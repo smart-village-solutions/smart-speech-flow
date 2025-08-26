@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+prometheus_client
+torch
+TTS
+soundfile
+numpy

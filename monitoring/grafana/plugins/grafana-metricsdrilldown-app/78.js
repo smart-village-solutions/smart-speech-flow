@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkgrafana_metricsdrilldown_app=self.webpackChunkgrafana_metricsdrilldown_app||[]).push([[78],{9078:(e,t,a)=>{a.r(t),a.d(t,{default:()=>l});var r=a(7985),n=a(5959),s=a.n(n),c=a(2425);function l({trail:e}){const[t,a]=(0,n.useState)(!1);return(0,n.useEffect)(()=>{t||(e.state.metric&&(0,c._r)().setRecentTrail(e),a(!0))},[e,t]),t?s().createElement(r.$L,{scene:e,createBrowserHistorySteps:!0,updateUrlOnInit:!0,namespace:e.state.urlNamespace},s().createElement(e.Component,{model:e})):null}}}]);
+//# sourceMappingURL=78.js.map?_cache=b47d06db0be36dfd8cc3

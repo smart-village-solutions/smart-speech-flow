@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+prometheus_client
+torch
+transformers
+python-multipart
+numpy
+ffmpeg-python
+sentencepiece
+sacremoses

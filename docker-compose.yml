@@ -1,0 +1,41 @@
+version: '3.8'
+services:
+  asr:
+    build: ./services/asr
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./models:/models
+  translation:
+    build: ./services/translation
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./models:/models
+  tts:
+    build: ./services/tts
+    ports:
+      - "8003:8000"
+    volumes:
+      - ./models:/models
+  api-gateway:
+    build: ./services/api-gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      - asr
+      - translation
+      - tts
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+  grafana:
+    image: grafana/grafana
+    user: "0"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./monitoring/grafana:/var/lib/grafana

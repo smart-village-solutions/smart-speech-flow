@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: 'asr'
+    static_configs:
+      - targets: ['asr:8000']
+  - job_name: 'translation'
+    static_configs:
+      - targets: ['translation:8000']
+  - job_name: 'tts'
+    static_configs:
+      - targets: ['tts:8000']
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:8000']
