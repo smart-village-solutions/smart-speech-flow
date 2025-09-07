@@ -6,3 +6,4 @@ openai-whisper
 python-multipart
 numpy
 ffmpeg-python
+httpx

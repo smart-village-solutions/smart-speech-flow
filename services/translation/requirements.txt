@@ -8,3 +8,4 @@ numpy
 ffmpeg-python
 sentencepiece
 sacremoses
+httpx

@@ -1,41 +1,109 @@
 version: '3.8'
+
 services:
+  traefik:
+    image: traefik:v2.10
+    command:
+      - --api.insecure=true
+      - --providers.docker=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.tlschallenge=true
+      - --certificatesresolvers.le.acme.email=admin@smart-village.solutions
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./letsencrypt:/letsencrypt
+    restart: always
+
   asr:
     build: ./services/asr
     ports:
       - "8001:8000"
     volumes:
       - ./models:/models
+    healthcheck:
+      test: CMD sh -c "curl -sf http://localhost:8000/health | grep -E '"status":"(ok|degraded)"'"
+      interval: 10s
+      timeout: 5s
+      retries: 5
   translation:
     build: ./services/translation
     ports:
       - "8002:8000"
     volumes:
       - ./models:/models
+    healthcheck:
+      test: CMD sh -c "curl -sf http://localhost:8000/health | grep -E '"status":"(ok|degraded)"'"
+      interval: 10s
+      timeout: 5s
+      retries: 5
   tts:
     build: ./services/tts
     ports:
       - "8003:8000"
     volumes:
       - ./models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: CMD sh -c "curl -sf http://localhost:8000/health | grep -E '"status":"(ok|degraded)"'"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   api-gateway:
     build: ./services/api-gateway
     ports:
       - "8000:8000"
-    depends_on:
-      - asr
-      - translation
-      - tts
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api-gateway.rule=Host(`ssf.smart-village.solutions`)"
+      - "traefik.http.routers.api-gateway.entrypoints=websecure"
+      - "traefik.http.routers.api-gateway.tls.certresolver=le"
+    restart: always
+
+  frontend:
+    build:
+      context: ../ssf-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`translate.smart-village.solutions`)"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls.certresolver=le"
+    restart: always
+
+
   prometheus:
     image: prom/prometheus
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
       - "9090:9090"
-  grafana:
-    image: grafana/grafana
-    user: "0"
+
+  loki:
+    image: grafana/loki:2.9.3
     ports:
-      - "3000:3000"
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
     volumes:
-      - ./monitoring/grafana:/var/lib/grafana
+      - ./monitoring/loki-config.yaml:/etc/loki/local-config.yaml
+
+  promtail:
+    image: grafana/promtail:2.9.3
+    volumes:
+      - /var/log:/var/log
+      - ./monitoring/promtail-config.yaml:/etc/promtail/config.yaml
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/config.yaml
