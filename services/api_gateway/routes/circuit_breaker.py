@@ -311,6 +311,7 @@ async def get_health_summary():
         # Service Health
         health_status = await circuit_breaker_client.get_health_status()
         summary = health_status.get("summary", {})
+        gpu_summary = health_status.get("gpu_summary", {})
 
         # Circuit Breaker States
         circuits = CircuitBreakerFactory.get_all_circuits()
@@ -318,6 +319,15 @@ async def get_health_summary():
 
         # Degradation Info
         degradation_status = await circuit_breaker_client.get_degradation_status()
+
+        gpu_overview = {
+            "devices_reporting": gpu_summary.get("devices_reporting", 0),
+            "services_reporting": gpu_summary.get("services_reporting", 0),
+            "critical_devices": gpu_summary.get("critical_devices", 0),
+            "warning_devices": gpu_summary.get("warning_devices", 0),
+            "scale_up_recommendations": gpu_summary.get("scale_up_recommendations", 0),
+            "recommended_action": gpu_summary.get("recommended_action", "steady")
+        }
 
         return {
             "status": "success",
@@ -327,9 +337,11 @@ async def get_health_summary():
                 "circuit_states": circuit_states,
                 "service_mode": degradation_status.get("current_mode", "unknown"),
                 "cache_entries": degradation_status.get("cache_size", 0),
-                "pending_requests": degradation_status.get("pending_requests", 0)
+                "pending_requests": degradation_status.get("pending_requests", 0),
+                "gpu": gpu_overview
             },
-            "alerts": _generate_health_alerts(health_status, circuit_states, degradation_status)
+            "gpu_summary": gpu_summary,
+            "alerts": _generate_health_alerts(health_status, circuit_states, degradation_status, gpu_summary)
         }
 
     except Exception as e:
@@ -341,7 +353,7 @@ async def get_health_summary():
 
 
 def _generate_health_alerts(health_status: Dict, circuit_states: Dict,
-                          degradation_status: Dict) -> List[Dict[str, str]]:
+                          degradation_status: Dict, gpu_summary: Dict) -> List[Dict[str, str]]:
     """Generiert Health Alerts für Dashboard"""
     alerts = []
 
@@ -385,6 +397,26 @@ def _generate_health_alerts(health_status: Dict, circuit_states: Dict,
             "level": "info",
             "type": "cache_full",
             "message": f"Fallback Cache fast voll ({cache_size} Einträge)"
+        })
+
+    # GPU Alerts
+    for gpu_alert in gpu_summary.get("alerts", []):
+        severity = gpu_alert.get("severity", "warning")
+        level = "error" if severity == "critical" else "warning"
+        alerts.append({
+            "level": level,
+            "type": "gpu_pressure",
+            "message": (
+                f"GPU Druck: {gpu_alert.get('service')} GPU{gpu_alert.get('device')} "
+                f"{gpu_alert.get('message')}"
+            )
+        })
+
+    for service in gpu_summary.get("services_missing_gpu", []):
+        alerts.append({
+            "level": "info",
+            "type": "gpu_unavailable",
+            "message": f"Service '{service}' meldet keine verfügbare GPU"
         })
 
     return alerts

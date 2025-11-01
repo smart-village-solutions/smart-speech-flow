@@ -416,6 +416,14 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 - Model-Loading-Zeiten
 - Concurrent-Request-Handling
 
+### **GPU Resource Management (Phase 6.1)**
+
+- Aggregierte GPU-Metriken werden im API-Gateway gesammelt und über `/circuit-breaker/health/summary` ausgespielt.
+- Schwellwerte: Warnung ab ≥75 % Auslastung, kritisch ab ≥90 % (GPU) bzw. ≥95 % (Memory).
+- Alerts: "gpu_pressure" für kritische Services, "gpu_unavailable" wenn ein Service keine GPU meldet.
+- Autoscaling-Signale pro Service werden kombiniert und als `scale_up_recommendations` ausgewiesen.
+- Ops-Workflow: Dashboard nutzt `gpu_summary` zur Skalierungsentscheidung (z. B. zusätzliche GPU-Worker ausrollen, Graceful-Degradation-Modus prüfen).
+
 ### **Visualisierung (Grafana)**
 
 **Dashboards:**

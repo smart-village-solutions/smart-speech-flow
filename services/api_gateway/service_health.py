@@ -61,6 +61,8 @@ class ServiceStatus:
     version: Optional[str] = None
     memory_usage: Optional[Dict] = None
     active_connections: Optional[int] = None
+    resources: Optional[Dict[str, Any]] = None
+    autoscaling: Optional[Dict[str, Any]] = None
 
 
 class ServiceHealthManager:
@@ -95,6 +97,12 @@ class ServiceHealthManager:
         self._setup_default_services()
 
         logger.info("🏥 Service Health Manager initialisiert")
+
+        # GPU Thresholds (Percent)
+        self.GPU_WARNING_THRESHOLD = 75.0
+        self.GPU_CRITICAL_THRESHOLD = 90.0
+        self.GPU_MEMORY_WARNING_THRESHOLD = 80.0
+        self.GPU_MEMORY_CRITICAL_THRESHOLD = 95.0
 
     def _setup_default_services(self):
         """Setup Standard Services für Smart Speech Flow"""
@@ -242,6 +250,8 @@ class ServiceHealthManager:
                 status.memory_usage = health_info['memory_usage']
             if 'active_connections' in health_info:
                 status.active_connections = health_info['active_connections']
+            status.resources = health_info.get('resources')
+            status.autoscaling = health_info.get('autoscaling')
 
         except CircuitBreakerOpenException as e:
             # Circuit ist OPEN - Service als nicht verfügbar markieren
@@ -249,6 +259,8 @@ class ServiceHealthManager:
             status.last_check = datetime.now()
             status.error_message = str(e)
             status.status_code = None
+            status.resources = None
+            status.autoscaling = None
 
         except Exception as e:
             # Unerwarteter Fehler
@@ -256,6 +268,8 @@ class ServiceHealthManager:
             status.last_check = datetime.now()
             status.error_message = str(e)
             status.status_code = getattr(e, 'status', None)
+            status.resources = None
+            status.autoscaling = None
 
     async def _perform_health_request(self, endpoint: ServiceEndpoint) -> Dict[str, Any]:
         """Führt tatsächlichen Health Check Request aus"""
@@ -429,7 +443,8 @@ class ServiceHealthManager:
                     [status.last_check for status in self.service_status.values() if status.last_check],
                     default=None
                 )
-            }
+            },
+            "gpu_summary": self.get_gpu_summary()
         }
 
     def is_service_healthy(self, service_name: str) -> bool:
@@ -451,6 +466,145 @@ class ServiceHealthManager:
             name for name, status in self.service_status.items()
             if not status.is_healthy
         ]
+
+    def get_gpu_summary(self) -> Dict[str, Any]:
+        """Aggregierte GPU-Metriken und Alerts across Services"""
+        util_values: List[float] = []
+        mem_values: List[float] = []
+
+        summary: Dict[str, Any] = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "services_reporting": 0,
+            "devices_reporting": 0,
+            "warning_devices": 0,
+            "critical_devices": 0,
+            "services_missing_gpu": [],
+            "devices": [],
+            "alerts": [],
+            "thresholds": {
+                "utilization_warning": self.GPU_WARNING_THRESHOLD,
+                "utilization_critical": self.GPU_CRITICAL_THRESHOLD,
+                "memory_warning": self.GPU_MEMORY_WARNING_THRESHOLD,
+                "memory_critical": self.GPU_MEMORY_CRITICAL_THRESHOLD
+            },
+            "autoscaling_signals": [],
+            "scale_up_recommendations": 0
+        }
+
+        for service_name, status in self.service_status.items():
+            if status.autoscaling:
+                recommendation = status.autoscaling.get("recommended_action")
+                signal = {
+                    "service": service_name,
+                    "recommended_action": recommendation,
+                    "reasons": status.autoscaling.get("reasons", [])
+                }
+                summary["autoscaling_signals"].append(signal)
+                if recommendation == "scale_up":
+                    summary["scale_up_recommendations"] += 1
+
+            resources = status.resources or {}
+            gpu_info = resources.get("gpu") if isinstance(resources, dict) else None
+
+            if not gpu_info:
+                continue
+
+            summary["services_reporting"] += 1
+
+            devices = gpu_info.get("devices") or []
+            if not gpu_info.get("available", False) or not devices:
+                summary["services_missing_gpu"].append(service_name)
+                continue
+
+            for device in devices:
+                summary["devices_reporting"] += 1
+
+                util = device.get("utilization_percent")
+                mem_util = device.get("memory_utilization")
+                if util is not None:
+                    util_values.append(util)
+                if mem_util is not None:
+                    mem_values.append(mem_util)
+
+                severity = "normal"
+                triggers: List[str] = []
+
+                if util is not None:
+                    if util >= self.GPU_CRITICAL_THRESHOLD:
+                        severity = "critical"
+                        triggers.append("utilization")
+                    elif util >= self.GPU_WARNING_THRESHOLD:
+                        severity = "warning"
+                        triggers.append("utilization")
+
+                if mem_util is not None:
+                    if mem_util >= self.GPU_MEMORY_CRITICAL_THRESHOLD:
+                        severity = "critical"
+                        if "memory" not in triggers:
+                            triggers.append("memory")
+                    elif mem_util >= self.GPU_MEMORY_WARNING_THRESHOLD and severity != "critical":
+                        severity = "warning"
+                        triggers.append("memory")
+
+                device_snapshot = {
+                    "service": service_name,
+                    "index": device.get("index"),
+                    "name": device.get("name"),
+                    "utilization_percent": util,
+                    "memory_utilization": mem_util,
+                    "temperature_c": device.get("temperature_c"),
+                    "pressure_level": severity
+                }
+
+                if device.get("memory_total_nvml") is not None:
+                    device_snapshot["memory_total_nvml"] = device.get("memory_total_nvml")
+                    device_snapshot["memory_used_nvml"] = device.get("memory_used_nvml")
+                if device.get("total_memory") is not None:
+                    device_snapshot["total_memory"] = device.get("total_memory")
+
+                summary["devices"].append(device_snapshot)
+
+                if severity == "warning":
+                    summary["warning_devices"] += 1
+                elif severity == "critical":
+                    summary["critical_devices"] += 1
+
+                if severity in ("warning", "critical"):
+                    details: List[str] = []
+                    if "utilization" in triggers and util is not None:
+                        details.append(f"utilization {util:.1f}%")
+                    if "memory" in triggers and mem_util is not None:
+                        details.append(f"memory {mem_util:.1f}%")
+
+                    summary["alerts"].append({
+                        "service": service_name,
+                        "device": device.get("index"),
+                        "severity": severity,
+                        "message": f"GPU{device.get('index')} {', '.join(details)}"
+                    })
+
+        if util_values:
+            summary["avg_utilization"] = round(sum(util_values) / len(util_values), 2)
+            summary["max_utilization"] = max(util_values)
+        else:
+            summary["avg_utilization"] = None
+            summary["max_utilization"] = None
+
+        if mem_values:
+            summary["avg_memory_utilization"] = round(sum(mem_values) / len(mem_values), 2)
+            summary["max_memory_utilization"] = max(mem_values)
+        else:
+            summary["avg_memory_utilization"] = None
+            summary["max_memory_utilization"] = None
+
+        if summary["critical_devices"] > 0 or summary["scale_up_recommendations"] > 0:
+            summary["recommended_action"] = "scale_up"
+        elif summary["warning_devices"] > 0:
+            summary["recommended_action"] = "review"
+        else:
+            summary["recommended_action"] = "steady"
+
+        return summary
 
 
 # Globale Service Health Manager Instanz

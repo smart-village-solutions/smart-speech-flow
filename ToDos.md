@@ -16,7 +16,7 @@ Alle ToDos der Phasen 0–5 sind abgeschlossen und in `Version2.md` bzw. `SYSTEM
 
 ## 🔄 Phase 6 – Production Hardening (offen)
 
-- [ ] **ToDo 6.1: GPU Resource Management**
+- [x] **ToDo 6.1: GPU Resource Management**
   Aufbauend auf den Health-Daten ein aktives GPU-Resource- und Placement-Management implementieren.
   - Acceptance Criteria: GPU-Auslastung beeinflusst Autoscaling-Signale; Limits und Graceful Degradation berücksichtigen GPU-Verfügbarkeit; Dokumentation für Ops vorhanden.
   - Owner: Platform / AI Infra

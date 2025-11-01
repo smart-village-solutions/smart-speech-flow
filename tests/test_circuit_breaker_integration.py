@@ -17,6 +17,7 @@ import time
 import logging
 import json
 import threading
+from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
@@ -431,6 +432,51 @@ class TestServiceHealthManagerRealSystem:
         assert overall_health["summary"]["healthy_services"] >= 1
 
         await manager.stop_monitoring()
+
+    @pytest.mark.asyncio
+    async def test_gpu_summary_alerts_and_aggregation(self):
+        """Test: GPU Summary erzeugt Alerts bei hoher Auslastung"""
+        manager = ServiceHealthManager()
+
+        try:
+            status = manager.service_status.get("asr")
+            assert status is not None
+
+            status.is_healthy = True
+            status.last_check = datetime.now()
+            status.resources = {
+                "gpu": {
+                    "available": True,
+                    "device_count": 1,
+                    "devices": [
+                        {
+                            "index": 0,
+                            "name": "Mock GPU",
+                            "utilization_percent": 92.5,
+                            "memory_utilization": 88.1,
+                            "temperature_c": 70
+                        }
+                    ]
+                }
+            }
+            status.autoscaling = {
+                "recommended_action": "scale_up",
+                "reasons": ["gpu_pressure"]
+            }
+
+            gpu_summary = manager.get_gpu_summary()
+            assert gpu_summary["devices_reporting"] == 1
+            assert gpu_summary["critical_devices"] == 1
+            assert gpu_summary["scale_up_recommendations"] == 1
+            assert any(alert["severity"] == "critical" for alert in gpu_summary["alerts"])
+            assert gpu_summary["recommended_action"] == "scale_up"
+
+            overall_health = manager.get_overall_health()
+            assert overall_health["gpu_summary"]["critical_devices"] == 1
+            assert overall_health["gpu_summary"]["devices_reporting"] == 1
+            assert overall_health["gpu_summary"]["recommended_action"] == "scale_up"
+        finally:
+            await manager.stop_monitoring()
 class TestGracefulDegradationRealSystem:
     """Graceful Degradation Tests mit echtem System"""
 
