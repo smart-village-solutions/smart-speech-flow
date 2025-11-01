@@ -26,10 +26,7 @@ Alle ToDos der Phasen 0–5 sind abgeschlossen und in `Version2.md` bzw. `SYSTEM
   - Acceptance Criteria: Mindestens zwei produktionsrelevante Dashboards; Alert-Regeln für Service-Ausfälle, Latenz, Ressourcenknappheit; README-Abschnitt mit Zugriff & Runbook.
   - Owner: Observability
 
-- [ ] **ToDo 6.3: Performance & Load Validation**
-  Automatisierte Lasttests für Audio- und Text-Pipelines einrichten, um Skalierungs- und Timeout-Thresholds zu verifizieren.
-  - Acceptance Criteria: Reproduzierbare Load-Test-Skripte (z. B. Locust/K6); dokumentierte Zielwerte; Regression-Check im CI.
-  - Owner: QA / Performance
+- [ ] **ToDo 6.3: End-to-End Test on Live-App
 
 ## 🧪 Regression-Checkliste
 
