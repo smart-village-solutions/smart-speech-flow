@@ -25,22 +25,27 @@ services:
       - "8001:8000"
     volumes:
       - ./models:/models
-    healthcheck:
-      test: CMD sh -c "curl -sf http://localhost:8000/health | grep -E '"status":"(ok|degraded)"'"
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
   translation:
     build: ./services/translation
     ports:
       - "8002:8000"
     volumes:
       - ./models:/models
-    healthcheck:
-      test: CMD sh -c "curl -sf http://localhost:8000/health | grep -E '"status":"(ok|degraded)"'"
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
   tts:
     build: ./services/tts
     ports:
@@ -52,23 +57,20 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              count: all
               capabilities: [gpu]
-    healthcheck:
-      test: CMD sh -c "curl -sf http://localhost:8000/health | grep -E '"status":"(ok|degraded)"'"
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
-  api-gateway:
-    build: ./services/api-gateway
+  api_gateway:
+    build:
+      context: .
+      dockerfile: services/api_gateway/Dockerfile
     ports:
       - "8000:8000"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.api-gateway.rule=Host(`ssf.smart-village.solutions`)"
-      - "traefik.http.routers.api-gateway.entrypoints=websecure"
-      - "traefik.http.routers.api-gateway.tls.certresolver=le"
+      - "traefik.http.routers.api_gateway.rule=Host(`ssf.smart-village.solutions`)"
+      - "traefik.http.routers.api_gateway.entrypoints=websecure"
+      - "traefik.http.routers.api_gateway.tls.certresolver=le"
     restart: always
 
   frontend:
@@ -92,18 +94,18 @@ services:
     ports:
       - "9090:9090"
 
-  loki:
-    image: grafana/loki:2.9.3
-    ports:
-      - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
-    volumes:
-      - ./monitoring/loki-config.yaml:/etc/loki/local-config.yaml
+#  loki:
+#    image: grafana/loki:2.9.3
+#    ports:
+#      - "3100:3100"
+#    command: -config.file=/etc/loki/local-config.yaml
+#    volumes:
+#      - ./monitoring/loki-config.yaml:/etc/loki/local-config.yaml
 
-  promtail:
-    image: grafana/promtail:2.9.3
-    volumes:
-      - /var/log:/var/log
-      - ./monitoring/promtail-config.yaml:/etc/promtail/config.yaml
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    command: -config.file=/etc/promtail/config.yaml
+#  promtail:
+#    image: grafana/promtail:2.9.3
+#    volumes:
+#      - /var/log:/var/log
+#      - ./monitoring/promtail-config.yaml:/etc/promtail/config.yaml
+#      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+#    command: -config.file=/etc/promtail/config.yaml

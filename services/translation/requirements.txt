@@ -9,3 +9,5 @@ ffmpeg-python
 sentencepiece
 sacremoses
 httpx
+psutil
+pynvml

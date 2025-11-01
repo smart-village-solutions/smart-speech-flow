@@ -10,6 +10,130 @@ from fastapi.responses import Response, JSONResponse
 from prometheus_client import Counter, Gauge, Histogram, generate_latest
 
 try:
+    import psutil
+except ImportError:  # pragma: no cover - dependency provided via requirements
+    psutil = None
+
+try:
+    import pynvml
+except ImportError:  # pragma: no cover - optional dependency
+    pynvml = None
+
+_nvml_initialized = False
+
+
+def _collect_gpu_metrics() -> Dict[str, Any]:
+    """Return GPU availability and utilization details if devices are present."""
+    global _nvml_initialized
+    gpu_available = bool(torch.cuda.is_available())
+    gpu_info: Dict[str, Any] = {
+        "available": gpu_available,
+        "device_count": torch.cuda.device_count() if gpu_available else 0,
+        "devices": [],
+        "errors": []
+    }
+
+    if not gpu_available:
+        return gpu_info
+
+    nvml_ready = False
+    if pynvml is not None:
+        try:
+            if not _nvml_initialized:
+                pynvml.nvmlInit()
+                _nvml_initialized = True
+            nvml_ready = True
+        except Exception as exc:  # pragma: no cover - hardware specific branch
+            gpu_info["errors"].append(f"nvml_init_failed: {exc}")
+
+    for device_idx in range(gpu_info["device_count"]):
+        device_data: Dict[str, Any] = {"index": device_idx}
+        try:
+            props = torch.cuda.get_device_properties(device_idx)
+            torch_alloc = torch.cuda.memory_allocated(device_idx)
+            torch_reserved = torch.cuda.memory_reserved(device_idx)
+            device_data.update({
+                "name": props.name,
+                "total_memory": props.total_memory,
+                "memory_allocated": torch_alloc,
+                "memory_reserved": torch_reserved,
+                "memory_utilization": None,
+                "utilization_percent": None,
+                "temperature_c": None
+            })
+            if nvml_ready:
+                try:
+                    handle = pynvml.nvmlDeviceGetHandleByIndex(device_idx)
+                    util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                    mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                    device_data["memory_utilization"] = round(mem.used / mem.total * 100, 2) if mem.total else None
+                    device_data["utilization_percent"] = util.gpu
+                    device_data["temperature_c"] = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+                    device_data["memory_total_nvml"] = mem.total
+                    device_data["memory_used_nvml"] = mem.used
+                except Exception as exc:  # pragma: no cover - hardware specific branch
+                    gpu_info["errors"].append(f"nvml_query_failed_gpu_{device_idx}: {exc}")
+        except Exception as exc:  # pragma: no cover - hardware specific branch
+            gpu_info["errors"].append(f"torch_query_failed_gpu_{device_idx}: {exc}")
+        gpu_info["devices"].append(device_data)
+
+    return gpu_info
+
+
+def _collect_resource_metrics() -> Dict[str, Any]:
+    metrics: Dict[str, Any] = {
+        "cpu_percent": None,
+        "memory_percent": None,
+        "memory_total": None,
+        "memory_available": None,
+        "gpu": _collect_gpu_metrics(),
+    }
+
+    if psutil is not None:
+        try:
+            metrics["cpu_percent"] = psutil.cpu_percent(interval=None)
+            virtual_mem = psutil.virtual_memory()
+            metrics["memory_percent"] = virtual_mem.percent
+            metrics["memory_total"] = virtual_mem.total
+            metrics["memory_available"] = virtual_mem.available
+        except Exception as exc:  # pragma: no cover - psutil rarely fails
+            metrics["psutil_error"] = str(exc)
+    else:
+        metrics["psutil_error"] = "psutil_not_installed"
+
+    return metrics
+
+
+def _derive_auto_scaling_signal(metrics: Dict[str, Any]) -> Dict[str, Any]:
+    threshold_cpu = 85
+    threshold_mem = 85
+    threshold_gpu = 85
+    reasons: List[str] = []
+
+    cpu_percent = metrics.get("cpu_percent")
+    if cpu_percent is not None and cpu_percent >= threshold_cpu:
+        reasons.append(f"cpu>={threshold_cpu}")
+
+    mem_percent = metrics.get("memory_percent")
+    if mem_percent is not None and mem_percent >= threshold_mem:
+        reasons.append(f"memory>={threshold_mem}")
+
+    gpu_info = metrics.get("gpu", {})
+    for device in gpu_info.get("devices", []):
+        gpu_util = device.get("utilization_percent")
+        mem_util = device.get("memory_utilization")
+        if gpu_util is not None and gpu_util >= threshold_gpu:
+            reasons.append(f"gpu{device.get('index')}_util>={threshold_gpu}")
+        if mem_util is not None and mem_util >= threshold_gpu:
+            reasons.append(f"gpu{device.get('index')}_mem>={threshold_gpu}")
+
+    recommended_action = "scale_up" if reasons else "steady"
+    return {
+        "recommended_action": recommended_action,
+        "reasons": reasons
+    }
+
+try:
     from transformers import M2M100ForConditionalGeneration, M2M100Tokenizer
 except ImportError:
     M2M100ForConditionalGeneration = None
@@ -164,6 +288,8 @@ def _generate_single(text: str, source_lang: str, target_lang: str, gen_override
 @app.get("/health")
 def health():
     ok = bool(model_loaded)
+    resources = _collect_resource_metrics()
+    autoscaling = _derive_auto_scaling_signal(resources)
     health_status.set(1 if ok else 0)
     return {
         "status": "ok" if ok else "degraded",
@@ -171,9 +297,11 @@ def health():
         "model_name": MODEL_NAME,
         "device": str(device),
         "dtype": "fp16" if dtype == torch.float16 else "fp32",
-        "gpu": torch.cuda.is_available(),
+        "gpu": resources.get("gpu", {}).get("available", False),
         "error": load_error,
-        "supported_languages": len(supported_langs)
+        "supported_languages": len(supported_langs),
+        "resources": resources,
+        "autoscaling": autoscaling
     }
 
 @app.get("/languages")
@@ -188,35 +316,60 @@ def metrics():
 
 @app.post("/translate")
 async def translate(request: Request):
-    if not model_loaded or m2m_model is None or m2m_tokenizer is None:
-        raise HTTPException(status_code=503, detail="Model unavailable")
-
-    requests_total.inc()
-
+    debug_active = False
+    system_stats = {"cpu": None, "ram": None}
+    if psutil is not None:
+        try:
+            system_stats = {"cpu": psutil.cpu_percent(), "ram": psutil.virtual_memory().percent}
+        except Exception:  # pragma: no cover - psutil rarely fails at runtime
+            system_stats = {"cpu": None, "ram": None}
+    debug_info = {"input": None, "output": None, "error": None, "duration": None, "model": MODEL_NAME, "system": system_stats}
     try:
         payload = await request.json()
+        debug_active = str(payload.get("debug", "false")).lower() == "true" or str(request.query_params.get("debug", "false")).lower() == "true"
     except Exception:
         errors_total.inc()
+        debug_info["error"] = "Invalid JSON payload"
+        if debug_active:
+            return JSONResponse({"translations": None, "debug": debug_info}, status_code=400)
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     text_in = payload.get("text")
     source_lang = payload.get("source_lang")
     target_lang = payload.get("target_lang")
     gen_overrides = payload.get("generation", {})
+    debug_info["input"] = {"text": text_in, "source_lang": source_lang, "target_lang": target_lang, "generation": gen_overrides}
+
+    if not model_loaded or m2m_model is None or m2m_tokenizer is None:
+        debug_info["error"] = "Model unavailable"
+        if debug_active:
+            return JSONResponse({"translations": None, "debug": debug_info}, status_code=503)
+        raise HTTPException(status_code=503, detail="Model unavailable")
 
     if text_in is None or (DENY_EMPTY and (isinstance(text_in, str) and not text_in.strip())):
         errors_total.inc()
+        debug_info["error"] = "Field 'text' must be a non-empty string or list of strings"
+        if debug_active:
+            return JSONResponse({"translations": None, "debug": debug_info}, status_code=400)
         raise HTTPException(status_code=400, detail="Field 'text' must be a non-empty string or list of strings")
 
     if not source_lang or not target_lang:
         errors_total.inc()
+        debug_info["error"] = "Fields 'source_lang' and 'target_lang' are required"
+        if debug_active:
+            return JSONResponse({"translations": None, "debug": debug_info}, status_code=400)
         raise HTTPException(status_code=400, detail="Fields 'source_lang' and 'target_lang' are required")
 
-    _validate_lang(source_lang)
-    _validate_lang(target_lang)
+    try:
+        _validate_lang(source_lang)
+        _validate_lang(target_lang)
+    except Exception as e:
+        debug_info["error"] = str(e)
+        if debug_active:
+            return JSONResponse({"translations": None, "debug": debug_info}, status_code=400)
+        raise
 
     texts: List[str] = _as_list(text_in)
-
     start = time.perf_counter()
     outputs: List[str] = []
 
@@ -235,12 +388,15 @@ async def translate(request: Request):
                 outputs.append(_generate_single(t, source_lang, target_lang, gen_overrides))
 
         elapsed = time.perf_counter() - start
+        debug_info["output"] = outputs if isinstance(text_in, list) else outputs[0]
+        debug_info["duration"] = round(elapsed, 3)
+        debug_info["error"] = None
         # Latenz an Prometheus melden
         try:
             request_latency.observe(elapsed)
         except Exception:
             pass
-        return JSONResponse({
+        response = {
             "model": MODEL_NAME,
             "device": str(device),
             "dtype": "fp16" if dtype == torch.float16 else "fp32",
@@ -249,9 +405,29 @@ async def translate(request: Request):
             "count": len(outputs),
             "elapsed_seconds": round(elapsed, 3),
             "translations": outputs if isinstance(text_in, list) else outputs[0]
-        })
-    except HTTPException:
+        }
+        # Romanisierte Variante für TTS ergänzen
+        try:
+            from uroman import uromanize
+            if isinstance(outputs, list):
+                tts_text = [uromanize(o) for o in outputs]
+            else:
+                tts_text = uromanize(outputs)
+            response["tts_text"] = tts_text
+        except ImportError:
+            response["tts_text"] = None
+        if debug_active:
+            response["debug"] = debug_info
+        return JSONResponse(response)
+    except HTTPException as e:
+        debug_info["error"] = str(e)
+        if debug_active:
+            return JSONResponse({"translations": None, "debug": debug_info}, status_code=400)
         raise
     except Exception as e:
         errors_total.inc()
+        debug_info["error"] = f"Translation failed: {e}"
+        debug_info["duration"] = round(time.perf_counter()-start,3)
+        if debug_active:
+            return JSONResponse({"translations": None, "debug": debug_info}, status_code=500)
         raise HTTPException(status_code=500, detail=f"Translation failed: {e}")

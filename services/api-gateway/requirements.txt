@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-prometheus_client
-requests
-python-multipart
-pytest
-httpx

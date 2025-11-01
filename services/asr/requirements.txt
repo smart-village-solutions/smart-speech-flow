@@ -7,3 +7,5 @@ python-multipart
 numpy
 ffmpeg-python
 httpx
+psutil
+pynvml

@@ -1,3 +1,5 @@
+# Zertifikatsdaten und private Schlüssel niemals ins Repository!
+letsencrypt/acme.json
 # Python
 __pycache__/
 *.py[cod]

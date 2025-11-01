@@ -7,3 +7,6 @@ soundfile
 numpy
 httpx
 pytest
+psutil
+uroman
+pynvml

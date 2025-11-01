@@ -1,9 +1,8 @@
 import sys
-import os
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + '/..'))
+sys.path.append("services/api_gateway")
+from app import app
 
 from fastapi.testclient import TestClient
-from app import app
 
 client = TestClient(app)
 
@@ -13,3 +12,5 @@ def test_health():
     data = response.json()
     assert "status" in data
     assert "model" in data
+    assert "resources" in data
+    assert "autoscaling" in data

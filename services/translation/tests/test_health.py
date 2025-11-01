@@ -13,3 +13,5 @@ def test_health():
     data = response.json()
     assert "status" in data
     assert "model_loaded" in data
+    assert "resources" in data
+    assert "autoscaling" in data

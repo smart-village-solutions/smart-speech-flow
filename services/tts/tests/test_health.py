@@ -14,6 +14,8 @@ def test_health():
     assert response.status_code == 200
     data = response.json()
     assert "status" in data
+    assert "resources" in data
+    assert "autoscaling" in data
 
 
 
@@ -29,3 +31,5 @@ def test_gpu_used():
     assert "gpu_used" in data
     assert data["model"] is True
     assert data["gpu_used"] is True
+    assert "resources" in data
+    assert data["resources"]["gpu"]["available"] is True

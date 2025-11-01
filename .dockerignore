@@ -1,0 +1,15 @@
+.git
+__pycache__/
+*.pyc
+*.pkl
+*.db
+*.zip
+*.tar
+*.mp3
+*.wav
+output.wav
+sample.wav
+models/
+letsencrypt/
+.venv
+*.log
