@@ -6,7 +6,7 @@
 | Phase | Fokus | Ergebnisse | Verifikation |
 | --- | --- | --- | --- |
 | 0 | Qualität & Tooling | Vollständige Test-Suite, dokumentierte Coverage | `PYTHONPATH=. pytest tests -q` (TESTS.md) |
-| 1 | Session Management | Single-Session-Policy, Admin-API, WebSocket-Lifecycle | `tests/test_session_manager.py`, `tests/test_admin_routes.py`, `tests/test_websocket_manager.py` |
+| 1 | Session Management | Multi-Session-Management, Admin-API, WebSocket-Lifecycle | `tests/test_session_manager.py`, `tests/test_admin_routes.py`, `tests/test_websocket_manager.py` |
 | 2 | Unified Input | Vereinheitlichte Message-API, Audio/Text-Validation, optimierte Pipelines | `tests/test_unified_message_endpoint.py`, `tests/test_audio_validation.py`, `tests/test_text_pipeline.py` |
 | 3 | User Experience | Differenziertes Broadcasting, Timeout-Handling, Mobile-Optimierung | `tests/test_mobile_optimization.py`, `tests/test_session_timeout.py` |
 | 4 | Resilience | Circuit Breaker, Graceful Degradation, erweitertes Input-Hardening | `tests/test_circuit_breaker_integration.py`, `tests/test_rate_limiting.py` |

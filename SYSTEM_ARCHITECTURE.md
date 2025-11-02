@@ -97,23 +97,21 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 
 ### **1. Session-Initiierung (Admin → Client)**
 
-**Single-Session-Regel:** Es darf immer nur eine aktive Session pro Admin geben.
+**Parallele Sessions:** Ein Admin kann mehrere aktive Sessions gleichzeitig betreuen; jede Session wird über ihre eigene Session-ID adressiert.
 
 **Workflow:**
-1. **Session-Cleanup:** Admin Frontend sendet POST-Request an `https://ssf.smart-village.solutions/api/admin/session/create`
-2. **Existing Session Termination:** API Gateway beendet automatisch alle bestehenden Admin-Sessions
-   - Aktive WebSocket-Verbindungen werden geschlossen
-   - Client-Benutzer erhalten Disconnect-Notification: "Session wurde vom Administrator beendet"
-   - Session-Cleanup und Resource-Freigabe
-3. **New Session Creation:** Session Manager erstellt neue Session
-4. Session-UUID wird generiert (z.B. 550e8400-e29b-41d4-a716-446655440000)
-5. Admin Frontend erhält vollständige Client-URL mit eingebetteter Session-UUID
-5. URL wird dem Kunden gezeigt oder geteilt
-6. Client ruft URL direkt auf (/join/{session_id})
-7. Client Frontend lädt verfügbare Sprachen und zeigt Sprachauswahl
-8. Client wählt Sprache und sendet POST-Request an `https://ssf.smart-village.solutions/api/customer/session/activate`
-9. Session wird mit gewählter Kundensprache aktiviert (Admin spricht immer Deutsch)
-10. Beide Clients erhalten Bestätigung: Session ist aktiv und bereit für Kommunikation
+1. Admin Frontend sendet POST-Request an `https://ssf.smart-village.solutions/api/admin/session/create`.
+2. Der Session Manager erstellt eine neue Session und ergänzt sie zum Satz aktiver Sessions (persistiert optional in Redis).
+3. Eine kurze Session-UUID wird generiert (z.B. 550E8400).
+4. Das Admin Frontend erhält die vollständige Client-URL mit eingebetteter Session-UUID.
+5. Die URL wird dem Kunden gezeigt oder geteilt.
+6. Der Client ruft die URL direkt auf (`/join/{session_id}`).
+7. Das Client Frontend lädt verfügbare Sprachen und zeigt die Sprachauswahl.
+8. Der Client wählt eine Sprache und sendet einen POST-Request an `https://ssf.smart-village.solutions/api/customer/session/activate`.
+9. Die Session wird mit der gewählten Kundensprache aktiviert (Admin führt weiterhin Deutsch).
+10. Beide Clients erhalten eine Bestätigung: Session ist aktiv und bereit für Kommunikation.
+
+*Hinweis:* Bestehende Sessions bleiben bestehen, bis sie manuell beendet oder automatisch aufgrund von Timeouts geschlossen werden.
 
 ### **2. Audio- und Text-Kommunikation (Bidirektional)**
 
@@ -178,13 +176,13 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 **Hauptkomponenten:**
 
 **SessionManager-Module:**
-- **CreateSession:** Single-Session-Regel enforcing
-  - Bestehende Sessions automatisch beenden
-  - Neue Session erstellen (ohne Sprachauswahl)
-  - Client-Disconnect-Notifications versenden
+- **CreateSession:** Parallele Sessions anlegen
+  - Neue Session erstellen (ohne bestehende Sessions automatisch zu beenden)
+  - Optionale Admin-Aktion: bestehende Sessions manuell terminieren
+  - Client-Notifications nur bei bewusster Termination
 - **URLDisplay:** Client-URL prominent anzeigen und teilen
 - **StatusMonitor:** Client-Join und Sprachauswahl überwachen
-- **SessionHistory:** Beendete Sessions verwalten (aktive Session ist immer singular)
+- **SessionHistory:** Aktive und beendete Sessions verwalten (Mehrfachauswahl möglich)
 
 **CommunicationInterface-Module:**
 - **InputSelector:** Toggle zwischen Audio-Aufnahme und Text-Eingabe
@@ -197,9 +195,9 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 - **ConnectionStatus:** Session- und WebSocket-Verbindungsstatus
 
 **AdminDashboard-Module:**
-- **CurrentSession:** Einzelne aktive Session-Anzeige (statt Multiple Sessions)
-  - Session-Status und Client-Information
-  - Session-Terminate-Button für manuelles Beenden
+- **CurrentSessions:** Übersicht über alle aktiven Sessions mit Auswahl der Fokus-Session
+  - Session-Status und Client-Informationen pro Eintrag
+  - Session-Terminate-Button für gezieltes Beenden
 - **SessionHistory:** Vergangene Sessions mit Zeitstempel und Dauer
 - **Statistics:** Nutzungsstatistiken pro Session
 - **Settings:** Konfiguration und Einstellungen
@@ -289,14 +287,14 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 ```
 
 **session_manager.py:**
-- **SessionManager:** Single-Session-Policy mit automatischem Session-Cleanup
-  - **Active Session Tracking:** Maximal eine aktive Admin-Session
-  - **Session Termination Logic:** Automatisches Beenden bestehender Sessions
+- **SessionManager:** Paralleles Session-Management mit optionalem Cleanup
+  - **Active Session Tracking:** Menge aktiver Admin-Sessions (Redis-persistiert)
+  - **Session Termination Logic:** Manuelles oder Timeout-basiertes Beenden bestehender Sessions
   - **WebSocket-Connection-Pool:** Verbindungsmanagement pro Session
   - **Graceful Disconnect:** Client-Benachrichtigung bei Session-Beendigung
   - **Broadcast-Funktionalität:** Echtzeit-Updates an alle Session-Teilnehmer
   - **Persistence Layer:** Redis-gestütztes Session- und Message-Storage (Fallback: In-Memory)
-- **Session:** Single-Instance Session-Model
+- **Session:** Session-Model mit paralleler Nutzung
   - **State:** inactive → pending → active → terminated
   - **Language-Pair:** Admin (DE) ↔ Customer (selected language)
   - **Timeout-Management:** Automatische Cleanup nach Inaktivität
@@ -669,17 +667,16 @@ Alle KI-Services können auf verfügbare NVIDIA-GPUs zugreifen durch:
   - Seamless Fallback auf HTTP-Polling
 - **Recovery:** < 5 Sekunden ohne Datenverlust
 
-**Session-Conflict-Handling:**
-- **Problem:** Admin versucht neue Session zu starten während eine aktive existiert
+**Session-Parallel-Handling:**
+- **Problem:** Admin startet zusätzliche Sessions, während andere aktiv bleiben.
 - **Lösung:**
-  - **Automatic Session Termination:** Bestehende Session wird sofort beendet
-  - **Client Notification:** Aktive Client-Benutzer erhalten Disconnect-Message
-  - **Graceful Cleanup:** WebSocket-Verbindungen ordnungsgemäß schließen
-  - **Resource Liberation:** Memory und Redis-Keys der alten Session freigeben
-- **User-Experience:** Nahtloser Übergang zur neuen Session ohne manuelle Eingriffe
+  - **Parallele Session-Verwaltung:** Session Manager verwaltet mehrere aktive Sessions im Set.
+  - **Gezielte Termination:** Admin kann einzelne Sessions manuell beenden; Clients erhalten nur dann Disconnect-Messages.
+  - **Resource Management:** Inaktive Sessions werden über Timeouts oder Admin-Aktionen bereinigt.
+- **User-Experience:** Admins können mehrere Gespräche parallel betreuen und per Session-ID zwischen ihnen wechseln.
 
 **Session-Timeout-Handling:**
-- **Problem:** Inaktive Sessions blockieren Ressourcen (bei Single-Session besonders kritisch)
+- **Problem:** Inaktive Sessions blockieren Ressourcen bei längerer Parallel-Nutzung
 - **Lösung:**
   - Configurable Timeouts: 15min Inaktivität → Warning, 30min → Auto-Close
   - Session-Heartbeat über WebSocket-Ping
