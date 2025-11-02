@@ -17,6 +17,7 @@ def index():
         const response = await fetch('/examples/' + fname);
         const blob = await response.blob();
         formData.append('file', blob, fname);
+        formData.append('debug', 'true');
         // Sende das Formular per fetch
         const result = await fetch('/upload', {{
             method: 'POST',
@@ -59,6 +60,7 @@ def index():
                 <option value='ru'>Russisch</option>
                 <option value='uk'>Ukrainisch</option>
             </select><br><br>
+            <input type='hidden' name='debug' value='true'>
             <button type='submit'>Verarbeiten & Download</button>
         </form>
 

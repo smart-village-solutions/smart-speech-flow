@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 import requests
-from requests import Response
+from requests import Response, exceptions
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +60,13 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         model: str,
         timeout_seconds: float,
         temperature: float,
+        max_retries: int,
     ) -> None:
         self.endpoint = endpoint.rstrip("/")
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.temperature = temperature
+        self.max_retries = max(1, max_retries)
         self.is_active = True
 
     def _build_prompt(
@@ -112,40 +114,56 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         prompt = self._build_prompt(text, source_lang, target_lang, context)
         start_time = time.perf_counter()
 
-        try:
-            response = self._request(prompt)
-            elapsed_ms = (time.perf_counter() - start_time) * 1000
-            response.raise_for_status()
-            data = response.json()
-            refined = (data.get("response") or "").strip()
+        last_error: Optional[str] = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = self._request(prompt)
+                elapsed_ms = (time.perf_counter() - start_time) * 1000
+                response.raise_for_status()
+                data = response.json()
+                refined = (data.get("response") or "").strip()
 
-            if not refined:
+                if not refined:
+                    return RefinementOutcome(
+                        text=text,
+                        changed=False,
+                        latency_ms=elapsed_ms,
+                        error="empty_response",
+                        raw_response=data,
+                    )
+
+                changed = refined != text
                 return RefinementOutcome(
-                    text=text,
-                    changed=False,
+                    text=refined,
+                    changed=changed,
                     latency_ms=elapsed_ms,
-                    error="empty_response",
+                    error=None,
                     raw_response=data,
                 )
+            except exceptions.Timeout as exc:
+                last_error = str(exc)
+                if attempt < self.max_retries:
+                    logger.warning(
+                        "Translation refinement timeout (attempt %s/%s), retrying...",
+                        attempt,
+                        self.max_retries,
+                    )
+                    time.sleep(min(0.1 * (2 ** (attempt - 1)), 1.0))
+                    continue
+                logger.warning("Translation refinement failed after retries: %s", exc)
+            except Exception as exc:  # noqa: BLE001
+                last_error = str(exc)
+                logger.warning("Translation refinement failed: %s", exc)
+                break
 
-            changed = refined != text
-            return RefinementOutcome(
-                text=refined,
-                changed=changed,
-                latency_ms=elapsed_ms,
-                error=None,
-                raw_response=data,
-            )
-        except Exception as exc:  # noqa: BLE001
-            elapsed_ms = (time.perf_counter() - start_time) * 1000
-            logger.warning("Translation refinement failed: %s", exc)
-            return RefinementOutcome(
-                text=text,
-                changed=False,
-                latency_ms=elapsed_ms,
-                error=str(exc),
-                raw_response=None,
-            )
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        return RefinementOutcome(
+            text=text,
+            changed=False,
+            latency_ms=elapsed_ms,
+            error=last_error,
+            raw_response=None,
+        )
 
 
 def get_translation_refiner() -> BaseTranslationRefiner:
@@ -158,6 +176,7 @@ def get_translation_refiner() -> BaseTranslationRefiner:
     model = os.getenv("LLM_REFINEMENT_MODEL", "gpt-oss:20b")
     timeout_seconds = float(os.getenv("LLM_REFINEMENT_TIMEOUT", "8.0"))
     temperature = float(os.getenv("LLM_REFINEMENT_TEMPERATURE", "0.7"))
+    max_retries = int(os.getenv("LLM_REFINEMENT_MAX_RETRIES", "2"))
 
     logger.info(
         "LLM translation refinement enabled with model '%s' at %s", model, endpoint
@@ -167,6 +186,7 @@ def get_translation_refiner() -> BaseTranslationRefiner:
         model=model,
         timeout_seconds=timeout_seconds,
         temperature=temperature,
+        max_retries=max_retries,
     )
 
 
