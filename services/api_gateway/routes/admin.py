@@ -1,10 +1,10 @@
 # services/api_gateway/routes/admin.py
 """
 Admin-Routes für Session-Management
-Single-Session-Policy Implementation
+Unterstützt parallele Admin-Sessions
 """
 
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
@@ -41,7 +41,7 @@ class SessionStatusResponse(BaseModel):
 class SessionHistoryResponse(BaseModel):
     sessions: list[Dict[str, Any]]
     total_count: int
-    active_session: Optional[Dict[str, Any]]
+    active_sessions: list[Dict[str, Any]] = Field(default_factory=list)
 
 class ErrorResponse(BaseModel):
     error: str
@@ -56,12 +56,11 @@ def get_client_base_url() -> str:
              response_model=SessionCreateResponse,
              status_code=status.HTTP_201_CREATED,
              summary="Neue Admin-Session erstellen",
-             description="Erstellt eine neue Admin-Session und beendet automatisch alle bestehenden Sessions (Single-Session-Policy)")
+             description="Erstellt eine neue Admin-Session. Mehrere parallele Sessions sind erlaubt.")
 async def create_admin_session():
     """
-    Erstellt eine neue Admin-Session mit Single-Session-Policy
+    Erstellt eine neue Admin-Session für parallele Nutzung
 
-    - Beendet automatisch alle bestehenden aktiven Sessions
     - Generiert neue Session-UUID
     - Erstellt Client-URL mit embedded Session-ID
     - Sendet WebSocket-Notifications an betroffene Clients
@@ -72,7 +71,6 @@ async def create_admin_session():
     try:
         logger.info("🚀 Admin-Session-Erstellung gestartet")
 
-        # Single-Session-Policy: Neue Session erstellen (beendet automatisch bestehende)
         session_id = await session_manager.create_admin_session()
 
         # Session-Details abrufen
@@ -95,7 +93,7 @@ async def create_admin_session():
             client_url=client_url,
             status=session.status.value,
             created_at=session.created_at.isoformat(),
-            message=f"Session {session_id} erfolgreich erstellt. Bestehende Sessions wurden automatisch beendet."
+            message=f"Session {session_id} erfolgreich erstellt. Verwende diese Session-ID für den Verbindungsaufbau."
         )
 
     except Exception as e:
@@ -108,8 +106,8 @@ async def create_admin_session():
 @router.get("/session/current",
             response_model=SessionStatusResponse,
             summary="Aktuelle Admin-Session abrufen",
-            description="Gibt Details der aktuell aktiven Admin-Session zurück")
-async def get_current_session():
+            description="Gibt Details der aktuell aktiven Admin-Session zurück. Optional kann eine Session-ID angegeben werden.")
+async def get_current_session(session_id: Optional[str] = Query(default=None, description="Spezifische Session-ID, die geladen werden soll.")):
     """
     Ruft die aktuelle aktive Admin-Session ab
 
@@ -117,7 +115,7 @@ async def get_current_session():
         SessionStatusResponse: Details der aktiven Session
     """
     try:
-        active_session_data = session_manager.get_active_session()
+        active_session_data = session_manager.get_active_session(session_id=session_id)
 
         if not active_session_data:
             raise HTTPException(
@@ -223,12 +221,12 @@ async def get_session_history(limit: int = 10):
         history = session_manager.get_session_history(limit=limit)
 
         # Aktuelle Session
-        active_session = session_manager.get_active_session()
+        active_sessions = session_manager.get_active_sessions()
 
         return SessionHistoryResponse(
             sessions=history,
             total_count=len(history),
-            active_session=active_session
+            active_sessions=active_sessions
         )
 
     except Exception as e:

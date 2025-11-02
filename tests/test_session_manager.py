@@ -1,6 +1,6 @@
 # tests/test_session_manager.py
 """
-Unit Tests für Single-Session-Policy Implementation
+Unit Tests für Session-Management mit parallelen Sessions
 """
 
 import pytest
@@ -32,8 +32,8 @@ def mock_websocket():
     return websocket
 
 
-class TestSingleSessionPolicy:
-    """Tests für Single-Session-Policy Logic"""
+class TestSessionCreationAndLifecycle:
+    """Tests für Session-Erstellung und parallele Nutzung"""
 
     @pytest.mark.asyncio
     async def test_create_admin_session_creates_new_session(self, session_manager):
@@ -42,7 +42,8 @@ class TestSingleSessionPolicy:
 
         assert session_id is not None
         assert len(session_id) == 8  # Kurze UUID
-        assert session_manager.active_admin_session == session_id
+        assert session_id in session_manager.active_admin_sessions
+        assert len(session_manager.active_admin_sessions) == 1
 
         session = session_manager.get_session(session_id)
         assert session.status == SessionStatus.PENDING
@@ -50,26 +51,19 @@ class TestSingleSessionPolicy:
         assert session.admin_language == "de"
 
     @pytest.mark.asyncio
-    async def test_single_session_policy_terminates_existing(self, session_manager):
-        """Test: Neue Session beendet automatisch bestehende Sessions"""
-        # Erste Session erstellen
+    async def test_multiple_sessions_remain_active(self, session_manager):
+        """Test: Mehrere Sessions können parallel bestehen"""
         first_session_id = await session_manager.create_admin_session()
-        first_session = session_manager.get_session(first_session_id)
-        first_session.status = SessionStatus.ACTIVE  # Simuliere aktive Session
-
-        # Zweite Session erstellen (soll erste beenden)
         second_session_id = await session_manager.create_admin_session()
 
-        # Erste Session soll beendet sein
-        first_session = session_manager.get_session(first_session_id)
-        assert first_session.status == SessionStatus.TERMINATED
-        assert first_session.termination_reason == "new_session_created"
-        assert first_session.terminated_at is not None
+        assert session_manager.active_admin_sessions == {first_session_id, second_session_id}
 
-        # Zweite Session soll aktiv sein
-        assert session_manager.active_admin_session == second_session_id
+        first_session = session_manager.get_session(first_session_id)
         second_session = session_manager.get_session(second_session_id)
+
+        assert first_session.status == SessionStatus.PENDING
         assert second_session.status == SessionStatus.PENDING
+        assert first_session.termination_reason is None
 
     @pytest.mark.asyncio
     async def test_terminate_all_active_sessions(self, session_manager):
@@ -91,7 +85,7 @@ class TestSingleSessionPolicy:
             assert session.status == SessionStatus.TERMINATED
             assert session.termination_reason == "test_cleanup"
 
-        assert session_manager.active_admin_session is None
+        assert session_manager.active_admin_sessions == set()
 
     @pytest.mark.asyncio
     async def test_session_activation_flow(self, session_manager):
@@ -150,22 +144,29 @@ class TestSessionStateManagement:
         await session_manager.terminate_session(session_id)
         assert session.status == SessionStatus.TERMINATED
 
-    def test_get_active_session_single_policy(self, session_manager):
-        """Test: get_active_session gibt nur eine Session zurück"""
+    def test_get_active_session_lookup(self, session_manager):
+        """Test: get_active_session liefert jüngste oder spezifische Session"""
         # Ohne aktive Session
         assert session_manager.get_active_session() is None
 
-        # Mit aktiver Session
-        asyncio.run(self._create_and_activate_session(session_manager))
-        active_session = session_manager.get_active_session()
+        session_a = asyncio.run(self._create_and_activate_session(session_manager, "fr"))
+        session_b = asyncio.run(self._create_and_activate_session(session_manager, "en"))
 
-        assert active_session is not None
-        assert active_session["status"] == "active"
+        latest = session_manager.get_active_session()
+        assert latest is not None
+        assert latest["id"] == session_b
+        assert latest["status"] == "active"
 
-    async def _create_and_activate_session(self, session_manager):
+        direct_lookup = session_manager.get_active_session(session_id=session_a)
+        assert direct_lookup is not None
+        assert direct_lookup["id"] == session_a
+        assert direct_lookup["status"] == "active"
+
+    async def _create_and_activate_session(self, session_manager, language):
         """Helper: Session erstellen und aktivieren"""
         session_id = await session_manager.create_admin_session()
-        await session_manager.activate_session(session_id, "fr")
+        await session_manager.activate_session(session_id, language)
+        return session_id
 
 
 class TestWebSocketManagement:
@@ -225,19 +226,19 @@ class TestMemoryLeakPrevention:
             session = session_manager.get_session(session_id)
             session.messages.append(MagicMock())
 
-        # Nur eine Session sollte aktiv sein, aber alle im Speicher für History
+        # Alle Sessions sollen aktiv oder pending bleiben
         active_sessions = [
             s for s in session_manager.sessions.values()
             if s.status != SessionStatus.TERMINATED
         ]
-        assert len(active_sessions) == 1
+        assert len(active_sessions) == 10
 
         # Beendete Sessions bleiben für History im Speicher
         terminated_sessions = [
             s for s in session_manager.sessions.values()
             if s.status == SessionStatus.TERMINATED
         ]
-        assert len(terminated_sessions) == 9
+        assert len(terminated_sessions) == 0
 
     def test_session_history_limiting(self, session_manager):
         """Test: Session-History wird auf sinnvolle Anzahl begrenzt"""

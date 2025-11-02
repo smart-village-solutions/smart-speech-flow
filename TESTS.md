@@ -4,25 +4,24 @@ Diese Datei fasst alle automatisierten Tests im Verzeichnis `tests/` zusammen un
 
 ## `tests/test_session_manager.py`
 
-Tests für den In-Memory-/Redis-kompatiblen `SessionManager`, einschließlich Single-Session-Policy, Statusverwaltung und WebSocket-Koordination.
+Tests für den In-Memory-/Redis-kompatiblen `SessionManager`, einschließlich paralleler Sessions, Statusverwaltung und WebSocket-Koordination.
 
-### `TestSingleSessionPolicy`
+### `TestSessionCreationAndLifecycle`
 - **test_create_admin_session_creates_new_session** – Stellt sicher, dass eine neue Admin-Session erzeugt wird, eine kurze UUID erhält und im Pending-Status landet.
-- **test_single_session_policy_terminates_existing** – Prüft, dass beim Start einer zweiten Session die vorherige Session mit dem Reason `new_session_created` beendet wird.
+- **test_multiple_sessions_remain_active** – Verifiziert, dass mehrere Admin-Sessions parallel bestehen bleiben können.
 - **test_terminate_all_active_sessions** – Validiert, dass `terminate_all_active_sessions` alle offenen Sessions schließt und den Terminationsgrund konsistent setzt.
 - **test_session_activation_flow** – Deckt den Übergang von Pending nach Active ab, sobald ein Kunde beitritt und seine Sprache setzt.
 - **test_websocket_termination_notifications** – Überprüft, dass bei Session-Termination WebSocket-Clients eine `session_terminated`-Nachricht erhalten und sauber geschlossen werden.
 
 ### `TestSessionStateManagement`
 - **test_session_state_transitions** – Testet den vollständigen Lebenszyklus einer Session (Pending → Active → Terminated).
-- **test_get_active_session_single_policy** – Gewährleistet, dass immer maximal eine aktive Session zurückgegeben wird.
+- **test_get_active_session_lookup** – Prüft, dass die jüngste aktive Session oder eine spezifische ID korrekt zurückgegeben wird.
 
 ### `TestWebSocketManagement`
 - **test_websocket_connection_lifecycle** – Verifiziert das Hinzufügen und Entfernen von WebSocket-Verbindungen inklusive Status-Flags an der Session.
 - **test_websocket_cleanup_on_termination** – Prüft, dass beim Beenden einer Session die gespeicherten WebSocket-Verbindungen entfernt werden.
 
-### `TestMemoryLeakPrevention`
-- **test_no_memory_leaks_on_session_switch** – Simuliert wiederholte Session-Wechsel und stellt sicher, dass nur eine Session aktiv bleibt, ohne dass Leaks entstehen.
+- **test_no_memory_leaks_on_session_switch** – Simuliert wiederholte Session-Wechsel und stellt sicher, dass mehrere Sessions ohne Speicherlecks bestehen können.
 - **test_session_history_limiting** – Bestätigt, dass `get_session_history` die Ergebnisliste korrekt auf das gewünschte Limit beschränkt.
 
 ## `tests/test_admin_routes.py`
@@ -36,6 +35,7 @@ API-Tests für die Admin-Endpunkte der Session-Verwaltung.
 
 ### `TestCurrentSessionRetrieval`
 - **test_get_current_session_success** – Stellt sicher, dass Informationen zur aktiven Session geliefert werden.
+- **test_get_current_session_with_specific_id** – Validiert, dass eine gewünschte Session-ID via Query-Parameter geladen wird.
 - **test_get_current_session_not_found** – Erwartet Status 404, wenn keine aktive Session existiert.
 
 ### `TestSessionTermination`
@@ -44,7 +44,7 @@ API-Tests für die Admin-Endpunkte der Session-Verwaltung.
 - **test_terminate_already_terminated_session** – Deckt den Fall ab, dass eine bereits terminierte Session erneut beendet wird.
 
 ### `TestSessionHistory`
-- **test_get_session_history_success** – Prüft, dass die History-Route terminierte Sessions und eine aktive Session liefert.
+- **test_get_session_history_success** – Prüft, dass die History-Route terminierte Sessions und alle aktiven Sessions liefert.
 - **test_get_session_history_with_custom_limit** – Validiert das optionale `limit`-Query-Argument.
 
 ### `TestSessionStatus`
@@ -81,7 +81,7 @@ Unit- und Integrationstests für den `WebSocketManager`, einschließlich Heartbe
 ### `TestWebSocketIntegration`
 - **test_integration_with_session_manager** – Sicherstellt, dass Verbindungen auch im `SessionManager` reflektiert werden.
 - **test_session_termination_via_session_manager** – Prüft, dass das Beenden über den `SessionManager` WebSockets schließt.
-- **test_single_session_policy_websocket_cleanup** – Validiert die Single-Session-Policy inklusive WebSocket-Cleanup.
+- **test_parallel_sessions_keep_existing_connections** – Stellt sicher, dass parallele Sessions bestehende WebSocket-Verbindungen nicht trennen.
 
 ## `tests/test_unified_message_endpoint.py`
 

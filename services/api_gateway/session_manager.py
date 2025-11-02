@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 import json
 import os
-from typing import Dict, List, Optional, Any, TYPE_CHECKING
+from typing import Dict, List, Optional, Any, TYPE_CHECKING, Set
 if TYPE_CHECKING:
     from .websocket import WebSocketManager
 
@@ -191,7 +191,7 @@ class SessionManager:
         """SessionManager Zustand auf Initialwerte zurücksetzen."""
         self.sessions: Dict[str, Session] = {}
         self.websocket_connections: Dict[str, Dict[str, Any]] = {}
-        self.active_admin_session: Optional[str] = None  # Single-Session-Tracking
+        self.active_admin_sessions: Set[str] = set()  # Mehrere parallele Admin-Sessions
         self.websocket_manager: Optional["WebSocketManager"] = None
 
         if clear_persistence and self.redis_enabled:
@@ -226,12 +226,16 @@ class SessionManager:
     def _key(self, *parts: str) -> str:
         return ":".join([self.redis_namespace, *parts])
 
-    def _persist_active_session(self):
+    def _persist_active_sessions(self):
         if not self.redis_enabled or not self.redis_client:
             return
 
-        if self.active_admin_session:
-            self.redis_client.set(self._key("session", "active_admin"), self.active_admin_session)
+        if self.active_admin_sessions:
+            try:
+                payload = json.dumps(sorted(self.active_admin_sessions))
+                self.redis_client.set(self._key("session", "active_admin"), payload)
+            except RedisError as exc:
+                print(f"⚠️ Persistierung der aktiven Sessions fehlgeschlagen: {exc}")
         else:
             self.redis_client.delete(self._key("session", "active_admin"))
 
@@ -262,7 +266,21 @@ class SessionManager:
 
             stored_active = self.redis_client.get(self._key("session", "active_admin"))
             if stored_active:
-                self.active_admin_session = stored_active
+                try:
+                    payload = json.loads(stored_active)
+                    if isinstance(payload, list):
+                        self.active_admin_sessions = set(payload)
+                    elif isinstance(payload, str):
+                        self.active_admin_sessions = {payload}
+                except (json.JSONDecodeError, TypeError):
+                    self.active_admin_sessions = {stored_active}
+
+                # Stale IDs bereinigen
+                self.active_admin_sessions = {
+                    sid
+                    for sid in self.active_admin_sessions
+                    if sid in self.sessions and self.sessions[sid].status != SessionStatus.TERMINATED
+                }
         except RedisError as exc:
             print(f"⚠️ Laden der Sessions aus Redis fehlgeschlagen: {exc}")
 
@@ -280,27 +298,23 @@ class SessionManager:
             print(f"⚠️ Bereinigung des Session-Stores fehlgeschlagen: {exc}")
 
     async def create_admin_session(self) -> str:
-        """Neue Admin-Session erstellen (Single-Session-Policy)"""
-        # 1. Alle bestehenden Sessions beenden
-        await self.terminate_all_active_sessions(reason="new_session_created")
-
-        # 2. Neue Session erstellen
+        """Neue Admin-Session erstellen, parallele Sessions erlaubt"""
         session_id = str(uuid.uuid4())[:8].upper()
         session = Session(
             id=session_id,
             status=SessionStatus.PENDING  # Wartet auf Customer-Join
         )
         self.sessions[session_id] = session
-        self.active_admin_session = session_id
+        self.active_admin_sessions.add(session_id)
 
         self._persist_session(session)
-        self._persist_active_session()
+        self._persist_active_sessions()
 
         print(f"✅ Neue Admin-Session erstellt: {session_id}")
         return session_id
 
     async def terminate_all_active_sessions(self, reason: str = "system_cleanup"):
-        """Alle aktiven Sessions beenden (Single-Session-Policy)"""
+        """Alle aktiven Sessions beenden (manueller Cleanup)"""
         terminated_count = 0
 
         for session_id, session in list(self.sessions.items()):
@@ -318,8 +332,8 @@ class SessionManager:
             print(f"🔄 {terminated_count} Sessions beendet. Grund: {reason}")
 
         # Active session tracking zurücksetzen
-        self.active_admin_session = None
-        self._persist_active_session()
+        self.active_admin_sessions.clear()
+        self._persist_active_sessions()
 
     async def terminate_session(self, session_id: str, reason: str = "manual_termination"):
         """Einzelne Session beenden mit WebSocket-Notifications"""
@@ -334,8 +348,8 @@ class SessionManager:
         session.admin_connected = False
         session.customer_connected = False
 
-        if self.active_admin_session == session_id:
-            self.active_admin_session = None
+        if session_id in self.active_admin_sessions:
+            self.active_admin_sessions.discard(session_id)
 
         # WebSocket-Disconnect-Notifications senden
         await self._send_termination_notifications(session_id, reason)
@@ -345,7 +359,7 @@ class SessionManager:
 
         # Session persistieren
         self._persist_session(session)
-        self._persist_active_session()
+        self._persist_active_sessions()
 
         print(f"🔚 Session {session_id} beendet. Grund: {reason}")
 
@@ -431,22 +445,34 @@ class SessionManager:
             session.update_activity()
             self._persist_session(session)
 
-    def get_active_session(self) -> Optional[Dict]:
-        """Aktuelle Admin-Session abrufen (Single-Session-Policy)"""
-        if not self.active_admin_session:
+    def get_active_session(self, session_id: Optional[str] = None) -> Optional[Dict]:
+        """Aktive Admin-Session abrufen.
+
+        Wenn eine Session-ID übergeben wird, wird genau diese Session zurückgegeben,
+        sofern sie noch nicht beendet wurde. Ohne Session-ID wird die zuletzt erstellte
+        aktive Session geliefert (oder None, falls keine existiert).
+        """
+
+        if session_id:
+            session = self.get_session(session_id)
+            if not session or session.status == SessionStatus.TERMINATED:
+                return None
+            return session.to_dict()
+
+        active_sessions = [
+            session
+            for session in self.sessions.values()
+            if session.status in [SessionStatus.PENDING, SessionStatus.ACTIVE]
+        ]
+
+        if not active_sessions:
             return None
 
-        session = self.get_session(self.active_admin_session)
-        if not session or session.status == SessionStatus.TERMINATED:
-            self.active_admin_session = None
-            self._persist_active_session()
-            return None
-
-        return session.to_dict()
+        active_sessions.sort(key=lambda s: s.created_at, reverse=True)
+        return active_sessions[0].to_dict()
 
     def get_active_sessions(self) -> List[Dict]:
-        """Legacy-Methode für Admin-Übersicht (deprecated)"""
-        print("⚠️ Warning: get_active_sessions() ist deprecated. Verwende get_active_session()")
+        """Alle aktiven oder ausstehende Sessions zurückgeben."""
         return [
             session.to_dict()
             for session in self.sessions.values()

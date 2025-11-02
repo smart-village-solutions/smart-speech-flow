@@ -1,7 +1,6 @@
 # tests/test_admin_routes.py
 """
-Unit Tests für Admin-Routes
-Single-Session-Policy und Error-Handling Tests
+Unit Tests für Admin-Routes mit parallelen Sessions
 """
 
 import pytest
@@ -23,6 +22,7 @@ def mock_session_manager():
     manager.create_admin_session = AsyncMock()
     manager.get_session = MagicMock()
     manager.get_active_session = MagicMock()
+    manager.get_active_sessions = MagicMock(return_value=[])
     manager.get_session_history = MagicMock()
     manager.terminate_session = AsyncMock()
     return manager
@@ -64,6 +64,7 @@ class TestAdminSessionCreation:
         assert "client_url" in data
         assert "localhost:5174/join/TEST123" in data["client_url"]
         assert "erfolgreich erstellt" in data["message"]
+        assert "Session-ID" in data["message"]
 
         # Verify manager was called
         mock_session_manager.create_admin_session.assert_called_once()
@@ -106,6 +107,7 @@ class TestCurrentSessionRetrieval:
         """Test: Erfolgreiche Abfrage der aktuellen Session"""
         # Mock setup
         mock_session_manager.get_active_session.return_value = {"id": "TEST123"}
+        mock_session_manager.get_active_sessions.return_value = []
         mock_session_manager.get_session.return_value = mock_session
 
         # API Call
@@ -120,6 +122,17 @@ class TestCurrentSessionRetrieval:
         assert data["admin_connected"] is True
         assert data["customer_connected"] is False
         assert data["message_count"] == 0
+
+    @patch('services.api_gateway.routes.admin.session_manager')
+    def test_get_current_session_with_specific_id(self, mock_session_manager, mock_session):
+        """Test: Abfrage einer spezifischen Session via Query-Parameter"""
+        mock_session_manager.get_active_session.return_value = {"id": "TEST123"}
+        mock_session_manager.get_session.return_value = mock_session
+
+        response = client.get("/api/admin/session/current", params={"session_id": "TEST123"})
+
+        assert response.status_code == 200
+        mock_session_manager.get_active_session.assert_called_once_with(session_id="TEST123")
 
     @patch('services.api_gateway.routes.admin.session_manager')
     def test_get_current_session_not_found(self, mock_session_manager):
@@ -204,10 +217,9 @@ class TestSessionHistory:
             {"id": "SESSION1", "status": "terminated", "created_at": "2025-09-28T10:00:00"},
             {"id": "SESSION2", "status": "terminated", "created_at": "2025-09-28T09:00:00"}
         ]
-        mock_active = {"id": "SESSION3", "status": "active"}
-
+        mock_active = [{"id": "SESSION3", "status": "active"}]
         mock_session_manager.get_session_history.return_value = mock_history
-        mock_session_manager.get_active_session.return_value = mock_active
+        mock_session_manager.get_active_sessions.return_value = mock_active
 
         # API Call
         response = client.get("/api/admin/session/history")
@@ -218,7 +230,8 @@ class TestSessionHistory:
 
         assert len(data["sessions"]) == 2
         assert data["total_count"] == 2
-        assert data["active_session"]["id"] == "SESSION3"
+        assert len(data["active_sessions"]) == 1
+        assert data["active_sessions"][0]["id"] == "SESSION3"
 
         # Verify correct limit was used
         mock_session_manager.get_session_history.assert_called_once_with(limit=10)
@@ -228,7 +241,7 @@ class TestSessionHistory:
         """Test: Session-Historie mit benutzerdefiniertem Limit"""
         # Mock setup
         mock_session_manager.get_session_history.return_value = []
-        mock_session_manager.get_active_session.return_value = None
+        mock_session_manager.get_active_sessions.return_value = []
 
         # API Call mit Custom Limit
         response = client.get("/api/admin/session/history?limit=5")

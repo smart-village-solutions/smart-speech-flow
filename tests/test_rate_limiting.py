@@ -37,7 +37,7 @@ def _register_active_session() -> str:
         status=SessionStatus.ACTIVE,
     )
     session_manager.sessions[session_id] = session
-    session_manager.active_admin_session = session_id
+    session_manager.active_admin_sessions.add(session_id)
     return session_id
 
 

@@ -485,25 +485,31 @@ class TestWebSocketIntegration:
         # WebSocket-Connection sollte aus Pools entfernt worden sein
         assert connection_id not in websocket_manager.all_connections
 
-    async def test_single_session_policy_websocket_cleanup(self, websocket_manager, session_manager):
-        """Test: Single-Session-Policy beendet alle WebSocket-Verbindungen"""
+    async def test_parallel_sessions_keep_existing_connections(self, websocket_manager, session_manager):
+        """Test: Parallele Sessions lassen bestehende WebSocket-Verbindungen aktiv"""
         # Erste Session mit WebSocket
         session1_id = await session_manager.create_admin_session()
         mock_ws1 = MockWebSocket()
-        conn1_id = await websocket_manager.connect_websocket(mock_ws1, session1_id, ClientType.ADMIN)
+        conn1_id = await websocket_manager.connect_websocket(
+            mock_ws1, session1_id, ClientType.ADMIN
+        )
 
-        # Zweite Session erstellen (sollte erste beenden)
+        # Zweite Session erstellen (soll parallel bestehen bleiben)
         session2_id = await session_manager.create_admin_session()
 
-        # Erste WebSocket-Verbindung sollte geschlossen worden sein
-        assert mock_ws1.is_closed
-        assert conn1_id not in websocket_manager.all_connections
+        # Erste WebSocket-Verbindung soll aktiv bleiben
+        assert not mock_ws1.is_closed
+        assert conn1_id in websocket_manager.all_connections
 
-        # Termination-Message sollte gesendet worden sein
-        termination_msgs = [msg for msg in mock_ws1.messages_sent
-                          if msg.get("type") == MessageType.SESSION_TERMINATED.value]
-        assert len(termination_msgs) == 1
-        assert termination_msgs[0]["reason"] == "new_session_created"
+        # Keine Termination-Nachricht erwartet
+        termination_msgs = [
+            msg for msg in mock_ws1.messages_sent
+            if msg.get("type") == MessageType.SESSION_TERMINATED.value
+        ]
+        assert termination_msgs == []
+
+        # Beide Sessions sollen als aktiv geführt werden
+        assert {session1_id, session2_id}.issubset(session_manager.active_admin_sessions)
 
 
 if __name__ == "__main__":
