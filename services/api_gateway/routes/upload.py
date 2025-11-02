@@ -2,6 +2,9 @@ from fastapi import UploadFile, File, Form
 from fastapi.responses import HTMLResponse
 from services.api_gateway.app import app
 from services.api_gateway.pipeline_logic import process_wav
+import logging
+
+logger = logging.getLogger("api_gateway")
 
 @app.post("/upload")
 async def upload(
@@ -13,12 +16,22 @@ async def upload(
     requests_total = app.requests_total if hasattr(app, 'requests_total') else None
     if requests_total:
         requests_total.inc()
-    print(f"Form received: source_lang={source_lang}, target_lang={target_lang}")
+    logger.info(
+        "Upload form received: source_lang=%s, target_lang=%s",
+        source_lang,
+        target_lang
+    )
     if not source_lang or not target_lang:
         return HTMLResponse(content=f"<html><body><h2>Fehler</h2><p>Sprachparameter fehlen! Bitte Ausgangs- und Zielsprache wählen.</p></body></html>", status_code=400)
     file_bytes = await file.read()
     result = process_wav(file_bytes, source_lang, target_lang)
     if result["error"]:
+        logger.info(
+            "Upload pipeline error: error=%s, originalText=%s, translatedText=%s",
+            result["error_msg"],
+            result.get("asr_text"),
+            result.get("translation_text")
+        )
         return HTMLResponse(content=f"""
             <html>
             <head><title>Fehler bei der Verarbeitung</title></head>
@@ -31,6 +44,14 @@ async def upload(
             </html>
         """)
     audio_b64 = b64encode(result["audio_bytes"]).decode()
+    logger.info(
+        "Upload pipeline success: source_lang=%s, target_lang=%s, originalText=%s, translatedText=%s, audioBytes=%s",
+        source_lang,
+        target_lang,
+        result["asr_text"],
+        result["translation_text"],
+        len(result["audio_bytes"]) if result["audio_bytes"] else 0
+    )
     return HTMLResponse(content=f"""
         <html>
         <head><title>Ergebnis Download</title></head>
