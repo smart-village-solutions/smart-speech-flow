@@ -21,7 +21,7 @@ Alle ToDos der Phasen 0–5 sind abgeschlossen und in `Version2.md` bzw. `SYSTEM
   - Acceptance Criteria: GPU-Auslastung beeinflusst Autoscaling-Signale; Limits und Graceful Degradation berücksichtigen GPU-Verfügbarkeit; Dokumentation für Ops vorhanden.
   - Owner: Platform / AI Infra
 
-- [ ] **ToDo 6.2: Alerting & Dashboard Finalisierung**
+- [x] **ToDo 6.2: Alerting & Dashboard Finalisierung**
   Prometheus/Grafana-Stack um praxistaugliche Dashboards und Alerts ergänzen (SLA, Fehlerquote, Pipeline-Latenzen).
   - Acceptance Criteria: Mindestens zwei produktionsrelevante Dashboards; Alert-Regeln für Service-Ausfälle, Latenz, Ressourcenknappheit; README-Abschnitt mit Zugriff & Runbook.
   - Owner: Observability

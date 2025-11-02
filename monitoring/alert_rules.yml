@@ -1,0 +1,62 @@
+groups:
+  - name: ssf-service-health
+    rules:
+      - alert: ASRServiceDown
+        expr: asr_health_status == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: asr
+        annotations:
+          summary: ASR service is reporting a degraded health state.
+          description: The asr_health_status gauge has been 0 for more than 2 minutes. Investigate the ASR container logs and GPU availability.
+
+      - alert: TranslationServiceDown
+        expr: translation_health_status == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: translation
+        annotations:
+          summary: Translation service is unhealthy.
+          description: The translation_health_status gauge has been 0 for more than 2 minutes. Check model loading status and GPU resources.
+
+      - alert: TTSServiceDown
+        expr: tts_health_status == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: tts
+        annotations:
+          summary: TTS service is unhealthy.
+          description: The tts_health_status gauge has been 0 for more than 2 minutes. Verify TTS model caches and GPU utilisation.
+
+      - alert: TranslationLatencyHigh
+        expr: histogram_quantile(0.95, sum(rate(translation_request_latency_seconds_bucket[5m])) by (le)) > 3
+        for: 5m
+        labels:
+          severity: warning
+          service: translation
+        annotations:
+          summary: 95th percentile translation latency above 3s.
+          description: The translation_request_latency_seconds histogram indicates sustained latency. Consider scaling translation pods or checking upstream ASR delays.
+
+      - alert: GPUUtilisationCritical
+        expr: max_over_time(DCGM_FI_DEV_GPU_UTIL[5m]) > 90
+        for: 5m
+        labels:
+          severity: critical
+          component: gpu
+        annotations:
+          summary: GPU utilisation above 90% for 5m.
+          description: The DCGM_FI_DEV_GPU_UTIL metric shows saturation. Consider scaling out or reducing load.
+
+      - alert: GPUMemoryPressure
+        expr: max_over_time(DCGM_FI_DEV_FB_USED[5m]) / max_over_time(DCGM_FI_DEV_FB_TOTAL[5m]) > 0.95
+        for: 5m
+        labels:
+          severity: warning
+          component: gpu
+        annotations:
+          summary: GPU memory usage above 95%.
+          description: GPU memory usage is approaching the limit. Evaluate model footprint and concurrent load.

@@ -165,6 +165,14 @@ pytest services/api_gateway/tests/
 pytest --cov=services
 ```
 
+## 📈 Monitoring & Alerting Runbook
+
+- **Stack starten:** `docker compose up -d prometheus grafana` startet Prometheus (Port `9090`, öffentlich via `http://prometheus-ssf.smart-village.solutions`) und Grafana (Port `3000`, öffentlich via `http://grafana-ssf.smart-village.solutions`). Standard-Login: `admin` / `admin` (bitte nach dem ersten Login ändern).
+- **Datenquellen:** In Grafana eine Prometheus-Datenquelle mit URL `http://prometheus:9090` anlegen (falls nicht automatisch vorhanden).
+- **Dashboards importieren:** Die produktionsfertigen JSON-Dashboards liegen in `monitoring/grafana/dashboards/` (`service-health.json`, `pipeline-performance.json`). Über *Dashboards → Import* in Grafana laden.
+- **Alerting:** Prometheus lädt `monitoring/alert_rules.yml` automatisch und feuert Alerts für Service-Ausfälle, erhöhte Übersetzungs-Latenzen sowie GPU-Überlast. Aktive Alarme erscheinen im Dashboard *SSF Service Health* und im Prometheus `ALERTS`-Endpoint.
+- **Runbook:** Bei `ServiceDown`-Alerts zuerst `services/<service>/app.py` Logs prüfen, anschließend GPU-Auslastung im Dashboard kontrollieren. `TranslationLatencyHigh` deutet auf Pipeline-Stau hin – Skalierung über GPU-Worker oder Anfragen drosseln. `GPUUtilisationCritical`/`GPUMemoryPressure` signalisiert Ressourcengrenzen; Workload verteilen oder Modelle entladen.
+
 ## 🎵 Unterstützte Audioformate
 
 Der ASR-Service akzeptiert nicht nur WAV-Dateien, sondern auch weitere Audioformate:

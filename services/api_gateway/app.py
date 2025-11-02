@@ -13,7 +13,7 @@ from fastapi import FastAPI, UploadFile, File, Request
 from fastapi.responses import Response
 import requests
 import os
-from prometheus_client import Counter, generate_latest, CollectorRegistry
+from prometheus_client import Counter, CollectorRegistry
 import base64
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
@@ -104,6 +104,10 @@ app.add_middleware(RateLimitMiddleware)
 # Eigene Registry, um doppelte Registrierung zu vermeiden
 registry = CollectorRegistry()
 requests_total = Counter('gateway_requests_total', 'Total API Gateway requests', registry=registry)
+requests_total.inc(0)
+app.state.prometheus_registry = registry
+app.state.gateway_requests_total = requests_total
+setattr(app, "requests_total", requests_total)
 
 # === Service-URLs für die Orchestrierung ===
 # Je nach Umgebung werden interne Docker- oder lokale URLs verwendet
