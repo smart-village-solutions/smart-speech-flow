@@ -34,6 +34,15 @@ Alle ToDos der Phasen 0–5 sind abgeschlossen und in `Version2.md` bzw. `SYSTEM
   - *Tests*: Unit-/Integrationstests für Redis-Backend, Smoke-Test mit bestehender API (`tests/test_session_manager.py`, `tests/test_unified_message_endpoint.py`).
   - *Rollout*: Blue/Green-Plan erstellen, Fallback auf in-memory prüfen, Runbook in `SYSTEM_ARCHITECTURE.md` ergänzen.
 
+## 🚀 Phase 7 – Quality Enhancements (neu)
+
+- [ ] **ToDo 7.1: LLM-basierte Übersetzungs-Verfeinerung**
+  Übersetzungen vor dem TTS-Schritt mit einem lokalen LLM nachschärfen, um natürlichere Antworten zu erzielen.
+  - *Analyse*: Ollama (`ollama run gpt-oss:20b`) lokal integrieren, Ressourcenbedarf (14 GB MXFP4) evaluieren, Prompting-Strategie definieren.
+  - *Implementierung*: neue Pipeline-Stage (`TranslationRefiner`) zwischen Translation-Service und TTS, Feature-Gate über ENV (`LLM_REFINEMENT_ENABLED`, `LLM_REFINEMENT_MODEL=gpt-oss:20b`, Timeout). Standard-Implementierung ist No-op, LLM-Variante wird modular zugeschaltet.
+  - *Tests*: Vergleichstests für Text und Audio (Regression + subjective review), automatisierte Checks in `tests/test_text_pipeline.py` ergänzen, zusätzliche Assertions für deaktivierten Modus (Flag off → Originaltext bleibt unverändert).
+  - *Ops*: Ollama als optionalen Compose-Service dokumentieren, Entfernbarkeit erwähnen (Service + Flag zurücksetzen), Monitoring-Metriken (Latenz, Fehlerrate) erfassen.
+
 ## 🧪 Regression-Checkliste
 
 - `PYTHONPATH=. pytest tests -q`
