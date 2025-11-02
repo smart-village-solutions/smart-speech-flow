@@ -16,6 +16,6 @@ scrape_configs:
     static_configs:
       - targets: ['api_gateway:8000']
 
-  - job_name: 'gpu'
+  - job_name: 'dcgm_exporter'
     static_configs:
-      - targets: ['host.docker.internal:9400']
+      - targets: ['dcgm_exporter:9400']

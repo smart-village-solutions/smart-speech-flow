@@ -131,6 +131,23 @@ services:
       - "traefik.http.routers.grafana-http.middlewares=redirect-to-https"
       - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
 
+  dcgm_exporter:
+    image: nvidia/dcgm-exporter:latest
+    restart: always
+    privileged: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - DCGM_EXPORTER_LISTEN=0.0.0.0:9400
+      - DCGM_EXPORTER_KUBERNETES=false
+    expose:
+      - "9400"
+
 #  loki:
 #    image: grafana/loki:2.9.3
 #    ports:

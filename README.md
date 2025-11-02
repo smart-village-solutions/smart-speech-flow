@@ -167,11 +167,19 @@ pytest --cov=services
 
 ## 📈 Monitoring & Alerting Runbook
 
-- **Stack starten:** `docker compose up -d prometheus grafana` startet Prometheus (Port `9090`, öffentlich via `http://prometheus-ssf.smart-village.solutions`) und Grafana (Port `3000`, öffentlich via `http://grafana-ssf.smart-village.solutions`). Standard-Login: `admin` / `admin` (bitte nach dem ersten Login ändern).
+- **Stack starten:** `docker compose up -d prometheus grafana dcgm_exporter` startet Prometheus (Port `9090`, öffentlich via `http://prometheus-ssf.smart-village.solutions`), Grafana (Port `3000`, öffentlich via `http://grafana-ssf.smart-village.solutions`) sowie den NVIDIA DCGM Exporter für GPU-Metriken. Standard-Login: `admin` / `admin` (bitte nach dem ersten Login ändern).
 - **Datenquellen:** In Grafana eine Prometheus-Datenquelle mit URL `http://prometheus:9090` anlegen (falls nicht automatisch vorhanden).
-- **Dashboards importieren:** Die produktionsfertigen JSON-Dashboards liegen in `monitoring/grafana/dashboards/` (`service-health.json`, `pipeline-performance.json`). Über *Dashboards → Import* in Grafana laden.
+- **Dashboards importieren:** Die produktionsfertigen JSON-Dashboards liegen in `monitoring/grafana/dashboards/` (`service-health.json`, `pipeline-performance.json`, `dcgm-exporter.json`). Über *Dashboards → Import* in Grafana laden.
 - **Alerting:** Prometheus lädt `monitoring/alert_rules.yml` automatisch und feuert Alerts für Service-Ausfälle, erhöhte Übersetzungs-Latenzen sowie GPU-Überlast. Aktive Alarme erscheinen im Dashboard *SSF Service Health* und im Prometheus `ALERTS`-Endpoint.
 - **Runbook:** Bei `ServiceDown`-Alerts zuerst `services/<service>/app.py` Logs prüfen, anschließend GPU-Auslastung im Dashboard kontrollieren. `TranslationLatencyHigh` deutet auf Pipeline-Stau hin – Skalierung über GPU-Worker oder Anfragen drosseln. `GPUUtilisationCritical`/`GPUMemoryPressure` signalisiert Ressourcengrenzen; Workload verteilen oder Modelle entladen.
+
+### GPU-Monitoring mit DCGM Exporter
+
+- **Voraussetzung:** NVIDIA-Treiber, `nvidia-smi` und das [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) müssen auf dem Host verfügbar sein.
+- **Service:** Der Compose-Service `dcgm_exporter` (Image `nvidia/dcgm-exporter`) läuft mit GPU-Zugriff (`privileged`, `capabilities=[gpu]`) und stellt Metriken unter `http://dcgm_exporter:9400/metrics` bereit.
+- **Prometheus-Job:** In `monitoring/prometheus.yml` ist ein `dcgm_exporter`-Scrape-Job hinterlegt, der automatisch die GPU-Metriken einsammelt. Status prüfen via `curl http://localhost:9090/api/v1/targets`.
+- **Grafana-Dashboard:** `dcgm-exporter.json` visualisiert Temperatur, Auslastung, Tensor-Core-Activity und Speicherverbrauch der GPUs. Nach dem Import erscheinen Auswahlboxen für `instance` und `gpu`; bei mehreren Hosts müssen passende Labels gesetzt werden.
+- **Troubleshooting:** Falls der Service nicht startet, mit `docker compose logs dcgm_exporter` prüfen, ob GPU-Geräte sichtbar sind. `docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 nvidia-smi` hilft, generelle GPU-Probleme zu isolieren.
 
 ## 🎵 Unterstützte Audioformate
 
