@@ -87,15 +87,15 @@ class TestAudioValidation:
 
     def test_file_too_large_rejection(self):
         """Test: Zu große Dateien werden abgelehnt"""
-        # Create large audio file (longer duration to exceed size limit)
-        audio_bytes = create_test_wav(duration_seconds=60.0)  # Very long audio
+        specs = AudioSpecs()
+        oversized_bytes = b"\x00" * (int(specs.MAX_FILE_SIZE_MB * 1024 * 1024) + 2048)
 
-        result = validate_audio_input(audio_bytes)
+        result = validate_audio_input(oversized_bytes)
 
-        if not result.is_valid and result.error_code == "FILE_TOO_LARGE":
-            assert "too large" in result.error_message.lower()
-            assert result.details["file_size_bytes"] > 0
-        # If file size is still within limit, that's also okay for this test duration
+        assert result.is_valid is False
+        assert result.error_code == "FILE_TOO_LARGE"
+        assert "too large" in result.error_message.lower()
+        assert result.details["file_size_bytes"] > int(specs.MAX_FILE_SIZE_MB * 1024 * 1024)
 
     def test_wrong_sample_rate_auto_conversion(self):
         """Test: Sample-Rate wird automatisch auf 16kHz konvertiert"""
@@ -168,7 +168,7 @@ class TestAudioValidation:
     def test_duration_too_long_rejection(self):
         """Test: Zu lange Audio-Dateien werden abgelehnt"""
         audio_bytes = create_test_wav(
-            duration_seconds=25.0,  # 25 seconds - too long
+            duration_seconds=250.0,  # 250 seconds - too long
             sample_rate=16000,
             bit_depth=16,
             channels=1
@@ -179,7 +179,7 @@ class TestAudioValidation:
         assert result.is_valid is False
         assert result.error_code == "INVALID_AUDIO_SPECS"
         assert "too long" in result.error_message.lower()
-        assert result.details["current_specs"]["duration_seconds"] > 20.0
+        assert result.details["current_specs"]["duration_seconds"] > 200.0
 
     def test_invalid_wav_format_rejection(self):
         """Test: Ungültiges WAV-Format wird abgelehnt"""
@@ -278,13 +278,13 @@ class TestAudioValidationPerformance:
     def test_performance_with_large_valid_file(self):
         """Test: Performance mit großer gültiger Datei"""
         # Create maximum allowed duration
-        audio_bytes = create_test_wav(duration_seconds=19.0)  # Just under 20s limit
+        audio_bytes = create_test_wav(duration_seconds=190.0)  # Just under 200s limit
 
         result = validate_audio_input(audio_bytes)
 
         assert result.is_valid is True
         assert result.validation_time_ms < 2000  # Should be under 2 seconds
-        assert result.duration_seconds == pytest.approx(19.0, rel=0.1)
+        assert result.duration_seconds == pytest.approx(190.0, rel=0.1)
 
 
 class TestProcessWavIntegration:
@@ -387,19 +387,19 @@ class TestAudioValidationEdgeCases:
 
     def test_exactly_maximum_duration(self):
         """Test: Genau maximale Dauer ist gültig"""
-        audio_bytes = create_test_wav(duration_seconds=20.0)  # Exactly maximum
+        audio_bytes = create_test_wav(duration_seconds=200.0)  # Exactly maximum
 
         result = validate_audio_input(audio_bytes)
 
         assert result.is_valid is True
-        assert result.duration_seconds == pytest.approx(20.0, rel=0.05)
+        assert result.duration_seconds == pytest.approx(200.0, rel=0.05)
 
     def test_audio_specs_configuration(self):
         """Test: AudioSpecs-Konfiguration ist korrekt"""
         specs = AudioSpecs()
 
-        assert specs.MAX_DURATION_SECONDS == 20.0
-        assert specs.MAX_FILE_SIZE_MB == 3.2
+        assert specs.MAX_DURATION_SECONDS == 200.0
+        assert specs.MAX_FILE_SIZE_MB == 32.0
         assert specs.REQUIRED_SAMPLE_RATE == 16000
         assert specs.REQUIRED_BIT_DEPTH == 16
         assert specs.REQUIRED_CHANNELS == 1

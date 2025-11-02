@@ -36,12 +36,12 @@ Alle ToDos der Phasen 0–5 sind abgeschlossen und in `Version2.md` bzw. `SYSTEM
 
 ## 🚀 Phase 7 – Quality Enhancements (neu)
 
-- [ ] **ToDo 7.1: LLM-basierte Übersetzungs-Verfeinerung**
+- [x] **ToDo 7.1: LLM-basierte Übersetzungs-Verfeinerung**
   Übersetzungen vor dem TTS-Schritt mit einem lokalen LLM nachschärfen, um natürlichere Antworten zu erzielen.
-  - *Analyse*: Ollama (`ollama run gpt-oss:20b`) lokal integrieren, Ressourcenbedarf (14 GB MXFP4) evaluieren, Prompting-Strategie definieren.
-  - *Implementierung*: neue Pipeline-Stage (`TranslationRefiner`) zwischen Translation-Service und TTS, Feature-Gate über ENV (`LLM_REFINEMENT_ENABLED`, `LLM_REFINEMENT_MODEL=gpt-oss:20b`, Timeout). Standard-Implementierung ist No-op, LLM-Variante wird modular zugeschaltet.
-  - *Tests*: Vergleichstests für Text und Audio (Regression + subjective review), automatisierte Checks in `tests/test_text_pipeline.py` ergänzen, zusätzliche Assertions für deaktivierten Modus (Flag off → Originaltext bleibt unverändert).
-  - *Ops*: Ollama als optionalen Compose-Service dokumentieren, Entfernbarkeit erwähnen (Service + Flag zurücksetzen), Monitoring-Metriken (Latenz, Fehlerrate) erfassen.
+  - *Analyse*: Ollama (`gpt-oss:20b`) integriert, GPU-Bedarf validiert, Prompt für Konversations-Tuning definiert.
+  - *Implementierung*: `TranslationRefiner` zwischen Translation und TTS aktiv, Standard über ENV abschaltbar (`LLM_REFINEMENT_ENABLED`, Modell/Timeout konfigurierbar); Retry-Logik & Timeout-Handling ergänzt.
+  - *Tests*: Pipeline-Unit- und Integrationstests (`services/api_gateway/tests/test_pipeline.py`, `pytest` Komplettlauf) decken aktivierten und deaktivierten Modus ab.
+  - *Ops*: Ollama-Service in `docker-compose.yml` samt GPU-Setup, README/SYSTEM_ARCHITECTURE aktualisiert, Prometheus-Metriken für Requests/Latenzen verfügbar.
 
 ## 🧪 Regression-Checkliste
 

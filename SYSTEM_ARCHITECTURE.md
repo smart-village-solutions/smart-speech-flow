@@ -562,8 +562,8 @@ Alle KI-Services können auf verfügbare NVIDIA-GPUs zugreifen durch:
 
 ### **Audio-Parameter**
 - **Format:** WAV (16kHz, 16-bit, Mono)
-- **Maximale Dauer:** 20 Sekunden
-- **Dateigröße-Limit:** 3.2 MB (bei 20s WAV 16kHz)
+- **Maximale Dauer (Backend):** 200 Sekunden *(Frontend setzt engere Limits, default 20s)*
+- **Dateigröße-Limit (Backend):** 32 MB *(Frontend limitiert enger)*
 - **Qualitäts-Optimierung:** 16kHz für Whisper-Modelle optimiert
 
 ### **Text-Parameter**

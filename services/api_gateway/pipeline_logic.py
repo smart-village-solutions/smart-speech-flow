@@ -35,8 +35,8 @@ class AudioValidationError(Exception):
 @dataclass
 class AudioSpecs:
     """Audio specification requirements"""
-    MAX_DURATION_SECONDS: float = 20.0  # Maximum 20 seconds
-    MAX_FILE_SIZE_MB: float = 3.2       # Maximum 3.2 MB
+    MAX_DURATION_SECONDS: float = 200.0  # Maximum 200 seconds
+    MAX_FILE_SIZE_MB: float = 32.0       # Maximum 32 MB
     REQUIRED_SAMPLE_RATE: int = 16000   # 16kHz
     REQUIRED_BIT_DEPTH: int = 16        # 16-bit
     REQUIRED_CHANNELS: int = 1          # Mono
@@ -103,8 +103,8 @@ def validate_audio_input(audio_bytes: bytes, normalize: bool = True) -> AudioVal
 
     Validates:
     - WAV format (16kHz, 16-bit, Mono)
-    - Duration limits (0.1s - 20s)
-    - File size limits (max 3.2 MB)
+    - Duration limits (0.1s - 200s)
+    - File size limits (max 32 MB)
     - Audio quality and integrity
 
     Args:

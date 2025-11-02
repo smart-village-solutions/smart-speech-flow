@@ -212,7 +212,7 @@ def test_pipeline_endpoint():
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
         long_file = create_test_wav_file(
             temp_file.name,
-            duration_seconds=25.0,  # Too long (over 20s limit)
+            duration_seconds=250.0,  # Too long (over backend 200s limit)
             sample_rate=16000,
             bit_depth=16,
             channels=1

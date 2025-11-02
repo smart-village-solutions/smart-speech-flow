@@ -130,11 +130,11 @@ class TestAudioValidationIntegration:
 
     def test_session_audio_too_long(self):
         """Test: Session API mit zu langem Audio"""
-        # Create audio that's too long (over 20 seconds)
+        # Create audio that's too long (over 200 seconds)
         test_file = self.test_files_dir / "too_long_audio.wav"
         create_test_wav_file(
             str(test_file),
-            duration_seconds=25.0,  # Too long
+            duration_seconds=250.0,  # Too long
             sample_rate=16000,
             bit_depth=16,
             channels=1
