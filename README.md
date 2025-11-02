@@ -74,6 +74,12 @@ Smart Speech Flow ermöglicht es, gesprochene Inhalte automatisch zu transkribie
    curl -F "file=@sample.wav" -F "source_lang=de" -F "target_lang=en" http://localhost:8000/pipeline --output output.wav
    ```
 
+### 5. Session Store (Redis)
+- **Port:** 6379 (intern via Docker-Netzwerk)
+- **Funktion:** Persistente Ablage der Sessions, Nachrichten & Timeout-Metadaten
+- **Besonderheiten:** AOF aktiviert, Fallback auf In-Memory-Store falls Redis nicht erreichbar
+- **Konfiguration:** `REDIS_URL` & `REDIS_NAMESPACE` steuern Ziel-Instance und Namensraum
+
 ## 🔄 Pipeline-Workflow
 
 1. **ASR:** Audiodatei wird in Text transkribiert

@@ -7,6 +7,8 @@ Speichert Sessions in-memory (für Entwicklung) oder Redis (für Produktion)
 from __future__ import annotations
 
 import uuid
+import json
+import os
 from typing import Dict, List, Optional, Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from .websocket import WebSocketManager
@@ -14,6 +16,14 @@ if TYPE_CHECKING:
 from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
+
+try:  # Optional dependency for persistence
+    from redis import Redis
+    from redis.exceptions import RedisError
+except ImportError:  # pragma: no cover - redis optional for tests
+    Redis = None  # type: ignore
+    class RedisError(Exception):  # type: ignore
+        pass
 
 class ClientType(str, Enum):
     ADMIN = "admin"
@@ -48,6 +58,19 @@ class SessionMessage:
             "timestamp": self.timestamp.isoformat()
         }
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SessionMessage":
+        return cls(
+            id=data["id"],
+            sender=ClientType(data["sender"]),
+            original_text=data.get("original_text", ""),
+            translated_text=data.get("translated_text", ""),
+            audio_base64=data.get("audio_base64"),
+            source_lang=data.get("source_lang", ""),
+            target_lang=data.get("target_lang", ""),
+            timestamp=datetime.fromisoformat(data["timestamp"])
+        )
+
 @dataclass
 class Session:
     id: str
@@ -67,8 +90,8 @@ class Session:
     session_timeout_minutes: int = 30  # Auto-close nach 30 Minuten
     warning_timeout_minutes: int = 25  # Warning nach 25 Minuten
 
-    def to_dict(self):
-        return {
+    def to_dict(self, include_messages: bool = False) -> Dict[str, Any]:
+        data = {
             "id": self.id,
             "customer_language": self.customer_language,
             "admin_language": self.admin_language,
@@ -82,8 +105,14 @@ class Session:
             "last_activity": self.last_activity.isoformat(),
             "timeout_warning_sent": self.timeout_warning_sent,
             "session_timeout_minutes": self.session_timeout_minutes,
+            "warning_timeout_minutes": self.warning_timeout_minutes,
             "minutes_since_activity": int((datetime.now() - self.last_activity).total_seconds() / 60)
         }
+
+        if include_messages:
+            data["messages"] = [message.to_dict() for message in self.messages]
+
+        return data
 
     def update_activity(self):
         """Session-Aktivität aktualisieren (für Heartbeat/Messages)"""
@@ -106,6 +135,35 @@ class Session:
         minutes_inactive = (datetime.now() - self.last_activity).total_seconds() / 60
         return minutes_inactive >= self.session_timeout_minutes
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Session":
+        messages_data = data.get("messages", [])
+        messages = [SessionMessage.from_dict(msg) for msg in messages_data]
+
+        created_at = datetime.fromisoformat(data["created_at"])
+        terminated_at_raw = data.get("terminated_at")
+        terminated_at = datetime.fromisoformat(terminated_at_raw) if terminated_at_raw else None
+        last_activity_raw = data.get("last_activity", data["created_at"])
+
+        session = cls(
+            id=data["id"],
+            customer_language=data.get("customer_language"),
+            admin_language=data.get("admin_language", "de"),
+            status=SessionStatus(data.get("status", SessionStatus.PENDING.value)),
+            created_at=created_at,
+            terminated_at=terminated_at,
+            messages=messages,
+            admin_connected=data.get("admin_connected", False),
+            customer_connected=data.get("customer_connected", False),
+            termination_reason=data.get("termination_reason"),
+            last_activity=datetime.fromisoformat(last_activity_raw),
+            timeout_warning_sent=data.get("timeout_warning_sent", False),
+            session_timeout_minutes=data.get("session_timeout_minutes", 30),
+            warning_timeout_minutes=data.get("warning_timeout_minutes", 25)
+        )
+
+        return session
+
 def _set_global_session_manager(manager: SessionManager) -> None:  # type: ignore[name-defined]
     """Global SessionManager-Referenz aktualisieren."""
     global session_manager
@@ -121,15 +179,105 @@ class SessionManager:
         return cls._instance
 
     def __init__(self):
+        self.redis_client: Optional[Redis] = None
+        self.redis_namespace: str = os.getenv("REDIS_NAMESPACE", "ssf")
+        self.redis_enabled: bool = False
+
         self.reset()
         _set_global_session_manager(self)
+        self._init_persistence()
 
-    def reset(self):
+    def reset(self, *, clear_persistence: bool = False):
         """SessionManager Zustand auf Initialwerte zurücksetzen."""
         self.sessions: Dict[str, Session] = {}
         self.websocket_connections: Dict[str, Dict[str, Any]] = {}
         self.active_admin_session: Optional[str] = None  # Single-Session-Tracking
         self.websocket_manager: Optional["WebSocketManager"] = None
+
+        if clear_persistence and self.redis_enabled:
+            self._clear_persistence_store()
+
+        if self.redis_enabled:
+            self._load_sessions_from_persistence()
+
+    # === Persistence Helpers ===
+
+    def _init_persistence(self):
+        """Initialisiert optionales Redis-Backend für Session-Persistenz."""
+        redis_url = os.getenv("REDIS_URL")
+
+        if not redis_url or Redis is None:
+            print("ℹ️ Session-Persistenz deaktiviert – verwende In-Memory Store")
+            return
+
+        try:
+            self.redis_client = Redis.from_url(redis_url, decode_responses=True)
+            self.redis_client.ping()
+        except RedisError as exc:
+            print(f"⚠️ Redis nicht erreichbar ({exc}). Fallback auf In-Memory Store.")
+            self.redis_client = None
+            self.redis_enabled = False
+            return
+
+        self.redis_enabled = True
+        print("✅ Redis Session-Persistenz aktiviert")
+        self._load_sessions_from_persistence()
+
+    def _key(self, *parts: str) -> str:
+        return ":".join([self.redis_namespace, *parts])
+
+    def _persist_active_session(self):
+        if not self.redis_enabled or not self.redis_client:
+            return
+
+        if self.active_admin_session:
+            self.redis_client.set(self._key("session", "active_admin"), self.active_admin_session)
+        else:
+            self.redis_client.delete(self._key("session", "active_admin"))
+
+    def _persist_session(self, session: Session):
+        if not self.redis_enabled or not self.redis_client:
+            return
+
+        try:
+            payload = session.to_dict(include_messages=True)
+            self.redis_client.set(self._key("session", session.id), json.dumps(payload))
+            self.redis_client.sadd(self._key("sessions"), session.id)
+        except RedisError as exc:
+            print(f"⚠️ Persistierung der Session {session.id} fehlgeschlagen: {exc}")
+
+    def _load_sessions_from_persistence(self):
+        if not self.redis_enabled or not self.redis_client:
+            return
+
+        try:
+            session_ids = self.redis_client.smembers(self._key("sessions"))
+            for session_id in session_ids:
+                raw = self.redis_client.get(self._key("session", session_id))
+                if not raw:
+                    continue
+                data = json.loads(raw)
+                session = Session.from_dict(data)
+                self.sessions[session.id] = session
+
+            stored_active = self.redis_client.get(self._key("session", "active_admin"))
+            if stored_active:
+                self.active_admin_session = stored_active
+        except RedisError as exc:
+            print(f"⚠️ Laden der Sessions aus Redis fehlgeschlagen: {exc}")
+
+    def _clear_persistence_store(self):
+        if not self.redis_enabled or not self.redis_client:
+            return
+
+        try:
+            session_ids = self.redis_client.smembers(self._key("sessions"))
+            for session_id in session_ids:
+                self.redis_client.delete(self._key("session", session_id))
+            self.redis_client.delete(self._key("sessions"))
+            self.redis_client.delete(self._key("session", "active_admin"))
+        except RedisError as exc:
+            print(f"⚠️ Bereinigung des Session-Stores fehlgeschlagen: {exc}")
 
     async def create_admin_session(self) -> str:
         """Neue Admin-Session erstellen (Single-Session-Policy)"""
@@ -144,6 +292,9 @@ class SessionManager:
         )
         self.sessions[session_id] = session
         self.active_admin_session = session_id
+
+        self._persist_session(session)
+        self._persist_active_session()
 
         print(f"✅ Neue Admin-Session erstellt: {session_id}")
         return session_id
@@ -161,12 +312,14 @@ class SessionManager:
         for session in self.sessions.values():
             if session.status == SessionStatus.TERMINATED:
                 session.termination_reason = reason
+                self._persist_session(session)
 
         if terminated_count > 0:
             print(f"🔄 {terminated_count} Sessions beendet. Grund: {reason}")
 
         # Active session tracking zurücksetzen
         self.active_admin_session = None
+        self._persist_active_session()
 
     async def terminate_session(self, session_id: str, reason: str = "manual_termination"):
         """Einzelne Session beenden mit WebSocket-Notifications"""
@@ -190,8 +343,9 @@ class SessionManager:
         # WebSocket-Verbindungen cleanup
         await self._cleanup_websocket_connections(session_id)
 
-        # Redis-Cleanup (für zukünftige Redis-Integration)
-        await self._cleanup_redis_data(session_id)
+        # Session persistieren
+        self._persist_session(session)
+        self._persist_active_session()
 
         print(f"🔚 Session {session_id} beendet. Grund: {reason}")
 
@@ -242,13 +396,6 @@ class SessionManager:
             del self.websocket_connections[session_id]
             print(f"🧹 WebSocket-Connections für Session {session_id} bereinigt")
 
-    async def _cleanup_redis_data(self, session_id: str):
-        """Redis-Cleanup für Session-Daten (Future Implementation)"""
-        # TODO: Redis-Integration für Session-Persistence
-        # redis_client.delete(f"session:{session_id}")
-        # redis_client.delete(f"session:{session_id}:messages")
-        pass
-
     def create_session(self, customer_language: str) -> str:
         """Legacy-Methode - deprecated zugunsten von create_admin_session()"""
         print("⚠️ Warning: create_session() ist deprecated. Verwende create_admin_session()")
@@ -259,11 +406,22 @@ class SessionManager:
             status=SessionStatus.ACTIVE
         )
         self.sessions[session_id] = session
+        self._persist_session(session)
         return session_id
 
     def get_session(self, session_id: str) -> Optional[Session]:
         """Session abrufen"""
-        return self.sessions.get(session_id)
+        session = self.sessions.get(session_id)
+        if session is None and self.redis_enabled and self.redis_client:
+            try:
+                raw = self.redis_client.get(self._key("session", session_id))
+                if raw:
+                    data = json.loads(raw)
+                    session = Session.from_dict(data)
+                    self.sessions[session_id] = session
+            except RedisError as exc:
+                print(f"⚠️ Lesen der Session {session_id} aus Redis fehlgeschlagen: {exc}")
+        return session
 
     def add_message(self, session_id: str, message: SessionMessage):
         """Nachricht zur Session hinzufügen"""
@@ -271,6 +429,7 @@ class SessionManager:
             session.messages.append(message)
             # ✨ Session-Aktivität bei neuer Nachricht aktualisieren
             session.update_activity()
+            self._persist_session(session)
 
     def get_active_session(self) -> Optional[Dict]:
         """Aktuelle Admin-Session abrufen (Single-Session-Policy)"""
@@ -280,6 +439,7 @@ class SessionManager:
         session = self.get_session(self.active_admin_session)
         if not session or session.status == SessionStatus.TERMINATED:
             self.active_admin_session = None
+            self._persist_active_session()
             return None
 
         return session.to_dict()
@@ -321,6 +481,7 @@ class SessionManager:
         session.customer_language = customer_language
         session.status = SessionStatus.ACTIVE
         session.customer_connected = True
+        self._persist_session(session)
 
         print(f"🎯 Session {session_id} aktiviert mit Sprache: {customer_language}")
 
@@ -338,6 +499,7 @@ class SessionManager:
                 session.admin_connected = True
             else:
                 session.customer_connected = True
+            self._persist_session(session)
 
         print(f"🔗 WebSocket-Verbindung hinzugefügt: {session_id} ({client_type.value})")
 
@@ -353,6 +515,7 @@ class SessionManager:
                     session.admin_connected = False
                 else:
                     session.customer_connected = False
+                self._persist_session(session)
 
             print(f"🔌 WebSocket-Verbindung entfernt: {session_id} ({client_type.value})")
 
@@ -371,6 +534,7 @@ class SessionManager:
         session = self.get_session(session_id)
         if session:
             session.update_activity()
+            self._persist_session(session)
 
     async def check_session_timeouts(self):
         """Alle Sessions auf Timeouts prüfen und entsprechende Aktionen durchführen"""
@@ -403,6 +567,7 @@ class SessionManager:
 
             await self.websocket_manager.broadcast_to_session(session.id, warning_message)
             session.timeout_warning_sent = True
+            self._persist_session(session)
             print(f"⚠️ Timeout-Warning gesendet für Session {session.id}")
 
     def get_sessions_requiring_timeout_check(self) -> List[Session]:

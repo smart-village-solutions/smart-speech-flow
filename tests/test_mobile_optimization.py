@@ -128,7 +128,7 @@ class TestWebSocketMobileOptimization:
     def setup_method(self):
         """Test-Setup"""
         self.session_manager = SessionManager()
-        self.session_manager.reset()
+        self.session_manager.reset(clear_persistence=True)
         self.websocket_manager = WebSocketManager(self.session_manager)
 
     @pytest.mark.asyncio

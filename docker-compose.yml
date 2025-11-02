@@ -66,11 +66,25 @@ services:
       dockerfile: services/api_gateway/Dockerfile
     ports:
       - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_NAMESPACE=ssf
+    depends_on:
+      - redis
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.api_gateway.rule=Host(`ssf.smart-village.solutions`)"
       - "traefik.http.routers.api_gateway.entrypoints=websecure"
       - "traefik.http.routers.api_gateway.tls.certresolver=le"
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    expose:
+      - "6379"
+    volumes:
+      - redis-data:/data
     restart: always
 
   frontend:
@@ -169,3 +183,6 @@ services:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - ./monitoring/promtail-config.yaml:/etc/promtail/config.yaml:ro
       - ./monitoring/promtail-data:/var/lib/promtail
+
+volumes:
+  redis-data:

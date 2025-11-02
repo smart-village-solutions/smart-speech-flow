@@ -283,6 +283,7 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
   - **WebSocket-Connection-Pool:** Verbindungsmanagement pro Session
   - **Graceful Disconnect:** Client-Benachrichtigung bei Session-Beendigung
   - **Broadcast-Funktionalität:** Echtzeit-Updates an alle Session-Teilnehmer
+  - **Persistence Layer:** Redis-gestütztes Session- und Message-Storage (Fallback: In-Memory)
 - **Session:** Single-Instance Session-Model
   - **State:** inactive → pending → active → terminated
   - **Language-Pair:** Admin (DE) ↔ Customer (selected language)
@@ -292,6 +293,8 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
   - translated_text: Übersetzter Text (für Empfänger-Anzeige)
   - audio_data: Übersetzte Audio-Datei (für Empfänger-Wiedergabe)
 - **ClientType:** Admin/Customer-Unterscheidung mit Role-basierter Session-Control
+
+> **Failover:** Ist Redis nicht erreichbar, schaltet der SessionManager automatisch auf den bewährten In-Memory-Betrieb zurück (Startup-Log-Hinweis). In Docker-Deployments stellt `docker-compose.yml` den Redis-Dienst inklusive AOF-Persistenz und Namespace-Konfiguration bereit.
 
 **routes-Module:**
 - session.py: Session-CRUD-Operationen mit UUID-Support

@@ -24,9 +24,9 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def reset_session_manager() -> None:
-    session_manager.reset()
+    session_manager.reset(clear_persistence=True)
     yield
-    session_manager.reset()
+    session_manager.reset(clear_persistence=True)
 
 def _register_active_session() -> str:
     session_id = "RATE1234"

@@ -26,7 +26,13 @@ Alle ToDos der Phasen 0–5 sind abgeschlossen und in `Version2.md` bzw. `SYSTEM
   - Acceptance Criteria: Mindestens zwei produktionsrelevante Dashboards; Alert-Regeln für Service-Ausfälle, Latenz, Ressourcenknappheit; README-Abschnitt mit Zugriff & Runbook.
   - Owner: Observability
 
-- [ ] **ToDo 6.3: End-to-End Test on Live-App
+- [x] **ToDo 6.3: Session Persistence & Failover**
+  Sessions dauerhaft in Redis ablegen, um Neustarts zu überstehen und horizontales Scaling zu ermöglichen.
+  - *Analyse*: Redis-Variante und Persistence-Modus festlegen (AOF + Snapshot), Security/Secrets klären.
+  - *Setup*: Redis als Compose-Service ergänzen, Health-Checks & Monitoring einbinden, Local/Prod-Konfig via ENV.
+  - *Implementierung*: `SessionManager` auf Redis CRUD umstellen (Sessions, Messages, Timeouts) inkl. Migration der Audio-Referenzen.
+  - *Tests*: Unit-/Integrationstests für Redis-Backend, Smoke-Test mit bestehender API (`tests/test_session_manager.py`, `tests/test_unified_message_endpoint.py`).
+  - *Rollout*: Blue/Green-Plan erstellen, Fallback auf in-memory prüfen, Runbook in `SYSTEM_ARCHITECTURE.md` ergänzen.
 
 ## 🧪 Regression-Checkliste
 

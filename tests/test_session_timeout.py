@@ -15,7 +15,7 @@ class TestSessionTimeoutManagement:
     def setup_method(self):
         """Test-Setup - frische SessionManager-Instanz"""
         self.session_manager = SessionManager()
-        self.session_manager.reset()
+        self.session_manager.reset(clear_persistence=True)
 
     def test_session_activity_update(self):
         """Test: Session-Aktivität wird korrekt aktualisiert"""
