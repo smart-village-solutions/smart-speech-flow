@@ -47,6 +47,10 @@ def create_test_wav(
     else:
         raise ValueError(f"Unsupported bit depth: {bit_depth}")
 
+    if channels > 1:
+        wave_data = np.tile(wave_data.reshape(-1, 1), (1, channels)).astype(wave_data.dtype)
+        wave_data = wave_data.flatten()
+
     # Create WAV file in memory
     wav_io = io.BytesIO()
     with wave.open(wav_io, 'wb') as wav_file:
@@ -79,6 +83,7 @@ class TestAudioValidation:
         assert result.bit_depth == 16
         assert result.channels == 1
         assert result.validation_time_ms >= 0
+        assert isinstance(result.processed_audio, bytes)
 
     def test_file_too_large_rejection(self):
         """Test: Zu große Dateien werden abgelehnt"""
@@ -92,8 +97,8 @@ class TestAudioValidation:
             assert result.details["file_size_bytes"] > 0
         # If file size is still within limit, that's also okay for this test duration
 
-    def test_wrong_sample_rate_rejection(self):
-        """Test: Falsche Sample-Rate wird abgelehnt"""
+    def test_wrong_sample_rate_auto_conversion(self):
+        """Test: Sample-Rate wird automatisch auf 16kHz konvertiert"""
         audio_bytes = create_test_wav(
             duration_seconds=2.0,
             sample_rate=44100,  # Wrong sample rate
@@ -103,14 +108,15 @@ class TestAudioValidation:
 
         result = validate_audio_input(audio_bytes)
 
-        assert result.is_valid is False
-        assert result.error_code == "INVALID_AUDIO_SPECS"
-        assert "sample rate" in result.error_message.lower()
-        assert result.details["current_specs"]["sample_rate"] == 44100
-        assert result.details["required_specs"]["sample_rate"] == 16000
+        assert result.is_valid is True
+        assert result.error_code is None
+        assert result.sample_rate == 16000
+        assert result.spec_conversion_applied is True
+        assert result.channels == 1
+        assert isinstance(result.processed_audio, bytes)
 
-    def test_wrong_bit_depth_rejection(self):
-        """Test: Falsche Bit-Tiefe wird abgelehnt"""
+    def test_wrong_bit_depth_auto_conversion(self):
+        """Test: Bit-Tiefe wird automatisch auf 16-bit konvertiert"""
         audio_bytes = create_test_wav(
             duration_seconds=2.0,
             sample_rate=16000,
@@ -120,14 +126,14 @@ class TestAudioValidation:
 
         result = validate_audio_input(audio_bytes)
 
-        assert result.is_valid is False
-        assert result.error_code == "INVALID_AUDIO_SPECS"
-        assert "bit depth" in result.error_message.lower()
-        assert result.details["current_specs"]["bit_depth"] == 32
-        assert result.details["required_specs"]["bit_depth"] == 16
+        assert result.is_valid is True
+        assert result.error_code is None
+        assert result.bit_depth == 16
+        assert result.spec_conversion_applied is True
+        assert isinstance(result.processed_audio, bytes)
 
-    def test_stereo_rejection(self):
-        """Test: Stereo-Audio wird abgelehnt (nur Mono erlaubt)"""
+    def test_stereo_auto_conversion(self):
+        """Test: Stereo-Audio wird automatisch in Mono konvertiert"""
         audio_bytes = create_test_wav(
             duration_seconds=2.0,
             sample_rate=16000,
@@ -137,11 +143,11 @@ class TestAudioValidation:
 
         result = validate_audio_input(audio_bytes)
 
-        assert result.is_valid is False
-        assert result.error_code == "INVALID_AUDIO_SPECS"
-        assert "channels" in result.error_message.lower()
-        assert result.details["current_specs"]["channels"] == 2
-        assert result.details["required_specs"]["channels"] == 1
+        assert result.is_valid is True
+        assert result.channels == 1
+        assert result.spec_conversion_applied is True
+        assert result.error_code is None
+        assert isinstance(result.processed_audio, bytes)
 
     def test_duration_too_short_rejection(self):
         """Test: Zu kurze Audio-Dateien werden abgelehnt"""
@@ -323,7 +329,8 @@ class TestProcessWavIntegration:
         # Invalid audio (wrong sample rate)
         audio_bytes = create_test_wav(
             duration_seconds=2.0,
-            sample_rate=44100  # Wrong sample rate
+            sample_rate=44100,
+            channels=4  # Unsupported channel layout
         )
 
         result = process_wav(audio_bytes, "en", "de", debug=True, validate_audio=True)
@@ -332,6 +339,7 @@ class TestProcessWavIntegration:
         assert "Audio validation failed" in result["error_msg"]
         assert result["validation_result"] is not None
         assert result["validation_result"].error_code == "INVALID_AUDIO_SPECS"
+        assert "automatic conversion failed" in result["validation_result"].error_message.lower()
 
         # Should not proceed to ASR/Translation/TTS
         assert result["asr_text"] is None
@@ -412,6 +420,8 @@ class TestAudioValidationEdgeCases:
         assert result.validation_time_ms == 100
         assert result.error_code is None
         assert result.normalization_applied is False
+        assert result.spec_conversion_applied is False
+        assert result.processed_audio is None
 
 
 if __name__ == "__main__":

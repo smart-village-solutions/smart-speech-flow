@@ -6,6 +6,7 @@ import io
 import wave
 import re
 import unicodedata
+import audioop
 from typing import Dict, Any, Optional, Tuple, List
 from dataclasses import dataclass
 from enum import Enum
@@ -90,6 +91,8 @@ class AudioValidationResult:
     # Performance metrics
     validation_time_ms: Optional[int] = None
     normalization_applied: bool = False
+    spec_conversion_applied: bool = False
+    processed_audio: Optional[bytes] = None
 
 # === Audio Validation Functions ===
 
@@ -154,6 +157,36 @@ def validate_audio_input(audio_bytes: bytes, normalize: bool = True) -> AudioVal
                 validation_time_ms=int((time.perf_counter() - start_time) * 1000)
             )
 
+        # Attempt automatic conversion to required specs if needed
+        conversion_attempted = False
+        conversion_applied = False
+        conversion_error: Optional[str] = None
+
+        if (
+            sample_rate != specs.REQUIRED_SAMPLE_RATE or
+            bit_depth != specs.REQUIRED_BIT_DEPTH or
+            channels != specs.REQUIRED_CHANNELS
+        ):
+            conversion_attempted = True
+            try:
+                (audio_bytes,
+                 sample_rate,
+                 bit_depth,
+                 channels,
+                 duration_seconds) = convert_audio_to_required_specs(
+                    audio_bytes,
+                    sample_rate,
+                    bit_depth,
+                    channels,
+                    specs.REQUIRED_SAMPLE_RATE,
+                    specs.REQUIRED_BIT_DEPTH,
+                    specs.REQUIRED_CHANNELS
+                )
+                file_size_bytes = len(audio_bytes)
+                conversion_applied = True
+            except Exception as e:
+                conversion_error = str(e)
+
         # Step 3: Audio specifications validation
         validation_errors = []
 
@@ -177,6 +210,8 @@ def validate_audio_input(audio_bytes: bytes, normalize: bool = True) -> AudioVal
             validation_errors.append(f"Duration {duration_seconds:.2f}s too long, maximum: {specs.MAX_DURATION_SECONDS}s")
 
         if validation_errors:
+            if conversion_attempted and not conversion_applied and conversion_error:
+                validation_errors.append(f"automatic conversion failed: {conversion_error}")
             return AudioValidationResult(
                 is_valid=False,
                 error_code="INVALID_AUDIO_SPECS",
@@ -222,7 +257,9 @@ def validate_audio_input(audio_bytes: bytes, normalize: bool = True) -> AudioVal
             bit_depth=bit_depth,
             channels=channels,
             validation_time_ms=validation_time_ms,
-            normalization_applied=normalization_applied
+            normalization_applied=normalization_applied,
+            spec_conversion_applied=conversion_applied,
+            processed_audio=audio_bytes
         )
 
     except Exception as e:
@@ -313,6 +350,84 @@ def normalize_audio(audio_bytes: bytes, sample_rate: int, bit_depth: int, channe
         logging.warning(f"Audio normalization failed: {e}")
         # Return original audio if normalization fails
         return audio_bytes
+
+
+def convert_audio_to_required_specs(
+    audio_bytes: bytes,
+    sample_rate: int,
+    bit_depth: int,
+    channels: int,
+    target_sample_rate: int,
+    target_bit_depth: int,
+    target_channels: int
+) -> Tuple[bytes, int, int, int, float]:
+    """
+    Convert incoming WAV audio to required specifications using pure Python helpers.
+    """
+
+    if target_channels != 1:
+        raise ValueError("Only mono output is supported")
+
+    target_sample_width = target_bit_depth // 8
+    if target_sample_width not in (1, 2, 3, 4):
+        raise ValueError("Unsupported target bit depth")
+
+    audio_io = io.BytesIO(audio_bytes)
+    with wave.open(audio_io, 'rb') as wav_in:
+        frames = wav_in.readframes(-1)
+        sample_width = wav_in.getsampwidth()
+
+    if sample_width not in (1, 2, 3, 4):
+        raise ValueError("Unsupported source bit depth")
+
+    working_frames = frames
+    working_channels = channels
+    working_sample_width = sample_width
+
+    # Convert bit depth first if required
+    if working_sample_width != target_sample_width:
+        working_frames = audioop.lin2lin(working_frames, working_sample_width, target_sample_width)
+        working_sample_width = target_sample_width
+        bit_depth = working_sample_width * 8
+
+    # Convert to mono if needed
+    if working_channels != target_channels:
+        if working_channels == 2:
+            working_frames = audioop.tomono(working_frames, working_sample_width, 0.5, 0.5)
+            working_channels = 1
+        else:
+            raise ValueError(f"Cannot convert {working_channels} channels to mono")
+        channels = working_channels
+
+    # Resample if needed
+    if sample_rate != target_sample_rate:
+        working_frames, _ = audioop.ratecv(
+            working_frames,
+            working_sample_width,
+            working_channels,
+            sample_rate,
+            target_sample_rate,
+            None
+        )
+        sample_rate = target_sample_rate
+
+    output_io = io.BytesIO()
+    with wave.open(output_io, 'wb') as wav_out:
+        wav_out.setnchannels(working_channels)
+        wav_out.setsampwidth(working_sample_width)
+        wav_out.setframerate(sample_rate)
+        wav_out.writeframes(working_frames)
+
+    sample_count = len(working_frames) // (working_sample_width * working_channels)
+    duration_seconds = sample_count / sample_rate if sample_rate > 0 else 0.0
+
+    return (
+        output_io.getvalue(),
+        sample_rate,
+        working_sample_width * 8,
+        working_channels,
+        duration_seconds
+    )
 
 
 # === Text Validation and Processing ===
@@ -705,17 +820,22 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
     # Audio Validation Step (if enabled)
     if validate_audio:
         start_validation = time.perf_counter()
+        original_file_size = len(file_bytes)
         validation_result = validate_audio_input(file_bytes, normalize=True)
+
+        if validation_result.is_valid and validation_result.processed_audio:
+            file_bytes = validation_result.processed_audio
 
         validation_step = {
             "step": "Audio_Validation",
-            "input": {"file_size": len(file_bytes)},
+            "input": {"file_size": original_file_size},
             "output": validation_result.is_valid,
             "error": None if validation_result.is_valid else validation_result.error_message,
             "duration": round(time.perf_counter() - start_validation, 3),
             "details": {
                 "validation_time_ms": validation_result.validation_time_ms,
-                "normalization_applied": validation_result.normalization_applied
+                "normalization_applied": validation_result.normalization_applied,
+                "spec_conversion_applied": validation_result.spec_conversion_applied
             }
         }
 
@@ -724,7 +844,8 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
                 "duration_seconds": validation_result.duration_seconds,
                 "sample_rate": validation_result.sample_rate,
                 "bit_depth": validation_result.bit_depth,
-                "channels": validation_result.channels
+                "channels": validation_result.channels,
+                "processed_file_size": len(file_bytes)
             })
         else:
             validation_step["details"]["error_code"] = validation_result.error_code
