@@ -22,14 +22,14 @@ Smart Speech Flow ermöglicht es, gesprochene Inhalte automatisch zu transkribie
 │   (React)       │    │   (FastAPI)  │    │  (Load Balancer)│
 │   Port: 5173    │    │  Port: 8000  │    │   Port: 80/443  │
 └─────────────────┘    └──────────────┘    └─────────────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              │               │               │
-         ┌────▼────┐    ┌─────▼─────┐   ┌────▼────┐
-         │   ASR   │    │Translation│   │   TTS   │
-         │(Whisper)│    │  (M2M100) │   │(Coqui)  │
-         │Port:8001│    │ Port:8002 │   │Port:8003│
-         └─────────┘    └───────────┘   └─────────┘
+            │
+        ┌───────────────┼───────────────────────────┐
+        │               │                           │
+      ┌────▼────┐    ┌─────▼─────┐   ┌────▼────┐   ┌────▼────┐
+      │   ASR   │    │Translation│   │   TTS   │   │ Ollama  │
+      │(Whisper)│    │  (M2M100) │   │(Coqui)  │   │(Refiner)│
+      │Port:8001│    │ Port:8002 │   │Port:8003│   │Port:11434│
+      └─────────┘    └───────────┘   └─────────┘   └─────────┘
 ```
 
 ### 1. ASR Service (Speech-to-Text)
@@ -80,12 +80,20 @@ Smart Speech Flow ermöglicht es, gesprochene Inhalte automatisch zu transkribie
 - **Besonderheiten:** AOF aktiviert, Fallback auf In-Memory-Store falls Redis nicht erreichbar
 - **Konfiguration:** `REDIS_URL` & `REDIS_NAMESPACE` steuern Ziel-Instance und Namensraum
 
+### 6. Ollama Translation Refinement (optional)
+- **Port:** 11434
+- **Funktion:** LLM-basierte Nachbearbeitung von Übersetzungen mit `gpt-oss:20b`
+- **GPU:** Nutzt über das NVIDIA Container Toolkit die vorhandenen GPUs automatisch
+- **Aktivierung:** `LLM_REFINEMENT_ENABLED=true` am API-Gateway setzen
+- **Vorbereitung:** Modell einmalig laden via `docker compose exec ollama ollama pull gpt-oss:20b`
+
 ## 🔄 Pipeline-Workflow
 
 1. **ASR:** Audiodatei wird in Text transkribiert
 2. **Translation:** Transkribierter Text wird in die Zielsprache übersetzt (mit Romanisierung für TTS)
-3. **TTS:** Übersetzter Text wird als Sprache synthetisiert (WAV)
-4. **API-Gateway:** Orchestriert alle Schritte und gibt die finale WAV-Datei zurück
+3. **(Optional) LLM-Veredelung:** Bei aktivem Flag wird der Übersetzungstext über Ollama nachbearbeitet
+4. **TTS:** Übersetzter Text wird als Sprache synthetisiert (WAV)
+5. **API-Gateway:** Orchestriert alle Schritte und gibt die finale WAV-Datei zurück
 
 ## 📋 Endpunkte Übersicht
 
@@ -126,6 +134,8 @@ cd ssf-backend
 docker compose up --build
 ```
 
+> Der Ollama-Service startet automatisch und nutzt die GPU, sobald das NVIDIA Container Toolkit vorhanden ist. Die LLM-Nachbearbeitung bleibt deaktiviert, bis `LLM_REFINEMENT_ENABLED=true` gesetzt wird.
+
 ### GPU-Setup (optional)
 
 Für optimale Performance mit NVIDIA GPU:
@@ -141,6 +151,9 @@ sudo systemctl restart docker
 
 # GPU-Status prüfen
 nvidia-smi
+
+# (Optional) GPU-Zugriff mit Ollama-Image testen
+docker run --rm --gpus all ollama/ollama:latest nvidia-smi
 ```
 
 ### Einzelne Services lokal starten

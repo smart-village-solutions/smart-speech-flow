@@ -18,6 +18,7 @@ import aiohttp
 from .circuit_breaker import CircuitBreakerOpenException
 from .service_health import service_health_manager
 from .graceful_degradation import graceful_degradation_manager
+from .translation_refiner import RefinementOutcome, translation_refiner
 
 ASR_URL = "http://asr:8000/transcribe"
 TRANSLATION_URL = "http://translation:8000/translate"
@@ -729,11 +730,37 @@ def process_text_pipeline(text: str, source_lang: str, target_lang: str, debug: 
                 "debug": debug_info
             }
 
+        # Optional LLM refinement
+        refined_tts_text = tts_text
+        if translation_refiner.is_active:
+            refinement_context = {
+                "original_text": processed_text,
+                "pipeline": "text",
+            }
+            outcome: RefinementOutcome = translation_refiner.refine(
+                translation_text,
+                source_lang,
+                target_lang,
+                context=refinement_context,
+            )
+            translation_text = outcome.text
+            if outcome.changed:
+                # Drop precomputed romanization so TTS uses refined text directly
+                refined_tts_text = None
+
+            debug_info["steps"].append({
+                "step": "LLM_Refinement",
+                "input": {"enabled": True, "changed": outcome.changed},
+                "output": translation_text,
+                "error": outcome.error,
+                "duration": round((outcome.latency_ms or 0.0) / 1000, 3),
+            })
+
         # Step 3: TTS
         start_tts = time.perf_counter()
         tts_payload = {"text": translation_text, "lang": target_lang, "debug": str(debug).lower()}
-        if tts_text:
-            tts_payload["tts_text"] = tts_text
+        if refined_tts_text:
+            tts_payload["tts_text"] = refined_tts_text
 
         tts_resp = requests.post(TTS_URL, json=tts_payload)
 
@@ -902,6 +929,22 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
             "audio_bytes": None,
             "debug": debug_info
         }
+    # Optional LLM refinement
+    if translation_refiner.is_active:
+        outcome = translation_refiner.refine(
+            translation_text,
+            source_lang,
+            target_lang,
+            context={"original_text": asr_text, "pipeline": "audio"},
+        )
+        translation_text = outcome.text
+        debug_info["steps"].append({
+            "step": "LLM_Refinement",
+            "input": {"enabled": True, "changed": outcome.changed},
+            "output": translation_text,
+            "error": outcome.error,
+            "duration": round((outcome.latency_ms or 0.0) / 1000, 3),
+        })
     # TTS
     start_tts = time.perf_counter()
     tts_resp = requests.post(TTS_URL, json={"text": translation_text, "lang": target_lang, "debug": str(debug).lower()})

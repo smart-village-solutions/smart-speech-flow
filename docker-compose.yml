@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   traefik:
     image: traefik:v2.10
@@ -69,13 +67,36 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - REDIS_NAMESPACE=ssf
+      - LLM_REFINEMENT_ENABLED=${LLM_REFINEMENT_ENABLED:-true}
+      - LLM_REFINEMENT_MODEL=${LLM_REFINEMENT_MODEL:-gpt-oss:20b}
+      - LLM_REFINEMENT_ENDPOINT=${LLM_REFINEMENT_ENDPOINT:-http://ollama:11434}
+      - LLM_REFINEMENT_TIMEOUT=${LLM_REFINEMENT_TIMEOUT:-8.0}
+      - LLM_REFINEMENT_TEMPERATURE=${LLM_REFINEMENT_TEMPERATURE:-0.7}
     depends_on:
       - redis
+      - ollama
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.api_gateway.rule=Host(`ssf.smart-village.solutions`)"
       - "traefik.http.routers.api_gateway.entrypoints=websecure"
       - "traefik.http.routers.api_gateway.tls.certresolver=le"
+    restart: always
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama-data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     restart: always
 
   redis:
@@ -186,3 +207,4 @@ services:
 
 volumes:
   redis-data:
+  ollama-data:
