@@ -14,17 +14,11 @@ scrape_configs:
       - host: unix:///var/run/docker.sock
     relabel_configs:
       - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
         target_label: container
-        replacement: '${1}'
-      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
-        target_label: service
-      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
-        target_label: compose_project
-      - source_labels: ['__meta_docker_container_log_stream']
-        target_label: stream
-      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
-        regex: '(api_gateway|asr|translation|tts|frontend|traefik|prometheus|grafana|dcgm_exporter)'
-        action: keep
+      - source_labels: ['__meta_docker_container_id']
+        target_label: __path__
+        replacement: '/var/lib/docker/containers/$1/$1-json.log'
     pipeline_stages:
       - match:
           selector: '{service="api_gateway"}'

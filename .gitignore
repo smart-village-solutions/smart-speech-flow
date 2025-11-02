@@ -31,6 +31,9 @@ models/
 
 # Docker
 *.pid
+monitoring/loki-data/
+monitoring/promtail-data/
+monitoring/grafana/grafana.db
 
 # OS
 .DS_Store

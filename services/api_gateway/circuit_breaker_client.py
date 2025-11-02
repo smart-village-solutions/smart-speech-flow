@@ -105,7 +105,7 @@ class CircuitBreakerServiceClient:
     async def _perform_asr_request(self, audio_data: bytes, source_lang: str,
                                   debug: bool) -> Dict[str, Any]:
         """Führt tatsächlichen ASR Request aus"""
-        url = "http://asr:8001/transcribe"
+        url = "http://asr:8000/transcribe"
 
         # Multipart Form Data für Audio Upload
         form_data = aiohttp.FormData()
@@ -185,7 +185,7 @@ class CircuitBreakerServiceClient:
     async def _perform_translation_request(self, text: str, source_lang: str,
                                          target_lang: str, debug: bool) -> Dict[str, Any]:
         """Führt tatsächlichen Translation Request aus"""
-        url = "http://translation:8002/translate"
+        url = "http://translation:8000/translate"
 
         payload = {
             "text": text,
@@ -266,7 +266,7 @@ class CircuitBreakerServiceClient:
     async def _perform_tts_request(self, text: str, target_lang: str,
                                   voice_id: str, debug: bool) -> Dict[str, Any]:
         """Führt tatsächlichen TTS Request aus"""
-        url = "http://tts:8003/synthesize"
+        url = "http://tts:8000/synthesize"
 
         payload = {
             "text": text,

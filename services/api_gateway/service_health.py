@@ -109,7 +109,7 @@ class ServiceHealthManager:
         # ASR Service
         self.register_service(ServiceEndpoint(
             name="asr",
-            base_url="http://asr:8001",
+            base_url="http://asr:8000",
             health_path="/health",
             timeout=10.0  # ASR kann länger dauern
         ))
@@ -117,7 +117,7 @@ class ServiceHealthManager:
         # Translation Service
         self.register_service(ServiceEndpoint(
             name="translation",
-            base_url="http://translation:8002",
+            base_url="http://translation:8000",
             health_path="/health",
             timeout=8.0
         ))
@@ -125,7 +125,7 @@ class ServiceHealthManager:
         # TTS Service
         self.register_service(ServiceEndpoint(
             name="tts",
-            base_url="http://tts:8003",
+            base_url="http://tts:8000",
             health_path="/health",
             timeout=10.0  # TTS kann länger dauern
         ))
