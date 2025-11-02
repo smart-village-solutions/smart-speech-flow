@@ -5,12 +5,25 @@
 Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für mehrsprachige Kommunikation zwischen Verwaltungsmitarbeitern und Bürgern. Das System ermöglicht bidirektionale Sprachkommunikation mit automatischer Übersetzung in Echtzeit.
 
 ## 🎯 Zielgruppen
-
 - **Admin-Benutzer:** Deutschsprachige Verwaltungsmitarbeiter
 - **Client-Benutzer:** Mehrsprachige Bürger und Kunden
-- **System-Administratoren:** IT-Pers**Backend-Validierung:**
+- **System-Administratoren:** IT-Personal für Monitoring und Wartung
 
-**Unified Endpoint Logic (`/api/session/{id}/message`):**
+## 🌍 Produktiv-Setup & öffentliche Endpunkte
+
+| Komponente | Produktions-URL | Hinweise |
+|------------|-----------------|----------|
+| Admin & Client Frontend | `https://translate.smart-village.solutions` | Single-Page-App mit Admin-Startseite (`/admin`) und Client-Deeplinks (`/join/{sessionId}`); dient zugleich als Reverse-Proxy für API-Aufrufe unter `/api/*`. |
+| REST & WebSocket API | `https://ssf.smart-village.solutions` | FastAPI-Gateway; WebSocket-Einstieg `wss://ssf.smart-village.solutions/ws/{sessionId}/{clientType}`. Alle Endpunkte identisch auch via Frontend-Host erreichbar. |
+| Monitoring (Prometheus) | `https://prometheus-ssf.smart-village.solutions` | Read-Only Zugriff auf Prometheus UI und Metriken (`/graph`, `/alerts`). |
+| Monitoring (Grafana) | `https://grafana-ssf.smart-village.solutions` | Dashboard-Zugang; Standard-Credentials `admin`/`admin` (nach Erstlogin ändern). |
+| TLS & Routing | `https://translate.smart-village.solutions`, `https://ssf.smart-village.solutions` | Traefik verwaltet Zertifikate via Let's Encrypt & verteilt Traffic auf die Docker-Services. |
+
+Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gateway:8000`, `http://asr:8000` usw.). Persistente Sitzungen nutzen den Redis-Container (`redis://redis:6379/0`, Namespace `ssf`).
+
+## 🔐 Backend-Validierung
+
+**Unified Endpoint Logic (`https://ssf.smart-village.solutions/api/session/{id}/message`):**
 - **Content-Type Detection:** Automatische Erkennung von Audio vs. Text
 - **Request-Schema-Validation:** Pydantic-Modelle für beide Input-Typen
 - **Pipeline-Routing:** Intelligente Weiterleitung basierend auf Input-Format
@@ -28,17 +41,17 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 
 **Unified Response Format:**
 - **Konsistente Struktur:** Beide Input-Modi verwenden identisches Response-Schema
-- **Pipeline-Metadata:** Input-Typ, verwendete Services, Verarbeitungszeititoring und Wartung
+- **Pipeline-Metadata:** Input-Typ, verwendete Services, Verarbeitungszeit sowie Hinweise für Monitoring und Wartung
 
 ## 🔧 Komponenten-Architektur
 
 ### **Frontend Layer**
 
-**Admin Frontend (Port: 5173)** - Deutsche Verwaltungsoberfläche
+**Admin Frontend** *(Prod: `https://translate.smart-village.solutions/admin`, Dev: `http://localhost:5173`)* - Deutsche Verwaltungsoberfläche
 - Session Management: UUID-basierte Session erstellen, Client-URL anzeigen, Status überwachen
 - Voice Interface: Deutsch sprechen, Übersetzungen hören, Chat-History
 
-**Client Frontend (Port: 5174)** - Mehrsprachige Bürgeroberfläche
+**Client Frontend** *(Prod: `https://translate.smart-village.solutions/join/{sessionId}` , Dev: `http://localhost:5174`)* - Mehrsprachige Bürgeroberfläche
 - URL-Routing: Session-UUID aus URL extrahieren, Session-Gültigkeit prüfen
 - Language Selection: Sprache aus 100+ Optionen auswählen, Session aktivieren
 - Voice Interface: In Muttersprache sprechen, deutsche Übersetzung hören, Chat-History
@@ -47,38 +60,37 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 
 ### **Backend Layer**
 
-**API Gateway (Port: 8000)** - Zentrale Orchestrierung
+**API Gateway** *(Prod: `https://ssf.smart-village.solutions`, Dev: `http://localhost:8000`)* - Zentrale Orchestrierung
 - Session Management: UUID-basierte Session-Erstellung, Client-Sprachauswahl-Integration, Status-Tracking und Timeouts, WebSocket-Koordination
 - Unified Input Processing: Content-Type-basierte Audio/Text-Erkennung über einheitlichen `/message` Endpunkt
 - Pipeline Orchestration: Audio-Pipeline (ASR → Translation → TTS) oder Text-Pipeline (Translation → TTS), Request-Routing an Mikroservices, Error-Handling und Retry-Logic, Response-Aggregation
 
 ### **Microservices Layer**
 
-**ASR Service (Port: 8001)** - Spracherkennung
+**ASR Service** *(Interner Host: `http://asr:8000`, Port nach außen via Traefik nicht freigegeben)* - Spracherkennung
 - Whisper Models: Mehrsprachig, GPU-optimiert
 - Audio Processing: Format Detection, Normalisierung, Quality Enhancement
 
-**Translation Service (Port: 8002)** - Textübersetzung
+**Translation Service** *(Interner Host: `http://translation:8000`)* - Textübersetzung
 - M2M100 Model: 100+ Sprachen, bidirektional, GPU-beschleunigt
 - Text Processing: Chunking, Romanisierung, Error Recovery
 
-**TTS Service (Port: 8003)** - Sprachsynthese
+**TTS Service** *(Interner Host: `http://tts:8000`)* - Sprachsynthese
 - Coqui-TTS Models: Hochqualitäts-Stimmen, europäische Sprachen
 - HuggingFace MMS-TTS: 1000+ Sprachen, Romanisierung, Auto-Fallback
 
 ### **Infrastructure Layer**
 
-**Load Balancer (Traefik):** SSL/TLS, Routing, Health Checks
+**Load Balancer (Traefik):** Terminiert TLS für `translate.smart-village.solutions` und `ssf.smart-village.solutions`, verwaltet Routing-Regeln und Health Checks.
 
-**Container Orchestration (Docker Compose):** Service Discovery, GPU-Support, Auto-Restart
+**Container Orchestration (Docker Compose):** Service Discovery, GPU-Support (NVIDIA Runtime), Auto-Restart
 
-**Session Storage (Redis/Memory):** Session State, Message Cache, Timeout Management
+**Session Storage (Redis/Memory):** Session State, Message Cache, Timeout Management (`redis://redis:6379/0`, Namespace `ssf`)
 
 **NVIDIA GPU:** CUDA 13.0, Shared Memory, Multi-Service Support
 
-**Monitoring & Logging:**
-- Prometheus: Metriken-Sammlung, Performance-Tracking, Resource-Monitoring
-- Grafana: Dashboard-Anzeige, Alerting, Trend-Analyse
+- Prometheus: Metriken-Sammlung, Performance-Tracking, Resource-Monitoring (`https://prometheus-ssf.smart-village.solutions`)
+- Grafana: Dashboard-Anzeige, Alerting, Trend-Analyse (`https://grafana-ssf.smart-village.solutions`)
 - Application Logs: Structured Logging, Error Aggregation, Audit Trail
 
 ## 🔄 Datenfluss-Architektur
@@ -88,7 +100,7 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 **Single-Session-Regel:** Es darf immer nur eine aktive Session pro Admin geben.
 
 **Workflow:**
-1. **Session-Cleanup:** Admin Frontend sendet POST-Request an /api/admin/session/create
+1. **Session-Cleanup:** Admin Frontend sendet POST-Request an `https://ssf.smart-village.solutions/api/admin/session/create`
 2. **Existing Session Termination:** API Gateway beendet automatisch alle bestehenden Admin-Sessions
    - Aktive WebSocket-Verbindungen werden geschlossen
    - Client-Benutzer erhalten Disconnect-Notification: "Session wurde vom Administrator beendet"
@@ -99,7 +111,7 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 5. URL wird dem Kunden gezeigt oder geteilt
 6. Client ruft URL direkt auf (/join/{session_id})
 7. Client Frontend lädt verfügbare Sprachen und zeigt Sprachauswahl
-8. Client wählt Sprache und sendet POST-Request an /api/customer/session/activate
+8. Client wählt Sprache und sendet POST-Request an `https://ssf.smart-village.solutions/api/customer/session/activate`
 9. Session wird mit gewählter Kundensprache aktiviert (Admin spricht immer Deutsch)
 10. Beide Clients erhalten Bestätigung: Session ist aktiv und bereit für Kommunikation
 
@@ -109,7 +121,7 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 1. **Input-Optionen:** Benutzer (Admin oder Client) wählt zwischen:
    - **Audio-Aufnahme:** WebRTC/MediaRecorder (max. 20 Sekunden)
    - **Text-Eingabe:** Direkte Texteingabe über Eingabefeld
-2. **Einheitlicher Endpunkt:** Frontend sendet POST-Request an `/api/session/{id}/message`
+2. **Einheitlicher Endpunkt:** Frontend sendet POST-Request an `https://ssf.smart-village.solutions/api/session/{id}/message`
    - **Audio-Input:** Multipart-Upload mit WAV-Datei + Metadaten
    - **Text-Input:** JSON mit Text-Inhalt + Input-Type-Flag
 3. **API Gateway Auto-Detection:** Content-Type-basierte Input-Erkennung
@@ -155,7 +167,7 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 
 ## 🌐 Frontend-Architektur
 
-### **Admin Frontend (Port: 5173)**
+### **Admin Frontend** *(Prod: `https://translate.smart-village.solutions/admin`, Dev: `http://localhost:5173`)*
 
 **Technologie-Stack:**
 - React 18 + TypeScript für moderne Komponentenentwicklung
@@ -192,7 +204,7 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 - **Statistics:** Nutzungsstatistiken pro Session
 - **Settings:** Konfiguration und Einstellungen
 
-### **Client Frontend (Port: 5174)**
+### **Client Frontend** *(Prod: `https://translate.smart-village.solutions/join/{sessionId}`, Dev: `http://localhost:5174`)*
 
 **Technologie-Stack:**
 - React 18 + TypeScript für moderne Komponentenentwicklung
@@ -232,7 +244,7 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 
 ## ⚙️ Backend-Architektur
 
-### **API Gateway (Port: 8000)**
+### **API Gateway** *(Prod: `https://ssf.smart-village.solutions`, Dev: `http://localhost:8000`)*
 
 **Technologie-Stack:**
 - FastAPI + Uvicorn für moderne Python-API-Entwicklung
@@ -244,7 +256,7 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 
 **API-Endpunkte:**
 
-**Unified Message Endpoint:** `POST /api/session/{session_id}/message`
+**Unified Message Endpoint:** `POST https://ssf.smart-village.solutions/api/session/{session_id}/message`
 ```json
 // Audio-Input (multipart/form-data)
 {
@@ -269,7 +281,7 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
   "session_id": "uuid",
   "original_text": "Hallo, wie kann ich helfen?",
   "translated_text": "Hello, how can I help?",
-  "audio_url": "/api/audio/uuid.wav",
+  "audio_url": "https://ssf.smart-village.solutions/api/audio/uuid.wav",
   "input_type": "audio|text",
   "processing_time": 1.2,
   "timestamp": "2025-09-28T10:30:01Z"
@@ -319,7 +331,7 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 - rate_limiting.py: Request-Rate-Begrenzung
 - authentication.py: Zukünftige Auth-Integration
 
-### **ASR Service (Port: 8001)**
+### **ASR Service** *(Interner Host: `http://asr:8000`)*
 
 **Whisper-basierte Spracherkennung:**
 
@@ -333,12 +345,12 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 - language_detection: Automatische Spracherkennung
 - confidence_scoring: Qualitätsbewertung der Transkription
 
-**API-Endpunkte:**
-- /transcribe: Hauptendpunkt für Audio-zu-Text-Konvertierung
-- /languages: Unterstützte Sprachen abrufen
-- /health: Service-Status und GPU-Informationen
+**API-Endpunkte (intern):**
+- `http://asr:8000/transcribe`: Hauptendpunkt für Audio-zu-Text-Konvertierung
+- `http://asr:8000/languages`: Unterstützte Sprachen abrufen
+- `http://asr:8000/health`: Service-Status und GPU-Informationen
 
-### **Translation Service (Port: 8002)**
+### **Translation Service** *(Interner Host: `http://translation:8000`)*
 
 **M2M100-basierte Übersetzung:**
 
@@ -351,12 +363,12 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 - romanization: uroman für TTS-Vorbereitung
 - quality_assessment: Übersetzungsqualität bewerten
 
-**API-Endpunkte:**
-- /translate: Text-zu-Text-Übersetzung
-- /languages: 100+ unterstützte Sprachpaare
-- /health: Model-Status und Performance-Metriken
+**API-Endpunkte (intern):**
+- `http://translation:8000/translate`: Text-zu-Text-Übersetzung
+- `http://translation:8000/languages`: 100+ unterstützte Sprachpaare
+- `http://translation:8000/health`: Model-Status und Performance-Metriken
 
-### **TTS Service (Port: 8003)**
+### **TTS Service** *(Interner Host: `http://tts:8000`)*
 
 **Multi-Provider TTS-System:**
 
@@ -377,10 +389,10 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 - audio_optimization: Qualität, Lautstärke, Tempo anpassen
 - format_conversion: WAV-Output-Standardisierung
 
-**API-Endpunkte:**
-- /synthesize: Text-zu-Audio-Konvertierung (WAV)
-- /voices: Verfügbare Stimmen pro Sprache
-- /health: TTS-Model-Status und Verfügbarkeit
+**API-Endpunkte (intern):**
+- `http://tts:8000/synthesize`: Text-zu-Audio-Konvertierung (WAV)
+- `http://tts:8000/voices`: Verfügbare Stimmen pro Sprache
+- `http://tts:8000/health`: TTS-Model-Status und Verfügbarkeit
 
 ## 📊 Monitoring & Logging-Architektur
 
