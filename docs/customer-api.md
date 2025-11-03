@@ -34,7 +34,7 @@ If session is already active:
 ```json
 {
   "session_id": "ABC12345",
-  "status": "active", 
+  "status": "active",
   "customer_language": "en",
   "message": "Session ABC12345 ist bereits aktiv",
   "timestamp": "2025-11-03T10:30:00Z"
@@ -158,10 +158,10 @@ if (status.can_send_messages) {
 ```typescript
 try {
   const response = await fetch('/api/customer/session/activate', { ... });
-  
+
   if (!response.ok) {
     const error = await response.json();
-    
+
     switch (response.status) {
       case 404:
         // Session expired or invalid QR code
