@@ -78,9 +78,14 @@ services:
       - ollama
     labels:
       - "traefik.enable=true"
+      # Main HTTP router with WebSocket support
       - "traefik.http.routers.api_gateway.rule=Host(`ssf.smart-village.solutions`)"
       - "traefik.http.routers.api_gateway.entrypoints=websecure"
       - "traefik.http.routers.api_gateway.tls.certresolver=le"
+      - "traefik.http.services.api_gateway.loadbalancer.server.port=8000"
+      # Configure service to handle WebSocket upgrades
+      - "traefik.http.services.api_gateway.loadbalancer.passhostheader=true"
+      - "traefik.http.middlewares.websocket-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
     restart: always
 
   ollama:

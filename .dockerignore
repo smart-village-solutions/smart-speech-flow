@@ -8,6 +8,39 @@ __pycache__/
 *.mp3
 *.wav
 output.wav
+# Virtual environments
+.venv/
+*/.venv/
+env/
+*/env/
+venv/
+*/venv/
+# Node modules
+node_modules/
+*/node_modules/
+# Docker files
+Dockerfile*
+docker-compose*.yml
+# IDE files
+.vscode/
+.idea/
+# OS files
+.DS_Store
+Thumbs.db
+# Cache directories
+.cache/
+*/.cache/
+__pycache__/
+*/__pycache__/
+# Test files
+.pytest_cache/
+*/.pytest_cache/
+# Large data files
+*.model
+*.bin
+*.safetensors
+models/
+*/models/
 sample.wav
 models/
 letsencrypt/
