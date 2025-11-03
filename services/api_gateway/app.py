@@ -136,15 +136,21 @@ else:
 
 # === Routen-Import ===
 # Importiert alle FastAPI-Endpunkte zentral aus dem routes-Paket
-from .routes import index, upload, pipeline, metrics, health, session, admin, circuit_breaker
+from .routes import index, upload, pipeline, metrics, health, session, admin, customer, circuit_breaker
 from services.api_gateway.utils.health_utils import get_health_status_html
 from . import websocket
 
 # === Session-Routen registrieren ===
 app.include_router(session.router, prefix="/api", tags=["sessions"])
 app.include_router(admin.router, tags=["admin"])
+app.include_router(customer.router, tags=["customer"])
 app.include_router(websocket.router, tags=["websocket"])
 app.include_router(circuit_breaker.router, prefix="/api", tags=["circuit-breaker"])
+
+@app.get("/languages", tags=["public"], summary="List supported languages")
+async def list_supported_languages():
+    """Expose supported languages without the /api prefix for the public site."""
+    return await session.get_supported_languages()
 
 # === Lokaler Start ===
 # Startet die App direkt mit "python app.py" (für Entwicklung und Debugging)
