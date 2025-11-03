@@ -67,6 +67,7 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - REDIS_NAMESPACE=ssf
+      - CLIENT_BASE_URL=https://translate.smart-village.solutions
       - LLM_REFINEMENT_ENABLED=${LLM_REFINEMENT_ENABLED:-true}
       - LLM_REFINEMENT_MODEL=${LLM_REFINEMENT_MODEL:-gpt-oss:20b}
       - LLM_REFINEMENT_ENDPOINT=${LLM_REFINEMENT_ENDPOINT:-http://ollama:11434}

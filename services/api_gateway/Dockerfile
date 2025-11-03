@@ -9,8 +9,10 @@ COPY services/api_gateway/requirements.txt ./
 RUN apt-get update && apt-get install -y curl
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Kopiere nur die benötigten Service-Dateien
-COPY services/ /app/services/
+# Kopiere nur den API Gateway Service
+COPY services/api_gateway/ /app/services/api_gateway/
+# Kopiere geteilte Service-Initialisierung falls benötigt
+COPY services/__init__.py /app/services/__init__.py
 # Kopiere den examples-Ordner
 COPY examples/ /app/examples/
 

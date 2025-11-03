@@ -49,8 +49,10 @@ class ErrorResponse(BaseModel):
     timestamp: str
 
 def get_client_base_url() -> str:
-    """Client Frontend Base URL - TODO: aus Environment-Variable laden"""
-    return "http://localhost:5174"  # Client Frontend Port
+    """Client Frontend Base URL"""
+    import os
+    # Verwende Environment-Variable oder Fallback auf Production-URL
+    return os.environ.get("CLIENT_BASE_URL", "https://translate.smart-village.solutions")
 
 @router.post("/session/create",
              response_model=SessionCreateResponse,
