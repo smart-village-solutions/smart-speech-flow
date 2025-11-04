@@ -1,0 +1,86 @@
+{
+  "summary": {
+    "total_tests": 9,
+    "passed": 4,
+    "failed": 0,
+    "warnings": 5,
+    "success_rate": 44.44444444444444,
+    "total_duration": 0.015514373779296875
+  },
+  "test_results": [
+    {
+      "name": "API_HEALTH",
+      "description": "Verify API Gateway and services are healthy",
+      "result": "\u2705 PASSED",
+      "duration": "0.01s",
+      "error_message": "",
+      "details": {}
+    },
+    {
+      "name": "SESSION_CREATION",
+      "description": "Create new WebSocket session via API",
+      "result": "\u2705 PASSED",
+      "duration": "0.00s",
+      "error_message": "",
+      "details": {
+        "session_id": "11A8412E"
+      }
+    },
+    {
+      "name": "WEBSOCKET_ADMIN_CONNECTION",
+      "description": "Establish WebSocket connection as admin",
+      "result": "\u26a0\ufe0f WARNING",
+      "duration": "0.00s",
+      "error_message": "<coroutine object WebSocketIntegrationTester.test_websocket_connection at 0x74f2ab9ded40>",
+      "details": {}
+    },
+    {
+      "name": "WEBSOCKET_CUSTOMER_CONNECTION",
+      "description": "Establish WebSocket connection as customer",
+      "result": "\u26a0\ufe0f WARNING",
+      "duration": "0.00s",
+      "error_message": "<coroutine object WebSocketIntegrationTester.test_websocket_connection at 0x74f2ab9ded40>",
+      "details": {}
+    },
+    {
+      "name": "BIDIRECTIONAL_COMMUNICATION",
+      "description": "Test message flow between admin and customer",
+      "result": "\u26a0\ufe0f WARNING",
+      "duration": "0.00s",
+      "error_message": "<coroutine object WebSocketIntegrationTester.test_bidirectional_communication at 0x74f2abbf70f0>",
+      "details": {}
+    },
+    {
+      "name": "FALLBACK_ACTIVATION",
+      "description": "Test automatic fallback to polling system",
+      "result": "\u26a0\ufe0f WARNING",
+      "duration": "0.00s",
+      "error_message": "<coroutine object WebSocketIntegrationTester.test_fallback_activation at 0x74f2ab9ded40>",
+      "details": {}
+    },
+    {
+      "name": "SESSION_CLEANUP",
+      "description": "Verify session cleanup and timeout handling",
+      "result": "\u26a0\ufe0f WARNING",
+      "duration": "0.00s",
+      "error_message": "<coroutine object WebSocketIntegrationTester.test_session_cleanup at 0x74f2aba4a460>",
+      "details": {}
+    },
+    {
+      "name": "MONITORING_ENDPOINTS",
+      "description": "Verify WebSocket monitoring APIs",
+      "result": "\u2705 PASSED",
+      "duration": "0.00s",
+      "error_message": "",
+      "details": {}
+    },
+    {
+      "name": "CORS_HEADERS",
+      "description": "Validate CORS configuration",
+      "result": "\u2705 PASSED",
+      "duration": "0.00s",
+      "error_message": "",
+      "details": {}
+    }
+  ]
+}

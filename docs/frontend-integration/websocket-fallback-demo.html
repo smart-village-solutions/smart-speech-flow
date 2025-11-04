@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSF WebSocket Fallback Demo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+
+        .section h3 {
+            margin-top: 0;
+            color: #2c5530;
+            border-bottom: 2px solid #4a7c59;
+            padding-bottom: 10px;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            background: #4a7c59;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background: #3d6147;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .danger {
+            background: #d32f2f !important;
+        }
+
+        .danger:hover {
+            background: #b71c1c !important;
+        }
+
+        .warning {
+            background: #f57c00 !important;
+        }
+
+        .warning:hover {
+            background: #e65100 !important;
+        }
+
+        .status {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .status-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #4a7c59;
+        }
+
+        .status-item label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .status-value {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .connected { border-left-color: #4caf50; }
+        .connecting { border-left-color: #ff9800; }
+        .polling { border-left-color: #2196f3; }
+        .disconnected { border-left-color: #f44336; }
+
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+
+        .log-timestamp {
+            color: #569cd6;
+        }
+
+        .log-level-info { color: #4fc3f7; }
+        .log-level-warn { color: #ffb74d; }
+        .log-level-error { color: #f48fb1; }
+        .log-level-success { color: #81c784; }
+
+        .message-test {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 15px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 100px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            resize: vertical;
+        }
+
+        .received-messages {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .message-item {
+            background: #e8f5e8;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .notification-banner {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            max-width: 400px;
+            padding: 15px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            z-index: 1000;
+            display: none;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .notification-fallback {
+            background: #2196f3;
+        }
+
+        .notification-recovery {
+            background: #4caf50;
+        }
+
+        .notification-error {
+            background: #f44336;
+        }
+
+        .compatibility-test {
+            background: #e3f2fd;
+            border: 1px solid #bbdefb;
+        }
+
+        .test-result {
+            display: grid;
+            grid-template-columns: 2fr 1fr 3fr;
+            gap: 15px;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .test-result:last-child {
+            border-bottom: none;
+        }
+
+        .test-status {
+            font-weight: bold;
+        }
+
+        .test-pass { color: #4caf50; }
+        .test-fail { color: #f44336; }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .advanced-options {
+            display: none;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .show-advanced {
+            text-decoration: underline;
+            color: #4a7c59;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .error-simulation {
+            background: #fff3e0;
+            border: 1px solid #ffcc02;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 SSF WebSocket Fallback Demo</h1>
+
+        <!-- Compatibility Test Section -->
+        <div class="section compatibility-test">
+            <h3>🔍 Kompatibilitätstest</h3>
+            <p>Teste die Browserkompatibilität und Serververfügbarkeit:</p>
+            <div class="controls">
+                <button onclick="runCompatibilityTest()">Kompatibilität testen</button>
+            </div>
+            <div id="compatibility-results"></div>
+        </div>
+
+        <!-- Connection Configuration -->
+        <div class="section">
+            <h3>⚙️ Verbindungseinstellungen</h3>
+            <div class="input-group">
+                <label for="session-id">Session ID:</label>
+                <input type="text" id="session-id" value="demo-session-123" placeholder="Eindeutige Session ID">
+            </div>
+            <div class="input-group">
+                <label for="client-type">Client-Typ:</label>
+                <select id="client-type" style="width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="customer">Customer</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label for="base-url">Server URL:</label>
+                <input type="text" id="base-url" value="http://localhost:8000" placeholder="http://localhost:8000">
+            </div>
+
+            <span class="show-advanced" onclick="toggleAdvanced()">📋 Erweiterte Optionen anzeigen</span>
+
+            <div class="advanced-options" id="advanced-options">
+                <div class="input-group">
+                    <label>
+                        <input type="checkbox" id="enable-fallback" checked> Automatisches Fallback aktiviert
+                    </label>
+                </div>
+                <div class="input-group">
+                    <label>
+                        <input type="checkbox" id="enable-recovery" checked> Automatische Wiederherstellung aktiviert
+                    </label>
+                </div>
+                <div class="input-group">
+                    <label>
+                        <input type="checkbox" id="enable-notifications" checked> Benutzerbenachrichtigungen aktiviert
+                    </label>
+                </div>
+                <div class="input-group">
+                    <label>
+                        <input type="checkbox" id="debug-mode" checked> Debug-Modus aktiviert
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Connection Controls -->
+        <div class="section">
+            <h3>🔌 Verbindungssteuerung</h3>
+            <div class="controls">
+                <button id="connect-btn" onclick="connectClient()">Verbinden</button>
+                <button id="disconnect-btn" onclick="disconnectClient()" disabled>Trennen</button>
+                <button class="warning" onclick="forceFallback()">Fallback erzwingen</button>
+                <button onclick="clearLogs()">Logs löschen</button>
+            </div>
+        </div>
+
+        <!-- Connection Status -->
+        <div class="section">
+            <h3>📊 Verbindungsstatus</h3>
+            <div class="status" id="status-display">
+                <div class="status-item">
+                    <label>Verbindungszustand:</label>
+                    <div class="status-value" id="connection-state">disconnected</div>
+                </div>
+                <div class="status-item">
+                    <label>WebSocket Status:</label>
+                    <div class="status-value" id="websocket-status">Nicht verbunden</div>
+                </div>
+                <div class="status-item">
+                    <label>Polling Status:</label>
+                    <div class="status-value" id="polling-status">Inaktiv</div>
+                </div>
+                <div class="status-item">
+                    <label>Wiederholungsversuche:</label>
+                    <div class="status-value" id="retry-count">0</div>
+                </div>
+                <div class="status-item">
+                    <label>Warteschlagennachrichten:</label>
+                    <div class="status-value" id="queued-messages">0</div>
+                </div>
+                <div class="status-item">
+                    <label>Polling ID:</label>
+                    <div class="status-value" id="polling-id">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error Simulation -->
+        <div class="section error-simulation">
+            <h3>⚠️ Fehlersimulation</h3>
+            <p>Simuliere verschiedene Verbindungsfehler um Fallback-Verhalten zu testen:</p>
+            <div class="controls">
+                <button class="danger" onclick="simulateNetworkError()">Netzwerkfehler</button>
+                <button class="danger" onclick="simulateCorsError()">CORS-Fehler</button>
+                <button class="danger" onclick="simulateHandshakeError()">Handshake-Fehler</button>
+                <button class="warning" onclick="simulateServerFallback()">Server Fallback</button>
+            </div>
+            <p><small>⚠️ Diese Funktionen sind nur in der Demo verfügbar und simulieren Fehler für Testzwecke.</small></p>
+        </div>
+
+        <!-- Message Testing -->
+        <div class="section">
+            <h3>💬 Nachrichten testen</h3>
+            <div class="message-test">
+                <div>
+                    <h4>Nachricht senden:</h4>
+                    <textarea id="message-input" placeholder="Gebe eine JSON-Nachricht ein, z.B.:
+{
+  &quot;type&quot;: &quot;user_message&quot;,
+  &quot;content&quot;: &quot;Hallo Server!&quot;,
+  &quot;timestamp&quot;: &quot;2024-01-15T10:30:00Z&quot;
+}"></textarea>
+                    <button onclick="sendMessage()" style="margin-top: 10px; width: 100%;">Nachricht senden</button>
+                </div>
+                <div>
+                    <h4>Empfangene Nachrichten:</h4>
+                    <div class="received-messages" id="received-messages">
+                        <p style="color: #666; text-align: center;">Keine Nachrichten empfangen</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Event Log -->
+        <div class="section">
+            <h3>📝 Event-Log</h3>
+            <div class="log" id="event-log">
+                <div class="log-entry">
+                    <span class="log-timestamp">[System]</span>
+                    <span class="log-level-info">Demo bereit. Verbinde dich mit dem Server um zu beginnen.</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Banner -->
+    <div class="notification-banner" id="notification-banner"></div>
+
+    <script src="ssf-websocket-client-with-fallback.js"></script>
+    <script>
+        let client = null;
+        let messageCounter = 0;
+
+        // Initialize demo
+        document.addEventListener('DOMContentLoaded', function() {
+            log('info', 'Demo initialisiert');
+            updateStatus();
+
+            // Auto-fill default message
+            document.getElementById('message-input').value = JSON.stringify({
+                type: 'user_message',
+                content: 'Hallo vom Frontend!',
+                timestamp: new Date().toISOString()
+            }, null, 2);
+        });
+
+        // Toggle advanced options
+        function toggleAdvanced() {
+            const options = document.getElementById('advanced-options');
+            const toggle = document.querySelector('.show-advanced');
+
+            if (options.style.display === 'none' || !options.style.display) {
+                options.style.display = 'block';
+                toggle.textContent = '📋 Erweiterte Optionen ausblenden';
+            } else {
+                options.style.display = 'none';
+                toggle.textContent = '📋 Erweiterte Optionen anzeigen';
+            }
+        }
+
+        // Run compatibility test
+        async function runCompatibilityTest() {
+            log('info', 'Starte Kompatibilitätstest...');
+
+            try {
+                const baseUrl = document.getElementById('base-url').value;
+                const result = await SSFWebSocketClientWithFallback.testCompatibility(baseUrl);
+
+                displayCompatibilityResults(result);
+                log('success', `Kompatibilitätstest abgeschlossen - ${result.compatible ? 'Kompatibel' : 'Probleme erkannt'}`);
+
+            } catch (error) {
+                log('error', `Kompatibilitätstest fehlgeschlagen: ${error.message}`);
+            }
+        }
+
+        // Display compatibility results
+        function displayCompatibilityResults(result) {
+            const container = document.getElementById('compatibility-results');
+
+            let html = '<h4>Testergebnisse:</h4>';
+
+            // Overall result
+            html += `<div class="test-result">
+                <strong>Gesamt-Kompatibilität:</strong>
+                <span class="test-status ${result.compatible ? 'test-pass' : 'test-fail'}">
+                    ${result.compatible ? '✅ Kompatibel' : '❌ Probleme'}
+                </span>
+                <span>${result.compatible ? 'Alle Funktionen verfügbar' : 'Fallback erforderlich'}</span>
+            </div>`;
+
+            // Individual tests
+            for (const [test, passed] of Object.entries(result.tests)) {
+                const testName = {
+                    'websocket_support': 'WebSocket Unterstützung',
+                    'fetch_support': 'Fetch API Unterstützung',
+                    'json_support': 'JSON Unterstützung',
+                    'promise_support': 'Promise Unterstützung',
+                    'origin_header': 'Origin Header',
+                    'cors_preflight': 'CORS Preflight'
+                }[test] || test;
+
+                html += `<div class="test-result">
+                    <span>${testName}:</span>
+                    <span class="test-status ${passed ? 'test-pass' : 'test-fail'}">
+                        ${passed ? '✅' : '❌'}
+                    </span>
+                    <span>${passed ? 'Verfügbar' : 'Nicht verfügbar'}</span>
+                </div>`;
+            }
+
+            // Recommendations
+            if (result.recommendations.length > 0) {
+                html += '<h4>Empfehlungen:</h4><ul>';
+                result.recommendations.forEach(rec => {
+                    html += `<li>${rec}</li>`;
+                });
+                html += '</ul>';
+            }
+
+            container.innerHTML = html;
+        }
+
+        // Connect client
+        async function connectClient() {
+            if (client) {
+                log('warn', 'Client bereits verbunden');
+                return;
+            }
+
+            const sessionId = document.getElementById('session-id').value;
+            const clientType = document.getElementById('client-type').value;
+            const baseUrl = document.getElementById('base-url').value;
+
+            const options = {
+                baseUrl: baseUrl,
+                enableFallback: document.getElementById('enable-fallback').checked,
+                enableAutoRecovery: document.getElementById('enable-recovery').checked,
+                userNotifications: document.getElementById('enable-notifications').checked,
+                debug: document.getElementById('debug-mode').checked,
+                maxRetries: 3,
+                retryDelay: 2000,
+                pollingInterval: 5000,
+                recoveryCheckInterval: 30000
+            };
+
+            try {
+                client = new SSFWebSocketClientWithFallback(sessionId, clientType, options);
+
+                // Register event handlers
+                client.addEventListener('open', (event) => {
+                    log('success', 'WebSocket Verbindung hergestellt');
+                    updateButtons(true);
+                    updateStatus();
+                });
+
+                client.addEventListener('message', (event) => {
+                    const data = JSON.parse(event.data);
+                    log('info', `Nachricht empfangen: ${data.type || 'unknown'}`);
+                    displayReceivedMessage(data);
+                });
+
+                client.addEventListener('close', (event) => {
+                    log('warn', `WebSocket Verbindung geschlossen: ${event.code}`);
+                    updateStatus();
+                });
+
+                client.addEventListener('error', (event) => {
+                    log('error', `WebSocket Fehler: ${event.type} - ${event.error?.message || 'Unbekannter Fehler'}`);
+                    updateStatus();
+                });
+
+                client.addEventListener('fallback', (event) => {
+                    log('warn', `Fallback aktiviert: ${event.type} - ${event.reason}`);
+                    showNotification('fallback', `Fallback-Modus aktiviert: ${event.reason}`);
+                    updateStatus();
+                });
+
+                client.addEventListener('recovery', (event) => {
+                    log('success', `WebSocket Wiederherstellung: ${event.type}`);
+                    showNotification('recovery', 'WebSocket Verbindung wiederhergestellt');
+                    updateStatus();
+                });
+
+                client.addEventListener('notification', (event) => {
+                    log('info', `Benutzerbenachrichtigung: ${event.message}`);
+                    showNotification('fallback', event.message);
+                });
+
+                await client.connect();
+
+                log('info', 'Verbindungsaufbau gestartet...');
+                updateButtons(false, true);
+
+            } catch (error) {
+                log('error', `Verbindung fehlgeschlagen: ${error.message}`);
+                client = null;
+                updateButtons(false);
+            }
+        }
+
+        // Disconnect client
+        function disconnectClient() {
+            if (client) {
+                client.close();
+                client = null;
+                log('info', 'Verbindung getrennt');
+                updateButtons(false);
+                updateStatus();
+            }
+        }
+
+        // Force fallback
+        async function forceFallback() {
+            if (!client) {
+                log('warn', 'Kein Client verbunden');
+                return;
+            }
+
+            try {
+                await client.forceFallback('manual_fallback');
+                log('info', 'Fallback manuell aktiviert');
+            } catch (error) {
+                log('error', `Fehler beim Fallback: ${error.message}`);
+            }
+        }
+
+        // Send message
+        async function sendMessage() {
+            if (!client) {
+                log('warn', 'Kein Client verbunden');
+                return;
+            }
+
+            const messageText = document.getElementById('message-input').value.trim();
+            if (!messageText) {
+                log('warn', 'Nachricht ist leer');
+                return;
+            }
+
+            try {
+                const message = JSON.parse(messageText);
+                message.demo_id = ++messageCounter;
+
+                await client.send(message);
+                log('info', `Nachricht gesendet: ${message.type || 'unknown'} (#${message.demo_id})`);
+
+            } catch (error) {
+                log('error', `Fehler beim Senden: ${error.message}`);
+            }
+        }
+
+        // Simulate errors (demo only)
+        function simulateNetworkError() {
+            log('warn', 'Simuliere Netzwerkfehler...');
+            showNotification('error', 'Netzwerkfehler simuliert - Fallback sollte aktiviert werden');
+
+            if (client && client.websocket) {
+                // Simulate network error by closing with specific code
+                client.websocket.close(1006, 'Network error (simulated)');
+            }
+        }
+
+        function simulateCorsError() {
+            log('warn', 'Simuliere CORS-Fehler...');
+            showNotification('error', 'CORS-Fehler simuliert - Fallback sollte sofort aktiviert werden');
+
+            if (client && client.websocket) {
+                // Simulate CORS error
+                const corsError = new Error('CORS origin blocked (simulated)');
+                client._handleConnectionFailure(corsError);
+            }
+        }
+
+        function simulateHandshakeError() {
+            log('warn', 'Simuliere Handshake-Fehler...');
+            showNotification('error', 'WebSocket-Handshake-Fehler simuliert');
+
+            if (client && client.websocket) {
+                client.websocket.close(1002, 'Protocol error (simulated)');
+            }
+        }
+
+        async function simulateServerFallback() {
+            if (!client || !client.websocket || client.websocket.readyState !== WebSocket.OPEN) {
+                log('warn', 'WebSocket muss verbunden sein um Server-Fallback zu simulieren');
+                return;
+            }
+
+            log('warn', 'Simuliere Server-Fallback-Anfrage...');
+
+            const fallbackMessage = {
+                type: 'fallback_activated',
+                polling_id: 'demo-polling-' + Date.now(),
+                fallback_reason: 'server_requested_fallback',
+                message: 'Server hat Fallback-Modus aktiviert (simuliert)',
+                endpoints: {
+                    poll: '/api/websocket/polling/poll',
+                    send: '/api/websocket/polling/send'
+                }
+            };
+
+            // Simulate receiving the message from server
+            client._handleWebSocketMessage(fallbackMessage);
+        }
+
+        // Display received message
+        function displayReceivedMessage(data) {
+            const container = document.getElementById('received-messages');
+
+            // Clear placeholder text
+            if (container.querySelector('p')) {
+                container.innerHTML = '';
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message-item';
+            messageDiv.innerHTML = `
+                <div><strong>Typ:</strong> ${data.type || 'unknown'}</div>
+                <div><strong>Zeit:</strong> ${new Date().toLocaleTimeString()}</div>
+                <div><strong>Daten:</strong> ${JSON.stringify(data, null, 2)}</div>
+            `;
+
+            container.insertBefore(messageDiv, container.firstChild);
+
+            // Keep only last 5 messages
+            while (container.children.length > 5) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        // Update button states
+        function updateButtons(connected = false, connecting = false) {
+            document.getElementById('connect-btn').disabled = connected || connecting;
+            document.getElementById('disconnect-btn').disabled = !connected && !connecting;
+        }
+
+        // Update status display
+        function updateStatus() {
+            const status = client ? client.getStatus() : {
+                connectionState: 'disconnected',
+                isWebSocketConnected: false,
+                isPolling: false,
+                pollingId: null,
+                retryCount: 0,
+                queuedMessages: 0
+            };
+
+            document.getElementById('connection-state').textContent = status.connectionState;
+            document.getElementById('websocket-status').textContent = status.isWebSocketConnected ? 'Verbunden' : 'Nicht verbunden';
+            document.getElementById('polling-status').textContent = status.isPolling ? 'Aktiv' : 'Inaktiv';
+            document.getElementById('retry-count').textContent = status.retryCount;
+            document.getElementById('queued-messages').textContent = status.queuedMessages;
+            document.getElementById('polling-id').textContent = status.pollingId || '-';
+
+            // Update status colors
+            const stateElement = document.getElementById('connection-state').parentElement;
+            stateElement.className = `status-item ${status.connectionState}`;
+        }
+
+        // Show notification
+        function showNotification(type, message) {
+            const banner = document.getElementById('notification-banner');
+
+            banner.className = `notification-banner notification-${type}`;
+            banner.textContent = message;
+            banner.style.display = 'block';
+
+            setTimeout(() => {
+                banner.style.display = 'none';
+            }, 5000);
+        }
+
+        // Clear logs
+        function clearLogs() {
+            document.getElementById('event-log').innerHTML = `
+                <div class="log-entry">
+                    <span class="log-timestamp">[System]</span>
+                    <span class="log-level-info">Logs gelöscht</span>
+                </div>
+            `;
+        }
+
+        // Logging function
+        function log(level, message) {
+            const logContainer = document.getElementById('event-log');
+            const timestamp = new Date().toLocaleTimeString();
+
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.innerHTML = `
+                <span class="log-timestamp">[${timestamp}]</span>
+                <span class="log-level-${level}">${message}</span>
+            `;
+
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+
+            // Keep only last 100 entries
+            while (logContainer.children.length > 100) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+        }
+
+        // Status update interval
+        setInterval(updateStatus, 1000);
+
+        // Auto-reconnect demo (optional)
+        window.addEventListener('beforeunload', () => {
+            if (client) {
+                client.close();
+            }
+        });
+    </script>
+</body>
+</html>

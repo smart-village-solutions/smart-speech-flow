@@ -35,6 +35,28 @@ async def session_timeout_monitor() -> None:
             await asyncio.sleep(60)
 
 
+async def websocket_monitor_task() -> None:
+    """Background Task für WebSocket-Monitoring und Cleanup"""
+    from .websocket_monitor import websocket_monitor
+
+    try:
+        print("🚀 WebSocket-Monitoring gestartet")
+        await websocket_monitor.periodic_cleanup()
+    except Exception as e:
+        print(f"⚠️ Fehler im WebSocket-Monitor: {e}")
+
+
+async def websocket_fallback_task() -> None:
+    """Background Task für WebSocket-Fallback-System"""
+    from .websocket_fallback import fallback_manager
+
+    try:
+        print("🔄 WebSocket-Fallback-System gestartet")
+        await fallback_manager.periodic_cleanup()
+    except Exception as e:
+        print(f"⚠️ Fehler im WebSocket-Fallback-System: {e}")
+
+
 async def circuit_breaker_monitor() -> None:
     """Background Task für Circuit Breaker Health Monitoring"""
     from .circuit_breaker_client import circuit_breaker_client
@@ -63,6 +85,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Startup: Background Tasks starten
     timeout_task = asyncio.create_task(session_timeout_monitor())
     circuit_breaker_task = asyncio.create_task(circuit_breaker_monitor())
+    websocket_monitor_bg_task = asyncio.create_task(websocket_monitor_task())
+    websocket_fallback_bg_task = asyncio.create_task(websocket_fallback_task())
 
     try:
         yield None
@@ -72,6 +96,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         timeout_task.cancel()
         circuit_breaker_task.cancel()
+        websocket_monitor_bg_task.cancel()
+        websocket_fallback_bg_task.cancel()
 
         # Circuit Breaker Health Monitoring stoppen
         try:
@@ -80,7 +106,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             print(f"⚠️ Fehler beim Stoppen des Circuit Breaker Monitoring: {e}")
 
         # Tasks aufräumen
-        for task in [timeout_task, circuit_breaker_task]:
+        for task in [
+            timeout_task,
+            circuit_breaker_task,
+            websocket_monitor_bg_task,
+            websocket_fallback_bg_task,
+        ]:
             try:
                 await task
             except asyncio.CancelledError:
@@ -90,15 +121,74 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 # === App-Initialisierung ===
 app = FastAPI(title="API Gateway", lifespan=lifespan)
 
+
 # === CORS Middleware ===
-# Erlaubt Zugriffe von Figma-Subdomains und der Produktiv-Domain
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"https://.*\.figma\.site|https://translate\.smart-village\.solutions",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Enhanced CORS Configuration for WebSocket Support
+def setup_cors_for_websockets():
+    """Configure CORS for both REST API and WebSocket connections"""
+    # Development vs Production CORS
+    development_origins = os.environ.get("DEVELOPMENT_CORS_ORIGINS", "").split(",")
+    development_origins = [
+        origin.strip() for origin in development_origins if origin.strip()
+    ]
+
+    production_pattern = (
+        r"https://.*\.figma\.site|https://translate\.smart-village\.solutions"
+    )
+    environment = os.environ.get("ENVIRONMENT", "production")
+
+    if environment == "development":
+        # Allow localhost and configured development origins
+        allow_origins = development_origins + [
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://localhost:8080",
+            "https://localhost:3000",
+            "https://localhost:3001",
+            "https://localhost:8080",
+        ]
+        allow_origin_regex = None
+    else:
+        # Production: strict validation
+        allow_origins = []
+        allow_origin_regex = production_pattern
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allow_origins,
+        allow_origin_regex=allow_origin_regex,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
+        allow_headers=[
+            # Standard headers
+            "Content-Type",
+            "Authorization",
+            "Accept",
+            "Origin",
+            "User-Agent",
+            "Cache-Control",
+            "Pragma",
+            # WebSocket-specific headers
+            "Upgrade",
+            "Connection",
+            "Sec-WebSocket-Key",
+            "Sec-WebSocket-Version",
+            "Sec-WebSocket-Protocol",
+            "Sec-WebSocket-Extensions",
+        ],
+        expose_headers=[
+            "Content-Length",
+            "Content-Type",
+            # WebSocket upgrade response headers
+            "Upgrade",
+            "Connection",
+            "Sec-WebSocket-Accept",
+        ],
+    )
+
+
+# Setup CORS with WebSocket support
+setup_cors_for_websockets()
 
 # === Rate Limiting Middleware ===
 app.add_middleware(RateLimitMiddleware)
@@ -139,7 +229,7 @@ else:
         "TTS": "http://localhost:8103/health",
     }
 
-from . import websocket
+from . import websocket, websocket_monitoring_routes, websocket_polling_routes
 
 # === Routen-Import ===
 # Importiert alle FastAPI-Endpunkte zentral aus dem routes-Paket
@@ -149,6 +239,8 @@ from .routes import admin, circuit_breaker, customer, session
 app.include_router(session.router, prefix="/api", tags=["sessions"])
 app.include_router(admin.router, tags=["admin"])
 app.include_router(customer.router, tags=["customer"])
+app.include_router(websocket_monitoring_routes.router, tags=["websocket-monitoring"])
+app.include_router(websocket_polling_routes.router, tags=["websocket-polling-fallback"])
 app.include_router(websocket.router, tags=["websocket"])
 app.include_router(circuit_breaker.router, prefix="/api", tags=["circuit-breaker"])
 

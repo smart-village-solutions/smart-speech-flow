@@ -1,0 +1,86 @@
+{
+  "summary": {
+    "total_tests": 9,
+    "passed": 5,
+    "failed": 4,
+    "warnings": 0,
+    "success_rate": 55.55555555555556,
+    "total_duration": 0.026014089584350586
+  },
+  "test_results": [
+    {
+      "name": "API_HEALTH",
+      "description": "Verify API Gateway and services are healthy",
+      "result": "\u2705 PASSED",
+      "duration": "0.01s",
+      "error_message": "",
+      "details": {}
+    },
+    {
+      "name": "SESSION_CREATION",
+      "description": "Create new WebSocket session via API",
+      "result": "\u2705 PASSED",
+      "duration": "0.00s",
+      "error_message": "",
+      "details": {
+        "session_id": "0327E1FE"
+      }
+    },
+    {
+      "name": "WEBSOCKET_ADMIN_CONNECTION",
+      "description": "Establish WebSocket connection as admin",
+      "result": "\u274c FAILED",
+      "duration": "0.01s",
+      "error_message": "",
+      "details": {}
+    },
+    {
+      "name": "WEBSOCKET_CUSTOMER_CONNECTION",
+      "description": "Establish WebSocket connection as customer",
+      "result": "\u274c FAILED",
+      "duration": "0.00s",
+      "error_message": "",
+      "details": {}
+    },
+    {
+      "name": "BIDIRECTIONAL_COMMUNICATION",
+      "description": "Test message flow between admin and customer",
+      "result": "\u274c FAILED",
+      "duration": "0.00s",
+      "error_message": "",
+      "details": {}
+    },
+    {
+      "name": "FALLBACK_ACTIVATION",
+      "description": "Test automatic fallback to polling system",
+      "result": "\u2705 PASSED",
+      "duration": "0.00s",
+      "error_message": "",
+      "details": {}
+    },
+    {
+      "name": "SESSION_CLEANUP",
+      "description": "Verify session cleanup and timeout handling",
+      "result": "\u274c FAILED",
+      "duration": "0.00s",
+      "error_message": "",
+      "details": {}
+    },
+    {
+      "name": "MONITORING_ENDPOINTS",
+      "description": "Verify WebSocket monitoring APIs",
+      "result": "\u2705 PASSED",
+      "duration": "0.00s",
+      "error_message": "",
+      "details": {}
+    },
+    {
+      "name": "CORS_HEADERS",
+      "description": "Validate CORS configuration",
+      "result": "\u2705 PASSED",
+      "duration": "0.00s",
+      "error_message": "",
+      "details": {}
+    }
+  ]
+}

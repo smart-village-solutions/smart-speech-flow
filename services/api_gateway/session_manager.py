@@ -460,6 +460,11 @@ class SessionManager:
                 )
         return session
 
+    def get_session_status(self, session_id: str) -> Optional[SessionStatus]:
+        """Session-Status abrufen"""
+        session = self.get_session(session_id)
+        return session.status if session else None
+
     def add_message(self, session_id: str, message: SessionMessage):
         """Nachricht zur Session hinzufügen"""
         if session := self.get_session(session_id):

@@ -11,6 +11,8 @@ Features:
 
 import asyncio
 import logging
+import os
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -20,9 +22,38 @@ from typing import Any, Dict, List, Optional, Set
 from fastapi import WebSocket
 
 from .session_manager import ClientType, SessionManager, SessionStatus
+from .websocket_fallback import FallbackReason, fallback_manager
+from .websocket_monitor import DisconnectReason, websocket_monitor
 
 # === Logging Setup ===
 logger = logging.getLogger(__name__)
+
+
+# === Origin Validation for WebSocket Connections ===
+async def validate_websocket_origin(origin: Optional[str]) -> bool:
+    """
+    Validate WebSocket origin against allowed origins
+    """
+    if not origin:
+        return False  # Reject connections without Origin header
+
+    # Development environment - allow localhost and configured origins
+    environment = os.environ.get("ENVIRONMENT", "production")
+    if environment == "development":
+        if origin.startswith(("http://localhost", "https://localhost")):
+            return True
+
+        # Allow configured development origins
+        dev_origins = os.environ.get("DEVELOPMENT_CORS_ORIGINS", "").split(",")
+        dev_origins = [o.strip() for o in dev_origins if o.strip()]
+        if origin in dev_origins:
+            return True
+
+    # Production environment - strict validation
+    production_pattern = (
+        r"https://.*\.figma\.site|https://translate\.smart-village\.solutions"
+    )
+    return bool(re.match(production_pattern, origin))
 
 
 class ConnectionState(str, Enum):
@@ -321,6 +352,15 @@ class WebSocketManager:
             session_id, client_type, websocket
         )
 
+        # 📊 Monitoring: Connection established
+        origin = client_info.get("origin") if client_info else None
+        websocket_monitor.connection_established(
+            connection_id=connection_id,
+            session_id=session_id,
+            client_type=client_type.value,
+            origin=origin,
+        )
+
         # Stats aktualisieren
         self.connection_stats["total_connections"] += 1
         self._update_active_connections_count()
@@ -452,9 +492,28 @@ class WebSocketManager:
             try:
                 await connection.websocket.send_json(message)
                 successful_sends += 1
+
+                # 📊 Monitoring: Message sent
+                message_type = message.get("type", "unknown")
+                websocket_monitor.message_sent(
+                    connection_id=connection_id,
+                    message_data=str(message),
+                    message_type=message_type,
+                )
+
             except Exception as e:
                 logger.warning(f"⚠️ Broadcast-Fehler zu {connection_id}: {e}")
                 failed_sends += 1
+
+                # 📊 Monitoring: Error occurred
+                websocket_monitor.record_error(
+                    connection_id=connection_id,
+                    error_type="broadcast_error",
+                    error_details=str(e),
+                )
+
+                # 🔄 Evaluate if fallback should be triggered
+                await self._evaluate_connection_error(connection, e, "broadcast_error")
 
                 # Connection als tot markieren
                 connection.state = ConnectionState.ERROR
@@ -797,8 +856,128 @@ class WebSocketManager:
             connection.session_id, connection.client_type
         )
 
+        # 📊 Monitoring: Connection closed
+        websocket_monitor.connection_closed(
+            connection_id=connection_id,
+            reason=DisconnectReason.CLIENT_DISCONNECT,  # Default reason
+        )
+
         self._update_active_connections_count()
         logger.debug(f"🧹 Connection-Cleanup abgeschlossen: {connection_id}")
+
+    async def _evaluate_connection_error(
+        self, connection: WebSocketConnection, error: Exception, error_context: str
+    ):
+        """
+        Evaluate WebSocket connection error and potentially trigger fallback
+        """
+        try:
+            # Prepare error details for evaluation
+            error_details = {
+                "message": str(error),
+                "type": type(error).__name__,
+                "context": error_context,
+                "connection_id": f"{connection.session_id}_{connection.client_type.value}_{int(time.time())}",
+            }
+
+            # Extract additional error information
+            if hasattr(error, "code"):
+                error_details["code"] = error.code
+            if hasattr(error, "reason"):
+                error_details["reason"] = error.reason
+
+            # Get origin from connection client_info
+            origin = None
+            if connection.client_info:
+                origin = connection.client_info.get("origin")
+
+            # Evaluate if fallback should be triggered
+            should_fallback = await fallback_manager.evaluate_websocket_failure(
+                session_id=connection.session_id,
+                client_type=connection.client_type.value,
+                origin=origin,
+                error_details=error_details,
+            )
+
+            if should_fallback:
+                # Determine fallback reason based on error
+                fallback_reason = self._classify_error_for_fallback(
+                    error, error_context
+                )
+
+                # Activate polling fallback
+                polling_id = await fallback_manager.activate_polling_fallback(
+                    session_id=connection.session_id,
+                    client_type=connection.client_type.value,
+                    origin=origin,
+                    reason=fallback_reason,
+                )
+
+                # Send fallback notification to client if connection is still alive
+                if connection.state != ConnectionState.DISCONNECTED:
+                    await self._send_fallback_activation_message(
+                        connection, polling_id, fallback_reason
+                    )
+
+                logger.info(
+                    f"🔄 Polling fallback activated for {connection.session_id}: {polling_id}"
+                )
+
+        except Exception as fallback_error:
+            logger.error(f"Error in fallback evaluation: {fallback_error}")
+
+    def _classify_error_for_fallback(
+        self, error: Exception, context: str
+    ) -> FallbackReason:
+        """Classify error type for appropriate fallback reason"""
+        error_message = str(error).lower()
+        error_type = type(error).__name__.lower()
+
+        # WebSocket specific errors
+        if "websocket" in error_type:
+            if "1003" in error_message or "unsupported data" in error_message:
+                return FallbackReason.WEBSOCKET_HANDSHAKE_FAILED
+            return FallbackReason.WEBSOCKET_CONNECTION_FAILED
+
+        # CORS related errors
+        if "cors" in error_message or "origin" in error_message:
+            return FallbackReason.CORS_ORIGIN_BLOCKED
+
+        # Network errors
+        if any(term in error_message for term in ["network", "connection", "timeout"]):
+            if "timeout" in error_message:
+                return FallbackReason.TIMEOUT_ERROR
+            return FallbackReason.NETWORK_ERROR
+
+        # Connection errors during broadcast suggest network issues
+        if context == "broadcast_error":
+            return FallbackReason.NETWORK_ERROR
+
+        return FallbackReason.WEBSOCKET_CONNECTION_FAILED
+
+    async def _send_fallback_activation_message(
+        self, connection: WebSocketConnection, polling_id: str, reason: FallbackReason
+    ):
+        """Send fallback activation notification to client"""
+        try:
+            fallback_message = {
+                "type": "fallback_activated",
+                "polling_id": polling_id,
+                "fallback_reason": reason.value,
+                "message": "Connection switched to compatibility mode. All features remain available.",
+                "polling_endpoint": f"/api/websocket/poll/{polling_id}",
+                "instructions": {
+                    "action": "switch_to_polling",
+                    "polling_interval": 5,
+                    "recovery_check_interval": 300,
+                },
+                "timestamp": datetime.now().isoformat(),
+            }
+
+            await connection.websocket.send_json(fallback_message)
+
+        except Exception as e:
+            logger.warning(f"Failed to send fallback activation message: {e}")
 
     async def _broadcast_client_joined(
         self, session_id: str, client_type: ClientType, connection_id: str
@@ -1009,7 +1188,14 @@ class WebSocketManager:
 
 # === FastAPI WebSocket Endpoints ===
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+)
 
 router = APIRouter()
 
@@ -1034,19 +1220,26 @@ async def websocket_endpoint(
     websocket: WebSocket,
     session_id: str,
     client_type: str,
+    origin: Optional[str] = Header(None),  # Explicit Origin handling
     manager: WebSocketManager = Depends(get_websocket_manager),
 ):
     """
-    WebSocket-Endpunkt für Session-basierte Kommunikation
+    Enhanced WebSocket endpoint with explicit CORS validation
     """
-    # Client-Type validieren
+    # 1. CORS Origin Validation (before WebSocket accept)
+    if not await validate_websocket_origin(origin):
+        await websocket.close(code=1008, reason="Origin not allowed")
+        logger.warning(f"❌ WebSocket connection rejected - invalid origin: {origin}")
+        return
+
+    # 2. Client-Type validieren
     try:
         client_type_enum = ClientType(client_type.lower())
     except ValueError:
         await websocket.close(code=1003, reason="Invalid client type")
         return
 
-    # Session validieren
+    # 3. Session validieren
     session = manager.session_manager.get_session(session_id)
     if not session:
         await websocket.close(code=1003, reason="Session not found")
@@ -1059,9 +1252,10 @@ async def websocket_endpoint(
     connection_id = None
 
     try:
-        # WebSocket-Verbindung herstellen
+        # 4. WebSocket-Verbindung herstellen mit origin logging
+        logger.info(f"🔗 WebSocket connection from origin: {origin}")
         connection_id = await manager.connect_websocket(
-            websocket, session_id, client_type_enum
+            websocket, session_id, client_type_enum, client_info={"origin": origin}
         )
 
         # Message-Handler-Loop
@@ -1119,6 +1313,66 @@ async def get_session_connections(
         "session_id": session_id,
         "connections": connections,
         "count": len(connections),
+    }
+
+
+@router.get("/api/websocket/debug/connection-test")
+async def websocket_connection_test(
+    origin: Optional[str] = Header(None), user_agent: Optional[str] = Header(None)
+):
+    """
+    Debug endpoint to test WebSocket connection feasibility
+    """
+    origin_allowed = await validate_websocket_origin(origin) if origin else False
+    environment = os.environ.get("ENVIRONMENT", "production")
+
+    suggestions = []
+    if not origin:
+        suggestions.append(
+            "Origin header is missing - ensure frontend sends Origin header"
+        )
+    elif not origin_allowed:
+        if environment == "development":
+            suggestions.append(
+                "Add your origin to DEVELOPMENT_CORS_ORIGINS environment variable"
+            )
+        else:
+            suggestions.append(
+                "Origin must match production pattern: *.figma.site or translate.smart-village.solutions"
+            )
+        suggestions.append("Check if origin is correctly formatted (include protocol)")
+    else:
+        suggestions.append("Origin is allowed for WebSocket connections")
+        suggestions.append("Ensure WebSocket upgrade headers are included in request")
+
+    if environment == "production":
+        suggestions.append("Use wss:// protocol for production connections")
+
+    return {
+        "timestamp": datetime.now().isoformat(),
+        "origin": origin,
+        "user_agent": user_agent,
+        "origin_allowed": origin_allowed,
+        "cors_headers": {
+            "Access-Control-Allow-Origin": origin if origin_allowed else None,
+            "Access-Control-Allow-Headers": "Upgrade, Connection, Sec-WebSocket-Key, Sec-WebSocket-Version",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+        },
+        "websocket_endpoint": "/ws/{session_id}/{client_type}",
+        "environment": environment,
+        "configuration": {
+            "development_origins": (
+                os.environ.get("DEVELOPMENT_CORS_ORIGINS", "").split(",")
+                if environment == "development"
+                else "Hidden in production"
+            ),
+            "production_pattern": (
+                "https://.*\\.figma\\.site|https://translate\\.smart-village\\.solutions"
+                if environment == "production"
+                else None
+            ),
+        },
+        "suggestions": suggestions,
     }
 
 

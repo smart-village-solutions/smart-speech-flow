@@ -60,3 +60,65 @@ groups:
         annotations:
           summary: GPU memory usage above 95%.
           description: GPU memory usage is approaching the limit. Evaluate model footprint and concurrent load.
+
+  - name: websocket-health
+    rules:
+      - alert: WebSocketConnectionsHigh
+        expr: websocket_connections_active > 100
+        for: 2m
+        labels:
+          severity: warning
+          component: websocket
+        annotations:
+          summary: High number of active WebSocket connections
+          description: "Currently {{ $value }} active WebSocket connections. Monitor system resources and connection patterns."
+
+      - alert: WebSocketConnectionFailures
+        expr: rate(websocket_disconnects_total{disconnect_reason!="client_disconnect"}[5m]) > 0.1
+        for: 1m
+        labels:
+          severity: critical
+          component: websocket
+        annotations:
+          summary: High WebSocket connection failure rate
+          description: "WebSocket disconnect rate of {{ $value }}/sec for non-client disconnects. Check network connectivity and server health."
+
+      - alert: WebSocketHeartbeatLatencyHigh
+        expr: histogram_quantile(0.95, sum(rate(websocket_heartbeat_latency_seconds_bucket[5m])) by (le)) > 1.0
+        for: 3m
+        labels:
+          severity: warning
+          component: websocket
+        annotations:
+          summary: High WebSocket heartbeat latency
+          description: "95th percentile heartbeat latency is {{ $value }}s. Network issues or server overload may be occurring."
+
+      - alert: WebSocketSessionsStale
+        expr: websocket_connections_active - websocket_sessions_with_connections > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: websocket
+        annotations:
+          summary: Stale WebSocket connections detected
+          description: "{{ $value }} WebSocket connections appear to be stale (not associated with active sessions)."
+
+      - alert: WebSocketErrorRateHigh
+        expr: rate(websocket_errors_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          component: websocket
+        annotations:
+          summary: High WebSocket error rate
+          description: "WebSocket error rate of {{ $value }}/sec. Check application logs and client connection patterns."
+
+      - alert: WebSocketOriginBlocked
+        expr: rate(websocket_disconnects_total{disconnect_reason="origin_not_allowed"}[5m]) > 0.01
+        for: 1m
+        labels:
+          severity: warning
+          component: websocket
+        annotations:
+          summary: WebSocket connections blocked due to CORS
+          description: "{{ $value }}/sec WebSocket connections blocked due to origin restrictions. Review CORS configuration."

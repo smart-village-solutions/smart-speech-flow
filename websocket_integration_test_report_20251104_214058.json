@@ -1,0 +1,44 @@
+{
+  "summary": {
+    "total_tests": 4,
+    "passed": 2,
+    "failed": 2,
+    "warnings": 0,
+    "success_rate": 50.0,
+    "total_duration": 0.013447284698486328
+  },
+  "test_results": [
+    {
+      "name": "API_HEALTH",
+      "description": "Verify API Gateway and services are healthy",
+      "result": "\u2705 PASSED",
+      "duration": "0.01s",
+      "error_message": "",
+      "details": {}
+    },
+    {
+      "name": "SESSION_CREATION",
+      "description": "Create new WebSocket session via API",
+      "result": "\u274c FAILED",
+      "duration": "0.00s",
+      "error_message": "object bool can't be used in 'await' expression",
+      "details": {}
+    },
+    {
+      "name": "MONITORING_ENDPOINTS",
+      "description": "Verify WebSocket monitoring APIs",
+      "result": "\u274c FAILED",
+      "duration": "0.00s",
+      "error_message": "",
+      "details": {}
+    },
+    {
+      "name": "CORS_HEADERS",
+      "description": "Validate CORS configuration",
+      "result": "\u2705 PASSED",
+      "duration": "0.00s",
+      "error_message": "",
+      "details": {}
+    }
+  ]
+}

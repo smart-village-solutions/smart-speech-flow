@@ -23,9 +23,23 @@ https://translate.smart-village.solutions
 
 2. **Sprachauswahl anzeigen** – `GET /api/languages/supported`
    - Antwort liefert `languages` (Key–Value-Map), `admin_default` und `popular` Sprachen.
-   - Kund*innen wählen ihre Sprache (`source_lang`) sowie optional die gewünschte Zielsprache (`target_lang`).
+   - Kund*innen wählen ihre Sprache (`customer_language`).
 
-> **Hinweis:** Die Session bleibt in `pending`, bis eine Nachricht gesendet wurde. Die gewählten Sprachen werden bei jeder Nachricht im jeweiligen Request angegeben und so an die Pipeline übergeben.
+3. **Session aktivieren** – `POST /api/customer/session/activate`
+   ```json
+   {
+     "session_id": "ABC12345",
+     "customer_language": "de"
+   }
+   ```
+   - Überführt die Session vom `pending` in den `active` Status.
+   - Nach erfolgreicher Aktivierung können Nachrichten gesendet werden.
+
+4. **Session-Status prüfen** – `GET /api/customer/session/{sessionId}/status`
+   - Liefert Customer-spezifischen Session-Status (`can_send_messages`, `is_active`, etc.).
+   - Kann für UI-Updates verwendet werden.
+
+> **Hinweis:** Die Session muss explizit über `/api/customer/session/activate` aktiviert werden, bevor Nachrichten gesendet werden können. Die gewählten Sprachen werden bei jeder Nachricht im jeweiligen Request angegeben und so an die Pipeline übergeben.
 
 ## 3. Nachrichten senden
 
@@ -90,7 +104,9 @@ client_type=customer
 ### 4.2 Verlauf & Status aktualisieren
 
 - `GET /api/session/{sessionId}/messages` liefert die komplette Nachrichtenliste (`original_text`, `translated_text`, `audio_base64`, `timestamp`).
-- `GET /api/session/{sessionId}` kann für regelmäßige Statusprüfungen (z. B. Session beendet) genutzt werden.
+- `GET /api/session/{sessionId}` kann für allgemeine Statusprüfungen genutzt werden.
+- `GET /api/customer/session/{sessionId}/status` für Customer-spezifische Statusprüfungen (empfohlen für Kunden-Frontend).
+- `GET /api/admin/session/current` für Admin-spezifische Statusprüfungen (empfohlen für Admin-Frontend).
 
 ### 4.3 Activity-Updates (optional)
 
@@ -110,7 +126,7 @@ Content-Type: application/json
 
 ## 5. Echtzeitkommunikation per WebSocket
 
-- Verbindungs-URL: `wss://translate.smart-village.solutions/ws/{sessionId}/{clientType}`
+- Verbindungs-URL: `wss://ssf.smart-village.solutions/ws/{sessionId}/{clientType}` (empfohlen) oder `wss://translate.smart-village.solutions/ws/{sessionId}/{clientType}` (via Frontend-Reverse-Proxy)
   - `clientType` = `admin` oder `customer`.
   - Bei ungültiger Session oder falschem Typ schließt der Server die Verbindung.
 
@@ -135,11 +151,126 @@ Content-Type: application/json
 - Spezialnachrichten `session_terminated` informieren über ein Gesprächsende.
 - Optional: `GET /api/websocket/stats` stellt Monitoring-Infos bereit.
 
-## 6. Fehlerrückgaben
+## 6. WebSocket-Troubleshooting
+
+### 6.1 Verbindungsdiagnose
+
+Für WebSocket-Probleme steht ein Diagnose-Endpunkt zur Verfügung:
+
+```javascript
+// WebSocket-Kompatibilität prüfen
+fetch('/api/websocket/debug/connection-test', {
+  method: 'GET',
+  headers: {
+    'Content-Type': 'application/json'
+  }
+})
+.then(response => response.json())
+.then(data => {
+  console.log('WebSocket-Diagnose:', data);
+  if (data.origin_allowed) {
+    console.log('✅ Origin erlaubt - WebSocket sollte funktionieren');
+  } else {
+    console.log('❌ Origin blockiert:', data.suggestions);
+  }
+});
+```
+
+### 6.2 Automatischer Fallback
+
+Bei WebSocket-Problemen aktiviert das System automatisch Polling-Fallback:
+
+1. **WebSocket-Verbindung schlägt fehl** → System erkennt Problem automatisch
+2. **Fallback-Nachricht erhalten:**
+   ```json
+   {
+     "type": "fallback_activated",
+     "polling_id": "...",
+     "polling_endpoint": "/api/websocket/poll/...",
+     "instructions": {
+       "action": "switch_to_polling",
+       "polling_interval": 5
+     }
+   }
+   ```
+3. **Client wechselt zu Polling:** Verwende den bereitgestellten `polling_endpoint`
+
+### 6.3 Häufige WebSocket-Probleme
+
+| Problem | Symptom | Lösung |
+|---------|---------|--------|
+| **CORS-Blockierung** | "Origin not allowed" | Figma-Domains (*.figma.site) sind automatisch erlaubt |
+| **"Failed to fetch"** | Preflight-Request schlägt fehl | System aktiviert automatisch Polling-Fallback |
+| **Connection Timeout** | WebSocket öffnet nicht | Prüfe Netzwerk/Firewall, System aktiviert Fallback |
+| **Unexpected close** | Verbindung bricht ab | Überprüfe Session-Status, System versucht Reconnect |
+
+### 6.4 Client-Implementierung mit Fallback
+
+```javascript
+class WebSocketClient {
+  constructor(sessionId, clientType) {
+    this.sessionId = sessionId;
+    this.clientType = clientType;
+    this.pollingId = null;
+    this.pollingInterval = null;
+  }
+
+  async connect() {
+    try {
+      // WebSocket versuchen
+      const wsUrl = `wss://ssf.smart-village.solutions/ws/${this.sessionId}/${this.clientType}`;
+      this.ws = new WebSocket(wsUrl);
+
+      this.ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'fallback_activated') {
+          this.activateFallback(data.polling_id);
+        } else {
+          this.onMessage(data);
+        }
+      };
+
+      this.ws.onerror = () => {
+        console.log('WebSocket failed, fallback will be activated automatically');
+      };
+
+    } catch (error) {
+      console.log('WebSocket connection failed:', error);
+      // Fallback wird automatisch aktiviert
+    }
+  }
+
+  activateFallback(pollingId) {
+    this.pollingId = pollingId;
+    this.startPolling();
+  }
+
+  startPolling() {
+    this.pollingInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/websocket/poll/${this.pollingId}`);
+        const data = await response.json();
+        if (data.messages) {
+          data.messages.forEach(msg => this.onMessage(msg));
+        }
+      } catch (error) {
+        console.error('Polling failed:', error);
+      }
+    }, 5000);
+  }
+
+  onMessage(data) {
+    // Verarbeite Nachrichten (identisch für WebSocket und Polling)
+    console.log('Message received:', data);
+  }
+}
+```
+
+## 7. Fehlerrückgaben
 
 - Ungültige Session: `404` mit `detail`-Payload.
 - Fehlende Felder: `400` mit `error_code` und `details`. Beispiel bei Multipart: `"MISSING_FIELDS"`.
-- Audiofehler (z. B. nicht unterstütztes Format): `400` mit `AUDIO_VALIDATION_FAILED`.
+- Audiofehler (z. B. nicht unterstütztes Format): `400` mit `AUDIO_VALIDATION_FAILED`.
 - Allgemeine Fehler: `500` mit `PROCESSING_ERROR`.
 
-Das Frontend sollte Fehlermeldungen aus `detail` anzeigen und Nutzer*innen entsprechend informieren (z. B. Session nicht verfügbar, Audio zu kurz/lang, Sprache nicht unterstützt).
+Das Frontend sollte Fehlermeldungen aus `detail` anzeigen und Nutzer*innen entsprechend informieren (z. B. Session nicht verfügbar, Audio zu kurz/lang, Sprache nicht unterstützt).
