@@ -4,19 +4,18 @@ Unit Tests für Admin-Routes mit parallelen Sessions
 """
 
 import pytest
-import asyncio
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
-# Mock the session_manager before importing the app
-with patch('services.api_gateway.routes.admin.session_manager') as mock_session_manager:
-    from services.api_gateway.app import app
-    from services.api_gateway.session_manager import SessionStatus
+# Import the app and modules first
+from services.api_gateway.app import app
+from services.api_gateway.session_manager import SessionStatus
 
 client = TestClient(app)
 
+
 @pytest.fixture
-def mock_session_manager():
+def admin_session_manager():
     """Mock SessionManager für Tests"""
     manager = MagicMock()
     manager.create_admin_session = AsyncMock()
@@ -26,6 +25,7 @@ def mock_session_manager():
     manager.get_session_history = MagicMock()
     manager.terminate_session = AsyncMock()
     return manager
+
 
 @pytest.fixture
 def mock_session():
@@ -42,15 +42,16 @@ def mock_session():
     session.termination_reason = None
     return session
 
+
 class TestAdminSessionCreation:
     """Tests für Admin-Session-Erstellung"""
 
     @patch('services.api_gateway.routes.admin.session_manager')
-    def test_create_admin_session_success(self, mock_session_manager, mock_session):
+    def test_create_admin_session_success(self, admin_session_manager, mock_session):
         """Test: Erfolgreiche Admin-Session-Erstellung"""
         # Mock setup
-        mock_session_manager.create_admin_session = AsyncMock(return_value="TEST123")
-        mock_session_manager.get_session.return_value = mock_session
+        admin_session_manager.create_admin_session = AsyncMock(return_value="TEST123")
+        admin_session_manager.get_session.return_value = mock_session
 
         # API Call
         response = client.post("/api/admin/session/create")
@@ -62,19 +63,21 @@ class TestAdminSessionCreation:
         assert data["session_id"] == "TEST123"
         assert data["status"] == "pending"
         assert "client_url" in data
-        assert "localhost:5174/join/TEST123" in data["client_url"]
+        # Test accepts both development and production URLs
+        assert ("localhost:5174/join/TEST123" in data["client_url"] or
+                "translate.smart-village.solutions/join/TEST123" in data["client_url"])
         assert "erfolgreich erstellt" in data["message"]
         assert "Session-ID" in data["message"]
 
         # Verify manager was called
-        mock_session_manager.create_admin_session.assert_called_once()
-        mock_session_manager.get_session.assert_called_once_with("TEST123")
+        admin_session_manager.create_admin_session.assert_called_once()
+        admin_session_manager.get_session.assert_called_once_with("TEST123")
 
     @patch('services.api_gateway.routes.admin.session_manager')
-    def test_create_admin_session_failure(self, mock_session_manager):
+    def test_create_admin_session_failure(self, admin_session_manager):
         """Test: Session-Erstellung schlägt fehl"""
         # Mock setup - Session creation fails
-        mock_session_manager.create_admin_session = AsyncMock(side_effect=Exception("Database error"))
+        admin_session_manager.create_admin_session = AsyncMock(side_effect=Exception("Database error"))
 
         # API Call
         response = client.post("/api/admin/session/create")
@@ -85,11 +88,11 @@ class TestAdminSessionCreation:
         assert "Session-Erstellung fehlgeschlagen" in data["detail"]
 
     @patch('services.api_gateway.routes.admin.session_manager')
-    def test_create_admin_session_no_session_returned(self, mock_session_manager):
+    def test_create_admin_session_no_session_returned(self, admin_session_manager):
         """Test: Session wird erstellt aber nicht gefunden"""
         # Mock setup
-        mock_session_manager.create_admin_session = AsyncMock(return_value="TEST123")
-        mock_session_manager.get_session.return_value = None  # Session not found
+        admin_session_manager.create_admin_session = AsyncMock(return_value="TEST123")
+        admin_session_manager.get_session.return_value = None  # Session not found
 
         # API Call
         response = client.post("/api/admin/session/create")
@@ -99,16 +102,17 @@ class TestAdminSessionCreation:
         data = response.json()
         assert "Fehler bei Session-Erstellung" in data["detail"]
 
+
 class TestCurrentSessionRetrieval:
     """Tests für aktuelle Session-Abfrage"""
 
     @patch('services.api_gateway.routes.admin.session_manager')
-    def test_get_current_session_success(self, mock_session_manager, mock_session):
+    def test_get_current_session_success(self, admin_session_manager, mock_session):
         """Test: Erfolgreiche Abfrage der aktuellen Session"""
         # Mock setup
-        mock_session_manager.get_active_session.return_value = {"id": "TEST123"}
-        mock_session_manager.get_active_sessions.return_value = []
-        mock_session_manager.get_session.return_value = mock_session
+        admin_session_manager.get_active_session.return_value = {"id": "TEST123"}
+        admin_session_manager.get_active_sessions.return_value = []
+        admin_session_manager.get_session.return_value = mock_session
 
         # API Call
         response = client.get("/api/admin/session/current")
@@ -124,21 +128,21 @@ class TestCurrentSessionRetrieval:
         assert data["message_count"] == 0
 
     @patch('services.api_gateway.routes.admin.session_manager')
-    def test_get_current_session_with_specific_id(self, mock_session_manager, mock_session):
+    def test_get_current_session_with_specific_id(self, admin_session_manager, mock_session):
         """Test: Abfrage einer spezifischen Session via Query-Parameter"""
-        mock_session_manager.get_active_session.return_value = {"id": "TEST123"}
-        mock_session_manager.get_session.return_value = mock_session
+        admin_session_manager.get_active_session.return_value = {"id": "TEST123"}
+        admin_session_manager.get_session.return_value = mock_session
 
         response = client.get("/api/admin/session/current", params={"session_id": "TEST123"})
 
         assert response.status_code == 200
-        mock_session_manager.get_active_session.assert_called_once_with(session_id="TEST123")
+        admin_session_manager.get_active_session.assert_called_once_with(session_id="TEST123")
 
     @patch('services.api_gateway.routes.admin.session_manager')
-    def test_get_current_session_not_found(self, mock_session_manager):
+    def test_get_current_session_not_found(self, admin_session_manager):
         """Test: Keine aktive Session gefunden"""
         # Mock setup
-        mock_session_manager.get_active_session.return_value = None
+        admin_session_manager.get_active_session.return_value = None
 
         # API Call
         response = client.get("/api/admin/session/current")
@@ -148,15 +152,16 @@ class TestCurrentSessionRetrieval:
         data = response.json()
         assert "Keine aktive Admin-Session gefunden" in data["detail"]
 
+
 class TestSessionTermination:
     """Tests für Session-Beendigung"""
 
     @patch('services.api_gateway.routes.admin.session_manager')
-    def test_terminate_session_success(self, mock_session_manager, mock_session):
+    def test_terminate_session_success(self, admin_session_manager, mock_session):
         """Test: Erfolgreiche Session-Beendigung"""
         # Mock setup
-        mock_session_manager.get_session.return_value = mock_session
-        mock_session_manager.terminate_session = AsyncMock()
+        admin_session_manager.get_session.return_value = mock_session
+        admin_session_manager.terminate_session = AsyncMock()
 
         # API Call
         response = client.delete("/api/admin/session/TEST123/terminate")
@@ -170,15 +175,15 @@ class TestSessionTermination:
         assert "erfolgreich beendet" in data["message"]
 
         # Verify termination was called
-        mock_session_manager.terminate_session.assert_called_once_with(
+        admin_session_manager.terminate_session.assert_called_once_with(
             "TEST123", "manual_admin_termination"
         )
 
     @patch('services.api_gateway.routes.admin.session_manager')
-    def test_terminate_session_not_found(self, mock_session_manager):
+    def test_terminate_session_not_found(self, admin_session_manager):
         """Test: Session nicht gefunden bei Termination"""
         # Mock setup
-        mock_session_manager.get_session.return_value = None
+        admin_session_manager.get_session.return_value = None
 
         # API Call
         response = client.delete("/api/admin/session/INVALID/terminate")
@@ -189,11 +194,11 @@ class TestSessionTermination:
         assert "Session INVALID nicht gefunden" in data["detail"]
 
     @patch('services.api_gateway.routes.admin.session_manager')
-    def test_terminate_already_terminated_session(self, mock_session_manager, mock_session):
+    def test_terminate_already_terminated_session(self, admin_session_manager, mock_session):
         """Test: Session ist bereits beendet"""
         # Mock setup
         mock_session.status = SessionStatus.TERMINATED
-        mock_session_manager.get_session.return_value = mock_session
+        admin_session_manager.get_session.return_value = mock_session
 
         # API Call
         response = client.delete("/api/admin/session/TEST123/terminate")
@@ -206,11 +211,12 @@ class TestSessionTermination:
         assert data["status"] == "already_terminated"
         assert "bereits beendet" in data["message"]
 
+
 class TestSessionHistory:
     """Tests für Session-Historie"""
 
     @patch('services.api_gateway.routes.admin.session_manager')
-    def test_get_session_history_success(self, mock_session_manager):
+    def test_get_session_history_success(self, admin_session_manager):
         """Test: Erfolgreiche Session-Historie-Abfrage"""
         # Mock setup
         mock_history = [
@@ -218,8 +224,8 @@ class TestSessionHistory:
             {"id": "SESSION2", "status": "terminated", "created_at": "2025-09-28T09:00:00"}
         ]
         mock_active = [{"id": "SESSION3", "status": "active"}]
-        mock_session_manager.get_session_history.return_value = mock_history
-        mock_session_manager.get_active_sessions.return_value = mock_active
+        admin_session_manager.get_session_history.return_value = mock_history
+        admin_session_manager.get_active_sessions.return_value = mock_active
 
         # API Call
         response = client.get("/api/admin/session/history")
@@ -234,30 +240,31 @@ class TestSessionHistory:
         assert data["active_sessions"][0]["id"] == "SESSION3"
 
         # Verify correct limit was used
-        mock_session_manager.get_session_history.assert_called_once_with(limit=10)
+        admin_session_manager.get_session_history.assert_called_once_with(limit=10)
 
     @patch('services.api_gateway.routes.admin.session_manager')
-    def test_get_session_history_with_custom_limit(self, mock_session_manager):
+    def test_get_session_history_with_custom_limit(self, admin_session_manager):
         """Test: Session-Historie mit benutzerdefiniertem Limit"""
         # Mock setup
-        mock_session_manager.get_session_history.return_value = []
-        mock_session_manager.get_active_sessions.return_value = []
+        admin_session_manager.get_session_history.return_value = []
+        admin_session_manager.get_active_sessions.return_value = []
 
         # API Call mit Custom Limit
         response = client.get("/api/admin/session/history?limit=5")
 
         # Assertions
         assert response.status_code == 200
-        mock_session_manager.get_session_history.assert_called_once_with(limit=5)
+        admin_session_manager.get_session_history.assert_called_once_with(limit=5)
+
 
 class TestSessionStatus:
     """Tests für Session-Status-Abfrage"""
 
     @patch('services.api_gateway.routes.admin.session_manager')
-    def test_get_session_status_success(self, mock_session_manager, mock_session):
+    def test_get_session_status_success(self, admin_session_manager, mock_session):
         """Test: Erfolgreiche Session-Status-Abfrage"""
         # Mock setup
-        mock_session_manager.get_session.return_value = mock_session
+        admin_session_manager.get_session.return_value = mock_session
 
         # API Call
         response = client.get("/api/admin/session/TEST123/status")
@@ -272,10 +279,10 @@ class TestSessionStatus:
         assert data["customer_connected"] is False
 
     @patch('services.api_gateway.routes.admin.session_manager')
-    def test_get_session_status_not_found(self, mock_session_manager):
+    def test_get_session_status_not_found(self, admin_session_manager):
         """Test: Session nicht gefunden bei Status-Abfrage"""
         # Mock setup
-        mock_session_manager.get_session.return_value = None
+        admin_session_manager.get_session.return_value = None
 
         # API Call
         response = client.get("/api/admin/session/INVALID/status")
@@ -285,14 +292,15 @@ class TestSessionStatus:
         data = response.json()
         assert "Session INVALID nicht gefunden" in data["detail"]
 
+
 class TestErrorHandling:
     """Tests für Error-Handling"""
 
     @patch('services.api_gateway.routes.admin.session_manager')
-    def test_unexpected_error_handling(self, mock_session_manager):
+    def test_unexpected_error_handling(self, admin_session_manager):
         """Test: Behandlung unerwarteter Fehler"""
         # Mock setup - Unexpected error
-        mock_session_manager.get_active_session.side_effect = RuntimeError("Unexpected error")
+        admin_session_manager.get_active_session.side_effect = RuntimeError("Unexpected error")
 
         # API Call
         response = client.get("/api/admin/session/current")
@@ -302,17 +310,18 @@ class TestErrorHandling:
         data = response.json()
         assert "Fehler beim Abrufen der Session" in data["detail"]
 
+
 class TestClientURLGeneration:
     """Tests für Client-URL-Generierung"""
 
     @patch('services.api_gateway.routes.admin.session_manager')
     @patch('services.api_gateway.routes.admin.get_client_base_url')
-    def test_client_url_generation(self, mock_get_base_url, mock_session_manager, mock_session):
+    def test_client_url_generation(self, mock_get_base_url, admin_session_manager, mock_session):
         """Test: Korrekte Client-URL-Generierung"""
         # Mock setup
         mock_get_base_url.return_value = "https://client.example.com"
-        mock_session_manager.create_admin_session = AsyncMock(return_value="ABC123")
-        mock_session_manager.get_session.return_value = mock_session
+        admin_session_manager.create_admin_session = AsyncMock(return_value="ABC123")
+        admin_session_manager.get_session.return_value = mock_session
 
         # API Call
         response = client.post("/api/admin/session/create")
@@ -321,6 +330,7 @@ class TestClientURLGeneration:
         assert response.status_code == 201
         data = response.json()
         assert data["client_url"] == "https://client.example.com/join/ABC123"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

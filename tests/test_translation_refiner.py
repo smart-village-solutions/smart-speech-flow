@@ -1,8 +1,6 @@
 import importlib
 import os
 
-import pytest
-
 MODULE_PATH = "services.api_gateway.translation_refiner"
 
 
@@ -25,7 +23,6 @@ def reload_module(env: dict[str, str | None]):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
-
 
 
 def test_translation_refiner_disabled_returns_noop(monkeypatch):

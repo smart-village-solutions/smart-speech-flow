@@ -1,6 +1,5 @@
 import asyncio
 import inspect
-from typing import Any, Dict
 
 try:  # pragma: no cover - optional dependency detection
     import pytest_asyncio  # type: ignore  # noqa: F401

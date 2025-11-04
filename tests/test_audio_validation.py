@@ -7,13 +7,12 @@ Testet WAV-Format-Validation, Dauer-Limitierung, Dateigröße-Check und Audio-No
 import pytest
 import io
 import wave
-import struct
 import numpy as np
 from unittest.mock import Mock, patch
 
 from services.api_gateway.pipeline_logic import (
     validate_audio_input, normalize_audio, AudioValidationResult, AudioSpecs,
-    AudioValidationError, process_wav
+    process_wav
 )
 
 

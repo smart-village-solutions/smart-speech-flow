@@ -10,6 +10,7 @@ API Gateway Hauptdatei
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator
 
 # === Imports ===
 # Standard- und Third-Party-Module
@@ -21,7 +22,7 @@ from .rate_limiter import RateLimitMiddleware
 
 
 # === Background Tasks ===
-async def session_timeout_monitor():
+async def session_timeout_monitor() -> None:
     """Background Task für Session-Timeout-Management"""
     from .session_manager import session_manager
 
@@ -34,7 +35,7 @@ async def session_timeout_monitor():
             await asyncio.sleep(60)
 
 
-async def circuit_breaker_monitor():
+async def circuit_breaker_monitor() -> None:
     """Background Task für Circuit Breaker Health Monitoring"""
     from .circuit_breaker_client import circuit_breaker_client
     from .graceful_degradation import graceful_degradation_manager
@@ -58,13 +59,13 @@ async def circuit_breaker_monitor():
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Startup: Background Tasks starten
     timeout_task = asyncio.create_task(session_timeout_monitor())
     circuit_breaker_task = asyncio.create_task(circuit_breaker_monitor())
 
     try:
-        yield
+        yield None
     finally:
         # Shutdown: Background Tasks beenden
         from .circuit_breaker_client import circuit_breaker_client
@@ -119,9 +120,9 @@ DOCKER_ENV = os.environ.get("DOCKER_COMPOSE", "1") == "1"
 
 if DOCKER_ENV:
     # Docker-Service-URLs für Microservices
-    ASR_URL = "http://asr:8000/transcribe"
-    TRANSLATION_URL = "http://translation:8000/translate"
-    TTS_URL = "http://tts:8000/synthesize"
+    ASR_URL: str = "http://asr:8000/transcribe"
+    TRANSLATION_URL: str = "http://translation:8000/translate"
+    TTS_URL: str = "http://tts:8000/synthesize"
     SERVICE_URLS = {
         "ASR": "http://asr:8000/health",
         "Translation": "http://translation:8000/health",
@@ -153,7 +154,7 @@ app.include_router(circuit_breaker.router, prefix="/api", tags=["circuit-breaker
 
 
 @app.get("/languages", tags=["public"], summary="List supported languages")
-async def list_supported_languages():
+async def list_supported_languages() -> Any:
     """Expose supported languages without the /api prefix for the public site."""
     return await session.get_supported_languages()
 

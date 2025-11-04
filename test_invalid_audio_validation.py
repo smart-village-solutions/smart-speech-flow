@@ -53,7 +53,7 @@ def test_invalid_audio_formats():
                         print("ℹ️  Audio rejected by different step in pipeline")
 
                 else:
-                    print(f"❌ Invalid audio was not rejected properly")
+                    print("❌ Invalid audio was not rejected properly")
                     print(f"Response: {response.text[:300]}")
 
         finally:
@@ -88,7 +88,7 @@ def test_invalid_audio_formats():
                     print("✅ Empty file correctly rejected!")
                     print(f"Error: {result.get('error', '')}")
                 else:
-                    print(f"❌ Empty file not rejected properly")
+                    print("❌ Empty file not rejected properly")
                     print(f"Response: {response.text[:300]}")
 
         finally:

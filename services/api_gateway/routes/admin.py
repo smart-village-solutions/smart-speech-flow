@@ -71,7 +71,7 @@ def get_client_base_url() -> str:
     summary="Neue Admin-Session erstellen",
     description="Erstellt eine neue Admin-Session. Mehrere parallele Sessions sind erlaubt.",
 )
-async def create_admin_session():
+async def create_admin_session() -> SessionCreateResponse:
     """
     Erstellt eine neue Admin-Session für parallele Nutzung
 
@@ -128,7 +128,7 @@ async def get_current_session(
     session_id: Optional[str] = Query(
         default=None, description="Spezifische Session-ID, die geladen werden soll."
     )
-):
+) -> SessionStatusResponse:
     """
     Ruft die aktuelle aktive Admin-Session ab
 
@@ -177,7 +177,7 @@ async def get_current_session(
     summary="Session manuell beenden",
     description="Beendet eine spezifische Session manuell mit graceful cleanup",
 )
-async def terminate_session(session_id: str):
+async def terminate_session(session_id: str) -> JSONResponse:
     """
     Beendet eine Session manuell
 
@@ -235,7 +235,7 @@ async def terminate_session(session_id: str):
     summary="Session-Historie abrufen",
     description="Gibt eine Liste der vergangenen Sessions und aktuelle Session zurück",
 )
-async def get_session_history(limit: int = 10):
+async def get_session_history(limit: int = 10) -> SessionHistoryResponse:
     """
     Ruft Session-Historie für Admin-Dashboard ab
 
@@ -270,7 +270,7 @@ async def get_session_history(limit: int = 10):
     summary="Session-Status abrufen",
     description="Gibt detaillierte Informationen über eine spezifische Session zurück",
 )
-async def get_session_status(session_id: str):
+async def get_session_status(session_id: str) -> SessionStatusResponse:
     """
     Ruft Status einer spezifischen Session ab
 

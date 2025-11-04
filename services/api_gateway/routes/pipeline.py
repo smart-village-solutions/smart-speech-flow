@@ -19,7 +19,7 @@ async def pipeline(
     source_lang: str = Form(...),
     target_lang: str = Form(...),
     debug: str = Form(None),
-):
+) -> Response:
     requests_total = app.requests_total if hasattr(app, "requests_total") else None
     if requests_total:
         requests_total.inc()
@@ -32,7 +32,7 @@ async def pipeline(
         file_bytes, source_lang, target_lang, debug=debug_active, validate_audio=True
     )
 
-    def get_origin(request: Request):
+    def get_origin(request: Request) -> str:
         o = request.headers.get("origin", "")
         allowed = [
             "https://parse-sticky-41228602.figma.site",
@@ -41,7 +41,9 @@ async def pipeline(
         ]
         return o if o in allowed else allowed[0]
 
-    def pipeline_response(request, content, status_code=200):
+    def pipeline_response(
+        request: Request, content: str, status_code: int = 200
+    ) -> Response:
         origin = get_origin(request)
         return Response(
             content=content,
@@ -59,7 +61,7 @@ async def pipeline(
 
     logger = logging.getLogger("api_gateway")
 
-    async def inner(request: Request):
+    async def inner(request: Request) -> Response:
         import json
 
         if result["error"]:

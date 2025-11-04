@@ -5,22 +5,15 @@ Testet Content-Type-basierte Auto-Detection, Audio/Text-Pipeline und Unified Res
 """
 
 import pytest
-import asyncio
 import json
 import base64
 from datetime import datetime
 from unittest.mock import Mock, AsyncMock, patch
-from io import BytesIO
-
-# FastAPI Test-Utilities
-from fastapi.testclient import TestClient
-from fastapi import UploadFile
 
 # Session-Manager und Dependencies
 from services.api_gateway.session_manager import SessionManager, ClientType, SessionStatus
 from services.api_gateway.routes.session import (
-    TextMessageRequest, MessageResponse, ErrorResponse,
-    process_text_input, process_audio_input, create_session_message
+    TextMessageRequest, MessageResponse, ErrorResponse
 )
 
 

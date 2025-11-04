@@ -9,3 +9,5 @@ ffmpeg-python
 httpx
 psutil
 pynvml
+black==24.10.0
+isort==5.13.2

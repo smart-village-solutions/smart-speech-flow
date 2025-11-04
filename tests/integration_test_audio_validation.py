@@ -5,7 +5,6 @@ Testet das Zusammenspiel von Audio-Validation mit dem Unified Message Endpoint
 """
 
 import requests
-import io
 import wave
 import numpy as np
 import time

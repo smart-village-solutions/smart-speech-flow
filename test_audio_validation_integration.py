@@ -7,7 +7,6 @@ import requests
 import io
 import wave
 import numpy as np
-import json
 
 
 def create_test_wav_bytes(

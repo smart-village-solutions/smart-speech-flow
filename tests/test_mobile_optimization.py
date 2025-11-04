@@ -8,14 +8,13 @@ Tests für Mobile-Optimization Features
 """
 
 import pytest
-import asyncio
 from datetime import datetime
 from unittest.mock import Mock, AsyncMock
 from services.api_gateway.websocket import (
     WebSocketManager, WebSocketConnection, AdaptivePollingManager,
     ConnectionState, ClientType, MessageType
 )
-from services.api_gateway.session_manager import SessionManager, Session, SessionStatus
+from services.api_gateway.session_manager import SessionManager
 from services.api_gateway.routes.session import ClientActivityUpdate
 
 
@@ -151,7 +150,7 @@ class TestWebSocketMobileOptimization:
         )
 
         connection = self.websocket_manager.all_connections[connection_id]
-        assert connection.is_mobile == True
+        assert connection.is_mobile is True
         assert connection.battery_level == 0.8
         assert connection.network_quality == "good"
         assert connection.current_polling_interval == 5  # active_mobile
@@ -173,7 +172,7 @@ class TestWebSocketMobileOptimization:
         await self.websocket_manager._handle_tab_visibility_change(connection, message)
 
         # Polling-Intervall sollte sich geändert haben
-        assert connection.tab_active == False
+        assert connection.tab_active is False
         assert connection.current_polling_interval == 30  # background_mobile
 
     @pytest.mark.asyncio
@@ -294,8 +293,8 @@ class TestClientActivityAPI:
             connection_type="wifi"
         )
 
-        assert update.is_mobile == True
-        assert update.tab_active == False
+        assert update.is_mobile is True
+        assert update.tab_active is False
         assert update.battery_level == 0.75
         assert update.network_quality == "good"
 

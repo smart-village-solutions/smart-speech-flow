@@ -28,6 +28,7 @@ def reset_session_manager() -> None:
     yield
     session_manager.reset(clear_persistence=True)
 
+
 def _register_active_session() -> str:
     session_id = "RATE1234"
     session = Session(

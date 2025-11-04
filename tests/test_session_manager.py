@@ -217,7 +217,8 @@ class TestMemoryLeakPrevention:
     @pytest.mark.asyncio
     async def test_no_memory_leaks_on_session_switch(self, session_manager):
         """Test: Keine Memory-Leaks bei häufigen Session-Wechseln"""
-        initial_session_count = len(session_manager.sessions)
+        # Track initial session count for memory leak detection
+        len(session_manager.sessions)
 
         # Viele Session-Wechsel simulieren
         for i in range(10):

@@ -4,7 +4,6 @@ Test der Audio-Validierung mit dem bestehenden Pipeline-Endpoint
 """
 
 import requests
-import io
 import wave
 import numpy as np
 import tempfile
@@ -93,9 +92,9 @@ def test_pipeline_endpoint():
                         if result.get("error"):
                             print(f"   ⚠️ Error reported: {result.get('error_msg')}")
                         else:
-                            print(f"   ✅ No errors reported")
+                            print("   ✅ No errors reported")
 
-                    except Exception as e:
+                    except Exception:
                         print(f"   Response content (not JSON): {response.text[:500]}")
                 else:
                     print(f"❌ Request failed: {response.text[:500]}")
@@ -148,7 +147,7 @@ def test_pipeline_endpoint():
                             print("❌ Invalid audio was unexpectedly accepted")
                             print(f"   Result: {result}")
 
-                    except Exception as e:
+                    except Exception:
                         print(f"   Response content (not JSON): {response.text[:500]}")
                 else:
                     print(f"   Request failed with status {response.status_code}: {response.text[:500]}")
@@ -199,7 +198,7 @@ def test_pipeline_endpoint():
                         else:
                             print("❌ Stereo audio was unexpectedly accepted")
 
-                    except Exception as e:
+                    except Exception:
                         print(f"   Response content (not JSON): {response.text[:500]}")
                 else:
                     print(f"   Request failed: {response.text[:500]}")
@@ -245,7 +244,7 @@ def test_pipeline_endpoint():
                         else:
                             print("❌ Long audio was unexpectedly accepted")
 
-                    except Exception as e:
+                    except Exception:
                         print(f"   Response content (not JSON): {response.text[:500]}")
                 else:
                     print(f"   Request failed: {response.text[:500]}")

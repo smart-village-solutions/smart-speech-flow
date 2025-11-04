@@ -1,8 +1,7 @@
 from fastapi.responses import HTMLResponse
 
 from services.api_gateway.app import SERVICE_URLS, app
-
-from .health import get_health_status_html
+from services.api_gateway.utils.health_utils import get_health_status_html
 
 
 @app.get("/", response_class=HTMLResponse)

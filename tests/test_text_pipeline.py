@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from services.api_gateway.pipeline_logic import (
     validate_text_input, normalize_text, detect_spam, detect_harmful_content,
-    process_text_pipeline, TextValidationResult, TextSpecs
+    process_text_pipeline
 )
 
 

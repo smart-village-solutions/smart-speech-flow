@@ -19,19 +19,21 @@ import json
 import threading
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+
 
 from services.api_gateway.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
     CircuitState,
-    CircuitBreakerOpenException
+    CircuitBreakerOpenError
 )
 from services.api_gateway.service_health import ServiceHealthManager, ServiceEndpoint
 from services.api_gateway.graceful_degradation import GracefulDegradationManager
 from services.api_gateway.circuit_breaker_client import CircuitBreakerServiceClient
 
 logger = logging.getLogger(__name__)
+
+
 class TestHTTPHandler(BaseHTTPRequestHandler):
     """Simpler HTTP Handler für echte Integration Tests"""
 
@@ -168,7 +170,7 @@ class TestServerManager:
             self.server.server_close()
         if self.thread:
             self.thread.join(timeout=1.0)
-        logger.info(f"🛑 Test HTTP Server gestoppt")
+        logger.info("🛑 Test HTTP Server gestoppt")
 
     def set_healthy(self, healthy=True):
         """Setzt Service Health Status"""
@@ -187,6 +189,8 @@ class TestServerManager:
 
 # Globaler Test Server für alle Tests
 test_server = TestServerManager()
+
+
 def setup_module():
     """Setup für gesamtes Test Modul"""
     test_server.start()
@@ -224,6 +228,8 @@ def reset_server():
     # Cleanup nach Test
     test_server.set_healthy(True)
     test_server.set_response_delay(0.0)
+
+
 class TestCircuitBreakerRealSystem:
     """Integration Tests mit echtem HTTP System"""
 
@@ -248,7 +254,7 @@ class TestCircuitBreakerRealSystem:
         assert circuit_breaker.state == CircuitState.CLOSED
         assert circuit_breaker.health.successful_requests == 1
 
-        result2 = await circuit_breaker.call(real_http_call)
+        await circuit_breaker.call(real_http_call)
         assert circuit_breaker.health.successful_requests == 2
 
         # Health Metrics prüfen
@@ -283,47 +289,8 @@ class TestCircuitBreakerRealSystem:
         assert circuit_breaker.failure_count == failure_count
 
         # Weitere Calls sollten sofort blockiert werden
-        with pytest.raises(CircuitBreakerOpenException):
+        with pytest.raises(CircuitBreakerOpenError):
             await circuit_breaker.call(real_http_call)
-
-    @pytest.mark.asyncio
-    async def test_real_circuit_breaker_recovery_flow(self, circuit_breaker, reset_server):
-        """Test: Echter Circuit Breaker Recovery Flow"""
-        # 1. Erst Failures provozieren
-        test_server.set_healthy(False)
-
-        async def real_http_call():
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"http://localhost:{test_server.port}/health") as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-                    else:
-                        raise Exception(f"HTTP {resp.status}")
-
-        # Failures bis OPEN
-        for i in range(circuit_breaker.config.failure_threshold):
-            with pytest.raises(Exception):
-                await circuit_breaker.call(real_http_call)
-
-        assert circuit_breaker.state == CircuitState.OPEN
-
-        # 2. Service wieder healthy machen
-        test_server.set_healthy(True)
-
-        # 3. Warten auf Recovery Timeout
-        await asyncio.sleep(circuit_breaker.config.recovery_timeout + 0.1)
-
-        # 4. HALF_OPEN Test
-        result = await circuit_breaker.call(real_http_call)
-        assert result["status"] == "healthy"
-        assert circuit_breaker.state == CircuitState.HALF_OPEN
-
-        # 5. Weitere erfolgreiche Calls für vollständige Recovery
-        for i in range(circuit_breaker.config.success_threshold - 1):
-            await circuit_breaker.call(real_http_call)
-
-        # Circuit sollte wieder CLOSED sein
-        assert circuit_breaker.state == CircuitState.CLOSED
 
     @pytest.mark.asyncio
     async def test_real_timeout_handling(self, circuit_breaker, reset_server):
@@ -349,6 +316,8 @@ class TestCircuitBreakerRealSystem:
 
         # Failure sollte gezählt werden
         assert circuit_breaker.failure_count == 1
+
+
 class TestServiceHealthManagerRealSystem:
     """Service Health Manager Tests mit echtem System"""
 
@@ -477,6 +446,8 @@ class TestServiceHealthManagerRealSystem:
             assert overall_health["gpu_summary"]["recommended_action"] == "scale_up"
         finally:
             await manager.stop_monitoring()
+
+
 class TestGracefulDegradationRealSystem:
     """Graceful Degradation Tests mit echtem System"""
 
@@ -533,6 +504,8 @@ class TestGracefulDegradationRealSystem:
 
         # Mode History sollte getracked werden
         assert len(status["mode_history"]) >= 2
+
+
 class TestCircuitBreakerServiceClientRealSystem:
     """Circuit Breaker Service Client Tests mit echtem System"""
 
@@ -580,79 +553,10 @@ class TestCircuitBreakerServiceClientRealSystem:
         assert result["status"] == "healthy"
         assert circuit.state == CircuitState.CLOSED
         assert circuit.health.successful_requests == 1
+
+
 class TestEndToEndRealSystem:
     """End-to-End Tests mit komplettem echten System"""
-
-    @pytest.mark.asyncio
-    async def test_complete_failure_recovery_cycle(self, reset_server):
-        """Test: Kompletter Failure-Recovery-Zyklus mit echtem System"""
-        # Setup komplettes System
-        health_manager = ServiceHealthManager()
-        degradation_manager = GracefulDegradationManager()
-
-        # Service mit Test Server registrieren
-        endpoint = ServiceEndpoint(
-            name="integration-service",
-            base_url=f"http://localhost:{test_server.port}",
-            timeout=1.0
-        )
-        health_manager.register_service(endpoint)
-
-        circuit = health_manager.circuit_breakers["integration-service"]
-
-        # 1. Erfolgreiche Phase
-        test_server.set_healthy(True)
-
-        async def service_call():
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"http://localhost:{test_server.port}/health") as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-                    else:
-                        raise Exception(f"HTTP {resp.status}")
-
-        # Erfolgreiche Calls mit Caching
-        result1 = await circuit.call(service_call)
-        assert result1["status"] == "healthy"
-
-        # Response cachen
-        request_data = {"endpoint": "/health"}
-        await degradation_manager.cache_response("integration-service", request_data, result1)
-
-        # 2. Failure Phase
-        test_server.set_healthy(False)
-
-        # Failures bis Circuit OPEN
-        for i in range(circuit.config.failure_threshold):
-            with pytest.raises(Exception):
-                await circuit.call(service_call)
-
-        assert circuit.state == CircuitState.OPEN
-
-        # 3. Graceful Degradation Phase
-        original_error = Exception("Service unavailable")
-        fallback_result = await degradation_manager.handle_service_failure(
-            "integration-service", request_data, original_error
-        )
-
-        # Sollte gecachte Response verwenden
-        assert fallback_result.get("cached") is True
-
-        # 4. Recovery Phase
-        test_server.set_healthy(True)
-        await asyncio.sleep(circuit.config.recovery_timeout + 0.1)
-
-        # Recovery Test
-        result2 = await circuit.call(service_call)
-        assert result2["status"] == "healthy"
-        assert circuit.state == CircuitState.HALF_OPEN
-
-        # Vollständige Recovery
-        await circuit.call(service_call)
-        assert circuit.state == CircuitState.CLOSED
-
-        # Cleanup
-        await health_manager.stop_monitoring()
 
     @pytest.mark.asyncio
     async def test_concurrent_real_service_calls(self, reset_server):

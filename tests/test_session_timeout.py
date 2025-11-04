@@ -4,7 +4,6 @@ Tests für Session-Timeout-Management
 """
 
 import pytest
-import asyncio
 from datetime import datetime, timedelta
 from services.api_gateway.session_manager import SessionManager, Session, SessionStatus, ClientType
 
@@ -78,6 +77,7 @@ class TestSessionTimeoutManagement:
         class MockWebSocketManager:
             async def broadcast_to_session(self, session_id, message):
                 pass
+
             async def handle_session_termination(self, session_id, reason):
                 pass
 

@@ -5,7 +5,6 @@ Testet die neue process_text_pipeline über die Session API
 """
 
 import requests
-import json
 import time
 
 
@@ -201,7 +200,7 @@ def test_text_pipeline_integration():
     for i in range(3):
         try:
             payload = {
-                "text": f"Performance test message number {i+1}",
+                "text": f"Performance test message number {i + 1}",
                 "source_lang": "en",
                 "target_lang": "de",
                 "client_type": "admin"
@@ -220,7 +219,7 @@ def test_text_pipeline_integration():
                 text_times.append(end_time - start_time)
 
         except Exception as e:
-            print(f"   Performance test {i+1} failed: {e}")
+            print(f"   Performance test {i + 1} failed: {e}")
 
     if text_times:
         avg_text_time = sum(text_times) / len(text_times)

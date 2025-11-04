@@ -29,7 +29,7 @@ from ..websocket import MessageType, WebSocketManager
 router = APIRouter()
 
 # WebSocket Manager Instance (wird nach session_manager import initialisiert)
-websocket_manager = None
+websocket_manager: Optional[WebSocketManager] = None
 
 # === Pydantic Models für Unified Message Endpoint ===
 
@@ -166,7 +166,7 @@ class ActivityUpdateResponse(BaseModel):
 
 
 # Unterstützte Sprachen basierend auf TTS-Service
-SUPPORTED_LANGUAGES = {
+SUPPORTED_LANGUAGES: Dict[str, Dict[str, str]] = {
     "de": {"name": "Deutsch", "native": "Deutsch"},
     "en": {"name": "English", "native": "English"},
     "ar": {"name": "Arabic", "native": "العربية"},
@@ -181,7 +181,7 @@ SUPPORTED_LANGUAGES = {
 
 
 @router.post("/session/create")
-async def create_session(customer_language: str):
+async def create_session(customer_language: str) -> Dict[str, Any]:
     """Neue Session für Admin-Kunde Gespräch erstellen"""
     if customer_language not in SUPPORTED_LANGUAGES:
         raise HTTPException(400, f"Sprache '{customer_language}' nicht unterstützt")
@@ -198,7 +198,7 @@ async def create_session(customer_language: str):
 
 
 @router.get("/session/{session_id}")
-async def get_session_info(session_id: str):
+async def get_session_info(session_id: str) -> Dict[str, Any]:
     """Session-Informationen abrufen"""
     session = session_manager.get_session(session_id)
     if not session:
@@ -217,7 +217,7 @@ async def get_session_info(session_id: str):
 
 
 @router.get("/sessions/active")
-async def get_active_sessions():
+async def get_active_sessions() -> Dict[str, Any]:
     """Aktive Sessions für Admin-Übersicht"""
     return {"sessions": session_manager.get_active_sessions()}
 
@@ -585,7 +585,7 @@ def create_error_response(
 
 
 @router.get("/session/{session_id}/messages")
-async def get_session_messages(session_id: str):
+async def get_session_messages(session_id: str) -> Dict[str, Any]:
     """Nachrichten einer Session abrufen"""
     session = session_manager.get_session(session_id)
     if not session:
@@ -619,7 +619,7 @@ async def get_message_audio(message_id: str):
 
 
 @router.get("/languages/supported")
-async def get_supported_languages():
+async def get_supported_languages() -> Dict[str, Any]:
     """Verfügbare Sprachen für Frontends"""
     return {
         "languages": SUPPORTED_LANGUAGES,
@@ -712,7 +712,9 @@ async def update_client_activity(
 
 
 @router.websocket("/ws/{session_id}/{client_type}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str, client_type: str):
+async def websocket_endpoint(
+    websocket: WebSocket, session_id: str, client_type: str
+) -> None:
     """WebSocket für Echtzeit-Updates (optional für später)"""
     await websocket.accept()
 

@@ -6,19 +6,14 @@ Testet Session-basierte Connection-Pools, Heartbeat-System, Graceful-Disconnect 
 
 import pytest
 import asyncio
-import json
 from datetime import datetime, timedelta
-from unittest.mock import Mock, AsyncMock, patch
-
-# FastAPI WebSocket-Test-Utilities
-from fastapi.testclient import TestClient
-from fastapi.websockets import WebSocket
+from unittest.mock import Mock, AsyncMock
 
 # WebSocket-Manager und Dependencies
 from services.api_gateway.websocket import (
-    WebSocketManager, WebSocketConnection, ConnectionState, MessageType
+    WebSocketManager, ConnectionState, MessageType
 )
-from services.api_gateway.session_manager import SessionManager, ClientType, SessionStatus
+from services.api_gateway.session_manager import SessionManager, ClientType
 
 
 class MockWebSocket:
@@ -105,9 +100,9 @@ class TestWebSocketManager:
         mock_ws3 = MockWebSocket()
 
         # Verbindungen zu verschiedenen Sessions erstellen
-        conn1 = await websocket_manager.connect_websocket(mock_ws1, session1_id, ClientType.ADMIN)
-        conn2 = await websocket_manager.connect_websocket(mock_ws2, session1_id, ClientType.CUSTOMER)
-        conn3 = await websocket_manager.connect_websocket(mock_ws3, session2_id, ClientType.ADMIN)
+        await websocket_manager.connect_websocket(mock_ws1, session1_id, ClientType.ADMIN)
+        await websocket_manager.connect_websocket(mock_ws2, session1_id, ClientType.CUSTOMER)
+        await websocket_manager.connect_websocket(mock_ws3, session2_id, ClientType.ADMIN)
 
         # Assertions: Session-Pools sind korrekt organisiert
         assert len(websocket_manager.session_connections[session1_id]) == 2
@@ -144,7 +139,7 @@ class TestWebSocketManager:
 
         # Disconnect-Message wurde gesendet
         disconnect_messages = [msg for msg in mock_websocket.messages_sent
-                             if msg.get("type") == MessageType.CONNECTION_STATUS.value]
+                               if msg.get("type") == MessageType.CONNECTION_STATUS.value]
         assert len(disconnect_messages) == 1
         assert disconnect_messages[0]["status"] == "disconnecting"
 
@@ -156,8 +151,8 @@ class TestWebSocketManager:
         mock_ws1 = MockWebSocket()
         mock_ws2 = MockWebSocket()
 
-        conn1 = await websocket_manager.connect_websocket(mock_ws1, session_id, ClientType.ADMIN)
-        conn2 = await websocket_manager.connect_websocket(mock_ws2, session_id, ClientType.CUSTOMER)
+        await websocket_manager.connect_websocket(mock_ws1, session_id, ClientType.ADMIN)
+        await websocket_manager.connect_websocket(mock_ws2, session_id, ClientType.CUSTOMER)
 
         # Session beenden
         await websocket_manager.handle_session_termination(session_id, "test_termination")
@@ -168,9 +163,9 @@ class TestWebSocketManager:
 
         # Termination-Messages wurden gesendet
         termination_msgs1 = [msg for msg in mock_ws1.messages_sent
-                           if msg.get("type") == MessageType.SESSION_TERMINATED.value]
+                             if msg.get("type") == MessageType.SESSION_TERMINATED.value]
         termination_msgs2 = [msg for msg in mock_ws2.messages_sent
-                           if msg.get("type") == MessageType.SESSION_TERMINATED.value]
+                             if msg.get("type") == MessageType.SESSION_TERMINATED.value]
 
         assert len(termination_msgs1) == 1
         assert len(termination_msgs2) == 1
@@ -202,7 +197,7 @@ class TestWebSocketManager:
 
         # Assertions: Ping wurde gesendet
         ping_messages = [msg for msg in mock_websocket.messages_sent
-                        if msg.get("type") == MessageType.HEARTBEAT_PING.value]
+                         if msg.get("type") == MessageType.HEARTBEAT_PING.value]
         assert len(ping_messages) == 1
 
         # Pong simulieren
@@ -259,8 +254,8 @@ class TestWebSocketManager:
         mock_ws1 = MockWebSocket()
         mock_ws2 = MockWebSocket()
 
-        conn1 = await websocket_manager.connect_websocket(mock_ws1, session_id, ClientType.ADMIN)
-        conn2 = await websocket_manager.connect_websocket(mock_ws2, session_id, ClientType.CUSTOMER)
+        await websocket_manager.connect_websocket(mock_ws1, session_id, ClientType.ADMIN)
+        await websocket_manager.connect_websocket(mock_ws2, session_id, ClientType.CUSTOMER)
 
         # Test-Message broadcasten
         test_message = {
@@ -272,9 +267,9 @@ class TestWebSocketManager:
 
         # Assertions: Beide Clients haben Message erhalten
         broadcast_msgs1 = [msg for msg in mock_ws1.messages_sent
-                          if msg.get("type") == "test_broadcast"]
+                           if msg.get("type") == "test_broadcast"]
         broadcast_msgs2 = [msg for msg in mock_ws2.messages_sent
-                          if msg.get("type") == "test_broadcast"]
+                           if msg.get("type") == "test_broadcast"]
 
         assert len(broadcast_msgs1) == 1
         assert len(broadcast_msgs2) == 1
@@ -304,13 +299,13 @@ class TestWebSocketManager:
         # Assertions
         # Admin (Sender) erhält original_message
         admin_messages = [msg for msg in mock_admin_ws.messages_sent
-                         if msg.get("type") == "message"]
+                          if msg.get("type") == "message"]
         assert len(admin_messages) == 1
         assert admin_messages[0]["text"] == "Original German Text"
 
         # Customer (Empfänger) erhält translated_message
         customer_messages = [msg for msg in mock_customer_ws.messages_sent
-                           if msg.get("type") == "message"]
+                             if msg.get("type") == "message"]
         assert len(customer_messages) == 1
         assert customer_messages[0]["text"] == "Translated English Text"
 
@@ -322,8 +317,8 @@ class TestWebSocketManager:
         mock_ws2 = MockWebSocket()
 
         # Verbindungen erstellen
-        conn1 = await websocket_manager.connect_websocket(mock_ws1, session_id, ClientType.ADMIN)
-        conn2 = await websocket_manager.connect_websocket(mock_ws2, session_id, ClientType.CUSTOMER)
+        await websocket_manager.connect_websocket(mock_ws1, session_id, ClientType.ADMIN)
+        await websocket_manager.connect_websocket(mock_ws2, session_id, ClientType.CUSTOMER)
 
         # Polling-Fallback aktivieren
         await websocket_manager.enable_polling_fallback(session_id, ClientType.ADMIN)
@@ -415,7 +410,7 @@ class TestWebSocketManager:
 
         # Erste Verbindung (Admin)
         mock_admin_ws = MockWebSocket()
-        admin_conn_id = await websocket_manager.connect_websocket(
+        await websocket_manager.connect_websocket(
             mock_admin_ws, session_id, ClientType.ADMIN
         )
 
@@ -427,7 +422,7 @@ class TestWebSocketManager:
 
         # Admin sollte Customer-Join-Notification erhalten haben
         join_messages = [msg for msg in mock_admin_ws.messages_sent
-                        if msg.get("type") == MessageType.CLIENT_JOINED.value]
+                         if msg.get("type") == MessageType.CLIENT_JOINED.value]
         assert len(join_messages) == 1
         assert join_messages[0]["client_type"] == ClientType.CUSTOMER.value
 
@@ -436,7 +431,7 @@ class TestWebSocketManager:
 
         # Admin sollte Customer-Leave-Notification erhalten haben
         leave_messages = [msg for msg in mock_admin_ws.messages_sent
-                         if msg.get("type") == MessageType.CLIENT_LEFT.value]
+                          if msg.get("type") == MessageType.CLIENT_LEFT.value]
         assert len(leave_messages) == 1
         assert leave_messages[0]["client_type"] == ClientType.CUSTOMER.value
         assert leave_messages[0]["reason"] == "test_leave"
@@ -452,13 +447,13 @@ class TestWebSocketIntegration:
         session_id = await websocket_manager.session_manager.create_admin_session()
 
         # WebSocket-Verbindung zur Session
-        connection_id = await websocket_manager.connect_websocket(
+        await websocket_manager.connect_websocket(
             mock_websocket, session_id, ClientType.ADMIN
         )
 
         # Session sollte WebSocket-Connection haben
         session = websocket_manager.session_manager.get_session(session_id)
-        assert session.admin_connected == True
+        assert session.admin_connected is True
 
         # WebSocket-Verbindung über SessionManager abrufen
         session_ws = websocket_manager.session_manager.get_websocket_connection(
