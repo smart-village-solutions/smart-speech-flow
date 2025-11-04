@@ -1,0 +1,107 @@
+# Pre-commit Hooks Configuration
+# Automatisiert Code-Qualitätsprüfungen vor jedem Commit
+
+repos:
+  # Python Code Formatting
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3.12
+        args: [--line-length=88]
+        files: ^services/.*\.py$
+
+  # Import Sorting
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: [--profile=black, --line-length=88]
+        files: ^services/.*\.py$
+
+  # Python Linting
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        files: ^services/.*\.py$
+        additional_dependencies:
+          - flake8-bugbear
+          - flake8-docstrings
+          - pep8-naming
+
+  # Security Analysis
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.10
+    hooks:
+      - id: bandit
+        args: [-r, --severity-level, high]
+        files: ^services/.*\.py$
+        exclude: ^services/.*/tests/.*$
+
+  # General File Checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Prevent large files from being committed
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+
+      # Ensure files end with newline
+      - id: end-of-file-fixer
+        files: \.(py|yaml|yml|json|md|txt|sh)$
+
+      # Remove trailing whitespace
+      - id: trailing-whitespace
+        files: \.(py|yaml|yml|json|md|txt|sh)$
+
+      # Check YAML syntax
+      - id: check-yaml
+        files: \.(yaml|yml)$
+        exclude: ^docker-compose\.yml$  # May have template syntax
+
+      # Check JSON syntax
+      - id: check-json
+        files: \.json$
+        exclude: ^response\.json$
+
+      # Check for merge conflicts
+      - id: check-merge-conflict
+
+      # Check Python AST (syntax)
+      - id: check-ast
+        files: \.py$
+
+      # Check for debugger imports
+      - id: debug-statements
+        files: \.py$
+
+  # Dependency Security Scanning
+  - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
+    rev: v1.3.2
+    hooks:
+      - id: python-safety-dependencies-check
+        files: requirements.*\.txt$
+
+# Configuration for specific hooks
+default_language_version:
+  python: python3.12
+
+# Files to exclude globally
+exclude: |
+  (?x)^(
+    \.venv/.*|
+    __pycache__/.*|
+    \.git/.*|
+    \.pytest_cache/.*|
+    \.mypy_cache/.*|
+    monitoring/.*|
+    letsencrypt/.*|
+    examples/.*
+  )$
+
+# Fail fast - stop on first failure
+fail_fast: false
+
+# Minimum pre-commit version required
+minimum_pre_commit_version: 3.0.0

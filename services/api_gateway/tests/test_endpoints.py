@@ -1,8 +1,6 @@
-import os
 import sys
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
@@ -12,6 +10,7 @@ if str(ROOT_DIR) not in sys.path:
 from services.api_gateway.app import app
 
 client = TestClient(app)
+
 
 def test_endpoints_exist():
     for endpoint in ["/", "/upload", "/pipeline", "/metrics"]:

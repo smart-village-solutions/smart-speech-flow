@@ -1,0 +1,92 @@
+/root/projects/ssf-backend/.venv/lib/python3.12/site-packages/flake8_import_order/styles.py:3: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import iter_entry_points
+services/api_gateway/circuit_breaker.py:19:1: F401 'dataclasses.field' imported but unused
+services/api_gateway/circuit_breaker.py:20:1: F401 'datetime.timedelta' imported but unused
+services/api_gateway/circuit_breaker.py:325:8: N818 exception name 'CircuitBreakerOpenException' should be named with an Error suffix
+services/api_gateway/circuit_breaker_client.py:16:1: F401 'asyncio' imported but unused
+services/api_gateway/circuit_breaker_client.py:17:1: F401 'json' imported but unused
+services/api_gateway/circuit_breaker_client.py:19:1: F401 'time' imported but unused
+services/api_gateway/circuit_breaker_client.py:20:1: F401 'typing.Union' imported but unused
+services/api_gateway/graceful_degradation.py:16:1: F401 'asyncio' imported but unused
+services/api_gateway/graceful_degradation.py:23:1: F401 'typing.Union' imported but unused
+services/api_gateway/pipeline_logic.py:1:1: F401 'asyncio' imported but unused
+services/api_gateway/pipeline_logic.py:6:1: F401 'struct' imported but unused
+services/api_gateway/pipeline_logic.py:11:1: F401 'enum.Enum' imported but unused
+services/api_gateway/pipeline_logic.py:14:1: F401 'aiohttp' imported but unused
+services/api_gateway/pipeline_logic.py:20:1: F401 '.circuit_breaker.CircuitBreakerOpenException' imported but unused
+services/api_gateway/pipeline_logic.py:21:1: F401 '.graceful_degradation.graceful_degradation_manager' imported but unused
+services/api_gateway/pipeline_logic.py:22:1: F401 '.service_health.service_health_manager' imported but unused
+services/api_gateway/pipeline_logic.py:117:1: C901 'validate_audio_input' is too complex (20)
+services/api_gateway/pipeline_logic.py:148:71: E226 missing whitespace around arithmetic operator
+services/api_gateway/pipeline_logic.py:148:76: E226 missing whitespace around arithmetic operator
+services/api_gateway/pipeline_logic.py:430:9: F841 local variable 'bit_depth' is assigned to but never used
+services/api_gateway/pipeline_logic.py:477:1: C901 'validate_text_input' is too complex (11)
+services/api_gateway/pipeline_logic.py:677:1: C901 'process_text_pipeline' is too complex (12)
+services/api_gateway/routes/circuit_breaker.py:17:1: F401 'typing.Optional' imported but unused
+services/api_gateway/routes/circuit_breaker.py:19:1: F401 'fastapi.Depends' imported but unused
+services/api_gateway/routes/circuit_breaker.py:20:1: F401 'fastapi.responses.JSONResponse' imported but unused
+services/api_gateway/routes/circuit_breaker.py:25:1: F401 '..service_health.service_health_manager' imported but unused
+services/api_gateway/routes/circuit_breaker.py:283:24: F541 f-string is missing placeholders
+services/api_gateway/routes/customer.py:12:1: F401 'fastapi.responses.JSONResponse' imported but unused
+services/api_gateway/routes/health.py:2:1: F401 'fastapi.responses.HTMLResponse' imported but unused
+services/api_gateway/routes/health.py:2:1: F401 'fastapi.responses.JSONResponse' imported but unused
+services/api_gateway/routes/health.py:5:1: F401 'services.api_gateway.utils.health_utils.get_health_status_html' imported but unused
+services/api_gateway/routes/pipeline.py:3:1: F401 'time' imported but unused
+services/api_gateway/routes/pipeline.py:5:1: F401 'psutil' imported but unused
+services/api_gateway/routes/pipeline.py:6:1: F401 'requests' imported but unused
+services/api_gateway/routes/pipeline.py:9:1: F401 'services.api_gateway.app.ASR_URL' imported but unused
+services/api_gateway/routes/pipeline.py:9:1: F401 'services.api_gateway.app.TRANSLATION_URL' imported but unused
+services/api_gateway/routes/pipeline.py:9:1: F401 'services.api_gateway.app.TTS_URL' imported but unused
+services/api_gateway/routes/session.py:9:1: F401 'json' imported but unused
+services/api_gateway/routes/session.py:13:1: F401 'typing.Union' imported but unused
+services/api_gateway/routes/session.py:15:1: F401 'fastapi.Depends' imported but unused
+services/api_gateway/routes/session.py:15:1: F401 'fastapi.File' imported but unused
+services/api_gateway/routes/session.py:15:1: F401 'fastapi.Form' imported but unused
+services/api_gateway/routes/session.py:15:1: F401 'fastapi.UploadFile' imported but unused
+services/api_gateway/routes/session.py:26:1: F401 'fastapi.responses.JSONResponse' imported but unused
+services/api_gateway/routes/session.py:53:32: N805 first argument of a method should be named 'self'
+services/api_gateway/routes/session.py:301:5: F401 'fastapi.File' imported but unused
+services/api_gateway/routes/session.py:301:5: F401 'fastapi.Form' imported but unused
+services/api_gateway/routes/session.py:301:5: F811 redefinition of unused 'File' from line 15
+services/api_gateway/routes/session.py:301:5: F811 redefinition of unused 'Form' from line 15
+services/api_gateway/routes/session.py:301:5: F811 redefinition of unused 'UploadFile' from line 15
+services/api_gateway/routes/session.py:346:9: F841 local variable 'validation_start' is assigned to but never used
+services/api_gateway/routes/upload.py:28:21: F541 f-string is missing placeholders
+services/api_gateway/service_health.py:20:1: F401 'dataclasses.field' imported but unused
+services/api_gateway/service_health.py:21:1: F401 'datetime.timedelta' imported but unused
+services/api_gateway/service_health.py:227:9: F841 local variable 'results' is assigned to but never used
+services/api_gateway/service_health.py:505:5: C901 'ServiceHealthManager.get_gpu_summary' is too complex (27)
+services/api_gateway/session.py:20:1: F401 'fastapi.responses.JSONResponse' imported but unused
+services/api_gateway/session_manager.py:266:5: C901 'SessionManager._load_sessions_from_persistence' is too complex (11)
+services/api_gateway/tests/test_customer.py:1:1: F401 'os' imported but unused
+services/api_gateway/tests/test_customer.py:5:1: F401 'pytest' imported but unused
+services/api_gateway/tests/test_endpoints.py:1:1: F401 'os' imported but unused
+services/api_gateway/tests/test_endpoints.py:5:1: F401 'pytest' imported but unused
+services/api_gateway/tests/test_health.py:1:1: F401 'pytest' imported but unused
+services/api_gateway/tests/test_metrics.py:1:1: F401 'pytest' imported but unused
+services/api_gateway/websocket.py:13:1: F401 'json' imported but unused
+services/api_gateway/websocket.py:15:1: F401 'math' imported but unused
+services/api_gateway/websocket.py:1014:1: F811 redefinition of unused 'WebSocketDisconnect' from line 22
+services/api_gateway/websocket.py:1035:1: C901 'websocket_endpoint' is too complex (13)
+services/api_gateway/websocket.py:1090:17: E722 do not use bare 'except'
+services/asr/app.py:71:1: C901 '_collect_gpu_metrics' is too complex (12)
+services/asr/app.py:203:5: F841 local variable 'e' is assigned to but never used
+services/asr/app.py:228:1: C901 'transcribe' is too complex (11)
+services/translation/app.py:25:1: C901 '_collect_gpu_metrics' is too complex (12)
+services/translation/app.py:349:1: C901 'translate' is too complex (31)
+services/tts/app.py:54:1: F401 'os' imported but unused
+services/tts/app.py:55:1: F401 're' imported but unused
+services/tts/app.py:67:6: N811 constant 'TTS' imported as non constant 'TTSApi'
+services/tts/app.py:70:1: F401 'base64' imported but unused
+services/tts/app.py:86:1: C901 '_collect_gpu_metrics' is too complex (12)
+services/tts/app.py:321:1: C901 'synthesize' is too complex (18)
+12    C901 'validate_audio_input' is too complex (20)
+2     E226 missing whitespace around arithmetic operator
+1     E722 do not use bare 'except'
+52    F401 'dataclasses.field' imported but unused
+2     F541 f-string is missing placeholders
+4     F811 redefinition of unused 'File' from line 15
+4     F841 local variable 'bit_depth' is assigned to but never used
+1     N805 first argument of a method should be named 'self'
+1     N811 constant 'TTS' imported as non constant 'TTSApi'
+1     N818 exception name 'CircuitBreakerOpenException' should be named with an Error suffix

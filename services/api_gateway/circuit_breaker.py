@@ -14,39 +14,42 @@ Version: 1.0
 """
 
 import asyncio
-import time
-from enum import Enum
-from typing import Optional, Callable, Any, Dict, List
-from dataclasses import dataclass, field
 import logging
-from datetime import datetime, timedelta
+import time
+from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class CircuitState(Enum):
     """Circuit Breaker States"""
-    CLOSED = "closed"         # Service funktioniert normal
-    OPEN = "open"            # Service blockiert nach Fehlern
+
+    CLOSED = "closed"  # Service funktioniert normal
+    OPEN = "open"  # Service blockiert nach Fehlern
     HALF_OPEN = "half_open"  # Test ob Service wieder verfügbar
 
 
 @dataclass
 class CircuitBreakerConfig:
     """Konfiguration für Circuit Breaker"""
-    failure_threshold: int = 5          # Anzahl Fehler bis OPEN
-    recovery_timeout: int = 60          # Sekunden bis HALF_OPEN Test
-    success_threshold: int = 3          # Erfolge für CLOSED Status
-    timeout: float = 10.0               # Request Timeout in Sekunden
+
+    failure_threshold: int = 5  # Anzahl Fehler bis OPEN
+    recovery_timeout: int = 60  # Sekunden bis HALF_OPEN Test
+    success_threshold: int = 3  # Erfolge für CLOSED Status
+    timeout: float = 10.0  # Request Timeout in Sekunden
 
     # Exponential Backoff für Recovery
-    max_recovery_time: int = 300        # Max 5 Minuten
-    backoff_multiplier: float = 2.0     # Verdopplung der Wartezeit
+    max_recovery_time: int = 300  # Max 5 Minuten
+    backoff_multiplier: float = 2.0  # Verdopplung der Wartezeit
 
 
 @dataclass
 class ServiceHealth:
     """Service Health Metrics"""
+
     service_name: str
     total_requests: int = 0
     successful_requests: int = 0
@@ -115,7 +118,7 @@ class CircuitBreaker:
             Ergebnis der Funktion oder Exception
 
         Raises:
-            CircuitBreakerOpenException: Wenn Circuit OPEN ist
+            CircuitBreakerOpenError: Wenn Circuit OPEN ist
             TimeoutError: Bei Timeout
         """
         # Circuit State Check
@@ -123,7 +126,7 @@ class CircuitBreaker:
             if self._should_attempt_reset():
                 await self._attempt_reset()
             else:
-                raise CircuitBreakerOpenException(
+                raise CircuitBreakerOpenError(
                     f"Circuit Breaker '{self.name}' ist OPEN. "
                     f"Nächster Versuch in {self._time_until_next_attempt():.1f}s"
                 )
@@ -139,8 +142,7 @@ class CircuitBreaker:
                 effective_timeout = timeout + slack
 
             result = await asyncio.wait_for(
-                func(*args, **kwargs),
-                timeout=effective_timeout
+                func(*args, **kwargs), timeout=effective_timeout
             )
 
             # Success Handling
@@ -151,7 +153,9 @@ class CircuitBreaker:
         except asyncio.TimeoutError:
             execution_time = time.time() - start_time
             await self._on_failure(f"Timeout nach {execution_time:.2f}s")
-            raise TimeoutError(f"Service '{self.name}' Timeout nach {execution_time:.2f}s")
+            raise TimeoutError(
+                f"Service '{self.name}' Timeout nach {execution_time:.2f}s"
+            )
 
         except Exception as e:
             execution_time = time.time() - start_time
@@ -169,7 +173,9 @@ class CircuitBreaker:
         if len(self.response_times) > 100:  # Sliding window
             self.response_times.pop(0)
 
-        self.health.average_response_time = sum(self.response_times) / len(self.response_times)
+        self.health.average_response_time = sum(self.response_times) / len(
+            self.response_times
+        )
 
         # State Management
         if self.state == CircuitState.HALF_OPEN:
@@ -179,7 +185,9 @@ class CircuitBreaker:
         elif self.state == CircuitState.CLOSED:
             self.failure_count = 0  # Reset failure count
 
-        logger.debug(f"✅ '{self.name}' Success: {response_time:.3f}s (Rate: {self.health.success_rate:.1f}%)")
+        logger.debug(
+            f"✅ '{self.name}' Success: {response_time:.3f}s (Rate: {self.health.success_rate:.1f}%)"
+        )
 
     async def _on_failure(self, error: str):
         """Behandelt fehlgeschlagene Requests"""
@@ -196,7 +204,9 @@ class CircuitBreaker:
             # Zurück zu OPEN bei Fehler im Test
             await self._open_circuit()
 
-        logger.warning(f"❌ '{self.name}' Failure: {error} (Count: {self.failure_count})")
+        logger.warning(
+            f"❌ '{self.name}' Failure: {error} (Count: {self.failure_count})"
+        )
 
     async def _open_circuit(self):
         """Öffnet Circuit Breaker - Service wird blockiert"""
@@ -208,14 +218,16 @@ class CircuitBreaker:
         if old_state == CircuitState.HALF_OPEN:
             self.current_recovery_timeout = min(
                 self.current_recovery_timeout * self.config.backoff_multiplier,
-                self.config.max_recovery_time
+                self.config.max_recovery_time,
             )
 
         self.next_attempt_time = self.last_failure_time + self.current_recovery_timeout
         self.health.current_state = self.state
 
         await self._notify_state_change(old_state, self.state)
-        logger.error(f"🔴 Circuit Breaker '{self.name}' OPEN - Service blockiert für {self.current_recovery_timeout}s")
+        logger.error(
+            f"🔴 Circuit Breaker '{self.name}' OPEN - Service blockiert für {self.current_recovery_timeout}s"
+        )
 
     async def _close_circuit(self):
         """Schließt Circuit Breaker - Normaler Service"""
@@ -227,7 +239,9 @@ class CircuitBreaker:
         self.health.current_state = self.state
 
         await self._notify_state_change(old_state, self.state)
-        logger.info(f"🟢 Circuit Breaker '{self.name}' CLOSED - Service wieder verfügbar")
+        logger.info(
+            f"🟢 Circuit Breaker '{self.name}' CLOSED - Service wieder verfügbar"
+        )
 
     async def _attempt_reset(self):
         """Versucht Circuit zu schließen (HALF_OPEN State)"""
@@ -237,7 +251,9 @@ class CircuitBreaker:
         self.health.current_state = self.state
 
         await self._notify_state_change(old_state, self.state)
-        logger.info(f"🟡 Circuit Breaker '{self.name}' HALF_OPEN - Teste Service Verfügbarkeit")
+        logger.info(
+            f"🟡 Circuit Breaker '{self.name}' HALF_OPEN - Teste Service Verfügbarkeit"
+        )
 
     def _should_attempt_reset(self) -> bool:
         """Prüft ob Reset-Versuch erlaubt ist"""
@@ -251,7 +267,9 @@ class CircuitBreaker:
             return 0.0
         return max(0.0, self.next_attempt_time - time.time())
 
-    async def _notify_state_change(self, old_state: CircuitState, new_state: CircuitState):
+    async def _notify_state_change(
+        self, old_state: CircuitState, new_state: CircuitState
+    ):
         """Benachrichtigt über State Changes"""
         if self.on_state_change:
             try:
@@ -279,9 +297,17 @@ class CircuitBreaker:
                 "current_recovery_timeout": self.current_recovery_timeout,
             },
             "last_events": {
-                "last_failure": self.health.last_failure.isoformat() if self.health.last_failure else None,
-                "last_success": self.health.last_success.isoformat() if self.health.last_success else None,
-            }
+                "last_failure": (
+                    self.health.last_failure.isoformat()
+                    if self.health.last_failure
+                    else None
+                ),
+                "last_success": (
+                    self.health.last_success.isoformat()
+                    if self.health.last_success
+                    else None
+                ),
+            },
         }
 
     def reset(self):
@@ -296,8 +322,9 @@ class CircuitBreaker:
         self.health.current_state = self.state
 
 
-class CircuitBreakerOpenException(Exception):
+class CircuitBreakerOpenError(Exception):
     """Exception wenn Circuit Breaker OPEN ist"""
+
     pass
 
 
@@ -308,7 +335,9 @@ class CircuitBreakerFactory:
     _instances: Dict[str, CircuitBreaker] = {}
 
     @classmethod
-    def get_circuit_breaker(cls, service_name: str, config: CircuitBreakerConfig = None) -> CircuitBreaker:
+    def get_circuit_breaker(
+        cls, service_name: str, config: CircuitBreakerConfig = None
+    ) -> CircuitBreaker:
         """Holt oder erstellt Circuit Breaker für Service"""
         if service_name not in cls._instances:
             cls._instances[service_name] = CircuitBreaker(service_name, config)

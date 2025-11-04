@@ -4,20 +4,22 @@ Admin-Routes für Session-Management
 Unterstützt parallele Admin-Sessions
 """
 
+import logging
+from datetime import datetime
+from typing import Any, Dict, Optional
+
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
-from datetime import datetime
-import logging
 
-from ..session_manager import session_manager, SessionStatus
+from ..session_manager import SessionStatus, session_manager
 
 # Logger setup
 logger = logging.getLogger(__name__)
 
 # Router setup
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
 
 # Request/Response Models
 class SessionCreateResponse(BaseModel):
@@ -26,6 +28,7 @@ class SessionCreateResponse(BaseModel):
     status: str = Field(..., description="Session status")
     created_at: str = Field(..., description="Session creation timestamp")
     message: str = Field(..., description="Success message")
+
 
 class SessionStatusResponse(BaseModel):
     session_id: str
@@ -38,27 +41,36 @@ class SessionStatusResponse(BaseModel):
     terminated_at: Optional[str]
     termination_reason: Optional[str]
 
+
 class SessionHistoryResponse(BaseModel):
     sessions: list[Dict[str, Any]]
     total_count: int
     active_sessions: list[Dict[str, Any]] = Field(default_factory=list)
+
 
 class ErrorResponse(BaseModel):
     error: str
     message: str
     timestamp: str
 
+
 def get_client_base_url() -> str:
     """Client Frontend Base URL"""
     import os
-    # Verwende Environment-Variable oder Fallback auf Production-URL
-    return os.environ.get("CLIENT_BASE_URL", "https://translate.smart-village.solutions")
 
-@router.post("/session/create",
-             response_model=SessionCreateResponse,
-             status_code=status.HTTP_201_CREATED,
-             summary="Neue Admin-Session erstellen",
-             description="Erstellt eine neue Admin-Session. Mehrere parallele Sessions sind erlaubt.")
+    # Verwende Environment-Variable oder Fallback auf Production-URL
+    return os.environ.get(
+        "CLIENT_BASE_URL", "https://translate.smart-village.solutions"
+    )
+
+
+@router.post(
+    "/session/create",
+    response_model=SessionCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Neue Admin-Session erstellen",
+    description="Erstellt eine neue Admin-Session. Mehrere parallele Sessions sind erlaubt.",
+)
 async def create_admin_session():
     """
     Erstellt eine neue Admin-Session für parallele Nutzung
@@ -80,7 +92,7 @@ async def create_admin_session():
         if not session:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Fehler bei Session-Erstellung"
+                detail="Fehler bei Session-Erstellung",
             )
 
         # Client-URL generieren
@@ -95,21 +107,28 @@ async def create_admin_session():
             client_url=client_url,
             status=session.status.value,
             created_at=session.created_at.isoformat(),
-            message=f"Session {session_id} erfolgreich erstellt. Verwende diese Session-ID für den Verbindungsaufbau."
+            message=f"Session {session_id} erfolgreich erstellt. Verwende diese Session-ID für den Verbindungsaufbau.",
         )
 
     except Exception as e:
         logger.error(f"❌ Fehler bei Admin-Session-Erstellung: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Session-Erstellung fehlgeschlagen: {str(e)}"
+            detail=f"Session-Erstellung fehlgeschlagen: {str(e)}",
         )
 
-@router.get("/session/current",
-            response_model=SessionStatusResponse,
-            summary="Aktuelle Admin-Session abrufen",
-            description="Gibt Details der aktuell aktiven Admin-Session zurück. Optional kann eine Session-ID angegeben werden.")
-async def get_current_session(session_id: Optional[str] = Query(default=None, description="Spezifische Session-ID, die geladen werden soll.")):
+
+@router.get(
+    "/session/current",
+    response_model=SessionStatusResponse,
+    summary="Aktuelle Admin-Session abrufen",
+    description="Gibt Details der aktuell aktiven Admin-Session zurück. Optional kann eine Session-ID angegeben werden.",
+)
+async def get_current_session(
+    session_id: Optional[str] = Query(
+        default=None, description="Spezifische Session-ID, die geladen werden soll."
+    )
+):
     """
     Ruft die aktuelle aktive Admin-Session ab
 
@@ -122,7 +141,7 @@ async def get_current_session(session_id: Optional[str] = Query(default=None, de
         if not active_session_data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Keine aktive Admin-Session gefunden"
+                detail="Keine aktive Admin-Session gefunden",
             )
 
         session_id = active_session_data["id"]
@@ -136,8 +155,10 @@ async def get_current_session(session_id: Optional[str] = Query(default=None, de
             customer_connected=session.customer_connected,
             message_count=len(session.messages),
             created_at=session.created_at.isoformat(),
-            terminated_at=session.terminated_at.isoformat() if session.terminated_at else None,
-            termination_reason=session.termination_reason
+            terminated_at=(
+                session.terminated_at.isoformat() if session.terminated_at else None
+            ),
+            termination_reason=session.termination_reason,
         )
 
     except HTTPException:
@@ -146,13 +167,16 @@ async def get_current_session(session_id: Optional[str] = Query(default=None, de
         logger.error(f"❌ Fehler beim Abrufen der aktuellen Session: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Fehler beim Abrufen der Session: {str(e)}"
+            detail=f"Fehler beim Abrufen der Session: {str(e)}",
         )
 
-@router.delete("/session/{session_id}/terminate",
-               status_code=status.HTTP_200_OK,
-               summary="Session manuell beenden",
-               description="Beendet eine spezifische Session manuell mit graceful cleanup")
+
+@router.delete(
+    "/session/{session_id}/terminate",
+    status_code=status.HTTP_200_OK,
+    summary="Session manuell beenden",
+    description="Beendet eine spezifische Session manuell mit graceful cleanup",
+)
 async def terminate_session(session_id: str):
     """
     Beendet eine Session manuell
@@ -169,7 +193,7 @@ async def terminate_session(session_id: str):
         if not session:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Session {session_id} nicht gefunden"
+                detail=f"Session {session_id} nicht gefunden",
             )
 
         if session.status == SessionStatus.TERMINATED:
@@ -177,7 +201,7 @@ async def terminate_session(session_id: str):
                 content={
                     "message": f"Session {session_id} ist bereits beendet",
                     "session_id": session_id,
-                    "status": "already_terminated"
+                    "status": "already_terminated",
                 }
             )
 
@@ -191,7 +215,7 @@ async def terminate_session(session_id: str):
                 "message": f"Session {session_id} erfolgreich beendet",
                 "session_id": session_id,
                 "status": "terminated",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
         )
 
@@ -201,13 +225,16 @@ async def terminate_session(session_id: str):
         logger.error(f"❌ Fehler beim Beenden der Session {session_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Fehler beim Beenden der Session: {str(e)}"
+            detail=f"Fehler beim Beenden der Session: {str(e)}",
         )
 
-@router.get("/session/history",
-            response_model=SessionHistoryResponse,
-            summary="Session-Historie abrufen",
-            description="Gibt eine Liste der vergangenen Sessions und aktuelle Session zurück")
+
+@router.get(
+    "/session/history",
+    response_model=SessionHistoryResponse,
+    summary="Session-Historie abrufen",
+    description="Gibt eine Liste der vergangenen Sessions und aktuelle Session zurück",
+)
 async def get_session_history(limit: int = 10):
     """
     Ruft Session-Historie für Admin-Dashboard ab
@@ -226,22 +253,23 @@ async def get_session_history(limit: int = 10):
         active_sessions = session_manager.get_active_sessions()
 
         return SessionHistoryResponse(
-            sessions=history,
-            total_count=len(history),
-            active_sessions=active_sessions
+            sessions=history, total_count=len(history), active_sessions=active_sessions
         )
 
     except Exception as e:
         logger.error(f"❌ Fehler beim Abrufen der Session-Historie: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Fehler beim Abrufen der Historie: {str(e)}"
+            detail=f"Fehler beim Abrufen der Historie: {str(e)}",
         )
 
-@router.get("/session/{session_id}/status",
-            response_model=SessionStatusResponse,
-            summary="Session-Status abrufen",
-            description="Gibt detaillierte Informationen über eine spezifische Session zurück")
+
+@router.get(
+    "/session/{session_id}/status",
+    response_model=SessionStatusResponse,
+    summary="Session-Status abrufen",
+    description="Gibt detaillierte Informationen über eine spezifische Session zurück",
+)
 async def get_session_status(session_id: str):
     """
     Ruft Status einer spezifischen Session ab
@@ -258,7 +286,7 @@ async def get_session_status(session_id: str):
         if not session:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Session {session_id} nicht gefunden"
+                detail=f"Session {session_id} nicht gefunden",
             )
 
         return SessionStatusResponse(
@@ -269,8 +297,10 @@ async def get_session_status(session_id: str):
             customer_connected=session.customer_connected,
             message_count=len(session.messages),
             created_at=session.created_at.isoformat(),
-            terminated_at=session.terminated_at.isoformat() if session.terminated_at else None,
-            termination_reason=session.termination_reason
+            terminated_at=(
+                session.terminated_at.isoformat() if session.terminated_at else None
+            ),
+            termination_reason=session.termination_reason,
         )
 
     except HTTPException:
@@ -279,8 +309,9 @@ async def get_session_status(session_id: str):
         logger.error(f"❌ Fehler beim Abrufen des Session-Status: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Fehler beim Abrufen des Status: {str(e)}"
+            detail=f"Fehler beim Abrufen des Status: {str(e)}",
         )
+
 
 # Note: Exception handlers werden auf App-Level registriert, nicht auf Router-Level
 # Error handling erfolgt in den individuellen Route-Funktionen

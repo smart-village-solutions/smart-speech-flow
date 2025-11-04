@@ -1,8 +1,6 @@
-import os
 import sys
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
@@ -13,6 +11,7 @@ from services.api_gateway.app import app
 from services.api_gateway.session_manager import session_manager
 
 client = TestClient(app)
+
 
 class TestCustomerRoutes:
     def setup_method(self):
@@ -28,10 +27,7 @@ class TestCustomerRoutes:
         session_id = session_data["session_id"]
 
         # Activate session as customer
-        activate_payload = {
-            "session_id": session_id,
-            "customer_language": "en"
-        }
+        activate_payload = {"session_id": session_id, "customer_language": "en"}
 
         response = client.post("/api/customer/session/activate", json=activate_payload)
         assert response.status_code == 200
@@ -45,10 +41,7 @@ class TestCustomerRoutes:
 
     def test_activate_session_not_found(self):
         """Test activation with non-existent session"""
-        activate_payload = {
-            "session_id": "NONEXISTENT",
-            "customer_language": "en"
-        }
+        activate_payload = {"session_id": "NONEXISTENT", "customer_language": "en"}
 
         response = client.post("/api/customer/session/activate", json=activate_payload)
         assert response.status_code == 404
@@ -60,10 +53,7 @@ class TestCustomerRoutes:
         response = client.post("/api/admin/session/create")
         session_id = response.json()["session_id"]
 
-        activate_payload = {
-            "session_id": session_id,
-            "customer_language": "de"
-        }
+        activate_payload = {"session_id": session_id, "customer_language": "de"}
 
         # First activation
         response1 = client.post("/api/customer/session/activate", json=activate_payload)
@@ -87,10 +77,7 @@ class TestCustomerRoutes:
         assert response.status_code == 200
 
         # Try to activate terminated session
-        activate_payload = {
-            "session_id": session_id,
-            "customer_language": "en"
-        }
+        activate_payload = {"session_id": session_id, "customer_language": "en"}
 
         response = client.post("/api/customer/session/activate", json=activate_payload)
         assert response.status_code == 400
@@ -113,10 +100,7 @@ class TestCustomerRoutes:
         assert data["can_send_messages"] is False
 
         # Activate session
-        activate_payload = {
-            "session_id": session_id,
-            "customer_language": "ar"
-        }
+        activate_payload = {"session_id": session_id, "customer_language": "ar"}
         client.post("/api/customer/session/activate", json=activate_payload)
 
         # Get status again (should be active)
@@ -149,7 +133,7 @@ class TestCustomerRoutes:
         # Activate with unsupported language
         activate_payload = {
             "session_id": session_id,
-            "customer_language": "xyz"  # Not in supported list
+            "customer_language": "xyz",  # Not in supported list
         }
 
         response = client.post("/api/customer/session/activate", json=activate_payload)
@@ -168,22 +152,19 @@ class TestCustomerRoutes:
             "text": "Hello",
             "source_lang": "en",
             "target_lang": "de",
-            "client_type": "customer"
+            "client_type": "customer",
         }
 
         response = client.post(
             f"/api/session/{session_id}/message",
             json=message_payload,
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
         )
         assert response.status_code == 400
         assert "SESSION_NOT_ACTIVE" in response.json()["detail"]["error_code"]
 
         # Activate session
-        activate_payload = {
-            "session_id": session_id,
-            "customer_language": "en"
-        }
+        activate_payload = {"session_id": session_id, "customer_language": "en"}
         response = client.post("/api/customer/session/activate", json=activate_payload)
         assert response.status_code == 200
 
@@ -193,7 +174,7 @@ class TestCustomerRoutes:
         response = client.post(
             f"/api/session/{session_id}/message",
             json=message_payload,
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
         )
         assert response.status_code == 400
         # Should be circuit breaker error, NOT session error

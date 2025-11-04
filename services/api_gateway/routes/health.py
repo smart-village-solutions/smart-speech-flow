@@ -1,7 +1,6 @@
-from fastapi.responses import JSONResponse, HTMLResponse
-from services.api_gateway.app import app, SERVICE_URLS
-from services.api_gateway.utils.health_utils import get_health_status_html
 import requests
+
+from services.api_gateway.app import SERVICE_URLS, app
 
 
 @app.get("/health")

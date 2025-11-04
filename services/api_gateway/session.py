@@ -4,15 +4,27 @@ Session-Management Endpunkte für Admin-Kunde Gespräche
 Erweitert das bestehende API Gateway um Session-Funktionalität
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
 import base64
 import uuid
 from datetime import datetime
 
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
+
 # Import der bestehenden Pipeline-Logik
 from services.api_gateway.pipeline_logic import process_wav
-from services.api_gateway.session_manager import session_manager, SessionMessage, ClientType
+from services.api_gateway.session_manager import (
+    ClientType,
+    SessionMessage,
+    session_manager,
+)
 
 router = APIRouter()
 
@@ -25,8 +37,9 @@ SUPPORTED_LANGUAGES = {
     "ru": {"name": "Russian", "native": "Русский"},
     "uk": {"name": "Ukrainian", "native": "Українська"},
     "am": {"name": "Amharic", "native": "አማርኛ"},
-    "fa": {"name": "Persian", "native": "فارسی"}
+    "fa": {"name": "Persian", "native": "فارسی"},
 }
+
 
 @router.post("/session/create")
 async def create_session(customer_language: str):
@@ -41,8 +54,9 @@ async def create_session(customer_language: str):
         "customer_language": customer_language,
         "admin_url": f"/admin?session={session_id}",
         "customer_url": f"/customer?session={session_id}",
-        "status": "created"
+        "status": "created",
     }
+
 
 @router.get("/session/{session_id}")
 async def get_session_info(session_id: str):
@@ -59,13 +73,15 @@ async def get_session_info(session_id: str):
         "created_at": session.created_at.isoformat(),
         "message_count": len(session.messages),
         "admin_connected": session.admin_connected,
-        "customer_connected": session.customer_connected
+        "customer_connected": session.customer_connected,
     }
+
 
 @router.get("/sessions/active")
 async def get_active_sessions():
     """Aktive Sessions für Admin-Übersicht"""
     return {"sessions": session_manager.get_active_sessions()}
+
 
 @router.post("/session/{session_id}/message")
 async def send_session_message(
@@ -73,7 +89,7 @@ async def send_session_message(
     client_type: ClientType,
     file: UploadFile = File(...),
     source_lang: str = Form(...),
-    target_lang: str = Form(...)
+    target_lang: str = Form(...),
 ):
     """Neue Audio-Nachricht zur Session hinzufügen"""
     session = session_manager.get_session(session_id)
@@ -85,7 +101,9 @@ async def send_session_message(
         result = await process_wav(file, source_lang, target_lang)
 
         if result["status"] != "success":
-            raise HTTPException(500, f"Pipeline-Fehler: {result.get('error', 'Unbekannt')}")
+            raise HTTPException(
+                500, f"Pipeline-Fehler: {result.get('error', 'Unbekannt')}"
+            )
 
         # Session-Nachricht erstellen
         message = SessionMessage(
@@ -93,10 +111,14 @@ async def send_session_message(
             sender=client_type,
             original_text=result["originalText"],
             translated_text=result["translatedText"],
-            audio_base64=base64.b64encode(result["audioBytes"]).decode() if result["audioBytes"] else None,
+            audio_base64=(
+                base64.b64encode(result["audioBytes"]).decode()
+                if result["audioBytes"]
+                else None
+            ),
             source_lang=source_lang,
             target_lang=target_lang,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         # Zur Session hinzufügen
@@ -107,11 +129,12 @@ async def send_session_message(
             "message_id": message.id,
             "original_text": message.original_text,
             "translated_text": message.translated_text,
-            "audio_available": message.audio_base64 is not None
+            "audio_available": message.audio_base64 is not None,
         }
 
     except Exception as e:
         raise HTTPException(500, f"Fehler bei Nachrichtenverarbeitung: {str(e)}")
+
 
 @router.get("/session/{session_id}/messages")
 async def get_session_messages(session_id: str):
@@ -122,8 +145,9 @@ async def get_session_messages(session_id: str):
 
     return {
         "session_id": session_id,
-        "messages": [msg.to_dict() for msg in session.messages]
+        "messages": [msg.to_dict() for msg in session.messages],
     }
+
 
 @router.get("/languages/supported")
 async def get_supported_languages():
@@ -131,8 +155,9 @@ async def get_supported_languages():
     return {
         "languages": SUPPORTED_LANGUAGES,
         "admin_default": "de",
-        "popular": ["en", "ar", "tr", "ru", "fa"]  # Häufige Verwaltungssprachen
+        "popular": ["en", "ar", "tr", "ru", "fa"],  # Häufige Verwaltungssprachen
     }
+
 
 @router.websocket("/ws/{session_id}/{client_type}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str, client_type: str):

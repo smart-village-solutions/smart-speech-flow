@@ -7,19 +7,18 @@ API Gateway Hauptdatei
 - Ermöglicht lokalen Start mit Uvicorn
 """
 
-# === Imports ===
-# Standard- und Third-Party-Module
-from fastapi import FastAPI, UploadFile, File, Request
-from fastapi.responses import Response
-import requests
-import os
-from prometheus_client import Counter, CollectorRegistry
-import base64
-from fastapi.middleware.cors import CORSMiddleware
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
+# === Imports ===
+# Standard- und Third-Party-Module
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import CollectorRegistry, Counter
+
 from .rate_limiter import RateLimitMiddleware
+
 
 # === Background Tasks ===
 async def session_timeout_monitor():
@@ -33,6 +32,7 @@ async def session_timeout_monitor():
         except Exception as e:
             print(f"⚠️ Fehler im Session-Timeout-Monitor: {e}")
             await asyncio.sleep(60)
+
 
 async def circuit_breaker_monitor():
     """Background Task für Circuit Breaker Health Monitoring"""
@@ -55,6 +55,7 @@ async def circuit_breaker_monitor():
                 await asyncio.sleep(300)
     except Exception as e:
         print(f"❌ Circuit Breaker Monitor Startup Fehler: {e}")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -84,6 +85,7 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 pass
 
+
 # === App-Initialisierung ===
 app = FastAPI(title="API Gateway", lifespan=lifespan)
 
@@ -103,7 +105,9 @@ app.add_middleware(RateLimitMiddleware)
 # === Monitoring ===
 # Eigene Registry, um doppelte Registrierung zu vermeiden
 registry = CollectorRegistry()
-requests_total = Counter('gateway_requests_total', 'Total API Gateway requests', registry=registry)
+requests_total = Counter(
+    "gateway_requests_total", "Total API Gateway requests", registry=registry
+)
 requests_total.inc(0)
 app.state.prometheus_registry = registry
 app.state.gateway_requests_total = requests_total
@@ -121,7 +125,7 @@ if DOCKER_ENV:
     SERVICE_URLS = {
         "ASR": "http://asr:8000/health",
         "Translation": "http://translation:8000/health",
-        "TTS": "http://tts:8000/health"
+        "TTS": "http://tts:8000/health",
     }
 else:
     # Lokale Service-URLs für Entwicklung ohne Docker
@@ -131,14 +135,14 @@ else:
     SERVICE_URLS = {
         "ASR": "http://localhost:8101/health",
         "Translation": "http://localhost:8102/health",
-        "TTS": "http://localhost:8103/health"
+        "TTS": "http://localhost:8103/health",
     }
+
+from . import websocket
 
 # === Routen-Import ===
 # Importiert alle FastAPI-Endpunkte zentral aus dem routes-Paket
-from .routes import index, upload, pipeline, metrics, health, session, admin, customer, circuit_breaker
-from services.api_gateway.utils.health_utils import get_health_status_html
-from . import websocket
+from .routes import admin, circuit_breaker, customer, session
 
 # === Session-Routen registrieren ===
 app.include_router(session.router, prefix="/api", tags=["sessions"])
@@ -147,13 +151,16 @@ app.include_router(customer.router, tags=["customer"])
 app.include_router(websocket.router, tags=["websocket"])
 app.include_router(circuit_breaker.router, prefix="/api", tags=["circuit-breaker"])
 
+
 @app.get("/languages", tags=["public"], summary="List supported languages")
 async def list_supported_languages():
     """Expose supported languages without the /api prefix for the public site."""
     return await session.get_supported_languages()
 
+
 # === Lokaler Start ===
 # Startet die App direkt mit "python app.py" (für Entwicklung und Debugging)
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

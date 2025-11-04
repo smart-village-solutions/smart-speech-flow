@@ -13,14 +13,13 @@ Datum: November 2025
 Version: 1.0
 """
 
-from fastapi import APIRouter, HTTPException, Depends, status
-from fastapi.responses import JSONResponse
-from typing import Dict, Any, Optional, List
 import logging
+from typing import Any, Dict, List
 
-from ..circuit_breaker_client import circuit_breaker_client
+from fastapi import APIRouter, HTTPException, status
+
 from ..circuit_breaker import CircuitBreakerFactory
-from ..service_health import service_health_manager
+from ..circuit_breaker_client import circuit_breaker_client
 from ..graceful_degradation import graceful_degradation_manager
 
 logger = logging.getLogger(__name__)
@@ -41,13 +40,13 @@ async def get_services_health():
         return {
             "status": "success",
             "data": health_status,
-            "timestamp": health_status.get("monitoring_info", {}).get("last_check")
+            "timestamp": health_status.get("monitoring_info", {}).get("last_check"),
         }
     except Exception as e:
         logger.error(f"❌ Health Status Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Health status check failed: {str(e)}"
+            detail=f"Health status check failed: {str(e)}",
         )
 
 
@@ -65,7 +64,7 @@ async def get_service_health(service_name: str):
     if service_name not in ["asr", "translation", "tts"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown service: {service_name}. Valid services: asr, translation, tts"
+            detail=f"Unknown service: {service_name}. Valid services: asr, translation, tts",
         )
 
     try:
@@ -74,13 +73,13 @@ async def get_service_health(service_name: str):
         if service_status is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Service '{service_name}' not found or not registered"
+                detail=f"Service '{service_name}' not found or not registered",
             )
 
         return {
             "status": "success",
             "service_name": service_name,
-            "data": service_status
+            "data": service_status,
         }
     except HTTPException:
         raise
@@ -88,7 +87,7 @@ async def get_service_health(service_name: str):
         logger.error(f"❌ Service Health Error for {service_name}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Service health check failed: {str(e)}"
+            detail=f"Service health check failed: {str(e)}",
         )
 
 
@@ -110,13 +109,13 @@ async def get_circuit_breakers_status():
         return {
             "status": "success",
             "total_circuits": len(circuits),
-            "circuits": circuit_status
+            "circuits": circuit_status,
         }
     except Exception as e:
         logger.error(f"❌ Circuit Breaker Status Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Circuit breaker status check failed: {str(e)}"
+            detail=f"Circuit breaker status check failed: {str(e)}",
         )
 
 
@@ -131,15 +130,12 @@ async def get_degradation_status():
     try:
         degradation_status = await circuit_breaker_client.get_degradation_status()
 
-        return {
-            "status": "success",
-            "data": degradation_status
-        }
+        return {"status": "success", "data": degradation_status}
     except Exception as e:
         logger.error(f"❌ Degradation Status Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Degradation status check failed: {str(e)}"
+            detail=f"Degradation status check failed: {str(e)}",
         )
 
 
@@ -157,7 +153,7 @@ async def reset_circuit_breaker(service_name: str):
     if service_name not in ["asr", "translation", "tts"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown service: {service_name}. Valid services: asr, translation, tts"
+            detail=f"Unknown service: {service_name}. Valid services: asr, translation, tts",
         )
 
     try:
@@ -166,7 +162,7 @@ async def reset_circuit_breaker(service_name: str):
         if service_name not in circuits:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Circuit breaker for service '{service_name}' not found"
+                detail=f"Circuit breaker for service '{service_name}' not found",
             )
 
         # Manual Reset
@@ -174,14 +170,16 @@ async def reset_circuit_breaker(service_name: str):
         old_state = circuit.state
         circuit.reset()
 
-        logger.warning(f"⚠️ Manual Circuit Breaker Reset: {service_name} ({old_state.value} → CLOSED)")
+        logger.warning(
+            f"⚠️ Manual Circuit Breaker Reset: {service_name} ({old_state.value} → CLOSED)"
+        )
 
         return {
             "status": "success",
             "message": f"Circuit breaker for '{service_name}' has been reset",
             "service_name": service_name,
             "old_state": old_state.value,
-            "new_state": "closed"
+            "new_state": "closed",
         }
 
     except HTTPException:
@@ -190,7 +188,7 @@ async def reset_circuit_breaker(service_name: str):
         logger.error(f"❌ Circuit Breaker Reset Error for {service_name}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Circuit breaker reset failed: {str(e)}"
+            detail=f"Circuit breaker reset failed: {str(e)}",
         )
 
 
@@ -209,10 +207,7 @@ async def reset_all_circuit_breakers():
         for name, circuit in circuits.items():
             old_state = circuit.state
             circuit.reset()
-            reset_results[name] = {
-                "old_state": old_state.value,
-                "new_state": "closed"
-            }
+            reset_results[name] = {"old_state": old_state.value, "new_state": "closed"}
 
         logger.warning(f"⚠️ Manual Reset ALL Circuit Breakers: {list(circuits.keys())}")
 
@@ -220,14 +215,14 @@ async def reset_all_circuit_breakers():
             "status": "success",
             "message": f"All {len(circuits)} circuit breakers have been reset",
             "total_reset": len(circuits),
-            "results": reset_results
+            "results": reset_results,
         }
 
     except Exception as e:
         logger.error(f"❌ All Circuit Breakers Reset Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Circuit breakers reset failed: {str(e)}"
+            detail=f"Circuit breakers reset failed: {str(e)}",
         )
 
 
@@ -245,19 +240,16 @@ async def get_cache_status():
             "cache_size": degradation_status["cache_size"],
             "cache_stats": degradation_status["cache_stats"],
             "pending_requests": degradation_status["pending_requests"],
-            "current_mode": degradation_status["current_mode"]
+            "current_mode": degradation_status["current_mode"],
         }
 
-        return {
-            "status": "success",
-            "data": cache_info
-        }
+        return {"status": "success", "data": cache_info}
 
     except Exception as e:
         logger.error(f"❌ Cache Status Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Cache status check failed: {str(e)}"
+            detail=f"Cache status check failed: {str(e)}",
         )
 
 
@@ -277,25 +269,25 @@ async def clear_fallback_cache():
         # Cache leeren
         graceful_degradation_manager.response_cache.clear()
         graceful_degradation_manager.cache_stats = {
-            'hits': 0,
-            'misses': 0,
-            'evictions': 0
+            "hits": 0,
+            "misses": 0,
+            "evictions": 0,
         }
 
         logger.warning(f"⚠️ Fallback Cache cleared: {old_cache_size} entries removed")
 
         return {
             "status": "success",
-            "message": f"Fallback cache cleared successfully",
+            "message": "Fallback cache cleared successfully",
             "entries_removed": old_cache_size,
-            "cache_stats_reset": True
+            "cache_stats_reset": True,
         }
 
     except Exception as e:
         logger.error(f"❌ Cache Clear Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Cache clear failed: {str(e)}"
+            detail=f"Cache clear failed: {str(e)}",
         )
 
 
@@ -315,7 +307,9 @@ async def get_health_summary():
 
         # Circuit Breaker States
         circuits = CircuitBreakerFactory.get_all_circuits()
-        circuit_states = {name: circuit.state.value for name, circuit in circuits.items()}
+        circuit_states = {
+            name: circuit.state.value for name, circuit in circuits.items()
+        }
 
         # Degradation Info
         degradation_status = await circuit_breaker_client.get_degradation_status()
@@ -326,7 +320,7 @@ async def get_health_summary():
             "critical_devices": gpu_summary.get("critical_devices", 0),
             "warning_devices": gpu_summary.get("warning_devices", 0),
             "scale_up_recommendations": gpu_summary.get("scale_up_recommendations", 0),
-            "recommended_action": gpu_summary.get("recommended_action", "steady")
+            "recommended_action": gpu_summary.get("recommended_action", "steady"),
         }
 
         return {
@@ -338,85 +332,105 @@ async def get_health_summary():
                 "service_mode": degradation_status.get("current_mode", "unknown"),
                 "cache_entries": degradation_status.get("cache_size", 0),
                 "pending_requests": degradation_status.get("pending_requests", 0),
-                "gpu": gpu_overview
+                "gpu": gpu_overview,
             },
             "gpu_summary": gpu_summary,
-            "alerts": _generate_health_alerts(health_status, circuit_states, degradation_status, gpu_summary)
+            "alerts": _generate_health_alerts(
+                health_status, circuit_states, degradation_status, gpu_summary
+            ),
         }
 
     except Exception as e:
         logger.error(f"❌ Health Summary Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Health summary generation failed: {str(e)}"
+            detail=f"Health summary generation failed: {str(e)}",
         )
 
 
-def _generate_health_alerts(health_status: Dict, circuit_states: Dict,
-                          degradation_status: Dict, gpu_summary: Dict) -> List[Dict[str, str]]:
+def _generate_health_alerts(
+    health_status: Dict,
+    circuit_states: Dict,
+    degradation_status: Dict,
+    gpu_summary: Dict,
+) -> List[Dict[str, str]]:
     """Generiert Health Alerts für Dashboard"""
     alerts = []
 
     # Service Health Alerts
     unhealthy_services = health_status.get("services", {}).get("unhealthy", [])
     for service in unhealthy_services:
-        alerts.append({
-            "level": "error",
-            "type": "service_down",
-            "message": f"Service '{service}' ist nicht verfügbar"
-        })
+        alerts.append(
+            {
+                "level": "error",
+                "type": "service_down",
+                "message": f"Service '{service}' ist nicht verfügbar",
+            }
+        )
 
     # Circuit Breaker Alerts
     for service, state in circuit_states.items():
         if state == "open":
-            alerts.append({
-                "level": "error",
-                "type": "circuit_open",
-                "message": f"Circuit Breaker für '{service}' ist OPEN"
-            })
+            alerts.append(
+                {
+                    "level": "error",
+                    "type": "circuit_open",
+                    "message": f"Circuit Breaker für '{service}' ist OPEN",
+                }
+            )
         elif state == "half_open":
-            alerts.append({
-                "level": "warning",
-                "type": "circuit_testing",
-                "message": f"Circuit Breaker für '{service}' testet Recovery"
-            })
+            alerts.append(
+                {
+                    "level": "warning",
+                    "type": "circuit_testing",
+                    "message": f"Circuit Breaker für '{service}' testet Recovery",
+                }
+            )
 
     # Degradation Alerts
     current_mode = degradation_status.get("current_mode", "full")
     if current_mode != "full":
-        alerts.append({
-            "level": "warning",
-            "type": "degraded_mode",
-            "message": f"System läuft im {current_mode.upper()} Modus"
-        })
+        alerts.append(
+            {
+                "level": "warning",
+                "type": "degraded_mode",
+                "message": f"System läuft im {current_mode.upper()} Modus",
+            }
+        )
 
     # Cache Alerts
     cache_size = degradation_status.get("cache_size", 0)
     if cache_size > 800:  # Near max cache size
-        alerts.append({
-            "level": "info",
-            "type": "cache_full",
-            "message": f"Fallback Cache fast voll ({cache_size} Einträge)"
-        })
+        alerts.append(
+            {
+                "level": "info",
+                "type": "cache_full",
+                "message": f"Fallback Cache fast voll ({cache_size} Einträge)",
+            }
+        )
 
     # GPU Alerts
     for gpu_alert in gpu_summary.get("alerts", []):
         severity = gpu_alert.get("severity", "warning")
         level = "error" if severity == "critical" else "warning"
-        alerts.append({
-            "level": level,
-            "type": "gpu_pressure",
-            "message": (
-                f"GPU Druck: {gpu_alert.get('service')} GPU{gpu_alert.get('device')} "
-                f"{gpu_alert.get('message')}"
-            )
-        })
+        alerts.append(
+            {
+                "level": level,
+                "type": "gpu_pressure",
+                "message": (
+                    f"GPU Druck: {gpu_alert.get('service')} GPU{gpu_alert.get('device')} "
+                    f"{gpu_alert.get('message')}"
+                ),
+            }
+        )
 
     for service in gpu_summary.get("services_missing_gpu", []):
-        alerts.append({
-            "level": "info",
-            "type": "gpu_unavailable",
-            "message": f"Service '{service}' meldet keine verfügbare GPU"
-        })
+        alerts.append(
+            {
+                "level": "info",
+                "type": "gpu_unavailable",
+                "message": f"Service '{service}' meldet keine verfügbare GPU",
+            }
+        )
 
     return alerts

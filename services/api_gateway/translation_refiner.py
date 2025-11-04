@@ -109,7 +109,9 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         context: Optional[Dict[str, Any]] = None,
     ) -> RefinementOutcome:
         if not text:
-            return RefinementOutcome(text=text, changed=False, latency_ms=0.0, error=None)
+            return RefinementOutcome(
+                text=text, changed=False, latency_ms=0.0, error=None
+            )
 
         prompt = self._build_prompt(text, source_lang, target_lang, context)
         start_time = time.perf_counter()

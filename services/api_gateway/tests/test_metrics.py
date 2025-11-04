@@ -1,8 +1,9 @@
-import pytest
 from fastapi.testclient import TestClient
+
 from services.api_gateway.app import app
 
 client = TestClient(app)
+
 
 def test_metrics():
     response = client.get("/metrics")

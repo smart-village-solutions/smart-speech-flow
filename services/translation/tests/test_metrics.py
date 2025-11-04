@@ -1,11 +1,13 @@
-import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + '/..'))
+import sys
 
-from fastapi.testclient import TestClient
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/.."))
+
 from app import app
+from fastapi.testclient import TestClient
 
 client = TestClient(app)
+
 
 def test_metrics():
     response = client.get("/metrics")

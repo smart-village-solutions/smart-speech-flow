@@ -1,11 +1,13 @@
-import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + '/..'))
+import sys
 
-from fastapi.testclient import TestClient
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/.."))
+
 from app import app
+from fastapi.testclient import TestClient
 
 client = TestClient(app)
+
 
 def test_health():
     response = client.get("/health")
@@ -14,12 +16,14 @@ def test_health():
     assert "status" in data
     assert "model_loaded" in data
 
+
 def test_languages():
     response = client.get("/languages")
     assert response.status_code == 200
     data = response.json()
     assert "languages" in data
     assert isinstance(data["languages"], list)
+
 
 def test_metrics():
     response = client.get("/metrics")

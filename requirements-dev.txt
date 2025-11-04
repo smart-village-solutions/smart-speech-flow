@@ -1,0 +1,31 @@
+# Code Quality Tools
+black==24.10.0
+isort==5.13.2
+flake8==7.1.1
+mypy==1.13.0
+
+# Security Tools
+bandit==1.7.10
+safety==3.2.8
+
+# Testing Tools
+pytest==8.3.3
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+httpx==0.27.2
+
+# Pre-commit Hooks
+pre-commit==4.0.1
+
+# Code Quality Extensions
+flake8-docstrings==1.7.0
+flake8-import-order==0.18.2
+flake8-bugbear==24.10.31
+pep8-naming==0.14.1
+
+# Type Stubs
+types-requests==2.32.0.20241016
+types-redis==4.6.0.20241004
+
+# Development Utilities
+pip-tools==7.4.1  # For dependency management

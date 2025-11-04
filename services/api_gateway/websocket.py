@@ -10,20 +10,20 @@ Features:
 """
 
 import asyncio
-import json
 import logging
 import time
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set, Any
-from enum import Enum
 from dataclasses import dataclass
-from fastapi import WebSocket, WebSocketDisconnect
-import math
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set
 
-from .session_manager import SessionManager, ClientType, SessionStatus
+from fastapi import WebSocket
+
+from .session_manager import ClientType, SessionManager, SessionStatus
 
 # === Logging Setup ===
 logger = logging.getLogger(__name__)
+
 
 class ConnectionState(str, Enum):
     CONNECTING = "connecting"
@@ -32,6 +32,7 @@ class ConnectionState(str, Enum):
     DISCONNECTED = "disconnected"
     HEARTBEAT_TIMEOUT = "heartbeat_timeout"
     ERROR = "error"
+
 
 class MessageType(str, Enum):
     # System Messages
@@ -58,9 +59,11 @@ class MessageType(str, Enum):
     ERROR = "error"
     RECONNECT_REQUIRED = "reconnect_required"
 
+
 @dataclass
 class WebSocketConnection:
     """WebSocket-Verbindung mit Metadata"""
+
     websocket: WebSocket
     client_type: ClientType
     session_id: str
@@ -102,8 +105,9 @@ class WebSocketConnection:
             "network_quality": self.network_quality,
             "current_polling_interval": self.current_polling_interval,
             "is_alive": self.is_alive(),
-            "client_info": self.client_info
+            "client_info": self.client_info,
         }
+
 
 class AdaptivePollingManager:
     """
@@ -113,13 +117,13 @@ class AdaptivePollingManager:
 
     # Polling-Intervall-Konfiguration (Sekunden)
     POLLING_INTERVALS = {
-        "active_desktop": 3,      # Sehr responsiv für Desktop
-        "active_mobile": 5,       # Standard responsiv für Mobile
-        "background_desktop": 10, # Reduziert für Desktop-Background
+        "active_desktop": 3,  # Sehr responsiv für Desktop
+        "active_mobile": 5,  # Standard responsiv für Mobile
+        "background_desktop": 10,  # Reduziert für Desktop-Background
         "background_mobile": 30,  # Stark reduziert für Mobile-Background
-        "battery_saver": 60,      # Minimal für Battery-Saver-Mode
-        "slow_network": 15,       # Angepasst für langsame Verbindungen
-        "offline_mode": 120       # Sehr selten für Offline-Detection
+        "battery_saver": 60,  # Minimal für Battery-Saver-Mode
+        "slow_network": 15,  # Angepasst für langsame Verbindungen
+        "offline_mode": 120,  # Sehr selten für Offline-Detection
     }
 
     def __init__(self):
@@ -157,7 +161,7 @@ class AdaptivePollingManager:
         is_mobile: Optional[bool] = None,
         tab_active: Optional[bool] = None,
         battery_level: Optional[float] = None,
-        network_quality: Optional[str] = None
+        network_quality: Optional[str] = None,
     ) -> int:
         """
         Client-Status aktualisieren und neues Intervall zurückgeben
@@ -177,7 +181,9 @@ class AdaptivePollingManager:
 
         return new_interval
 
-    def get_battery_optimization_tips(self, connection: WebSocketConnection) -> List[str]:
+    def get_battery_optimization_tips(
+        self, connection: WebSocketConnection
+    ) -> List[str]:
         """
         Battery-Optimierungs-Tipps für Client
         """
@@ -193,6 +199,7 @@ class AdaptivePollingManager:
             tips.append("📶 Langsame Verbindung erkannt - Polling angepasst")
 
         return tips
+
 
 class WebSocketManager:
     """
@@ -211,7 +218,7 @@ class WebSocketManager:
 
         # Heartbeat-System
         self.heartbeat_interval = 30  # Sekunden
-        self.heartbeat_timeout = 60   # Sekunden
+        self.heartbeat_timeout = 60  # Sekunden
         self.heartbeat_task: Optional[asyncio.Task] = None
 
         # Polling-Fallback Configuration
@@ -232,7 +239,7 @@ class WebSocketManager:
             "failed_connections": 0,
             "heartbeat_timeouts": 0,
             "reconnects": 0,
-            "polling_fallbacks": 0
+            "polling_fallbacks": 0,
         }
 
         logger.info("🔗 WebSocketManager initialisiert")
@@ -261,7 +268,7 @@ class WebSocketManager:
         websocket: WebSocket,
         session_id: str,
         client_type: ClientType,
-        client_info: Optional[Dict[str, Any]] = None
+        client_info: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         WebSocket-Verbindung herstellen und zu Session-Pool hinzufügen
@@ -295,7 +302,7 @@ class WebSocketManager:
             is_mobile=is_mobile,
             tab_active=True,  # Initial aktiv
             battery_level=battery_level,
-            network_quality=network_quality
+            network_quality=network_quality,
         )
 
         # 📱 Optimales Polling-Intervall berechnen
@@ -310,7 +317,9 @@ class WebSocketManager:
         self.all_connections[connection_id] = connection
 
         # Session-Manager integrieren
-        await self.session_manager.add_websocket_connection(session_id, client_type, websocket)
+        await self.session_manager.add_websocket_connection(
+            session_id, client_type, websocket
+        )
 
         # Stats aktualisieren
         self.connection_stats["total_connections"] += 1
@@ -322,7 +331,9 @@ class WebSocketManager:
         # Heartbeat-System starten falls noch nicht aktiv
         await self.start_heartbeat_system()
 
-        logger.info(f"🔗 WebSocket verbunden: {connection_id} (Session: {session_id}, Type: {client_type.value})")
+        logger.info(
+            f"🔗 WebSocket verbunden: {connection_id} (Session: {session_id}, Type: {client_type.value})"
+        )
 
         # Anderen Clients in der Session mitteilen
         await self._broadcast_client_joined(session_id, client_type, connection_id)
@@ -330,10 +341,7 @@ class WebSocketManager:
         return connection_id
 
     async def disconnect_websocket(
-        self,
-        connection_id: str,
-        reason: str = "client_disconnect",
-        code: int = 1000
+        self, connection_id: str, reason: str = "client_disconnect", code: int = 1000
     ):
         """
         WebSocket-Verbindung graceful trennen
@@ -349,11 +357,16 @@ class WebSocketManager:
             await self._send_disconnect_message(connection, reason)
 
             # WebSocket schließen
-            if connection.websocket.client_state != connection.websocket.client_state.DISCONNECTED:
+            if (
+                connection.websocket.client_state
+                != connection.websocket.client_state.DISCONNECTED
+            ):
                 await connection.websocket.close(code=code, reason=reason)
 
         except Exception as e:
-            logger.warning(f"⚠️ Fehler beim Schließen der WebSocket-Verbindung {connection_id}: {e}")
+            logger.warning(
+                f"⚠️ Fehler beim Schließen der WebSocket-Verbindung {connection_id}: {e}"
+            )
 
         finally:
             # Connection-Cleanup
@@ -361,13 +374,12 @@ class WebSocketManager:
 
             # Anderen Clients mitteilen
             await self._broadcast_client_left(
-                connection.session_id,
-                connection.client_type,
-                connection_id,
-                reason
+                connection.session_id, connection.client_type, connection_id, reason
             )
 
-    async def handle_session_termination(self, session_id: str, reason: str = "session_ended"):
+    async def handle_session_termination(
+        self, session_id: str, reason: str = "session_ended"
+    ):
         """
         Alle WebSocket-Verbindungen einer Session graceful beenden
         """
@@ -375,7 +387,9 @@ class WebSocketManager:
             return
 
         connections = list(self.session_connections[session_id].values())
-        logger.info(f"🔚 Beende {len(connections)} WebSocket-Verbindungen für Session {session_id}")
+        logger.info(
+            f"🔚 Beende {len(connections)} WebSocket-Verbindungen für Session {session_id}"
+        )
 
         # Termination-Nachricht an alle Clients senden
         termination_message = {
@@ -384,14 +398,16 @@ class WebSocketManager:
             "reason": reason,
             "message": self._get_termination_message(reason),
             "timestamp": datetime.now().isoformat(),
-            "reconnect_allowed": False
+            "reconnect_allowed": False,
         }
 
         # Parallel alle Verbindungen benachrichtigen und schließen
         disconnect_tasks = []
         for connection in connections:
             disconnect_tasks.append(
-                self._disconnect_connection_with_message(connection, termination_message)
+                self._disconnect_connection_with_message(
+                    connection, termination_message
+                )
             )
 
         if disconnect_tasks:
@@ -408,7 +424,7 @@ class WebSocketManager:
         session_id: str,
         message: Dict[str, Any],
         exclude_connection: Optional[str] = None,
-        target_client_type: Optional[ClientType] = None
+        target_client_type: Optional[ClientType] = None,
     ):
         """
         Nachricht an alle Clients einer Session broadcasten
@@ -443,14 +459,16 @@ class WebSocketManager:
                 # Connection als tot markieren
                 connection.state = ConnectionState.ERROR
 
-        logger.debug(f"📢 Broadcast zu Session {session_id}: {successful_sends} erfolgreich, {failed_sends} fehlgeschlagen")
+        logger.debug(
+            f"📢 Broadcast zu Session {session_id}: {successful_sends} erfolgreich, {failed_sends} fehlgeschlagen"
+        )
 
     async def broadcast_with_differentiated_content(
         self,
         session_id: str,
         sender_type: ClientType,
         original_message: Dict[str, Any],
-        translated_message: Dict[str, Any]
+        translated_message: Dict[str, Any],
     ):
         """
         Differentiated Broadcasting:
@@ -474,9 +492,13 @@ class WebSocketManager:
                     # Empfänger erhält translated_text + audio
                     await connection.websocket.send_json(translated_message)
             except Exception as e:
-                logger.warning(f"⚠️ Differentiated-Broadcast-Fehler zu {connection_id}: {e}")
+                logger.warning(
+                    f"⚠️ Differentiated-Broadcast-Fehler zu {connection_id}: {e}"
+                )
 
-    async def handle_websocket_message(self, connection_id: str, message: Dict[str, Any]):
+    async def handle_websocket_message(
+        self, connection_id: str, message: Dict[str, Any]
+    ):
         """
         Eingehende WebSocket-Nachrichten verarbeiten
         """
@@ -508,7 +530,9 @@ class WebSocketManager:
         else:
             logger.warning(f"⚠️ Unbekannter Message-Type: {message_type}")
 
-    async def enable_polling_fallback(self, session_id: str, client_type: ClientType) -> str:
+    async def enable_polling_fallback(
+        self, session_id: str, client_type: ClientType
+    ) -> str:
         """
         Polling-Fallback für Client aktivieren
         """
@@ -542,15 +566,20 @@ class WebSocketManager:
         for session_id, connections in self.session_connections.items():
             session_stats[session_id] = {
                 "total_connections": len(connections),
-                "active_connections": sum(1 for c in connections.values() if c.is_alive()),
-                "client_types": list(set(c.client_type.value for c in connections.values()))
+                "active_connections": sum(
+                    1 for c in connections.values() if c.is_alive()
+                ),
+                "client_types": list(
+                    set(c.client_type.value for c in connections.values())
+                ),
             }
 
         return {
             "global_stats": self.connection_stats,
             "session_stats": session_stats,
             "polling_clients": len(self.polling_clients),
-            "heartbeat_active": self.heartbeat_task is not None and not self.heartbeat_task.done()
+            "heartbeat_active": self.heartbeat_task is not None
+            and not self.heartbeat_task.done(),
         }
 
     def get_session_connections(self, session_id: str) -> List[Dict[str, Any]]:
@@ -591,7 +620,7 @@ class WebSocketManager:
         """
         ping_message = {
             "type": MessageType.HEARTBEAT_PING.value,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
         dead_connections = []
@@ -633,7 +662,9 @@ class WebSocketManager:
         connection.last_heartbeat = datetime.now()
         connection.state = ConnectionState.CONNECTED
 
-    async def _handle_client_message(self, connection: WebSocketConnection, message: Dict[str, Any]):
+    async def _handle_client_message(
+        self, connection: WebSocketConnection, message: Dict[str, Any]
+    ):
         """
         Client-Message verarbeiten und weiterleiten
         """
@@ -643,16 +674,18 @@ class WebSocketManager:
             "from": connection.client_type.value,
             "session_id": connection.session_id,
             "content": message.get("content"),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
         await self.broadcast_to_session(
             connection.session_id,
             forward_message,
-            exclude_connection=f"{connection.session_id}_{connection.client_type.value}_{int(connection.connected_at.timestamp())}"
+            exclude_connection=f"{connection.session_id}_{connection.client_type.value}_{int(connection.connected_at.timestamp())}",
         )
 
-    async def _handle_typing_indicator(self, connection: WebSocketConnection, message: Dict[str, Any]):
+    async def _handle_typing_indicator(
+        self, connection: WebSocketConnection, message: Dict[str, Any]
+    ):
         """
         Typing-Indicator weiterleiten
         """
@@ -661,13 +694,13 @@ class WebSocketManager:
             "from": connection.client_type.value,
             "session_id": connection.session_id,
             "is_typing": message.get("is_typing", False),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
         await self.broadcast_to_session(
             connection.session_id,
             typing_message,
-            exclude_connection=f"{connection.session_id}_{connection.client_type.value}_{int(connection.connected_at.timestamp())}"
+            exclude_connection=f"{connection.session_id}_{connection.client_type.value}_{int(connection.connected_at.timestamp())}",
         )
 
     async def _send_connection_ack(self, connection: WebSocketConnection):
@@ -679,7 +712,7 @@ class WebSocketManager:
             "session_id": connection.session_id,
             "client_type": connection.client_type.value,
             "timestamp": datetime.now().isoformat(),
-            "heartbeat_interval": self.heartbeat_interval
+            "heartbeat_interval": self.heartbeat_interval,
         }
 
         try:
@@ -687,7 +720,9 @@ class WebSocketManager:
         except Exception as e:
             logger.warning(f"⚠️ Connection-ACK-Fehler: {e}")
 
-    async def _send_disconnect_message(self, connection: WebSocketConnection, reason: str):
+    async def _send_disconnect_message(
+        self, connection: WebSocketConnection, reason: str
+    ):
         """
         Disconnect-Nachricht vor dem Schließen senden
         """
@@ -695,7 +730,7 @@ class WebSocketManager:
             "type": MessageType.CONNECTION_STATUS.value,
             "status": "disconnecting",
             "reason": reason,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
         try:
@@ -704,9 +739,7 @@ class WebSocketManager:
             pass  # Ignore Fehler beim Disconnect
 
     async def _disconnect_connection_with_message(
-        self,
-        connection: WebSocketConnection,
-        termination_message: Dict[str, Any]
+        self, connection: WebSocketConnection, termination_message: Dict[str, Any]
     ):
         """
         Verbindung mit spezifischer Nachricht trennen
@@ -715,8 +748,14 @@ class WebSocketManager:
             await connection.websocket.send_json(termination_message)
             await asyncio.sleep(0.1)  # Kurz warten damit Message ankommt
 
-            if connection.websocket.client_state != connection.websocket.client_state.DISCONNECTED:
-                await connection.websocket.close(code=1000, reason=termination_message.get("reason", "session_terminated"))
+            if (
+                connection.websocket.client_state
+                != connection.websocket.client_state.DISCONNECTED
+            ):
+                await connection.websocket.close(
+                    code=1000,
+                    reason=termination_message.get("reason", "session_terminated"),
+                )
 
         except Exception as e:
             logger.warning(f"⚠️ Fehler beim Trennen der Verbindung: {e}")
@@ -755,14 +794,15 @@ class WebSocketManager:
 
         # Session-Manager informieren
         await self.session_manager.remove_websocket_connection(
-            connection.session_id,
-            connection.client_type
+            connection.session_id, connection.client_type
         )
 
         self._update_active_connections_count()
         logger.debug(f"🧹 Connection-Cleanup abgeschlossen: {connection_id}")
 
-    async def _broadcast_client_joined(self, session_id: str, client_type: ClientType, connection_id: str):
+    async def _broadcast_client_joined(
+        self, session_id: str, client_type: ClientType, connection_id: str
+    ):
         """
         Client-Join-Event an andere Session-Teilnehmer senden
         """
@@ -771,17 +811,15 @@ class WebSocketManager:
             "session_id": session_id,
             "client_type": client_type.value,
             "connection_id": connection_id,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
-        await self.broadcast_to_session(session_id, join_message, exclude_connection=connection_id)
+        await self.broadcast_to_session(
+            session_id, join_message, exclude_connection=connection_id
+        )
 
     async def _broadcast_client_left(
-        self,
-        session_id: str,
-        client_type: ClientType,
-        connection_id: str,
-        reason: str
+        self, session_id: str, client_type: ClientType, connection_id: str, reason: str
     ):
         """
         Client-Leave-Event an andere Session-Teilnehmer senden
@@ -792,7 +830,7 @@ class WebSocketManager:
             "client_type": client_type.value,
             "connection_id": connection_id,
             "reason": reason,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
         await self.broadcast_to_session(session_id, leave_message)
@@ -807,7 +845,7 @@ class WebSocketManager:
             "manual_termination": "Die Session wurde manuell beendet.",
             "system_cleanup": "Die Session wurde für System-Wartung beendet.",
             "error": "Die Session wurde aufgrund eines Fehlers beendet.",
-            "session_ended": "Die Session wurde ordnungsgemäß beendet."
+            "session_ended": "Die Session wurde ordnungsgemäß beendet.",
         }
         return messages.get(reason, "Die Session wurde beendet.")
 
@@ -822,13 +860,15 @@ class WebSocketManager:
         """
         Exponential backoff für Reconnect-Delays
         """
-        delay = self.base_reconnect_delay * (2 ** attempt)
+        delay = self.base_reconnect_delay * (2**attempt)
         max_delay = 60  # Maximum 60 Sekunden
         return min(delay, max_delay)
 
     # 📱 === Mobile-Optimization Handlers ===
 
-    async def _handle_tab_visibility_change(self, connection: WebSocketConnection, message: Dict[str, Any]):
+    async def _handle_tab_visibility_change(
+        self, connection: WebSocketConnection, message: Dict[str, Any]
+    ):
         """
         Tab-Visibility-Change verarbeiten (Background/Foreground)
         """
@@ -837,19 +877,27 @@ class WebSocketManager:
 
         # Status aktualisieren und neues Intervall berechnen
         new_interval = self.adaptive_polling.update_client_status(
-            connection,
-            tab_active=is_visible
+            connection, tab_active=is_visible
         )
 
         # Client über Intervall-Änderung informieren
         if new_interval != old_interval:
-            await self._send_polling_interval_update(connection, new_interval,
-                reason="tab_visibility_change" if is_visible else "background_optimization")
+            await self._send_polling_interval_update(
+                connection,
+                new_interval,
+                reason=(
+                    "tab_visibility_change" if is_visible else "background_optimization"
+                ),
+            )
 
-        logger.info(f"📱 Tab-Visibility für {connection.session_id}: {'visible' if is_visible else 'hidden'} "
-                   f"(Polling: {old_interval}s → {new_interval}s)")
+        logger.info(
+            f"📱 Tab-Visibility für {connection.session_id}: {'visible' if is_visible else 'hidden'} "
+            f"(Polling: {old_interval}s → {new_interval}s)"
+        )
 
-    async def _handle_battery_status_update(self, connection: WebSocketConnection, message: Dict[str, Any]):
+    async def _handle_battery_status_update(
+        self, connection: WebSocketConnection, message: Dict[str, Any]
+    ):
         """
         Battery-Status-Update verarbeiten
         """
@@ -859,8 +907,7 @@ class WebSocketManager:
 
         # Status aktualisieren
         new_interval = self.adaptive_polling.update_client_status(
-            connection,
-            battery_level=battery_level
+            connection, battery_level=battery_level
         )
 
         # Battery-Saver-Mode Detection
@@ -869,39 +916,55 @@ class WebSocketManager:
 
         # Client über Intervall-Änderung informieren
         if new_interval != old_interval:
-            await self._send_polling_interval_update(connection, new_interval,
-                reason="battery_optimization")
+            await self._send_polling_interval_update(
+                connection, new_interval, reason="battery_optimization"
+            )
 
-        logger.info(f"🔋 Battery-Update für {connection.session_id}: {battery_level:.0%} "
-                   f"{'(charging)' if is_charging else ''} (Polling: {old_interval}s → {new_interval}s)")
+        logger.info(
+            f"🔋 Battery-Update für {connection.session_id}: {battery_level:.0%} "
+            f"{'(charging)' if is_charging else ''} (Polling: {old_interval}s → {new_interval}s)"
+        )
 
-    async def _handle_network_status_change(self, connection: WebSocketConnection, message: Dict[str, Any]):
+    async def _handle_network_status_change(
+        self, connection: WebSocketConnection, message: Dict[str, Any]
+    ):
         """
         Network-Status-Change verarbeiten
         """
-        network_quality = message.get("network_quality", "good")  # "good", "slow", "offline"
-        connection_type = message.get("connection_type", "wifi")  # "wifi", "cellular", "offline"
+        network_quality = message.get(
+            "network_quality", "good"
+        )  # "good", "slow", "offline"
+        connection_type = message.get(
+            "connection_type", "wifi"
+        )  # "wifi", "cellular", "offline"
         old_interval = connection.current_polling_interval
 
         # Status aktualisieren
         new_interval = self.adaptive_polling.update_client_status(
-            connection,
-            network_quality=network_quality
+            connection, network_quality=network_quality
         )
 
         # Client über Intervall-Änderung informieren
         if new_interval != old_interval:
             reason = f"network_{network_quality}"
-            await self._send_polling_interval_update(connection, new_interval, reason=reason)
+            await self._send_polling_interval_update(
+                connection, new_interval, reason=reason
+            )
 
-        logger.info(f"📶 Network-Update für {connection.session_id}: {network_quality} ({connection_type}) "
-                   f"(Polling: {old_interval}s → {new_interval}s)")
+        logger.info(
+            f"📶 Network-Update für {connection.session_id}: {network_quality} ({connection_type}) "
+            f"(Polling: {old_interval}s → {new_interval}s)"
+        )
 
-    async def _send_polling_interval_update(self, connection: WebSocketConnection, new_interval: int, reason: str):
+    async def _send_polling_interval_update(
+        self, connection: WebSocketConnection, new_interval: int, reason: str
+    ):
         """
         Polling-Intervall-Update an Client senden
         """
-        optimization_tips = self.adaptive_polling.get_battery_optimization_tips(connection)
+        optimization_tips = self.adaptive_polling.get_battery_optimization_tips(
+            connection
+        )
 
         message = {
             "type": MessageType.POLLING_INTERVAL_UPDATE.value,
@@ -912,7 +975,7 @@ class WebSocketManager:
             "battery_level": connection.battery_level,
             "is_mobile": connection.is_mobile,
             "tab_active": connection.tab_active,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
         try:
@@ -933,9 +996,9 @@ class WebSocketManager:
             "tips": [
                 "📱 Tab schließen wenn nicht benötigt",
                 "🔌 Gerät ans Ladegerät anschließen",
-                "⚡ Battery-Saver-Modus deaktivieren für normale Geschwindigkeit"
+                "⚡ Battery-Saver-Modus deaktivieren für normale Geschwindigkeit",
             ],
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
         try:
@@ -943,14 +1006,16 @@ class WebSocketManager:
         except Exception as e:
             logger.warning(f"⚠️ Fehler beim Senden der Battery-Saver-Notification: {e}")
 
+
 # === FastAPI WebSocket Endpoints ===
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 router = APIRouter()
 
 # Globale WebSocket-Manager-Instanz
 websocket_manager: Optional[WebSocketManager] = None
+
 
 def get_websocket_manager() -> WebSocketManager:
     """
@@ -959,15 +1024,17 @@ def get_websocket_manager() -> WebSocketManager:
     global websocket_manager
     if websocket_manager is None:
         from .session_manager import session_manager
+
         websocket_manager = WebSocketManager(session_manager)
     return websocket_manager
+
 
 @router.websocket("/ws/{session_id}/{client_type}")
 async def websocket_endpoint(
     websocket: WebSocket,
     session_id: str,
     client_type: str,
-    manager: WebSocketManager = Depends(get_websocket_manager)
+    manager: WebSocketManager = Depends(get_websocket_manager),
 ):
     """
     WebSocket-Endpunkt für Session-basierte Kommunikation
@@ -1014,11 +1081,11 @@ async def websocket_endpoint(
                 error_message = {
                     "type": MessageType.ERROR.value,
                     "error": "Message processing failed",
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
                 }
                 try:
                     await websocket.send_json(error_message)
-                except:
+                except Exception:
                     break
 
     except Exception as e:
@@ -1029,17 +1096,20 @@ async def websocket_endpoint(
         if connection_id:
             await manager.disconnect_websocket(connection_id, "client_disconnect")
 
+
 @router.get("/api/websocket/stats")
-async def get_websocket_stats(manager: WebSocketManager = Depends(get_websocket_manager)):
+async def get_websocket_stats(
+    manager: WebSocketManager = Depends(get_websocket_manager),
+):
     """
     WebSocket-Statistiken für Monitoring
     """
     return manager.get_connection_stats()
 
+
 @router.get("/api/websocket/sessions/{session_id}/connections")
 async def get_session_connections(
-    session_id: str,
-    manager: WebSocketManager = Depends(get_websocket_manager)
+    session_id: str, manager: WebSocketManager = Depends(get_websocket_manager)
 ):
     """
     WebSocket-Verbindungen einer Session anzeigen
@@ -1048,14 +1118,15 @@ async def get_session_connections(
     return {
         "session_id": session_id,
         "connections": connections,
-        "count": len(connections)
+        "count": len(connections),
     }
+
 
 @router.post("/api/websocket/sessions/{session_id}/polling/enable")
 async def enable_polling_fallback(
     session_id: str,
     client_type: str,
-    manager: WebSocketManager = Depends(get_websocket_manager)
+    manager: WebSocketManager = Depends(get_websocket_manager),
 ):
     """
     Polling-Fallback für Session aktivieren
@@ -1071,13 +1142,13 @@ async def enable_polling_fallback(
         "polling_id": polling_id,
         "session_id": session_id,
         "client_type": client_type,
-        "polling_interval": manager.polling_interval
+        "polling_interval": manager.polling_interval,
     }
+
 
 @router.get("/api/websocket/polling/{polling_id}/messages")
 async def get_polling_messages(
-    polling_id: str,
-    manager: WebSocketManager = Depends(get_websocket_manager)
+    polling_id: str, manager: WebSocketManager = Depends(get_websocket_manager)
 ):
     """
     Nachrichten für Polling-Client abrufen
@@ -1087,5 +1158,5 @@ async def get_polling_messages(
         "polling_id": polling_id,
         "messages": messages,
         "count": len(messages),
-        "next_poll_in": manager.polling_interval
+        "next_poll_in": manager.polling_interval,
     }

@@ -1,5 +1,6 @@
 import subprocess
 
+
 # Hilfsfunktion für ffmpeg-Normalisierung
 def normalize_to_wav16k(in_path):
     ffmpeg_bin = os.getenv("FFMPEG_BIN", "ffmpeg")
@@ -9,11 +10,24 @@ def normalize_to_wav16k(in_path):
     if enable_loudnorm:
         filters.append("loudnorm")
     if enable_vad:
-        filters.append("silenceremove=start_periods=1:start_silence=0.1:start_threshold=-50dB")
+        filters.append(
+            "silenceremove=start_periods=1:start_silence=0.1:start_threshold=-50dB"
+        )
     afilter = ",".join(filters) if filters else None
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as out_tmp:
         out_path = out_tmp.name
-    cmd = [ffmpeg_bin, "-y", "-i", in_path, "-ac", "1", "-ar", "16000", "-sample_fmt", "s16"]
+    cmd = [
+        ffmpeg_bin,
+        "-y",
+        "-i",
+        in_path,
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-sample_fmt",
+        "s16",
+    ]
     if afilter:
         cmd += ["-af", afilter]
     cmd += [out_path]
@@ -24,15 +38,18 @@ def normalize_to_wav16k(in_path):
             os.remove(out_path)
         raise RuntimeError(f"ffmpeg-Normalisierung fehlgeschlagen: {e}")
     return out_path
+
+
+import os
+import shutil
+import tempfile
 from typing import Any, Dict, List
 
-from fastapi import FastAPI, UploadFile, File, Form, Request
+import torch
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import Response
 from prometheus_client import Counter, Gauge, generate_latest
-import os
-import torch
-import tempfile
-import shutil
+
 try:
     import whisper
 except ImportError:
@@ -59,7 +76,7 @@ def _collect_gpu_metrics() -> Dict[str, Any]:
         "available": gpu_available,
         "device_count": torch.cuda.device_count() if gpu_available else 0,
         "devices": [],
-        "errors": []
+        "errors": [],
     }
 
     if not gpu_available:
@@ -81,27 +98,35 @@ def _collect_gpu_metrics() -> Dict[str, Any]:
             props = torch.cuda.get_device_properties(device_idx)
             torch_alloc = torch.cuda.memory_allocated(device_idx)
             torch_reserved = torch.cuda.memory_reserved(device_idx)
-            device_data.update({
-                "name": props.name,
-                "total_memory": props.total_memory,
-                "memory_allocated": torch_alloc,
-                "memory_reserved": torch_reserved,
-                "memory_utilization": None,
-                "utilization_percent": None,
-                "temperature_c": None
-            })
+            device_data.update(
+                {
+                    "name": props.name,
+                    "total_memory": props.total_memory,
+                    "memory_allocated": torch_alloc,
+                    "memory_reserved": torch_reserved,
+                    "memory_utilization": None,
+                    "utilization_percent": None,
+                    "temperature_c": None,
+                }
+            )
             if nvml_ready:
                 try:
                     handle = pynvml.nvmlDeviceGetHandleByIndex(device_idx)
                     util = pynvml.nvmlDeviceGetUtilizationRates(handle)
                     mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-                    device_data["memory_utilization"] = round(mem.used / mem.total * 100, 2) if mem.total else None
+                    device_data["memory_utilization"] = (
+                        round(mem.used / mem.total * 100, 2) if mem.total else None
+                    )
                     device_data["utilization_percent"] = util.gpu
-                    device_data["temperature_c"] = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+                    device_data["temperature_c"] = pynvml.nvmlDeviceGetTemperature(
+                        handle, pynvml.NVML_TEMPERATURE_GPU
+                    )
                     device_data["memory_total_nvml"] = mem.total
                     device_data["memory_used_nvml"] = mem.used
                 except Exception as exc:  # pragma: no cover - hardware specific branch
-                    gpu_info["errors"].append(f"nvml_query_failed_gpu_{device_idx}: {exc}")
+                    gpu_info["errors"].append(
+                        f"nvml_query_failed_gpu_{device_idx}: {exc}"
+                    )
         except Exception as exc:  # pragma: no cover - hardware specific branch
             gpu_info["errors"].append(f"torch_query_failed_gpu_{device_idx}: {exc}")
         gpu_info["devices"].append(device_data)
@@ -160,24 +185,25 @@ def _derive_auto_scaling_signal(metrics: Dict[str, Any]) -> Dict[str, Any]:
 
     recommended_action = "scale_up" if reasons else "steady"
 
-    return {
-        "recommended_action": recommended_action,
-        "reasons": reasons
-    }
+    return {"recommended_action": recommended_action, "reasons": reasons}
+
 
 app = FastAPI(title="ASR Service")
 SUPPORTED_LANGS = ["de", "en", "ar", "tr", "am", "fa", "ru", "uk"]
-requests_total = Counter('asr_requests_total', 'Total ASR requests')
-health_status = Gauge('asr_health_status', 'Health status of ASR service')
+requests_total = Counter("asr_requests_total", "Total ASR requests")
+health_status = Gauge("asr_health_status", "Health status of ASR service")
 model = None
 model_loaded = False
 if whisper:
     try:
-        model = whisper.load_model("base", device="cuda" if torch.cuda.is_available() else "cpu")
+        model = whisper.load_model(
+            "base", device="cuda" if torch.cuda.is_available() else "cpu"
+        )
         model_loaded = True
-    except Exception as e:
+    except Exception:
         model = None
         model_loaded = False
+
 
 @app.get("/health")
 def health():
@@ -189,38 +215,61 @@ def health():
         "status": "ok" if model_available else "degraded",
         "model": model_available,
         "resources": resources,
-        "autoscaling": autoscaling
+        "autoscaling": autoscaling,
     }
+
 
 @app.get("/metrics")
 def metrics():
     return Response(generate_latest(), media_type="text/plain")
 
+
 @app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...), lang: str = Form("de"), request: Request = None, debug: str = Form(None)):
+async def transcribe(
+    file: UploadFile = File(...),
+    lang: str = Form("de"),
+    request: Request = None,
+    debug: str = Form(None),
+):
     import time
+
     start = time.perf_counter()
     # Debug-Parameter aus Query und Form lesen
     debug_query = request.query_params.get("debug") if request else None
-    debug_active = (str(debug).lower() == "true") or (str(debug_query).lower() == "true")
+    debug_active = (str(debug).lower() == "true") or (
+        str(debug_query).lower() == "true"
+    )
     requests_total.inc()
     system_stats = {"cpu": None, "ram": None}
     if psutil is not None:
         try:
-            system_stats = {"cpu": psutil.cpu_percent(), "ram": psutil.virtual_memory().percent}
+            system_stats = {
+                "cpu": psutil.cpu_percent(),
+                "ram": psutil.virtual_memory().percent,
+            }
         except Exception:  # pragma: no cover - psutil rarely fails
             system_stats = {"cpu": None, "ram": None}
-    debug_info = {"input": {"lang": lang}, "output": None, "error": None, "duration": None, "model": "whisper-base", "system": system_stats}
+    debug_info = {
+        "input": {"lang": lang},
+        "output": None,
+        "error": None,
+        "duration": None,
+        "model": "whisper-base",
+        "system": system_stats,
+    }
     if lang not in SUPPORTED_LANGS:
         from fastapi import HTTPException
+
         debug_info["error"] = f"Unsupported language code: {lang}"
-        debug_info["duration"] = round(time.perf_counter()-start,3)
+        debug_info["duration"] = round(time.perf_counter() - start, 3)
         if debug_active:
             return {"text": None, "fallback": True, "debug": debug_info}
-        raise HTTPException(status_code=400, detail=f"Unsupported language code: {lang}")
+        raise HTTPException(
+            status_code=400, detail=f"Unsupported language code: {lang}"
+        )
     if not model_loaded:
         debug_info["error"] = "ASR-Modell nicht geladen"
-        debug_info["duration"] = round(time.perf_counter()-start,3)
+        debug_info["duration"] = round(time.perf_counter() - start, 3)
         if debug_active:
             return {"text": "Hallo Welt", "fallback": True, "debug": debug_info}
         return {"text": "Hallo Welt", "fallback": True}
@@ -242,7 +291,7 @@ async def transcribe(file: UploadFile = File(...), lang: str = Form("de"), reque
             os.remove(tmp_path)
         if norm_path and os.path.exists(norm_path):
             os.remove(norm_path)
-    debug_info["duration"] = round(time.perf_counter()-start,3)
+    debug_info["duration"] = round(time.perf_counter() - start, 3)
     if debug_active:
         return {"text": text, "fallback": False, "debug": debug_info}
     return {"text": text, "fallback": False}

@@ -1,0 +1,309 @@
+name: Code Quality Pipeline
+
+# Trigger auf alle wichtigen Events
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:  # Manueller Trigger
+
+# Globale Umgebungsvariablen
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  # Job 1: Code Formatting und Linting
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Create virtual environment
+      run: |
+        python -m venv .venv
+        source .venv/bin/activate
+        echo "VIRTUAL_ENV=$VIRTUAL_ENV" >> $GITHUB_ENV
+        echo "$VIRTUAL_ENV/bin" >> $GITHUB_PATH
+
+    - name: Install dependencies
+      run: |
+        source .venv/bin/activate
+        pip install --upgrade pip
+        pip install -r requirements-dev.txt
+
+    - name: Check code formatting with Black
+      run: |
+        source .venv/bin/activate
+        black --check --diff services/
+
+    - name: Check import sorting with isort
+      run: |
+        source .venv/bin/activate
+        isort --check-only --diff services/
+
+    - name: Lint code with flake8
+      run: |
+        source .venv/bin/activate
+        flake8 services/ --format=github --statistics --tee --output-file=flake8-report.txt
+
+    - name: Upload flake8 report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: flake8-report
+        path: flake8-report.txt
+        retention-days: 30
+
+  # Job 2: Security Analysis
+  security-analysis:
+    name: Security Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Create virtual environment
+      run: |
+        python -m venv .venv
+        source .venv/bin/activate
+        echo "VIRTUAL_ENV=$VIRTUAL_ENV" >> $GITHUB_ENV
+        echo "$VIRTUAL_ENV/bin" >> $GITHUB_PATH
+
+    - name: Install security tools
+      run: |
+        source .venv/bin/activate
+        pip install --upgrade pip
+        pip install bandit pip-audit
+
+    - name: Run Bandit security analysis
+      run: |
+        source .venv/bin/activate
+        bandit -r services/ -f json -o bandit-report.json || true
+        bandit -r services/ -f txt -o bandit-report.txt || true
+
+    - name: Check for high/critical security issues
+      run: |
+        source .venv/bin/activate
+        # Fail if high or critical issues found
+        HIGH_ISSUES=$(bandit -r services/ -f json | jq '.results[] | select(.issue_severity == "HIGH" or .issue_severity == "MEDIUM") | length' | wc -l)
+        echo "High/Medium security issues found: $HIGH_ISSUES"
+        if [ "$HIGH_ISSUES" -gt "5" ]; then
+          echo "❌ Too many high/medium severity security issues found!"
+          bandit -r services/ -ll
+          exit 1
+        else
+          echo "✅ Security check passed"
+        fi
+
+    - name: Run pip-audit for dependency vulnerabilities
+      run: |
+        source .venv/bin/activate
+        pip-audit --format=json --output=pip-audit-report.json || true
+        pip-audit --format=text --output=pip-audit-report.txt || true
+        VULN_COUNT=$(pip-audit --format=json | jq '.vulnerabilities | length' || echo "0")
+        echo "Vulnerabilities found: $VULN_COUNT"
+        if [ "$VULN_COUNT" -gt "0" ]; then
+          echo "❌ Vulnerable dependencies found!"
+          pip-audit
+          exit 1
+        else
+          echo "✅ No vulnerable dependencies found"
+        fi
+
+    - name: Upload security reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-reports
+        path: |
+          bandit-report.*
+          pip-audit-report.*
+        retention-days: 30
+
+  # Job 3: Type Checking (optional, da graduelle Einführung)
+  type-checking:
+    name: Type Checking
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true  # Nicht blockierend während der Einführung
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Create virtual environment
+      run: |
+        python -m venv .venv
+        source .venv/bin/activate
+        echo "VIRTUAL_ENV=$VIRTUAL_ENV" >> $GITHUB_ENV
+        echo "$VIRTUAL_ENV/bin" >> $GITHUB_PATH
+
+    - name: Install dependencies
+      run: |
+        source .venv/bin/activate
+        pip install --upgrade pip
+        pip install mypy types-requests types-redis
+        pip install -r requirements-dev.txt
+
+    - name: Run MyPy type checking
+      run: |
+        source .venv/bin/activate
+        mypy services/api_gateway/ --ignore-missing-imports --show-error-codes --pretty || true
+
+    - name: Generate type coverage report
+      run: |
+        source .venv/bin/activate
+        mypy services/api_gateway/ --html-report mypy-report --ignore-missing-imports || true
+
+    - name: Upload type checking report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: mypy-report
+        path: mypy-report/
+        retention-days: 30
+
+  # Job 4: Dependency Analysis
+  dependency-analysis:
+    name: Dependency Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Check for dependency conflicts
+      run: |
+        python -m venv .venv
+        source .venv/bin/activate
+        pip install --upgrade pip
+        pip install pip-tools
+
+        # Check each service's requirements
+        for service in services/*/; do
+          if [ -f "$service/requirements.txt" ]; then
+            echo "Checking $service requirements..."
+            pip-compile --dry-run --quiet "$service/requirements.txt" || {
+              echo "❌ Dependency conflict in $service"
+              exit 1
+            }
+          fi
+        done
+
+        echo "✅ All dependency checks passed"
+
+  # Job 5: Quality Gate Evaluation
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    needs: [code-quality, security-analysis]
+    if: always()
+
+    steps:
+    - name: Evaluate Quality Gate
+      run: |
+        # Check if critical jobs passed
+        CODE_QUALITY_RESULT="${{ needs.code-quality.result }}"
+        SECURITY_RESULT="${{ needs.security-analysis.result }}"
+
+        echo "Code Quality Result: $CODE_QUALITY_RESULT"
+        echo "Security Analysis Result: $SECURITY_RESULT"
+
+        # Quality gate fails if critical checks fail
+        if [ "$CODE_QUALITY_RESULT" != "success" ] || [ "$SECURITY_RESULT" != "success" ]; then
+          echo "❌ Quality gate failed!"
+          echo "Code quality and security checks are mandatory."
+          exit 1
+        else
+          echo "✅ Quality gate passed!"
+          echo "All mandatory quality checks successful."
+        fi
+
+  # Job 6: Quality Metrics Summary
+  quality-summary:
+    name: Quality Summary
+    runs-on: ubuntu-latest
+    needs: [code-quality, security-analysis, type-checking, dependency-analysis, quality-gate]
+    if: always()
+
+    steps:
+    - name: Create Quality Summary
+      run: |
+        echo "# Code Quality Summary 📊" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status | Notes |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|---------|-------|" >> $GITHUB_STEP_SUMMARY
+
+        # Code Quality
+        if [ "${{ needs.code-quality.result }}" == "success" ]; then
+          echo "| Code Quality | ✅ Passed | Formatting and linting checks successful |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Code Quality | ❌ Failed | Check formatting and linting issues |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # Security Analysis
+        if [ "${{ needs.security-analysis.result }}" == "success" ]; then
+          echo "| Security | ✅ Passed | No critical security issues found |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Security | ❌ Failed | Critical security issues detected |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # Type Checking (optional)
+        if [ "${{ needs.type-checking.result }}" == "success" ]; then
+          echo "| Type Checking | ✅ Passed | Type annotations valid |" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.type-checking.result }}" == "failure" ]; then
+          echo "| Type Checking | ⚠️ Issues | Type checking found issues (not blocking) |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Type Checking | ➖ Skipped | Type checking skipped |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # Dependency Analysis
+        if [ "${{ needs.dependency-analysis.result }}" == "success" ]; then
+          echo "| Dependencies | ✅ Passed | No dependency conflicts |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Dependencies | ❌ Failed | Dependency conflicts detected |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # Overall Quality Gate
+        if [ "${{ needs.quality-gate.result }}" == "success" ]; then
+          echo "| **Overall** | **✅ PASSED** | **All mandatory checks successful** |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| **Overall** | **❌ FAILED** | **Quality gate requirements not met** |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Next Steps" >> $GITHUB_STEP_SUMMARY
+        echo "- Review failed checks and fix identified issues" >> $GITHUB_STEP_SUMMARY
+        echo "- Download artifacts for detailed reports" >> $GITHUB_STEP_SUMMARY
+        echo "- Check the Actions logs for specific error details" >> $GITHUB_STEP_SUMMARY

@@ -1,5 +1,6 @@
 import requests
 
+
 def get_health_status_html(service_urls):
     health_results = {}
     for name, url in service_urls.items():
@@ -9,7 +10,7 @@ def get_health_status_html(service_urls):
         except Exception:
             status = "nicht erreichbar"
         health_results[name] = status
-    health_html = "".join([
-        f'<li><b>{name}:</b> {status}</li>' for name, status in health_results.items()
-    ])
+    health_html = "".join(
+        [f"<li><b>{name}:</b> {status}</li>" for name, status in health_results.items()]
+    )
     return health_html

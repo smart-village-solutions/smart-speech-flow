@@ -15,19 +15,20 @@ Version: 1.0
 """
 
 import asyncio
-import aiohttp
-import time
-from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 import logging
+import time
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import aiohttp
 
 from .circuit_breaker import (
     CircuitBreaker,
-    CircuitBreakerFactory,
     CircuitBreakerConfig,
+    CircuitBreakerFactory,
+    CircuitBreakerOpenError,
     CircuitState,
-    CircuitBreakerOpenException
 )
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ServiceEndpoint:
     """Service Endpoint Configuration"""
+
     name: str
     base_url: str
     health_path: str = "/health"
@@ -49,6 +51,7 @@ class ServiceEndpoint:
 @dataclass
 class ServiceStatus:
     """Service Status Information"""
+
     name: str
     is_healthy: bool = False
     last_check: Optional[datetime] = None
@@ -107,28 +110,34 @@ class ServiceHealthManager:
     def _setup_default_services(self):
         """Setup Standard Services für Smart Speech Flow"""
         # ASR Service
-        self.register_service(ServiceEndpoint(
-            name="asr",
-            base_url="http://asr:8000",
-            health_path="/health",
-            timeout=10.0  # ASR kann länger dauern
-        ))
+        self.register_service(
+            ServiceEndpoint(
+                name="asr",
+                base_url="http://asr:8000",
+                health_path="/health",
+                timeout=10.0,  # ASR kann länger dauern
+            )
+        )
 
         # Translation Service
-        self.register_service(ServiceEndpoint(
-            name="translation",
-            base_url="http://translation:8000",
-            health_path="/health",
-            timeout=8.0
-        ))
+        self.register_service(
+            ServiceEndpoint(
+                name="translation",
+                base_url="http://translation:8000",
+                health_path="/health",
+                timeout=8.0,
+            )
+        )
 
         # TTS Service
-        self.register_service(ServiceEndpoint(
-            name="tts",
-            base_url="http://tts:8000",
-            health_path="/health",
-            timeout=10.0  # TTS kann länger dauern
-        ))
+        self.register_service(
+            ServiceEndpoint(
+                name="tts",
+                base_url="http://tts:8000",
+                health_path="/health",
+                timeout=10.0,  # TTS kann länger dauern
+            )
+        )
 
     def register_service(self, endpoint: ServiceEndpoint):
         """Registriert neuen Service für Health Monitoring"""
@@ -137,11 +146,11 @@ class ServiceHealthManager:
 
         # Circuit Breaker Configuration per Service
         circuit_config = CircuitBreakerConfig(
-            failure_threshold=3,      # ASR/TTS können mal länger dauern
-            recovery_timeout=45,      # Weniger aggressiv für ML Services
-            success_threshold=2,      # Schneller Recovery
+            failure_threshold=3,  # ASR/TTS können mal länger dauern
+            recovery_timeout=45,  # Weniger aggressiv für ML Services
+            success_threshold=2,  # Schneller Recovery
             timeout=endpoint.timeout,
-            max_recovery_time=300
+            max_recovery_time=300,
         )
 
         circuit_breaker = CircuitBreakerFactory.get_circuit_breaker(
@@ -170,7 +179,9 @@ class ServiceHealthManager:
         # Initiale Health Checks
         await self._check_all_services()
 
-        logger.info(f"🚀 Service Health Monitoring gestartet (Intervall: {self.check_interval}s)")
+        logger.info(
+            f"🚀 Service Health Monitoring gestartet (Intervall: {self.check_interval}s)"
+        )
 
     async def stop_monitoring(self):
         """Stoppt Health Monitoring"""
@@ -213,17 +224,25 @@ class ServiceHealthManager:
             for name, endpoint in self.services.items()
         ]
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)
 
         # Log Results
-        healthy_count = sum(1 for status in self.service_status.values() if status.is_healthy)
+        healthy_count = sum(
+            1 for status in self.service_status.values() if status.is_healthy
+        )
         total_count = len(self.services)
 
         if healthy_count == total_count:
             logger.debug(f"💚 Alle {total_count} Services sind gesund")
         else:
-            unhealthy = [name for name, status in self.service_status.items() if not status.is_healthy]
-            logger.warning(f"⚠️ {total_count - healthy_count}/{total_count} Services nicht verfügbar: {unhealthy}")
+            unhealthy = [
+                name
+                for name, status in self.service_status.items()
+                if not status.is_healthy
+            ]
+            logger.warning(
+                f"⚠️ {total_count - healthy_count}/{total_count} Services nicht verfügbar: {unhealthy}"
+            )
 
     async def _check_service_health(self, service_name: str, endpoint: ServiceEndpoint):
         """Health Check für einzelnen Service"""
@@ -237,23 +256,23 @@ class ServiceHealthManager:
             # Status Update
             status.is_healthy = True
             status.last_check = datetime.now()
-            status.response_time = health_info.get('response_time', 0.0)
+            status.response_time = health_info.get("response_time", 0.0)
             status.error_message = None
-            status.status_code = health_info.get('status_code', 200)
+            status.status_code = health_info.get("status_code", 200)
 
             # Extended Health Info wenn verfügbar
-            if 'uptime' in health_info:
-                status.uptime = health_info['uptime']
-            if 'version' in health_info:
-                status.version = health_info['version']
-            if 'memory_usage' in health_info:
-                status.memory_usage = health_info['memory_usage']
-            if 'active_connections' in health_info:
-                status.active_connections = health_info['active_connections']
-            status.resources = health_info.get('resources')
-            status.autoscaling = health_info.get('autoscaling')
+            if "uptime" in health_info:
+                status.uptime = health_info["uptime"]
+            if "version" in health_info:
+                status.version = health_info["version"]
+            if "memory_usage" in health_info:
+                status.memory_usage = health_info["memory_usage"]
+            if "active_connections" in health_info:
+                status.active_connections = health_info["active_connections"]
+            status.resources = health_info.get("resources")
+            status.autoscaling = health_info.get("autoscaling")
 
-        except CircuitBreakerOpenException as e:
+        except CircuitBreakerOpenError as e:
             # Circuit ist OPEN - Service als nicht verfügbar markieren
             status.is_healthy = False
             status.last_check = datetime.now()
@@ -267,11 +286,13 @@ class ServiceHealthManager:
             status.is_healthy = False
             status.last_check = datetime.now()
             status.error_message = str(e)
-            status.status_code = getattr(e, 'status', None)
+            status.status_code = getattr(e, "status", None)
             status.resources = None
             status.autoscaling = None
 
-    async def _perform_health_request(self, endpoint: ServiceEndpoint) -> Dict[str, Any]:
+    async def _perform_health_request(
+        self, endpoint: ServiceEndpoint
+    ) -> Dict[str, Any]:
         """Führt tatsächlichen Health Check Request aus"""
         start_time = time.time()
 
@@ -292,25 +313,25 @@ class ServiceHealthManager:
                     try:
                         health_data = await response.json()
                         if isinstance(health_data, dict):
-                            health_data['response_time'] = response_time
-                            health_data['status_code'] = response.status
+                            health_data["response_time"] = response_time
+                            health_data["status_code"] = response.status
                             return health_data
                         else:
                             # Not a dict response
                             return {
-                                'status': 'healthy',
-                                'response_time': response_time,
-                                'status_code': response.status,
-                                'message': str(health_data)
+                                "status": "healthy",
+                                "response_time": response_time,
+                                "status_code": response.status,
+                                "message": str(health_data),
                             }
                     except (aiohttp.ContentTypeError, ValueError, TypeError):
                         # Non-JSON response - create default response
                         response_text = await response.text()
                         return {
-                            'status': 'healthy',
-                            'response_time': response_time,
-                            'status_code': response.status,
-                            'message': response_text[:200] if response_text else 'OK'
+                            "status": "healthy",
+                            "response_time": response_time,
+                            "status_code": response.status,
+                            "message": response_text[:200] if response_text else "OK",
                         }
                 else:
                     # HTTP Error
@@ -319,7 +340,7 @@ class ServiceHealthManager:
                         request_info=response.request_info,
                         history=response.history,
                         status=response.status,
-                        message=f"Health check failed: {error_text[:200]}"
+                        message=f"Health check failed: {error_text[:200]}",
                     )
 
         except asyncio.TimeoutError:
@@ -329,8 +350,13 @@ class ServiceHealthManager:
             if created_session:
                 await session.close()
 
-    async def _on_circuit_state_change(self, service_name: str, old_state: CircuitState,
-                                     new_state: CircuitState, health_metrics):
+    async def _on_circuit_state_change(
+        self,
+        service_name: str,
+        old_state: CircuitState,
+        new_state: CircuitState,
+        health_metrics,
+    ):
         """Callback für Circuit Breaker State Changes"""
         logger.warning(
             f"🔄 Service '{service_name}' Circuit: {old_state.value} → {new_state.value} "
@@ -345,7 +371,9 @@ class ServiceHealthManager:
 
     async def _handle_service_failure(self, service_name: str):
         """Behandelt Service Ausfall"""
-        logger.error(f"🚨 Service '{service_name}' ist ausgefallen - Graceful Degradation aktiviert")
+        logger.error(
+            f"🚨 Service '{service_name}' ist ausgefallen - Graceful Degradation aktiviert"
+        )
         # Hier könnte Alerting/Notification Logic stehen
 
     async def _handle_service_recovery(self, service_name: str):
@@ -390,20 +418,22 @@ class ServiceHealthManager:
                 "uptime": status.uptime,
                 "version": status.version,
                 "memory_usage": status.memory_usage,
-                "active_connections": status.active_connections
+                "active_connections": status.active_connections,
             },
-            "circuit_breaker": circuit.get_health_status()
+            "circuit_breaker": circuit.get_health_status(),
         }
 
     def get_overall_health(self) -> Dict[str, Any]:
         """Gesamter Health Status aller Services"""
         checked_statuses = {
-            name: status for name, status in self.service_status.items()
+            name: status
+            for name, status in self.service_status.items()
             if status.last_check is not None
         }
 
         pending_services = [
-            name for name, status in self.service_status.items()
+            name
+            for name, status in self.service_status.items()
             if status.last_check is None
         ]
 
@@ -425,26 +455,31 @@ class ServiceHealthManager:
                 "total_services": total_services,
                 "healthy_services": healthy_count,
                 "unhealthy_services": len(unhealthy_services),
-                "success_rate": (healthy_count / total_services * 100) if total_services > 0 else 0
+                "success_rate": (
+                    (healthy_count / total_services * 100) if total_services > 0 else 0
+                ),
             },
             "services": {
                 "healthy": healthy_services,
                 "unhealthy": unhealthy_services,
-                "pending": pending_services
+                "pending": pending_services,
             },
             "detailed_status": {
-                name: self.get_service_health(name)
-                for name in self.services.keys()
+                name: self.get_service_health(name) for name in self.services.keys()
             },
             "monitoring_info": {
                 "is_monitoring": self.is_monitoring,
                 "check_interval": self.check_interval,
                 "last_check": max(
-                    [status.last_check for status in self.service_status.values() if status.last_check],
-                    default=None
-                )
+                    [
+                        status.last_check
+                        for status in self.service_status.values()
+                        if status.last_check
+                    ],
+                    default=None,
+                ),
             },
-            "gpu_summary": self.get_gpu_summary()
+            "gpu_summary": self.get_gpu_summary(),
         }
 
     def is_service_healthy(self, service_name: str) -> bool:
@@ -456,14 +491,14 @@ class ServiceHealthManager:
     def get_healthy_services(self) -> List[str]:
         """Liste aller gesunden Services"""
         return [
-            name for name, status in self.service_status.items()
-            if status.is_healthy
+            name for name, status in self.service_status.items() if status.is_healthy
         ]
 
     def get_unhealthy_services(self) -> List[str]:
         """Liste aller ungesunden Services"""
         return [
-            name for name, status in self.service_status.items()
+            name
+            for name, status in self.service_status.items()
             if not status.is_healthy
         ]
 
@@ -485,10 +520,10 @@ class ServiceHealthManager:
                 "utilization_warning": self.GPU_WARNING_THRESHOLD,
                 "utilization_critical": self.GPU_CRITICAL_THRESHOLD,
                 "memory_warning": self.GPU_MEMORY_WARNING_THRESHOLD,
-                "memory_critical": self.GPU_MEMORY_CRITICAL_THRESHOLD
+                "memory_critical": self.GPU_MEMORY_CRITICAL_THRESHOLD,
             },
             "autoscaling_signals": [],
-            "scale_up_recommendations": 0
+            "scale_up_recommendations": 0,
         }
 
         for service_name, status in self.service_status.items():
@@ -497,7 +532,7 @@ class ServiceHealthManager:
                 signal = {
                     "service": service_name,
                     "recommended_action": recommendation,
-                    "reasons": status.autoscaling.get("reasons", [])
+                    "reasons": status.autoscaling.get("reasons", []),
                 }
                 summary["autoscaling_signals"].append(signal)
                 if recommendation == "scale_up":
@@ -542,7 +577,10 @@ class ServiceHealthManager:
                         severity = "critical"
                         if "memory" not in triggers:
                             triggers.append("memory")
-                    elif mem_util >= self.GPU_MEMORY_WARNING_THRESHOLD and severity != "critical":
+                    elif (
+                        mem_util >= self.GPU_MEMORY_WARNING_THRESHOLD
+                        and severity != "critical"
+                    ):
                         severity = "warning"
                         triggers.append("memory")
 
@@ -553,11 +591,13 @@ class ServiceHealthManager:
                     "utilization_percent": util,
                     "memory_utilization": mem_util,
                     "temperature_c": device.get("temperature_c"),
-                    "pressure_level": severity
+                    "pressure_level": severity,
                 }
 
                 if device.get("memory_total_nvml") is not None:
-                    device_snapshot["memory_total_nvml"] = device.get("memory_total_nvml")
+                    device_snapshot["memory_total_nvml"] = device.get(
+                        "memory_total_nvml"
+                    )
                     device_snapshot["memory_used_nvml"] = device.get("memory_used_nvml")
                 if device.get("total_memory") is not None:
                     device_snapshot["total_memory"] = device.get("total_memory")
@@ -576,12 +616,14 @@ class ServiceHealthManager:
                     if "memory" in triggers and mem_util is not None:
                         details.append(f"memory {mem_util:.1f}%")
 
-                    summary["alerts"].append({
-                        "service": service_name,
-                        "device": device.get("index"),
-                        "severity": severity,
-                        "message": f"GPU{device.get('index')} {', '.join(details)}"
-                    })
+                    summary["alerts"].append(
+                        {
+                            "service": service_name,
+                            "device": device.get("index"),
+                            "severity": severity,
+                            "message": f"GPU{device.get('index')} {', '.join(details)}",
+                        }
+                    )
 
         if util_values:
             summary["avg_utilization"] = round(sum(util_values) / len(util_values), 2)
@@ -591,7 +633,9 @@ class ServiceHealthManager:
             summary["max_utilization"] = None
 
         if mem_values:
-            summary["avg_memory_utilization"] = round(sum(mem_values) / len(mem_values), 2)
+            summary["avg_memory_utilization"] = round(
+                sum(mem_values) / len(mem_values), 2
+            )
             summary["max_memory_utilization"] = max(mem_values)
         else:
             summary["avg_memory_utilization"] = None

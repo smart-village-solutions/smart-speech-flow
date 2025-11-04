@@ -23,6 +23,8 @@ class RateLimitConfig:
     global_window_seconds: int = int(os.getenv("GLOBAL_RATE_WINDOW_SECONDS", "60"))
     message_limit: int = int(os.getenv("MESSAGE_RATE_LIMIT", "12"))
     message_window_seconds: int = int(os.getenv("MESSAGE_RATE_WINDOW_SECONDS", "10"))
+
+
 LATEST_RATE_LIMIT_MIDDLEWARE = None  # type: Optional["RateLimitMiddleware"]
 
 
@@ -119,7 +121,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _client_key(request: Request) -> str:
-        forwarded = request.headers.get("x-forwarded-for") or request.headers.get("x-real-ip")
+        forwarded = request.headers.get("x-forwarded-for") or request.headers.get(
+            "x-real-ip"
+        )
         if forwarded:
             return forwarded.split(",")[0].strip()
         if request.client:
@@ -133,7 +137,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         path = request.url.path
         parts = [segment for segment in path.split("/") if segment]
-        if len(parts) >= 4 and parts[0] == "api" and parts[1] == "session" and parts[3] == "message":
+        if (
+            len(parts) >= 4
+            and parts[0] == "api"
+            and parts[1] == "session"
+            and parts[3] == "message"
+        ):
             session_id = parts[2]
             return f"session:{session_id}"
         return None

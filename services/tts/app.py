@@ -46,25 +46,28 @@ def get_tts_model(lang: str):
     except Exception as e:
         print(f"Fehler beim Laden von HuggingFace MMS-TTS für Sprache {lang}: {e}")
         import traceback
+
         print(traceback.format_exc())
         return None
+
+
 from typing import Any, Dict, List
 
-from transformers import pipeline
 import soundfile as sf
-from fastapi import FastAPI, Request
-from fastapi.responses import Response, FileResponse, JSONResponse
-import re
-from prometheus_client import Counter, Gauge, generate_latest
-import os
 import torch
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
+from prometheus_client import Counter, Gauge, generate_latest
+from transformers import pipeline
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 try:
-    from TTS.api import TTS as TTSApi
+    from TTS.api import TTS
+
+    TTSApi = TTS
 except ImportError:
     TTSApi = None
 import tempfile
-import base64
 
 try:
     import psutil
@@ -87,7 +90,7 @@ def _collect_gpu_metrics() -> Dict[str, Any]:
         "available": gpu_available,
         "device_count": torch.cuda.device_count() if gpu_available else 0,
         "devices": [],
-        "errors": []
+        "errors": [],
     }
 
     if not gpu_available:
@@ -109,27 +112,35 @@ def _collect_gpu_metrics() -> Dict[str, Any]:
             props = torch.cuda.get_device_properties(device_idx)
             torch_alloc = torch.cuda.memory_allocated(device_idx)
             torch_reserved = torch.cuda.memory_reserved(device_idx)
-            device_data.update({
-                "name": props.name,
-                "total_memory": props.total_memory,
-                "memory_allocated": torch_alloc,
-                "memory_reserved": torch_reserved,
-                "memory_utilization": None,
-                "utilization_percent": None,
-                "temperature_c": None
-            })
+            device_data.update(
+                {
+                    "name": props.name,
+                    "total_memory": props.total_memory,
+                    "memory_allocated": torch_alloc,
+                    "memory_reserved": torch_reserved,
+                    "memory_utilization": None,
+                    "utilization_percent": None,
+                    "temperature_c": None,
+                }
+            )
             if nvml_ready:
                 try:
                     handle = pynvml.nvmlDeviceGetHandleByIndex(device_idx)
                     util = pynvml.nvmlDeviceGetUtilizationRates(handle)
                     mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-                    device_data["memory_utilization"] = round(mem.used / mem.total * 100, 2) if mem.total else None
+                    device_data["memory_utilization"] = (
+                        round(mem.used / mem.total * 100, 2) if mem.total else None
+                    )
                     device_data["utilization_percent"] = util.gpu
-                    device_data["temperature_c"] = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+                    device_data["temperature_c"] = pynvml.nvmlDeviceGetTemperature(
+                        handle, pynvml.NVML_TEMPERATURE_GPU
+                    )
                     device_data["memory_total_nvml"] = mem.total
                     device_data["memory_used_nvml"] = mem.used
                 except Exception as exc:  # pragma: no cover - hardware specific branch
-                    gpu_info["errors"].append(f"nvml_query_failed_gpu_{device_idx}: {exc}")
+                    gpu_info["errors"].append(
+                        f"nvml_query_failed_gpu_{device_idx}: {exc}"
+                    )
         except Exception as exc:  # pragma: no cover - hardware specific branch
             gpu_info["errors"].append(f"torch_query_failed_gpu_{device_idx}: {exc}")
         gpu_info["devices"].append(device_data)
@@ -185,27 +196,26 @@ def _derive_auto_scaling_signal(metrics: Dict[str, Any]) -> Dict[str, Any]:
             reasons.append(f"gpu{device.get('index')}_mem>={threshold_gpu}")
 
     recommended_action = "scale_up" if reasons else "steady"
-    return {
-        "recommended_action": recommended_action,
-        "reasons": reasons
-    }
+    return {"recommended_action": recommended_action, "reasons": reasons}
+
 
 app = FastAPI(title="TTS Service")
-requests_total = Counter('tts_requests_total', 'Total TTS requests')
-health_status = Gauge('tts_health_status', 'Health status of TTS service')
+requests_total = Counter("tts_requests_total", "Total TTS requests")
+health_status = Gauge("tts_health_status", "Health status of TTS service")
 MODEL_PATH = "/models/tts_model.pt"
 
 # Primäre, konkret verifizierte Coqui-Modelle aus deiner Liste/Umgebung
 tts_models = {
-    "de": "tts_models/de/thorsten/vits",           # Deutsch, verfügbar
-    "en": "tts_models/en/ljspeech/vits",           # Englisch, verfügbar
-    "tr": "tts_models/tr/common-voice/glow-tts",   # Türkisch, verfügbar
-    "fa": "tts_models/fa/custom/glow-tts",         # Persisch, verfügbar (Custom)
-    "uk": "tts_models/uk/mai/vits"                 # Ukrainisch, verfügbar
+    "de": "tts_models/de/thorsten/vits",  # Deutsch, verfügbar
+    "en": "tts_models/en/ljspeech/vits",  # Englisch, verfügbar
+    "tr": "tts_models/tr/common-voice/glow-tts",  # Türkisch, verfügbar
+    "fa": "tts_models/fa/custom/glow-tts",  # Persisch, verfügbar (Custom)
+    "uk": "tts_models/uk/mai/vits",  # Ukrainisch, verfügbar
 }
 
 
 tts_model_cache = {}
+
 
 def resolve_tts_model_name(lang: str) -> str:
     """
@@ -246,8 +256,10 @@ def resolve_tts_model_name(lang: str) -> str:
     except Exception as e:
         print(f"Fehler beim Laden von HuggingFace MMS-TTS für Sprache {lang}: {e}")
         import traceback
+
         print(traceback.format_exc())
         return None
+
 
 @app.get("/health")
 def health():
@@ -259,7 +271,9 @@ def health():
     gpu_info = resources.get("gpu", {})
     gpu_available = gpu_info.get("available", False)
     gpu_used = False
-    gpu_errors: List[str] = list(gpu_info.get("errors", [])) if gpu_info.get("errors") else []
+    gpu_errors: List[str] = (
+        list(gpu_info.get("errors", [])) if gpu_info.get("errors") else []
+    )
 
     loaded_models = {}
     for lang in configured_langs:
@@ -290,50 +304,86 @@ def health():
         "gpu": gpu_available,
         "gpu_used": gpu_used,
         "gpu_error": gpu_error,
-        "configured_models": {
-            "coqui": tts_models
-        },
+        "configured_models": {"coqui": tts_models},
         "loaded_models": loaded_models,
         "resources": resources,
-        "autoscaling": autoscaling
+        "autoscaling": autoscaling,
     }
+
 
 @app.get("/metrics")
 def metrics():
     return Response(generate_latest(), media_type="text/plain")
 
+
 @app.post("/synthesize")
 async def synthesize(request: Request):
-    import time, traceback
+    import time
+    import traceback
+
     start = time.perf_counter()
     data = await request.json()
     text = data.get("tts_text") or data.get("text", "Hallo Welt")
     lang = data.get("lang", "de")
-    debug_active = str(data.get("debug", "false")).lower() == "true" or str(request.query_params.get("debug", "false")).lower() == "true"
+    debug_active = (
+        str(data.get("debug", "false")).lower() == "true"
+        or str(request.query_params.get("debug", "false")).lower() == "true"
+    )
     system_stats = {"cpu": None, "ram": None}
     if psutil is not None:
         try:
-            system_stats = {"cpu": psutil.cpu_percent(), "ram": psutil.virtual_memory().percent}
+            system_stats = {
+                "cpu": psutil.cpu_percent(),
+                "ram": psutil.virtual_memory().percent,
+            }
         except Exception:  # pragma: no cover - psutil rarely fails
             system_stats = {"cpu": None, "ram": None}
-    debug_info = {"input": {"text": text, "lang": lang}, "output": None, "error": None, "duration": None, "model": None, "system": system_stats}
+    debug_info = {
+        "input": {"text": text, "lang": lang},
+        "output": None,
+        "error": None,
+        "duration": None,
+        "model": None,
+        "system": system_stats,
+    }
 
     # Minimalvalidierung
     if not isinstance(text, str) or not text.strip():
         debug_info["error"] = "Field 'text' must be a non-empty string"
-        debug_info["duration"] = round(time.perf_counter()-start,3)
+        debug_info["duration"] = round(time.perf_counter() - start, 3)
         if debug_active:
-            return JSONResponse(content={"fallback": False, "error": debug_info["error"], "debug": debug_info}, status_code=400)
-        return JSONResponse(content={"error": "Field 'text' must be a non-empty string"}, status_code=400)
+            return JSONResponse(
+                content={
+                    "fallback": False,
+                    "error": debug_info["error"],
+                    "debug": debug_info,
+                },
+                status_code=400,
+            )
+        return JSONResponse(
+            content={"error": "Field 'text' must be a non-empty string"},
+            status_code=400,
+        )
 
     tts_model = get_tts_model(lang)
     debug_info["model"] = str(tts_model)
     if not tts_model:
-        debug_info["error"] = f"Kein TTS-Modell für Sprache '{lang}' (Konfig oder Download prüfen)."
-        debug_info["duration"] = round(time.perf_counter()-start,3)
+        debug_info["error"] = (
+            f"Kein TTS-Modell für Sprache '{lang}' (Konfig oder Download prüfen)."
+        )
+        debug_info["duration"] = round(time.perf_counter() - start, 3)
         if debug_active:
-            return JSONResponse(content={"fallback": True, "error": debug_info["error"], "debug": debug_info}, status_code=503)
-        return JSONResponse(content={"fallback": True, "error": debug_info["error"]}, status_code=503)
+            return JSONResponse(
+                content={
+                    "fallback": True,
+                    "error": debug_info["error"],
+                    "debug": debug_info,
+                },
+                status_code=503,
+            )
+        return JSONResponse(
+            content={"fallback": True, "error": debug_info["error"]}, status_code=503
+        )
 
     try:
         # Coqui-TTS-Modell
@@ -342,39 +392,64 @@ async def synthesize(request: Request):
                 tts_model.tts_to_file(text=text, file_path=tmp.name)
                 tmp_path = tmp.name
             debug_info["output"] = "audio/wav"
-            debug_info["duration"] = round(time.perf_counter()-start,3)
+            debug_info["duration"] = round(time.perf_counter() - start, 3)
             if debug_active:
-                return FileResponse(tmp_path, media_type="audio/wav", filename="output.wav", headers={"X-Debug-Info": str(debug_info)})
+                return FileResponse(
+                    tmp_path,
+                    media_type="audio/wav",
+                    filename="output.wav",
+                    headers={"X-Debug-Info": str(debug_info)},
+                )
             return FileResponse(tmp_path, media_type="audio/wav", filename="output.wav")
         # HuggingFace MMS-TTS pipeline
         elif hasattr(tts_model, "__call__"):
             import numpy as np
+
             tts_pipe = tts_model
             result = tts_pipe(text)
             audio = result["audio"] if isinstance(result, dict) else result[0]["audio"]
             sampling_rate = result.get("sampling_rate", 16000)
-            print(f"MMS-TTS Output: type={type(audio)}, shape={getattr(audio, 'shape', None)}, size={getattr(audio, 'size', None)}, sampling_rate={sampling_rate}")
+            print(
+                f"MMS-TTS Output: type={type(audio)}, shape={getattr(audio, 'shape', None)}, size={getattr(audio, 'size', None)}, sampling_rate={sampling_rate}"
+            )
             if isinstance(audio, np.ndarray):
                 audio = audio.squeeze()
                 audio = audio.astype(np.float32)
             if not isinstance(audio, np.ndarray):
-                print(f"Warnung: MMS-TTS Output ist kein numpy-Array, sondern: {type(audio)}")
+                print(
+                    f"Warnung: MMS-TTS Output ist kein numpy-Array, sondern: {type(audio)}"
+                )
             if isinstance(audio, np.ndarray) and audio.size == 0:
                 print("Warnung: MMS-TTS Output ist leer!")
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 sf.write(tmp.name, audio, sampling_rate)
                 tmp_path = tmp.name
             debug_info["output"] = "audio/wav"
-            debug_info["duration"] = round(time.perf_counter()-start,3)
+            debug_info["duration"] = round(time.perf_counter() - start, 3)
             if debug_active:
-                return FileResponse(tmp_path, media_type="audio/wav", filename="output.wav", headers={"X-Debug-Info": str(debug_info)})
+                return FileResponse(
+                    tmp_path,
+                    media_type="audio/wav",
+                    filename="output.wav",
+                    headers={"X-Debug-Info": str(debug_info)},
+                )
             return FileResponse(tmp_path, media_type="audio/wav", filename="output.wav")
         else:
             raise RuntimeError("Unbekannter TTS-Modelltyp")
     except Exception as e:
         debug_info["error"] = str(e)
         debug_info["traceback"] = traceback.format_exc()
-        debug_info["duration"] = round(time.perf_counter()-start,3)
+        debug_info["duration"] = round(time.perf_counter() - start, 3)
         if debug_active:
-            return JSONResponse(content={"fallback": False, "error": f"TTS fehlgeschlagen: {str(e)}", "debug": debug_info}, status_code=500)
-        return JSONResponse(content={"fallback": False, "error": f"TTS fehlgeschlagen: {str(e)}"}, status_code=500)
+            return JSONResponse(
+                content={
+                    "fallback": False,
+                    "error": f"TTS fehlgeschlagen: {str(e)}",
+                    "debug": debug_info,
+                },
+                status_code=500,
+            )
+        return JSONResponse(
+            content={"fallback": False, "error": f"TTS fehlgeschlagen: {str(e)}"},
+            status_code=500,
+        )
