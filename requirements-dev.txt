@@ -7,6 +7,7 @@ mypy==1.13.0
 # Security Tools
 bandit==1.7.10
 safety==3.2.8
+pip-audit==2.7.3
 
 # Testing Tools
 pytest==8.3.3

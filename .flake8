@@ -1,0 +1,44 @@
+[flake8]
+# Flake8 Configuration für SSF Backend
+max-line-length = 100
+exclude = 
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    build,
+    dist,
+    *.egg-info,
+    .pytest_cache,
+    .mypy_cache,
+    node_modules,
+    monitoring/grafana,
+    monitoring/loki,
+    monitoring/loki-data,
+    monitoring/promtail-data
+
+# Ignore specific error codes
+ignore = 
+    E203,  # Whitespace before ':' (conflicts with Black)
+    E501,  # Line too long (handled by Black)
+    W503,  # Line break before binary operator (conflicts with Black)
+    E402,  # Module level import not at top (sometimes needed)
+    F401,  # Module imported but unused (handled separately)
+    
+# Complexity
+max-complexity = 15
+
+# Docstrings (relaxed for now)
+docstring-convention = google
+ignore-docstrings = True
+
+# Per-file ignores
+per-file-ignores =
+    __init__.py:F401,F403
+    tests/*:F401,F811
+    */tests/*:F401,F811
+
+# Show source code for errors
+show-source = True
+statistics = True
+count = True
