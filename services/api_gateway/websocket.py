@@ -59,8 +59,9 @@ async def validate_websocket_origin(origin: Optional[str]) -> bool:
     if not origin:
         return False  # Reject connections without Origin header in production
 
+    # ✅ FIX: Korrektes Regex-Pattern (* → .*)
     production_pattern = (
-        r"https://.*\.figma\.site|https://*\.smart-village\.solutions"
+        r"https://.*\.figma\.site|https://.*\.smart-village\.solutions"
     )
     return bool(re.match(production_pattern, origin))
 

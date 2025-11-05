@@ -117,14 +117,26 @@ class ConversationTester:
         """Baut WebSocket-Verbindungen für Admin und Customer auf"""
         logger.info("🔌 WebSocket-Verbindungen aufbauen...")
 
-        # Admin WebSocket (Development-Modus erlaubt alle Origins)
+        # ✅ Origin Header für Production-Modus (CORS)
+        # websockets.connect() nutzt additional_headers Parameter
+        headers = {
+            "Origin": "https://translate.smart-village.solutions"
+        }
+
+        # Admin WebSocket
         admin_uri = f"{WS_URL}/ws/{self.session_id}/admin"
-        self.admin_ws = await websockets.connect(admin_uri)
+        self.admin_ws = await websockets.connect(
+            admin_uri,
+            additional_headers=headers
+        )
         logger.info("✅ Admin WebSocket verbunden")
 
         # Customer WebSocket
         customer_uri = f"{WS_URL}/ws/{self.session_id}/customer"
-        self.customer_ws = await websockets.connect(customer_uri)
+        self.customer_ws = await websockets.connect(
+            customer_uri,
+            additional_headers=headers
+        )
         logger.info("✅ Customer WebSocket verbunden")
 
         # Task 5.1 & 5.6: Warte auf connection_ack von beiden Verbindungen
@@ -225,16 +237,16 @@ class ConversationTester:
             {
                 "speaker": "admin",
                 "audio_file": "German.wav",
-                "expected_de": "Guten Tag",  # Erwarteter deutscher Text
-                "expected_en": "good day",   # Erwarteter englischer Text (lowercase für matching)
-                "description": "Admin begrüßt auf Deutsch"
+                "expected_de": "wind",  # Nordwind-Geschichte enthält "wind"
+                "expected_en": "wind",   # Englische Übersetzung enthält "wind"
+                "description": "Admin sendet deutsche Audio (Nordwind-Geschichte)"
             },
             {
                 "speaker": "customer",
                 "audio_file": "English_pcm.wav",
-                "expected_en": "Hello",      # Erwarteter englischer Text
-                "expected_de": "hallo",      # Erwarteter deutscher Text (lowercase für matching)
-                "description": "Customer antwortet auf Englisch"
+                "expected_en": "rat",      # Ratten-Geschichte enthält "rat"
+                "expected_de": "ratte",      # Deutsche Übersetzung enthält "ratte"
+                "description": "Customer sendet englische Audio (Ratten-Geschichte)"
             }
         ]
 
