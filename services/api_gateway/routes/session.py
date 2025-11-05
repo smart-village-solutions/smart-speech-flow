@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import (
     APIRouter,
+    Depends,
     HTTPException,
     Request,
     UploadFile,
@@ -24,12 +25,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # Import der bestehenden Pipeline-Logik
 from ..pipeline_logic import process_text_pipeline, process_wav
 from ..session_manager import ClientType, SessionMessage, SessionStatus, session_manager
-from ..websocket import MessageType, WebSocketManager
+from ..websocket import MessageType, WebSocketManager, get_websocket_manager
 
 router = APIRouter()
-
-# WebSocket Manager Instance (wird nach session_manager import initialisiert)
-websocket_manager: Optional[WebSocketManager] = None
 
 # === Pydantic Models für Unified Message Endpoint ===
 
@@ -223,7 +221,11 @@ async def get_active_sessions() -> Dict[str, Any]:
 
 
 @router.post("/session/{session_id}/message", response_model=MessageResponse)
-async def send_unified_message(session_id: str, request: Request) -> MessageResponse:
+async def send_unified_message(
+    session_id: str,
+    request: Request,
+    manager: WebSocketManager = Depends(get_websocket_manager)
+) -> MessageResponse:
     """
     Unified Message Endpoint für Audio- und Text-Input
 
@@ -233,11 +235,17 @@ async def send_unified_message(session_id: str, request: Request) -> MessageResp
 
     Returns einheitliches MessageResponse-Format
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     start_time = time.perf_counter()
+    logger.info(f"🚀 Processing message for session {session_id}")
 
     # Session-Validation
+    logger.debug(f"🔍 Validating session {session_id}")
     session = session_manager.get_session(session_id)
     if not session:
+        logger.error(f"❌ Session nicht gefunden: {session_id}")
         raise HTTPException(
             status_code=404,
             detail=create_error_response(
@@ -248,6 +256,7 @@ async def send_unified_message(session_id: str, request: Request) -> MessageResp
         )
 
     if session.status != SessionStatus.ACTIVE:
+        logger.error(f"❌ Session nicht aktiv: {session_id}, Status: {session.status.value}")
         raise HTTPException(
             status_code=400,
             detail=create_error_response(
@@ -257,17 +266,27 @@ async def send_unified_message(session_id: str, request: Request) -> MessageResp
             ),
         )
 
+    logger.info(f"✅ Session-Validation erfolgreich: {session_id}")
+
     # Content-Type-basierte Auto-Detection
     content_type = request.headers.get("content-type", "")
+    logger.info(f"📋 Content-Type: {content_type}")
 
     try:
         if content_type.startswith("multipart/form-data"):
             # Audio-Pipeline
-            return await process_audio_input(session_id, request, start_time)
+            logger.info(f"🎵 Starte Audio-Pipeline für {session_id}...")
+            result = await process_audio_input(session_id, request, start_time, manager)
+            logger.info(f"✅ Audio-Pipeline erfolgreich: {session_id}")
+            return result
         elif content_type.startswith("application/json"):
             # Text-Pipeline
-            return await process_text_input(session_id, request, start_time)
+            logger.info(f"📝 Starte Text-Pipeline für {session_id}...")
+            result = await process_text_input(session_id, request, start_time, manager)
+            logger.info(f"✅ Text-Pipeline erfolgreich: {session_id}")
+            return result
         else:
+            logger.error(f"❌ Unsupported Content-Type: {content_type}")
             raise HTTPException(
                 status_code=400,
                 detail=create_error_response(
@@ -278,8 +297,12 @@ async def send_unified_message(session_id: str, request: Request) -> MessageResp
             )
 
     except HTTPException:
+        logger.info(f"⚠️ HTTPException in send_unified_message für {session_id}")
         raise
     except Exception as e:
+        logger.error(f"💥 UNEXPECTED ERROR in send_unified_message für {session_id}: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail=create_error_response(
@@ -291,7 +314,7 @@ async def send_unified_message(session_id: str, request: Request) -> MessageResp
 
 
 async def process_audio_input(
-    session_id: str, request: Request, start_time: float
+    session_id: str, request: Request, start_time: float, manager: WebSocketManager
 ) -> MessageResponse:
     """Audio-Input verarbeiten (multipart/form-data)"""
 
@@ -388,6 +411,7 @@ async def process_audio_input(
         audio_bytes=result.get("audio_bytes"),
         source_lang=source_lang,
         target_lang=target_lang,
+        manager=manager,
     )
 
     # Response erstellen
@@ -410,7 +434,7 @@ async def process_audio_input(
 
 
 async def process_text_input(
-    session_id: str, request: Request, start_time: float
+    session_id: str, request: Request, start_time: float, manager: WebSocketManager
 ) -> MessageResponse:
     """Text-Input verarbeiten (application/json)"""
 
@@ -470,6 +494,7 @@ async def process_text_input(
         audio_bytes=audio_bytes,
         source_lang=text_request.source_lang,
         target_lang=text_request.target_lang,
+        manager=manager,
     )
 
     # Response erstellen
@@ -499,8 +524,11 @@ async def create_session_message(
     audio_bytes: Optional[bytes],
     source_lang: str,
     target_lang: str,
+    manager: WebSocketManager,
 ) -> SessionMessage:
     """Session-Message erstellen und zur Session hinzufügen"""
+    import logging
+    logger = logging.getLogger(__name__)
 
     message = SessionMessage(
         id=str(uuid.uuid4()),
@@ -517,23 +545,54 @@ async def create_session_message(
     session_manager.add_message(session_id, message)
 
     # ✨ WebSocket Broadcasting mit differentiated content
-    await broadcast_message_to_session(session_id, message, client_type)
+    logger.info(f"🔄 Starte WebSocket-Broadcasting für session={session_id}, sender={client_type}")
+    try:
+        result = await broadcast_message_to_session(session_id, message, client_type, manager)
+
+        # Task 4.7: Handle broadcast failures
+        if result.success:
+            logger.info(
+                f"✅ WebSocket-Broadcasting erfolgreich für {session_id}: "
+                f"{result.successful_sends}/{result.total_connections} zugestellt"
+            )
+        else:
+            logger.error(
+                f"❌ WebSocket-Broadcasting fehlgeschlagen für {session_id}: "
+                f"{result.successful_sends} erfolgreich, {result.failed_sends} fehlgeschlagen "
+                f"von {result.total_connections} Verbindungen. "
+                f"Fehler: {', '.join(result.errors)}"
+            )
+    except Exception as e:
+        logger.error(f"❌ WebSocket-Broadcasting-Fehler für {session_id}: {e}")
+        # WebSocket-Fehler sollen den HTTP-Request nicht zum Absturz bringen
+        import traceback
+        traceback.print_exc()
 
     return message
 
 
 async def broadcast_message_to_session(
-    session_id: str, message: SessionMessage, sender_type: ClientType
+    session_id: str, message: SessionMessage, sender_type: ClientType, manager: WebSocketManager
 ):
     """
     🚀 Differentiated Message Broadcasting:
     - Sender erhält original_text (ASR-Bestätigung)
     - Empfänger erhält translated_text + audio
+
+    Args:
+        session_id: Session identifier
+        message: Message to broadcast
+        sender_type: Who sent the message (admin or customer)
+        manager: WebSocketManager instance (injected via dependency injection)
+
+    Returns:
+        BroadcastResult with success status and metrics
     """
-    # WebSocket Manager lazy initialization
-    global websocket_manager
-    if websocket_manager is None:
-        websocket_manager = WebSocketManager(session_manager)
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.info(f"📡 Broadcasting message in session {session_id} from {sender_type.value}")
+
     # Original Message für Sender (ASR-Bestätigung)
     sender_message = {
         "type": MessageType.MESSAGE.value,
@@ -564,12 +623,18 @@ async def broadcast_message_to_session(
     }
 
     # 🎯 Differentiated Broadcasting ausführen
-    await websocket_manager.broadcast_with_differentiated_content(
+    logger.info(f"📤 Broadcasting differentiated content to session {session_id}")
+    result = await manager.broadcast_with_differentiated_content(
         session_id=session_id,
         sender_type=sender_type,
         original_message=sender_message,
         translated_message=receiver_message,
     )
+    logger.info(
+        f"✅ Broadcast completed for session {session_id}: "
+        f"{result.successful_sends}/{result.total_connections} delivered"
+    )
+    return result
 
 
 def create_error_response(
@@ -630,7 +695,9 @@ async def get_supported_languages() -> Dict[str, Any]:
 
 @router.post("/session/{session_id}/activity")
 async def update_client_activity(
-    session_id: str, activity: ClientActivityUpdate
+    session_id: str,
+    activity: ClientActivityUpdate,
+    manager: WebSocketManager = Depends(get_websocket_manager)
 ) -> ActivityUpdateResponse:
     """
     📱 Client-Activity-Status aktualisieren für Mobile-Optimization
@@ -644,15 +711,8 @@ async def update_client_activity(
     if session.status != SessionStatus.ACTIVE:
         raise HTTPException(400, "Session ist nicht aktiv")
 
-    # WebSocket-Manager initialisieren falls nötig
-    global websocket_manager
-    if websocket_manager is None:
-        from ..websocket import WebSocketManager
-
-        websocket_manager = WebSocketManager(session_manager)
-
     # Aktive WebSocket-Verbindungen für diese Session finden
-    session_connections = websocket_manager.get_session_connections(session_id)
+    session_connections = manager.get_session_connections(session_id)
 
     if not session_connections:
         raise HTTPException(
@@ -666,7 +726,7 @@ async def update_client_activity(
     for connection_dict in session_connections:
         # Connection-Objekt aus all_connections holen
         connection_id = None
-        for conn_id, conn in websocket_manager.all_connections.items():
+        for conn_id, conn in manager.all_connections.items():
             if conn.session_id == session_id:
                 connection_id = conn_id
                 connection = conn
@@ -675,7 +735,7 @@ async def update_client_activity(
         if connection_id and connection:
             # Status aktualisieren
             old_interval = connection.current_polling_interval
-            new_interval = websocket_manager.adaptive_polling.update_client_status(
+            new_interval = manager.adaptive_polling.update_client_status(
                 connection,
                 is_mobile=activity.is_mobile,
                 tab_active=activity.tab_active,
@@ -684,14 +744,14 @@ async def update_client_activity(
             )
 
             new_intervals.append(new_interval)
-            tips = websocket_manager.adaptive_polling.get_battery_optimization_tips(
+            tips = manager.adaptive_polling.get_battery_optimization_tips(
                 connection
             )
             optimization_tips.extend(tips)
 
             # WebSocket-Notification senden falls Intervall sich geändert hat
             if new_interval != old_interval:
-                await websocket_manager._send_polling_interval_update(
+                await manager._send_polling_interval_update(
                     connection, new_interval, reason="client_activity_update"
                 )
 

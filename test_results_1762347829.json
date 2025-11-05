@@ -1,0 +1,56 @@
+{
+  "session_id": "53F795DE",
+  "total_messages": 2,
+  "successful_translations": 0,
+  "failed_translations": 2,
+  "websocket_timeouts": 2,
+  "api_errors": 0,
+  "detailed_log": [
+    {
+      "speaker": "admin",
+      "audio_file": "German.wav",
+      "expected_de": "Guten Tag",
+      "expected_en": "good day",
+      "description": "Admin begrüßt auf Deutsch",
+      "api_response": {
+        "status": "success",
+        "message_id": "275e1827-27d6-4a86-8d87-c897f7392476",
+        "session_id": "53F795DE",
+        "original_text": " Eins stritten sich Nordwind und Sonne, wer von ihnen beiden wohl der stärkere Wäre, als ein Wanderer, der in ein warm Mantel gehüllt war, des Weges der Herkarm. Sie wurden einig, dass derjenige für den stärkeren Gelten sollte, der den Wanderer zwingen würde, sein Mantel abzunehmen. Der Nordwind bließt mit aller Macht, aber je mehr bließt, dass der Sifester hüllte sich der Wanderer in sein Mantel ein. Endlich gab der Nordwind den Kampf auf. Nun erwärmte die Sonne, die Luft mit ihren freundlichen Strahlen und schon nach wenigen Augenblicken zog der Wanderer sein Mantel aus. Da musste der Nordwind zugeben, dass die Sonne von ihnen beiden der stärkere Wäre.",
+        "translated_text": "One argued between North Wind and Sun, who of them would probably be stronger than a wanderer wrapped in a warm coat, the way of the heart arm. They agreed that the one should be for the stronger wind, who would force the wanderer to take off his coat. The North Wind blows with all its power, but the more it blows, the Sifester wrapped the wanderer in his coat. Finally the North Wind gave up the fight. Now the sun, the air warmed with its friendly rays, and after a few moments the wanderer pulled out his coat. Then the North Wind had to admit that the sun was stronger from them both.",
+        "audio_available": true,
+        "audio_url": "/api/audio/275e1827-27d6-4a86-8d87-c897f7392476.wav",
+        "processing_time_ms": 2601,
+        "pipeline_type": "audio",
+        "source_lang": "de",
+        "target_lang": "en",
+        "timestamp": "2025-11-05T13:02:43.783415"
+      },
+      "websocket_timeout": true
+    },
+    {
+      "speaker": "customer",
+      "audio_file": "English_pcm.wav",
+      "expected_en": "Hello",
+      "expected_de": "hallo",
+      "description": "Customer antwortet auf Englisch",
+      "api_response": {
+        "status": "success",
+        "message_id": "659948f1-74c8-462d-804d-0d3436351553",
+        "session_id": "53F795DE",
+        "original_text": " Once there was a young rat named Arthur who could never make up his mind. Whenever his friends asked him if he would like to go out with them, he would only answer I don't know. He wouldn't say yes or no either. He would always shirk making a choice. His aunt Helen said to him, now look here, no one is going to care for you if you carry on like this. You have no more mind than a blade of grass. One rainy day the rats heard a great noise in the loft. The pine rafters were all rotten so that the barn was rather unsafe. It last the joy scaveway and fell to the ground. The walls shook and all the rats haired stood on end with fear and horror. This wont do said the captain. I'll send out scouts to search for a new home. Within five hours the ten scouts came back and said, we found a stone house where there is room and board for us all. There is a kindly horse named Nelly, a cow, a calf and a garden with an elm tree. The rats crawled out of their little houses and stood on the floor in a long line. Just then the old one saw Arthur. Stop, you are of course, you are coming of course. I'm not certain that Arthur undaunted. The roof may not come down yet. Well said the angry old rat, we can't wait for you to join us. Right about face, march. Arthur stood and watched them hurry away. I think I'll go tomorrow he calmly said to himself. But then again, I don't know it's so nice and snug here. That night there was a big crash. In the morning some men with some boys and girls. Wrote up and looked at the barn. One of them moved the board and he saw a young rat quite dead, half in and half out of his hole. Thus the shaker got his doof.",
+        "translated_text": "Einmal war die Ratte halb gestrandet, sah er die halbe Nacht nach unten, so kam eine junge Ratte namens Arthur, die niemals seine Meinung machen konnte. Jedes Mal, wenn seine Freunde ihn gefragt haben, ob er mit ihnen herausgehen möchte, würde er nur antworten, ich weiß es nicht. Er würde auch nicht sagen, ja oder nein. Er würde immer eine Wahl machen. Seine Tante Helen sagte ihm, jetzt schaue hier, niemand wird sich um dich kümmern, wenn du so weitermacht. Du hast keinen Sinn mehr als ein Blatt Gras. Eines regnerischen Tages haben die Ratten einen großen Lärm in der Hütte hören. In fünf Stunden waren die Pinienräuter alle verdorben, so dass die Hütte ziemlich unsicher war. Es dauerte die Freude Scaveway und fiel auf den Boden. Die Wände schüttelten und alle Haare standen auf dem Ende mit Angst und Schrecken. Das wird der Kapitän sagen. Aber ich werde seine Scouts aussenden, um ein neues Zuhause zu suchen. In fünf Stunden glaube ich, dass wir ein Stein",
+        "audio_available": true,
+        "audio_url": "/api/audio/659948f1-74c8-462d-804d-0d3436351553.wav",
+        "processing_time_ms": 5151,
+        "pipeline_type": "audio",
+        "source_lang": "en",
+        "target_lang": "de",
+        "timestamp": "2025-11-05T13:03:47.329887"
+      },
+      "websocket_timeout": true
+    }
+  ],
+  "overall_success": false,
+  "success_rate": "0.0%"
+}

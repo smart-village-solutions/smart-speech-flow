@@ -28,21 +28,22 @@ class ConnectionState(Enum):
 
 
 class DisconnectReason(Enum):
-    """WebSocket disconnect reasons"""
+    """WebSocket disconnect reasons for monitoring"""
 
     CLIENT_DISCONNECT = "client_disconnect"
     SERVER_DISCONNECT = "server_disconnect"
-    CONNECTION_ERROR = "connection_error"
-    HEARTBEAT_TIMEOUT = "heartbeat_timeout"
     SESSION_EXPIRED = "session_expired"
-    RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
-    AUTHENTICATION_FAILED = "authentication_failed"
-    PROTOCOL_ERROR = "protocol_error"
+    SESSION_NOT_FOUND = "session_not_found"
+    INVALID_CLIENT_TYPE = "invalid_client_type"
+    ORIGIN_NOT_ALLOWED = "origin_not_allowed"
+    HEARTBEAT_TIMEOUT = "heartbeat_timeout"
+    INTERNAL_ERROR = "internal_error"
+    GRACEFUL_SHUTDOWN = "graceful_shutdown"
 
 
 @dataclass
 class ConnectionMetrics:
-    """Connection-specific metrics data"""
+    """Metrics for individual WebSocket connection"""
 
     session_id: str
     client_type: str
@@ -50,12 +51,12 @@ class ConnectionMetrics:
     connect_time: datetime
     disconnect_time: Optional[datetime] = None
     disconnect_reason: Optional[DisconnectReason] = None
-    last_heartbeat: Optional[datetime] = None
     messages_sent: int = 0
     messages_received: int = 0
     bytes_sent: int = 0
     bytes_received: int = 0
     errors: int = 0
+    last_heartbeat: Optional[datetime] = None
     connection_duration: Optional[float] = None
 
 
@@ -173,42 +174,6 @@ class WebSocketMonitor:
 
         # System Health
         self.system_info = Info("websocket_system_info", "WebSocket system information", registry=self._registry)
-
-        # Broadcast Metrics (Task 4.8)
-        self.broadcast_total = Counter(
-            "websocket_broadcast_total",
-            "Total number of broadcast operations",
-            ["session_id", "sender_type"],
-            registry=self._registry,
-        )
-
-        self.broadcast_success_total = Counter(
-            "websocket_broadcast_success_total",
-            "Total number of successful broadcast operations",
-            ["session_id", "sender_type"],
-            registry=self._registry,
-        )
-
-        self.broadcast_failure_total = Counter(
-            "websocket_broadcast_failure_total",
-            "Total number of failed broadcast operations",
-            ["session_id", "sender_type", "reason"],
-            registry=self._registry,
-        )
-
-        self.broadcast_messages_delivered = Counter(
-            "websocket_broadcast_messages_delivered_total",
-            "Total number of messages successfully delivered in broadcasts",
-            ["session_id", "sender_type"],
-            registry=self._registry,
-        )
-
-        self.broadcast_messages_failed = Counter(
-            "websocket_broadcast_messages_failed_total",
-            "Total number of messages that failed to deliver in broadcasts",
-            ["session_id", "sender_type"],
-            registry=self._registry,
-        )
 
         # Initialize system info
         self.system_info.info(
@@ -543,7 +508,7 @@ def initialize_websocket_monitor(registry=None):
     global websocket_monitor
     if websocket_monitor is None:
         websocket_monitor = WebSocketMonitor(registry=registry)
-
+        
         # Test-Metrik hinzufügen um Registry-Verbindung zu bestätigen
         if registry is not None:
             from prometheus_client import Gauge
@@ -553,7 +518,7 @@ def initialize_websocket_monitor(registry=None):
                 registry=registry
             )
             test_metric.set(1)
-
+            
     return websocket_monitor
 
 def get_websocket_monitor():

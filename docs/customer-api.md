@@ -78,6 +78,11 @@ Gets session status from customer perspective.
 
 ### Key Fields
 
+- `status`: Current session state - `pending` (awaiting customer), `active` (both connected), `terminated` (ended)
+- `customer_language`: Language code selected by customer (e.g., "en", "ar", "tr")
+- `admin_connected`: Boolean indicating if admin has an active WebSocket connection
+- `customer_connected`: Boolean indicating if customer has an active WebSocket connection
+
 - `is_active`: `true` if session status is "active"
 - `can_send_messages`: `true` if messaging is enabled (same as `is_active`)
 - `customer_language`: Language selected during activation

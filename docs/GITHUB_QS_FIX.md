@@ -11,7 +11,7 @@ Error: input and output filenames must not be matched: services/api_gateway//req
 ## 🔍 **Ursache**
 
 - `pip-compile --dry-run` erwartet `.in` Dateien als Input, nicht `.txt` Dateien
-- API-Inkompatibilität zwischen verschiedenen `pip-tools` Versionen  
+- API-Inkompatibilität zwischen verschiedenen `pip-tools` Versionen
 - Fehlende Behandlung von Edge-Cases in der ursprünglichen Implementierung
 
 ## ✅ **Lösung implementiert**
@@ -52,7 +52,7 @@ python -c "import fastapi, uvicorn, websockets, prometheus_client"  # Import-Tes
 Die `.github/workflows/code-quality.yml` wurde aktualisiert mit:
 
 - ✅ Funktionierender Dependency-Check ohne `pip-compile`
-- ✅ Service-spezifische Import-Validierung  
+- ✅ Service-spezifische Import-Validierung
 - ✅ Bessere Logging und Error-Reporting
 - ✅ Kompatibilität mit verschiedenen Python-Versionen
 
@@ -67,7 +67,7 @@ Die `.github/workflows/code-quality.yml` wurde aktualisiert mit:
    ✅ api_gateway core imports working
 🔍 Checking asr...
    ✅ asr installs successfully
-🔍 Checking translation...  
+🔍 Checking translation...
    ✅ translation installs successfully
 🔍 Checking tts...
    ✅ tts installs successfully
@@ -97,7 +97,7 @@ Die `.github/workflows/code-quality.yml` wurde aktualisiert mit:
 ./scripts/simple_dependency_check.sh
 
 # Erweiterter Check (mit pip-tools und safety)
-./scripts/check_dependencies.sh  
+./scripts/check_dependencies.sh
 ```
 
 ## 🎯 **Impact**

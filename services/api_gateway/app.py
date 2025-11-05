@@ -12,13 +12,38 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
-# === Imports ===
-# Standard- und Third-Party-Module
+# === Standard- und Third-Party-Module ===
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CollectorRegistry, Counter
 
 from .rate_limiter import RateLimitMiddleware
+
+
+# === Service-URLs für die Orchestrierung ===
+# Je nach Umgebung werden interne Docker- oder lokale URLs verwendet
+DOCKER_ENV = os.environ.get("DOCKER_COMPOSE", "1") == "1"
+
+if DOCKER_ENV:
+    # Docker-Service-URLs für Microservices
+    ASR_URL: str = "http://asr:8000/transcribe"
+    TRANSLATION_URL: str = "http://translation:8000/translate"
+    TTS_URL: str = "http://tts:8000/synthesize"
+    SERVICE_URLS = {
+        "ASR": "http://asr:8000/health",
+        "Translation": "http://translation:8000/health",
+        "TTS": "http://tts:8000/health",
+    }
+else:
+    # Lokale Service-URLs für Entwicklung ohne Docker
+    ASR_URL = "http://localhost:8101/transcribe"
+    TRANSLATION_URL = "http://localhost:8102/translate"
+    TTS_URL = "http://localhost:8103/synthesize"
+    SERVICE_URLS = {
+        "ASR": "http://localhost:8101/health",
+        "Translation": "http://localhost:8102/health",
+        "TTS": "http://localhost:8103/health",
+    }
 
 
 # === Background Tasks ===
@@ -37,11 +62,16 @@ async def session_timeout_monitor() -> None:
 
 async def websocket_monitor_task() -> None:
     """Background Task für WebSocket-Monitoring und Cleanup"""
-    from .websocket_monitor import websocket_monitor
+    # Verwende den bereits initialisierten Monitor statt neuen zu erstellen
+    # Warte bis der Monitor im Startup initialisiert wurde
+    await asyncio.sleep(1)  # Kurz warten bis Startup abgeschlossen
+
+    from .websocket_monitor import get_websocket_monitor
 
     try:
         print("🚀 WebSocket-Monitoring gestartet")
-        await websocket_monitor.periodic_cleanup()
+        monitor = get_websocket_monitor()
+        await monitor.periodic_cleanup()
     except Exception as e:
         print(f"⚠️ Fehler im WebSocket-Monitor: {e}")
 
@@ -82,16 +112,30 @@ async def circuit_breaker_monitor() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Startup: Background Tasks starten
+    """Application Lifespan: Initialize singletons and start background tasks"""
+    import sys
+
+    sys.stderr.write("="*80 + "\n"); sys.stderr.flush()
+    sys.stderr.write("API GATEWAY STARTUP\n"); sys.stderr.flush()
+    sys.stderr.write("="*80 + "\n"); sys.stderr.flush()
+
+    # Initialize WebSocketManager singleton
+    from .websocket import get_websocket_manager
+    sys.stderr.write("Initializing WebSocketManager singleton...\n"); sys.stderr.flush()
+    manager = get_websocket_manager()
+    sys.stderr.write(f"WebSocketManager ready (ID: {id(manager)})\n"); sys.stderr.flush()
+
+    # Start background tasks
     timeout_task = asyncio.create_task(session_timeout_monitor())
     circuit_breaker_task = asyncio.create_task(circuit_breaker_monitor())
     websocket_monitor_bg_task = asyncio.create_task(websocket_monitor_task())
     websocket_fallback_bg_task = asyncio.create_task(websocket_fallback_task())
+    sys.stderr.write("All background tasks started\n"); sys.stderr.flush()
+    sys.stderr.write("="*80 + "\n"); sys.stderr.flush()
 
     try:
         yield None
     finally:
-        # Shutdown: Background Tasks beenden
         from .circuit_breaker_client import circuit_breaker_client
 
         timeout_task.cancel()
@@ -99,27 +143,69 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         websocket_monitor_bg_task.cancel()
         websocket_fallback_bg_task.cancel()
 
-        # Circuit Breaker Health Monitoring stoppen
         try:
             await circuit_breaker_client.stop_health_monitoring()
         except Exception as e:
-            print(f"⚠️ Fehler beim Stoppen des Circuit Breaker Monitoring: {e}")
+            print(f"Error stopping circuit breaker: {e}")
 
-        # Tasks aufräumen
-        for task in [
-            timeout_task,
-            circuit_breaker_task,
-            websocket_monitor_bg_task,
-            websocket_fallback_bg_task,
-        ]:
+        for task in [timeout_task, circuit_breaker_task, websocket_monitor_bg_task, websocket_fallback_bg_task]:
             try:
                 await task
             except asyncio.CancelledError:
                 pass
 
+        print("Shutdown complete", flush=True)
+
 
 # === App-Initialisierung ===
-app = FastAPI(title="API Gateway", lifespan=lifespan)
+app = FastAPI(
+    title="Smart Speech Flow API Gateway",
+    description="""
+    Echtzeit-Sprachverarbeitung und Übersetzung mit WebSocket-Unterstützung.
+
+    ## Session Workflow
+
+    1. **Admin** erstellt Session via `/api/admin/session/create`
+    2. **Customer** aktiviert Session via `/api/customer/session/activate`
+    3. Beide verbinden sich via WebSocket `/ws/{session_id}/{connection_type}`
+    4. Nachrichten werden bidirektional übersetzt und zugestellt
+
+    ## Connection Types
+
+    - `admin`: Deutschsprachiger Mitarbeiter (administrative staff member)
+    - `customer`: Mehrsprachiger Kunde/Bürger (multilingual end-user/citizen)
+
+    ## WebSocket Architecture
+
+    Das System verwendet einen zentralen **WebSocketManager** als Singleton:
+    - Eine Instanz verwaltet alle Verbindungen
+    - Dependency Injection via `get_websocket_manager()`
+    - Differenzierte Broadcasts (Admin ≠ Customer Nachricht)
+    - Prometheus Metrics für Monitoring
+    """,
+    version="1.1.0",
+    lifespan=lifespan
+)
+
+
+# === Monitoring Setup (BEFORE any module imports) ===
+# Eigene Registry erstellen um doppelte Registrierung zu vermeiden
+registry = CollectorRegistry()
+requests_total = Counter(
+    "gateway_requests_total", "Total API Gateway requests", registry=registry
+)
+requests_total.inc(0)
+
+# Attach to app state
+app.state.prometheus_registry = registry
+app.state.gateway_requests_total = requests_total
+setattr(app, "requests_total", requests_total)
+
+
+# === WebSocket Monitor Initialisierung ===
+# Muss VOR dem Import der WebSocket-Module passieren
+from .websocket_monitor import initialize_websocket_monitor
+websocket_monitor = initialize_websocket_monitor(registry)
 
 
 # === CORS Middleware ===
@@ -190,50 +276,15 @@ def setup_cors_for_websockets():
 # Setup CORS with WebSocket support
 setup_cors_for_websockets()
 
+
 # === Rate Limiting Middleware ===
 app.add_middleware(RateLimitMiddleware)
 
-# === Monitoring ===
-# Eigene Registry, um doppelte Registrierung zu vermeiden
-registry = CollectorRegistry()
-requests_total = Counter(
-    "gateway_requests_total", "Total API Gateway requests", registry=registry
-)
-requests_total.inc(0)
-app.state.prometheus_registry = registry
-app.state.gateway_requests_total = requests_total
-setattr(app, "requests_total", requests_total)
 
-# === Service-URLs für die Orchestrierung ===
-# Je nach Umgebung werden interne Docker- oder lokale URLs verwendet
-DOCKER_ENV = os.environ.get("DOCKER_COMPOSE", "1") == "1"
-
-if DOCKER_ENV:
-    # Docker-Service-URLs für Microservices
-    ASR_URL: str = "http://asr:8000/transcribe"
-    TRANSLATION_URL: str = "http://translation:8000/translate"
-    TTS_URL: str = "http://tts:8000/synthesize"
-    SERVICE_URLS = {
-        "ASR": "http://asr:8000/health",
-        "Translation": "http://translation:8000/health",
-        "TTS": "http://tts:8000/health",
-    }
-else:
-    # Lokale Service-URLs für Entwicklung ohne Docker
-    ASR_URL = "http://localhost:8101/transcribe"
-    TRANSLATION_URL = "http://localhost:8102/translate"
-    TTS_URL = "http://localhost:8103/synthesize"
-    SERVICE_URLS = {
-        "ASR": "http://localhost:8101/health",
-        "Translation": "http://localhost:8102/health",
-        "TTS": "http://localhost:8103/health",
-    }
-
+# === Module Imports (AFTER app initialization) ===
 from . import websocket, websocket_monitoring_routes, websocket_polling_routes
-
-# === Routen-Import ===
-# Importiert alle FastAPI-Endpunkte zentral aus dem routes-Paket
 from .routes import admin, circuit_breaker, customer, session
+from .routes.metrics import metrics
 
 # === Session-Routen registrieren ===
 app.include_router(session.router, prefix="/api", tags=["sessions"])
@@ -243,6 +294,9 @@ app.include_router(websocket_monitoring_routes.router, tags=["websocket-monitori
 app.include_router(websocket_polling_routes.router, tags=["websocket-polling-fallback"])
 app.include_router(websocket.router, tags=["websocket"])
 app.include_router(circuit_breaker.router, prefix="/api", tags=["circuit-breaker"])
+
+# Metrics-Route direkt an App binden
+app.get("/metrics")(metrics)
 
 
 @app.get("/languages", tags=["public"], summary="List supported languages")

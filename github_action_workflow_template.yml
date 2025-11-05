@@ -1,0 +1,187 @@
+# GitHub Action Workflow Update
+# Replace the dependency check section in .github/workflows/ files
+
+name: Quality & Security Check
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  dependency-check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Create scripts directory
+      run: mkdir -p scripts
+
+    - name: Run Dependency Check
+      run: |
+        echo "🔍 Running dependency validation for Python ${{ matrix.python-version }}"
+
+        # Create virtual environment
+        python -m venv .venv
+        source .venv/bin/activate
+
+        # Upgrade pip
+        pip install --upgrade pip
+
+        echo "📦 Checking service dependencies..."
+
+        # Track failures
+        FAILED_SERVICES=()
+        ALL_SERVICES=()
+
+        # Check each service
+        for service_dir in services/*/; do
+          if [ -f "$service_dir/requirements.txt" ]; then
+            service_name=$(basename "$service_dir")
+            ALL_SERVICES+=("$service_name")
+            echo "🔍 Checking $service_name..."
+
+            # Test installation
+            if pip install -r "$service_dir/requirements.txt" > /dev/null 2>&1; then
+              echo "   ✅ $service_name installs successfully"
+
+              # Basic import tests
+              case "$service_name" in
+                "api_gateway")
+                  python -c "import fastapi, uvicorn, websockets" || echo "   ⚠️  Import issues"
+                  ;;
+                "asr"|"translation"|"tts")
+                  echo "   ℹ️  ML service - requires GPU for full functionality"
+                  ;;
+              esac
+
+            else
+              echo "   ❌ $service_name installation failed"
+              FAILED_SERVICES+=("$service_name")
+            fi
+
+            # Reset environment
+            pip freeze | grep -v "^pip=\|^setuptools=\|^wheel=" | cut -d= -f1 | xargs pip uninstall -y > /dev/null 2>&1 || true
+
+          fi
+        done
+
+        # Results
+        echo ""
+        echo "📊 Dependency Check Summary for Python ${{ matrix.python-version }}:"
+
+        if [ ${#FAILED_SERVICES[@]} -eq 0 ]; then
+          echo "✅ All dependency checks passed!"
+          exit 0
+        else
+          echo "❌ Failed services: ${FAILED_SERVICES[*]}"
+          exit 1
+        fi
+
+  lint-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install linting tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install black isort flake8 bandit safety
+
+    - name: Run Black formatter check
+      run: |
+        echo "🎨 Running Black formatter check..."
+        black --check --diff services/ || {
+          echo "❌ Black formatting issues found"
+          echo "💡 Run 'black services/' to fix formatting"
+          exit 1
+        }
+
+    - name: Run isort import sorting check
+      run: |
+        echo "📋 Running isort import check..."
+        isort --check-only --diff services/ || {
+          echo "❌ Import sorting issues found"
+          echo "💡 Run 'isort services/' to fix imports"
+          exit 1
+        }
+
+    - name: Run flake8 linting
+      run: |
+        echo "🔍 Running flake8 linting..."
+        flake8 services/ --max-line-length=88 --extend-ignore=E203,W503 || {
+          echo "❌ Linting issues found"
+          echo "💡 Fix linting issues or update .flake8 config"
+          exit 1
+        }
+
+    - name: Run bandit security check
+      run: |
+        echo "🔒 Running bandit security check..."
+        bandit -r services/ -f json -o bandit-report.json || true
+        if [ -f bandit-report.json ]; then
+          echo "📋 Bandit security scan completed"
+          # Don't fail on security issues, just report
+        fi
+
+    - name: Upload bandit results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: bandit-security-report
+        path: bandit-report.json
+
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: [dependency-check, lint-check]
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-asyncio httpx
+
+        # Install API Gateway deps for testing
+        pip install -r services/api_gateway/requirements.txt
+
+    - name: Run API Gateway tests
+      run: |
+        echo "🧪 Running API Gateway unit tests..."
+        cd services/api_gateway
+        python -m pytest ../../tests/ -v --tb=short || {
+          echo "❌ Tests failed"
+          exit 1
+        }
+
+    - name: Test imports and basic functionality
+      run: |
+        echo "🔍 Testing basic service functionality..."
+
+        # Test API Gateway
+        python -c "
+        import sys
+        sys.path.append('services/api_gateway')
+        from app import app
+        print('✅ API Gateway import successful')
+        "
+
+        echo "✅ All integration tests passed"

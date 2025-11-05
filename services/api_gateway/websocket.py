@@ -23,7 +23,7 @@ from fastapi import WebSocket
 
 from .session_manager import ClientType, SessionManager, SessionStatus
 from .websocket_fallback import FallbackReason, fallback_manager
-from .websocket_monitor import DisconnectReason, websocket_monitor
+from .websocket_monitor import DisconnectReason, get_websocket_monitor
 
 # === Logging Setup ===
 logger = logging.getLogger(__name__)
@@ -34,12 +34,14 @@ async def validate_websocket_origin(origin: Optional[str]) -> bool:
     """
     Validate WebSocket origin against allowed origins
     """
-    if not origin:
-        return False  # Reject connections without Origin header
-
-    # Development environment - allow localhost and configured origins
+    # Development environment - mehr permissive Regeln
     environment = os.environ.get("ENVIRONMENT", "production")
     if environment == "development":
+        # Erlaube fehlende Origin-Header in Development (für Tests)
+        if not origin:
+            return True
+
+        # Erlaube alle localhost Origins
         if origin.startswith(("http://localhost", "https://localhost")):
             return True
 
@@ -49,9 +51,16 @@ async def validate_websocket_origin(origin: Optional[str]) -> bool:
         if origin in dev_origins:
             return True
 
+        # In Development auch Origins ohne explizite Konfiguration erlauben
+        # Das hilft bei Tests und lokaler Entwicklung
+        return True
+
     # Production environment - strict validation
+    if not origin:
+        return False  # Reject connections without Origin header in production
+
     production_pattern = (
-        r"https://.*\.figma\.site|https://translate\.smart-village\.solutions"
+        r"https://.*\.figma\.site|https://*\.smart-village\.solutions"
     )
     return bool(re.match(production_pattern, origin))
 
@@ -89,6 +98,17 @@ class MessageType(str, Enum):
     # Error Messages
     ERROR = "error"
     RECONNECT_REQUIRED = "reconnect_required"
+
+
+@dataclass
+class BroadcastResult:
+    """Result of a broadcast operation"""
+    success: bool
+    total_connections: int
+    successful_sends: int
+    failed_sends: int
+    session_has_connections: bool
+    errors: List[str]
 
 
 @dataclass
@@ -248,8 +268,9 @@ class WebSocketManager:
         self.all_connections: Dict[str, WebSocketConnection] = {}
 
         # Heartbeat-System
+        # Task 5.2: Timeout erhöht von 60s auf 300s um premature disconnects zu vermeiden
         self.heartbeat_interval = 30  # Sekunden
-        self.heartbeat_timeout = 60  # Sekunden
+        self.heartbeat_timeout = 300  # Sekunden (war 60)
         self.heartbeat_task: Optional[asyncio.Task] = None
 
         # Polling-Fallback Configuration
@@ -354,7 +375,7 @@ class WebSocketManager:
 
         # 📊 Monitoring: Connection established
         origin = client_info.get("origin") if client_info else None
-        websocket_monitor.connection_established(
+        get_websocket_monitor().connection_established(
             connection_id=connection_id,
             session_id=session_id,
             client_type=client_type.value,
@@ -495,7 +516,7 @@ class WebSocketManager:
 
                 # 📊 Monitoring: Message sent
                 message_type = message.get("type", "unknown")
-                websocket_monitor.message_sent(
+                get_websocket_monitor().message_sent(
                     connection_id=connection_id,
                     message_data=str(message),
                     message_type=message_type,
@@ -506,7 +527,7 @@ class WebSocketManager:
                 failed_sends += 1
 
                 # 📊 Monitoring: Error occurred
-                websocket_monitor.record_error(
+                get_websocket_monitor().record_error(
                     connection_id=connection_id,
                     error_type="broadcast_error",
                     error_details=str(e),
@@ -528,32 +549,123 @@ class WebSocketManager:
         sender_type: ClientType,
         original_message: Dict[str, Any],
         translated_message: Dict[str, Any],
-    ):
+    ) -> BroadcastResult:
         """
-        Differentiated Broadcasting:
+        Differentiated Broadcasting with validation and error handling:
         - Sender erhält original_text (ASR-Bestätigung)
         - Empfänger erhält translated_text + audio
+
+        Returns:
+            BroadcastResult with success status and detailed metrics
         """
+        # Task 4.8: Record broadcast attempt
+        monitor = get_websocket_monitor()
+        monitor.broadcast_total.labels(
+            session_id=session_id,
+            sender_type=sender_type.value
+        ).inc()
+
+        errors = []
+        successful_sends = 0
+        failed_sends = 0
+
+        # Task 4.1 & 4.2: Validate session has connections
         if session_id not in self.session_connections:
-            return
+            logger.warning(f"⚠️ Broadcasting to session {session_id} with no connections")
+
+            # Task 4.8: Record failure reason
+            monitor.broadcast_failure_total.labels(
+                session_id=session_id,
+                sender_type=sender_type.value,
+                reason="no_connections"
+            ).inc()
+
+            return BroadcastResult(
+                success=False,
+                total_connections=0,
+                successful_sends=0,
+                failed_sends=0,
+                session_has_connections=False,
+                errors=["Session has no active connections"]
+            )
 
         connections = self.session_connections[session_id]
+        total_connections = len(connections)
+
+        # Task 4.3: Log connection count before broadcast
+        logger.info(f"📡 Broadcasting to session {session_id}: {total_connections} connection(s)")
+
+        # Task 4.4: Check if manager has any connections at all
+        if len(self.all_connections) == 0:
+            error_msg = "WebSocketManager has no connections at all"
+            logger.error(f"❌ {error_msg}")
+            errors.append(error_msg)
 
         for connection_id, connection in connections.items():
             if not connection.is_alive():
+                failed_sends += 1
+                errors.append(f"Connection {connection_id} is not alive")
                 continue
 
             try:
                 if connection.client_type == sender_type:
                     # Sender erhält original_text zur Bestätigung
                     await connection.websocket.send_json(original_message)
+                    successful_sends += 1
+                    logger.debug(f"✓ Sent original message to sender {connection_id}")
                 else:
                     # Empfänger erhält translated_text + audio
                     await connection.websocket.send_json(translated_message)
+                    successful_sends += 1
+                    logger.debug(f"✓ Sent translated message to receiver {connection_id}")
             except Exception as e:
-                logger.warning(
-                    f"⚠️ Differentiated-Broadcast-Fehler zu {connection_id}: {e}"
-                )
+                failed_sends += 1
+                error_msg = f"Failed to send to {connection_id}: {str(e)}"
+                logger.warning(f"⚠️ {error_msg}")
+                errors.append(error_msg)
+
+        # Task 4.5 & 4.6: Return detailed status
+        success = successful_sends > 0 and failed_sends == 0
+
+        # Task 4.8: Record metrics
+        if success:
+            logger.info(f"✅ Broadcast successful: {successful_sends}/{total_connections} delivered")
+            monitor.broadcast_success_total.labels(
+                session_id=session_id,
+                sender_type=sender_type.value
+            ).inc()
+        else:
+            logger.warning(
+                f"⚠️ Broadcast partial/failed: {successful_sends} succeeded, "
+                f"{failed_sends} failed out of {total_connections}"
+            )
+            monitor.broadcast_failure_total.labels(
+                session_id=session_id,
+                sender_type=sender_type.value,
+                reason="partial_failure" if successful_sends > 0 else "complete_failure"
+            ).inc()
+
+        # Record individual message delivery counts
+        if successful_sends > 0:
+            monitor.broadcast_messages_delivered.labels(
+                session_id=session_id,
+                sender_type=sender_type.value
+            ).inc(successful_sends)
+
+        if failed_sends > 0:
+            monitor.broadcast_messages_failed.labels(
+                session_id=session_id,
+                sender_type=sender_type.value
+            ).inc(failed_sends)
+
+        return BroadcastResult(
+            success=success,
+            total_connections=total_connections,
+            successful_sends=successful_sends,
+            failed_sends=failed_sends,
+            session_has_connections=True,
+            errors=errors
+        )
 
     async def handle_websocket_message(
         self, connection_id: str, message: Dict[str, Any]
@@ -857,7 +969,7 @@ class WebSocketManager:
         )
 
         # 📊 Monitoring: Connection closed
-        websocket_monitor.connection_closed(
+        get_websocket_monitor().connection_closed(
             connection_id=connection_id,
             reason=DisconnectReason.CLIENT_DISCONNECT,  # Default reason
         )

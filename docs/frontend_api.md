@@ -57,7 +57,8 @@ Content-Type: application/json
 }
 ```
 
-- Pflichtfelder: `text`, `source_lang`, `target_lang`, `client_type` (`admin` oder `customer`).
+- Pflichtfelder: `text`, `source_lang`, `target_lang`, `client_type`
+- `client_type`: Rolle des Senders - `admin` (deutschsprachiger Mitarbeiter) oder `customer` (mehrsprachiger Kunde/Bürger)
 - Erfolgsresponse:
 
 ```json
@@ -92,6 +93,7 @@ client_type=customer
 - Das Datei-Feld muss `file` heißen.
 - Unterstützte Audioformate werden serverseitig automatisch in das benötigte WAV-Format konvertiert.
 - Response entspricht dem Textfall, `pipeline_type` ist `audio` und `original_text` enthält das ASR-Ergebnis zur Kontrolle.
+- `client_type`: Rolle des Senders - `admin` (Mitarbeiter) oder `customer` (Kunde/Bürger)
 
 ## 4. Antworten konsumieren
 
@@ -146,6 +148,42 @@ Content-Type: application/json
   "audio_url": "/api/audio/...",
   "role": "receiver_message"
 }
+```
+
+### 5.1 WebSocket Message Roles
+
+Das Backend sendet **zwei verschiedene Nachrichten** für jede gesendete Message:
+
+#### **1. An Sender (Echo/Bestätigung):**
+```json
+{
+  "type": "message",
+  "role": "sender_confirmation",
+  "text": "Original-Text",
+  "audio_available": false,
+  "sender": "admin"
+}
+```
+
+**Frontend-Empfehlung:** Kann ignoriert werden wenn optimistische UI-Updates verwendet werden (Frontend zeigt eigene Nachrichten bereits lokal an).
+
+#### **2. An Empfänger (Übersetzung + Audio):**
+```json
+{
+  "type": "message",
+  "role": "receiver_message",
+  "text": "Übersetzter Text",
+  "audio_available": true,
+  "audio_url": "/api/audio/xxx.wav",
+  "sender": "admin"
+}
+```
+
+**Frontend-Empfehlung:** **MUSS** angezeigt werden. Enthält die übersetzte Nachricht für den anderen Client.
+
+> **Wichtig:** Das `sender`-Feld identifiziert immer den **ursprünglichen Absender** der Nachricht, nicht den Empfänger. Verwende `role` um zu unterscheiden ob es sich um ein Echo (`sender_confirmation`) oder eine neue Nachricht (`receiver_message`) handelt.
+
+**Detaillierte Dokumentation:** Siehe `/docs/WEBSOCKET_MESSAGE_ROLES.md`
 ```
 
 - Spezialnachrichten `session_terminated` informieren über ein Gesprächsende.

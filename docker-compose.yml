@@ -74,6 +74,14 @@ services:
       - LLM_REFINEMENT_TIMEOUT=${LLM_REFINEMENT_TIMEOUT:-8.0}
       - LLM_REFINEMENT_TEMPERATURE=${LLM_REFINEMENT_TEMPERATURE:-0.7}
       - LLM_REFINEMENT_MAX_RETRIES=${LLM_REFINEMENT_MAX_RETRIES:-2}
+      # Rate Limiting Configuration für Produktion
+      - GLOBAL_RATE_LIMIT=${GLOBAL_RATE_LIMIT:-1200}
+      - GLOBAL_RATE_WINDOW_SECONDS=${GLOBAL_RATE_WINDOW_SECONDS:-60}
+      - MESSAGE_RATE_LIMIT=${MESSAGE_RATE_LIMIT:-50}
+      - MESSAGE_RATE_WINDOW_SECONDS=${MESSAGE_RATE_WINDOW_SECONDS:-10}
+      # Production Configuration (allows Figma and translate.smart-village.solutions)
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - DEVELOPMENT_CORS_ORIGINS=${DEVELOPMENT_CORS_ORIGINS:-http://localhost:5173,http://localhost:5174}
     depends_on:
       - redis
       - ollama
@@ -189,6 +197,25 @@ services:
       - DCGM_EXPORTER_KUBERNETES=false
     expose:
       - "9400"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    container_name: ssf-backend-cadvisor
+    restart: always
+    privileged: true
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+    command:
+      - '--housekeeping_interval=10s'
+      - '--store_container_labels=true'
 
   loki:
     image: grafana/loki:2.9.3

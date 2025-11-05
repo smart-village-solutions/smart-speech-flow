@@ -211,6 +211,40 @@ class TestWebSocketManager:
         assert connection.last_heartbeat > old_heartbeat
         assert connection.state == ConnectionState.CONNECTED
 
+    async def test_websocket_manager_singleton_behavior(self):
+        """Test: WebSocketManager Singleton-Verhalten via Dependency Injection"""
+        from services.api_gateway.websocket import get_websocket_manager
+        from services.api_gateway.websocket_monitor import initialize_websocket_monitor
+        from services.api_gateway.session_manager import SessionManager
+
+        # Monitor initialisieren (wird von connect_websocket benötigt)
+        initialize_websocket_monitor()
+
+        # Mehrere Aufrufe sollten dieselbe Instanz zurückgeben
+        manager1 = get_websocket_manager()
+        manager2 = get_websocket_manager()
+        manager3 = get_websocket_manager()
+
+        # Assertions: Alle Referenzen zeigen auf dieselbe Instanz
+        assert manager1 is manager2
+        assert manager2 is manager3
+        assert id(manager1) == id(manager2) == id(manager3)
+
+        # Singleton-Zustand ist geteilt
+        mock_ws = MockWebSocket()
+        session_id = "SINGLETON_TEST"
+
+        conn_id = await manager1.connect_websocket(
+            mock_ws, session_id, ClientType.ADMIN
+        )
+
+        # Andere Referenz sieht dieselbe Connection
+        assert conn_id in manager1.all_connections
+        assert conn_id in manager2.all_connections
+        assert conn_id in manager3.all_connections
+        assert session_id in manager1.session_connections
+        assert session_id in manager2.session_connections
+
     async def test_heartbeat_timeout_detection(self, websocket_manager, mock_websocket):
         """Test: Heartbeat-Timeout-Erkennung"""
         session_id = "TEST123"
@@ -274,6 +308,120 @@ class TestWebSocketManager:
         assert len(broadcast_msgs1) == 1
         assert len(broadcast_msgs2) == 1
         assert broadcast_msgs1[0]["content"] == "Hello Session!"
+
+    async def test_broadcast_with_differentiated_content_returns_status(self, websocket_manager):
+        """Test: broadcast_with_differentiated_content gibt BroadcastResult zurück"""
+        from services.api_gateway.websocket_monitor import initialize_websocket_monitor
+
+        # Monitor initialisieren
+        initialize_websocket_monitor()
+
+        session_id = "TEST_BROADCAST"
+
+        # Zwei Verbindungen erstellen
+        mock_ws_admin = MockWebSocket()
+        mock_ws_customer = MockWebSocket()
+
+        await websocket_manager.connect_websocket(mock_ws_admin, session_id, ClientType.ADMIN)
+        await websocket_manager.connect_websocket(mock_ws_customer, session_id, ClientType.CUSTOMER)
+
+        # Messages wie sie vom System verwendet werden
+        original_message = {
+            "type": "translation",
+            "message_id": "test_msg_123",
+            "session_id": session_id,
+            "sender": "admin",
+            "original_text": "Hello",
+            "source_lang": "en",
+            "target_lang": "de"
+        }
+
+        translated_message = {
+            "type": "translation",
+            "message_id": "test_msg_123",
+            "session_id": session_id,
+            "sender": "admin",
+            "translated_text": "Hallo",
+            "original_text": "Hello",
+            "source_lang": "en",
+            "target_lang": "de"
+        }
+
+        # Broadcast durchführen
+        result = await websocket_manager.broadcast_with_differentiated_content(
+            session_id=session_id,
+            sender_type=ClientType.ADMIN,
+            original_message=original_message,
+            translated_message=translated_message
+        )
+
+        # Assertions: BroadcastResult prüfen
+        assert result is not None
+        assert hasattr(result, 'success')
+        assert hasattr(result, 'total_connections')
+        assert hasattr(result, 'successful_sends')
+        assert hasattr(result, 'failed_sends')
+        assert hasattr(result, 'session_has_connections')
+
+        # Bei 2 Connections sollte Broadcast erfolgreich sein
+        assert result.success is True
+        assert result.total_connections == 2
+        assert result.successful_sends == 2
+        assert result.failed_sends == 0
+        assert result.session_has_connections is True
+
+        # Verify messages were sent
+        translation_msgs_admin = [msg for msg in mock_ws_admin.messages_sent if msg.get("type") == "translation"]
+        translation_msgs_customer = [msg for msg in mock_ws_customer.messages_sent if msg.get("type") == "translation"]
+
+        # Admin (sender) gets original message, customer gets translation
+        assert len(translation_msgs_admin) == 1
+        assert len(translation_msgs_customer) == 1
+
+    async def test_broadcast_to_session_without_connections_returns_failure(self, websocket_manager):
+        """Test: Broadcasting an Session ohne Connections gibt Fehler zurück"""
+        from services.api_gateway.websocket_monitor import initialize_websocket_monitor
+
+        # Monitor initialisieren
+        initialize_websocket_monitor()
+
+        session_id = "EMPTY_SESSION"
+
+        original_message = {
+            "type": "translation",
+            "message_id": "test_msg_456",
+            "session_id": session_id,
+            "sender": "admin",
+            "original_text": "Test",
+            "source_lang": "en",
+            "target_lang": "en"
+        }
+
+        translated_message = {
+            "type": "translation",
+            "message_id": "test_msg_456",
+            "session_id": session_id,
+            "sender": "admin",
+            "translated_text": "Test",
+            "original_text": "Test",
+            "source_lang": "en",
+            "target_lang": "en"
+        }
+
+        # Broadcast an Session ohne Connections
+        result = await websocket_manager.broadcast_with_differentiated_content(
+            session_id=session_id,
+            sender_type=ClientType.ADMIN,
+            original_message=original_message,
+            translated_message=translated_message
+        )
+
+        # Assertions: Broadcast sollte fehlschlagen
+        assert result is not None
+        assert result.success is False
+        assert result.total_connections == 0
+        assert result.successful_sends == 0
+        assert result.session_has_connections is False
 
     async def test_differentiated_broadcasting(self, websocket_manager):
         """Test: Differentiated Broadcasting (Sender vs. Empfänger)"""

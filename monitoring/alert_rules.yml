@@ -122,3 +122,47 @@ groups:
         annotations:
           summary: WebSocket connections blocked due to CORS
           description: "{{ $value }}/sec WebSocket connections blocked due to origin restrictions. Review CORS configuration."
+
+      - alert: WebSocketBroadcastFailureRateHigh
+        expr: rate(websocket_broadcast_failure_total[5m]) / rate(websocket_broadcast_total[5m]) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+          component: websocket
+          feature: broadcasting
+        annotations:
+          summary: High WebSocket broadcast failure rate (>1%)
+          description: "Broadcast failure rate is {{ $value | humanizePercentage }}. Check WebSocketManager health and connection state."
+          runbook_url: "https://docs.smart-village.solutions/runbooks/websocket-broadcast-failures"
+
+      - alert: WebSocketBroadcastMessagesNotDelivered
+        expr: rate(websocket_broadcast_messages_failed_total[5m]) > 0.05
+        for: 1m
+        labels:
+          severity: warning
+          component: websocket
+          feature: broadcasting
+        annotations:
+          summary: WebSocket messages failing to deliver
+          description: "{{ $value }}/sec messages failed to deliver. Verify client connections and network health."
+
+      - alert: WebSocketBroadcastNoActivity
+        expr: rate(websocket_broadcast_total[10m]) == 0 and websocket_connections_active > 0
+        for: 10m
+        labels:
+          severity: info
+          component: websocket
+          feature: broadcasting
+        annotations:
+          summary: No broadcast activity despite active connections
+          description: "Active WebSocket connections exist but no broadcasts in 10 minutes. May be expected during idle periods."
+
+      - alert: WebSocketSessionConnectionMismatch
+        expr: websocket_sessions_with_connections > 0 and websocket_connections_active == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: websocket
+        annotations:
+          summary: Session-Connection state mismatch detected
+          description: "Sessions report connections but connection count is 0. Possible state corruption in WebSocketManager."

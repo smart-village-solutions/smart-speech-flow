@@ -147,7 +147,7 @@ async def poll_messages(
                 "polling_id": polling_id,
                 "messages": messages,
                 "message_count": len(messages),
-                "has_more": False,  # TODO: Implement pagination
+                "has_more": False,  # TODO(Issue #XX): Implement pagination for large message queues
                 "next_poll_interval": client_status["polling_interval"],
                 "timestamp": datetime.utcnow().isoformat(),
             },
@@ -212,7 +212,7 @@ async def send_message_via_polling(polling_id: str, message: PollingMessage):
             content={
                 "status": "success",
                 "message": "Message sent successfully",
-                "broadcast_count": 1,  # TODO: Get actual broadcast count
+                "broadcast_count": 1,  # TODO(Issue #XX): Track actual broadcast count from fallback_manager
                 "timestamp": datetime.utcnow().isoformat(),
             },
         )
@@ -332,7 +332,7 @@ async def websocket_recovery_failed(
                 "status": "success",
                 "message": "WebSocket recovery failure recorded",
                 "continues_polling": True,
-                "next_retry_scheduled": True,  # TODO: Get actual retry info
+                "next_retry_scheduled": True,  # TODO(Issue #XX): Return actual retry schedule from fallback_manager
                 "timestamp": datetime.utcnow().isoformat(),
             },
         )

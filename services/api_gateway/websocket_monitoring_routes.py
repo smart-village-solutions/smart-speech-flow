@@ -9,7 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from .websocket_monitor import websocket_monitor
+from .websocket_monitor import get_websocket_monitor
 
 router = APIRouter(prefix="/api/websocket/monitoring", tags=["WebSocket Monitoring"])
 
@@ -21,7 +21,7 @@ async def websocket_health_check():
     Returns current health status and key metrics
     """
     try:
-        health_status = websocket_monitor.get_health_status()
+        health_status = get_websocket_monitor().get_health_status()
 
         return JSONResponse(
             status_code=200 if health_status["status"] == "healthy" else 503,
@@ -48,7 +48,7 @@ async def websocket_connection_stats():
     Comprehensive WebSocket connection statistics
     """
     try:
-        stats = websocket_monitor.get_connection_stats()
+        stats = get_websocket_monitor().get_connection_stats()
 
         return JSONResponse(
             status_code=200,
@@ -78,7 +78,7 @@ async def list_active_connections(
     List active WebSocket connections with optional filtering
     """
     try:
-        active_connections = websocket_monitor.get_active_connections()
+        active_connections = get_websocket_monitor().get_active_connections()
 
         # Filter by session_id if provided
         if session_id:
@@ -154,7 +154,7 @@ async def get_session_connections(session_id: str):
     Get all WebSocket connections for a specific session
     """
     try:
-        session_connections = websocket_monitor.get_session_connections(session_id)
+        session_connections = get_websocket_monitor().get_session_connections(session_id)
 
         if not session_connections:
             raise HTTPException(
@@ -219,8 +219,8 @@ async def websocket_metrics_summary(
     try:
         # This would typically query a time-series database
         # For now, we'll return current statistics
-        stats = websocket_monitor.get_connection_stats()
-        health = websocket_monitor.get_health_status()
+        stats = get_websocket_monitor().get_connection_stats()
+        health = get_websocket_monitor().get_health_status()
 
         return JSONResponse(
             status_code=200,
@@ -258,7 +258,7 @@ async def force_close_connection(
     Force close a specific WebSocket connection (admin function)
     """
     try:
-        active_connections = websocket_monitor.get_active_connections()
+        active_connections = get_websocket_monitor().get_active_connections()
 
         if connection_id not in active_connections:
             raise HTTPException(
@@ -269,7 +269,7 @@ async def force_close_connection(
         # Close the connection through the monitor
         from .websocket_monitor import DisconnectReason
 
-        websocket_monitor.connection_closed(
+        get_websocket_monitor().connection_closed(
             connection_id=connection_id, reason=DisconnectReason.SERVER_DISCONNECT
         )
 

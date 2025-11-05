@@ -404,7 +404,97 @@ ssf-backend/
 └── README.md                # Diese Datei
 ```
 
-## 📄 Lizenz
+## � WebSocket Architecture
+
+### Singleton Pattern
+
+Das System verwendet einen **zentralen WebSocketManager** als Singleton-Instanz:
+
+```python
+from services.api_gateway.websocket import get_websocket_manager
+
+# FastAPI Dependency Injection
+async def some_route(manager: WebSocketManager = Depends(get_websocket_manager)):
+    # Manager wird automatisch injiziert
+    await manager.broadcast_message_to_session(...)
+```
+
+**Vorteile:**
+- Eine zentrale Instanz verwaltet alle WebSocket-Verbindungen
+- Konsistente Session-Verwaltung über alle Endpunkte
+- Keine Race Conditions durch mehrfache Manager-Instanzen
+- Dependency Injection garantiert korrekte Initialisierung
+
+### Message Broadcasting
+
+Nachrichten werden **differenziert** an Admin und Customer gesendet:
+
+```python
+result = await manager.broadcast_with_differentiated_content(
+    session_id="ABC12345",
+    admin_message={"type": "message", "text": "Original", ...},
+    customer_message={"type": "message", "text": "Translated", ...}
+)
+
+# BroadcastResult validiert Erfolg:
+# - success: bool (True wenn mindestens eine Verbindung erreicht)
+# - total_connections: int (Admin + Customer Verbindungen)
+# - successful_sends: int (Erfolgreich zugestellt)
+# - failed_sends: int (Fehlerhafte Zustellungen)
+```
+
+**Monitoring:** Prometheus-Metriken unter `/metrics`:
+- `websocket_broadcast_total` - Anzahl Broadcasts pro Session
+- `websocket_broadcast_success_total` - Erfolgreiche Broadcasts
+- `websocket_broadcast_failure_total` - Fehlgeschlagene Broadcasts
+- `websocket_broadcast_messages_delivered_total` - Zugestellte Nachrichten
+
+### Connection Management
+
+WebSocket-Verbindungen werden pro Session und Rolle verwaltet:
+
+```
+/ws/{session_id}/{connection_type}
+```
+
+- `connection_type`: `admin` oder `customer`
+- Automatisches Heartbeat-System (30s Intervall)
+- Reconnection-Handling im Frontend erforderlich
+
+**Best Practices für Frontend:**
+- WebSocket-Verbindung nach Aktivierung öffnen
+- Heartbeat-Pongs implementieren
+- Bei Verbindungsabbruch automatisch reconnecten
+- Message-Queue für offline-Nachrichten
+
+### Troubleshooting
+
+**Problem:** Nachrichten kommen nicht an (0% Delivery)
+
+**Lösung:**
+1. Container-Logs prüfen: `docker logs ssf-backend_api_gateway_1`
+2. Prometheus Metrics checken: `curl http://localhost:9090/api/v1/query?query=websocket_broadcast_failure_total`
+3. WebSocket-Verbindung im Browser-DevTools prüfen
+4. Container neu starten: `docker-compose up -d --force-recreate api_gateway`
+
+**Problem:** "WebSocketManager ist None" Fehler
+
+**Lösung:**
+- Manager wird via Dependency Injection bereitgestellt
+- `get_websocket_manager()` in FastAPI-Routes verwenden
+- Keine globalen Manager-Variablen verwenden
+
+**Problem:** Container-Restart schlägt fehl (KeyError: 'ContainerConfig')
+
+**Lösung:**
+```bash
+# Workaround für Docker Compose Bug
+docker-compose up -d --no-deps --force-recreate api_gateway
+docker start ssf-backend_redis_1
+docker start ssf-backend_ollama_1
+```
+
+## �📄 Lizenz
 
 MIT
 
@@ -414,4 +504,4 @@ Smart Village Solutions
 
 ---
 
-**Letztes Update:** September 2025 | **Version:** 1.0.0
+**Letztes Update:** November 2025 | **Version:** 1.1.0
