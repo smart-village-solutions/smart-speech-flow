@@ -1,7 +1,7 @@
 [flake8]
 # Flake8 Configuration für SSF Backend
 max-line-length = 100
-exclude = 
+exclude =
     .git,
     __pycache__,
     .venv,
@@ -18,13 +18,13 @@ exclude =
     monitoring/promtail-data
 
 # Ignore specific error codes
-ignore = 
+ignore =
     E203,  # Whitespace before ':' (conflicts with Black)
     E501,  # Line too long (handled by Black)
     W503,  # Line break before binary operator (conflicts with Black)
     E402,  # Module level import not at top (sometimes needed)
     F401,  # Module imported but unused (handled separately)
-    
+
 # Complexity
 max-complexity = 15
 

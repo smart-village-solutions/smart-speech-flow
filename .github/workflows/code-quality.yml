@@ -213,38 +213,38 @@ jobs:
         python -m venv .venv
         source .venv/bin/activate
         pip install --upgrade pip
-        
+
         echo "📦 Checking service dependencies..."
         FAILED_SERVICES=()
         ALL_SERVICES=()
-        
+
         for service_dir in services/*/; do
           if [ -f "$service_dir/requirements.txt" ]; then
             service_name=$(basename "$service_dir")
             ALL_SERVICES+=("$service_name")
             echo "🔍 Checking $service_name..."
-            
+
             # Create temporary venv for each service
             temp_venv=".venv_${service_name}"
             python -m venv "$temp_venv"
             source "$temp_venv/bin/activate"
-            
+
             if pip install -r "$service_dir/requirements.txt" > /dev/null 2>&1; then
               echo "   ✅ $service_name installs successfully"
             else
               echo "   ❌ $service_name installation failed"
               FAILED_SERVICES+=("$service_name")
             fi
-            
+
             deactivate
             rm -rf "$temp_venv"
           fi
         done
-        
+
         echo ""
         echo "📊 Dependency Check Summary:"
         echo "   Services checked: ${#ALL_SERVICES[@]}"
-        
+
         if [ ${#FAILED_SERVICES[@]} -eq 0 ]; then
           echo "✅ All dependency checks passed!"
         else
@@ -264,10 +264,10 @@ jobs:
       run: |
         CODE_QUALITY_RESULT="${{ needs.code-quality.result }}"
         SECURITY_RESULT="${{ needs.security-analysis.result }}"
-        
+
         echo "Code Quality Result: $CODE_QUALITY_RESULT"
         echo "Security Analysis Result: $SECURITY_RESULT"
-        
+
         # Quality gate is informational for now
         if [ "$CODE_QUALITY_RESULT" != "success" ] || [ "$SECURITY_RESULT" != "success" ]; then
           echo "::warning::Quality gate checks found issues"

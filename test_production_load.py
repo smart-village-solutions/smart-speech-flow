@@ -45,16 +45,16 @@ class LoadTestResults:
         self.message_send_times = []
         self.start_time = None
         self.end_time = None
-        
+
     def add_session_creation_time(self, duration: float):
         self.session_creation_times.append(duration)
-        
+
     def add_message_send_time(self, duration: float):
         self.message_send_times.append(duration)
-        
+
     def calculate_stats(self) -> Dict:
         total_duration = (self.end_time - self.start_time) if self.start_time and self.end_time else 0
-        
+
         return {
             "total_sessions": self.total_sessions,
             "successful_sessions": self.successful_sessions,
@@ -82,7 +82,7 @@ async def create_and_test_session(session_num: int, semaphore: asyncio.Semaphore
         session_id = None
         admin_ws = None
         customer_ws = None
-        
+
         try:
             async with aiohttp.ClientSession() as http_session:
                 # 1. Create Admin Session
@@ -92,14 +92,14 @@ async def create_and_test_session(session_num: int, semaphore: asyncio.Semaphore
                         print(f"❌ Session {session_num}: Failed to create (status {resp.status})")
                         results.failed_sessions += 1
                         return False
-                    
+
                     data = await resp.json()
                     session_id = data.get("session_id")
                     create_duration = time.time() - create_start
                     results.add_session_creation_time(create_duration)
-                    
+
                 print(f"✅ Session {session_num}: Created {session_id}")
-                
+
                 # 2. Activate Customer
                 async with http_session.post(
                     f"{BASE_URL}/api/customer/session/activate",
@@ -109,27 +109,27 @@ async def create_and_test_session(session_num: int, semaphore: asyncio.Semaphore
                         print(f"❌ Session {session_num}: Failed to activate")
                         results.failed_sessions += 1
                         return False
-                
+
                 # 3. Connect WebSockets
                 admin_ws = await http_session.ws_connect(f"{WS_URL}/ws/{session_id}/admin")
                 customer_ws = await http_session.ws_connect(f"{WS_URL}/ws/{session_id}/customer")
-                
+
                 # Wait for connection_ack
                 admin_ack = await asyncio.wait_for(admin_ws.receive_json(), timeout=5)
                 customer_ack = await asyncio.wait_for(customer_ws.receive_json(), timeout=5)
-                
+
                 if admin_ack.get("type") != "connection_ack" or customer_ack.get("type") != "connection_ack":
                     print(f"❌ Session {session_num}: Connection ACK failed")
                     results.connection_failures += 1
                     results.failed_sessions += 1
                     return False
-                
+
                 # 4. Send Messages
                 messages_received = 0
-                
+
                 for msg_num in range(MESSAGES_PER_SESSION):
                     send_start = time.time()
-                    
+
                     # Send text message
                     async with http_session.post(
                         f"{BASE_URL}/api/session/{session_id}/message",
@@ -143,36 +143,36 @@ async def create_and_test_session(session_num: int, semaphore: asyncio.Semaphore
                         results.total_messages_sent += 1
                         send_duration = time.time() - send_start
                         results.add_message_send_time(send_duration)
-                        
+
                         if resp.status not in [200, 201]:
                             print(f"⚠️ Session {session_num}: Message {msg_num} failed to send")
                             results.broadcast_failures += 1
                             continue
-                    
+
                     # Wait for WebSocket message (with timeout)
                     try:
                         # Customer should receive the message
                         ws_msg = await asyncio.wait_for(customer_ws.receive_json(), timeout=3)
-                        
+
                         # Skip heartbeats
                         while ws_msg.get("type") == "heartbeat":
                             # Send pong
                             await customer_ws.send_json({"type": "pong"})
                             ws_msg = await asyncio.wait_for(customer_ws.receive_json(), timeout=3)
-                        
+
                         if ws_msg.get("type") == "message":
                             messages_received += 1
                             results.total_messages_received += 1
-                        
+
                     except asyncio.TimeoutError:
                         print(f"⚠️ Session {session_num}: Message {msg_num} not received via WebSocket")
-                    
+
                     # Small delay between messages
                     await asyncio.sleep(0.1)
-                
+
                 # 5. Validate Results
                 delivery_rate = (messages_received / MESSAGES_PER_SESSION * 100) if MESSAGES_PER_SESSION > 0 else 0
-                
+
                 if delivery_rate >= 90:  # Allow 10% tolerance
                     print(f"✅ Session {session_num}: {messages_received}/{MESSAGES_PER_SESSION} messages delivered ({delivery_rate:.1f}%)")
                     results.successful_sessions += 1
@@ -181,12 +181,12 @@ async def create_and_test_session(session_num: int, semaphore: asyncio.Semaphore
                     print(f"⚠️ Session {session_num}: Low delivery rate {delivery_rate:.1f}%")
                     results.failed_sessions += 1
                     return False
-                
+
         except Exception as e:
             print(f"❌ Session {session_num}: Exception - {e}")
             results.failed_sessions += 1
             return False
-        
+
         finally:
             # Cleanup WebSockets
             if admin_ws:
@@ -205,91 +205,91 @@ async def run_load_test():
     print(f"Total messages: {NUM_SESSIONS * MESSAGES_PER_SESSION}")
     print("=" * 80)
     print()
-    
+
     results.start_time = time.time()
     results.total_sessions = NUM_SESSIONS
-    
+
     # Create semaphore to limit concurrency
     semaphore = asyncio.Semaphore(CONCURRENT_LIMIT)
-    
+
     # Run all sessions
     tasks = [
         create_and_test_session(i + 1, semaphore)
         for i in range(NUM_SESSIONS)
     ]
-    
+
     session_results = await asyncio.gather(*tasks)
-    
+
     results.end_time = time.time()
-    
+
     # Calculate and print statistics
     print()
     print("=" * 80)
     print("📊 Load Test Results")
     print("=" * 80)
-    
+
     stats = results.calculate_stats()
-    
+
     print(f"\n🎯 Session Statistics:")
     print(f"  Total Sessions:       {stats['total_sessions']}")
     print(f"  Successful:           {stats['successful_sessions']} ({stats['session_success_rate']:.1f}%)")
     print(f"  Failed:               {stats['failed_sessions']}")
     print(f"  Connection Failures:  {stats['connection_failures']}")
-    
+
     print(f"\n📨 Message Statistics:")
     print(f"  Total Sent:           {stats['total_messages_sent']}")
     print(f"  Total Received:       {stats['total_messages_received']}")
     print(f"  Delivery Rate:        {stats['message_delivery_rate']:.1f}%")
     print(f"  Broadcast Failures:   {stats['broadcast_failures']}")
-    
+
     print(f"\n⚡ Performance:")
     print(f"  Total Duration:       {stats['total_duration_seconds']:.2f}s")
     print(f"  Sessions/sec:         {stats['throughput_sessions_per_second']:.2f}")
     print(f"  Messages/sec:         {stats['throughput_messages_per_second']:.2f}")
-    
+
     print(f"\n⏱️ Latency:")
     print(f"  Avg Session Creation: {stats['avg_session_creation_time']*1000:.2f}ms")
     print(f"  Max Session Creation: {stats['max_session_creation_time']*1000:.2f}ms")
     print(f"  Avg Message Send:     {stats['avg_message_send_time']*1000:.2f}ms")
     print(f"  Max Message Send:     {stats['max_message_send_time']*1000:.2f}ms")
-    
+
     # Success Criteria
     print(f"\n✅ Success Criteria:")
     criteria_met = 0
     total_criteria = 5
-    
+
     if stats['session_success_rate'] >= 95:
         print(f"  ✅ Session success rate >= 95% ({stats['session_success_rate']:.1f}%)")
         criteria_met += 1
     else:
         print(f"  ❌ Session success rate < 95% ({stats['session_success_rate']:.1f}%)")
-    
+
     if stats['message_delivery_rate'] >= 95:
         print(f"  ✅ Message delivery rate >= 95% ({stats['message_delivery_rate']:.1f}%)")
         criteria_met += 1
     else:
         print(f"  ❌ Message delivery rate < 95% ({stats['message_delivery_rate']:.1f}%)")
-    
+
     if stats['connection_failures'] == 0:
         print(f"  ✅ Zero connection failures")
         criteria_met += 1
     else:
         print(f"  ❌ {stats['connection_failures']} connection failures")
-    
+
     if stats['avg_message_send_time'] < 2.0:
         print(f"  ✅ Avg message send time < 2s ({stats['avg_message_send_time']:.2f}s)")
         criteria_met += 1
     else:
         print(f"  ❌ Avg message send time >= 2s ({stats['avg_message_send_time']:.2f}s)")
-    
+
     if stats['throughput_messages_per_second'] >= 10:
         print(f"  ✅ Throughput >= 10 msg/s ({stats['throughput_messages_per_second']:.2f})")
         criteria_met += 1
     else:
         print(f"  ⚠️ Throughput < 10 msg/s ({stats['throughput_messages_per_second']:.2f})")
-    
+
     print(f"\n📋 Overall: {criteria_met}/{total_criteria} criteria met")
-    
+
     if criteria_met == total_criteria:
         print("✅ LOAD TEST PASSED - System ready for production")
         return 0
@@ -299,9 +299,9 @@ async def run_load_test():
     else:
         print("❌ LOAD TEST FAILED - System not ready for production load")
         return 2
-    
+
     print("=" * 80)
-    
+
     # Save results to file
     with open(f"load_test_results_{int(time.time())}.json", "w") as f:
         json.dump({
@@ -313,7 +313,7 @@ async def run_load_test():
             },
             "results": stats
         }, f, indent=2)
-    
+
     print(f"\n💾 Results saved to load_test_results_{int(time.time())}.json")
 
 if __name__ == "__main__":

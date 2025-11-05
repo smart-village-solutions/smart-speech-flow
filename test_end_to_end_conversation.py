@@ -51,6 +51,8 @@ class ConversationTester:
         # Message queues für Nachrichten vom Heartbeat-Handler
         self.admin_message_queue = asyncio.Queue()
         self.customer_message_queue = asyncio.Queue()
+        # ✅ VERBESSERUNG: Tracking für sender_confirmation
+        self.sender_confirmations_received = 0
 
     async def test_full_conversation(self) -> Dict[str, Any]:
         """Führt kompletten Konversationstest durch"""
@@ -291,6 +293,42 @@ class ConversationTester:
             step['api_response'] = result
             self.conversation_log.append(step)
 
+        # ✅ VERBESSERUNG: Warte auf sender_confirmation für den Sender
+        await self.wait_for_sender_confirmation(step)
+
+    async def wait_for_sender_confirmation(self, step: Dict[str, Any]):
+        """Wartet auf sender_confirmation für den Sender (wie Frontend es empfängt)"""
+        # Bestimme Queue des Senders
+        if step['speaker'] == 'admin':
+            sender_queue = self.admin_message_queue
+            sender_name = "Admin"
+        else:
+            sender_queue = self.customer_message_queue
+            sender_name = "Customer"
+
+        logger.info(f"⏳ {sender_name}: Warte auf sender_confirmation...")
+
+        try:
+            # Warte kurz auf sender_confirmation (sollte schnell kommen)
+            ws_data = await asyncio.wait_for(sender_queue.get(), timeout=5)
+
+            if ws_data.get('type') == 'message' and ws_data.get('role') == 'sender_confirmation':
+                logger.info(f"✅ {sender_name}: sender_confirmation empfangen (würde von Frontend ignoriert)")
+                step['sender_confirmation_received'] = True
+                self.sender_confirmations_received += 1
+            else:
+                logger.warning(
+                    f"⚠️ {sender_name}: Erwartete sender_confirmation, erhielt "
+                    f"type={ws_data.get('type')}, role={ws_data.get('role')}"
+                )
+                step['sender_confirmation_received'] = False
+                # Nachricht zurück in Queue für wait_for_translation
+                await sender_queue.put(ws_data)
+
+        except asyncio.TimeoutError:
+            logger.warning(f"⚠️ {sender_name}: Keine sender_confirmation innerhalb 5s")
+            step['sender_confirmation_received'] = False
+
     async def wait_for_translation(self, step: Dict[str, Any]):
         """Wartet auf WebSocket-Benachrichtigungen über Übersetzung"""
         logger.info("⏳ Warte auf WebSocket-Übersetzungsbenachrichtigungen...")
@@ -330,14 +368,30 @@ class ConversationTester:
 
                 # Prüfe ob das eine echte Übersetzung ist
                 if ws_data.get('type') == 'message':
-                    # WebSocket-Daten zu Step hinzufügen
-                    step['websocket_response'] = ws_data
-                    translation_received = True
+                    # ✅ VERBESSERUNG: Validiere role field (wie Frontend)
+                    msg_role = ws_data.get('role', 'unknown')
 
-                    # Validierung der Übersetzung
-                    self.validate_translation(step, ws_data)
-                    logger.info(f"✅ Übersetzungsnachricht erfolgreich empfangen und validiert")
-                    return
+                    if msg_role == 'receiver_message':
+                        # ✅ Valide Übersetzungsnachricht für Empfänger
+                        logger.info(f"✅ receiver_message empfangen (valide Translation)")
+                        step['websocket_response'] = ws_data
+                        translation_received = True
+
+                        # Validierung der Übersetzung
+                        self.validate_translation(step, ws_data)
+                        logger.info(f"✅ Übersetzungsnachricht erfolgreich empfangen und validiert")
+                        return
+
+                    elif msg_role == 'sender_confirmation':
+                        # ✅ sender_confirmation ignorieren (wie Frontend)
+                        logger.info(f"📤 sender_confirmation empfangen und ignoriert (wie Frontend)")
+                        step['sender_confirmation_received'] = True
+                        continue  # Warte weiter auf receiver_message
+
+                    else:
+                        # Unbekannte Role
+                        logger.warning(f"⚠️ Unbekannte Message-Role: {msg_role}")
+                        continue
 
                 elif ws_data.get('type') == 'connection_ack':
                     logger.debug("📋 Connection acknowledgment (bereits erhalten beim Connect)")
@@ -402,6 +456,7 @@ class ConversationTester:
             "api_errors": 0,
             "heartbeat_timeouts": 0,  # Task 5.7
             "assertion_failures": 0,  # Task 5.8
+            "sender_confirmations_received": self.sender_confirmations_received,  # ✅ VERBESSERUNG
             "detailed_log": self.conversation_log,
             "overall_success": True
         }
@@ -459,6 +514,7 @@ class ConversationTester:
         logger.info(f"API-Fehler: {results['api_errors']}")
         logger.info(f"Heartbeat Timeouts: {results['heartbeat_timeouts']}")  # Task 5.7
         logger.info(f"Assertion Failures: {results['assertion_failures']}")  # Task 5.8
+        logger.info(f"sender_confirmations empfangen: {results['sender_confirmations_received']}/{results['total_messages']}")  # ✅ VERBESSERUNG
         logger.info(f"Erfolgsquote: {results['success_rate']}")
         logger.info(f"Gesamtergebnis: {'✅ BESTANDEN' if results['overall_success'] else '❌ FEHLGESCHLAGEN'}")
         logger.info(f"{'='*50}")
