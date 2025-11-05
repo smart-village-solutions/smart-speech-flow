@@ -110,6 +110,34 @@ async def circuit_breaker_monitor() -> None:
         print(f"❌ Circuit Breaker Monitor Startup Fehler: {e}")
 
 
+async def audio_cleanup_task() -> None:
+    """Background Task für automatisches Löschen alter Audio-Dateien (24h Retention)"""
+    from .audio_storage import cleanup_old_audio_files, get_disk_usage
+
+    try:
+        print("🧹 Audio-Cleanup-Service gestartet (läuft stündlich)")
+
+        while True:
+            try:
+                # Stündliche Cleanup-Routine
+                await asyncio.sleep(3600)  # 1 Stunde warten
+
+                # Cleanup durchführen
+                stats = cleanup_old_audio_files()
+                print(f"🧹 Audio-Cleanup abgeschlossen: {stats['total_deleted']} Dateien gelöscht")
+
+                # Disk Usage loggen
+                disk_stats = get_disk_usage()
+                total_mb = disk_stats['total_bytes'] / (1024 * 1024)
+                print(f"💾 Audio Storage: {disk_stats['total_files']} Dateien, {total_mb:.2f} MB")
+
+            except Exception as e:
+                print(f"⚠️ Fehler im Audio-Cleanup-Task: {e}")
+                await asyncio.sleep(3600)
+    except Exception as e:
+        print(f"❌ Audio-Cleanup-Task Startup Fehler: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application Lifespan: Initialize singletons and start background tasks"""
@@ -130,6 +158,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     circuit_breaker_task = asyncio.create_task(circuit_breaker_monitor())
     websocket_monitor_bg_task = asyncio.create_task(websocket_monitor_task())
     websocket_fallback_bg_task = asyncio.create_task(websocket_fallback_task())
+    audio_cleanup_bg_task = asyncio.create_task(audio_cleanup_task())
     sys.stderr.write("All background tasks started\n"); sys.stderr.flush()
     sys.stderr.write("="*80 + "\n"); sys.stderr.flush()
 
@@ -142,13 +171,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         circuit_breaker_task.cancel()
         websocket_monitor_bg_task.cancel()
         websocket_fallback_bg_task.cancel()
+        audio_cleanup_bg_task.cancel()
 
         try:
             await circuit_breaker_client.stop_health_monitoring()
         except Exception as e:
             print(f"Error stopping circuit breaker: {e}")
 
-        for task in [timeout_task, circuit_breaker_task, websocket_monitor_bg_task, websocket_fallback_bg_task]:
+        for task in [timeout_task, circuit_breaker_task, websocket_monitor_bg_task, websocket_fallback_bg_task, audio_cleanup_bg_task]:
             try:
                 await task
             except asyncio.CancelledError:

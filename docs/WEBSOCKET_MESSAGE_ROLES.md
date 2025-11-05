@@ -95,9 +95,54 @@ result = await manager.broadcast_with_differentiated_content(
   "role": "sender_confirmation",
   "sender": "admin",
   "text": "Hallo, wie kann ich helfen?",
-  "audio_available": false
+  "audio_available": false,
+  "pipeline_metadata": {
+    "input": {
+      "type": "audio",
+      "source_lang": "de"
+    },
+    "steps": [
+      {
+        "name": "asr",
+        "started_at": "2025-11-05T12:00:00.000Z",
+        "completed_at": "2025-11-05T12:00:00.150Z",
+        "duration_ms": 150,
+        "input": {},
+        "output": {
+          "text": "Hallo, wie kann ich helfen?"
+        }
+      },
+      {
+        "name": "translation",
+        "started_at": "2025-11-05T12:00:00.150Z",
+        "completed_at": "2025-11-05T12:00:00.300Z",
+        "duration_ms": 150,
+        "input": {},
+        "output": {
+          "text": "مرحبا، كيف يمكنني المساعدة؟",
+          "model": "m2m100_1.2B"
+        }
+      },
+      {
+        "name": "tts",
+        "started_at": "2025-11-05T12:00:00.300Z",
+        "completed_at": "2025-11-05T12:00:00.500Z",
+        "duration_ms": 200,
+        "input": {},
+        "output": {
+          "audio_format": "wav",
+          "sample_rate": 22050
+        }
+      }
+    ],
+    "total_duration_ms": 500,
+    "pipeline_started_at": "2025-11-05T12:00:00.000Z",
+    "pipeline_completed_at": "2025-11-05T12:00:00.500Z"
+  }
 }
 ```
+
+**WICHTIG:** Das `pipeline_metadata` Feld ist **IMMER vorhanden** in allen WebSocket-Nachrichten, unabhängig von der Rolle. Es enthält detaillierte Informationen über jeden Schritt der Verarbeitungspipeline (ASR, Translation, TTS).
 
 ---
 
@@ -123,13 +168,145 @@ result = await manager.broadcast_with_differentiated_content(
   "sender": "admin",
   "text": "مرحبا، كيف يمكنني المساعدة؟",
   "audio_available": true,
-  "audio_url": "/api/audio/a1b2c3d4.wav"
+  "audio_url": "/api/audio/a1b2c3d4.wav",
+  "original_audio_url": "/api/audio/input_a1b2c3d4.wav",
+  "pipeline_metadata": {
+    "input": {
+      "type": "audio",
+      "source_lang": "de",
+      "audio_url": "/api/audio/input_a1b2c3d4.wav"
+    },
+    "steps": [
+      {
+        "name": "asr",
+        "started_at": "2025-11-05T12:00:00.000Z",
+        "completed_at": "2025-11-05T12:00:00.150Z",
+        "duration_ms": 150,
+        "input": {},
+        "output": {
+          "text": "Hallo, wie kann ich helfen?"
+        }
+      },
+      {
+        "name": "translation",
+        "started_at": "2025-11-05T12:00:00.150Z",
+        "completed_at": "2025-11-05T12:00:00.300Z",
+        "duration_ms": 150,
+        "input": {},
+        "output": {
+          "text": "مرحبا، كيف يمكنني المساعدة؟",
+          "model": "m2m100_1.2B"
+        }
+      },
+      {
+        "name": "tts",
+        "started_at": "2025-11-05T12:00:00.300Z",
+        "completed_at": "2025-11-05T12:00:00.500Z",
+        "duration_ms": 200,
+        "input": {},
+        "output": {
+          "audio_format": "wav",
+          "sample_rate": 22050
+        }
+      }
+    ],
+    "total_duration_ms": 500,
+    "pipeline_started_at": "2025-11-05T12:00:00.000Z",
+    "pipeline_completed_at": "2025-11-05T12:00:00.500Z"
+  }
+}
+```
+
+**WICHTIG:**
+- Das `pipeline_metadata` Feld ist **IMMER vorhanden** in allen WebSocket-Nachrichten
+- Bei Audio-Input enthält `pipeline_metadata.input.audio_url` die URL zur Original-Audiodatei
+- Das zusätzliche Feld `original_audio_url` auf Top-Level bietet direkten Zugriff auf die Original-Audiodatei (nur bei Audio-Input, ansonsten `null`)
+- Bei Text-Input ist `pipeline_metadata.input.type` auf `"text"` gesetzt und `original_audio_url` ist `null`
+
+---
+
+## � Pipeline Metadata
+
+### Übersicht
+
+**Seit Version 1.1** enthalten ALLE WebSocket-Nachrichten ein `pipeline_metadata` Feld mit detaillierten Informationen über die Verarbeitungspipeline.
+
+### Struktur
+
+Das `pipeline_metadata` Objekt enthält:
+
+1. **Input Information**: Typ (audio/text), Sprache, optional Audio-URL
+2. **Pipeline Steps**: Array mit allen Verarbeitungsschritten
+3. **Timing Information**: Gesamt-Dauer und Zeitstempel
+
+### Verfügbare Pipeline-Schritte
+
+| Step Name | Beschreibung | Input Type | Output |
+|-----------|--------------|------------|--------|
+| `asr` | Automatic Speech Recognition | Audio | Text |
+| `translation` | Text-Übersetzung | Text | Übersetzter Text |
+| `tts` | Text-to-Speech | Text | Audio |
+| `refinement` | Optional: LLM-basierte Verbesserung | Text | Verbesserter Text |
+
+### Timing-Felder
+
+Alle Zeitstempel sind im **ISO 8601 Format** mit Millisekunden-Präzision:
+
+```typescript
+{
+  "started_at": "2025-11-05T12:00:00.000Z",
+  "completed_at": "2025-11-05T12:00:00.150Z",
+  "duration_ms": 150
+}
+```
+
+### Original Audio URL
+
+Bei Audio-Input enthält die Nachricht zusätzlich:
+
+- `original_audio_url`: Top-Level-Feld für direkten Zugriff
+- `pipeline_metadata.input.audio_url`: Redundant, aber innerhalb der Metadaten
+
+Die Original-Audiodatei wird für **24 Stunden** gespeichert und kann über die URL abgerufen werden.
+
+### Verwendungszwecke
+
+**Frontend:**
+- Performance-Monitoring (Pipeline-Dauer anzeigen)
+- Debugging (Welcher Schritt dauerte am längsten?)
+- Original-Audio-Playback ermöglichen
+- Qualitäts-Metriken sammeln
+
+**Beispiel - Performance anzeigen:**
+```typescript
+function displayPipelinePerformance(metadata: PipelineMetadata) {
+  const totalMs = metadata.total_duration_ms;
+  console.log(`Total processing time: ${totalMs}ms`);
+
+  metadata.steps.forEach(step => {
+    const percentage = (step.duration_ms / totalMs * 100).toFixed(1);
+    console.log(`  ${step.name}: ${step.duration_ms}ms (${percentage}%)`);
+  });
+}
+```
+
+### Backward Compatibility
+
+**Wichtig:** Das `pipeline_metadata` Feld ist **optional für alte Clients**.
+
+Alte Frontend-Versionen können das Feld ignorieren ohne Fehler zu verursachen. Neue Clients sollten jedoch prüfen, ob das Feld vorhanden ist, bevor sie darauf zugreifen:
+
+```typescript
+if (message.pipeline_metadata) {
+  // Use metadata
+} else {
+  // Fallback für alte Nachrichten
 }
 ```
 
 ---
 
-## 🔄 Message Flow
+## �🔄 Message Flow
 
 ### Beispiel: Admin sendet Nachricht (de → ar)
 
@@ -178,6 +355,19 @@ websocket.onmessage = (event) => {
     if (message.role === "receiver_message") {
       // Nur Nachrichten vom anderen Client anzeigen
       displayMessage(message);
+
+      // Pipeline-Metadaten für Debugging/Monitoring
+      if (message.pipeline_metadata) {
+        console.log('Pipeline total duration:', message.pipeline_metadata.total_duration_ms, 'ms');
+        message.pipeline_metadata.steps.forEach(step => {
+          console.log(`  ${step.name}: ${step.duration_ms}ms`);
+        });
+      }
+
+      // Original-Audio für Debugging/Playback
+      if (message.original_audio_url) {
+        console.log('Original audio available at:', message.original_audio_url);
+      }
     }
     // sender_confirmation wird ignoriert (lokal bereits angezeigt)
 
@@ -185,6 +375,9 @@ websocket.onmessage = (event) => {
     if (message.role === "receiver_message" ||
         message.role === "sender_confirmation") {
       displayMessage(message);
+
+      // Pipeline-Metadaten sind immer verfügbar
+      trackPerformanceMetrics(message.pipeline_metadata);
     }
   }
 };
@@ -210,6 +403,27 @@ websocket.onmessage = (event) => {
 
 **Schema:**
 ```typescript
+interface PipelineStep {
+  name: "asr" | "translation" | "tts" | "refinement";
+  started_at: string;        // ISO 8601 timestamp
+  completed_at: string;      // ISO 8601 timestamp
+  duration_ms: number;       // Duration in milliseconds
+  input: Record<string, any>; // Step-specific input data
+  output: Record<string, any>; // Step-specific output data
+}
+
+interface PipelineMetadata {
+  input: {
+    type: "audio" | "text";
+    source_lang: string;     // ISO 639-1 code
+    audio_url?: string;      // Only for audio input
+  };
+  steps: PipelineStep[];
+  total_duration_ms: number;
+  pipeline_started_at: string; // ISO 8601 timestamp
+  pipeline_completed_at: string; // ISO 8601 timestamp
+}
+
 interface ChatMessage {
   type: "message";
   role: "sender_confirmation" | "receiver_message";
@@ -222,6 +436,8 @@ interface ChatMessage {
   target_lang: string;       // ISO 639-1 code
   audio_available: boolean;
   audio_url?: string;        // Optional, nur bei receiver_message
+  original_audio_url?: string | null; // URL to original input audio (nur bei Audio-Input)
+  pipeline_metadata: PipelineMetadata; // ALWAYS present
 }
 ```
 
@@ -231,6 +447,8 @@ interface ChatMessage {
 3. `sender_confirmation` hat immer `audio_available: false`
 4. `receiver_message` hat `audio_available: true` wenn TTS erfolgreich
 5. `sender` ist immer der **ursprüngliche Absender** (nicht Empfänger)
+6. **NEU:** `pipeline_metadata` ist **IMMER vorhanden** in allen WebSocket-Nachrichten
+7. **NEU:** `original_audio_url` ist vorhanden bei Audio-Input, ansonsten `null`
 
 ---
 

@@ -74,9 +74,50 @@ Content-Type: application/json
   "pipeline_type": "text",
   "source_lang": "de",
   "target_lang": "en",
-  "timestamp": "2025-11-02T11:32:05.418216"
+  "timestamp": "2025-11-02T11:32:05.418216",
+  "pipeline_metadata": {
+    "input": {
+      "type": "text",
+      "source_lang": "de"
+    },
+    "steps": [
+      {
+        "name": "translation",
+        "started_at": "2025-11-02T11:32:05.100Z",
+        "completed_at": "2025-11-02T11:32:05.850Z",
+        "duration_ms": 750,
+        "input": {
+          "text": "Guten Tag",
+          "source_lang": "de",
+          "target_lang": "en",
+          "model": "m2m100_1.2B"
+        },
+        "output": {
+          "text": "Good day",
+          "model": "m2m100_1.2B"
+        }
+      },
+      {
+        "name": "tts",
+        "started_at": "2025-11-02T11:32:05.850Z",
+        "completed_at": "2025-11-02T11:32:06.940Z",
+        "duration_ms": 1090,
+        "input": {
+          "text": "Good day",
+          "target_lang": "en",
+          "model": "coqui-tts"
+        },
+        "output": {}
+      }
+    ],
+    "total_duration_ms": 1840,
+    "pipeline_started_at": "2025-11-02T11:32:05.100Z",
+    "pipeline_completed_at": "2025-11-02T11:32:06.940Z"
+  }
 }
 ```
+
+> **Neu:** Das `pipeline_metadata`-Feld enthält detaillierte Informationen über jeden Verarbeitungsschritt (ASR, Translation, TTS) mit Timestamps, Modellen und Ein-/Ausgaben. Siehe Abschnitt 7 für Details.
 
 ### 3.2 Sprachnachricht
 
@@ -99,9 +140,14 @@ client_type=customer
 
 ### 4.1 Audio abrufen
 
-- Wenn `audio_available` true ist, kann der Browser die Datei über
+- Wenn `audio_available` true ist, kann der Browser die **übersetzte** Audioausgabe über
   `GET /api/audio/{message_id}.wav`
   abspielen oder herunterladen.
+
+- Bei Sprachnachrichten (Audio-Input) ist auch die **Original-Audioaufnahme** verfügbar:
+  `GET /api/audio/input_{message_id}.wav`
+
+  > **Hinweis:** Original-Audiodateien werden aus Datenschutzgründen nach **24 Stunden automatisch gelöscht**. Danach gibt der Endpunkt 404 zurück. Die URL ist im `pipeline_metadata.input.audio_url` verfügbar.
 
 ### 4.2 Verlauf & Status aktualisieren
 
@@ -146,9 +192,61 @@ Content-Type: application/json
   "timestamp": "...",
   "audio_available": true,
   "audio_url": "/api/audio/...",
-  "role": "receiver_message"
+  "role": "receiver_message",
+  "pipeline_metadata": {
+    "input": {
+      "type": "audio",
+      "audio_url": "/api/audio/input_....wav",
+      "source_lang": "en"
+    },
+    "steps": [
+      {
+        "name": "asr",
+        "started_at": "2025-11-02T11:32:05.000Z",
+        "completed_at": "2025-11-02T11:32:06.200Z",
+        "duration_ms": 1200,
+        "input": {},
+        "output": {
+          "text": "Hello"
+        }
+      },
+      {
+        "name": "translation",
+        "started_at": "2025-11-02T11:32:06.200Z",
+        "completed_at": "2025-11-02T11:32:07.000Z",
+        "duration_ms": 800,
+        "input": {
+          "text": "Hello",
+          "source_lang": "en",
+          "target_lang": "de",
+          "model": "m2m100_1.2B"
+        },
+        "output": {
+          "text": "Hallo",
+          "model": "m2m100_1.2B"
+        }
+      },
+      {
+        "name": "tts",
+        "started_at": "2025-11-02T11:32:07.000Z",
+        "completed_at": "2025-11-02T11:32:07.500Z",
+        "duration_ms": 500,
+        "input": {
+          "text": "Hallo",
+          "target_lang": "de",
+          "model": "coqui-tts"
+        },
+        "output": {}
+      }
+    ],
+    "total_duration_ms": 2500,
+    "pipeline_started_at": "2025-11-02T11:32:05.000Z",
+    "pipeline_completed_at": "2025-11-02T11:32:07.500Z"
+  }
 }
 ```
+
+> **Neu:** WebSocket-Nachrichten enthalten jetzt immer `pipeline_metadata` mit detaillierten Performance- und Verarbeitungsinformationen. Siehe Abschnitt 7 für Details.
 
 ### 5.1 WebSocket Message Roles
 
@@ -312,3 +410,143 @@ class WebSocketClient {
 - Allgemeine Fehler: `500` mit `PROCESSING_ERROR`.
 
 Das Frontend sollte Fehlermeldungen aus `detail` anzeigen und Nutzer*innen entsprechend informieren (z. B. Session nicht verfügbar, Audio zu kurz/lang, Sprache nicht unterstützt).
+
+---
+
+## 8. Pipeline Metadata (NEU)
+
+**Verfügbar ab:** Version 2.0 (November 2025)
+**Status:** Prototyp-Phase - immer verfügbar in allen Nachrichten
+
+### 8.1 Überblick
+
+Alle Nachrichten (HTTP-Responses und WebSocket-Messages) enthalten jetzt ein `pipeline_metadata`-Feld mit detaillierten Informationen über jeden Verarbeitungsschritt:
+
+- **ASR** (Automatic Speech Recognition) - nur bei Audio-Input
+- **Translation** (Übersetzung)
+- **Refinement** (LLM-basierte Verbesserung) - optional, wenn aktiviert
+- **TTS** (Text-to-Speech)
+
+### 8.2 Struktur
+
+```typescript
+interface PipelineMetadata {
+  input: {
+    type: "audio" | "text";
+    source_lang: string;
+    audio_url?: string;  // Nur bei Audio-Input, 24h gültig
+  };
+  steps: PipelineStep[];
+  total_duration_ms: number;
+  pipeline_started_at: string;  // ISO 8601 UTC
+  pipeline_completed_at: string;  // ISO 8601 UTC
+}
+
+interface PipelineStep {
+  name: "asr" | "translation" | "refinement" | "tts";
+  started_at: string;  // ISO 8601 UTC, z.B. "2025-11-02T11:32:05.100Z"
+  completed_at: string;  // ISO 8601 UTC
+  duration_ms: number;  // Dauer in Millisekunden
+  input: Record<string, any>;  // Step-spezifische Eingabe
+  output: Record<string, any>;  // Step-spezifische Ausgabe
+}
+```
+
+### 8.3 Verwendungsbeispiele
+
+#### **Performance-Monitoring**
+
+```typescript
+function analyzePerformance(metadata: PipelineMetadata) {
+  const slowSteps = metadata.steps.filter(step => step.duration_ms > 1000);
+
+  if (slowSteps.length > 0) {
+    console.warn('Langsame Pipeline-Schritte:', slowSteps.map(s => s.name));
+  }
+
+  // Gesamt-Performance anzeigen
+  console.log(`Pipeline-Dauer: ${metadata.total_duration_ms}ms`);
+
+  // Pro-Step Breakdown
+  metadata.steps.forEach(step => {
+    const percentage = (step.duration_ms / metadata.total_duration_ms * 100).toFixed(1);
+    console.log(`${step.name}: ${step.duration_ms}ms (${percentage}%)`);
+  });
+}
+```
+
+#### **Original-Audio Zugriff**
+
+```typescript
+function getOriginalAudio(metadata: PipelineMetadata): string | null {
+  if (metadata.input.type === 'audio' && metadata.input.audio_url) {
+    return metadata.input.audio_url;
+  }
+  return null;
+}
+
+// Verwendung
+const originalUrl = getOriginalAudio(message.pipeline_metadata);
+if (originalUrl) {
+  // Zeige "Original anhören" Button
+  audioPlayer.src = `https://ssf.smart-village.solutions${originalUrl}`;
+}
+```
+
+#### **Debugging fehlgeschlagener Übersetzungen**
+
+```typescript
+function debugTranslation(metadata: PipelineMetadata) {
+  const translationStep = metadata.steps.find(s => s.name === 'translation');
+
+  if (translationStep) {
+    console.log('Übersetzungs-Input:', translationStep.input.text);
+    console.log('Übersetzungs-Output:', translationStep.output.text);
+    console.log('Verwendetes Modell:', translationStep.output.model);
+    console.log('Dauer:', translationStep.duration_ms, 'ms');
+  }
+}
+```
+
+### 8.4 Retention Policy für Original-Audio
+
+**Wichtig:** Original-Audiodateien werden aus Datenschutzgründen **nach 24 Stunden automatisch gelöscht**.
+
+- URLs in `pipeline_metadata.input.audio_url` sind nur 24h gültig
+- Nach Ablauf gibt `GET /api/audio/input_{message_id}.wav` → `404 Not Found`
+- Frontend sollte dies behandeln und ggf. Hinweis anzeigen:
+
+```typescript
+async function playOriginalAudio(url: string) {
+  try {
+    const response = await fetch(url);
+    if (response.status === 404) {
+      showNotification('Original-Audio wurde nach 24h gelöscht (Datenschutz)');
+      return;
+    }
+    const blob = await response.blob();
+    audioPlayer.src = URL.createObjectURL(blob);
+    audioPlayer.play();
+  } catch (error) {
+    console.error('Fehler beim Laden des Originals:', error);
+  }
+}
+```
+
+### 8.5 Backward Compatibility
+
+**Garantiert:** Alte Frontend-Versionen funktionieren weiterhin einwandfrei.
+
+- `pipeline_metadata` ist ein **zusätzliches** Feld
+- Alle bestehenden Felder bleiben unverändert
+- Alte Clients können `pipeline_metadata` einfach ignorieren
+
+### 8.6 Monitoring-Metriken
+
+Das Backend exportiert Prometheus-Metriken für Audio-Storage:
+
+- `audio_storage_disk_usage_bytes{directory="original|translated"}` - Disk-Nutzung in Bytes
+- `audio_files_total{directory="original|translated"}` - Anzahl gespeicherter Dateien
+- `audio_cleanup_deleted_files_total{directory="original|translated"}` - Gelöschte Dateien durch Cleanup
+
+DevOps-Teams können diese Metriken für Alerting verwenden (z.B. Warnung bei >80% Disk-Nutzung).

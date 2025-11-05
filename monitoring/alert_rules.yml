@@ -166,3 +166,45 @@ groups:
         annotations:
           summary: Session-Connection state mismatch detected
           description: "Sessions report connections but connection count is 0. Possible state corruption in WebSocketManager."
+
+  - name: ssf-audio-storage
+    rules:
+      - alert: AudioStorageDiskUsageHigh
+        expr: audio_storage_disk_usage_bytes / (1024 * 1024 * 1024) > 0.8 * 10
+        for: 5m
+        labels:
+          severity: warning
+          component: audio-storage
+        annotations:
+          summary: Audio storage disk usage above 80%
+          description: "Audio storage is using {{ $value | humanize }}GB (>80% of estimated 10GB capacity). Consider increasing disk space or reducing retention period."
+
+      - alert: AudioStorageDiskUsageCritical
+        expr: audio_storage_disk_usage_bytes / (1024 * 1024 * 1024) > 0.95 * 10
+        for: 2m
+        labels:
+          severity: critical
+          component: audio-storage
+        annotations:
+          summary: Audio storage disk usage above 95%
+          description: "Audio storage critically full at {{ $value | humanize }}GB (>95%). Immediate action required - cleanup may fail soon."
+
+      - alert: AudioCleanupFailing
+        expr: rate(audio_cleanup_deleted_files_total[1h]) == 0
+        for: 2h
+        labels:
+          severity: warning
+          component: audio-storage
+        annotations:
+          summary: Audio cleanup job not deleting any files
+          description: "No files deleted by audio cleanup in the last 2 hours. Check if cleanup background task is running and retention period is correctly configured."
+
+      - alert: AudioStorageFileCountHigh
+        expr: sum(audio_files_total) > 10000
+        for: 5m
+        labels:
+          severity: warning
+          component: audio-storage
+        annotations:
+          summary: High number of audio files stored
+          description: "{{ $value }} audio files currently stored. This may indicate high traffic or cleanup issues."

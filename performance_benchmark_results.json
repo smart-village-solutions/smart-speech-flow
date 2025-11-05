@@ -1,0 +1,32 @@
+{
+  "timestamp": "2025-11-05T23:57:57.898798",
+  "results": {
+    "message_size": {
+      "legacy_size_bytes": 364,
+      "new_size_bytes": 1353,
+      "increase_bytes": 989,
+      "increase_percent": 271.7032967032967
+    },
+    "serialization": {
+      "iterations": 10000,
+      "total_time_ms": 46.837917529046535,
+      "avg_time_us": 4.6837917529046535
+    },
+    "concurrent": {
+      "num_sessions": 100,
+      "messages_per_session": 10,
+      "total_messages": 1000,
+      "create_time_ms": 0.43623801320791245,
+      "add_time_ms": 5.7722413912415504,
+      "memory_mb": 24.6875
+    },
+    "disk_io": {
+      "num_files": 100,
+      "file_size_kb": 50,
+      "write_time_ms": 2.5939922779798508,
+      "read_time_ms": 1.2652380391955376,
+      "delete_time_ms": 1.1380119249224663,
+      "total_data_mb": 4.8828125
+    }
+  }
+}

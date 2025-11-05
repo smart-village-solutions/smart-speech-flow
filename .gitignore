@@ -47,5 +47,8 @@ pytest_cache/
 .env
 .env.*
 
+# Audio Storage (24h retention, auto-cleanup)
+data/audio/
+
 # Node
 node_modules/

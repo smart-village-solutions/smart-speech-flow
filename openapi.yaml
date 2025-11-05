@@ -1,0 +1,510 @@
+openapi: 3.0.3
+info:
+  title: Smart Speech Flow Backend API
+  description: |
+    REST API for the Smart Speech Flow backend service.
+    Provides endpoints for session management, audio/text translation, and WebSocket communication.
+
+    **Version 1.1 Changes:**
+    - Added `pipeline_metadata` to all message responses
+    - Added `original_audio_url` field for audio inputs
+    - New GET endpoint `/api/audio/input_{message_id}.wav` for original audio retrieval
+  version: 1.1.0
+  contact:
+    name: Smart Village Solutions
+    email: support@smart-village.solutions
+
+servers:
+  - url: https://api.smart-speech-flow.example.com
+    description: Production server
+  - url: http://localhost:8000
+    description: Development server
+
+tags:
+  - name: Sessions
+    description: Session management endpoints
+  - name: Messages
+    description: Message sending and retrieval
+  - name: Audio
+    description: Audio file access
+  - name: Admin
+    description: Administrative endpoints
+
+paths:
+  /api/session:
+    post:
+      tags:
+        - Sessions
+      summary: Create a new session
+      description: Creates a new translation session with specified languages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - source_language
+                - target_language
+              properties:
+                source_language:
+                  type: string
+                  description: ISO 639-1 language code
+                  example: "de"
+                target_language:
+                  type: string
+                  description: ISO 639-1 language code
+                  example: "ar"
+      responses:
+        '200':
+          description: Session created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                    example: "ABC12345"
+                  status:
+                    type: string
+                    enum: [active, pending]
+                    example: "active"
+                  created_at:
+                    type: string
+                    format: date-time
+                    example: "2025-11-05T12:00:00Z"
+        '400':
+          description: Invalid request
+        '500':
+          description: Server error
+
+  /api/session/{session_id}/audio:
+    post:
+      tags:
+        - Messages
+      summary: Send audio message
+      description: |
+        Sends an audio message through the translation pipeline (ASR → Translation → TTS).
+        Returns the translated text, audio, and pipeline metadata.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The session identifier
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - audio
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                  description: WAV audio file
+      responses:
+        '200':
+          description: Message processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Invalid audio format
+        '404':
+          description: Session not found
+        '500':
+          description: Processing error
+
+  /api/session/{session_id}/text:
+    post:
+      tags:
+        - Messages
+      summary: Send text message
+      description: |
+        Sends a text message through the translation pipeline (Translation → TTS).
+        Returns the translated text, audio, and pipeline metadata.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The session identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - text
+              properties:
+                text:
+                  type: string
+                  example: "Hello, how can I help you?"
+      responses:
+        '200':
+          description: Message processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Invalid request
+        '404':
+          description: Session not found
+        '500':
+          description: Processing error
+
+  /api/audio/input_{message_id}.wav:
+    get:
+      tags:
+        - Audio
+      summary: Get original input audio
+      description: |
+        Retrieves the original input audio file for a message.
+
+        **Storage & Retention:**
+        - Audio files are stored for 24 hours after creation
+        - Files are automatically deleted by hourly cleanup job
+        - Storage path: `/data/audio/original/input_{message_id}.wav`
+
+        **Access Control:**
+        - Only accessible by the client who sent the original message
+        - Requires valid session authentication
+
+        **Error Scenarios:**
+        - 404: File expired (>24h) or never existed
+        - 403: Forbidden (different client attempting access)
+        - 410: Gone (explicitly deleted for GDPR compliance)
+        - 500: Storage system error
+      parameters:
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The message identifier (UUID format)
+      responses:
+        '200':
+          description: Audio file retrieved successfully
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: audio/wav
+            Content-Length:
+              schema:
+                type: integer
+                example: 51200
+            Cache-Control:
+              schema:
+                type: string
+                example: private, max-age=86400
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        '403':
+          description: Forbidden - Client does not have access to this audio file
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Access denied"
+                  message:
+                    type: string
+                    example: "You do not have permission to access this audio file"
+        '404':
+          description: Audio file not found (expired after 24h or never existed)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Not found"
+                  message:
+                    type: string
+                    example: "Audio file expired or does not exist"
+                  retention_policy:
+                    type: string
+                    example: "Audio files are retained for 24 hours"
+        '410':
+          description: Gone - Audio file was explicitly deleted (e.g., GDPR request)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Gone"
+                  message:
+                    type: string
+                    example: "Audio file was permanently deleted"
+                  deleted_at:
+                    type: string
+                    format: date-time
+                    example: "2025-11-06T10:30:00.000Z"
+        '500':
+          description: Internal server error - Storage system failure
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Storage error"
+                  message:
+                    type: string
+                    example: "Failed to read audio file from storage"
+
+  /api/audio/{message_id}.wav:
+    get:
+      tags:
+        - Audio
+      summary: Get translated audio output
+      description: Retrieves the translated audio file (TTS output) for a message
+      parameters:
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The message identifier
+      responses:
+        '200':
+          description: Audio file
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Audio file not found
+
+components:
+  schemas:
+    MessageResponse:
+      type: object
+      required:
+        - message_id
+        - session_id
+        - text
+        - translated_text
+        - timestamp
+        - pipeline_metadata
+      properties:
+        message_id:
+          type: string
+          format: uuid
+          description: Unique message identifier
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        session_id:
+          type: string
+          description: Session identifier
+          example: "ABC12345"
+        text:
+          type: string
+          description: Original text (from ASR or user input)
+          example: "Hello, how can I help you?"
+        translated_text:
+          type: string
+          description: Translated text
+          example: "مرحبا، كيف يمكنني المساعدة؟"
+        audio_base64:
+          type: string
+          format: byte
+          description: Base64-encoded translated audio (TTS output)
+        timestamp:
+          type: string
+          format: date-time
+          description: Message creation timestamp
+          example: "2025-11-05T12:00:00.500Z"
+        original_audio_url:
+          type: string
+          nullable: true
+          description: |
+            URL to the original input audio file (only for audio input).
+            Available for 24 hours. Returns null for text input.
+          example: "/api/audio/input_a1b2c3d4-e5f6-7890-abcd-ef1234567890.wav"
+        pipeline_metadata:
+          $ref: '#/components/schemas/PipelineMetadata'
+
+    PipelineMetadata:
+      type: object
+      description: |
+        Detailed information about the processing pipeline.
+        Always present in all message responses (version 1.1+).
+      required:
+        - input
+        - steps
+        - total_duration_ms
+        - pipeline_started_at
+        - pipeline_completed_at
+      properties:
+        input:
+          type: object
+          required:
+            - type
+            - source_lang
+          properties:
+            type:
+              type: string
+              enum: [audio, text]
+              description: Type of input
+              example: "audio"
+            source_lang:
+              type: string
+              description: ISO 639-1 language code
+              example: "de"
+            audio_url:
+              type: string
+              description: URL to original audio (only for audio input)
+              example: "/api/audio/input_a1b2c3d4.wav"
+        steps:
+          type: array
+          description: Array of pipeline processing steps
+          items:
+            $ref: '#/components/schemas/PipelineStep'
+        total_duration_ms:
+          type: integer
+          description: Total pipeline duration in milliseconds
+          example: 500
+        pipeline_started_at:
+          type: string
+          format: date-time
+          description: Pipeline start timestamp (ISO 8601)
+          example: "2025-11-05T12:00:00.000Z"
+        pipeline_completed_at:
+          type: string
+          format: date-time
+          description: Pipeline completion timestamp (ISO 8601)
+          example: "2025-11-05T12:00:00.500Z"
+
+    PipelineStep:
+      type: object
+      description: Information about a single pipeline step
+      required:
+        - name
+        - started_at
+        - completed_at
+        - duration_ms
+        - input
+        - output
+      properties:
+        name:
+          type: string
+          enum: [asr, translation, tts, refinement]
+          description: Step name
+          example: "asr"
+        started_at:
+          type: string
+          format: date-time
+          description: Step start timestamp (ISO 8601)
+          example: "2025-11-05T12:00:00.000Z"
+        completed_at:
+          type: string
+          format: date-time
+          description: Step completion timestamp (ISO 8601)
+          example: "2025-11-05T12:00:00.150Z"
+        duration_ms:
+          type: integer
+          description: Step duration in milliseconds
+          example: 150
+        input:
+          type: object
+          description: Step-specific input data
+          additionalProperties: true
+          example: {}
+        output:
+          type: object
+          description: Step-specific output data
+          additionalProperties: true
+          example:
+            text: "Hello, how can I help you?"
+
+    WebSocketMessage:
+      type: object
+      description: WebSocket message format
+      required:
+        - type
+        - role
+        - message_id
+        - session_id
+        - text
+        - sender
+        - timestamp
+        - source_lang
+        - target_lang
+        - audio_available
+        - pipeline_metadata
+      properties:
+        type:
+          type: string
+          enum: [message]
+          example: "message"
+        role:
+          type: string
+          enum: [sender_confirmation, receiver_message]
+          description: |
+            Message role:
+            - sender_confirmation: Echo to sender
+            - receiver_message: New message for receiver
+          example: "receiver_message"
+        message_id:
+          type: string
+          format: uuid
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        session_id:
+          type: string
+          example: "ABC12345"
+        text:
+          type: string
+          description: Message text (original or translated depending on role)
+          example: "مرحبا، كيف يمكنني المساعدة؟"
+        sender:
+          type: string
+          enum: [admin, customer]
+          example: "admin"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2025-11-05T12:00:00.500Z"
+        source_lang:
+          type: string
+          description: ISO 639-1 code
+          example: "de"
+        target_lang:
+          type: string
+          description: ISO 639-1 code
+          example: "ar"
+        audio_available:
+          type: boolean
+          description: Whether audio is available for this message
+          example: true
+        audio_url:
+          type: string
+          description: URL to translated audio (only in receiver_message)
+          example: "/api/audio/a1b2c3d4.wav"
+        original_audio_url:
+          type: string
+          nullable: true
+          description: URL to original input audio (only for audio input)
+          example: "/api/audio/input_a1b2c3d4.wav"
+        pipeline_metadata:
+          $ref: '#/components/schemas/PipelineMetadata'

@@ -64,10 +64,43 @@ services:
       dockerfile: services/api_gateway/Dockerfile
     ports:
       - "8000:8000"
+
+    # Resource Limits (verhindert OOM bei vielen Audio-Files)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+
+    volumes:
+      # Persistent Audio Storage (Bind Mount)
+      - type: bind
+        source: ./data/audio
+        target: /data/audio
+        bind:
+          create_host_path: true
+
+      # Temporary Upload Buffer (RAM - tmpfs)
+      - type: tmpfs
+        target: /tmp/audio
+        tmpfs:
+          size: 1G
+
     environment:
       - REDIS_URL=redis://redis:6379/0
       - REDIS_NAMESPACE=ssf
       - CLIENT_BASE_URL=https://translate.smart-village.solutions
+      # Audio Storage Configuration
+      - AUDIO_STORAGE_PATH=/data/audio
+      - AUDIO_RETENTION_HOURS=24
+      - AUDIO_TEMP_PATH=/tmp/audio
+      - AUDIO_MAX_DISK_USAGE_GB=9
+      - AUDIO_CLEANUP_INTERVAL_MINUTES=60
+      - ENABLE_PIPELINE_METADATA=true
+      # LLM Refinement Configuration
       - LLM_REFINEMENT_ENABLED=${LLM_REFINEMENT_ENABLED:-true}
       - LLM_REFINEMENT_MODEL=${LLM_REFINEMENT_MODEL:-gpt-oss:20b}
       - LLM_REFINEMENT_ENDPOINT=${LLM_REFINEMENT_ENDPOINT:-http://ollama:11434}
@@ -82,6 +115,22 @@ services:
       # Production Configuration (allows Figma and translate.smart-village.solutions)
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - DEVELOPMENT_CORS_ORIGINS=${DEVELOPMENT_CORS_ORIGINS:-http://localhost:5173,http://localhost:5174}
+
+    # Health Checks
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # Logging Configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
     depends_on:
       - redis
       - ollama

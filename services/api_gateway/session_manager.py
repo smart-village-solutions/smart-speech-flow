@@ -50,9 +50,12 @@ class SessionMessage:
     source_lang: str
     target_lang: str
     timestamp: datetime
+    # NEW: Pipeline Metadata
+    pipeline_metadata: Optional[Dict[str, Any]] = None
+    original_audio_url: Optional[str] = None  # URL to original input audio
 
     def to_dict(self):
-        return {
+        data = {
             "id": self.id,
             "sender": self.sender.value,
             "original_text": self.original_text,
@@ -62,6 +65,12 @@ class SessionMessage:
             "target_lang": self.target_lang,
             "timestamp": self.timestamp.isoformat(),
         }
+        # Include pipeline metadata if available
+        if self.pipeline_metadata:
+            data["pipeline_metadata"] = self.pipeline_metadata
+        if self.original_audio_url:
+            data["original_audio_url"] = self.original_audio_url
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SessionMessage":
@@ -74,6 +83,8 @@ class SessionMessage:
             source_lang=data.get("source_lang", ""),
             target_lang=data.get("target_lang", ""),
             timestamp=datetime.fromisoformat(data["timestamp"]),
+            pipeline_metadata=data.get("pipeline_metadata"),
+            original_audio_url=data.get("original_audio_url"),
         )
 
 

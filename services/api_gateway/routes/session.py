@@ -6,6 +6,7 @@ Enhanced with Unified Message Endpoint for Audio/Text Input
 """
 
 import base64
+import logging
 import time
 import uuid
 from datetime import datetime
@@ -28,6 +29,96 @@ from ..session_manager import ClientType, SessionMessage, SessionStatus, session
 from ..websocket import MessageType, WebSocketManager, get_websocket_manager
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def transform_pipeline_metadata(debug_info: Optional[Dict[str, Any]], source_lang: str, target_lang: str, original_audio_url: Optional[str] = None, message_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    Transform pipeline debug_info to spec-compliant pipeline_metadata format.
+
+    Args:
+        debug_info: Raw debug information from pipeline_logic
+        source_lang: Source language code
+        target_lang: Target language code
+        original_audio_url: URL to original audio input (if audio pipeline)
+        message_id: Message ID for audio URL generation
+
+    Returns:
+        Spec-compliant pipeline_metadata dict or None if no debug_info
+    """
+    if not debug_info:
+        return None
+
+    steps = debug_info.get("steps", [])
+    if not steps:
+        return None
+
+    # Build pipeline metadata according to spec
+    pipeline_metadata = {
+        "input": {
+            "type": "audio" if original_audio_url else "text",
+            "source_lang": source_lang,
+        },
+        "steps": [],
+        "total_duration_ms": debug_info.get("total_duration_ms", 0),
+        "pipeline_started_at": debug_info.get("pipeline_started_at", ""),
+        "pipeline_completed_at": debug_info.get("pipeline_completed_at", ""),
+    }
+
+    # Add audio URL if available
+    if original_audio_url:
+        pipeline_metadata["input"]["audio_url"] = original_audio_url
+
+    # Transform steps to spec format
+    for step in steps:
+        step_name = step.get("name") or step.get("step", "").lower()
+
+        # Skip validation steps (not part of main pipeline)
+        if "validation" in step_name.lower():
+            continue
+
+        transformed_step = {
+            "name": step_name,
+            "input": step.get("input", {}),
+            "output": {},
+            "started_at": step.get("started_at", ""),
+            "completed_at": step.get("completed_at", ""),
+            "duration_ms": step.get("duration_ms", 0),
+        }
+
+        # Add output based on step type
+        if step_name == "asr":
+            transformed_step["output"] = {
+                "text": step.get("output", ""),
+            }
+        elif step_name == "translation":
+            transformed_step["output"] = {
+                "text": step.get("output", ""),
+                "model": step.get("input", {}).get("model", "m2m100_1.2B"),
+            }
+        elif step_name == "refinement" or step_name == "llm_refinement":
+            transformed_step["name"] = "refinement"
+            transformed_step["output"] = {
+                "text": step.get("output", ""),
+                "changed": step.get("input", {}).get("changed", False),
+            }
+        elif step_name == "tts":
+            output_value = step.get("output", "")
+            if isinstance(output_value, str) and "audio" in output_value:
+                # TTS succeeded - use actual message_id if provided
+                audio_url = f"/api/audio/{message_id}.wav" if message_id else "/api/audio/unknown.wav"
+                transformed_step["output"] = {
+                    "audio_url": audio_url,
+                    "format": "wav",
+                }
+            else:
+                # TTS failed
+                transformed_step["output"] = {}
+
+        pipeline_metadata["steps"].append(transformed_step)
+
+    return pipeline_metadata
+
 
 # === Pydantic Models für Unified Message Endpoint ===
 
@@ -402,17 +493,53 @@ async def process_audio_input(
             ),
         )
 
+    # Store original audio file persistently
+    from ..audio_storage import save_original_audio, save_translated_audio
+
+    message_id = str(uuid.uuid4())
+    original_audio_url = None
+
+    # Save original input audio
+    try:
+        original_audio_b64 = base64.b64encode(file_bytes).decode()
+        original_audio_url = save_original_audio(message_id, original_audio_b64)
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to save original audio: {e}")
+
+    # Save translated audio
+    audio_bytes = result.get("audio_bytes")
+    if audio_bytes:
+        try:
+            translated_audio_b64 = base64.b64encode(audio_bytes).decode()
+            save_translated_audio(message_id, translated_audio_b64)
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to save translated audio: {e}")
+
+    # Transform pipeline metadata to match spec format (with message_id for audio URLs)
+    pipeline_metadata = transform_pipeline_metadata(
+        result.get("debug"),
+        source_lang,
+        target_lang,
+        original_audio_url,
+        message_id
+    )
+
     # Session-Message erstellen
     message = await create_session_message(
         session_id=session_id,
         client_type=client_type,
         original_text=result.get("asr_text", ""),
         translated_text=result.get("translation_text", ""),
-        audio_bytes=result.get("audio_bytes"),
+        audio_bytes=audio_bytes,
         source_lang=source_lang,
         target_lang=target_lang,
         manager=manager,
+        pipeline_metadata=pipeline_metadata,
+        original_audio_url=original_audio_url,
     )
+
+    # Override message ID with pre-generated one (for audio URL consistency)
+    message.id = message_id
 
     # Response erstellen
     processing_time_ms = max(1, int((time.perf_counter() - start_time) * 1000))
@@ -483,6 +610,14 @@ async def process_text_input(
     translated_text = pipeline_result.get("translation_text", "")
     audio_bytes = pipeline_result.get("audio_bytes")
 
+    # Transform pipeline metadata to match spec format
+    pipeline_metadata = transform_pipeline_metadata(
+        pipeline_result.get("debug"),
+        text_request.source_lang,
+        text_request.target_lang,
+        original_audio_url=None  # Text pipeline has no audio input
+    )
+
     # Session-Message erstellen
     message = await create_session_message(
         session_id=session_id,
@@ -495,6 +630,8 @@ async def process_text_input(
         source_lang=text_request.source_lang,
         target_lang=text_request.target_lang,
         manager=manager,
+        pipeline_metadata=pipeline_metadata,
+        original_audio_url=None,  # No original audio for text input
     )
 
     # Response erstellen
@@ -525,6 +662,8 @@ async def create_session_message(
     source_lang: str,
     target_lang: str,
     manager: WebSocketManager,
+    pipeline_metadata: Optional[Dict[str, Any]] = None,
+    original_audio_url: Optional[str] = None,
 ) -> SessionMessage:
     """Session-Message erstellen und zur Session hinzufügen"""
     import logging
@@ -539,6 +678,8 @@ async def create_session_message(
         source_lang=source_lang,
         target_lang=target_lang,
         timestamp=datetime.now(),
+        pipeline_metadata=pipeline_metadata,
+        original_audio_url=original_audio_url,
     )
 
     # Zur Session hinzufügen
@@ -606,6 +747,11 @@ async def broadcast_message_to_session(
         "audio_available": False,  # Sender braucht keine Audio-Bestätigung
         "role": "sender_confirmation",
     }
+    # Add pipeline metadata if available
+    if message.pipeline_metadata:
+        sender_message["pipeline_metadata"] = message.pipeline_metadata
+    if message.original_audio_url:
+        sender_message["original_audio_url"] = message.original_audio_url
 
     # Translated Message für Empfänger (mit Audio)
     receiver_message = {
@@ -621,6 +767,11 @@ async def broadcast_message_to_session(
         "audio_url": f"/api/audio/{message.id}.wav" if message.audio_base64 else None,
         "role": "receiver_message",
     }
+    # Add pipeline metadata if available
+    if message.pipeline_metadata:
+        receiver_message["pipeline_metadata"] = message.pipeline_metadata
+    if message.original_audio_url:
+        receiver_message["original_audio_url"] = message.original_audio_url
 
     # 🎯 Differentiated Broadcasting ausführen
     logger.info(f"📤 Broadcasting differentiated content to session {session_id}")
@@ -664,7 +815,7 @@ async def get_session_messages(session_id: str) -> Dict[str, Any]:
 
 @router.get("/audio/{message_id}.wav")
 async def get_message_audio(message_id: str):
-    """Audio-Datei einer Nachricht abrufen"""
+    """Audio-Datei einer Nachricht abrufen (übersetztes Audio)"""
     from fastapi.responses import Response
 
     # Message in allen Sessions suchen
@@ -681,6 +832,41 @@ async def get_message_audio(message_id: str):
                 )
 
     raise HTTPException(404, "Audio file not found")
+
+
+@router.get("/audio/input_{message_id}.wav")
+async def get_original_audio(message_id: str):
+    """
+    Original-Audio einer Nachricht abrufen (Sprecher-Aufnahme)
+
+    Hinweis: Original-Audio wird für 24 Stunden gespeichert und dann automatisch gelöscht.
+    """
+    from fastapi.responses import FileResponse, Response
+    from ..audio_storage import get_audio_file_path
+
+    # Suche Original-Audio-Datei
+    filename = f"input_{message_id}.wav"
+    filepath = get_audio_file_path(filename)
+
+    if filepath is None or not filepath.exists():
+        raise HTTPException(
+            404,
+            detail={
+                "error_code": "AUDIO_NOT_FOUND",
+                "error_message": "Original audio file not found or has been deleted (24h retention)",
+                "message_id": message_id,
+                "retention_policy": "24 hours"
+            }
+        )
+
+    # Datei zurückgeben
+    return FileResponse(
+        path=str(filepath),
+        media_type="audio/wav",
+        headers={
+            "Content-Disposition": f"inline; filename=input_{message_id}.wav"
+        }
+    )
 
 
 @router.get("/languages/supported")

@@ -46,3 +46,5 @@ models/
 letsencrypt/
 .venv
 *.log
+# Audio Storage (24h retention, auto-cleanup)
+data/audio/
