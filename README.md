@@ -184,6 +184,30 @@ pytest services/api_gateway/tests/
 pytest --cov=services
 ```
 
+## 🧪 Tests & Scripts — Struktur
+
+Wir haben die Test-Skripte im Projekt konsolidiert, damit CI und lokale Entwickler klar sehen, welche Dateien automatisiert ausgeführt werden und welche lediglich Hilfs-/Runner-Skripte sind.
+
+- Automatisch ausgeführte Tests (pytest): `tests/` inklusive Unterordner:
+  - `tests/integration/` — Integrationstests (API, Pipeline, WebSocket-Integration)
+  - `tests/load/` — Last- und Performance-Tests (nur manuell oder CI-on-demand)
+
+- Hilfs-Skripte und manuelle Runner: `scripts/`
+  - Shell-, Node- und Python-Skripte, die manuell gestartet werden (z. B. `scripts/test_simple.sh`, `scripts/test_websocket_connection.js`).
+
+Wichtig:
+- CI führt standardmäßig nur `pytest tests/` aus. Skripte unter `scripts/` werden nicht automatisch ausgeführt.
+- Nutzt `git mv` zum Verschieben von Testdateien, damit die Git-Historie erhalten bleibt.
+- Wenn ihr neue, automatisierte Tests hinzufügt, legt sie unter `tests/` ab (Unit/Integration) oder `tests/load/` für Performance-Tests.
+
+Beispiel: Lokale Ausführung nur der Integrationstests
+
+```bash
+# Nur Integrationstests
+pytest tests/integration/ -q
+```
+
+
 ## 📈 Monitoring & Alerting Runbook
 
 - **Stack starten:** `docker compose up -d prometheus grafana dcgm_exporter` startet Prometheus (Port `9090`, öffentlich via `http://prometheus-ssf.smart-village.solutions`), Grafana (Port `3000`, öffentlich via `http://grafana-ssf.smart-village.solutions`) sowie den NVIDIA DCGM Exporter für GPU-Metriken. Standard-Login: `admin` / `admin` (bitte nach dem ersten Login ändern).
