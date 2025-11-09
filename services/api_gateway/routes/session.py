@@ -32,7 +32,13 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def transform_pipeline_metadata(debug_info: Optional[Dict[str, Any]], source_lang: str, target_lang: str, original_audio_url: Optional[str] = None, message_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def transform_pipeline_metadata(
+    debug_info: Optional[Dict[str, Any]],
+    source_lang: str,
+    target_lang: str,
+    original_audio_url: Optional[str] = None,
+    message_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
     """
     Transform pipeline debug_info to spec-compliant pipeline_metadata format.
 
@@ -106,7 +112,11 @@ def transform_pipeline_metadata(debug_info: Optional[Dict[str, Any]], source_lan
             output_value = step.get("output", "")
             if isinstance(output_value, str) and "audio" in output_value:
                 # TTS succeeded - use actual message_id if provided
-                audio_url = f"/api/audio/{message_id}.wav" if message_id else "/api/audio/unknown.wav"
+                audio_url = (
+                    f"/api/audio/{message_id}.wav"
+                    if message_id
+                    else "/api/audio/unknown.wav"
+                )
                 transformed_step["output"] = {
                     "audio_url": audio_url,
                     "format": "wav",
@@ -320,7 +330,7 @@ async def get_active_sessions() -> Dict[str, Any]:
 async def send_unified_message(
     session_id: str,
     request: Request,
-    manager: WebSocketManager = Depends(get_websocket_manager)
+    manager: WebSocketManager = Depends(get_websocket_manager),
 ) -> MessageResponse:
     """
     Unified Message Endpoint für Audio- und Text-Input
@@ -332,6 +342,7 @@ async def send_unified_message(
     Returns einheitliches MessageResponse-Format
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     start_time = time.perf_counter()
@@ -352,7 +363,9 @@ async def send_unified_message(
         )
 
     if session.status != SessionStatus.ACTIVE:
-        logger.error(f"❌ Session nicht aktiv: {session_id}, Status: {session.status.value}")
+        logger.error(
+            f"❌ Session nicht aktiv: {session_id}, Status: {session.status.value}"
+        )
         raise HTTPException(
             status_code=400,
             detail=create_error_response(
@@ -396,8 +409,11 @@ async def send_unified_message(
         logger.info(f"⚠️ HTTPException in send_unified_message für {session_id}")
         raise
     except Exception as e:
-        logger.error(f"💥 UNEXPECTED ERROR in send_unified_message für {session_id}: {e}")
+        logger.error(
+            f"💥 UNEXPECTED ERROR in send_unified_message für {session_id}: {e}"
+        )
         import traceback
+
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
@@ -522,11 +538,7 @@ async def process_audio_input(
 
     # Transform pipeline metadata to match spec format (with message_id for audio URLs)
     pipeline_metadata = transform_pipeline_metadata(
-        result.get("debug"),
-        source_lang,
-        target_lang,
-        original_audio_url,
-        message_id
+        result.get("debug"), source_lang, target_lang, original_audio_url, message_id
     )
 
     # Session-Message erstellen
@@ -621,7 +633,7 @@ async def process_text_input(
         pipeline_result.get("debug"),
         text_request.source_lang,
         text_request.target_lang,
-        original_audio_url=None  # Text pipeline has no audio input
+        original_audio_url=None,  # Text pipeline has no audio input
     )
 
     # Session-Message erstellen
@@ -674,6 +686,7 @@ async def create_session_message(
 ) -> SessionMessage:
     """Session-Message erstellen und zur Session hinzufügen"""
     import logging
+
     logger = logging.getLogger(__name__)
 
     message = SessionMessage(
@@ -693,9 +706,13 @@ async def create_session_message(
     session_manager.add_message(session_id, message)
 
     # ✨ WebSocket Broadcasting mit differentiated content
-    logger.info(f"🔄 Starte WebSocket-Broadcasting für session={session_id}, sender={client_type}")
+    logger.info(
+        f"🔄 Starte WebSocket-Broadcasting für session={session_id}, sender={client_type}"
+    )
     try:
-        result = await broadcast_message_to_session(session_id, message, client_type, manager)
+        result = await broadcast_message_to_session(
+            session_id, message, client_type, manager
+        )
 
         # Task 4.7: Handle broadcast failures
         if result.success:
@@ -714,13 +731,17 @@ async def create_session_message(
         logger.error(f"❌ WebSocket-Broadcasting-Fehler für {session_id}: {e}")
         # WebSocket-Fehler sollen den HTTP-Request nicht zum Absturz bringen
         import traceback
+
         traceback.print_exc()
 
     return message
 
 
 async def broadcast_message_to_session(
-    session_id: str, message: SessionMessage, sender_type: ClientType, manager: WebSocketManager
+    session_id: str,
+    message: SessionMessage,
+    sender_type: ClientType,
+    manager: WebSocketManager,
 ):
     """
     🚀 Differentiated Message Broadcasting:
@@ -737,9 +758,12 @@ async def broadcast_message_to_session(
         BroadcastResult with success status and metrics
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
-    logger.info(f"📡 Broadcasting message in session {session_id} from {sender_type.value}")
+    logger.info(
+        f"📡 Broadcasting message in session {session_id} from {sender_type.value}"
+    )
 
     # Original Message für Sender (ASR-Bestätigung)
     sender_message = {
@@ -848,7 +872,8 @@ async def get_original_audio(message_id: str):
 
     Hinweis: Original-Audio wird für 24 Stunden gespeichert und dann automatisch gelöscht.
     """
-    from fastapi.responses import FileResponse, Response
+    from fastapi.responses import FileResponse
+
     from ..audio_storage import get_audio_file_path
 
     # Suche Original-Audio-Datei
@@ -862,17 +887,15 @@ async def get_original_audio(message_id: str):
                 "error_code": "AUDIO_NOT_FOUND",
                 "error_message": "Original audio file not found or has been deleted (24h retention)",
                 "message_id": message_id,
-                "retention_policy": "24 hours"
-            }
+                "retention_policy": "24 hours",
+            },
         )
 
     # Datei zurückgeben
     return FileResponse(
         path=str(filepath),
         media_type="audio/wav",
-        headers={
-            "Content-Disposition": f"inline; filename=input_{message_id}.wav"
-        }
+        headers={"Content-Disposition": f"inline; filename=input_{message_id}.wav"},
     )
 
 
@@ -890,7 +913,7 @@ async def get_supported_languages() -> Dict[str, Any]:
 async def update_client_activity(
     session_id: str,
     activity: ClientActivityUpdate,
-    manager: WebSocketManager = Depends(get_websocket_manager)
+    manager: WebSocketManager = Depends(get_websocket_manager),
 ) -> ActivityUpdateResponse:
     """
     📱 Client-Activity-Status aktualisieren für Mobile-Optimization
@@ -937,9 +960,7 @@ async def update_client_activity(
             )
 
             new_intervals.append(new_interval)
-            tips = manager.adaptive_polling.get_battery_optimization_tips(
-                connection
-            )
+            tips = manager.adaptive_polling.get_battery_optimization_tips(connection)
             optimization_tips.extend(tips)
 
             # WebSocket-Notification senden falls Intervall sich geändert hat

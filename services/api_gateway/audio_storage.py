@@ -8,42 +8,39 @@ Manages persistent storage of audio files with automatic cleanup.
 - Cleanup: Hourly background job
 """
 
-import os
+import base64
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
-import base64
+
+logger = logging.getLogger(__name__)
 
 # Prometheus metrics
 try:
-    from prometheus_client import Gauge, Counter
+    from prometheus_client import Counter, Gauge
 
     # Disk usage metrics
     audio_storage_disk_usage_bytes = Gauge(
-        'audio_storage_disk_usage_bytes',
-        'Total disk usage in bytes for audio storage',
-        ['directory']
+        "audio_storage_disk_usage_bytes",
+        "Total disk usage in bytes for audio storage",
+        ["directory"],
     )
 
     audio_files_total = Gauge(
-        'audio_files_total',
-        'Total number of audio files',
-        ['directory']
+        "audio_files_total", "Total number of audio files", ["directory"]
     )
 
     audio_cleanup_deleted_files_total = Counter(
-        'audio_cleanup_deleted_files_total',
-        'Total number of audio files deleted by cleanup job',
-        ['directory']
+        "audio_cleanup_deleted_files_total",
+        "Total number of audio files deleted by cleanup job",
+        ["directory"],
     )
 
     PROMETHEUS_AVAILABLE = True
 except ImportError:
     PROMETHEUS_AVAILABLE = False
     logger.warning("Prometheus client not available - metrics disabled")
-
-logger = logging.getLogger(__name__)
 
 # Storage paths
 AUDIO_BASE_DIR = Path("/data/audio")
@@ -191,11 +188,13 @@ def cleanup_old_audio_files() -> dict:
         "deleted_original": 0,
         "deleted_translated": 0,
         "total_deleted": 0,
-        "errors": 0
+        "errors": 0,
     }
 
     cutoff_time = datetime.now() - timedelta(hours=RETENTION_HOURS)
-    logger.info(f"Starting audio cleanup (retention: {RETENTION_HOURS}h, cutoff: {cutoff_time})")
+    logger.info(
+        f"Starting audio cleanup (retention: {RETENTION_HOURS}h, cutoff: {cutoff_time})"
+    )
 
     # Cleanup original audio
     for filepath in ORIGINAL_AUDIO_DIR.glob("*.wav"):
@@ -226,8 +225,12 @@ def cleanup_old_audio_files() -> dict:
 
     # Update Prometheus metrics
     if PROMETHEUS_AVAILABLE:
-        audio_cleanup_deleted_files_total.labels(directory='original').inc(stats["deleted_original"])
-        audio_cleanup_deleted_files_total.labels(directory='translated').inc(stats["deleted_translated"])
+        audio_cleanup_deleted_files_total.labels(directory="original").inc(
+            stats["deleted_original"]
+        )
+        audio_cleanup_deleted_files_total.labels(directory="translated").inc(
+            stats["deleted_translated"]
+        )
 
     return stats
 
@@ -276,9 +279,13 @@ def get_disk_usage() -> dict:
 
     # Update Prometheus metrics
     if PROMETHEUS_AVAILABLE:
-        audio_storage_disk_usage_bytes.labels(directory='original').set(stats["original_bytes"])
-        audio_storage_disk_usage_bytes.labels(directory='translated').set(stats["translated_bytes"])
-        audio_files_total.labels(directory='original').set(stats["original_files"])
-        audio_files_total.labels(directory='translated').set(stats["translated_files"])
+        audio_storage_disk_usage_bytes.labels(directory="original").set(
+            stats["original_bytes"]
+        )
+        audio_storage_disk_usage_bytes.labels(directory="translated").set(
+            stats["translated_bytes"]
+        )
+        audio_files_total.labels(directory="original").set(stats["original_files"])
+        audio_files_total.labels(directory="translated").set(stats["translated_files"])
 
     return stats
