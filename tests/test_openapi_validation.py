@@ -1,0 +1,293 @@
+"""
+OpenAPI Specification Validation Tests
+========================================
+
+Tests that validate the OpenAPI specification against the actual implementation.
+
+This ensures:
+1. All documented endpoints actually exist
+2. Response schemas match the OpenAPI spec
+3. Required fields are present in responses
+4. Field types match the specification
+5. Status codes match documentation
+"""
+
+import pytest
+import yaml
+from pathlib import Path
+from fastapi.testclient import TestClient
+from services.api_gateway.app import app
+
+
+@pytest.fixture(scope="module")
+def openapi_spec():
+    """Load the OpenAPI specification"""
+    spec_path = Path(__file__).parent.parent / "openapi.yaml"
+    with open(spec_path, 'r') as f:
+        return yaml.safe_load(f)
+
+
+@pytest.fixture
+def client(monkeypatch):
+    """FastAPI TestClient with monkeypatched service URLs"""
+    monkeypatch.setattr("services.api_gateway.pipeline_logic.ASR_URL", "http://localhost:8001/transcribe")
+    monkeypatch.setattr("services.api_gateway.pipeline_logic.TRANSLATION_URL", "http://localhost:8002/translate")
+    monkeypatch.setattr("services.api_gateway.pipeline_logic.TTS_URL", "http://localhost:8003/synthesize")
+    return TestClient(app)
+
+
+@pytest.fixture
+def active_session(client):
+    """Create and activate a test session"""
+    response = client.post("/api/admin/session/create")
+    assert response.status_code == 201
+    session_id = response.json()["session_id"]
+
+    client.post("/api/customer/session/activate", json={
+        "session_id": session_id,
+        "customer_language": "en"
+    })
+
+    return session_id
+
+
+class TestOpenAPIEndpoints:
+    """Test that all OpenAPI endpoints exist and return correct status codes"""
+
+    def test_admin_session_create_endpoint_exists(self, client, openapi_spec):
+        """Test POST /api/admin/session/create matches OpenAPI spec"""
+        # Get expected response from OpenAPI spec
+        endpoint_spec = openapi_spec['paths']['/api/admin/session/create']['post']
+
+        # Call endpoint
+        response = client.post("/api/admin/session/create")
+
+        # Validate status code
+        assert response.status_code == 201, "Should return 201 Created"
+        assert '201' in endpoint_spec['responses'], "OpenAPI should document 201 response"
+
+        # Validate response structure
+        data = response.json()
+        schema = endpoint_spec['responses']['201']['content']['application/json']['schema']
+        required_fields = schema.get('required', [])
+
+        for field in required_fields:
+            assert field in data, f"Required field '{field}' missing from response"
+
+    def test_customer_session_activate_endpoint_exists(self, client, openapi_spec):
+        """Test POST /api/customer/session/activate matches OpenAPI spec"""
+        endpoint_spec = openapi_spec['paths']['/api/customer/session/activate']['post']
+
+        # Create session first
+        resp = client.post("/api/admin/session/create")
+        session_id = resp.json()["session_id"]
+
+        # Activate session
+        response = client.post("/api/customer/session/activate", json={
+            "session_id": session_id,
+            "customer_language": "en"
+        })
+
+        assert response.status_code == 200, "Should return 200 OK"
+        assert '200' in endpoint_spec['responses'], "OpenAPI should document 200 response"
+
+    def test_session_status_endpoint_exists(self, client, active_session, openapi_spec):
+        """Test GET /api/session/{sessionId} matches OpenAPI spec"""
+        endpoint_spec = openapi_spec['paths']['/api/session/{sessionId}']['get']
+
+        response = client.get(f"/api/session/{active_session}")
+
+        assert response.status_code == 200, "Should return 200 OK"
+        assert '200' in endpoint_spec['responses'], "OpenAPI should document 200 response"
+
+        # Validate response has expected fields
+        data = response.json()
+        expected_fields = ['status', 'customer_language', 'admin_language', 'message_count']
+        for field in expected_fields:
+            assert field in data, f"Expected field '{field}' in session status response"
+
+    def test_unified_message_endpoint_exists(self, client, active_session, openapi_spec):
+        """Test POST /api/session/{sessionId}/message matches OpenAPI spec"""
+        endpoint_spec = openapi_spec['paths']['/api/session/{sessionId}/message']['post']
+
+        # Test with text message
+        response = client.post(
+            f"/api/session/{active_session}/message",
+            json={
+                "text": "Hello",
+                "source_lang": "en",
+                "target_lang": "de",
+                "client_type": "admin"
+            }
+        )
+
+        assert response.status_code == 200, "Should return 200 OK"
+        assert '200' in endpoint_spec['responses'], "OpenAPI should document 200 response"
+
+    def test_message_history_endpoint_exists(self, client, active_session, openapi_spec):
+        """Test GET /api/session/{sessionId}/messages matches OpenAPI spec"""
+        endpoint_spec = openapi_spec['paths']['/api/session/{sessionId}/messages']['get']
+
+        response = client.get(f"/api/session/{active_session}/messages")
+
+        assert response.status_code == 200, "Should return 200 OK"
+        assert '200' in endpoint_spec['responses'], "OpenAPI should document 200 response"
+
+        data = response.json()
+        assert 'messages' in data, "Response should contain 'messages' array"
+
+    def test_supported_languages_endpoint_exists(self, client, openapi_spec):
+        """Test GET /api/languages/supported matches OpenAPI spec"""
+        endpoint_spec = openapi_spec['paths']['/api/languages/supported']['get']
+
+        response = client.get("/api/languages/supported")
+
+        assert response.status_code == 200, "Should return 200 OK"
+        assert '200' in endpoint_spec['responses'], "OpenAPI should document 200 response"
+
+        data = response.json()
+        assert 'languages' in data, "Response should contain 'languages' object"
+
+
+class TestMessageResponseSchema:
+    """Test that MessageResponse matches OpenAPI schema"""
+
+    def test_message_response_has_all_required_fields(self, client, active_session, openapi_spec):
+        """Test that message response contains all required fields from OpenAPI spec"""
+        # Get MessageResponse schema from OpenAPI
+        message_response_schema = openapi_spec['components']['schemas']['MessageResponse']
+        required_fields = message_response_schema.get('required', [])
+
+        # Send a message
+        response = client.post(
+            f"/api/session/{active_session}/message",
+            json={
+                "text": "Test message",
+                "source_lang": "en",
+                "target_lang": "de",
+                "client_type": "customer"
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Check all required fields are present
+        missing_fields = [field for field in required_fields if field not in data]
+        assert not missing_fields, f"Missing required fields: {missing_fields}"
+
+    def test_message_response_field_types(self, client, active_session, openapi_spec):
+        """Test that MessageResponse field types match OpenAPI spec"""
+        message_response_schema = openapi_spec['components']['schemas']['MessageResponse']
+        properties = message_response_schema['properties']
+
+        # Send a message
+        response = client.post(
+            f"/api/session/{active_session}/message",
+            json={
+                "text": "Test",
+                "source_lang": "en",
+                "target_lang": "de",
+                "client_type": "admin"
+            }
+        )
+
+        data = response.json()
+
+        # Validate field types
+        type_mapping = {
+            'string': str,
+            'integer': int,
+            'boolean': bool,
+            'object': dict,
+            'array': list
+        }
+
+        for field_name, field_spec in properties.items():
+            if field_name in data and data[field_name] is not None:
+                expected_type_name = field_spec.get('type')
+                if expected_type_name in type_mapping:
+                    expected_type = type_mapping[expected_type_name]
+                    actual_value = data[field_name]
+                    assert isinstance(actual_value, expected_type), \
+                        f"Field '{field_name}' should be {expected_type_name}, got {type(actual_value).__name__}"
+
+    def test_message_response_status_enum(self, client, active_session, openapi_spec):
+        """Test that status field matches enum values from OpenAPI spec"""
+        message_response_schema = openapi_spec['components']['schemas']['MessageResponse']
+        status_enum = message_response_schema['properties']['status'].get('enum', [])
+
+        response = client.post(
+            f"/api/session/{active_session}/message",
+            json={
+                "text": "Test",
+                "source_lang": "en",
+                "target_lang": "de",
+                "client_type": "admin"
+            }
+        )
+
+        data = response.json()
+        assert data['status'] in status_enum, \
+            f"Status '{data['status']}' not in allowed values: {status_enum}"
+
+    def test_message_response_pipeline_type_enum(self, client, active_session, openapi_spec):
+        """Test that pipeline_type field matches enum values from OpenAPI spec"""
+        message_response_schema = openapi_spec['components']['schemas']['MessageResponse']
+        pipeline_type_enum = message_response_schema['properties']['pipeline_type'].get('enum', [])
+
+        response = client.post(
+            f"/api/session/{active_session}/message",
+            json={
+                "text": "Test",
+                "source_lang": "en",
+                "target_lang": "de",
+                "client_type": "admin"
+            }
+        )
+
+        data = response.json()
+        assert data['pipeline_type'] in pipeline_type_enum, \
+            f"Pipeline type '{data['pipeline_type']}' not in allowed values: {pipeline_type_enum}"
+
+
+class TestOpenAPICompleteness:
+    """Test that OpenAPI spec is complete and up-to-date"""
+
+    def test_openapi_version_is_current(self, openapi_spec):
+        """Test that OpenAPI spec version is 1.2.0 or higher"""
+        version = openapi_spec['info']['version']
+        major, minor, patch = map(int, version.split('.'))
+
+        assert major >= 1, "Major version should be at least 1"
+        assert minor >= 2, "Minor version should be at least 2 (current: 1.2.0)"
+
+    def test_all_message_endpoints_documented(self, openapi_spec):
+        """Test that all known message endpoints are documented"""
+        paths = openapi_spec['paths']
+
+        # Check critical endpoints exist
+        assert '/api/admin/session/create' in paths, "Admin session creation should be documented"
+        assert '/api/customer/session/activate' in paths, "Customer activation should be documented"
+        assert '/api/session/{sessionId}' in paths, "Session status should be documented"
+        assert '/api/session/{sessionId}/message' in paths, "Unified message endpoint should be documented"
+        assert '/api/session/{sessionId}/messages' in paths, "Message history should be documented"
+        assert '/api/languages/supported' in paths, "Supported languages should be documented"
+
+    def test_deprecated_endpoints_not_documented(self, openapi_spec):
+        """Test that old/deprecated endpoints are not in the spec"""
+        paths = openapi_spec['paths']
+
+        # These endpoints should NOT exist (old API design)
+        deprecated = [
+            '/api/session',  # Old session creation
+            '/api/session/{session_id}/audio',  # Separate audio endpoint
+            '/api/session/{session_id}/text',  # Separate text endpoint
+        ]
+
+        for endpoint in deprecated:
+            assert endpoint not in paths, f"Deprecated endpoint '{endpoint}' should not be documented"
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "-s"])
