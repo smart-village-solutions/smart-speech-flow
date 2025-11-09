@@ -10,13 +10,18 @@ This ensures:
 3. Required fields are present in responses
 4. Field types match the specification
 5. Status codes match documentation
+
+These tests run against the LIVE PRODUCTION API at https://ssf.smart-village.solutions
 """
 
 import pytest
 import yaml
+import requests
 from pathlib import Path
-from fastapi.testclient import TestClient
-from services.api_gateway.app import app
+
+
+# Production API base URL
+PRODUCTION_API_URL = "https://ssf.smart-village.solutions"
 
 
 @pytest.fixture(scope="module")
@@ -28,22 +33,20 @@ def openapi_spec():
 
 
 @pytest.fixture
-def client(monkeypatch):
-    """FastAPI TestClient with monkeypatched service URLs"""
-    monkeypatch.setattr("services.api_gateway.pipeline_logic.ASR_URL", "http://localhost:8001/transcribe")
-    monkeypatch.setattr("services.api_gateway.pipeline_logic.TRANSLATION_URL", "http://localhost:8002/translate")
-    monkeypatch.setattr("services.api_gateway.pipeline_logic.TTS_URL", "http://localhost:8003/synthesize")
-    return TestClient(app)
+def client():
+    """Returns the production API URL for testing"""
+    return PRODUCTION_API_URL
+
 
 
 @pytest.fixture
 def active_session(client):
     """Create and activate a test session"""
-    response = client.post("/api/admin/session/create")
+    response = requests.post(f"{client}/api/admin/session/create")
     assert response.status_code == 201
     session_id = response.json()["session_id"]
 
-    client.post("/api/customer/session/activate", json={
+    requests.post(f"{client}/api/customer/session/activate", json={
         "session_id": session_id,
         "customer_language": "en"
     })
@@ -60,7 +63,7 @@ class TestOpenAPIEndpoints:
         endpoint_spec = openapi_spec['paths']['/api/admin/session/create']['post']
 
         # Call endpoint
-        response = client.post("/api/admin/session/create")
+        response = requests.post(f"{client}/api/admin/session/create")
 
         # Validate status code
         assert response.status_code == 201, "Should return 201 Created"
@@ -79,11 +82,11 @@ class TestOpenAPIEndpoints:
         endpoint_spec = openapi_spec['paths']['/api/customer/session/activate']['post']
 
         # Create session first
-        resp = client.post("/api/admin/session/create")
+        resp = requests.post(f"{client}/api/admin/session/create")
         session_id = resp.json()["session_id"]
 
         # Activate session
-        response = client.post("/api/customer/session/activate", json={
+        response = requests.post(f"{client}/api/customer/session/activate", json={
             "session_id": session_id,
             "customer_language": "en"
         })
@@ -95,7 +98,7 @@ class TestOpenAPIEndpoints:
         """Test GET /api/session/{sessionId} matches OpenAPI spec"""
         endpoint_spec = openapi_spec['paths']['/api/session/{sessionId}']['get']
 
-        response = client.get(f"/api/session/{active_session}")
+        response = requests.get(f"{client}/api/session/{active_session}")
 
         assert response.status_code == 200, "Should return 200 OK"
         assert '200' in endpoint_spec['responses'], "OpenAPI should document 200 response"
@@ -111,8 +114,8 @@ class TestOpenAPIEndpoints:
         endpoint_spec = openapi_spec['paths']['/api/session/{sessionId}/message']['post']
 
         # Test with text message
-        response = client.post(
-            f"/api/session/{active_session}/message",
+        response = requests.post(
+            f"{client}/api/session/{active_session}/message",
             json={
                 "text": "Hello",
                 "source_lang": "en",
@@ -128,7 +131,7 @@ class TestOpenAPIEndpoints:
         """Test GET /api/session/{sessionId}/messages matches OpenAPI spec"""
         endpoint_spec = openapi_spec['paths']['/api/session/{sessionId}/messages']['get']
 
-        response = client.get(f"/api/session/{active_session}/messages")
+        response = requests.get(f"{client}/api/session/{active_session}/messages")
 
         assert response.status_code == 200, "Should return 200 OK"
         assert '200' in endpoint_spec['responses'], "OpenAPI should document 200 response"
@@ -140,7 +143,7 @@ class TestOpenAPIEndpoints:
         """Test GET /api/languages/supported matches OpenAPI spec"""
         endpoint_spec = openapi_spec['paths']['/api/languages/supported']['get']
 
-        response = client.get("/api/languages/supported")
+        response = requests.get(f"{client}/api/languages/supported")
 
         assert response.status_code == 200, "Should return 200 OK"
         assert '200' in endpoint_spec['responses'], "OpenAPI should document 200 response"
@@ -159,8 +162,8 @@ class TestMessageResponseSchema:
         required_fields = message_response_schema.get('required', [])
 
         # Send a message
-        response = client.post(
-            f"/api/session/{active_session}/message",
+        response = requests.post(
+            f"{client}/api/session/{active_session}/message",
             json={
                 "text": "Test message",
                 "source_lang": "en",
@@ -182,8 +185,8 @@ class TestMessageResponseSchema:
         properties = message_response_schema['properties']
 
         # Send a message
-        response = client.post(
-            f"/api/session/{active_session}/message",
+        response = requests.post(
+            f"{client}/api/session/{active_session}/message",
             json={
                 "text": "Test",
                 "source_lang": "en",
@@ -217,8 +220,8 @@ class TestMessageResponseSchema:
         message_response_schema = openapi_spec['components']['schemas']['MessageResponse']
         status_enum = message_response_schema['properties']['status'].get('enum', [])
 
-        response = client.post(
-            f"/api/session/{active_session}/message",
+        response = requests.post(
+            f"{client}/api/session/{active_session}/message",
             json={
                 "text": "Test",
                 "source_lang": "en",
@@ -236,8 +239,8 @@ class TestMessageResponseSchema:
         message_response_schema = openapi_spec['components']['schemas']['MessageResponse']
         pipeline_type_enum = message_response_schema['properties']['pipeline_type'].get('enum', [])
 
-        response = client.post(
-            f"/api/session/{active_session}/message",
+        response = requests.post(
+            f"{client}/api/session/{active_session}/message",
             json={
                 "text": "Test",
                 "source_lang": "en",
@@ -249,8 +252,6 @@ class TestMessageResponseSchema:
         data = response.json()
         assert data['pipeline_type'] in pipeline_type_enum, \
             f"Pipeline type '{data['pipeline_type']}' not in allowed values: {pipeline_type_enum}"
-
-
 class TestOpenAPICompleteness:
     """Test that OpenAPI spec is complete and up-to-date"""
 
