@@ -1,3 +1,28 @@
+# Ignore generated test reports and archives
+docs/reports/
+docs/archive/
+
+# Audio and sample artifacts
+*.wav
+
+# Test result files
+test_results_*.json
+
+# Logs
+*.log
+
+# Python artifacts
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
 # Zertifikatsdaten und private Schlüssel niemals ins Repository!
 letsencrypt/acme.json
 # Python
