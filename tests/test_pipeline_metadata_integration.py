@@ -237,7 +237,7 @@ class TestTextPipelineIntegration:
 
         # Verify no ASR step in text pipeline (asr_text should be the input text)
         assert result["asr_text"] == "Hello world"
-        
+
         # Verify Translation and TTS steps exist
         step_names = {step.get("step") or step.get("name") for step in debug_info["steps"]}
         assert "Translation" in step_names or "translation" in step_names

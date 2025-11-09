@@ -169,6 +169,11 @@ class MessageResponse(BaseModel):
     # Timestamps
     timestamp: str = Field(..., description="Message timestamp (ISO format)")
 
+    # Pipeline Metadata (optional, for debugging/monitoring)
+    pipeline_metadata: Optional[Dict[str, Any]] = Field(
+        None, description="Detailed pipeline processing metadata"
+    )
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -557,6 +562,7 @@ async def process_audio_input(
         source_lang=source_lang,
         target_lang=target_lang,
         timestamp=message.timestamp.isoformat(),
+        pipeline_metadata=pipeline_metadata,
     )
 
 
@@ -650,6 +656,7 @@ async def process_text_input(
         source_lang=text_request.source_lang,
         target_lang=text_request.target_lang,
         timestamp=message.timestamp.isoformat(),
+        pipeline_metadata=pipeline_metadata,
     )
 
 
