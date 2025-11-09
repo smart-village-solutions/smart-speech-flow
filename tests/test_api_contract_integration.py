@@ -155,7 +155,7 @@ class TestAudioMessageAPI:
         for audio pipeline
         """
         session_id = active_session
-        
+
         response = client.post(
             f"/api/session/{session_id}/message",
             files={"file": ("test_audio.wav", sample_audio_bytes, "audio/wav")},
@@ -165,7 +165,7 @@ class TestAudioMessageAPI:
                 "client_type": "customer"
             }
         )
-        
+
         assert response.status_code == 200
         data = response.json()
 
