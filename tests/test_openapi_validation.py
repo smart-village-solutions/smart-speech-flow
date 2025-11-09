@@ -256,12 +256,12 @@ class TestOpenAPICompleteness:
     """Test that OpenAPI spec is complete and up-to-date"""
 
     def test_openapi_version_is_current(self, openapi_spec):
-        """Test that OpenAPI spec version is 1.2.0 or higher"""
+        """Test that OpenAPI spec version is 1.3.0 or higher"""
         version = openapi_spec['info']['version']
         major, minor, patch = map(int, version.split('.'))
 
         assert major >= 1, "Major version should be at least 1"
-        assert minor >= 2, "Minor version should be at least 2 (current: 1.2.0)"
+        assert minor >= 3, "Minor version should be at least 3 (current: 1.3.0 with WebSocket docs)"
 
     def test_all_message_endpoints_documented(self, openapi_spec):
         """Test that all known message endpoints are documented"""
@@ -274,6 +274,39 @@ class TestOpenAPICompleteness:
         assert '/api/session/{sessionId}/message' in paths, "Unified message endpoint should be documented"
         assert '/api/session/{sessionId}/messages' in paths, "Message history should be documented"
         assert '/api/languages/supported' in paths, "Supported languages should be documented"
+
+    def test_websocket_endpoints_documented(self, openapi_spec):
+        """Test that WebSocket endpoints are documented"""
+        paths = openapi_spec['paths']
+
+        # WebSocket endpoints
+        assert '/ws/{sessionId}/{clientType}' in paths, "WebSocket connection endpoint should be documented"
+        assert '/api/websocket/debug/connection-test' in paths, "WebSocket diagnostics should be documented"
+        assert '/api/websocket/poll/{polling_id}' in paths, "WebSocket polling fallback should be documented"
+
+        # Audio endpoints (including original)
+        assert '/api/audio/{message_id}.wav' in paths, "Translated audio endpoint should be documented"
+        assert '/api/audio/input_{message_id}.wav' in paths, "Original audio input endpoint should be documented"
+
+    def test_websocket_message_schema_complete(self, openapi_spec):
+        """Test that WebSocketMessage schema includes all required fields"""
+        ws_schema = openapi_spec['components']['schemas']['WebSocketMessage']
+        required_fields = ws_schema.get('required', [])
+
+        # Critical fields that MUST be in WebSocket messages
+        critical_fields = [
+            'type', 'role', 'message_id', 'session_id', 'text',
+            'sender', 'timestamp', 'source_lang', 'target_lang',
+            'audio_available', 'pipeline_metadata'
+        ]
+
+        for field in critical_fields:
+            assert field in required_fields, f"WebSocketMessage should require '{field}'"
+
+        # Check role enum values
+        role_enum = ws_schema['properties']['role'].get('enum', [])
+        assert 'sender_confirmation' in role_enum, "Role should include 'sender_confirmation'"
+        assert 'receiver_message' in role_enum, "Role should include 'receiver_message'"
 
     def test_deprecated_endpoints_not_documented(self, openapi_spec):
         """Test that old/deprecated endpoints are not in the spec"""
@@ -288,6 +321,52 @@ class TestOpenAPICompleteness:
 
         for endpoint in deprecated:
             assert endpoint not in paths, f"Deprecated endpoint '{endpoint}' should not be documented"
+
+
+class TestWebSocketEndpoints:
+    """Test WebSocket endpoint documentation completeness"""
+
+    def test_websocket_connection_endpoint_documented(self, openapi_spec):
+        """Test that WebSocket connection endpoint is properly documented"""
+        ws_endpoint = openapi_spec['paths']['/ws/{sessionId}/{clientType}']
+
+        # Check parameters
+        params = {p['name']: p for p in ws_endpoint['get']['parameters']}
+        assert 'sessionId' in params, "sessionId parameter should be documented"
+        assert 'clientType' in params, "clientType parameter should be documented"
+
+        # Check clientType enum
+        client_type_enum = params['clientType']['schema'].get('enum', [])
+        assert 'admin' in client_type_enum, "clientType should allow 'admin'"
+        assert 'customer' in client_type_enum, "clientType should allow 'customer'"
+
+        # Check responses
+        responses = ws_endpoint['get']['responses']
+        assert '101' in responses, "WebSocket upgrade (101) should be documented"
+        assert '404' in responses, "Session not found (404) should be documented"
+
+    def test_websocket_fallback_documented(self, openapi_spec):
+        """Test that WebSocket polling fallback is documented"""
+        polling_endpoint = openapi_spec['paths']['/api/websocket/poll/{polling_id}']
+
+        # Check it returns WebSocketMessage array
+        response_schema = polling_endpoint['get']['responses']['200']['content']['application/json']['schema']
+        assert 'messages' in response_schema['properties'], "Polling should return messages array"
+
+        messages_schema = response_schema['properties']['messages']
+        assert '$ref' in messages_schema['items'], "Messages should reference WebSocketMessage schema"
+        assert 'WebSocketMessage' in messages_schema['items']['$ref'], "Should use WebSocketMessage schema"
+
+    def test_websocket_diagnostics_documented(self, openapi_spec):
+        """Test that WebSocket diagnostics endpoint is documented"""
+        diag_endpoint = openapi_spec['paths']['/api/websocket/debug/connection-test']
+
+        response_schema = diag_endpoint['get']['responses']['200']['content']['application/json']['schema']
+        properties = response_schema['properties']
+
+        assert 'origin_allowed' in properties, "Should check if origin is allowed"
+        assert 'websocket_supported' in properties, "Should check WebSocket support"
+        assert 'suggestions' in properties, "Should provide troubleshooting suggestions"
 
 
 if __name__ == "__main__":
