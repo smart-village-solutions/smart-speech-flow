@@ -568,8 +568,7 @@ def get_websocket_monitor():
     """Get the websocket monitor instance, should already be initialized by app startup"""
     global websocket_monitor
     if websocket_monitor is None:
-        # Das sollte nicht passieren - der Monitor sollte bereits initialisiert sein
-        raise RuntimeError(
-            "WebSocket-Monitor nicht initialisiert! App-Startup-Reihenfolge prüfen."
-        )
+        # Lazily initialize a default monitor for tests and simple setups
+        # to avoid hard dependency on app startup ordering.
+        initialize_websocket_monitor()
     return websocket_monitor

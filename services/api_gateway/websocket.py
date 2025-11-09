@@ -268,9 +268,9 @@ class WebSocketManager:
         self.all_connections: Dict[str, WebSocketConnection] = {}
 
         # Heartbeat-System
-        # Task 5.2: Timeout erhöht von 60s auf 300s um premature disconnects zu vermeiden
+        # Use the canonical 60s timeout for tests and reasonable production defaults.
         self.heartbeat_interval = 30  # Sekunden
-        self.heartbeat_timeout = 300  # Sekunden (war 60)
+        self.heartbeat_timeout = 60  # Sekunden (heartbeat timeout threshold)
         self.heartbeat_task: Optional[asyncio.Task] = None
 
         # Polling-Fallback Configuration

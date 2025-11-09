@@ -27,7 +27,8 @@ PRODUCTION_API_URL = "https://ssf.smart-village.solutions"
 @pytest.fixture(scope="module")
 def openapi_spec():
     """Load the OpenAPI specification"""
-    spec_path = Path(__file__).parent.parent / "openapi.yaml"
+    # Prefer canonical spec in docs/ to avoid duplicate root file
+    spec_path = Path(__file__).parent.parent / "docs" / "openapi.yaml"
     with open(spec_path, 'r') as f:
         return yaml.safe_load(f)
 
