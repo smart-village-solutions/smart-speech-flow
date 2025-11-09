@@ -909,7 +909,9 @@ def process_text_pipeline(
         # Pipeline completion timestamp
         pipeline_completed_at = datetime.utcnow()
         debug_info["pipeline_completed_at"] = pipeline_completed_at.isoformat() + "Z"
-        debug_info["total_duration_ms"] = int((time.perf_counter() - start_total) * 1000)
+        debug_info["total_duration_ms"] = int(
+            (time.perf_counter() - start_total) * 1000
+        )
 
         # Success
         debug_info["system"] = {

@@ -19,7 +19,6 @@ from prometheus_client import CollectorRegistry, Counter
 
 from .rate_limiter import RateLimitMiddleware
 
-
 # === Service-URLs für die Orchestrierung ===
 # Je nach Umgebung werden interne Docker- oder lokale URLs verwendet
 DOCKER_ENV = os.environ.get("DOCKER_COMPOSE", "1") == "1"
@@ -124,12 +123,16 @@ async def audio_cleanup_task() -> None:
 
                 # Cleanup durchführen
                 stats = cleanup_old_audio_files()
-                print(f"🧹 Audio-Cleanup abgeschlossen: {stats['total_deleted']} Dateien gelöscht")
+                print(
+                    f"🧹 Audio-Cleanup abgeschlossen: {stats['total_deleted']} Dateien gelöscht"
+                )
 
                 # Disk Usage loggen
                 disk_stats = get_disk_usage()
-                total_mb = disk_stats['total_bytes'] / (1024 * 1024)
-                print(f"💾 Audio Storage: {disk_stats['total_files']} Dateien, {total_mb:.2f} MB")
+                total_mb = disk_stats["total_bytes"] / (1024 * 1024)
+                print(
+                    f"💾 Audio Storage: {disk_stats['total_files']} Dateien, {total_mb:.2f} MB"
+                )
 
             except Exception as e:
                 print(f"⚠️ Fehler im Audio-Cleanup-Task: {e}")
@@ -143,15 +146,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application Lifespan: Initialize singletons and start background tasks"""
     import sys
 
-    sys.stderr.write("="*80 + "\n"); sys.stderr.flush()
-    sys.stderr.write("API GATEWAY STARTUP\n"); sys.stderr.flush()
-    sys.stderr.write("="*80 + "\n"); sys.stderr.flush()
+    sys.stderr.write("=" * 80 + "\n")
+    sys.stderr.flush()
+    sys.stderr.write("API GATEWAY STARTUP\n")
+    sys.stderr.flush()
+    sys.stderr.write("=" * 80 + "\n")
+    sys.stderr.flush()
 
     # Initialize WebSocketManager singleton
     from .websocket import get_websocket_manager
-    sys.stderr.write("Initializing WebSocketManager singleton...\n"); sys.stderr.flush()
+
+    sys.stderr.write("Initializing WebSocketManager singleton...\n")
+    sys.stderr.flush()
     manager = get_websocket_manager()
-    sys.stderr.write(f"WebSocketManager ready (ID: {id(manager)})\n"); sys.stderr.flush()
+    sys.stderr.write(f"WebSocketManager ready (ID: {id(manager)})\n")
+    sys.stderr.flush()
 
     # Start background tasks
     timeout_task = asyncio.create_task(session_timeout_monitor())
@@ -159,8 +168,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     websocket_monitor_bg_task = asyncio.create_task(websocket_monitor_task())
     websocket_fallback_bg_task = asyncio.create_task(websocket_fallback_task())
     audio_cleanup_bg_task = asyncio.create_task(audio_cleanup_task())
-    sys.stderr.write("All background tasks started\n"); sys.stderr.flush()
-    sys.stderr.write("="*80 + "\n"); sys.stderr.flush()
+    sys.stderr.write("All background tasks started\n")
+    sys.stderr.flush()
+    sys.stderr.write("=" * 80 + "\n")
+    sys.stderr.flush()
 
     try:
         yield None
@@ -178,7 +189,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as e:
             print(f"Error stopping circuit breaker: {e}")
 
-        for task in [timeout_task, circuit_breaker_task, websocket_monitor_bg_task, websocket_fallback_bg_task, audio_cleanup_bg_task]:
+        for task in [
+            timeout_task,
+            circuit_breaker_task,
+            websocket_monitor_bg_task,
+            websocket_fallback_bg_task,
+            audio_cleanup_bg_task,
+        ]:
             try:
                 await task
             except asyncio.CancelledError:
@@ -214,7 +231,7 @@ app = FastAPI(
     - Prometheus Metrics für Monitoring
     """,
     version="1.1.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 
@@ -235,6 +252,7 @@ setattr(app, "requests_total", requests_total)
 # === WebSocket Monitor Initialisierung ===
 # Muss VOR dem Import der WebSocket-Module passieren
 from .websocket_monitor import initialize_websocket_monitor
+
 websocket_monitor = initialize_websocket_monitor(registry)
 
 

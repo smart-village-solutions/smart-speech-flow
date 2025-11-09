@@ -73,6 +73,7 @@ class WebSocketMonitor:
         # Falls keine Registry übergeben wird, verwende die Standard-Registry
         if registry is None:
             from prometheus_client import REGISTRY
+
             self._registry = REGISTRY
         else:
             self._registry = registry
@@ -172,7 +173,11 @@ class WebSocketMonitor:
         )
 
         # System Health
-        self.system_info = Info("websocket_system_info", "WebSocket system information", registry=self._registry)
+        self.system_info = Info(
+            "websocket_system_info",
+            "WebSocket system information",
+            registry=self._registry,
+        )
 
         # Broadcast Metrics (Task 4.8)
         self.broadcast_total = Counter(
@@ -538,6 +543,7 @@ class WebSocketMonitor:
 # Global WebSocket Monitor Instance
 websocket_monitor = None
 
+
 def initialize_websocket_monitor(registry=None):
     """Initialize the global WebSocket monitor with the given registry"""
     global websocket_monitor
@@ -547,19 +553,23 @@ def initialize_websocket_monitor(registry=None):
         # Test-Metrik hinzufügen um Registry-Verbindung zu bestätigen
         if registry is not None:
             from prometheus_client import Gauge
+
             test_metric = Gauge(
                 "websocket_monitor_initialized",
                 "WebSocket monitor initialization indicator",
-                registry=registry
+                registry=registry,
             )
             test_metric.set(1)
 
     return websocket_monitor
+
 
 def get_websocket_monitor():
     """Get the websocket monitor instance, should already be initialized by app startup"""
     global websocket_monitor
     if websocket_monitor is None:
         # Das sollte nicht passieren - der Monitor sollte bereits initialisiert sein
-        raise RuntimeError("WebSocket-Monitor nicht initialisiert! App-Startup-Reihenfolge prüfen.")
+        raise RuntimeError(
+            "WebSocket-Monitor nicht initialisiert! App-Startup-Reihenfolge prüfen."
+        )
     return websocket_monitor

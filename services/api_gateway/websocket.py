@@ -60,9 +60,7 @@ async def validate_websocket_origin(origin: Optional[str]) -> bool:
         return False  # Reject connections without Origin header in production
 
     # ✅ FIX: Korrektes Regex-Pattern (* → .*)
-    production_pattern = (
-        r"https://.*\.figma\.site|https://.*\.smart-village\.solutions"
-    )
+    production_pattern = r"https://.*\.figma\.site|https://.*\.smart-village\.solutions"
     return bool(re.match(production_pattern, origin))
 
 
@@ -104,6 +102,7 @@ class MessageType(str, Enum):
 @dataclass
 class BroadcastResult:
     """Result of a broadcast operation"""
+
     success: bool
     total_connections: int
     successful_sends: int
@@ -562,8 +561,7 @@ class WebSocketManager:
         # Task 4.8: Record broadcast attempt
         monitor = get_websocket_monitor()
         monitor.broadcast_total.labels(
-            session_id=session_id,
-            sender_type=sender_type.value
+            session_id=session_id, sender_type=sender_type.value
         ).inc()
 
         errors = []
@@ -572,13 +570,15 @@ class WebSocketManager:
 
         # Task 4.1 & 4.2: Validate session has connections
         if session_id not in self.session_connections:
-            logger.warning(f"⚠️ Broadcasting to session {session_id} with no connections")
+            logger.warning(
+                f"⚠️ Broadcasting to session {session_id} with no connections"
+            )
 
             # Task 4.8: Record failure reason
             monitor.broadcast_failure_total.labels(
                 session_id=session_id,
                 sender_type=sender_type.value,
-                reason="no_connections"
+                reason="no_connections",
             ).inc()
 
             return BroadcastResult(
@@ -587,14 +587,16 @@ class WebSocketManager:
                 successful_sends=0,
                 failed_sends=0,
                 session_has_connections=False,
-                errors=["Session has no active connections"]
+                errors=["Session has no active connections"],
             )
 
         connections = self.session_connections[session_id]
         total_connections = len(connections)
 
         # Task 4.3: Log connection count before broadcast
-        logger.info(f"📡 Broadcasting to session {session_id}: {total_connections} connection(s)")
+        logger.info(
+            f"📡 Broadcasting to session {session_id}: {total_connections} connection(s)"
+        )
 
         # Task 4.4: Check if manager has any connections at all
         if len(self.all_connections) == 0:
@@ -618,7 +620,9 @@ class WebSocketManager:
                     # Empfänger erhält translated_text + audio
                     await connection.websocket.send_json(translated_message)
                     successful_sends += 1
-                    logger.debug(f"✓ Sent translated message to receiver {connection_id}")
+                    logger.debug(
+                        f"✓ Sent translated message to receiver {connection_id}"
+                    )
             except Exception as e:
                 failed_sends += 1
                 error_msg = f"Failed to send to {connection_id}: {str(e)}"
@@ -630,10 +634,11 @@ class WebSocketManager:
 
         # Task 4.8: Record metrics
         if success:
-            logger.info(f"✅ Broadcast successful: {successful_sends}/{total_connections} delivered")
+            logger.info(
+                f"✅ Broadcast successful: {successful_sends}/{total_connections} delivered"
+            )
             monitor.broadcast_success_total.labels(
-                session_id=session_id,
-                sender_type=sender_type.value
+                session_id=session_id, sender_type=sender_type.value
             ).inc()
         else:
             logger.warning(
@@ -643,20 +648,20 @@ class WebSocketManager:
             monitor.broadcast_failure_total.labels(
                 session_id=session_id,
                 sender_type=sender_type.value,
-                reason="partial_failure" if successful_sends > 0 else "complete_failure"
+                reason=(
+                    "partial_failure" if successful_sends > 0 else "complete_failure"
+                ),
             ).inc()
 
         # Record individual message delivery counts
         if successful_sends > 0:
             monitor.broadcast_messages_delivered.labels(
-                session_id=session_id,
-                sender_type=sender_type.value
+                session_id=session_id, sender_type=sender_type.value
             ).inc(successful_sends)
 
         if failed_sends > 0:
             monitor.broadcast_messages_failed.labels(
-                session_id=session_id,
-                sender_type=sender_type.value
+                session_id=session_id, sender_type=sender_type.value
             ).inc(failed_sends)
 
         return BroadcastResult(
@@ -665,7 +670,7 @@ class WebSocketManager:
             successful_sends=successful_sends,
             failed_sends=failed_sends,
             session_has_connections=True,
-            errors=errors
+            errors=errors,
         )
 
     async def handle_websocket_message(

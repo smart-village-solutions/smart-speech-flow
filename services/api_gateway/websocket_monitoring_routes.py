@@ -154,7 +154,9 @@ async def get_session_connections(session_id: str):
     Get all WebSocket connections for a specific session
     """
     try:
-        session_connections = get_websocket_monitor().get_session_connections(session_id)
+        session_connections = get_websocket_monitor().get_session_connections(
+            session_id
+        )
 
         if not session_connections:
             raise HTTPException(
