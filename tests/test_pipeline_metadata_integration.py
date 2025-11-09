@@ -40,8 +40,13 @@ def sample_audio():
 
 @pytest.fixture
 def sample_audio_base64():
-    """Provide sample audio as base64"""
-    audio_bytes = b"RIFF" + b"\x00" * 40
+    """Provide real sample audio from examples folder as base64"""
+    import os
+
+    # Use English_pcm.wav - standard PCM format that ASR service accepts
+    audio_path = os.path.join(os.path.dirname(__file__), "..", "examples", "English_pcm.wav")
+    with open(audio_path, "rb") as f:
+        audio_bytes = f.read()
     return base64.b64encode(audio_bytes).decode()
 
 
@@ -58,13 +63,47 @@ def mock_pipeline_responses():
 class TestAudioPipelineIntegration:
     """Test complete audio pipeline with metadata"""
 
-    @pytest.mark.skip(reason="Requires mocking complex HTTP client behavior - covered by E2E tests")
     @pytest.mark.asyncio
-    async def test_audio_pipeline_generates_metadata(self, sample_audio, mock_pipeline_responses):
-        """Test that audio pipeline generates complete metadata"""
-        pass  # Covered by E2E tests
+    async def test_audio_pipeline_generates_metadata(self, sample_audio_base64, monkeypatch):
+        """Test that audio pipeline generates complete metadata with real services"""
+        import base64
 
+        # Patch service URLs to use localhost ports (outside Docker network)
+        monkeypatch.setattr("services.api_gateway.pipeline_logic.ASR_URL", "http://localhost:8001/transcribe")
+        monkeypatch.setattr("services.api_gateway.pipeline_logic.TRANSLATION_URL", "http://localhost:8002/translate")
+        monkeypatch.setattr("services.api_gateway.pipeline_logic.TTS_URL", "http://localhost:8003/synthesize")
 
+        # Decode base64 to bytes for process_wav
+        audio_bytes = base64.b64decode(sample_audio_base64)
+
+        # Real integration test - calls actual ASR/Translation/TTS services
+        result = await asyncio.to_thread(
+            lambda: process_wav(
+                file_bytes=audio_bytes,
+                source_lang="en",
+                target_lang="de",
+                debug=True,
+                validate_audio=True  # Use real audio from examples/
+            )
+        )
+
+        # Verify result structure (process_wav returns these keys)
+        assert "asr_text" in result
+        assert "translation_text" in result
+        assert "audio_bytes" in result
+        assert "debug" in result
+
+        # Verify debug has steps
+        debug_info = result["debug"]
+        assert "steps" in debug_info
+        assert len(debug_info["steps"]) >= 3  # ASR, Translation, TTS (minimum)
+
+        # Verify each step has required fields (some steps may not have all fields)
+        for step in debug_info["steps"]:
+            assert "step" in step or "name" in step  # Can be either field name
+            # Not all steps have started_at/completed_at (e.g., validation step)
+            # Just check for duration_ms or duration
+            assert "duration_ms" in step or "duration" in step
     @pytest.mark.asyncio
     async def test_original_audio_storage_and_retrieval(self, sample_audio, sample_audio_base64):
         """Test that original audio is stored and can be retrieved"""
@@ -167,13 +206,42 @@ class TestAudioPipelineIntegration:
 class TestTextPipelineIntegration:
     """Test complete text pipeline with metadata"""
 
-    @pytest.mark.skip(reason="Requires mocking complex HTTP client behavior - covered by E2E tests")
     @pytest.mark.asyncio
-    async def test_text_pipeline_generates_metadata(self, mock_pipeline_responses):
-        """Test that text pipeline generates complete metadata"""
-        pass  # Covered by E2E tests
+    async def test_text_pipeline_generates_metadata(self, monkeypatch):
+        """Test that text pipeline generates complete metadata with real services"""
+        # Patch service URLs to use localhost ports (outside Docker network)
+        monkeypatch.setattr("services.api_gateway.pipeline_logic.TRANSLATION_URL", "http://localhost:8002/translate")
+        monkeypatch.setattr("services.api_gateway.pipeline_logic.TTS_URL", "http://localhost:8003/synthesize")
 
+        # Real integration test - calls actual Translation/TTS services
+        result = await asyncio.to_thread(
+            lambda: process_text_pipeline(
+                text="Hello world",
+                source_lang="en",
+                target_lang="de",
+                debug=True,
+                validate_text=False
+            )
+        )
 
+        # Verify result structure (process_text_pipeline returns these keys)
+        assert "asr_text" in result
+        assert "translation_text" in result
+        assert "audio_bytes" in result
+        assert "debug" in result
+
+        # Verify debug has steps (no ASR for text)
+        debug_info = result["debug"]
+        assert "steps" in debug_info
+        assert len(debug_info["steps"]) >= 2  # Translation, TTS (minimum)
+
+        # Verify no ASR step in text pipeline (asr_text should be the input text)
+        assert result["asr_text"] == "Hello world"
+        
+        # Verify Translation and TTS steps exist
+        step_names = {step.get("step") or step.get("name") for step in debug_info["steps"]}
+        assert "Translation" in step_names or "translation" in step_names
+        assert "TTS" in step_names or "tts" in step_names
     @pytest.mark.asyncio
     async def test_metadata_transformation_text_pipeline(self):
         """Test transformation of text pipeline debug_info"""
