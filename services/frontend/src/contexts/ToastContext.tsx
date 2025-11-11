@@ -1,0 +1,91 @@
+import { createContext, useContext, useState, useCallback } from 'react';
+import type { ReactNode } from 'react';
+
+export type ToastType = 'success' | 'error' | 'warning' | 'info';
+
+export interface Toast {
+  id: string;
+  type: ToastType;
+  message: string;
+  duration?: number;
+}
+
+interface ToastContextType {
+  toasts: Toast[];
+  showToast: (type: ToastType, message: string, duration?: number) => void;
+  removeToast: (id: string) => void;
+}
+
+const ToastContext = createContext<ToastContextType | null>(null);
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const showToast = useCallback((type: ToastType, message: string, duration = 5000) => {
+    const id = Math.random().toString(36).substring(2, 11);
+    const toast: Toast = { id, type, message, duration };
+
+    setToasts((prev) => [...prev, toast]);
+
+    if (duration > 0) {
+      setTimeout(() => {
+        removeToast(id);
+      }, duration);
+    }
+  }, []);
+
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  return (
+    <ToastContext.Provider value={{ toasts, showToast, removeToast }}>
+      {children}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+    </ToastContext.Provider>
+  );
+}
+
+export function useToast() {
+  const context = useContext(ToastContext);
+  if (!context) {
+    throw new Error('useToast must be used within a ToastProvider');
+  }
+  return context;
+}
+
+function ToastContainer({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: string) => void }) {
+  if (toasts.length === 0) return null;
+
+  return (
+    <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
+      {toasts.map((toast) => (
+        <ToastItem key={toast.id} toast={toast} onRemove={onRemove} />
+      ))}
+    </div>
+  );
+}
+
+function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) => void }) {
+  const config = {
+    success: { bg: 'bg-green-500', icon: '✓' },
+    error: { bg: 'bg-red-500', icon: '✕' },
+    warning: { bg: 'bg-yellow-500', icon: '⚠' },
+    info: { bg: 'bg-blue-500', icon: 'ℹ' },
+  };
+
+  const { bg, icon } = config[toast.type];
+
+  return (
+    <div className={`${bg} text-white rounded-lg shadow-lg p-4 flex items-start space-x-3 animate-slide-in`}>
+      <span className="text-xl font-bold">{icon}</span>
+      <p className="flex-1 text-sm">{toast.message}</p>
+      <button
+        onClick={() => onRemove(toast.id)}
+        className="text-white hover:text-gray-200 font-bold text-lg leading-none"
+      >
+        ×
+      </button>
+    </div>
+  );
+}

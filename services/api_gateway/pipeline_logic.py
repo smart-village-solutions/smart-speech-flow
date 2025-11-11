@@ -670,6 +670,7 @@ def process_text_pipeline(
     text: str,
     source_lang: str,
     target_lang: str,
+    session_id: str = None,
     debug: bool = False,
     validate_text: bool = True,
 ) -> Dict[str, Any]:
@@ -682,6 +683,7 @@ def process_text_pipeline(
         text: Input text to process
         source_lang: Source language code
         target_lang: Target language code
+        session_id: Session ID for deterministic TTS seed
         debug: Enable debug information
         validate_text: Enable text validation
 
@@ -843,6 +845,7 @@ def process_text_pipeline(
         tts_payload = {
             "text": translation_text,
             "lang": target_lang,
+            "session_id": session_id,  # Für session-basierten Seed
             "debug": str(debug).lower(),
         }
         if refined_tts_text:
@@ -892,21 +895,34 @@ def process_text_pipeline(
             }
 
         audio_bytes = tts_resp.content
+
+        # Bestimme TTS-Modell basierend auf Sprache (da TTS-Service keine Header liefert)
+        tts_model_mapping = {
+            "de": "tts_models/de/thorsten/vits",
+            "en": "tts_models/en/ljspeech/vits",
+            "tr": "tts_models/tr/common-voice/glow-tts",
+            "fa": "tts_models/fa/custom/glow-tts",
+            "uk": "tts_models/uk/mai/vits",
+        }
+        tts_model_used = tts_model_mapping.get(
+            target_lang, f"facebook/mms-tts-{target_lang}"
+        )
+
         debug_info["steps"].append(
             {
                 "step": "TTS",
                 "name": "tts",
                 "input": {"lang": target_lang, "text": translation_text},
                 "output": "audio/wav",
+                "model": tts_model_used,  # Füge Modellnamen hinzu
+                "language": target_lang,
                 "error": None,
                 "duration": round(time.perf_counter() - start_tts, 3),
                 "started_at": tts_started_at.isoformat() + "Z",
                 "completed_at": tts_completed_at.isoformat() + "Z",
                 "duration_ms": tts_duration_ms,
             }
-        )
-
-        # Pipeline completion timestamp
+        )  # Pipeline completion timestamp
         pipeline_completed_at = datetime.utcnow()
         debug_info["pipeline_completed_at"] = pipeline_completed_at.isoformat() + "Z"
         debug_info["total_duration_ms"] = int(

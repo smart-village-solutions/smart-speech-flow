@@ -3,7 +3,9 @@ services:
     image: traefik:v2.10
     command:
       - --api.insecure=true
+      - --log.level=DEBUG
       - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
       - --certificatesresolvers.le.acme.tlschallenge=true
@@ -172,7 +174,7 @@ services:
       - redis-data:/data
     restart: always
 
-  frontend:
+  frontend-archive:
     build:
       context: ../ssf-frontend
       dockerfile: Dockerfile
@@ -180,9 +182,28 @@ services:
       - "5173:5173"
     labels:
       - "traefik.enable=true"
+      - "traefik.http.routers.frontend-archive.rule=Host(`translate-archive.smart-village.solutions`)"
+      - "traefik.http.routers.frontend-archive.entrypoints=websecure"
+      - "traefik.http.routers.frontend-archive.tls.certresolver=le"
+    restart: always
+
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    environment:
+      - VITE_API_BASE_URL=https://ssf.smart-village.solutions
+      - VITE_WS_BASE_URL=wss://ssf.smart-village.solutions
+      - VITE_APP_PASSWORD=ssf2025kassel
+    networks:
+      - default
+    labels:
+      - "traefik.enable=true"
       - "traefik.http.routers.frontend.rule=Host(`translate.smart-village.solutions`)"
       - "traefik.http.routers.frontend.entrypoints=websecure"
       - "traefik.http.routers.frontend.tls.certresolver=le"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+      - "traefik.docker.network=ssf-backend_default"
     restart: always
 
 

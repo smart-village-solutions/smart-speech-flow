@@ -21,7 +21,7 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 # Import der bestehenden Pipeline-Logik
 from ..pipeline_logic import process_text_pipeline, process_wav
@@ -120,6 +120,10 @@ def transform_pipeline_metadata(
                 transformed_step["output"] = {
                     "audio_url": audio_url,
                     "format": "wav",
+                    "model": step.get("model", "unknown"),  # TTS-Modell hinzufügen
+                    "language": step.get(
+                        "language", target_lang
+                    ),  # TTS-Sprache hinzufügen
                 }
             else:
                 # TTS failed
@@ -560,6 +564,7 @@ async def process_audio_input(
             manager=manager,
             pipeline_metadata=pipeline_metadata,
             original_audio_url=original_audio_url,
+            message_id=message_id,  # Use pre-generated ID
         )
     except TypeError:
         # Fallback: call without manager kwarg for backwards compatibility with
@@ -608,14 +613,50 @@ async def process_text_input(
     """Text-Input verarbeiten (application/json)"""
 
     # JSON-Payload parsen
+    body = None
     try:
         body = await request.json()
-        text_request = TextMessageRequest(**body)
+        logger.info(f"📦 Received JSON payload: {body}")
     except Exception as e:
+        logger.error(f"❌ Failed to parse JSON: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=create_error_response("INVALID_JSON", f"Invalid JSON: {str(e)}", {}),
+        )
+
+    # Pydantic Validierung
+    try:
+        text_request = TextMessageRequest(**body)
+    except ValidationError as e:
+        # Pydantic Validierungsfehler mit detaillierten Informationen
+        error_details = e.errors()[0] if e.errors() else {}
+        error_type = error_details.get("type", "unknown")
+        field_name = error_details.get("loc", ["unknown"])[-1]
+
+        # Benutzerfreundliche Fehlermeldungen
+        if error_type == "string_too_long":
+            max_length = error_details.get("ctx", {}).get("max_length", 500)
+            actual_length = (
+                len(body.get(field_name, ""))
+                if body and field_name in body
+                else "unknown"
+            )
+            user_message = f"Der Text ist zu lang. Maximum: {max_length} Zeichen, Ihre Eingabe: {actual_length} Zeichen."
+        elif error_type == "string_too_short":
+            min_length = error_details.get("ctx", {}).get("min_length", 1)
+            user_message = f"Der Text ist zu kurz. Minimum: {min_length} Zeichen."
+        elif error_type == "missing":
+            user_message = f"Pflichtfeld '{field_name}' fehlt."
+        else:
+            user_message = f"Ungültige Eingabe für Feld '{field_name}': {error_details.get('msg', 'Validierungsfehler')}"
+
+        logger.error(f"❌ Validation failed: {user_message}, details: {error_details}")
         raise HTTPException(
             status_code=400,
             detail=create_error_response(
-                "INVALID_JSON", f"Invalid JSON payload: {str(e)}", {}
+                "VALIDATION_ERROR",
+                user_message,
+                {"field": field_name, "error_type": error_type},
             ),
         )
 
@@ -635,7 +676,10 @@ async def process_text_input(
 
     # Text-Pipeline ausführen (ASR überspringen)
     pipeline_result = process_text_pipeline(
-        text_request.text, text_request.source_lang, text_request.target_lang
+        text_request.text,
+        text_request.source_lang,
+        text_request.target_lang,
+        session_id=session_id,
     )
 
     # Fehlerbehandlung
@@ -652,12 +696,16 @@ async def process_text_input(
     translated_text = pipeline_result.get("translation_text", "")
     audio_bytes = pipeline_result.get("audio_bytes")
 
+    # Generate message_id upfront for use in pipeline_metadata
+    message_id = str(uuid.uuid4())
+
     # Transform pipeline metadata to match spec format
     pipeline_metadata = transform_pipeline_metadata(
         pipeline_result.get("debug"),
         text_request.source_lang,
         text_request.target_lang,
         original_audio_url=None,  # Text pipeline has no audio input
+        message_id=message_id,  # Pass message_id for audio URL
     )
 
     # Session-Message erstellen
@@ -673,6 +721,7 @@ async def process_text_input(
             manager=manager,
             pipeline_metadata=pipeline_metadata,
             original_audio_url=None,  # No original audio for text input
+            message_id=message_id,  # Use pre-generated ID
         )
     except TypeError:
         # Backward-compat fallback for test fakes
@@ -719,6 +768,7 @@ async def create_session_message(
     manager: Optional[WebSocketManager] = None,
     pipeline_metadata: Optional[Dict[str, Any]] = None,
     original_audio_url: Optional[str] = None,
+    message_id: Optional[str] = None,  # Allow pre-generated message_id
 ) -> SessionMessage:
     """Session-Message erstellen und zur Session hinzufügen"""
     import logging
@@ -726,7 +776,7 @@ async def create_session_message(
     logger = logging.getLogger(__name__)
 
     message = SessionMessage(
-        id=str(uuid.uuid4()),
+        id=message_id or str(uuid.uuid4()),  # Use provided ID or generate new one
         sender=client_type,
         original_text=original_text,
         translated_text=translated_text,

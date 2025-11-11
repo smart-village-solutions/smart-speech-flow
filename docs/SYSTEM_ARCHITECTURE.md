@@ -13,11 +13,16 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 
 | Komponente | Produktions-URL | Hinweise |
 |------------|-----------------|----------|
-| Admin & Client Frontend | `https://translate.smart-village.solutions` | Single-Page-App mit Admin-Startseite (`/admin`) und Client-Deeplinks (`/join/{sessionId}`); dient zugleich als Reverse-Proxy für API-Aufrufe unter `/api/*`. |
-| REST & WebSocket API | `https://ssf.smart-village.solutions` | FastAPI-Gateway; WebSocket-Einstieg `wss://ssf.smart-village.solutions/ws/{sessionId}/{clientType}`. Alle Endpunkte identisch auch via Frontend-Host erreichbar. |
+| Frontend (Nginx) | `https://translate.smart-village.solutions` | React SPA (Nginx-Container) mit Admin-Startseite (`/admin`) und Client-Deeplinks (`/join/{sessionId}`). Statische Assets werden direkt ausgeliefert. |
+| REST & WebSocket API | `https://ssf.smart-village.solutions` | FastAPI-Gateway; WebSocket-Einstieg `wss://ssf.smart-village.solutions/ws/{sessionId}/{clientType}`. API-Endpunkte unter `/api/*`. |
 | Monitoring (Prometheus) | `https://prometheus-ssf.smart-village.solutions` | Read-Only Zugriff auf Prometheus UI und Metriken (`/graph`, `/alerts`). |
 | Monitoring (Grafana) | `https://grafana-ssf.smart-village.solutions` | Dashboard-Zugang; Standard-Credentials `admin`/`admin` (nach Erstlogin ändern). |
-| TLS & Routing | `https://translate.smart-village.solutions`, `https://ssf.smart-village.solutions` | Traefik verwaltet Zertifikate via Let's Encrypt & verteilt Traffic auf die Docker-Services. |
+| TLS & Routing | Traefik | Let's Encrypt Zertifikate für alle Domains, automatisches Routing basierend auf Host-Header. |
+
+**Deployment-Architektur:**
+- **Frontend:** Eigener Nginx-Container (`ssf-backend-frontend-1`) auf Port 80, exponiert via Traefik
+- **API Gateway:** FastAPI-Container (`ssf-backend-api_gateway-1`) auf Port 8000, exponiert via Traefik
+- **Hot-Deploy:** `docker cp dist/. ssf-backend-frontend-1:/usr/share/nginx/html/` für schnelle Frontend-Updates ohne Container-Rebuild
 
 Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gateway:8000`, `http://asr:8000` usw.). Persistente Sitzungen nutzen den Redis-Container (`redis://redis:6379/0`, Namespace `ssf`).
 
@@ -47,16 +52,27 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 
 ### **Frontend Layer**
 
-**Admin Frontend** *(Prod: `https://translate.smart-village.solutions/admin`, Dev: `http://localhost:5173`)* - Deutsche Verwaltungsoberfläche
-- Session Management: UUID-basierte Session erstellen, Client-URL anzeigen, Status überwachen
-- Voice Interface: Deutsch sprechen, Übersetzungen hören, Chat-History
+**React Frontend (Nginx)** *(Prod: `https://translate.smart-village.solutions`, Dev: `http://localhost:5173`)* - Unified Admin & Client Interface
 
-**Client Frontend** *(Prod: `https://translate.smart-village.solutions/join/{sessionId}` , Dev: `http://localhost:5174`)* - Mehrsprachige Bürgeroberfläche
+**Technologie-Stack:**
+- React 18 + TypeScript + Vite
+- TailwindCSS v3 für responsives Styling
+- WebRTC für browserbasierte Audio-Aufnahme
+- Nginx-Container für Production-Serving
+
+**Admin Interface** (`/admin`):
+- Session Management: UUID-basierte Session erstellen, Client-URL anzeigen, Status überwachen
+- Voice & Text Interface: Deutsch sprechen/schreiben, Übersetzungen hören, Chat-History
+- Multi-Session Support: Parallele Sessions verwalten und zwischen ihnen wechseln
+
+**Client Interface** (`/join/{sessionId}`):
 - URL-Routing: Session-UUID aus URL extrahieren, Session-Gültigkeit prüfen
 - Language Selection: Sprache aus 100+ Optionen auswählen, Session aktivieren
-- Voice Interface: In Muttersprache sprechen, deutsche Übersetzung hören, Chat-History
+- Voice & Text Interface: In Muttersprache sprechen/schreiben, deutsche Übersetzung hören, Chat-History
 
-**Kommunikation:** HTTP REST API für Session-Management, WebSocket für Echtzeit-Updates (mit Polling-Fallback)
+**Kommunikation:**
+- HTTP REST API (`https://ssf.smart-village.solutions/api/*`) für Session-Management
+- WebSocket (`wss://ssf.smart-village.solutions/ws/{sessionId}/{clientType}`) für Echtzeit-Updates mit Polling-Fallback
 
 ### **Backend Layer**
 
@@ -165,80 +181,76 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 
 ## 🌐 Frontend-Architektur
 
-### **Admin Frontend** *(Prod: `https://translate.smart-village.solutions/admin`, Dev: `http://localhost:5173`)*
+### **Unified React Frontend** *(Prod: `https://translate.smart-village.solutions`, Dev: `http://localhost:5173`)*
+
+**Deployment:**
+- **Production:** Nginx-Container (`ssf-backend-frontend-1`) auf Port 80
+- **Traefik-Routing:** `Host(translate.smart-village.solutions)` → Frontend-Container
+- **Hot-Deploy:** `docker cp dist/. ssf-backend-frontend-1:/usr/share/nginx/html/`
+- **Build-Pipeline:** `npm run build` → Vite generiert optimierte Bundles in `dist/`
 
 **Technologie-Stack:**
-- React 18 + TypeScript für moderne Komponentenentwicklung
-- Vite für schnelle Build-Pipeline
-- TailwindCSS für responsives Styling
+- React 18 + TypeScript + Vite
+- TailwindCSS v3 (CSS: ~18 KB gzipped)
+- React Router für Client-side Routing
 - WebRTC für browserbasierte Audio-Aufnahme
 
-**Hauptkomponenten:**
+**Routing-Struktur:**
+- `/` → Landing Page mit Admin-Login
+- `/admin` → Admin Interface (Session Management)
+- `/customer` → Customer Interface (nach Activation)
 
-**SessionManager-Module:**
-- **CreateSession:** Parallele Sessions anlegen
-  - Neue Session erstellen (ohne bestehende Sessions automatisch zu beenden)
-  - Optionale Admin-Aktion: bestehende Sessions manuell terminieren
-  - Client-Notifications nur bei bewusster Termination
-- **URLDisplay:** Client-URL prominent anzeigen und teilen
-- **StatusMonitor:** Client-Join und Sprachauswahl überwachen
-- **SessionHistory:** Aktive und beendete Sessions verwalten (Mehrfachauswahl möglich)
+**Shared Components:**
 
-**CommunicationInterface-Module:**
-- **InputSelector:** Toggle zwischen Audio-Aufnahme und Text-Eingabe
-- **AudioRecorder:** Deutsche Audio-Aufnahme (max. 20 Sekunden)
-- **TextInput:** Deutsche Text-Eingabe mit Live-Vorschau
-- **MessageDisplay:** Chat-History mit Audio-Player
-- **TranslationView:** Originaler Input (ASR/Text) vs. Übersetzung (empfangene Nachrichten)
-- **InputConfirmation:** Anzeige des ASR-Texts oder eingegebenen Texts zur Bestätigung
-- **RealtimeCommunication:** WebSocket-Verbindung mit Polling-Fallback
-- **ConnectionStatus:** Session- und WebSocket-Verbindungsstatus
+**SessionContext:**
+- Global State Management für Messages, Session-ID, Client-Type
+- WebSocket-Service-Integration mit automatischem Reconnect
+- Temp-ID-Mapping für optimistische UI-Updates
+- Message-History-Verwaltung mit Deduplication
 
-**AdminDashboard-Module:**
-- **CurrentSessions:** Übersicht über alle aktiven Sessions mit Auswahl der Fokus-Session
-  - Session-Status und Client-Informationen pro Eintrag
-  - Session-Terminate-Button für gezieltes Beenden
-- **SessionHistory:** Vergangene Sessions mit Zeitstempel und Dauer
-- **Statistics:** Nutzungsstatistiken pro Session
-- **Settings:** Konfiguration und Einstellungen
+**MessageComponents:**
+- **MessageList:** Scrollbare Chat-History mit Auto-Scroll
+- **MessageBubble:** Nachrichtendarstellung mit Pipeline-Metadata (expandable)
+- **MessageInput:** Unified Input für Text mit Character-Counter (500 max)
+- **AudioPlayer:** Audio-Wiedergabe mit Play/Pause-Controls
 
-### **Client Frontend** *(Prod: `https://translate.smart-village.solutions/join/{sessionId}`, Dev: `http://localhost:5174`)*
+**WebSocketService:**
+- Connection Management mit exponential backoff
+- Message-Queue für offline Messages
+- Automatic Reconnection bei Verbindungsabbruch
+- Status-Monitoring (connected, connecting, disconnected)
 
-**Technologie-Stack:**
-- React 18 + TypeScript für moderne Komponentenentwicklung
-- i18next für vollständige Internationalisierung
-- WebRTC für browserbasierte Audio-Aufnahme
-- PWA-Support für optimale mobile Nutzung
+**Admin-Specific Components:**
 
-**Hauptkomponenten:**
+**SessionManager:**
+- Session-Erstellung mit UUID-Generierung
+- Client-URL-Display mit Copy-Button
+- Session-Status-Monitoring (inactive, pending, active)
+- Multi-Session-Support (parallele Sessions möglich)
 
-**SessionJoin-Module:**
-- URLRouter: Session-UUID aus URL extrahieren
-- SessionValidation: Session-Gültigkeit prüfen
-- LanguagePicker: Sprache aus 100+ Optionen auswählen
-- SessionActivation: Session mit gewählter Sprache aktivieren
+**AdminDashboard:**
+- Active Sessions Overview
+- Session-Switching via Session-ID
+- Manual Session-Termination
+- Connection Status Indicators
 
-**LanguageSelection-Module:**
-- InfoPage: Anweisungen in der gewählten Zielsprache
-- FlagDisplay: Visuelle Sprachendarstellung mit Flaggen
-- WelcomeScreen: Begrüßung in Muttersprache
+**Customer-Specific Components:**
 
-**CommunicationInterface-Module:**
-- **InputModeSelector:** Wahl zwischen Audio-Aufnahme und Text-Eingabe
-- **RecordButton:** Audio-Aufnahme in Muttersprache (max. 20 Sekunden)
-- **TextInputField:** Text-Eingabe in Muttersprache mit Sprachunterstützung
-- **PlaybackQueue:** Deutsche Audio-Antworten wiedergeben
-- **VisualFeedback:** Audio-Wellenformen und Status-Anzeigen
-- **InputConfirmation:** Anzeige des ASR-Texts oder eingegebenen Texts in Muttersprache
-- **RealtimeCommunication:** WebSocket-Verbindung mit Polling-Fallback und Mobile-Optimierung
-- **ChatHistory:** Gesprächsverlauf mit differenzierter Text-Anzeige
-  - Eigene Nachrichten: ASR-/Text-Original
-  - Empfangene Nachrichten: Übersetzter Text
+**SessionJoin:**
+- URL-Parameter-Extraktion (`/customer?session_id={uuid}`)
+- Session-Validation API-Call
+- Error-Handling für ungültige Sessions
 
-**UserExperience-Module:**
-- OfflineMode: Basis-Funktionen ohne Internet
-- AccessibilityTools: Screen Reader Support, große Icons
-- HelpSystem: Mehrsprachige Hilfe und Tutorials
+**LanguageSelector:**
+- 100+ Sprachen mit Flaggen-Icons
+- Search/Filter-Funktionalität
+- Session-Activation mit gewählter Sprache
+
+**CustomerInterface:**
+- Welcome-Screen nach Activation
+- Language-specific Instructions
+- Audio/Text Input Interface
+- Real-time Translation Display
 
 ## ⚙️ Backend-Architektur
 
@@ -515,16 +527,15 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 ### **Container-Orchestrierung**
 
 **Docker Compose Struktur:**
-- traefik: Load Balancer + SSL-Terminierung
-- api_gateway: Session-Management + Pipeline-Orchestration
-- asr: Speech-to-Text Service
-- translation: Text-to-Text Service
-- tts: Text-to-Speech Service
-- frontend-admin: Admin-Interface
-- frontend-client: Customer-Interface
-- prometheus: Metrics Collection
-- grafana: Visualization Dashboard
-- redis: Session Storage (optional)
+- traefik: Load Balancer + SSL-Terminierung + Let's Encrypt
+- frontend: Unified React SPA (Nginx) → `translate.smart-village.solutions`
+- api_gateway: Session-Management + Pipeline-Orchestration → `ssf.smart-village.solutions`
+- asr: Speech-to-Text Service (intern)
+- translation: Text-to-Text Service (intern)
+- tts: Text-to-Speech Service (intern)
+- prometheus: Metrics Collection → `prometheus-ssf.smart-village.solutions`
+- grafana: Visualization Dashboard → `grafana-ssf.smart-village.solutions`
+- redis: Session Storage mit AOF-Persistenz
 
 **GPU-Resource-Sharing:**
 Alle KI-Services können auf verfügbare NVIDIA-GPUs zugreifen durch:

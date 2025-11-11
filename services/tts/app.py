@@ -56,7 +56,7 @@ from typing import Any, Dict, List
 import soundfile as sf
 import torch
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import JSONResponse, Response
 from prometheus_client import Counter, Gauge, generate_latest
 from transformers import pipeline
 
@@ -325,6 +325,7 @@ async def synthesize(request: Request):
     data = await request.json()
     text = data.get("tts_text") or data.get("text", "Hallo Welt")
     lang = data.get("lang", "de")
+    session_id = data.get("session_id")  # Optional: für session-basierten Seed
     debug_active = (
         str(data.get("debug", "false")).lower() == "true"
         or str(request.query_params.get("debug", "false")).lower() == "true"
@@ -366,7 +367,8 @@ async def synthesize(request: Request):
         )
 
     tts_model = get_tts_model(lang)
-    debug_info["model"] = str(tts_model)
+    model_name = resolve_tts_model_name(lang)  # Hole den Modellnamen für Metadaten
+    debug_info["model"] = model_name
     if not tts_model:
         debug_info["error"] = (
             f"Kein TTS-Modell für Sprache '{lang}' (Konfig oder Download prüfen)."
@@ -382,28 +384,67 @@ async def synthesize(request: Request):
                 status_code=503,
             )
         return JSONResponse(
-            content={"fallback": True, "error": debug_info["error"]}, status_code=503
+            content={"fallback": True, "error": debug_info["error"]},
+            status_code=503,
         )
 
     try:
         # Coqui-TTS-Modell
         if hasattr(tts_model, "tts_to_file"):
+            # Setze deterministischen Seed basierend auf session_id (falls vorhanden)
+            # oder Text-Hash (Fallback). Dies sorgt für konsistente Stimm-Charakteristik
+            # innerhalb einer Session
+            if session_id:
+                seed = hash(session_id) % (2**32)
+                debug_info["seed_source"] = "session_id"
+                print(f"🎲 TTS Seed: {seed} (von session_id: {session_id})")
+            else:
+                seed = hash(text) % (2**32)
+                debug_info["seed_source"] = "text_hash"
+                print(f"🎲 TTS Seed: {seed} (von text_hash)")
+
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(seed)
+
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 tts_model.tts_to_file(text=text, file_path=tmp.name)
                 tmp_path = tmp.name
+
+            # Lese Audio-Datei und sende als Response mit Custom-Headern
+            with open(tmp_path, "rb") as f:
+                audio_bytes = f.read()
+
             debug_info["output"] = "audio/wav"
             debug_info["duration"] = round(time.perf_counter() - start, 3)
+
+            headers = {
+                "X-TTS-Model": model_name,
+                "X-TTS-Language": lang,
+            }
             if debug_active:
-                return FileResponse(
-                    tmp_path,
-                    media_type="audio/wav",
-                    filename="output.wav",
-                    headers={"X-Debug-Info": str(debug_info)},
-                )
-            return FileResponse(tmp_path, media_type="audio/wav", filename="output.wav")
+                headers["X-Debug-Info"] = str(debug_info)
+
+            return Response(
+                content=audio_bytes, media_type="audio/wav", headers=headers
+            )
         # HuggingFace MMS-TTS pipeline
         elif hasattr(tts_model, "__call__"):
             import numpy as np
+
+            # Setze deterministischen Seed auch für MMS-TTS
+            if session_id:
+                seed = hash(session_id) % (2**32)
+                debug_info["seed_source"] = "session_id"
+                print(f"🎲 MMS-TTS Seed: {seed} (von session_id: {session_id})")
+            else:
+                seed = hash(text) % (2**32)
+                debug_info["seed_source"] = "text_hash"
+                print(f"🎲 MMS-TTS Seed: {seed} (von text_hash)")
+
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(seed)
 
             tts_pipe = tts_model
             result = tts_pipe(text)
@@ -424,16 +465,24 @@ async def synthesize(request: Request):
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 sf.write(tmp.name, audio, sampling_rate)
                 tmp_path = tmp.name
+
+            # Lese Audio-Datei und sende als Response mit Custom-Headern
+            with open(tmp_path, "rb") as f:
+                audio_bytes = f.read()
+
             debug_info["output"] = "audio/wav"
             debug_info["duration"] = round(time.perf_counter() - start, 3)
+
+            headers = {
+                "X-TTS-Model": model_name + " (MMS-TTS Fallback)",
+                "X-TTS-Language": lang,
+            }
             if debug_active:
-                return FileResponse(
-                    tmp_path,
-                    media_type="audio/wav",
-                    filename="output.wav",
-                    headers={"X-Debug-Info": str(debug_info)},
-                )
-            return FileResponse(tmp_path, media_type="audio/wav", filename="output.wav")
+                headers["X-Debug-Info"] = str(debug_info)
+
+            return Response(
+                content=audio_bytes, media_type="audio/wav", headers=headers
+            )
         else:
             raise RuntimeError("Unbekannter TTS-Modelltyp")
     except Exception as e:
