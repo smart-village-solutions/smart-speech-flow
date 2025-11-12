@@ -1,0 +1,93 @@
+Test-ID,Test-Beschreibung,Chrome,Firefox,Safari,Edge,Notizen,Status
+BT-01,Session erstellen,,,,,Source: de Target: en,
+BT-02,Mikrofon-Berechtigung anfordern,,,,,Dialog erscheint,
+BT-03,Recording starten,,,,,Icon-Animation,
+BT-04,Recording stoppen,,,,,Icon zurück zu normal,
+BT-05,Audio-Konvertierung (Browser → WAV),,,,,Console-Log prüfen,
+BT-06,WAV-Upload (FormData POST),,,,,Network-Tab prüfen,
+BT-07,ASR-Verarbeitung,,,,,Deutscher Text erkannt,
+BT-08,Translation,,,,,Englische Übersetzung,
+BT-09,TTS-Audio-Wiedergabe,,,,,Audio hörbar,
+BT-10,WebSocket-Broadcast (Admin → Kunde),,,,,Beide Clients aktualisiert,
+BT-11,Optimistic UI-Update,,,,,Nachricht sofort sichtbar,
+BT-12,Error-Handling (Mikrofon verweigert),,,,,Fehlermeldung angezeigt,
+BT-13,Error-Handling (Netzwerkfehler),,,,,Retry-Option angeboten,
+BT-14,Audio-Format-Erkennung,,,,,Korrekt für jeden Browser,
+
+Performance-Kategorie,Metrik,Chrome (ms),Firefox (ms),Safari (ms),Edge (ms),Ziel,Status
+Audio-Konvertierung,Test 1 (5s Audio),,,,,"<500ms",
+Audio-Konvertierung,Test 2 (10s Audio),,,,,"<500ms",
+Audio-Konvertierung,Test 3 (15s Audio),,,,,"<500ms",
+Audio-Konvertierung,Durchschnitt,,,,,"<500ms",
+Upload-Zeit,Audio-Größe (bytes),,,,,Bandbreite (kbps),
+E2E-Pipeline,Recording (s),5s,5s,5s,5s,,
+E2E-Pipeline,Konvertierung (ms),,,,,"<3000ms gesamt",
+E2E-Pipeline,Upload (ms),,,,,,
+E2E-Pipeline,ASR (ms),,,,,"<200ms",
+E2E-Pipeline,Translation (ms),,,,,"<100ms",
+E2E-Pipeline,TTS (ms),,,,,"<500ms",
+E2E-Pipeline,Gesamt (ms),,,,,"<3000ms",
+
+Fehler-ID,Fehler-Beschreibung,Chrome,Firefox,Safari,Edge,Notizen,Status
+ERR-01,Mikrofon-Berechtigung verweigert,,,,,Fehlermeldung angezeigt?,
+ERR-02,Netzwerkfehler (Offline),,,,,Retry-Option?,
+ERR-03,Leere Audio-Aufnahme (<1s),,,,,Warnung angezeigt?,
+ERR-04,Keine Sprache erkannt (ASR-Fehler),,,,,Backend-Fehlermeldung?,
+ERR-05,WebSocket-Verbindung verloren,,,,,Reconnect funktioniert?,
+ERR-06,Ungültige Session-ID,,,,,404-Fehler abgefangen?,
+ERR-07,Backend-Timeout (>30s),,,,,Timeout-Meldung?,
+ERR-08,Mikrofon-Zugriff während Recording verloren,,,,,Graceful Degradation?,
+
+UX-Kriterium,Chrome (1-5),Firefox (1-5),Safari (1-5),Edge (1-5),Notizen,Durchschnitt
+Mikrofon-Icon klar erkennbar,,,,,"1=schlecht, 5=exzellent",
+Recording-Animation intuitiv,,,,,Pulsierend/rot?,
+Optimistic Update hilfreich,,,,,Sofortige Rückmeldung?,
+Fehlermeldungen verständlich,,,,,Klare Handlungsanweisung?,
+TTS-Audio-Qualität,,,,,Klar und verständlich?,
+
+Audio-Format-Validierung,Chrome,Firefox,Safari,Edge,Notizen,Status
+RIFF-Header,,,,,Validierung erfolgreich?,
+WAVE-Header,,,,,Validierung erfolgreich?,
+fmt-Chunk,,,,,Validierung erfolgreich?,
+data-Chunk,,,,,Validierung erfolgreich?,
+Sample-Rate (16kHz),,,,,Validierung erfolgreich?,
+Channels (Mono),,,,,Validierung erfolgreich?,
+Bits-per-Sample (16),,,,,Validierung erfolgreich?,
+
+Mobile-Test,iOS 16 (iPhone),iOS 17 (iPhone),iOS 16 (iPad),iOS 17 (iPad),Android 12-14,Notizen
+Mikrofon-Berechtigung,,,,,System-Dialog?,
+Recording während App-Wechsel,,,,,Unterbrechung?,
+TTS-Audio-Wiedergabe,,,,,Lautstärke OK?,
+Performance (ms),,,,,< 1000ms?,
+
+Accessibility-Test,Chrome,Firefox,Safari,Edge,Notizen,Status
+Mikrofon-Icon mit aria-label,,,,,Screen-Reader-Test,
+Recording-Status akustisch wahrnehmbar,,,,,Sound/Voice-Feedback?,
+Fehlermeldungen screen-reader-freundlich,,,,,ARIA-Live-Region?,
+Keyboard-Navigation (Tab/Enter),,,,,Mikrofon per Tastatur?,
+Farbkontrast (WCAG 2.1 AA),,,,,Contrast Checker Tool,
+
+Gesamt-Bewertung,Chrome,Firefox,Safari,Edge,Gesamt (%),Status
+Funktionalität (14 Tests),,,,,/14,
+Performance (3 Metriken),,,,,PASS/FAIL,
+Fehlerszenarien (8 Tests),,,,,/8,
+UX-Bewertung (5 Kriterien),,,,,/25,
+
+Test-Informationen,Wert,,,,,,
+Test-Datum,,,,,,,
+Tester,,,,,,,
+Backend-Version (Commit),,,,,,,
+Frontend-Version (Commit),,,,,,,
+Test-URL,https://translate.smart-village.solutions,,,,,,
+
+Finale-Empfehlung,Status,,,,,,
+Chrome,PASS / FAIL / NEEDS REVIEW,,,,,,
+Firefox,PASS / FAIL / NEEDS REVIEW,,,,,,
+Safari,PASS / FAIL / NEEDS REVIEW,,,,,,
+Edge,PASS / FAIL / NEEDS REVIEW,,,,,,
+Gesamt-Status,READY / MINOR ISSUES / NEEDS FIXES / NOT READY,,,,,,
+
+Kritische-Blocker,Beschreibung,Status (FIXED/OPEN),,,,
+Blocker #1,,,,,,
+Blocker #2,,,,,,
+Blocker #3,,,,,,
