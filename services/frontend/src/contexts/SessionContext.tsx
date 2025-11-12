@@ -238,16 +238,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       pendingMessagesRef.current.delete(realId);
 
       // Update the optimistic message with WebSocket data
-      const msg = messages.find((m) => m.id === tempId);
-      if (msg) {
-        console.log('✏️ Updating temp message with pending data:', tempId);
-        updateMessage(tempId, {
-          status: 'sent',
-          content: pendingMessage.text,
-          pipeline_metadata: pendingMessage.pipeline_metadata,
-          audio_url: pendingMessage.audio_url,
-        });
-      }
+      console.log('✏️ Updating temp message with pending data:', tempId);
+      updateMessage(tempId, {
+        status: 'sent',
+        content: pendingMessage.text,
+        pipeline_metadata: pendingMessage.pipeline_metadata,
+        audio_url: pendingMessage.audio_url,
+      });
     }
   };
 
