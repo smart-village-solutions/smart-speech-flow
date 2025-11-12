@@ -168,24 +168,36 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     if (wsMessage.role === 'receiver_message') {
       // This is a message from the other party (translated for us)
-      // Always check if it already exists (to prevent duplicates)
-      const existingMessage = messages.find((m) => m.id === wsMessage.message_id);
-      if (!existingMessage) {
-        console.log('📥 receiver_message - creating new message:', wsMessage.message_id);
+      // Check if message already exists to prevent duplicates
+      if (!wsMessage.message_id) {
+        console.error('❌ receiver_message without message_id');
+        return;
+      }
+      
+      console.log('📥 receiver_message received:', wsMessage.message_id);
+      
+      // Use functional state update to get current messages
+      setMessages((currentMessages) => {
+        const existingMessage = currentMessages.find((m) => m.id === wsMessage.message_id);
+        if (existingMessage) {
+          console.log('⚠️ receiver_message already exists, skipping:', wsMessage.message_id);
+          return currentMessages;
+        }
+        
+        console.log('✅ Creating new receiver message:', wsMessage.message_id);
         const newMessage: Message = {
-          id: wsMessage.message_id,
+          id: wsMessage.message_id!,
           sender: clientType === 'admin' ? 'customer' : 'admin',
           content_type: wsMessage.audio_url ? 'audio' : 'text',
-          content: wsMessage.text,
+          content: wsMessage.text,  // The translated text for us
           translation_audio_url: wsMessage.audio_url,  // Audio der Übersetzung
           timestamp: new Date().toISOString(),
           status: 'sent',
           pipeline_metadata: wsMessage.pipeline_metadata,
         };
-        addMessage(newMessage);
-      } else {
-        console.log('⚠️ receiver_message already exists, skipping:', wsMessage.message_id);
-      }
+        return [...currentMessages, newMessage];
+      });
+      return;
     }
   };
 

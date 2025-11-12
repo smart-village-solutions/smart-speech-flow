@@ -90,8 +90,8 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
             </div>
           )}
 
-          {/* Text Content */}
-          {message.content && message.content_type === 'text' && (
+          {/* Text Content - for text messages AND received audio messages */}
+          {message.content && (message.content_type === 'text' || !isOwnMessage) && (
             <div className="whitespace-pre-wrap break-words">{message.content}</div>
           )}
 

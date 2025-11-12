@@ -43,7 +43,9 @@ def _register_active_session() -> str:
 
 
 def _patch_pipeline(monkeypatch):
-    def fake_process_text_pipeline(text: str, source_lang: str, target_lang: str):
+    def fake_process_text_pipeline(
+        text: str, source_lang: str, target_lang: str, session_id: str = None, **kwargs
+    ) -> dict:
         return {
             "error": False,
             "asr_text": text,
