@@ -78,6 +78,12 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
           )}
 
           {/* Original Content (for own messages) */}
+          {isOwnMessage && message.content && message.content_type === 'audio' && (
+            <div className="mb-2 text-sm opacity-90 italic">
+              "{message.content}"
+            </div>
+          )}
+
           {isOwnMessage && message.recognized_text && (
             <div className="mb-2 text-sm opacity-90 italic">
               "{message.recognized_text}"
@@ -85,7 +91,7 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
           )}
 
           {/* Text Content */}
-          {message.content && (
+          {message.content && message.content_type === 'text' && (
             <div className="whitespace-pre-wrap break-words">{message.content}</div>
           )}
 

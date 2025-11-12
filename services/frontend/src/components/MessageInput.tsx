@@ -44,7 +44,7 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
           setRecordingState('recording');
           setRecordingDuration(0);
           setError(null);
-          
+
           // Start duration counter
           recordingIntervalRef.current = window.setInterval(() => {
             setRecordingDuration((prev) => prev + 1);
@@ -105,7 +105,7 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
 
     try {
       console.log('📡 Uploading audio message with temp ID:', tempMessageId);
-      
+
       // Create FormData for multipart/form-data upload
       const formData = new FormData();
       formData.append('file', wavBlob, 'recording.wav');
@@ -125,7 +125,7 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
       });
 
       console.log('✅ Audio upload successful:', response.data.message_id);
-      
+
       // Register the mapping from temp ID to real ID
       registerTempId(tempMessageId, response.data.message_id);
       console.log('🔗 Registered mapping:', tempMessageId, '->', response.data.message_id);
@@ -313,15 +313,16 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
             <div className="flex flex-col items-center space-y-3">
               <button
                 onClick={stopRecording}
-                className="w-16 h-16 sm:w-20 sm:h-20 bg-red-500 text-white rounded-full flex items-center justify-center relative"
+                className="w-16 h-16 sm:w-20 sm:h-20 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center relative cursor-pointer z-10"
+                type="button"
               >
-                <div className="absolute inset-0 bg-red-500 rounded-full animate-ping opacity-75" />
-                <span className="relative text-2xl sm:text-3xl">⏹️</span>
+                <div className="absolute inset-0 bg-red-500 rounded-full animate-ping opacity-75 pointer-events-none" />
+                <span className="relative text-2xl sm:text-3xl z-10">⏹️</span>
               </button>
               <div className="text-base sm:text-lg font-mono font-semibold text-gray-700">
                 {formatDuration(recordingDuration)}
               </div>
-              <div className="text-xs sm:text-sm text-gray-600">Aufnahme läuft...</div>
+              <div className="text-xs sm:text-sm text-gray-600">Aufnahme läuft... (Klicken zum Stoppen)</div>
             </div>
           )}
 
