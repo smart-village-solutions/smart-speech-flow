@@ -173,9 +173,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         console.error('❌ receiver_message without message_id');
         return;
       }
-      
+
       console.log('📥 receiver_message received:', wsMessage.message_id);
-      
+
       // Use functional state update to get current messages
       setMessages((currentMessages) => {
         const existingMessage = currentMessages.find((m) => m.id === wsMessage.message_id);
@@ -183,7 +183,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           console.log('⚠️ receiver_message already exists, skipping:', wsMessage.message_id);
           return currentMessages;
         }
-        
+
         console.log('✅ Creating new receiver message:', wsMessage.message_id);
         const newMessage: Message = {
           id: wsMessage.message_id!,

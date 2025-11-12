@@ -45,6 +45,8 @@ class WebSocketService {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private status: ConnectionStatus = 'disconnected';
+  private heartbeatInterval: number | null = null;
+  private readonly HEARTBEAT_INTERVAL_MS = 30000; // 30 Sekunden
 
   /**
    * Connect to WebSocket server
@@ -80,6 +82,7 @@ class WebSocketService {
   disconnect(): void {
     console.log('[WebSocket] Disconnecting');
     this.reconnectAttempts = this.maxReconnectAttempts; // Prevent auto-reconnect
+    this.stopHeartbeat();
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -126,6 +129,7 @@ class WebSocketService {
       console.log('[WebSocket] Connected');
       this.reconnectAttempts = 0;
       this.setStatus('connected');
+      this.startHeartbeat();
     };
 
     this.ws.onmessage = (event) => {
@@ -146,6 +150,7 @@ class WebSocketService {
     this.ws.onclose = (event) => {
       console.log('[WebSocket] Closed:', event.code, event.reason);
       this.setStatus('disconnected');
+      this.stopHeartbeat();
       this.ws = null;
 
       // Auto-reconnect if not intentionally closed
@@ -181,6 +186,34 @@ class WebSocketService {
 
   private notifyMessageHandlers(message: WebSocketMessage): void {
     this.messageHandlers.forEach((handler) => handler(message));
+  }
+
+  /**
+   * Start sending heartbeat messages
+   */
+  private startHeartbeat(): void {
+    this.stopHeartbeat(); // Clear any existing interval
+
+    this.heartbeatInterval = window.setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        try {
+          this.ws.send(JSON.stringify({ type: 'heartbeat_pong' }));
+          console.log('[WebSocket] Heartbeat sent');
+        } catch (error) {
+          console.error('[WebSocket] Failed to send heartbeat:', error);
+        }
+      }
+    }, this.HEARTBEAT_INTERVAL_MS);
+  }
+
+  /**
+   * Stop sending heartbeat messages
+   */
+  private stopHeartbeat(): void {
+    if (this.heartbeatInterval !== null) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
   }
 }
 
