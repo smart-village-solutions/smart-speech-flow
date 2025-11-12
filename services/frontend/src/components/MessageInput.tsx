@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSession } from '../contexts/SessionContext';
 import MessageService from '../services/MessageService';
+import { AudioRecorderWithWAVConversion } from '../utils/AudioRecorderWithWAVConversion';
+import api from '../services/api';
 
 type InputMode = 'text' | 'audio';
 type RecordingState = 'idle' | 'recording' | 'processing';
@@ -17,9 +19,8 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
   const recordingIntervalRef = useRef<number | null>(null);
+  const audioRecorderRef = useRef<AudioRecorderWithWAVConversion | null>(null);
 
   useEffect(() => {
     // Cleanup on unmount
@@ -33,59 +34,132 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm',
+      // Create audio recorder instance with WAV conversion
+      const recorder = new AudioRecorderWithWAVConversion({
+        sampleRate: 16000,
+        bitDepth: 16,
+        channels: 1,
+        maxDurationMs: 20000,
+        onStart: () => {
+          setRecordingState('recording');
+          setRecordingDuration(0);
+          setError(null);
+          
+          // Start duration counter
+          recordingIntervalRef.current = window.setInterval(() => {
+            setRecordingDuration((prev) => prev + 1);
+          }, 1000);
+        },
+        onStop: () => {
+          setRecordingState('processing');
+          if (recordingIntervalRef.current) {
+            clearInterval(recordingIntervalRef.current);
+            recordingIntervalRef.current = null;
+          }
+        },
+        onDataAvailable: async (wavBlob) => {
+          // WAV conversion successful, upload to backend
+          await sendAudioMessage(wavBlob);
+        },
+        onError: (error) => {
+          console.error('Recording error:', error);
+          setError(error.message || 'Fehler bei der Audio-Aufnahme');
+          setRecordingState('idle');
+        },
       });
 
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await sendAudioMessage(audioBlob);
-        stream.getTracks().forEach((track) => track.stop());
-      };
-
-      mediaRecorder.start();
-      setRecordingState('recording');
-      setRecordingDuration(0);
-      setError(null);
-
-      // Start duration counter
-      recordingIntervalRef.current = setInterval(() => {
-        setRecordingDuration((prev) => prev + 1);
-      }, 1000);
+      audioRecorderRef.current = recorder;
+      await recorder.startRecording();
     } catch (err) {
       console.error('Failed to start recording:', err);
       setError('Mikrofon-Zugriff verweigert. Bitte Berechtigungen prüfen.');
+      setRecordingState('idle');
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && recordingState === 'recording') {
-      mediaRecorderRef.current.stop();
-      setRecordingState('processing');
-      if (recordingIntervalRef.current) {
-        clearInterval(recordingIntervalRef.current);
-        recordingIntervalRef.current = null;
-      }
+    if (audioRecorderRef.current && recordingState === 'recording') {
+      audioRecorderRef.current.stopRecording();
     }
   };
 
-  const sendAudioMessage = async (_audioBlob: Blob) => {
+  const sendAudioMessage = async (wavBlob: Blob) => {
     if (!sessionId || !clientType) return;
 
-    // TODO: Audio messages need multipart/form-data format
-    // Currently not supported - need to implement file upload
-    setError('Audio-Nachrichten werden noch nicht unterstützt');
-    setRecordingState('idle');
+    // Determine source and target language based on client type
+    const source_lang = clientType === 'admin' ? adminLanguage : (customerLanguage || 'en');
+    const target_lang = clientType === 'admin' ? (customerLanguage || 'en') : adminLanguage;
+
+    const tempMessageId = `temp-${Date.now()}`;
+    const optimisticMessage = {
+      id: tempMessageId,
+      sender: clientType,
+      content_type: 'audio' as const,
+      content: '[Audio-Nachricht]',
+      timestamp: new Date().toISOString(),
+      status: 'sending' as const,
+    };
+
+    addMessage(optimisticMessage);
+    setError(null);
+
+    try {
+      console.log('📡 Uploading audio message with temp ID:', tempMessageId);
+      
+      // Create FormData for multipart/form-data upload
+      const formData = new FormData();
+      formData.append('file', wavBlob, 'recording.wav');
+      formData.append('source_lang', source_lang);
+      formData.append('target_lang', target_lang);
+      formData.append('client_type', clientType);
+
+      // Upload audio via POST /api/session/{sessionId}/message
+      const response = await api.post<{
+        message_id: string;
+        status: string;
+        message: string;
+      }>(`/api/session/${sessionId}/message`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      console.log('✅ Audio upload successful:', response.data.message_id);
+      
+      // Register the mapping from temp ID to real ID
+      registerTempId(tempMessageId, response.data.message_id);
+      console.log('🔗 Registered mapping:', tempMessageId, '->', response.data.message_id);
+
+      // Mark as sent
+      updateMessage(tempMessageId, {
+        status: 'sent',
+      });
+
+      // Reset recording state
+      setRecordingState('idle');
+    } catch (err: any) {
+      console.error('Failed to send audio message:', err);
+      updateMessage(tempMessageId, {
+        status: 'error',
+      });
+
+      // Extract user-friendly error message from API response
+      let errorMessage = 'Fehler beim Senden der Audio-Nachricht';
+      if (err.response?.data?.detail?.error_message) {
+        errorMessage = err.response.data.detail.error_message;
+      } else if (err.response?.data?.detail?.message) {
+        errorMessage = err.response.data.detail.message;
+      } else if (err.response?.data?.detail) {
+        errorMessage = typeof err.response.data.detail === 'string'
+          ? err.response.data.detail
+          : 'Fehler beim Senden der Audio-Nachricht';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      setError(errorMessage);
+      setRecordingState('idle');
+    }
   };
 
   const sendTextMessage = async () => {

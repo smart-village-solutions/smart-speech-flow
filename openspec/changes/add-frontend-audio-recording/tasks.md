@@ -13,20 +13,20 @@
 - [x] 2.5 WAV-Header-Generierung (RIFF/WAVE/fmt/data chunks)
 - [x] 2.6 WAV-Format-Validierung implementieren
 - [x] 2.7 Error-Handling für Mikrofonzugriff und Konvertierungsfehler
-- [ ] 2.8 TypeScript-Typen und Interfaces definieren
-- [ ] 2.9 Commit Changes
+- [x] 2.8 TypeScript-Typen und Interfaces definieren
+- [x] 2.9 Commit Changes
 
 ## 3. MessageInput-Komponente erweitern
-- [ ] 3.1 Import der `AudioRecorderWithWAVConversion` Utility
-- [ ] 3.2 State-Management für Konvertierungs-Status erweitern
-- [ ] 3.3 `sendAudioMessage()` Funktion implementieren
-  - [ ] 3.3.1 FormData-Objekt mit WAV-Blob erstellen
-  - [ ] 3.3.2 Korrekte Parameter hinzufügen (source_lang, target_lang, client_type)
-  - [ ] 3.3.3 POST-Request an `/api/session/{sessionId}/message` senden
-  - [ ] 3.3.4 Response-Handling und WebSocket-Integration
-- [ ] 3.4 `startRecording()` Funktion mit WAV-Konvertierung verknüpfen
-- [ ] 3.5 Error-Handling und User-Feedback implementieren
-- [ ] 3.6 Optimistische UI-Updates während Upload
+- [x] 3.1 Import der `AudioRecorderWithWAVConversion` Utility
+- [x] 3.2 State-Management für Konvertierungs-Status erweitern
+- [x] 3.3 `sendAudioMessage()` Funktion implementieren
+  - [x] 3.3.1 FormData-Objekt mit WAV-Blob erstellen
+  - [x] 3.3.2 Korrekte Parameter hinzufügen (source_lang, target_lang, client_type)
+  - [x] 3.3.3 POST-Request an `/api/session/{sessionId}/message` senden
+  - [x] 3.3.4 Response-Handling und WebSocket-Integration
+- [x] 3.4 `startRecording()` Funktion mit WAV-Konvertierung verknüpfen
+- [x] 3.5 Error-Handling und User-Feedback implementieren
+- [x] 3.6 Optimistische UI-Updates während Upload
 - [ ] 3.7 Commit Changes
 
 ## 4. Integration und UI-Verbesserungen
