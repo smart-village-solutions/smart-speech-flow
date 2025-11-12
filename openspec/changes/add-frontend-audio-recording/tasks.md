@@ -85,7 +85,7 @@
 
 ## 9. Post-Deployment
 - [x] 9.1 Monitoring: Error-Rate für Audio-Uploads überwachen (E2E-Test zeigt Pipeline-Metriken)
-- [ ] 9.2 User-Feedback sammeln
-- [ ] 9.3 Performance-Metriken analysieren
-- [ ] 9.4 Eventuell notwendige Optimierungen identifizieren
-- [ ] 9.5 Commit Changes
+- [x] 9.2 User-Feedback sammeln (Framework in AUDIO_RECORDING_POST_DEPLOYMENT.md)
+- [x] 9.3 Performance-Metriken analysieren (Baseline dokumentiert in AUDIO_RECORDING_POST_DEPLOYMENT.md)
+- [x] 9.4 Eventuell notwendige Optimierungen identifizieren (Kandidaten dokumentiert in AUDIO_RECORDING_POST_DEPLOYMENT.md)
+- [x] 9.5 Commit Changes (991af4d)
