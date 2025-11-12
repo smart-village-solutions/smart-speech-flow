@@ -79,6 +79,13 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
 
   const stopRecording = () => {
     if (audioRecorderRef.current && recordingState === 'recording') {
+      // Sofort visuelles Feedback geben
+      setRecordingState('processing');
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+        recordingIntervalRef.current = null;
+      }
+      // Aufnahme tatsächlich stoppen (Konvertierung läuft im Hintergrund)
       audioRecorderRef.current.stopRecording();
     }
   };
