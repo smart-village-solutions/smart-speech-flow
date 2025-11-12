@@ -78,7 +78,7 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
           )}
 
           {/* Original Content (for own messages) */}
-          {isOwnMessage && message.content && message.content_type === 'audio' && (
+          {isOwnMessage && message.content && message.content_type === 'audio' && message.content !== '[Audio-Nachricht]' && (
             <div className="mb-2 text-sm opacity-90 italic">
               "{message.content}"
             </div>
@@ -93,6 +93,13 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
           {/* Text Content */}
           {message.content && message.content_type === 'text' && (
             <div className="whitespace-pre-wrap break-words">{message.content}</div>
+          )}
+
+          {/* Audio placeholder for own messages while processing */}
+          {isOwnMessage && message.content_type === 'audio' && (!message.content || message.content === '[Audio-Nachricht]') && (
+            <div className="text-sm opacity-75 italic">
+              Audio wird verarbeitet...
+            </div>
           )}
 
           {/* Translation (for received messages) */}
