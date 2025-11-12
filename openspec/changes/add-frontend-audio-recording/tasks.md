@@ -1,18 +1,18 @@
 ## 1. Vorbereitung und Analyse
-- [ ] 1.1 Bestehenden Frontend-Code analysieren (`MessageInput.tsx`)
-- [ ] 1.2 Backend-API-Kontrakt für Audio-Upload verifizieren (`/api/session/{sessionId}/message`)
-- [ ] 1.3 Dokumentierte Lösung aus `docs/frontend-integration/AudioRecorderWithWAVConversion.js` reviewen
-- [ ] 1.4 TypeScript-Interfaces für Audio-Upload definieren
+- [x] 1.1 Bestehenden Frontend-Code analysieren (`MessageInput.tsx`)
+- [x] 1.2 Backend-API-Kontrakt für Audio-Upload verifizieren (`/api/session/{sessionId}/message`)
+- [x] 1.3 Dokumentierte Lösung aus `docs/frontend-integration/AudioRecorderWithWAVConversion.js` reviewen
+- [x] 1.4 TypeScript-Interfaces für Audio-Upload definieren
 - [ ] 1.5 Commit Changes
 
 ## 2. WAV-Konvertierungs-Utility implementieren
-- [ ] 2.1 Neue Datei `src/utils/AudioRecorderWithWAVConversion.ts` erstellen
-- [ ] 2.2 MediaRecorder-Wrapper mit Browser-Format-Erkennung implementieren
-- [ ] 2.3 Web Audio API Integration für Audio-Dekodierung
-- [ ] 2.4 PCM Resampling-Logik (beliebige Samplerate → 16kHz Mono)
-- [ ] 2.5 WAV-Header-Generierung (RIFF/WAVE/fmt/data chunks)
-- [ ] 2.6 WAV-Format-Validierung implementieren
-- [ ] 2.7 Error-Handling für Mikrofonzugriff und Konvertierungsfehler
+- [x] 2.1 Neue Datei `src/utils/AudioRecorderWithWAVConversion.ts` erstellen
+- [x] 2.2 MediaRecorder-Wrapper mit Browser-Format-Erkennung implementieren
+- [x] 2.3 Web Audio API Integration für Audio-Dekodierung
+- [x] 2.4 PCM Resampling-Logik (beliebige Samplerate → 16kHz Mono)
+- [x] 2.5 WAV-Header-Generierung (RIFF/WAVE/fmt/data chunks)
+- [x] 2.6 WAV-Format-Validierung implementieren
+- [x] 2.7 Error-Handling für Mikrofonzugriff und Konvertierungsfehler
 - [ ] 2.8 TypeScript-Typen und Interfaces definieren
 - [ ] 2.9 Commit Changes
 
