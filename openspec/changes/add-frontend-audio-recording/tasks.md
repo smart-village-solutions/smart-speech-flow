@@ -67,6 +67,8 @@
 - [x] 6.3 Troubleshooting-Guide für häufige Probleme (AUDIO_RECORDING_BROWSER_TEST.md)
 - [x] 6.4 Browser-Kompatibilitäts-Matrix aktualisieren (in AUDIO_RECORDING_BROWSER_TEST.md)
 - [x] 6.5 Commit Changes (7351033 - Heartbeat Feature)
+- [x] 6.6 Manuelle Test-Checkliste erstellen (AUDIO_RECORDING_MANUAL_TEST_CHECKLIST.md, Commit c050a73)
+- [x] 6.7 Test-Matrix mit Performance-Metriken (AUDIO_RECORDING_TEST_MATRIX.md + CSV, Commit c050a73)
 
 ## 7. Quality Assurance
 - [x] 7.1 TypeScript-Compilation ohne Errors (✓ Build erfolgreich)
