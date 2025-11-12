@@ -79,9 +79,9 @@
 ## 8. Deployment-Vorbereitung
 - [x] 8.1 Production-Build testen (✓ npm run build erfolgreich)
 - [x] 8.2 Docker-Image-Build verifizieren (✓ Container deployed)
-- [ ] 8.3 Rollback-Strategie dokumentieren
+- [x] 8.3 Rollback-Strategie dokumentieren (✓ AUDIO_RECORDING_ROLLBACK_STRATEGY.md, Commit f9d715c)
 - [x] 8.4 Deployment-Checklist erstellen (AUDIO_RECORDING_BROWSER_TEST.md)
-- [ ] 8.5 Commit Changes
+- [x] 8.5 Commit Changes (f9d715c)
 
 ## 9. Post-Deployment
 - [x] 9.1 Monitoring: Error-Rate für Audio-Uploads überwachen (E2E-Test zeigt Pipeline-Metriken)
