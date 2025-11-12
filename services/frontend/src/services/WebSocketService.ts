@@ -19,8 +19,8 @@ export interface WebSocketMessage {
     };
     steps?: Array<{
       name: string;
-      input?: any;
-      output?: any;
+      input?: unknown;
+      output?: unknown;
       started_at?: string;
       completed_at?: string;
       duration_ms: number;

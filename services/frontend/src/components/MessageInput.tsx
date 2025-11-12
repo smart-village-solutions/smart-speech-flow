@@ -144,7 +144,7 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
 
       // Reset recording state
       setRecordingState('idle');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to send audio message:', err);
       updateMessage(tempMessageId, {
         status: 'error',
@@ -152,16 +152,18 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
 
       // Extract user-friendly error message from API response
       let errorMessage = 'Fehler beim Senden der Audio-Nachricht';
-      if (err.response?.data?.detail?.error_message) {
-        errorMessage = err.response.data.detail.error_message;
-      } else if (err.response?.data?.detail?.message) {
-        errorMessage = err.response.data.detail.message;
-      } else if (err.response?.data?.detail) {
-        errorMessage = typeof err.response.data.detail === 'string'
-          ? err.response.data.detail
-          : 'Fehler beim Senden der Audio-Nachricht';
-      } else if (err.message) {
-        errorMessage = err.message;
+      const error = err as { response?: { data?: { detail?: { error_message?: string; message?: string } | string } }; message?: string };
+      if (error.response?.data?.detail) {
+        const detail = error.response.data.detail;
+        if (typeof detail === 'object' && detail.error_message) {
+          errorMessage = detail.error_message;
+        } else if (typeof detail === 'object' && detail.message) {
+          errorMessage = detail.message;
+        } else if (typeof detail === 'string') {
+          errorMessage = detail;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
       }
 
       setError(errorMessage);
@@ -210,7 +212,7 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
       updateMessage(tempMessageId, {
         status: 'sent',
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to send text message:', err);
       updateMessage(tempMessageId, {
         status: 'error',
@@ -218,16 +220,18 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
 
       // Extract user-friendly error message from API response
       let errorMessage = 'Fehler beim Senden der Nachricht';
-      if (err.response?.data?.detail?.error_message) {
-        errorMessage = err.response.data.detail.error_message;
-      } else if (err.response?.data?.detail?.message) {
-        errorMessage = err.response.data.detail.message;
-      } else if (err.response?.data?.detail) {
-        errorMessage = typeof err.response.data.detail === 'string'
-          ? err.response.data.detail
-          : 'Fehler beim Senden der Nachricht';
-      } else if (err.message) {
-        errorMessage = err.message;
+      const error = err as { response?: { data?: { detail?: { error_message?: string; message?: string } | string } }; message?: string };
+      if (error.response?.data?.detail) {
+        const detail = error.response.data.detail;
+        if (typeof detail === 'object' && detail.error_message) {
+          errorMessage = detail.error_message;
+        } else if (typeof detail === 'object' && detail.message) {
+          errorMessage = detail.message;
+        } else if (typeof detail === 'string') {
+          errorMessage = detail;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
       }
 
       setError(errorMessage);

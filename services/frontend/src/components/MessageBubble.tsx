@@ -205,14 +205,14 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
                             {step.duration_ms}ms
                           </div>
                         </div>
-                        {step.output && Object.keys(step.output).length > 0 && (
+                        {step.output && typeof step.output === 'object' && Object.keys(step.output as object).length > 0 ? (
                           <div className="mt-2 p-2 bg-white rounded border border-gray-200">
                             <div className="text-xs text-gray-600 mb-1">Output:</div>
                             <pre className="text-xs text-gray-800 whitespace-pre-wrap overflow-x-auto">
                               {JSON.stringify(step.output, null, 2)}
                             </pre>
                           </div>
-                        )}
+                        ) : null}
                       </div>
                     ))}
                   </div>

@@ -55,7 +55,7 @@ class CustomerService {
     try {
       const response = await api.get(`/api/session/${sessionId}`);
       return response.data.status === 'pending' || response.data.status === 'active';
-    } catch (error) {
+    } catch {
       return false;
     }
   }

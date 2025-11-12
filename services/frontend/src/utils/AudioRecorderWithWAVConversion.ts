@@ -127,8 +127,8 @@ export class AudioRecorderWithWAVConversion {
       });
 
       // Create AudioContext for WAV conversion
-      const AudioContextConstructor = window.AudioContext || (window as any).webkitAudioContext;
-      this.audioContext = new AudioContextConstructor({
+      const AudioContextConstructor = window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      this.audioContext = new (AudioContextConstructor!)({
         sampleRate: this.options.sampleRate,
       });
 
