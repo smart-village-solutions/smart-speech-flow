@@ -20,6 +20,7 @@ def test_speech_translate_sample():
 
 
 # Mapping: Dateiname -> (source_lang, target_lang)
+# Alle 10 unterstützten Sprachen
 EXAMPLES = [
     ("examples/German.wav", "de", "en"),
     ("examples/Amharic.wav", "am", "de"),
@@ -29,6 +30,8 @@ EXAMPLES = [
     ("examples/Russian.wav", "ru", "de"),
     ("examples/Turkish.wav", "tr", "de"),
     ("examples/Ukrainian.wav", "uk", "de"),
+    ("examples/Kurdish.wav", "ku", "de"),
+    ("examples/Tigrinya.wav", "ti", "de"),
 ]
 
 

@@ -99,7 +99,8 @@ class SimplifiedLoadTester:
             "memory_usage": 1024.0
         }
 
-        self.languages = ["de", "en", "ar", "tr", "ru", "uk", "am", "fa"]
+        # Alle 10 unterstützten Sprachen
+        self.languages = ["de", "en", "ar", "tr", "ru", "uk", "am", "fa", "ku", "ti"]
 
     async def create_session_batch(self, batch_size: int, batch_index: int) -> Tuple[List[str], float]:
         """Create a batch of sessions and return session IDs with timing"""

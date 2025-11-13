@@ -189,7 +189,7 @@ def _derive_auto_scaling_signal(metrics: Dict[str, Any]) -> Dict[str, Any]:
 
 
 app = FastAPI(title="ASR Service")
-SUPPORTED_LANGS = ["de", "en", "ar", "tr", "am", "fa", "ru", "uk"]
+SUPPORTED_LANGS = ["de", "en", "ar", "tr", "am", "fa", "ru", "uk", "ku", "ti"]
 requests_total = Counter("asr_requests_total", "Total ASR requests")
 health_status = Gauge("asr_health_status", "Health status of ASR service")
 model = None
