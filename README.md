@@ -22,8 +22,8 @@ Ein containerisiertes Microservice-Backend für Echtzeit-Sprachverarbeitung und 
 
 ```bash
 # 1. Repository klonen
-git clone https://github.com/smart-village-solutions/smart-speech-flow-backend.git
-cd smart-speech-flow-backend
+git clone https://github.com/smart-village-solutions/smart-speech-flow.git
+cd smart-speech-flow
 
 # 2. Services starten (Docker Compose)
 docker compose up -d
@@ -469,9 +469,9 @@ See our [ROADMAP.md](ROADMAP.md) for:
 
 **Smart Village Solutions**
 
-- 📧 Email: [Contact via GitHub Issues](https://github.com/smart-village-solutions/smart-speech-flow-backend/issues)
-- 🐛 Bug Reports: [GitHub Issues](https://github.com/smart-village-solutions/smart-speech-flow-backend/issues)
-- 💬 Discussions: [GitHub Discussions](https://github.com/smart-village-solutions/smart-speech-flow-backend/discussions)
+- 📧 Email: [Contact via GitHub Issues](https://github.com/smart-village-solutions/smart-speech-flow/issues)
+- 🐛 Bug Reports: [GitHub Issues](https://github.com/smart-village-solutions/smart-speech-flow/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/smart-village-solutions/smart-speech-flow/discussions)
 
 ---
 

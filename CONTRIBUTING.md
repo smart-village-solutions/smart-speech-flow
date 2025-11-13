@@ -15,11 +15,11 @@ Thank you for your interest in contributing! This guide will help you get starte
 
 ```bash
 # Fork the repository on GitHub, then:
-git clone https://github.com/YOUR_USERNAME/smart-speech-flow-backend.git
-cd smart-speech-flow-backend
+git clone https://github.com/YOUR_USERNAME/smart-speech-flow.git
+cd smart-speech-flow
 
 # Add upstream remote
-git remote add upstream https://github.com/smart-village-solutions/smart-speech-flow-backend.git
+git remote add upstream https://github.com/smart-village-solutions/smart-speech-flow.git
 ```
 
 ### 2. Set Up Development Environment
@@ -219,19 +219,19 @@ Brief description of changes
 
 **Looking for something to work on?** Check these:
 
-1. Issues labeled [`good-first-issue`](https://github.com/smart-village-solutions/smart-speech-flow-backend/labels/good-first-issue)
-2. Issues labeled [`help-wanted`](https://github.com/smart-village-solutions/smart-speech-flow-backend/labels/help-wanted)
+1. Issues labeled [`good-first-issue`](https://github.com/smart-village-solutions/smart-speech-flow/labels/good-first-issue)
+2. Issues labeled [`help-wanted`](https://github.com/smart-village-solutions/smart-speech-flow/labels/help-wanted)
 3. Documentation improvements
 4. Test coverage improvements
 
 **Need help?**
 - Ask questions in issue comments
-- Open a [Discussion](https://github.com/smart-village-solutions/smart-speech-flow-backend/discussions)
+- Open a [Discussion](https://github.com/smart-village-solutions/smart-speech-flow/discussions)
 - Tag maintainers with `@maintainer-name`
 
 ## 🐛 Reporting Bugs
 
-Use the [Bug Report template](https://github.com/smart-village-solutions/smart-speech-flow-backend/issues/new?template=bug_report.md):
+Use the [Bug Report template](https://github.com/smart-village-solutions/smart-speech-flow/issues/new?template=bug_report.md):
 
 **Include:**
 - Clear bug description
@@ -242,7 +242,7 @@ Use the [Bug Report template](https://github.com/smart-village-solutions/smart-s
 
 ## 💡 Suggesting Features
 
-Use the [Feature Request template](https://github.com/smart-village-solutions/smart-speech-flow-backend/issues/new?template=feature_request.md):
+Use the [Feature Request template](https://github.com/smart-village-solutions/smart-speech-flow/issues/new?template=feature_request.md):
 
 **Include:**
 - Clear feature description
@@ -367,8 +367,8 @@ This project adheres to the [Contributor Covenant Code of Conduct](CODE_OF_CONDU
 
 ## 📞 Getting Help
 
-- 💬 [GitHub Discussions](https://github.com/smart-village-solutions/smart-speech-flow-backend/discussions)
-- 🐛 [GitHub Issues](https://github.com/smart-village-solutions/smart-speech-flow-backend/issues)
+- 💬 [GitHub Discussions](https://github.com/smart-village-solutions/smart-speech-flow/discussions)
+- 🐛 [GitHub Issues](https://github.com/smart-village-solutions/smart-speech-flow/issues)
 - 📖 [Documentation](docs/README.md)
 
 ---

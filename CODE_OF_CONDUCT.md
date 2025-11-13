@@ -61,7 +61,7 @@ representative at an online or offline event.
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the project maintainers responsible for enforcement at:
 
-**[Report via GitHub Issues](https://github.com/smart-village-solutions/smart-speech-flow-backend/issues)**
+**[Report via GitHub Issues](https://github.com/smart-village-solutions/smart-speech-flow/issues)**
 
 Please mark the issue as "Code of Conduct Violation" and provide:
 - Description of the incident
@@ -143,8 +143,8 @@ For answers to common questions about this code of conduct, see the FAQ at
 
 For questions about this Code of Conduct, please contact the project maintainers:
 
-- **GitHub Issues**: [Open an issue](https://github.com/smart-village-solutions/smart-speech-flow-backend/issues)
-- **GitHub Discussions**: [Start a discussion](https://github.com/smart-village-solutions/smart-speech-flow-backend/discussions)
+- **GitHub Issues**: [Open an issue](https://github.com/smart-village-solutions/smart-speech-flow/issues)
+- **GitHub Discussions**: [Start a discussion](https://github.com/smart-village-solutions/smart-speech-flow/discussions)
 
 ---
 

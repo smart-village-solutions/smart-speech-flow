@@ -247,13 +247,13 @@ This roadmap outlines completed v1.0 features, ongoing work, and planned improve
 We welcome community input on our roadmap!
 
 ### How to Suggest Features
-1. Check [existing feature requests](https://github.com/smart-village-solutions/smart-speech-flow-backend/labels/enhancement)
-2. Open a [new feature request](https://github.com/smart-village-solutions/smart-speech-flow-backend/issues/new?template=feature_request.md)
-3. Participate in [GitHub Discussions](https://github.com/smart-village-solutions/smart-speech-flow-backend/discussions)
+1. Check [existing feature requests](https://github.com/smart-village-solutions/smart-speech-flow/labels/enhancement)
+2. Open a [new feature request](https://github.com/smart-village-solutions/smart-speech-flow/issues/new?template=feature_request.md)
+3. Participate in [GitHub Discussions](https://github.com/smart-village-solutions/smart-speech-flow/discussions)
 
 ### How to Contribute
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
-- Look for [`good-first-issue`](https://github.com/smart-village-solutions/smart-speech-flow-backend/labels/good-first-issue) labels
+- Look for [`good-first-issue`](https://github.com/smart-village-solutions/smart-speech-flow/labels/good-first-issue) labels
 - Join discussions on prioritization
 - Implement features from the roadmap
 
@@ -262,8 +262,8 @@ We welcome community input on our roadmap!
 ## 📞 Questions?
 
 Have questions about the roadmap?
-- 💬 [GitHub Discussions](https://github.com/smart-village-solutions/smart-speech-flow-backend/discussions)
-- 🐛 [GitHub Issues](https://github.com/smart-village-solutions/smart-speech-flow-backend/issues)
+- 💬 [GitHub Discussions](https://github.com/smart-village-solutions/smart-speech-flow/discussions)
+- 🐛 [GitHub Issues](https://github.com/smart-village-solutions/smart-speech-flow/issues)
 
 ---
 

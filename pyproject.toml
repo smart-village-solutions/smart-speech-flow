@@ -3,7 +3,7 @@ requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "smart-speech-flow-backend"
+name = "smart-speech-flow"
 description = "Containerized microservice system for multilingual real-time communication"
 readme = "README.md"
 requires-python = ">=3.12"

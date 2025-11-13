@@ -321,7 +321,7 @@ chown -R root:root /root/projects/ssf-backend/backups
 ### Recovery Steps
 1. Provision new server (if hardware failure)
 2. Install Docker & Docker Compose
-3. Clone repository: `git clone https://github.com/smart-village-solutions/smart-speech-flow-backend.git`
+3. Clone repository: `git clone https://github.com/smart-village-solutions/smart-speech-flow.git`
 4. Restore latest backup: `./scripts/restore-full.sh backups/daily/latest`
 5. Update DNS (if IP changed)
 6. Verify all services: `./scripts/health-check.sh`

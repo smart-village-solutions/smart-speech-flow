@@ -129,7 +129,7 @@ When adding new documentation:
 
 - [Main README](../README.md) - Project overview and quick start
 - [OpenAPI Specification](openapi.yaml) - REST API documentation
-- [Repository](https://github.com/smart-village-solutions/smart-speech-flow-backend) - Source code
+- [Repository](https://github.com/smart-village-solutions/smart-speech-flow) - Source code
 
 ## 📮 Questions?
 
