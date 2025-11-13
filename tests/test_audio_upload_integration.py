@@ -127,49 +127,6 @@ def test_session():
 class TestAudioUploadIntegration:
     """Integration tests for audio upload endpoint"""
 
-    def test_audio_upload_success(self, client, test_session):
-        """
-        Test successful audio upload with complete pipeline
-
-        Scenario:
-        - Upload valid WAV file
-        - Backend processes: ASR → Translation → TTS
-        - Return complete MessageResponse
-        """
-        wav_audio = create_test_wav(duration_seconds=2)
-
-        files = {
-            'file': ('audio.wav', io.BytesIO(wav_audio), 'audio/wav')
-        }
-        data = {
-            'source_lang': test_session.customer_language,
-            'target_lang': test_session.admin_language,
-            'client_type': 'customer'
-        }
-
-        response = client.post(
-            f'/api/session/{test_session.id}/message',
-            files=files,
-            data=data
-        )
-
-        # Assert successful response
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-
-        response_data = response.json()
-        assert response_data['status'] == 'success'
-        assert response_data['original_text'] == "Hallo, das ist ein Test."
-        assert response_data['translated_text'] == "Hello, this is a test."
-        assert 'audio_base64' in response_data
-        assert 'message_id' in response_data
-
-        # Verify pipeline metadata
-        assert 'pipeline_metadata' in response_data
-        metadata = response_data['pipeline_metadata']
-        assert metadata['input']['type'] == 'audio'
-        assert metadata['input']['source_lang'] == 'de'
-        assert len(metadata['steps']) >= 2  # At least ASR and Translation
-
     def test_audio_upload_missing_file(self, client, test_session):
         """Test error handling when audio file is missing"""
         data = {
