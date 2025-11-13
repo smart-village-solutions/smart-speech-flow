@@ -1,18 +1,62 @@
 # Smart Speech Flow Backend
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Docker](https://img.shields.io/badge/docker-compose-blue.svg)](https://docs.docker.com/compose/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
+
 Ein containerisiertes Microservice-Backend für Echtzeit-Sprachverarbeitung und Übersetzung. Das System besteht aus vier eigenständigen Services, die über ein API-Gateway orchestriert werden und eine vollständige Pipeline von Sprache zu Sprache ermöglichen.
 
-## 🚀 Überblick
+## ✨ Features at a Glance
 
-Smart Speech Flow ermöglicht es, gesprochene Inhalte automatisch zu transkribieren, zwischen über 100 Sprachen zu übersetzen und als natürliche Sprache auszugeben. Jeder Service ist in Python/FastAPI implementiert und kann einzeln oder als Gesamtpipeline genutzt werden.
+- 🎤 **Automatic Speech Recognition** – Transkription mit OpenAI Whisper
+- 🌍 **Multi-Language Translation** – 100+ Sprachen mit Facebook M2M100
+- 🔊 **Text-to-Speech** – Natürliche Sprachsynthese mit Coqui-TTS & HuggingFace MMS
+- ⚡ **GPU-Accelerated** – CUDA-Support für optimale Performance
+- 🔄 **WebSocket Real-Time** – Live-Kommunikation für Admin & Customer
+- 📊 **Production Monitoring** – Prometheus & Grafana Integration
+- 🎛️ **LLM Refinement** – Optional mit Ollama (gpt-oss:20b)
+- 🐳 **Cloud-Ready** – Vollständig containerisiert mit Docker Compose
 
-### Hauptfunktionen
-- **Automatische Spracherkennung (ASR)** mit OpenAI Whisper
-- **Mehrsprachige Übersetzung** mit Facebook M2M100 (100+ Sprachen)
-- **Text-zu-Sprache (TTS)** mit Coqui-TTS und HuggingFace MMS-TTS
-- **GPU-beschleunigte KI-Inferenz** mit CUDA-Unterstützung
-- **Echtzeit-Monitoring** mit Prometheus und Grafana
-- **Vollständige Pipeline-Orchestrierung** über API-Gateway
+## 🚀 Quick Start
+
+```bash
+# 1. Repository klonen
+git clone https://github.com/smart-village-solutions/smart-speech-flow-backend.git
+cd smart-speech-flow-backend
+
+# 2. Services starten (Docker Compose)
+docker compose up -d
+
+# 3. Health-Check
+curl http://localhost:8000/health
+```
+
+**Das war's!** Die API ist unter `http://localhost:8000` verfügbar.
+
+### Erste API-Anfrage
+
+```bash
+# Pipeline testen: Deutsch → Englisch
+curl -F "file=@examples/audio/sample.wav" \
+     -F "source_lang=de" \
+     -F "target_lang=en" \
+     http://localhost:8000/pipeline \
+     --output translated.wav
+```
+
+## 📚 Documentation
+
+**Start here:**
+- 📖 [Documentation Index](docs/README.md) – Navigation by role & topic
+- 🧪 [Testing Guide](docs/testing/TESTING_GUIDE.md) – Comprehensive test overview
+- 🏗️ [System Architecture](docs/architecture/SYSTEM_ARCHITECTURE.md) – Design decisions
+- 🔌 [Frontend Integration](docs/guides/frontend-integration.md) – WebSocket & API usage
+
+**For contributors:**
+- 🤝 [Contributing Guide](CONTRIBUTING.md) – Get started in 3 steps
+- 🗺️ [Project Roadmap](ROADMAP.md) – v1.0 features & future plans
+- 📜 [Code of Conduct](CODE_OF_CONDUCT.md) – Community guidelines
 
 ## 🏗️ Architektur & Services
 
@@ -115,114 +159,113 @@ Smart Speech Flow ermöglicht es, gesprochene Inhalte automatisch zu transkribie
 | API-Gateway    | `/health`        | GET     | Status aller Services              |
 | API-Gateway    | `/metrics`       | GET     | Monitoring                         |
 
-## 🛠️ Installation & Start
+## 🛠️ Installation & Setup
 
-### Voraussetzungen
-- Docker & Docker Compose
-- NVIDIA GPU mit CUDA-Unterstützung (optional, aber empfohlen)
-- NVIDIA Container Toolkit für GPU-Zugriff
-- Mindestens 16GB RAM (für KI-Modelle)
-- 20GB freier Speicherplatz
+### Prerequisites
+- **Docker & Docker Compose** (v2.x recommended)
+- **16GB+ RAM** (for AI models)
+- **20GB disk space** (for models and containers)
+- **NVIDIA GPU** (optional, for faster inference)
+- **NVIDIA Container Toolkit** (for GPU support)
 
-### Mit Docker Compose (empfohlen)
-```bash
-# Repository klonen
-git clone <repository-url>
-cd ssf-backend
+### GPU Setup (Optional but Recommended)
 
-# Services starten
-docker compose up --build
-```
-
-> Der Ollama-Service startet automatisch und nutzt die GPU, sobald das NVIDIA Container Toolkit vorhanden ist. Die LLM-Nachbearbeitung bleibt deaktiviert, bis `LLM_REFINEMENT_ENABLED=true` gesetzt wird.
-
-### GPU-Setup (optional)
-
-Für optimale Performance mit NVIDIA GPU:
+For optimal performance with NVIDIA GPU:
 
 ```bash
-# NVIDIA Container Toolkit installieren
+# Install NVIDIA Container Toolkit
 distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
 curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
-curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | \
+  sudo tee /etc/apt/sources.list.d/nvidia-docker.list
 
 sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
 sudo systemctl restart docker
 
-# GPU-Status prüfen
-nvidia-smi
-
-# (Optional) GPU-Zugriff mit Ollama-Image testen
-docker run --rm --gpus all ollama/ollama:latest nvidia-smi
+# Verify GPU access
+docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 nvidia-smi
 ```
 
-### Einzelne Services lokal starten
+### Local Development (without Docker)
+
 ```bash
 # Python Virtual Environment
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate  # Linux/Mac
+# .venv\Scripts\activate   # Windows
 
-# Services einzeln starten
-uvicorn services/asr/app:app --port 8001 &
-uvicorn services/translation/app:app --port 8002 &
-uvicorn services/tts/app:app --port 8003 &
-uvicorn services/api_gateway/app:app --port 8000 &
-```
+# Install dependencies
+pip install -r requirements-dev.txt
 
-### Testen
-```bash
-# Alle Tests ausführen
+# Run tests
 pytest
 
-# Einzelne Services
-pytest services/asr/tests/
-pytest services/translation/tests/
-pytest services/tts/tests/
-pytest services/api_gateway/tests/
-
-# Mit Coverage
-pytest --cov=services
+# Start individual services
+uvicorn services/asr/app:app --port 8001 --reload
+uvicorn services/translation/app:app --port 8002 --reload
+uvicorn services/tts/app:app --port 8003 --reload
+uvicorn services/api_gateway/app:app --port 8000 --reload
 ```
 
-## 🧪 Tests & Scripts — Struktur
-
-Wir haben die Test-Skripte im Projekt konsolidiert, damit CI und lokale Entwickler klar sehen, welche Dateien automatisiert ausgeführt werden und welche lediglich Hilfs-/Runner-Skripte sind.
-
-- Automatisch ausgeführte Tests (pytest): `tests/` inklusive Unterordner:
-  - `tests/integration/` — Integrationstests (API, Pipeline, WebSocket-Integration)
-  - `tests/load/` — Last- und Performance-Tests (nur manuell oder CI-on-demand)
-
-- Hilfs-Skripte und manuelle Runner: `scripts/`
-  - Shell-, Node- und Python-Skripte, die manuell gestartet werden (z. B. `scripts/test_simple.sh`, `scripts/test_websocket_connection.js`).
-
-Wichtig:
-- CI führt standardmäßig nur `pytest tests/` aus. Skripte unter `scripts/` werden nicht automatisch ausgeführt.
-- Nutzt `git mv` zum Verschieben von Testdateien, damit die Git-Historie erhalten bleibt.
-- Wenn ihr neue, automatisierte Tests hinzufügt, legt sie unter `tests/` ab (Unit/Integration) oder `tests/load/` für Performance-Tests.
-
-Beispiel: Lokale Ausführung nur der Integrationstests
+## 🧪 Testing
 
 ```bash
-# Nur Integrationstests
-pytest tests/integration/ -q
+# Run all tests
+pytest
+
+# Run specific test categories
+pytest tests/integration/  # Integration tests
+pytest tests/test_admin_routes.py  # Admin API tests
+pytest tests/test_openapi_validation.py  # OpenAPI contract tests
+
+# Run with coverage
+pytest --cov=services --cov-report=html
+
+# Run load tests (manual only)
+pytest tests/load/
 ```
 
+**Test Status:** 234/242 tests passing (96.7%) – See [TEST_STATUS.md](TEST_STATUS.md)
 
-## 📈 Monitoring & Alerting Runbook
+**Learn more:** [Testing Guide](docs/testing/TESTING_GUIDE.md)
 
-- **Stack starten:** `docker compose up -d prometheus grafana dcgm_exporter` startet Prometheus (Port `9090`, öffentlich via `http://prometheus-ssf.smart-village.solutions`), Grafana (Port `3000`, öffentlich via `http://grafana-ssf.smart-village.solutions`) sowie den NVIDIA DCGM Exporter für GPU-Metriken. Standard-Login: `admin` / `admin` (bitte nach dem ersten Login ändern).
-- **Datenquellen:** In Grafana eine Prometheus-Datenquelle mit URL `http://prometheus:9090` anlegen (falls nicht automatisch vorhanden).
-- **Dashboards importieren:** Die produktionsfertigen JSON-Dashboards liegen in `monitoring/grafana/dashboards/` (`service-health.json`, `pipeline-performance.json`, `dcgm-exporter.json`). Über *Dashboards → Import* in Grafana laden.
-- **Alerting:** Prometheus lädt `monitoring/alert_rules.yml` automatisch und feuert Alerts für Service-Ausfälle, erhöhte Übersetzungs-Latenzen sowie GPU-Überlast. Aktive Alarme erscheinen im Dashboard *SSF Service Health* und im Prometheus `ALERTS`-Endpoint.
-- **Runbook:** Bei `ServiceDown`-Alerts zuerst `services/<service>/app.py` Logs prüfen, anschließend GPU-Auslastung im Dashboard kontrollieren. `TranslationLatencyHigh` deutet auf Pipeline-Stau hin – Skalierung über GPU-Worker oder Anfragen drosseln. `GPUUtilisationCritical`/`GPUMemoryPressure` signalisiert Ressourcengrenzen; Workload verteilen oder Modelle entladen.
 
-### GPU-Monitoring mit DCGM Exporter
+## � Monitoring & Operations
 
-- **Voraussetzung:** NVIDIA-Treiber, `nvidia-smi` und das [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) müssen auf dem Host verfügbar sein.
-- **Service:** Der Compose-Service `dcgm_exporter` (Image `nvidia/dcgm-exporter`) läuft mit GPU-Zugriff (`privileged`, `capabilities=[gpu]`) und stellt Metriken unter `http://dcgm_exporter:9400/metrics` bereit.
-- **Prometheus-Job:** In `monitoring/prometheus.yml` ist ein `dcgm_exporter`-Scrape-Job hinterlegt, der automatisch die GPU-Metriken einsammelt. Status prüfen via `curl http://localhost:9090/api/v1/targets`.
-- **Grafana-Dashboard:** `dcgm-exporter.json` visualisiert Temperatur, Auslastung, Tensor-Core-Activity und Speicherverbrauch der GPUs. Nach dem Import erscheinen Auswahlboxen für `instance` und `gpu`; bei mehreren Hosts müssen passende Labels gesetzt werden.
-- **Troubleshooting:** Falls der Service nicht startet, mit `docker compose logs dcgm_exporter` prüfen, ob GPU-Geräte sichtbar sind. `docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 nvidia-smi` hilft, generelle GPU-Probleme zu isolieren.
+### Quick Access
+- **Prometheus:** `http://prometheus-ssf.smart-village.solutions` (metrics aggregation)
+- **Grafana:** `http://grafana-ssf.smart-village.solutions` (dashboards, login: `admin`/`admin`)
+- **Service Metrics:** `http://localhost:8000/metrics` (each service exposes metrics)
+
+### Dashboards
+Pre-built Grafana dashboards in `monitoring/grafana/dashboards/`:
+- `service-health.json` – Service status & uptime
+- `pipeline-performance.json` – Latency & throughput
+- `dcgm-exporter.json` – GPU monitoring (temperature, memory, utilization)
+
+### Alerting
+Prometheus alerts configured in `monitoring/alert_rules.yml`:
+- **ServiceDown** – Service unreachable for 2+ minutes
+- **TranslationLatencyHigh** – Translation taking >10s (p95)
+- **GPUUtilisationCritical** – GPU >90% for 5+ minutes
+- **GPUMemoryPressure** – GPU memory >85%
+
+**Runbook:** See [Operations Documentation](docs/operations/) for troubleshooting procedures.
+
+### GPU Monitoring (DCGM Exporter)
+
+```bash
+# Start monitoring stack
+docker compose up -d prometheus grafana dcgm_exporter
+
+# Check GPU metrics
+curl http://localhost:9400/metrics | grep DCGM
+
+# View in Grafana (after importing dcgm-exporter.json)
+# Access: http://localhost:3000
+```
+
+**Prerequisites:** NVIDIA driver + NVIDIA Container Toolkit installed.
 
 ## 🎵 Unterstützte Audioformate
 
@@ -353,80 +396,81 @@ curl http://localhost:8003/health  # TTS
 
 ## 🐛 Troubleshooting
 
-### GPU-Probleme
+### Common Issues
+
+**GPU not detected:**
 ```bash
-# GPU-Status prüfen
+# Check GPU visibility
 nvidia-smi
 
-# Docker GPU-Test
-docker run --rm --gpus all nvidia/cuda:13.0.0-cudnn-runtime-ubuntu22.04 nvidia-smi
+# Test Docker GPU access
+docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 nvidia-smi
 
-# In Container prüfen
+# Check in container
 docker compose exec asr python3 -c "import torch; print(torch.cuda.is_available())"
 ```
 
-### Performance-Optimierung
-- **GPU verwenden:** Deutlich schnellere Inferenz
-- **Batch-Processing:** Mehrere Texte gleichzeitig übersetzen
-- **Model-Caching:** Models werden automatisch geladen und gecacht
-- **Resource Limits:** In docker-compose.yml anpassen
-
-### Häufige Fehlercodes
-| Code | Bedeutung | Lösung |
-|------|-----------|--------|
-| 400 | Ungültige Eingabe | Prüfe Request-Format und Parameter |
-| 503 | Service nicht verfügbar | Warte auf Model-Loading oder prüfe Ressourcen |
-| 500 | Interne Fehler | Prüfe Logs und Systemressourcen |
-
-## 🔧 Development
-
-### Code Quality
+**Services not starting:**
 ```bash
-# Linting
-flake8 services/
-pylint services/
+# Check logs
+docker compose logs <service_name>
 
-# Komplexitätsanalyse
-radon cc services/
+# Restart services
+docker compose restart
 
-# Formatting
-black services/
-isort services/
+# Rebuild from scratch
+docker compose down -v
+docker compose up --build
 ```
 
-### Unterstützte Sprachen
-Die unterstützten Sprachen sind je Service unter `/languages` abrufbar:
-```bash
-curl http://localhost:8001/languages  # ASR
-curl http://localhost:8002/languages  # Translation
-```
+**Performance issues:**
+- Enable GPU acceleration (see GPU Setup above)
+- Increase Docker memory limits in docker-compose.yml
+- Use smaller models for faster inference
+- Check GPU memory usage: `nvidia-smi`
 
-## 💡 Hinweise & Tipps
+### Error Codes
 
-- **GPU-Beschleunigung:** Container mit GPU-Support starten für bessere Performance
-- **Eigene Modelle:** Können im Ordner `models/` abgelegt werden
-- **Versionierung:** `.venv` und Modelle sind nicht versioniert (siehe `.gitignore`)
-- **Private Modelle:** Bei gated HuggingFace-Modellen: `huggingface-cli login`
-- **Sprachunterstützung:** Vollständige Liste unter `/languages`-Endpunkten
-- **Audioformate:** Alle gängigen Formate werden automatisch erkannt
+| Code | Meaning | Solution |
+|------|---------|----------|
+| 400 | Invalid input | Check request format and parameters |
+| 503 | Service unavailable | Wait for model loading or check resources |
+| 500 | Internal error | Check logs and system resources |
 
-## 📁 Projektstruktur
+**More help:** See [Operations Runbooks](docs/operations/runbooks/)
 
-```
-ssf-backend/
-├── services/
-│   ├── api_gateway/          # Zentrale API und Pipeline-Orchestrierung
-│   ├── asr/                  # Spracherkennung (Whisper)
-│   ├── translation/          # Übersetzung (M2M100)
-│   └── tts/                  # Text-zu-Sprache (Coqui/MMS)
-├── frontend/                 # React Frontend
-├── examples/                 # Audio-Beispieldateien
-├── monitoring/               # Grafana-Konfiguration
-├── docker-compose.yml        # Service-Orchestrierung
-├── traefik.yml              # Load Balancer Config
-├── models.md                # Modell-Dokumentation
-└── README.md                # Diese Datei
-```
+## 🤝 Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Development setup (3 steps)
+- Code style guidelines (black, isort, flake8)
+- Testing requirements
+- Pull request process
+
+**First-time contributors:** Look for issues labeled `good-first-issue`.
+
+## � License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🗺️ What's Next?
+
+See our [ROADMAP.md](ROADMAP.md) for:
+- ✅ Completed v1.0 features
+- 🚧 Planned improvements
+- 🎯 Future milestones
+
+## 👥 Contact & Support
+
+**Smart Village Solutions**
+
+- 📧 Email: [Contact via GitHub Issues](https://github.com/smart-village-solutions/smart-speech-flow-backend/issues)
+- 🐛 Bug Reports: [GitHub Issues](https://github.com/smart-village-solutions/smart-speech-flow-backend/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/smart-village-solutions/smart-speech-flow-backend/discussions)
+
+---
+
+**Built with ❤️ by Smart Village Solutions** | Last updated: November 2025 | Version 1.0.0
 
 ## � WebSocket Architecture
 

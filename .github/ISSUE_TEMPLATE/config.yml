@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 GitHub Discussions
+    url: https://github.com/smart-village-solutions/smart-speech-flow-backend/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: 📖 Documentation
+    url: https://github.com/smart-village-solutions/smart-speech-flow-backend/blob/main/docs/README.md
+    about: Read the project documentation
+  - name: 🔐 Security Vulnerability
+    url: https://github.com/smart-village-solutions/smart-speech-flow-backend/security/advisories
+    about: Report a security vulnerability (private disclosure)
