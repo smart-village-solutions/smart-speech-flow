@@ -85,7 +85,7 @@ This roadmap outlines completed v1.0 features, ongoing work, and planned improve
 
 ---
 
-## 🎯 Planned Features (Q1-Q2 2026)
+## 🎯 Planned Features
 
 ### Performance & Scalability
 **Priority:** High
@@ -173,7 +173,7 @@ This roadmap outlines completed v1.0 features, ongoing work, and planned improve
 
 ---
 
-## 🔮 Future Vision (2026+)
+## 🔮 Future Vision
 
 ### AI/ML Enhancements
 - **Emotion Detection** – Analyze sentiment and emotion in speech
@@ -223,17 +223,17 @@ This roadmap outlines completed v1.0 features, ongoing work, and planned improve
 
 ## 🗓️ Release Timeline
 
-### Q4 2025
+### Step 1
 - ✅ **v1.0.0** – Public launch (November 2025)
 - 🚧 **v1.1.0** – Code quality improvements, flaky test fixes
 - 🚧 **v1.2.0** – Frontend SPA completion, WebSocket refinements
 
-### Q1 2026
+### Step 2
 - ⏳ **v1.3.0** – Performance optimizations, model caching
 - ⏳ **v1.4.0** – Database integration, user management
 - ⏳ **v1.5.0** – Authentication & authorization
 
-### Q2 2026
+### Step 3
 - ⏳ **v2.0.0** – Major release with breaking changes
   - Kubernetes support
   - New API version (v2)

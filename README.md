@@ -34,6 +34,10 @@ curl http://localhost:8000/health
 
 **Das war's!** Die API ist unter `http://localhost:8000` verfügbar.
 
+> **🔐 Demo Access:** Das Frontend verwendet ein Demo-Passwort (`ssf2025kassel`) für die Landing-Page.
+> Dieses Passwort ist ausschließlich clientseitig und dient nur zur Demonstration.
+> Für Produktiv-Deployments sollte es über `VITE_APP_PASSWORD` in `.env.production` geändert werden.
+
 ### Erste API-Anfrage
 
 ```bash
