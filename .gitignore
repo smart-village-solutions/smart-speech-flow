@@ -15,11 +15,16 @@ test_results_*.json
 .venv/
 __pycache__/
 *.py[cod]
+*.pyc
 .pytest_cache/
+.mypy_cache/
 
 # Editor/IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
 # OS
 .DS_Store
@@ -74,6 +79,10 @@ pytest_cache/
 
 # Audio Storage (24h retention, auto-cleanup)
 data/audio/
+
+# Backups
+*-backup-*.tar.gz
+docs-backup-*.tar.gz
 
 # Node
 node_modules/
