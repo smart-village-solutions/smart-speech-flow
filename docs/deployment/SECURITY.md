@@ -115,10 +115,11 @@ curl -u "admin:YOUR_PASSWORD" http://localhost:3000/api/health
 ### ⚠️ Frontend Demo Password
 
 The frontend uses a demo password for the landing page:
-- **Password:** `ssf2025kassel`
-- **Location:** `services/frontend/.env.production`
+- **Configuration:** Set in `.env` → `FRONTEND_DEMO_PASSWORD`
+- **Default:** `ssf2025kassel`
+- **Docker:** Passed via `docker-compose.yml` → `VITE_APP_PASSWORD`
 - **Security:** Client-side only, no backend validation
-- **Production:** Change via `VITE_APP_PASSWORD` environment variable
+- **Production:** Change password in `.env` file
 
 ### ✅ Grafana Admin Password
 

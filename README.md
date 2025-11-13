@@ -35,7 +35,7 @@ curl http://localhost:8000/health
 **Das war's!** Die API ist unter `http://localhost:8000` verfügbar.
 
 > **🔐 Security Notes:**
-> - **Frontend Demo Password:** `ssf2025kassel` (clientseitig, nur für Demo)
+> - **Frontend Demo Password:** Set in `.env` → `FRONTEND_DEMO_PASSWORD` (default: `ssf2025kassel`)
 > - **Grafana Admin:** Set `GRAFANA_ADMIN_PASSWORD` in `.env` (see [Security Guide](docs/deployment/SECURITY.md))
 > - **Production:** All monitoring services are internal-only (Prometheus, Loki, cAdvisor, Ollama)
 > - **Development:** Use `.env.local` for default `admin/admin` credentials
