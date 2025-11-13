@@ -2,7 +2,7 @@ services:
   traefik:
     image: traefik:v2.10
     command:
-      - --api.insecure=true
+      - --api.dashboard=true
       - --log.level=DEBUG
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
@@ -150,8 +150,8 @@ services:
 
   ollama:
     image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
+    expose:
+      - "11434"
     environment:
       - OLLAMA_HOST=0.0.0.0
     volumes:
@@ -212,8 +212,8 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
-    ports:
-      - "9090:9090"
+    expose:
+      - "9090"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.prometheus.rule=Host(`prometheus-ssf.smart-village.solutions`)"
@@ -234,8 +234,10 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION=false
+      - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - ./monitoring/grafana:/var/lib/grafana
     labels:
@@ -273,8 +275,8 @@ services:
     container_name: ssf-backend-cadvisor
     restart: always
     privileged: true
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -291,8 +293,8 @@ services:
     image: grafana/loki:2.9.3
     restart: always
     command: -config.file=/etc/loki/config.yaml
-    ports:
-      - "3100:3100"
+    expose:
+      - "3100"
     volumes:
       - ./monitoring/loki-config.yaml:/etc/loki/config.yaml:ro
       - ./monitoring/loki-data:/loki
