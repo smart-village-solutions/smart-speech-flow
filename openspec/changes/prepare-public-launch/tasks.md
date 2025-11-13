@@ -287,18 +287,20 @@
 - [x] 6.1.3 Push to main branch
 - [x] 6.1.4 Push tag: `git push origin v1.0.0`
 
-### 6.2 Repository Settings (if applicable)
-- [ ] 6.2.1 Add repository description
-- [ ] 6.2.2 Add repository topics/tags
-- [ ] 6.2.3 Enable GitHub Issues
-- [ ] 6.2.4 Enable GitHub Discussions (optional)
-- [ ] 6.2.5 Set default branch to `main`
-- [ ] 6.2.6 Add repository social preview image
+### 6.2 Repository Settings ✅
+- [x] 6.2.1 Repository renamed: `smart-speech-flow-backend` → `smart-speech-flow`
+- [x] 6.2.2 All documentation updated with new URLs (commit ee4518c)
+- [ ] 6.2.3 Add repository description (GitHub UI)
+- [ ] 6.2.4 Add repository topics/tags (GitHub UI)
+- [ ] 6.2.5 Enable GitHub Issues (GitHub UI)
+- [ ] 6.2.6 Enable GitHub Discussions (optional, GitHub UI)
+- [ ] 6.2.7 Verify default branch is `main` (GitHub UI)
+- [ ] 6.2.8 Add repository social preview image (GitHub UI)
 
 ### 6.3 Communication Preparation
-- [ ] 6.3.1 Prepare repository URL for press release
-- [ ] 6.3.2 Draft first GitHub Release notes
-- [ ] 6.3.3 Prepare demo video/screenshots
+- [x] 6.3.1 Repository URL: https://github.com/smart-village-solutions/smart-speech-flow
+- [ ] 6.3.2 Create GitHub Release v1.0.0 (GitHub UI)
+- [ ] 6.3.3 Prepare demo video/screenshots (optional, post-launch)
 - [ ] 6.3.4 Brief team on repository structure
 
 ---
