@@ -97,7 +97,7 @@ async def test_message_route():
     print("5. Sende ZWEITE Audio-Nachricht (Customer)...")
 
     try:
-        with open("/root/projects/ssf-backend/examples/English_pcm.wav", "rb") as f:
+        with open("/root/projects/ssf-backend/examples/English.wav", "rb") as f:
             audio_data2 = f.read()
         print(f"   Audio-Datei geladen: {len(audio_data2)} bytes")
     except Exception as e:
@@ -105,7 +105,7 @@ async def test_message_route():
         return
 
     try:
-        files2 = {"file": ("English_pcm.wav", audio_data2, "audio/wav")}
+        files2 = {"file": ("English.wav", audio_data2, "audio/wav")}
         data2 = {
             "source_lang": "en",
             "target_lang": "de",

@@ -83,15 +83,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (wsMessage.role === 'session_activated') {
-      // Customer has joined - admin can see this
-      console.log('Session activated, customer joined with language:', wsMessage.customer_language);
+    // Handle both session_activated (legacy) and client_joined (current)
+    if (wsMessage.role === 'session_activated' || wsMessage.role === 'client_joined') {
+      console.log('Session activated/client joined:', wsMessage);
+
       // Update customer language when customer joins
       if (wsMessage.customer_language) {
+        console.log('✅ Setting customer language:', wsMessage.customer_language);
         setCustomerLanguage(wsMessage.customer_language);
       }
-      // Set session as active
-      setIsActive(true);
+
+      // Set session as active when customer joins
+      if (wsMessage.role === 'client_joined' && wsMessage.client_type === 'customer') {
+        setIsActive(true);
+      } else if (wsMessage.role === 'session_activated') {
+        setIsActive(true);
+      }
       return;
     }
 

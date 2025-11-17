@@ -12,12 +12,15 @@ interface MessageInputProps {
 }
 
 export default function MessageInput({ disabled = false }: MessageInputProps) {
-  const { sessionId, clientType, addMessage, updateMessage, customerLanguage, adminLanguage, registerTempId } = useSession();
+  const { sessionId, clientType, addMessage, updateMessage, customerLanguage, adminLanguage, registerTempId, isActive } = useSession();
   const [inputMode, setInputMode] = useState<InputMode>('text');
   const [textMessage, setTextMessage] = useState('');
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  // Disable input until session is active (customer has joined)
+  const isInputDisabled = disabled || !isActive;
 
   const recordingIntervalRef = useRef<number | null>(null);
   const audioRecorderRef = useRef<AudioRecorderWithWAVConversion | null>(null);
@@ -92,10 +95,12 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
 
   const sendAudioMessage = async (wavBlob: Blob) => {
     if (!sessionId || !clientType) return;
+    // Admin needs customerLanguage, customer uses their own language from session context
+    if (clientType === 'admin' && !customerLanguage) return;
 
     // Determine source and target language based on client type
-    const source_lang = clientType === 'admin' ? adminLanguage : (customerLanguage || 'en');
-    const target_lang = clientType === 'admin' ? (customerLanguage || 'en') : adminLanguage;
+    const source_lang = clientType === 'admin' ? adminLanguage : customerLanguage!;
+    const target_lang = clientType === 'admin' ? customerLanguage! : adminLanguage;
 
     const tempMessageId = `temp-${Date.now()}`;
     const optimisticMessage = {
@@ -172,11 +177,30 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
   };
 
   const sendTextMessage = async () => {
-    if (!textMessage.trim() || !sessionId || !clientType) return;
+    console.log('🔍 sendTextMessage called:', {
+      textMessage: textMessage.substring(0, 20),
+      sessionId,
+      clientType,
+      customerLanguage,
+      isActive
+    });
+
+    if (!textMessage.trim() || !sessionId || !clientType) {
+      console.log('❌ Basic validation failed');
+      return;
+    }
+
+    // Admin needs customerLanguage, customer uses their own language from session context
+    if (clientType === 'admin' && !customerLanguage) {
+      console.log('❌ Admin missing customerLanguage');
+      return;
+    }
 
     // Determine source and target language based on client type
-    const source_lang = clientType === 'admin' ? adminLanguage : (customerLanguage || 'en');
-    const target_lang = clientType === 'admin' ? (customerLanguage || 'en') : adminLanguage;
+    const source_lang = clientType === 'admin' ? adminLanguage : customerLanguage!;
+    const target_lang = clientType === 'admin' ? customerLanguage! : adminLanguage;
+
+    console.log('✅ Sending message:', { source_lang, target_lang, clientType });
 
     const tempMessageId = `temp-${Date.now()}`;
     const optimisticMessage = {
@@ -263,7 +287,7 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
       <div className="flex items-center justify-center mb-3 space-x-2">
         <button
           onClick={() => setInputMode('text')}
-          disabled={disabled || recordingState !== 'idle'}
+          disabled={isInputDisabled || recordingState !== 'idle'}
           className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors text-sm sm:text-base ${
             inputMode === 'text'
               ? 'bg-indigo-600 text-white'
@@ -274,7 +298,7 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
         </button>
         <button
           onClick={() => setInputMode('audio')}
-          disabled={disabled || recordingState !== 'idle'}
+          disabled={isInputDisabled || recordingState !== 'idle'}
           className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors text-sm sm:text-base ${
             inputMode === 'audio'
               ? 'bg-indigo-600 text-white'
@@ -292,14 +316,14 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
             value={textMessage}
             onChange={(e) => setTextMessage(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Nachricht eingeben..."
-            disabled={disabled}
+            placeholder={!isActive ? "Warten auf Teilnehmer..." : "Nachricht eingeben..."}
+            disabled={isInputDisabled}
             rows={2}
             className="flex-1 px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed resize-none text-sm sm:text-base"
           />
           <button
             onClick={sendTextMessage}
-            disabled={disabled || !textMessage.trim()}
+            disabled={isInputDisabled || !textMessage.trim()}
             className="px-4 sm:px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed min-h-[76px] text-sm sm:text-base"
           >
             Senden
@@ -313,7 +337,7 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
           {recordingState === 'idle' && (
             <button
               onClick={startRecording}
-              disabled={disabled}
+              disabled={isInputDisabled}
               className="w-16 h-16 sm:w-20 sm:h-20 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-2xl sm:text-3xl transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
               🎤

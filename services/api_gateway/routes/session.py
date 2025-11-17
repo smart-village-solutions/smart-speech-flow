@@ -32,6 +32,85 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def validate_session_languages(
+    session: Any,
+    source_lang: str,
+    target_lang: str,
+    client_type: ClientType,
+) -> None:
+    """Validate that message languages match session configuration.
+
+    Expected language pairs:
+    - Customer → Admin: customer_language → admin_language (de)
+    - Admin → Customer: admin_language (de) → customer_language
+
+    Raises HTTPException if languages don't match.
+    """
+    logger.info(
+        f"🔍 Validating languages: session={session.id}, client={client_type.value}, source={source_lang}, target={target_lang}, customer_lang={session.customer_language}, admin_lang={session.admin_language}"
+    )
+
+    def create_error_response(error_type: str, message: str, details: Dict) -> Dict:
+        return {"error": message, "error_type": error_type, "details": details}
+
+    if client_type == ClientType.CUSTOMER:
+        # Customer sends in their language, expects translation to German
+        if source_lang != session.customer_language:
+            raise HTTPException(
+                status_code=400,
+                detail=create_error_response(
+                    "INVALID_SOURCE_LANGUAGE",
+                    f"Customer must send messages in session language '{session.customer_language}', not '{source_lang}'",
+                    {
+                        "expected_source_lang": session.customer_language,
+                        "actual_source_lang": source_lang,
+                        "session_id": session.id,
+                    },
+                ),
+            )
+        if target_lang != session.admin_language:
+            raise HTTPException(
+                status_code=400,
+                detail=create_error_response(
+                    "INVALID_TARGET_LANGUAGE",
+                    f"Customer messages must be translated to admin language '{session.admin_language}', not '{target_lang}'",
+                    {
+                        "expected_target_lang": session.admin_language,
+                        "actual_target_lang": target_lang,
+                        "session_id": session.id,
+                    },
+                ),
+            )
+    elif client_type == ClientType.ADMIN:
+        # Admin sends in German, expects translation to customer language
+        if source_lang != session.admin_language:
+            raise HTTPException(
+                status_code=400,
+                detail=create_error_response(
+                    "INVALID_SOURCE_LANGUAGE",
+                    f"Admin must send messages in admin language '{session.admin_language}', not '{source_lang}'",
+                    {
+                        "expected_source_lang": session.admin_language,
+                        "actual_source_lang": source_lang,
+                        "session_id": session.id,
+                    },
+                ),
+            )
+        if target_lang != session.customer_language:
+            raise HTTPException(
+                status_code=400,
+                detail=create_error_response(
+                    "INVALID_TARGET_LANGUAGE",
+                    f"Admin messages must be translated to customer language '{session.customer_language}', not '{target_lang}'",
+                    {
+                        "expected_target_lang": session.customer_language,
+                        "actual_target_lang": target_lang,
+                        "session_id": session.id,
+                    },
+                ),
+            )
+
+
 def transform_pipeline_metadata(
     debug_info: Optional[Dict[str, Any]],
     source_lang: str,
@@ -458,6 +537,11 @@ async def process_audio_input(
     target_lang = form["target_lang"]
     client_type = ClientType(form["client_type"])
 
+    # Validate languages match session configuration
+    session = session_manager.get_session(session_id)
+    if session:
+        validate_session_languages(session, source_lang, target_lang, client_type)
+
     # Audio-Datei validation
     if not hasattr(file, "read"):
         raise HTTPException(
@@ -661,6 +745,9 @@ async def process_text_input(
         )
 
     # Language validation
+    logger.info(
+        f"🔍 Starting language validation for text request: source={text_request.source_lang}, target={text_request.target_lang}, client={text_request.client_type}"
+    )
     if (
         text_request.source_lang not in SUPPORTED_LANGUAGES
         or text_request.target_lang not in SUPPORTED_LANGUAGES
@@ -672,6 +759,23 @@ async def process_text_input(
                 f"Unsupported language. Source: {text_request.source_lang}, Target: {text_request.target_lang}",
                 {"supported_languages": list(SUPPORTED_LANGUAGES.keys())},
             ),
+        )
+
+    # Validate languages match session configuration
+    session = session_manager.get_session(session_id)
+    logger.info(
+        f"🔎 Session lookup for text input, session_id={session_id}, session_found={session is not None}, customer_lang={session.customer_language if session else 'N/A'}, admin_lang={session.admin_language if session else 'N/A'}"
+    )
+    if session:
+        validate_session_languages(
+            session,
+            text_request.source_lang,
+            text_request.target_lang,
+            text_request.client_type,
+        )
+    else:
+        logger.warning(
+            f"⚠️ Session {session_id} not found for language validation - skipping check"
         )
 
     # Text-Pipeline ausführen (ASR überspringen)

@@ -1,6 +1,7 @@
 import audioop
 import io
 import logging
+import os
 import re
 import time
 import unicodedata
@@ -15,9 +16,18 @@ import requests
 
 from .translation_refiner import RefinementOutcome, translation_refiner
 
-ASR_URL = "http://asr:8000/transcribe"
-TRANSLATION_URL = "http://translation:8000/translate"
-TTS_URL = "http://tts:8000/synthesize"
+# Import service URLs from app.py (respects DOCKER_COMPOSE env var)
+# Define defaults here for backwards compatibility, but prefer importing from app
+DOCKER_ENV = os.environ.get("DOCKER_COMPOSE", "1") == "1"
+
+if DOCKER_ENV:
+    ASR_URL = "http://asr:8000/transcribe"
+    TRANSLATION_URL = "http://translation:8000/translate"
+    TTS_URL = "http://tts:8000/synthesize"
+else:
+    ASR_URL = "http://localhost:8001/transcribe"
+    TRANSLATION_URL = "http://localhost:8002/translate"
+    TTS_URL = "http://localhost:8003/synthesize"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 

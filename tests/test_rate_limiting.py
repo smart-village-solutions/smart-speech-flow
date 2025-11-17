@@ -90,8 +90,8 @@ def test_session_message_rate_limit(monkeypatch):
 
     payload = {
         "text": "hello",
-        "source_lang": "en",
-        "target_lang": "de",
+        "source_lang": "de",
+        "target_lang": "en",
         "client_type": "admin",
     }
 

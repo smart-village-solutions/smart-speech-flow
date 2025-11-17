@@ -219,6 +219,12 @@ def health():
     }
 
 
+@app.get("/supported-languages")
+def supported_languages():
+    """Return list of supported languages"""
+    return {"languages": SUPPORTED_LANGS}
+
+
 @app.get("/metrics")
 def metrics():
     return Response(generate_latest(), media_type="text/plain")

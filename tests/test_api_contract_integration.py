@@ -39,7 +39,7 @@ def client(monkeypatch):
 @pytest.fixture
 def sample_audio_bytes():
     """Load real audio file from examples/ as bytes"""
-    audio_path = Path(__file__).parent.parent / "examples" / "English_pcm.wav"
+    audio_path = Path(__file__).parent.parent / "examples" / "English.wav"
     with open(audio_path, "rb") as f:
         return f.read()
 
@@ -192,9 +192,9 @@ class TestTextMessageAPI:
         response = client.post(
             f"/api/session/{session_id}/message",
             json={
-                "text": "Hello, how can I help you?",
-                "source_lang": "en",
-                "target_lang": "de",
+                "text": "Hallo, wie kann ich Ihnen helfen?",
+                "source_lang": "de",
+                "target_lang": "en",
                 "client_type": "admin"
             }
         )
@@ -214,7 +214,7 @@ class TestTextMessageAPI:
 
         # Text fields - documented keys
         assert "original_text" in data
-        assert data["original_text"] == "Hello, how can I help you?"
+        assert data["original_text"] == "Hallo, wie kann ich Ihnen helfen?"
 
         assert "translated_text" in data  # ← Public API key
         assert isinstance(data["translated_text"], str)
@@ -231,10 +231,10 @@ class TestTextMessageAPI:
         assert data["pipeline_type"] == "text"
 
         assert "source_lang" in data
-        assert data["source_lang"] == "en"
+        assert data["source_lang"] == "de"
 
         assert "target_lang" in data
-        assert data["target_lang"] == "de"
+        assert data["target_lang"] == "en"
 
         assert "timestamp" in data
 
@@ -345,8 +345,8 @@ class TestMessageHistoryAPI:
             f"/api/session/{session_id}/message",
             json={
                 "text": "Test message",
-                "source_lang": "en",
-                "target_lang": "de",
+                "source_lang": "de",
+                "target_lang": "en",
                 "client_type": "admin"
             }
         )

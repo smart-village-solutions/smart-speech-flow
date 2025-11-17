@@ -1111,6 +1111,12 @@ class WebSocketManager:
             "timestamp": datetime.now().isoformat(),
         }
 
+        # Include customer_language when customer joins
+        if client_type == ClientType.CUSTOMER:
+            session = self.session_manager.get_session(session_id)
+            if session and session.customer_language:
+                join_message["customer_language"] = session.customer_language
+
         await self.broadcast_to_session(
             session_id, join_message, exclude_connection=connection_id
         )

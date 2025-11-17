@@ -88,10 +88,10 @@ async def test_with_websockets():
         # 6. Zweite Nachricht (Customer -> Admin) - HIER KOMMT DER 500 FEHLER
         print("5. Sende zweite Audio-Nachricht (Customer)...")
 
-        with open("/root/projects/ssf-backend/examples/English_pcm.wav", "rb") as f:
+        with open("/root/projects/ssf-backend/examples/English.wav", "rb") as f:
             audio_data2 = f.read()
 
-        files2 = {"file": ("English_pcm.wav", audio_data2, "audio/wav")}
+        files2 = {"file": ("English.wav", audio_data2, "audio/wav")}
         data2 = {
             "source_lang": "en",
             "target_lang": "de",

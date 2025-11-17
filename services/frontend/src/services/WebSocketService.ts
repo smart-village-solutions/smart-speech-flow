@@ -2,7 +2,7 @@ export type ClientType = 'admin' | 'customer';
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 export interface WebSocketMessage {
-  role: 'sender_confirmation' | 'receiver_message' | 'session_terminated' | 'session_activated' | 'error';
+  role: 'sender_confirmation' | 'receiver_message' | 'session_terminated' | 'session_activated' | 'client_joined' | 'error';
   session_id: string;
   message_id?: string;
   text?: string;  // Backend sendet "text" statt "content"
@@ -11,6 +11,8 @@ export interface WebSocketMessage {
   target_lang?: string;
   sender?: string;
   customer_language?: string;
+  client_type?: string;  // For client_joined events
+  connection_id?: string;  // For client_joined events
   pipeline_metadata?: {
     input?: {
       type: 'audio' | 'text';
@@ -134,8 +136,16 @@ class WebSocketService {
 
     this.ws.onmessage = (event) => {
       try {
-        const message: WebSocketMessage = JSON.parse(event.data);
-        console.log('[WebSocket] Message received:', message);
+        const rawMessage = JSON.parse(event.data);
+        console.log('[WebSocket] Message received:', rawMessage);
+
+        // Map backend message types to frontend role format
+        // Prioritize 'role' over 'type' to preserve differentiated message types
+        const message: WebSocketMessage = {
+          ...rawMessage,
+          role: rawMessage.role || rawMessage.type, // Use 'role' if present, fallback to 'type'
+        };
+
         this.notifyMessageHandlers(message);
       } catch (error) {
         console.error('[WebSocket] Failed to parse message:', error);

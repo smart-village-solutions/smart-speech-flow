@@ -22,19 +22,6 @@ def get_tts_model(lang: str):
         except Exception as e:
             print(f"Coqui-TTS fehlgeschlagen: {e}")
             # Fallback: HuggingFace MMS-TTS
-    # Mapping ISO-639-1 → ISO-639-3 für HuggingFace MMS-TTS
-    iso1_to_iso3_hf = {
-        "de": "deu",
-        "en": "eng",
-        "ar": "ara",
-        "tr": "tur",
-        "ru": "rus",
-        "uk": "ukr",
-        "am": "amh",
-        "ti": "tir",
-        "ku": "kmr",  # Kurmancî
-        "fa": "fas",  # Persian
-    }
     try:
         hf_code = iso1_to_iso3_hf.get(lang, lang)
         hf_model_id = f"facebook/mms-tts-{hf_code}"
@@ -214,6 +201,20 @@ tts_models = {
 }
 
 
+# Mapping ISO-639-1 → ISO-639-3 für HuggingFace MMS-TTS (global definiert)
+iso1_to_iso3_hf = {
+    "de": "deu",
+    "en": "eng",
+    "ar": "ara",
+    "tr": "tur",
+    "ru": "rus",
+    "uk": "ukr",
+    "am": "amh",
+    "ti": "tir",
+    "ku": "kmr",  # Kurmancî
+    "fa": "fas",  # Persian
+}
+
 tts_model_cache = {}
 
 
@@ -309,6 +310,13 @@ def health():
         "resources": resources,
         "autoscaling": autoscaling,
     }
+
+
+@app.get("/supported-languages")
+def supported_languages():
+    """Return list of supported languages (Coqui + HF MMS fallback)"""
+    all_langs = set(tts_models.keys()) | set(iso1_to_iso3_hf.keys())
+    return {"languages": sorted(list(all_langs))}
 
 
 @app.get("/metrics")

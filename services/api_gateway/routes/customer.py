@@ -99,14 +99,24 @@ async def activate_session(request: ActivateSessionRequest):
 
         # Idempotenz: Bereits aktive Session
         if session.status == SessionStatus.ACTIVE:
-            logger.info(
-                f"ℹ️ Session {request.session_id} bereits aktiv - idempotente Antwort"
-            )
+            # Prüfen, ob Sprache geändert werden soll
+            if session.customer_language != request.customer_language:
+                logger.info(
+                    f"🔄 Sprache wird aktualisiert: {session.customer_language} → {request.customer_language}"
+                )
+                await session_manager.activate_session(
+                    request.session_id, request.customer_language
+                )
+                session = session_manager.get_session(request.session_id)  # Neu laden
+            else:
+                logger.info(
+                    f"ℹ️ Session {request.session_id} bereits aktiv - idempotente Antwort"
+                )
+
             return ActivateSessionResponse(
                 session_id=request.session_id,
                 status=session.status.value,
-                customer_language=session.customer_language
-                or request.customer_language,
+                customer_language=session.customer_language,
                 message=f"Session {request.session_id} ist bereits aktiv",
                 timestamp=datetime.now().isoformat(),
             )

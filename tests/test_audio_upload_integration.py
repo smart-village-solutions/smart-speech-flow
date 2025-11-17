@@ -58,24 +58,33 @@ def mock_process_wav(file_bytes, source_lang, target_lang, debug=False, validate
         },
     }
 
-# Patch process_wav BEVOR app importiert wird
-import services.api_gateway.pipeline_logic
-services.api_gateway.pipeline_logic.process_wav = mock_process_wav
 
 # Jetzt erst die App importieren
 from services.api_gateway.app import app
 from services.api_gateway.session_manager import (
     SessionManager, SessionStatus, ClientType, SessionMessage, session_manager
 )
+import services.api_gateway.pipeline_logic
 
 
 # Configure pytest-asyncio
 pytestmark = pytest.mark.asyncio
 
 
+@pytest.fixture(autouse=True)
+def mock_process_wav_fixture(monkeypatch):
+    """Mock process_wav für alle Tests in dieser Datei"""
+    # Patch direkt im routes.session Modul wo es verwendet wird
+    monkeypatch.setattr(
+        "services.api_gateway.routes.session.process_wav",
+        mock_process_wav
+    )
+
+
 def create_test_wav(duration_seconds=2, sample_rate=16000):
     """Create a valid WAV file (16kHz, Mono, 16-bit PCM)"""
     buffer = io.BytesIO()
+
 
     with wave.open(buffer, 'wb') as wav_file:
         wav_file.setnchannels(1)  # Mono

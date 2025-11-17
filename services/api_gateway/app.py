@@ -35,13 +35,13 @@ if DOCKER_ENV:
     }
 else:
     # Lokale Service-URLs für Entwicklung ohne Docker
-    ASR_URL = "http://localhost:8101/transcribe"
-    TRANSLATION_URL = "http://localhost:8102/translate"
-    TTS_URL = "http://localhost:8103/synthesize"
+    ASR_URL = "http://localhost:8001/transcribe"
+    TRANSLATION_URL = "http://localhost:8002/translate"
+    TTS_URL = "http://localhost:8003/synthesize"
     SERVICE_URLS = {
-        "ASR": "http://localhost:8101/health",
-        "Translation": "http://localhost:8102/health",
-        "TTS": "http://localhost:8103/health",
+        "ASR": "http://localhost:8001/health",
+        "Translation": "http://localhost:8002/health",
+        "TTS": "http://localhost:8003/health",
     }
 
 

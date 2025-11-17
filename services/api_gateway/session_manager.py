@@ -532,20 +532,27 @@ class SessionManager:
         return terminated_sessions[:limit]
 
     async def activate_session(self, session_id: str, customer_language: str):
-        """Session aktivieren wenn Customer beitritt"""
+        """Session aktivieren wenn Customer beitritt oder Sprache ändern"""
         session = self.get_session(session_id)
         if not session:
             raise ValueError(f"Session {session_id} nicht gefunden")
 
-        if session.status != SessionStatus.PENDING:
-            raise ValueError(f"Session {session_id} ist nicht im PENDING-Status")
+        # Erlaubt Aktivierung von PENDING → ACTIVE oder Sprachänderung in ACTIVE
+        if session.status == SessionStatus.TERMINATED:
+            raise ValueError(
+                f"Session {session_id} ist beendet und kann nicht mehr geändert werden"
+            )
 
+        # Sprache und Status aktualisieren
         session.customer_language = customer_language
-        session.status = SessionStatus.ACTIVE
+        if session.status == SessionStatus.PENDING:
+            session.status = SessionStatus.ACTIVE
         session.customer_connected = True
         self._persist_session(session)
 
-        print(f"🎯 Session {session_id} aktiviert mit Sprache: {customer_language}")
+        print(
+            f"🎯 Session {session_id} aktiviert/aktualisiert mit Sprache: {customer_language}"
+        )
 
     async def add_websocket_connection(
         self, session_id: str, client_type: ClientType, websocket

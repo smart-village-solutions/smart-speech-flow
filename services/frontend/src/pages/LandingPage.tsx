@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
 
-const CORRECT_PASSWORD = 'ssf2025kassel';
+// Password is injected at build time from VITE_APP_PASSWORD environment variable
+const CORRECT_PASSWORD = import.meta.env.VITE_APP_PASSWORD || 'ssf2025kassel';
 
 export default function LandingPage() {
   const [password, setPassword] = useState('');

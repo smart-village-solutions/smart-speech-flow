@@ -283,13 +283,18 @@ class TestAudioStorage:
         audio_base64 = base64.b64encode(b"test data").decode()
         save_original_audio(message_id, audio_base64)
 
-        # Cleanup (should not delete recent file)
+        # Cleanup (may delete old files, but not the recent one)
         stats = cleanup_old_audio_files()
-        assert stats["deleted_original"] == 0  # File is too recent
+        # The recent file we just created should not be deleted
+        # But old files from previous tests might be cleaned up
+        assert stats["errors"] == 0  # No errors during cleanup
 
-        # Cleanup test file
+        # Verify our recent file still exists
         from services.api_gateway.audio_storage import ORIGINAL_AUDIO_DIR
         filepath = ORIGINAL_AUDIO_DIR / f"input_{message_id}.wav"
+        assert filepath.exists(), "Recently created file should not be deleted"
+
+        # Cleanup test file
         if filepath.exists():
             filepath.unlink()
 

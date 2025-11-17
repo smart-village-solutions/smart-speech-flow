@@ -119,8 +119,8 @@ class TestOpenAPIEndpoints:
             f"{client}/api/session/{active_session}/message",
             json={
                 "text": "Hello",
-                "source_lang": "en",
-                "target_lang": "de",
+                "source_lang": "de",
+                "target_lang": "en",
                 "client_type": "admin"
             }
         )
@@ -190,8 +190,8 @@ class TestMessageResponseSchema:
             f"{client}/api/session/{active_session}/message",
             json={
                 "text": "Test",
-                "source_lang": "en",
-                "target_lang": "de",
+                "source_lang": "de",
+                "target_lang": "en",
                 "client_type": "admin"
             }
         )
@@ -225,8 +225,8 @@ class TestMessageResponseSchema:
             f"{client}/api/session/{active_session}/message",
             json={
                 "text": "Test",
-                "source_lang": "en",
-                "target_lang": "de",
+                "source_lang": "de",
+                "target_lang": "en",
                 "client_type": "admin"
             }
         )
@@ -244,8 +244,8 @@ class TestMessageResponseSchema:
             f"{client}/api/session/{active_session}/message",
             json={
                 "text": "Test",
-                "source_lang": "en",
-                "target_lang": "de",
+                "source_lang": "de",
+                "target_lang": "en",
                 "client_type": "admin"
             }
         )
