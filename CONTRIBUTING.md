@@ -357,6 +357,84 @@ See [SECURITY.md](SECURITY.md) for our security policy.
 - Make requested changes promptly
 - Thank reviewers for their time
 
+## 🤖 AI-Assisted Contributions
+
+We welcome and encourage the use of AI tools in your contributions! This project itself was largely developed with AI assistance.
+
+### Recommended AI Tools
+
+- **GitHub Copilot** – IDE-integrated code completion and refactoring
+- **ChatGPT/Claude** – Problem-solving, architecture discussions, debugging
+- **Cursor/Windsurf** – AI-native development environments
+- **Tabnine** – Intelligent code completion
+
+### Guidelines for AI-Assisted Development
+
+#### ✅ Do:
+- **Document AI usage** in your PR description when significant
+- **Review thoroughly** – AI makes mistakes, always verify generated code
+- **Test extensively** – AI-generated code needs the same test coverage
+- **Understand the code** – Don't submit code you don't comprehend
+- **Follow security best practices** – Be extra vigilant with AI suggestions
+- **Iterate and refine** – Use AI as a starting point, not the final answer
+
+#### ❌ Don't:
+- **Blindly copy-paste** AI output without understanding
+- **Skip code review** just because AI generated it
+- **Include sensitive data** in AI prompts (API keys, secrets, PII)
+- **Submit untested code** – even if AI says it works
+- **Ignore security warnings** from linters/security scanners
+
+### Security Considerations
+
+When using AI tools:
+1. **Never share sensitive data** (credentials, API keys, user data)
+2. **Scan for vulnerabilities** – run `bandit` on AI-generated code
+3. **Validate input handling** – check for injection vulnerabilities
+4. **Review dependencies** – AI might suggest outdated or insecure packages
+5. **Test edge cases** – AI often misses boundary conditions
+
+### Best Practices
+
+```bash
+# After generating code with AI, always:
+
+# 1. Format and lint
+black services/
+isort services/
+flake8 services/
+
+# 2. Security scan
+bandit -r services/
+
+# 3. Run tests
+pytest
+
+# 4. Check coverage
+pytest --cov=services --cov-report=html
+```
+
+### PR Description Template for AI-Assisted Work
+
+When submitting AI-assisted contributions, consider adding:
+
+```markdown
+## AI Tool Usage
+
+- **Tools used**: GitHub Copilot, ChatGPT, etc.
+- **Extent**: [e.g., "Initial implementation", "Test generation", "Refactoring"]
+- **Review process**: [e.g., "Manually reviewed all code", "Added additional tests"]
+- **Changes made**: [e.g., "Modified AI suggestions for security", "Added error handling"]
+```
+
+### Learn More
+
+See [AI_DEVELOPMENT.md](AI_DEVELOPMENT.md) for detailed insights into how AI was used in this project, including:
+- Development phases and AI contribution percentages
+- Lessons learned and AI limitations
+- Best practices from our experience
+- Ethics and transparency principles
+
 ## 📜 License
 
 By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).

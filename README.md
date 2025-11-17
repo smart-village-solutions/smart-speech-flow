@@ -18,6 +18,19 @@ Ein containerisiertes Microservice-Backend für Echtzeit-Sprachverarbeitung und 
 - 🎛️ **LLM Refinement** – Optional mit Ollama (gpt-oss:20b)
 - 🐳 **Cloud-Ready** – Vollständig containerisiert mit Docker Compose
 
+## 🤖 AI-Assisted Development
+
+[![AI-Assisted](https://img.shields.io/badge/Development-AI--Assisted-purple.svg)](AI_DEVELOPMENT.md)
+
+Dieses Projekt wurde mit maßgeblicher Unterstützung von KI-Tools entwickelt. Wir glauben an Transparenz und dokumentieren unsere Entwicklungsmethodik offen:
+
+- 💡 **Konzeption & Architektur** mit GitHub Copilot und Claude (Anthropic)
+- ⚡ **70-80% der Backend/Frontend-Implementation** AI-gestützt
+- 📝 **Dokumentation und Tests** mit KI-Unterstützung erstellt
+- 🧠 **Finale Qualität, Security und Architektur** in menschlicher Verantwortung
+
+Für Details siehe [AI_DEVELOPMENT.md](AI_DEVELOPMENT.md) – dort dokumentieren wir Tools, Prozesse, Best Practices und Lessons Learned.
+
 ## 🚀 Quick Start
 
 ```bash
