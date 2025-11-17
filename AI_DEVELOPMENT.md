@@ -13,14 +13,14 @@ Smart Speech Flow wurde mit substantieller Unterstützung von KI-Tools entwickel
 
 ## Entwicklungsphasen & AI-Anteil
 
-### 1. Konzeption & Design (60-70% AI-Unterstützung)
+### 1. Konzeption & Design
 - System-Architektur und Microservice-Design
 - API-Spezifikationen (OpenAPI/Swagger)
 - Datenmodelle, Schemas und Validierung
 - WebSocket-Protokoll-Design
 - Security-Konzepte und Best Practices
 
-### 2. Backend-Implementation (70-80% AI-Unterstützung)
+### 2. Backend-Implementation
 - FastAPI-Services und Routing
 - Session-Management und State-Handling
 - WebSocket-Implementation mit Fallback-Mechanismen
@@ -29,7 +29,7 @@ Smart Speech Flow wurde mit substantieller Unterstützung von KI-Tools entwickel
 - Prometheus-Monitoring und Metrics
 - Docker-Konfiguration und Compose-Setup
 
-### 3. Frontend-Development (70-80% AI-Unterstützung)
+### 3. Frontend-Development
 - React-Komponenten und Hooks
 - TypeScript-Typen und Interfaces
 - WebSocket-Client-Implementation
@@ -37,14 +37,14 @@ Smart Speech Flow wurde mit substantieller Unterstützung von KI-Tools entwickel
 - Responsive UI mit Tailwind CSS
 - Audio-Recording und -Processing
 
-### 4. Testing (50-70% AI-Unterstützung)
+### 4. Testing
 - Unit-Tests (pytest, 245+ Tests)
 - Integration-Tests (Service-Tests mit HTTP)
 - E2E-Test-Szenarien
 - Mock-Strategien und Fixtures
 - Test-Coverage-Optimierung
 
-### 5. Dokumentation (80-90% AI-Unterstützung)
+### 5. Dokumentation
 - README und Getting Started
 - API-Dokumentation und Guides
 - Architecture Decision Records (ADRs)
@@ -52,7 +52,7 @@ Smart Speech Flow wurde mit substantieller Unterstützung von KI-Tools entwickel
 - Deployment-Anleitungen
 - Troubleshooting-Guides
 
-### 6. DevOps & Infrastructure (50-60% AI-Unterstützung)
+### 6. DevOps & Infrastructure
 - Docker-Images und Multi-Stage-Builds
 - Docker-Compose-Orchestrierung
 - Nginx-Konfiguration und Reverse-Proxy
@@ -134,7 +134,6 @@ Wir begrüßen AI-gestützte Beiträge ausdrücklich! Bitte beachte:
 - GitHub Copilot (IDE-Integration)
 - ChatGPT/Claude (Problem-Solving)
 - Cursor/Windsurf (AI-native IDEs)
-- Tabnine (Code-Completion)
 
 ### Nicht empfohlen
 - ❌ Blindes Copy-Paste von AI-generierten Code ohne Verständnis
