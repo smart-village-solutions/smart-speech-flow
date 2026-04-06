@@ -1,8 +1,14 @@
 import asyncio
 import inspect
 from pathlib import Path
+import sys
 
 import pytest
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 try:  # pragma: no cover - optional dependency detection
     import pytest_asyncio  # type: ignore  # noqa: F401
