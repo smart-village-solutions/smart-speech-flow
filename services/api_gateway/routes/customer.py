@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from ..log_safety import sanitize_log_value
+from ..log_safety import safe_language_code, sanitize_log_value
 from ..session_manager import SessionStatus, session_manager
 
 # Logger setup
@@ -95,13 +95,9 @@ async def activate_session(request: ActivateSessionRequest) -> ActivateSessionRe
     """
     try:
         logger.info(
-            "🎯 Session-Aktivierung angefordert | %s",
-            sanitize_log_value(
-                {
-                    "session_ref": _safe_session_ref(request.session_id),
-                    "customer_language": request.customer_language,
-                }
-            ),
+            "🎯 Session-Aktivierung angefordert | session_ref=%s customer_language=%s",
+            _safe_session_ref(request.session_id),
+            safe_language_code(request.customer_language),
         )
 
         # Session validieren

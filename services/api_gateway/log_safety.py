@@ -4,8 +4,11 @@ Helpers to keep structured logging safe when values may contain user input.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
+
+_SAFE_LANGUAGE_CODE = re.compile(r"^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8}){0,2}$")
 
 
 def sanitize_log_value(value: Any, *, max_length: int = 200) -> Any:
@@ -31,3 +34,18 @@ def sanitize_log_value(value: Any, *, max_length: int = 200) -> Any:
         return [sanitize_log_value(item, max_length=max_length) for item in value]
 
     return value
+
+
+def safe_language_code(value: Any) -> str:
+    """Return an allowlisted language tag for logging."""
+    if not isinstance(value, str):
+        return "invalid"
+
+    normalized = value.strip()
+    if not normalized:
+        return "missing"
+
+    if not _SAFE_LANGUAGE_CODE.fullmatch(normalized):
+        return "invalid"
+
+    return normalized[:32]

@@ -5,7 +5,7 @@ from fastapi import File, Form, UploadFile
 from fastapi.responses import HTMLResponse
 
 from services.api_gateway.app import app
-from services.api_gateway.log_safety import sanitize_log_value
+from services.api_gateway.log_safety import safe_language_code, sanitize_log_value
 from services.api_gateway.pipeline_logic import process_wav
 
 logger = logging.getLogger("api_gateway")
@@ -31,8 +31,8 @@ async def upload(
         requests_total.inc()
     logger.info(
         "Upload form received: source_lang=%s, target_lang=%s",
-        sanitize_log_value(source_lang),
-        sanitize_log_value(target_lang),
+        safe_language_code(source_lang),
+        safe_language_code(target_lang),
     )
     if not source_lang or not target_lang:
         return HTMLResponse(
@@ -66,8 +66,8 @@ async def upload(
     escaped_audio_b64 = escape(audio_b64, quote=True)
     logger.info(
         "Upload pipeline success: source_lang=%s, target_lang=%s, has_transcript=%s, has_translation=%s, audioBytes=%s",
-        sanitize_log_value(source_lang),
-        sanitize_log_value(target_lang),
+        safe_language_code(source_lang),
+        safe_language_code(target_lang),
         bool(result.get("asr_text")),
         bool(result.get("translation_text")),
         len(result["audio_bytes"]) if result["audio_bytes"] else 0,
