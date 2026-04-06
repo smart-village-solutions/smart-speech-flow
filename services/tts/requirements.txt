@@ -4,7 +4,7 @@ prometheus_client
 torch
 soundfile
 numpy>=2.0.0
-transformers>=4.38.0,<5.0.0
+transformers>=4.38.0,<6.0.0
 httpx
 pytest
 psutil
