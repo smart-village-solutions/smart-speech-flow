@@ -13,7 +13,7 @@ Dieser Service bietet eine robuste Text-zu-Sprache-Schnittstelle für verschiede
 ## Features
 - **Text-to-Speech (TTS) für viele Sprachen**
 - **Automatischer Fallback:** Coqui-TTS für direkt unterstützte Sprachen, HuggingFace MMS-TTS für alle weiteren
-- **REST API mit `/synthesize`, `/health` und `/metrics` Endpunkten**
+- **REST API mit `/synthesize`, `/health`, `/metrics` und `/supported-languages`**
 - **Prometheus-Metriken**
 - **Docker- und venv-ready**
 - **Automatisierte Tests für alle Zielsprachen**
@@ -32,6 +32,7 @@ Erzeugt eine Sprachdatei aus Text.
     "lang": "de"
   }
   ```
+  Alternativ akzeptiert der Service auch `tts_text` statt `text`.
 - **Antwort:**
   - Bei Erfolg: WAV-Datei
   - Bei Fehler: JSON mit Fehlermeldung und Fallback-Status
@@ -41,6 +42,9 @@ Gibt den Status des Dienstes, geladene Modelle und GPU-Infos zurück.
 
 ### `/metrics` (GET)
 Prometheus-kompatible Metriken für Monitoring.
+
+### `/supported-languages` (GET)
+Gibt die verfuegbaren Sprachcodes fuer Coqui-TTS und MMS-Fallback zurueck.
 
 ## Architektur & Funktionsweise
 1. **Modellwahl:**
@@ -61,7 +65,7 @@ docker run -p 8000:8000 tts-service
 
 ### Lokal mit venv
 ```bash
-python3.11 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app:app --reload

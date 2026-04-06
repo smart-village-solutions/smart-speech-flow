@@ -42,14 +42,13 @@ const data = await response.json();
 // {
 //   "session_id": "ABC12345",
 //   "status": "pending",
-//   "client_url": "https://ssf.../customer/ABC12345",
-//   "qr_code_data": "https://ssf.../customer/ABC12345",
+//   "client_url": "https://translate.smart-village.solutions/join/ABC12345",
 //   "created_at": "2025-11-05T20:00:00Z",
 //   "message": "Session ABC12345 erfolgreich erstellt"
 // }
 
 const sessionId = data.session_id;
-const qrCodeURL = data.qr_code_data; // Für QR-Code Generator
+const qrCodeURL = data.client_url; // Fuer QR-Code Generator oder Deeplink
 ```
 
 ### 2. Customer: Session aktivieren
@@ -58,7 +57,7 @@ const qrCodeURL = data.qr_code_data; // Für QR-Code Generator
 // Customer scannt QR-Code → extrahiert session_id aus URL
 
 // Sprachen laden
-const langResponse = await fetch(`${CONFIG.API_BASE}/api/customer/languages/supported`);
+const langResponse = await fetch(`${CONFIG.API_BASE}/api/languages/supported`);
 const languages = await langResponse.json();
 // {
 //   "languages": {
@@ -503,11 +502,11 @@ Session wurde beendet.
 ```
 1. [QR-Code scannen]
    ↓
-   URL: https://ssf.../customer/ABC12345
+   URL: https://translate.smart-village.solutions/join/ABC12345
    Extrahiere: session_id
    ↓
 2. [Sprache wählen]
-   GET /api/customer/languages/supported
+   GET /api/languages/supported
    ↓
    Zeige: Sprachauswahl (de, en, ar, tr, ...)
    ↓
@@ -772,7 +771,7 @@ function Chat({ sessionId, userType }) {
 - [ ] Alle Message Types werden behandelt (connection_ack, heartbeat, message, client_joined, session_terminated)
 - [ ] Audio-Player für `audio_url` integriert
 - [ ] Session-Aktivierung für Customer implementiert
-- [ ] QR-Code Generator für Admin (nutze `qr_code_data` aus API)
+- [ ] QR-Code Generator fuer Admin (nutze `client_url` aus API)
 - [ ] Error Handling für API-Fehler (400, 404, 500)
 - [ ] UI zeigt Verbindungsstatus an (🟢/🔴)
 - [ ] Reconnection-Hinweis für User

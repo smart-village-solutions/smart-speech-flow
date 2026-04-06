@@ -2,109 +2,152 @@
 
 ## Beschreibung
 
-Das API Gateway ist die zentrale Schnittstelle für alle Sprachdienste im Smart Speech Flow Backend. Es orchestriert die Verarbeitung von Audio, Text und Übersetzung über die einzelnen Microservices (ASR, Translation, TTS) und bietet ein einheitliches REST-API für Endnutzer und Frontend.
+Das API Gateway ist der zentrale Einstiegspunkt fuer Smart Speech Flow. Es verbindet die Fachservices fuer ASR, Translation und TTS mit der sessionbasierten Admin/Customer-Kommunikation im Frontend.
 
-## Input
+Heute ist das Gateway nicht nur ein einfacher Pipeline-Proxy, sondern vor allem:
 
-- **/pipeline (POST)**
-  - `file`: Audiodatei (WAV, MP3, OGG, FLAC, etc.)
-  - `source_lang`: Ausgangssprache (z. B. `de`, `en`, `ar`, ...)
-  - `target_lang`: Zielsprache (z. B. `en`, `de`, `tr`, ...)
-  - Übergabe als `multipart/form-data`
+- Session-Manager fuer Admin- und Customer-Gespraeche
+- Unified Message API fuer Text und Audio
+- WebSocket-Hub fuer Echtzeitkommunikation
+- Persistenz- und Timeout-Schicht fuer Sessions
+- Fallback- und Monitoring-Schicht fuer produktionsnahe Nutzung
 
-Beispiel mit `curl`:
-```bash
-curl -F "file=@sample.wav" -F "source_lang=de" -F "target_lang=en" https://ssf.smart-village.solutions/pipeline
+## Primaere API-Oberflaeche
+
+Der empfohlene Einstieg fuer Frontends laeuft ueber die sessionbasierten Endpunkte:
+
+- `POST /api/admin/session/create`
+- `GET /api/admin/session/current`
+- `POST /api/customer/session/activate`
+- `GET /api/customer/session/{session_id}/status`
+- `POST /api/session/{session_id}/message`
+- `GET /api/session/{session_id}/messages`
+- `GET /api/languages/supported`
+- `WS /ws/{session_id}/{client_type}`
+
+## Legacy- und Low-Level-Endpunkte
+
+Zusaetzlich existieren weiterhin generische Gateway-Endpunkte:
+
+- `POST /pipeline`
+- `POST /upload`
+- `GET /health`
+- `GET /metrics`
+- `GET /languages`
+
+`/pipeline` ist weiterhin nuetzlich fuer direkte End-to-End-Tests, bildet aber nicht den heutigen Haupt-Workflow des Frontends ab.
+
+## Typischer Frontend-Workflow
+
+1. Admin erstellt eine Session ueber `POST /api/admin/session/create`
+2. Customer waehlt Sprache und aktiviert die Session ueber `POST /api/customer/session/activate`
+3. Beide Seiten verbinden sich per WebSocket an `/ws/{session_id}/{client_type}`
+4. Nachrichten laufen ueber `POST /api/session/{session_id}/message`
+5. Historie und Audio koennen ueber REST-Endpunkte nachgeladen werden
+
+## Unified Message Endpoint
+
+### `POST /api/session/{session_id}/message`
+
+Der Endpoint akzeptiert beide Eingabeformen:
+
+- `application/json` fuer Textnachrichten
+- `multipart/form-data` fuer Audioeingaben
+
+### Text-Beispiel
+
+```json
+{
+  "text": "Guten Tag",
+  "source_lang": "de",
+  "target_lang": "en",
+  "client_type": "admin"
+}
 ```
 
-## Output
+### Audio-Beispiel
 
-- **Erfolgreiche Antwort (JSON):**
-  ```json
-  {
-    "success": true,
-    "originalText": "Hier spricht die Polizei.",
-    "translatedText": "Here the police speak.",
-    "audioBase64": "<base64-kodierte WAV-Datei>"
-  }
-  ```
-  - `originalText`: Transkription des Audios in der Ausgangssprache
-  - `translatedText`: Übersetzung in die Zielsprache
-  - `audioBase64`: Die synthetisierte Sprache als WAV-Datei (Base64-kodiert)
+Multipart-Request mit:
 
-- **Fehlerhafte Antwort (JSON):**
-  ```json
-  {
-    "success": false,
-    "error": "Fehlermeldung"
-  }
-  ```
+- `file`
+- `source_lang`
+- `target_lang`
+- `client_type`
 
-## Weitere Endpunkte
+### Response
 
-- **/health (GET):**
-  - Gibt den Status der angebundenen Services als JSON zurück.
-- **/metrics (GET):**
-  - Prometheus-kompatible Metriken für Monitoring.
-- **/** (GET):**
-  - HTML-Frontend mit Upload-Formular und Health-Status.
+Der Endpoint liefert ein einheitliches Response-Schema mit:
 
-## Typische Nutzung
+- `status`
+- `message_id`
+- `session_id`
+- `original_text`
+- `translated_text`
+- `audio_available`
+- `audio_url`
+- `processing_time_ms`
+- `pipeline_type`
+- `pipeline_metadata`
 
-Das Frontend sendet eine Audiodatei und die gewünschten Sprachen an `/pipeline`. Die Antwort enthält Transkription, Übersetzung und die synthetisierte Sprache als Audio. Fehler werden als JSON mit `success: false` und einer Fehlermeldung zurückgegeben.
+## Weitere wichtige Endpunkte
 
----
+### `GET /api/session/{session_id}/messages`
 
-Weitere Details zur Orchestrierung und zu den unterstützten Formaten siehe Haupt-README im Projektroot.
+Liefert die Nachrichtenhistorie einer Session.
 
-## Features
-- **Zentrales REST-API für alle Sprachdienste**
-- **Routing zu ASR, TTS und Translation Services**
-- **Health- und Metrics-Endpunkte**
-- **Validierung und Fehlerbehandlung**
-- **Docker- und venv-ready**
-- **Erweiterbar für weitere Services**
+### `GET /api/audio/{message_id}.wav`
 
-## Endpunkte
-- `/pipeline` (POST): Orchestriert komplexe Sprachverarbeitungs-Pipelines (z. B. ASR → Translation → TTS)
-- `/health` (GET): Status des Gateways und der angebundenen Services
-- `/metrics` (GET): Prometheus-kompatible Metriken
+Liefert das erzeugte Audio einer Nachricht.
 
-## Architektur & Funktionsweise
-1. **Routing:**
-   - Der Gateway nimmt Anfragen entgegen und leitet sie an die jeweiligen Microservices weiter.
-   - Die Kommunikation erfolgt über HTTP-Requests zu den internen Service-Endpunkten.
-2. **Validierung:**
-   - Eingaben werden geprüft und ggf. normalisiert.
-3. **Fehlerbehandlung:**
-   - Fehler aus den Microservices werden gesammelt und als konsistente API-Fehler zurückgegeben.
-4. **Health-Checks:**
-   - Der Gateway prüft regelmäßig die Erreichbarkeit und den Status der angebundenen Services.
+### `GET /api/audio/input_{message_id}.wav`
 
-## Installation & Betrieb
-### Mit Docker
+Liefert das urspruengliche Eingabe-Audio, sofern es noch innerhalb der Aufbewahrungszeit vorhanden ist.
+
+### `GET /api/languages/supported`
+
+Liefert die vom Frontend verwendete Sprachliste inklusive `admin_default` und `popular`.
+
+### `GET /languages`
+
+Oeffentlicher Alias fuer die Sprachliste ohne `/api`-Praefix.
+
+## Betrieb und Architektur
+
+Das Gateway umfasst unter anderem:
+
+- Session-Management mit optionaler Redis-Persistenz
+- WebSocket-Management mit Heartbeats
+- Polling-Fallback bei Verbindungsproblemen
+- Audio-Validierung und Text-Validierung
+- Circuit Breaker und Graceful Degradation
+- Monitoring ueber Prometheus-Metriken
+
+## Lokale Entwicklung
+
 ```bash
-docker build -t api_gateway .
-docker run -p 8000:8000 api_gateway
-```
-
-### Lokal mit venv
-```bash
-python3.11 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app:app --reload
+uvicorn services.api_gateway.app:app --reload --port 8000
+```
+
+## Docker
+
+Der Service wird im Projektkontext ueber das Root-`docker-compose.yml` gestartet:
+
+```bash
+docker compose up -d api_gateway
 ```
 
 ## Testen
+
 ```bash
-pytest tests/
+pytest services/api_gateway/tests/
+pytest tests/test_unified_message_endpoint.py
+pytest tests/test_websocket_manager.py
 ```
 
-## Erweiterung
-- Weitere Services können einfach angebunden werden.
-- Die Endpunkte und Routing-Logik sind in `app.py` und `pipeline.py` konfigurierbar.
-
 ## Hinweise
-- Der Gateway-Service ist für die Integration in größere Systeme und für externe Schnittstellen konzipiert.
-- Monitoring und Health-Checks sind integriert.
+
+- Fuer neue Frontend-Integrationen sollte immer die sessionbasierte API verwendet werden.
+- `/pipeline` bleibt fuer direkte Service-Tests und technische Integrationen sinnvoll, ist aber nicht mehr die alleinige Leit-API.

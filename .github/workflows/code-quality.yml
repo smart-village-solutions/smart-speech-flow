@@ -11,6 +11,7 @@ on:
 # Globale Umgebungsvariablen
 env:
   PYTHON_VERSION: '3.12'
+  SONAR_HOST_URL: 'https://sonarcloud.io'
 
 jobs:
   # Job 1: Code Formatting und Linting
@@ -39,7 +40,7 @@ jobs:
     - name: Install dependencies
       run: |
         source .venv/bin/activate
-        pip install --upgrade pip
+        pip install --upgrade pip "setuptools<81"
         pip install -r requirements-dev.txt
 
     - name: Check code formatting with Black
@@ -252,11 +253,91 @@ jobs:
           echo "💡 Check requirements.txt files for conflicting or invalid dependencies"
         fi
 
-    # Job 5: Quality Gate Evaluation
+  # Job 5: SonarCloud Analysis
+  sonar-analysis:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      enabled: ${{ steps.sonar-config.outputs.enabled }}
+
+    steps:
+    - name: Check Sonar configuration
+      id: sonar-config
+      run: |
+        if [ -n "${SONAR_TOKEN}" ]; then
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          echo "::warning::SONAR_TOKEN not configured; skipping SonarCloud analysis"
+        fi
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+    - name: Checkout Code
+      if: steps.sonar-config.outputs.enabled == 'true'
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Python
+      if: steps.sonar-config.outputs.enabled == 'true'
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Create virtual environment
+      if: steps.sonar-config.outputs.enabled == 'true'
+      run: |
+        python -m venv .venv
+        source .venv/bin/activate
+        echo "VIRTUAL_ENV=$VIRTUAL_ENV" >> $GITHUB_ENV
+        echo "$VIRTUAL_ENV/bin" >> $GITHUB_PATH
+
+    - name: Install dependencies
+      if: steps.sonar-config.outputs.enabled == 'true'
+      run: |
+        source .venv/bin/activate
+        pip install --upgrade pip "setuptools<81"
+        pip install -r requirements-dev.txt -r services/api_gateway/requirements.txt
+
+    - name: Run tests with coverage for Sonar
+      if: steps.sonar-config.outputs.enabled == 'true'
+      env:
+        SSF_AUDIO_BASE_DIR: ${{ runner.temp }}/audio
+      run: |
+        source .venv/bin/activate
+        export PYTHONPATH=.
+        pytest tests/ \
+          -m "not integration and not real_system" \
+          --ignore=tests/integration \
+          --ignore=tests/load \
+          --ignore=tests/integration_test_audio_validation.py \
+          --cov=services \
+          --cov-report=xml:coverage.xml \
+          --cov-report=term
+
+    - name: SonarCloud Scan
+      if: steps.sonar-config.outputs.enabled == 'true'
+      uses: SonarSource/sonarqube-scan-action@v6
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
+      with:
+        args: >
+          -Dsonar.organization=${{ vars.SONAR_ORGANIZATION || github.repository_owner }}
+          -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY || format('{0}_{1}', github.repository_owner, github.event.repository.name) }}
+          -Dsonar.python.version=${{ env.PYTHON_VERSION }}
+          -Dsonar.python.coverage.reportPaths=coverage.xml
+          -Dsonar.qualitygate.wait=true
+          -Dsonar.qualitygate.timeout=300
+
+  # Job 6: Quality Gate Evaluation
   quality-gate:
     name: Quality Gate
     runs-on: ubuntu-latest
-    needs: [code-quality, security-analysis]
+    needs: [code-quality, security-analysis, sonar-analysis]
     if: always()
 
     steps:
@@ -264,24 +345,35 @@ jobs:
       run: |
         CODE_QUALITY_RESULT="${{ needs.code-quality.result }}"
         SECURITY_RESULT="${{ needs.security-analysis.result }}"
+        SONAR_RESULT="${{ needs.sonar-analysis.result }}"
+        SONAR_ENABLED="${{ needs.sonar-analysis.outputs.enabled }}"
 
         echo "Code Quality Result: $CODE_QUALITY_RESULT"
         echo "Security Analysis Result: $SECURITY_RESULT"
+        echo "Sonar Result: $SONAR_RESULT"
+        echo "Sonar Enabled: $SONAR_ENABLED"
 
-        # Quality gate is informational for now
-        if [ "$CODE_QUALITY_RESULT" != "success" ] || [ "$SECURITY_RESULT" != "success" ]; then
-          echo "::warning::Quality gate checks found issues"
-          echo "Code quality and security should be reviewed."
-        else
-          echo "✅ Quality gate passed!"
-          echo "All quality checks successful."
+        # Sonar is blocking once configured; missing secrets/vars keep the job skipped.
+        if [ "$SONAR_RESULT" = "failure" ]; then
+          echo "❌ Sonar quality gate failed"
+          exit 1
         fi
 
-  # Job 6: Quality Metrics Summary
+        if [ "$CODE_QUALITY_RESULT" != "success" ] || [ "$SECURITY_RESULT" != "success" ]; then
+          echo "::warning::Quality gate checks found issues in non-Sonar jobs"
+          echo "Code quality and security should be reviewed."
+        elif [ "$SONAR_ENABLED" != "true" ]; then
+          echo "::warning::Sonar analysis skipped - configure SONAR_TOKEN (and optional Sonar variables if defaults do not match)"
+        else
+          echo "✅ Quality gate passed!"
+          echo "All blocking quality checks successful."
+        fi
+
+  # Job 7: Quality Metrics Summary
   quality-summary:
     name: Quality Summary
     runs-on: ubuntu-latest
-    needs: [code-quality, security-analysis, type-checking, dependency-analysis, quality-gate]
+    needs: [code-quality, security-analysis, type-checking, dependency-analysis, sonar-analysis, quality-gate]
     if: always()
 
     steps:
@@ -304,6 +396,17 @@ jobs:
           echo "| Security | ✅ Passed | No critical security issues found |" >> $GITHUB_STEP_SUMMARY
         else
           echo "| Security | ❌ Failed | Critical security issues detected |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # SonarCloud
+        if [ "${{ needs.sonar-analysis.outputs.enabled }}" != "true" ]; then
+          echo "| SonarCloud | ⚠️ Skipped | Configure SONAR_TOKEN and optional Sonar variables if needed |" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.sonar-analysis.result }}" == "success" ]; then
+          echo "| SonarCloud | ✅ Passed | Analysis and quality gate successful |" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.sonar-analysis.result }}" == "failure" ]; then
+          echo "| SonarCloud | ❌ Failed | Analysis or quality gate failed |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| SonarCloud | ⚠️ Incomplete | Check Sonar job logs and configuration |" >> $GITHUB_STEP_SUMMARY
         fi
 
         # Type Checking (optional)

@@ -52,7 +52,7 @@ Gibt den Status des Dienstes, unterstützte Sprachen und Modellinfos zurück.
 Prometheus-kompatible Metriken für Monitoring.
 
 ### Weitere Endpunkte
-- `/languages` (GET): Gibt alle unterstützten Sprachen zurück.
+- `/supported-languages` (GET): Gibt alle unterstuetzten Sprachen zurueck.
 
 ## Architektur & Funktionsweise
 1. **Modellwahl:**
@@ -72,7 +72,7 @@ docker run -p 8000:8000 asr-service
 
 ### Lokal mit venv
 ```bash
-python3.11 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app:app --reload
@@ -88,5 +88,5 @@ pytest tests/
 - Die Modellkonfiguration erfolgt in `app.py`.
 
 ## Hinweise
-- Die unterstützten Sprachen sind in `/languages` abrufbar.
+- Die unterstuetzten Sprachen sind in `/supported-languages` abrufbar.
 - Bei privaten/gated Modellen ist ggf. ein HuggingFace-Token nötig (`huggingface-cli login`).

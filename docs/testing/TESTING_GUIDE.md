@@ -12,12 +12,13 @@ This guide covers all testing aspects of the Smart Speech Flow Backend project.
 
 ## Test Overview
 
-**Total Tests:** 242
-- ✅ **234 passing** (96.7%)
-- ⚠️ **7 flaky** (2.9%) - intermittent failures
-- ⏭️ **1 skipped** (0.4%)
+The repository contains:
 
-See [TEST_STATUS.md](../TEST_STATUS.md) for detailed analysis.
+- unit tests for service and gateway logic
+- integration tests for session, audio and websocket flows
+- load tests for production-like websocket scenarios
+
+Because the suite changes over time, this guide intentionally does not hardcode pass/fail counts. Use the latest local `pytest` run or CI results as the source of truth.
 
 ## Running Tests
 

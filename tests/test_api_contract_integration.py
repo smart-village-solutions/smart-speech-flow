@@ -19,6 +19,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from services.api_gateway.app import app
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def client(monkeypatch):

@@ -10,6 +10,7 @@ Manages persistent storage of audio files with automatic cleanup.
 
 import base64
 import logging
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -43,7 +44,8 @@ except ImportError:
     logger.warning("Prometheus client not available - metrics disabled")
 
 # Storage paths
-AUDIO_BASE_DIR = Path("/data/audio")
+# Default remains /data/audio for local/Docker parity, but CI can override it.
+AUDIO_BASE_DIR = Path(os.environ.get("SSF_AUDIO_BASE_DIR", "/data/audio"))
 ORIGINAL_AUDIO_DIR = AUDIO_BASE_DIR / "original"
 TRANSLATED_AUDIO_DIR = AUDIO_BASE_DIR / "translated"
 

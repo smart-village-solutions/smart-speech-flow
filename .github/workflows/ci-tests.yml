@@ -11,23 +11,31 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.10, 3.11]
+        python-version: ["3.10", "3.11"]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: "pip"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
+          pip install -r requirements-dev.txt -r services/api_gateway/requirements.txt
 
-      - name: Run pytest (only tests/)
+      - name: Run hermetic pytest subset
+        env:
+          PYTHONPATH: .
+          SSF_AUDIO_BASE_DIR: ${{ runner.temp }}/audio
         run: |
-          echo "Running pytest on tests/ (scripts/ are intentionally skipped)"
-          pytest tests/ -q
+          echo "Running hermetic pytest subset on tests/ (integration, load and real-system suites are skipped in CI)"
+          pytest tests/ -q \
+            -m "not integration and not real_system" \
+            --ignore=tests/integration \
+            --ignore=tests/load \
+            --ignore=tests/integration_test_audio_validation.py
