@@ -2,7 +2,7 @@ import os
 import re
 import threading
 import time
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 
 import torch
 from fastapi import FastAPI, HTTPException, Request
@@ -20,6 +20,49 @@ except ImportError:  # pragma: no cover - optional dependency
     pynvml = None
 
 _nvml_initialized = False
+TRANSLATION_ERROR_RESPONSES = {
+    400: {"description": "Invalid translation request"},
+    500: {"description": "Translation failed"},
+    503: {"description": "Translation model unavailable"},
+}
+
+
+def _get_system_stats() -> Dict[str, Any]:
+    if psutil is None:
+        return {"cpu": None, "ram": None}
+
+    try:
+        return {
+            "cpu": psutil.cpu_percent(),
+            "ram": psutil.virtual_memory().percent,
+        }
+    except Exception:  # pragma: no cover - psutil rarely fails at runtime
+        return {"cpu": None, "ram": None}
+
+
+def _build_debug_response(
+    debug_active: bool, debug_info: Dict[str, Any], status_code: int
+) -> JSONResponse | None:
+    if not debug_active:
+        return None
+    return JSONResponse(
+        {"translations": None, "debug": debug_info}, status_code=status_code
+    )
+
+
+class _DebugResponse(Exception):
+    def __init__(self, response: JSONResponse):
+        self.response = response
+
+
+def _raise_http_error(
+    debug_active: bool, debug_info: Dict[str, Any], status_code: int, detail: str
+) -> None:
+    debug_info["error"] = detail
+    debug_response = _build_debug_response(debug_active, debug_info, status_code)
+    if debug_response is not None:
+        raise _DebugResponse(debug_response)
+    raise HTTPException(status_code=status_code, detail=detail)
 
 
 def _collect_gpu_metrics() -> Dict[str, Any]:
@@ -208,7 +251,7 @@ if M2M100ForConditionalGeneration and M2M100Tokenizer:
         m2m_model.to(device)
         m2m_model.eval()
         model_loaded = True
-        supported_langs = sorted(list(m2m_tokenizer.lang_code_to_id.keys()))
+        supported_langs = sorted(m2m_tokenizer.lang_code_to_id.keys())
         print(
             f"Loaded. Supported langs ({len(supported_langs)}): {', '.join(supported_langs[:10])} ..."
         )
@@ -236,7 +279,7 @@ def _validate_lang(code: str) -> None:
         )
 
 
-def _as_list(text: Union[str, List[str]]) -> List[str]:
+def _as_list(text: str | List[str]) -> List[str]:
     if isinstance(text, list):
         return [str(t) for t in text]
     return [str(text)]
@@ -265,6 +308,38 @@ def _chunk_text_if_needed(text: str) -> List[str]:
     return chunks
 
 
+def _translate_texts(
+    texts: List[str],
+    source_lang: str,
+    target_lang: str,
+    gen_overrides: Dict[str, Any],
+) -> List[str]:
+    outputs: List[str] = []
+    for text in texts:
+        if len(text) > MAX_INPUT_CHARS:
+            chunks = _chunk_text_if_needed(text)
+            partials = [
+                _generate_single(chunk, source_lang, target_lang, gen_overrides)
+                for chunk in chunks
+            ]
+            outputs.append(" ".join(partials))
+        else:
+            outputs.append(
+                _generate_single(text, source_lang, target_lang, gen_overrides)
+            )
+    return outputs
+
+
+def _maybe_uromanize(outputs: List[str], expect_list: bool) -> str | List[str] | None:
+    try:
+        from uroman import uromanize
+
+        romanized = [uromanize(output) for output in outputs]
+        return romanized if expect_list else romanized[0]
+    except ImportError:
+        return None
+
+
 def _generate_single(
     text: str, source_lang: str, target_lang: str, gen_overrides: Dict[str, Any]
 ) -> str:
@@ -281,13 +356,13 @@ def _generate_single(
     forced_bos_id = m2m_tokenizer.get_lang_id(target_lang)
 
     # Generierungsparameter zusammenführen
-    gen_kwargs = dict(
-        forced_bos_token_id=forced_bos_id,
-        max_new_tokens=GEN_MAX_NEW_TOKENS,
-        num_beams=GEN_NUM_BEAMS,
-        length_penalty=GEN_LENGTH_PENALTY,
-        early_stopping=GEN_EARLY_STOPPING,
-    )
+    gen_kwargs = {
+        "forced_bos_token_id": forced_bos_id,
+        "max_new_tokens": GEN_MAX_NEW_TOKENS,
+        "num_beams": GEN_NUM_BEAMS,
+        "length_penalty": GEN_LENGTH_PENALTY,
+        "early_stopping": GEN_EARLY_STOPPING,
+    }
     if gen_overrides:
         gen_kwargs.update(gen_overrides)
 
@@ -327,7 +402,7 @@ def health():
     }
 
 
-@app.get("/languages")
+@app.get("/languages", responses={503: {"description": "Model not loaded"}})
 def languages():
     if not model_loaded:
         raise HTTPException(status_code=503, detail="Model not loaded")
@@ -345,45 +420,113 @@ def metrics():
     )
 
 
-@app.post("/translate")
+def _parse_translation_payload(
+    request_payload: Dict[str, Any], request: Request
+) -> tuple[bool, Dict[str, Any]]:
+    debug_active = (
+        str(request_payload.get("debug", "false")).lower() == "true"
+        or str(request.query_params.get("debug", "false")).lower() == "true"
+    )
+    return debug_active, request_payload
+
+
+def _validate_translation_input(
+    text_in: Any,
+    source_lang: Any,
+    target_lang: Any,
+    *,
+    debug_active: bool,
+    debug_info: Dict[str, Any],
+) -> None:
+    if not model_loaded or m2m_model is None or m2m_tokenizer is None:
+        _raise_http_error(debug_active, debug_info, 503, "Model unavailable")
+
+    if text_in is None or (
+        DENY_EMPTY and isinstance(text_in, str) and not text_in.strip()
+    ):
+        errors_total.inc()
+        _raise_http_error(
+            debug_active,
+            debug_info,
+            400,
+            "Field 'text' must be a non-empty string or list of strings",
+        )
+
+    if not source_lang or not target_lang:
+        errors_total.inc()
+        _raise_http_error(
+            debug_active,
+            debug_info,
+            400,
+            "Fields 'source_lang' and 'target_lang' are required",
+        )
+
+    try:
+        _validate_lang(source_lang)
+        _validate_lang(target_lang)
+    except HTTPException as exc:
+        _raise_http_error(debug_active, debug_info, exc.status_code, str(exc.detail))
+
+
+def _build_translation_response(
+    outputs: List[str],
+    source_lang: str,
+    target_lang: str,
+    elapsed: float,
+    expect_list: bool,
+    debug_active: bool,
+    debug_info: Dict[str, Any],
+) -> JSONResponse:
+    translations = outputs if expect_list else outputs[0]
+    debug_info["output"] = translations
+    debug_info["duration"] = round(elapsed, 3)
+    debug_info["error"] = None
+    try:
+        request_latency.observe(elapsed)
+    except Exception:
+        pass
+    response = {
+        "model": MODEL_NAME,
+        "device": str(device),
+        "dtype": "fp16" if dtype == torch.float16 else "fp32",
+        "source_lang": source_lang,
+        "target_lang": target_lang,
+        "count": len(outputs),
+        "elapsed_seconds": round(elapsed, 3),
+        "translations": translations,
+        "tts_text": _maybe_uromanize(outputs, expect_list),
+    }
+    if debug_active:
+        response["debug"] = debug_info
+    return JSONResponse(response)
+
+
+@app.post("/translate", responses=TRANSLATION_ERROR_RESPONSES)
 async def translate(request: Request):
     debug_active = False
-    system_stats = {"cpu": None, "ram": None}
-    if psutil is not None:
-        try:
-            system_stats = {
-                "cpu": psutil.cpu_percent(),
-                "ram": psutil.virtual_memory().percent,
-            }
-        except Exception:  # pragma: no cover - psutil rarely fails at runtime
-            system_stats = {"cpu": None, "ram": None}
     debug_info = {
         "input": None,
         "output": None,
         "error": None,
         "duration": None,
         "model": MODEL_NAME,
-        "system": system_stats,
+        "system": _get_system_stats(),
     }
     try:
         payload = await request.json()
-        debug_active = (
-            str(payload.get("debug", "false")).lower() == "true"
-            or str(request.query_params.get("debug", "false")).lower() == "true"
-        )
+        debug_active, payload = _parse_translation_payload(payload, request)
     except Exception:
         errors_total.inc()
-        debug_info["error"] = "Invalid JSON payload"
-        if debug_active:
-            return JSONResponse(
-                {"translations": None, "debug": debug_info}, status_code=400
-            )
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+        try:
+            _raise_http_error(debug_active, debug_info, 400, "Invalid JSON payload")
+        except _DebugResponse as exc:
+            return exc.response
 
     text_in = payload.get("text")
     source_lang = payload.get("source_lang")
     target_lang = payload.get("target_lang")
     gen_overrides = payload.get("generation", {})
+    expect_list = isinstance(text_in, list)
     debug_info["input"] = {
         "text": text_in,
         "source_lang": source_lang,
@@ -391,121 +534,45 @@ async def translate(request: Request):
         "generation": gen_overrides,
     }
 
-    if not model_loaded or m2m_model is None or m2m_tokenizer is None:
-        debug_info["error"] = "Model unavailable"
-        if debug_active:
-            return JSONResponse(
-                {"translations": None, "debug": debug_info}, status_code=503
-            )
-        raise HTTPException(status_code=503, detail="Model unavailable")
-
-    if text_in is None or (
-        DENY_EMPTY and (isinstance(text_in, str) and not text_in.strip())
-    ):
-        errors_total.inc()
-        debug_info["error"] = (
-            "Field 'text' must be a non-empty string or list of strings"
-        )
-        if debug_active:
-            return JSONResponse(
-                {"translations": None, "debug": debug_info}, status_code=400
-            )
-        raise HTTPException(
-            status_code=400,
-            detail="Field 'text' must be a non-empty string or list of strings",
-        )
-
-    if not source_lang or not target_lang:
-        errors_total.inc()
-        debug_info["error"] = "Fields 'source_lang' and 'target_lang' are required"
-        if debug_active:
-            return JSONResponse(
-                {"translations": None, "debug": debug_info}, status_code=400
-            )
-        raise HTTPException(
-            status_code=400,
-            detail="Fields 'source_lang' and 'target_lang' are required",
-        )
-
     try:
-        _validate_lang(source_lang)
-        _validate_lang(target_lang)
-    except Exception as e:
-        debug_info["error"] = str(e)
-        if debug_active:
-            return JSONResponse(
-                {"translations": None, "debug": debug_info}, status_code=400
-            )
-        raise
+        _validate_translation_input(
+            text_in,
+            source_lang,
+            target_lang,
+            debug_active=debug_active,
+            debug_info=debug_info,
+        )
+    except _DebugResponse as exc:
+        return exc.response
 
-    texts: List[str] = _as_list(text_in)
+    texts = _as_list(text_in)
     start = time.perf_counter()
-    outputs: List[str] = []
 
     try:
-        for t in texts:
-            if not isinstance(t, str):
-                t = str(t)
-
-            if len(t) > MAX_INPUT_CHARS:
-                chunks = _chunk_text_if_needed(t)
-                partials = []
-                for ch in chunks:
-                    partials.append(
-                        _generate_single(ch, source_lang, target_lang, gen_overrides)
-                    )
-                outputs.append(" ".join(partials))
-            else:
-                outputs.append(
-                    _generate_single(t, source_lang, target_lang, gen_overrides)
-                )
-
+        outputs = _translate_texts(texts, source_lang, target_lang, gen_overrides)
         elapsed = time.perf_counter() - start
-        debug_info["output"] = outputs if isinstance(text_in, list) else outputs[0]
-        debug_info["duration"] = round(elapsed, 3)
-        debug_info["error"] = None
-        # Latenz an Prometheus melden
+        return _build_translation_response(
+            outputs,
+            source_lang,
+            target_lang,
+            elapsed,
+            expect_list,
+            debug_active,
+            debug_info,
+        )
+    except HTTPException as exc:
         try:
-            request_latency.observe(elapsed)
-        except Exception:
-            pass
-        response = {
-            "model": MODEL_NAME,
-            "device": str(device),
-            "dtype": "fp16" if dtype == torch.float16 else "fp32",
-            "source_lang": source_lang,
-            "target_lang": target_lang,
-            "count": len(outputs),
-            "elapsed_seconds": round(elapsed, 3),
-            "translations": outputs if isinstance(text_in, list) else outputs[0],
-        }
-        # Romanisierte Variante für TTS ergänzen
-        try:
-            from uroman import uromanize
-
-            if isinstance(outputs, list):
-                tts_text = [uromanize(o) for o in outputs]
-            else:
-                tts_text = uromanize(outputs)
-            response["tts_text"] = tts_text
-        except ImportError:
-            response["tts_text"] = None
-        if debug_active:
-            response["debug"] = debug_info
-        return JSONResponse(response)
-    except HTTPException as e:
-        debug_info["error"] = str(e)
-        if debug_active:
-            return JSONResponse(
-                {"translations": None, "debug": debug_info}, status_code=400
+            _raise_http_error(
+                debug_active, debug_info, exc.status_code, str(exc.detail)
             )
+        except _DebugResponse as debug_response:
+            return debug_response.response
         raise
     except Exception as e:
         errors_total.inc()
-        debug_info["error"] = f"Translation failed: {e}"
         debug_info["duration"] = round(time.perf_counter() - start, 3)
-        if debug_active:
-            return JSONResponse(
-                {"translations": None, "debug": debug_info}, status_code=500
-            )
-        raise HTTPException(status_code=500, detail=f"Translation failed: {e}")
+        try:
+            _raise_http_error(debug_active, debug_info, 500, f"Translation failed: {e}")
+        except _DebugResponse as exc:
+            return exc.response
+        raise

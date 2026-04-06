@@ -6,11 +6,12 @@ Enhanced with Unified Message Endpoint for Audio/Text Input
 """
 
 import base64
+import hashlib
 import logging
 import time
 import uuid
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import (
     APIRouter,
@@ -31,6 +32,33 @@ from ..websocket import MessageType, WebSocketManager, get_websocket_manager
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+SESSION_NOT_FOUND_MESSAGE = "Session nicht gefunden"
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def iso_utc_now() -> str:
+    return utc_now().isoformat()
+
+
+def _safe_identifier(value: Optional[str]) -> str:
+    if not value:
+        return "missing"
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+
+
+def _log_session_event(message: str, session_id: Optional[str], **extra: Any) -> None:
+    safe_extra = {"session_ref": _safe_identifier(session_id), **extra}
+    logger.info("%s | %s", message, safe_extra)
+
+
+ManagerDependency = Annotated[
+    WebSocketManager,
+    Depends(get_websocket_manager),
+]
+
 
 def validate_session_languages(
     session: Any,
@@ -46,8 +74,12 @@ def validate_session_languages(
 
     Raises HTTPException if languages don't match.
     """
-    logger.info(
-        f"🔍 Validating languages: session={session.id}, client={client_type.value}, source={source_lang}, target={target_lang}, customer_lang={session.customer_language}, admin_lang={session.admin_language}"
+    _log_session_event(
+        "🔍 Validating languages",
+        session.id,
+        client=client_type.value,
+        source_lang=source_lang,
+        target_lang=target_lang,
     )
 
     def create_error_response(error_type: str, message: str, details: Dict) -> Dict:
@@ -311,6 +343,22 @@ class ErrorResponse(BaseModel):
     )
 
 
+BAD_REQUEST_RESPONSE = {400: {"model": ErrorResponse, "description": "Bad request"}}
+NOT_FOUND_RESPONSE = {404: {"model": ErrorResponse, "description": "Not found"}}
+SERVER_ERROR_RESPONSE = {
+    500: {"model": ErrorResponse, "description": "Internal server error"}
+}
+MESSAGE_ROUTE_RESPONSES = {
+    **BAD_REQUEST_RESPONSE,
+    **NOT_FOUND_RESPONSE,
+    **SERVER_ERROR_RESPONSE,
+}
+ACTIVITY_ROUTE_RESPONSES = {
+    **BAD_REQUEST_RESPONSE,
+    **NOT_FOUND_RESPONSE,
+}
+
+
 # 📱 Mobile-Optimization Models
 
 
@@ -367,7 +415,7 @@ SUPPORTED_LANGUAGES: Dict[str, Dict[str, str]] = {
 }
 
 
-@router.post("/session/create")
+@router.post("/session/create", responses=BAD_REQUEST_RESPONSE)
 async def create_session(customer_language: str) -> Dict[str, Any]:
     """Neue Session für Admin-Kunde Gespräch erstellen"""
     if customer_language not in SUPPORTED_LANGUAGES:
@@ -384,12 +432,12 @@ async def create_session(customer_language: str) -> Dict[str, Any]:
     }
 
 
-@router.get("/session/{session_id}")
+@router.get("/session/{session_id}", responses=NOT_FOUND_RESPONSE)
 async def get_session_info(session_id: str) -> Dict[str, Any]:
     """Session-Informationen abrufen"""
     session = session_manager.get_session(session_id)
     if not session:
-        raise HTTPException(404, "Session nicht gefunden")
+        raise HTTPException(404, SESSION_NOT_FOUND_MESSAGE)
 
     return {
         "id": session.id,
@@ -409,11 +457,11 @@ async def get_active_sessions() -> Dict[str, Any]:
     return {"sessions": session_manager.get_active_sessions()}
 
 
-@router.post("/session/{session_id}/message", response_model=MessageResponse)
+@router.post("/session/{session_id}/message", responses=MESSAGE_ROUTE_RESPONSES)
 async def send_unified_message(
     session_id: str,
     request: Request,
-    manager: WebSocketManager = Depends(get_websocket_manager),
+    manager: ManagerDependency,
 ) -> MessageResponse:
     """
     Unified Message Endpoint für Audio- und Text-Input
@@ -429,13 +477,13 @@ async def send_unified_message(
     logger = logging.getLogger(__name__)
 
     start_time = time.perf_counter()
-    logger.info(f"🚀 Processing message for session {session_id}")
+    _log_session_event("🚀 Processing message", session_id)
 
     # Session-Validation
-    logger.debug(f"🔍 Validating session {session_id}")
+    logger.debug("🔍 Validating session")
     session = session_manager.get_session(session_id)
     if not session:
-        logger.error(f"❌ Session nicht gefunden: {session_id}")
+        _log_session_event("❌ Session nicht gefunden", session_id)
         raise HTTPException(
             status_code=404,
             detail=create_error_response(
@@ -446,8 +494,8 @@ async def send_unified_message(
         )
 
     if session.status != SessionStatus.ACTIVE:
-        logger.error(
-            f"❌ Session nicht aktiv: {session_id}, Status: {session.status.value}"
+        _log_session_event(
+            "❌ Session nicht aktiv", session_id, session_status=session.status.value
         )
         raise HTTPException(
             status_code=400,
@@ -458,27 +506,30 @@ async def send_unified_message(
             ),
         )
 
-    logger.info(f"✅ Session-Validation erfolgreich: {session_id}")
+    _log_session_event("✅ Session-Validation erfolgreich", session_id)
 
     # Content-Type-basierte Auto-Detection
     content_type = request.headers.get("content-type", "")
-    logger.info(f"📋 Content-Type: {content_type}")
+    logger.info("📋 Content-Type received | %s", {"content_type": content_type})
 
     try:
         if content_type.startswith("multipart/form-data"):
             # Audio-Pipeline
-            logger.info(f"🎵 Starte Audio-Pipeline für {session_id}...")
+            _log_session_event("🎵 Starte Audio-Pipeline", session_id)
             result = await process_audio_input(session_id, request, start_time, manager)
-            logger.info(f"✅ Audio-Pipeline erfolgreich: {session_id}")
+            _log_session_event("✅ Audio-Pipeline erfolgreich", session_id)
             return result
         elif content_type.startswith("application/json"):
             # Text-Pipeline
-            logger.info(f"📝 Starte Text-Pipeline für {session_id}...")
+            _log_session_event("📝 Starte Text-Pipeline", session_id)
             result = await process_text_input(session_id, request, start_time, manager)
-            logger.info(f"✅ Text-Pipeline erfolgreich: {session_id}")
+            _log_session_event("✅ Text-Pipeline erfolgreich", session_id)
             return result
         else:
-            logger.error(f"❌ Unsupported Content-Type: {content_type}")
+            logger.error(
+                "❌ Unsupported Content-Type received | %s",
+                {"content_type": content_type},
+            )
             raise HTTPException(
                 status_code=400,
                 detail=create_error_response(
@@ -489,11 +540,13 @@ async def send_unified_message(
             )
 
     except HTTPException:
-        logger.info(f"⚠️ HTTPException in send_unified_message für {session_id}")
+        _log_session_event("⚠️ HTTPException in send_unified_message", session_id)
         raise
     except Exception as e:
-        logger.error(
-            f"💥 UNEXPECTED ERROR in send_unified_message für {session_id}: {e}"
+        _log_session_event(
+            "💥 Unexpected error in send_unified_message",
+            session_id,
+            error_type=type(e).__name__,
         )
         import traceback
 
@@ -616,7 +669,7 @@ async def process_audio_input(
         original_audio_b64 = base64.b64encode(file_bytes).decode()
         original_audio_url = save_original_audio(message_id, original_audio_b64)
     except Exception as e:
-        logger.warning(f"⚠️ Failed to save original audio: {e}")
+        logger.warning("⚠️ Failed to save original audio: %s", type(e).__name__)
 
     # Save translated audio
     audio_bytes = result.get("audio_bytes")
@@ -625,7 +678,7 @@ async def process_audio_input(
             translated_audio_b64 = base64.b64encode(audio_bytes).decode()
             save_translated_audio(message_id, translated_audio_b64)
         except Exception as e:
-            logger.warning(f"⚠️ Failed to save translated audio: {e}")
+            logger.warning("⚠️ Failed to save translated audio: %s", type(e).__name__)
 
     # Transform pipeline metadata to match spec format (with message_id for audio URLs)
     pipeline_metadata = transform_pipeline_metadata(
@@ -700,9 +753,15 @@ async def process_text_input(
     body = None
     try:
         body = await request.json()
-        logger.info(f"📦 Received JSON payload: {body}")
+        logger.info(
+            "📦 Received JSON payload metadata | %s",
+            {
+                "keys": sorted(body.keys()) if isinstance(body, dict) else [],
+                "has_text": bool(body.get("text")) if isinstance(body, dict) else False,
+            },
+        )
     except Exception as e:
-        logger.error(f"❌ Failed to parse JSON: {str(e)}")
+        logger.error("❌ Failed to parse JSON: %s", type(e).__name__)
         raise HTTPException(
             status_code=400,
             detail=create_error_response("INVALID_JSON", f"Invalid JSON: {str(e)}", {}),
@@ -734,7 +793,10 @@ async def process_text_input(
         else:
             user_message = f"Ungültige Eingabe für Feld '{field_name}': {error_details.get('msg', 'Validierungsfehler')}"
 
-        logger.error(f"❌ Validation failed: {user_message}, details: {error_details}")
+        logger.error(
+            "❌ Validation failed | %s",
+            {"field": field_name, "error_type": error_type},
+        )
         raise HTTPException(
             status_code=400,
             detail=create_error_response(
@@ -746,7 +808,12 @@ async def process_text_input(
 
     # Language validation
     logger.info(
-        f"🔍 Starting language validation for text request: source={text_request.source_lang}, target={text_request.target_lang}, client={text_request.client_type}"
+        "🔍 Starting language validation for text request | %s",
+        {
+            "source_lang": text_request.source_lang,
+            "target_lang": text_request.target_lang,
+            "client_type": text_request.client_type.value,
+        },
     )
     if (
         text_request.source_lang not in SUPPORTED_LANGUAGES
@@ -764,7 +831,11 @@ async def process_text_input(
     # Validate languages match session configuration
     session = session_manager.get_session(session_id)
     logger.info(
-        f"🔎 Session lookup for text input, session_id={session_id}, session_found={session is not None}, customer_lang={session.customer_language if session else 'N/A'}, admin_lang={session.admin_language if session else 'N/A'}"
+        "🔎 Session lookup for text input | %s",
+        {
+            "session_ref": _safe_identifier(session_id),
+            "session_found": session is not None,
+        },
     )
     if session:
         validate_session_languages(
@@ -775,7 +846,8 @@ async def process_text_input(
         )
     else:
         logger.warning(
-            f"⚠️ Session {session_id} not found for language validation - skipping check"
+            "⚠️ Session not found for language validation - skipping check | %s",
+            {"session_ref": _safe_identifier(session_id)},
         )
 
     # Text-Pipeline ausführen (ASR überspringen)
@@ -887,7 +959,7 @@ async def create_session_message(
         audio_base64=base64.b64encode(audio_bytes).decode() if audio_bytes else None,
         source_lang=source_lang,
         target_lang=target_lang,
-        timestamp=datetime.now(),
+        timestamp=utc_now(),
         pipeline_metadata=pipeline_metadata,
         original_audio_url=original_audio_url,
     )
@@ -896,8 +968,10 @@ async def create_session_message(
     session_manager.add_message(session_id, message)
 
     # ✨ WebSocket Broadcasting mit differentiated content
-    logger.info(
-        f"🔄 Starte WebSocket-Broadcasting für session={session_id}, sender={client_type}"
+    _log_session_event(
+        "🔄 Starte WebSocket-Broadcasting",
+        session_id,
+        sender=client_type.value,
     )
     try:
         # Only attempt broadcasting if a WebSocketManager was provided
@@ -920,19 +994,31 @@ async def create_session_message(
 
         # Task 4.7: Handle broadcast failures
         if result.success:
-            logger.info(
-                f"✅ WebSocket-Broadcasting erfolgreich für {session_id}: "
-                f"{result.successful_sends}/{result.total_connections} zugestellt"
+            _log_session_event(
+                "✅ WebSocket-Broadcasting erfolgreich",
+                session_id,
+                successful_sends=result.successful_sends,
+                total_connections=result.total_connections,
             )
         else:
             logger.error(
-                f"❌ WebSocket-Broadcasting fehlgeschlagen für {session_id}: "
-                f"{result.successful_sends} erfolgreich, {result.failed_sends} fehlgeschlagen "
-                f"von {result.total_connections} Verbindungen. "
-                f"Fehler: {', '.join(result.errors)}"
+                "❌ WebSocket-Broadcasting fehlgeschlagen | %s",
+                {
+                    "session_ref": _safe_identifier(session_id),
+                    "successful_sends": result.successful_sends,
+                    "failed_sends": result.failed_sends,
+                    "total_connections": result.total_connections,
+                    "error_count": len(result.errors),
+                },
             )
     except Exception as e:
-        logger.error(f"❌ WebSocket-Broadcasting-Fehler für {session_id}: {e}")
+        logger.error(
+            "❌ WebSocket-Broadcasting-Fehler | %s",
+            {
+                "session_ref": _safe_identifier(session_id),
+                "error_type": type(e).__name__,
+            },
+        )
         # WebSocket-Fehler sollen den HTTP-Request nicht zum Absturz bringen
         import traceback
 
@@ -961,12 +1047,10 @@ async def broadcast_message_to_session(
     Returns:
         BroadcastResult with success status and metrics
     """
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    logger.info(
-        f"📡 Broadcasting message in session {session_id} from {sender_type.value}"
+    _log_session_event(
+        "📡 Broadcasting message",
+        session_id,
+        sender_type=sender_type.value,
     )
 
     # Original Message für Sender (ASR-Bestätigung)
@@ -1009,7 +1093,7 @@ async def broadcast_message_to_session(
         receiver_message["original_audio_url"] = message.original_audio_url
 
     # 🎯 Differentiated Broadcasting ausführen
-    logger.info(f"📤 Broadcasting differentiated content to session {session_id}")
+    _log_session_event("📤 Broadcasting differentiated content", session_id)
     if manager is None:
         # No WebSocketManager provided (e.g., unit tests without DI) -> noop
         class _NoopResult:
@@ -1028,9 +1112,11 @@ async def broadcast_message_to_session(
             original_message=sender_message,
             translated_message=receiver_message,
         )
-    logger.info(
-        f"✅ Broadcast completed for session {session_id}: "
-        f"{result.successful_sends}/{result.total_connections} delivered"
+    _log_session_event(
+        "✅ Broadcast completed",
+        session_id,
+        successful_sends=result.successful_sends,
+        total_connections=result.total_connections,
     )
     return result
 
@@ -1043,16 +1129,16 @@ def create_error_response(
         error_code=error_code,
         error_message=error_message,
         details=details,
-        timestamp=datetime.now().isoformat(),
+        timestamp=iso_utc_now(),
     ).model_dump()
 
 
-@router.get("/session/{session_id}/messages")
+@router.get("/session/{session_id}/messages", responses=NOT_FOUND_RESPONSE)
 async def get_session_messages(session_id: str) -> Dict[str, Any]:
     """Nachrichten einer Session abrufen"""
     session = session_manager.get_session(session_id)
     if not session:
-        raise HTTPException(404, "Session nicht gefunden")
+        raise HTTPException(404, SESSION_NOT_FOUND_MESSAGE)
 
     return {
         "session_id": session_id,
@@ -1060,7 +1146,7 @@ async def get_session_messages(session_id: str) -> Dict[str, Any]:
     }
 
 
-@router.get("/audio/{message_id}.wav")
+@router.get("/audio/{message_id}.wav", responses=NOT_FOUND_RESPONSE)
 async def get_message_audio(message_id: str):
     """Audio-Datei einer Nachricht abrufen (übersetztes Audio)"""
     from fastapi.responses import Response
@@ -1081,7 +1167,7 @@ async def get_message_audio(message_id: str):
     raise HTTPException(404, "Audio file not found")
 
 
-@router.get("/audio/input_{message_id}.wav")
+@router.get("/audio/input_{message_id}.wav", responses=NOT_FOUND_RESPONSE)
 async def get_original_audio(message_id: str):
     """
     Original-Audio einer Nachricht abrufen (Sprecher-Aufnahme)
@@ -1125,11 +1211,11 @@ async def get_supported_languages() -> Dict[str, Any]:
     }
 
 
-@router.post("/session/{session_id}/activity")
+@router.post("/session/{session_id}/activity", responses=ACTIVITY_ROUTE_RESPONSES)
 async def update_client_activity(
     session_id: str,
     activity: ClientActivityUpdate,
-    manager: WebSocketManager = Depends(get_websocket_manager),
+    manager: ManagerDependency,
 ) -> ActivityUpdateResponse:
     """
     📱 Client-Activity-Status aktualisieren für Mobile-Optimization
@@ -1138,7 +1224,7 @@ async def update_client_activity(
     # Session validieren
     session = session_manager.get_session(session_id)
     if not session:
-        raise HTTPException(404, "Session nicht gefunden")
+        raise HTTPException(404, SESSION_NOT_FOUND_MESSAGE)
 
     if session.status != SessionStatus.ACTIVE:
         raise HTTPException(400, "Session ist nicht aktiv")
@@ -1155,7 +1241,7 @@ async def update_client_activity(
     new_intervals = []
     optimization_tips = []
 
-    for connection_dict in session_connections:
+    for _ in session_connections:
         # Connection-Objekt aus all_connections holen
         connection_id = None
         for conn_id, conn in manager.all_connections.items():
@@ -1197,7 +1283,7 @@ async def update_client_activity(
         new_polling_interval=avg_interval,
         optimization_tips=unique_tips[:3],  # Max 3 Tips
         session_id=session_id,
-        timestamp=datetime.now().isoformat(),
+        timestamp=iso_utc_now(),
     )
 
 

@@ -5,7 +5,7 @@ Ermöglicht Kunden das Beitreten und Aktivieren von Sessions
 """
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, status
@@ -18,6 +18,12 @@ logger = logging.getLogger(__name__)
 
 # Router setup
 router = APIRouter(prefix="/api/customer", tags=["customer"])
+
+CUSTOMER_ROUTE_RESPONSES = {
+    400: {"description": "Invalid customer session request"},
+    404: {"description": "Session not found"},
+    500: {"description": "Customer session operation failed"},
+}
 
 
 # Request/Response Models
@@ -48,14 +54,18 @@ class ErrorResponse(BaseModel):
     session_id: Optional[str] = None
 
 
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
 @router.post(
     "/session/activate",
-    response_model=ActivateSessionResponse,
     status_code=status.HTTP_200_OK,
     summary="Aktiviert eine pending Session für den Kunden",
     description="Übernimmt eine Session vom pending in den active Status. Idempotent - kann mehrmals aufgerufen werden.",
+    responses=CUSTOMER_ROUTE_RESPONSES,
 )
-async def activate_session(request: ActivateSessionRequest):
+async def activate_session(request: ActivateSessionRequest) -> ActivateSessionResponse:
     """
     Aktiviert eine Session für Customer-Teilnahme
 
@@ -118,7 +128,7 @@ async def activate_session(request: ActivateSessionRequest):
                 status=session.status.value,
                 customer_language=session.customer_language,
                 message=f"Session {request.session_id} ist bereits aktiv",
-                timestamp=datetime.now().isoformat(),
+                timestamp=utc_now().isoformat(),
             )
 
         # Sprache validieren (optional - die Implementierung kann erweitert werden)
@@ -153,7 +163,7 @@ async def activate_session(request: ActivateSessionRequest):
             status="active",
             customer_language=request.customer_language,
             message=f"Session {request.session_id} wurde erfolgreich aktiviert",
-            timestamp=datetime.now().isoformat(),
+            timestamp=utc_now().isoformat(),
         )
 
     except HTTPException:
@@ -172,8 +182,9 @@ async def activate_session(request: ActivateSessionRequest):
     "/session/{session_id}/status",
     summary="Session-Status für Kunden abrufen",
     description="Ermöglicht Kunden zu prüfen ob eine Session bereit ist",
+    responses=CUSTOMER_ROUTE_RESPONSES,
 )
-async def get_customer_session_status(session_id: str):
+async def get_customer_session_status(session_id: str) -> dict[str, object]:
     """
     Session-Status für Customer-Interface abrufen
 
@@ -212,8 +223,9 @@ async def get_customer_session_status(session_id: str):
     "/languages/supported",
     summary="Unterstützte Sprachen für Kunden abrufen",
     description="Liste aller verfügbaren Sprachen für die Session-Aktivierung",
+    responses={500: {"description": "Supported language lookup failed"}},
 )
-async def get_supported_languages_for_customers():
+async def get_supported_languages_for_customers() -> dict[str, object]:
     """
     Customer-spezifische Sprachen-Liste
 

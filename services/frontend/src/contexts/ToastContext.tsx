@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -18,8 +19,12 @@ interface ToastContextType {
 
 const ToastContext = createContext<ToastContextType | null>(null);
 
-export function ToastProvider({ children }: { children: ReactNode }) {
+export function ToastProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
 
   const showToast = useCallback((type: ToastType, message: string, duration = 5000) => {
     const id = Math.random().toString(36).substring(2, 11);
@@ -32,14 +37,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         removeToast(id);
       }, duration);
     }
-  }, []);
+  }, [removeToast]);
 
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
+  const contextValue = useMemo(
+    () => ({ toasts, showToast, removeToast }),
+    [toasts, showToast, removeToast]
+  );
 
   return (
-    <ToastContext.Provider value={{ toasts, showToast, removeToast }}>
+    <ToastContext.Provider value={contextValue}>
       {children}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </ToastContext.Provider>
@@ -54,7 +60,7 @@ export function useToast() {
   return context;
 }
 
-function ToastContainer({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: string) => void }) {
+function ToastContainer({ toasts, onRemove }: Readonly<{ toasts: Toast[]; onRemove: (id: string) => void }>) {
   if (toasts.length === 0) return null;
 
   return (
@@ -66,7 +72,7 @@ function ToastContainer({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: 
   );
 }
 
-function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) => void }) {
+function ToastItem({ toast, onRemove }: Readonly<{ toast: Toast; onRemove: (id: string) => void }>) {
   const config = {
     success: { bg: 'bg-green-500', icon: '✓' },
     error: { bg: 'bg-red-500', icon: '✕' },

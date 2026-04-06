@@ -3,7 +3,7 @@ WebSocket Monitoring API Routes
 Provides comprehensive monitoring and health check endpoints for WebSocket infrastructure.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -12,10 +12,22 @@ from fastapi.responses import JSONResponse
 from .websocket_monitor import get_websocket_monitor
 
 router = APIRouter(prefix="/api/websocket/monitoring", tags=["WebSocket Monitoring"])
+MONITORING_ROUTE_RESPONSES = {
+    404: {"description": "Requested WebSocket resource not found"},
+    500: {"description": "Monitoring operation failed"},
+}
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def utc_now_iso() -> str:
+    return utc_now().isoformat()
 
 
 @router.get("/health")
-async def websocket_health_check():
+def websocket_health_check():
     """
     WebSocket system health check endpoint
     Returns current health status and key metrics
@@ -28,7 +40,7 @@ async def websocket_health_check():
             content={
                 "status": "success",
                 "data": health_status,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except Exception as e:
@@ -37,13 +49,13 @@ async def websocket_health_check():
             content={
                 "status": "error",
                 "message": f"Health check failed: {str(e)}",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
 
 
-@router.get("/stats")
-async def websocket_connection_stats():
+@router.get("/stats", responses=MONITORING_ROUTE_RESPONSES)
+def websocket_connection_stats():
     """
     Comprehensive WebSocket connection statistics
     """
@@ -55,7 +67,7 @@ async def websocket_connection_stats():
             content={
                 "status": "success",
                 "data": stats,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except Exception as e:
@@ -64,8 +76,8 @@ async def websocket_connection_stats():
         )
 
 
-@router.get("/connections")
-async def list_active_connections(
+@router.get("/connections", responses=MONITORING_ROUTE_RESPONSES)
+def list_active_connections(
     session_id: Optional[str] = Query(None, description="Filter by session ID"),
     client_type: Optional[str] = Query(
         None, description="Filter by client type (admin/customer)"
@@ -120,7 +132,7 @@ async def list_active_connections(
                     "bytes_received": metrics.bytes_received,
                     "errors": metrics.errors,
                     "connection_duration": (
-                        (datetime.utcnow() - metrics.connect_time).total_seconds()
+                        (utc_now() - metrics.connect_time).total_seconds()
                     ),
                 }
             )
@@ -139,7 +151,7 @@ async def list_active_connections(
                         "limit": limit,
                     },
                 },
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except Exception as e:
@@ -148,8 +160,8 @@ async def list_active_connections(
         )
 
 
-@router.get("/sessions/{session_id}/connections")
-async def get_session_connections(session_id: str):
+@router.get("/sessions/{session_id}/connections", responses=MONITORING_ROUTE_RESPONSES)
+def get_session_connections(session_id: str):
     """
     Get all WebSocket connections for a specific session
     """
@@ -184,7 +196,7 @@ async def get_session_connections(session_id: str):
                     "bytes_received": metrics.bytes_received,
                     "errors": metrics.errors,
                     "connection_duration": (
-                        (datetime.utcnow() - metrics.connect_time).total_seconds()
+                        (utc_now() - metrics.connect_time).total_seconds()
                     ),
                 }
             )
@@ -198,7 +210,7 @@ async def get_session_connections(session_id: str):
                     "connections": serialized_connections,
                     "connection_count": len(serialized_connections),
                 },
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except HTTPException:
@@ -209,8 +221,8 @@ async def get_session_connections(session_id: str):
         )
 
 
-@router.get("/metrics/summary")
-async def websocket_metrics_summary(
+@router.get("/metrics/summary", responses=MONITORING_ROUTE_RESPONSES)
+def websocket_metrics_summary(
     hours: int = Query(
         1, ge=1, le=168, description="Number of hours to analyze (max 1 week)"
     )
@@ -231,16 +243,14 @@ async def websocket_metrics_summary(
                 "data": {
                     "time_period": {
                         "hours": hours,
-                        "start_time": (
-                            datetime.utcnow() - timedelta(hours=hours)
-                        ).isoformat(),
-                        "end_time": datetime.utcnow().isoformat(),
+                        "start_time": (utc_now() - timedelta(hours=hours)).isoformat(),
+                        "end_time": utc_now_iso(),
                     },
                     "current_stats": stats,
                     "health_status": health,
                     "note": "Historical metrics require time-series database integration",
                 },
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except Exception as e:
@@ -249,8 +259,8 @@ async def websocket_metrics_summary(
         )
 
 
-@router.post("/connections/{connection_id}/close")
-async def force_close_connection(
+@router.post("/connections/{connection_id}/close", responses=MONITORING_ROUTE_RESPONSES)
+def force_close_connection(
     connection_id: str,
     reason: str = Query(
         "admin_forced_disconnect", description="Reason for forced disconnect"
@@ -281,7 +291,7 @@ async def force_close_connection(
                 "status": "success",
                 "message": f"WebSocket connection {connection_id} force-closed",
                 "reason": reason,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except HTTPException:
@@ -292,8 +302,8 @@ async def force_close_connection(
         )
 
 
-@router.get("/debug/prometheus-metrics")
-async def get_prometheus_metrics():
+@router.get("/debug/prometheus-metrics", responses=MONITORING_ROUTE_RESPONSES)
+def get_prometheus_metrics():
     """
     Get current Prometheus metrics for WebSocket monitoring
     (Useful for debugging Prometheus integration)
@@ -319,7 +329,7 @@ async def get_prometheus_metrics():
                     "total_metric_lines": len(websocket_metrics),
                     "content_type": CONTENT_TYPE_LATEST,
                 },
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except Exception as e:

@@ -88,7 +88,7 @@ export interface WAVValidationResult {
  * ```
  */
 export class AudioRecorderWithWAVConversion {
-  private options: Required<AudioRecorderConfig>;
+  private readonly options: Required<AudioRecorderConfig>;
   private mediaRecorder: MediaRecorder | null = null;
   private audioContext: AudioContext | null = null;
   private stream: MediaStream | null = null;
@@ -127,8 +127,16 @@ export class AudioRecorderWithWAVConversion {
       });
 
       // Create AudioContext for WAV conversion
-      const AudioContextConstructor = window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      this.audioContext = new (AudioContextConstructor!)({
+      const browser = globalThis as typeof globalThis & {
+        AudioContext?: typeof AudioContext;
+        webkitAudioContext?: typeof AudioContext;
+      };
+      const AudioContextConstructor =
+        browser.AudioContext ?? browser.webkitAudioContext;
+      if (!AudioContextConstructor) {
+        throw new Error('AudioContext wird in diesem Browser nicht unterstützt');
+      }
+      this.audioContext = new AudioContextConstructor({
         sampleRate: this.options.sampleRate,
       });
 
@@ -182,7 +190,7 @@ export class AudioRecorderWithWAVConversion {
       this.isRecording = true;
 
       // Auto-stop after max duration
-      this.autoStopTimeout = window.setTimeout(() => {
+      this.autoStopTimeout = globalThis.setTimeout(() => {
         if (this.isRecording) {
           this.stopRecording();
         }
@@ -246,37 +254,25 @@ export class AudioRecorderWithWAVConversion {
    * Convert browser audio format to WAV
    */
   private async convertToWAV(audioBlob: Blob): Promise<Blob> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
+    if (!this.audioContext) {
+      throw new Error('AudioContext not initialized');
+    }
 
-      reader.onload = async () => {
-        try {
-          if (!this.audioContext) {
-            throw new Error('AudioContext not initialized');
-          }
-
-          // Decode audio data
-          const arrayBuffer = reader.result as ArrayBuffer;
-          const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
-
-          // Normalize audio properties
-          const { sampleRate, channels } = this.options;
-          const normalizedBuffer = this.normalizeAudioBuffer(audioBuffer, sampleRate, channels);
-
-          // Create WAV header and combine with audio data
-          const wavArrayBuffer = this.encodeWAV(normalizedBuffer, sampleRate);
-          const wavBlob = new Blob([wavArrayBuffer], { type: 'audio/wav' });
-
-          resolve(wavBlob);
-        } catch (error) {
-          console.error('Error decoding audio:', error);
-          reject(error);
-        }
-      };
-
-      reader.onerror = () => reject(new Error('FileReader error'));
-      reader.readAsArrayBuffer(audioBlob);
-    });
+    try {
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+      const { sampleRate, channels } = this.options;
+      const normalizedBuffer = this.normalizeAudioBuffer(
+        audioBuffer,
+        sampleRate,
+        channels
+      );
+      const wavArrayBuffer = this.encodeWAV(normalizedBuffer, sampleRate);
+      return new Blob([wavArrayBuffer], { type: 'audio/wav' });
+    } catch (error) {
+      console.error('Error decoding audio:', error);
+      throw error;
+    }
   }
 
   /**
@@ -351,9 +347,8 @@ export class AudioRecorderWithWAVConversion {
 
     // Write audio data (Float32 → Int16 conversion)
     let offset = 44;
-    for (let i = 0; i < audioData.length; i++) {
-      // Normalize and clip
-      let sample = Math.max(-1, Math.min(1, audioData[i]));
+    for (const sampleValue of audioData) {
+      let sample = Math.max(-1, Math.min(1, sampleValue));
       // Convert to 16-bit integer
       sample = sample * 0x7fff;
       view.setInt16(offset, sample, true);
@@ -367,78 +362,58 @@ export class AudioRecorderWithWAVConversion {
    * Write string to DataView at specified offset
    */
   private writeString(view: DataView, offset: number, string: string): void {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
+    for (const [index, char] of Array.from(string).entries()) {
+      view.setUint8(offset + index, char.codePointAt(0) ?? 0);
     }
+  }
+
+  private readAsciiString(
+    arrayBuffer: ArrayBuffer,
+    offset: number,
+    length: number
+  ): string {
+    const bytes = new Uint8Array(arrayBuffer, offset, length);
+    return String.fromCodePoint(...Array.from(bytes));
   }
 
   /**
    * Validate WAV format structure
    */
   private async validateWAVFormat(wavBlob: Blob): Promise<WAVValidationResult> {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
+    try {
+      const arrayBuffer = await wavBlob.arrayBuffer();
+      const dataView = new DataView(arrayBuffer);
+      const riff = this.readAsciiString(arrayBuffer, 0, 4);
+      if (riff !== 'RIFF') {
+        return { valid: false, error: 'Kein RIFF-Header gefunden' };
+      }
 
-      reader.onload = () => {
-        const arrayBuffer = reader.result as ArrayBuffer;
-        const dataView = new DataView(arrayBuffer);
+      const wave = this.readAsciiString(arrayBuffer, 8, 4);
+      if (wave !== 'WAVE') {
+        return { valid: false, error: 'Kein WAVE-Format gefunden' };
+      }
 
-        try {
-          // Check RIFF header
-          const riff = String.fromCharCode(
-            ...new Uint8Array(arrayBuffer, 0, 4)
-          );
-          if (riff !== 'RIFF') {
-            resolve({ valid: false, error: 'Kein RIFF-Header gefunden' });
-            return;
-          }
+      const fmt = this.readAsciiString(arrayBuffer, 12, 4);
+      if (fmt !== 'fmt ') {
+        return { valid: false, error: 'Kein fmt-chunk gefunden' };
+      }
 
-          // Check WAVE format
-          const wave = String.fromCharCode(
-            ...new Uint8Array(arrayBuffer, 8, 4)
-          );
-          if (wave !== 'WAVE') {
-            resolve({ valid: false, error: 'Kein WAVE-Format gefunden' });
-            return;
-          }
-
-          // Check fmt chunk
-          const fmt = String.fromCharCode(
-            ...new Uint8Array(arrayBuffer, 12, 4)
-          );
-          if (fmt !== 'fmt ') {
-            resolve({ valid: false, error: 'Kein fmt-chunk gefunden' });
-            return;
-          }
-
-          // Read audio properties
-          const audioFormat = dataView.getUint16(20, true);
-          const channels = dataView.getUint16(22, true);
-          const sampleRate = dataView.getUint32(24, true);
-          const bitDepth = dataView.getUint16(34, true);
-
-          resolve({
-            valid: true,
-            format: {
-              audioFormat,
-              channels,
-              sampleRate,
-              bitDepth,
-              fileSize: arrayBuffer.byteLength,
-            },
-          });
-        } catch (error) {
-          resolve({
-            valid: false,
-            error: (error as Error).message,
-          });
-        }
+      return {
+        valid: true,
+        format: {
+          audioFormat: dataView.getUint16(20, true),
+          channels: dataView.getUint16(22, true),
+          sampleRate: dataView.getUint32(24, true),
+          bitDepth: dataView.getUint16(34, true),
+          fileSize: arrayBuffer.byteLength,
+        },
       };
-
-      reader.onerror = () =>
-        resolve({ valid: false, error: 'FileReader-Fehler' });
-      reader.readAsArrayBuffer(wavBlob);
-    });
+    } catch (error) {
+      return {
+        valid: false,
+        error: (error as Error).message,
+      };
+    }
   }
 
   /**

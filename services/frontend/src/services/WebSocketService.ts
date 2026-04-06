@@ -41,11 +41,11 @@ class WebSocketService {
   private ws: WebSocket | null = null;
   private sessionId: string | null = null;
   private clientType: ClientType | null = null;
-  private messageHandlers: Set<MessageHandler> = new Set();
-  private statusHandlers: Set<StatusHandler> = new Set();
+  private readonly messageHandlers: Set<MessageHandler> = new Set();
+  private readonly statusHandlers: Set<StatusHandler> = new Set();
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectDelay = 1000;
+  private readonly maxReconnectAttempts = 5;
+  private readonly reconnectDelay = 1000;
   private status: ConnectionStatus = 'disconnected';
   private heartbeatInterval: number | null = null;
   private readonly HEARTBEAT_INTERVAL_MS = 30000; // 30 Sekunden
@@ -54,7 +54,7 @@ class WebSocketService {
    * Connect to WebSocket server
    */
   connect(sessionId: string, clientType: ClientType): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
       console.log('[WebSocket] Already connected');
       return;
     }
@@ -204,8 +204,8 @@ class WebSocketService {
   private startHeartbeat(): void {
     this.stopHeartbeat(); // Clear any existing interval
 
-    this.heartbeatInterval = window.setInterval(() => {
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    this.heartbeatInterval = globalThis.setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
         try {
           this.ws.send(JSON.stringify({ type: 'heartbeat_pong' }));
           console.log('[WebSocket] Heartbeat sent');

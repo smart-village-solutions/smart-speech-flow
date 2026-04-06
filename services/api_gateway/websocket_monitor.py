@@ -8,13 +8,17 @@ import asyncio
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set
 
 from prometheus_client import Counter, Gauge, Histogram, Info
 
 logger = logging.getLogger(__name__)
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 class ConnectionState(Enum):
@@ -237,7 +241,7 @@ class WebSocketMonitor:
             session_id=session_id,
             client_type=client_type,
             origin=origin,
-            connect_time=datetime.utcnow(),
+            connect_time=utc_now(),
         )
 
         self._active_connections[connection_id] = metrics
@@ -272,7 +276,7 @@ class WebSocketMonitor:
             return None
 
         # Update connection metrics
-        metrics.disconnect_time = datetime.utcnow()
+        metrics.disconnect_time = utc_now()
         metrics.disconnect_reason = reason
         metrics.connection_duration = (
             metrics.disconnect_time - metrics.connect_time
@@ -377,7 +381,7 @@ class WebSocketMonitor:
         if not metrics:
             return
 
-        metrics.last_heartbeat = datetime.utcnow()
+        metrics.last_heartbeat = utc_now()
 
         # Update Prometheus metrics
         self.heartbeat_latency.labels(
@@ -454,7 +458,7 @@ class WebSocketMonitor:
 
     def get_health_status(self) -> Dict[str, Any]:
         """Get WebSocket system health status"""
-        now = datetime.utcnow()
+        now = utc_now()
         healthy_connections = 0
         stale_connections = 0
 
@@ -499,28 +503,28 @@ class WebSocketMonitor:
             excess = len(self._connection_history) - self._max_history_size
             self._connection_history = self._connection_history[excess:]
 
+    def _find_stale_connections(self, now: datetime) -> List[str]:
+        stale_connections: List[str] = []
+        for connection_id, metrics in self._active_connections.items():
+            if metrics.last_heartbeat:
+                time_since_heartbeat = (now - metrics.last_heartbeat).total_seconds()
+                if time_since_heartbeat > 300:
+                    stale_connections.append(connection_id)
+                continue
+
+            connection_age = (now - metrics.connect_time).total_seconds()
+            if connection_age > 300:
+                stale_connections.append(connection_id)
+        return stale_connections
+
     async def periodic_cleanup(self):
         """Periodic cleanup task for stale connections"""
         while True:
             try:
                 await asyncio.sleep(300)  # Run every 5 minutes
 
-                now = datetime.utcnow()
-                stale_connections = []
-
-                for connection_id, metrics in self._active_connections.items():
-                    # Consider connection stale if no heartbeat for 5 minutes
-                    if metrics.last_heartbeat:
-                        time_since_heartbeat = (
-                            now - metrics.last_heartbeat
-                        ).total_seconds()
-                        if time_since_heartbeat > 300:
-                            stale_connections.append(connection_id)
-                    else:
-                        # No heartbeat recorded, check connection age
-                        connection_age = (now - metrics.connect_time).total_seconds()
-                        if connection_age > 300:  # 5 minutes without any heartbeat
-                            stale_connections.append(connection_id)
+                now = utc_now()
+                stale_connections = self._find_stale_connections(now)
 
                 # Clean up stale connections
                 for connection_id in stale_connections:

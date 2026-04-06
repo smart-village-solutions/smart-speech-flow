@@ -7,12 +7,16 @@ import os
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Deque, Dict, Optional, Tuple
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 @dataclass
@@ -167,7 +171,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 "window_seconds": window,
                 "scope": scope,
             },
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_now().isoformat() + "Z",
         }
         response = JSONResponse(status_code=429, content=content)
         response.headers["Retry-After"] = retry_after_header

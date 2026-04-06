@@ -242,54 +242,47 @@ class EnhancedAudioValidator:
         self, audio_bytes: bytes, source_format: str
     ) -> Optional[bytes]:
         """Konvertiere Audio zu 16kHz, 16-bit, Mono WAV mit FFmpeg"""
-
-        temp_input = None
-        temp_output = None
-
         try:
-            # Temporäre Eingabedatei
-            with tempfile.NamedTemporaryFile(
-                suffix=f".{source_format}", delete=False
-            ) as temp_in:
-                temp_input = temp_in.name
-                temp_in.write(audio_bytes)
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_input = os.path.join(temp_dir, f"input.{source_format}")
+                temp_output = os.path.join(temp_dir, "converted.wav")
 
-            # Temporäre Ausgabedatei
-            temp_output = tempfile.mktemp(suffix=".wav")
+                with open(temp_input, "wb") as temp_in:
+                    temp_in.write(audio_bytes)
 
-            # FFmpeg-Kommando für WAV-Konvertierung
-            cmd = [
-                "ffmpeg",
-                "-i",
-                temp_input,
-                "-ar",
-                "16000",  # Sample Rate: 16kHz
-                "-ac",
-                "1",  # Channels: Mono
-                "-sample_fmt",
-                "s16",  # Bit Depth: 16-bit
-                "-f",
-                "wav",  # Format: WAV
-                "-y",  # Überschreiben
-                temp_output,
-            ]
+                cmd = [
+                    "ffmpeg",
+                    "-i",
+                    temp_input,
+                    "-ar",
+                    "16000",
+                    "-ac",
+                    "1",
+                    "-sample_fmt",
+                    "s16",
+                    "-f",
+                    "wav",
+                    "-y",
+                    temp_output,
+                ]
 
-            # Stille Ausführung
-            result = subprocess.run(
-                cmd, capture_output=True, timeout=30  # 30 Sekunden Timeout
-            )
+                result = subprocess.run(cmd, capture_output=True, timeout=30)
 
-            if result.returncode == 0 and os.path.exists(temp_output):
-                with open(temp_output, "rb") as f:
-                    converted_audio = f.read()
+                if result.returncode == 0 and os.path.exists(temp_output):
+                    with open(temp_output, "rb") as f:
+                        converted_audio = f.read()
 
-                logger.info(
-                    f"FFmpeg-Konvertierung erfolgreich: {len(audio_bytes)} -> {len(converted_audio)} bytes"
-                )
-                return converted_audio
-            else:
+                    logger.info(
+                        "FFmpeg-Konvertierung erfolgreich: %s -> %s bytes",
+                        len(audio_bytes),
+                        len(converted_audio),
+                    )
+                    return converted_audio
+
                 logger.error(
-                    f"FFmpeg-Fehler (Code {result.returncode}): {result.stderr.decode()}"
+                    "FFmpeg-Fehler (Code %s): %s",
+                    result.returncode,
+                    result.stderr.decode(),
                 )
                 return None
 
@@ -299,14 +292,6 @@ class EnhancedAudioValidator:
         except Exception as e:
             logger.error(f"FFmpeg-Konvertierung Fehler: {e}")
             return None
-        finally:
-            # Cleanup
-            for temp_file in [temp_input, temp_output]:
-                if temp_file and os.path.exists(temp_file):
-                    try:
-                        os.unlink(temp_file)
-                    except OSError:
-                        pass
 
     def _generate_error_message(
         self, format_detection: AudioFormatDetection, details: dict
