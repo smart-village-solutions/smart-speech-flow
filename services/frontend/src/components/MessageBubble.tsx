@@ -90,8 +90,8 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    globalThis.addEventListener('keydown', handleKeyDown);
+    return () => globalThis.removeEventListener('keydown', handleKeyDown);
   }, [showMetadataModal]);
 
   const playAudio = async (url: string) => {
@@ -179,15 +179,18 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
 
       {/* Pipeline Metadata Modal */}
       {showMetadataModal && message.pipeline_metadata && (
-        <div
+        <dialog
+          open
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-          onClick={() => setShowMetadataModal(false)}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowMetadataModal(false);
+            }
+          }}
         >
           <div
             className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
             onMouseDown={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
             aria-label="Pipeline Details"
           >
             {/* Header */}
@@ -267,7 +270,7 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
               )}
             </div>
           </div>
-        </div>
+        </dialog>
       )}
     </>
   );
