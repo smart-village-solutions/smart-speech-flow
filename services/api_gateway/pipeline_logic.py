@@ -122,6 +122,344 @@ class AudioValidationResult:
     processed_audio: Optional[bytes] = None
 
 
+def _validation_time_ms(start_time: float) -> int:
+    return int((time.perf_counter() - start_time) * 1000)
+
+
+def _build_audio_validation_failure(
+    *,
+    start_time: float,
+    error_code: str,
+    error_message: str,
+    details: Dict[str, Any],
+) -> AudioValidationResult:
+    return AudioValidationResult(
+        is_valid=False,
+        error_code=error_code,
+        error_message=error_message,
+        details=details,
+        validation_time_ms=_validation_time_ms(start_time),
+    )
+
+
+def _read_wav_properties(
+    audio_bytes: bytes, start_time: float
+) -> AudioValidationResult | Tuple[int, int, int, float]:
+    try:
+        audio_io = io.BytesIO(audio_bytes)
+        with wave.open(audio_io, "rb") as wav_file:
+            channels = wav_file.getnchannels()
+            sample_width = wav_file.getsampwidth()
+            sample_rate = wav_file.getframerate()
+            frames = wav_file.getnframes()
+            duration_seconds = frames / sample_rate if sample_rate > 0 else 0
+            bit_depth = sample_width * 8
+        return channels, bit_depth, sample_rate, duration_seconds
+    except Exception as exc:
+        return _build_audio_validation_failure(
+            start_time=start_time,
+            error_code="INVALID_WAV_FORMAT",
+            error_message=f"Invalid WAV format: {str(exc)}",
+            details={"wav_error": str(exc)},
+        )
+
+
+def _convert_audio_if_needed(
+    audio_bytes: bytes,
+    *,
+    sample_rate: int,
+    bit_depth: int,
+    channels: int,
+    duration_seconds: float,
+    specs: AudioSpecs,
+) -> Tuple[bytes, int, int, int, float, bool, bool, Optional[str]]:
+    conversion_attempted = False
+    conversion_applied = False
+    conversion_error: Optional[str] = None
+
+    if (
+        sample_rate == specs.REQUIRED_SAMPLE_RATE
+        and bit_depth == specs.REQUIRED_BIT_DEPTH
+        and channels == specs.REQUIRED_CHANNELS
+    ):
+        return (
+            audio_bytes,
+            sample_rate,
+            bit_depth,
+            channels,
+            duration_seconds,
+            conversion_attempted,
+            conversion_applied,
+            conversion_error,
+        )
+
+    conversion_attempted = True
+    try:
+        (
+            audio_bytes,
+            sample_rate,
+            bit_depth,
+            channels,
+            duration_seconds,
+        ) = convert_audio_to_required_specs(
+            audio_bytes,
+            sample_rate,
+            channels,
+            specs.REQUIRED_SAMPLE_RATE,
+            specs.REQUIRED_BIT_DEPTH,
+            specs.REQUIRED_CHANNELS,
+        )
+        conversion_applied = True
+    except Exception as exc:
+        conversion_error = str(exc)
+
+    return (
+        audio_bytes,
+        sample_rate,
+        bit_depth,
+        channels,
+        duration_seconds,
+        conversion_attempted,
+        conversion_applied,
+        conversion_error,
+    )
+
+
+def _collect_audio_validation_errors(
+    *,
+    sample_rate: int,
+    bit_depth: int,
+    channels: int,
+    duration_seconds: float,
+    specs: AudioSpecs,
+    conversion_attempted: bool,
+    conversion_applied: bool,
+    conversion_error: Optional[str],
+) -> List[str]:
+    validation_errors = []
+
+    if sample_rate != specs.REQUIRED_SAMPLE_RATE:
+        validation_errors.append(
+            f"Sample rate {sample_rate}Hz, required: {specs.REQUIRED_SAMPLE_RATE}Hz"
+        )
+    if bit_depth != specs.REQUIRED_BIT_DEPTH:
+        validation_errors.append(
+            f"Bit depth {bit_depth}-bit, required: {specs.REQUIRED_BIT_DEPTH}-bit"
+        )
+    if channels != specs.REQUIRED_CHANNELS:
+        validation_errors.append(
+            f"Channels {channels}, required: {specs.REQUIRED_CHANNELS} (Mono)"
+        )
+    if duration_seconds < specs.MIN_DURATION_SECONDS:
+        validation_errors.append(
+            f"Duration {duration_seconds:.2f}s too short, minimum: {specs.MIN_DURATION_SECONDS}s"
+        )
+    if duration_seconds > specs.MAX_DURATION_SECONDS:
+        validation_errors.append(
+            f"Duration {duration_seconds:.2f}s too long, maximum: {specs.MAX_DURATION_SECONDS}s"
+        )
+    if conversion_attempted and not conversion_applied and conversion_error:
+        validation_errors.append(f"automatic conversion failed: {conversion_error}")
+
+    return validation_errors
+
+
+def _normalize_audio_if_requested(
+    audio_bytes: bytes,
+    *,
+    sample_rate: int,
+    bit_depth: int,
+    channels: int,
+    normalize: bool,
+) -> Tuple[bytes, bool]:
+    if not normalize:
+        return audio_bytes, False
+
+    try:
+        normalized_bytes = normalize_audio(
+            audio_bytes, sample_rate, bit_depth, channels
+        )
+        if normalized_bytes != audio_bytes:
+            return normalized_bytes, True
+    except Exception as exc:
+        logging.warning(f"Audio normalization failed: {exc}")
+
+    return audio_bytes, False
+
+
+def _collect_system_metrics() -> Dict[str, float]:
+    return {
+        "cpu": psutil.cpu_percent(),
+        "ram": psutil.virtual_memory().percent,
+    }
+
+
+def _mark_pipeline_failure(
+    debug_info: Dict[str, Any], start_total: float, error_message: str
+) -> None:
+    debug_info["error"] = error_message
+    debug_info["system"] = _collect_system_metrics()
+    debug_info["total_duration"] = round(time.perf_counter() - start_total, 3)
+
+
+def _pipeline_error_result(
+    *,
+    debug_info: Dict[str, Any],
+    start_total: float,
+    error_message: str,
+    asr_text: Optional[str],
+    translation_text: Optional[str],
+    audio_bytes: Optional[bytes],
+    validation_result: Optional[Any] = None,
+) -> Dict[str, Any]:
+    _mark_pipeline_failure(debug_info, start_total, error_message)
+    result = {
+        "error": True,
+        "error_msg": error_message,
+        "asr_text": asr_text,
+        "translation_text": translation_text,
+        "audio_bytes": audio_bytes,
+        "debug": debug_info,
+    }
+    if validation_result is not None:
+        result["validation_result"] = validation_result
+    return result
+
+
+def _append_text_validation_step(
+    debug_info: Dict[str, Any],
+    *,
+    text_length: int,
+    validation_result: TextValidationResult,
+    start_validation: float,
+) -> None:
+    debug_info["steps"].append(
+        {
+            "step": "Text_Validation",
+            "input": {"text_length": text_length, "enable_filtering": True},
+            "output": validation_result.is_valid,
+            "error": (
+                None if validation_result.is_valid else validation_result.error_message
+            ),
+            "duration": round(time.perf_counter() - start_validation, 3),
+        }
+    )
+
+
+def _validate_and_normalize_text(
+    text: str,
+    debug_info: Dict[str, Any],
+    start_total: float,
+) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
+    start_validation = time.perf_counter()
+    validation_result = validate_text_input(text, enable_content_filtering=True)
+    _append_text_validation_step(
+        debug_info,
+        text_length=len(text),
+        validation_result=validation_result,
+        start_validation=start_validation,
+    )
+    if validation_result.is_valid:
+        return validation_result.normalized_text, None
+
+    error_message = f"Text validation failed: {validation_result.error_message}"
+    return None, _pipeline_error_result(
+        debug_info=debug_info,
+        start_total=start_total,
+        error_message=error_message,
+        asr_text=None,
+        translation_text=None,
+        audio_bytes=None,
+        validation_result=validation_result,
+    )
+
+
+def _append_audio_validation_step(
+    debug_info: Dict[str, Any],
+    *,
+    original_file_size: int,
+    validation_result: AudioValidationResult,
+    processed_file_size: int,
+    start_validation: float,
+) -> None:
+    validation_step = {
+        "step": "Audio_Validation",
+        "input": {"file_size": original_file_size},
+        "output": validation_result.is_valid,
+        "error": (
+            None if validation_result.is_valid else validation_result.error_message
+        ),
+        "duration": round(time.perf_counter() - start_validation, 3),
+        "details": {
+            "validation_time_ms": validation_result.validation_time_ms,
+            "normalization_applied": validation_result.normalization_applied,
+            "spec_conversion_applied": validation_result.spec_conversion_applied,
+        },
+    }
+
+    if validation_result.is_valid:
+        validation_step["details"].update(
+            {
+                "duration_seconds": validation_result.duration_seconds,
+                "sample_rate": validation_result.sample_rate,
+                "bit_depth": validation_result.bit_depth,
+                "channels": validation_result.channels,
+                "processed_file_size": processed_file_size,
+            }
+        )
+    else:
+        validation_step["details"]["error_code"] = validation_result.error_code
+        validation_step["details"]["error_details"] = validation_result.details
+
+    debug_info["steps"].append(validation_step)
+
+
+def _apply_audio_validation(
+    file_bytes: bytes,
+    *,
+    debug_info: Dict[str, Any],
+    start_total: float,
+) -> Tuple[Optional[bytes], Optional[Dict[str, Any]]]:
+    start_validation = time.perf_counter()
+    original_file_size = len(file_bytes)
+    validation_result = validate_audio_input(file_bytes, normalize=True)
+    processed_bytes = (
+        validation_result.processed_audio
+        if validation_result.is_valid and validation_result.processed_audio
+        else file_bytes
+    )
+
+    _append_audio_validation_step(
+        debug_info,
+        original_file_size=original_file_size,
+        validation_result=validation_result,
+        processed_file_size=len(processed_bytes),
+        start_validation=start_validation,
+    )
+
+    if validation_result.is_valid:
+        return processed_bytes, None
+
+    error_message = f"Audio validation failed: {validation_result.error_message}"
+    return None, _pipeline_error_result(
+        debug_info=debug_info,
+        start_total=start_total,
+        error_message=error_message,
+        asr_text=None,
+        translation_text=None,
+        audio_bytes=None,
+        validation_result=validation_result,
+    )
+
+
+def _finalize_pipeline_success(debug_info: Dict[str, Any], start_total: float) -> None:
+    pipeline_completed_at = utc_now()
+    debug_info["pipeline_completed_at"] = pipeline_completed_at.isoformat() + "Z"
+    debug_info["total_duration_ms"] = int((time.perf_counter() - start_total) * 1000)
+    debug_info["system"] = _collect_system_metrics()
+    debug_info["total_duration"] = round(time.perf_counter() - start_total, 3)
+
+
 # === Audio Validation Functions ===
 
 
@@ -165,93 +503,41 @@ def validate_audio_input(
                 validation_time_ms=int((time.perf_counter() - start_time) * 1000),
             )
 
-        # Step 2: WAV format validation
-        try:
-            audio_io = io.BytesIO(audio_bytes)
-            with wave.open(audio_io, "rb") as wav_file:
-                # Get WAV properties
-                channels = wav_file.getnchannels()
-                sample_width = wav_file.getsampwidth()
-                sample_rate = wav_file.getframerate()
-                frames = wav_file.getnframes()
+        wav_properties = _read_wav_properties(audio_bytes, start_time)
+        if isinstance(wav_properties, AudioValidationResult):
+            return wav_properties
+        channels, bit_depth, sample_rate, duration_seconds = wav_properties
 
-                # Calculate duration
-                duration_seconds = frames / sample_rate if sample_rate > 0 else 0
-                bit_depth = sample_width * 8
+        (
+            audio_bytes,
+            sample_rate,
+            bit_depth,
+            channels,
+            duration_seconds,
+            conversion_attempted,
+            conversion_applied,
+            conversion_error,
+        ) = _convert_audio_if_needed(
+            audio_bytes,
+            sample_rate=sample_rate,
+            bit_depth=bit_depth,
+            channels=channels,
+            duration_seconds=duration_seconds,
+            specs=specs,
+        )
+        file_size_bytes = len(audio_bytes)
 
-        except Exception as e:
-            return AudioValidationResult(
-                is_valid=False,
-                error_code="INVALID_WAV_FORMAT",
-                error_message=f"Invalid WAV format: {str(e)}",
-                details={"wav_error": str(e)},
-                validation_time_ms=int((time.perf_counter() - start_time) * 1000),
-            )
-
-        # Attempt automatic conversion to required specs if needed
-        conversion_attempted = False
-        conversion_applied = False
-        conversion_error: Optional[str] = None
-
-        if (
-            sample_rate != specs.REQUIRED_SAMPLE_RATE
-            or bit_depth != specs.REQUIRED_BIT_DEPTH
-            or channels != specs.REQUIRED_CHANNELS
-        ):
-            conversion_attempted = True
-            try:
-                (audio_bytes, sample_rate, bit_depth, channels, duration_seconds) = (
-                    convert_audio_to_required_specs(
-                        audio_bytes,
-                        sample_rate,
-                        channels,
-                        specs.REQUIRED_SAMPLE_RATE,
-                        specs.REQUIRED_BIT_DEPTH,
-                        specs.REQUIRED_CHANNELS,
-                    )
-                )
-                file_size_bytes = len(audio_bytes)
-                conversion_applied = True
-            except Exception as e:
-                conversion_error = str(e)
-
-        # Step 3: Audio specifications validation
-        validation_errors = []
-
-        # Sample rate check
-        if sample_rate != specs.REQUIRED_SAMPLE_RATE:
-            validation_errors.append(
-                f"Sample rate {sample_rate}Hz, required: {specs.REQUIRED_SAMPLE_RATE}Hz"
-            )
-
-        # Bit depth check
-        if bit_depth != specs.REQUIRED_BIT_DEPTH:
-            validation_errors.append(
-                f"Bit depth {bit_depth}-bit, required: {specs.REQUIRED_BIT_DEPTH}-bit"
-            )
-
-        # Channels check (Mono)
-        if channels != specs.REQUIRED_CHANNELS:
-            validation_errors.append(
-                f"Channels {channels}, required: {specs.REQUIRED_CHANNELS} (Mono)"
-            )
-
-        # Duration checks
-        if duration_seconds < specs.MIN_DURATION_SECONDS:
-            validation_errors.append(
-                f"Duration {duration_seconds:.2f}s too short, minimum: {specs.MIN_DURATION_SECONDS}s"
-            )
-
-        if duration_seconds > specs.MAX_DURATION_SECONDS:
-            validation_errors.append(
-                f"Duration {duration_seconds:.2f}s too long, maximum: {specs.MAX_DURATION_SECONDS}s"
-            )
-
+        validation_errors = _collect_audio_validation_errors(
+            sample_rate=sample_rate,
+            bit_depth=bit_depth,
+            channels=channels,
+            duration_seconds=duration_seconds,
+            specs=specs,
+            conversion_attempted=conversion_attempted,
+            conversion_applied=conversion_applied,
+            conversion_error=conversion_error,
+        )
         if validation_errors:
-            if conversion_attempted and not conversion_applied and conversion_error:
-                validation_errors.append(
-                    f"automatic conversion failed: {conversion_error}"
-                )
             return AudioValidationResult(
                 is_valid=False,
                 error_code="INVALID_AUDIO_SPECS",
@@ -271,25 +557,16 @@ def validate_audio_input(
                         "max_duration": specs.MAX_DURATION_SECONDS,
                     },
                 },
-                validation_time_ms=int((time.perf_counter() - start_time) * 1000),
+                validation_time_ms=_validation_time_ms(start_time),
             )
 
-        # Step 4: Audio normalization (if requested and valid)
-        normalization_applied = False
-        if normalize:
-            try:
-                normalized_bytes = normalize_audio(
-                    audio_bytes, sample_rate, bit_depth, channels
-                )
-                if normalized_bytes != audio_bytes:
-                    normalization_applied = True
-                    audio_bytes = normalized_bytes
-            except Exception as e:
-                logging.warning(f"Audio normalization failed: {e}")
-                # Normalization failure is not critical - continue with original audio
-
-        # Step 5: Success - all validations passed
-        validation_time_ms = int((time.perf_counter() - start_time) * 1000)
+        audio_bytes, normalization_applied = _normalize_audio_if_requested(
+            audio_bytes,
+            sample_rate=sample_rate,
+            bit_depth=bit_depth,
+            channels=channels,
+            normalize=normalize,
+        )
 
         return AudioValidationResult(
             is_valid=True,
@@ -298,7 +575,7 @@ def validate_audio_input(
             sample_rate=sample_rate,
             bit_depth=bit_depth,
             channels=channels,
-            validation_time_ms=validation_time_ms,
+            validation_time_ms=_validation_time_ms(start_time),
             normalization_applied=normalization_applied,
             spec_conversion_applied=conversion_applied,
             processed_audio=audio_bytes,
@@ -310,7 +587,7 @@ def validate_audio_input(
             error_code="VALIDATION_ERROR",
             error_message=f"Audio validation failed: {str(e)}",
             details={"exception": str(e)},
-            validation_time_ms=int((time.perf_counter() - start_time) * 1000),
+            validation_time_ms=_validation_time_ms(start_time),
         )
 
 
@@ -721,47 +998,11 @@ def process_text_pipeline(
     try:
         # Step 1: Text validation (if enabled)
         if validate_text:
-            start_validation = time.perf_counter()
-            validation_result = validate_text_input(text, enable_content_filtering=True)
-
-            debug_info["steps"].append(
-                {
-                    "step": "Text_Validation",
-                    "input": {"text_length": len(text), "enable_filtering": True},
-                    "output": validation_result.is_valid,
-                    "error": (
-                        None
-                        if validation_result.is_valid
-                        else validation_result.error_message
-                    ),
-                    "duration": round(time.perf_counter() - start_validation, 3),
-                }
+            processed_text, validation_failure = _validate_and_normalize_text(
+                text, debug_info, start_total
             )
-
-            if not validation_result.is_valid:
-                debug_info["error"] = (
-                    f"Text validation failed: {validation_result.error_message}"
-                )
-                debug_info["system"] = {
-                    "cpu": psutil.cpu_percent(),
-                    "ram": psutil.virtual_memory().percent,
-                }
-                debug_info["total_duration"] = round(
-                    time.perf_counter() - start_total, 3
-                )
-
-                return {
-                    "error": True,
-                    "error_msg": f"Text validation failed: {validation_result.error_message}",
-                    "validation_result": validation_result,
-                    "asr_text": None,
-                    "translation_text": None,
-                    "audio_bytes": None,
-                    "debug": debug_info,
-                }
-
-            # Use normalized text for processing
-            processed_text = validation_result.normalized_text
+            if validation_failure is not None:
+                return validation_failure
         else:
             processed_text = text
 
@@ -802,21 +1043,14 @@ def process_text_pipeline(
         # Translation error handling
         if translation_resp.status_code != 200:
             error_msg = translation_json.get("detail") or str(translation_json)
-            debug_info["error"] = f"Translation-Fehler: {error_msg}"
-            debug_info["system"] = {
-                "cpu": psutil.cpu_percent(),
-                "ram": psutil.virtual_memory().percent,
-            }
-            debug_info["total_duration"] = round(time.perf_counter() - start_total, 3)
-
-            return {
-                "error": True,
-                "error_msg": f"Translation-Fehler: {error_msg}",
-                "asr_text": processed_text,  # Original text as "ASR" result
-                "translation_text": None,
-                "audio_bytes": None,
-                "debug": debug_info,
-            }
+            return _pipeline_error_result(
+                debug_info=debug_info,
+                start_total=start_total,
+                error_message=f"Translation-Fehler: {error_msg}",
+                asr_text=processed_text,  # Original text as "ASR" result
+                translation_text=None,
+                audio_bytes=None,
+            )
 
         # Optional LLM refinement
         refined_tts_text = tts_text
@@ -893,21 +1127,14 @@ def process_text_pipeline(
                     "duration_ms": tts_duration_ms,
                 }
             )
-            debug_info["error"] = f"TTS-Fehler: {error_msg}"
-            debug_info["system"] = {
-                "cpu": psutil.cpu_percent(),
-                "ram": psutil.virtual_memory().percent,
-            }
-            debug_info["total_duration"] = round(time.perf_counter() - start_total, 3)
-
-            return {
-                "error": True,
-                "error_msg": f"TTS-Fehler: {error_msg}",
-                "asr_text": processed_text,
-                "translation_text": translation_text,
-                "audio_bytes": None,
-                "debug": debug_info,
-            }
+            return _pipeline_error_result(
+                debug_info=debug_info,
+                start_total=start_total,
+                error_message=f"TTS-Fehler: {error_msg}",
+                asr_text=processed_text,
+                translation_text=translation_text,
+                audio_bytes=None,
+            )
 
         audio_bytes = tts_resp.content
 
@@ -938,18 +1165,7 @@ def process_text_pipeline(
                 "duration_ms": tts_duration_ms,
             }
         )  # Pipeline completion timestamp
-        pipeline_completed_at = utc_now()
-        debug_info["pipeline_completed_at"] = pipeline_completed_at.isoformat() + "Z"
-        debug_info["total_duration_ms"] = int(
-            (time.perf_counter() - start_total) * 1000
-        )
-
-        # Success
-        debug_info["system"] = {
-            "cpu": psutil.cpu_percent(),
-            "ram": psutil.virtual_memory().percent,
-        }
-        debug_info["total_duration"] = round(time.perf_counter() - start_total, 3)
+        _finalize_pipeline_success(debug_info, start_total)
 
         return {
             "error": False,
@@ -960,21 +1176,14 @@ def process_text_pipeline(
         }
 
     except Exception as e:
-        debug_info["error"] = f"Pipeline-Fehler: {str(e)}"
-        debug_info["system"] = {
-            "cpu": psutil.cpu_percent(),
-            "ram": psutil.virtual_memory().percent,
-        }
-        debug_info["total_duration"] = round(time.perf_counter() - start_total, 3)
-
-        return {
-            "error": True,
-            "error_msg": f"Pipeline-Fehler: {str(e)}",
-            "asr_text": None,
-            "translation_text": None,
-            "audio_bytes": None,
-            "debug": debug_info,
-        }
+        return _pipeline_error_result(
+            debug_info=debug_info,
+            start_total=start_total,
+            error_message=f"Pipeline-Fehler: {str(e)}",
+            asr_text=None,
+            translation_text=None,
+            audio_bytes=None,
+        )
 
 
 def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audio=True):
@@ -1006,64 +1215,14 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
 
     # Audio Validation Step (if enabled)
     if validate_audio:
-        start_validation = time.perf_counter()
-        original_file_size = len(file_bytes)
-        validation_result = validate_audio_input(file_bytes, normalize=True)
-
-        if validation_result.is_valid and validation_result.processed_audio:
-            file_bytes = validation_result.processed_audio
-
-        validation_step = {
-            "step": "Audio_Validation",
-            "input": {"file_size": original_file_size},
-            "output": validation_result.is_valid,
-            "error": (
-                None if validation_result.is_valid else validation_result.error_message
-            ),
-            "duration": round(time.perf_counter() - start_validation, 3),
-            "details": {
-                "validation_time_ms": validation_result.validation_time_ms,
-                "normalization_applied": validation_result.normalization_applied,
-                "spec_conversion_applied": validation_result.spec_conversion_applied,
-            },
-        }
-
-        if validation_result.is_valid:
-            validation_step["details"].update(
-                {
-                    "duration_seconds": validation_result.duration_seconds,
-                    "sample_rate": validation_result.sample_rate,
-                    "bit_depth": validation_result.bit_depth,
-                    "channels": validation_result.channels,
-                    "processed_file_size": len(file_bytes),
-                }
-            )
-        else:
-            validation_step["details"]["error_code"] = validation_result.error_code
-            validation_step["details"]["error_details"] = validation_result.details
-
-        debug_info["steps"].append(validation_step)
-
-        # Return early if validation failed
-        if not validation_result.is_valid:
-            debug_info["error"] = (
-                f"Audio validation failed: {validation_result.error_message}"
-            )
-            debug_info["system"] = {
-                "cpu": psutil.cpu_percent(),
-                "ram": psutil.virtual_memory().percent,
-            }
-            debug_info["total_duration"] = round(time.perf_counter() - start_total, 3)
-
-            return {
-                "error": True,
-                "error_msg": f"Audio validation failed: {validation_result.error_message}",
-                "validation_result": validation_result,
-                "asr_text": None,
-                "translation_text": None,
-                "audio_bytes": None,
-                "debug": debug_info,
-            }
+        validated_bytes, validation_failure = _apply_audio_validation(
+            file_bytes,
+            debug_info=debug_info,
+            start_total=start_total,
+        )
+        if validation_failure is not None:
+            return validation_failure
+        file_bytes = validated_bytes
 
     # ASR
     start_asr = time.perf_counter()
@@ -1126,20 +1285,14 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
     # Fehlerbehandlung
     if translation_resp.status_code != 200:
         error_msg = translation_json.get("detail") or str(translation_json)
-        debug_info["error"] = f"Translation-Fehler: {error_msg}"
-        debug_info["system"] = {
-            "cpu": psutil.cpu_percent(),
-            "ram": psutil.virtual_memory().percent,
-        }
-        debug_info["total_duration"] = round(time.perf_counter() - start_total, 3)
-        return {
-            "error": True,
-            "error_msg": f"Translation-Fehler: {error_msg}",
-            "asr_text": asr_text,
-            "translation_text": None,
-            "audio_bytes": None,
-            "debug": debug_info,
-        }
+        return _pipeline_error_result(
+            debug_info=debug_info,
+            start_total=start_total,
+            error_message=f"Translation-Fehler: {error_msg}",
+            asr_text=asr_text,
+            translation_text=None,
+            audio_bytes=None,
+        )
     # Optional LLM refinement
     if translation_refiner.is_active:
         refinement_started_at = utc_now()
@@ -1203,20 +1356,14 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
                 "duration_ms": tts_duration_ms,
             }
         )
-        debug_info["error"] = f"TTS-Fehler: {error_msg}"
-        debug_info["system"] = {
-            "cpu": psutil.cpu_percent(),
-            "ram": psutil.virtual_memory().percent,
-        }
-        debug_info["total_duration"] = round(time.perf_counter() - start_total, 3)
-        return {
-            "error": True,
-            "error_msg": f"TTS-Fehler: {error_msg}",
-            "asr_text": asr_text,
-            "translation_text": translation_text,
-            "audio_bytes": None,
-            "debug": debug_info,
-        }
+        return _pipeline_error_result(
+            debug_info=debug_info,
+            start_total=start_total,
+            error_message=f"TTS-Fehler: {error_msg}",
+            asr_text=asr_text,
+            translation_text=translation_text,
+            audio_bytes=None,
+        )
     audio_bytes = tts_resp.content
     debug_info["steps"].append(
         {
@@ -1232,16 +1379,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
         }
     )
 
-    # Pipeline completion timestamp
-    pipeline_completed_at = utc_now()
-    debug_info["pipeline_completed_at"] = pipeline_completed_at.isoformat() + "Z"
-    debug_info["total_duration_ms"] = int((time.perf_counter() - start_total) * 1000)
-
-    debug_info["system"] = {
-        "cpu": psutil.cpu_percent(),
-        "ram": psutil.virtual_memory().percent,
-    }
-    debug_info["total_duration"] = round(time.perf_counter() - start_total, 3)
+    _finalize_pipeline_success(debug_info, start_total)
     return {
         "error": False,
         "asr_text": asr_text,

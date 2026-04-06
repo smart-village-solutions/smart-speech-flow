@@ -369,9 +369,9 @@ class TestMessageHistoryAPI:
         assert "translated_text" in message  # ← Public API key
         assert "timestamp" in message
 
-        # May have audio fields
-        if "audio_base64" in message or "audio_url" in message:
-            assert True  # Audio fields are optional
+        # Audio fields are optional, but if present they must be named as documented.
+        optional_audio_keys = {"audio_base64", "audio_url"}
+        assert set(message).intersection(optional_audio_keys) <= optional_audio_keys
 
 
 if __name__ == "__main__":

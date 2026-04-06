@@ -13,6 +13,8 @@ from fastapi.responses import JSONResponse, Response
 from prometheus_client import Counter, Gauge, generate_latest
 from transformers import pipeline
 
+from services.gpu_metrics import collect_gpu_metrics
+
 try:
     from TTS.api import TTS
 
@@ -248,67 +250,26 @@ def _error_response(
 def _collect_gpu_metrics() -> Dict[str, Any]:
     """Return GPU availability and utilization details for TTS service."""
     global _nvml_initialized
-    gpu_available = bool(torch.cuda.is_available())
-    gpu_info: Dict[str, Any] = {
-        "available": gpu_available,
-        "device_count": torch.cuda.device_count() if gpu_available else 0,
-        "devices": [],
-        "errors": [],
-    }
-
-    if not gpu_available:
-        return gpu_info
-
-    nvml_ready = False
-    if pynvml is not None:
-        try:
-            if not _nvml_initialized:
-                pynvml.nvmlInit()
-                _nvml_initialized = True
-            nvml_ready = True
-        except Exception as exc:  # pragma: no cover - hardware specific branch
-            gpu_info["errors"].append(f"nvml_init_failed: {exc}")
-
-    for device_idx in range(gpu_info["device_count"]):
-        device_data: Dict[str, Any] = {"index": device_idx}
-        try:
-            props = torch.cuda.get_device_properties(device_idx)
-            torch_alloc = torch.cuda.memory_allocated(device_idx)
-            torch_reserved = torch.cuda.memory_reserved(device_idx)
-            device_data.update(
-                {
-                    "name": props.name,
-                    "total_memory": props.total_memory,
-                    "memory_allocated": torch_alloc,
-                    "memory_reserved": torch_reserved,
-                    "memory_utilization": None,
-                    "utilization_percent": None,
-                    "temperature_c": None,
-                }
-            )
-            if nvml_ready:
-                try:
-                    handle = pynvml.nvmlDeviceGetHandleByIndex(device_idx)
-                    util = pynvml.nvmlDeviceGetUtilizationRates(handle)
-                    mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-                    device_data["memory_utilization"] = (
-                        round(mem.used / mem.total * 100, 2) if mem.total else None
-                    )
-                    device_data["utilization_percent"] = util.gpu
-                    device_data["temperature_c"] = pynvml.nvmlDeviceGetTemperature(
-                        handle, pynvml.NVML_TEMPERATURE_GPU
-                    )
-                    device_data["memory_total_nvml"] = mem.total
-                    device_data["memory_used_nvml"] = mem.used
-                except Exception as exc:  # pragma: no cover - hardware specific branch
-                    gpu_info["errors"].append(
-                        f"nvml_query_failed_gpu_{device_idx}: {exc}"
-                    )
-        except Exception as exc:  # pragma: no cover - hardware specific branch
-            gpu_info["errors"].append(f"torch_query_failed_gpu_{device_idx}: {exc}")
-        gpu_info["devices"].append(device_data)
-
+    gpu_info, _nvml_initialized = collect_gpu_metrics(torch, pynvml, _nvml_initialized)
     return gpu_info
+
+
+def _inspect_loaded_model_gpu_usage() -> tuple[bool, List[str]]:
+    gpu_used = False
+    gpu_errors: List[str] = []
+
+    for loaded_model in tts_model_cache.values():
+        try:
+            if hasattr(loaded_model, "_device"):
+                gpu_used = gpu_used or loaded_model._device == "cuda"
+            elif hasattr(loaded_model, "device"):
+                gpu_used = gpu_used or str(loaded_model.device).startswith("cuda")
+            else:
+                gpu_errors.append("model_missing_device_attribute")
+        except Exception as exc:
+            gpu_errors.append(str(exc))
+
+    return gpu_used, gpu_errors
 
 
 def _collect_resource_metrics() -> Dict[str, Any]:
@@ -449,30 +410,17 @@ def health():
     autoscaling = _derive_auto_scaling_signal(resources)
     gpu_info = resources.get("gpu", {})
     gpu_available = gpu_info.get("available", False)
-    gpu_used = False
+    gpu_used, model_gpu_errors = _inspect_loaded_model_gpu_usage()
     gpu_errors: List[str] = (
         list(gpu_info.get("errors", [])) if gpu_info.get("errors") else []
     )
+    gpu_errors.extend(model_gpu_errors)
 
     loaded_models = {}
     for lang in configured_langs:
         loaded_models[lang] = (
             lang in tts_model_cache and tts_model_cache[lang] is not None
         )
-
-    for loaded_model in tts_model_cache.values():
-        try:
-            if hasattr(loaded_model, "_device"):
-                if loaded_model._device == "cuda":
-                    gpu_used = True
-            elif hasattr(loaded_model, "device") and str(
-                loaded_model.device
-            ).startswith("cuda"):
-                gpu_used = True
-            else:
-                gpu_errors.append("model_missing_device_attribute")
-        except Exception as exc:
-            gpu_errors.append(str(exc))
 
     if not gpu_available and not gpu_errors:
         gpu_errors.append("torch.cuda.is_available()==False")

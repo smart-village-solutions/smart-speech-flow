@@ -2,7 +2,7 @@ FROM nvidia/cuda:13.0.0-cudnn-runtime-ubuntu22.04
 
 # System- und Python-Abhängigkeiten installieren
 RUN apt-get update && \
-	apt-get install -y python3 python3-pip ffmpeg curl && \
+	apt-get install -y --no-install-recommends curl ffmpeg python3 python3-pip && \
 	rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

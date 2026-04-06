@@ -1,4 +1,6 @@
 # services/api_gateway/routes/session.py
+from __future__ import annotations
+
 """
 Session-Management Endpunkte für Admin-Kunde Gespräche
 Erweitert das bestehende API Gateway um Session-Funktionalität
@@ -193,63 +195,306 @@ def transform_pipeline_metadata(
     if original_audio_url:
         pipeline_metadata["input"]["audio_url"] = original_audio_url
 
-    # Transform steps to spec format
     for step in steps:
-        step_name = step.get("name") or step.get("step", "").lower()
-
-        # Skip validation steps (not part of main pipeline)
-        if "validation" in step_name.lower():
-            continue
-
-        transformed_step = {
-            "name": step_name,
-            "input": step.get("input", {}),
-            "output": {},
-            "started_at": step.get("started_at", ""),
-            "completed_at": step.get("completed_at", ""),
-            "duration_ms": step.get("duration_ms", 0),
-        }
-
-        # Add output based on step type
-        if step_name == "asr":
-            transformed_step["output"] = {
-                "text": step.get("output", ""),
-            }
-        elif step_name == "translation":
-            transformed_step["output"] = {
-                "text": step.get("output", ""),
-                "model": step.get("input", {}).get("model", "m2m100_1.2B"),
-            }
-        elif step_name == "refinement" or step_name == "llm_refinement":
-            transformed_step["name"] = "refinement"
-            transformed_step["output"] = {
-                "text": step.get("output", ""),
-                "changed": step.get("input", {}).get("changed", False),
-            }
-        elif step_name == "tts":
-            output_value = step.get("output", "")
-            if isinstance(output_value, str) and "audio" in output_value:
-                # TTS succeeded - use actual message_id if provided
-                audio_url = (
-                    f"/api/audio/{message_id}.wav"
-                    if message_id
-                    else "/api/audio/unknown.wav"
-                )
-                transformed_step["output"] = {
-                    "audio_url": audio_url,
-                    "format": "wav",
-                    "model": step.get("model", "unknown"),  # TTS-Modell hinzufügen
-                    "language": step.get(
-                        "language", target_lang
-                    ),  # TTS-Sprache hinzufügen
-                }
-            else:
-                # TTS failed
-                transformed_step["output"] = {}
-
-        pipeline_metadata["steps"].append(transformed_step)
+        transformed_step = _transform_pipeline_step(step, target_lang, message_id)
+        if transformed_step is not None:
+            pipeline_metadata["steps"].append(transformed_step)
 
     return pipeline_metadata
+
+
+def _transform_pipeline_step(
+    step: Dict[str, Any], target_lang: str, message_id: Optional[str]
+) -> Optional[Dict[str, Any]]:
+    step_name = step.get("name") or step.get("step", "").lower()
+    if "validation" in step_name.lower():
+        return None
+
+    transformed_step = {
+        "name": step_name,
+        "input": step.get("input", {}),
+        "output": {},
+        "started_at": step.get("started_at", ""),
+        "completed_at": step.get("completed_at", ""),
+        "duration_ms": step.get("duration_ms", 0),
+    }
+
+    if step_name == "asr":
+        transformed_step["output"] = {"text": step.get("output", "")}
+    elif step_name == "translation":
+        transformed_step["output"] = {
+            "text": step.get("output", ""),
+            "model": step.get("input", {}).get("model", "m2m100_1.2B"),
+        }
+    elif step_name in {"refinement", "llm_refinement"}:
+        transformed_step["name"] = "refinement"
+        transformed_step["output"] = {
+            "text": step.get("output", ""),
+            "changed": step.get("input", {}).get("changed", False),
+        }
+    elif step_name == "tts":
+        transformed_step["output"] = _build_tts_step_output(
+            step, target_lang, message_id
+        )
+
+    return transformed_step
+
+
+def _build_tts_step_output(
+    step: Dict[str, Any], target_lang: str, message_id: Optional[str]
+) -> Dict[str, Any]:
+    output_value = step.get("output", "")
+    if not (isinstance(output_value, str) and "audio" in output_value):
+        return {}
+
+    audio_url = (
+        f"/api/audio/{message_id}.wav" if message_id else "/api/audio/unknown.wav"
+    )
+    return {
+        "audio_url": audio_url,
+        "format": "wav",
+        "model": step.get("model", "unknown"),
+        "language": step.get("language", target_lang),
+    }
+
+
+def _validate_supported_languages(source_lang: str, target_lang: str) -> None:
+    if source_lang in SUPPORTED_LANGUAGES and target_lang in SUPPORTED_LANGUAGES:
+        return
+
+    raise HTTPException(
+        status_code=400,
+        detail=create_error_response(
+            "UNSUPPORTED_LANGUAGE",
+            f"Unsupported language. Source: {source_lang}, Target: {target_lang}",
+            {"supported_languages": list(SUPPORTED_LANGUAGES.keys())},
+        ),
+    )
+
+
+async def _parse_audio_form(request: Request) -> tuple[Any, str, str, ClientType]:
+    form = await request.form()
+    required_fields = ["file", "source_lang", "target_lang", "client_type"]
+    missing_fields = [field for field in required_fields if field not in form]
+    if missing_fields:
+        raise HTTPException(
+            status_code=400,
+            detail=create_error_response(
+                "MISSING_FIELDS",
+                f"Missing required fields: {', '.join(missing_fields)}",
+                {"missing_fields": missing_fields},
+            ),
+        )
+
+    return (
+        form["file"],
+        form["source_lang"],
+        form["target_lang"],
+        ClientType(form["client_type"]),
+    )
+
+
+def _validate_audio_file_input(file: Any) -> None:
+    if hasattr(file, "read"):
+        return
+
+    raise HTTPException(
+        status_code=400,
+        detail=create_error_response("INVALID_FILE", "Invalid audio file", {}),
+    )
+
+
+def _should_validate_upload_file(file: Any) -> bool:
+    try:
+        from starlette.datastructures import UploadFile as StarletteUploadFile
+
+        upload_file_types = (UploadFile, StarletteUploadFile)
+    except ImportError:  # pragma: no cover - defensive fallback
+        upload_file_types = (UploadFile,)
+
+    return isinstance(file, upload_file_types)
+
+
+def _validate_audio_payload(file: Any, file_bytes: bytes) -> None:
+    if not _should_validate_upload_file(file):
+        return
+
+    from ..pipeline_logic import validate_audio_input
+
+    validation_result = validate_audio_input(file_bytes, normalize=True)
+    if validation_result.is_valid:
+        return
+
+    raise HTTPException(
+        status_code=400,
+        detail=create_error_response(
+            validation_result.error_code or "AUDIO_VALIDATION_FAILED",
+            validation_result.error_message or "Audio validation failed",
+            {
+                "validation_details": validation_result.details,
+                "validation_time_ms": validation_result.validation_time_ms,
+            },
+        ),
+    )
+
+
+def _store_audio_artifacts(
+    message_id: str, file_bytes: bytes, audio_bytes: Optional[bytes]
+) -> Optional[str]:
+    from ..audio_storage import save_original_audio, save_translated_audio
+
+    original_audio_url = None
+    try:
+        original_audio_b64 = base64.b64encode(file_bytes).decode()
+        original_audio_url = save_original_audio(message_id, original_audio_b64)
+    except Exception as e:
+        logger.warning("⚠️ Failed to save original audio: %s", type(e).__name__)
+
+    if audio_bytes:
+        try:
+            translated_audio_b64 = base64.b64encode(audio_bytes).decode()
+            save_translated_audio(message_id, translated_audio_b64)
+        except Exception as e:
+            logger.warning("⚠️ Failed to save translated audio: %s", type(e).__name__)
+
+    return original_audio_url
+
+
+async def _create_session_message_with_fallback(
+    *,
+    session_id: str,
+    client_type: ClientType,
+    original_text: str,
+    translated_text: str,
+    audio_bytes: Optional[bytes],
+    source_lang: str,
+    target_lang: str,
+    manager: Optional[WebSocketManager],
+    pipeline_metadata: Optional[Dict[str, Any]],
+    original_audio_url: Optional[str],
+    message_id: str,
+) -> SessionMessage:
+    try:
+        return await create_session_message(
+            session_id=session_id,
+            client_type=client_type,
+            original_text=original_text,
+            translated_text=translated_text,
+            audio_bytes=audio_bytes,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            manager=manager,
+            pipeline_metadata=pipeline_metadata,
+            original_audio_url=original_audio_url,
+            message_id=message_id,
+        )
+    except TypeError:
+        return await create_session_message(
+            session_id,
+            client_type,
+            original_text,
+            translated_text,
+            audio_bytes,
+            source_lang,
+            target_lang,
+        )
+
+
+def _build_message_response(
+    *,
+    message: SessionMessage,
+    session_id: str,
+    source_lang: str,
+    target_lang: str,
+    pipeline_type: str,
+    pipeline_metadata: Optional[Dict[str, Any]],
+    start_time: float,
+) -> MessageResponse:
+    processing_time_ms = max(1, int((time.perf_counter() - start_time) * 1000))
+    return MessageResponse(
+        status="success",
+        message_id=message.id,
+        session_id=session_id,
+        original_text=message.original_text,
+        translated_text=message.translated_text,
+        audio_available=message.audio_base64 is not None,
+        audio_url=f"/api/audio/{message.id}.wav" if message.audio_base64 else None,
+        processing_time_ms=processing_time_ms,
+        pipeline_type=pipeline_type,
+        source_lang=source_lang,
+        target_lang=target_lang,
+        timestamp=message.timestamp.isoformat(),
+        pipeline_metadata=pipeline_metadata,
+    )
+
+
+async def _parse_text_request(request: Request) -> TextMessageRequest:
+    body = None
+    try:
+        body = await request.json()
+        logger.info(
+            "📦 Received JSON payload metadata | %s",
+            sanitize_log_value(
+                {
+                    "keys": sorted(body.keys()) if isinstance(body, dict) else [],
+                    "has_text": (
+                        bool(body.get("text")) if isinstance(body, dict) else False
+                    ),
+                }
+            ),
+        )
+    except Exception as e:
+        logger.error("❌ Failed to parse JSON: %s", type(e).__name__)
+        raise HTTPException(
+            status_code=400,
+            detail=create_error_response("INVALID_JSON", f"Invalid JSON: {str(e)}", {}),
+        )
+
+    try:
+        return TextMessageRequest(**body)
+    except ValidationError as e:
+        raise _build_text_validation_error(e, body) from e
+
+
+def _build_text_validation_error(
+    e: ValidationError, body: Optional[Dict[str, Any]]
+) -> HTTPException:
+    error_details = e.errors()[0] if e.errors() else {}
+    error_type = error_details.get("type", "unknown")
+    field_name = error_details.get("loc", ["unknown"])[-1]
+
+    if error_type == "string_too_long":
+        max_length = error_details.get("ctx", {}).get("max_length", 500)
+        actual_length = (
+            len(body.get(field_name, "")) if body and field_name in body else "unknown"
+        )
+        user_message = (
+            f"Der Text ist zu lang. Maximum: {max_length} Zeichen, "
+            f"Ihre Eingabe: {actual_length} Zeichen."
+        )
+    elif error_type == "string_too_short":
+        min_length = error_details.get("ctx", {}).get("min_length", 1)
+        user_message = f"Der Text ist zu kurz. Minimum: {min_length} Zeichen."
+    elif error_type == "missing":
+        user_message = f"Pflichtfeld '{field_name}' fehlt."
+    else:
+        user_message = (
+            f"Ungültige Eingabe für Feld '{field_name}': "
+            f"{error_details.get('msg', 'Validierungsfehler')}"
+        )
+
+    logger.error(
+        "❌ Validation failed | %s",
+        sanitize_log_value({"field": field_name, "error_type": error_type}),
+    )
+    return HTTPException(
+        status_code=400,
+        detail=create_error_response(
+            "VALIDATION_ERROR",
+            user_message,
+            {"field": field_name, "error_type": error_type},
+        ),
+    )
 
 
 # === Pydantic Models für Unified Message Endpoint ===
@@ -578,85 +823,20 @@ async def process_audio_input(
     manager: Optional[WebSocketManager] = None,
 ) -> MessageResponse:
     """Audio-Input verarbeiten (multipart/form-data)"""
-
-    # Form-Data parsen
-    form = await request.form()
-
-    # Required fields validation
-    required_fields = ["file", "source_lang", "target_lang", "client_type"]
-    missing_fields = [field for field in required_fields if field not in form]
-    if missing_fields:
-        raise HTTPException(
-            status_code=400,
-            detail=create_error_response(
-                "MISSING_FIELDS",
-                f"Missing required fields: {', '.join(missing_fields)}",
-                {"missing_fields": missing_fields},
-            ),
-        )
-
-    file = form["file"]
-    source_lang = form["source_lang"]
-    target_lang = form["target_lang"]
-    client_type = ClientType(form["client_type"])
+    file, source_lang, target_lang, client_type = await _parse_audio_form(request)
 
     # Validate languages match session configuration
     session = session_manager.get_session(session_id)
     if session:
         validate_session_languages(session, source_lang, target_lang, client_type)
 
-    # Audio-Datei validation
-    if not hasattr(file, "read"):
-        raise HTTPException(
-            status_code=400,
-            detail=create_error_response("INVALID_FILE", "Invalid audio file", {}),
-        )
-
-    # Audio-Pipeline ausführen mit integrierter Validation
+    _validate_audio_file_input(file)
     file_bytes = await file.read()
-
-    # Comprehensive Audio Validation
-    from ..pipeline_logic import validate_audio_input
-
-    try:
-        from starlette.datastructures import UploadFile as StarletteUploadFile
-
-        upload_file_types = (UploadFile, StarletteUploadFile)
-    except ImportError:  # pragma: no cover - defensive fallback
-        upload_file_types = (UploadFile,)
-
-    should_validate_audio = isinstance(file, upload_file_types)
-    if should_validate_audio:
-        validation_result = validate_audio_input(file_bytes, normalize=True)
-
-        if not validation_result.is_valid:
-            raise HTTPException(
-                status_code=400,
-                detail=create_error_response(
-                    validation_result.error_code or "AUDIO_VALIDATION_FAILED",
-                    validation_result.error_message or "Audio validation failed",
-                    {
-                        "validation_details": validation_result.details,
-                        "validation_time_ms": validation_result.validation_time_ms,
-                    },
-                ),
-            )
-
-    # Language validation
-    if source_lang not in SUPPORTED_LANGUAGES or target_lang not in SUPPORTED_LANGUAGES:
-        raise HTTPException(
-            status_code=400,
-            detail=create_error_response(
-                "UNSUPPORTED_LANGUAGE",
-                f"Unsupported language. Source: {source_lang}, Target: {target_lang}",
-                {"supported_languages": list(SUPPORTED_LANGUAGES.keys())},
-            ),
-        )
+    _validate_audio_payload(file, file_bytes)
+    _validate_supported_languages(source_lang, target_lang)
 
     # Audio-Pipeline ausführen (Validation bereits durchgeführt)
-    result = process_wav(
-        file_bytes, source_lang, target_lang, validate_audio=False
-    )  # Skip validation da bereits gemacht
+    result = process_wav(file_bytes, source_lang, target_lang, validate_audio=False)
 
     if result.get("error", False):
         raise HTTPException(
@@ -668,86 +848,36 @@ async def process_audio_input(
             ),
         )
 
-    # Store original audio file persistently
-    from ..audio_storage import save_original_audio, save_translated_audio
-
     message_id = str(uuid.uuid4())
-    original_audio_url = None
-
-    # Save original input audio
-    try:
-        original_audio_b64 = base64.b64encode(file_bytes).decode()
-        original_audio_url = save_original_audio(message_id, original_audio_b64)
-    except Exception as e:
-        logger.warning("⚠️ Failed to save original audio: %s", type(e).__name__)
-
-    # Save translated audio
     audio_bytes = result.get("audio_bytes")
-    if audio_bytes:
-        try:
-            translated_audio_b64 = base64.b64encode(audio_bytes).decode()
-            save_translated_audio(message_id, translated_audio_b64)
-        except Exception as e:
-            logger.warning("⚠️ Failed to save translated audio: %s", type(e).__name__)
+    original_audio_url = _store_audio_artifacts(message_id, file_bytes, audio_bytes)
 
-    # Transform pipeline metadata to match spec format (with message_id for audio URLs)
     pipeline_metadata = transform_pipeline_metadata(
         result.get("debug"), source_lang, target_lang, original_audio_url, message_id
     )
 
-    # Session-Message erstellen
-    # Create session message in a compatibility-friendly way: some tests monkeypatch
-    # create_session_message with a fake that doesn't accept the 'manager' kwarg.
-    try:
-        # Preferred call - pass manager when available
-        message = await create_session_message(
-            session_id=session_id,
-            client_type=client_type,
-            original_text=result.get("asr_text", ""),
-            translated_text=result.get("translation_text", ""),
-            audio_bytes=audio_bytes,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            manager=manager,
-            pipeline_metadata=pipeline_metadata,
-            original_audio_url=original_audio_url,
-            message_id=message_id,  # Use pre-generated ID
-        )
-    except TypeError:
-        # Fallback: call without manager kwarg for backwards compatibility with
-        # test fakes that don't accept the new kwarg.
-        # Call legacy-style signature (positional args) to be compatible with
-        # test fakes that only accept the original parameters.
-        message = await create_session_message(
-            session_id,
-            client_type,
-            result.get("asr_text", ""),
-            result.get("translation_text", ""),
-            audio_bytes,
-            source_lang,
-            target_lang,
-        )
-
-    # Override message ID with pre-generated one (for audio URL consistency)
-    message.id = message_id
-
-    # Response erstellen
-    processing_time_ms = max(1, int((time.perf_counter() - start_time) * 1000))
-
-    return MessageResponse(
-        status="success",
-        message_id=message.id,
+    message = await _create_session_message_with_fallback(
         session_id=session_id,
-        original_text=message.original_text,
-        translated_text=message.translated_text,
-        audio_available=message.audio_base64 is not None,
-        audio_url=f"/api/audio/{message.id}.wav" if message.audio_base64 else None,
-        processing_time_ms=processing_time_ms,
-        pipeline_type="audio",
+        client_type=client_type,
+        original_text=result.get("asr_text", ""),
+        translated_text=result.get("translation_text", ""),
+        audio_bytes=audio_bytes,
         source_lang=source_lang,
         target_lang=target_lang,
-        timestamp=message.timestamp.isoformat(),
+        manager=manager,
         pipeline_metadata=pipeline_metadata,
+        original_audio_url=original_audio_url,
+        message_id=message_id,
+    )
+    message.id = message_id
+    return _build_message_response(
+        message=message,
+        session_id=session_id,
+        source_lang=source_lang,
+        target_lang=target_lang,
+        pipeline_type="audio",
+        pipeline_metadata=pipeline_metadata,
+        start_time=start_time,
     )
 
 
@@ -758,67 +888,7 @@ async def process_text_input(
     manager: Optional[WebSocketManager] = None,
 ) -> MessageResponse:
     """Text-Input verarbeiten (application/json)"""
-
-    # JSON-Payload parsen
-    body = None
-    try:
-        body = await request.json()
-        logger.info(
-            "📦 Received JSON payload metadata | %s",
-            sanitize_log_value(
-                {
-                    "keys": sorted(body.keys()) if isinstance(body, dict) else [],
-                    "has_text": (
-                        bool(body.get("text")) if isinstance(body, dict) else False
-                    ),
-                }
-            ),
-        )
-    except Exception as e:
-        logger.error("❌ Failed to parse JSON: %s", type(e).__name__)
-        raise HTTPException(
-            status_code=400,
-            detail=create_error_response("INVALID_JSON", f"Invalid JSON: {str(e)}", {}),
-        )
-
-    # Pydantic Validierung
-    try:
-        text_request = TextMessageRequest(**body)
-    except ValidationError as e:
-        # Pydantic Validierungsfehler mit detaillierten Informationen
-        error_details = e.errors()[0] if e.errors() else {}
-        error_type = error_details.get("type", "unknown")
-        field_name = error_details.get("loc", ["unknown"])[-1]
-
-        # Benutzerfreundliche Fehlermeldungen
-        if error_type == "string_too_long":
-            max_length = error_details.get("ctx", {}).get("max_length", 500)
-            actual_length = (
-                len(body.get(field_name, ""))
-                if body and field_name in body
-                else "unknown"
-            )
-            user_message = f"Der Text ist zu lang. Maximum: {max_length} Zeichen, Ihre Eingabe: {actual_length} Zeichen."
-        elif error_type == "string_too_short":
-            min_length = error_details.get("ctx", {}).get("min_length", 1)
-            user_message = f"Der Text ist zu kurz. Minimum: {min_length} Zeichen."
-        elif error_type == "missing":
-            user_message = f"Pflichtfeld '{field_name}' fehlt."
-        else:
-            user_message = f"Ungültige Eingabe für Feld '{field_name}': {error_details.get('msg', 'Validierungsfehler')}"
-
-        logger.error(
-            "❌ Validation failed | %s",
-            sanitize_log_value({"field": field_name, "error_type": error_type}),
-        )
-        raise HTTPException(
-            status_code=400,
-            detail=create_error_response(
-                "VALIDATION_ERROR",
-                user_message,
-                {"field": field_name, "error_type": error_type},
-            ),
-        )
+    text_request = await _parse_text_request(request)
 
     # Language validation
     logger.info(
@@ -831,18 +901,7 @@ async def process_text_input(
             }
         ),
     )
-    if (
-        text_request.source_lang not in SUPPORTED_LANGUAGES
-        or text_request.target_lang not in SUPPORTED_LANGUAGES
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail=create_error_response(
-                "UNSUPPORTED_LANGUAGE",
-                f"Unsupported language. Source: {text_request.source_lang}, Target: {text_request.target_lang}",
-                {"supported_languages": list(SUPPORTED_LANGUAGES.keys())},
-            ),
-        )
+    _validate_supported_languages(text_request.source_lang, text_request.target_lang)
 
     # Validate languages match session configuration
     session = session_manager.get_session(session_id)
@@ -902,52 +961,28 @@ async def process_text_input(
         message_id=message_id,  # Pass message_id for audio URL
     )
 
-    # Session-Message erstellen
-    try:
-        message = await create_session_message(
-            session_id=session_id,
-            client_type=text_request.client_type,
-            original_text=pipeline_result.get("asr_text", text_request.text),
-            translated_text=translated_text,
-            audio_bytes=audio_bytes,
-            source_lang=text_request.source_lang,
-            target_lang=text_request.target_lang,
-            manager=manager,
-            pipeline_metadata=pipeline_metadata,
-            original_audio_url=None,  # No original audio for text input
-            message_id=message_id,  # Use pre-generated ID
-        )
-    except TypeError:
-        # Backward-compat fallback for test fakes
-        # Call legacy-style signature (positional args) to be compatible with
-        # test fakes that only accept the original parameters.
-        message = await create_session_message(
-            session_id,
-            text_request.client_type,
-            pipeline_result.get("asr_text", text_request.text),
-            translated_text,
-            audio_bytes,
-            text_request.source_lang,
-            text_request.target_lang,
-        )
-
-    # Response erstellen
-    processing_time_ms = max(1, int((time.perf_counter() - start_time) * 1000))
-
-    return MessageResponse(
-        status="success",
-        message_id=message.id,
+    message = await _create_session_message_with_fallback(
         session_id=session_id,
-        original_text=message.original_text,
-        translated_text=message.translated_text,
-        audio_available=message.audio_base64 is not None,
-        audio_url=f"/api/audio/{message.id}.wav" if message.audio_base64 else None,
-        processing_time_ms=processing_time_ms,
-        pipeline_type="text",
+        client_type=text_request.client_type,
+        original_text=pipeline_result.get("asr_text", text_request.text),
+        translated_text=translated_text,
+        audio_bytes=audio_bytes,
         source_lang=text_request.source_lang,
         target_lang=text_request.target_lang,
-        timestamp=message.timestamp.isoformat(),
+        manager=manager,
         pipeline_metadata=pipeline_metadata,
+        original_audio_url=None,
+        message_id=message_id,
+    )
+
+    return _build_message_response(
+        message=message,
+        session_id=session_id,
+        source_lang=text_request.source_lang,
+        target_lang=text_request.target_lang,
+        pipeline_type="text",
+        pipeline_metadata=pipeline_metadata,
+        start_time=start_time,
     )
 
 

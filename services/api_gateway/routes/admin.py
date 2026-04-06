@@ -6,7 +6,7 @@ Admin-Routes für Session-Management.
 import logging
 from datetime import datetime, timezone
 from hashlib import sha256
-from typing import Any, Dict, Optional
+from typing import Annotated, Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import JSONResponse
@@ -39,13 +39,13 @@ class SessionCreateResponse(BaseModel):
 class SessionStatusResponse(BaseModel):
     session_id: str
     status: str
-    customer_language: Optional[str]
+    customer_language: Optional[str] = None
     admin_connected: bool
     customer_connected: bool
     message_count: int
     created_at: str
-    terminated_at: Optional[str]
-    termination_reason: Optional[str]
+    terminated_at: Optional[str] = None
+    termination_reason: Optional[str] = None
 
 
 class SessionHistoryResponse(BaseModel):
@@ -156,9 +156,10 @@ async def create_admin_session() -> SessionCreateResponse:
     responses=ADMIN_ROUTE_RESPONSES,
 )
 async def get_current_session(
-    session_id: Optional[str] = Query(
-        default=None, description="Spezifische Session-ID, die geladen werden soll."
-    )
+    session_id: Annotated[
+        Optional[str],
+        Query(description="Spezifische Session-ID, die geladen werden soll."),
+    ] = None,
 ) -> SessionStatusResponse:
     """
     Ruft die aktuelle aktive Admin-Session ab

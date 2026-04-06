@@ -194,11 +194,12 @@ class ServiceHealthManager:
 
         if self.health_check_task:
             self.health_check_task.cancel()
-            try:
-                await self.health_check_task
-            except asyncio.CancelledError:
-                pass
-            except Exception as result:
+            result = (
+                await asyncio.gather(self.health_check_task, return_exceptions=True)
+            )[0]
+            if isinstance(result, BaseException) and not isinstance(
+                result, asyncio.CancelledError
+            ):
                 logger.error("Health monitoring shutdown error: %s", result)
             self.health_check_task = None
 

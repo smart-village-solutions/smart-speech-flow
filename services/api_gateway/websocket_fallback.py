@@ -140,6 +140,7 @@ class WebSocketFallbackManager:
         Evaluate if WebSocket failure should trigger fallback
         Returns True if fallback should be activated
         """
+        _ = origin
         failure_key = f"{session_id}_{client_type}"
         history = self.failure_history[failure_key]
 
