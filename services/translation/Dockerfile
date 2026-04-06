@@ -1,4 +1,4 @@
-FROM nvidia/cuda:13.0.0-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:13.2.0-cudnn-runtime-ubuntu22.04
 
 # System- und Python-Abhängigkeiten installieren
 RUN apt-get update && \
