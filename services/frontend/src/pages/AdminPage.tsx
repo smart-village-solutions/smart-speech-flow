@@ -33,7 +33,7 @@ export default function AdminPage() {
     if (needsAdminConnection) {
       startSession(sessionId, 'admin');
 
-      // Load session info and message history before starting session
+      // Start the session connection immediately, then hydrate state from the API.
       Promise.all([
         SessionService.getSessionStatus(sessionId),
         MessageService.getMessages(sessionId)
