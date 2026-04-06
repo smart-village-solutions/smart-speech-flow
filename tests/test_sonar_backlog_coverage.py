@@ -355,6 +355,11 @@ async def test_websocket_polling_routes_wait_and_poll(monkeypatch):
     poll = Mock(side_effect=[[], messages])
     monkeypatch.setattr(polling_routes.fallback_manager, "poll_messages", poll)
     monkeypatch.setattr(polling_routes.asyncio, "sleep", AsyncMock())
+    if not hasattr(polling_routes.asyncio, "timeout"):
+        async def passthrough(awaitable, timeout):  # noqa: ANN001
+            return await awaitable
+
+        monkeypatch.setattr(polling_routes.asyncio, "wait_for", passthrough)
 
     waited = await polling_routes._await_polled_messages("poll-1", 1)
     assert waited == messages
@@ -376,14 +381,22 @@ async def test_websocket_polling_routes_wait_and_poll(monkeypatch):
 async def test_websocket_polling_routes_timeout_returns_empty_list(monkeypatch):
     polling_routes = importlib.import_module("services.api_gateway.websocket_polling_routes")
 
-    class TimeoutContext:
-        async def __aenter__(self):
-            raise TimeoutError()
+    if hasattr(polling_routes.asyncio, "timeout"):
+        class TimeoutContext:
+            async def __aenter__(self):
+                raise TimeoutError()
 
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
 
-    monkeypatch.setattr(polling_routes.asyncio, "timeout", lambda seconds: TimeoutContext())
+        monkeypatch.setattr(
+            polling_routes.asyncio, "timeout", lambda seconds: TimeoutContext()
+        )
+    else:
+        async def raise_timeout(awaitable, timeout):  # noqa: ANN001
+            raise asyncio.TimeoutError()
+
+        monkeypatch.setattr(polling_routes.asyncio, "wait_for", raise_timeout)
 
     assert await polling_routes._await_polled_messages("poll-2", 1) == []
 

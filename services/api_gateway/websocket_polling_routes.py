@@ -33,14 +33,20 @@ def utc_now_iso() -> str:
 
 async def _await_polled_messages(polling_id: str, timeout_seconds: int):
     """Wait briefly for new messages without keeping a manual timeout counter."""
+
+    async def poll_loop():
+        while True:
+            messages = fallback_manager.poll_messages(polling_id)
+            if messages:
+                return messages
+            await asyncio.sleep(1)
+
     try:
-        async with asyncio.timeout(timeout_seconds):
-            while True:
-                messages = fallback_manager.poll_messages(polling_id)
-                if messages:
-                    return messages
-                await asyncio.sleep(1)
-    except TimeoutError:
+        if hasattr(asyncio, "timeout"):
+            async with asyncio.timeout(timeout_seconds):
+                return await poll_loop()
+        return await asyncio.wait_for(poll_loop(), timeout_seconds)
+    except (TimeoutError, asyncio.TimeoutError):
         return []
 
 
