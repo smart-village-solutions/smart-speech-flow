@@ -2,6 +2,8 @@ import asyncio
 import inspect
 from pathlib import Path
 
+import pytest
+
 try:  # pragma: no cover - optional dependency detection
     import pytest_asyncio  # type: ignore  # noqa: F401
     HAS_PYTEST_ASYNCIO = True
@@ -34,19 +36,15 @@ def pytest_addoption(parser):  # pragma: no cover - exercised via pytest hooks
 def pytest_configure(config):  # pragma: no cover - exercised via pytest hooks
     config.addinivalue_line(
         "markers",
+        "asyncio: mark test as requiring asyncio event loop",
+    )
+    config.addinivalue_line(
+        "markers",
         "integration: mark test as requiring live local services or broader integration setup",
     )
     config.addinivalue_line(
         "markers",
         "load: mark test as generating significant load against local services",
-    )
-
-    if HAS_PYTEST_ASYNCIO:
-        return
-
-    config.addinivalue_line(
-        "markers",
-        "asyncio: mark test as requiring asyncio event loop",
     )
 
 
@@ -66,18 +64,17 @@ def pytest_collection_modifyitems(config, items):  # pragma: no cover - exercise
         path_parts = item_path.parts
 
         if "tests" in path_parts and "integration" in path_parts:
-            item.add_marker("integration")
+            item.add_marker(pytest.mark.integration)
             if not run_integration:
                 item.add_marker(skip_integration)
 
         if "tests" in path_parts and "load" in path_parts:
-            item.add_marker("load")
+            item.add_marker(pytest.mark.load)
             if not run_load:
                 item.add_marker(skip_load)
 
 
 if not HAS_PYTEST_ASYNCIO:
-
     def pytest_pyfunc_call(pyfuncitem):  # pragma: no cover - exercised via pytest hooks
         test_func = pyfuncitem.obj
         if not inspect.iscoroutinefunction(test_func):
