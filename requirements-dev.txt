@@ -14,7 +14,7 @@ pip-audit==2.7.3
 pytest==8.3.3
 pytest-asyncio==0.24.0
 pytest-cov==7.1.0
-httpx==0.27.2
+httpx==0.28.1
 
 # Pre-commit Hooks
 pre-commit==4.0.1
