@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import importlib.util
+import inspect
 import io
 import os
 import sys
@@ -370,13 +371,36 @@ def test_asr_helpers_build_debug_payloads(asr_app, monkeypatch):
     assert asr_app._build_asr_response("Hallo", True, True, debug_info)["debug"] == debug_info
 
 
+def test_asr_health_supported_languages_and_metrics(asr_app, monkeypatch):
+    monkeypatch.setattr(
+        asr_app,
+        "_collect_resource_metrics",
+        lambda: {"cpu_percent": 10, "memory_percent": 20, "gpu": {"devices": []}},
+    )
+    monkeypatch.setattr(
+        asr_app,
+        "_derive_auto_scaling_signal",
+        lambda metrics: {"recommended_action": "steady", "reasons": []},
+    )
+
+    asr_app.model_loaded = True
+    health = asr_app.health()
+    assert health["status"] == "ok"
+    assert health["autoscaling"]["recommended_action"] == "steady"
+    assert asr_app.supported_languages() == {"languages": asr_app.SUPPORTED_LANGS}
+    assert asr_app.metrics().body == b"metrics"
+
+
 @pytest.mark.asyncio
 async def test_asr_transcribe_fallback_and_success_paths(asr_app, monkeypatch):
     request = build_request(query_params={"debug": "true"})
 
     asr_app.model_loaded = False
     fallback_response = await asr_app.transcribe(
-        FakeUploadFile(b"audio-bytes"), "de", request, "true"
+        file=FakeUploadFile(b"audio-bytes"),
+        request=request,
+        lang="de",
+        debug="true",
     )
     assert fallback_response["fallback"] is True
     assert fallback_response["text"] == "Hallo Welt"
@@ -397,10 +421,54 @@ async def test_asr_transcribe_fallback_and_success_paths(asr_app, monkeypatch):
     monkeypatch.setattr(asr_app, "normalize_to_wav16k", lambda path: tmp_output.name)
 
     success_response = await asr_app.transcribe(
-        FakeUploadFile(b"wav-data"), "en", build_request(query_params={}), None
+        file=FakeUploadFile(b"wav-data"),
+        request=build_request(query_params={}),
+        lang="en",
+        debug=None,
     )
 
     assert success_response == {"text": f"en:{os.path.basename(tmp_output.name)}", "fallback": False}
+    assert not os.path.exists(tmp_input.name)
+    assert not os.path.exists(tmp_output.name)
+
+
+@pytest.mark.asyncio
+async def test_asr_transcribe_invalid_language_and_runtime_error(asr_app, monkeypatch):
+    with pytest.raises(StubHTTPException) as invalid_error:
+        await asr_app.transcribe(
+            file=FakeUploadFile(b"audio-bytes"),
+            request=build_request(query_params={}),
+            lang="xx",
+            debug=None,
+        )
+
+    assert invalid_error.value.status_code == 400
+
+    tmp_input = tempfile.NamedTemporaryFile(delete=False)
+    tmp_input.close()
+    tmp_output = tempfile.NamedTemporaryFile(delete=False)
+    tmp_output.close()
+
+    class FailingModel:
+        @staticmethod
+        def transcribe(path, language):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(asr_app, "model_loaded", True)
+    monkeypatch.setattr(asr_app, "model", FailingModel())
+    monkeypatch.setattr(asr_app, "_persist_upload_to_temp", lambda file_obj: tmp_input.name)
+    monkeypatch.setattr(asr_app, "normalize_to_wav16k", lambda path: tmp_output.name)
+
+    response = await asr_app.transcribe(
+        file=FakeUploadFile(b"wav-data"),
+        request=build_request(query_params={"debug": "true"}),
+        lang="de",
+        debug="true",
+    )
+
+    assert response["text"] == "Fehler bei der Transkription"
+    assert response["fallback"] is False
+    assert response["debug"]["error"] == "boom"
     assert not os.path.exists(tmp_input.name)
     assert not os.path.exists(tmp_output.name)
 
@@ -818,3 +886,303 @@ async def test_legacy_session_route_uses_new_process_wav_contract(monkeypatch):
     assert captured["message"].source_lang == "de"
     assert captured["message"].target_lang == "en"
     assert captured["message"].audio_base64 is not None
+
+
+def test_asr_module_imports_with_real_fastapi(monkeypatch):
+    pytest.importorskip("fastapi")
+
+    asr_module = load_module(
+        monkeypatch,
+        "services.asr.app",
+        "services/asr/app.py",
+        {
+            "torch": build_torch_stub(cuda_available=False),
+            "prometheus_client": build_prometheus_stub(),
+        },
+    )
+
+    transcribe_route = next(
+        route for route in asr_module.app.routes if getattr(route, "path", None) == "/transcribe"
+    )
+    signature = inspect.signature(transcribe_route.endpoint)
+
+    assert signature.parameters["lang"].default == "de"
+    assert signature.parameters["debug"].default is None
+
+
+@pytest.mark.asyncio
+async def test_websocket_fallback_lifecycle_and_cleanup(monkeypatch):
+    websocket_fallback = importlib.import_module("services.api_gateway.websocket_fallback")
+
+    manager = websocket_fallback.WebSocketFallbackManager(
+        websocket_fallback.FallbackConfig(
+            enable_jitter=False,
+            polling_interval=2,
+            max_websocket_retries=2,
+            enable_user_notifications=True,
+            enable_automatic_recovery=True,
+        )
+    )
+    notifications = []
+
+    async def notification_callback(notification):
+        notifications.append(notification)
+
+    manager.notification_callbacks.append(notification_callback)
+
+    polling_id = await manager.activate_polling_fallback(
+        "session-1",
+        "customer",
+        "https://example.com",
+        websocket_fallback.FallbackReason.NETWORK_ERROR,
+    )
+
+    assert notifications[0]["type"] == "fallback_notification"
+    assert manager.send_message_to_polling_client(polling_id, {"type": "chat", "text": "Hello"})
+
+    client = manager.polling_clients[polling_id]
+    client.websocket_retry_after = websocket_fallback.utc_now() - timedelta(seconds=1)
+    messages = manager.poll_messages(polling_id)
+
+    assert any(message["type"] == "websocket_retry_suggestion" for message in messages)
+    recovery = manager.attempt_websocket_recovery(polling_id)
+    assert recovery["success"] is True
+
+    manager.websocket_recovery_failed(
+        polling_id, websocket_fallback.FallbackReason.TIMEOUT_ERROR
+    )
+    assert manager.polling_clients[polling_id].websocket_retry_after is not None
+
+    manager.polling_clients[polling_id].created_at = websocket_fallback.utc_now() - timedelta(
+        seconds=1900
+    )
+    manager.polling_clients[polling_id].last_poll = None
+
+    sleep_calls = {"count": 0}
+
+    async def fake_sleep(seconds):
+        sleep_calls["count"] += 1
+        if sleep_calls["count"] == 1:
+            return None
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(websocket_fallback.asyncio, "sleep", fake_sleep)
+    with pytest.raises(asyncio.CancelledError):
+        await manager.periodic_cleanup()
+
+    assert polling_id not in manager.polling_clients
+
+
+def test_websocket_fallback_classifies_failures_and_limits_queue():
+    websocket_fallback = importlib.import_module("services.api_gateway.websocket_fallback")
+
+    manager = websocket_fallback.WebSocketFallbackManager(
+        websocket_fallback.FallbackConfig(enable_jitter=False)
+    )
+
+    assert (
+        manager._classify_failure_reason({"message": "CORS preflight blocked"})
+        == websocket_fallback.FallbackReason.CORS_PREFLIGHT_FAILED
+    )
+    assert manager.evaluate_websocket_failure(
+        "session-1",
+        "admin",
+        "https://example.com",
+        {"message": "network down", "code": 0},
+    ) is False
+    assert manager.evaluate_websocket_failure(
+        "session-1",
+        "admin",
+        "https://example.com",
+        {"message": "network down", "code": 0},
+    ) is True
+
+    polling_id = "poll-session-1-admin"
+    client = websocket_fallback.PollingClient(
+        polling_id=polling_id,
+        session_id="session-1",
+        client_type="admin",
+        origin=None,
+        created_at=websocket_fallback.utc_now(),
+    )
+    manager.polling_clients[polling_id] = client
+    manager.session_polling_clients["session-1"].add(polling_id)
+
+    for index in range(105):
+        assert manager.send_message_to_polling_client(
+            polling_id, {"type": "msg", "index": index}
+        )
+
+    assert len(manager.polling_clients[polling_id].message_queue) == 100
+    session_status = manager.get_session_fallback_status("session-1")
+    assert session_status["has_active_fallbacks"] is True
+    assert manager.deactivate_polling_fallback(polling_id) is True
+    assert manager.get_polling_client_status("missing") is None
+
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_client_unit_paths(monkeypatch):
+    client_module = importlib.import_module("services.api_gateway.circuit_breaker_client")
+    client = client_module.CircuitBreakerServiceClient()
+
+    async def fake_ensure_session():
+        return None
+
+    async def fake_cache_response(service, request_data, result, ttl):
+        return None
+
+    async def fake_handle_service_failure(service, request_data, error):
+        return {"service": service, "fallback": True, "error": str(error)}
+
+    async def fake_call_service(service, func, *args):
+        return {"service": service, "success": True}
+
+    monkeypatch.setattr(client, "_ensure_session", fake_ensure_session)
+    monkeypatch.setattr(
+        client_module.graceful_degradation_manager,
+        "cache_response",
+        fake_cache_response,
+    )
+    monkeypatch.setattr(
+        client_module.graceful_degradation_manager,
+        "handle_service_failure",
+        fake_handle_service_failure,
+    )
+    monkeypatch.setattr(
+        client_module.service_health_manager,
+        "call_service",
+        fake_call_service,
+    )
+    monkeypatch.setattr(
+        client_module.service_health_manager,
+        "get_overall_health",
+        lambda: {"status": "ok"},
+    )
+    monkeypatch.setattr(
+        client_module.service_health_manager,
+        "get_service_health",
+        lambda service_name: {"service": service_name},
+    )
+    monkeypatch.setattr(
+        client_module.graceful_degradation_manager,
+        "get_degradation_status",
+        lambda: {"fallbacks": 0},
+    )
+
+    assert (await client.call_asr_service(b"audio", "de", True))["success"] is True
+    assert (
+        await client.call_translation_service("Hallo", "de", "en", False)
+    )["success"] is True
+    assert (await client.call_tts_service("Hallo", "en"))["success"] is True
+    assert await client.get_health_status() == {"status": "ok"}
+    assert await client.get_service_status("asr") == {"service": "asr"}
+    assert await client.get_degradation_status() == {"fallbacks": 0}
+
+    async def raising_call_service(service, func, *args):
+        raise client_module.CircuitBreakerOpenError("open")
+
+    monkeypatch.setattr(
+        client_module.service_health_manager,
+        "call_service",
+        raising_call_service,
+    )
+    assert (await client.call_asr_service(b"audio"))["fallback"] is True
+
+    async def start_monitoring():
+        return None
+
+    async def stop_monitoring():
+        return None
+
+    async def close():
+        return None
+
+    monkeypatch.setattr(
+        client_module.service_health_manager, "start_monitoring", start_monitoring
+    )
+    monkeypatch.setattr(
+        client_module.service_health_manager, "stop_monitoring", stop_monitoring
+    )
+    monkeypatch.setattr(client, "close", close)
+
+    await client.start_health_monitoring()
+    await client.stop_health_monitoring()
+
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_client_performs_requests(monkeypatch):
+    client_module = importlib.import_module("services.api_gateway.circuit_breaker_client")
+    client = client_module.CircuitBreakerServiceClient()
+
+    class FakeResponseContext:
+        def __init__(self, response):
+            self._response = response
+
+        async def __aenter__(self):
+            return self._response
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeResponse:
+        def __init__(self, status, *, payload=None, text="", body=b"", headers=None):
+            self.status = status
+            self._payload = payload or {}
+            self._text = text
+            self._body = body
+            self.headers = headers or {}
+            self.request_info = SimpleNamespace()
+            self.history = ()
+
+        async def json(self):
+            return self._payload
+
+        async def text(self):
+            return self._text
+
+        async def read(self):
+            return self._body
+
+    responses = iter(
+        [
+            FakeResponse(200, payload={"text": "Hallo", "confidence": 0.9, "processing_time": 0.1}),
+            FakeResponse(
+                200,
+                payload={"translated_text": "Hello", "confidence": 0.8, "processing_time": 0.2},
+            ),
+            FakeResponse(
+                200,
+                body=b"WAV",
+                headers={"content-type": "audio/wav"},
+            ),
+            FakeResponse(
+                200,
+                payload={"audio_url": "/audio.wav", "processing_time": 0.3},
+                headers={"content-type": "application/json"},
+            ),
+            FakeResponse(500, text="kaputt"),
+        ]
+    )
+
+    class FakeSession:
+        closed = False
+
+        def post(self, url, **kwargs):
+            return FakeResponseContext(next(responses))
+
+    client.session = FakeSession()
+
+    asr_result = await client._perform_asr_request(b"audio", "de", True)
+    translation_result = await client._perform_translation_request(
+        "Hallo", "de", "en", False
+    )
+    tts_audio_result = await client._perform_tts_request("Hallo", "de", "default", False)
+    tts_json_result = await client._perform_tts_request("Hallo", "de", "default", False)
+
+    assert asr_result["text"] == "Hallo"
+    assert translation_result["translated_text"] == "Hello"
+    assert tts_audio_result["audio_data"] == b"WAV"
+    assert tts_json_result["audio_url"] == "/audio.wav"
+
+    with pytest.raises(client_module.aiohttp.ClientResponseError):
+        await client._perform_tts_request("Hallo", "de", "default", False)

@@ -277,9 +277,9 @@ def metrics():
 @app.post("/transcribe", responses=TRANSCRIBE_ERROR_RESPONSES)
 async def transcribe(
     file: Annotated[UploadFile, File(...)],
-    lang: Annotated[str, Form("de")],
     request: Request,
-    debug: Annotated[str | None, Form(None)] = None,
+    lang: Annotated[str, Form()] = "de",
+    debug: Annotated[str | None, Form()] = None,
 ):
     import time
 
