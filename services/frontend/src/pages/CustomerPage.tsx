@@ -15,7 +15,12 @@ type ViewMode = 'input' | 'language' | 'active';
 export default function CustomerPage() {
   const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
-  const { startSession, isActive, addMessage } = useSession();
+  const {
+    sessionId: activeSessionId,
+    startSession,
+    isActive,
+    addMessage,
+  } = useSession();
 
   const [viewMode, setViewMode] = useState<ViewMode>(urlSessionId ? 'language' : 'input');
   const [sessionId, setSessionId] = useState<string>(urlSessionId || '');
@@ -29,6 +34,22 @@ export default function CustomerPage() {
   useEffect(() => {
     loadLanguages();
   }, []);
+
+  useEffect(() => {
+    const sessionEndedWhileActive =
+      viewMode === 'active' && !activeSessionId && !isActive;
+
+    if (!sessionEndedWhileActive) {
+      return;
+    }
+
+    setError('Diese Session wurde beendet. Bitte geben Sie eine neue Session-ID ein.');
+    setViewMode('input');
+    setSessionId('');
+    setSelectedLanguage('');
+    setSessionIdError(null);
+    setLoading(false);
+  }, [activeSessionId, isActive, viewMode]);
 
   const loadLanguages = async () => {
     try {
@@ -210,6 +231,7 @@ export default function CustomerPage() {
 
       try {
         await CustomerService.activateSession(sessionId, langCode);
+        startSession(sessionId, 'customer', langCode);
 
         // Load message history
         try {
@@ -219,7 +241,6 @@ export default function CustomerPage() {
           console.warn('Failed to load message history:', historyErr);
         }
 
-        startSession(sessionId, 'customer', langCode);
         setViewMode('active');
       } catch (err) {
         console.error('Failed to activate session:', err);

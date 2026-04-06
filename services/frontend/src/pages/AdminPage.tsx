@@ -14,11 +14,25 @@ export default function AdminPage() {
   const [sessionStatus, setSessionStatus] = useState<'idle' | 'creating' | 'pending' | 'active'>('idle');
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { startSession, endSession, isActive, addMessage } = useSession();
+  const {
+    sessionId: activeSessionId,
+    clientType: activeClientType,
+    startSession,
+    endSession,
+    isActive,
+    addMessage,
+  } = useSession();
 
   // Start WebSocket connection immediately when session is created (pending or active)
   useEffect(() => {
-    if (sessionId && (sessionStatus === 'pending' || sessionStatus === 'active') && !isActive) {
+    const needsAdminConnection =
+      sessionId &&
+      (sessionStatus === 'pending' || sessionStatus === 'active') &&
+      (activeSessionId !== sessionId || activeClientType !== 'admin');
+
+    if (needsAdminConnection) {
+      startSession(sessionId, 'admin');
+
       // Load session info and message history before starting session
       Promise.all([
         SessionService.getSessionStatus(sessionId),
@@ -31,11 +45,9 @@ export default function AdminPage() {
         })
         .catch((err) => {
           console.warn('Failed to load session data:', err);
-          // Start session anyway without customer language
-          startSession(sessionId, 'admin');
         });
     }
-  }, [sessionId, sessionStatus, isActive, startSession, addMessage]);
+  }, [sessionId, sessionStatus, activeSessionId, activeClientType, startSession, addMessage]);
 
   // Update session status when session becomes active via WebSocket
   useEffect(() => {
@@ -49,6 +61,10 @@ export default function AdminPage() {
     setError(null);
 
     try {
+      if (activeSessionId || isActive) {
+        endSession();
+      }
+
       const response = await SessionService.createSession();
       setSessionId(response.session_id);
       setSessionStatus(response.status === 'active' ? 'active' : 'pending');

@@ -1,6 +1,6 @@
 services:
   traefik:
-    image: traefik:v2.10
+    image: traefik:v2.11
     command:
       - --api.dashboard=true
       - --log.level=DEBUG
@@ -11,6 +11,8 @@ services:
       - --certificatesresolvers.le.acme.tlschallenge=true
       - --certificatesresolvers.le.acme.email=admin@smart-village.solutions
       - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+    environment:
+      - DOCKER_API_VERSION=1.41
     ports:
       - "80:80"
       - "443:443"
@@ -229,6 +231,7 @@ services:
 
   grafana:
     image: grafana/grafana:10.2.3
+    restart: always
     depends_on:
       - prometheus
     ports:
@@ -240,6 +243,8 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - ./monitoring/grafana:/var/lib/grafana
+      - ./monitoring/grafana-provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana-dashboards:/var/lib/grafana/dashboards:ro
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.grafana.rule=Host(`grafana-ssf.smart-village.solutions`)"
@@ -288,6 +293,23 @@ services:
     command:
       - '--housekeeping_interval=10s'
       - '--store_container_labels=true'
+
+  node_exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: ssf-backend-node-exporter
+    restart: always
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/host/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|host|etc)($|/)'
+      - '--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|pstore|rpc_pipefs|securityfs|squashfs|sysfs|tracefs|tmpfs)$'
+    expose:
+      - "9100"
+    volumes:
+      - /:/host/rootfs:ro,rslave
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
 
   loki:
     image: grafana/loki:2.9.3

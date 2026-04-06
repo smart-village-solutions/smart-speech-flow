@@ -291,7 +291,7 @@ Prometheus alerts configured in `monitoring/alert_rules.yml`:
 
 ```bash
 # Start monitoring stack
-docker compose up -d prometheus grafana dcgm_exporter
+docker compose up -d prometheus grafana dcgm_exporter cadvisor node_exporter
 
 # Check GPU metrics
 curl http://localhost:9400/metrics | grep DCGM

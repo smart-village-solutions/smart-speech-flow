@@ -30,10 +30,12 @@ class SessionService {
 
   /**
    * Terminate an active session (admin)
-   * DELETE /api/admin/session/{sessionId}
+   * DELETE /api/admin/session/{sessionId}/terminate
    */
   async terminateSession(sessionId: string): Promise<TerminateSessionResponse> {
-    const response = await api.delete<TerminateSessionResponse>(`/api/admin/session/${sessionId}`);
+    const response = await api.delete<TerminateSessionResponse>(
+      `/api/admin/session/${sessionId}/terminate`
+    );
     return response.data;
   }
 

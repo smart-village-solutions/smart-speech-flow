@@ -61,13 +61,20 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
   const tempIdMapRef = useRef<Map<string, string>>(new Map());
   const pendingMessagesRef = useRef<Map<string, WebSocketMessage>>(new Map());
 
+  const resetSessionState = useCallback(() => {
+    tempIdMapRef.current.clear();
+    pendingMessagesRef.current.clear();
+    setMessages([]);
+    setCustomerLanguage(null);
+  }, []);
+
   const endSession = useCallback(() => {
     WebSocketService.disconnect();
     setSessionId(null);
     setClientType(null);
     setIsActive(false);
-    setMessages([]);
-  }, []);
+    resetSessionState();
+  }, [resetSessionState]);
 
   const addMessage = useCallback((message: Message) => {
     console.log('🔵 addMessage called:', message.id, message.content?.substring(0, 20));
@@ -236,14 +243,24 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
 
   const startSession = useCallback(
     (newSessionId: string, newClientType: ClientType, newCustomerLanguage?: string) => {
+      const sessionChanged = sessionId !== newSessionId || clientType !== newClientType;
+
+      if (sessionChanged) {
+        WebSocketService.disconnect();
+        resetSessionState();
+      }
+
       setSessionId(newSessionId);
       setClientType(newClientType);
       setIsActive(true);
       if (newCustomerLanguage) {
         setCustomerLanguage(newCustomerLanguage);
       }
+      if (!newCustomerLanguage && sessionChanged) {
+        setCustomerLanguage(null);
+      }
     },
-    []
+    [clientType, resetSessionState, sessionId]
   );
 
   const registerTempId = useCallback((tempId: string, realId: string) => {

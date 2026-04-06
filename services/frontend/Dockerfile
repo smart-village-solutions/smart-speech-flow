@@ -7,8 +7,10 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production=false
+# Install dependencies.
+# `--legacy-peer-deps` keeps container builds stable even when npm enforces
+# peer ranges more strictly than the already-checked-in lockfile.
+RUN npm ci --legacy-peer-deps
 
 # Copy source code
 COPY . .
