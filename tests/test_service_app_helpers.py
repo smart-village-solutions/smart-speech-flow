@@ -1,3 +1,5 @@
+import asyncio
+import importlib
 import importlib.util
 import io
 import os
@@ -5,6 +7,7 @@ import sys
 import tempfile
 import types
 import uuid
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,18 +21,24 @@ class DummyMetric:
     def inc(self, *args, **kwargs):
         return None
 
+    def set(self, *args, **kwargs):
+        return None
+
+    def observe(self, *args, **kwargs):
+        return None
+
+    def labels(self, *args, **kwargs):
+        return self
+
+    def info(self, *args, **kwargs):
+        return None
+
 
 class StubHTTPException(Exception):
     def __init__(self, status_code: int, detail: str):
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
-
-    def set(self, *args, **kwargs):
-        return None
-
-    def observe(self, *args, **kwargs):
-        return None
 
 
 class FakeDevice(str):
@@ -141,7 +150,12 @@ def build_fastapi_stub() -> tuple[types.ModuleType, types.ModuleType]:
 
     class Response:
         def __init__(self, content=None, media_type=None, headers=None, status_code=200):
-            self.body = content if isinstance(content, bytes) else str(content).encode()
+            if isinstance(content, bytes):
+                self.body = content
+            elif content is None:
+                self.body = b""
+            else:
+                self.body = str(content).encode()
             self.media_type = media_type
             self.headers = {k.lower(): v for k, v in (headers or {}).items()}
             self.status_code = status_code
@@ -153,6 +167,15 @@ def build_fastapi_stub() -> tuple[types.ModuleType, types.ModuleType]:
             super().__init__(
                 content=json.dumps(content, separators=(",", ":")).encode(),
                 media_type="application/json",
+                headers={},
+                status_code=status_code,
+            )
+
+    class HTMLResponse(Response):
+        def __init__(self, content=None, status_code=200):
+            super().__init__(
+                content=content,
+                media_type="text/html",
                 headers={},
                 status_code=status_code,
             )
@@ -178,6 +201,7 @@ def build_fastapi_stub() -> tuple[types.ModuleType, types.ModuleType]:
     fastapi_stub.UploadFile = object
     responses_stub.JSONResponse = JSONResponse
     responses_stub.Response = Response
+    responses_stub.HTMLResponse = HTMLResponse
     return fastapi_stub, responses_stub
 
 
@@ -301,6 +325,30 @@ def tts_app(monkeypatch):
             "fastapi": fastapi_stub,
             "fastapi.responses": responses_stub,
             "prometheus_client": build_prometheus_stub(),
+        },
+    )
+
+
+@pytest.fixture
+def upload_module(monkeypatch):
+    fastapi_stub, responses_stub = build_fastapi_stub()
+    app_module = types.ModuleType("services.api_gateway.app")
+    app_module.app = SimpleNamespace(
+        requests_total=DummyMetric(),
+        post=lambda *args, **kwargs: (lambda func: func),
+    )
+    pipeline_module = types.ModuleType("services.api_gateway.pipeline_logic")
+    pipeline_module.process_wav = lambda file_bytes, source_lang, target_lang: {}
+
+    return load_module(
+        monkeypatch,
+        "services.api_gateway.routes.upload",
+        "services/api_gateway/routes/upload.py",
+        {
+            "fastapi": fastapi_stub,
+            "fastapi.responses": responses_stub,
+            "services.api_gateway.app": app_module,
+            "services.api_gateway.pipeline_logic": pipeline_module,
         },
     )
 
@@ -485,6 +533,96 @@ def test_tts_helper_functions_cover_model_resolution_and_responses(tts_app, monk
     tts_app.tts_model_cache.clear()
     assert tts_app.get_tts_model("ar") == {"hf": "ar"}
 
+    text, normalized_lang, session_id, model_name = tts_app._resolve_synthesis_request(
+        {"text": " Hallo ", "lang": " EN ", "session_id": "sess-1"},
+        {"error": None},
+        0.0,
+    )
+    assert text == " Hallo "
+    assert normalized_lang == "en"
+    assert session_id == "sess-1"
+    assert model_name == "tts_models/en/ljspeech/vits"
+
+    payload, sampling_rate = tts_app._extract_audio_payload(
+        {"audio": [0.1], "sampling_rate": 22050}
+    )
+    assert payload == [0.1]
+    assert sampling_rate == 22050
+
+    payload, sampling_rate = tts_app._extract_audio_payload([{"audio": [0.2]}])
+    assert payload == [0.2]
+    assert sampling_rate == 16000
+
+    debug_info = tts_app._build_debug_info("Hallo", "de")
+    assert debug_info["input"] == {"text": "Hallo", "lang": "de"}
+    tts_app._update_duration(debug_info, 0.0)
+    assert debug_info["duration"] is not None
+
+
+def test_tts_health_and_support_endpoints(tts_app, monkeypatch):
+    tts_app.tts_model_cache.clear()
+    tts_app.tts_model_cache["de"] = SimpleNamespace(_device="cuda")
+    tts_app.tts_model_cache["en"] = SimpleNamespace(device="cpu")
+    monkeypatch.setattr(
+        tts_app,
+        "_collect_resource_metrics",
+        lambda: {"cpu_percent": 42, "memory_percent": 35, "gpu": {"devices": []}},
+    )
+    monkeypatch.setattr(
+        tts_app,
+        "_derive_auto_scaling_signal",
+        lambda metrics: {"recommended_action": "steady", "reasons": []},
+    )
+    monkeypatch.setattr(
+        tts_app.torch.cuda,
+        "is_available",
+        staticmethod(lambda: False),
+    )
+
+    health = tts_app.health()
+    assert health["status"] == "ok"
+    assert health["gpu_used"] is True
+    assert health["loaded_models"]["de"] is True
+    assert "ar" in tts_app.supported_languages()["languages"]
+    assert tts_app.metrics().body == b"metrics"
+
+
+def test_tts_hf_audio_synthesis_and_error_resolution(tts_app, monkeypatch):
+    class FakeArray:
+        def __init__(self):
+            self.size = 2
+            self.shape = (2,)
+
+        def squeeze(self):
+            return self
+
+        def astype(self, dtype):
+            return self
+
+    numpy_stub = types.ModuleType("numpy")
+    numpy_stub.ndarray = FakeArray
+    numpy_stub.float32 = "float32"
+    monkeypatch.setitem(sys.modules, "numpy", numpy_stub)
+
+    captured = {}
+    def fake_wav_writer(audio, sampling_rate):
+        captured["result"] = (audio, sampling_rate)
+        return b"WAV"
+
+    monkeypatch.setattr(tts_app, "_numpy_audio_to_wav_bytes", fake_wav_writer)
+    monkeypatch.setattr(
+        tts_app,
+        "_extract_audio_payload",
+        lambda result: (FakeArray(), 24000),
+    )
+
+    wav_bytes = tts_app._synthesize_hf_audio(lambda text: {"audio": [0.1]}, "Hallo")
+    assert captured["result"][1] == 24000
+    assert wav_bytes == b"WAV"
+
+    with pytest.raises(ValueError):
+        tts_app._resolve_synthesis_request({"text": "   ", "lang": "de"}, {"error": None}, 0.0)
+
 
 @pytest.mark.asyncio
 async def test_tts_synthesize_handles_invalid_and_success_paths(tts_app, monkeypatch):
@@ -511,6 +649,12 @@ async def test_tts_synthesize_handles_invalid_and_success_paths(tts_app, monkeyp
     assert response.headers["x-tts-language"] == "ar"
     assert response.headers["x-tts-model"].endswith("(MMS-TTS Fallback)")
 
+    monkeypatch.setattr(tts_app, "get_tts_model", lambda lang: None)
+    missing_response = await tts_app.synthesize(
+        build_request(payload={"text": "Hallo", "lang": "de"}, query_params={})
+    )
+    assert missing_response.status_code == 503
+
 
 def test_enhanced_audio_validator_convert_with_ffmpeg(tmp_path, monkeypatch):
     from services.api_gateway.enhanced_audio_validation import EnhancedAudioValidator
@@ -532,6 +676,107 @@ def test_enhanced_audio_validator_convert_with_ffmpeg(tmp_path, monkeypatch):
 
     monkeypatch.setattr("services.api_gateway.enhanced_audio_validation.subprocess.run", failing_run)
     assert validator._convert_with_ffmpeg(b"source", "webm") is None
+
+
+def test_websocket_monitor_utc_and_stale_detection():
+    websocket_monitor = importlib.import_module("services.api_gateway.websocket_monitor")
+    from prometheus_client import CollectorRegistry
+
+    monitor = websocket_monitor.WebSocketMonitor(registry=CollectorRegistry())
+    metrics = monitor.connection_established("conn-1", "session-1", "admin", "https://example.com:443")
+    monitor.connection_established("conn-2", "session-1", "customer")
+
+    now = websocket_monitor.utc_now()
+    assert now.tzinfo is not None
+
+    metrics.last_heartbeat = now - timedelta(seconds=301)
+    monitor._active_connections["conn-2"].connect_time = now - timedelta(seconds=301)
+    stale_connections = monitor._find_stale_connections(now)
+    assert stale_connections == ["conn-1", "conn-2"]
+
+    health = monitor.get_health_status()
+    assert health["status"] == "degraded"
+    assert health["active_connections"] == 2
+    assert health["stale_connections"] >= 1
+    assert monitor._extract_domain("https://example.com:443") == "example.com"
+
+
+@pytest.mark.asyncio
+async def test_websocket_monitor_periodic_cleanup_handles_stale_connections(monkeypatch):
+    websocket_monitor = importlib.import_module("services.api_gateway.websocket_monitor")
+    from prometheus_client import CollectorRegistry
+
+    monitor = websocket_monitor.WebSocketMonitor(registry=CollectorRegistry())
+    monitor.connection_established("conn-1", "session-1", "admin")
+    monkeypatch.setattr(monitor, "_find_stale_connections", lambda now: ["conn-1"])
+    closed = []
+    monkeypatch.setattr(
+        monitor,
+        "connection_closed",
+        lambda connection_id, reason: closed.append((connection_id, reason)),
+    )
+
+    sleep_calls = {"count": 0}
+
+    async def fake_sleep(seconds):
+        sleep_calls["count"] += 1
+        if sleep_calls["count"] == 1:
+            return None
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(websocket_monitor.asyncio, "sleep", fake_sleep)
+    with pytest.raises(asyncio.CancelledError):
+        await monitor.periodic_cleanup()
+    assert closed == [("conn-1", websocket_monitor.DisconnectReason.HEARTBEAT_TIMEOUT)]
+
+
+@pytest.mark.asyncio
+async def test_upload_route_escapes_html_and_handles_success(upload_module, monkeypatch):
+    class FakeAppCounter:
+        def __init__(self):
+            self.calls = 0
+
+        def inc(self):
+            self.calls += 1
+
+    counter = FakeAppCounter()
+    upload_module.app.requests_total = counter
+
+    monkeypatch.setattr(
+        upload_module,
+        "process_wav",
+        lambda file_bytes, source_lang, target_lang: {
+            "error": True,
+            "error_msg": "<script>alert(1)</script>",
+            "asr_text": "<b>roher text</b>",
+            "translation_text": None,
+            "audio_bytes": b"",
+        },
+    )
+    error_response = await upload_module.upload(FakeUploadFile(b"audio"), "de", "en")
+    assert error_response.status_code == 400
+    assert b"&lt;script&gt;alert(1)&lt;/script&gt;" in error_response.body
+    assert b"Keine Ausgabe verfuegbar." in error_response.body
+
+    monkeypatch.setattr(
+        upload_module,
+        "process_wav",
+        lambda file_bytes, source_lang, target_lang: {
+            "error": False,
+            "asr_text": "<b>Hallo</b>",
+            "translation_text": "<i>Hello</i>",
+            "audio_bytes": b"wav",
+        },
+    )
+    success_response = await upload_module.upload(
+        FakeUploadFile(b"audio"),
+        "<de>",
+        "<en>",
+    )
+    assert success_response.status_code == 200
+    assert b"&lt;b&gt;Hallo&lt;/b&gt;" in success_response.body
+    assert b"&lt;de&gt;" in success_response.body
+    assert counter.calls == 2
 
 
 @pytest.mark.asyncio
