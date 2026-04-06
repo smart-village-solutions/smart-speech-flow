@@ -10,5 +10,5 @@ pytest
 psutil
 uroman
 pynvml
-black==24.10.0
+black==25.1.0
 isort==5.13.2
