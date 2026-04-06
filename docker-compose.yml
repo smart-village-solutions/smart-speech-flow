@@ -244,7 +244,7 @@ services:
     volumes:
       - ./monitoring/grafana:/var/lib/grafana
       - ./monitoring/grafana-provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana-dashboards:/var/lib/grafana/dashboards:ro
+      - ./monitoring/grafana-dashboards:/var/lib/grafana/dashboards
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.grafana.rule=Host(`grafana-ssf.smart-village.solutions`)"
