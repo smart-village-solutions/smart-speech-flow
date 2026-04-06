@@ -1,4 +1,4 @@
-import { Github, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 
 export function Footer() {
   return (
@@ -58,7 +58,6 @@ export function Footer() {
                   rel="noopener noreferrer"
                   className="flex items-center gap-2 text-sm text-primary hover:text-primary-dark transition-colors"
                 >
-                  <Github className="w-4 h-4" />
                   <span>GitHub Repository</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>

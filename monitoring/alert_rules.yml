@@ -1,4 +1,86 @@
 groups:
+  - name: ssf-server-health
+    rules:
+      - alert: NodeExporterDown
+        expr: up{job="node_exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: server
+        annotations:
+          summary: Node exporter is unreachable.
+          description: Host-level server metrics are unavailable because the node_exporter target has been down for more than 2 minutes.
+
+      - alert: ServerCPUHigh
+        expr: 100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{job="node_exporter", mode="idle"}[5m]))) > 85
+        for: 10m
+        labels:
+          severity: warning
+          component: server
+        annotations:
+          summary: Server CPU usage above 85%.
+          description: CPU utilisation has been above 85% for 10 minutes. Check for overloaded services or runaway processes.
+
+      - alert: ServerCPUCritical
+        expr: 100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{job="node_exporter", mode="idle"}[5m]))) > 95
+        for: 5m
+        labels:
+          severity: critical
+          component: server
+        annotations:
+          summary: Server CPU usage above 95%.
+          description: CPU utilisation is critically high for 5 minutes. User-facing latency and dropped work are likely.
+
+      - alert: ServerMemoryPressure
+        expr: 100 * (1 - (node_memory_MemAvailable_bytes{job="node_exporter"} / node_memory_MemTotal_bytes{job="node_exporter"})) > 90
+        for: 10m
+        labels:
+          severity: warning
+          component: server
+        annotations:
+          summary: Server RAM usage above 90%.
+          description: Available system memory is low for more than 10 minutes. Check memory-heavy containers and caches.
+
+      - alert: ServerMemoryCritical
+        expr: 100 * (1 - (node_memory_MemAvailable_bytes{job="node_exporter"} / node_memory_MemTotal_bytes{job="node_exporter"})) > 95
+        for: 5m
+        labels:
+          severity: critical
+          component: server
+        annotations:
+          summary: Server RAM usage above 95%.
+          description: System memory is critically low for 5 minutes. Risk of OOM kills is high.
+
+      - alert: ServerDiskUsageHigh
+        expr: 100 * (1 - (node_filesystem_avail_bytes{job="node_exporter", mountpoint="/", fstype!="rootfs"} / node_filesystem_size_bytes{job="node_exporter", mountpoint="/", fstype!="rootfs"})) > 85
+        for: 15m
+        labels:
+          severity: warning
+          component: server
+        annotations:
+          summary: Root filesystem usage above 85%.
+          description: The root filesystem has been above 85% usage for 15 minutes. Plan cleanup or capacity expansion.
+
+      - alert: ServerDiskUsageCritical
+        expr: 100 * (1 - (node_filesystem_avail_bytes{job="node_exporter", mountpoint="/", fstype!="rootfs"} / node_filesystem_size_bytes{job="node_exporter", mountpoint="/", fstype!="rootfs"})) > 95
+        for: 5m
+        labels:
+          severity: critical
+          component: server
+        annotations:
+          summary: Root filesystem usage above 95%.
+          description: The root filesystem is nearly full. Logging, model downloads, and temp file handling may fail soon.
+
+      - alert: ServerLoadHigh
+        expr: node_load5{job="node_exporter"} / count by (instance) (node_cpu_seconds_total{job="node_exporter", mode="idle"}) > 1.5
+        for: 10m
+        labels:
+          severity: warning
+          component: server
+        annotations:
+          summary: Server load is high relative to CPU cores.
+          description: 5-minute system load has been above 1.5x the number of CPU cores for 10 minutes, indicating sustained contention.
+
   - name: ssf-service-health
     rules:
       - alert: ASRServiceDown
