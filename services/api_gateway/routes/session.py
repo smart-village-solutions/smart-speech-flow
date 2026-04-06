@@ -58,6 +58,10 @@ ManagerDependency = Annotated[
     WebSocketManager,
     Depends(get_websocket_manager),
 ]
+OptionalManagerDependency = Annotated[
+    Optional[WebSocketManager],
+    Depends(get_websocket_manager),
+]
 
 
 def validate_session_languages(
@@ -461,7 +465,7 @@ async def get_active_sessions() -> Dict[str, Any]:
 async def send_unified_message(
     session_id: str,
     request: Request,
-    manager: ManagerDependency,
+    manager: OptionalManagerDependency = None,
 ) -> MessageResponse:
     """
     Unified Message Endpoint für Audio- und Text-Input

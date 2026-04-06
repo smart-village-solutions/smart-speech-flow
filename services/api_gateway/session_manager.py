@@ -47,8 +47,13 @@ def utc_now() -> datetime:
 
 def _ensure_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=UTC)
+        return dt.astimezone().astimezone(UTC)
     return dt.astimezone(UTC)
+
+
+def _minutes_since(dt: datetime) -> float:
+    """Return minutes since ``dt`` while tolerating legacy naive timestamps."""
+    return (utc_now() - _ensure_utc(dt)).total_seconds() / 60
 
 
 @dataclass
@@ -136,9 +141,7 @@ class Session:
             "timeout_warning_sent": self.timeout_warning_sent,
             "session_timeout_minutes": self.session_timeout_minutes,
             "warning_timeout_minutes": self.warning_timeout_minutes,
-            "minutes_since_activity": int(
-                (utc_now() - self.last_activity).total_seconds() / 60
-            ),
+            "minutes_since_activity": int(_minutes_since(self.last_activity)),
         }
 
         if include_messages:
@@ -156,7 +159,7 @@ class Session:
         if self.timeout_warning_sent or self.status != SessionStatus.ACTIVE:
             return False
 
-        minutes_inactive = (utc_now() - self.last_activity).total_seconds() / 60
+        minutes_inactive = _minutes_since(self.last_activity)
         return minutes_inactive >= self.warning_timeout_minutes
 
     def is_timeout_due(self) -> bool:
@@ -164,7 +167,7 @@ class Session:
         if self.status == SessionStatus.TERMINATED:
             return False
 
-        minutes_inactive = (utc_now() - self.last_activity).total_seconds() / 60
+        minutes_inactive = _minutes_since(self.last_activity)
         return minutes_inactive >= self.session_timeout_minutes
 
     @classmethod
