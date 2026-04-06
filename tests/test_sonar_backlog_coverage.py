@@ -36,10 +36,10 @@ def test_app_module_builds_service_urls_for_docker_and_local():
             "LOCAL_SERVICE_SCHEME": None,
         },
     )
-    assert app_module.ASR_URL == "http://asr:8000/transcribe"
-    assert app_module.TRANSLATION_URL == "http://translation:8000/translate"
-    assert app_module.TTS_URL == "http://tts:8000/synthesize"
     assert app_module.SERVICE_URLS["ASR"] == "http://asr:8000/health"
+    assert app_module._build_service_url("asr", 8000, "/transcribe", scheme="http") == (
+        "http://asr:8000/transcribe"
+    )
     assert app_module._localhost_origin(3000, secure=True) == "https://localhost:3000"
 
     app_module = reload_module(
@@ -50,10 +50,10 @@ def test_app_module_builds_service_urls_for_docker_and_local():
             "LOCAL_SERVICE_SCHEME": "https",
         },
     )
-    assert app_module.ASR_URL == "https://localhost:8001/transcribe"
-    assert app_module.TRANSLATION_URL == "https://localhost:8002/translate"
-    assert app_module.TTS_URL == "https://localhost:8003/synthesize"
     assert app_module.SERVICE_URLS["TTS"] == "https://localhost:8003/health"
+    assert app_module._build_service_url(
+        "localhost", 8003, "/synthesize", scheme="https"
+    ) == "https://localhost:8003/synthesize"
 
 
 def test_app_cors_setup_uses_localhost_helpers_in_development(monkeypatch):

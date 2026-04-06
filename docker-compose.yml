@@ -80,12 +80,9 @@ services:
           memory: 1G
 
     volumes:
-      # Persistent Audio Storage (Bind Mount)
-      - type: bind
-        source: ./data/audio
-        target: /data/audio
-        bind:
-          create_host_path: true
+      # Persistent Audio Storage (named volume keeps write access for the
+      # non-root container user without relying on host directory ownership)
+      - audio-data:/data/audio
 
       # Temporary Upload Buffer (RAM - tmpfs)
       - type: tmpfs
@@ -336,3 +333,4 @@ services:
 volumes:
   redis-data:
   ollama-data:
+  audio-data:

@@ -41,15 +41,6 @@ def _localhost_origin(port: int, *, secure: bool = False) -> str:
 
 if DOCKER_ENV:
     # Docker-Service-URLs für Microservices
-    ASR_URL: str = _build_service_url(
-        "asr", 8000, "/transcribe", scheme=DEFAULT_INTERNAL_SCHEME
-    )
-    TRANSLATION_URL: str = _build_service_url(
-        "translation", 8000, "/translate", scheme=DEFAULT_INTERNAL_SCHEME
-    )
-    TTS_URL: str = _build_service_url(
-        "tts", 8000, "/synthesize", scheme=DEFAULT_INTERNAL_SCHEME
-    )
     SERVICE_URLS = {
         "ASR": _build_service_url(
             "asr", 8000, "/health", scheme=DEFAULT_INTERNAL_SCHEME
@@ -63,15 +54,6 @@ if DOCKER_ENV:
     }
 else:
     # Lokale Service-URLs für Entwicklung ohne Docker
-    ASR_URL = _build_service_url(
-        "localhost", 8001, "/transcribe", scheme=DEFAULT_LOCAL_SCHEME
-    )
-    TRANSLATION_URL = _build_service_url(
-        "localhost", 8002, "/translate", scheme=DEFAULT_LOCAL_SCHEME
-    )
-    TTS_URL = _build_service_url(
-        "localhost", 8003, "/synthesize", scheme=DEFAULT_LOCAL_SCHEME
-    )
     SERVICE_URLS = {
         "ASR": _build_service_url(
             "localhost", 8001, "/health", scheme=DEFAULT_LOCAL_SCHEME

@@ -68,8 +68,10 @@ async def _apply_activity_update_to_session_connections(
     new_intervals: List[int] = []
     optimization_tips: List[str] = []
 
-    connections = manager.session_connections.get(session_id, {})
-    for connection in connections.values():
+    # Iterate over a snapshot so disconnect cleanup cannot mutate the live dict
+    # while we are awaiting polling interval updates.
+    connections = list(manager.session_connections.get(session_id, {}).values())
+    for connection in connections:
         old_interval = connection.current_polling_interval
         new_interval = manager.adaptive_polling.update_client_status(
             connection,
