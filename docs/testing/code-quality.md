@@ -27,7 +27,7 @@ Das Projekt verwendet automatisierte Tools zur Sicherstellung von Code-Qualität
 #### flake8 (Linting)
 - **Zweck**: Code-Stil und potenzielle Fehler erkennen
 - **Konfiguration**: `setup.cfg`
-- **Max. Zeilenlaenge**: 100 Zeichen
+- **Max. Zeilenlaenge**: 88 Zeichen
 - **Ausführung**: `flake8 services/`
 - **Ignorierte Regeln**: E203, W503, E501 (Black-Kompatibilität)
 
