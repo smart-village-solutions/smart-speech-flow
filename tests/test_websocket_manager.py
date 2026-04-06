@@ -43,6 +43,33 @@ class MockWebSocket:
         self.close_reason = reason
 
 
+class _Counter:
+    def __init__(self):
+        self.value = 0
+
+    def inc(self, amount=1):
+        self.value += amount
+
+
+class _MetricFamily:
+    def __init__(self):
+        self.counters = {}
+
+    def labels(self, **labels):
+        key = tuple(sorted(labels.items()))
+        self.counters.setdefault(key, _Counter())
+        return self.counters[key]
+
+
+class MockMonitor:
+    def __init__(self):
+        self.broadcast_total = _MetricFamily()
+        self.broadcast_failure_total = _MetricFamily()
+        self.broadcast_success_total = _MetricFamily()
+        self.broadcast_messages_delivered = _MetricFamily()
+        self.broadcast_messages_failed = _MetricFamily()
+
+
 @pytest.fixture
 def session_manager():
     """Session-Manager für Tests"""
@@ -456,6 +483,93 @@ class TestWebSocketManager:
                              if msg.get("type") == "message"]
         assert len(customer_messages) == 1
         assert customer_messages[0]["text"] == "Translated English Text"
+
+    async def test_send_differentiated_message_uses_sender_and_receiver_payloads(
+        self, websocket_manager
+    ):
+        session_id = "TEST_HELPERS"
+        sender_ws = MockWebSocket()
+        receiver_ws = MockWebSocket()
+
+        sender_connection_id = await websocket_manager.connect_websocket(
+            sender_ws, session_id, ClientType.ADMIN
+        )
+        receiver_connection_id = await websocket_manager.connect_websocket(
+            receiver_ws, session_id, ClientType.CUSTOMER
+        )
+
+        original_message = {"type": "message", "text": "orig"}
+        translated_message = {"type": "message", "text": "translated"}
+
+        await websocket_manager._send_differentiated_message(
+            connection=websocket_manager.all_connections[sender_connection_id],
+            connection_id=sender_connection_id,
+            sender_type=ClientType.ADMIN,
+            original_message=original_message,
+            translated_message=translated_message,
+        )
+        await websocket_manager._send_differentiated_message(
+            connection=websocket_manager.all_connections[receiver_connection_id],
+            connection_id=receiver_connection_id,
+            sender_type=ClientType.ADMIN,
+            original_message=original_message,
+            translated_message=translated_message,
+        )
+
+        assert sender_ws.messages_sent[-1] == original_message
+        assert receiver_ws.messages_sent[-1] == translated_message
+
+    async def test_record_broadcast_summary_updates_partial_failure_metrics(
+        self, websocket_manager
+    ):
+        monitor = MockMonitor()
+
+        websocket_manager._record_broadcast_summary(
+            monitor=monitor,
+            session_id="TEST123",
+            sender_type=ClientType.ADMIN,
+            total_connections=2,
+            successful_sends=1,
+            failed_sends=1,
+            success=False,
+        )
+
+        failure_counter = monitor.broadcast_failure_total.labels(
+            session_id="TEST123",
+            sender_type=ClientType.ADMIN.value,
+            reason="partial_failure",
+        )
+        delivered_counter = monitor.broadcast_messages_delivered.labels(
+            session_id="TEST123",
+            sender_type=ClientType.ADMIN.value,
+        )
+        failed_counter = monitor.broadcast_messages_failed.labels(
+            session_id="TEST123",
+            sender_type=ClientType.ADMIN.value,
+        )
+
+        assert failure_counter.value == 1
+        assert delivered_counter.value == 1
+        assert failed_counter.value == 1
+
+    async def test_build_no_connection_broadcast_result_marks_failure_metric(
+        self, websocket_manager
+    ):
+        monitor = MockMonitor()
+
+        result = websocket_manager._build_no_connection_broadcast_result(
+            monitor, "EMPTY_SESSION", ClientType.CUSTOMER
+        )
+
+        assert result.success is False
+        assert result.session_has_connections is False
+        assert result.errors == ["Session has no active connections"]
+        failure_counter = monitor.broadcast_failure_total.labels(
+            session_id="EMPTY_SESSION",
+            sender_type=ClientType.CUSTOMER.value,
+            reason="no_connections",
+        )
+        assert failure_counter.value == 1
 
     async def test_connection_stats_monitoring(self, websocket_manager):
         """Test: Connection-Statistiken für Monitoring"""

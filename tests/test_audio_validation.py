@@ -11,8 +11,16 @@ import numpy as np
 from unittest.mock import Mock, patch
 
 from services.api_gateway.pipeline_logic import (
-    validate_audio_input, normalize_audio, AudioValidationResult, AudioSpecs,
-    process_wav
+    validate_audio_input,
+    normalize_audio,
+    AudioValidationResult,
+    AudioSpecs,
+    process_wav,
+    _build_audio_validation_failure,
+    _collect_audio_validation_errors,
+    _normalize_audio_if_requested,
+    _pipeline_error_result,
+    _validate_and_normalize_text,
 )
 
 
@@ -258,7 +266,89 @@ class TestAudioNormalization:
 
         # Should return original audio if normalization fails
         normalized = normalize_audio(invalid_audio, 16000, 16, 1)
-        assert normalized == invalid_audio
+
+
+class TestPipelineHelpers:
+    """Direkte Tests für neu extrahierte Pipeline-Helfer."""
+
+    def test_build_audio_validation_failure_tracks_metadata(self):
+        result = _build_audio_validation_failure(
+            start_time=0.0,
+            error_code="TEST_ERROR",
+            error_message="boom",
+            details={"foo": "bar"},
+        )
+
+        assert result.is_valid is False
+        assert result.error_code == "TEST_ERROR"
+        assert result.error_message == "boom"
+        assert result.details == {"foo": "bar"}
+        assert isinstance(result.validation_time_ms, int)
+
+    def test_collect_audio_validation_errors_includes_conversion_failure(self):
+        specs = AudioSpecs()
+
+        errors = _collect_audio_validation_errors(
+            sample_rate=8000,
+            bit_depth=8,
+            channels=2,
+            duration_seconds=0.05,
+            specs=specs,
+            conversion_attempted=True,
+            conversion_applied=False,
+            conversion_error="ffmpeg failed",
+        )
+
+        assert any("Sample rate 8000Hz" in error for error in errors)
+        assert any("Bit depth 8-bit" in error for error in errors)
+        assert any("Channels 2" in error for error in errors)
+        assert any("too short" in error for error in errors)
+        assert any("automatic conversion failed: ffmpeg failed" in error for error in errors)
+
+    def test_normalize_audio_if_requested_skips_when_disabled(self):
+        audio_bytes = create_test_wav(duration_seconds=0.2)
+
+        processed_audio, normalization_applied = _normalize_audio_if_requested(
+            audio_bytes,
+            sample_rate=16000,
+            bit_depth=16,
+            channels=1,
+            normalize=False,
+        )
+
+        assert processed_audio == audio_bytes
+        assert normalization_applied is False
+
+    def test_validate_and_normalize_text_returns_pipeline_error_for_invalid_text(self):
+        debug_info = {"steps": []}
+
+        processed_text, failure = _validate_and_normalize_text("", debug_info, start_total=0.0)
+
+        assert processed_text is None
+        assert failure is not None
+        assert failure["error"] is True
+        assert failure["validation_result"].error_code == "TEXT_TOO_SHORT"
+        assert debug_info["steps"][0]["step"] == "Text_Validation"
+
+    def test_pipeline_error_result_includes_validation_result(self):
+        debug_info = {"steps": []}
+        validation_result = AudioValidationResult(is_valid=False, error_code="INVALID")
+
+        result = _pipeline_error_result(
+            debug_info=debug_info,
+            start_total=0.0,
+            error_message="Audio validation failed",
+            asr_text=None,
+            translation_text=None,
+            audio_bytes=None,
+            validation_result=validation_result,
+        )
+
+        assert result["error"] is True
+        assert result["error_msg"] == "Audio validation failed"
+        assert result["validation_result"] is validation_result
+        assert "system" in debug_info
+        assert "total_duration" in debug_info
 
 
 class TestAudioValidationPerformance:
