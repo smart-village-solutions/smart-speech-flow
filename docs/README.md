@@ -9,7 +9,6 @@ Welcome to the Smart Speech Flow Backend documentation! This guide helps you fin
 - [Frontend Integration Guide](guides/frontend-integration.md) - How to integrate with the frontend
 - [API Conventions](guides/api-conventions.md) - API design patterns and standards
 - [Code Quality Standards](testing/code-quality.md) - Coding standards and quality checks
-- [Smartspeechflow.de Konzept](smartspeechflow-de-konzept.md) - Product presentation, sitemap and design briefing
 
 ### For Operators
 - [Deployment Rollback Procedure](operations/deployment-rollback-procedure.md) - How to rollback deployments
