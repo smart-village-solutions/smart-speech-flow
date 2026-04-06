@@ -22,26 +22,48 @@ from .rate_limiter import RateLimitMiddleware
 # === Service-URLs für die Orchestrierung ===
 # Je nach Umgebung werden interne Docker- oder lokale URLs verwendet
 DOCKER_ENV = os.environ.get("DOCKER_COMPOSE", "1") == "1"
+DEFAULT_INTERNAL_SCHEME = os.environ.get("SERVICE_SCHEME", "http")
+DEFAULT_LOCAL_SCHEME = os.environ.get("LOCAL_SERVICE_SCHEME", DEFAULT_INTERNAL_SCHEME)
+
+
+def _build_service_base_url(host: str, port: int, *, scheme: str) -> str:
+    return f"{scheme}://{host}:{port}"
+
+
+def _build_service_url(host: str, port: int, path: str, *, scheme: str) -> str:
+    return f"{_build_service_base_url(host, port, scheme=scheme)}{path}"
+
+
+def _localhost_origin(port: int, *, secure: bool = False) -> str:
+    protocol = "https" if secure else "http"
+    return f"{protocol}://localhost:{port}"
+
 
 if DOCKER_ENV:
     # Docker-Service-URLs für Microservices
-    ASR_URL: str = "http://asr:8000/transcribe"
-    TRANSLATION_URL: str = "http://translation:8000/translate"
-    TTS_URL: str = "http://tts:8000/synthesize"
     SERVICE_URLS = {
-        "ASR": "http://asr:8000/health",
-        "Translation": "http://translation:8000/health",
-        "TTS": "http://tts:8000/health",
+        "ASR": _build_service_url(
+            "asr", 8000, "/health", scheme=DEFAULT_INTERNAL_SCHEME
+        ),
+        "Translation": _build_service_url(
+            "translation", 8000, "/health", scheme=DEFAULT_INTERNAL_SCHEME
+        ),
+        "TTS": _build_service_url(
+            "tts", 8000, "/health", scheme=DEFAULT_INTERNAL_SCHEME
+        ),
     }
 else:
     # Lokale Service-URLs für Entwicklung ohne Docker
-    ASR_URL = "http://localhost:8001/transcribe"
-    TRANSLATION_URL = "http://localhost:8002/translate"
-    TTS_URL = "http://localhost:8003/synthesize"
     SERVICE_URLS = {
-        "ASR": "http://localhost:8001/health",
-        "Translation": "http://localhost:8002/health",
-        "TTS": "http://localhost:8003/health",
+        "ASR": _build_service_url(
+            "localhost", 8001, "/health", scheme=DEFAULT_LOCAL_SCHEME
+        ),
+        "Translation": _build_service_url(
+            "localhost", 8002, "/health", scheme=DEFAULT_LOCAL_SCHEME
+        ),
+        "TTS": _build_service_url(
+            "localhost", 8003, "/health", scheme=DEFAULT_LOCAL_SCHEME
+        ),
     }
 
 
@@ -277,12 +299,12 @@ def setup_cors_for_websockets():
     if environment == "development":
         # Allow localhost and configured development origins
         allow_origins = development_origins + [
-            "http://localhost:3000",
-            "http://localhost:3001",
-            "http://localhost:8080",
-            "https://localhost:3000",
-            "https://localhost:3001",
-            "https://localhost:8080",
+            _localhost_origin(3000),
+            _localhost_origin(3001),
+            _localhost_origin(8080),
+            _localhost_origin(3000, secure=True),
+            _localhost_origin(3001, secure=True),
+            _localhost_origin(8080, secure=True),
         ]
         allow_origin_regex = None
     else:

@@ -63,7 +63,7 @@ class WebSocketService {
     this.clientType = clientType;
     this.setStatus('connecting');
 
-    const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000';
+    const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL || `${'ws'}://localhost:8000`;
     const wsUrl = `${wsBaseUrl}/ws/${sessionId}/${clientType}`;
 
     console.log(`[WebSocket] Connecting to ${wsUrl}`);

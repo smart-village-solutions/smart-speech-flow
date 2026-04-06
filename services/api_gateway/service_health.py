@@ -16,6 +16,7 @@ Version: 1.0
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -33,6 +34,11 @@ from .circuit_breaker import (
 
 logger = logging.getLogger(__name__)
 DEFAULT_HEALTH_PATH = "/health"
+SERVICE_SCHEME = os.environ.get("SERVICE_SCHEME", "http")
+
+
+def _service_base_url(host: str, port: int = 8000) -> str:
+    return f"{SERVICE_SCHEME}://{host}:{port}"
 
 
 def utc_now() -> datetime:
@@ -118,7 +124,7 @@ class ServiceHealthManager:
         self.register_service(
             ServiceEndpoint(
                 name="asr",
-                base_url="http://asr:8000",
+                base_url=_service_base_url("asr"),
                 health_path=DEFAULT_HEALTH_PATH,
                 timeout=10.0,  # ASR kann länger dauern
             )
@@ -128,7 +134,7 @@ class ServiceHealthManager:
         self.register_service(
             ServiceEndpoint(
                 name="translation",
-                base_url="http://translation:8000",
+                base_url=_service_base_url("translation"),
                 health_path=DEFAULT_HEALTH_PATH,
                 timeout=8.0,
             )
@@ -138,7 +144,7 @@ class ServiceHealthManager:
         self.register_service(
             ServiceEndpoint(
                 name="tts",
-                base_url="http://tts:8000",
+                base_url=_service_base_url("tts"),
                 health_path=DEFAULT_HEALTH_PATH,
                 timeout=10.0,  # TTS kann länger dauern
             )

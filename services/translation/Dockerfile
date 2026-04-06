@@ -10,7 +10,10 @@ COPY requirements.txt ./
 COPY app.py ./
 # COPY tests/ ./tests/
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+	useradd --system --create-home --uid 10001 appuser && \
+	chown -R appuser:appuser /app
 # RUN pip install pytest
 # RUN pytest tests/ || true
+USER appuser
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

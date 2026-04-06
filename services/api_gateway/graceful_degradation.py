@@ -259,7 +259,7 @@ class GracefulDegradationManager:
         return None
 
     def _try_alternative_service(
-        self, service_name: str, request_data: Dict
+        self, service_name: str, _request_data: Dict
     ) -> Optional[Dict[str, Any]]:
         """Versucht alternativen Service zu verwenden"""
         alternatives = self.fallback_config.alternative_services.get(service_name, [])

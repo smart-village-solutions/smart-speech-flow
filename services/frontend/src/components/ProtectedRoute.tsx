@@ -5,7 +5,7 @@ interface ProtectedRouteProps {
   children: ReactNode;
 }
 
-export default function ProtectedRoute({ children }: ProtectedRouteProps) {
+export default function ProtectedRoute({ children }: Readonly<ProtectedRouteProps>) {
   const isAuthenticated = sessionStorage.getItem('authenticated') === 'true';
 
   if (!isAuthenticated) {

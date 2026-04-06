@@ -10,6 +10,13 @@ from requests import Response, exceptions
 logger = logging.getLogger(__name__)
 
 
+def _default_refinement_endpoint() -> str:
+    scheme = os.getenv("LLM_REFINEMENT_SCHEME", "http")
+    host = os.getenv("LLM_REFINEMENT_HOST", "ollama")
+    port = os.getenv("LLM_REFINEMENT_PORT", "11434")
+    return f"{scheme}://{host}:{port}"
+
+
 def _strtobool(value: str) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -174,7 +181,7 @@ def get_translation_refiner() -> BaseTranslationRefiner:
         logger.info("LLM translation refinement disabled")
         return NoOpTranslationRefiner()
 
-    endpoint = os.getenv("LLM_REFINEMENT_ENDPOINT", "http://ollama:11434")
+    endpoint = os.getenv("LLM_REFINEMENT_ENDPOINT", _default_refinement_endpoint())
     model = os.getenv("LLM_REFINEMENT_MODEL", "gpt-oss:20b")
     timeout_seconds = float(os.getenv("LLM_REFINEMENT_TIMEOUT", "8.0"))
     temperature = float(os.getenv("LLM_REFINEMENT_TEMPERATURE", "0.7"))

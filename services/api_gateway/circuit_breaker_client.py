@@ -15,6 +15,7 @@ Version: 1.0
 
 import asyncio
 import logging
+import os
 from typing import Any, Dict, Optional
 
 import aiohttp
@@ -24,6 +25,11 @@ from .graceful_degradation import graceful_degradation_manager
 from .service_health import service_health_manager
 
 logger = logging.getLogger(__name__)
+SERVICE_SCHEME = os.environ.get("SERVICE_SCHEME", "http")
+
+
+def _service_url(host: str, path: str) -> str:
+    return f"{SERVICE_SCHEME}://{host}:8000{path}"
 
 
 class CircuitBreakerServiceClient:
@@ -105,7 +111,7 @@ class CircuitBreakerServiceClient:
         self, audio_data: bytes, source_lang: str, debug: bool
     ) -> Dict[str, Any]:
         """Führt tatsächlichen ASR Request aus"""
-        url = "http://asr:8000/transcribe"
+        url = _service_url("asr", "/transcribe")
 
         # Multipart Form Data für Audio Upload
         form_data = aiohttp.FormData()
@@ -195,7 +201,7 @@ class CircuitBreakerServiceClient:
         self, text: str, source_lang: str, target_lang: str, debug: bool
     ) -> Dict[str, Any]:
         """Führt tatsächlichen Translation Request aus"""
-        url = "http://translation:8000/translate"
+        url = _service_url("translation", "/translate")
 
         payload = {
             "text": text,
@@ -280,7 +286,7 @@ class CircuitBreakerServiceClient:
         self, text: str, target_lang: str, voice_id: str, debug: bool
     ) -> Dict[str, Any]:
         """Führt tatsächlichen TTS Request aus"""
-        url = "http://tts:8000/synthesize"
+        url = _service_url("tts", "/synthesize")
 
         payload = {
             "text": text,

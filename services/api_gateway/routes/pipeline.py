@@ -61,7 +61,7 @@ async def pipeline(
 
     logger = logging.getLogger("api_gateway")
 
-    async def inner(request: Request) -> Response:
+    def inner(request: Request) -> Response:
         import json
 
         if result["error"]:
@@ -89,4 +89,4 @@ async def pipeline(
         }
         return pipeline_response(request, json.dumps(response_obj))
 
-    return await inner(request)
+    return inner(request)

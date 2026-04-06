@@ -20,15 +20,34 @@ from .translation_refiner import RefinementOutcome, translation_refiner
 # Import service URLs from app.py (respects DOCKER_COMPOSE env var)
 # Define defaults here for backwards compatibility, but prefer importing from app
 DOCKER_ENV = os.environ.get("DOCKER_COMPOSE", "1") == "1"
+DEFAULT_INTERNAL_SCHEME = os.environ.get("SERVICE_SCHEME", "http")
+DEFAULT_LOCAL_SCHEME = os.environ.get("LOCAL_SERVICE_SCHEME", DEFAULT_INTERNAL_SCHEME)
+
+
+def _build_service_url(host: str, port: int, path: str, *, scheme: str) -> str:
+    return f"{scheme}://{host}:{port}{path}"
+
 
 if DOCKER_ENV:
-    ASR_URL = "http://asr:8000/transcribe"
-    TRANSLATION_URL = "http://translation:8000/translate"
-    TTS_URL = "http://tts:8000/synthesize"
+    ASR_URL = _build_service_url(
+        "asr", 8000, "/transcribe", scheme=DEFAULT_INTERNAL_SCHEME
+    )
+    TRANSLATION_URL = _build_service_url(
+        "translation", 8000, "/translate", scheme=DEFAULT_INTERNAL_SCHEME
+    )
+    TTS_URL = _build_service_url(
+        "tts", 8000, "/synthesize", scheme=DEFAULT_INTERNAL_SCHEME
+    )
 else:
-    ASR_URL = "http://localhost:8001/transcribe"
-    TRANSLATION_URL = "http://localhost:8002/translate"
-    TTS_URL = "http://localhost:8003/synthesize"
+    ASR_URL = _build_service_url(
+        "localhost", 8001, "/transcribe", scheme=DEFAULT_LOCAL_SCHEME
+    )
+    TRANSLATION_URL = _build_service_url(
+        "localhost", 8002, "/translate", scheme=DEFAULT_LOCAL_SCHEME
+    )
+    TTS_URL = _build_service_url(
+        "localhost", 8003, "/synthesize", scheme=DEFAULT_LOCAL_SCHEME
+    )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -372,6 +391,146 @@ def _validate_and_normalize_text(
         audio_bytes=None,
         validation_result=validation_result,
     )
+
+
+def _run_text_translation_step(
+    *,
+    processed_text: str,
+    source_lang: str,
+    target_lang: str,
+    debug: bool,
+    debug_info: Dict[str, Any],
+) -> Tuple[requests.Response, Dict[str, Any], str, Optional[str]]:
+    start_translation = time.perf_counter()
+    translation_started_at = utc_now()
+    translation_payload = {
+        "text": processed_text,
+        "source_lang": source_lang,
+        "target_lang": target_lang,
+        "model": "m2m100_1.2B",
+        "debug": str(debug).lower(),
+    }
+
+    translation_resp = requests.post(
+        TRANSLATION_URL, json=translation_payload, timeout=30
+    )
+    translation_completed_at = utc_now()
+    translation_json = translation_resp.json()
+    translation_text = translation_json.get("translations", "")
+    tts_text = translation_json.get("tts_text")
+    translation_duration_ms = int((time.perf_counter() - start_translation) * 1000)
+
+    debug_info["steps"].append(
+        {
+            "step": "Translation",
+            "name": "translation",
+            "input": translation_payload,
+            "output": translation_text,
+            "error": translation_json.get("error"),
+            "duration": round(time.perf_counter() - start_translation, 3),
+            "started_at": translation_started_at.isoformat() + "Z",
+            "completed_at": translation_completed_at.isoformat() + "Z",
+            "duration_ms": translation_duration_ms,
+        }
+    )
+
+    return translation_resp, translation_json, translation_text, tts_text
+
+
+def _apply_translation_refinement(
+    *,
+    processed_text: str,
+    translation_text: str,
+    source_lang: str,
+    target_lang: str,
+    debug_info: Dict[str, Any],
+    tts_text: Optional[str],
+) -> Tuple[str, Optional[str]]:
+    refined_tts_text = tts_text
+    if not translation_refiner.is_active:
+        return translation_text, refined_tts_text
+
+    refinement_started_at = utc_now()
+    outcome: RefinementOutcome = translation_refiner.refine(
+        translation_text,
+        source_lang,
+        target_lang,
+        context={"original_text": processed_text, "pipeline": "text"},
+    )
+    refinement_completed_at = utc_now()
+    translation_text = outcome.text
+    if outcome.changed:
+        refined_tts_text = None
+
+    debug_info["steps"].append(
+        {
+            "step": "LLM_Refinement",
+            "name": "refinement",
+            "input": {"enabled": True, "changed": outcome.changed},
+            "output": translation_text,
+            "error": outcome.error,
+            "duration": round((outcome.latency_ms or 0.0) / 1000, 3),
+            "started_at": refinement_started_at.isoformat() + "Z",
+            "completed_at": refinement_completed_at.isoformat() + "Z",
+            "duration_ms": int(outcome.latency_ms or 0),
+        }
+    )
+
+    return translation_text, refined_tts_text
+
+
+def _run_text_tts_step(
+    *,
+    translation_text: str,
+    target_lang: str,
+    session_id: Optional[str],
+    debug: bool,
+    refined_tts_text: Optional[str],
+) -> Tuple[requests.Response, int, datetime, datetime, float]:
+    start_tts = time.perf_counter()
+    tts_started_at = utc_now()
+    tts_payload = {
+        "text": translation_text,
+        "lang": target_lang,
+        "session_id": session_id,
+        "debug": str(debug).lower(),
+    }
+    if refined_tts_text:
+        tts_payload["tts_text"] = refined_tts_text
+
+    tts_resp = requests.post(TTS_URL, json=tts_payload, timeout=30)
+    tts_completed_at = utc_now()
+    tts_duration_ms = int((time.perf_counter() - start_tts) * 1000)
+    return tts_resp, tts_duration_ms, tts_started_at, tts_completed_at, start_tts
+
+
+def _append_tts_debug_step(
+    *,
+    debug_info: Dict[str, Any],
+    target_lang: str,
+    translation_text: str,
+    error_msg: Optional[str],
+    tts_duration_ms: int,
+    tts_started_at: datetime,
+    tts_completed_at: datetime,
+    start_tts: float,
+    model: Optional[str] = None,
+) -> None:
+    tts_step = {
+        "step": "TTS",
+        "name": "tts",
+        "input": {"lang": target_lang, "text": translation_text},
+        "output": None if error_msg else AUDIO_WAV_MIME,
+        "error": error_msg,
+        "duration": round(time.perf_counter() - start_tts, 3),
+        "started_at": tts_started_at.isoformat() + "Z",
+        "completed_at": tts_completed_at.isoformat() + "Z",
+        "duration_ms": tts_duration_ms,
+    }
+    if model:
+        tts_step["model"] = model
+        tts_step["language"] = target_lang
+    debug_info["steps"].append(tts_step)
 
 
 def _append_audio_validation_step(
@@ -1007,37 +1166,14 @@ def process_text_pipeline(
             processed_text = text
 
         # Step 2: Translation (skip ASR entirely)
-        start_translation = time.perf_counter()
-        translation_started_at = utc_now()
-        translation_payload = {
-            "text": processed_text,
-            "source_lang": source_lang,
-            "target_lang": target_lang,
-            "model": "m2m100_1.2B",
-            "debug": str(debug).lower(),
-        }
-
-        translation_resp = requests.post(
-            TRANSLATION_URL, json=translation_payload, timeout=30
-        )
-        translation_completed_at = utc_now()
-        translation_json = translation_resp.json()
-        translation_text = translation_json.get("translations", "")
-        tts_text = translation_json.get("tts_text")
-        translation_duration_ms = int((time.perf_counter() - start_translation) * 1000)
-
-        debug_info["steps"].append(
-            {
-                "step": "Translation",
-                "name": "translation",
-                "input": translation_payload,
-                "output": translation_text,
-                "error": translation_json.get("error"),
-                "duration": round(time.perf_counter() - start_translation, 3),
-                "started_at": translation_started_at.isoformat() + "Z",
-                "completed_at": translation_completed_at.isoformat() + "Z",
-                "duration_ms": translation_duration_ms,
-            }
+        translation_resp, translation_json, translation_text, tts_text = (
+            _run_text_translation_step(
+                processed_text=processed_text,
+                source_lang=source_lang,
+                target_lang=target_lang,
+                debug=debug,
+                debug_info=debug_info,
+            )
         )
 
         # Translation error handling
@@ -1053,56 +1189,25 @@ def process_text_pipeline(
             )
 
         # Optional LLM refinement
-        refined_tts_text = tts_text
-        if translation_refiner.is_active:
-            refinement_started_at = utc_now()
-            refinement_context = {
-                "original_text": processed_text,
-                "pipeline": "text",
-            }
-            outcome: RefinementOutcome = translation_refiner.refine(
-                translation_text,
-                source_lang,
-                target_lang,
-                context=refinement_context,
-            )
-            refinement_completed_at = utc_now()
-            translation_text = outcome.text
-            if outcome.changed:
-                # Drop precomputed romanization so TTS uses refined text directly
-                refined_tts_text = None
-
-            refinement_duration_ms = outcome.latency_ms or 0
-
-            debug_info["steps"].append(
-                {
-                    "step": "LLM_Refinement",
-                    "name": "refinement",
-                    "input": {"enabled": True, "changed": outcome.changed},
-                    "output": translation_text,
-                    "error": outcome.error,
-                    "duration": round((outcome.latency_ms or 0.0) / 1000, 3),
-                    "started_at": refinement_started_at.isoformat() + "Z",
-                    "completed_at": refinement_completed_at.isoformat() + "Z",
-                    "duration_ms": int(refinement_duration_ms),
-                }
-            )
+        translation_text, refined_tts_text = _apply_translation_refinement(
+            processed_text=processed_text,
+            translation_text=translation_text,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            debug_info=debug_info,
+            tts_text=tts_text,
+        )
 
         # Step 3: TTS
-        start_tts = time.perf_counter()
-        tts_started_at = utc_now()
-        tts_payload = {
-            "text": translation_text,
-            "lang": target_lang,
-            "session_id": session_id,  # Für session-basierten Seed
-            "debug": str(debug).lower(),
-        }
-        if refined_tts_text:
-            tts_payload["tts_text"] = refined_tts_text
-
-        tts_resp = requests.post(TTS_URL, json=tts_payload, timeout=30)
-        tts_completed_at = utc_now()
-        tts_duration_ms = int((time.perf_counter() - start_tts) * 1000)
+        tts_resp, tts_duration_ms, tts_started_at, tts_completed_at, start_tts = (
+            _run_text_tts_step(
+                translation_text=translation_text,
+                target_lang=target_lang,
+                session_id=session_id,
+                debug=debug,
+                refined_tts_text=refined_tts_text,
+            )
+        )
 
         if (
             tts_resp.status_code != 200
@@ -1114,18 +1219,15 @@ def process_text_pipeline(
             except Exception:
                 error_msg = tts_resp.text
 
-            debug_info["steps"].append(
-                {
-                    "step": "TTS",
-                    "name": "tts",
-                    "input": {"lang": target_lang, "text": translation_text},
-                    "output": None,
-                    "error": error_msg,
-                    "duration": round(time.perf_counter() - start_tts, 3),
-                    "started_at": tts_started_at.isoformat() + "Z",
-                    "completed_at": tts_completed_at.isoformat() + "Z",
-                    "duration_ms": tts_duration_ms,
-                }
+            _append_tts_debug_step(
+                debug_info=debug_info,
+                target_lang=target_lang,
+                translation_text=translation_text,
+                error_msg=error_msg,
+                tts_duration_ms=tts_duration_ms,
+                tts_started_at=tts_started_at,
+                tts_completed_at=tts_completed_at,
+                start_tts=start_tts,
             )
             return _pipeline_error_result(
                 debug_info=debug_info,
@@ -1150,21 +1252,17 @@ def process_text_pipeline(
             target_lang, f"facebook/mms-tts-{target_lang}"
         )
 
-        debug_info["steps"].append(
-            {
-                "step": "TTS",
-                "name": "tts",
-                "input": {"lang": target_lang, "text": translation_text},
-                "output": AUDIO_WAV_MIME,
-                "model": tts_model_used,  # Füge Modellnamen hinzu
-                "language": target_lang,
-                "error": None,
-                "duration": round(time.perf_counter() - start_tts, 3),
-                "started_at": tts_started_at.isoformat() + "Z",
-                "completed_at": tts_completed_at.isoformat() + "Z",
-                "duration_ms": tts_duration_ms,
-            }
-        )  # Pipeline completion timestamp
+        _append_tts_debug_step(
+            debug_info=debug_info,
+            target_lang=target_lang,
+            translation_text=translation_text,
+            error_msg=None,
+            tts_duration_ms=tts_duration_ms,
+            tts_started_at=tts_started_at,
+            tts_completed_at=tts_completed_at,
+            start_tts=start_tts,
+            model=tts_model_used,
+        )
         _finalize_pipeline_success(debug_info, start_total)
 
         return {

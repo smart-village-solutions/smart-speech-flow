@@ -6,7 +6,7 @@ interface MessageListProps {
   showMetadata?: boolean;
 }
 
-export default function MessageList({ showMetadata = false }: MessageListProps) {
+export default function MessageList({ showMetadata = false }: Readonly<MessageListProps>) {
   const { messages, clientType } = useSession();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);

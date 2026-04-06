@@ -80,12 +80,9 @@ services:
           memory: 1G
 
     volumes:
-      # Persistent Audio Storage (Bind Mount)
-      - type: bind
-        source: ./data/audio
-        target: /data/audio
-        bind:
-          create_host_path: true
+      # Persistent Audio Storage (named volume keeps write access for the
+      # non-root container user without relying on host directory ownership)
+      - audio-data:/data/audio
 
       # Temporary Upload Buffer (RAM - tmpfs)
       - type: tmpfs
@@ -204,7 +201,7 @@ services:
       - "traefik.http.routers.frontend.rule=Host(`translate.smart-village.solutions`)"
       - "traefik.http.routers.frontend.entrypoints=websecure"
       - "traefik.http.routers.frontend.tls.certresolver=le"
-      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+      - "traefik.http.services.frontend.loadbalancer.server.port=8080"
       - "traefik.docker.network=ssf-backend_default"
     restart: always
 
@@ -336,3 +333,4 @@ services:
 volumes:
   redis-data:
   ollama-data:
+  audio-data:

@@ -30,6 +30,19 @@ from services.api_gateway.session_manager import (
 
 router = APIRouter()
 SESSION_NOT_FOUND_DETAIL = "Session nicht gefunden"
+SESSION_CREATE_RESPONSES = {
+    400: {"description": "Unsupported customer language"},
+}
+SESSION_INFO_RESPONSES = {
+    404: {"description": SESSION_NOT_FOUND_DETAIL},
+}
+SESSION_MESSAGE_RESPONSES = {
+    404: {"description": SESSION_NOT_FOUND_DETAIL},
+    500: {"description": "Message processing failed"},
+}
+SESSION_MESSAGES_RESPONSES = {
+    404: {"description": SESSION_NOT_FOUND_DETAIL},
+}
 
 # Unterstützte Sprachen basierend auf TTS-Service
 SUPPORTED_LANGUAGES = {
@@ -44,7 +57,7 @@ SUPPORTED_LANGUAGES = {
 }
 
 
-@router.post("/session/create")
+@router.post("/session/create", responses=SESSION_CREATE_RESPONSES)
 async def create_session(customer_language: str):
     """Neue Session für Admin-Kunde Gespräch erstellen"""
     if customer_language not in SUPPORTED_LANGUAGES:
@@ -61,7 +74,7 @@ async def create_session(customer_language: str):
     }
 
 
-@router.get("/session/{session_id}")
+@router.get("/session/{session_id}", responses=SESSION_INFO_RESPONSES)
 async def get_session_info(session_id: str):
     """Session-Informationen abrufen"""
     session = session_manager.get_session(session_id)
@@ -86,7 +99,7 @@ async def get_active_sessions():
     return {"sessions": session_manager.get_active_sessions()}
 
 
-@router.post("/session/{session_id}/message")
+@router.post("/session/{session_id}/message", responses=SESSION_MESSAGE_RESPONSES)
 async def send_session_message(
     session_id: str,
     client_type: ClientType,
@@ -142,7 +155,7 @@ async def send_session_message(
         raise HTTPException(500, f"Fehler bei Nachrichtenverarbeitung: {str(e)}")
 
 
-@router.get("/session/{session_id}/messages")
+@router.get("/session/{session_id}/messages", responses=SESSION_MESSAGES_RESPONSES)
 async def get_session_messages(session_id: str):
     """Nachrichten einer Session abrufen"""
     session = session_manager.get_session(session_id)
