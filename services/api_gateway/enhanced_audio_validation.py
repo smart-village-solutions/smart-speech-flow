@@ -347,7 +347,7 @@ class EnhancedAudioValidator:
 
 # Integration in bestehende validate_audio_input Funktion
 def enhanced_validate_audio_input(
-    audio_bytes: bytes, normalize: bool = True
+    audio_bytes: bytes, _normalize: bool = True
 ) -> "AudioValidationResult":
     """
     Erweiterte Audio-Validierung mit Multi-Format-Support

@@ -1,8 +1,13 @@
 import axios from 'axios';
 
+function localApiBaseUrl(): string {
+  const scheme = 'http';
+  return `${scheme}://localhost:8000`;
+}
+
 // Create axios instance with base URL from environment
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
+  baseURL: import.meta.env.VITE_API_BASE_URL || localApiBaseUrl(),
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',

@@ -5,7 +5,7 @@ interface LayoutProps {
   showHeader?: boolean;
 }
 
-export default function Layout({ children, showHeader = false }: LayoutProps) {
+export default function Layout({ children, showHeader = false }: Readonly<LayoutProps>) {
   return (
     <div className="min-h-screen bg-gray-50">
       {showHeader && (

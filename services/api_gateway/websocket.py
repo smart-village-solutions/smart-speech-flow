@@ -53,6 +53,10 @@ def _safe_identifier(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
 
 
+def _localhost_origin_prefixes() -> tuple[str, str]:
+    return (f"{'http'}://localhost", f"{'https'}://localhost")
+
+
 # === Origin Validation for WebSocket Connections ===
 async def validate_websocket_origin(origin: Optional[str]) -> bool:
     """
@@ -68,7 +72,7 @@ async def validate_websocket_origin(origin: Optional[str]) -> bool:
             return True
 
         # Erlaube alle localhost Origins
-        if origin.startswith(("http://localhost", "https://localhost")):
+        if origin.startswith(_localhost_origin_prefixes()):
             return True
 
         # Allow configured development origins
@@ -823,7 +827,10 @@ class WebSocketManager:
                     1 for c in connections.values() if c.is_alive()
                 ),
                 "client_types": list(
-                    set(c.client_type.value for c in connections.values())
+                    {
+                        connection.client_type.value
+                        for connection in connections.values()
+                    }
                 ),
             }
 

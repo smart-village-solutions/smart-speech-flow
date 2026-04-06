@@ -31,6 +31,19 @@ def utc_now_iso() -> str:
     return utc_now().isoformat()
 
 
+async def _await_polled_messages(polling_id: str, timeout_seconds: int):
+    """Wait briefly for new messages without keeping a manual timeout counter."""
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            while True:
+                messages = fallback_manager.poll_messages(polling_id)
+                if messages:
+                    return messages
+                await asyncio.sleep(1)
+    except TimeoutError:
+        return []
+
+
 class PollingMessage(BaseModel):
     """Message sent via polling"""
 
@@ -149,9 +162,7 @@ async def poll_messages(
 
         # If no messages, wait for new ones (long polling)
         if not messages and timeout > 0:
-            # Simple long polling implementation
-            await asyncio.sleep(1)  # Brief wait for potential new messages
-            messages = fallback_manager.poll_messages(polling_id)
+            messages = await _await_polled_messages(polling_id, timeout)
 
         return JSONResponse(
             status_code=200,

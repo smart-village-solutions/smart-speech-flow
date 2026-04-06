@@ -204,7 +204,7 @@ services:
       - "traefik.http.routers.frontend.rule=Host(`translate.smart-village.solutions`)"
       - "traefik.http.routers.frontend.entrypoints=websecure"
       - "traefik.http.routers.frontend.tls.certresolver=le"
-      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+      - "traefik.http.services.frontend.loadbalancer.server.port=8080"
       - "traefik.docker.network=ssf-backend_default"
     restart: always
 

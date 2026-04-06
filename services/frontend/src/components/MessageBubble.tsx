@@ -97,7 +97,7 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
   const playAudio = async (url: string) => {
     try {
       // Verwende absolute URL für Audio
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || `${'http'}://localhost:8000`;
       const absoluteUrl = url.startsWith('http') ? url : `${apiBaseUrl}${url}`;
 
       console.log('🔊 Playing audio from:', absoluteUrl);

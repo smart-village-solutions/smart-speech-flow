@@ -60,6 +60,38 @@ def _log_session_event(message: str, session_id: Optional[str], **extra: Any) ->
     logger.info("%s | %s", message, safe_extra)
 
 
+async def _apply_activity_update_to_session_connections(
+    manager: WebSocketManager,
+    session_id: str,
+    activity: "ClientActivityUpdate",
+) -> tuple[List[int], List[str]]:
+    new_intervals: List[int] = []
+    optimization_tips: List[str] = []
+
+    connections = manager.session_connections.get(session_id, {})
+    for connection in connections.values():
+        old_interval = connection.current_polling_interval
+        new_interval = manager.adaptive_polling.update_client_status(
+            connection,
+            is_mobile=activity.is_mobile,
+            tab_active=activity.tab_active,
+            battery_level=activity.battery_level,
+            network_quality=activity.network_quality,
+        )
+
+        new_intervals.append(new_interval)
+        optimization_tips.extend(
+            manager.adaptive_polling.get_battery_optimization_tips(connection)
+        )
+
+        if new_interval != old_interval:
+            await manager._send_polling_interval_update(
+                connection, new_interval, reason="client_activity_update"
+            )
+
+    return new_intervals, optimization_tips
+
+
 ManagerDependency = Annotated[
     WebSocketManager,
     Depends(get_websocket_manager),
@@ -1302,47 +1334,16 @@ async def update_client_activity(
     if session.status != SessionStatus.ACTIVE:
         raise HTTPException(400, "Session ist nicht aktiv")
 
-    # Aktive WebSocket-Verbindungen für diese Session finden
-    session_connections = manager.get_session_connections(session_id)
-
-    if not session_connections:
+    if not manager.get_session_connections(session_id):
         raise HTTPException(
             400, "Keine aktiven WebSocket-Verbindungen für diese Session"
         )
 
-    # Activity-Update für alle Verbindungen der Session anwenden
-    new_intervals = []
-    optimization_tips = []
-
-    for _ in session_connections:
-        # Connection-Objekt aus all_connections holen
-        connection_id = None
-        for conn_id, conn in manager.all_connections.items():
-            if conn.session_id == session_id:
-                connection_id = conn_id
-                connection = conn
-                break
-
-        if connection_id and connection:
-            # Status aktualisieren
-            old_interval = connection.current_polling_interval
-            new_interval = manager.adaptive_polling.update_client_status(
-                connection,
-                is_mobile=activity.is_mobile,
-                tab_active=activity.tab_active,
-                battery_level=activity.battery_level,
-                network_quality=activity.network_quality,
-            )
-
-            new_intervals.append(new_interval)
-            tips = manager.adaptive_polling.get_battery_optimization_tips(connection)
-            optimization_tips.extend(tips)
-
-            # WebSocket-Notification senden falls Intervall sich geändert hat
-            if new_interval != old_interval:
-                await manager._send_polling_interval_update(
-                    connection, new_interval, reason="client_activity_update"
-                )
+    new_intervals, optimization_tips = (
+        await _apply_activity_update_to_session_connections(
+            manager, session_id, activity
+        )
+    )
 
     # Session-Aktivität aktualisieren (für Timeout-Management)
     session_manager.update_session_activity(session_id)
