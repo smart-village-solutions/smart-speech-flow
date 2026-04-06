@@ -12,7 +12,7 @@ Das Projekt verwendet automatisierte Tools zur Sicherstellung von Code-Qualität
 
 #### Black (Code Formatter)
 - **Zweck**: Konsistente Python-Code-Formatierung
-- **Konfiguration**: 88 Zeichen Zeilenlänge
+- **Konfiguration**: 100 Zeichen Zeilenlaenge
 - **Ausführung**: `black services/`
 - **Pre-commit**: Automatisch bei jedem Commit
 
@@ -27,7 +27,7 @@ Das Projekt verwendet automatisierte Tools zur Sicherstellung von Code-Qualität
 #### flake8 (Linting)
 - **Zweck**: Code-Stil und potenzielle Fehler erkennen
 - **Konfiguration**: `setup.cfg`
-- **Max. Zeilenlänge**: 88 Zeichen
+- **Max. Zeilenlaenge**: 100 Zeichen
 - **Ausführung**: `flake8 services/`
 - **Ignorierte Regeln**: E203, W503, E501 (Black-Kompatibilität)
 
@@ -49,7 +49,15 @@ Das Projekt verwendet automatisierte Tools zur Sicherstellung von Code-Qualität
 #### pip-audit (Dependency Scanner)
 - **Zweck**: Bekannte Sicherheitslücken in Dependencies
 - **Ausführung**: `pip-audit`
-- **Verhalten**: Blockiert bei bekannten Vulnerabilities
+- **Verhalten**: Der Report wird in CI erzeugt; Blocking-Regeln koennen schrittweise verschaerft werden
+
+### 5. Zentralisierte Qualitaetsanalyse
+
+#### SonarCloud
+- **Zweck**: Zentrale Analyse fuer Maintainability, Code Smells, Duplication und Quality Gates
+- **Ausfuehrung**: In GitHub Actions ueber die Code-Quality-Pipeline
+- **Scope**: Aktive Backend- und relevante Frontend-Quellpfade, keine Archive oder Laufzeitdaten
+- **Qualitaetsgate**: Wird in CI ausgewertet, sobald die SonarCloud-Repository-Konfiguration vorhanden ist
 
 ### 4. Type-Checking (Graduell)
 
@@ -66,7 +74,7 @@ Das Projekt verwendet automatisierte Tools zur Sicherstellung von Code-Qualität
 2. **Import-Sortierung**: Muss isort-Standards erfüllen
 3. **Linting**: Keine kritischen flake8-Fehler
 4. **Sicherheit**: Keine High/Critical Bandit-Issues
-5. **Dependencies**: Keine bekannten Vulnerabilities
+5. **Sonar Quality Gate**: Muss im konfigurierten CI-Setup erfolgreich sein
 
 ### Advisory (Nicht-blockierend)
 1. **Type-Coverage**: Graduelle Verbesserung angestrebt
@@ -99,9 +107,24 @@ pip-audit                     # Dependency-Check
 
 ### CI/CD Pipeline
 - **Trigger**: Push/PR auf main/develop
-- **Jobs**: Code-Quality, Security, Type-Checking, Dependencies
+- **Jobs**: Code-Quality, Security, Type-Checking, Dependencies, SonarCloud
 - **Reports**: Artifacts für alle Tool-Outputs
-- **Quality Gate**: Blockiert Merge bei kritischen Fehlern
+- **Quality Gate**: SonarCloud liefert zentrales Qualitaetsfeedback fuer PRs und Branches
+
+### SonarCloud-Konfiguration
+
+Fuer die GitHub-Integration werden folgende Repository-Einstellungen benoetigt:
+
+- Secret: `SONAR_TOKEN`
+- optional Repository Variable: `SONAR_ORGANIZATION`
+- optional Repository Variable: `SONAR_PROJECT_KEY`
+
+Falls die Variablen nicht gesetzt werden, verwendet der Workflow standardmaessig:
+
+- Sonar-Organisation = GitHub Repository Owner
+- Sonar Project Key = `<repository_owner>_<repository_name>`
+
+Die Scanner-Konfiguration liegt in `sonar-project.properties`.
 
 ## 📊 Metriken und Monitoring
 
@@ -143,6 +166,7 @@ pip-audit                     # Dependency-Check
 ├── pyproject.toml              # Tool-Konfigurationen (Black, isort, mypy)
 ├── setup.cfg                   # flake8-Konfiguration
 ├── requirements-dev.txt        # Entwicklungs-Dependencies
+├── sonar-project.properties    # SonarCloud-Analysekonfiguration
 └── .github/workflows/
     └── code-quality.yml        # CI/CD Quality Pipeline
 ```

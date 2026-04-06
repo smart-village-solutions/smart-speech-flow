@@ -68,8 +68,6 @@ open htmlcov/index.html  # Linux/Mac
 start htmlcov/index.html # Windows
 ```
 
-**Test Status:** 234/242 tests passing (96.7%). See [TEST_STATUS.md](TEST_STATUS.md) for details.
-
 **Learn more:** [Testing Guide](docs/testing/TESTING_GUIDE.md)
 
 ## 📝 Code Style
@@ -94,6 +92,23 @@ bandit -r services/
 # Run all quality checks
 ./scripts/quality-check.sh
 ```
+
+### SonarCloud in CI
+
+Pull requests and tracked branches are additionally analyzed in SonarCloud through the GitHub Actions quality workflow.
+
+Repository administrators need to configure:
+
+- `SONAR_TOKEN` as a GitHub Actions secret
+- optional `SONAR_ORGANIZATION` as a repository variable
+- optional `SONAR_PROJECT_KEY` as a repository variable
+
+If the optional variables are omitted, the workflow falls back to:
+
+- organization: GitHub repository owner
+- project key: `<repository_owner>_<repository_name>`
+
+SonarCloud complements the existing local tools. Contributors are not expected to run Sonar locally for normal development, but pull requests should be prepared so that linting, tests, and static analysis pass cleanly.
 
 **Configuration:**
 - Black: line length 100, Python 3.12+
