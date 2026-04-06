@@ -62,7 +62,7 @@ jobs:
 
     - name: Upload flake8 report
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: flake8-report
         path: flake8-report.txt
@@ -136,7 +136,7 @@ jobs:
 
     - name: Upload security reports
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: security-reports
         path: |
@@ -187,7 +187,7 @@ jobs:
 
     - name: Upload type checking report
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: mypy-report
         path: mypy-report/
