@@ -6,7 +6,7 @@ due to CORS, network, or compatibility issues.
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Annotated, Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -128,9 +128,9 @@ async def activate_polling_fallback(
 @router.get("/poll/{polling_id}", responses=POLLING_ROUTE_RESPONSES)
 async def poll_messages(
     polling_id: str,
-    timeout: int = Query(
-        default=30, ge=1, le=60, description="Long polling timeout in seconds"
-    ),
+    timeout: Annotated[
+        int, Query(ge=1, le=60, description="Long polling timeout in seconds")
+    ] = 30,
 ):
     """
     Long polling endpoint to retrieve queued messages
@@ -325,7 +325,8 @@ def websocket_recovery_success(polling_id: str):
 
 @router.post("/recover/{polling_id}/failed", responses=POLLING_ROUTE_RESPONSES)
 def websocket_recovery_failed(
-    polling_id: str, failure_reason: str = Query(default="websocket_connection_failed")
+    polling_id: str,
+    failure_reason: Annotated[str, Query()] = "websocket_connection_failed",
 ):
     """
     Notify that WebSocket recovery attempt failed

@@ -207,7 +207,7 @@ class GracefulDegradationManager:
         strategy: FallbackStrategy,
         service_name: str,
         request_data: Dict,
-        original_error: Exception,
+        _original_error: Exception,
     ) -> Optional[Dict[str, Any]]:
         """Wendet spezifische Fallback-Strategie an"""
 
@@ -331,7 +331,7 @@ class GracefulDegradationManager:
         return None
 
     def _queue_request(
-        self, service_name: str, request_data: Dict
+        self, service_name: str, _request_data: Dict
     ) -> Dict[str, Any] | None:
         """Reiht Request für späteren Retry ein"""
         if not self.fallback_config.enable_queuing:
@@ -342,7 +342,7 @@ class GracefulDegradationManager:
         queued_request = {
             "id": request_id,
             "service_name": service_name,
-            "request_data": request_data,
+            "request_data": _request_data,
             "timestamp": utc_now(),
             "retry_count": 0,
             "max_retries": 3,

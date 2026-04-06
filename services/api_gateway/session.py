@@ -8,6 +8,7 @@ import asyncio
 import base64
 import uuid
 from datetime import datetime, timezone
+from typing import Annotated
 
 from fastapi import (
     APIRouter,
@@ -28,6 +29,7 @@ from services.api_gateway.session_manager import (
 )
 
 router = APIRouter()
+SESSION_NOT_FOUND_DETAIL = "Session nicht gefunden"
 
 # Unterstützte Sprachen basierend auf TTS-Service
 SUPPORTED_LANGUAGES = {
@@ -64,7 +66,7 @@ async def get_session_info(session_id: str):
     """Session-Informationen abrufen"""
     session = session_manager.get_session(session_id)
     if not session:
-        raise HTTPException(404, "Session nicht gefunden")
+        raise HTTPException(404, SESSION_NOT_FOUND_DETAIL)
 
     return {
         "id": session.id,
@@ -88,14 +90,14 @@ async def get_active_sessions():
 async def send_session_message(
     session_id: str,
     client_type: ClientType,
-    file: UploadFile = File(...),
-    source_lang: str = Form(...),
-    target_lang: str = Form(...),
+    file: Annotated[UploadFile, File(...)],
+    source_lang: Annotated[str, Form(...)],
+    target_lang: Annotated[str, Form(...)],
 ):
     """Neue Audio-Nachricht zur Session hinzufügen"""
     session = session_manager.get_session(session_id)
     if not session:
-        raise HTTPException(404, "Session nicht gefunden")
+        raise HTTPException(404, SESSION_NOT_FOUND_DETAIL)
 
     try:
         # Nutze bestehende Pipeline-Logik
@@ -145,7 +147,7 @@ async def get_session_messages(session_id: str):
     """Nachrichten einer Session abrufen"""
     session = session_manager.get_session(session_id)
     if not session:
-        raise HTTPException(404, "Session nicht gefunden")
+        raise HTTPException(404, SESSION_NOT_FOUND_DETAIL)
 
     return {
         "session_id": session_id,

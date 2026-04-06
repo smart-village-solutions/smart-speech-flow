@@ -1,13 +1,8 @@
-import os
-import sys
-
 import pytest
 import torch
-
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/.."))
-
-from app import app
 from fastapi.testclient import TestClient
+
+from services.tts.app import app
 
 client = TestClient(app)
 

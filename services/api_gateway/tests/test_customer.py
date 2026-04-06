@@ -113,6 +113,30 @@ class TestCustomerRoutes:
         assert data["is_active"] is True
         assert data["can_send_messages"] is True
 
+    def test_customer_session_status_reflects_admin_termination(self):
+        """Terminated sessions must be visible to the customer status endpoint."""
+        response = client.post("/api/admin/session/create")
+        session_id = response.json()["session_id"]
+
+        activate_payload = {"session_id": session_id, "customer_language": "ru"}
+        activate_response = client.post(
+            "/api/customer/session/activate", json=activate_payload
+        )
+        assert activate_response.status_code == 200
+
+        terminate_response = client.delete(f"/api/admin/session/{session_id}/terminate")
+        assert terminate_response.status_code == 200
+
+        status_response = client.get(f"/api/customer/session/{session_id}/status")
+        assert status_response.status_code == 200
+
+        data = status_response.json()
+        assert data["session_id"] == session_id
+        assert data["status"] == "terminated"
+        assert data["customer_language"] == "ru"
+        assert data["is_active"] is False
+        assert data["can_send_messages"] is False
+
     def test_customer_supported_languages(self):
         """Test customer languages endpoint"""
         response = client.get("/api/customer/languages/supported")

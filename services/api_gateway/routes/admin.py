@@ -1,13 +1,12 @@
 # services/api_gateway/routes/admin.py
 """
-Admin-Routes für Session-Management
-Unterstützt parallele Admin-Sessions
+Admin-Routes für Session-Management.
 """
 
 import logging
 from datetime import datetime, timezone
 from hashlib import sha256
-from typing import Any, Dict, Optional
+from typing import Annotated, Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import JSONResponse
@@ -40,13 +39,13 @@ class SessionCreateResponse(BaseModel):
 class SessionStatusResponse(BaseModel):
     session_id: str
     status: str
-    customer_language: Optional[str]
+    customer_language: Optional[str] = None
     admin_connected: bool
     customer_connected: bool
     message_count: int
     created_at: str
-    terminated_at: Optional[str]
-    termination_reason: Optional[str]
+    terminated_at: Optional[str] = None
+    termination_reason: Optional[str] = None
 
 
 class SessionHistoryResponse(BaseModel):
@@ -85,14 +84,15 @@ def get_client_base_url() -> str:
     "/session/create",
     status_code=status.HTTP_201_CREATED,
     summary="Neue Admin-Session erstellen",
-    description="Erstellt eine neue Admin-Session. Mehrere parallele Sessions sind erlaubt.",
+    description="Erstellt eine neue Admin-Session. Vorherige aktive Sessions werden standardmäßig aus Datenschutzgründen beendet.",
     responses={500: {"description": "Session creation failed"}},
 )
 async def create_admin_session() -> SessionCreateResponse:
     """
-    Erstellt eine neue Admin-Session für parallele Nutzung
+    Erstellt eine neue Admin-Session
 
     - Generiert neue Session-UUID
+    - Beendet standardmäßig ältere aktive Sessions
     - Erstellt Client-URL mit embedded Session-ID
     - Sendet WebSocket-Notifications an betroffene Clients
 
@@ -156,9 +156,10 @@ async def create_admin_session() -> SessionCreateResponse:
     responses=ADMIN_ROUTE_RESPONSES,
 )
 async def get_current_session(
-    session_id: Optional[str] = Query(
-        default=None, description="Spezifische Session-ID, die geladen werden soll."
-    )
+    session_id: Annotated[
+        Optional[str],
+        Query(description="Spezifische Session-ID, die geladen werden soll."),
+    ] = None,
 ) -> SessionStatusResponse:
     """
     Ruft die aktuelle aktive Admin-Session ab
@@ -194,6 +195,11 @@ async def get_current_session(
 
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        )
     except Exception as e:
         logger.error(
             "❌ Fehler beim Abrufen der aktuellen Session: %s",

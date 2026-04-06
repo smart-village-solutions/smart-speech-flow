@@ -452,6 +452,46 @@ class TestAudioPipeline:
             assert exc_info.value.status_code == 500
             assert "PIPELINE_ERROR" in str(exc_info.value.detail)
 
+    @pytest.mark.asyncio
+    async def test_audio_pipeline_uses_processed_audio_bytes(self, active_session, mock_audio_bytes):
+        """Test: Erfolgreich validierte/normalisierte Audio-Bytes werden weitergereicht."""
+        from services.api_gateway.routes.session import process_audio_input
+
+        request = Mock()
+        mock_file = Mock()
+        mock_file.read = AsyncMock(return_value=mock_audio_bytes)
+
+        form_data = {
+            "file": mock_file,
+            "source_lang": "de",
+            "target_lang": "en",
+            "client_type": "admin"
+        }
+        request.form = AsyncMock(return_value=form_data)
+
+        processed_audio = b"processed-audio"
+        validation_result = Mock(is_valid=True, processed_audio=processed_audio)
+
+        with patch(
+            'services.api_gateway.routes.session._should_validate_upload_file',
+            return_value=True,
+        ), patch(
+            'services.api_gateway.pipeline_logic.validate_audio_input',
+            return_value=validation_result,
+        ), patch('services.api_gateway.routes.session.process_wav') as mock_process_wav:
+            mock_process_wav.return_value = {
+                "error": False,
+                "asr_text": "Guten Tag",
+                "translation_text": "Good day",
+                "audio_bytes": b"fake_output_audio"
+            }
+
+            await process_audio_input(active_session, request, 0.0)
+
+            mock_process_wav.assert_called_once_with(
+                processed_audio, "de", "en", validate_audio=False
+            )
+
 
 class TestSessionValidation:
     """Tests für Session-Validation und Error-Handling"""
@@ -523,6 +563,75 @@ class TestSessionMessageCreation:
         session = session_manager.get_session(active_session)
         assert len(session.messages) == 1
         assert session.messages[0].id == message.id
+
+    @pytest.mark.asyncio
+    async def test_create_session_message_fallback_only_for_legacy_signature(self, active_session):
+        """Test: Legacy-Fallback greift nur bei alter Signatur, nicht bei internem TypeError."""
+        from services.api_gateway.routes import session as session_routes
+
+        async def legacy_create_session_message(
+            session_id,
+            client_type,
+            original_text,
+            translated_text,
+            audio_bytes,
+            source_lang,
+            target_lang,
+        ):
+            return session_routes.SessionMessage(
+                id="legacy-msg",
+                sender=client_type,
+                original_text=original_text,
+                translated_text=translated_text,
+                audio_base64=None,
+                source_lang=source_lang,
+                target_lang=target_lang,
+                timestamp=datetime.now(),
+            )
+
+        with patch.object(
+            session_routes,
+            "create_session_message",
+            legacy_create_session_message,
+        ):
+            message = await session_routes._create_session_message_with_fallback(
+                session_id=active_session,
+                client_type=ClientType.ADMIN,
+                original_text="Hello",
+                translated_text="Hallo",
+                audio_bytes=None,
+                source_lang="en",
+                target_lang="de",
+                manager=None,
+                pipeline_metadata=None,
+                original_audio_url=None,
+                message_id="ignored",
+            )
+
+        assert message.id == "legacy-msg"
+
+        async def raising_create_session_message(*args, **kwargs):
+            raise TypeError("internal failure")
+
+        with patch.object(
+            session_routes,
+            "create_session_message",
+            raising_create_session_message,
+        ):
+            with pytest.raises(TypeError, match="internal failure"):
+                await session_routes._create_session_message_with_fallback(
+                    session_id=active_session,
+                    client_type=ClientType.ADMIN,
+                    original_text="Hello",
+                    translated_text="Hallo",
+                    audio_bytes=None,
+                    source_lang="en",
+                    target_lang="de",
+                    manager=None,
+                    pipeline_metadata=None,
+                    original_audio_url=None,
+                    message_id="ignored",
+                )
 
 
 class TestAudioEndpoint:

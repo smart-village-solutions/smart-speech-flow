@@ -590,36 +590,16 @@ class WebSocketManager:
         Returns:
             BroadcastResult with success status and detailed metrics
         """
-        # Task 4.8: Record broadcast attempt
         monitor = get_websocket_monitor()
-        monitor.broadcast_total.labels(
-            session_id=session_id, sender_type=sender_type.value
-        ).inc()
+        self._record_broadcast_attempt(monitor, session_id, sender_type)
 
         errors = []
         successful_sends = 0
         failed_sends = 0
 
-        # Task 4.1 & 4.2: Validate session has connections
         if session_id not in self.session_connections:
-            logger.warning(
-                f"⚠️ Broadcasting to session {session_id} with no connections"
-            )
-
-            # Task 4.8: Record failure reason
-            monitor.broadcast_failure_total.labels(
-                session_id=session_id,
-                sender_type=sender_type.value,
-                reason="no_connections",
-            ).inc()
-
-            return BroadcastResult(
-                success=False,
-                total_connections=0,
-                successful_sends=0,
-                failed_sends=0,
-                session_has_connections=False,
-                errors=["Session has no active connections"],
+            return self._build_no_connection_broadcast_result(
+                monitor, session_id, sender_type
             )
 
         connections = self.session_connections[session_id]
@@ -643,28 +623,94 @@ class WebSocketManager:
                 continue
 
             try:
-                if connection.client_type == sender_type:
-                    # Sender erhält original_text zur Bestätigung
-                    await connection.websocket.send_json(original_message)
-                    successful_sends += 1
-                    logger.debug(f"✓ Sent original message to sender {connection_id}")
-                else:
-                    # Empfänger erhält translated_text + audio
-                    await connection.websocket.send_json(translated_message)
-                    successful_sends += 1
-                    logger.debug(
-                        f"✓ Sent translated message to receiver {connection_id}"
-                    )
+                await self._send_differentiated_message(
+                    connection=connection,
+                    connection_id=connection_id,
+                    sender_type=sender_type,
+                    original_message=original_message,
+                    translated_message=translated_message,
+                )
+                successful_sends += 1
             except Exception as e:
                 failed_sends += 1
                 error_msg = f"Failed to send to {connection_id}: {str(e)}"
                 logger.warning(f"⚠️ {error_msg}")
                 errors.append(error_msg)
 
-        # Task 4.5 & 4.6: Return detailed status
         success = successful_sends > 0 and failed_sends == 0
 
-        # Task 4.8: Record metrics
+        self._record_broadcast_summary(
+            monitor=monitor,
+            session_id=session_id,
+            sender_type=sender_type,
+            total_connections=total_connections,
+            successful_sends=successful_sends,
+            failed_sends=failed_sends,
+            success=success,
+        )
+
+        return BroadcastResult(
+            success=success,
+            total_connections=total_connections,
+            successful_sends=successful_sends,
+            failed_sends=failed_sends,
+            session_has_connections=True,
+            errors=errors,
+        )
+
+    def _record_broadcast_attempt(
+        self, monitor: Any, session_id: str, sender_type: ClientType
+    ) -> None:
+        monitor.broadcast_total.labels(
+            session_id=session_id, sender_type=sender_type.value
+        ).inc()
+
+    def _build_no_connection_broadcast_result(
+        self, monitor: Any, session_id: str, sender_type: ClientType
+    ) -> BroadcastResult:
+        logger.warning(f"⚠️ Broadcasting to session {session_id} with no connections")
+        monitor.broadcast_failure_total.labels(
+            session_id=session_id,
+            sender_type=sender_type.value,
+            reason="no_connections",
+        ).inc()
+        return BroadcastResult(
+            success=False,
+            total_connections=0,
+            successful_sends=0,
+            failed_sends=0,
+            session_has_connections=False,
+            errors=["Session has no active connections"],
+        )
+
+    async def _send_differentiated_message(
+        self,
+        *,
+        connection: WebSocketConnection,
+        connection_id: str,
+        sender_type: ClientType,
+        original_message: Dict[str, Any],
+        translated_message: Dict[str, Any],
+    ) -> None:
+        if connection.client_type == sender_type:
+            await connection.websocket.send_json(original_message)
+            logger.debug(f"✓ Sent original message to sender {connection_id}")
+            return
+
+        await connection.websocket.send_json(translated_message)
+        logger.debug(f"✓ Sent translated message to receiver {connection_id}")
+
+    def _record_broadcast_summary(
+        self,
+        *,
+        monitor: Any,
+        session_id: str,
+        sender_type: ClientType,
+        total_connections: int,
+        successful_sends: int,
+        failed_sends: int,
+        success: bool,
+    ) -> None:
         if success:
             logger.info(
                 f"✅ Broadcast successful: {successful_sends}/{total_connections} delivered"
@@ -685,25 +731,14 @@ class WebSocketManager:
                 ),
             ).inc()
 
-        # Record individual message delivery counts
         if successful_sends > 0:
             monitor.broadcast_messages_delivered.labels(
                 session_id=session_id, sender_type=sender_type.value
             ).inc(successful_sends)
-
         if failed_sends > 0:
             monitor.broadcast_messages_failed.labels(
                 session_id=session_id, sender_type=sender_type.value
             ).inc(failed_sends)
-
-        return BroadcastResult(
-            success=success,
-            total_connections=total_connections,
-            successful_sends=successful_sends,
-            failed_sends=failed_sends,
-            session_has_connections=True,
-            errors=errors,
-        )
 
     async def handle_websocket_message(
         self, connection_id: str, message: Dict[str, Any]
@@ -1388,7 +1423,7 @@ async def websocket_endpoint(
     session_id: str,
     client_type: str,
     manager: WebSocketManagerDependency,
-    origin: Optional[str] = Header(None),  # Explicit Origin handling
+    origin: Annotated[Optional[str], Header()] = None,  # Explicit Origin handling
 ):
     """
     Enhanced WebSocket endpoint with explicit CORS validation
@@ -1489,7 +1524,8 @@ async def get_session_connections(session_id: str, manager: WebSocketManagerDepe
 
 @router.get("/api/websocket/debug/connection-test")
 async def websocket_connection_test(
-    origin: Optional[str] = Header(None), user_agent: Optional[str] = Header(None)
+    origin: Annotated[Optional[str], Header()] = None,
+    user_agent: Annotated[Optional[str], Header()] = None,
 ):
     """
     Debug endpoint to test WebSocket connection feasibility

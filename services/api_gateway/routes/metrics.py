@@ -1,6 +1,8 @@
 from fastapi.responses import Response
 from prometheus_client import generate_latest
 
+TEXT_PLAIN_MEDIA_TYPE = "text/plain"
+
 
 def metrics():
     """Kombinierte Prometheus-Metriken für Gateway und WebSocket-Monitoring"""
@@ -33,14 +35,14 @@ def metrics():
                     + "\n"
                     + ws_metrics.decode("utf-8")
                 )
-                return Response(combined, media_type="text/plain")
+                return Response(combined, media_type=TEXT_PLAIN_MEDIA_TYPE)
         except Exception:
             pass  # Fallback zu nur Gateway-Metriken
 
-        return Response(main_metrics, media_type="text/plain")
+        return Response(main_metrics, media_type=TEXT_PLAIN_MEDIA_TYPE)
 
     except Exception:
         # Absoluter Fallback
         return Response(
-            "# Fehler beim Generieren der Metriken\n", media_type="text/plain"
+            "# Fehler beim Generieren der Metriken\n", media_type=TEXT_PLAIN_MEDIA_TYPE
         )

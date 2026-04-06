@@ -391,6 +391,169 @@ def test_asr_health_supported_languages_and_metrics(asr_app, monkeypatch):
     assert asr_app.metrics().body == b"metrics"
 
 
+def test_gpu_metrics_collects_torch_and_nvml_data():
+    gpu_metrics = importlib.import_module("services.gpu_metrics")
+
+    class FakeCuda:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def device_count():
+            return 1
+
+        @staticmethod
+        def get_device_properties(device_idx):
+            return SimpleNamespace(name="Test GPU", total_memory=4096)
+
+        @staticmethod
+        def memory_allocated(device_idx):
+            return 512
+
+        @staticmethod
+        def memory_reserved(device_idx):
+            return 1024
+
+    fake_torch = SimpleNamespace(cuda=FakeCuda())
+    fake_nvml = SimpleNamespace(
+        NVML_TEMPERATURE_GPU=0,
+        nvmlInit=lambda: None,
+        nvmlDeviceGetHandleByIndex=lambda device_idx: f"handle-{device_idx}",
+        nvmlDeviceGetUtilizationRates=lambda handle: SimpleNamespace(gpu=72),
+        nvmlDeviceGetMemoryInfo=lambda handle: SimpleNamespace(total=2000, used=500),
+        nvmlDeviceGetTemperature=lambda handle, sensor: 61,
+    )
+
+    gpu_info, nvml_initialized = gpu_metrics.collect_gpu_metrics(
+        fake_torch, fake_nvml, False
+    )
+
+    assert nvml_initialized is True
+    assert gpu_info["available"] is True
+    assert gpu_info["device_count"] == 1
+    assert gpu_info["errors"] == []
+    assert gpu_info["devices"] == [
+        {
+            "index": 0,
+            "name": "Test GPU",
+            "total_memory": 4096,
+            "memory_allocated": 512,
+            "memory_reserved": 1024,
+            "memory_utilization": 25.0,
+            "utilization_percent": 72,
+            "temperature_c": 61,
+            "memory_total_nvml": 2000,
+            "memory_used_nvml": 500,
+        }
+    ]
+
+
+def test_gpu_metrics_handles_missing_gpu_and_nvml_failure():
+    gpu_metrics = importlib.import_module("services.gpu_metrics")
+
+    no_gpu_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: False, device_count=lambda: 3)
+    )
+    gpu_info, nvml_initialized = gpu_metrics.collect_gpu_metrics(
+        no_gpu_torch, None, False
+    )
+    assert gpu_info == {
+        "available": False,
+        "device_count": 0,
+        "devices": [],
+        "errors": [],
+    }
+    assert nvml_initialized is False
+
+    class FakeCuda:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def device_count():
+            return 1
+
+        @staticmethod
+        def get_device_properties(device_idx):
+            raise RuntimeError("torch boom")
+
+        @staticmethod
+        def memory_allocated(device_idx):
+            return 0
+
+        @staticmethod
+        def memory_reserved(device_idx):
+            return 0
+
+    failed_gpu_info, failed_nvml_initialized = gpu_metrics.collect_gpu_metrics(
+        SimpleNamespace(cuda=FakeCuda()),
+        SimpleNamespace(nvmlInit=lambda: (_ for _ in ()).throw(RuntimeError("nvml boom"))),
+        False,
+    )
+
+    assert failed_nvml_initialized is False
+    assert failed_gpu_info["available"] is True
+    assert failed_gpu_info["errors"] == [
+        "nvml_init_failed: nvml boom",
+        "torch_query_failed_gpu_0: torch boom",
+    ]
+    assert failed_gpu_info["devices"] == [{"index": 0}]
+
+
+def test_service_apps_collect_gpu_metrics_and_metrics_route_fallbacks(
+    asr_app, translation_app, tts_app, monkeypatch
+):
+    payload = {"available": True, "devices": [{"index": 0}]}
+
+    monkeypatch.setattr(asr_app, "collect_gpu_metrics", lambda *args: (payload, True))
+    monkeypatch.setattr(
+        translation_app, "collect_gpu_metrics", lambda *args: (payload, True)
+    )
+    monkeypatch.setattr(tts_app, "collect_gpu_metrics", lambda *args: (payload, True))
+
+    assert asr_app._collect_gpu_metrics() == payload
+    assert translation_app._collect_gpu_metrics() == payload
+    assert tts_app._collect_gpu_metrics() == payload
+
+    app_module = types.ModuleType("services.api_gateway.app")
+    app_module.app = SimpleNamespace(
+        state=SimpleNamespace(prometheus_registry="main-registry")
+    )
+    websocket_monitor = types.ModuleType("services.api_gateway.websocket_monitor")
+    websocket_monitor.get_websocket_monitor = lambda: SimpleNamespace(
+        _registry="ws-registry"
+    )
+
+    metrics_route = load_module(
+        monkeypatch,
+        "services.api_gateway.routes.metrics",
+        "services/api_gateway/routes/metrics.py",
+        {
+            "services.api_gateway.app": app_module,
+            "services.api_gateway.websocket_monitor": websocket_monitor,
+        },
+    )
+    monkeypatch.setattr(
+        metrics_route,
+        "generate_latest",
+        lambda registry: (
+            b"main_metric 1\n" if registry == "main-registry" else b"ws_metric 2\n"
+        ),
+    )
+
+    combined_response = metrics_route.metrics()
+    assert combined_response.media_type == "text/plain"
+    assert combined_response.body == b"main_metric 1\nws_metric 2\n"
+
+    monkeypatch.setattr(
+        metrics_route, "generate_latest", lambda registry: (_ for _ in ()).throw(RuntimeError("broken"))
+    )
+    fallback_response = metrics_route.metrics()
+    assert fallback_response.body == b"# Fehler beim Generieren der Metriken\n"
+
+
 @pytest.mark.asyncio
 async def test_asr_transcribe_fallback_and_success_paths(asr_app, monkeypatch):
     request = build_request(query_params={"debug": "true"})
@@ -1018,6 +1181,30 @@ def test_websocket_fallback_classifies_failures_and_limits_queue():
     assert session_status["has_active_fallbacks"] is True
     assert manager.deactivate_polling_fallback(polling_id) is True
     assert manager.get_polling_client_status("missing") is None
+
+
+def test_websocket_fallback_uses_origin_in_failure_history_key():
+    websocket_fallback = importlib.import_module("services.api_gateway.websocket_fallback")
+
+    manager = websocket_fallback.WebSocketFallbackManager(
+        websocket_fallback.FallbackConfig(enable_jitter=False)
+    )
+
+    manager.evaluate_websocket_failure(
+        "session-1",
+        "admin",
+        "https://admin.example",
+        {"message": "network down", "code": 0},
+    )
+    manager.evaluate_websocket_failure(
+        "session-1",
+        "admin",
+        None,
+        {"message": "network down", "code": 0},
+    )
+
+    assert "session-1_admin_https://admin.example" in manager.failure_history
+    assert "session-1_admin_unknown_origin" in manager.failure_history
 
 
 @pytest.mark.asyncio

@@ -18,6 +18,7 @@ from typing import Optional
 from .log_safety import sanitize_log_value
 
 logger = logging.getLogger(__name__)
+WAV_GLOB_PATTERN = "*.wav"
 
 
 def utc_now() -> datetime:
@@ -227,7 +228,7 @@ def cleanup_old_audio_files() -> dict:
     )
 
     # Cleanup original audio
-    for filepath in ORIGINAL_AUDIO_DIR.glob("*.wav"):
+    for filepath in ORIGINAL_AUDIO_DIR.glob(WAV_GLOB_PATTERN):
         try:
             file_mtime = datetime.fromtimestamp(filepath.stat().st_mtime, timezone.utc)
             if file_mtime < cutoff_time:
@@ -246,7 +247,7 @@ def cleanup_old_audio_files() -> dict:
             stats["errors"] += 1
 
     # Cleanup translated audio
-    for filepath in TRANSLATED_AUDIO_DIR.glob("*.wav"):
+    for filepath in TRANSLATED_AUDIO_DIR.glob(WAV_GLOB_PATTERN):
         try:
             file_mtime = datetime.fromtimestamp(filepath.stat().st_mtime, timezone.utc)
             if file_mtime < cutoff_time:
@@ -303,7 +304,7 @@ def get_disk_usage() -> dict:
     }
 
     # Count original files
-    for filepath in ORIGINAL_AUDIO_DIR.glob("*.wav"):
+    for filepath in ORIGINAL_AUDIO_DIR.glob(WAV_GLOB_PATTERN):
         try:
             stats["original_bytes"] += filepath.stat().st_size
             stats["original_files"] += 1
@@ -315,7 +316,7 @@ def get_disk_usage() -> dict:
             )
 
     # Count translated files
-    for filepath in TRANSLATED_AUDIO_DIR.glob("*.wav"):
+    for filepath in TRANSLATED_AUDIO_DIR.glob(WAV_GLOB_PATTERN):
         try:
             stats["translated_bytes"] += filepath.stat().st_size
             stats["translated_files"] += 1

@@ -59,6 +59,7 @@ class EnhancedAudioValidator:
         b"OggS": "ogg",
         b"fLaC": "flac",
     }
+    DEFAULT_BINARY_MIME_TYPE = "application/octet-stream"
 
     def __init__(self):
         self.ffmpeg_available = self._check_ffmpeg()
@@ -80,7 +81,7 @@ class EnhancedAudioValidator:
         if len(audio_bytes) < 12:
             return AudioFormatDetection(
                 format_name="unknown",
-                mime_type="application/octet-stream",
+                mime_type=self.DEFAULT_BINARY_MIME_TYPE,
                 is_wav=False,
                 is_supported_by_browser=False,
                 needs_conversion=True,
@@ -111,7 +112,7 @@ class EnhancedAudioValidator:
                 return AudioFormatDetection(
                     format_name=format_name,
                     mime_type=format_info.get(
-                        "mime_types", ["application/octet-stream"]
+                        "mime_types", [self.DEFAULT_BINARY_MIME_TYPE]
                     )[0],
                     is_wav=False,
                     is_supported_by_browser=True,
@@ -132,7 +133,7 @@ class EnhancedAudioValidator:
 
         return AudioFormatDetection(
             format_name="unknown",
-            mime_type="application/octet-stream",
+            mime_type=self.DEFAULT_BINARY_MIME_TYPE,
             is_wav=False,
             is_supported_by_browser=False,
             needs_conversion=True,

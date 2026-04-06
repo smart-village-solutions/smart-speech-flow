@@ -7,13 +7,22 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies.
-# `--legacy-peer-deps` keeps container builds stable even when npm enforces
-# peer ranges more strictly than the already-checked-in lockfile.
-RUN npm ci --legacy-peer-deps --ignore-scripts
+# Install dependencies with peer-dependency compatibility, then restore the
+# required esbuild binary explicitly after disabling install scripts.
+RUN npm ci --legacy-peer-deps --ignore-scripts \
+ && npm rebuild esbuild
 
-# Copy source code
-COPY . .
+# Copy only the files required for the SPA build
+COPY src ./src
+COPY public ./public
+COPY index.html ./
+COPY eslint.config.js ./
+COPY postcss.config.js ./
+COPY tailwind.config.js ./
+COPY tsconfig.app.json ./
+COPY tsconfig.json ./
+COPY tsconfig.node.json ./
+COPY vite.config.ts ./
 
 # Build the application
 RUN npm run build

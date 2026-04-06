@@ -4,7 +4,7 @@ Provides comprehensive monitoring and health check endpoints for WebSocket infra
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -78,13 +78,15 @@ def websocket_connection_stats():
 
 @router.get("/connections", responses=MONITORING_ROUTE_RESPONSES)
 def list_active_connections(
-    session_id: Optional[str] = Query(None, description="Filter by session ID"),
-    client_type: Optional[str] = Query(
-        None, description="Filter by client type (admin/customer)"
-    ),
-    limit: int = Query(
-        100, ge=1, le=1000, description="Maximum number of connections to return"
-    ),
+    session_id: Annotated[
+        Optional[str], Query(description="Filter by session ID")
+    ] = None,
+    client_type: Annotated[
+        Optional[str], Query(description="Filter by client type (admin/customer)")
+    ] = None,
+    limit: Annotated[
+        int, Query(ge=1, le=1000, description="Maximum number of connections to return")
+    ] = 100,
 ):
     """
     List active WebSocket connections with optional filtering
@@ -223,9 +225,9 @@ def get_session_connections(session_id: str):
 
 @router.get("/metrics/summary", responses=MONITORING_ROUTE_RESPONSES)
 def websocket_metrics_summary(
-    hours: int = Query(
-        1, ge=1, le=168, description="Number of hours to analyze (max 1 week)"
-    )
+    hours: Annotated[
+        int, Query(ge=1, le=168, description="Number of hours to analyze (max 1 week)")
+    ] = 1,
 ):
     """
     WebSocket metrics summary for specified time period
@@ -262,9 +264,9 @@ def websocket_metrics_summary(
 @router.post("/connections/{connection_id}/close", responses=MONITORING_ROUTE_RESPONSES)
 def force_close_connection(
     connection_id: str,
-    reason: str = Query(
-        "admin_forced_disconnect", description="Reason for forced disconnect"
-    ),
+    reason: Annotated[
+        str, Query(description="Reason for forced disconnect")
+    ] = "admin_forced_disconnect",
 ):
     """
     Force close a specific WebSocket connection (admin function)
