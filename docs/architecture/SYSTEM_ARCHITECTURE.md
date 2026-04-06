@@ -357,7 +357,7 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 
 **API-Endpunkte (intern):**
 - `http://asr:8000/transcribe`: Hauptendpunkt für Audio-zu-Text-Konvertierung
-- `http://asr:8000/languages`: Unterstützte Sprachen abrufen
+- `http://asr:8000/supported-languages`: Unterstuetzte Sprachen abrufen
 - `http://asr:8000/health`: Service-Status und GPU-Informationen
 
 ### **Translation Service** *(Interner Host: `http://translation:8000`)*
@@ -401,7 +401,7 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 
 **API-Endpunkte (intern):**
 - `http://tts:8000/synthesize`: Text-zu-Audio-Konvertierung (WAV)
-- `http://tts:8000/voices`: Verfügbare Stimmen pro Sprache
+- `http://tts:8000/supported-languages`: Unterstuetzte Sprachcodes abrufen
 - `http://tts:8000/health`: TTS-Model-Status und Verfügbarkeit
 
 ## 📊 Monitoring & Logging-Architektur

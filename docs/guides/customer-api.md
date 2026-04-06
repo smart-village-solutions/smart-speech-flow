@@ -87,9 +87,9 @@ Gets session status from customer perspective.
 - `can_send_messages`: `true` if messaging is enabled (same as `is_active`)
 - `customer_language`: Language selected during activation
 
-## GET /api/customer/languages/supported
+## GET /api/languages/supported
 
-Returns supported languages for customer interface.
+Returns the supported language map for the frontend, including default and popular languages.
 
 ### Response (200)
 
@@ -151,7 +151,7 @@ if (status.can_send_messages) {
 
 ### 3. Frontend Integration Points
 
-- **Language Selection**: Use `/api/customer/languages/supported` to populate language picker
+- **Language Selection**: Use `/api/languages/supported` to populate language picker
 - **Session Activation**: Call `/api/customer/session/activate` after language selection
 - **Status Polling**: Use `/api/customer/session/{id}/status` to monitor session state
 - **Error Handling**: Handle 404 (session not found) and 400 (already terminated) appropriately
