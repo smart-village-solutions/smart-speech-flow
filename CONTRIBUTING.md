@@ -352,7 +352,7 @@ curl http://localhost:8000/metrics
 **Found a security vulnerability?**
 
 **DO NOT** open a public issue. Instead:
-- Email security concerns to the maintainers
+- Use the repository's private GitHub Security Advisory reporting flow
 - Include detailed description and reproduction steps
 - Wait for acknowledgment before public disclosure
 
