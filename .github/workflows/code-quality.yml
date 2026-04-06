@@ -12,6 +12,7 @@ on:
 env:
   PYTHON_VERSION: '3.12'
   SONAR_HOST_URL: 'https://sonarcloud.io'
+  SONAR_ENABLED: ${{ secrets.SONAR_TOKEN != '' }}
 
 jobs:
   # Job 1: Code Formatting und Linting
@@ -258,7 +259,7 @@ jobs:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: ${{ secrets.SONAR_TOKEN != '' }}
+    if: ${{ env.SONAR_ENABLED == 'true' }}
 
     steps:
     - name: Checkout Code
