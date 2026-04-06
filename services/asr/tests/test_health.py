@@ -1,8 +1,6 @@
-import sys
-
-sys.path.append("services/api_gateway")
-from app import app
 from fastapi.testclient import TestClient
+
+from services.asr.app import app
 
 client = TestClient(app)
 

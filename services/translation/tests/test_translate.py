@@ -1,10 +1,7 @@
-import os
-import sys
-
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/.."))
-
-from app import app
 from fastapi.testclient import TestClient
+
+from services.translation import app as translation_app
+from services.translation.app import app
 
 client = TestClient(app)
 
@@ -62,7 +59,7 @@ def test_translate_invalid_lang():
 
 def test_translate_model_unavailable(monkeypatch):
     # Simuliere, dass das Modell nicht geladen ist
-    monkeypatch.setattr("app.model_loaded", False)
+    monkeypatch.setattr(translation_app, "model_loaded", False)
     response = client.post(
         "/translate",
         json={"text": "Hallo Welt", "source_lang": "de", "target_lang": "en"},
@@ -70,7 +67,7 @@ def test_translate_model_unavailable(monkeypatch):
     assert response.status_code == 503
     data = response.json()
     assert "Model unavailable" in data["detail"]
-    monkeypatch.setattr("app.model_loaded", True)  # Rücksetzen
+    monkeypatch.setattr(translation_app, "model_loaded", True)  # Rücksetzen
 
 
 def test_translate_empty_text():

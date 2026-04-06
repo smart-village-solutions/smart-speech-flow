@@ -56,6 +56,13 @@ def _minutes_since(dt: datetime) -> float:
     return (utc_now() - _ensure_utc(dt)).total_seconds() / 60
 
 
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass
 class SessionMessage:
     id: str
@@ -222,6 +229,9 @@ class SessionManager:
         self.redis_client: Optional[Redis] = None
         self.redis_namespace: str = os.getenv("REDIS_NAMESPACE", "ssf")
         self.redis_enabled: bool = False
+        self.allow_parallel_sessions: bool = _env_flag(
+            "SSF_ALLOW_PARALLEL_SESSIONS", False
+        )
 
         self.reset()
         _set_global_session_manager(self)
@@ -339,8 +349,16 @@ class SessionManager:
             print(f"⚠️ Bereinigung des Session-Stores fehlgeschlagen: {exc}")
 
     async def create_admin_session(self) -> str:
-        """Neue Admin-Session erstellen, parallele Sessions erlaubt"""
+        """Neue Admin-Session erstellen.
+
+        Standardmäßig wird aus Datenschutzgründen genau eine aktive Admin-Session
+        gleichzeitig erlaubt. Das bisherige Parallelverhalten kann explizit über
+        ``SSF_ALLOW_PARALLEL_SESSIONS=true`` reaktiviert werden.
+        """
         await asyncio.sleep(0)
+        if not self.allow_parallel_sessions:
+            await self.terminate_all_active_sessions(reason="new_session_created")
+
         session_id = str(uuid.uuid4())[:8].upper()
         session = Session(
             id=session_id, status=SessionStatus.PENDING  # Wartet auf Customer-Join
@@ -446,6 +464,7 @@ class SessionManager:
             "new_session_created": "Die Session wurde beendet, da eine neue Session gestartet wurde.",
             "timeout": "Die Session wurde aufgrund von Inaktivität beendet.",
             "manual_termination": "Die Session wurde manuell beendet.",
+            "manual_admin_termination": "Die Session wurde vom Admin beendet.",
             "system_cleanup": "Die Session wurde für System-Wartung beendet.",
             "error": "Die Session wurde aufgrund eines Fehlers beendet.",
         }
@@ -507,7 +526,7 @@ class SessionManager:
 
         Wenn eine Session-ID übergeben wird, wird genau diese Session zurückgegeben,
         sofern sie noch nicht beendet wurde. Ohne Session-ID wird die zuletzt erstellte
-        aktive Session geliefert (oder None, falls keine existiert).
+        aktive Session geliefert, solange diese eindeutig ist.
         """
 
         if session_id:
@@ -524,6 +543,11 @@ class SessionManager:
 
         if not active_sessions:
             return None
+
+        if len(active_sessions) > 1:
+            raise ValueError(
+                "Mehrere aktive Sessions vorhanden; explizite session_id erforderlich"
+            )
 
         active_sessions.sort(key=lambda s: s.created_at, reverse=True)
         return active_sessions[0].to_dict()

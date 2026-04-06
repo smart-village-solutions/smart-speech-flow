@@ -1,6 +1,6 @@
 # tests/test_session_manager.py
 """
-Unit Tests für Session-Management mit parallelen Sessions
+Unit Tests für Session-Management.
 """
 
 import pytest
@@ -19,7 +19,10 @@ from services.api_gateway.session_manager import (
 @pytest.fixture
 def session_manager():
     """Fresh SessionManager instance für jeden Test"""
-    return SessionManager()
+    manager = SessionManager()
+    manager.allow_parallel_sessions = False
+    manager.reset(clear_persistence=True)
+    return manager
 
 
 @pytest.fixture
@@ -33,7 +36,7 @@ def mock_websocket():
 
 
 class TestSessionCreationAndLifecycle:
-    """Tests für Session-Erstellung und parallele Nutzung"""
+    """Tests für Session-Erstellung und Lifecycle."""
 
     @pytest.mark.asyncio
     async def test_create_admin_session_creates_new_session(self, session_manager):
@@ -51,8 +54,25 @@ class TestSessionCreationAndLifecycle:
         assert session.admin_language == "de"
 
     @pytest.mark.asyncio
-    async def test_multiple_sessions_remain_active(self, session_manager):
-        """Test: Mehrere Sessions können parallel bestehen"""
+    async def test_new_session_terminates_previous_session_by_default(self, session_manager):
+        """Test: Neue Session beendet ältere aktive Session standardmäßig."""
+        first_session_id = await session_manager.create_admin_session()
+        second_session_id = await session_manager.create_admin_session()
+
+        assert session_manager.active_admin_sessions == {second_session_id}
+
+        first_session = session_manager.get_session(first_session_id)
+        second_session = session_manager.get_session(second_session_id)
+
+        assert first_session.status == SessionStatus.TERMINATED
+        assert first_session.termination_reason == "new_session_created"
+        assert second_session.status == SessionStatus.PENDING
+
+    @pytest.mark.asyncio
+    async def test_parallel_sessions_can_be_enabled_explicitly(self, session_manager):
+        """Test: Parallele Sessions bleiben nur mit explizitem Opt-in bestehen."""
+        session_manager.allow_parallel_sessions = True
+
         first_session_id = await session_manager.create_admin_session()
         second_session_id = await session_manager.create_admin_session()
 
@@ -145,21 +165,30 @@ class TestSessionStateManagement:
         assert session.status == SessionStatus.TERMINATED
 
     def test_get_active_session_lookup(self, session_manager):
-        """Test: get_active_session liefert jüngste oder spezifische Session"""
+        """Test: get_active_session liefert spezifische oder eindeutige Session."""
         # Ohne aktive Session
         assert session_manager.get_active_session() is None
 
         session_a = asyncio.run(self._create_and_activate_session(session_manager, "fr"))
-        session_b = asyncio.run(self._create_and_activate_session(session_manager, "en"))
-
         latest = session_manager.get_active_session()
         assert latest is not None
-        assert latest["id"] == session_b
+        assert latest["id"] == session_a
         assert latest["status"] == "active"
 
         direct_lookup = session_manager.get_active_session(session_id=session_a)
         assert direct_lookup is not None
         assert direct_lookup["id"] == session_a
+        assert direct_lookup["status"] == "active"
+
+        session_manager.allow_parallel_sessions = True
+        session_b = asyncio.run(self._create_and_activate_session(session_manager, "en"))
+
+        with pytest.raises(ValueError, match="explizite session_id erforderlich"):
+            session_manager.get_active_session()
+
+        direct_lookup = session_manager.get_active_session(session_id=session_b)
+        assert direct_lookup is not None
+        assert direct_lookup["id"] == session_b
         assert direct_lookup["status"] == "active"
 
     async def _create_and_activate_session(self, session_manager, language):
@@ -216,7 +245,7 @@ class TestMemoryLeakPrevention:
 
     @pytest.mark.asyncio
     async def test_no_memory_leaks_on_session_switch(self, session_manager):
-        """Test: Keine Memory-Leaks bei häufigen Session-Wechseln"""
+        """Test: Keine unbegrenzte Akkumulation aktiver Sessions bei Session-Wechseln."""
         # Track initial session count for memory leak detection
         len(session_manager.sessions)
 
@@ -227,19 +256,19 @@ class TestMemoryLeakPrevention:
             session = session_manager.get_session(session_id)
             session.messages.append(MagicMock())
 
-        # Alle Sessions sollen aktiv oder pending bleiben
+        # Nur die jüngste Session bleibt aktiv; ältere bleiben für History erhalten
         active_sessions = [
             s for s in session_manager.sessions.values()
             if s.status != SessionStatus.TERMINATED
         ]
-        assert len(active_sessions) == 10
+        assert len(active_sessions) == 1
 
         # Beendete Sessions bleiben für History im Speicher
         terminated_sessions = [
             s for s in session_manager.sessions.values()
             if s.status == SessionStatus.TERMINATED
         ]
-        assert len(terminated_sessions) == 0
+        assert len(terminated_sessions) == 9
 
     def test_session_history_limiting(self, session_manager):
         """Test: Session-History wird auf sinnvolle Anzahl begrenzt"""

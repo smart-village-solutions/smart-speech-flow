@@ -53,6 +53,13 @@ tts_models = {
     "uk": "tts_models/uk/mai/vits",
 }
 
+# Explizite HF-MMS-Modell-Overrides für Sprachcodes, deren Checkpoint nicht
+# direkt dem schlichten ISO-639-3-Muster folgt.
+hf_model_overrides = {
+    # Kurmanci wird im Produkt in lateinischer Schrift angeboten.
+    "ku": "facebook/mms-tts-kmr-script_latin",
+}
+
 # Mapping ISO-639-1 -> ISO-639-3 für HuggingFace MMS-TTS
 iso1_to_iso3_hf = {
     "de": "deu",
@@ -63,11 +70,14 @@ iso1_to_iso3_hf = {
     "uk": "ukr",
     "am": "amh",
     "ti": "tir",
-    "ku": "kmr",
     "fa": "fas",
 }
 
 tts_model_cache = {}
+
+
+def _supported_language_codes() -> List[str]:
+    return sorted(set(tts_models) | set(iso1_to_iso3_hf) | set(hf_model_overrides))
 
 
 def _coqui_tts_to_audio_bytes(tts_model: Any, text: str) -> bytes:
@@ -104,6 +114,10 @@ def _normalize_lang_code(lang: str) -> str:
 
 
 def _resolve_hf_model_name(lang: str) -> str | None:
+    override_model_name = hf_model_overrides.get(lang)
+    if override_model_name is not None:
+        return override_model_name
+
     hf_code = iso1_to_iso3_hf.get(lang)
     if hf_code is None:
         return None
@@ -429,7 +443,7 @@ async def _render_audio_bytes(tts_model: Any, text: str) -> tuple[bytes, bool]:
 
 @app.get("/health")
 def health():
-    configured_langs = sorted(tts_models.keys())
+    configured_langs = _supported_language_codes()
     model_available = any(tts_model_cache.values())
     resources = _collect_resource_metrics()
     autoscaling = _derive_auto_scaling_signal(resources)
@@ -470,7 +484,7 @@ def health():
         "gpu": gpu_available,
         "gpu_used": gpu_used,
         "gpu_error": "; ".join(gpu_errors) if gpu_errors else None,
-        "configured_models": {"coqui": tts_models},
+        "configured_models": {"coqui": tts_models, "hf_overrides": hf_model_overrides},
         "loaded_models": loaded_models,
         "resources": resources,
         "autoscaling": autoscaling,
@@ -479,8 +493,7 @@ def health():
 
 @app.get("/supported-languages")
 def supported_languages():
-    all_langs = set(tts_models) | set(iso1_to_iso3_hf)
-    return {"languages": sorted(all_langs)}
+    return {"languages": _supported_language_codes()}
 
 
 @app.get("/metrics")

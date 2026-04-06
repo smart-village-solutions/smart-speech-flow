@@ -629,7 +629,9 @@ class TestWebSocketIntegration:
         assert connection_id not in websocket_manager.all_connections
 
     async def test_parallel_sessions_keep_existing_connections(self, websocket_manager, session_manager):
-        """Test: Parallele Sessions lassen bestehende WebSocket-Verbindungen aktiv"""
+        """Test: Parallele Sessions lassen bestehende WebSocket-Verbindungen aktiv."""
+        session_manager.allow_parallel_sessions = True
+
         # Erste Session mit WebSocket
         session1_id = await session_manager.create_admin_session()
         mock_ws1 = MockWebSocket()

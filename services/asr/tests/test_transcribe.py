@@ -1,21 +1,20 @@
-import os
-import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/.."))
-
-from app import app
 from fastapi.testclient import TestClient
 
+from services.asr.app import app
+
 client = TestClient(app)
+SAMPLE_WAV = Path(__file__).with_name("sample.wav")
 
 
 def test_transcribe_success():
     # Beispiel: Test mit einer Dummy-Audiodatei
-    with open("tests/sample.wav", "rb") as f:
+    with SAMPLE_WAV.open("rb") as f:
         response = client.post(
             "/transcribe",
             files={"file": ("sample.wav", f, "audio/wav")},
-            data={"language": "de"},
+            data={"lang": "de"},
         )
     assert response.status_code == 200
     data = response.json()
@@ -25,7 +24,7 @@ def test_transcribe_success():
 
 
 def test_transcribe_invalid_language():
-    with open("tests/sample.wav", "rb") as f:
+    with SAMPLE_WAV.open("rb") as f:
         response = client.post(
             "/transcribe",
             files={"file": ("sample.wav", f, "audio/wav")},

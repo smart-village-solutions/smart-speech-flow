@@ -1,7 +1,6 @@
 # services/api_gateway/routes/admin.py
 """
-Admin-Routes für Session-Management
-Unterstützt parallele Admin-Sessions
+Admin-Routes für Session-Management.
 """
 
 import logging
@@ -85,14 +84,15 @@ def get_client_base_url() -> str:
     "/session/create",
     status_code=status.HTTP_201_CREATED,
     summary="Neue Admin-Session erstellen",
-    description="Erstellt eine neue Admin-Session. Mehrere parallele Sessions sind erlaubt.",
+    description="Erstellt eine neue Admin-Session. Vorherige aktive Sessions werden standardmäßig aus Datenschutzgründen beendet.",
     responses={500: {"description": "Session creation failed"}},
 )
 async def create_admin_session() -> SessionCreateResponse:
     """
-    Erstellt eine neue Admin-Session für parallele Nutzung
+    Erstellt eine neue Admin-Session
 
     - Generiert neue Session-UUID
+    - Beendet standardmäßig ältere aktive Sessions
     - Erstellt Client-URL mit embedded Session-ID
     - Sendet WebSocket-Notifications an betroffene Clients
 
@@ -194,6 +194,11 @@ async def get_current_session(
 
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        )
     except Exception as e:
         logger.error(
             "❌ Fehler beim Abrufen der aktuellen Session: %s",
