@@ -6,11 +6,13 @@ Ermöglicht Kunden das Beitreten und Aktivieren von Sessions
 
 import logging
 from datetime import datetime, timezone
+from hashlib import sha256
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
+from ..log_safety import sanitize_log_value
 from ..session_manager import SessionStatus, session_manager
 
 # Logger setup
@@ -58,6 +60,12 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _safe_session_ref(session_id: Optional[str]) -> str:
+    if not session_id:
+        return "missing"
+    return sha256(session_id.encode("utf-8")).hexdigest()[:12]
+
+
 @router.post(
     "/session/activate",
     status_code=status.HTTP_200_OK,
@@ -87,13 +95,24 @@ async def activate_session(request: ActivateSessionRequest) -> ActivateSessionRe
     """
     try:
         logger.info(
-            f"🎯 Session-Aktivierung angefordert: {request.session_id} mit Sprache: {request.customer_language}"
+            "🎯 Session-Aktivierung angefordert | %s",
+            sanitize_log_value(
+                {
+                    "session_ref": _safe_session_ref(request.session_id),
+                    "customer_language": request.customer_language,
+                }
+            ),
         )
 
         # Session validieren
         session = session_manager.get_session(request.session_id)
         if not session:
-            logger.warning(f"❌ Session {request.session_id} nicht gefunden")
+            logger.warning(
+                "❌ Session nicht gefunden | %s",
+                sanitize_log_value(
+                    {"session_ref": _safe_session_ref(request.session_id)}
+                ),
+            )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Session {request.session_id} nicht gefunden oder abgelaufen",
@@ -101,7 +120,12 @@ async def activate_session(request: ActivateSessionRequest) -> ActivateSessionRe
 
         # Status prüfen
         if session.status == SessionStatus.TERMINATED:
-            logger.warning(f"❌ Session {request.session_id} bereits beendet")
+            logger.warning(
+                "❌ Session bereits beendet | %s",
+                sanitize_log_value(
+                    {"session_ref": _safe_session_ref(request.session_id)}
+                ),
+            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Session {request.session_id} wurde bereits beendet und kann nicht aktiviert werden",
@@ -112,7 +136,14 @@ async def activate_session(request: ActivateSessionRequest) -> ActivateSessionRe
             # Prüfen, ob Sprache geändert werden soll
             if session.customer_language != request.customer_language:
                 logger.info(
-                    f"🔄 Sprache wird aktualisiert: {session.customer_language} → {request.customer_language}"
+                    "🔄 Sprache wird aktualisiert | %s",
+                    sanitize_log_value(
+                        {
+                            "session_ref": _safe_session_ref(request.session_id),
+                            "previous_language": session.customer_language,
+                            "new_language": request.customer_language,
+                        }
+                    ),
                 )
                 await session_manager.activate_session(
                     request.session_id, request.customer_language
@@ -120,7 +151,10 @@ async def activate_session(request: ActivateSessionRequest) -> ActivateSessionRe
                 session = session_manager.get_session(request.session_id)  # Neu laden
             else:
                 logger.info(
-                    f"ℹ️ Session {request.session_id} bereits aktiv - idempotente Antwort"
+                    "ℹ️ Session bereits aktiv - idempotente Antwort | %s",
+                    sanitize_log_value(
+                        {"session_ref": _safe_session_ref(request.session_id)}
+                    ),
                 )
 
             return ActivateSessionResponse(
@@ -145,7 +179,10 @@ async def activate_session(request: ActivateSessionRequest) -> ActivateSessionRe
             "fa",
         ]
         if request.customer_language not in supported_languages:
-            logger.warning(f"⚠️ Ununterstützte Sprache: {request.customer_language}")
+            logger.warning(
+                "⚠️ Ununterstützte Sprache | %s",
+                sanitize_log_value({"customer_language": request.customer_language}),
+            )
             # Warnung, aber nicht blockieren - der TTS-Service entscheidet final
 
         # Session aktivieren
@@ -155,7 +192,13 @@ async def activate_session(request: ActivateSessionRequest) -> ActivateSessionRe
 
         # Erfolgsmeldung
         logger.info(
-            f"✅ Session {request.session_id} erfolgreich aktiviert mit Sprache: {request.customer_language}"
+            "✅ Session erfolgreich aktiviert | %s",
+            sanitize_log_value(
+                {
+                    "session_ref": _safe_session_ref(request.session_id),
+                    "customer_language": request.customer_language,
+                }
+            ),
         )
 
         return ActivateSessionResponse(
@@ -170,7 +213,13 @@ async def activate_session(request: ActivateSessionRequest) -> ActivateSessionRe
         raise
     except Exception as e:
         logger.error(
-            f"❌ Unerwarteter Fehler bei Session-Aktivierung {request.session_id}: {str(e)}"
+            "❌ Unerwarteter Fehler bei Session-Aktivierung | %s",
+            sanitize_log_value(
+                {
+                    "session_ref": _safe_session_ref(request.session_id),
+                    "error": e,
+                }
+            ),
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -212,7 +261,10 @@ async def get_customer_session_status(session_id: str) -> dict[str, object]:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Fehler beim Abrufen des Customer-Session-Status: {str(e)}")
+        logger.error(
+            "❌ Fehler beim Abrufen des Customer-Session-Status: %s",
+            sanitize_log_value(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Abrufen des Session-Status: {str(e)}",

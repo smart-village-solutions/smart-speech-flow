@@ -14,6 +14,7 @@ from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+from services.api_gateway.log_safety import sanitize_log_value
 from services.api_gateway.pipeline_logic import AudioSpecs, AudioValidationResult
 
 
@@ -189,7 +190,10 @@ class EnhancedAudioValidator:
 
             except Exception as wav_error:
                 details["wav_error"] = str(wav_error)
-                logger.warning(f"WAV-Parsing fehlgeschlagen: {wav_error}")
+                logger.warning(
+                    "WAV-Parsing fehlgeschlagen: %s",
+                    sanitize_log_value(wav_error),
+                )
                 # Fall through zu Konvertierung
 
         # 3. Browser-Format zu WAV konvertieren
@@ -220,19 +224,24 @@ class EnhancedAudioValidator:
                             )
 
                         logger.info(
-                            f"Erfolgreiche Konvertierung: {format_detection.format_name} -> WAV"
+                            "Erfolgreiche Konvertierung: %s -> WAV",
+                            sanitize_log_value(format_detection.format_name),
                         )
                         return True, converted_audio, "", details
 
                     except Exception as conv_wav_error:
                         details["conversion_wav_error"] = str(conv_wav_error)
                         logger.error(
-                            f"Konvertierte WAV-Datei ungültig: {conv_wav_error}"
+                            "Konvertierte WAV-Datei ungueltig: %s",
+                            sanitize_log_value(conv_wav_error),
                         )
 
             except Exception as conv_error:
                 details["conversion_error"] = str(conv_error)
-                logger.error(f"FFmpeg-Konvertierung fehlgeschlagen: {conv_error}")
+                logger.error(
+                    "FFmpeg-Konvertierung fehlgeschlagen: %s",
+                    sanitize_log_value(conv_error),
+                )
 
         # 4. Fallback für unbekannte/nicht-unterstützte Formate
         error_message = self._generate_error_message(format_detection, details)
@@ -244,8 +253,21 @@ class EnhancedAudioValidator:
         """Konvertiere Audio zu 16kHz, 16-bit, Mono WAV mit FFmpeg"""
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
-                temp_input = os.path.join(temp_dir, f"input.{source_format}")
-                temp_output = os.path.join(temp_dir, "converted.wav")
+                safe_suffix = (
+                    "".join(ch for ch in source_format.lower() if ch.isalnum()) or "bin"
+                )
+                input_fd, temp_input = tempfile.mkstemp(
+                    dir=temp_dir,
+                    prefix="audio_input_",
+                    suffix=f".{safe_suffix}",
+                )
+                output_fd, temp_output = tempfile.mkstemp(
+                    dir=temp_dir,
+                    prefix="audio_output_",
+                    suffix=".wav",
+                )
+                os.close(input_fd)
+                os.close(output_fd)
 
                 with open(temp_input, "wb") as temp_in:
                     temp_in.write(audio_bytes)
@@ -282,7 +304,7 @@ class EnhancedAudioValidator:
                 logger.error(
                     "FFmpeg-Fehler (Code %s): %s",
                     result.returncode,
-                    result.stderr.decode(),
+                    sanitize_log_value(result.stderr.decode(errors="replace")),
                 )
                 return None
 
@@ -290,7 +312,7 @@ class EnhancedAudioValidator:
             logger.error("FFmpeg-Konvertierung Timeout")
             return None
         except Exception as e:
-            logger.error(f"FFmpeg-Konvertierung Fehler: {e}")
+            logger.error("FFmpeg-Konvertierung Fehler: %s", sanitize_log_value(e))
             return None
 
     def _generate_error_message(

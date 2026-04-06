@@ -6,12 +6,14 @@ Unterstützt parallele Admin-Sessions
 
 import logging
 from datetime import datetime, timezone
+from hashlib import sha256
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from ..log_safety import sanitize_log_value
 from ..session_manager import SessionStatus, session_manager
 
 # Logger setup
@@ -63,6 +65,12 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _safe_session_ref(session_id: Optional[str]) -> str:
+    if not session_id:
+        return "missing"
+    return sha256(session_id.encode("utf-8")).hexdigest()[:12]
+
+
 def get_client_base_url() -> str:
     """Client Frontend Base URL"""
     import os
@@ -108,8 +116,19 @@ async def create_admin_session() -> SessionCreateResponse:
         client_base_url = get_client_base_url()
         client_url = f"{client_base_url}/join/{session_id}"
 
-        logger.info(f"✅ Admin-Session erfolgreich erstellt: {session_id}")
-        logger.info(f"🔗 Client-URL generiert: {client_url}")
+        logger.info(
+            "✅ Admin-Session erfolgreich erstellt | %s",
+            sanitize_log_value({"session_ref": _safe_session_ref(session_id)}),
+        )
+        logger.info(
+            "🔗 Client-URL generiert | %s",
+            sanitize_log_value(
+                {
+                    "session_ref": _safe_session_ref(session_id),
+                    "client_url": client_url,
+                }
+            ),
+        )
 
         return SessionCreateResponse(
             session_id=session_id,
@@ -120,7 +139,10 @@ async def create_admin_session() -> SessionCreateResponse:
         )
 
     except Exception as e:
-        logger.error(f"❌ Fehler bei Admin-Session-Erstellung: {str(e)}")
+        logger.error(
+            "❌ Fehler bei Admin-Session-Erstellung: %s",
+            sanitize_log_value(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Session-Erstellung fehlgeschlagen: {str(e)}",
@@ -173,7 +195,10 @@ async def get_current_session(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Fehler beim Abrufen der aktuellen Session: {str(e)}")
+        logger.error(
+            "❌ Fehler beim Abrufen der aktuellen Session: %s",
+            sanitize_log_value(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Abrufen der Session: {str(e)}",
@@ -218,7 +243,10 @@ async def terminate_session(session_id: str) -> JSONResponse:
         # Session beenden
         await session_manager.terminate_session(session_id, "manual_admin_termination")
 
-        logger.info(f"✅ Session {session_id} manuell beendet")
+        logger.info(
+            "✅ Session manuell beendet | %s",
+            sanitize_log_value({"session_ref": _safe_session_ref(session_id)}),
+        )
 
         return JSONResponse(
             content={
@@ -232,7 +260,15 @@ async def terminate_session(session_id: str) -> JSONResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Fehler beim Beenden der Session {session_id}: {str(e)}")
+        logger.error(
+            "❌ Fehler beim Beenden der Session | %s",
+            sanitize_log_value(
+                {
+                    "session_ref": _safe_session_ref(session_id),
+                    "error": e,
+                }
+            ),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Beenden der Session: {str(e)}",
@@ -267,7 +303,10 @@ async def get_session_history(limit: int = 10) -> SessionHistoryResponse:
         )
 
     except Exception as e:
-        logger.error(f"❌ Fehler beim Abrufen der Session-Historie: {str(e)}")
+        logger.error(
+            "❌ Fehler beim Abrufen der Session-Historie: %s",
+            sanitize_log_value(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Abrufen der Historie: {str(e)}",
@@ -316,7 +355,10 @@ async def get_session_status(session_id: str) -> SessionStatusResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Fehler beim Abrufen des Session-Status: {str(e)}")
+        logger.error(
+            "❌ Fehler beim Abrufen des Session-Status: %s",
+            sanitize_log_value(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Abrufen des Status: {str(e)}",

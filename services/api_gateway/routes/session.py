@@ -24,6 +24,8 @@ from fastapi import (
 )
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from ..log_safety import sanitize_log_value
+
 # Import der bestehenden Pipeline-Logik
 from ..pipeline_logic import process_text_pipeline, process_wav
 from ..session_manager import ClientType, SessionMessage, SessionStatus, session_manager
@@ -50,7 +52,8 @@ def _safe_identifier(value: Optional[str]) -> str:
 
 
 def _log_session_event(message: str, session_id: Optional[str], **extra: Any) -> None:
-    safe_extra = {"session_ref": _safe_identifier(session_id), **extra}
+    safe_extra = {"session_ref": _safe_identifier(session_id)}
+    safe_extra.update(sanitize_log_value(extra))
     logger.info("%s | %s", message, safe_extra)
 
 
@@ -514,7 +517,10 @@ async def send_unified_message(
 
     # Content-Type-basierte Auto-Detection
     content_type = request.headers.get("content-type", "")
-    logger.info("📋 Content-Type received | %s", {"content_type": content_type})
+    logger.info(
+        "📋 Content-Type received | %s",
+        sanitize_log_value({"content_type": content_type}),
+    )
 
     try:
         if content_type.startswith("multipart/form-data"):
@@ -532,7 +538,7 @@ async def send_unified_message(
         else:
             logger.error(
                 "❌ Unsupported Content-Type received | %s",
-                {"content_type": content_type},
+                sanitize_log_value({"content_type": content_type}),
             )
             raise HTTPException(
                 status_code=400,
@@ -759,10 +765,14 @@ async def process_text_input(
         body = await request.json()
         logger.info(
             "📦 Received JSON payload metadata | %s",
-            {
-                "keys": sorted(body.keys()) if isinstance(body, dict) else [],
-                "has_text": bool(body.get("text")) if isinstance(body, dict) else False,
-            },
+            sanitize_log_value(
+                {
+                    "keys": sorted(body.keys()) if isinstance(body, dict) else [],
+                    "has_text": (
+                        bool(body.get("text")) if isinstance(body, dict) else False
+                    ),
+                }
+            ),
         )
     except Exception as e:
         logger.error("❌ Failed to parse JSON: %s", type(e).__name__)
@@ -799,7 +809,7 @@ async def process_text_input(
 
         logger.error(
             "❌ Validation failed | %s",
-            {"field": field_name, "error_type": error_type},
+            sanitize_log_value({"field": field_name, "error_type": error_type}),
         )
         raise HTTPException(
             status_code=400,
@@ -813,11 +823,13 @@ async def process_text_input(
     # Language validation
     logger.info(
         "🔍 Starting language validation for text request | %s",
-        {
-            "source_lang": text_request.source_lang,
-            "target_lang": text_request.target_lang,
-            "client_type": text_request.client_type.value,
-        },
+        sanitize_log_value(
+            {
+                "source_lang": text_request.source_lang,
+                "target_lang": text_request.target_lang,
+                "client_type": text_request.client_type.value,
+            }
+        ),
     )
     if (
         text_request.source_lang not in SUPPORTED_LANGUAGES
@@ -836,10 +848,12 @@ async def process_text_input(
     session = session_manager.get_session(session_id)
     logger.info(
         "🔎 Session lookup for text input | %s",
-        {
-            "session_ref": _safe_identifier(session_id),
-            "session_found": session is not None,
-        },
+        sanitize_log_value(
+            {
+                "session_ref": _safe_identifier(session_id),
+                "session_found": session is not None,
+            }
+        ),
     )
     if session:
         validate_session_languages(
@@ -851,7 +865,7 @@ async def process_text_input(
     else:
         logger.warning(
             "⚠️ Session not found for language validation - skipping check | %s",
-            {"session_ref": _safe_identifier(session_id)},
+            sanitize_log_value({"session_ref": _safe_identifier(session_id)}),
         )
 
     # Text-Pipeline ausführen (ASR überspringen)
@@ -1007,21 +1021,25 @@ async def create_session_message(
         else:
             logger.error(
                 "❌ WebSocket-Broadcasting fehlgeschlagen | %s",
-                {
-                    "session_ref": _safe_identifier(session_id),
-                    "successful_sends": result.successful_sends,
-                    "failed_sends": result.failed_sends,
-                    "total_connections": result.total_connections,
-                    "error_count": len(result.errors),
-                },
+                sanitize_log_value(
+                    {
+                        "session_ref": _safe_identifier(session_id),
+                        "successful_sends": result.successful_sends,
+                        "failed_sends": result.failed_sends,
+                        "total_connections": result.total_connections,
+                        "error_count": len(result.errors),
+                    }
+                ),
             )
     except Exception as e:
         logger.error(
             "❌ WebSocket-Broadcasting-Fehler | %s",
-            {
-                "session_ref": _safe_identifier(session_id),
-                "error_type": type(e).__name__,
-            },
+            sanitize_log_value(
+                {
+                    "session_ref": _safe_identifier(session_id),
+                    "error_type": type(e).__name__,
+                }
+            ),
         )
         # WebSocket-Fehler sollen den HTTP-Request nicht zum Absturz bringen
         import traceback

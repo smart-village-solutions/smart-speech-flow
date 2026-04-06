@@ -15,6 +15,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
+from .log_safety import sanitize_log_value
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,7 +64,10 @@ def ensure_directories():
     """Ensure audio storage directories exist."""
     ORIGINAL_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     TRANSLATED_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Audio storage directories initialized: {AUDIO_BASE_DIR}")
+    logger.info(
+        "Audio storage directories initialized: %s",
+        sanitize_log_value(AUDIO_BASE_DIR),
+    )
 
 
 def save_original_audio(message_id: str, audio_base64: str) -> str:
@@ -89,7 +94,7 @@ def save_original_audio(message_id: str, audio_base64: str) -> str:
     try:
         audio_data = base64.b64decode(audio_base64)
     except Exception as e:
-        logger.error(f"Failed to decode base64 audio: {e}")
+        logger.error("Failed to decode base64 audio: %s", sanitize_log_value(e))
         raise ValueError(f"Invalid base64 audio data: {e}")
 
     # Save to disk
@@ -98,9 +103,17 @@ def save_original_audio(message_id: str, audio_base64: str) -> str:
 
     try:
         filepath.write_bytes(audio_data)
-        logger.info(f"Saved original audio: {filepath} ({len(audio_data)} bytes)")
+        logger.info(
+            "Saved original audio: %s (%s bytes)",
+            sanitize_log_value(filepath),
+            len(audio_data),
+        )
     except Exception as e:
-        logger.error(f"Failed to save audio file {filepath}: {e}")
+        logger.error(
+            "Failed to save audio file %s: %s",
+            sanitize_log_value(filepath),
+            sanitize_log_value(e),
+        )
         raise IOError(f"Failed to save audio file: {e}")
 
     # Return URL path
@@ -131,7 +144,7 @@ def save_translated_audio(message_id: str, audio_base64: str) -> str:
     try:
         audio_data = base64.b64decode(audio_base64)
     except Exception as e:
-        logger.error(f"Failed to decode base64 audio: {e}")
+        logger.error("Failed to decode base64 audio: %s", sanitize_log_value(e))
         raise ValueError(f"Invalid base64 audio data: {e}")
 
     # Save to disk
@@ -140,9 +153,17 @@ def save_translated_audio(message_id: str, audio_base64: str) -> str:
 
     try:
         filepath.write_bytes(audio_data)
-        logger.info(f"Saved translated audio: {filepath} ({len(audio_data)} bytes)")
+        logger.info(
+            "Saved translated audio: %s (%s bytes)",
+            sanitize_log_value(filepath),
+            len(audio_data),
+        )
     except Exception as e:
-        logger.error(f"Failed to save audio file {filepath}: {e}")
+        logger.error(
+            "Failed to save audio file %s: %s",
+            sanitize_log_value(filepath),
+            sanitize_log_value(e),
+        )
         raise IOError(f"Failed to save audio file: {e}")
 
     # Return URL path
@@ -200,7 +221,9 @@ def cleanup_old_audio_files() -> dict:
 
     cutoff_time = utc_now() - timedelta(hours=RETENTION_HOURS)
     logger.info(
-        f"Starting audio cleanup (retention: {RETENTION_HOURS}h, cutoff: {cutoff_time})"
+        "Starting audio cleanup (retention: %sh, cutoff: %s)",
+        RETENTION_HOURS,
+        sanitize_log_value(cutoff_time.isoformat()),
     )
 
     # Cleanup original audio
@@ -210,9 +233,16 @@ def cleanup_old_audio_files() -> dict:
             if file_mtime < cutoff_time:
                 filepath.unlink()
                 stats["deleted_original"] += 1
-                logger.debug(f"Deleted old original audio: {filepath}")
+                logger.debug(
+                    "Deleted old original audio: %s",
+                    sanitize_log_value(filepath),
+                )
         except Exception as e:
-            logger.error(f"Failed to delete {filepath}: {e}")
+            logger.error(
+                "Failed to delete %s: %s",
+                sanitize_log_value(filepath),
+                sanitize_log_value(e),
+            )
             stats["errors"] += 1
 
     # Cleanup translated audio
@@ -222,13 +252,20 @@ def cleanup_old_audio_files() -> dict:
             if file_mtime < cutoff_time:
                 filepath.unlink()
                 stats["deleted_translated"] += 1
-                logger.debug(f"Deleted old translated audio: {filepath}")
+                logger.debug(
+                    "Deleted old translated audio: %s",
+                    sanitize_log_value(filepath),
+                )
         except Exception as e:
-            logger.error(f"Failed to delete {filepath}: {e}")
+            logger.error(
+                "Failed to delete %s: %s",
+                sanitize_log_value(filepath),
+                sanitize_log_value(e),
+            )
             stats["errors"] += 1
 
     stats["total_deleted"] = stats["deleted_original"] + stats["deleted_translated"]
-    logger.info(f"Audio cleanup completed: {stats}")
+    logger.info("Audio cleanup completed: %s", sanitize_log_value(stats))
 
     # Update Prometheus metrics
     if PROMETHEUS_AVAILABLE:
@@ -271,7 +308,11 @@ def get_disk_usage() -> dict:
             stats["original_bytes"] += filepath.stat().st_size
             stats["original_files"] += 1
         except Exception as e:
-            logger.error(f"Failed to stat {filepath}: {e}")
+            logger.error(
+                "Failed to stat %s: %s",
+                sanitize_log_value(filepath),
+                sanitize_log_value(e),
+            )
 
     # Count translated files
     for filepath in TRANSLATED_AUDIO_DIR.glob("*.wav"):
@@ -279,7 +320,11 @@ def get_disk_usage() -> dict:
             stats["translated_bytes"] += filepath.stat().st_size
             stats["translated_files"] += 1
         except Exception as e:
-            logger.error(f"Failed to stat {filepath}: {e}")
+            logger.error(
+                "Failed to stat %s: %s",
+                sanitize_log_value(filepath),
+                sanitize_log_value(e),
+            )
 
     stats["total_bytes"] = stats["original_bytes"] + stats["translated_bytes"]
     stats["total_files"] = stats["original_files"] + stats["translated_files"]

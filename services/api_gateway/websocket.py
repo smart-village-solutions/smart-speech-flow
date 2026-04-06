@@ -29,6 +29,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 
+from .log_safety import sanitize_log_value
 from .session_manager import ClientType, SessionManager, SessionStatus
 from .websocket_fallback import FallbackReason, fallback_manager
 from .websocket_monitor import DisconnectReason, get_websocket_monitor
@@ -736,7 +737,10 @@ class WebSocketManager:
             await self._handle_network_status_change(connection, message)
 
         else:
-            logger.warning(f"⚠️ Unbekannter Message-Type: {message_type}")
+            logger.warning(
+                "⚠️ Unbekannter Message-Type: %s",
+                sanitize_log_value(message_type),
+            )
 
     async def enable_polling_fallback(
         self, session_id: str, client_type: ClientType
@@ -1392,7 +1396,10 @@ async def websocket_endpoint(
     # 1. CORS Origin Validation (before WebSocket accept)
     if not await validate_websocket_origin(origin):
         await websocket.close(code=1008, reason="Origin not allowed")
-        logger.warning(f"❌ WebSocket connection rejected - invalid origin: {origin}")
+        logger.warning(
+            "❌ WebSocket connection rejected - invalid origin: %s",
+            sanitize_log_value(origin),
+        )
         return
 
     # 2. Client-Type validieren
@@ -1416,7 +1423,10 @@ async def websocket_endpoint(
 
     try:
         # 4. WebSocket-Verbindung herstellen mit origin logging
-        logger.info(f"🔗 WebSocket connection from origin: {origin}")
+        logger.info(
+            "🔗 WebSocket connection from origin: %s",
+            sanitize_log_value(origin),
+        )
         connection_id = await manager.connect_websocket(
             websocket, session_id, client_type_enum, client_info={"origin": origin}
         )
