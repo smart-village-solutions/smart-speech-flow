@@ -365,6 +365,7 @@ class ServiceHealthManager:
         health_metrics,
     ):
         """Callback für Circuit Breaker State Changes"""
+        await asyncio.sleep(0)
         logger.warning(
             f"🔄 Service '{service_name}' Circuit: {old_state.value} → {new_state.value} "
             f"(Success Rate: {health_metrics.success_rate:.1f}%)"
@@ -541,8 +542,29 @@ class ServiceHealthManager:
         if mem_util is not None:
             mem_values.append(mem_util)
 
+        severity, triggers = self._classify_gpu_pressure(util, mem_util)
+        summary["devices"].append(
+            self._build_gpu_device_snapshot(
+                service_name, device, util, mem_util, severity
+            )
+        )
+        self._update_gpu_summary_counters(summary, severity)
+        self._append_gpu_alert(
+            summary,
+            service_name,
+            device.get("index"),
+            severity,
+            triggers,
+            util,
+            mem_util,
+        )
+
+    def _classify_gpu_pressure(
+        self, util: Optional[float], mem_util: Optional[float]
+    ) -> tuple[str, List[str]]:
         severity = "normal"
         triggers: List[str] = []
+
         if util is not None:
             if util >= self.GPU_CRITICAL_THRESHOLD:
                 severity = "critical"
@@ -551,17 +573,29 @@ class ServiceHealthManager:
                 severity = "warning"
                 triggers.append("utilization")
 
-        if mem_util is not None:
-            if mem_util >= self.GPU_MEMORY_CRITICAL_THRESHOLD:
-                severity = "critical"
-                if "memory" not in triggers:
-                    triggers.append("memory")
-            elif (
-                mem_util >= self.GPU_MEMORY_WARNING_THRESHOLD and severity != "critical"
-            ):
-                severity = "warning"
-                triggers.append("memory")
+        if mem_util is None:
+            return severity, triggers
 
+        if mem_util >= self.GPU_MEMORY_CRITICAL_THRESHOLD:
+            severity = "critical"
+            if "memory" not in triggers:
+                triggers.append("memory")
+            return severity, triggers
+
+        if mem_util >= self.GPU_MEMORY_WARNING_THRESHOLD and severity != "critical":
+            severity = "warning"
+            triggers.append("memory")
+
+        return severity, triggers
+
+    def _build_gpu_device_snapshot(
+        self,
+        service_name: str,
+        device: Dict[str, Any],
+        util: Optional[float],
+        mem_util: Optional[float],
+        severity: str,
+    ) -> Dict[str, Any]:
         device_snapshot = {
             "service": service_name,
             "index": device.get("index"),
@@ -576,27 +610,43 @@ class ServiceHealthManager:
             device_snapshot["memory_used_nvml"] = device.get("memory_used_nvml")
         if device.get("total_memory") is not None:
             device_snapshot["total_memory"] = device.get("total_memory")
-        summary["devices"].append(device_snapshot)
+        return device_snapshot
 
+    def _update_gpu_summary_counters(
+        self, summary: Dict[str, Any], severity: str
+    ) -> None:
         if severity == "warning":
             summary["warning_devices"] += 1
         elif severity == "critical":
             summary["critical_devices"] += 1
 
-        if severity in ("warning", "critical"):
-            details: List[str] = []
-            if "utilization" in triggers and util is not None:
-                details.append(f"utilization {util:.1f}%")
-            if "memory" in triggers and mem_util is not None:
-                details.append(f"memory {mem_util:.1f}%")
-            summary["alerts"].append(
-                {
-                    "service": service_name,
-                    "device": device.get("index"),
-                    "severity": severity,
-                    "message": f"GPU{device.get('index')} {', '.join(details)}",
-                }
-            )
+    def _append_gpu_alert(
+        self,
+        summary: Dict[str, Any],
+        service_name: str,
+        device_index: Any,
+        severity: str,
+        triggers: List[str],
+        util: Optional[float],
+        mem_util: Optional[float],
+    ) -> None:
+        if severity not in ("warning", "critical"):
+            return
+
+        details: List[str] = []
+        if "utilization" in triggers and util is not None:
+            details.append(f"utilization {util:.1f}%")
+        if "memory" in triggers and mem_util is not None:
+            details.append(f"memory {mem_util:.1f}%")
+
+        summary["alerts"].append(
+            {
+                "service": service_name,
+                "device": device_index,
+                "severity": severity,
+                "message": f"GPU{device_index} {', '.join(details)}",
+            }
+        )
 
     def _collect_gpu_stats(
         self, summary: Dict[str, Any], util_values: List[float], mem_values: List[float]

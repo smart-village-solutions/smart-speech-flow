@@ -420,7 +420,7 @@ class WebSocketFallbackManager:
                 f"🚫 Max WebSocket retries exceeded for {polling_id}, staying in polling mode"
             )
 
-    async def deactivate_polling_fallback(self, polling_id: str) -> bool:
+    def deactivate_polling_fallback(self, polling_id: str) -> bool:
         """Deactivate polling fallback for a client"""
         return self._cleanup_polling_client(polling_id)
 

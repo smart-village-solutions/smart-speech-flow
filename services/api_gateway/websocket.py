@@ -10,6 +10,7 @@ Features:
 """
 
 import asyncio
+import hashlib
 import logging
 import os
 import re
@@ -45,6 +46,10 @@ def ensure_utc(dt: datetime) -> datetime:
         local_tz = datetime.now().astimezone().tzinfo or timezone.utc
         return dt.replace(tzinfo=local_tz).astimezone(timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+def _safe_identifier(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
 
 
 # === Origin Validation for WebSocket Connections ===
@@ -744,8 +749,8 @@ class WebSocketManager:
         self.connection_stats["polling_fallbacks"] += 1
 
         logger.info(
-            "📡 Polling-Fallback aktiviert fuer session=%s client_type=%s",
-            session_id,
+            "📡 Polling-Fallback aktiviert fuer session_ref=%s client_type=%s",
+            _safe_identifier(session_id),
             client_type.value,
         )
         await asyncio.sleep(0)

@@ -1,10 +1,68 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Message } from '../contexts/SessionContext';
 
 interface MessageBubbleProps {
   readonly message: Message;
   readonly isOwnMessage: boolean;
   readonly showMetadata?: boolean;
+}
+
+interface MessageContentProps {
+  readonly message: Message;
+  readonly isOwnMessage: boolean;
+}
+
+function MessageContent({ message, isOwnMessage }: MessageContentProps) {
+  return (
+    <>
+      {message.status === 'sending' && (
+        <div className="flex items-center space-x-2 mb-2">
+          <div className="flex space-x-1">
+            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+          <span className="text-sm opacity-75">Wird gesendet...</span>
+        </div>
+      )}
+
+      {message.status === 'error' && (
+        <div className="flex items-center space-x-2 mb-2 text-red-200">
+          <span>⚠️</span>
+          <span className="text-sm">Fehler beim Senden</span>
+        </div>
+      )}
+
+      {isOwnMessage && message.content && message.content_type === 'audio' && message.content !== '[Audio-Nachricht]' && (
+        <div className="mb-2 text-sm opacity-90 italic">
+          "{message.content}"
+        </div>
+      )}
+
+      {isOwnMessage && message.recognized_text && (
+        <div className="mb-2 text-sm opacity-90 italic">
+          "{message.recognized_text}"
+        </div>
+      )}
+
+      {message.content && (message.content_type === 'text' || !isOwnMessage) && (
+        <div className="whitespace-pre-wrap break-words">{message.content}</div>
+      )}
+
+      {isOwnMessage && message.content_type === 'audio' && (!message.content || message.content === '[Audio-Nachricht]') && (
+        <div className="text-sm opacity-75 italic">
+          Audio wird verarbeitet...
+        </div>
+      )}
+
+      {!isOwnMessage && message.translation && (
+        <div className="mt-2 pt-2 border-t border-gray-300">
+          <div className="text-sm font-semibold mb-1">Übersetzung:</div>
+          <div>{message.translation}</div>
+        </div>
+      )}
+    </>
+  );
 }
 
 export default function MessageBubble({ message, isOwnMessage, showMetadata = false }: MessageBubbleProps) {
@@ -20,6 +78,21 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
       playAudio(message.translation_audio_url);
     }
   }, [message.translation_audio_url, isOwnMessage, message.status]);
+
+  useEffect(() => {
+    if (!showMetadataModal) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowMetadataModal(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showMetadataModal]);
 
   const playAudio = async (url: string) => {
     try {
@@ -49,128 +122,27 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
   const hasStructuredOutput = (output: unknown): output is Record<string, unknown> =>
     typeof output === 'object' && output !== null && Object.keys(output).length > 0;
 
+  const bubbleClasses = `rounded-lg px-4 py-3 ${
+    isOwnMessage
+      ? 'bg-indigo-600 text-white rounded-br-none'
+      : 'bg-gray-200 text-gray-900 rounded-bl-none'
+  }`;
+
   return (
     <>
       <div className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'} mb-4`}>
         <div className={`max-w-[70%] ${isOwnMessage ? 'items-end' : 'items-start'} flex flex-col`}>
-          {/* Message Bubble */}
           {canOpenMetadata ? (
             <button
               type="button"
               onClick={() => setShowMetadataModal(true)}
-              className={`rounded-lg px-4 py-3 text-left ${
-                isOwnMessage
-                  ? 'bg-indigo-600 text-white rounded-br-none'
-                  : 'bg-gray-200 text-gray-900 rounded-bl-none'
-              } cursor-pointer hover:opacity-90 transition-opacity`}
+              className={`${bubbleClasses} text-left cursor-pointer hover:opacity-90 transition-opacity`}
             >
-              {/* Sending/Error Status */}
-              {message.status === 'sending' && (
-                <div className="flex items-center space-x-2 mb-2">
-                  <div className="flex space-x-1">
-                    <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                  <span className="text-sm opacity-75">Wird gesendet...</span>
-                </div>
-              )}
-
-              {message.status === 'error' && (
-                <div className="flex items-center space-x-2 mb-2 text-red-200">
-                  <span>⚠️</span>
-                  <span className="text-sm">Fehler beim Senden</span>
-                </div>
-              )}
-
-              {isOwnMessage && message.content && message.content_type === 'audio' && message.content !== '[Audio-Nachricht]' && (
-                <div className="mb-2 text-sm opacity-90 italic">
-                  "{message.content}"
-                </div>
-              )}
-
-              {isOwnMessage && message.recognized_text && (
-                <div className="mb-2 text-sm opacity-90 italic">
-                  "{message.recognized_text}"
-                </div>
-              )}
-
-              {message.content && (message.content_type === 'text' || !isOwnMessage) && (
-                <div className="whitespace-pre-wrap break-words">{message.content}</div>
-              )}
-
-              {isOwnMessage && message.content_type === 'audio' && (!message.content || message.content === '[Audio-Nachricht]') && (
-                <div className="text-sm opacity-75 italic">
-                  Audio wird verarbeitet...
-                </div>
-              )}
-
-              {!isOwnMessage && message.translation && (
-                <div className="mt-2 pt-2 border-t border-gray-300">
-                  <div className="text-sm font-semibold mb-1">Übersetzung:</div>
-                  <div>{message.translation}</div>
-                </div>
-              )}
+              <MessageContent message={message} isOwnMessage={isOwnMessage} />
             </button>
           ) : (
-            <div
-              className={`rounded-lg px-4 py-3 ${
-                isOwnMessage
-                  ? 'bg-indigo-600 text-white rounded-br-none'
-                  : 'bg-gray-200 text-gray-900 rounded-bl-none'
-              }`}
-            >
-          {/* Sending/Error Status */}
-          {message.status === 'sending' && (
-            <div className="flex items-center space-x-2 mb-2">
-              <div className="flex space-x-1">
-                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-              <span className="text-sm opacity-75">Wird gesendet...</span>
-            </div>
-          )}
-
-          {message.status === 'error' && (
-            <div className="flex items-center space-x-2 mb-2 text-red-200">
-              <span>⚠️</span>
-              <span className="text-sm">Fehler beim Senden</span>
-            </div>
-          )}
-
-          {/* Original Content (for own messages) */}
-          {isOwnMessage && message.content && message.content_type === 'audio' && message.content !== '[Audio-Nachricht]' && (
-            <div className="mb-2 text-sm opacity-90 italic">
-              "{message.content}"
-            </div>
-          )}
-
-          {isOwnMessage && message.recognized_text && (
-            <div className="mb-2 text-sm opacity-90 italic">
-              "{message.recognized_text}"
-            </div>
-          )}
-
-          {/* Text Content - for text messages AND received audio messages */}
-          {message.content && (message.content_type === 'text' || !isOwnMessage) && (
-            <div className="whitespace-pre-wrap break-words">{message.content}</div>
-          )}
-
-          {/* Audio placeholder for own messages while processing */}
-          {isOwnMessage && message.content_type === 'audio' && (!message.content || message.content === '[Audio-Nachricht]') && (
-            <div className="text-sm opacity-75 italic">
-              Audio wird verarbeitet...
-            </div>
-          )}
-
-          {/* Translation (for received messages) */}
-          {!isOwnMessage && message.translation && (
-            <div className="mt-2 pt-2 border-t border-gray-300">
-              <div className="text-sm font-semibold mb-1">Übersetzung:</div>
-              <div>{message.translation}</div>
-            </div>
-          )}
+            <div className={bubbleClasses}>
+              <MessageContent message={message} isOwnMessage={isOwnMessage} />
             </div>
           )}
 
@@ -210,17 +182,13 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
           onClick={() => setShowMetadataModal(false)}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ') {
-              setShowMetadataModal(false);
-            }
-          }}
-          role="button"
-          tabIndex={0}
         >
           <div
             className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
             onMouseDown={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Pipeline Details"
           >
             {/* Header */}
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
