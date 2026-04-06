@@ -10,7 +10,7 @@ COPY package*.json ./
 # Install dependencies.
 # `--legacy-peer-deps` keeps container builds stable even when npm enforces
 # peer ranges more strictly than the already-checked-in lockfile.
-RUN npm ci --legacy-peer-deps
+RUN npm ci --legacy-peer-deps --ignore-scripts
 
 # Copy source code
 COPY . .
