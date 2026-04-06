@@ -88,6 +88,8 @@ class TestSessionCreationAndLifecycle:
     @pytest.mark.asyncio
     async def test_terminate_all_active_sessions(self, session_manager):
         """Test: Alle aktiven Sessions werden korrekt beendet"""
+        session_manager.allow_parallel_sessions = True
+
         # Mehrere Sessions erstellen und aktivieren
         session_ids = []
         for i in range(3):
@@ -106,6 +108,31 @@ class TestSessionCreationAndLifecycle:
             assert session.termination_reason == "test_cleanup"
 
         assert session_manager.active_admin_sessions == set()
+
+    @pytest.mark.asyncio
+    async def test_terminate_all_active_sessions_preserves_existing_reason(self, session_manager):
+        """Test: Bereits terminierte Sessions behalten ihren ursprünglichen Reason."""
+        terminated_session = Session(
+            id="OLDTERM1",
+            status=SessionStatus.TERMINATED,
+            termination_reason="manual_admin_termination",
+        )
+        session_manager.sessions[terminated_session.id] = terminated_session
+
+        active_session_id = await session_manager.create_admin_session()
+        active_session = session_manager.get_session(active_session_id)
+        active_session.status = SessionStatus.ACTIVE
+
+        await session_manager.terminate_all_active_sessions("test_cleanup")
+
+        assert (
+            session_manager.get_session("OLDTERM1").termination_reason
+            == "manual_admin_termination"
+        )
+        assert (
+            session_manager.get_session(active_session_id).termination_reason
+            == "test_cleanup"
+        )
 
     @pytest.mark.asyncio
     async def test_session_activation_flow(self, session_manager):

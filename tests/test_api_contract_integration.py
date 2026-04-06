@@ -371,7 +371,8 @@ class TestMessageHistoryAPI:
 
         # Audio fields are optional, but if present they must be named as documented.
         optional_audio_keys = {"audio_base64", "audio_url"}
-        assert set(message).intersection(optional_audio_keys) <= optional_audio_keys
+        audio_keys = {key for key in message if key.startswith("audio_")}
+        assert audio_keys <= optional_audio_keys
 
 
 if __name__ == "__main__":

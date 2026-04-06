@@ -1183,6 +1183,30 @@ def test_websocket_fallback_classifies_failures_and_limits_queue():
     assert manager.get_polling_client_status("missing") is None
 
 
+def test_websocket_fallback_uses_origin_in_failure_history_key():
+    websocket_fallback = importlib.import_module("services.api_gateway.websocket_fallback")
+
+    manager = websocket_fallback.WebSocketFallbackManager(
+        websocket_fallback.FallbackConfig(enable_jitter=False)
+    )
+
+    manager.evaluate_websocket_failure(
+        "session-1",
+        "admin",
+        "https://admin.example",
+        {"message": "network down", "code": 0},
+    )
+    manager.evaluate_websocket_failure(
+        "session-1",
+        "admin",
+        None,
+        {"message": "network down", "code": 0},
+    )
+
+    assert "session-1_admin_https://admin.example" in manager.failure_history
+    assert "session-1_admin_unknown_origin" in manager.failure_history
+
+
 @pytest.mark.asyncio
 async def test_circuit_breaker_client_unit_paths(monkeypatch):
     client_module = importlib.import_module("services.api_gateway.circuit_breaker_client")

@@ -375,15 +375,17 @@ class SessionManager:
     async def terminate_all_active_sessions(self, reason: str = "system_cleanup"):
         """Alle aktiven Sessions beenden (manueller Cleanup)"""
         terminated_count = 0
+        terminated_session_ids: set[str] = set()
 
         for session_id, session in tuple(self.sessions.items()):
             if session.status in [SessionStatus.PENDING, SessionStatus.ACTIVE]:
                 await self.terminate_session(session_id, reason)
                 terminated_count += 1
+                terminated_session_ids.add(session_id)
 
-        # Bereits terminierte Sessions optional aktualisieren, um konsistenten Reason zu gewährleisten
-        for session in self.sessions.values():
-            if session.status == SessionStatus.TERMINATED:
+        for session_id in terminated_session_ids:
+            session = self.sessions.get(session_id)
+            if session is not None:
                 session.termination_reason = reason
                 self._persist_session(session)
 

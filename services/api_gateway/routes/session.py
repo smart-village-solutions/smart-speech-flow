@@ -9,6 +9,7 @@ Enhanced with Unified Message Endpoint for Audio/Text Input
 
 import base64
 import hashlib
+import inspect
 import logging
 import time
 import uuid
@@ -315,15 +316,15 @@ def _should_validate_upload_file(file: Any) -> bool:
     return isinstance(file, upload_file_types)
 
 
-def _validate_audio_payload(file: Any, file_bytes: bytes) -> None:
+def _validate_audio_payload(file: Any, file_bytes: bytes) -> bytes:
     if not _should_validate_upload_file(file):
-        return
+        return file_bytes
 
     from ..pipeline_logic import validate_audio_input
 
     validation_result = validate_audio_input(file_bytes, normalize=True)
     if validation_result.is_valid:
-        return
+        return validation_result.processed_audio or file_bytes
 
     raise HTTPException(
         status_code=400,
@@ -335,6 +336,19 @@ def _validate_audio_payload(file: Any, file_bytes: bytes) -> None:
                 "validation_time_ms": validation_result.validation_time_ms,
             },
         ),
+    )
+
+
+def _supports_extended_session_message_args() -> bool:
+    signature = inspect.signature(create_session_message)
+    return all(
+        parameter_name in signature.parameters
+        for parameter_name in (
+            "manager",
+            "pipeline_metadata",
+            "original_audio_url",
+            "message_id",
+        )
     )
 
 
@@ -374,7 +388,7 @@ async def _create_session_message_with_fallback(
     original_audio_url: Optional[str],
     message_id: str,
 ) -> SessionMessage:
-    try:
+    if _supports_extended_session_message_args():
         return await create_session_message(
             session_id=session_id,
             client_type=client_type,
@@ -388,16 +402,16 @@ async def _create_session_message_with_fallback(
             original_audio_url=original_audio_url,
             message_id=message_id,
         )
-    except TypeError:
-        return await create_session_message(
-            session_id,
-            client_type,
-            original_text,
-            translated_text,
-            audio_bytes,
-            source_lang,
-            target_lang,
-        )
+
+    return await create_session_message(
+        session_id,
+        client_type,
+        original_text,
+        translated_text,
+        audio_bytes,
+        source_lang,
+        target_lang,
+    )
 
 
 def _build_message_response(
@@ -832,11 +846,13 @@ async def process_audio_input(
 
     _validate_audio_file_input(file)
     file_bytes = await file.read()
-    _validate_audio_payload(file, file_bytes)
+    processed_file_bytes = _validate_audio_payload(file, file_bytes)
     _validate_supported_languages(source_lang, target_lang)
 
     # Audio-Pipeline ausführen (Validation bereits durchgeführt)
-    result = process_wav(file_bytes, source_lang, target_lang, validate_audio=False)
+    result = process_wav(
+        processed_file_bytes, source_lang, target_lang, validate_audio=False
+    )
 
     if result.get("error", False):
         raise HTTPException(
