@@ -5,7 +5,7 @@ Unterstützt parallele Admin-Sessions
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -60,7 +60,7 @@ class ErrorResponse(BaseModel):
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def get_client_base_url() -> str:

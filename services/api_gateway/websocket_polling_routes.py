@@ -5,7 +5,7 @@ due to CORS, network, or compatibility issues.
 """
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -24,7 +24,7 @@ POLLING_ROUTE_RESPONSES = {
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def utc_now_iso() -> str:

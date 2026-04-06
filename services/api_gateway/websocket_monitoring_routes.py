@@ -3,7 +3,7 @@ WebSocket Monitoring API Routes
 Provides comprehensive monitoring and health check endpoints for WebSocket infrastructure.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -19,7 +19,7 @@ MONITORING_ROUTE_RESPONSES = {
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def utc_now_iso() -> str:

@@ -15,7 +15,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Annotated, Any, Dict, List, Optional, Set
 
@@ -37,14 +37,14 @@ logger = logging.getLogger(__name__)
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def ensure_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
-        local_tz = datetime.now().astimezone().tzinfo or UTC
-        return dt.replace(tzinfo=local_tz).astimezone(UTC)
-    return dt.astimezone(UTC)
+        local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+        return dt.replace(tzinfo=local_tz).astimezone(timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 # === Origin Validation for WebSocket Connections ===

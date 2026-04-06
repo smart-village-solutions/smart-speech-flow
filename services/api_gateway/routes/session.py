@@ -10,7 +10,7 @@ import hashlib
 import logging
 import time
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import (
@@ -36,7 +36,7 @@ SESSION_NOT_FOUND_MESSAGE = "Session nicht gefunden"
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def iso_utc_now() -> str:

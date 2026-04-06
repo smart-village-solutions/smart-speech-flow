@@ -7,7 +7,7 @@ Erweitert das bestehende API Gateway um Session-Funktionalität
 import asyncio
 import base64
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from fastapi import (
     APIRouter,
@@ -122,7 +122,7 @@ async def send_session_message(
             ),
             source_lang=source_lang,
             target_lang=target_lang,
-            timestamp=datetime.now(UTC),
+            timestamp=datetime.now(timezone.utc),
         )
 
         # Zur Session hinzufügen

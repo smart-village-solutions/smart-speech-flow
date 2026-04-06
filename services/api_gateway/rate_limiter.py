@@ -7,7 +7,7 @@ import os
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Deque, Dict, Optional, Tuple
 
 from fastapi import Request
@@ -16,7 +16,7 @@ from starlette.responses import JSONResponse, Response
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 @dataclass

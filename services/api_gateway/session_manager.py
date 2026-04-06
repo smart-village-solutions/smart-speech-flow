@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from .websocket import WebSocketManager
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 try:  # Optional dependency for persistence
@@ -42,13 +42,13 @@ class SessionStatus(str, Enum):
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def _ensure_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
-        return dt.astimezone().astimezone(UTC)
-    return dt.astimezone(UTC)
+        return dt.astimezone().astimezone(timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def _minutes_since(dt: datetime) -> float:

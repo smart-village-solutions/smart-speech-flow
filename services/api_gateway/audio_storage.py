@@ -11,7 +11,7 @@ Manages persistent storage of audio files with automatic cleanup.
 import base64
 import logging
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 # Prometheus metrics
@@ -206,7 +206,7 @@ def cleanup_old_audio_files() -> dict:
     # Cleanup original audio
     for filepath in ORIGINAL_AUDIO_DIR.glob("*.wav"):
         try:
-            file_mtime = datetime.fromtimestamp(filepath.stat().st_mtime, UTC)
+            file_mtime = datetime.fromtimestamp(filepath.stat().st_mtime, timezone.utc)
             if file_mtime < cutoff_time:
                 filepath.unlink()
                 stats["deleted_original"] += 1
@@ -218,7 +218,7 @@ def cleanup_old_audio_files() -> dict:
     # Cleanup translated audio
     for filepath in TRANSLATED_AUDIO_DIR.glob("*.wav"):
         try:
-            file_mtime = datetime.fromtimestamp(filepath.stat().st_mtime, UTC)
+            file_mtime = datetime.fromtimestamp(filepath.stat().st_mtime, timezone.utc)
             if file_mtime < cutoff_time:
                 filepath.unlink()
                 stats["deleted_translated"] += 1

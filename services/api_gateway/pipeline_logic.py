@@ -8,7 +8,7 @@ import time
 import unicodedata
 import wave
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -36,7 +36,7 @@ AUDIO_WAV_MIME = "audio/wav"
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 # === Audio Validation Configuration ===

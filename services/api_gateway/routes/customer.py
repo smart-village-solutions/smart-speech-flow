@@ -5,7 +5,7 @@ Ermöglicht Kunden das Beitreten und Aktivieren von Sessions
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, status
@@ -55,7 +55,7 @@ class ErrorResponse(BaseModel):
 
 
 def utc_now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 @router.post(
