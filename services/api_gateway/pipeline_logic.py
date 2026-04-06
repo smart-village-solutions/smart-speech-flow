@@ -1,3 +1,4 @@
+import asyncio
 import audioop
 import io
 import logging
@@ -7,7 +8,7 @@ import time
 import unicodedata
 import wave
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -30,6 +31,13 @@ else:
     TTS_URL = "http://localhost:8003/synthesize"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+AUDIO_WAV_MIME = "audio/wav"
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
 
 # === Audio Validation Configuration ===
 
@@ -67,7 +75,7 @@ class TextSpecs:
 
     MAX_LENGTH: int = 500  # Maximum 500 characters
     MIN_LENGTH: int = 1  # Minimum 1 character
-    ALLOWED_ENCODINGS: List[str] = None  # UTF-8 primary
+    ALLOWED_ENCODINGS: Optional[List[str]] = None  # UTF-8 primary
 
     def __post_init__(self):
         if self.ALLOWED_ENCODINGS is None:
@@ -196,7 +204,6 @@ def validate_audio_input(
                     convert_audio_to_required_specs(
                         audio_bytes,
                         sample_rate,
-                        bit_depth,
                         channels,
                         specs.REQUIRED_SAMPLE_RATE,
                         specs.REQUIRED_BIT_DEPTH,
@@ -395,7 +402,6 @@ def normalize_audio(
 def convert_audio_to_required_specs(
     audio_bytes: bytes,
     sample_rate: int,
-    bit_depth: int,
     channels: int,
     target_sample_rate: int,
     target_bit_depth: int,
@@ -440,7 +446,6 @@ def convert_audio_to_required_specs(
             working_channels = 1
         else:
             raise ValueError(f"Cannot convert {working_channels} channels to mono")
-        channels = working_channels
 
     # Resample if needed
     if sample_rate != target_sample_rate:
@@ -700,7 +705,7 @@ def process_text_pipeline(
     Returns:
         Processing result with translation and audio
     """
-    pipeline_start_time = datetime.utcnow()
+    pipeline_start_time = utc_now()
 
     debug_info = {
         "frontend_input": {
@@ -762,7 +767,7 @@ def process_text_pipeline(
 
         # Step 2: Translation (skip ASR entirely)
         start_translation = time.perf_counter()
-        translation_started_at = datetime.utcnow()
+        translation_started_at = utc_now()
         translation_payload = {
             "text": processed_text,
             "source_lang": source_lang,
@@ -774,7 +779,7 @@ def process_text_pipeline(
         translation_resp = requests.post(
             TRANSLATION_URL, json=translation_payload, timeout=30
         )
-        translation_completed_at = datetime.utcnow()
+        translation_completed_at = utc_now()
         translation_json = translation_resp.json()
         translation_text = translation_json.get("translations", "")
         tts_text = translation_json.get("tts_text")
@@ -816,7 +821,7 @@ def process_text_pipeline(
         # Optional LLM refinement
         refined_tts_text = tts_text
         if translation_refiner.is_active:
-            refinement_started_at = datetime.utcnow()
+            refinement_started_at = utc_now()
             refinement_context = {
                 "original_text": processed_text,
                 "pipeline": "text",
@@ -827,7 +832,7 @@ def process_text_pipeline(
                 target_lang,
                 context=refinement_context,
             )
-            refinement_completed_at = datetime.utcnow()
+            refinement_completed_at = utc_now()
             translation_text = outcome.text
             if outcome.changed:
                 # Drop precomputed romanization so TTS uses refined text directly
@@ -851,7 +856,7 @@ def process_text_pipeline(
 
         # Step 3: TTS
         start_tts = time.perf_counter()
-        tts_started_at = datetime.utcnow()
+        tts_started_at = utc_now()
         tts_payload = {
             "text": translation_text,
             "lang": target_lang,
@@ -862,12 +867,12 @@ def process_text_pipeline(
             tts_payload["tts_text"] = refined_tts_text
 
         tts_resp = requests.post(TTS_URL, json=tts_payload, timeout=30)
-        tts_completed_at = datetime.utcnow()
+        tts_completed_at = utc_now()
         tts_duration_ms = int((time.perf_counter() - start_tts) * 1000)
 
         if (
             tts_resp.status_code != 200
-            or tts_resp.headers.get("content-type", "") != "audio/wav"
+            or tts_resp.headers.get("content-type", "") != AUDIO_WAV_MIME
         ):
             try:
                 tts_json = tts_resp.json()
@@ -923,7 +928,7 @@ def process_text_pipeline(
                 "step": "TTS",
                 "name": "tts",
                 "input": {"lang": target_lang, "text": translation_text},
-                "output": "audio/wav",
+                "output": AUDIO_WAV_MIME,
                 "model": tts_model_used,  # Füge Modellnamen hinzu
                 "language": target_lang,
                 "error": None,
@@ -933,7 +938,7 @@ def process_text_pipeline(
                 "duration_ms": tts_duration_ms,
             }
         )  # Pipeline completion timestamp
-        pipeline_completed_at = datetime.utcnow()
+        pipeline_completed_at = utc_now()
         debug_info["pipeline_completed_at"] = pipeline_completed_at.isoformat() + "Z"
         debug_info["total_duration_ms"] = int(
             (time.perf_counter() - start_total) * 1000
@@ -986,7 +991,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
     Returns:
         Dict with processing results including validation info
     """
-    pipeline_start_time = datetime.utcnow()
+    pipeline_start_time = utc_now()
 
     debug_info = {
         "frontend_input": {
@@ -1062,14 +1067,14 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
 
     # ASR
     start_asr = time.perf_counter()
-    asr_started_at = datetime.utcnow()
+    asr_started_at = utc_now()
     asr_resp = requests.post(
         ASR_URL,
-        files={"file": ("input.wav", file_bytes, "audio/wav")},
+        files={"file": ("input.wav", file_bytes, AUDIO_WAV_MIME)},
         data={"lang": source_lang, "debug": str(debug).lower()},
         timeout=60,  # ASR kann länger dauern
     )
-    asr_completed_at = datetime.utcnow()
+    asr_completed_at = utc_now()
     asr_json = asr_resp.json()
     asr_text = asr_json.get("text", "")
     asr_duration_ms = int((time.perf_counter() - start_asr) * 1000)
@@ -1089,7 +1094,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
     )
     # Translation
     start_trans = time.perf_counter()
-    translation_started_at = datetime.utcnow()
+    translation_started_at = utc_now()
     translation_payload = {
         "text": asr_text,
         "source_lang": source_lang,
@@ -1100,7 +1105,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
     translation_resp = requests.post(
         TRANSLATION_URL, json=translation_payload, timeout=30
     )
-    translation_completed_at = datetime.utcnow()
+    translation_completed_at = utc_now()
     translation_json = translation_resp.json()
     translation_text = translation_json.get("translations", "")
     translation_duration_ms = int((time.perf_counter() - start_trans) * 1000)
@@ -1137,14 +1142,14 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
         }
     # Optional LLM refinement
     if translation_refiner.is_active:
-        refinement_started_at = datetime.utcnow()
+        refinement_started_at = utc_now()
         outcome = translation_refiner.refine(
             translation_text,
             source_lang,
             target_lang,
             context={"original_text": asr_text, "pipeline": "audio"},
         )
-        refinement_completed_at = datetime.utcnow()
+        refinement_completed_at = utc_now()
         translation_text = outcome.text
         refinement_duration_ms = outcome.latency_ms or 0
 
@@ -1163,7 +1168,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
         )
     # TTS
     start_tts = time.perf_counter()
-    tts_started_at = datetime.utcnow()
+    tts_started_at = utc_now()
     tts_resp = requests.post(
         TTS_URL,
         json={
@@ -1173,12 +1178,12 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
         },
         timeout=45,  # TTS kann auch länger dauern
     )
-    tts_completed_at = datetime.utcnow()
+    tts_completed_at = utc_now()
     tts_duration_ms = int((time.perf_counter() - start_tts) * 1000)
 
     if (
         tts_resp.status_code != 200
-        or tts_resp.headers.get("content-type", "") != "audio/wav"
+        or tts_resp.headers.get("content-type", "") != AUDIO_WAV_MIME
     ):
         try:
             tts_json = tts_resp.json()
@@ -1218,7 +1223,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
             "step": "TTS",
             "name": "tts",
             "input": {"lang": target_lang, "text": translation_text},
-            "output": "audio/wav",
+            "output": AUDIO_WAV_MIME,
             "error": None,
             "duration": round(time.perf_counter() - start_tts, 3),
             "started_at": tts_started_at.isoformat() + "Z",
@@ -1228,7 +1233,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
     )
 
     # Pipeline completion timestamp
-    pipeline_completed_at = datetime.utcnow()
+    pipeline_completed_at = utc_now()
     debug_info["pipeline_completed_at"] = pipeline_completed_at.isoformat() + "Z"
     debug_info["total_duration_ms"] = int((time.perf_counter() - start_total) * 1000)
 
@@ -1252,7 +1257,7 @@ async def process_wav_for_session(file, source_lang, target_lang, session_id=Non
     Nutzt die bestehende process_wav-Logik
     """
     # Rufe bestehende Funktion auf
-    result = await process_wav(file, source_lang, target_lang)
+    result = await asyncio.to_thread(process_wav, file, source_lang, target_lang)
 
     # Zusätzliche Session-Logik (falls gewünscht)
     if session_id:

@@ -17,11 +17,15 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class CircuitState(Enum):
@@ -166,7 +170,7 @@ class CircuitBreaker:
         """Behandelt erfolgreiche Requests"""
         self.health.total_requests += 1
         self.health.successful_requests += 1
-        self.health.last_success = datetime.now()
+        self.health.last_success = utc_now()
 
         # Response Time Tracking
         self.response_times.append(response_time)
@@ -193,7 +197,7 @@ class CircuitBreaker:
         """Behandelt fehlgeschlagene Requests"""
         self.health.total_requests += 1
         self.health.failed_requests += 1
-        self.health.last_failure = datetime.now()
+        self.health.last_failure = utc_now()
 
         # State Management
         if self.state == CircuitState.CLOSED:

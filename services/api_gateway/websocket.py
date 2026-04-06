@@ -10,16 +10,24 @@ Features:
 """
 
 import asyncio
+import hashlib
 import logging
 import os
 import re
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Annotated, Any, Dict, List, Optional, Set
 
-from fastapi import WebSocket
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+)
 
 from .session_manager import ClientType, SessionManager, SessionStatus
 from .websocket_fallback import FallbackReason, fallback_manager
@@ -29,11 +37,28 @@ from .websocket_monitor import DisconnectReason, get_websocket_monitor
 logger = logging.getLogger(__name__)
 
 
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def ensure_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+        return dt.replace(tzinfo=local_tz).astimezone(timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _safe_identifier(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+
+
 # === Origin Validation for WebSocket Connections ===
 async def validate_websocket_origin(origin: Optional[str]) -> bool:
     """
     Validate WebSocket origin against allowed origins
     """
+    await asyncio.sleep(0)
+
     # Development environment - mehr permissive Regeln
     environment = os.environ.get("ENVIRONMENT", "production")
     if environment == "development":
@@ -137,8 +162,8 @@ class WebSocketConnection:
             return False
 
         # Heartbeat-Timeout prüfen (60 Sekunden)
-        timeout_threshold = datetime.now() - timedelta(seconds=60)
-        return self.last_heartbeat > timeout_threshold
+        timeout_threshold = utc_now() - timedelta(seconds=60)
+        return ensure_utc(self.last_heartbeat) > timeout_threshold
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialisierung für Monitoring"""
@@ -302,16 +327,22 @@ class WebSocketManager:
             return
 
         self.heartbeat_task = asyncio.create_task(self._heartbeat_monitor())
+        await asyncio.sleep(0)
         logger.info("💓 Heartbeat-System gestartet")
 
     async def stop_heartbeat_system(self):
         """Stoppt das Heartbeat-System"""
         if self.heartbeat_task:
             self.heartbeat_task.cancel()
-            try:
-                await self.heartbeat_task
-            except asyncio.CancelledError:
-                pass
+            results = await asyncio.gather(
+                self.heartbeat_task,
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, Exception) and not isinstance(
+                    result, asyncio.CancelledError
+                ):
+                    logger.error("Heartbeat task shutdown error: %s", result)
             self.heartbeat_task = None
         logger.info("💓 Heartbeat-System gestoppt")
 
@@ -346,8 +377,8 @@ class WebSocketManager:
             websocket=websocket,
             client_type=client_type,
             session_id=session_id,
-            connected_at=datetime.now(),
-            last_heartbeat=datetime.now(),
+            connected_at=utc_now(),
+            last_heartbeat=utc_now(),
             state=ConnectionState.CONNECTED,
             client_info=client_info,
             # 📱 Mobile-Optimization
@@ -458,7 +489,7 @@ class WebSocketManager:
             "session_id": session_id,
             "reason": reason,
             "message": self._get_termination_message(reason),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "reconnect_allowed": False,
         }
 
@@ -717,7 +748,12 @@ class WebSocketManager:
         self.polling_clients.add(polling_id)
         self.connection_stats["polling_fallbacks"] += 1
 
-        logger.info(f"📡 Polling-Fallback aktiviert: {polling_id}")
+        logger.info(
+            "📡 Polling-Fallback aktiviert fuer session_ref=%s client_type=%s",
+            _safe_identifier(session_id),
+            client_type.value,
+        )
+        await asyncio.sleep(0)
         return polling_id
 
     async def get_polling_messages(self, polling_id: str) -> List[Dict[str, Any]]:
@@ -725,6 +761,7 @@ class WebSocketManager:
         Nachrichten für Polling-Client abrufen
         TODO: Message-Queue-Implementation für Polling-Clients
         """
+        await asyncio.sleep(0)
         if polling_id not in self.polling_clients:
             return []
 
@@ -797,7 +834,7 @@ class WebSocketManager:
         """
         ping_message = {
             "type": MessageType.HEARTBEAT_PING.value,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
         dead_connections = []
@@ -820,11 +857,11 @@ class WebSocketManager:
         """
         Heartbeat-Timeouts prüfen und tote Verbindungen entfernen
         """
-        timeout_threshold = datetime.now() - timedelta(seconds=self.heartbeat_timeout)
+        timeout_threshold = utc_now() - timedelta(seconds=self.heartbeat_timeout)
         timeout_connections = []
 
         for connection_id, connection in self.all_connections.items():
-            if connection.last_heartbeat < timeout_threshold:
+            if ensure_utc(connection.last_heartbeat) < timeout_threshold:
                 timeout_connections.append(connection_id)
                 self.connection_stats["heartbeat_timeouts"] += 1
 
@@ -836,7 +873,8 @@ class WebSocketManager:
         """
         Heartbeat-Pong verarbeiten
         """
-        connection.last_heartbeat = datetime.now()
+        await asyncio.sleep(0)
+        connection.last_heartbeat = utc_now()
         connection.state = ConnectionState.CONNECTED
 
     async def _handle_client_message(
@@ -851,7 +889,7 @@ class WebSocketManager:
             "from": connection.client_type.value,
             "session_id": connection.session_id,
             "content": message.get("content"),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
         await self.broadcast_to_session(
@@ -871,7 +909,7 @@ class WebSocketManager:
             "from": connection.client_type.value,
             "session_id": connection.session_id,
             "is_typing": message.get("is_typing", False),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
         await self.broadcast_to_session(
@@ -888,7 +926,7 @@ class WebSocketManager:
             "type": MessageType.CONNECTION_ACK.value,
             "session_id": connection.session_id,
             "client_type": connection.client_type.value,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "heartbeat_interval": self.heartbeat_interval,
         }
 
@@ -907,7 +945,7 @@ class WebSocketManager:
             "type": MessageType.CONNECTION_STATUS.value,
             "status": "disconnecting",
             "reason": reason,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
         try:
@@ -1010,7 +1048,7 @@ class WebSocketManager:
                 origin = connection.client_info.get("origin")
 
             # Evaluate if fallback should be triggered
-            should_fallback = await fallback_manager.evaluate_websocket_failure(
+            should_fallback = fallback_manager.evaluate_websocket_failure(
                 session_id=connection.session_id,
                 client_type=connection.client_type.value,
                 origin=origin,
@@ -1089,7 +1127,7 @@ class WebSocketManager:
                     "polling_interval": 5,
                     "recovery_check_interval": 300,
                 },
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": utc_now().isoformat(),
             }
 
             await connection.websocket.send_json(fallback_message)
@@ -1108,7 +1146,7 @@ class WebSocketManager:
             "session_id": session_id,
             "client_type": client_type.value,
             "connection_id": connection_id,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
         # Include customer_language when customer joins
@@ -1133,7 +1171,7 @@ class WebSocketManager:
             "client_type": client_type.value,
             "connection_id": connection_id,
             "reason": reason,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
         await self.broadcast_to_session(session_id, leave_message)
@@ -1278,7 +1316,7 @@ class WebSocketManager:
             "battery_level": connection.battery_level,
             "is_mobile": connection.is_mobile,
             "tab_active": connection.tab_active,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
         try:
@@ -1301,7 +1339,7 @@ class WebSocketManager:
                 "🔌 Gerät ans Ladegerät anschließen",
                 "⚡ Battery-Saver-Modus deaktivieren für normale Geschwindigkeit",
             ],
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
         try:
@@ -1312,16 +1350,11 @@ class WebSocketManager:
 
 # === FastAPI WebSocket Endpoints ===
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    Header,
-    HTTPException,
-    WebSocket,
-    WebSocketDisconnect,
-)
-
 router = APIRouter()
+WEBSOCKET_ROUTE_RESPONSES = {
+    400: {"description": "Invalid WebSocket fallback request"},
+    404: {"description": "Requested WebSocket resource not found"},
+}
 
 # Globale WebSocket-Manager-Instanz
 websocket_manager: Optional[WebSocketManager] = None
@@ -1339,13 +1372,19 @@ def get_websocket_manager() -> WebSocketManager:
     return websocket_manager
 
 
+WebSocketManagerDependency = Annotated[
+    WebSocketManager,
+    Depends(get_websocket_manager),
+]
+
+
 @router.websocket("/ws/{session_id}/{client_type}")
 async def websocket_endpoint(
     websocket: WebSocket,
     session_id: str,
     client_type: str,
+    manager: WebSocketManagerDependency,
     origin: Optional[str] = Header(None),  # Explicit Origin handling
-    manager: WebSocketManager = Depends(get_websocket_manager),
 ):
     """
     Enhanced WebSocket endpoint with explicit CORS validation
@@ -1399,7 +1438,7 @@ async def websocket_endpoint(
                 error_message = {
                     "type": MessageType.ERROR.value,
                     "error": "Message processing failed",
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": utc_now().isoformat(),
                 }
                 try:
                     await websocket.send_json(error_message)
@@ -1417,7 +1456,7 @@ async def websocket_endpoint(
 
 @router.get("/api/websocket/stats")
 async def get_websocket_stats(
-    manager: WebSocketManager = Depends(get_websocket_manager),
+    manager: WebSocketManagerDependency,
 ):
     """
     WebSocket-Statistiken für Monitoring
@@ -1426,9 +1465,7 @@ async def get_websocket_stats(
 
 
 @router.get("/api/websocket/sessions/{session_id}/connections")
-async def get_session_connections(
-    session_id: str, manager: WebSocketManager = Depends(get_websocket_manager)
-):
+async def get_session_connections(session_id: str, manager: WebSocketManagerDependency):
     """
     WebSocket-Verbindungen einer Session anzeigen
     """
@@ -1473,7 +1510,7 @@ async def websocket_connection_test(
         suggestions.append("Use wss:// protocol for production connections")
 
     return {
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": utc_now().isoformat(),
         "origin": origin,
         "user_agent": user_agent,
         "origin_allowed": origin_allowed,
@@ -1500,11 +1537,14 @@ async def websocket_connection_test(
     }
 
 
-@router.post("/api/websocket/sessions/{session_id}/polling/enable")
+@router.post(
+    "/api/websocket/sessions/{session_id}/polling/enable",
+    responses=WEBSOCKET_ROUTE_RESPONSES,
+)
 async def enable_polling_fallback(
     session_id: str,
     client_type: str,
-    manager: WebSocketManager = Depends(get_websocket_manager),
+    manager: WebSocketManagerDependency,
 ):
     """
     Polling-Fallback für Session aktivieren
@@ -1524,10 +1564,11 @@ async def enable_polling_fallback(
     }
 
 
-@router.get("/api/websocket/polling/{polling_id}/messages")
-async def get_polling_messages(
-    polling_id: str, manager: WebSocketManager = Depends(get_websocket_manager)
-):
+@router.get(
+    "/api/websocket/polling/{polling_id}/messages",
+    responses=WEBSOCKET_ROUTE_RESPONSES,
+)
+async def get_polling_messages(polling_id: str, manager: WebSocketManagerDependency):
     """
     Nachrichten für Polling-Client abrufen
     """

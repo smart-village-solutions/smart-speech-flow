@@ -11,11 +11,16 @@ Manages persistent storage of audio files with automatic cleanup.
 import base64
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
 
 # Prometheus metrics
 try:
@@ -167,7 +172,7 @@ def get_audio_file_path(filename: str) -> Optional[Path]:
     if filepath.exists():
         return filepath
 
-    logger.warning(f"Audio file not found: {filename}")
+    logger.warning("Audio file not found in managed storage")
     return None
 
 
@@ -193,7 +198,7 @@ def cleanup_old_audio_files() -> dict:
         "errors": 0,
     }
 
-    cutoff_time = datetime.now() - timedelta(hours=RETENTION_HOURS)
+    cutoff_time = utc_now() - timedelta(hours=RETENTION_HOURS)
     logger.info(
         f"Starting audio cleanup (retention: {RETENTION_HOURS}h, cutoff: {cutoff_time})"
     )
@@ -201,7 +206,7 @@ def cleanup_old_audio_files() -> dict:
     # Cleanup original audio
     for filepath in ORIGINAL_AUDIO_DIR.glob("*.wav"):
         try:
-            file_mtime = datetime.fromtimestamp(filepath.stat().st_mtime)
+            file_mtime = datetime.fromtimestamp(filepath.stat().st_mtime, timezone.utc)
             if file_mtime < cutoff_time:
                 filepath.unlink()
                 stats["deleted_original"] += 1
@@ -213,7 +218,7 @@ def cleanup_old_audio_files() -> dict:
     # Cleanup translated audio
     for filepath in TRANSLATED_AUDIO_DIR.glob("*.wav"):
         try:
-            file_mtime = datetime.fromtimestamp(filepath.stat().st_mtime)
+            file_mtime = datetime.fromtimestamp(filepath.stat().st_mtime, timezone.utc)
             if file_mtime < cutoff_time:
                 filepath.unlink()
                 stats["deleted_translated"] += 1

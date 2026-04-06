@@ -1,4 +1,5 @@
 import logging
+from html import escape
 
 from fastapi import File, Form, UploadFile
 from fastapi.responses import HTMLResponse
@@ -7,6 +8,13 @@ from services.api_gateway.app import app
 from services.api_gateway.pipeline_logic import process_wav
 
 logger = logging.getLogger("api_gateway")
+
+
+def _safe_text_preview(value: object) -> str:
+    text = str(value or "")
+    if not text:
+        return "Keine Ausgabe verfuegbar."
+    return escape(text[:200])
 
 
 @app.post("/upload")
@@ -32,31 +40,32 @@ async def upload(
     result = process_wav(file_bytes, source_lang, target_lang)
     if result["error"]:
         logger.info(
-            "Upload pipeline error: error=%s, originalText=%s, translatedText=%s",
+            "Upload pipeline error: error=%s, has_transcript=%s, has_translation=%s",
             result["error_msg"],
-            result.get("asr_text"),
-            result.get("translation_text"),
+            bool(result.get("asr_text")),
+            bool(result.get("translation_text")),
         )
         return HTMLResponse(
-            content="""
+            content=f"""
             <html>
             <head><title>Fehler bei der Verarbeitung</title></head>
             <body>
                 <h2>Fehler</h2>
-                <p>{result['error_msg']}</p>
-                <p>Transkription: {result['asr_text']}</p>
-                <p>Übersetzung: {result['translation_text']}</p>
+                <p>{_safe_text_preview(result.get('error_msg'))}</p>
+                <p>Transkription: {_safe_text_preview(result.get('asr_text'))}</p>
+                <p>Übersetzung: {_safe_text_preview(result.get('translation_text'))}</p>
             </body>
             </html>
-        """
+        """,
+            status_code=400,
         )
     audio_b64 = b64encode(result["audio_bytes"]).decode()
     logger.info(
-        "Upload pipeline success: source_lang=%s, target_lang=%s, originalText=%s, translatedText=%s, audioBytes=%s",
+        "Upload pipeline success: source_lang=%s, target_lang=%s, has_transcript=%s, has_translation=%s, audioBytes=%s",
         source_lang,
         target_lang,
-        result["asr_text"],
-        result["translation_text"],
+        bool(result.get("asr_text")),
+        bool(result.get("translation_text")),
         len(result["audio_bytes"]) if result["audio_bytes"] else 0,
     )
     return HTMLResponse(
@@ -65,10 +74,10 @@ async def upload(
         <head><title>Ergebnis Download</title></head>
         <body>
             <h2>Ergebnis</h2>
-            <p>Transkription: {result['asr_text']}</p>
-            <p>Übersetzung: {result['translation_text']}</p>
-            <p>Ausgangssprache: {source_lang}</p>
-            <p>Zielsprache: {target_lang}</p>
+            <p>Transkription: {_safe_text_preview(result.get('asr_text'))}</p>
+            <p>Übersetzung: {_safe_text_preview(result.get('translation_text'))}</p>
+            <p>Ausgangssprache: {escape(source_lang)}</p>
+            <p>Zielsprache: {escape(target_lang)}</p>
             <a href='data:audio/wav;base64,{audio_b64}' download='output.wav'>WAV herunterladen</a>
             <audio controls src='data:audio/wav;base64,{audio_b64}'></audio>
         </body>

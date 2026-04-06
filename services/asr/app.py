@@ -1,3 +1,4 @@
+import asyncio
 import subprocess
 
 
@@ -40,15 +41,22 @@ def normalize_to_wav16k(in_path):
     return out_path
 
 
+def _persist_upload_to_temp(file_obj) -> str:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".input") as tmp:
+        shutil.copyfileobj(file_obj, tmp)
+        return tmp.name
+
+
 import os
 import shutil
 import tempfile
 from typing import Any, Dict, List
 
 import torch
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from prometheus_client import Counter, Gauge, generate_latest
+from typing_extensions import Annotated
 
 try:
     import whisper
@@ -66,6 +74,10 @@ except ImportError:  # pragma: no cover - optional dependency
     pynvml = None
 
 _nvml_initialized = False
+TRANSCRIBE_ERROR_RESPONSES = {
+    400: {"description": "Invalid transcription request"},
+    503: {"description": "ASR model unavailable"},
+}
 
 
 def _collect_gpu_metrics() -> Dict[str, Any]:
@@ -188,6 +200,38 @@ def _derive_auto_scaling_signal(metrics: Dict[str, Any]) -> Dict[str, Any]:
     return {"recommended_action": recommended_action, "reasons": reasons}
 
 
+def _get_system_stats() -> Dict[str, Any]:
+    system_stats = {"cpu": None, "ram": None}
+    if psutil is not None:
+        try:
+            system_stats = {
+                "cpu": psutil.cpu_percent(),
+                "ram": psutil.virtual_memory().percent,
+            }
+        except Exception:  # pragma: no cover - psutil rarely fails
+            system_stats = {"cpu": None, "ram": None}
+    return system_stats
+
+
+def _build_debug_info(lang: str) -> Dict[str, Any]:
+    return {
+        "input": {"lang": lang},
+        "output": None,
+        "error": None,
+        "duration": None,
+        "model": "whisper-base",
+        "system": _get_system_stats(),
+    }
+
+
+def _build_asr_response(
+    text: str, fallback: bool, debug_active: bool, debug_info: Dict[str, Any]
+) -> Dict[str, Any]:
+    if debug_active:
+        return {"text": text, "fallback": fallback, "debug": debug_info}
+    return {"text": text, "fallback": fallback}
+
+
 app = FastAPI(title="ASR Service")
 SUPPORTED_LANGS = ["de", "en", "ar", "tr", "am", "fa", "ru", "uk", "ku", "ti"]
 requests_total = Counter("asr_requests_total", "Total ASR requests")
@@ -230,12 +274,12 @@ def metrics():
     return Response(generate_latest(), media_type="text/plain")
 
 
-@app.post("/transcribe")
+@app.post("/transcribe", responses=TRANSCRIBE_ERROR_RESPONSES)
 async def transcribe(
-    file: UploadFile = File(...),
-    lang: str = Form("de"),
-    request: Request = None,
-    debug: str = Form(None),
+    file: Annotated[UploadFile, File(...)],
+    request: Request,
+    lang: Annotated[str, Form()] = "de",
+    debug: Annotated[str | None, Form()] = None,
 ):
     import time
 
@@ -246,47 +290,23 @@ async def transcribe(
         str(debug_query).lower() == "true"
     )
     requests_total.inc()
-    system_stats = {"cpu": None, "ram": None}
-    if psutil is not None:
-        try:
-            system_stats = {
-                "cpu": psutil.cpu_percent(),
-                "ram": psutil.virtual_memory().percent,
-            }
-        except Exception:  # pragma: no cover - psutil rarely fails
-            system_stats = {"cpu": None, "ram": None}
-    debug_info = {
-        "input": {"lang": lang},
-        "output": None,
-        "error": None,
-        "duration": None,
-        "model": "whisper-base",
-        "system": system_stats,
-    }
+    debug_info = _build_debug_info(lang)
     if lang not in SUPPORTED_LANGS:
-        from fastapi import HTTPException
-
         debug_info["error"] = f"Unsupported language code: {lang}"
         debug_info["duration"] = round(time.perf_counter() - start, 3)
-        if debug_active:
-            return {"text": None, "fallback": True, "debug": debug_info}
         raise HTTPException(
             status_code=400, detail=f"Unsupported language code: {lang}"
         )
     if not model_loaded:
         debug_info["error"] = "ASR-Modell nicht geladen"
         debug_info["duration"] = round(time.perf_counter() - start, 3)
-        if debug_active:
-            return {"text": "Hallo Welt", "fallback": True, "debug": debug_info}
-        return {"text": "Hallo Welt", "fallback": True}
+        return _build_asr_response("Hallo Welt", True, debug_active, debug_info)
     # Speichere die Audiodatei temporär
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".input") as tmp:
-        shutil.copyfileobj(file.file, tmp)
-        tmp_path = tmp.name
+    tmp_path = await asyncio.to_thread(_persist_upload_to_temp, file.file)
     norm_path = None
     try:
-        norm_path = normalize_to_wav16k(tmp_path)
-        result = model.transcribe(norm_path, language=lang)
+        norm_path = await asyncio.to_thread(normalize_to_wav16k, tmp_path)
+        result = await asyncio.to_thread(model.transcribe, norm_path, language=lang)
         text = result.get("text", "")
         debug_info["output"] = text
     except Exception as e:
@@ -298,6 +318,4 @@ async def transcribe(
         if norm_path and os.path.exists(norm_path):
             os.remove(norm_path)
     debug_info["duration"] = round(time.perf_counter() - start, 3)
-    if debug_active:
-        return {"text": text, "fallback": False, "debug": debug_info}
-    return {"text": text, "fallback": False}
+    return _build_asr_response(text, False, debug_active, debug_info)

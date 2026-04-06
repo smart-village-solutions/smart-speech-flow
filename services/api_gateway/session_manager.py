@@ -6,6 +6,7 @@ Speichert Sessions in-memory (für Entwicklung) oder Redis (für Produktion)
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import uuid
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
     from .websocket import WebSocketManager
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 try:  # Optional dependency for persistence
@@ -38,6 +39,21 @@ class SessionStatus(str, Enum):
     PENDING = "pending"  # Session erstellt, wartet auf Client
     ACTIVE = "active"  # Beide Teilnehmer verbunden
     TERMINATED = "terminated"  # Session beendet
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _ensure_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.astimezone().astimezone(timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _minutes_since(dt: datetime) -> float:
+    """Return minutes since ``dt`` while tolerating legacy naive timestamps."""
+    return (utc_now() - _ensure_utc(dt)).total_seconds() / 60
 
 
 @dataclass
@@ -82,7 +98,7 @@ class SessionMessage:
             audio_base64=data.get("audio_base64"),
             source_lang=data.get("source_lang", ""),
             target_lang=data.get("target_lang", ""),
-            timestamp=datetime.fromisoformat(data["timestamp"]),
+            timestamp=_ensure_utc(datetime.fromisoformat(data["timestamp"])),
             pipeline_metadata=data.get("pipeline_metadata"),
             original_audio_url=data.get("original_audio_url"),
         )
@@ -94,7 +110,7 @@ class Session:
     customer_language: Optional[str] = None  # Wird erst bei Client-Join gesetzt
     admin_language: str = "de"
     status: SessionStatus = SessionStatus.PENDING
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=utc_now)
     terminated_at: Optional[datetime] = None
     messages: List[SessionMessage] = field(default_factory=list)
     admin_connected: bool = False
@@ -102,7 +118,7 @@ class Session:
     termination_reason: Optional[str] = None
 
     # ✨ Timeout Management Features
-    last_activity: datetime = field(default_factory=datetime.now)
+    last_activity: datetime = field(default_factory=utc_now)
     timeout_warning_sent: bool = False
     session_timeout_minutes: int = 30  # Auto-close nach 30 Minuten
     warning_timeout_minutes: int = 25  # Warning nach 25 Minuten
@@ -125,9 +141,7 @@ class Session:
             "timeout_warning_sent": self.timeout_warning_sent,
             "session_timeout_minutes": self.session_timeout_minutes,
             "warning_timeout_minutes": self.warning_timeout_minutes,
-            "minutes_since_activity": int(
-                (datetime.now() - self.last_activity).total_seconds() / 60
-            ),
+            "minutes_since_activity": int(_minutes_since(self.last_activity)),
         }
 
         if include_messages:
@@ -137,7 +151,7 @@ class Session:
 
     def update_activity(self):
         """Session-Aktivität aktualisieren (für Heartbeat/Messages)"""
-        self.last_activity = datetime.now()
+        self.last_activity = utc_now()
         self.timeout_warning_sent = False
 
     def is_timeout_warning_due(self) -> bool:
@@ -145,7 +159,7 @@ class Session:
         if self.timeout_warning_sent or self.status != SessionStatus.ACTIVE:
             return False
 
-        minutes_inactive = (datetime.now() - self.last_activity).total_seconds() / 60
+        minutes_inactive = _minutes_since(self.last_activity)
         return minutes_inactive >= self.warning_timeout_minutes
 
     def is_timeout_due(self) -> bool:
@@ -153,7 +167,7 @@ class Session:
         if self.status == SessionStatus.TERMINATED:
             return False
 
-        minutes_inactive = (datetime.now() - self.last_activity).total_seconds() / 60
+        minutes_inactive = _minutes_since(self.last_activity)
         return minutes_inactive >= self.session_timeout_minutes
 
     @classmethod
@@ -161,10 +175,12 @@ class Session:
         messages_data = data.get("messages", [])
         messages = [SessionMessage.from_dict(msg) for msg in messages_data]
 
-        created_at = datetime.fromisoformat(data["created_at"])
+        created_at = _ensure_utc(datetime.fromisoformat(data["created_at"]))
         terminated_at_raw = data.get("terminated_at")
         terminated_at = (
-            datetime.fromisoformat(terminated_at_raw) if terminated_at_raw else None
+            _ensure_utc(datetime.fromisoformat(terminated_at_raw))
+            if terminated_at_raw
+            else None
         )
         last_activity_raw = data.get("last_activity", data["created_at"])
 
@@ -179,7 +195,7 @@ class Session:
             admin_connected=data.get("admin_connected", False),
             customer_connected=data.get("customer_connected", False),
             termination_reason=data.get("termination_reason"),
-            last_activity=datetime.fromisoformat(last_activity_raw),
+            last_activity=_ensure_utc(datetime.fromisoformat(last_activity_raw)),
             timeout_warning_sent=data.get("timeout_warning_sent", False),
             session_timeout_minutes=data.get("session_timeout_minutes", 30),
             warning_timeout_minutes=data.get("warning_timeout_minutes", 25),
@@ -324,6 +340,7 @@ class SessionManager:
 
     async def create_admin_session(self) -> str:
         """Neue Admin-Session erstellen, parallele Sessions erlaubt"""
+        await asyncio.sleep(0)
         session_id = str(uuid.uuid4())[:8].upper()
         session = Session(
             id=session_id, status=SessionStatus.PENDING  # Wartet auf Customer-Join
@@ -341,7 +358,7 @@ class SessionManager:
         """Alle aktiven Sessions beenden (manueller Cleanup)"""
         terminated_count = 0
 
-        for session_id, session in list(self.sessions.items()):
+        for session_id, session in tuple(self.sessions.items()):
             if session.status in [SessionStatus.PENDING, SessionStatus.ACTIVE]:
                 await self.terminate_session(session_id, reason)
                 terminated_count += 1
@@ -369,7 +386,7 @@ class SessionManager:
 
         # Session-Status aktualisieren
         session.status = SessionStatus.TERMINATED
-        session.terminated_at = datetime.now()
+        session.terminated_at = utc_now()
         session.termination_reason = reason
         session.admin_connected = False
         session.customer_connected = False
@@ -405,7 +422,7 @@ class SessionManager:
             "session_id": session_id,
             "reason": reason,
             "message": self._get_termination_message(reason),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
         }
 
         # Alle WebSocket-Verbindungen der Session benachrichtigen
@@ -436,6 +453,7 @@ class SessionManager:
 
     async def _cleanup_websocket_connections(self, session_id: str):
         """WebSocket-Connection-Pool cleanup"""
+        await asyncio.sleep(0)
         if session_id in self.websocket_connections:
             del self.websocket_connections[session_id]
             print(f"🧹 WebSocket-Connections für Session {session_id} bereinigt")
@@ -533,6 +551,7 @@ class SessionManager:
 
     async def activate_session(self, session_id: str, customer_language: str):
         """Session aktivieren wenn Customer beitritt oder Sprache ändern"""
+        await asyncio.sleep(0)
         session = self.get_session(session_id)
         if not session:
             raise ValueError(f"Session {session_id} nicht gefunden")
@@ -558,6 +577,7 @@ class SessionManager:
         self, session_id: str, client_type: ClientType, websocket
     ):
         """WebSocket-Verbindung zur Session hinzufügen"""
+        await asyncio.sleep(0)
         if session_id not in self.websocket_connections:
             self.websocket_connections[session_id] = {}
 
@@ -580,6 +600,7 @@ class SessionManager:
         self, session_id: str, client_type: ClientType
     ):
         """WebSocket-Verbindung von Session entfernen"""
+        await asyncio.sleep(0)
         if session_id in self.websocket_connections:
             self.websocket_connections[session_id].pop(client_type.value, None)
 
@@ -615,7 +636,7 @@ class SessionManager:
 
     async def check_session_timeouts(self):
         """Alle Sessions auf Timeouts prüfen und entsprechende Aktionen durchführen"""
-        current_sessions = list(self.sessions.values())
+        current_sessions = tuple(self.sessions.values())
 
         for session in current_sessions:
             if session.status == SessionStatus.TERMINATED:
@@ -641,7 +662,7 @@ class SessionManager:
                 "session_id": session.id,
                 "message": f"Session wird in {remaining_minutes} Minuten aufgrund von Inaktivität beendet.",
                 "remaining_minutes": remaining_minutes,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": utc_now().isoformat(),
             }
 
             await self.websocket_manager.broadcast_to_session(
@@ -669,7 +690,7 @@ class SessionManager:
                 "type": "heartbeat_response",
                 "session_id": session_id,
                 "client_type": client_type.value,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": utc_now().isoformat(),
             }
             await self.websocket_manager.send_to_client(
                 session_id, client_type, response

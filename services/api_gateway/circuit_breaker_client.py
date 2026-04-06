@@ -13,6 +13,7 @@ Datum: November 2025
 Version: 1.0
 """
 
+import asyncio
 import logging
 from typing import Any, Dict, Optional
 
@@ -42,6 +43,7 @@ class CircuitBreakerServiceClient:
 
     async def _ensure_session(self):
         """Stellt sicher dass HTTP Session verfügbar ist"""
+        await asyncio.sleep(0)
         if self.session is None or self.session.closed:
             timeout = aiohttp.ClientTimeout(total=30)
             self.session = aiohttp.ClientSession(timeout=timeout)
@@ -321,14 +323,17 @@ class CircuitBreakerServiceClient:
 
     async def get_health_status(self) -> Dict[str, Any]:
         """Gesamter Health Status aller Services"""
+        await asyncio.sleep(0)
         return service_health_manager.get_overall_health()
 
     async def get_service_status(self, service_name: str) -> Dict[str, Any]:
         """Health Status für einzelnen Service"""
+        await asyncio.sleep(0)
         return service_health_manager.get_service_health(service_name)
 
     async def get_degradation_status(self) -> Dict[str, Any]:
         """Aktueller Degradation Status"""
+        await asyncio.sleep(0)
         return graceful_degradation_manager.get_degradation_status()
 
     async def start_health_monitoring(self):

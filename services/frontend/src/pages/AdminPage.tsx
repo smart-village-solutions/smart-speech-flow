@@ -136,12 +136,14 @@ export default function AdminPage() {
                   {sessionStatus === 'pending' && (
                     <span className="inline-flex items-center px-4 py-2 rounded-card text-yellow-800 bg-yellow-100 font-semibold">
                       <span className="mr-2">⏳</span>
+                      {' '}
                       Warte auf Kunde
                     </span>
                   )}
                   {sessionStatus === 'active' && (
                     <span className="inline-flex items-center px-4 py-2 rounded-card text-green-800 bg-green-100 font-semibold">
                       <span className="mr-2">✅</span>
+                      {' '}
                       Aktiv
                     </span>
                   )}

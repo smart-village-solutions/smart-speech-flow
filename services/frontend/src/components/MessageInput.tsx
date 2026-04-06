@@ -6,9 +6,13 @@ import api from '../services/api';
 
 type InputMode = 'text' | 'audio';
 type RecordingState = 'idle' | 'recording' | 'processing';
+type ApiError = {
+  response?: { data?: { detail?: { error_message?: string; message?: string } | string } };
+  message?: string;
+};
 
 interface MessageInputProps {
-  disabled?: boolean;
+  readonly disabled?: boolean;
 }
 
 export default function MessageInput({ disabled = false }: MessageInputProps) {
@@ -25,13 +29,75 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
   const recordingIntervalRef = useRef<number | null>(null);
   const audioRecorderRef = useRef<AudioRecorderWithWAVConversion | null>(null);
 
+  const clearRecordingTimer = () => {
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
+    }
+  };
+
+  const startRecordingTimer = () => {
+    recordingIntervalRef.current = globalThis.setInterval(() => {
+      setRecordingDuration((prev) => prev + 1);
+    }, 1000);
+  };
+
+  const getLanguagePair = () => {
+    if (!sessionId || !clientType) {
+      return null;
+    }
+    if (clientType === 'admin' && !customerLanguage) {
+      return null;
+    }
+    return {
+      source_lang: clientType === 'admin' ? adminLanguage : customerLanguage!,
+      target_lang: clientType === 'admin' ? customerLanguage! : adminLanguage,
+    };
+  };
+
+  const createOptimisticMessage = (
+    tempMessageId: string,
+    contentType: 'text' | 'audio',
+    content: string
+  ): {
+    id: string;
+    sender: 'admin' | 'customer';
+    content_type: 'text' | 'audio';
+    content: string;
+    timestamp: string;
+    status: 'sending';
+  } => ({
+    id: tempMessageId,
+    sender: clientType!,
+    content_type: contentType,
+    content,
+    timestamp: new Date().toISOString(),
+    status: 'sending',
+  });
+
+  const extractErrorMessage = (
+    err: unknown,
+    defaultMessage: string
+  ): string => {
+    const error = err as ApiError;
+    const detail = error.response?.data?.detail;
+    if (typeof detail === 'object' && detail?.error_message) {
+      return detail.error_message;
+    }
+    if (typeof detail === 'object' && detail?.message) {
+      return detail.message;
+    }
+    if (typeof detail === 'string') {
+      return detail;
+    }
+    return error.message ?? defaultMessage;
+  };
+
   useEffect(() => {
     // Cleanup on unmount
     return () => {
-      stopRecording();
-      if (recordingIntervalRef.current) {
-        clearInterval(recordingIntervalRef.current);
-      }
+      audioRecorderRef.current?.stopRecording();
+      clearRecordingTimer();
     };
   }, []);
 
@@ -47,18 +113,11 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
           setRecordingState('recording');
           setRecordingDuration(0);
           setError(null);
-
-          // Start duration counter
-          recordingIntervalRef.current = window.setInterval(() => {
-            setRecordingDuration((prev) => prev + 1);
-          }, 1000);
+          startRecordingTimer();
         },
         onStop: () => {
           setRecordingState('processing');
-          if (recordingIntervalRef.current) {
-            clearInterval(recordingIntervalRef.current);
-            recordingIntervalRef.current = null;
-          }
+          clearRecordingTimer();
         },
         onDataAvailable: async (wavBlob) => {
           // WAV conversion successful, upload to backend
@@ -84,35 +143,20 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
     if (audioRecorderRef.current && recordingState === 'recording') {
       // Sofort visuelles Feedback geben
       setRecordingState('processing');
-      if (recordingIntervalRef.current) {
-        clearInterval(recordingIntervalRef.current);
-        recordingIntervalRef.current = null;
-      }
+      clearRecordingTimer();
       // Aufnahme tatsächlich stoppen (Konvertierung läuft im Hintergrund)
       audioRecorderRef.current.stopRecording();
     }
   };
 
   const sendAudioMessage = async (wavBlob: Blob) => {
-    if (!sessionId || !clientType) return;
-    // Admin needs customerLanguage, customer uses their own language from session context
-    if (clientType === 'admin' && !customerLanguage) return;
-
-    // Determine source and target language based on client type
-    const source_lang = clientType === 'admin' ? adminLanguage : customerLanguage!;
-    const target_lang = clientType === 'admin' ? customerLanguage! : adminLanguage;
+    const languagePair = getLanguagePair();
+    if (!languagePair || !sessionId || !clientType) {
+      return;
+    }
 
     const tempMessageId = `temp-${Date.now()}`;
-    const optimisticMessage = {
-      id: tempMessageId,
-      sender: clientType,
-      content_type: 'audio' as const,
-      content: '[Audio-Nachricht]',
-      timestamp: new Date().toISOString(),
-      status: 'sending' as const,
-    };
-
-    addMessage(optimisticMessage);
+    addMessage(createOptimisticMessage(tempMessageId, 'audio', '[Audio-Nachricht]'));
     setError(null);
 
     try {
@@ -121,8 +165,8 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
       // Create FormData for multipart/form-data upload
       const formData = new FormData();
       formData.append('file', wavBlob, 'recording.wav');
-      formData.append('source_lang', source_lang);
-      formData.append('target_lang', target_lang);
+      formData.append('source_lang', languagePair.source_lang);
+      formData.append('target_lang', languagePair.target_lang);
       formData.append('client_type', clientType);
 
       // Upload audio via POST /api/session/{sessionId}/message
@@ -154,24 +198,9 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
       updateMessage(tempMessageId, {
         status: 'error',
       });
-
-      // Extract user-friendly error message from API response
-      let errorMessage = 'Fehler beim Senden der Audio-Nachricht';
-      const error = err as { response?: { data?: { detail?: { error_message?: string; message?: string } | string } }; message?: string };
-      if (error.response?.data?.detail) {
-        const detail = error.response.data.detail;
-        if (typeof detail === 'object' && detail.error_message) {
-          errorMessage = detail.error_message;
-        } else if (typeof detail === 'object' && detail.message) {
-          errorMessage = detail.message;
-        } else if (typeof detail === 'string') {
-          errorMessage = detail;
-        }
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-
-      setError(errorMessage);
+      setError(
+        extractErrorMessage(err, 'Fehler beim Senden der Audio-Nachricht')
+      );
       setRecordingState('idle');
     }
   };
@@ -185,43 +214,30 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
       isActive
     });
 
-    if (!textMessage.trim() || !sessionId || !clientType) {
+    const trimmedText = textMessage.trim();
+    const languagePair = getLanguagePair();
+    if (!trimmedText || !sessionId || !clientType) {
       console.log('❌ Basic validation failed');
       return;
     }
-
-    // Admin needs customerLanguage, customer uses their own language from session context
-    if (clientType === 'admin' && !customerLanguage) {
+    if (!languagePair) {
       console.log('❌ Admin missing customerLanguage');
       return;
     }
 
-    // Determine source and target language based on client type
-    const source_lang = clientType === 'admin' ? adminLanguage : customerLanguage!;
-    const target_lang = clientType === 'admin' ? customerLanguage! : adminLanguage;
-
-    console.log('✅ Sending message:', { source_lang, target_lang, clientType });
+    console.log('✅ Sending message:', { ...languagePair, clientType });
 
     const tempMessageId = `temp-${Date.now()}`;
-    const optimisticMessage = {
-      id: tempMessageId,
-      sender: clientType,
-      content_type: 'text' as const,
-      content: textMessage.trim(),
-      timestamp: new Date().toISOString(),
-      status: 'sending' as const,
-    };
-
-    addMessage(optimisticMessage);
+    addMessage(createOptimisticMessage(tempMessageId, 'text', trimmedText));
     setTextMessage('');
     setError(null);
 
     try {
       console.log('📡 Sending message with temp ID:', tempMessageId);
       const response = await MessageService.sendMessage(sessionId, {
-        text: textMessage.trim(),
-        source_lang,
-        target_lang,
+        text: trimmedText,
+        source_lang: languagePair.source_lang,
+        target_lang: languagePair.target_lang,
         client_type: clientType,
       });
 
@@ -241,24 +257,7 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
       updateMessage(tempMessageId, {
         status: 'error',
       });
-
-      // Extract user-friendly error message from API response
-      let errorMessage = 'Fehler beim Senden der Nachricht';
-      const error = err as { response?: { data?: { detail?: { error_message?: string; message?: string } | string } }; message?: string };
-      if (error.response?.data?.detail) {
-        const detail = error.response.data.detail;
-        if (typeof detail === 'object' && detail.error_message) {
-          errorMessage = detail.error_message;
-        } else if (typeof detail === 'object' && detail.message) {
-          errorMessage = detail.message;
-        } else if (typeof detail === 'string') {
-          errorMessage = detail;
-        }
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-
-      setError(errorMessage);
+      setError(extractErrorMessage(err, 'Fehler beim Senden der Nachricht'));
     }
   };
 
@@ -316,7 +315,7 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
             value={textMessage}
             onChange={(e) => setTextMessage(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder={!isActive ? "Warten auf Teilnehmer..." : "Nachricht eingeben..."}
+            placeholder={isActive ? "Nachricht eingeben..." : "Warten auf Teilnehmer..."}
             disabled={isInputDisabled}
             rows={2}
             className="flex-1 px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed resize-none text-sm sm:text-base"

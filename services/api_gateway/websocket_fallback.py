@@ -9,11 +9,19 @@ import logging
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def utc_now_iso() -> str:
+    return utc_now().isoformat()
 
 
 class FallbackReason(Enum):
@@ -121,7 +129,7 @@ class WebSocketFallbackManager:
 
         logger.info("🔄 WebSocket Fallback Manager initialized")
 
-    async def evaluate_websocket_failure(
+    def evaluate_websocket_failure(
         self,
         session_id: str,
         client_type: str,
@@ -140,7 +148,7 @@ class WebSocketFallbackManager:
 
         # Update failure history
         history.failure_count += 1
-        history.last_failure = datetime.utcnow()
+        history.last_failure = utc_now()
         history.failure_reasons.append(reason)
 
         # Keep only recent failures (last 10)
@@ -225,7 +233,7 @@ class WebSocketFallbackManager:
 
         # High frequency of different types of failures
         if history.last_failure:
-            time_since_last = (datetime.utcnow() - history.last_failure).total_seconds()
+            time_since_last = (utc_now() - history.last_failure).total_seconds()
             if (
                 time_since_last < 30 and history.failure_count >= 2
             ):  # 2 failures in 30 seconds
@@ -252,7 +260,7 @@ class WebSocketFallbackManager:
             session_id=session_id,
             client_type=client_type,
             origin=origin,
-            created_at=datetime.utcnow(),
+            created_at=utc_now(),
             polling_interval=polling_interval or self.config.polling_interval,
             fallback_reason=reason,
         )
@@ -269,7 +277,7 @@ class WebSocketFallbackManager:
         # Schedule WebSocket retry if appropriate
         if self._should_schedule_websocket_retry(reason):
             retry_delay = self._calculate_retry_delay(reason)
-            polling_client.websocket_retry_after = datetime.utcnow() + timedelta(
+            polling_client.websocket_retry_after = utc_now() + timedelta(
                 seconds=retry_delay
             )
 
@@ -288,7 +296,7 @@ class WebSocketFallbackManager:
 
         return polling_id
 
-    async def send_message_to_polling_client(
+    def send_message_to_polling_client(
         self, polling_id: str, message: Dict[str, Any]
     ) -> bool:
         """Send message to polling client's queue"""
@@ -300,7 +308,7 @@ class WebSocketFallbackManager:
         message_with_meta = {
             **message,
             "_polling_meta": {
-                "queued_at": datetime.utcnow().isoformat(),
+                "queued_at": utc_now_iso(),
                 "polling_id": polling_id,
             },
         }
@@ -313,33 +321,33 @@ class WebSocketFallbackManager:
 
         return True
 
-    async def poll_messages(self, polling_id: str) -> List[Dict[str, Any]]:
+    def poll_messages(self, polling_id: str) -> List[Dict[str, Any]]:
         """Retrieve queued messages for polling client"""
         client = self.polling_clients.get(polling_id)
         if not client:
             return []
 
         # Update last poll time
-        client.last_poll = datetime.utcnow()
+        client.last_poll = utc_now()
 
         # Get all queued messages
         messages = list(client.message_queue)
         client.message_queue.clear()
 
         # Check if WebSocket retry should be attempted
-        if await self._should_attempt_websocket_retry(client):
+        if self._should_attempt_websocket_retry(client):
             messages.append(
                 {
                     "type": "websocket_retry_suggestion",
                     "polling_id": polling_id,
                     "retry_reason": "scheduled_recovery_attempt",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": utc_now_iso(),
                 }
             )
 
         return messages
 
-    async def attempt_websocket_recovery(self, polling_id: str) -> Dict[str, Any]:
+    def attempt_websocket_recovery(self, polling_id: str) -> Dict[str, Any]:
         """Attempt to recover WebSocket connection for polling client"""
         client = self.polling_clients.get(polling_id)
         if not client:
@@ -368,7 +376,7 @@ class WebSocketFallbackManager:
             },
         }
 
-    async def websocket_recovery_successful(self, polling_id: str):
+    def websocket_recovery_successful(self, polling_id: str):
         """Mark WebSocket recovery as successful and cleanup polling client"""
         client = self.polling_clients.get(polling_id)
         if not client:
@@ -385,11 +393,11 @@ class WebSocketFallbackManager:
             )
 
         # Cleanup polling client
-        await self._cleanup_polling_client(polling_id)
+        self._cleanup_polling_client(polling_id)
 
         logger.info(f"✅ WebSocket recovery successful for {polling_id}")
 
-    async def websocket_recovery_failed(
+    def websocket_recovery_failed(
         self, polling_id: str, failure_reason: FallbackReason
     ):
         """Handle failed WebSocket recovery attempt"""
@@ -402,9 +410,7 @@ class WebSocketFallbackManager:
             retry_delay = self._calculate_retry_delay(
                 failure_reason, client.retry_count
             )
-            client.websocket_retry_after = datetime.utcnow() + timedelta(
-                seconds=retry_delay
-            )
+            client.websocket_retry_after = utc_now() + timedelta(seconds=retry_delay)
 
             logger.info(
                 f"⏰ Next WebSocket retry for {polling_id} scheduled in {retry_delay}s"
@@ -414,13 +420,11 @@ class WebSocketFallbackManager:
                 f"🚫 Max WebSocket retries exceeded for {polling_id}, staying in polling mode"
             )
 
-    async def deactivate_polling_fallback(self, polling_id: str) -> bool:
+    def deactivate_polling_fallback(self, polling_id: str) -> bool:
         """Deactivate polling fallback for a client"""
-        return await self._cleanup_polling_client(polling_id)
+        return self._cleanup_polling_client(polling_id)
 
-    async def get_polling_client_status(
-        self, polling_id: str
-    ) -> Optional[Dict[str, Any]]:
+    def get_polling_client_status(self, polling_id: str) -> Optional[Dict[str, Any]]:
         """Get status information for a polling client"""
         client = self.polling_clients.get(polling_id)
         if not client:
@@ -442,16 +446,16 @@ class WebSocketFallbackManager:
                 else None
             ),
             "queued_messages": len(client.message_queue),
-            "uptime_seconds": (datetime.utcnow() - client.created_at).total_seconds(),
+            "uptime_seconds": (utc_now() - client.created_at).total_seconds(),
         }
 
-    async def get_session_fallback_status(self, session_id: str) -> Dict[str, Any]:
+    def get_session_fallback_status(self, session_id: str) -> Dict[str, Any]:
         """Get fallback status for all clients in a session"""
         polling_client_ids = self.session_polling_clients.get(session_id, set())
 
         client_statuses = []
         for polling_id in polling_client_ids:
-            status = await self.get_polling_client_status(polling_id)
+            status = self.get_polling_client_status(polling_id)
             if status:
                 client_statuses.append(status)
 
@@ -528,12 +532,12 @@ class WebSocketFallbackManager:
 
         return max(1, base_delay)
 
-    async def _should_attempt_websocket_retry(self, client: PollingClient) -> bool:
+    def _should_attempt_websocket_retry(self, client: PollingClient) -> bool:
         """Check if WebSocket retry should be attempted"""
         if not client.websocket_retry_after:
             return False
 
-        if datetime.utcnow() < client.websocket_retry_after:
+        if utc_now() < client.websocket_retry_after:
             return False
 
         if client.retry_count >= self.config.max_websocket_retries:
@@ -559,7 +563,7 @@ class WebSocketFallbackManager:
                     else None
                 ),
             },
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now_iso(),
         }
 
         # Add to message queue
@@ -588,7 +592,7 @@ class WebSocketFallbackManager:
             "Connection using compatibility mode. All features remain available.",
         )
 
-    async def _cleanup_polling_client(self, polling_id: str) -> bool:
+    def _cleanup_polling_client(self, polling_id: str) -> bool:
         """Remove polling client and cleanup resources"""
         client = self.polling_clients.get(polling_id)
         if not client:
@@ -616,7 +620,7 @@ class WebSocketFallbackManager:
             try:
                 await asyncio.sleep(300)  # Run every 5 minutes
 
-                now = datetime.utcnow()
+                now = utc_now()
                 stale_clients = []
 
                 for polling_id, client in self.polling_clients.items():
@@ -627,7 +631,7 @@ class WebSocketFallbackManager:
 
                 # Cleanup stale clients
                 for polling_id in stale_clients:
-                    await self._cleanup_polling_client(polling_id)
+                    self._cleanup_polling_client(polling_id)
 
                 if stale_clients:
                     logger.info(

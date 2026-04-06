@@ -1,43 +1,9 @@
-# Stelle sicher, dass die Funktion get_tts_model vorhanden ist
-def get_tts_model(lang: str):
-    if lang in tts_model_cache:
-        return tts_model_cache[lang]
-
-    # Erst Coqui-TTS versuchen
-    if TTSApi:
-        try:
-            model_name = resolve_tts_model_name(lang)
-            print(f"Lade TTS-Modell für Sprache: {lang} ({model_name})")
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            model = TTSApi(model_name=model_name).to(device)
-            setattr(model, "_device", device)
-            # Debug: Zeige das tatsächliche Device des Modells
-            try:
-                print(f"Modell-Device: {next(model.parameters()).device}")
-            except Exception as e:
-                print(f"Device-Check nicht möglich: {e}")
-            tts_model_cache[lang] = model
-            print(f"TTS-Modell für Sprache {lang} erfolgreich geladen auf {device}.")
-            return model
-        except Exception as e:
-            print(f"Coqui-TTS fehlgeschlagen: {e}")
-            # Fallback: HuggingFace MMS-TTS
-    try:
-        hf_code = iso1_to_iso3_hf.get(lang, lang)
-        hf_model_id = f"facebook/mms-tts-{hf_code}"
-        print(f"Versuche HuggingFace MMS-TTS für Sprache: {lang} ({hf_model_id})")
-        tts_pipe = pipeline("text-to-speech", model=hf_model_id)
-        tts_model_cache[lang] = tts_pipe
-        print(f"HuggingFace MMS-TTS für Sprache {lang} erfolgreich geladen.")
-        return tts_pipe
-    except Exception as e:
-        print(f"Fehler beim Laden von HuggingFace MMS-TTS für Sprache {lang}: {e}")
-        import traceback
-
-        print(traceback.format_exc())
-        return None
-
-
+import asyncio
+import io
+import tempfile
+import time
+import traceback
+from pathlib import Path
 from typing import Any, Dict, List
 
 import soundfile as sf
@@ -47,14 +13,12 @@ from fastapi.responses import JSONResponse, Response
 from prometheus_client import Counter, Gauge, generate_latest
 from transformers import pipeline
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
 try:
     from TTS.api import TTS
 
     TTSApi = TTS
 except ImportError:
     TTSApi = None
-import tempfile
 
 try:
     import psutil
@@ -66,7 +30,205 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     pynvml = None
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
 _nvml_initialized = False
+AUDIO_WAV_MIME = "audio/wav"
+SYNTHESIS_ERROR_RESPONSES = {
+    400: {"description": "Invalid synthesis request"},
+    500: {"description": "Synthesis failed"},
+    503: {"description": "TTS model unavailable"},
+}
+
+app = FastAPI(title="TTS Service")
+requests_total = Counter("tts_requests_total", "Total TTS requests")
+health_status = Gauge("tts_health_status", "Health status of TTS service")
+MODEL_PATH = "/models/tts_model.pt"
+
+# Primäre, konkret verifizierte Coqui-Modelle aus deiner Liste/Umgebung
+tts_models = {
+    "de": "tts_models/de/thorsten/vits",
+    "en": "tts_models/en/ljspeech/vits",
+    "tr": "tts_models/tr/common-voice/glow-tts",
+    "fa": "tts_models/fa/custom/glow-tts",
+    "uk": "tts_models/uk/mai/vits",
+}
+
+# Mapping ISO-639-1 -> ISO-639-3 für HuggingFace MMS-TTS
+iso1_to_iso3_hf = {
+    "de": "deu",
+    "en": "eng",
+    "ar": "ara",
+    "tr": "tur",
+    "ru": "rus",
+    "uk": "ukr",
+    "am": "amh",
+    "ti": "tir",
+    "ku": "kmr",
+    "fa": "fas",
+}
+
+tts_model_cache = {}
+
+
+def _coqui_tts_to_audio_bytes(tts_model: Any, text: str) -> bytes:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir) / "tts-output.wav"
+        tts_model.tts_to_file(text=text, file_path=str(tmp_path))
+        return tmp_path.read_bytes()
+
+
+def _numpy_audio_to_wav_bytes(audio: Any, sampling_rate: int) -> bytes:
+    buffer = io.BytesIO()
+    sf.write(buffer, audio, sampling_rate, format="WAV")
+    return buffer.getvalue()
+
+
+def _get_system_stats() -> Dict[str, Any]:
+    if psutil is None:
+        return {"cpu": None, "ram": None}
+
+    try:
+        return {
+            "cpu": psutil.cpu_percent(),
+            "ram": psutil.virtual_memory().percent,
+        }
+    except Exception:  # pragma: no cover - psutil rarely fails
+        return {"cpu": None, "ram": None}
+
+
+def _normalize_lang_code(lang: str) -> str:
+    normalized_lang = (lang or "").strip().lower()
+    if not normalized_lang:
+        raise ValueError("Leerer Sprachcode")
+    return normalized_lang
+
+
+def _resolve_hf_model_name(lang: str) -> str | None:
+    hf_code = iso1_to_iso3_hf.get(lang)
+    if hf_code is None:
+        return None
+    return f"facebook/mms-tts-{hf_code}"
+
+
+def resolve_tts_model_name(lang: str) -> str:
+    normalized_lang = _normalize_lang_code(lang)
+    if normalized_lang in tts_models:
+        return tts_models[normalized_lang]
+
+    hf_model_name = _resolve_hf_model_name(normalized_lang)
+    if hf_model_name:
+        return hf_model_name
+
+    raise ValueError(f"Keine TTS-Stimme für Sprache '{normalized_lang}' konfiguriert.")
+
+
+def _load_coqui_model(normalized_lang: str):
+    model_name = tts_models[normalized_lang]
+    print(f"Lade TTS-Modell für Sprache: {normalized_lang} ({model_name})")
+    tts_device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = TTSApi(model_name=model_name).to(tts_device)
+    setattr(model, "_device", tts_device)
+    try:
+        print(f"Modell-Device: {next(model.parameters()).device}")
+    except Exception as exc:
+        print(f"Device-Check nicht möglich: {exc}")
+    print(
+        f"TTS-Modell für Sprache {normalized_lang} erfolgreich geladen auf {tts_device}."
+    )
+    return model
+
+
+def _load_hf_tts_model(normalized_lang: str):
+    hf_model_id = _resolve_hf_model_name(normalized_lang)
+    if hf_model_id is None:
+        return None
+
+    print(
+        f"Versuche HuggingFace MMS-TTS für Sprache: {normalized_lang} ({hf_model_id})"
+    )
+    tts_pipe = pipeline("text-to-speech", model=hf_model_id)
+    print(f"HuggingFace MMS-TTS für Sprache {normalized_lang} erfolgreich geladen.")
+    return tts_pipe
+
+
+def get_tts_model(lang: str):
+    normalized_lang = _normalize_lang_code(lang)
+    if normalized_lang in tts_model_cache:
+        return tts_model_cache[normalized_lang]
+
+    if normalized_lang in tts_models and TTSApi:
+        try:
+            model = _load_coqui_model(normalized_lang)
+            tts_model_cache[normalized_lang] = model
+            return model
+        except Exception as exc:
+            print(f"Coqui-TTS fehlgeschlagen: {exc}")
+
+    try:
+        tts_pipe = _load_hf_tts_model(normalized_lang)
+        if tts_pipe is None:
+            return None
+        tts_model_cache[normalized_lang] = tts_pipe
+        return tts_pipe
+    except Exception as exc:
+        print(
+            f"Fehler beim Laden von HuggingFace MMS-TTS für Sprache {normalized_lang}: {exc}"
+        )
+        print(traceback.format_exc())
+        return None
+
+
+def _seed_for_request(
+    session_id: str | None, text: str, debug_info: Dict[str, Any]
+) -> int:
+    if session_id:
+        debug_info["seed_source"] = "session_id"
+        return hash(session_id) % (2**32)
+
+    debug_info["seed_source"] = "text_hash"
+    return hash(text) % (2**32)
+
+
+def _apply_seed(seed: int) -> None:
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+
+
+def _audio_response(
+    audio_bytes: bytes,
+    model_name: str,
+    lang: str,
+    debug_active: bool,
+    debug_info: Dict[str, Any],
+) -> Response:
+    headers = {
+        "X-TTS-Model": model_name,
+        "X-TTS-Language": lang,
+    }
+    if debug_active:
+        headers["X-Debug-Info"] = str(debug_info)
+    return Response(content=audio_bytes, media_type=AUDIO_WAV_MIME, headers=headers)
+
+
+def _error_response(
+    debug_active: bool,
+    debug_info: Dict[str, Any],
+    status_code: int,
+    *,
+    fallback: bool,
+    error: str,
+) -> JSONResponse:
+    if debug_active:
+        return JSONResponse(
+            content={"fallback": fallback, "error": error, "debug": debug_info},
+            status_code=status_code,
+        )
+
+    return JSONResponse(
+        content={"fallback": fallback, "error": error},
+        status_code=status_code,
+    )
 
 
 def _collect_gpu_metrics() -> Dict[str, Any]:
@@ -159,6 +321,17 @@ def _collect_resource_metrics() -> Dict[str, Any]:
     return metrics
 
 
+def _append_gpu_signal(
+    reasons: List[str], gpu_device: Dict[str, Any], threshold_gpu: int
+) -> None:
+    gpu_util = gpu_device.get("utilization_percent")
+    mem_util = gpu_device.get("memory_utilization")
+    if gpu_util is not None and gpu_util >= threshold_gpu:
+        reasons.append(f"gpu{gpu_device.get('index')}_util>={threshold_gpu}")
+    if mem_util is not None and mem_util >= threshold_gpu:
+        reasons.append(f"gpu{gpu_device.get('index')}_mem>={threshold_gpu}")
+
+
 def _derive_auto_scaling_signal(metrics: Dict[str, Any]) -> Dict[str, Any]:
     threshold_cpu = 85
     threshold_mem = 85
@@ -174,98 +347,89 @@ def _derive_auto_scaling_signal(metrics: Dict[str, Any]) -> Dict[str, Any]:
         reasons.append(f"memory>={threshold_mem}")
 
     gpu_info = metrics.get("gpu", {})
-    for device in gpu_info.get("devices", []):
-        gpu_util = device.get("utilization_percent")
-        mem_util = device.get("memory_utilization")
-        if gpu_util is not None and gpu_util >= threshold_gpu:
-            reasons.append(f"gpu{device.get('index')}_util>={threshold_gpu}")
-        if mem_util is not None and mem_util >= threshold_gpu:
-            reasons.append(f"gpu{device.get('index')}_mem>={threshold_gpu}")
+    for gpu_device in gpu_info.get("devices", []):
+        _append_gpu_signal(reasons, gpu_device, threshold_gpu)
 
     recommended_action = "scale_up" if reasons else "steady"
     return {"recommended_action": recommended_action, "reasons": reasons}
 
 
-app = FastAPI(title="TTS Service")
-requests_total = Counter("tts_requests_total", "Total TTS requests")
-health_status = Gauge("tts_health_status", "Health status of TTS service")
-MODEL_PATH = "/models/tts_model.pt"
-
-# Primäre, konkret verifizierte Coqui-Modelle aus deiner Liste/Umgebung
-tts_models = {
-    "de": "tts_models/de/thorsten/vits",  # Deutsch, verfügbar
-    "en": "tts_models/en/ljspeech/vits",  # Englisch, verfügbar
-    "tr": "tts_models/tr/common-voice/glow-tts",  # Türkisch, verfügbar
-    "fa": "tts_models/fa/custom/glow-tts",  # Persisch, verfügbar (Custom)
-    "uk": "tts_models/uk/mai/vits",  # Ukrainisch, verfügbar
-}
+def _build_debug_info(text: Any, lang: Any) -> Dict[str, Any]:
+    return {
+        "input": {"text": text, "lang": lang},
+        "output": None,
+        "error": None,
+        "duration": None,
+        "model": None,
+        "system": _get_system_stats(),
+    }
 
 
-# Mapping ISO-639-1 → ISO-639-3 für HuggingFace MMS-TTS (global definiert)
-iso1_to_iso3_hf = {
-    "de": "deu",
-    "en": "eng",
-    "ar": "ara",
-    "tr": "tur",
-    "ru": "rus",
-    "uk": "ukr",
-    "am": "amh",
-    "ti": "tir",
-    "ku": "kmr",  # Kurmancî
-    "fa": "fas",  # Persian
-}
-
-tts_model_cache = {}
+def _update_duration(debug_info: Dict[str, Any], start: float) -> None:
+    debug_info["duration"] = round(time.perf_counter() - start, 3)
 
 
-def resolve_tts_model_name(lang: str) -> str:
-    """
-    1) Versuche zuerst ein verifiziertes Coqui-Modell (tts_models[...] aus deiner Liste).
-    2) Sonst Fehler.
-    """
-    lang = (lang or "").strip().lower()
-    if not lang:
-        raise ValueError("Leerer Sprachcode")
-    if lang in tts_models:
-        return tts_models[lang]
-    raise ValueError(f"Keine TTS-Stimme für Sprache '{lang}' konfiguriert.")
+def _resolve_synthesis_request(
+    data: Dict[str, Any], debug_info: Dict[str, Any], start: float
+) -> tuple[str, str, str | None, str]:
+    text = data.get("tts_text") or data.get("text", "Hallo Welt")
+    lang = data.get("lang", "de")
+    session_id = data.get("session_id")
 
-    if lang in tts_model_cache:
-        return tts_model_cache[lang]
+    if not isinstance(text, str) or not text.strip():
+        debug_info["error"] = "Field 'text' must be a non-empty string"
+        _update_duration(debug_info, start)
+        raise ValueError(debug_info["error"])
 
-    # Erst Coqui-TTS versuchen
-    if TTSApi:
-        try:
-            model_name = resolve_tts_model_name(lang)
-            print(f"Lade TTS-Modell für Sprache: {lang} ({model_name})")
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            model = TTSApi(model_name=model_name).to(device)
-            setattr(model, "_device", device)
-            tts_model_cache[lang] = model
-            print(f"TTS-Modell für Sprache {lang} erfolgreich geladen auf {device}.")
-            return model
-        except Exception as e:
-            print(f"Coqui-TTS fehlgeschlagen: {e}")
-            # Fallback: HuggingFace MMS-TTS
-    try:
-        hf_model_id = f"facebook/mms-tts-{lang}"
-        print(f"Versuche HuggingFace MMS-TTS für Sprache: {lang} ({hf_model_id})")
-        tts_pipe = pipeline("text-to-speech", model=hf_model_id)
-        tts_model_cache[lang] = tts_pipe
-        print(f"HuggingFace MMS-TTS für Sprache {lang} erfolgreich geladen.")
-        return tts_pipe
-    except Exception as e:
-        print(f"Fehler beim Laden von HuggingFace MMS-TTS für Sprache {lang}: {e}")
-        import traceback
+    normalized_lang = _normalize_lang_code(lang)
+    model_name = resolve_tts_model_name(normalized_lang)
+    return text, normalized_lang, session_id, model_name
 
-        print(traceback.format_exc())
-        return None
+
+def _extract_audio_payload(result: Any) -> tuple[Any, int]:
+    if isinstance(result, dict):
+        return result["audio"], result.get("sampling_rate", 16000)
+    return result[0]["audio"], 16000
+
+
+def _synthesize_hf_audio(tts_model: Any, text: str) -> bytes:
+    import numpy as np
+
+    result = tts_model(text)
+    audio, sampling_rate = _extract_audio_payload(result)
+    print(
+        "MMS-TTS Output: type=%s, shape=%s, size=%s, sampling_rate=%s"
+        % (
+            type(audio),
+            getattr(audio, "shape", None),
+            getattr(audio, "size", None),
+            sampling_rate,
+        )
+    )
+    if isinstance(audio, np.ndarray):
+        audio = audio.squeeze().astype(np.float32)
+        if audio.size == 0:
+            print("Warnung: MMS-TTS Output ist leer!")
+    else:
+        print(f"Warnung: MMS-TTS Output ist kein numpy-Array, sondern: {type(audio)}")
+    return _numpy_audio_to_wav_bytes(audio, sampling_rate)
+
+
+async def _render_audio_bytes(tts_model: Any, text: str) -> tuple[bytes, bool]:
+    if hasattr(tts_model, "tts_to_file"):
+        audio_bytes = await asyncio.to_thread(
+            _coqui_tts_to_audio_bytes, tts_model, text
+        )
+        return audio_bytes, False
+    if hasattr(tts_model, "__call__"):
+        audio_bytes = await asyncio.to_thread(_synthesize_hf_audio, tts_model, text)
+        return audio_bytes, True
+    raise RuntimeError("Unbekannter TTS-Modelltyp")
 
 
 @app.get("/health")
 def health():
-    # Verfügbare Sprachen aus Konfig (nur Coqui)
-    configured_langs = sorted(list(tts_models.keys()))
+    configured_langs = sorted(tts_models.keys())
     model_available = any(tts_model_cache.values())
     resources = _collect_resource_metrics()
     autoscaling = _derive_auto_scaling_signal(resources)
@@ -278,25 +442,26 @@ def health():
 
     loaded_models = {}
     for lang in configured_langs:
-        loaded = lang in tts_model_cache and tts_model_cache[lang] is not None
-        loaded_models[lang] = loaded
+        loaded_models[lang] = (
+            lang in tts_model_cache and tts_model_cache[lang] is not None
+        )
 
-    for model in tts_model_cache.values():
+    for loaded_model in tts_model_cache.values():
         try:
-            if hasattr(model, "_device"):
-                if model._device == "cuda":
+            if hasattr(loaded_model, "_device"):
+                if loaded_model._device == "cuda":
                     gpu_used = True
-            elif hasattr(model, "device") and str(model.device).startswith("cuda"):
+            elif hasattr(loaded_model, "device") and str(
+                loaded_model.device
+            ).startswith("cuda"):
                 gpu_used = True
             else:
                 gpu_errors.append("model_missing_device_attribute")
-        except Exception as e:
-            gpu_errors.append(str(e))
+        except Exception as exc:
+            gpu_errors.append(str(exc))
 
     if not gpu_available and not gpu_errors:
         gpu_errors.append("torch.cuda.is_available()==False")
-
-    gpu_error = "; ".join(gpu_errors) if gpu_errors else None
 
     health_status.set(1 if model_available else 0)
     return {
@@ -304,7 +469,7 @@ def health():
         "model": model_available,
         "gpu": gpu_available,
         "gpu_used": gpu_used,
-        "gpu_error": gpu_error,
+        "gpu_error": "; ".join(gpu_errors) if gpu_errors else None,
         "configured_models": {"coqui": tts_models},
         "loaded_models": loaded_models,
         "resources": resources,
@@ -314,9 +479,8 @@ def health():
 
 @app.get("/supported-languages")
 def supported_languages():
-    """Return list of supported languages (Coqui + HF MMS fallback)"""
-    all_langs = set(tts_models.keys()) | set(iso1_to_iso3_hf.keys())
-    return {"languages": sorted(list(all_langs))}
+    all_langs = set(tts_models) | set(iso1_to_iso3_hf)
+    return {"languages": sorted(all_langs)}
 
 
 @app.get("/metrics")
@@ -324,189 +488,83 @@ def metrics():
     return Response(generate_latest(), media_type="text/plain")
 
 
-@app.post("/synthesize")
+@app.post("/synthesize", responses=SYNTHESIS_ERROR_RESPONSES)
 async def synthesize(request: Request):
-    import time
-    import traceback
-
     start = time.perf_counter()
     data = await request.json()
     text = data.get("tts_text") or data.get("text", "Hallo Welt")
     lang = data.get("lang", "de")
-    session_id = data.get("session_id")  # Optional: für session-basierten Seed
     debug_active = (
         str(data.get("debug", "false")).lower() == "true"
         or str(request.query_params.get("debug", "false")).lower() == "true"
     )
-    system_stats = {"cpu": None, "ram": None}
-    if psutil is not None:
-        try:
-            system_stats = {
-                "cpu": psutil.cpu_percent(),
-                "ram": psutil.virtual_memory().percent,
-            }
-        except Exception:  # pragma: no cover - psutil rarely fails
-            system_stats = {"cpu": None, "ram": None}
-    debug_info = {
-        "input": {"text": text, "lang": lang},
-        "output": None,
-        "error": None,
-        "duration": None,
-        "model": None,
-        "system": system_stats,
-    }
+    debug_info = _build_debug_info(text, lang)
 
-    # Minimalvalidierung
     if not isinstance(text, str) or not text.strip():
         debug_info["error"] = "Field 'text' must be a non-empty string"
-        debug_info["duration"] = round(time.perf_counter() - start, 3)
-        if debug_active:
-            return JSONResponse(
-                content={
-                    "fallback": False,
-                    "error": debug_info["error"],
-                    "debug": debug_info,
-                },
-                status_code=400,
-            )
-        return JSONResponse(
-            content={"error": "Field 'text' must be a non-empty string"},
-            status_code=400,
-        )
-
-    tts_model = get_tts_model(lang)
-    model_name = resolve_tts_model_name(lang)  # Hole den Modellnamen für Metadaten
-    debug_info["model"] = model_name
-    if not tts_model:
-        debug_info["error"] = (
-            f"Kein TTS-Modell für Sprache '{lang}' (Konfig oder Download prüfen)."
-        )
-        debug_info["duration"] = round(time.perf_counter() - start, 3)
-        if debug_active:
-            return JSONResponse(
-                content={
-                    "fallback": True,
-                    "error": debug_info["error"],
-                    "debug": debug_info,
-                },
-                status_code=503,
-            )
-        return JSONResponse(
-            content={"fallback": True, "error": debug_info["error"]},
-            status_code=503,
+        _update_duration(debug_info, start)
+        return _error_response(
+            debug_active,
+            debug_info,
+            400,
+            fallback=False,
+            error=debug_info["error"],
         )
 
     try:
-        # Coqui-TTS-Modell
-        if hasattr(tts_model, "tts_to_file"):
-            # Setze deterministischen Seed basierend auf session_id (falls vorhanden)
-            # oder Text-Hash (Fallback). Dies sorgt für konsistente Stimm-Charakteristik
-            # innerhalb einer Session
-            if session_id:
-                seed = hash(session_id) % (2**32)
-                debug_info["seed_source"] = "session_id"
-                print(f"🎲 TTS Seed: {seed} (von session_id: {session_id})")
-            else:
-                seed = hash(text) % (2**32)
-                debug_info["seed_source"] = "text_hash"
-                print(f"🎲 TTS Seed: {seed} (von text_hash)")
+        text, normalized_lang, session_id, model_name = _resolve_synthesis_request(
+            data, debug_info, start
+        )
+    except ValueError as exc:
+        debug_info["error"] = str(exc)
+        _update_duration(debug_info, start)
+        return _error_response(
+            debug_active,
+            debug_info,
+            400,
+            fallback=False,
+            error=debug_info["error"],
+        )
 
-            torch.manual_seed(seed)
-            if torch.cuda.is_available():
-                torch.cuda.manual_seed(seed)
+    tts_model = get_tts_model(normalized_lang)
+    debug_info["model"] = model_name
+    if not tts_model:
+        debug_info["error"] = (
+            f"Kein TTS-Modell für Sprache '{normalized_lang}' (Konfig oder Download prüfen)."
+        )
+        _update_duration(debug_info, start)
+        return _error_response(
+            debug_active,
+            debug_info,
+            503,
+            fallback=True,
+            error=debug_info["error"],
+        )
 
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                tts_model.tts_to_file(text=text, file_path=tmp.name)
-                tmp_path = tmp.name
-
-            # Lese Audio-Datei und sende als Response mit Custom-Headern
-            with open(tmp_path, "rb") as f:
-                audio_bytes = f.read()
-
-            debug_info["output"] = "audio/wav"
-            debug_info["duration"] = round(time.perf_counter() - start, 3)
-
-            headers = {
-                "X-TTS-Model": model_name,
-                "X-TTS-Language": lang,
-            }
-            if debug_active:
-                headers["X-Debug-Info"] = str(debug_info)
-
-            return Response(
-                content=audio_bytes, media_type="audio/wav", headers=headers
-            )
-        # HuggingFace MMS-TTS pipeline
-        elif hasattr(tts_model, "__call__"):
-            import numpy as np
-
-            # Setze deterministischen Seed auch für MMS-TTS
-            if session_id:
-                seed = hash(session_id) % (2**32)
-                debug_info["seed_source"] = "session_id"
-                print(f"🎲 MMS-TTS Seed: {seed} (von session_id: {session_id})")
-            else:
-                seed = hash(text) % (2**32)
-                debug_info["seed_source"] = "text_hash"
-                print(f"🎲 MMS-TTS Seed: {seed} (von text_hash)")
-
-            torch.manual_seed(seed)
-            if torch.cuda.is_available():
-                torch.cuda.manual_seed(seed)
-
-            tts_pipe = tts_model
-            result = tts_pipe(text)
-            audio = result["audio"] if isinstance(result, dict) else result[0]["audio"]
-            sampling_rate = result.get("sampling_rate", 16000)
-            print(
-                f"MMS-TTS Output: type={type(audio)}, shape={getattr(audio, 'shape', None)}, size={getattr(audio, 'size', None)}, sampling_rate={sampling_rate}"
-            )
-            if isinstance(audio, np.ndarray):
-                audio = audio.squeeze()
-                audio = audio.astype(np.float32)
-            if not isinstance(audio, np.ndarray):
-                print(
-                    f"Warnung: MMS-TTS Output ist kein numpy-Array, sondern: {type(audio)}"
-                )
-            if isinstance(audio, np.ndarray) and audio.size == 0:
-                print("Warnung: MMS-TTS Output ist leer!")
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                sf.write(tmp.name, audio, sampling_rate)
-                tmp_path = tmp.name
-
-            # Lese Audio-Datei und sende als Response mit Custom-Headern
-            with open(tmp_path, "rb") as f:
-                audio_bytes = f.read()
-
-            debug_info["output"] = "audio/wav"
-            debug_info["duration"] = round(time.perf_counter() - start, 3)
-
-            headers = {
-                "X-TTS-Model": model_name + " (MMS-TTS Fallback)",
-                "X-TTS-Language": lang,
-            }
-            if debug_active:
-                headers["X-Debug-Info"] = str(debug_info)
-
-            return Response(
-                content=audio_bytes, media_type="audio/wav", headers=headers
-            )
-        else:
-            raise RuntimeError("Unbekannter TTS-Modelltyp")
-    except Exception as e:
-        debug_info["error"] = str(e)
+    try:
+        seed = _seed_for_request(session_id, text, debug_info)
+        _apply_seed(seed)
+        audio_bytes, used_fallback = await _render_audio_bytes(tts_model, text)
+        debug_info["output"] = AUDIO_WAV_MIME
+        _update_duration(debug_info, start)
+        response_model_name = (
+            f"{model_name} (MMS-TTS Fallback)" if used_fallback else model_name
+        )
+        return _audio_response(
+            audio_bytes,
+            response_model_name,
+            normalized_lang,
+            debug_active,
+            debug_info,
+        )
+    except Exception as exc:
+        debug_info["error"] = str(exc)
         debug_info["traceback"] = traceback.format_exc()
-        debug_info["duration"] = round(time.perf_counter() - start, 3)
-        if debug_active:
-            return JSONResponse(
-                content={
-                    "fallback": False,
-                    "error": f"TTS fehlgeschlagen: {str(e)}",
-                    "debug": debug_info,
-                },
-                status_code=500,
-            )
-        return JSONResponse(
-            content={"fallback": False, "error": f"TTS fehlgeschlagen: {str(e)}"},
-            status_code=500,
+        _update_duration(debug_info, start)
+        return _error_response(
+            debug_active,
+            debug_info,
+            500,
+            fallback=False,
+            error=f"TTS fehlgeschlagen: {exc}",
         )

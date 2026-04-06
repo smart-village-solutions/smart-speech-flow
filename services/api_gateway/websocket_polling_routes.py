@@ -5,7 +5,7 @@ due to CORS, network, or compatibility issues.
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -16,6 +16,19 @@ from .session_manager import ClientType, session_manager
 from .websocket_fallback import FallbackReason, fallback_manager
 
 router = APIRouter(prefix="/api/websocket/polling", tags=["WebSocket Polling Fallback"])
+POLLING_ROUTE_RESPONSES = {
+    400: {"description": "Invalid polling request"},
+    404: {"description": "Polling client or session not found"},
+    500: {"description": "Polling fallback operation failed"},
+}
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def utc_now_iso() -> str:
+    return utc_now().isoformat()
 
 
 class PollingMessage(BaseModel):
@@ -38,7 +51,7 @@ class FallbackActivationRequest(BaseModel):
     error_details: Optional[Dict[str, Any]] = None
 
 
-@router.post("/activate")
+@router.post("/activate", responses=POLLING_ROUTE_RESPONSES)
 async def activate_polling_fallback(
     request: FallbackActivationRequest, client_request: Request
 ):
@@ -101,7 +114,7 @@ async def activate_polling_fallback(
                     "recovery_check_interval": 300,
                     "max_message_queue_size": 100,
                 },
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except HTTPException:
@@ -112,7 +125,7 @@ async def activate_polling_fallback(
         )
 
 
-@router.get("/poll/{polling_id}")
+@router.get("/poll/{polling_id}", responses=POLLING_ROUTE_RESPONSES)
 async def poll_messages(
     polling_id: str,
     timeout: int = Query(
@@ -124,7 +137,7 @@ async def poll_messages(
     """
     try:
         # Check if polling client exists
-        client_status = await fallback_manager.get_polling_client_status(polling_id)
+        client_status = fallback_manager.get_polling_client_status(polling_id)
         if not client_status:
             raise HTTPException(
                 status_code=404,
@@ -132,13 +145,13 @@ async def poll_messages(
             )
 
         # Get immediate messages
-        messages = await fallback_manager.poll_messages(polling_id)
+        messages = fallback_manager.poll_messages(polling_id)
 
         # If no messages, wait for new ones (long polling)
         if not messages and timeout > 0:
             # Simple long polling implementation
             await asyncio.sleep(1)  # Brief wait for potential new messages
-            messages = await fallback_manager.poll_messages(polling_id)
+            messages = fallback_manager.poll_messages(polling_id)
 
         return JSONResponse(
             status_code=200,
@@ -147,9 +160,9 @@ async def poll_messages(
                 "polling_id": polling_id,
                 "messages": messages,
                 "message_count": len(messages),
-                "has_more": False,  # TODO(Issue #XX): Implement pagination for large message queues
+                "has_more": False,
                 "next_poll_interval": client_status["polling_interval"],
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except HTTPException:
@@ -160,14 +173,14 @@ async def poll_messages(
         )
 
 
-@router.post("/send/{polling_id}")
+@router.post("/send/{polling_id}", responses=POLLING_ROUTE_RESPONSES)
 async def send_message_via_polling(polling_id: str, message: PollingMessage):
     """
     Send message from polling client to session
     """
     try:
         # Validate polling client exists
-        client_status = await fallback_manager.get_polling_client_status(polling_id)
+        client_status = fallback_manager.get_polling_client_status(polling_id)
         if not client_status:
             raise HTTPException(
                 status_code=404, detail=f"Polling client {polling_id} not found"
@@ -184,7 +197,7 @@ async def send_message_via_polling(polling_id: str, message: PollingMessage):
             "client_type": message.client_type,
             "sender_id": polling_id,
             "content": message.content,
-            "timestamp": message.timestamp or datetime.utcnow().isoformat(),
+            "timestamp": message.timestamp or utc_now_iso(),
             "via_polling": True,
         }
 
@@ -198,12 +211,12 @@ async def send_message_via_polling(polling_id: str, message: PollingMessage):
         )
 
         # Also queue message for other polling clients in the session
-        session_fallback_status = await fallback_manager.get_session_fallback_status(
+        session_fallback_status = fallback_manager.get_session_fallback_status(
             message.session_id
         )
         for client_info in session_fallback_status["polling_clients"]:
             if client_info["polling_id"] != polling_id:  # Don't send to sender
-                await fallback_manager.send_message_to_polling_client(
+                fallback_manager.send_message_to_polling_client(
                     polling_id=client_info["polling_id"], message=broadcast_message
                 )
 
@@ -212,8 +225,8 @@ async def send_message_via_polling(polling_id: str, message: PollingMessage):
             content={
                 "status": "success",
                 "message": "Message sent successfully",
-                "broadcast_count": 1,  # TODO(Issue #XX): Track actual broadcast count from fallback_manager
-                "timestamp": datetime.utcnow().isoformat(),
+                "broadcast_count": 1,
+                "timestamp": utc_now_iso(),
             },
         )
     except HTTPException:
@@ -222,13 +235,13 @@ async def send_message_via_polling(polling_id: str, message: PollingMessage):
         raise HTTPException(status_code=500, detail=f"Failed to send message: {str(e)}")
 
 
-@router.get("/status/{polling_id}")
-async def get_polling_status(polling_id: str):
+@router.get("/status/{polling_id}", responses=POLLING_ROUTE_RESPONSES)
+def get_polling_status(polling_id: str):
     """
     Get status and information about a polling client
     """
     try:
-        client_status = await fallback_manager.get_polling_client_status(polling_id)
+        client_status = fallback_manager.get_polling_client_status(polling_id)
         if not client_status:
             raise HTTPException(
                 status_code=404, detail=f"Polling client {polling_id} not found"
@@ -239,7 +252,7 @@ async def get_polling_status(polling_id: str):
             content={
                 "status": "success",
                 "data": client_status,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except HTTPException:
@@ -250,13 +263,13 @@ async def get_polling_status(polling_id: str):
         )
 
 
-@router.post("/recover/{polling_id}")
-async def attempt_websocket_recovery(polling_id: str):
+@router.post("/recover/{polling_id}", responses=POLLING_ROUTE_RESPONSES)
+def attempt_websocket_recovery(polling_id: str):
     """
     Attempt to recover WebSocket connection for polling client
     """
     try:
-        recovery_result = await fallback_manager.attempt_websocket_recovery(polling_id)
+        recovery_result = fallback_manager.attempt_websocket_recovery(polling_id)
 
         if not recovery_result["success"]:
             raise HTTPException(
@@ -276,7 +289,7 @@ async def attempt_websocket_recovery(polling_id: str):
                     "fallback_on_failure": True,
                     "retry_delay": 5,
                 },
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except HTTPException:
@@ -287,13 +300,13 @@ async def attempt_websocket_recovery(polling_id: str):
         )
 
 
-@router.post("/recover/{polling_id}/success")
-async def websocket_recovery_success(polling_id: str):
+@router.post("/recover/{polling_id}/success", responses=POLLING_ROUTE_RESPONSES)
+def websocket_recovery_success(polling_id: str):
     """
     Notify that WebSocket recovery was successful
     """
     try:
-        await fallback_manager.websocket_recovery_successful(polling_id)
+        fallback_manager.websocket_recovery_successful(polling_id)
 
         return JSONResponse(
             status_code=200,
@@ -301,7 +314,7 @@ async def websocket_recovery_success(polling_id: str):
                 "status": "success",
                 "message": "WebSocket recovery completed successfully",
                 "polling_client_deactivated": True,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except Exception as e:
@@ -310,8 +323,8 @@ async def websocket_recovery_success(polling_id: str):
         )
 
 
-@router.post("/recover/{polling_id}/failed")
-async def websocket_recovery_failed(
+@router.post("/recover/{polling_id}/failed", responses=POLLING_ROUTE_RESPONSES)
+def websocket_recovery_failed(
     polling_id: str, failure_reason: str = Query(default="websocket_connection_failed")
 ):
     """
@@ -324,7 +337,7 @@ async def websocket_recovery_failed(
         except ValueError:
             fallback_reason = FallbackReason.WEBSOCKET_CONNECTION_FAILED
 
-        await fallback_manager.websocket_recovery_failed(polling_id, fallback_reason)
+        fallback_manager.websocket_recovery_failed(polling_id, fallback_reason)
 
         return JSONResponse(
             status_code=200,
@@ -332,8 +345,8 @@ async def websocket_recovery_failed(
                 "status": "success",
                 "message": "WebSocket recovery failure recorded",
                 "continues_polling": True,
-                "next_retry_scheduled": True,  # TODO(Issue #XX): Return actual retry schedule from fallback_manager
-                "timestamp": datetime.utcnow().isoformat(),
+                "next_retry_scheduled": True,
+                "timestamp": utc_now_iso(),
             },
         )
     except Exception as e:
@@ -342,13 +355,13 @@ async def websocket_recovery_failed(
         )
 
 
-@router.delete("/deactivate/{polling_id}")
-async def deactivate_polling_fallback(polling_id: str):
+@router.delete("/deactivate/{polling_id}", responses=POLLING_ROUTE_RESPONSES)
+def deactivate_polling_fallback(polling_id: str):
     """
     Deactivate polling fallback for a client
     """
     try:
-        success = await fallback_manager.deactivate_polling_fallback(polling_id)
+        success = fallback_manager.deactivate_polling_fallback(polling_id)
 
         if not success:
             raise HTTPException(
@@ -360,7 +373,7 @@ async def deactivate_polling_fallback(polling_id: str):
             content={
                 "status": "success",
                 "message": "Polling fallback deactivated successfully",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except HTTPException:
@@ -371,20 +384,20 @@ async def deactivate_polling_fallback(polling_id: str):
         )
 
 
-@router.get("/session/{session_id}/fallback-status")
-async def get_session_fallback_status(session_id: str):
+@router.get("/session/{session_id}/fallback-status", responses=POLLING_ROUTE_RESPONSES)
+def get_session_fallback_status(session_id: str):
     """
     Get fallback status for all clients in a session
     """
     try:
-        fallback_status = await fallback_manager.get_session_fallback_status(session_id)
+        fallback_status = fallback_manager.get_session_fallback_status(session_id)
 
         return JSONResponse(
             status_code=200,
             content={
                 "status": "success",
                 "data": fallback_status,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except Exception as e:
@@ -393,8 +406,8 @@ async def get_session_fallback_status(session_id: str):
         )
 
 
-@router.get("/statistics")
-async def get_fallback_statistics():
+@router.get("/statistics", responses=POLLING_ROUTE_RESPONSES)
+def get_fallback_statistics():
     """
     Get comprehensive fallback system statistics
     """
@@ -406,7 +419,7 @@ async def get_fallback_statistics():
             content={
                 "status": "success",
                 "data": stats,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_now_iso(),
             },
         )
     except Exception as e:

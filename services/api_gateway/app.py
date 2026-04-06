@@ -189,17 +189,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as e:
             print(f"Error stopping circuit breaker: {e}")
 
-        for task in [
+        task_results = await asyncio.gather(
             timeout_task,
             circuit_breaker_task,
             websocket_monitor_bg_task,
             websocket_fallback_bg_task,
             audio_cleanup_bg_task,
-        ]:
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+            return_exceptions=True,
+        )
+
+        for result in task_results:
+            if isinstance(result, Exception) and not isinstance(
+                result, asyncio.CancelledError
+            ):
+                print(f"Background task shutdown error: {result}")
 
         print("Shutdown complete", flush=True)
 
@@ -358,4 +361,9 @@ async def list_supported_languages() -> Any:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        "app:app",
+        host=os.environ.get("SSF_LOCAL_BIND_HOST", "127.0.0.1"),
+        port=8000,
+        reload=True,
+    )

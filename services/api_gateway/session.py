@@ -4,9 +4,10 @@ Session-Management Endpunkte für Admin-Kunde Gespräche
 Erweitert das bestehende API Gateway um Session-Funktionalität
 """
 
+import asyncio
 import base64
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import (
     APIRouter,
@@ -98,27 +99,30 @@ async def send_session_message(
 
     try:
         # Nutze bestehende Pipeline-Logik
-        result = await process_wav(file, source_lang, target_lang)
+        file_bytes = await file.read()
+        result = await asyncio.to_thread(
+            process_wav, file_bytes, source_lang, target_lang
+        )
 
-        if result["status"] != "success":
+        if result.get("error"):
             raise HTTPException(
-                500, f"Pipeline-Fehler: {result.get('error', 'Unbekannt')}"
+                500, f"Pipeline-Fehler: {result.get('error_msg', 'Unbekannt')}"
             )
 
         # Session-Nachricht erstellen
         message = SessionMessage(
             id=str(uuid.uuid4()),
             sender=client_type,
-            original_text=result["originalText"],
-            translated_text=result["translatedText"],
+            original_text=result["asr_text"],
+            translated_text=result["translation_text"],
             audio_base64=(
-                base64.b64encode(result["audioBytes"]).decode()
-                if result["audioBytes"]
+                base64.b64encode(result["audio_bytes"]).decode()
+                if result["audio_bytes"]
                 else None
             ),
             source_lang=source_lang,
             target_lang=target_lang,
-            timestamp=datetime.now(),
+            timestamp=datetime.now(timezone.utc),
         )
 
         # Zur Session hinzufügen

@@ -19,6 +19,7 @@ import json
 import threading
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from types import SimpleNamespace
 
 
 from services.api_gateway.circuit_breaker import (
@@ -446,6 +447,139 @@ class TestServiceHealthManagerRealSystem:
             assert overall_health["gpu_summary"]["critical_devices"] == 1
             assert overall_health["gpu_summary"]["devices_reporting"] == 1
             assert overall_health["gpu_summary"]["recommended_action"] == "scale_up"
+        finally:
+            await manager.stop_monitoring()
+
+    @pytest.mark.asyncio
+    async def test_circuit_state_change_callbacks_cover_open_and_closed(self):
+        """Test: Circuit-State-Callback triggert Failure- und Recovery-Hooks"""
+        manager = ServiceHealthManager()
+        failure_events = []
+        recovery_events = []
+
+        manager._handle_service_failure = failure_events.append
+        manager._handle_service_recovery = recovery_events.append
+        health_metrics = SimpleNamespace(success_rate=12.5)
+
+        try:
+            await manager._on_circuit_state_change(
+                "asr",
+                CircuitState.CLOSED,
+                CircuitState.OPEN,
+                health_metrics,
+            )
+            await manager._on_circuit_state_change(
+                "asr",
+                CircuitState.OPEN,
+                CircuitState.CLOSED,
+                health_metrics,
+            )
+
+            assert failure_events == ["asr"]
+            assert recovery_events == ["asr"]
+        finally:
+            await manager.stop_monitoring()
+
+    @pytest.mark.asyncio
+    async def test_gpu_summary_covers_warning_memory_and_missing_gpu_paths(self):
+        """Test: GPU Summary deckt Warning-, Memory- und Missing-GPU-Pfade ab"""
+        manager = ServiceHealthManager()
+
+        try:
+            asr_status = manager.service_status.get("asr")
+            translation_status = manager.service_status.get("translation")
+            tts_status = manager.service_status.get("tts")
+            assert asr_status is not None
+            assert translation_status is not None
+            assert tts_status is not None
+
+            asr_status.last_check = datetime.now()
+            asr_status.resources = {
+                "gpu": {
+                    "available": True,
+                    "device_count": 3,
+                    "devices": [
+                        {
+                            "index": 0,
+                            "name": "Warn GPU",
+                            "utilization_percent": 78.0,
+                            "temperature_c": 63,
+                        },
+                        {
+                            "index": 1,
+                            "name": "Memory GPU",
+                            "utilization_percent": 22.0,
+                            "memory_utilization": 96.0,
+                            "memory_total_nvml": 16000,
+                            "memory_used_nvml": 15360,
+                            "total_memory": "16GB",
+                        },
+                        {
+                            "index": 2,
+                            "name": "Normal GPU",
+                            "utilization_percent": 15.0,
+                            "memory_utilization": 42.0,
+                            "temperature_c": 49,
+                        },
+                    ],
+                }
+            }
+
+            translation_status.last_check = datetime.now()
+            translation_status.resources = {
+                "gpu": {
+                    "available": False,
+                    "device_count": 0,
+                    "devices": [],
+                }
+            }
+
+            tts_status.last_check = datetime.now()
+            tts_status.autoscaling = {
+                "recommended_action": "review",
+                "reasons": ["warming_up"],
+            }
+
+            gpu_summary = manager.get_gpu_summary()
+
+            assert gpu_summary["devices_reporting"] == 3
+            assert gpu_summary["warning_devices"] == 1
+            assert gpu_summary["critical_devices"] == 1
+            assert gpu_summary["services_missing_gpu"] == ["translation"]
+            assert gpu_summary["recommended_action"] == "scale_up"
+            assert gpu_summary["scale_up_recommendations"] == 0
+            assert gpu_summary["autoscaling_signals"] == [
+                {
+                    "service": "tts",
+                    "recommended_action": "review",
+                    "reasons": ["warming_up"],
+                }
+            ]
+            assert gpu_summary["avg_utilization"] == 38.33
+            assert gpu_summary["avg_memory_utilization"] == 69.0
+
+            warning_device = next(
+                device for device in gpu_summary["devices"] if device["index"] == 0
+            )
+            memory_device = next(
+                device for device in gpu_summary["devices"] if device["index"] == 1
+            )
+
+            assert warning_device["pressure_level"] == "warning"
+            assert memory_device["pressure_level"] == "critical"
+            assert memory_device["memory_total_nvml"] == 16000
+            assert memory_device["memory_used_nvml"] == 15360
+            assert memory_device["total_memory"] == "16GB"
+
+            assert any(
+                alert["message"] == "GPU0 utilization 78.0%"
+                for alert in gpu_summary["alerts"]
+            )
+            assert any(
+                alert["message"] == "GPU1 memory 96.0%"
+                for alert in gpu_summary["alerts"]
+            )
+            assert all(alert["device"] != 2 for alert in gpu_summary["alerts"])
         finally:
             await manager.stop_monitoring()
 

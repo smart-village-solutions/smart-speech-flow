@@ -6,8 +6,10 @@ WORKDIR /app
 
 # requirements.txt kopieren und Abhängigkeiten installieren
 COPY services/api_gateway/requirements.txt ./
-RUN apt-get update && apt-get install -y curl
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Kopiere nur den API Gateway Service
 COPY services/api_gateway/ /app/services/api_gateway/

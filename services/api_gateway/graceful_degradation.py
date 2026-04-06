@@ -13,15 +13,20 @@ Datum: November 2025
 Version: 1.0
 """
 
+import asyncio
 import json
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class ServiceMode(Enum):
@@ -56,12 +61,12 @@ class CacheEntry:
     @property
     def is_valid(self) -> bool:
         """Prüft ob Cache Entry noch gültig ist"""
-        return datetime.now() < self.timestamp + timedelta(seconds=self.ttl)
+        return utc_now() < self.timestamp + timedelta(seconds=self.ttl)
 
     @property
     def age_seconds(self) -> float:
         """Alter des Cache Entries in Sekunden"""
-        return (datetime.now() - self.timestamp).total_seconds()
+        return (utc_now() - self.timestamp).total_seconds()
 
 
 @dataclass
@@ -185,7 +190,7 @@ class GracefulDegradationManager:
 
         for strategy in fallback_strategies:
             try:
-                result = await self._apply_fallback_strategy(
+                result = self._apply_fallback_strategy(
                     strategy, service_name, request_data, original_error
                 )
                 if result is not None:
@@ -195,9 +200,9 @@ class GracefulDegradationManager:
                 continue
 
         # Letzter Fallback: Error Message
-        return await self._generate_error_response(service_name, original_error)
+        return self._generate_error_response(service_name, original_error)
 
-    async def _apply_fallback_strategy(
+    def _apply_fallback_strategy(
         self,
         strategy: FallbackStrategy,
         service_name: str,
@@ -207,20 +212,20 @@ class GracefulDegradationManager:
         """Wendet spezifische Fallback-Strategie an"""
 
         if strategy == FallbackStrategy.CACHED_RESPONSE:
-            return await self._try_cached_response(service_name, request_data)
+            return self._try_cached_response(service_name, request_data)
 
-        elif strategy == FallbackStrategy.ALTERNATIVE_SERVICE:
-            return await self._try_alternative_service(service_name, request_data)
+        if strategy == FallbackStrategy.ALTERNATIVE_SERVICE:
+            return self._try_alternative_service(service_name, request_data)
 
-        elif strategy == FallbackStrategy.DEGRADED_QUALITY:
-            return await self._try_degraded_quality(service_name, request_data)
+        if strategy == FallbackStrategy.DEGRADED_QUALITY:
+            return self._try_degraded_quality(service_name, request_data)
 
-        elif strategy == FallbackStrategy.QUEUE_REQUEST:
-            return await self._queue_request(service_name, request_data)
+        if strategy == FallbackStrategy.QUEUE_REQUEST:
+            return self._queue_request(service_name, request_data)
 
         return None
 
-    async def _try_cached_response(
+    def _try_cached_response(
         self, service_name: str, request_data: Dict
     ) -> Optional[Dict[str, Any]]:
         """Versucht gecachte Response zu verwenden"""
@@ -253,7 +258,7 @@ class GracefulDegradationManager:
         self.cache_stats["misses"] += 1
         return None
 
-    async def _try_alternative_service(
+    def _try_alternative_service(
         self, service_name: str, request_data: Dict
     ) -> Optional[Dict[str, Any]]:
         """Versucht alternativen Service zu verwenden"""
@@ -285,7 +290,7 @@ class GracefulDegradationManager:
 
         return None
 
-    async def _try_degraded_quality(
+    def _try_degraded_quality(
         self, service_name: str, request_data: Dict
     ) -> Optional[Dict[str, Any]]:
         """Versucht Service mit reduzierter Qualität"""
@@ -301,7 +306,7 @@ class GracefulDegradationManager:
                 "fallback_reason": "service_degradation",
             }
 
-        elif service_name == "translation":
+        if service_name == "translation":
             # Basis-Übersetzung ohne Kontext
             source_text = request_data.get("text", "")
             return {
@@ -312,7 +317,7 @@ class GracefulDegradationManager:
                 "fallback_reason": "service_degradation",
             }
 
-        elif service_name == "tts":
+        if service_name == "tts":
             # Text-only Output statt Audio
             text = request_data.get("text", "")
             return {
@@ -325,9 +330,9 @@ class GracefulDegradationManager:
 
         return None
 
-    async def _queue_request(
+    def _queue_request(
         self, service_name: str, request_data: Dict
-    ) -> Dict[str, Any]:
+    ) -> Dict[str, Any] | None:
         """Reiht Request für späteren Retry ein"""
         if not self.fallback_config.enable_queuing:
             return None
@@ -338,7 +343,7 @@ class GracefulDegradationManager:
             "id": request_id,
             "service_name": service_name,
             "request_data": request_data,
-            "timestamp": datetime.now(),
+            "timestamp": utc_now(),
             "retry_count": 0,
             "max_retries": 3,
         }
@@ -355,7 +360,7 @@ class GracefulDegradationManager:
             "estimated_retry": "in wenigen Minuten",
         }
 
-    async def _generate_error_response(
+    def _generate_error_response(
         self, service_name: str, original_error: Exception
     ) -> Dict[str, Any]:
         """Generiert benutzerfreundliche Fehlermeldung"""
@@ -372,7 +377,7 @@ class GracefulDegradationManager:
             "suggestion": error_info["suggestion"],
             "fallback_action": error_info["fallback_action"],
             "technical_error": str(original_error),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": utc_now().isoformat(),
             "retry_recommended": True,
             "estimated_recovery": "5-10 Minuten",
         }
@@ -385,6 +390,7 @@ class GracefulDegradationManager:
         ttl: Optional[int] = None,
     ):
         """Cached erfolgreiche Response für Fallback"""
+        await asyncio.sleep(0)
         cache_key = self._generate_cache_key(service_name, request_data)
         cache_ttl = ttl or self.fallback_config.cache_ttl
 
@@ -392,14 +398,14 @@ class GracefulDegradationManager:
         cache_entry = CacheEntry(
             key=cache_key,
             data=response_data.copy(),
-            timestamp=datetime.now(),
+            timestamp=utc_now(),
             ttl=cache_ttl,
             service_name=service_name,
         )
 
         # Cache Size Management
         if len(self.response_cache) >= self.fallback_config.max_cache_size:
-            await self._evict_oldest_cache_entries()
+            self._evict_oldest_cache_entries()
 
         self.response_cache[cache_key] = cache_entry
         logger.debug(
@@ -436,7 +442,7 @@ class GracefulDegradationManager:
         key_data = json.dumps(relevant_data, sort_keys=True)
         return f"{service_name}:{hash(key_data)}"
 
-    async def _evict_oldest_cache_entries(self):
+    def _evict_oldest_cache_entries(self):
         """Entfernt älteste Cache Entries"""
         if not self.response_cache:
             return
@@ -458,6 +464,7 @@ class GracefulDegradationManager:
 
     async def _update_service_mode(self, service_name: str, is_failure: bool):
         """Updated Service Betriebsmodus"""
+        await asyncio.sleep(0)
         old_mode = self.current_mode
 
         if is_failure:
@@ -474,7 +481,7 @@ class GracefulDegradationManager:
         if old_mode != self.current_mode:
             self.mode_history.append(
                 {
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": utc_now().isoformat(),
                     "old_mode": old_mode.value,
                     "new_mode": self.current_mode.value,
                     "trigger_service": service_name,
@@ -488,10 +495,11 @@ class GracefulDegradationManager:
 
     async def process_pending_requests(self):
         """Verarbeitet wartende Requests nach Service Recovery"""
+        await asyncio.sleep(0)
         if not self.pending_requests:
             return
 
-        current_time = datetime.now()
+        current_time = utc_now()
         processed_requests = []
 
         for request in self.pending_requests:
@@ -528,6 +536,7 @@ class GracefulDegradationManager:
 
     async def cleanup_expired_cache(self):
         """Entfernt abgelaufene Cache Entries"""
+        await asyncio.sleep(0)
         expired_keys = [
             key for key, entry in self.response_cache.items() if not entry.is_valid
         ]

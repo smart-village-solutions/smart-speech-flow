@@ -5,7 +5,7 @@ Unterstützt parallele Admin-Sessions
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -19,6 +19,11 @@ logger = logging.getLogger(__name__)
 
 # Router setup
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+ADMIN_ROUTE_RESPONSES = {
+    404: {"description": "Session not found"},
+    500: {"description": "Admin session operation failed"},
+}
 
 
 # Request/Response Models
@@ -54,6 +59,10 @@ class ErrorResponse(BaseModel):
     timestamp: str
 
 
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def get_client_base_url() -> str:
     """Client Frontend Base URL"""
     import os
@@ -66,10 +75,10 @@ def get_client_base_url() -> str:
 
 @router.post(
     "/session/create",
-    response_model=SessionCreateResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Neue Admin-Session erstellen",
     description="Erstellt eine neue Admin-Session. Mehrere parallele Sessions sind erlaubt.",
+    responses={500: {"description": "Session creation failed"}},
 )
 async def create_admin_session() -> SessionCreateResponse:
     """
@@ -120,9 +129,9 @@ async def create_admin_session() -> SessionCreateResponse:
 
 @router.get(
     "/session/current",
-    response_model=SessionStatusResponse,
     summary="Aktuelle Admin-Session abrufen",
     description="Gibt Details der aktuell aktiven Admin-Session zurück. Optional kann eine Session-ID angegeben werden.",
+    responses=ADMIN_ROUTE_RESPONSES,
 )
 async def get_current_session(
     session_id: Optional[str] = Query(
@@ -176,6 +185,7 @@ async def get_current_session(
     status_code=status.HTTP_200_OK,
     summary="Session manuell beenden",
     description="Beendet eine spezifische Session manuell mit graceful cleanup",
+    responses=ADMIN_ROUTE_RESPONSES,
 )
 async def terminate_session(session_id: str) -> JSONResponse:
     """
@@ -215,7 +225,7 @@ async def terminate_session(session_id: str) -> JSONResponse:
                 "message": f"Session {session_id} erfolgreich beendet",
                 "session_id": session_id,
                 "status": "terminated",
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": utc_now().isoformat(),
             }
         )
 
@@ -231,9 +241,9 @@ async def terminate_session(session_id: str) -> JSONResponse:
 
 @router.get(
     "/session/history",
-    response_model=SessionHistoryResponse,
     summary="Session-Historie abrufen",
     description="Gibt eine Liste der vergangenen Sessions und aktuelle Session zurück",
+    responses={500: {"description": "Session history lookup failed"}},
 )
 async def get_session_history(limit: int = 10) -> SessionHistoryResponse:
     """
@@ -266,9 +276,9 @@ async def get_session_history(limit: int = 10) -> SessionHistoryResponse:
 
 @router.get(
     "/session/{session_id}/status",
-    response_model=SessionStatusResponse,
     summary="Session-Status abrufen",
     description="Gibt detaillierte Informationen über eine spezifische Session zurück",
+    responses=ADMIN_ROUTE_RESPONSES,
 )
 async def get_session_status(session_id: str) -> SessionStatusResponse:
     """

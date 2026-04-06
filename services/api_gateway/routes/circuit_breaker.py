@@ -26,9 +26,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+CIRCUIT_BREAKER_ROUTE_RESPONSES = {
+    400: {"description": "Invalid service name"},
+    404: {"description": "Service or circuit breaker not found"},
+    500: {"description": "Circuit breaker health operation failed"},
+}
 
-@router.get("/health/services", response_model=Dict[str, Any])
-async def get_services_health():
+
+@router.get(
+    "/health/services",
+    responses={500: {"description": "Health status lookup failed"}},
+)
+async def get_services_health() -> Dict[str, Any]:
     """
     Gesamter Health Status aller Services
 
@@ -50,8 +59,11 @@ async def get_services_health():
         )
 
 
-@router.get("/health/services/{service_name}", response_model=Dict[str, Any])
-async def get_service_health(service_name: str):
+@router.get(
+    "/health/services/{service_name}",
+    responses=CIRCUIT_BREAKER_ROUTE_RESPONSES,
+)
+async def get_service_health(service_name: str) -> Dict[str, Any]:
     """
     Health Status für einzelnen Service
 
@@ -91,8 +103,11 @@ async def get_service_health(service_name: str):
         )
 
 
-@router.get("/health/circuit-breakers", response_model=Dict[str, Any])
-async def get_circuit_breakers_status():
+@router.get(
+    "/health/circuit-breakers",
+    responses={500: {"description": "Circuit breaker status lookup failed"}},
+)
+async def get_circuit_breakers_status() -> Dict[str, Any]:
     """
     Status aller Circuit Breaker
 
@@ -119,8 +134,11 @@ async def get_circuit_breakers_status():
         )
 
 
-@router.get("/health/degradation", response_model=Dict[str, Any])
-async def get_degradation_status():
+@router.get(
+    "/health/degradation",
+    responses={500: {"description": "Degradation status lookup failed"}},
+)
+async def get_degradation_status() -> Dict[str, Any]:
     """
     Graceful Degradation Status
 
@@ -139,8 +157,11 @@ async def get_degradation_status():
         )
 
 
-@router.post("/admin/circuit-breakers/{service_name}/reset")
-async def reset_circuit_breaker(service_name: str):
+@router.post(
+    "/admin/circuit-breakers/{service_name}/reset",
+    responses=CIRCUIT_BREAKER_ROUTE_RESPONSES,
+)
+async def reset_circuit_breaker(service_name: str) -> Dict[str, Any]:
     """
     Manueller Circuit Breaker Reset (Admin Only)
 
@@ -192,8 +213,11 @@ async def reset_circuit_breaker(service_name: str):
         )
 
 
-@router.post("/admin/circuit-breakers/reset-all")
-async def reset_all_circuit_breakers():
+@router.post(
+    "/admin/circuit-breakers/reset-all",
+    responses={500: {"description": "Circuit breaker reset failed"}},
+)
+async def reset_all_circuit_breakers() -> Dict[str, Any]:
     """
     Manueller Reset aller Circuit Breaker (Admin Only)
 
@@ -226,8 +250,11 @@ async def reset_all_circuit_breakers():
         )
 
 
-@router.get("/health/cache", response_model=Dict[str, Any])
-async def get_cache_status():
+@router.get(
+    "/health/cache",
+    responses={500: {"description": "Cache status lookup failed"}},
+)
+async def get_cache_status() -> Dict[str, Any]:
     """
     Fallback Cache Status
 
@@ -253,8 +280,11 @@ async def get_cache_status():
         )
 
 
-@router.delete("/admin/cache/clear")
-async def clear_fallback_cache():
+@router.delete(
+    "/admin/cache/clear",
+    responses={500: {"description": "Cache clear failed"}},
+)
+async def clear_fallback_cache() -> Dict[str, Any]:
     """
     Leert Fallback Cache (Admin Only)
 
@@ -291,8 +321,11 @@ async def clear_fallback_cache():
         )
 
 
-@router.get("/health/summary", response_model=Dict[str, Any])
-async def get_health_summary():
+@router.get(
+    "/health/summary",
+    responses={500: {"description": "Health summary generation failed"}},
+)
+async def get_health_summary() -> Dict[str, Any]:
     """
     Kompakte Health Summary für Dashboard
 
