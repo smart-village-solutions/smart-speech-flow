@@ -45,7 +45,7 @@ docker compose up -d
 curl http://localhost:8000/health
 ```
 
-**Das war's!** Die API ist unter `http://localhost:8000` verfügbar.
+**Das war's!** Die API ist unter `http://localhost:8000` verfuegbar.
 
 > **🔐 Security Notes:**
 > - **Frontend Demo Password:** Set in `.env` → `FRONTEND_DEMO_PASSWORD` (default: `ssf2025kassel`)
@@ -55,13 +55,23 @@ curl http://localhost:8000/health
 ### Erste API-Anfrage
 
 ```bash
-# Pipeline testen: Deutsch → Englisch
+# Legacy/Low-Level Pipeline testen: Deutsch -> Englisch
 curl -F "file=@examples/audio/sample.wav" \
      -F "source_lang=de" \
      -F "target_lang=en" \
      http://localhost:8000/pipeline \
      --output translated.wav
 ```
+
+### Empfohlener Einstieg fuer Frontends
+
+Der aktuelle Haupt-Workflow fuer Admin/Customer-Kommunikation ist sessionbasiert:
+
+1. `POST /api/admin/session/create`
+2. `POST /api/customer/session/activate`
+3. `POST /api/session/{session_id}/message`
+4. `GET /api/session/{session_id}/messages`
+5. `WS /ws/{session_id}/{client_type}`
 
 ## 📚 Documentation
 
@@ -98,7 +108,7 @@ curl -F "file=@examples/audio/sample.wav" \
 - **Port:** 8001
 - **Funktion:** Automatische Spracherkennung für verschiedene Sprachen und Audioformate
 - **Modelle:** Whisper, Wav2Vec, etc. (lokal geladen)
-- **Endpunkte:** `/transcribe` (POST), `/health` (GET), `/metrics` (GET), `/languages` (GET)
+- **Endpunkte:** `/transcribe` (POST), `/health` (GET), `/metrics` (GET), `/supported-languages` (GET)
 - **Beispiel:**
    ```bash
    curl -F "file=@sample.wav" http://localhost:8001/transcribe
@@ -118,7 +128,7 @@ curl -F "file=@examples/audio/sample.wav" \
 ### 3. TTS Service (Text-to-Speech)
 - **Port:** 8003
 - **Funktion:** Sprachsynthese für viele Sprachen mit Coqui-TTS und HuggingFace MMS-TTS
-- **Endpunkte:** `/synthesize` (POST), `/health` (GET), `/metrics` (GET)
+- **Endpunkte:** `/synthesize` (POST), `/health` (GET), `/metrics` (GET), `/supported-languages` (GET)
 - **Beispiel:**
    ```bash
    curl -X POST http://localhost:8003/synthesize \
@@ -129,9 +139,10 @@ curl -F "file=@examples/audio/sample.wav" \
 ### 4. API-Gateway
 - **Port:** 8000
 - **Funktion:** Zentrales REST-API für alle Sprachdienste
-- **Endpunkte:** `/pipeline` (POST), `/upload` (POST), `/health` (GET), `/metrics` (GET)
-- **Pipeline:** Orchestriert die gesamte Pipeline: ASR → Translation → TTS
-- **Beispiel für End-to-End:**
+- **Primaere Endpunkte:** Session- und Messaging-API unter `/api/*`
+- **Legacy/Low-Level Endpunkte:** `/pipeline` (POST), `/upload` (POST), `/health` (GET), `/metrics` (GET)
+- **Session-Workflow:** Admin erstellt Session, Customer aktiviert sie, Nachrichten laufen ueber den Unified Message Endpoint
+- **Beispiel fuer End-to-End Pipeline:**
    ```bash
    curl -F "file=@sample.wav" -F "source_lang=de" -F "target_lang=en" http://localhost:8000/pipeline --output output.wav
    ```
@@ -162,7 +173,7 @@ curl -F "file=@examples/audio/sample.wav" \
 | Service        | Endpunkt         | Methode | Beschreibung                       |
 |----------------|------------------|---------|------------------------------------|
 | ASR            | `/transcribe`    | POST    | Audiodatei → Text                  |
-| ASR            | `/languages`     | GET     | Unterstützte Sprachen              |
+| ASR            | `/supported-languages` | GET | Unterstuetzte Sprachen             |
 | ASR            | `/health`        | GET     | Status, Modellinfos                |
 | ASR            | `/metrics`       | GET     | Monitoring                         |
 | Translation    | `/translate`     | POST    | Textübersetzung                    |
@@ -170,11 +181,16 @@ curl -F "file=@examples/audio/sample.wav" \
 | Translation    | `/health`        | GET     | Status, Modellinfos                |
 | Translation    | `/metrics`       | GET     | Monitoring                         |
 | TTS            | `/synthesize`    | POST    | Text → Sprache (WAV)               |
+| TTS            | `/supported-languages` | GET | Unterstuetzte Sprachen             |
 | TTS            | `/health`        | GET     | Status, Modellinfos                |
 | TTS            | `/metrics`       | GET     | Monitoring                         |
-| API-Gateway    | `/pipeline`      | POST    | End-to-End (ASR → Trans → TTS)     |
-| API-Gateway    | `/upload`        | POST    | Upload mit HTML-Response           |
-| API-Gateway    | `/health`        | GET     | Status aller Services              |
+| API-Gateway    | `/api/admin/session/create` | POST | Neue Admin-Session erstellen |
+| API-Gateway    | `/api/customer/session/activate` | POST | Customer-Session aktivieren |
+| API-Gateway    | `/api/session/{id}/message` | POST | Unified Message Endpoint fuer Text und Audio |
+| API-Gateway    | `/api/session/{id}/messages` | GET | Nachrichtenhistorie einer Session |
+| API-Gateway    | `/api/languages/supported` | GET | Unterstuetzte Frontend-Sprachen |
+| API-Gateway    | `/pipeline`      | POST    | Legacy/Low-Level End-to-End-Pipeline |
+| API-Gateway    | `/health`        | GET     | Status der angebundenen Services   |
 | API-Gateway    | `/metrics`       | GET     | Monitoring                         |
 
 ## 🛠️ Installation & Setup
@@ -243,23 +259,24 @@ pytest --cov=services --cov-report=html
 pytest tests/load/
 ```
 
-**Test Status:** 234/242 tests passing (96.7%) – See [TEST_STATUS.md](TEST_STATUS.md)
+Die Test-Suite umfasst Unit-, Integrations- und Lasttests. Fuer den aktuellen Stand sollte immer `pytest` bzw. die CI-Pipeline als Referenz genutzt werden.
 
 **Learn more:** [Testing Guide](docs/testing/TESTING_GUIDE.md)
 
 
-## � Monitoring & Operations
+## Monitoring & Operations
 
 ### Quick Access
 - **Prometheus:** `http://prometheus-ssf.smart-village.solutions` (metrics aggregation)
 - **Grafana:** `http://grafana-ssf.smart-village.solutions` (dashboards, login: `admin`/`admin`)
 - **Service Metrics:** `http://localhost:8000/metrics` (each service exposes metrics)
 
-### Dashboards
-Pre-built Grafana dashboards in `monitoring/grafana/dashboards/`:
-- `service-health.json` – Service status & uptime
-- `pipeline-performance.json` – Latency & throughput
-- `dcgm-exporter.json` – GPU monitoring (temperature, memory, utilization)
+### Konfiguration
+Monitoring-Konfigurationen liegen unter `monitoring/`, zum Beispiel:
+- `monitoring/prometheus.yml`
+- `monitoring/alert_rules.yml`
+- `monitoring/loki-config.yaml`
+- `monitoring/promtail-config.yaml`
 
 ### Alerting
 Prometheus alerts configured in `monitoring/alert_rules.yml`:
