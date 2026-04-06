@@ -306,7 +306,9 @@ class TestCircuitBreakerRealSystem:
 
         # Call sollte mit Timeout fehlschlagen
         start_time = time.time()
-        with pytest.raises((asyncio.TimeoutError, aiohttp.ServerTimeoutError)):
+        with pytest.raises(
+            (TimeoutError, asyncio.TimeoutError, aiohttp.ServerTimeoutError)
+        ):
             await circuit_breaker.call(slow_http_call)
 
         # Prüfe dass Timeout eingetreten ist
