@@ -394,7 +394,8 @@ async def test_websocket_polling_routes_timeout_returns_empty_list(monkeypatch):
         )
     else:
         async def raise_timeout(awaitable, timeout):  # noqa: ANN001
-            raise asyncio.TimeoutError()
+            awaitable.close()
+            raise polling_routes.asyncio.TimeoutError()
 
         monkeypatch.setattr(polling_routes.asyncio, "wait_for", raise_timeout)
 
