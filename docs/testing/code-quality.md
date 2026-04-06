@@ -51,7 +51,7 @@ Das Projekt verwendet automatisierte Tools zur Sicherstellung von Code-Qualität
 - **Ausführung**: `pip-audit`
 - **Verhalten**: Der Report wird in CI erzeugt; Blocking-Regeln koennen schrittweise verschaerft werden
 
-### 5. Zentralisierte Qualitaetsanalyse
+### 4. Zentralisierte Qualitaetsanalyse
 
 #### SonarCloud
 - **Zweck**: Zentrale Analyse fuer Maintainability, Code Smells, Duplication und Quality Gates
@@ -59,7 +59,7 @@ Das Projekt verwendet automatisierte Tools zur Sicherstellung von Code-Qualität
 - **Scope**: Aktive Backend- und relevante Frontend-Quellpfade, keine Archive oder Laufzeitdaten
 - **Qualitaetsgate**: Wird in CI ausgewertet, sobald die SonarCloud-Repository-Konfiguration vorhanden ist
 
-### 4. Type-Checking (Graduell)
+### 5. Type-Checking (Graduell)
 
 #### MyPy (Type Checker)
 - **Zweck**: Statische Typenprüfung
