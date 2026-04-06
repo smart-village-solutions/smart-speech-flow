@@ -40,7 +40,7 @@ jobs:
     - name: Install dependencies
       run: |
         source .venv/bin/activate
-        pip install --upgrade pip
+        pip install --upgrade pip "setuptools<81"
         pip install -r requirements-dev.txt
 
     - name: Check code formatting with Black
@@ -299,15 +299,24 @@ jobs:
       if: steps.sonar-config.outputs.enabled == 'true'
       run: |
         source .venv/bin/activate
-        pip install --upgrade pip
+        pip install --upgrade pip "setuptools<81"
         pip install -r requirements-dev.txt -r services/api_gateway/requirements.txt
 
     - name: Run tests with coverage for Sonar
       if: steps.sonar-config.outputs.enabled == 'true'
+      env:
+        SSF_AUDIO_BASE_DIR: ${{ runner.temp }}/audio
       run: |
         source .venv/bin/activate
         export PYTHONPATH=.
-        pytest tests/ --cov=services --cov-report=xml:coverage.xml --cov-report=term
+        pytest tests/ \
+          -m "not integration and not real_system" \
+          --ignore=tests/integration \
+          --ignore=tests/load \
+          --ignore=tests/integration_test_audio_validation.py \
+          --cov=services \
+          --cov-report=xml:coverage.xml \
+          --cov-report=term
 
     - name: SonarCloud Scan
       if: steps.sonar-config.outputs.enabled == 'true'

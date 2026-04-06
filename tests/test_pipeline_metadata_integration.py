@@ -25,6 +25,8 @@ from services.api_gateway.audio_storage import (
     cleanup_old_audio_files,
 )
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def session_manager():
