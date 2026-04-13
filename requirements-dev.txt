@@ -17,7 +17,7 @@ pytest-cov==7.1.0
 httpx==0.28.1
 
 # Pre-commit Hooks
-pre-commit==4.0.1
+pre-commit==4.5.1
 
 # Code Quality Extensions
 flake8-docstrings==1.7.0
