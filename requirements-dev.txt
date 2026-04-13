@@ -22,7 +22,7 @@ pre-commit==4.0.1
 # Code Quality Extensions
 flake8-docstrings==1.7.0
 flake8-import-order==0.18.2
-flake8-bugbear==24.10.31
+flake8-bugbear==25.11.29
 pep8-naming==0.15.1
 
 # Type Stubs
