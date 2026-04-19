@@ -5,6 +5,8 @@ Welcome to the Smart Speech Flow Backend documentation! This guide helps you fin
 ## 📚 Quick Navigation
 
 ### For Developers
+- [Product Vision](PRODUCT_VISION.md) - Product purpose, positioning and target state
+- [Product Roadmap](PRODUCT_ROADMAP.md) - Path from the current MVP to the product vision
 - [Architecture Overview](architecture/SYSTEM_ARCHITECTURE.md) - System design and components
 - [Frontend Integration Guide](guides/frontend-integration.md) - How to integrate with the frontend
 - [API Conventions](guides/api-conventions.md) - API design patterns and standards
@@ -17,6 +19,7 @@ Welcome to the Smart Speech Flow Backend documentation! This guide helps you fin
 - [WebSocket Broadcast Failures Runbook](operations/runbooks/websocket-broadcast-failures.md) - Troubleshooting guide
 
 ### For Testers
+- [User Testing Strategy](testing/USER_TESTING_STRATEGY.md) - How product-oriented user testing should be designed and used
 - [Integration Tests Status](testing/INTEGRATION_TESTS_STATUS.md) - Current test coverage
 - [Audio Recording Test Summary](testing/AUDIO_RECORDING_TEST_SUMMARY.md) - Audio feature test results
 - [Manual Test Checklist](testing/AUDIO_RECORDING_MANUAL_TEST_CHECKLIST.md) - Manual testing procedures
@@ -61,6 +64,7 @@ Deployment procedures, monitoring, and incident response.
 Test strategies, results, and quality assurance procedures.
 
 **Contents:**
+- `USER_TESTING_STRATEGY.md` - Product-oriented user testing goals and methods
 - `INTEGRATION_TESTS_STATUS.md` - Integration test coverage
 - `AUDIO_RECORDING_TEST_SUMMARY.md` - Audio feature test results
 - `AUDIO_RECORDING_MANUAL_TEST_CHECKLIST.md` - Manual testing procedures
