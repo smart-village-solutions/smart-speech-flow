@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for React SPA
 # Stage 1: Build the application
-FROM node:20-alpine AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 
