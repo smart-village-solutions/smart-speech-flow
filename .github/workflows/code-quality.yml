@@ -300,7 +300,8 @@ jobs:
       run: |
         source .venv/bin/activate
         pip install --upgrade pip "setuptools<81"
-        pip install -r requirements-dev.txt -r services/api_gateway/requirements.txt
+        pip install -r requirements-dev.txt
+        pip install -r services/api_gateway/requirements.txt
 
     - name: Run tests with coverage for Sonar
       if: steps.sonar-config.outputs.enabled == 'true'
