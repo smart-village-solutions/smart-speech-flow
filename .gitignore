@@ -46,6 +46,8 @@ build/
 
 # Virtualenv
 .venv/
+.venv-pip-audit/
+.venv-coverage/
 .venv-dependency-tools/
 .venv-pdf/
 venv/
@@ -77,6 +79,8 @@ Thumbs.db
 # Test/Cache
 .cache/
 pytest_cache/
+.coverage
+coverage.xml
 
 # Secrets
 .env

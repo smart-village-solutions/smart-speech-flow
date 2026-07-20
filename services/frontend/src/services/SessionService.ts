@@ -1,4 +1,5 @@
 import api from './api';
+import { adminSessionPath, sessionPath } from '../utils/identifiers';
 
 export interface SessionData {
   session_id: string;
@@ -34,7 +35,7 @@ class SessionService {
    */
   async terminateSession(sessionId: string): Promise<TerminateSessionResponse> {
     const response = await api.delete<TerminateSessionResponse>(
-      `/api/admin/session/${sessionId}/terminate`
+      `${adminSessionPath(sessionId)}/terminate`
     );
     return response.data;
   }
@@ -44,7 +45,7 @@ class SessionService {
    * GET /api/session/{sessionId}
    */
   async getSessionStatus(sessionId: string): Promise<SessionData> {
-    const response = await api.get<SessionData>(`/api/session/${sessionId}`);
+    const response = await api.get<SessionData>(sessionPath(sessionId));
     return response.data;
   }
 }

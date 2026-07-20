@@ -13,6 +13,7 @@ from unittest.mock import Mock, AsyncMock
 from services.api_gateway.websocket import (
     WebSocketManager, ConnectionState, MessageType
 )
+import services.api_gateway.websocket as websocket_module
 from services.api_gateway.session_manager import SessionManager, ClientType
 
 
@@ -335,6 +336,73 @@ class TestWebSocketManager:
         assert len(broadcast_msgs1) == 1
         assert len(broadcast_msgs2) == 1
         assert broadcast_msgs1[0]["content"] == "Hello Session!"
+
+    async def test_broadcast_respects_target_and_excluded_connection(
+        self, websocket_manager, monkeypatch
+    ):
+        """A targeted broadcast must neither leak nor echo to an excluded client."""
+        monitor = Mock()
+        monkeypatch.setattr(websocket_module, "get_websocket_monitor", lambda: monitor)
+        session_id = "TARGETED123"
+        admin_socket = MockWebSocket()
+        customer_socket = MockWebSocket()
+
+        admin_id = await websocket_manager.connect_websocket(
+            admin_socket, session_id, ClientType.ADMIN
+        )
+        await websocket_manager.connect_websocket(
+            customer_socket, session_id, ClientType.CUSTOMER
+        )
+
+        await websocket_manager.broadcast_to_session(
+            session_id,
+            {"type": "private_update"},
+            exclude_connection=admin_id,
+            target_client_type=ClientType.ADMIN,
+        )
+
+        assert not [
+            message
+            for message in admin_socket.messages_sent
+            if message.get("type") == "private_update"
+        ]
+        assert not [
+            message
+            for message in customer_socket.messages_sent
+            if message.get("type") == "private_update"
+        ]
+
+    async def test_failed_broadcast_marks_only_failing_connection_as_error(
+        self, websocket_manager, monkeypatch
+    ):
+        """A send failure must not prevent healthy session peers from receiving data."""
+        monitor = Mock()
+        monkeypatch.setattr(websocket_module, "get_websocket_monitor", lambda: monitor)
+        session_id = "BROADCAST123"
+        failing_socket = MockWebSocket()
+        healthy_socket = MockWebSocket()
+
+        failing_id = await websocket_manager.connect_websocket(
+            failing_socket, session_id, ClientType.ADMIN
+        )
+        await websocket_manager.connect_websocket(
+            healthy_socket, session_id, ClientType.CUSTOMER
+        )
+        failing_socket.send_json = AsyncMock(side_effect=RuntimeError("send failed"))
+        monkeypatch.setattr(
+            websocket_manager, "_evaluate_connection_error", AsyncMock()
+        )
+
+        await websocket_manager.broadcast_to_session(
+            session_id, {"type": "resilient_broadcast"}
+        )
+
+        assert websocket_manager.all_connections[failing_id].state == ConnectionState.ERROR
+        assert [
+            message
+            for message in healthy_socket.messages_sent
+            if message.get("type") == "resilient_broadcast"
+        ] == [{"type": "resilient_broadcast"}]
 
     async def test_broadcast_with_differentiated_content_returns_status(self, websocket_manager):
         """Test: broadcast_with_differentiated_content gibt BroadcastResult zurück"""

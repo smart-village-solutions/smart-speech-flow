@@ -250,17 +250,8 @@ class TestE2ETimestamps:
         steps = pipeline_metadata["steps"]
 
         for step in steps:
-            # Validate started_at
-            try:
-                datetime.fromisoformat(step["started_at"].replace('Z', '+00:00'))
-            except ValueError:
-                pytest.fail(f"Invalid ISO 8601 timestamp for started_at: {step['started_at']}")
-
-            # Validate completed_at
-            try:
-                datetime.fromisoformat(step["completed_at"].replace('Z', '+00:00'))
-            except ValueError:
-                pytest.fail(f"Invalid ISO 8601 timestamp for completed_at: {step['completed_at']}")
+            datetime.fromisoformat(step["started_at"].replace('Z', '+00:00'))
+            datetime.fromisoformat(step["completed_at"].replace('Z', '+00:00'))
 
 
 class TestE2EDuration:

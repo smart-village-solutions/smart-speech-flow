@@ -102,7 +102,7 @@ class CircuitBreakerServiceClient:
             )
 
         except Exception as e:
-            logger.error(f"❌ ASR Service Error: {e}")
+            logger.exception("ASR service request failed")
             return await graceful_degradation_manager.handle_service_failure(
                 "asr", request_data, e
             )
@@ -192,7 +192,7 @@ class CircuitBreakerServiceClient:
             )
 
         except Exception as e:
-            logger.error(f"❌ Translation Service Error: {e}")
+            logger.exception("Translation service request failed")
             return await graceful_degradation_manager.handle_service_failure(
                 "translation", request_data, e
             )
@@ -277,7 +277,7 @@ class CircuitBreakerServiceClient:
             )
 
         except Exception as e:
-            logger.error(f"❌ TTS Service Error: {e}")
+            logger.exception("TTS service request failed")
             return await graceful_degradation_manager.handle_service_failure(
                 "tts", request_data, e
             )

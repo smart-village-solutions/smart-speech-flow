@@ -1,4 +1,5 @@
 import api from './api';
+import { sessionPath } from '../utils/identifiers';
 
 export interface Language {
   code: string;
@@ -53,7 +54,7 @@ class CustomerService {
    */
   async verifySession(sessionId: string): Promise<boolean> {
     try {
-      const response = await api.get(`/api/session/${sessionId}`);
+      const response = await api.get(sessionPath(sessionId));
       return response.data.status === 'pending' || response.data.status === 'active';
     } catch {
       return false;

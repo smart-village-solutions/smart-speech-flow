@@ -14,7 +14,8 @@ Version: 1.0
 """
 
 import logging
-from typing import Any, Dict, List
+from types import TracebackType
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -31,6 +32,17 @@ CIRCUIT_BREAKER_ROUTE_RESPONSES = {
     404: {"description": "Service or circuit breaker not found"},
     500: {"description": "Circuit breaker health operation failed"},
 }
+_REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
+
+
+def _redacted_exception_info(
+    error: Exception,
+) -> tuple[type[BaseException], BaseException, Optional[TracebackType]]:
+    return (
+        RuntimeError,
+        RuntimeError(_REDACTED_EXCEPTION_MESSAGE),
+        error.__traceback__,
+    )
 
 
 @router.get(
@@ -52,7 +64,7 @@ async def get_services_health() -> Dict[str, Any]:
             "timestamp": health_status.get("monitoring_info", {}).get("last_check"),
         }
     except Exception as e:
-        logger.error(f"❌ Health Status Error: {e}")
+        logger.exception("❌ Health Status Error", exc_info=_redacted_exception_info(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Health status check failed: {str(e)}",
@@ -96,7 +108,9 @@ async def get_service_health(service_name: str) -> Dict[str, Any]:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Service Health Error for {service_name}: {e}")
+        logger.exception(
+            "❌ Service Health Error", exc_info=_redacted_exception_info(e)
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Service health check failed: {str(e)}",
@@ -127,7 +141,9 @@ async def get_circuit_breakers_status() -> Dict[str, Any]:
             "circuits": circuit_status,
         }
     except Exception as e:
-        logger.error(f"❌ Circuit Breaker Status Error: {e}")
+        logger.exception(
+            "❌ Circuit Breaker Status Error", exc_info=_redacted_exception_info(e)
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Circuit breaker status check failed: {str(e)}",
@@ -150,7 +166,9 @@ async def get_degradation_status() -> Dict[str, Any]:
 
         return {"status": "success", "data": degradation_status}
     except Exception as e:
-        logger.error(f"❌ Degradation Status Error: {e}")
+        logger.exception(
+            "❌ Degradation Status Error", exc_info=_redacted_exception_info(e)
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Degradation status check failed: {str(e)}",
@@ -206,7 +224,9 @@ async def reset_circuit_breaker(service_name: str) -> Dict[str, Any]:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Circuit Breaker Reset Error for {service_name}: {e}")
+        logger.exception(
+            "❌ Circuit Breaker Reset Error", exc_info=_redacted_exception_info(e)
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Circuit breaker reset failed: {str(e)}",
@@ -243,7 +263,10 @@ async def reset_all_circuit_breakers() -> Dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error(f"❌ All Circuit Breakers Reset Error: {e}")
+        logger.exception(
+            "❌ All Circuit Breakers Reset Error",
+            exc_info=_redacted_exception_info(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Circuit breakers reset failed: {str(e)}",
@@ -273,7 +296,7 @@ async def get_cache_status() -> Dict[str, Any]:
         return {"status": "success", "data": cache_info}
 
     except Exception as e:
-        logger.error(f"❌ Cache Status Error: {e}")
+        logger.exception("❌ Cache Status Error", exc_info=_redacted_exception_info(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Cache status check failed: {str(e)}",
@@ -314,7 +337,7 @@ async def clear_fallback_cache() -> Dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error(f"❌ Cache Clear Error: {e}")
+        logger.exception("❌ Cache Clear Error", exc_info=_redacted_exception_info(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Cache clear failed: {str(e)}",
@@ -374,7 +397,9 @@ async def get_health_summary() -> Dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error(f"❌ Health Summary Error: {e}")
+        logger.exception(
+            "❌ Health Summary Error", exc_info=_redacted_exception_info(e)
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Health summary generation failed: {str(e)}",

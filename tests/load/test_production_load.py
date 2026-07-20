@@ -25,6 +25,8 @@ import json
 from datetime import datetime
 from typing import List, Dict, Tuple
 
+import pytest
+
 # Test Configuration
 BASE_URL = "http://localhost:8000"
 WS_URL = "ws://localhost:8000"
@@ -196,6 +198,8 @@ async def create_and_test_session(session_num: int, semaphore: asyncio.Semaphore
 
 async def run_load_test():
     """Execute the load test with concurrent sessions"""
+    global results
+    results = LoadTestResults()
     print("=" * 80)
     print("🚀 Production-Like Load Test")
     print("=" * 80)
@@ -315,6 +319,21 @@ async def run_load_test():
         }, f, indent=2)
 
     print(f"\n💾 Results saved to load_test_results_{int(time.time())}.json")
+
+
+@pytest.mark.load
+@pytest.mark.asyncio
+async def test_production_load():
+    """Validate production-like session delivery and throughput targets."""
+    exit_code = await run_load_test()
+    stats = results.calculate_stats()
+
+    assert exit_code == 0
+    assert stats["session_success_rate"] >= 95
+    assert stats["message_delivery_rate"] >= 95
+    assert stats["connection_failures"] == 0
+    assert stats["avg_message_send_time"] < 2.0
+    assert stats["throughput_messages_per_second"] >= 10
 
 if __name__ == "__main__":
     exit_code = asyncio.run(run_load_test())

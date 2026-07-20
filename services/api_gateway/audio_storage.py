@@ -95,7 +95,7 @@ def save_original_audio(message_id: str, audio_base64: str) -> str:
     try:
         audio_data = base64.b64decode(audio_base64)
     except Exception as e:
-        logger.error("Failed to decode base64 audio: %s", sanitize_log_value(e))
+        logger.exception("Failed to decode base64 audio")
         raise ValueError(f"Invalid base64 audio data: {e}")
 
     # Save to disk
@@ -110,11 +110,7 @@ def save_original_audio(message_id: str, audio_base64: str) -> str:
             len(audio_data),
         )
     except Exception as e:
-        logger.error(
-            "Failed to save audio file %s: %s",
-            sanitize_log_value(filepath),
-            sanitize_log_value(e),
-        )
+        logger.exception("Failed to save audio file")
         raise IOError(f"Failed to save audio file: {e}")
 
     # Return URL path
@@ -145,7 +141,7 @@ def save_translated_audio(message_id: str, audio_base64: str) -> str:
     try:
         audio_data = base64.b64decode(audio_base64)
     except Exception as e:
-        logger.error("Failed to decode base64 audio: %s", sanitize_log_value(e))
+        logger.exception("Failed to decode base64 audio")
         raise ValueError(f"Invalid base64 audio data: {e}")
 
     # Save to disk
@@ -160,11 +156,7 @@ def save_translated_audio(message_id: str, audio_base64: str) -> str:
             len(audio_data),
         )
     except Exception as e:
-        logger.error(
-            "Failed to save audio file %s: %s",
-            sanitize_log_value(filepath),
-            sanitize_log_value(e),
-        )
+        logger.exception("Failed to save audio file")
         raise IOError(f"Failed to save audio file: {e}")
 
     # Return URL path
@@ -238,12 +230,8 @@ def cleanup_old_audio_files() -> dict:
                     "Deleted old original audio: %s",
                     sanitize_log_value(filepath),
                 )
-        except Exception as e:
-            logger.error(
-                "Failed to delete %s: %s",
-                sanitize_log_value(filepath),
-                sanitize_log_value(e),
-            )
+        except Exception:
+            logger.exception("Failed to delete old original audio")
             stats["errors"] += 1
 
     # Cleanup translated audio
@@ -257,12 +245,8 @@ def cleanup_old_audio_files() -> dict:
                     "Deleted old translated audio: %s",
                     sanitize_log_value(filepath),
                 )
-        except Exception as e:
-            logger.error(
-                "Failed to delete %s: %s",
-                sanitize_log_value(filepath),
-                sanitize_log_value(e),
-            )
+        except Exception:
+            logger.exception("Failed to delete old translated audio")
             stats["errors"] += 1
 
     stats["total_deleted"] = stats["deleted_original"] + stats["deleted_translated"]
@@ -308,24 +292,16 @@ def get_disk_usage() -> dict:
         try:
             stats["original_bytes"] += filepath.stat().st_size
             stats["original_files"] += 1
-        except Exception as e:
-            logger.error(
-                "Failed to stat %s: %s",
-                sanitize_log_value(filepath),
-                sanitize_log_value(e),
-            )
+        except Exception:
+            logger.exception("Failed to stat original audio")
 
     # Count translated files
     for filepath in TRANSLATED_AUDIO_DIR.glob(WAV_GLOB_PATTERN):
         try:
             stats["translated_bytes"] += filepath.stat().st_size
             stats["translated_files"] += 1
-        except Exception as e:
-            logger.error(
-                "Failed to stat %s: %s",
-                sanitize_log_value(filepath),
-                sanitize_log_value(e),
-            )
+        except Exception:
+            logger.exception("Failed to stat translated audio")
 
     stats["total_bytes"] = stats["original_bytes"] + stats["translated_bytes"]
     stats["total_files"] = stats["original_files"] + stats["translated_files"]

@@ -1,4 +1,5 @@
 import api from './api';
+import { sessionPath } from '../utils/identifiers';
 
 export interface Message {
   id: string;
@@ -53,7 +54,7 @@ class MessageService {
    * POST /api/session/{sessionId}/message
    */
   async sendMessage(sessionId: string, data: SendMessageRequest): Promise<SendMessageResponse> {
-    const response = await api.post<SendMessageResponse>(`/api/session/${sessionId}/message`, data);
+    const response = await api.post<SendMessageResponse>(`${sessionPath(sessionId)}/message`, data);
     return response.data;
   }
 
@@ -62,7 +63,7 @@ class MessageService {
    * GET /api/session/{sessionId}/messages
    */
   async getMessages(sessionId: string): Promise<Message[]> {
-    const response = await api.get<GetMessagesResponse>(`/api/session/${sessionId}/messages`);
+    const response = await api.get<GetMessagesResponse>(`${sessionPath(sessionId)}/messages`);
     return response.data.messages || [];
   }
 }

@@ -6,6 +6,7 @@ Admin-Routes für Session-Management.
 import logging
 from datetime import datetime, timezone
 from hashlib import sha256
+from types import TracebackType
 from typing import Annotated, Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -25,6 +26,17 @@ ADMIN_ROUTE_RESPONSES = {
     404: {"description": "Session not found"},
     500: {"description": "Admin session operation failed"},
 }
+_REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
+
+
+def _redacted_exception_info(
+    error: Exception,
+) -> tuple[type[BaseException], BaseException, Optional[TracebackType]]:
+    return (
+        RuntimeError,
+        RuntimeError(_REDACTED_EXCEPTION_MESSAGE),
+        error.__traceback__,
+    )
 
 
 # Request/Response Models
@@ -139,9 +151,9 @@ async def create_admin_session() -> SessionCreateResponse:
         )
 
     except Exception as e:
-        logger.error(
-            "❌ Fehler bei Admin-Session-Erstellung: %s",
-            sanitize_log_value(e),
+        logger.exception(
+            "❌ Fehler bei Admin-Session-Erstellung",
+            exc_info=_redacted_exception_info(e),
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -201,9 +213,9 @@ async def get_current_session(
             detail=str(e),
         )
     except Exception as e:
-        logger.error(
-            "❌ Fehler beim Abrufen der aktuellen Session: %s",
-            sanitize_log_value(e),
+        logger.exception(
+            "❌ Fehler beim Abrufen der aktuellen Session",
+            exc_info=_redacted_exception_info(e),
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -266,14 +278,9 @@ async def terminate_session(session_id: str) -> JSONResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "❌ Fehler beim Beenden der Session | %s",
-            sanitize_log_value(
-                {
-                    "session_ref": _safe_session_ref(session_id),
-                    "error": e,
-                }
-            ),
+        logger.exception(
+            "❌ Fehler beim Beenden der Session",
+            exc_info=_redacted_exception_info(e),
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -309,9 +316,9 @@ async def get_session_history(limit: int = 10) -> SessionHistoryResponse:
         )
 
     except Exception as e:
-        logger.error(
-            "❌ Fehler beim Abrufen der Session-Historie: %s",
-            sanitize_log_value(e),
+        logger.exception(
+            "❌ Fehler beim Abrufen der Session-Historie",
+            exc_info=_redacted_exception_info(e),
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -361,9 +368,9 @@ async def get_session_status(session_id: str) -> SessionStatusResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "❌ Fehler beim Abrufen des Session-Status: %s",
-            sanitize_log_value(e),
+        logger.exception(
+            "❌ Fehler beim Abrufen des Session-Status",
+            exc_info=_redacted_exception_info(e),
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

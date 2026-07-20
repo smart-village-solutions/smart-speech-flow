@@ -574,8 +574,8 @@ class WebSocketFallbackManager:
         for callback in self.notification_callbacks:
             try:
                 await callback(notification)
-            except Exception as e:
-                logger.error(f"Error in notification callback: {e}")
+            except Exception:
+                logger.exception("Notification callback failed")
 
     def _get_user_friendly_message(self, reason: FallbackReason) -> str:
         """Get user-friendly message for fallback reason"""
@@ -639,8 +639,8 @@ class WebSocketFallbackManager:
                         f"🧹 Cleaned up {len(stale_clients)} stale polling clients"
                     )
 
-            except Exception as e:
-                logger.error(f"Error in polling cleanup task: {e}")
+            except Exception:
+                logger.exception("Polling cleanup task failed")
 
 
 # Global Fallback Manager Instance

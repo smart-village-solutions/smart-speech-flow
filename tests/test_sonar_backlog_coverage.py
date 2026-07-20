@@ -371,7 +371,7 @@ async def test_websocket_polling_routes_wait_and_poll(monkeypatch):
     )
     poll = Mock(side_effect=[[], messages])
     monkeypatch.setattr(polling_routes.fallback_manager, "poll_messages", poll)
-    response = await polling_routes.poll_messages("poll-1", timeout=1)
+    response = await polling_routes.poll_messages("poll-1", wait_seconds=1)
     payload = json.loads(response.body)
     assert payload["messages"] == messages
     assert payload["next_poll_interval"] == 7

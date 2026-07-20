@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
+import type { KeyboardEvent } from 'react';
 import { useSession } from '../contexts/SessionContext';
 import MessageService from '../services/MessageService';
+import { sessionPath } from '../utils/identifiers';
 import { AudioRecorderWithWAVConversion } from '../utils/AudioRecorderWithWAVConversion';
 import api from '../services/api';
 
@@ -124,7 +126,7 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
           await sendAudioMessage(wavBlob);
         },
         onError: (error) => {
-          console.error('Recording error:', error);
+          console.error('Recording error');
           setError(error.message || 'Fehler bei der Audio-Aufnahme');
           setRecordingState('idle');
         },
@@ -132,8 +134,8 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
 
       audioRecorderRef.current = recorder;
       await recorder.startRecording();
-    } catch (err) {
-      console.error('Failed to start recording:', err);
+    } catch {
+      console.error('Failed to start recording');
       setError('Mikrofon-Zugriff verweigert. Bitte Berechtigungen prüfen.');
       setRecordingState('idle');
     }
@@ -160,8 +162,6 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
     setError(null);
 
     try {
-      console.log('📡 Uploading audio message with temp ID:', tempMessageId);
-
       // Create FormData for multipart/form-data upload
       const formData = new FormData();
       formData.append('file', wavBlob, 'recording.wav');
@@ -174,17 +174,14 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
         message_id: string;
         status: string;
         message: string;
-      }>(`/api/session/${sessionId}/message`, formData, {
+      }>(`${sessionPath(sessionId)}/message`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
 
-      console.log('✅ Audio upload successful:', response.data.message_id);
-
       // Register the mapping from temp ID to real ID
       registerTempId(tempMessageId, response.data.message_id);
-      console.log('🔗 Registered mapping:', tempMessageId, '->', response.data.message_id);
 
       // Mark as sent
       updateMessage(tempMessageId, {
@@ -193,27 +190,19 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
 
       // Reset recording state
       setRecordingState('idle');
-    } catch (err: unknown) {
-      console.error('Failed to send audio message:', err);
+    } catch (error: unknown) {
+      console.error('Failed to send audio message');
       updateMessage(tempMessageId, {
         status: 'error',
       });
       setError(
-        extractErrorMessage(err, 'Fehler beim Senden der Audio-Nachricht')
+        extractErrorMessage(error, 'Fehler beim Senden der Audio-Nachricht')
       );
       setRecordingState('idle');
     }
   };
 
   const sendTextMessage = async () => {
-    console.log('🔍 sendTextMessage called:', {
-      textMessage: textMessage.substring(0, 20),
-      sessionId,
-      clientType,
-      customerLanguage,
-      isActive
-    });
-
     const trimmedText = textMessage.trim();
     const languagePair = getLanguagePair();
     if (!trimmedText || !sessionId || !clientType) {
@@ -225,15 +214,12 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
       return;
     }
 
-    console.log('✅ Sending message:', { ...languagePair, clientType });
-
     const tempMessageId = `temp-${Date.now()}`;
     addMessage(createOptimisticMessage(tempMessageId, 'text', trimmedText));
     setTextMessage('');
     setError(null);
 
     try {
-      console.log('📡 Sending message with temp ID:', tempMessageId);
       const response = await MessageService.sendMessage(sessionId, {
         text: trimmedText,
         source_lang: languagePair.source_lang,
@@ -241,27 +227,24 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
         client_type: clientType,
       });
 
-      console.log('✅ API Response received:', response.message_id);
       // Register the mapping from temp ID to real ID IMMEDIATELY
       // This must happen before WebSocket message arrives!
       registerTempId(tempMessageId, response.message_id);
-      console.log('🔗 Registered mapping:', tempMessageId, '->', response.message_id);
-
       // Don't update the ID - WebSocket will handle the final update
       // Just mark as sent to show it was accepted by server
       updateMessage(tempMessageId, {
         status: 'sent',
       });
-    } catch (err: unknown) {
-      console.error('Failed to send text message:', err);
+    } catch (error: unknown) {
+      console.error('Failed to send text message');
       updateMessage(tempMessageId, {
         status: 'error',
       });
-      setError(extractErrorMessage(err, 'Fehler beim Senden der Nachricht'));
+      setError(extractErrorMessage(error, 'Fehler beim Senden der Nachricht'));
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyPress = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendTextMessage();
@@ -285,6 +268,7 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
       {/* Mode Toggle */}
       <div className="flex items-center justify-center mb-3 space-x-2">
         <button
+          type="button"
           onClick={() => setInputMode('text')}
           disabled={isInputDisabled || recordingState !== 'idle'}
           className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors text-sm sm:text-base ${
@@ -296,6 +280,7 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
           📝 Text
         </button>
         <button
+          type="button"
           onClick={() => setInputMode('audio')}
           disabled={isInputDisabled || recordingState !== 'idle'}
           className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors text-sm sm:text-base ${
@@ -314,13 +299,14 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
           <textarea
             value={textMessage}
             onChange={(e) => setTextMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyPress}
             placeholder={isActive ? "Nachricht eingeben..." : "Warten auf Teilnehmer..."}
             disabled={isInputDisabled}
             rows={2}
             className="flex-1 px-3 sm:px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed resize-none text-sm sm:text-base"
           />
           <button
+            type="button"
             onClick={sendTextMessage}
             disabled={isInputDisabled || !textMessage.trim()}
             className="px-4 sm:px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed min-h-[76px] text-sm sm:text-base"
@@ -335,6 +321,7 @@ export default function MessageInput({ disabled = false }: MessageInputProps) {
         <div className="flex flex-col items-center py-2">
           {recordingState === 'idle' && (
             <button
+              type="button"
               onClick={startRecording}
               disabled={isInputDisabled}
               className="w-16 h-16 sm:w-20 sm:h-20 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-2xl sm:text-3xl transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"

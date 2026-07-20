@@ -597,10 +597,12 @@ async def test_asr_transcribe_fallback_and_success_paths(asr_app, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_asr_transcribe_invalid_language_and_runtime_error(asr_app, monkeypatch):
+    invalid_upload = FakeUploadFile(b"audio-bytes")
+    invalid_request = build_request(query_params={})
     with pytest.raises(StubHTTPException) as invalid_error:
         await asr_app.transcribe(
-            file=FakeUploadFile(b"audio-bytes"),
-            request=build_request(query_params={}),
+            file=invalid_upload,
+            request=invalid_request,
             lang="xx",
             debug=None,
         )
@@ -697,8 +699,9 @@ def test_translation_validation_and_response_helpers(translation_app):
 
 @pytest.mark.asyncio
 async def test_translation_translate_handles_invalid_json_and_success(translation_app, monkeypatch):
+    invalid_request = build_request(fail_json=True)
     with pytest.raises(StubHTTPException) as invalid_error:
-        await translation_app.translate(build_request(fail_json=True))
+        await translation_app.translate(invalid_request)
     assert invalid_error.value.status_code == 400
     assert invalid_error.value.detail == "Invalid JSON payload"
 

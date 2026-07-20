@@ -278,8 +278,8 @@ class CircuitBreaker:
         if self.on_state_change:
             try:
                 await self.on_state_change(self.name, old_state, new_state, self.health)
-            except Exception as e:
-                logger.error(f"❌ State Change Notification Fehler: {e}")
+            except Exception:
+                logger.exception("State change notification failed")
 
     def get_health_status(self) -> Dict[str, Any]:
         """Aktueller Health Status"""

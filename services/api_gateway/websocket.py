@@ -672,7 +672,7 @@ class WebSocketManager:
     def _build_no_connection_broadcast_result(
         self, monitor: Any, session_id: str, sender_type: ClientType
     ) -> BroadcastResult:
-        logger.warning(f"⚠️ Broadcasting to session {session_id} with no connections")
+        logger.warning("Broadcast attempted without active connections")
         monitor.broadcast_failure_total.labels(
             session_id=session_id,
             sender_type=sender_type.value,
@@ -871,8 +871,8 @@ class WebSocketManager:
         except asyncio.CancelledError:
             logger.info("💓 Heartbeat-Monitor gestoppt")
             raise
-        except Exception as e:
-            logger.error(f"❌ Heartbeat-Monitor-Fehler: {e}")
+        except Exception:
+            logger.exception("Heartbeat monitor failed")
 
     async def _send_heartbeat_pings(self):
         """
@@ -1125,8 +1125,8 @@ class WebSocketManager:
                     f"🔄 Polling fallback activated for {connection.session_id}: {polling_id}"
                 )
 
-        except Exception as fallback_error:
-            logger.error(f"Error in fallback evaluation: {fallback_error}")
+        except Exception:
+            logger.exception("Fallback evaluation failed")
 
     def _classify_error_for_fallback(
         self, error: Exception, context: str
@@ -1484,8 +1484,8 @@ async def websocket_endpoint(
                 logger.info(f"🔌 WebSocket-Disconnect: {connection_id}")
                 break
 
-            except Exception as e:
-                logger.error(f"❌ WebSocket-Message-Fehler {connection_id}: {e}")
+            except Exception:
+                logger.exception("WebSocket message processing failed")
                 # Error-Message an Client senden
                 error_message = {
                     "type": MessageType.ERROR.value,
@@ -1497,8 +1497,8 @@ async def websocket_endpoint(
                 except Exception:
                     break
 
-    except Exception as e:
-        logger.error(f"❌ WebSocket-Verbindungsfehler: {e}")
+    except Exception:
+        logger.exception("WebSocket connection failed")
 
     finally:
         # Cleanup bei Disconnect

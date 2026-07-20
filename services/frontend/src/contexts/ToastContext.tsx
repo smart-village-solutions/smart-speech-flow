@@ -95,6 +95,7 @@ function ToastItem({ toast, onRemove }: Readonly<{ toast: Toast; onRemove: (id: 
       <span className="text-xl font-bold">{icon}</span>
       <p className="flex-1 text-sm">{toast.message}</p>
       <button
+        type="button"
         onClick={() => onRemove(toast.id)}
         className="text-white hover:text-gray-200 font-bold text-lg leading-none"
       >

@@ -22,7 +22,9 @@ services:
     restart: always
 
   asr:
-    build: ./services/asr
+    build:
+      context: .
+      dockerfile: services/asr/Dockerfile
     ports:
       - "8001:8000"
     volumes:
@@ -36,7 +38,9 @@ services:
               capabilities: [gpu]
 
   translation:
-    build: ./services/translation
+    build:
+      context: .
+      dockerfile: services/translation/Dockerfile
     ports:
       - "8002:8000"
     volumes:
@@ -49,7 +53,9 @@ services:
               count: all
               capabilities: [gpu]
   tts:
-    build: ./services/tts
+    build:
+      context: .
+      dockerfile: services/tts/Dockerfile
     ports:
       - "8003:8000"
     volumes:

@@ -43,8 +43,8 @@ export default function AdminPage() {
           // Start session with customer language if available
           startSession(sessionId, 'admin', sessionInfo.customer_language || undefined);
         })
-        .catch((err) => {
-          console.warn('Failed to load session data:', err);
+        .catch(() => {
+          console.warn('Failed to load session data');
         });
     }
   }, [sessionId, sessionStatus, activeSessionId, activeClientType, startSession, addMessage]);
@@ -68,8 +68,8 @@ export default function AdminPage() {
       const response = await SessionService.createSession();
       setSessionId(response.session_id);
       setSessionStatus(response.status === 'active' ? 'active' : 'pending');
-    } catch (err) {
-      console.error('Failed to create session:', err);
+    } catch {
+      console.error('Failed to create session');
       setError('Fehler beim Erstellen der Session. Bitte versuchen Sie es erneut.');
       setSessionStatus('idle');
     }
@@ -84,8 +84,8 @@ export default function AdminPage() {
       setSessionId(null);
       setSessionStatus('idle');
       setError(null);
-    } catch (err) {
-      console.error('Failed to terminate session:', err);
+    } catch {
+      console.error('Failed to terminate session');
       setError('Fehler beim Beenden der Session.');
     }
   };
@@ -101,6 +101,7 @@ export default function AdminPage() {
                 Admin - Session Verwaltung
               </h1>
               <button
+                type="button"
                 onClick={() => navigate('/')}
                 className="text-primary hover:text-primary-dark font-semibold text-base sm:text-lg transition-colors"
               >
@@ -120,6 +121,7 @@ export default function AdminPage() {
           {sessionStatus === 'idle' && (
             <div className="bg-white rounded-card-lg shadow-card p-8 mb-8">
               <button
+                type="button"
                 onClick={handleCreateSession}
                 className="w-full bg-primary hover:brightness-90 text-white font-semibold py-4 px-8 rounded-card transition duration-200 text-lg"
               >
@@ -175,6 +177,7 @@ export default function AdminPage() {
 
               <div className="bg-white rounded-card-lg shadow-card p-6 sm:p-8">
                 <button
+                  type="button"
                   onClick={handleTerminateSession}
                   className="w-full bg-red-600 hover:brightness-90 text-white font-semibold py-4 px-8 rounded-card transition duration-200 text-lg"
                 >
