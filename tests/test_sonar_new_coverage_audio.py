@@ -31,9 +31,10 @@ def test_audio_storage_reports_decode_failures_without_payload(
         "b64decode",
         raise_value_error,
     )
+    save_audio = getattr(audio_storage, save_function)
 
     with caplog.at_level(logging.ERROR), pytest.raises(ValueError, match="Invalid base64"):
-        getattr(audio_storage, save_function)("message-1", "sensitive-payload")
+        save_audio("message-1", "sensitive-payload")
 
     assert "Failed to decode base64 audio" in caplog.text
     assert "sensitive-payload" not in caplog.text
@@ -59,8 +60,9 @@ def test_audio_storage_reports_write_failures_without_target_path(
     )
 
     payload = base64.b64encode(b"audio").decode()
+    save_audio = getattr(audio_storage, save_function)
     with caplog.at_level(logging.ERROR), pytest.raises(IOError, match="Failed to save"):
-        getattr(audio_storage, save_function)("private-message", payload)
+        save_audio("private-message", payload)
 
     assert "Failed to save audio file" in caplog.text
     assert "private-message" not in caplog.text

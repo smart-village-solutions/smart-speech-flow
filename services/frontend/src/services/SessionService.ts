@@ -1,5 +1,5 @@
 import api from './api';
-import { adminSessionPath, sessionPath } from '../utils/identifiers';
+import { sessionPath } from '../utils/identifiers';
 
 export interface SessionData {
   session_id: string;
@@ -34,8 +34,13 @@ class SessionService {
    * DELETE /api/admin/session/{sessionId}/terminate
    */
   async terminateSession(sessionId: string): Promise<TerminateSessionResponse> {
+    const matchedSessionId = /^[A-Z0-9]{8}$/.exec(sessionId)?.[0];
+    if (!matchedSessionId) {
+      throw new Error('Invalid session identifier');
+    }
+
     const response = await api.delete<TerminateSessionResponse>(
-      `${adminSessionPath(sessionId)}/terminate`
+      `/api/admin/session/${matchedSessionId}/terminate`
     );
     return response.data;
   }
