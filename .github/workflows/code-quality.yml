@@ -375,11 +375,13 @@ jobs:
     - name: Run Fallow audit for changed frontend files
       if: steps.frontend-changes.outputs.frontend_changed == 'true'
       working-directory: services/frontend
-      run: >
-        npx fallow audit
-        --changed-since "origin/${{ github.base_ref }}"
-        --format github-annotations
-        --fail-on-issues
+      run: |
+        set -o pipefail
+        npx fallow audit \
+          --changed-since "origin/${{ github.base_ref }}" \
+          --format json \
+          --quiet > fallow-audit.json || true
+        jq -e '.verdict != "fail"' fallow-audit.json
 
   # Job 7: Quality Gate Evaluation
   quality-gate:

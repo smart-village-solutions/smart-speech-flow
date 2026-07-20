@@ -21,10 +21,6 @@ export function sessionPath(sessionId: string): string {
   return `/api/session/${requirePathIdentifier(sessionId, 'session')}`;
 }
 
-export function adminSessionPath(sessionId: string): string {
-  return `/api/admin/session/${requirePathIdentifier(sessionId, 'session')}`;
-}
-
 export function buildWebSocketUrl(baseUrl: string, sessionId: string, clientType: 'admin' | 'customer'): string {
   const base = new URL(baseUrl);
   if (base.protocol !== 'ws:' && base.protocol !== 'wss:') {
