@@ -217,18 +217,18 @@ sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
 sudo systemctl restart docker
 
 # Verify GPU access
-docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:13.0.0-base-ubuntu24.04 nvidia-smi
 ```
 
 ### Local Development (without Docker)
 
 ```bash
 # Python Virtual Environment
-python -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate  # Linux/Mac
 # .venv\Scripts\activate   # Windows
 
-# Install dependencies
+# Install pinned dependencies
 pip install -r requirements-dev.txt
 
 # Run tests
@@ -240,6 +240,26 @@ uvicorn services/translation/app:app --port 8002 --reload
 uvicorn services/tts/app:app --port 8003 --reload
 uvicorn services/api_gateway/app:app --port 8000 --reload
 ```
+
+### Python Dependency Locking
+
+Python dependencies are maintained from `requirements.in` source files and
+compiled into pinned `requirements.txt` lockfiles.
+
+```bash
+# Regenerate all pinned Python requirements
+./scripts/compile_requirements.sh
+
+# Validate resolution, installation and vulnerability status
+./scripts/check_dependencies.sh
+```
+
+Relevant files:
+- `requirements-dev.in` -> `requirements-dev.txt`
+- `services/*/requirements.in` -> `services/*/requirements.txt`
+
+The current CI baseline is Python `3.12`, with additional coverage on Python
+`3.13`.
 
 ## 🧪 Testing
 
@@ -277,6 +297,10 @@ Monitoring-Konfigurationen liegen unter `monitoring/`, zum Beispiel:
 - `monitoring/alert_rules.yml`
 - `monitoring/loki-config.yaml`
 - `monitoring/promtail-config.yaml`
+
+Der Compose-Stack verwendet feste Image-Tags fuer Traefik, Prometheus,
+Grafana, Loki, Promtail, cAdvisor, DCGM Exporter, Redis und Ollama, damit
+Security-Updates reproduzierbar bleiben.
 
 ### Alerting
 Prometheus alerts configured in `monitoring/alert_rules.yml`:
@@ -439,7 +463,7 @@ curl http://localhost:8003/health  # TTS
 nvidia-smi
 
 # Test Docker GPU access
-docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:13.0.0-base-ubuntu24.04 nvidia-smi
 
 # Check in container
 docker compose exec asr python3 -c "import torch; print(torch.cuda.is_available())"

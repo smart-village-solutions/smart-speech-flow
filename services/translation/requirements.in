@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+prometheus_client
+torch
+transformers
+python-multipart
+numpy
+ffmpeg-python
+sentencepiece
+sacremoses
+httpx==0.28.1
+psutil==6.1.0
+pynvml
+black==26.3.1
+isort==5.13.2

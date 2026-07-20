@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+prometheus_client
+torch
+soundfile
+numpy>=2.0.0
+transformers>=5.5.0,<6.0.0
+httpx==0.28.1
+pytest==9.0.3
+psutil==6.1.0
+uroman
+pynvml
+black==26.3.1
+isort==5.13.2

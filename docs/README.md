@@ -11,6 +11,10 @@ Welcome to the Smart Speech Flow Backend documentation! This guide helps you fin
 - [Frontend Integration Guide](guides/frontend-integration.md) - How to integrate with the frontend
 - [API Conventions](guides/api-conventions.md) - API design patterns and standards
 - [Code Quality Standards](testing/code-quality.md) - Coding standards and quality checks
+- Python dependency workflow:
+  - Sources live in `requirements*.in` and `services/*/requirements.in`
+  - Pinned lockfiles are generated via `../scripts/compile_requirements.sh`
+  - Validation runs via `../scripts/check_dependencies.sh`
 
 ### For Operators
 - [Deployment Rollback Procedure](operations/deployment-rollback-procedure.md) - How to rollback deployments
@@ -145,5 +149,5 @@ If you can't find what you're looking for:
 
 ---
 
-**Last Updated:** 2025-11-13
+**Last Updated:** 2026-07-20
 **Maintained by:** Smart Village Solutions Team

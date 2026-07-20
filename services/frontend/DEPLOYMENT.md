@@ -17,7 +17,7 @@ Das Frontend ist vollständig implementiert und bereit für Deployment unter **t
 - ✅ Audio-Player mit Auto-Play
 - ✅ Pipeline-Metadata anzeigen (collapsible)
 - ✅ Toast-Notifications für System-Messages
-- ✅ Docker Multi-Stage Build (Node 20 + Nginx)
+- ✅ Docker Multi-Stage Build (Node 22 + Nginx)
 - ✅ Traefik Labels konfiguriert
 - ✅ Health Check Endpoint
 
@@ -31,6 +31,10 @@ docker compose build frontend
 ```
 
 **Ergebnis**: Image `ssf-backend-frontend` erfolgreich gebaut (verified ✓)
+
+Build-Basis:
+- Builder: `node:22-alpine`
+- Runtime: `nginxinc/nginx-unprivileged:alpine`
 
 ### 2. Container starten
 

@@ -1,6 +1,6 @@
 services:
   traefik:
-    image: traefik:v2.11
+    image: traefik:v2.11.52
     command:
       - --api.dashboard=true
       - --log.level=DEBUG
@@ -148,7 +148,7 @@ services:
     restart: always
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.32.0
     expose:
       - "11434"
     environment:
@@ -165,7 +165,7 @@ services:
     restart: always
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.7-alpine
     command: ["redis-server", "--appendonly", "yes"]
     expose:
       - "6379"
@@ -207,7 +207,7 @@ services:
 
 
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:v3.13.1
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
@@ -227,7 +227,7 @@ services:
       - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
 
   grafana:
-    image: grafana/grafana:10.2.3
+    image: grafana/grafana:11.6.16
     restart: always
     depends_on:
       - prometheus
@@ -256,7 +256,7 @@ services:
       - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
 
   dcgm_exporter:
-    image: nvidia/dcgm-exporter:latest
+    image: nvidia/dcgm-exporter:4.8.3
     restart: always
     privileged: true
     deploy:
@@ -273,7 +273,7 @@ services:
       - "9400"
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    image: ghcr.io/google/cadvisor:v0.60.5
     container_name: ssf-backend-cadvisor
     restart: always
     privileged: true
@@ -292,7 +292,7 @@ services:
       - '--store_container_labels=true'
 
   node_exporter:
-    image: prom/node-exporter:v1.8.1
+    image: prom/node-exporter:v1.12.1
     container_name: ssf-backend-node-exporter
     restart: always
     command:
@@ -309,7 +309,7 @@ services:
       - /sys:/host/sys:ro
 
   loki:
-    image: grafana/loki:2.9.3
+    image: grafana/loki:2.9.15
     restart: always
     command: -config.file=/etc/loki/config.yaml
     expose:
@@ -319,7 +319,7 @@ services:
       - ./monitoring/loki-data:/loki
 
   promtail:
-    image: grafana/promtail:2.9.3
+    image: grafana/promtail:2.9.15
     restart: always
     command: -config.file=/etc/promtail/config.yaml -log.level=debug
     depends_on:
