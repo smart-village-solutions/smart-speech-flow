@@ -46,6 +46,7 @@ build/
 
 # Virtualenv
 .venv/
+.venv-pdf/
 venv/
 ENV/
 
