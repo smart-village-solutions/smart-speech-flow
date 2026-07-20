@@ -63,7 +63,7 @@ Das Projekt verwendet automatisierte Tools zur Sicherstellung von Code-Qualität
 - **Zweck**: TypeScript/JavaScript-spezifische Analyse fuer Dead Code, Duplikate und Komplexitaets-Hotspots
 - **Ausfuehrung**: In GitHub Actions als PR-basierter Audit-Lauf fuer `services/frontend`
 - **Scope**: Geaenderte Frontend-Dateien im Pull Request statt Full-Repo-Blocker
-- **Lokale Nutzung**: `cd services/frontend && npm run fallow` oder `npm run fallow:audit`
+- **Lokale Nutzung**: `cd services/frontend && npm run fallow` oder `cd services/frontend && npm run fallow:audit`
 
 ### 5. Type-Checking (Graduell)
 
