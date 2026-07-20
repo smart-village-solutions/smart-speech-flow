@@ -8,6 +8,16 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOLS_VENV="${ROOT_DIR}/.venv-dependency-tools"
+TEMP_VENVS=()
+AUDIT_WARNINGS=()
+
+cleanup() {
+    for temp_venv in "${TEMP_VENVS[@]:-}"; do
+        [ -n "${temp_venv}" ] && [ -d "${temp_venv}" ] && rm -rf "${temp_venv}"
+    done
+}
+
+trap cleanup EXIT
 
 echo "🔍 Starting dependency validation..."
 
@@ -42,7 +52,8 @@ for service_dir in "${ROOT_DIR}"/services/*; do
         pip-compile --dry-run "${source_requirements}" || true
     fi
 
-    install_venv="$(mktemp -d "${ROOT_DIR}/.venv-${service_name}-XXXXXX")"
+    install_venv="$(mktemp -d -t "ssf-${service_name}-venv-XXXXXX")"
+    TEMP_VENVS+=("${install_venv}")
     python3 -m venv "${install_venv}"
     source "${install_venv}/bin/activate"
     pip install --upgrade pip > /dev/null
@@ -55,7 +66,6 @@ for service_dir in "${ROOT_DIR}"/services/*; do
     fi
 
     deactivate
-    rm -rf "${install_venv}"
 
     source "${TOOLS_VENV}/bin/activate"
 
@@ -63,6 +73,7 @@ for service_dir in "${ROOT_DIR}"/services/*; do
         echo "   ✅ ${service_name} security check passed"
     else
         echo "   ⚠️  ${service_name} has security vulnerabilities"
+        AUDIT_WARNINGS+=("${service_name}")
     fi
 done
 
@@ -72,7 +83,12 @@ if [ ${#FAILED_SERVICES[@]} -eq 0 ]; then
     echo "✅ All dependency checks passed!"
     echo "   - All services have resolvable dependencies"
     echo "   - All packages install successfully"
-    echo "   - No major security vulnerabilities detected"
+    if [ ${#AUDIT_WARNINGS[@]} -eq 0 ]; then
+        echo "   - No security vulnerabilities reported by pip-audit"
+    else
+        echo "   - pip-audit reported vulnerabilities for:"
+        printf '     - %s\n' "${AUDIT_WARNINGS[@]}" | sort -u
+    fi
     exit 0
 fi
 

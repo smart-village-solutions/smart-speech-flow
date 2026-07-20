@@ -226,7 +226,7 @@ def _audio_response(
     if debug_active:
         # HTTP headers must be latin-1 encodable; ensure_ascii keeps non-ASCII
         # payloads transportable while preserving the debug data structure.
-        headers["X-Debug-Info"] = json.dumps(debug_info, ensure_ascii=True)
+        headers["X-Debug-Info"] = json.dumps(debug_info, ensure_ascii=True, default=str)
     return Response(content=audio_bytes, media_type=AUDIO_WAV_MIME, headers=headers)
 
 

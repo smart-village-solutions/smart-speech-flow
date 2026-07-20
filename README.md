@@ -258,8 +258,9 @@ Relevant files:
 - `requirements-dev.in` -> `requirements-dev.txt`
 - `services/*/requirements.in` -> `services/*/requirements.txt`
 
-The current CI baseline is Python `3.12`, with additional coverage on Python
-`3.13`.
+The current CI baseline is Python `3.12`. Python `3.13` compatibility is
+tracked separately because the standard-library `audioop` removal requires an
+application change before that lane can be enabled again.
 
 ## 🧪 Testing
 

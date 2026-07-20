@@ -13,9 +13,11 @@ source "${VENV_DIR}/bin/activate"
 
 pip install --upgrade pip pip-tools
 
-pip-compile --resolver=backtracking --output-file "${ROOT_DIR}/requirements-dev.txt" "${ROOT_DIR}/requirements-dev.in"
+cd "${ROOT_DIR}"
 
-for service_dir in "${ROOT_DIR}"/services/*; do
+pip-compile --resolver=backtracking --output-file requirements-dev.txt requirements-dev.in
+
+for service_dir in services/*; do
     if [ -f "${service_dir}/requirements.in" ]; then
         pip-compile \
             --resolver=backtracking \
