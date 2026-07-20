@@ -1,5 +1,5 @@
-## Basis-Image: Schlankes Python 3.10
-FROM python:3.10-slim
+## Basis-Image: Schlankes Python 3.12
+FROM python:3.12-slim
 
 # Arbeitsverzeichnis im Container
 WORKDIR /app

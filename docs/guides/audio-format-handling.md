@@ -210,7 +210,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
 
 ```dockerfile
 # services/api_gateway/Dockerfile erweitern
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # FFmpeg für Audio-Konvertierung installieren
 RUN apt-get update && apt-get install -y \

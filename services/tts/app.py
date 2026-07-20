@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 import tempfile
 import time
 import traceback
@@ -223,7 +224,9 @@ def _audio_response(
         "X-TTS-Language": lang,
     }
     if debug_active:
-        headers["X-Debug-Info"] = str(debug_info)
+        # HTTP headers must be latin-1 encodable; ensure_ascii keeps non-ASCII
+        # payloads transportable while preserving the debug data structure.
+        headers["X-Debug-Info"] = json.dumps(debug_info, ensure_ascii=True, default=str)
     return Response(content=audio_bytes, media_type=AUDIO_WAV_MIME, headers=headers)
 
 
@@ -364,7 +367,11 @@ def _resolve_synthesis_request(
 def _extract_audio_payload(result: Any) -> tuple[Any, int]:
     if isinstance(result, dict):
         return result["audio"], result.get("sampling_rate", 16000)
-    return result[0]["audio"], 16000
+    if isinstance(result, (list, tuple)) and result:
+        first_item = result[0]
+        if isinstance(first_item, dict):
+            return first_item["audio"], first_item.get("sampling_rate", 16000)
+    raise TypeError(f"Unsupported TTS pipeline output format: {type(result)!r}")
 
 
 def _synthesize_hf_audio(tts_model: Any, text: str) -> bytes:
