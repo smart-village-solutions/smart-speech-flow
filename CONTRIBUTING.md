@@ -110,6 +110,20 @@ If the optional variables are omitted, the workflow falls back to:
 
 SonarCloud complements the existing local tools. Contributors are not expected to run Sonar locally for normal development, but pull requests should be prepared so that linting, tests, and static analysis pass cleanly.
 
+### Fallow for the Frontend
+
+The frontend TypeScript code in `services/frontend` is additionally checked with `fallow` on pull requests. The workflow runs `fallow audit` against changed frontend files so that new dead-code, duplication, and complexity regressions are caught without blocking on older backlog outside the diff.
+
+Local usage:
+
+```bash
+cd services/frontend
+npm run fallow
+npm run fallow:audit
+```
+
+Current note: the pinned `fallow` version expects Node 22+ in CI, so the GitHub Actions workflow uses Node 22 for this step.
+
 **Configuration:**
 - Black: line length 100, Python 3.12+
 - isort: compatible with black
