@@ -142,7 +142,7 @@ platformdirs==4.10.1
     # via black
 prometheus-client==0.25.0
     # via -r /root/projects/ssf-backend/services/translation/requirements.in
-psutil==6.1.0
+psutil==7.2.2
     # via -r /root/projects/ssf-backend/services/translation/requirements.in
 pydantic==2.13.4
     # via fastapi

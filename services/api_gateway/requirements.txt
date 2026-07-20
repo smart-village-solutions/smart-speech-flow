@@ -84,7 +84,7 @@ propcache==0.5.2
     # via
     #   aiohttp
     #   yarl
-psutil==6.1.0
+psutil==7.2.2
     # via -r /root/projects/ssf-backend/services/api_gateway/requirements.in
 pydantic==2.13.4
     # via fastapi

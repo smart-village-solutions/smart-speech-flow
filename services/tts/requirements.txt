@@ -143,7 +143,7 @@ pluggy==1.6.0
     # via pytest
 prometheus-client==0.25.0
     # via -r /root/projects/ssf-backend/services/tts/requirements.in
-psutil==6.1.0
+psutil==7.2.2
     # via -r /root/projects/ssf-backend/services/tts/requirements.in
 pycparser==3.0
     # via cffi
