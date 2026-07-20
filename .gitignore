@@ -90,3 +90,6 @@ docs-backup-*.tar.gz
 
 # Node
 node_modules/
+
+# Fallow local cache and snapshots
+.fallow/

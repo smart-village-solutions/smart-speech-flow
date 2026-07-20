@@ -333,11 +333,44 @@ jobs:
           -Dsonar.qualitygate.wait=true
           -Dsonar.qualitygate.timeout=300
 
-  # Job 6: Quality Gate Evaluation
+  # Job 6: Fallow frontend analysis
+  fallow-analysis:
+    name: Fallow Frontend Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: services/frontend/package-lock.json
+
+    - name: Install frontend dependencies
+      working-directory: services/frontend
+      run: npm ci
+
+    - name: Run Fallow audit for changed frontend files
+      uses: fallow-rs/fallow@v3
+      with:
+        command: audit
+        root: services/frontend
+        fail-on-issues: true
+        annotations: true
+        version: ^3.7.1
+
+  # Job 7: Quality Gate Evaluation
   quality-gate:
     name: Quality Gate
     runs-on: ubuntu-latest
-    needs: [code-quality, security-analysis, sonar-analysis]
+    needs: [code-quality, security-analysis, sonar-analysis, fallow-analysis]
     if: always()
 
     steps:
@@ -347,15 +380,22 @@ jobs:
         SECURITY_RESULT="${{ needs.security-analysis.result }}"
         SONAR_RESULT="${{ needs.sonar-analysis.result }}"
         SONAR_ENABLED="${{ needs.sonar-analysis.outputs.enabled }}"
+        FALLOW_RESULT="${{ needs.fallow-analysis.result }}"
 
         echo "Code Quality Result: $CODE_QUALITY_RESULT"
         echo "Security Analysis Result: $SECURITY_RESULT"
         echo "Sonar Result: $SONAR_RESULT"
         echo "Sonar Enabled: $SONAR_ENABLED"
+        echo "Fallow Result: $FALLOW_RESULT"
 
         # Sonar is blocking once configured; missing secrets/vars keep the job skipped.
         if [ "$SONAR_RESULT" = "failure" ]; then
           echo "❌ Sonar quality gate failed"
+          exit 1
+        fi
+
+        if [ "$FALLOW_RESULT" = "failure" ]; then
+          echo "❌ Fallow frontend audit failed"
           exit 1
         fi
 
@@ -369,11 +409,11 @@ jobs:
           echo "All blocking quality checks successful."
         fi
 
-  # Job 7: Quality Metrics Summary
+  # Job 8: Quality Metrics Summary
   quality-summary:
     name: Quality Summary
     runs-on: ubuntu-latest
-    needs: [code-quality, security-analysis, type-checking, dependency-analysis, sonar-analysis, quality-gate]
+    needs: [code-quality, security-analysis, type-checking, dependency-analysis, sonar-analysis, fallow-analysis, quality-gate]
     if: always()
 
     steps:
@@ -407,6 +447,17 @@ jobs:
           echo "| SonarCloud | ❌ Failed | Analysis or quality gate failed |" >> $GITHUB_STEP_SUMMARY
         else
           echo "| SonarCloud | ⚠️ Incomplete | Check Sonar job logs and configuration |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # Fallow
+        if [ "${{ github.event_name }}" != "pull_request" ]; then
+          echo "| Fallow | ➖ Skipped | Runs on pull requests for changed frontend files only |" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.fallow-analysis.result }}" == "success" ]; then
+          echo "| Fallow | ✅ Passed | Changed frontend files passed fallow audit |" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.fallow-analysis.result }}" == "failure" ]; then
+          echo "| Fallow | ❌ Failed | Changed frontend files introduced fallow findings |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Fallow | ⚠️ Incomplete | Check fallow job logs |" >> $GITHUB_STEP_SUMMARY
         fi
 
         # Type Checking (optional)

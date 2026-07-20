@@ -59,6 +59,12 @@ Das Projekt verwendet automatisierte Tools zur Sicherstellung von Code-Qualität
 - **Scope**: Aktive Backend- und relevante Frontend-Quellpfade, keine Archive oder Laufzeitdaten
 - **Qualitaetsgate**: Wird in CI ausgewertet, sobald die SonarCloud-Repository-Konfiguration vorhanden ist
 
+#### Fallow
+- **Zweck**: TypeScript/JavaScript-spezifische Analyse fuer Dead Code, Duplikate und Komplexitaets-Hotspots
+- **Ausfuehrung**: In GitHub Actions als PR-basierter Audit-Lauf fuer `services/frontend`
+- **Scope**: Geaenderte Frontend-Dateien im Pull Request statt Full-Repo-Blocker
+- **Lokale Nutzung**: `cd services/frontend && npm run fallow` oder `npm run fallow:audit`
+
 ### 5. Type-Checking (Graduell)
 
 #### MyPy (Type Checker)
@@ -75,6 +81,7 @@ Das Projekt verwendet automatisierte Tools zur Sicherstellung von Code-Qualität
 3. **Linting**: Keine kritischen flake8-Fehler
 4. **Sicherheit**: Keine High/Critical Bandit-Issues
 5. **Sonar Quality Gate**: Muss im konfigurierten CI-Setup erfolgreich sein
+6. **Fallow Audit**: Geaenderte Frontend-Dateien duerfen im PR keine neuen `fallow`-Befunde einfuehren
 
 ### Advisory (Nicht-blockierend)
 1. **Type-Coverage**: Graduelle Verbesserung angestrebt
@@ -108,6 +115,7 @@ pip-audit                     # Dependency-Check
 ### CI/CD Pipeline
 - **Trigger**: Push/PR auf main/develop
 - **Jobs**: Code-Quality, Security, Type-Checking, Dependencies, SonarCloud
+- **Frontend-Guard**: `fallow audit` auf Pull Requests fuer geaenderte TypeScript/JavaScript-Dateien
 - **Reports**: Artifacts für alle Tool-Outputs
 - **Quality Gate**: SonarCloud liefert zentrales Qualitaetsfeedback fuer PRs und Branches
 
