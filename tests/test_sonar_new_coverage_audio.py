@@ -9,6 +9,14 @@ from types import SimpleNamespace
 import pytest
 
 
+def raise_value_error(_: str) -> None:
+    raise ValueError("invalid input")
+
+
+def raise_os_error(*_: object) -> None:
+    raise OSError("disk unavailable")
+
+
 @pytest.mark.parametrize(
     "save_function",
     ["save_original_audio", "save_translated_audio"],
@@ -21,7 +29,7 @@ def test_audio_storage_reports_decode_failures_without_payload(
     monkeypatch.setattr(
         audio_storage.base64,
         "b64decode",
-        lambda _: (_ for _ in ()).throw(ValueError("invalid input")),
+        raise_value_error,
     )
 
     with caplog.at_level(logging.ERROR), pytest.raises(ValueError, match="Invalid base64"):
@@ -47,7 +55,7 @@ def test_audio_storage_reports_write_failures_without_target_path(
     monkeypatch.setattr(
         audio_storage.Path,
         "write_bytes",
-        lambda *_: (_ for _ in ()).throw(OSError("disk unavailable")),
+        raise_os_error,
     )
 
     payload = base64.b64encode(b"audio").decode()
