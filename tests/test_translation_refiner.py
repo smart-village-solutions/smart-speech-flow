@@ -96,6 +96,62 @@ def test_ollama_translation_refiner_returns_refined_text(monkeypatch):
     )
 
 
+def test_phi4_mini_prompt_uses_supported_source_as_meaning_anchor():
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = mod.OllamaTranslationRefiner(
+        endpoint="http://ollama:11434",
+        model="phi4-mini",
+        timeout_seconds=1.0,
+        temperature=0.2,
+        max_retries=1,
+    )
+
+    prompt = refiner._build_prompt(
+        "Hello", "de", "en", context={"original_text": "Hallo"}
+    )
+
+    assert "Original user input: Hallo" in prompt
+    assert "Use the original input only to verify" in prompt
+
+
+def test_phi4_mini_prompt_omits_unsupported_source_text():
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = mod.OllamaTranslationRefiner(
+        endpoint="http://ollama:11434",
+        model="phi4-mini",
+        timeout_seconds=1.0,
+        temperature=0.2,
+        max_retries=1,
+    )
+
+    prompt = refiner._build_prompt(
+        "Hello", "ti", "en", context={"original_text": "\u12a8\u1218\u12ed"}
+    )
+
+    assert "Original user input:" not in prompt
+    assert "\u12a8\u1218\u12ed" not in prompt
+
+
+def test_phi4_mini_skips_unsupported_target_language(monkeypatch):
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    post = Mock()
+    monkeypatch.setattr(mod.requests, "post", post)
+    refiner = mod.OllamaTranslationRefiner(
+        endpoint="http://ollama:11434",
+        model="phi4-mini",
+        timeout_seconds=1.0,
+        temperature=0.2,
+        max_retries=1,
+    )
+
+    outcome = refiner.refine("\u12a8\u1218\u12ed", "de", "ti")
+
+    assert outcome.text == "\u12a8\u1218\u12ed"
+    assert outcome.changed is False
+    assert outcome.latency_ms == 0.0
+    post.assert_not_called()
+
+
 def test_shadow_comparison_refiner_schedules_candidate(monkeypatch):
     mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
     refiner = mod.ShadowComparisonRefiner(

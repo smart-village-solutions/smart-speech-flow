@@ -11,6 +11,48 @@ from requests import Response, exceptions
 
 logger = logging.getLogger(__name__)
 
+# Languages listed as supported by the Phi-4-mini-instruct model card.  Phi is
+# still used as a target-language editor, so an unsupported source language is
+# deliberately not a reason to skip refinement; it merely withholds the source
+# text as an unreliable semantic reference.
+_PHI4_MINI_SUPPORTED_LANGUAGE_CODES = frozenset(
+    {
+        "ar",
+        "cs",
+        "da",
+        "de",
+        "en",
+        "es",
+        "fi",
+        "fr",
+        "he",
+        "hu",
+        "it",
+        "ja",
+        "ko",
+        "nl",
+        "no",
+        "pl",
+        "pt",
+        "ru",
+        "sv",
+        "th",
+        "tr",
+        "uk",
+        "zh",
+    }
+)
+
+
+def _language_code_is_supported_by_phi4_mini(language_code: str) -> bool:
+    """Return whether a language code is covered by Phi-4-mini's model card."""
+    normalized_code = language_code.strip().lower().split("-", maxsplit=1)[0]
+    return normalized_code in _PHI4_MINI_SUPPORTED_LANGUAGE_CODES
+
+
+def _is_phi4_mini_model(model: str) -> bool:
+    return model.strip().lower().startswith("phi4-mini")
+
 
 def _default_refinement_endpoint() -> str:
     scheme = os.getenv("LLM_REFINEMENT_SCHEME", "http")
@@ -97,15 +139,26 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
     ) -> str:
         original_text = context.get("original_text") if context else None
         prompt = (
-            "You are an assistant that improves translation quality for spoken conversations. "
-            "Polish the translated sentence so it sounds natural in the target language, but keep the original meaning. "
-            "Respond with the improved sentence only."
+            "You improve a translation for a spoken conversation.\n"
+            "Return only the improved translation in the target language.\n"
+            "Preserve the original meaning, intent, tone, level of formality, names, "
+            "numbers, dates, units, and technical terms. Do not add, omit, summarize, "
+            "or explain anything. Make only changes that improve grammatical correctness, "
+            "fluency, and naturalness for speech. If the candidate is already good, "
+            "return it unchanged."
         )
         if source_lang:
             prompt += f"\nOriginal language code: {source_lang}."
         if target_lang:
             prompt += f"\nTarget language code: {target_lang}."
-        if original_text:
+        if original_text and (
+            not _is_phi4_mini_model(self.model)
+            or _language_code_is_supported_by_phi4_mini(source_lang)
+        ):
+            prompt += (
+                "\nUse the original input only to verify that meaning is preserved. "
+                "Do not translate again unless the current translation contains a clear error."
+            )
             prompt += f"\nOriginal user input: {original_text}"
         prompt += f"\nCurrent translation candidate: {text}\nImproved translation:"
         return prompt
@@ -129,6 +182,17 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         context: Optional[Dict[str, Any]] = None,
     ) -> RefinementOutcome:
         if not text:
+            return RefinementOutcome(
+                text=text, changed=False, latency_ms=0.0, error=None, model=self.model
+            )
+
+        if _is_phi4_mini_model(
+            self.model
+        ) and not _language_code_is_supported_by_phi4_mini(target_lang):
+            logger.info(
+                "Skipping Phi-4-mini refinement for unsupported target language '%s'",
+                target_lang,
+            )
             return RefinementOutcome(
                 text=text, changed=False, latency_ms=0.0, error=None, model=self.model
             )
