@@ -279,6 +279,8 @@ def _transform_pipeline_step(
             "text": step.get("output", ""),
             "changed": step.get("input", {}).get("changed", False),
         }
+        if step.get("refinement_comparison"):
+            transformed_step["refinement_comparison"] = step["refinement_comparison"]
     elif step_name == "tts":
         transformed_step["output"] = _build_tts_step_output(
             step, target_lang, message_id

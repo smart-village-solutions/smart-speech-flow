@@ -1,0 +1,220 @@
+{
+  "audio_format": {
+    "container": "WAV",
+    "codec": "PCM signed 16-bit little-endian",
+    "sample_rate_hz": 16000,
+    "channels": 1
+  },
+  "fixtures": [
+    {
+      "file": "ar_short.wav",
+      "language": "ar",
+      "duration_class": "short",
+      "duration_seconds": 4.352,
+      "text": "مرحباً، أود تسجيل عنواني اليوم."
+    },
+    {
+      "file": "ar_medium.wav",
+      "language": "ar",
+      "duration_class": "medium",
+      "duration_seconds": 11.568,
+      "text": "لإتمام التسجيل أحتاج إلى جواز السفر وتأكيد السكن وشهادة الميلاد، والرسوم الإدارية تبلغ اثني عشر يورو."
+    },
+    {
+      "file": "ar_long.wav",
+      "language": "ar",
+      "duration_class": "long",
+      "duration_seconds": 15.984,
+      "text": "بدأ عقد عملي في الثالث من فبراير عام ألفين وستة وعشرين. أحتاج إلى ترجمة شهادة الميلاد وموعد السابع والعشرين من مارس الساعة الثانية والنصف."
+    },
+    {
+      "file": "de_short.wav",
+      "language": "de",
+      "duration_class": "short",
+      "duration_seconds": 4.88,
+      "text": "Guten Tag, ich möchte meine neue Adresse heute anmelden."
+    },
+    {
+      "file": "de_medium.wav",
+      "language": "de",
+      "duration_class": "medium",
+      "duration_seconds": 10.32,
+      "text": "Für die Anmeldung benötige ich den Reisepass, die Wohnungsgeberbestätigung und die Geburtsurkunde; die Gebühr beträgt zwölf Euro, bitte für heute Nachmittag."
+    },
+    {
+      "file": "de_long.wav",
+      "language": "de",
+      "duration_class": "long",
+      "duration_seconds": 14.832,
+      "text": "Mein Arbeitsvertrag begann am dritten Februar zweitausendsechsundzwanzig. Für die Verlängerung benötige ich die beglaubigte Geburtsurkunde und einen Termin am siebenundzwanzigsten März um vierzehn Uhr dreißig."
+    },
+    {
+      "file": "en_short.wav",
+      "language": "en",
+      "duration_class": "short",
+      "duration_seconds": 4.208,
+      "text": "Hello, I would like to register my new address today."
+    },
+    {
+      "file": "en_medium.wav",
+      "language": "en",
+      "duration_class": "medium",
+      "duration_seconds": 10.688,
+      "text": "For registration today, I need my passport, the landlord confirmation, and my birth certificate; the administrative fee is twelve euros."
+    },
+    {
+      "file": "en_long.wav",
+      "language": "en",
+      "duration_class": "long",
+      "duration_seconds": 13.568,
+      "text": "My employment contract started on the third of February, twenty twenty-six. To extend my residence permit, I need a certified birth certificate and an appointment on Friday, the twenty-seventh of March, at two thirty."
+    },
+    {
+      "file": "tr_short.wav",
+      "language": "tr",
+      "duration_class": "short",
+      "duration_seconds": 4.016,
+      "text": "Merhaba, bugün yeni adresimi kaydettirmek istiyorum."
+    },
+    {
+      "file": "tr_medium.wav",
+      "language": "tr",
+      "duration_class": "medium",
+      "duration_seconds": 9.52,
+      "text": "Kayıt işlemi için bugün pasaportuma, ev sahibi belgesine ve doğum belgeme ihtiyacım var; idari ücret on iki avrodur."
+    },
+    {
+      "file": "tr_long.wav",
+      "language": "tr",
+      "duration_class": "long",
+      "duration_seconds": 15.008,
+      "text": "İş sözleşmem üç Şubat iki bin yirmi altıda başladı. Oturma iznimi uzatmak için doğum belgemin onaylı tercümesi ve yirmi yedi Mart günü saat on dört otuz için randevuya ihtiyacım var."
+    },
+    {
+      "file": "uk_short.wav",
+      "language": "uk",
+      "duration_class": "short",
+      "duration_seconds": 4.064,
+      "text": "Добрий день, хочу зареєструвати адресу."
+    },
+    {
+      "file": "uk_medium.wav",
+      "language": "uk",
+      "duration_class": "medium",
+      "duration_seconds": 9.712,
+      "text": "Для реєстрації потрібні паспорт, підтвердження орендодавця та свідоцтво про народження; збір — дванадцять євро."
+    },
+    {
+      "file": "uk_long.wav",
+      "language": "uk",
+      "duration_class": "long",
+      "duration_seconds": 15.056,
+      "text": "Договір почався третього лютого дві тисячі двадцять шостого року. Для продовження дозволу потрібні завірений переклад свідоцтва і запис на двадцять сьоме березня о чотирнадцятій тридцять."
+    },
+    {
+      "file": "am_short.wav",
+      "language": "am",
+      "duration_class": "short",
+      "duration_seconds": 4.976,
+      "text": "ሰላም፣ አዲሱን አድራሻዬን ዛሬ ማስመዝገብ እፈልጋለሁ።"
+    },
+    {
+      "file": "am_medium.wav",
+      "language": "am",
+      "duration_class": "medium",
+      "duration_seconds": 9.456,
+      "text": "ለምዝገባው ፓስፖርቴን፣ የቤት ባለቤት ማረጋገጫን እና የልደት ማስረጃን እፈልጋለሁ፤ ክፍያው አሥራ ሁለት ዩሮ ነው።"
+    },
+    {
+      "file": "am_long.wav",
+      "language": "am",
+      "duration_class": "long",
+      "duration_seconds": 15.888,
+      "text": "የሥራ ውሌ በሦስተኛው የካቲት ሁለት ሺህ ሃያ ስድስት ተጀመረ። የመኖሪያ ፈቃዴን ለማራዘም የልደት ማስረጃ የተረጋገጠ ትርጉም እና በሃያ ሰባተኛው መጋቢት ከቀኑ ሁለት ተኩል ቀጠሮ እፈልጋለሁ።"
+    },
+    {
+      "file": "fa_short.wav",
+      "language": "fa",
+      "duration_class": "short",
+      "duration_seconds": 4.88,
+      "text": "سلام، می‌خواهم امروز نشانی جدیدم را ثبت کنم."
+    },
+    {
+      "file": "fa_medium.wav",
+      "language": "fa",
+      "duration_class": "medium",
+      "duration_seconds": 9.2,
+      "text": "برای ثبت‌نام امروز، گذرنامه، تأییدیه صاحب‌خانه و گواهی تولد لازم دارم؛ هزینه اداری دوازده یورو است."
+    },
+    {
+      "file": "fa_long.wav",
+      "language": "fa",
+      "duration_class": "long",
+      "duration_seconds": 15.152,
+      "text": "قرارداد کار من در سوم فوریه دو هزار و بیست و شش آغاز شد. برای تمدید اجازه اقامتم، ترجمه رسمی گواهی تولد و وقت ملاقات در بیست و هفتم مارس ساعت دو و نیم بعدازظهر لازم دارم."
+    },
+    {
+      "file": "ku_short.wav",
+      "language": "ku",
+      "duration_class": "short",
+      "duration_seconds": 4.464,
+      "text": "Silav, ez dixwazim navnîşana nû tomar bikim."
+    },
+    {
+      "file": "ku_medium.wav",
+      "language": "ku",
+      "duration_class": "medium",
+      "duration_seconds": 10.288,
+      "text": "Ji bo tomarkirinê, pasaport, belgeya xwediyê malê û belgeya dayikbûnê pêdivî me; xerca duwanzdeh euro ye."
+    },
+    {
+      "file": "ku_long.wav",
+      "language": "ku",
+      "duration_class": "long",
+      "duration_seconds": 16.0,
+      "text": "Peymana karê min di sêyemîn sibatê du hezar bîst û şeş de dest pê kir. Ji bo dirêjkirinê, wergera belgeya dayikbûnê û randevûya bîst û heftemîn adarê pêdivî me."
+    },
+    {
+      "file": "ru_short.wav",
+      "language": "ru",
+      "duration_class": "short",
+      "duration_seconds": 4.096,
+      "text": "Здравствуйте, хочу зарегистрировать новый адрес."
+    },
+    {
+      "file": "ru_medium.wav",
+      "language": "ru",
+      "duration_class": "medium",
+      "duration_seconds": 10.784,
+      "text": "Для регистрации мне нужны паспорт, подтверждение жилья и свидетельство о рождении; административный сбор составляет двенадцать евро."
+    },
+    {
+      "file": "ru_long.wav",
+      "language": "ru",
+      "duration_class": "long",
+      "duration_seconds": 16.608,
+      "text": "Мой трудовой договор начался третьего февраля две тысячи двадцать шестого года. Для продления вида на жительство мне нужны перевод свидетельства о рождении и запись на двадцать седьмое марта в четырнадцать тридцать."
+    },
+    {
+      "file": "ti_short.wav",
+      "language": "ti",
+      "duration_class": "short",
+      "duration_seconds": 3.072,
+      "text": "ሰላም፣ ሎሚ ሓድሽ ኣድራሻይ ክምዝግብ እደሊ ኣለኹ።"
+    },
+    {
+      "file": "ti_medium.wav",
+      "language": "ti",
+      "duration_class": "medium",
+      "duration_seconds": 10.304,
+      "text": "ንምዝገባ ፓስፖርተይ፣ ማረጋገጺ ወናኒ ገዛን ምስክር ልደትን የድልዩኒ፤ እቲ ኣስተዳደራዊ ክፍሊት ዓሰርተ ክልተ ዩሮ እዩ ንሎሚ ድሕሪ ቐትሪ።"
+    },
+    {
+      "file": "ti_long.wav",
+      "language": "ti",
+      "duration_class": "long",
+      "duration_seconds": 13.296,
+      "text": "ውዕለይ ስራሕ ብሳልሳይ ለካቲት ክልተ ሽሕ ዕስራን ሽዱሽተን ጀመረ። ፍቓድ መንበሪየይ ንምንዋሕ ዝተረጋገጸ ትርጉም ምስክር ልደትን ኣብ መበል ዕስራን ሸውዓተን መጋቢት ሰዓት ክልተን ፈረቓን ቆጸራን የድልየኒ።"
+    }
+  ]
+}

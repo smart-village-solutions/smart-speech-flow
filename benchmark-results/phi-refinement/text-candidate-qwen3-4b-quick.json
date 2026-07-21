@@ -1,0 +1,2007 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-07-21T10:17:27.492879+00:00",
+  "pipeline": "text",
+  "warmups": 1,
+  "runs": 1,
+  "cases": [
+    {
+      "file": "ar_short.wav",
+      "language": "ar",
+      "duration_class": "short",
+      "duration_seconds": 4.352,
+      "text": "مرحباً، أود تسجيل عنواني اليوم.",
+      "sha256": "6c13bbf418a8d22f55157ea272fa45891cd019539b30e117ed29ebb6f8ade6ac",
+      "target_lang": "de"
+    },
+    {
+      "file": "ar_medium.wav",
+      "language": "ar",
+      "duration_class": "medium",
+      "duration_seconds": 11.568,
+      "text": "لإتمام التسجيل أحتاج إلى جواز السفر وتأكيد السكن وشهادة الميلاد، والرسوم الإدارية تبلغ اثني عشر يورو.",
+      "sha256": "2db571a3b09c802ecbb541447015ab3a540a9e34f97dcdd01cb1305e685af2e7",
+      "target_lang": "de"
+    },
+    {
+      "file": "ar_long.wav",
+      "language": "ar",
+      "duration_class": "long",
+      "duration_seconds": 15.984,
+      "text": "بدأ عقد عملي في الثالث من فبراير عام ألفين وستة وعشرين. أحتاج إلى ترجمة شهادة الميلاد وموعد السابع والعشرين من مارس الساعة الثانية والنصف.",
+      "sha256": "3b63496d649b410cc04aebaa8d8c0b90485b20ebf3a1c77a4e9b0c383356916d",
+      "target_lang": "de"
+    },
+    {
+      "file": "de_short.wav",
+      "language": "de",
+      "duration_class": "short",
+      "duration_seconds": 4.88,
+      "text": "Guten Tag, ich möchte meine neue Adresse heute anmelden.",
+      "sha256": "a5a44a8ddf27a81db33dfa536dbccbac5bb82b232f654482dfcbeda0f4b3e831",
+      "target_lang": "en"
+    },
+    {
+      "file": "de_medium.wav",
+      "language": "de",
+      "duration_class": "medium",
+      "duration_seconds": 10.32,
+      "text": "Für die Anmeldung benötige ich den Reisepass, die Wohnungsgeberbestätigung und die Geburtsurkunde; die Gebühr beträgt zwölf Euro, bitte für heute Nachmittag.",
+      "sha256": "827c718dcb66c82eeb5b1dc34d270717ecb2de602a67342c6e7d50c504dd91c1",
+      "target_lang": "en"
+    },
+    {
+      "file": "de_long.wav",
+      "language": "de",
+      "duration_class": "long",
+      "duration_seconds": 14.832,
+      "text": "Mein Arbeitsvertrag begann am dritten Februar zweitausendsechsundzwanzig. Für die Verlängerung benötige ich die beglaubigte Geburtsurkunde und einen Termin am siebenundzwanzigsten März um vierzehn Uhr dreißig.",
+      "sha256": "268747c9692b64e9a78580618c1c14846b3f0a9d2e1a44fa0e5892c1fe4dac73",
+      "target_lang": "en"
+    },
+    {
+      "file": "en_short.wav",
+      "language": "en",
+      "duration_class": "short",
+      "duration_seconds": 4.208,
+      "text": "Hello, I would like to register my new address today.",
+      "sha256": "1ea7bc6b8fc3e788860845c10e3b7b309df2f1d060efcb13b248805d85cbe411",
+      "target_lang": "de"
+    },
+    {
+      "file": "en_medium.wav",
+      "language": "en",
+      "duration_class": "medium",
+      "duration_seconds": 10.688,
+      "text": "For registration today, I need my passport, the landlord confirmation, and my birth certificate; the administrative fee is twelve euros.",
+      "sha256": "319ea77c4a9a36b9abc2cd872c116ad213934fc0679e28960fd0366bfcac70df",
+      "target_lang": "de"
+    },
+    {
+      "file": "en_long.wav",
+      "language": "en",
+      "duration_class": "long",
+      "duration_seconds": 13.568,
+      "text": "My employment contract started on the third of February, twenty twenty-six. To extend my residence permit, I need a certified birth certificate and an appointment on Friday, the twenty-seventh of March, at two thirty.",
+      "sha256": "5302862025a65aeb45ba1842bec7f9518587c1db7e002b66795bca89eb4c0ca1",
+      "target_lang": "de"
+    },
+    {
+      "file": "tr_short.wav",
+      "language": "tr",
+      "duration_class": "short",
+      "duration_seconds": 4.016,
+      "text": "Merhaba, bugün yeni adresimi kaydettirmek istiyorum.",
+      "sha256": "88968e261760615e8034f07588855e431527cb2f845182a1b62a43b450a79ae4",
+      "target_lang": "de"
+    },
+    {
+      "file": "tr_medium.wav",
+      "language": "tr",
+      "duration_class": "medium",
+      "duration_seconds": 9.52,
+      "text": "Kayıt işlemi için bugün pasaportuma, ev sahibi belgesine ve doğum belgeme ihtiyacım var; idari ücret on iki avrodur.",
+      "sha256": "48d4bbf5ce9a5bbf423385b9589fba53dcfc62e62b7ab8552e8f96f57cc327f6",
+      "target_lang": "de"
+    },
+    {
+      "file": "tr_long.wav",
+      "language": "tr",
+      "duration_class": "long",
+      "duration_seconds": 15.008,
+      "text": "İş sözleşmem üç Şubat iki bin yirmi altıda başladı. Oturma iznimi uzatmak için doğum belgemin onaylı tercümesi ve yirmi yedi Mart günü saat on dört otuz için randevuya ihtiyacım var.",
+      "sha256": "8511b2f165f264c49b25945e427e6017ce8877c8255bc30ff6e41242baa96f79",
+      "target_lang": "de"
+    },
+    {
+      "file": "uk_short.wav",
+      "language": "uk",
+      "duration_class": "short",
+      "duration_seconds": 4.064,
+      "text": "Добрий день, хочу зареєструвати адресу.",
+      "sha256": "6adc066de6559ff3664d4434b0ced427b0adc9fcaa5d6cf5835d999da04f51eb",
+      "target_lang": "de"
+    },
+    {
+      "file": "uk_medium.wav",
+      "language": "uk",
+      "duration_class": "medium",
+      "duration_seconds": 9.712,
+      "text": "Для реєстрації потрібні паспорт, підтвердження орендодавця та свідоцтво про народження; збір — дванадцять євро.",
+      "sha256": "b1f493ffed264b21ac9bd6c91f4c80000c6d297ea9a66ac29c76fb038d3753b3",
+      "target_lang": "de"
+    },
+    {
+      "file": "uk_long.wav",
+      "language": "uk",
+      "duration_class": "long",
+      "duration_seconds": 15.056,
+      "text": "Договір почався третього лютого дві тисячі двадцять шостого року. Для продовження дозволу потрібні завірений переклад свідоцтва і запис на двадцять сьоме березня о чотирнадцятій тридцять.",
+      "sha256": "2e6cd33ef86a19e57cc50cfc8bc53d660afea02bf5324533121f3a0ccdb7d2ea",
+      "target_lang": "de"
+    },
+    {
+      "file": "am_short.wav",
+      "language": "am",
+      "duration_class": "short",
+      "duration_seconds": 4.976,
+      "text": "ሰላም፣ አዲሱን አድራሻዬን ዛሬ ማስመዝገብ እፈልጋለሁ።",
+      "sha256": "7bc07ff4a27da85507918d8518fda1e1e24e897d1242d71f04a55ad843fc82e9",
+      "target_lang": "de"
+    },
+    {
+      "file": "am_medium.wav",
+      "language": "am",
+      "duration_class": "medium",
+      "duration_seconds": 9.456,
+      "text": "ለምዝገባው ፓስፖርቴን፣ የቤት ባለቤት ማረጋገጫን እና የልደት ማስረጃን እፈልጋለሁ፤ ክፍያው አሥራ ሁለት ዩሮ ነው።",
+      "sha256": "0124f298e5cf85361bba4f568d07611fcbed4f100dff43443fe07ed6ecc30ac6",
+      "target_lang": "de"
+    },
+    {
+      "file": "am_long.wav",
+      "language": "am",
+      "duration_class": "long",
+      "duration_seconds": 15.888,
+      "text": "የሥራ ውሌ በሦስተኛው የካቲት ሁለት ሺህ ሃያ ስድስት ተጀመረ። የመኖሪያ ፈቃዴን ለማራዘም የልደት ማስረጃ የተረጋገጠ ትርጉም እና በሃያ ሰባተኛው መጋቢት ከቀኑ ሁለት ተኩል ቀጠሮ እፈልጋለሁ።",
+      "sha256": "37657ce7ec0bb6f50d72e61fbb679df19d3e5c81c4e09ea256bb737663bcac38",
+      "target_lang": "de"
+    },
+    {
+      "file": "fa_short.wav",
+      "language": "fa",
+      "duration_class": "short",
+      "duration_seconds": 4.88,
+      "text": "سلام، می‌خواهم امروز نشانی جدیدم را ثبت کنم.",
+      "sha256": "d08d9e226563b9ba3b223c06b9fe58ef552d0ebbab2f1f9e3ea78c36af462c47",
+      "target_lang": "de"
+    },
+    {
+      "file": "fa_medium.wav",
+      "language": "fa",
+      "duration_class": "medium",
+      "duration_seconds": 9.2,
+      "text": "برای ثبت‌نام امروز، گذرنامه، تأییدیه صاحب‌خانه و گواهی تولد لازم دارم؛ هزینه اداری دوازده یورو است.",
+      "sha256": "0946cd9ae0f4ab6d74d9b945e20d20ef9187503b1a2a111997a7b55ac48adf8c",
+      "target_lang": "de"
+    },
+    {
+      "file": "fa_long.wav",
+      "language": "fa",
+      "duration_class": "long",
+      "duration_seconds": 15.152,
+      "text": "قرارداد کار من در سوم فوریه دو هزار و بیست و شش آغاز شد. برای تمدید اجازه اقامتم، ترجمه رسمی گواهی تولد و وقت ملاقات در بیست و هفتم مارس ساعت دو و نیم بعدازظهر لازم دارم.",
+      "sha256": "6c1270c57559917bc1a1ffe03b26002c99fffcce57459872d3f38d2fc3f0089a",
+      "target_lang": "de"
+    },
+    {
+      "file": "ku_short.wav",
+      "language": "ku",
+      "duration_class": "short",
+      "duration_seconds": 4.464,
+      "text": "Silav, ez dixwazim navnîşana nû tomar bikim.",
+      "sha256": "316f284ab683f8d9c27269af42fc1d9dee6ea43e5f30d4152efcf32aaff50f57",
+      "target_lang": "de"
+    },
+    {
+      "file": "ku_medium.wav",
+      "language": "ku",
+      "duration_class": "medium",
+      "duration_seconds": 10.288,
+      "text": "Ji bo tomarkirinê, pasaport, belgeya xwediyê malê û belgeya dayikbûnê pêdivî me; xerca duwanzdeh euro ye.",
+      "sha256": "1461b8303ced6ad78edc1a918024cd5dcf9674f4672f12ddd0e5df1f07162054",
+      "target_lang": "de"
+    },
+    {
+      "file": "ku_long.wav",
+      "language": "ku",
+      "duration_class": "long",
+      "duration_seconds": 16.0,
+      "text": "Peymana karê min di sêyemîn sibatê du hezar bîst û şeş de dest pê kir. Ji bo dirêjkirinê, wergera belgeya dayikbûnê û randevûya bîst û heftemîn adarê pêdivî me.",
+      "sha256": "bd1434559842de5b8547eea4e1c7ac247defbfcbe8cce98f4bfb09f73f52686e",
+      "target_lang": "de"
+    },
+    {
+      "file": "ru_short.wav",
+      "language": "ru",
+      "duration_class": "short",
+      "duration_seconds": 4.096,
+      "text": "Здравствуйте, хочу зарегистрировать новый адрес.",
+      "sha256": "19c6ac124870d0b2a1f8d5836020ff47f9ce43c535ddfa6d6798b4c22c2eb87c",
+      "target_lang": "de"
+    },
+    {
+      "file": "ru_medium.wav",
+      "language": "ru",
+      "duration_class": "medium",
+      "duration_seconds": 10.784,
+      "text": "Для регистрации мне нужны паспорт, подтверждение жилья и свидетельство о рождении; административный сбор составляет двенадцать евро.",
+      "sha256": "d685abe0e13b361965a50941aff3c94b1809a3b1f211f66f0cce9bf263633dfd",
+      "target_lang": "de"
+    },
+    {
+      "file": "ru_long.wav",
+      "language": "ru",
+      "duration_class": "long",
+      "duration_seconds": 16.608,
+      "text": "Мой трудовой договор начался третьего февраля две тысячи двадцать шестого года. Для продления вида на жительство мне нужны перевод свидетельства о рождении и запись на двадцать седьмое марта в четырнадцать тридцать.",
+      "sha256": "219c91651ff7c490359242840654e91004f59948f229b7320bfe189efaa1654c",
+      "target_lang": "de"
+    },
+    {
+      "file": "ti_short.wav",
+      "language": "ti",
+      "duration_class": "short",
+      "duration_seconds": 3.072,
+      "text": "ሰላም፣ ሎሚ ሓድሽ ኣድራሻይ ክምዝግብ እደሊ ኣለኹ።",
+      "sha256": "12235f6f8a979d057c90e47425e63605f0ef70999d824dcf9ce78266dadece8d",
+      "target_lang": "de"
+    },
+    {
+      "file": "ti_medium.wav",
+      "language": "ti",
+      "duration_class": "medium",
+      "duration_seconds": 10.304,
+      "text": "ንምዝገባ ፓስፖርተይ፣ ማረጋገጺ ወናኒ ገዛን ምስክር ልደትን የድልዩኒ፤ እቲ ኣስተዳደራዊ ክፍሊት ዓሰርተ ክልተ ዩሮ እዩ ንሎሚ ድሕሪ ቐትሪ።",
+      "sha256": "0ee88ac2e9e1775eedb260f324c2e65bee63dc0ce0782a99054d5b23d3dbd06a",
+      "target_lang": "de"
+    },
+    {
+      "file": "ti_long.wav",
+      "language": "ti",
+      "duration_class": "long",
+      "duration_seconds": 13.296,
+      "text": "ውዕለይ ስራሕ ብሳልሳይ ለካቲት ክልተ ሽሕ ዕስራን ሽዱሽተን ጀመረ። ፍቓድ መንበሪየይ ንምንዋሕ ዝተረጋገጸ ትርጉም ምስክር ልደትን ኣብ መበል ዕስራን ሸውዓተን መጋቢት ሰዓት ክልተን ፈረቓን ቆጸራን የድልየኒ።",
+      "sha256": "ac68c70879031b4a5fd9331f952fe7845360b8636853f0f201181b835623c9bb",
+      "target_lang": "de"
+    }
+  ],
+  "results": [
+    {
+      "id": "ar_short.wav",
+      "duration_ms": 4173.461098995176,
+      "pipeline_total_ms": 4171,
+      "refinement_ms": 4004,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "ar"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "مرحباً، أود تسجيل عنواني اليوم.",
+              "source_lang": "ar",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Heute möchte ich meine Adresse anmelden.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:15:40.818635+00:00Z",
+            "completed_at": "2026-07-21T10:15:40.945588+00:00Z",
+            "duration_ms": 126
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Heute möchte ich meine Adresse anmelden.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:15:40.945622+00:00Z",
+            "completed_at": "2026-07-21T10:15:44.950594+00:00Z",
+            "duration_ms": 4004,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Heute möchte ich meine Adresse anmelden."
+            },
+            "output": {
+              "audio_url": "/api/audio/30b18160-f15e-48ac-8ce4-32e52f359519.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:15:44.950613+00:00Z",
+            "completed_at": "2026-07-21T10:15:44.988117+00:00Z",
+            "duration_ms": 37
+          }
+        ],
+        "total_duration_ms": 4169,
+        "pipeline_started_at": "2026-07-21T10:15:40.818592+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:15:44.988138+00:00Z"
+      }
+    },
+    {
+      "id": "ar_medium.wav",
+      "duration_ms": 4547.292937000748,
+      "pipeline_total_ms": 4545,
+      "refinement_ms": 4005,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "ar"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "لإتمام التسجيل أحتاج إلى جواز السفر وتأكيد السكن وشهادة الميلاد، والرسوم الإدارية تبلغ اثني عشر يورو.",
+              "source_lang": "ar",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Um die Registrierung abzuschließen, benötige ich einen Reisepass, eine Bestätigung der Unterkunft und eine Geburtsurkunde, und die Verwaltungsgebühr beträgt zwölf Euro.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:15:44.992378+00:00Z",
+            "completed_at": "2026-07-21T10:15:45.420688+00:00Z",
+            "duration_ms": 428
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Um die Registrierung abzuschließen, benötige ich einen Reisepass, eine Bestätigung der Unterkunft und eine Geburtsurkunde, und die Verwaltungsgebühr beträgt zwölf Euro.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:15:45.420715+00:00Z",
+            "completed_at": "2026-07-21T10:15:49.425800+00:00Z",
+            "duration_ms": 4005,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Um die Registrierung abzuschließen, benötige ich einen Reisepass, eine Bestätigung der Unterkunft und eine Geburtsurkunde, und die Verwaltungsgebühr beträgt zwölf Euro."
+            },
+            "output": {
+              "audio_url": "/api/audio/dd64678f-e54d-4ad3-9de2-1720834de146.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:15:49.425817+00:00Z",
+            "completed_at": "2026-07-21T10:15:49.534017+00:00Z",
+            "duration_ms": 108
+          }
+        ],
+        "total_duration_ms": 4541,
+        "pipeline_started_at": "2026-07-21T10:15:44.992311+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:15:49.534038+00:00Z"
+      }
+    },
+    {
+      "id": "ar_long.wav",
+      "duration_ms": 4408.681836001051,
+      "pipeline_total_ms": 4406,
+      "refinement_ms": 4004,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "ar"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "بدأ عقد عملي في الثالث من فبراير عام ألفين وستة وعشرين. أحتاج إلى ترجمة شهادة الميلاد وموعد السابع والعشرين من مارس الساعة الثانية والنصف.",
+              "source_lang": "ar",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Der Arbeitsvertrag begann am 3. Februar 1962.Ich brauche die Übersetzung der Geburtsurkunde und das Datum der 27. März um 2.30 Uhr.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:15:49.539605+00:00Z",
+            "completed_at": "2026-07-21T10:15:49.862226+00:00Z",
+            "duration_ms": 322
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Der Arbeitsvertrag begann am 3. Februar 1962.Ich brauche die Übersetzung der Geburtsurkunde und das Datum der 27. März um 2.30 Uhr.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:15:49.862255+00:00Z",
+            "completed_at": "2026-07-21T10:15:53.866650+00:00Z",
+            "duration_ms": 4004,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Der Arbeitsvertrag begann am 3. Februar 1962.Ich brauche die Übersetzung der Geburtsurkunde und das Datum der 27. März um 2.30 Uhr."
+            },
+            "output": {
+              "audio_url": "/api/audio/46e9a381-875b-4aef-8c40-118ced16cdea.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:15:53.866668+00:00Z",
+            "completed_at": "2026-07-21T10:15:53.941331+00:00Z",
+            "duration_ms": 74
+          }
+        ],
+        "total_duration_ms": 4401,
+        "pipeline_started_at": "2026-07-21T10:15:49.539523+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:15:53.941351+00:00Z"
+      }
+    },
+    {
+      "id": "de_short.wav",
+      "duration_ms": 4208.25967300334,
+      "pipeline_total_ms": 4206,
+      "refinement_ms": 4004,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "de"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "Guten Tag, ich möchte meine neue Adresse heute anmelden.",
+              "source_lang": "de",
+              "target_lang": "en",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "I want to sign up for my new address today.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:15:53.948787+00:00Z",
+            "completed_at": "2026-07-21T10:15:54.075637+00:00Z",
+            "duration_ms": 126
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "I want to sign up for my new address today.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:15:54.075663+00:00Z",
+            "completed_at": "2026-07-21T10:15:58.080642+00:00Z",
+            "duration_ms": 4004,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "en",
+              "text": "I want to sign up for my new address today."
+            },
+            "output": {
+              "audio_url": "/api/audio/d4ba8de9-ec35-43b7-b7a9-97ea4d9ea9e3.wav",
+              "format": "wav",
+              "model": "tts_models/en/ljspeech/vits",
+              "language": "en"
+            },
+            "started_at": "2026-07-21T10:15:58.080659+00:00Z",
+            "completed_at": "2026-07-21T10:15:58.152873+00:00Z",
+            "duration_ms": 72
+          }
+        ],
+        "total_duration_ms": 4204,
+        "pipeline_started_at": "2026-07-21T10:15:53.948714+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:15:58.152895+00:00Z"
+      }
+    },
+    {
+      "id": "de_medium.wav",
+      "duration_ms": 4397.539051999047,
+      "pipeline_total_ms": 4395,
+      "refinement_ms": 4005,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "de"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "Für die Anmeldung benötige ich den Reisepass, die Wohnungsgeberbestätigung und die Geburtsurkunde; die Gebühr beträgt zwölf Euro, bitte für heute Nachmittag.",
+              "source_lang": "de",
+              "target_lang": "en",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "For registration, I need the passport, resident certificate and birth certificate; the fee is twelve euros, please for this afternoon.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:15:58.156836+00:00Z",
+            "completed_at": "2026-07-21T10:15:58.472586+00:00Z",
+            "duration_ms": 315
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "For registration, I need the passport, resident certificate and birth certificate; the fee is twelve euros, please for this afternoon.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:15:58.472610+00:00Z",
+            "completed_at": "2026-07-21T10:16:02.477624+00:00Z",
+            "duration_ms": 4005,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "en",
+              "text": "For registration, I need the passport, resident certificate and birth certificate; the fee is twelve euros, please for this afternoon."
+            },
+            "output": {
+              "audio_url": "/api/audio/2104fbd2-c6fd-4dda-87b9-9f7aee503d42.wav",
+              "format": "wav",
+              "model": "tts_models/en/ljspeech/vits",
+              "language": "en"
+            },
+            "started_at": "2026-07-21T10:16:02.477641+00:00Z",
+            "completed_at": "2026-07-21T10:16:02.549312+00:00Z",
+            "duration_ms": 71
+          }
+        ],
+        "total_duration_ms": 4392,
+        "pipeline_started_at": "2026-07-21T10:15:58.156760+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:16:02.549333+00:00Z"
+      }
+    },
+    {
+      "id": "de_long.wav",
+      "duration_ms": 4643.895230998169,
+      "pipeline_total_ms": 4641,
+      "refinement_ms": 4004,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "de"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "Mein Arbeitsvertrag begann am dritten Februar zweitausendsechsundzwanzig. Für die Verlängerung benötige ich die beglaubigte Geburtsurkunde und einen Termin am siebenundzwanzigsten März um vierzehn Uhr dreißig.",
+              "source_lang": "de",
+              "target_lang": "en",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "My employment contract began on the third of February two thousand twenty-six. For the renewal I need the certified birth certificate and an appointment on the twenty-seventh of March at fourteen o’clock thirty.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:16:02.555145+00:00Z",
+            "completed_at": "2026-07-21T10:16:03.071769+00:00Z",
+            "duration_ms": 516
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "My employment contract began on the third of February two thousand twenty-six. For the renewal I need the certified birth certificate and an appointment on the twenty-seventh of March at fourteen o’clock thirty.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:16:03.071799+00:00Z",
+            "completed_at": "2026-07-21T10:16:07.076595+00:00Z",
+            "duration_ms": 4004,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "en",
+              "text": "My employment contract began on the third of February two thousand twenty-six. For the renewal I need the certified birth certificate and an appointment on the twenty-seventh of March at fourteen o’clock thirty."
+            },
+            "output": {
+              "audio_url": "/api/audio/3748c7a1-322c-4633-89c9-dd5927e6e5a0.wav",
+              "format": "wav",
+              "model": "tts_models/en/ljspeech/vits",
+              "language": "en"
+            },
+            "started_at": "2026-07-21T10:16:07.076612+00:00Z",
+            "completed_at": "2026-07-21T10:16:07.191330+00:00Z",
+            "duration_ms": 114
+          }
+        ],
+        "total_duration_ms": 4636,
+        "pipeline_started_at": "2026-07-21T10:16:02.555015+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:16:07.191351+00:00Z"
+      }
+    },
+    {
+      "id": "en_short.wav",
+      "duration_ms": 4251.448258000892,
+      "pipeline_total_ms": 4248,
+      "refinement_ms": 4004,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "en"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "Hello, I would like to register my new address today.",
+              "source_lang": "en",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Hallo, ich möchte heute meine neue Adresse anmelden.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:16:07.199490+00:00Z",
+            "completed_at": "2026-07-21T10:16:07.345708+00:00Z",
+            "duration_ms": 146
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Hallo, ich möchte heute meine neue Adresse anmelden.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:16:07.345734+00:00Z",
+            "completed_at": "2026-07-21T10:16:11.350642+00:00Z",
+            "duration_ms": 4004,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Hallo, ich möchte heute meine neue Adresse anmelden."
+            },
+            "output": {
+              "audio_url": "/api/audio/c258563d-981c-427b-84f5-7a6cc869c742.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:16:11.350668+00:00Z",
+            "completed_at": "2026-07-21T10:16:11.442923+00:00Z",
+            "duration_ms": 92
+          }
+        ],
+        "total_duration_ms": 4243,
+        "pipeline_started_at": "2026-07-21T10:16:07.199440+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:16:11.442944+00:00Z"
+      }
+    },
+    {
+      "id": "en_medium.wav",
+      "duration_ms": 4481.795087995124,
+      "pipeline_total_ms": 4479,
+      "refinement_ms": 4005,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "en"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "For registration today, I need my passport, the landlord confirmation, and my birth certificate; the administrative fee is twelve euros.",
+              "source_lang": "en",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Für die Registrierung heute benötige ich meinen Reisepass, die Bestätigung des Vermieters und meine Geburtsurkunde; die Verwaltungsgebühr beträgt zwölf Euro.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:16:11.450699+00:00Z",
+            "completed_at": "2026-07-21T10:16:11.841432+00:00Z",
+            "duration_ms": 390
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Für die Registrierung heute benötige ich meinen Reisepass, die Bestätigung des Vermieters und meine Geburtsurkunde; die Verwaltungsgebühr beträgt zwölf Euro.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:16:11.841462+00:00Z",
+            "completed_at": "2026-07-21T10:16:15.846574+00:00Z",
+            "duration_ms": 4005,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Für die Registrierung heute benötige ich meinen Reisepass, die Bestätigung des Vermieters und meine Geburtsurkunde; die Verwaltungsgebühr beträgt zwölf Euro."
+            },
+            "output": {
+              "audio_url": "/api/audio/a341eaf0-7363-4c12-88d1-84f5c0ae9fa8.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:16:15.846590+00:00Z",
+            "completed_at": "2026-07-21T10:16:15.924035+00:00Z",
+            "duration_ms": 77
+          }
+        ],
+        "total_duration_ms": 4473,
+        "pipeline_started_at": "2026-07-21T10:16:11.450599+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:16:15.924056+00:00Z"
+      }
+    },
+    {
+      "id": "en_long.wav",
+      "duration_ms": 4489.229673003138,
+      "pipeline_total_ms": 4487,
+      "refinement_ms": 4005,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "en"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "My employment contract started on the third of February, twenty twenty-six. To extend my residence permit, I need a certified birth certificate and an appointment on Friday, the twenty-seventh of March, at two thirty.",
+              "source_lang": "en",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Um meine Aufenthaltserlaubnis zu verlängern, brauche ich eine bestätigte Geburtsurkunde und einen Termin am Freitag, dem 27. März, um zweiunddreißig.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:16:15.931777+00:00Z",
+            "completed_at": "2026-07-21T10:16:16.332049+00:00Z",
+            "duration_ms": 400
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Um meine Aufenthaltserlaubnis zu verlängern, brauche ich eine bestätigte Geburtsurkunde und einen Termin am Freitag, dem 27. März, um zweiunddreißig.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:16:16.332079+00:00Z",
+            "completed_at": "2026-07-21T10:16:20.337224+00:00Z",
+            "duration_ms": 4005,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Um meine Aufenthaltserlaubnis zu verlängern, brauche ich eine bestätigte Geburtsurkunde und einen Termin am Freitag, dem 27. März, um zweiunddreißig."
+            },
+            "output": {
+              "audio_url": "/api/audio/f8c35620-7e0f-4d32-9e16-ca5afdacf15d.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:16:20.337241+00:00Z",
+            "completed_at": "2026-07-21T10:16:20.412642+00:00Z",
+            "duration_ms": 75
+          }
+        ],
+        "total_duration_ms": 4480,
+        "pipeline_started_at": "2026-07-21T10:16:15.931691+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:16:20.412664+00:00Z"
+      }
+    },
+    {
+      "id": "tr_short.wav",
+      "duration_ms": 4226.422687002923,
+      "pipeline_total_ms": 4223,
+      "refinement_ms": 4004,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "tr"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "Merhaba, bugün yeni adresimi kaydettirmek istiyorum.",
+              "source_lang": "tr",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Hallo, ich möchte heute meine neue Adresse registrieren.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:16:20.421063+00:00Z",
+            "completed_at": "2026-07-21T10:16:20.552477+00:00Z",
+            "duration_ms": 131
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Hallo, ich möchte heute meine neue Adresse registrieren.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:16:20.552503+00:00Z",
+            "completed_at": "2026-07-21T10:16:24.557418+00:00Z",
+            "duration_ms": 4004,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Hallo, ich möchte heute meine neue Adresse registrieren."
+            },
+            "output": {
+              "audio_url": "/api/audio/5f1ecaaa-c149-441d-809c-46a8277da326.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:16:24.557434+00:00Z",
+            "completed_at": "2026-07-21T10:16:24.641839+00:00Z",
+            "duration_ms": 84
+          }
+        ],
+        "total_duration_ms": 4220,
+        "pipeline_started_at": "2026-07-21T10:16:20.421015+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:16:24.641871+00:00Z"
+      }
+    },
+    {
+      "id": "tr_medium.wav",
+      "duration_ms": 4485.679739998886,
+      "pipeline_total_ms": 4483,
+      "refinement_ms": 4005,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "tr"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "Kayıt işlemi için bugün pasaportuma, ev sahibi belgesine ve doğum belgeme ihtiyacım var; idari ücret on iki avrodur.",
+              "source_lang": "tr",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Für die Registrierung benötige ich heute meinen Reisepass, meine Gastgeberbescheinigung und meine Geburtsurkunde; die Verwaltungsgebühr beträgt zwölf Euro.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:16:24.648278+00:00Z",
+            "completed_at": "2026-07-21T10:16:25.047619+00:00Z",
+            "duration_ms": 399
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Für die Registrierung benötige ich heute meinen Reisepass, meine Gastgeberbescheinigung und meine Geburtsurkunde; die Verwaltungsgebühr beträgt zwölf Euro.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:16:25.047648+00:00Z",
+            "completed_at": "2026-07-21T10:16:29.052678+00:00Z",
+            "duration_ms": 4005,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Für die Registrierung benötige ich heute meinen Reisepass, meine Gastgeberbescheinigung und meine Geburtsurkunde; die Verwaltungsgebühr beträgt zwölf Euro."
+            },
+            "output": {
+              "audio_url": "/api/audio/d4b3833d-2243-43b7-b7b9-bef40bbfab31.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:16:29.052694+00:00Z",
+            "completed_at": "2026-07-21T10:16:29.128117+00:00Z",
+            "duration_ms": 75
+          }
+        ],
+        "total_duration_ms": 4479,
+        "pipeline_started_at": "2026-07-21T10:16:24.648175+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:16:29.128138+00:00Z"
+      }
+    },
+    {
+      "id": "tr_long.wav",
+      "duration_ms": 4816.989242994168,
+      "pipeline_total_ms": 4759,
+      "refinement_ms": 4005,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "tr"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "İş sözleşmem üç Şubat iki bin yirmi altıda başladı. Oturma iznimi uzatmak için doğum belgemin onaylı tercümesi ve yirmi yedi Mart günü saat on dört otuz için randevuya ihtiyacım var.",
+              "source_lang": "tr",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Mein Arbeitsvertrag begann am drei Februar zweitausend zweiundzwanzig. Um meine Aufenthaltserlaubnis zu verlängern, brauche ich eine genehmigte Übersetzung meiner Geburtsurkunde und einen Termin für vierundzwanzig Uhr am siebzehnten März.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:16:29.133382+00:00Z",
+            "completed_at": "2026-07-21T10:16:29.749378+00:00Z",
+            "duration_ms": 616
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Mein Arbeitsvertrag begann am drei Februar zweitausend zweiundzwanzig. Um meine Aufenthaltserlaubnis zu verlängern, brauche ich eine genehmigte Übersetzung meiner Geburtsurkunde und einen Termin für vierundzwanzig Uhr am siebzehnten März.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:16:29.749408+00:00Z",
+            "completed_at": "2026-07-21T10:16:33.754454+00:00Z",
+            "duration_ms": 4005,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Mein Arbeitsvertrag begann am drei Februar zweitausend zweiundzwanzig. Um meine Aufenthaltserlaubnis zu verlängern, brauche ich eine genehmigte Übersetzung meiner Geburtsurkunde und einen Termin für vierundzwanzig Uhr am siebzehnten März."
+            },
+            "output": {
+              "audio_url": "/api/audio/56a5890d-007d-41ce-a5f9-1fb89c0ec2a4.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:16:33.754474+00:00Z",
+            "completed_at": "2026-07-21T10:16:33.888021+00:00Z",
+            "duration_ms": 133
+          }
+        ],
+        "total_duration_ms": 4754,
+        "pipeline_started_at": "2026-07-21T10:16:29.133291+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:16:33.888044+00:00Z"
+      }
+    },
+    {
+      "id": "uk_short.wav",
+      "duration_ms": 4250.50314499822,
+      "pipeline_total_ms": 4231,
+      "refinement_ms": 4005,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "uk"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "Добрий день, хочу зареєструвати адресу.",
+              "source_lang": "uk",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Ich möchte eine Adresse angeben.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:16:33.950493+00:00Z",
+            "completed_at": "2026-07-21T10:16:34.075760+00:00Z",
+            "duration_ms": 125
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Ich möchte eine Adresse angeben.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:16:34.075786+00:00Z",
+            "completed_at": "2026-07-21T10:16:38.080843+00:00Z",
+            "duration_ms": 4005,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Ich möchte eine Adresse angeben."
+            },
+            "output": {
+              "audio_url": "/api/audio/86433020-70fc-4f33-8159-15a5d1cc858a.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:16:38.080860+00:00Z",
+            "completed_at": "2026-07-21T10:16:38.179690+00:00Z",
+            "duration_ms": 98
+          }
+        ],
+        "total_duration_ms": 4229,
+        "pipeline_started_at": "2026-07-21T10:16:33.950446+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:16:38.179711+00:00Z"
+      }
+    },
+    {
+      "id": "uk_medium.wav",
+      "duration_ms": 4467.719270003727,
+      "pipeline_total_ms": 4465,
+      "refinement_ms": 4004,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "uk"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "Для реєстрації потрібні паспорт, підтвердження орендодавця та свідоцтво про народження; збір — дванадцять євро.",
+              "source_lang": "uk",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Für die Registrierung benötigen Sie einen Reisepass, eine Bestätigung des Mieters und eine Geburtsurkunde; die Gebühr beträgt zwölf Euro.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:16:38.200757+00:00Z",
+            "completed_at": "2026-07-21T10:16:38.558795+00:00Z",
+            "duration_ms": 358
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Für die Registrierung benötigen Sie einen Reisepass, eine Bestätigung des Mieters und eine Geburtsurkunde; die Gebühr beträgt zwölf Euro.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:16:38.558824+00:00Z",
+            "completed_at": "2026-07-21T10:16:42.563634+00:00Z",
+            "duration_ms": 4004,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Für die Registrierung benötigen Sie einen Reisepass, eine Bestätigung des Mieters und eine Geburtsurkunde; die Gebühr beträgt zwölf Euro."
+            },
+            "output": {
+              "audio_url": "/api/audio/671f511a-683a-46cb-8510-0c24aed1ed52.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:16:42.563650+00:00Z",
+            "completed_at": "2026-07-21T10:16:42.663335+00:00Z",
+            "duration_ms": 99
+          }
+        ],
+        "total_duration_ms": 4462,
+        "pipeline_started_at": "2026-07-21T10:16:38.200693+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:16:42.663364+00:00Z"
+      }
+    },
+    {
+      "id": "uk_long.wav",
+      "duration_ms": 4771.46276399435,
+      "pipeline_total_ms": 4769,
+      "refinement_ms": 4005,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "uk"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "Договір почався третього лютого дві тисячі двадцять шостого року. Для продовження дозволу потрібні завірений переклад свідоцтва і запис на двадцять сьоме березня о чотирнадцятій тридцять.",
+              "source_lang": "uk",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Der Vertrag begann am dritten Februar des zweitausend zwanzigsten Jahres. Für die Verlängerung der Genehmigung benötigt eine zertifizierte Übersetzung der Bescheinigung und Aufzeichnung am siebzehnten März um vierzehnunddreißig.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:16:42.669065+00:00Z",
+            "completed_at": "2026-07-21T10:16:43.278892+00:00Z",
+            "duration_ms": 609
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Der Vertrag begann am dritten Februar des zweitausend zwanzigsten Jahres. Für die Verlängerung der Genehmigung benötigt eine zertifizierte Übersetzung der Bescheinigung und Aufzeichnung am siebzehnten März um vierzehnunddreißig.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:16:43.278922+00:00Z",
+            "completed_at": "2026-07-21T10:16:47.284098+00:00Z",
+            "duration_ms": 4005,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Der Vertrag begann am dritten Februar des zweitausend zwanzigsten Jahres. Für die Verlängerung der Genehmigung benötigt eine zertifizierte Übersetzung der Bescheinigung und Aufzeichnung am siebzehnten März um vierzehnunddreißig."
+            },
+            "output": {
+              "audio_url": "/api/audio/b66f4cf1-848a-442a-aab1-950a7de5476f.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:16:47.284115+00:00Z",
+            "completed_at": "2026-07-21T10:16:47.430793+00:00Z",
+            "duration_ms": 146
+          }
+        ],
+        "total_duration_ms": 4761,
+        "pipeline_started_at": "2026-07-21T10:16:42.668963+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:16:47.430827+00:00Z"
+      }
+    },
+    {
+      "id": "am_short.wav",
+      "duration_ms": 4216.847999996389,
+      "pipeline_total_ms": 4214,
+      "refinement_ms": 4004,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "am"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "ሰላም፣ አዲሱን አድራሻዬን ዛሬ ማስመዝገብ እፈልጋለሁ።",
+              "source_lang": "am",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Hallo, ich möchte heute meine neue Adresse registrieren.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:16:47.440511+00:00Z",
+            "completed_at": "2026-07-21T10:16:47.573465+00:00Z",
+            "duration_ms": 132
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Hallo, ich möchte heute meine neue Adresse registrieren.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:16:47.573490+00:00Z",
+            "completed_at": "2026-07-21T10:16:51.577674+00:00Z",
+            "duration_ms": 4004,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Hallo, ich möchte heute meine neue Adresse registrieren."
+            },
+            "output": {
+              "audio_url": "/api/audio/843762eb-504f-4fe2-ba2a-1ba6336edaaa.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:16:51.577692+00:00Z",
+            "completed_at": "2026-07-21T10:16:51.652740+00:00Z",
+            "duration_ms": 75
+          }
+        ],
+        "total_duration_ms": 4212,
+        "pipeline_started_at": "2026-07-21T10:16:47.440465+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:16:51.652771+00:00Z"
+      }
+    },
+    {
+      "id": "am_medium.wav",
+      "duration_ms": 4426.397248993453,
+      "pipeline_total_ms": 4423,
+      "refinement_ms": 4005,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "am"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "ለምዝገባው ፓስፖርቴን፣ የቤት ባለቤት ማረጋገጫን እና የልደት ማስረጃን እፈልጋለሁ፤ ክፍያው አሥራ ሁለት ዩሮ ነው።",
+              "source_lang": "am",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Ich möchte einen Reisepass, eine Besitzerbescheinigung und eine Geburtsurkunde für die Registrierung, zwei Euro pro Person.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:16:51.658227+00:00Z",
+            "completed_at": "2026-07-21T10:16:51.955831+00:00Z",
+            "duration_ms": 297
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Ich möchte einen Reisepass, eine Besitzerbescheinigung und eine Geburtsurkunde für die Registrierung, zwei Euro pro Person.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:16:51.955861+00:00Z",
+            "completed_at": "2026-07-21T10:16:55.960976+00:00Z",
+            "duration_ms": 4005,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Ich möchte einen Reisepass, eine Besitzerbescheinigung und eine Geburtsurkunde für die Registrierung, zwei Euro pro Person."
+            },
+            "output": {
+              "audio_url": "/api/audio/8b009c56-770d-4112-af0e-f4695238ee08.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:16:55.960992+00:00Z",
+            "completed_at": "2026-07-21T10:16:56.077305+00:00Z",
+            "duration_ms": 116
+          }
+        ],
+        "total_duration_ms": 4419,
+        "pipeline_started_at": "2026-07-21T10:16:51.658140+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:16:56.077336+00:00Z"
+      }
+    },
+    {
+      "id": "am_long.wav",
+      "duration_ms": 4614.433887996711,
+      "pipeline_total_ms": 4612,
+      "refinement_ms": 4004,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "am"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "የሥራ ውሌ በሦስተኛው የካቲት ሁለት ሺህ ሃያ ስድስት ተጀመረ። የመኖሪያ ፈቃዴን ለማራዘም የልደት ማስረጃ የተረጋገጠ ትርጉም እና በሃያ ሰባተኛው መጋቢት ከቀኑ ሁለት ተኩል ቀጠሮ እፈልጋለሁ።",
+              "source_lang": "am",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Ich möchte eine bestätigte Übersetzung der Altersbescheinigung, um die Aufenthaltserlaubnis zu erhöhen, und eine gleichwertige Übersetzung ab dem Samstag, dem 7. März, in Haiti.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:16:56.083715+00:00Z",
+            "completed_at": "2026-07-21T10:16:56.595893+00:00Z",
+            "duration_ms": 512
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Ich möchte eine bestätigte Übersetzung der Altersbescheinigung, um die Aufenthaltserlaubnis zu erhöhen, und eine gleichwertige Übersetzung ab dem Samstag, dem 7. März, in Haiti.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:16:56.595921+00:00Z",
+            "completed_at": "2026-07-21T10:17:00.600653+00:00Z",
+            "duration_ms": 4004,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Ich möchte eine bestätigte Übersetzung der Altersbescheinigung, um die Aufenthaltserlaubnis zu erhöhen, und eine gleichwertige Übersetzung ab dem Samstag, dem 7. März, in Haiti."
+            },
+            "output": {
+              "audio_url": "/api/audio/a21a66b0-0fce-49cb-9180-8bab876fabb6.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:17:00.600670+00:00Z",
+            "completed_at": "2026-07-21T10:17:00.691982+00:00Z",
+            "duration_ms": 91
+          }
+        ],
+        "total_duration_ms": 4608,
+        "pipeline_started_at": "2026-07-21T10:16:56.083644+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:17:00.692003+00:00Z"
+      }
+    },
+    {
+      "id": "fa_short.wav",
+      "duration_ms": 4216.539927998383,
+      "pipeline_total_ms": 4213,
+      "refinement_ms": 4004,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "fa"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "سلام، می‌خواهم امروز نشانی جدیدم را ثبت کنم.",
+              "source_lang": "fa",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Hallo, ich möchte heute mein neues Zeichen registrieren.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:17:00.699183+00:00Z",
+            "completed_at": "2026-07-21T10:17:00.842278+00:00Z",
+            "duration_ms": 143
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Hallo, ich möchte heute mein neues Zeichen registrieren.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:17:00.842304+00:00Z",
+            "completed_at": "2026-07-21T10:17:04.846677+00:00Z",
+            "duration_ms": 4004,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Hallo, ich möchte heute mein neues Zeichen registrieren."
+            },
+            "output": {
+              "audio_url": "/api/audio/9194a529-4311-4544-af4c-5958fdc30a9c.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:17:04.846695+00:00Z",
+            "completed_at": "2026-07-21T10:17:04.910672+00:00Z",
+            "duration_ms": 63
+          }
+        ],
+        "total_duration_ms": 4211,
+        "pipeline_started_at": "2026-07-21T10:17:00.699109+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:17:04.910692+00:00Z"
+      }
+    },
+    {
+      "id": "fa_medium.wav",
+      "duration_ms": 4522.190103998582,
+      "pipeline_total_ms": 4519,
+      "refinement_ms": 4005,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "fa"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "برای ثبت‌نام امروز، گذرنامه، تأییدیه صاحب‌خانه و گواهی تولد لازم دارم؛ هزینه اداری دوازده یورو است.",
+              "source_lang": "fa",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Für die heutige Registrierung benötige ich einen Reisepass, eine Besitzerbescheinigung und eine Geburtsurkunde; die Verwaltungsgebühr beträgt zwölf Euro.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:17:04.915771+00:00Z",
+            "completed_at": "2026-07-21T10:17:05.321466+00:00Z",
+            "duration_ms": 405
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Für die heutige Registrierung benötige ich einen Reisepass, eine Besitzerbescheinigung und eine Geburtsurkunde; die Verwaltungsgebühr beträgt zwölf Euro.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:17:05.321493+00:00Z",
+            "completed_at": "2026-07-21T10:17:09.326584+00:00Z",
+            "duration_ms": 4005,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Für die heutige Registrierung benötige ich einen Reisepass, eine Besitzerbescheinigung und eine Geburtsurkunde; die Verwaltungsgebühr beträgt zwölf Euro."
+            },
+            "output": {
+              "audio_url": "/api/audio/dd6f19c9-57d0-49f4-97b0-e07d0ecfe3fe.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:17:09.326601+00:00Z",
+            "completed_at": "2026-07-21T10:17:09.431543+00:00Z",
+            "duration_ms": 104
+          }
+        ],
+        "total_duration_ms": 4515,
+        "pipeline_started_at": "2026-07-21T10:17:04.915675+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:17:09.431565+00:00Z"
+      }
+    },
+    {
+      "id": "fa_long.wav",
+      "duration_ms": 4551.22627500532,
+      "pipeline_total_ms": 4548,
+      "refinement_ms": 4003,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "fa"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "قرارداد کار من در سوم فوریه دو هزار و بیست و شش آغاز شد. برای تمدید اجازه اقامتم، ترجمه رسمی گواهی تولد و وقت ملاقات در بیست و هفتم مارس ساعت دو و نیم بعدازظهر لازم دارم.",
+              "source_lang": "fa",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Für die Verlängerung der Aufenthaltserlaubnis benötige ich die offizielle Übersetzung der Geburtsurkunde und die Zeit des Treffens am 27. März um zweieinhalb Uhr nachmittags.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:17:09.438055+00:00Z",
+            "completed_at": "2026-07-21T10:17:09.882569+00:00Z",
+            "duration_ms": 444
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Für die Verlängerung der Aufenthaltserlaubnis benötige ich die offizielle Übersetzung der Geburtsurkunde und die Zeit des Treffens am 27. März um zweieinhalb Uhr nachmittags.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:17:09.882597+00:00Z",
+            "completed_at": "2026-07-21T10:17:13.885905+00:00Z",
+            "duration_ms": 4003,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Für die Verlängerung der Aufenthaltserlaubnis benötige ich die offizielle Übersetzung der Geburtsurkunde und die Zeit des Treffens am 27. März um zweieinhalb Uhr nachmittags."
+            },
+            "output": {
+              "audio_url": "/api/audio/ab8d5c30-41d1-4966-8e34-2cbf12d65e9a.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:17:13.885922+00:00Z",
+            "completed_at": "2026-07-21T10:17:13.982193+00:00Z",
+            "duration_ms": 96
+          }
+        ],
+        "total_duration_ms": 4544,
+        "pipeline_started_at": "2026-07-21T10:17:09.437929+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:17:13.982216+00:00Z"
+      }
+    },
+    {
+      "id": "ru_short.wav",
+      "duration_ms": 4189.634561997082,
+      "pipeline_total_ms": 4187,
+      "refinement_ms": 4004,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "ru"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "Здравствуйте, хочу зарегистрировать новый адрес.",
+              "source_lang": "ru",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Ich möchte eine neue Adresse anmelden.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:17:13.999760+00:00Z",
+            "completed_at": "2026-07-21T10:17:14.115530+00:00Z",
+            "duration_ms": 115
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Ich möchte eine neue Adresse anmelden.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:17:14.115558+00:00Z",
+            "completed_at": "2026-07-21T10:17:18.120503+00:00Z",
+            "duration_ms": 4004,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Ich möchte eine neue Adresse anmelden."
+            },
+            "output": {
+              "audio_url": "/api/audio/07ad9bf2-f3fa-4281-8a5c-af9f1e54e460.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:17:18.120531+00:00Z",
+            "completed_at": "2026-07-21T10:17:18.185596+00:00Z",
+            "duration_ms": 65
+          }
+        ],
+        "total_duration_ms": 4185,
+        "pipeline_started_at": "2026-07-21T10:17:13.999722+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:17:18.185617+00:00Z"
+      }
+    },
+    {
+      "id": "ru_medium.wav",
+      "duration_ms": 4499.259575000906,
+      "pipeline_total_ms": 4496,
+      "refinement_ms": 4004,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "ru"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "Для регистрации мне нужны паспорт, подтверждение жилья и свидетельство о рождении; административный сбор составляет двенадцать евро.",
+              "source_lang": "ru",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Für die Registrierung benötige ich einen Reisepass, eine Wohnungsbescheinigung und eine Geburtsurkunde; die Verwaltungsgebühr beträgt zwölf Euro.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:17:18.189981+00:00Z",
+            "completed_at": "2026-07-21T10:17:18.561401+00:00Z",
+            "duration_ms": 371
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Für die Registrierung benötige ich einen Reisepass, eine Wohnungsbescheinigung und eine Geburtsurkunde; die Verwaltungsgebühr beträgt zwölf Euro.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:17:18.561430+00:00Z",
+            "completed_at": "2026-07-21T10:17:22.566396+00:00Z",
+            "duration_ms": 4004,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Für die Registrierung benötige ich einen Reisepass, eine Wohnungsbescheinigung und eine Geburtsurkunde; die Verwaltungsgebühr beträgt zwölf Euro."
+            },
+            "output": {
+              "audio_url": "/api/audio/e568f537-882f-48e1-b62e-067d61d5f279.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:17:22.566413+00:00Z",
+            "completed_at": "2026-07-21T10:17:22.683828+00:00Z",
+            "duration_ms": 117
+          }
+        ],
+        "total_duration_ms": 4493,
+        "pipeline_started_at": "2026-07-21T10:17:18.189905+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:17:22.683849+00:00Z"
+      }
+    },
+    {
+      "id": "ru_long.wav",
+      "duration_ms": 4791.132592996291,
+      "pipeline_total_ms": 4789,
+      "refinement_ms": 4005,
+      "refinement_status": "error",
+      "metadata": {
+        "input": {
+          "type": "text",
+          "source_lang": "ru"
+        },
+        "steps": [
+          {
+            "name": "translation",
+            "input": {
+              "text": "Мой трудовой договор начался третьего февраля две тысячи двадцать шестого года. Для продления вида на жительство мне нужны перевод свидетельства о рождении и запись на двадцать седьмое марта в четырнадцать тридцать.",
+              "source_lang": "ru",
+              "target_lang": "de",
+              "model": "m2m100_1.2B",
+              "debug": "false"
+            },
+            "output": {
+              "text": "Mein Arbeitsvertrag begann am dritten Februar des zweitausendsechzigsten Jahres.Um die Aufenthaltserlaubnis zu verlängern, brauche ich eine Übersetzung der Geburtsurkunde und eine Aufnahme am siebzehnten März um vierzehnunddreißig.",
+              "model": "m2m100_1.2B"
+            },
+            "started_at": "2026-07-21T10:17:22.689852+00:00Z",
+            "completed_at": "2026-07-21T10:17:23.324590+00:00Z",
+            "duration_ms": 634
+          },
+          {
+            "name": "refinement",
+            "input": {
+              "enabled": true,
+              "changed": false
+            },
+            "output": {
+              "text": "Mein Arbeitsvertrag begann am dritten Februar des zweitausendsechzigsten Jahres.Um die Aufenthaltserlaubnis zu verlängern, brauche ich eine Übersetzung der Geburtsurkunde und eine Aufnahme am siebzehnten März um vierzehnunddreißig.",
+              "changed": false
+            },
+            "started_at": "2026-07-21T10:17:23.324619+00:00Z",
+            "completed_at": "2026-07-21T10:17:27.329865+00:00Z",
+            "duration_ms": 4005,
+            "refinement_comparison": {
+              "primary_model": "qwen3:4b",
+              "primary_status": "error",
+              "candidate_model": null,
+              "candidate_status": null
+            }
+          },
+          {
+            "name": "tts",
+            "input": {
+              "lang": "de",
+              "text": "Mein Arbeitsvertrag begann am dritten Februar des zweitausendsechzigsten Jahres.Um die Aufenthaltserlaubnis zu verlängern, brauche ich eine Übersetzung der Geburtsurkunde und eine Aufnahme am siebzehnten März um vierzehnunddreißig."
+            },
+            "output": {
+              "audio_url": "/api/audio/bce917bd-9564-4e24-9dcd-6637647f5fb5.wav",
+              "format": "wav",
+              "model": "tts_models/de/thorsten/vits",
+              "language": "de"
+            },
+            "started_at": "2026-07-21T10:17:27.329881+00:00Z",
+            "completed_at": "2026-07-21T10:17:27.473768+00:00Z",
+            "duration_ms": 143
+          }
+        ],
+        "total_duration_ms": 4784,
+        "pipeline_started_at": "2026-07-21T10:17:22.689707+00:00Z",
+        "pipeline_completed_at": "2026-07-21T10:17:27.473789+00:00Z"
+      }
+    }
+  ],
+  "summary": {
+    "end_to_end": {
+      "count": 24,
+      "mean_ms": 4443.67,
+      "median_ms": 4474.76,
+      "p95_ms": 4791.13,
+      "min_ms": 4173.46,
+      "max_ms": 4816.99,
+      "error_rate": 0.2,
+      "timeout_rate": 0.0
+    },
+    "refinement": {
+      "count": 24,
+      "mean_ms": 4004.42,
+      "median_ms": 4004.0,
+      "p95_ms": 4005,
+      "min_ms": 4003,
+      "max_ms": 4005,
+      "error_rate": 0.5,
+      "timeout_rate": 0.5
+    }
+  }
+}

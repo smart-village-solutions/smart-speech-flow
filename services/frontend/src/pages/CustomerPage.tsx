@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { ChangeEvent, FormEvent } from 'react';
+import type { ChangeEvent, SubmitEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CustomerService from '../services/CustomerService';
 import MessageService from '../services/MessageService';
@@ -80,7 +80,7 @@ export default function CustomerPage() {
     setSessionIdError(null);
   };
 
-  const handleSessionIdSubmit = async (e: FormEvent) => {
+  const handleSessionIdSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!validatePathIdentifier(sessionId, 'session')) {

@@ -51,6 +51,38 @@ interface SessionContextType {
 
 const SessionContext = createContext<SessionContextType | null>(null);
 
+function findTemporaryMessageId(tempIdMap: Map<string, string>, messageId: string) {
+  for (const [tempId, realId] of tempIdMap) {
+    if (realId === messageId) {
+      return tempId;
+    }
+  }
+  return null;
+}
+
+function confirmTemporaryMessage(
+  messages: Message[],
+  tempId: string,
+  wsMessage: WebSocketMessage
+): Message[] {
+  if (!messages.some((message) => message.id === tempId)) {
+    console.warn('Temporary message not found');
+    return messages;
+  }
+
+  return messages.map<Message>((message) =>
+    message.id === tempId
+      ? {
+          ...message,
+          status: 'sent',
+          content: wsMessage.text,
+          pipeline_metadata: wsMessage.pipeline_metadata,
+          audio_url: wsMessage.audio_url,
+        }
+      : message
+  );
+}
+
 export function SessionProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [clientType, setClientType] = useState<ClientType | null>(null);
@@ -141,32 +173,11 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
       return;
     }
 
-    const tempIdMap = tempIdMapRef.current;
-    const tempId =
-      Array.from(tempIdMap.entries()).find(([, realId]) => realId === messageId)?.[0] ??
-      null;
+    const tempId = findTemporaryMessageId(tempIdMapRef.current, messageId);
 
     if (tempId) {
       setTimeout(() => {
-        setMessages((currentMessages) => {
-          const message = currentMessages.find((currentMessage) => currentMessage.id === tempId);
-          if (!message) {
-            console.warn('Temporary message not found');
-            return currentMessages;
-          }
-
-          return currentMessages.map((currentMessage) =>
-            currentMessage.id === tempId
-              ? {
-                  ...currentMessage,
-                  status: 'sent',
-                  content: wsMessage.text,
-                  pipeline_metadata: wsMessage.pipeline_metadata,
-                  audio_url: wsMessage.audio_url,
-                }
-              : currentMessage
-          );
-        });
+        setMessages((currentMessages) => confirmTemporaryMessage(currentMessages, tempId, wsMessage));
       }, 100);
       return;
     }
@@ -179,11 +190,6 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
       }
 
       pendingMessagesRef.current.delete(messageId);
-      const existingMessage = messages.some((message) => message.id === messageId);
-      if (existingMessage) {
-        return;
-      }
-
       addMessage({
         id: messageId,
         sender: clientType || 'admin',
@@ -195,7 +201,7 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
         pipeline_metadata: wsMessage.pipeline_metadata,
       });
     }, 500);
-  }, [addMessage, clientType, messages]);
+  }, [addMessage, clientType]);
 
   const handleWebSocketMessage = useCallback((wsMessage: WebSocketMessage) => {
     if (wsMessage.role === 'session_terminated') {

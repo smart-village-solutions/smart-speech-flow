@@ -1,7 +1,9 @@
 import logging
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any, Dict, Optional
 
 import requests
@@ -28,6 +30,14 @@ class RefinementOutcome:
     latency_ms: Optional[float] = None
     error: Optional[str] = None
     raw_response: Optional[Dict[str, Any]] = None
+    model: Optional[str] = None
+    candidate_model: Optional[str] = None
+    candidate_status: Optional[str] = None
+
+
+_CANDIDATE_EXECUTOR = ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="refinement-shadow"
+)
 
 
 class BaseTranslationRefiner:
@@ -68,12 +78,14 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         timeout_seconds: float,
         temperature: float,
         max_retries: int,
+        think: bool = False,
     ) -> None:
         self.endpoint = endpoint.rstrip("/")
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.temperature = temperature
         self.max_retries = max(1, max_retries)
+        self.think = think
         self.is_active = True
 
     def _build_prompt(
@@ -103,6 +115,7 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
             "model": self.model,
             "prompt": prompt,
             "stream": False,
+            "think": self.think,
             "options": {"temperature": self.temperature},
         }
         url = f"{self.endpoint}/api/generate"
@@ -117,7 +130,7 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
     ) -> RefinementOutcome:
         if not text:
             return RefinementOutcome(
-                text=text, changed=False, latency_ms=0.0, error=None
+                text=text, changed=False, latency_ms=0.0, error=None, model=self.model
             )
 
         prompt = self._build_prompt(text, source_lang, target_lang, context)
@@ -139,6 +152,7 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
                         latency_ms=elapsed_ms,
                         error="empty_response",
                         raw_response=data,
+                        model=self.model,
                     )
 
                 changed = refined != text
@@ -148,6 +162,7 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
                     latency_ms=elapsed_ms,
                     error=None,
                     raw_response=data,
+                    model=self.model,
                 )
             except exceptions.Timeout as exc:
                 last_error = str(exc)
@@ -172,31 +187,98 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
             latency_ms=elapsed_ms,
             error=last_error,
             raw_response=None,
+            model=self.model,
         )
 
 
+class ShadowComparisonRefiner(OllamaTranslationRefiner):
+    """Executes the primary model in-path and a bounded candidate job in background."""
+
+    def __init__(
+        self, *args: Any, candidate_model: str, queue_limit: int, **kwargs: Any
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.candidate_model = candidate_model
+        self.queue_limit = max(1, queue_limit)
+        self.pending = 0
+        self.lock = Lock()
+
+    def _run_candidate(self, *args: Any, **kwargs: Any) -> None:
+        try:
+            candidate = OllamaTranslationRefiner(
+                self.endpoint,
+                self.candidate_model,
+                self.timeout_seconds,
+                self.temperature,
+                self.max_retries,
+                self.think,
+            )
+            result = candidate.refine(*args, **kwargs)
+            status = "error" if result.error else "success"
+            logger.info(
+                "Shadow candidate model=%s status=%s latency_ms=%s",
+                self.candidate_model,
+                status,
+                result.latency_ms,
+            )
+        finally:
+            with self.lock:
+                self.pending -= 1
+
+    def refine(self, *args: Any, **kwargs: Any) -> RefinementOutcome:
+        outcome = super().refine(*args, **kwargs)
+        outcome.candidate_model = self.candidate_model
+        with self.lock:
+            if self.pending >= self.queue_limit:
+                outcome.candidate_status = "skipped_overload"
+                return outcome
+            self.pending += 1
+        outcome.candidate_status = "scheduled"
+        _CANDIDATE_EXECUTOR.submit(self._run_candidate, *args, **kwargs)
+        return outcome
+
+
 def get_translation_refiner() -> BaseTranslationRefiner:
+    mode = os.getenv("LLM_REFINEMENT_MODE", "").strip().lower()
     enabled = _strtobool(os.getenv("LLM_REFINEMENT_ENABLED", "false"))
-    if not enabled:
+    mode = mode or ("primary_only" if enabled else "disabled")
+    if mode not in {"disabled", "primary_only", "candidate_only", "shadow_compare"}:
+        raise ValueError("Invalid LLM_REFINEMENT_MODE")
+    if mode == "disabled":
         logger.info("LLM translation refinement disabled")
         return NoOpTranslationRefiner()
 
     endpoint = os.getenv("LLM_REFINEMENT_ENDPOINT", _default_refinement_endpoint())
-    model = os.getenv("LLM_REFINEMENT_MODEL", "gpt-oss:20b")
-    timeout_seconds = float(os.getenv("LLM_REFINEMENT_TIMEOUT", "8.0"))
+    primary_model = os.getenv(
+        "LLM_REFINEMENT_PRIMARY_MODEL", os.getenv("LLM_REFINEMENT_MODEL", "gpt-oss:20b")
+    )
+    candidate_model = os.getenv("LLM_REFINEMENT_CANDIDATE_MODEL", "phi4-mini")
+    model = candidate_model if mode == "candidate_only" else primary_model
+    timeout_seconds = float(os.getenv("LLM_REFINEMENT_TIMEOUT", "4.0"))
+    if not 3.0 <= timeout_seconds <= 5.0:
+        raise ValueError("LLM_REFINEMENT_TIMEOUT must be between 3.0 and 5.0")
     temperature = float(os.getenv("LLM_REFINEMENT_TEMPERATURE", "0.7"))
-    max_retries = int(os.getenv("LLM_REFINEMENT_MAX_RETRIES", "2"))
+    max_retries = int(os.getenv("LLM_REFINEMENT_MAX_RETRIES", "1"))
+    think = _strtobool(os.getenv("LLM_REFINEMENT_THINK", "false"))
 
     logger.info(
         "LLM translation refinement enabled with model '%s' at %s", model, endpoint
     )
-    return OllamaTranslationRefiner(
+    args = dict(
         endpoint=endpoint,
         model=model,
         timeout_seconds=timeout_seconds,
         temperature=temperature,
         max_retries=max_retries,
+        think=think,
     )
+    if mode == "shadow_compare":
+        return ShadowComparisonRefiner(
+            **args,
+            candidate_model=candidate_model,
+            queue_limit=int(os.getenv("LLM_REFINEMENT_SHADOW_QUEUE_LIMIT", "4")),
+        )
+    return OllamaTranslationRefiner(**args)
 
 
 translation_refiner: BaseTranslationRefiner = get_translation_refiner()
@@ -206,6 +288,7 @@ __all__ = [
     "BaseTranslationRefiner",
     "NoOpTranslationRefiner",
     "OllamaTranslationRefiner",
+    "ShadowComparisonRefiner",
     "get_translation_refiner",
     "translation_refiner",
 ]

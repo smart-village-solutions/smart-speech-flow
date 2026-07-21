@@ -473,6 +473,12 @@ def _apply_translation_refinement(
             "started_at": refinement_started_at.isoformat() + "Z",
             "completed_at": refinement_completed_at.isoformat() + "Z",
             "duration_ms": int(outcome.latency_ms or 0),
+            "refinement_comparison": {
+                "primary_model": outcome.model,
+                "primary_status": "error" if outcome.error else "success",
+                "candidate_model": outcome.candidate_model,
+                "candidate_status": outcome.candidate_status,
+            },
         }
     )
 
@@ -1415,6 +1421,12 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
                 "started_at": refinement_started_at.isoformat() + "Z",
                 "completed_at": refinement_completed_at.isoformat() + "Z",
                 "duration_ms": int(refinement_duration_ms),
+                "refinement_comparison": {
+                    "primary_model": outcome.model,
+                    "primary_status": "error" if outcome.error else "success",
+                    "candidate_model": outcome.candidate_model,
+                    "candidate_status": outcome.candidate_status,
+                },
             }
         )
     # TTS
