@@ -264,14 +264,14 @@ def get_translation_refiner() -> BaseTranslationRefiner:
     logger.info(
         "LLM translation refinement enabled with model '%s' at %s", model, endpoint
     )
-    args = dict(
-        endpoint=endpoint,
-        model=model,
-        timeout_seconds=timeout_seconds,
-        temperature=temperature,
-        max_retries=max_retries,
-        think=think,
-    )
+    args = {
+        "endpoint": endpoint,
+        "model": model,
+        "timeout_seconds": timeout_seconds,
+        "temperature": temperature,
+        "max_retries": max_retries,
+        "think": think,
+    }
     if mode == "shadow_compare":
         return ShadowComparisonRefiner(
             **args,
