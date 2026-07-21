@@ -51,6 +51,38 @@ interface SessionContextType {
 
 const SessionContext = createContext<SessionContextType | null>(null);
 
+function findTemporaryMessageId(tempIdMap: Map<string, string>, messageId: string) {
+  for (const [tempId, realId] of tempIdMap) {
+    if (realId === messageId) {
+      return tempId;
+    }
+  }
+  return null;
+}
+
+function confirmTemporaryMessage(
+  messages: Message[],
+  tempId: string,
+  wsMessage: WebSocketMessage
+): Message[] {
+  if (!messages.some((message) => message.id === tempId)) {
+    console.warn('Temporary message not found');
+    return messages;
+  }
+
+  return messages.map<Message>((message) =>
+    message.id === tempId
+      ? {
+          ...message,
+          status: 'sent',
+          content: wsMessage.text,
+          pipeline_metadata: wsMessage.pipeline_metadata,
+          audio_url: wsMessage.audio_url,
+        }
+      : message
+  );
+}
+
 export function SessionProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [clientType, setClientType] = useState<ClientType | null>(null);
@@ -77,11 +109,10 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
   }, [resetSessionState]);
 
   const addMessage = useCallback((message: Message) => {
-    console.log('🔵 addMessage called:', message.id, message.content?.substring(0, 20));
     setMessages((prev) => {
-      const exists = prev.find((currentMessage) => currentMessage.id === message.id);
+      const exists = prev.some((currentMessage) => currentMessage.id === message.id);
       if (exists) {
-        console.warn('⚠️ Message already exists, skipping:', message.id);
+        console.warn('Message already exists, skipping');
         return prev;
       }
       return [...prev, message];
@@ -95,9 +126,7 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
   }, []);
 
   const handleSessionActivated = useCallback((wsMessage: WebSocketMessage) => {
-    console.log('Session activated/client joined:', wsMessage);
     if (wsMessage.customer_language) {
-      console.log('✅ Setting customer language:', wsMessage.customer_language);
       setCustomerLanguage(wsMessage.customer_language);
     }
     if (wsMessage.role === 'session_activated' || wsMessage.client_type === 'customer') {
@@ -115,15 +144,13 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
       return;
     }
 
-    console.log('📥 receiver_message received:', messageId);
     setMessages((currentMessages) => {
-      const existingMessage = currentMessages.find((message) => message.id === messageId);
+      const existingMessage = currentMessages.some((message) => message.id === messageId);
       if (existingMessage) {
-        console.log('⚠️ receiver_message already exists, skipping:', messageId);
+        console.log('Receiver message already exists, skipping');
         return currentMessages;
       }
 
-      console.log('✅ Creating new receiver message:', messageId);
       return [
         ...currentMessages,
         {
@@ -146,38 +173,15 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
       return;
     }
 
-    const tempIdMap = tempIdMapRef.current;
-    console.log(
-      '📤 sender_confirmation received:',
-      messageId,
-      'tempMap has:',
-      Array.from(tempIdMap.entries())
-    );
-
-    const tempId =
-      Array.from(tempIdMap.entries()).find(([, realId]) => realId === messageId)?.[0] ??
-      null;
+    const tempId = findTemporaryMessageId(tempIdMapRef.current, messageId);
 
     if (tempId) {
-      console.log('⏳ Found temp ID mapping:', tempId, '-> waiting for message');
       setTimeout(() => {
-        const message = messages.find((currentMessage) => currentMessage.id === tempId);
-        if (message) {
-          console.log('✏️ Updating temp message:', tempId);
-          updateMessage(tempId, {
-            status: 'sent',
-            content: wsMessage.text,
-            pipeline_metadata: wsMessage.pipeline_metadata,
-            audio_url: wsMessage.audio_url,
-          });
-        } else {
-          console.warn('⚠️ Temp message not found yet:', tempId);
-        }
+        setMessages((currentMessages) => confirmTemporaryMessage(currentMessages, tempId, wsMessage));
       }, 100);
       return;
     }
 
-    console.log('⏳ No mapping yet - storing pending message:', messageId);
     pendingMessagesRef.current.set(messageId, wsMessage);
     setTimeout(() => {
       const stillPending = pendingMessagesRef.current.get(messageId);
@@ -185,14 +189,7 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
         return;
       }
 
-      console.log('⚠️ Timeout - creating message without mapping:', messageId);
       pendingMessagesRef.current.delete(messageId);
-      const existingMessage = messages.find((message) => message.id === messageId);
-      if (existingMessage) {
-        return;
-      }
-
-      console.log('➕ Creating new sender_confirmation message:', messageId);
       addMessage({
         id: messageId,
         sender: clientType || 'admin',
@@ -204,7 +201,7 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
         pipeline_metadata: wsMessage.pipeline_metadata,
       });
     }, 500);
-  }, [addMessage, clientType, messages, updateMessage]);
+  }, [addMessage, clientType]);
 
   const handleWebSocketMessage = useCallback((wsMessage: WebSocketMessage) => {
     if (wsMessage.role === 'session_terminated') {
@@ -264,7 +261,6 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
   );
 
   const registerTempId = useCallback((tempId: string, realId: string) => {
-    console.log('🔗 registerTempId called:', tempId, '->', realId);
     tempIdMapRef.current.set(tempId, realId);
 
     const pendingMessage = pendingMessagesRef.current.get(realId);
@@ -272,9 +268,7 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
       return;
     }
 
-    console.log('✅ Found pending message - processing now:', realId);
     pendingMessagesRef.current.delete(realId);
-    console.log('✏️ Updating temp message with pending data:', tempId);
     updateMessage(tempId, {
       status: 'sent',
       content: pendingMessage.text,

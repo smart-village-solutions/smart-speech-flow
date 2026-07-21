@@ -147,8 +147,14 @@ async def activate_polling_fallback(
 @router.get("/poll/{polling_id}", responses=POLLING_ROUTE_RESPONSES)
 async def poll_messages(
     polling_id: str,
-    timeout: Annotated[
-        int, Query(ge=1, le=60, description="Long polling timeout in seconds")
+    wait_seconds: Annotated[
+        int,
+        Query(
+            alias="timeout",
+            ge=1,
+            le=60,
+            description="Long polling timeout in seconds",
+        ),
     ] = 30,
 ):
     """
@@ -167,8 +173,8 @@ async def poll_messages(
         messages = fallback_manager.poll_messages(polling_id)
 
         # If no messages, wait for new ones (long polling)
-        if not messages and timeout > 0:
-            messages = await _await_polled_messages(polling_id, timeout)
+        if not messages and wait_seconds > 0:
+            messages = await _await_polled_messages(polling_id, wait_seconds)
 
         return JSONResponse(
             status_code=200,

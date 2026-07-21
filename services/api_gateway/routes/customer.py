@@ -7,6 +7,7 @@ Ermöglicht Kunden das Beitreten und Aktivieren von Sessions
 import logging
 from datetime import datetime, timezone
 from hashlib import sha256
+from types import TracebackType
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, status
@@ -26,6 +27,17 @@ CUSTOMER_ROUTE_RESPONSES = {
     404: {"description": "Session not found"},
     500: {"description": "Customer session operation failed"},
 }
+_REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
+
+
+def _redacted_exception_info(
+    error: Exception,
+) -> tuple[type[BaseException], BaseException, Optional[TracebackType]]:
+    return (
+        RuntimeError,
+        RuntimeError(_REDACTED_EXCEPTION_MESSAGE),
+        error.__traceback__,
+    )
 
 
 # Request/Response Models
@@ -175,10 +187,7 @@ async def activate_session(request: ActivateSessionRequest) -> ActivateSessionRe
             "fa",
         ]
         if request.customer_language not in supported_languages:
-            logger.warning(
-                "⚠️ Ununterstützte Sprache | %s",
-                sanitize_log_value({"customer_language": request.customer_language}),
-            )
+            logger.warning("⚠️ Nicht unterstützte Kundensprache angefordert")
             # Warnung, aber nicht blockieren - der TTS-Service entscheidet final
 
         # Session aktivieren
@@ -208,14 +217,9 @@ async def activate_session(request: ActivateSessionRequest) -> ActivateSessionRe
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "❌ Unerwarteter Fehler bei Session-Aktivierung | %s",
-            sanitize_log_value(
-                {
-                    "session_ref": _safe_session_ref(request.session_id),
-                    "error": e,
-                }
-            ),
+        logger.exception(
+            "❌ Unerwarteter Fehler bei Session-Aktivierung",
+            exc_info=_redacted_exception_info(e),
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -257,9 +261,9 @@ async def get_customer_session_status(session_id: str) -> dict[str, object]:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "❌ Fehler beim Abrufen des Customer-Session-Status: %s",
-            sanitize_log_value(e),
+        logger.exception(
+            "❌ Fehler beim Abrufen des Customer-Session-Status",
+            exc_info=_redacted_exception_info(e),
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

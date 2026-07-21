@@ -100,17 +100,16 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || `${'http'}://localhost:8000`;
       const absoluteUrl = url.startsWith('http') ? url : `${apiBaseUrl}${url}`;
 
-      console.log('🔊 Playing audio from:', absoluteUrl);
       const audio = new Audio(absoluteUrl);
       audio.onplay = () => setAudioPlaying(true);
       audio.onended = () => setAudioPlaying(false);
-      audio.onerror = (e) => {
-        console.error('Audio playback error:', e);
+      audio.onerror = () => {
+        console.error('Audio playback error');
         setAudioPlaying(false);
       };
       await audio.play();
-    } catch (err) {
-      console.error('Failed to play audio:', err);
+    } catch {
+      console.error('Failed to play audio');
     }
   };
 
@@ -149,6 +148,7 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
           {/* Audio Player - außerhalb des klickbaren Bereichs */}
           {message.translation_audio_url && !isOwnMessage && (
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 if (message.translation_audio_url) {
@@ -198,6 +198,7 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-gray-900">Pipeline Details</h3>
                 <button
+                  type="button"
                   onClick={() => setShowMetadataModal(false)}
                   className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
                 >

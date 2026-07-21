@@ -1,3 +1,5 @@
+import { buildWebSocketUrl } from '../utils/identifiers';
+
 export type ClientType = 'admin' | 'customer';
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
@@ -59,22 +61,17 @@ class WebSocketService {
       return;
     }
 
-    this.sessionId = sessionId;
-    this.clientType = clientType;
-    this.setStatus('connecting');
-
-    const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL || `${'ws'}://localhost:8000`;
-    const wsUrl = `${wsBaseUrl}/ws/${sessionId}/${clientType}`;
-
-    console.log(`[WebSocket] Connecting to ${wsUrl}`);
-
     try {
+      const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL || `${'ws'}://localhost:8000`;
+      const wsUrl = buildWebSocketUrl(wsBaseUrl, sessionId, clientType);
+      this.sessionId = sessionId;
+      this.clientType = clientType;
+      this.setStatus('connecting');
       this.ws = new WebSocket(wsUrl);
       this.setupEventHandlers();
-    } catch (error) {
-      console.error('[WebSocket] Connection error:', error);
+    } catch {
+      console.error('[WebSocket] Connection could not be established');
       this.setStatus('error');
-      this.scheduleReconnect();
     }
   }
 
@@ -137,7 +134,6 @@ class WebSocketService {
     this.ws.onmessage = (event) => {
       try {
         const rawMessage = JSON.parse(event.data);
-        console.log('[WebSocket] Message received:', rawMessage);
 
         // Map backend message types to frontend role format
         // Prioritize 'role' over 'type' to preserve differentiated message types
@@ -147,18 +143,18 @@ class WebSocketService {
         };
 
         this.notifyMessageHandlers(message);
-      } catch (error) {
-        console.error('[WebSocket] Failed to parse message:', error);
+      } catch {
+        console.error('[WebSocket] Failed to parse message');
       }
     };
 
-    this.ws.onerror = (error) => {
-      console.error('[WebSocket] Error:', error);
+    this.ws.onerror = () => {
+      console.error('[WebSocket] Connection error');
       this.setStatus('error');
     };
 
-    this.ws.onclose = (event) => {
-      console.log('[WebSocket] Closed:', event.code, event.reason);
+    this.ws.onclose = () => {
+      console.log('[WebSocket] Closed');
       this.setStatus('disconnected');
       this.stopHeartbeat();
       this.ws = null;
@@ -179,7 +175,7 @@ class WebSocketService {
     this.reconnectAttempts++;
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
 
-    console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+    console.log('[WebSocket] Reconnecting');
 
     setTimeout(() => {
       if (this.sessionId && this.clientType) {
@@ -209,8 +205,8 @@ class WebSocketService {
         try {
           this.ws.send(JSON.stringify({ type: 'heartbeat_pong' }));
           console.log('[WebSocket] Heartbeat sent');
-        } catch (error) {
-          console.error('[WebSocket] Failed to send heartbeat:', error);
+        } catch {
+          console.error('[WebSocket] Failed to send heartbeat');
         }
       }
     }, this.HEARTBEAT_INTERVAL_MS);

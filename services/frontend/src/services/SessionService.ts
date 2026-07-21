@@ -1,4 +1,5 @@
 import api from './api';
+import { sessionPath } from '../utils/identifiers';
 
 export interface SessionData {
   session_id: string;
@@ -33,8 +34,13 @@ class SessionService {
    * DELETE /api/admin/session/{sessionId}/terminate
    */
   async terminateSession(sessionId: string): Promise<TerminateSessionResponse> {
+    const matchedSessionId = /^[A-Z0-9]{8}$/.exec(sessionId)?.[0];
+    if (!matchedSessionId) {
+      throw new Error('Invalid session identifier');
+    }
+
     const response = await api.delete<TerminateSessionResponse>(
-      `/api/admin/session/${sessionId}/terminate`
+      `/api/admin/session/${matchedSessionId}/terminate`
     );
     return response.data;
   }
@@ -44,7 +50,7 @@ class SessionService {
    * GET /api/session/{sessionId}
    */
   async getSessionStatus(sessionId: string): Promise<SessionData> {
-    const response = await api.get<SessionData>(`/api/session/${sessionId}`);
+    const response = await api.get<SessionData>(sessionPath(sessionId));
     return response.data;
   }
 }

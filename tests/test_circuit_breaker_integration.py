@@ -18,7 +18,7 @@ import logging
 import json
 import threading
 from datetime import datetime
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
 
 
@@ -35,7 +35,7 @@ from services.api_gateway.circuit_breaker_client import CircuitBreakerServiceCli
 logger = logging.getLogger(__name__)
 
 
-class TestHTTPHandler(BaseHTTPRequestHandler):
+class LocalHTTPHandler(BaseHTTPRequestHandler):
     """Simpler HTTP Handler für echte Integration Tests"""
 
     # Klassen-Variablen für Test-Kontrolle
@@ -49,7 +49,7 @@ class TestHTTPHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         """Handle GET Requests"""
-        TestHTTPHandler.call_count += 1
+        LocalHTTPHandler.call_count += 1
 
         if self.path == '/health':
             self._handle_health()
@@ -58,7 +58,7 @@ class TestHTTPHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         """Handle POST Requests"""
-        TestHTTPHandler.call_count += 1
+        LocalHTTPHandler.call_count += 1
 
         if self.path == '/transcribe':
             self._handle_transcribe()
@@ -74,21 +74,21 @@ class TestHTTPHandler(BaseHTTPRequestHandler):
         if self.response_delay > 0:
             time.sleep(self.response_delay)
 
-        if not TestHTTPHandler.is_healthy:
+        if not LocalHTTPHandler.is_healthy:
             self.send_response(500)
             self.end_headers()
             self.wfile.write(b'Service Unavailable')
             return
 
-        response_data = {"status": "healthy", "service": "test", "call_count": TestHTTPHandler.call_count}
+        response_data = {"status": "healthy", "service": "test", "call_count": LocalHTTPHandler.call_count}
         self._send_json_response(response_data)
 
     def _handle_transcribe(self):
         """ASR Handler"""
-        if TestHTTPHandler.response_delay > 0:
-            time.sleep(TestHTTPHandler.response_delay)
+        if LocalHTTPHandler.response_delay > 0:
+            time.sleep(LocalHTTPHandler.response_delay)
 
-        if not TestHTTPHandler.is_healthy:
+        if not LocalHTTPHandler.is_healthy:
             self.send_response(500)
             self.end_headers()
             self.wfile.write(b'ASR Service Down')
@@ -103,10 +103,10 @@ class TestHTTPHandler(BaseHTTPRequestHandler):
 
     def _handle_translate(self):
         """Translation Handler"""
-        if TestHTTPHandler.response_delay > 0:
-            time.sleep(TestHTTPHandler.response_delay)
+        if LocalHTTPHandler.response_delay > 0:
+            time.sleep(LocalHTTPHandler.response_delay)
 
-        if not TestHTTPHandler.is_healthy:
+        if not LocalHTTPHandler.is_healthy:
             self.send_response(500)
             self.end_headers()
             self.wfile.write(b'Translation Service Down')
@@ -121,10 +121,10 @@ class TestHTTPHandler(BaseHTTPRequestHandler):
 
     def _handle_synthesize(self):
         """TTS Handler"""
-        if TestHTTPHandler.response_delay > 0:
-            time.sleep(TestHTTPHandler.response_delay)
+        if LocalHTTPHandler.response_delay > 0:
+            time.sleep(LocalHTTPHandler.response_delay)
 
-        if not TestHTTPHandler.is_healthy:
+        if not LocalHTTPHandler.is_healthy:
             self.send_response(500)
             self.end_headers()
             self.wfile.write(b'TTS Service Down')
@@ -132,7 +132,7 @@ class TestHTTPHandler(BaseHTTPRequestHandler):
 
         response_data = {
             "success": True,
-            "audio_url": "http://localhost:9999/audio/test.wav"
+            "audio_url": f"http://localhost:{self.server.server_port}/audio/test.wav"
         }
         self._send_json_response(response_data)
 
@@ -146,17 +146,18 @@ class TestHTTPHandler(BaseHTTPRequestHandler):
         self.wfile.write(response)
 
 
-class TestServerManager:
+class LocalHTTPServer:
     """Manager für Test HTTP Server"""
 
-    def __init__(self, port=9999):
+    def __init__(self, port=0):
         self.port = port
         self.server = None
         self.thread = None
 
     def start(self):
         """Startet Test Server in eigenem Thread"""
-        self.server = HTTPServer(('localhost', self.port), TestHTTPHandler)
+        self.server = HTTPServer(('localhost', self.port), LocalHTTPHandler)
+        self.port = self.server.server_port
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 
@@ -171,35 +172,38 @@ class TestServerManager:
             self.server.server_close()
         if self.thread:
             self.thread.join(timeout=1.0)
+            assert not self.thread.is_alive(), "Test HTTP server thread did not stop"
+        self.server = None
+        self.thread = None
         logger.info("🛑 Test HTTP Server gestoppt")
 
     def set_healthy(self, healthy=True):
         """Setzt Service Health Status"""
-        TestHTTPHandler.is_healthy = healthy
+        LocalHTTPHandler.is_healthy = healthy
         logger.info(f"📊 Test Server Health: {'Healthy' if healthy else 'Unhealthy'}")
 
     def set_response_delay(self, delay=0.0):
         """Setzt Response Delay"""
-        TestHTTPHandler.response_delay = delay
+        LocalHTTPHandler.response_delay = delay
         logger.info(f"⏱️ Test Server Response Delay: {delay}s")
 
     def reset_call_count(self):
         """Reset Call Counter"""
-        TestHTTPHandler.call_count = 0
+        LocalHTTPHandler.call_count = 0
 
 
 # Globaler Test Server für alle Tests
-test_server = TestServerManager()
+test_server = LocalHTTPServer()
 
 
-def setup_module():
-    """Setup für gesamtes Test Modul"""
+@pytest.fixture(scope="module", autouse=True)
+def running_test_server():
+    """Run the local HTTP server and always release its port and thread."""
     test_server.start()
-
-
-def teardown_module():
-    """Teardown für gesamtes Test Modul"""
-    test_server.stop()
+    try:
+        yield
+    finally:
+        test_server.stop()
 
 
 @pytest.fixture
@@ -274,15 +278,20 @@ class TestCircuitBreakerRealSystem:
                 async with session.get(f"http://localhost:{test_server.port}/health") as resp:
                     if resp.status == 200:
                         return await resp.json()
-                    else:
-                        raise Exception(f"HTTP {resp.status}: Service Down")
+                    raise aiohttp.ClientResponseError(
+                        request_info=resp.request_info,
+                        history=resp.history,
+                        status=resp.status,
+                        message="Service Down",
+                    )
 
         # Failures sammeln bis Circuit OPEN geht
         failure_count = 0
         for i in range(circuit_breaker.config.failure_threshold):
-            with pytest.raises(Exception) as exc_info:
+            with pytest.raises(aiohttp.ClientResponseError) as exc_info:
                 await circuit_breaker.call(real_http_call)
-            assert "Service Down" in str(exc_info.value)
+            assert exc_info.value.status == 500
+            assert exc_info.value.message == "Service Down"
             failure_count += 1
 
         # Circuit sollte jetzt OPEN sein
@@ -650,22 +659,19 @@ class TestCircuitBreakerServiceClientRealSystem:
         """Test: Echte Service Client Initialisierung"""
         client = CircuitBreakerServiceClient()
 
-        # Session sollte bei Bedarf erstellt werden
-        await client._ensure_session()
-        assert client.session is not None
-        assert not client.session.closed
-
-        # Health Status sollte abrufbar sein (wenn Services laufen)
         try:
-            health_status = await client.get_health_status()
-            assert isinstance(health_status, dict)
-            assert "overall_healthy" in health_status
-        except Exception as e:
-            # Erwartbar wenn keine echten Services laufen
-            logger.info(f"Health status nicht verfügbar (erwartbar): {e}")
+            # Session sollte bei Bedarf erstellt werden
+            await client._ensure_session()
+            session_was_open = client.session is not None and not client.session.closed
 
-        # Cleanup
-        await client.close()
+            # Der Health-Status wird lokal aus dem Manager erzeugt.
+            health_status = await client.get_health_status()
+        finally:
+            await client.close()
+
+        assert session_was_open
+        assert isinstance(health_status, dict)
+        assert "overall_healthy" in health_status
 
     @pytest.mark.asyncio
     async def test_real_http_call_with_circuit_breaker(self, reset_server):
@@ -723,3 +729,73 @@ class TestEndToEndRealSystem:
         # Call IDs sollten korrekt sein
         call_ids = [result["call_id"] for result in results]
         assert sorted(call_ids) == list(range(5))
+
+
+class TestCircuitBreakerStateTransitions:
+    """Fast behavioral coverage for recovery and reset state transitions."""
+
+    @pytest.mark.asyncio
+    async def test_half_open_successes_close_circuit_and_reset_backoff(self):
+        config = CircuitBreakerConfig(
+            failure_threshold=1, recovery_timeout=2, success_threshold=2
+        )
+        circuit = CircuitBreaker("half-open-success", config)
+
+        async def fail():
+            raise RuntimeError("unavailable")
+
+        async def succeed():
+            return "recovered"
+
+        with pytest.raises(RuntimeError, match="unavailable"):
+            await circuit.call(fail)
+        circuit.next_attempt_time = time.time() - 1
+
+        assert await circuit.call(succeed) == "recovered"
+        assert circuit.state == CircuitState.HALF_OPEN
+        assert circuit.success_count == 1
+        assert await circuit.call(succeed) == "recovered"
+        assert circuit.state == CircuitState.CLOSED
+        assert circuit.success_count == 0
+        assert circuit.failure_count == 0
+        assert circuit.current_recovery_timeout == config.recovery_timeout
+
+    @pytest.mark.asyncio
+    async def test_half_open_failure_reopens_with_exponential_backoff(self):
+        config = CircuitBreakerConfig(
+            failure_threshold=1,
+            recovery_timeout=2,
+            max_recovery_time=3,
+            backoff_multiplier=2,
+        )
+        circuit = CircuitBreaker("half-open-failure", config)
+
+        async def fail():
+            raise RuntimeError("still unavailable")
+
+        with pytest.raises(RuntimeError):
+            await circuit.call(fail)
+        circuit.next_attempt_time = time.time() - 1
+        with pytest.raises(RuntimeError):
+            await circuit.call(fail)
+
+        assert circuit.state == CircuitState.OPEN
+        assert circuit.current_recovery_timeout == 3
+        assert circuit.health.failed_requests == 2
+
+    def test_manual_reset_restores_closed_state_and_retry_schedule(self):
+        circuit = CircuitBreaker("manual-reset", CircuitBreakerConfig(recovery_timeout=7))
+        circuit.state = CircuitState.OPEN
+        circuit.failure_count = 4
+        circuit.success_count = 2
+        circuit.next_attempt_time = time.time() + 60
+        circuit.current_recovery_timeout = 30
+
+        circuit.reset()
+
+        assert circuit.state == CircuitState.CLOSED
+        assert circuit.health.current_state == CircuitState.CLOSED
+        assert circuit.failure_count == 0
+        assert circuit.success_count == 0
+        assert circuit.next_attempt_time is None
+        assert circuit.current_recovery_timeout == 7

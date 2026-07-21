@@ -22,7 +22,9 @@ services:
     restart: always
 
   asr:
-    build: ./services/asr
+    build:
+      context: .
+      dockerfile: services/asr/Dockerfile
     ports:
       - "8001:8000"
     volumes:
@@ -36,7 +38,9 @@ services:
               capabilities: [gpu]
 
   translation:
-    build: ./services/translation
+    build:
+      context: .
+      dockerfile: services/translation/Dockerfile
     ports:
       - "8002:8000"
     volumes:
@@ -49,7 +53,9 @@ services:
               count: all
               capabilities: [gpu]
   tts:
-    build: ./services/tts
+    build:
+      context: .
+      dockerfile: services/tts/Dockerfile
     ports:
       - "8003:8000"
     volumes:
@@ -104,10 +110,15 @@ services:
       # LLM Refinement Configuration
       - LLM_REFINEMENT_ENABLED=${LLM_REFINEMENT_ENABLED:-true}
       - LLM_REFINEMENT_MODEL=${LLM_REFINEMENT_MODEL:-gpt-oss:20b}
+      - LLM_REFINEMENT_MODE=${LLM_REFINEMENT_MODE:-primary_only}
+      - LLM_REFINEMENT_PRIMARY_MODEL=${LLM_REFINEMENT_PRIMARY_MODEL:-gpt-oss:20b}
+      - LLM_REFINEMENT_CANDIDATE_MODEL=${LLM_REFINEMENT_CANDIDATE_MODEL:-phi4-mini}
+      - LLM_REFINEMENT_SHADOW_QUEUE_LIMIT=${LLM_REFINEMENT_SHADOW_QUEUE_LIMIT:-4}
       - LLM_REFINEMENT_ENDPOINT=${LLM_REFINEMENT_ENDPOINT:-http://ollama:11434}
-      - LLM_REFINEMENT_TIMEOUT=${LLM_REFINEMENT_TIMEOUT:-8.0}
+      - LLM_REFINEMENT_TIMEOUT=${LLM_REFINEMENT_TIMEOUT:-4.0}
       - LLM_REFINEMENT_TEMPERATURE=${LLM_REFINEMENT_TEMPERATURE:-0.7}
-      - LLM_REFINEMENT_MAX_RETRIES=${LLM_REFINEMENT_MAX_RETRIES:-2}
+      - LLM_REFINEMENT_THINK=${LLM_REFINEMENT_THINK:-false}
+      - LLM_REFINEMENT_MAX_RETRIES=${LLM_REFINEMENT_MAX_RETRIES:-1}
       # Rate Limiting Configuration für Produktion
       - GLOBAL_RATE_LIMIT=${GLOBAL_RATE_LIMIT:-1200}
       - GLOBAL_RATE_WINDOW_SECONDS=${GLOBAL_RATE_WINDOW_SECONDS:-60}

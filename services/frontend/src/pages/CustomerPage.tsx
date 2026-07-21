@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import type { ChangeEvent, SubmitEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CustomerService from '../services/CustomerService';
 import MessageService from '../services/MessageService';
@@ -9,6 +10,7 @@ import MessageInput from '../components/MessageInput';
 import ConnectionStatusIndicator from '../components/ConnectionStatusIndicator';
 import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
+import { validatePathIdentifier } from '../utils/identifiers';
 
 type ViewMode = 'input' | 'language' | 'active';
 
@@ -55,8 +57,8 @@ export default function CustomerPage() {
     try {
       const langs = await CustomerService.getLanguages();
       setLanguages(langs);
-    } catch (err) {
-      console.error('Failed to load languages:', err);
+    } catch {
+      console.error('Failed to load languages');
       // Fallback to hardcoded languages if API fails
       setLanguages([
         { code: 'en', name: 'English' },
@@ -72,21 +74,16 @@ export default function CustomerPage() {
     }
   };
 
-  const validateSessionId = (id: string): boolean => {
-    const regex = /^[A-Z0-9]{8}$/;
-    return regex.test(id);
-  };
-
-  const handleSessionIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSessionIdChange = (e: ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.toUpperCase();
     setSessionId(value);
     setSessionIdError(null);
   };
 
-  const handleSessionIdSubmit = async (e: React.FormEvent) => {
+  const handleSessionIdSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    if (!validateSessionId(sessionId)) {
+    if (!validatePathIdentifier(sessionId, 'session')) {
       setSessionIdError('Session-ID muss genau 8 Zeichen (Großbuchstaben und Zahlen) sein');
       return;
     }
@@ -104,8 +101,8 @@ export default function CustomerPage() {
       }
 
       setViewMode('language');
-    } catch (err) {
-      console.error('Failed to verify session:', err);
+    } catch {
+      console.error('Failed to verify session');
       setError('Fehler beim Überprüfen der Session. Bitte versuchen Sie es erneut.');
     } finally {
       setLoading(false);
@@ -122,6 +119,7 @@ export default function CustomerPage() {
           <div className="flex items-center justify-between mb-8">
             <h1 className="text-2xl sm:text-3xl font-bold text-text leading-tight">Session beitreten</h1>
             <button
+              type="button"
               onClick={() => navigate('/')}
               className="text-primary hover:text-primary-dark font-semibold text-base sm:text-lg transition-colors"
             >
@@ -237,13 +235,13 @@ export default function CustomerPage() {
         try {
           const history = await MessageService.getMessages(sessionId);
           history.forEach((msg) => addMessage(msg));
-        } catch (historyErr) {
-          console.warn('Failed to load message history:', historyErr);
+        } catch {
+          console.warn('Failed to load message history');
         }
 
         setViewMode('active');
-      } catch (err) {
-        console.error('Failed to activate session:', err);
+      } catch {
+        console.error('Failed to activate session');
         setError('Fehler beim Beitreten zur Session. Bitte versuchen Sie es erneut.');
         setLoading(false);
       }
@@ -257,6 +255,7 @@ export default function CustomerPage() {
           <div className="flex items-center justify-between mb-8">
             <h1 className="text-2xl sm:text-3xl font-bold text-text leading-tight">Sprache auswählen</h1>
             <button
+              type="button"
               onClick={() => setViewMode('input')}
               className="text-primary hover:text-primary-dark font-semibold text-base sm:text-lg transition-colors"
             >
@@ -291,6 +290,7 @@ export default function CustomerPage() {
 
                 return (
                   <button
+                    type="button"
                     key={lang.code}
                     onClick={() => handleLanguageClick(lang.code)}
                     className="flex flex-col items-center p-4 sm:p-6 border-2 border-gray-200 rounded-card hover:border-primary hover:bg-primary/5 transition-all duration-200 active:scale-95"

@@ -300,7 +300,8 @@ jobs:
       run: |
         source .venv/bin/activate
         pip install --upgrade pip "setuptools<81"
-        pip install -r requirements-dev.txt -r services/api_gateway/requirements.txt
+        pip install -r requirements-dev.txt
+        pip install -r services/api_gateway/requirements.txt
 
     - name: Run tests with coverage for Sonar
       if: steps.sonar-config.outputs.enabled == 'true'
@@ -373,13 +374,14 @@ jobs:
 
     - name: Run Fallow audit for changed frontend files
       if: steps.frontend-changes.outputs.frontend_changed == 'true'
-      uses: fallow-rs/fallow@v3
-      with:
-        command: audit
-        root: services/frontend
-        fail-on-issues: true
-        annotations: true
-        version: ^3.7.1
+      working-directory: services/frontend
+      run: |
+        set -o pipefail
+        npx fallow audit \
+          --changed-since "origin/${{ github.base_ref }}" \
+          --format json \
+          --quiet > fallow-audit.json || true
+        jq -e '.verdict != "fail"' fallow-audit.json
 
   # Job 7: Quality Gate Evaluation
   quality-gate:

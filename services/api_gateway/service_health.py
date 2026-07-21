@@ -224,8 +224,8 @@ class ServiceHealthManager:
         except asyncio.CancelledError:
             logger.info("🔄 Health Check Loop beendet")
             raise
-        except Exception as e:
-            logger.error(f"❌ Health Check Loop Fehler: {e}")
+        except Exception:
+            logger.exception("Health check loop failed")
 
     async def _check_all_services(self):
         """Überprüft Health Status aller Services"""

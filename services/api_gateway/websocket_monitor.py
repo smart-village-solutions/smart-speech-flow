@@ -540,8 +540,8 @@ class WebSocketMonitor:
                         f"Cleaned up {len(stale_connections)} stale WebSocket connections"
                     )
 
-            except Exception as e:
-                logger.error(f"Error in WebSocket cleanup task: {e}")
+            except Exception:
+                logger.exception("WebSocket cleanup task failed")
 
 
 # Global WebSocket Monitor Instance

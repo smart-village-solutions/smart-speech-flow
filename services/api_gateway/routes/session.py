@@ -14,6 +14,7 @@ import logging
 import time
 import uuid
 from datetime import datetime, timezone
+from types import TracebackType
 from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import (
@@ -38,6 +39,17 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 SESSION_NOT_FOUND_MESSAGE = "Session nicht gefunden"
+_REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
+
+
+def _redacted_exception_info(
+    error: Exception,
+) -> tuple[type[BaseException], BaseException, Optional[TracebackType]]:
+    return (
+        RuntimeError,
+        RuntimeError(_REDACTED_EXCEPTION_MESSAGE),
+        error.__traceback__,
+    )
 
 
 def utc_now() -> datetime:
@@ -255,7 +267,10 @@ def _transform_pipeline_step(
     }
 
     if step_name == "asr":
-        transformed_step["output"] = {"text": step.get("output", "")}
+        transformed_step["output"] = {
+            "text": step.get("output", ""),
+            "model": step.get("model") or step.get("debug", {}).get("model", "unknown"),
+        }
     elif step_name == "translation":
         transformed_step["output"] = {
             "text": step.get("output", ""),
@@ -266,7 +281,11 @@ def _transform_pipeline_step(
         transformed_step["output"] = {
             "text": step.get("output", ""),
             "changed": step.get("input", {}).get("changed", False),
+            "model": step.get("model")
+            or step.get("refinement_comparison", {}).get("primary_model", "unknown"),
         }
+        if step.get("refinement_comparison"):
+            transformed_step["refinement_comparison"] = step["refinement_comparison"]
     elif step_name == "tts":
         transformed_step["output"] = _build_tts_step_output(
             step, target_lang, message_id
@@ -492,7 +511,9 @@ async def _parse_text_request(request: Request) -> TextMessageRequest:
             ),
         )
     except Exception as e:
-        logger.error("❌ Failed to parse JSON: %s", type(e).__name__)
+        logger.exception(
+            "❌ Failed to parse JSON", exc_info=_redacted_exception_info(e)
+        )
         raise HTTPException(
             status_code=400,
             detail=create_error_response("INVALID_JSON", f"Invalid JSON: {str(e)}", {}),
@@ -1117,19 +1138,11 @@ async def create_session_message(
                 ),
             )
     except Exception as e:
-        logger.error(
-            "❌ WebSocket-Broadcasting-Fehler | %s",
-            sanitize_log_value(
-                {
-                    "session_ref": _safe_identifier(session_id),
-                    "error_type": type(e).__name__,
-                }
-            ),
+        logger.exception(
+            "❌ WebSocket-Broadcasting-Fehler",
+            exc_info=_redacted_exception_info(e),
         )
         # WebSocket-Fehler sollen den HTTP-Request nicht zum Absturz bringen
-        import traceback
-
-        traceback.print_exc()
 
     return message
 

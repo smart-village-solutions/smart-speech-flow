@@ -232,17 +232,11 @@ class EnhancedAudioValidator:
 
                     except Exception as conv_wav_error:
                         details["conversion_wav_error"] = str(conv_wav_error)
-                        logger.error(
-                            "Konvertierte WAV-Datei ungueltig: %s",
-                            sanitize_log_value(conv_wav_error),
-                        )
+                        logger.exception("Converted WAV file is invalid")
 
             except Exception as conv_error:
                 details["conversion_error"] = str(conv_error)
-                logger.error(
-                    "FFmpeg-Konvertierung fehlgeschlagen: %s",
-                    sanitize_log_value(conv_error),
-                )
+                logger.exception("FFmpeg conversion failed")
 
         # 4. Fallback für unbekannte/nicht-unterstützte Formate
         error_message = self._generate_error_message(format_detection, details)
@@ -312,8 +306,8 @@ class EnhancedAudioValidator:
         except subprocess.TimeoutExpired:
             logger.error("FFmpeg-Konvertierung Timeout")
             return None
-        except Exception as e:
-            logger.error("FFmpeg-Konvertierung Fehler: %s", sanitize_log_value(e))
+        except Exception:
+            logger.exception("FFmpeg conversion failed")
             return None
 
     def _generate_error_message(
