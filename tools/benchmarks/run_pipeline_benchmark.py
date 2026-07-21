@@ -29,12 +29,13 @@ def percentile(values: list[float], fraction: float) -> float:
 
 
 def summary(values: list[float], errors: int, timeouts: int) -> dict[str, float | int]:
+    attempts = max(1, len(values) + errors + timeouts)
     return {
         "count": len(values), "mean_ms": round(statistics.mean(values), 2) if values else 0,
         "median_ms": round(statistics.median(values), 2) if values else 0,
         "p95_ms": round(percentile(values, 0.95), 2), "min_ms": round(min(values), 2) if values else 0,
-        "max_ms": round(max(values), 2) if values else 0, "error_rate": errors / max(1, len(values) + errors),
-        "timeout_rate": timeouts / max(1, len(values) + errors),
+        "max_ms": round(max(values), 2) if values else 0, "error_rate": errors / attempts,
+        "timeout_rate": timeouts / attempts,
     }
 
 
@@ -107,10 +108,12 @@ def main() -> None:
     totals = [item["duration_ms"] for item in results]
     refinements = [item["refinement_ms"] for item in results if item["refinement_ms"] is not None]
     refinement_errors = sum(item.get("refinement_status") == "error" for item in results)
+    # Refinement metadata currently reports only success/error, not a timeout status.
+    refinement_timeouts = 0
     manifest_cases = [{key: value for key, value in case.items() if key != "path"} for case in cases]
     report = {"schema_version": 1, "created_at": datetime.now(timezone.utc).isoformat(), "pipeline": args.pipeline,
               "warmups": args.warmups, "runs": args.runs, "cases": manifest_cases, "results": results,
-              "summary": {"end_to_end": summary(totals, errors, timeouts), "refinement": summary(refinements, refinement_errors, refinement_errors)}}
+              "summary": {"end_to_end": summary(totals, errors, timeouts), "refinement": summary(refinements, refinement_errors, refinement_timeouts)}}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(report["summary"], indent=2))

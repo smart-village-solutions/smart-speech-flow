@@ -298,7 +298,13 @@ class ShadowComparisonRefiner(OllamaTranslationRefiner):
                 return outcome
             self.pending += 1
         outcome.candidate_status = "scheduled"
-        _CANDIDATE_EXECUTOR.submit(self._run_candidate, *args, **kwargs)
+        try:
+            _CANDIDATE_EXECUTOR.submit(self._run_candidate, *args, **kwargs)
+        except RuntimeError:
+            with self.lock:
+                self.pending -= 1
+            outcome.candidate_status = "submission_failed"
+            logger.warning("Unable to schedule shadow candidate refinement")
         return outcome
 
 

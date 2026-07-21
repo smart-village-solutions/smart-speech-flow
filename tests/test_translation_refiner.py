@@ -200,3 +200,31 @@ def test_shadow_comparison_refiner_records_candidate_result(monkeypatch):
     refiner._run_candidate("Hallo", "de", "en")
 
     assert refiner.pending == 0
+
+
+def test_shadow_comparison_refiner_recovers_when_submission_fails(monkeypatch):
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = mod.ShadowComparisonRefiner(
+        endpoint="http://ollama:11434",
+        model="primary",
+        candidate_model="candidate",
+        queue_limit=1,
+        timeout_seconds=1.0,
+        temperature=0.2,
+        max_retries=1,
+    )
+    monkeypatch.setattr(
+        mod.OllamaTranslationRefiner,
+        "refine",
+        Mock(return_value=mod.RefinementOutcome(text="refined", changed=True)),
+    )
+    monkeypatch.setattr(
+        mod._CANDIDATE_EXECUTOR,
+        "submit",
+        Mock(side_effect=RuntimeError("executor shut down")),
+    )
+
+    outcome = refiner.refine("Hallo", "de", "en")
+
+    assert outcome.candidate_status == "submission_failed"
+    assert refiner.pending == 0
