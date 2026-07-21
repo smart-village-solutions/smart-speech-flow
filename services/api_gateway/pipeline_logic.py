@@ -473,6 +473,7 @@ def _apply_translation_refinement(
             "started_at": refinement_started_at.isoformat() + "Z",
             "completed_at": refinement_completed_at.isoformat() + "Z",
             "duration_ms": int(outcome.latency_ms or 0),
+            "model": outcome.model,
             "refinement_comparison": {
                 "primary_model": outcome.model,
                 "primary_status": "error" if outcome.error else "success",
@@ -1348,6 +1349,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
             "name": "asr",
             "input": {"lang": source_lang},
             "output": asr_text,
+            "model": asr_json.get("debug", {}).get("model"),
             "error": asr_json.get("error"),
             "duration": round(time.perf_counter() - start_asr, 3),
             "started_at": asr_started_at.isoformat() + "Z",
@@ -1421,6 +1423,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
                 "started_at": refinement_started_at.isoformat() + "Z",
                 "completed_at": refinement_completed_at.isoformat() + "Z",
                 "duration_ms": int(refinement_duration_ms),
+                "model": outcome.model,
                 "refinement_comparison": {
                     "primary_model": outcome.model,
                     "primary_status": "error" if outcome.error else "success",

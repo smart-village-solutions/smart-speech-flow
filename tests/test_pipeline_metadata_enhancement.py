@@ -26,6 +26,7 @@ class TestPipelineMetadataTransformation:
                     "name": "asr",
                     "input": {"lang": "de"},
                     "output": "Hallo Welt",
+                    "model": "whisper-base",
                     "started_at": "2025-11-05T20:00:55.000Z",
                     "completed_at": "2025-11-05T20:00:57.500Z",
                     "duration_ms": 2500
@@ -73,6 +74,7 @@ class TestPipelineMetadataTransformation:
         asr_step = result["steps"][0]
         assert asr_step["name"] == "asr"
         assert asr_step["output"]["text"] == "Hallo Welt"
+        assert asr_step["output"]["model"] == "whisper-base"
         assert asr_step["duration_ms"] == 2500
 
         # Translation step
@@ -152,6 +154,7 @@ class TestPipelineMetadataTransformation:
                     "name": "llm_refinement",
                     "input": {"enabled": True, "changed": True},
                     "output": "Test refined",
+                    "model": "phi4-mini",
                     "started_at": "2025-11-05T20:00:56.000Z",
                     "completed_at": "2025-11-05T20:00:58.000Z",
                     "duration_ms": 2000
@@ -180,6 +183,7 @@ class TestPipelineMetadataTransformation:
         assert refinement_step["name"] == "refinement"  # Normalized name
         assert refinement_step["output"]["text"] == "Test refined"
         assert refinement_step["output"]["changed"] == True
+        assert refinement_step["output"]["model"] == "phi4-mini"
         assert refinement_step["duration_ms"] == 2000
 
 

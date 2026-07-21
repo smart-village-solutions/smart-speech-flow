@@ -267,7 +267,10 @@ def _transform_pipeline_step(
     }
 
     if step_name == "asr":
-        transformed_step["output"] = {"text": step.get("output", "")}
+        transformed_step["output"] = {
+            "text": step.get("output", ""),
+            "model": step.get("model") or step.get("debug", {}).get("model", "unknown"),
+        }
     elif step_name == "translation":
         transformed_step["output"] = {
             "text": step.get("output", ""),
@@ -278,6 +281,8 @@ def _transform_pipeline_step(
         transformed_step["output"] = {
             "text": step.get("output", ""),
             "changed": step.get("input", {}).get("changed", False),
+            "model": step.get("model")
+            or step.get("refinement_comparison", {}).get("primary_model", "unknown"),
         }
         if step.get("refinement_comparison"):
             transformed_step["refinement_comparison"] = step["refinement_comparison"]
