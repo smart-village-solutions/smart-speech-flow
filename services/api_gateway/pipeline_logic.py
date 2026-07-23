@@ -161,6 +161,25 @@ def _build_audio_validation_failure(
     )
 
 
+def build_file_too_large_result(
+    *, file_size_bytes: int, max_size_bytes: int, specs: AudioSpecs, start_time: float
+) -> AudioValidationResult:
+    """Build the consistent file-size validation failure used by both validators."""
+    return _build_audio_validation_failure(
+        start_time=start_time,
+        error_code="FILE_TOO_LARGE",
+        error_message=(
+            f"Audio file too large: {file_size_bytes / 1024 / 1024:.1f}MB. "
+            f"Maximum allowed: {specs.MAX_FILE_SIZE_MB}MB"
+        ),
+        details={
+            "file_size_bytes": file_size_bytes,
+            "max_size_bytes": max_size_bytes,
+            "file_size_mb": round(file_size_bytes / 1024 / 1024, 2),
+        },
+    )
+
+
 def _read_wav_properties(
     audio_bytes: bytes, start_time: float
 ) -> AudioValidationResult | Tuple[int, int, int, float]:
@@ -657,16 +676,11 @@ def validate_audio_input(
         max_size_bytes = int(specs.MAX_FILE_SIZE_MB * 1024 * 1024)
 
         if file_size_bytes > max_size_bytes:
-            return AudioValidationResult(
-                is_valid=False,
-                error_code="FILE_TOO_LARGE",
-                error_message=f"Audio file too large: {file_size_bytes / 1024 / 1024:.1f}MB. Maximum allowed: {specs.MAX_FILE_SIZE_MB}MB",
-                details={
-                    "file_size_bytes": file_size_bytes,
-                    "max_size_bytes": max_size_bytes,
-                    "file_size_mb": round(file_size_bytes / 1024 / 1024, 2),
-                },
-                validation_time_ms=int((time.perf_counter() - start_time) * 1000),
+            return build_file_too_large_result(
+                file_size_bytes=file_size_bytes,
+                max_size_bytes=max_size_bytes,
+                specs=specs,
+                start_time=start_time,
             )
 
         wav_properties = _read_wav_properties(audio_bytes, start_time)
