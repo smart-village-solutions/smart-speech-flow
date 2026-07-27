@@ -10,6 +10,8 @@ annotated-types==0.7.0
     # via pydantic
 anyio==4.14.2
     # via httpx
+ast-serialize==0.6.0
+    # via mypy
 attrs==26.1.0
     # via flake8-bugbear
 authlib==1.7.2
@@ -108,6 +110,8 @@ joblib==1.5.3
     # via nltk
 joserfc==1.7.4
     # via authlib
+librt==0.13.0
+    # via mypy
 license-expression==30.4.4
     # via cyclonedx-python-lib
 markdown-it-py==4.2.0
@@ -122,7 +126,7 @@ mdurl==0.1.2
     # via markdown-it-py
 msgpack==1.2.1
     # via cachecontrol
-mypy==1.13.0
+mypy==2.3.0
     # via -r requirements-dev.in
 mypy-extensions==1.1.0
     # via
@@ -146,7 +150,9 @@ packaging==26.2
     #   safety-schemas
     #   wheel
 pathspec==1.1.1
-    # via black
+    # via
+    #   black
+    #   mypy
 pep8-naming==0.15.1
     # via -r requirements-dev.in
 pip-api==0.0.34
