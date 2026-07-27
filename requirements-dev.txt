@@ -263,7 +263,7 @@ types-pyopenssl==24.1.0.20240722
     # via types-redis
 types-redis==4.6.0.20241004
     # via -r requirements-dev.in
-types-requests==2.33.0.20260402
+types-requests==2.33.0.20260712
     # via -r requirements-dev.in
 types-setuptools==83.0.0.20260716
     # via types-cffi
