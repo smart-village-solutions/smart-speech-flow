@@ -31,6 +31,7 @@ certifi==2026.6.17
     #   httpcore
     #   httpx
     #   requests
+    #   safety
 cffi==2.1.0
     # via cryptography
 cfgv==3.5.0
@@ -43,6 +44,7 @@ click==8.4.2
     #   nltk
     #   pip-tools
     #   safety
+    #   typer
 coverage[toml]==7.15.2
     # via pytest-cov
 cryptography==49.0.0
@@ -169,9 +171,7 @@ pluggy==1.6.0
 pre-commit==4.3.0
     # via -r requirements-dev.in
 psutil==7.2.2
-    # via
-    #   -r requirements-dev.in
-    #   safety
+    # via -r requirements-dev.in
 py-serializable==1.1.2
     # via cyclonedx-python-lib
 pycodestyle==2.14.0
@@ -223,7 +223,6 @@ requests==2.34.2
     # via
     #   cachecontrol
     #   pip-audit
-    #   safety
 rich==15.0.0
     # via
     #   bandit
@@ -233,7 +232,7 @@ ruamel-yaml==0.19.1
     # via
     #   safety
     #   safety-schemas
-safety==3.6.2
+safety==3.8.1
     # via -r requirements-dev.in
 safety-schemas==0.0.16
     # via safety
@@ -255,7 +254,9 @@ tomlkit==0.15.1
     # via safety
 tqdm==4.69.0
     # via nltk
-typer==0.27.0
+truststore==0.10.4
+    # via safety
+typer==0.25.1
     # via safety
 types-cffi==2.0.0.20260518
     # via types-pyopenssl
