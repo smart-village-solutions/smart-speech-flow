@@ -1,4 +1,4 @@
-FROM nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04 AS wheel-builder
+FROM nvidia/cuda:13.3.1-cudnn-runtime-ubuntu24.04 AS wheel-builder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg python3 python3-pip \
@@ -36,7 +36,7 @@ RUN python3 -m pip wheel \
     --wheel-dir /wheels \
     -r requirements.txt
 
-FROM nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04
+FROM nvidia/cuda:13.3.1-cudnn-runtime-ubuntu24.04
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ffmpeg python3 python3-pip \
