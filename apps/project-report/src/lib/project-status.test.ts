@@ -6,7 +6,7 @@ const validReport = () => ({
   statusModel: projectStatusModel,
   healthModel: projectHealthModel,
   priorityModel: projectPriorityModel,
-  milestones: [{ id: 'M1', title: 'Test', plannedEffortPt: 1, sortOrder: 1, workPackages: [{ id: 'WP-1', title: 'Test', area: 'Test', priority: 'must', effortPt: 1, status: 'planned', health: 'on_track', dependsOn: [] }] }],
+  milestones: [{ id: 'M1', title: 'Test', plannedEffortPt: 1, sortOrder: 1, workPackages: [{ id: 'WP-1', title: 'Test', area: 'Test', complexity: 'medium', priority: 'must', effortPt: 1, status: 'planned', health: 'on_track', dependsOn: [] }] }],
 });
 
 describe('validateProjectStatusReport', () => {
