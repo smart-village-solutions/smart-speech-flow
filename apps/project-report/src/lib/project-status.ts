@@ -25,11 +25,14 @@ export const projectPriorityModel = {
 export type ProjectStatus = keyof typeof projectStatusModel;
 export type ProjectHealth = (typeof projectHealthModel)[number];
 export type ProjectPriority = keyof typeof projectPriorityModel;
+export const projectComplexityModel = ['low', 'medium', 'high', 'very_high'] as const;
+export type ProjectComplexity = (typeof projectComplexityModel)[number];
 
 export type WorkPackage = {
   id: string;
   title: string;
   area: string;
+  complexity: ProjectComplexity;
   priority: ProjectPriority;
   effortPt: number;
   status: ProjectStatus;
@@ -85,7 +88,7 @@ export const validateProjectStatusReport = (value: unknown): string[] => {
     if (milestoneIds.has(milestone.id)) errors.push(`Doppelte Meilenstein-ID: ${milestone.id}`);
     milestoneIds.add(milestone.id);
     for (const item of milestone.workPackages) {
-      if (!isRecord(item) || typeof item.id !== 'string' || typeof item.title !== 'string' || typeof item.area !== 'string' || !Number.isFinite(item.effortPt) || !Array.isArray(item.dependsOn)) {
+      if (!isRecord(item) || typeof item.id !== 'string' || typeof item.title !== 'string' || typeof item.area !== 'string' || !projectComplexityModel.includes(item.complexity as ProjectComplexity) || !Number.isFinite(item.effortPt) || !Array.isArray(item.dependsOn)) {
         errors.push(`Ungültiges Arbeitspaket in ${milestone.id}.`);
         continue;
       }
