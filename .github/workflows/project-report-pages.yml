@@ -1,0 +1,52 @@
+name: Deploy project report to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/project-report/**'
+      - '.github/workflows/project-report-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: project-report-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/project-report/package-lock.json
+      - name: Install dependencies
+        working-directory: apps/project-report
+        run: npm ci
+      - name: Test
+        working-directory: apps/project-report
+        run: npm test
+      - name: Build
+        working-directory: apps/project-report
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/
+        run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/project-report/dist
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
