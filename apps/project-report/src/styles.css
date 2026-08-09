@@ -16,6 +16,9 @@ input, select { min-height: 2.6rem; border: 1px solid #aab9ab; border-radius: .4
 .tabs button[aria-selected="true"] { background: #1d5b2a; border-radius: .35rem; color: white; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
 .card { padding: 1.3rem; background: white; border: 1px solid #cdd7cd; border-radius: .7rem; box-shadow: 0 1px 3px #132b1714; }
+.card-link { color: inherit; display: block; text-decoration: none; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.card-link:hover, .card-link:focus-visible { border-color: #347a40; box-shadow: 0 5px 14px #132b1726; outline: none; transform: translateY(-2px); }
+.card-action { color: #235e2b; display: inline-block; font-size: .85rem; font-weight: 700; margin-top: 1.25rem; }
 .card-title { display: flex; justify-content: space-between; gap: .5rem; color: #486b4c; font-weight: 700; font-size: .85rem; }
 .progress { height: .85rem; position: relative; overflow: hidden; border-radius: 999px; background: #dce8dc; }
 .progress span { height: 100%; display: block; background: #347a40; }
