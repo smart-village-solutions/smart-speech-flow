@@ -1,6 +1,6 @@
 {
   "meta": {
-    "version": "1.4.0",
+    "version": "1.4.1",
     "updatedAt": "2026-08-09",
     "source": "docs/local-notes/konzept.md (Leistungskonzept KasselDIALOG); Kundenplanung mit Mehrorganisationsbetrieb ab 2026-10"
   },
@@ -28,7 +28,7 @@
   "milestones": [
     {
       "id": "M1",
-      "title": "Kundenmeeting am 13.08.2026: Grundlagen & UI-Prototyp",
+      "title": "Grundlagen & UI-Prototyp (Deadline: 13.08.2026)",
       "plannedEffortPt": 20,
       "sortOrder": 1,
       "workPackages": [
@@ -104,7 +104,7 @@
     },
     {
       "id": "M2",
-      "title": "Kunden-Folgetermin 1 am 20.08.2026: Gesprächs- und Audiofluss",
+      "title": "Gesprächs- und Audiofluss (Deadline: 20.08.2026)",
       "plannedEffortPt": 46,
       "sortOrder": 2,
       "workPackages": [
@@ -168,7 +168,7 @@
     },
     {
       "id": "M3",
-      "title": "Kunden-Folgetermin 2 am 27.08.2026: Umbau weitgehend abschließen",
+      "title": "Umbau weitgehend abschließen (Deadline: 27.08.2026)",
       "plannedEffortPt": 46,
       "sortOrder": 3,
       "workPackages": [
@@ -246,7 +246,7 @@
     },
     {
       "id": "M4",
-      "title": "Kunden-Folgetermin 3 am 03.09.2026: Interne Optimierungsrunde",
+      "title": "Interne Optimierungsrunde (Deadline: 03.09.2026)",
       "plannedEffortPt": 38,
       "sortOrder": 4,
       "workPackages": [
@@ -310,7 +310,7 @@
     },
     {
       "id": "M5",
-      "title": "Kunden-Folgetermin 4 am 10.09.2026: Interne Optimierung abschließen",
+      "title": "Interne Optimierung abschließen (Deadline: 10.09.2026)",
       "plannedEffortPt": 40,
       "sortOrder": 5,
       "workPackages": [
@@ -388,7 +388,7 @@
     },
     {
       "id": "M6",
-      "title": "Mitte September 2026: Öffentliche Optimierungsrunde und Rollout-Vorbereitung",
+      "title": "Öffentliche Optimierungsrunde und Rollout-Vorbereitung (Deadline: Mitte September 2026)",
       "plannedEffortPt": 20,
       "sortOrder": 6,
       "workPackages": [
@@ -424,7 +424,7 @@
     },
     {
       "id": "M7",
-      "title": "Ab Oktober 2026: Regulärer Betrieb",
+      "title": "Regulärer Betrieb (Start: Oktober 2026)",
       "plannedEffortPt": 30,
       "sortOrder": 7,
       "workPackages": [
