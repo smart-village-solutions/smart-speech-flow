@@ -5,6 +5,7 @@ Welcome to the Smart Speech Flow Backend documentation! This guide helps you fin
 ## 📚 Quick Navigation
 
 ### For Developers
+- [English Developer Guide](DEVELOPER_GUIDE.en.md) - Local setup, architecture, API integration, WebSockets, and quality workflow
 - [Product Vision](PRODUCT_VISION.md) - Product purpose, positioning and target state
 - [Internal Product Vision](PRODUCT_VISION_INTERNAL.md) - Strategic platform, operating-model, and business vision
 - [Product Roadmap](PRODUCT_ROADMAP.md) - Path from the current MVP to the product vision
@@ -15,6 +16,7 @@ Welcome to the Smart Speech Flow Backend documentation! This guide helps you fin
 - [Frontend Integration Guide](guides/frontend-integration.md) - How to integrate with the frontend
 - [API Conventions](guides/api-conventions.md) - API design patterns and standards
 - [Code Quality Standards](testing/code-quality.md) - Coding standards and quality checks
+- [English Code Quality Standards](testing/code-quality.en.md) - English reference for quality tooling and CI expectations
 - Python dependency workflow:
   - Sources live in `requirements*.in` and `services/*/requirements.in`
   - Pinned lockfiles are generated via `../scripts/compile_requirements.sh`
