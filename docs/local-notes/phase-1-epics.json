@@ -1,0 +1,196 @@
+{
+  "meta": {
+    "version": "1.0.1",
+    "updatedAt": "2026-08-09",
+    "source": "docs/PRODUCT_ROADMAP.md, Abschnitt 'Phase 1: MVP stabilisieren'"
+  },
+  "statusModel": {
+    "idea": 0,
+    "commissioned": 0,
+    "planned": 10,
+    "prototype": 20,
+    "implementation": 45,
+    "optimization": 70,
+    "testing": 80,
+    "acceptance": 90,
+    "done": 100
+  },
+  "healthModel": [
+    "on_track",
+    "needs_attention",
+    "at_risk",
+    "blocked"
+  ],
+  "priorityModel": {
+    "must": "1: Muss sein",
+    "replacement_required": "2: Notwendig für die Ablösung des Alt-Systems",
+    "valuable": "3: Neu, aber sehr sinnvoll",
+    "requested": "4: Neu und gewünscht",
+    "funded_optional": "5: Nicht so wichtig, aber finanziert",
+    "unfunded_nice_to_have": "6: Nice to have, noch ohne Finanzierung",
+    "irrelevant": "7: Irrelevant"
+  },
+  "milestones": [
+    {
+      "id": "M1",
+      "title": "Phase 1: MVP stabilisieren",
+      "plannedEffortPt": 78,
+      "sortOrder": 1,
+      "workPackages": [
+        {
+          "id": "WP-1",
+          "title": "Gesprächsfluss stabilisieren",
+          "area": "Session und WebSocket",
+          "priority": "must",
+          "effortPt": 16,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": [],
+          "acceptanceCriteria": [
+            "Admin und Customer können ein Gespräch zuverlässig starten, führen und beenden.",
+            "Kritische Session- und WebSocket-Pfade sind automatisiert getestet."
+          ],
+          "todos": [
+            "Session-Erstellung, -Beitritt und -Beendigung vereinheitlichen.",
+            "Nachrichtenfluss zwischen Admin und Customer absichern.",
+            "WebSocket-Verbindungsaufbau, Reconnect und Cleanup stabilisieren.",
+            "Hängende oder verwaiste Sessions erkennen und bereinigen.",
+            "Nachrichtenverlust und doppelte Zustellung verhindern."
+          ],
+          "featureSummary": "Der zentrale Gesprächsfluss funktioniert stabil in realen Nutzungssituationen."
+        },
+        {
+          "id": "WP-2",
+          "title": "Audio-Verarbeitung robust machen",
+          "area": "Audio-Pipeline",
+          "priority": "must",
+          "effortPt": 14,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-1"],
+          "acceptanceCriteria": [
+            "Fehlerhafte, unvollständige und zu große Audiodateien werden nachvollziehbar behandelt.",
+            "Ausfälle in ASR-, Übersetzungs- und TTS-Pipeline führen zu klaren Fehlerzuständen."
+          ],
+          "todos": [
+            "Audioeingaben und Formate validieren.",
+            "Fehlerhafte Uploads sauber behandeln.",
+            "Timeouts und Ausfälle entlang der Pipeline abfangen.",
+            "Verhalten bei schwacher Verbindung und Verbindungsabbrüchen verbessern.",
+            "Audio-End-to-End-Tests ergänzen."
+          ],
+          "featureSummary": "Die Audio-Pipeline bleibt auch bei ungünstigen Eingaben und Netzsituationen zuverlässig."
+        },
+        {
+          "id": "WP-3",
+          "title": "Status, Fehlerbehandlung und Transparenz verbessern",
+          "area": "Produktverhalten und Monitoring",
+          "priority": "must",
+          "effortPt": 10,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-1", "WP-2"],
+          "acceptanceCriteria": [
+            "Statusübergänge sind für beide Gesprächsrollen nachvollziehbar.",
+            "Technische Fehler werden verständlich und handlungsorientiert kommuniziert."
+          ],
+          "todos": [
+            "Einheitliches Zustandsmodell für Sessions, Nachrichten und Verarbeitung definieren.",
+            "Statusübergänge sichtbar machen.",
+            "Technische Fehler in verständliche Meldungen übersetzen.",
+            "Fehlerfälle protokollieren und im Monitoring sichtbar machen.",
+            "Grenzfälle dokumentieren."
+          ],
+          "featureSummary": "Nutzende und Betriebsteam können den Zustand eines Gesprächs und Fehlerursachen nachvollziehen."
+        },
+        {
+          "id": "WP-4",
+          "title": "Kernmodule wartbar machen",
+          "area": "API-Gateway",
+          "priority": "must",
+          "effortPt": 12,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-1"],
+          "acceptanceCriteria": [
+            "Kernverantwortlichkeiten sind zwischen Routen, Pipeline, Session- und WebSocket-Management klar getrennt.",
+            "Refactorings sind durch Tests abgesichert."
+          ],
+          "todos": [
+            "Technische Schulden in Kernmodulen erfassen und priorisieren.",
+            "Große oder stark gekoppelte Module gezielt entkoppeln.",
+            "Modulverantwortlichkeiten schärfen.",
+            "Fehlerbehandlung und Logging konsolidieren.",
+            "Refactorings mit Tests absichern."
+          ],
+          "featureSummary": "Die Kernlogik des API-Gateways bleibt veränderbar und testbar."
+        },
+        {
+          "id": "WP-5",
+          "title": "Qualitätssicherung der kritischen Produktpfade",
+          "area": "Testautomatisierung",
+          "priority": "must",
+          "effortPt": 10,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-1", "WP-2", "WP-3", "WP-4"],
+          "acceptanceCriteria": [
+            "Kritische End-to-End-Flows sind als Testfälle dokumentiert und automatisiert.",
+            "Flaky Tests sind identifiziert und priorisiert."
+          ],
+          "todos": [
+            "Kritische End-to-End-Flows definieren.",
+            "Regressionstests für Session, Nachricht, Audio und WebSocket ausbauen.",
+            "Flaky Tests identifizieren und stabilisieren.",
+            "Smoke- und Integrationstests festigen.",
+            "Qualitätskriterien für die Phase-1-Abnahme festlegen."
+          ],
+          "featureSummary": "Die wesentlichen Nutzerpfade sind regressionsgesichert."
+        },
+        {
+          "id": "WP-6",
+          "title": "Pilotierung und Nutzerforschung",
+          "area": "Produktvalidierung",
+          "priority": "valuable",
+          "effortPt": 8,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-1", "WP-2", "WP-3"],
+          "acceptanceCriteria": [
+            "Reale oder realitätsnahe Nutzungsszenarien wurden getestet.",
+            "Friktionen, Abbruchgründe und Anforderungen sind priorisiert dokumentiert."
+          ],
+          "todos": [
+            "Repräsentative Gesprächsszenarien definieren.",
+            "Tests mit realen Nutzenden organisieren und durchführen.",
+            "Friktionen, Abbruchgründe und Anforderungen erfassen.",
+            "Technische Fehler von Bedien- und Verständnisproblemen trennen.",
+            "Erkenntnisse in einen Folge-Backlog überführen."
+          ],
+          "featureSummary": "Produktentscheidungen basieren auf beobachteter Nutzung statt ausschließlich auf technischer Validierung."
+        },
+        {
+          "id": "WP-7",
+          "title": "Modelle und Konfigurationen evaluieren",
+          "area": "KI-Qualität",
+          "priority": "valuable",
+          "effortPt": 8,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-2", "WP-5"],
+          "acceptanceCriteria": [
+            "Vergleichsdaten für ASR, Übersetzung und TTS liegen vor.",
+            "Eine begründete Baseline für Modelle und Konfigurationen ist dokumentiert."
+          ],
+          "todos": [
+            "Vergleichsszenarien festlegen.",
+            "Qualitäts-, Geschwindigkeits- und Stabilitätsdaten erfassen.",
+            "Sprach-, Modell- und Konfigurations-Baselines festlegen.",
+            "Entscheidungen dokumentieren."
+          ],
+          "featureSummary": "Spätere Produktentscheidungen stützen sich auf vergleichbare Qualitäts- und Stabilitätsdaten."
+        }
+      ]
+    }
+  ]
+}

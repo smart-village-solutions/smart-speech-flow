@@ -22,6 +22,12 @@ und Betriebsanforderung.
   aus frei wählbaren Client-Eingaben übernommen.
 - Decision: Sessions, Nachrichten, Audiodaten, Konfigurationen, Logs und
   Metriken erhalten tenant-sichere Zugriffspfade.
+- Decision: SVA Studio ist führend für administrative Mandanten-, Identitäts-
+  und Berechtigungsdaten. SSF erhält den Tenant-Kontext ausschließlich aus
+  signierten OIDC-Ansprüchen oder einer serverseitigen Introspection und
+  kommuniziert Provisionierungs-, Status- und Nutzungsdaten über versionierte,
+  idempotente APIs bzw. Ereignisse zurück. Eine gemeinsame Datenbank ist
+  ausgeschlossen.
 - Decision: Die rechtliche Prüfung vom 13. bis voraussichtlich 27. August ist
   ein verbindlicher Eingang für das Daten- und Retentionsmodell.
 
@@ -44,5 +50,4 @@ und Betriebsanforderung.
 
 ## Open Questions
 
-- Welcher Identity Provider liefert den vertrauenswürdigen Tenant-Kontext?
 - Welche bestehenden Daten müssen vor dem Mehrorganisations-Pilot migriert werden?

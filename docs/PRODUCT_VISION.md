@@ -8,7 +8,7 @@ Das Produkt ist nicht als isolierter Uebersetzer gedacht, sondern als offene Ges
 
 ## Vision Statement
 
-Smart Speech Flow ist die offene und souveraen betreibbare Infrastruktur fuer mehrsprachige Echtzeitgespraeche.
+Smart Speech Flow ist die offene und souveraen betreibbare Betriebsplattform fuer kommunale Sprach-KI und mehrsprachige Echtzeitgespraeche.
 
 SSF ermoeglicht sprachuebergreifende Kommunikation in unterschiedlichen Nutzungskontexten und Interaktionsformen.
 
@@ -23,7 +23,7 @@ SSF kann direkt als eigenstaendige Anwendung genutzt und zugleich als integrierb
 
 ## Zielbild
 
-Smart Speech Flow soll der Standardbaustein fuer sprachuebergreifende Gespraeche werden, ueberall dort, wo Verstaendigung in Echtzeit notwendig ist.
+Smart Speech Flow soll der Standardbaustein fuer kommunale Sprach-KI werden. Sprachuebergreifende Gespraeche sind der erste Anwendungsfall; die Plattform soll weitere sprachbasierte Verwaltungsservices sicher und standardisiert betreibbar machen.
 
 Im Zielbild ermoeglicht SSF:
 
@@ -32,6 +32,8 @@ Im Zielbild ermoeglicht SSF:
 - unterschiedliche Gespraechsmodi je nach Situation, Geraet und Nutzungskontext
 - einen Betrieb auf eigener Infrastruktur oder in anderen kontrollierten Betriebsmodellen
 - die Einbettung in bestehende digitale Angebote statt einer erzwungenen Parallelanwendung
+- die sichere Verwaltung von Mandanten, Rollen, Ressourcen und Nutzungsdaten in einer Control Plane
+- austauschbare ASR-, Uebersetzungs- und TTS-Komponenten statt einer Abhaengigkeit von einem einzelnen Modell
 
 ## Produktformen
 
@@ -52,6 +54,8 @@ Andere Produkte, Portale und Fachverfahren nutzen Smart Speech Flow als integrie
 - Einfachheit vor Funktionsballast
 - Vertrauen, Stabilitaet und Transparenz im operativen Einsatz
 - Offene Architektur fuer Integration, Erweiterung und selbstbestimmten Betrieb
+- Mandantentrennung, Datenschutz und kontrollierter Zugriff als Voraussetzung fuer Vertrauen
+- messbare Qualitaet, Latenz und Ressourcenverbrauch als Grundlage fuer wirtschaftlichen Betrieb
 
 ## Open-Source-Verstaendnis
 
@@ -72,6 +76,10 @@ Dazu gehoeren insbesondere:
 Smart Speech Flow ist so gedacht, dass eine Organisation eine Instanz selbst nutzen und zugleich weiteren Partnern oder Organisationseinheiten zugaenglich machen kann.
 
 Damit eignet sich SSF nicht nur fuer Einzelnutzung, sondern auch als gemeinsam betriebene Infrastruktur in Netzwerken, Verbuenden oder lokalen Oekosystemen.
+
+Die Plattform unterscheidet dabei die technische Betreiberrolle von den Rollen eines Mandanten: Ein `system_admin` betreibt eine SSF-Installation, ein `tenant_admin` verwaltet den eigenen Mandanten, operative `admin`-Nutzer fuehren Sessions durch und `customer` nimmt an einer zugewiesenen Session teil. Details beschreiben das [Rollen- und Berechtigungsmodell](architecture/roles-and-permissions.md) und die [Customer Journey](architecture/customer-journey.md).
+
+SVA Studio kann diese Control Plane als einheitliche Betreiber- und Mandanten-Admin-Oberfläche bereitstellen. Studio verantwortet dann Mandanten, administrative Identitäten, Rollen, Konfigurationen und Lebenszyklusworkflows; SSF verantwortet Sessions und die Sprach-KI-Runtime. Die Systeme kommunizieren über versionierte APIs und Ereignisse, nicht über eine gemeinsame Datenbank.
 
 ## Nordstern
 

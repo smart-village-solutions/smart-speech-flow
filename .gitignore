@@ -99,3 +99,7 @@ node_modules/
 
 # Fallow local cache and snapshots
 .fallow/
+docs/local-notes/konzept.md
+docs/PRODUCT_VISION_INTERNAL.md
+docs/PRODUCT_VISION.md
+docs/PRODUCT_VISION.md
