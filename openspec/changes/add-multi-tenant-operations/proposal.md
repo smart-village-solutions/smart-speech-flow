@@ -16,6 +16,8 @@ verbindlich umgesetzt und erprobt sein.
 - Tenantübergreifenden Zugriff mit automatisierten Negativtests verhindern.
 - Einen Mehrorganisations-Pilot einschließlich Provisionierung und
   Supportabläufen durchführen.
+- SVA Studio als bevorzugte Control Plane für Mandanten, administrative
+  Identitäten und Lebenszyklusworkflows integrieren.
 
 ## Impact
 
