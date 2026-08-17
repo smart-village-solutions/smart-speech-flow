@@ -66,6 +66,8 @@ ENV/
 *.tmp
 output.wav
 models/
+docs/local-notes/*
+docs/local-notes
 
 # Docker
 *.pid

@@ -26,6 +26,28 @@ def utc_now_iso() -> str:
     return utc_now().isoformat()
 
 
+def _serialize_connection(metrics, connection_id: str | None = None) -> dict:
+    """Convert monitor metrics to the common API representation."""
+    connection = {
+        "session_id": metrics.session_id,
+        "client_type": metrics.client_type,
+        "origin": metrics.origin,
+        "connect_time": metrics.connect_time.isoformat(),
+        "last_heartbeat": (
+            metrics.last_heartbeat.isoformat() if metrics.last_heartbeat else None
+        ),
+        "messages_sent": metrics.messages_sent,
+        "messages_received": metrics.messages_received,
+        "bytes_sent": metrics.bytes_sent,
+        "bytes_received": metrics.bytes_received,
+        "errors": metrics.errors,
+        "connection_duration": (utc_now() - metrics.connect_time).total_seconds(),
+    }
+    if connection_id is not None:
+        connection["connection_id"] = connection_id
+    return connection
+
+
 @router.get("/health")
 def websocket_health_check():
     """
@@ -113,31 +135,10 @@ def list_active_connections(
         # Limit results
         connection_list = list(active_connections.items())[:limit]
 
-        # Convert to serializable format
-        serialized_connections = []
-        for conn_id, metrics in connection_list:
-            serialized_connections.append(
-                {
-                    "connection_id": conn_id,
-                    "session_id": metrics.session_id,
-                    "client_type": metrics.client_type,
-                    "origin": metrics.origin,
-                    "connect_time": metrics.connect_time.isoformat(),
-                    "last_heartbeat": (
-                        metrics.last_heartbeat.isoformat()
-                        if metrics.last_heartbeat
-                        else None
-                    ),
-                    "messages_sent": metrics.messages_sent,
-                    "messages_received": metrics.messages_received,
-                    "bytes_sent": metrics.bytes_sent,
-                    "bytes_received": metrics.bytes_received,
-                    "errors": metrics.errors,
-                    "connection_duration": (
-                        (utc_now() - metrics.connect_time).total_seconds()
-                    ),
-                }
-            )
+        serialized_connections = [
+            _serialize_connection(metrics, connection_id=conn_id)
+            for conn_id, metrics in connection_list
+        ]
 
         return JSONResponse(
             status_code=200,
@@ -178,30 +179,9 @@ def get_session_connections(session_id: str):
                 detail=f"No active WebSocket connections found for session {session_id}",
             )
 
-        # Convert to serializable format
-        serialized_connections = []
-        for metrics in session_connections:
-            serialized_connections.append(
-                {
-                    "session_id": metrics.session_id,
-                    "client_type": metrics.client_type,
-                    "origin": metrics.origin,
-                    "connect_time": metrics.connect_time.isoformat(),
-                    "last_heartbeat": (
-                        metrics.last_heartbeat.isoformat()
-                        if metrics.last_heartbeat
-                        else None
-                    ),
-                    "messages_sent": metrics.messages_sent,
-                    "messages_received": metrics.messages_received,
-                    "bytes_sent": metrics.bytes_sent,
-                    "bytes_received": metrics.bytes_received,
-                    "errors": metrics.errors,
-                    "connection_duration": (
-                        (utc_now() - metrics.connect_time).total_seconds()
-                    ),
-                }
-            )
+        serialized_connections = [
+            _serialize_connection(metrics) for metrics in session_connections
+        ]
 
         return JSONResponse(
             status_code=200,
