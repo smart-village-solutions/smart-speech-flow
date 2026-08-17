@@ -11,7 +11,8 @@ This guide assumes familiarity with Python services, Docker Compose, and API-bas
 3. For backend changes, continue with [Working Practices](#4-working-practices), [Code Standards](#5-code-standards), and [Testing](#6-testing).
 4. For REST, WebSocket, or client work, read [API, WebSocket, and Data Conventions](#7-api-websocket-and-data-conventions).
 5. For configuration, production-facing behaviour, or incident-related work, read [Configuration and Secrets](#8-configuration-and-secrets) and [Observability and Operations](#10-observability-and-operations).
-6. Before requesting review, complete the [Definition of Done](#13-definition-of-done).
+6. For frontend development, start the backend and model services, then run `npm install` and `npm run dev` in `services/frontend`; Vite proxies `/api` and `/ws` to `localhost:8000`.
+7. Before requesting review, complete the [Definition of Done](#13-definition-of-done).
 
 ## 1. Purpose and Scope
 
@@ -23,17 +24,17 @@ Use these guidelines as the default decision framework. When a change affects an
 
 ## 2. Quick Start
 
-### Full Container Stack
+### Backend and Model Stack
 
 ```bash
 git clone https://github.com/smart-village-solutions/smart-speech-flow.git
 cd smart-speech-flow
 cp .env.example .env
-docker compose up -d traefik redis ollama api_gateway asr translation tts frontend
+docker compose up -d traefik redis ollama api_gateway asr translation tts
 curl http://localhost:8000/health
 ```
 
-The Compose definition also contains the optional `frontend-archive` service, which uses `../ssf-frontend` as its build context. It is not part of the command above; the maintained `frontend` service is built from `services/frontend`.
+The Compose definition also contains a containerised `frontend` and the optional `frontend-archive` service, which uses `../ssf-frontend` as its build context. Use the local Vite workflow above for frontend development; the containerised frontend is configured for deployment routing rather than as the default local development entry point.
 
 ### Local Python Development
 
