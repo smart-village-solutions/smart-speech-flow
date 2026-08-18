@@ -28,10 +28,9 @@ COPY vite.config.ts ./
 # environment variables in the Nginx container cannot change the bundle.
 ARG VITE_API_BASE_URL
 ARG VITE_WS_BASE_URL
-ARG VITE_APP_PASSWORD
-ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
-ENV VITE_WS_BASE_URL=${VITE_WS_BASE_URL}
-ENV VITE_APP_PASSWORD=${VITE_APP_PASSWORD}
+# This value is intentionally public because Vite embeds it in browser code.
+# It is a demo UI gate, not an authentication secret.
+ARG VITE_DEMO_ACCESS_CODE
 
 # Never produce a deployable image that sends browser traffic to localhost.
 RUN if [ -z "${VITE_API_BASE_URL}" ] || [ -z "${VITE_WS_BASE_URL}" ]; then \
@@ -48,7 +47,10 @@ RUN if [ -z "${VITE_API_BASE_URL}" ] || [ -z "${VITE_WS_BASE_URL}" ]; then \
     esac
 
 # Build the application
-RUN npm run build
+RUN VITE_API_BASE_URL="${VITE_API_BASE_URL}" \
+    VITE_WS_BASE_URL="${VITE_WS_BASE_URL}" \
+    VITE_APP_PASSWORD="${VITE_DEMO_ACCESS_CODE}" \
+    npm run build
 
 # Stage 2: Serve with non-root Nginx
 FROM nginxinc/nginx-unprivileged:alpine

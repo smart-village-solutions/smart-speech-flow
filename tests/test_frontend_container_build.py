@@ -89,11 +89,47 @@ def test_frontend_container_embeds_production_service_urls():
 
 @pytest.mark.integration
 @pytest.mark.slow
+def test_frontend_container_embeds_explicit_public_demo_access_code():
+    """The public demo gate value reaches Vite without Docker secret handling."""
+    tag = f"ssf-frontend-config-test:{uuid.uuid4().hex}"
+    try:
+        result = _docker_build(
+            tag,
+            f"VITE_API_BASE_URL={API_BASE_URL}",
+            f"VITE_WS_BASE_URL={WS_BASE_URL}",
+            "VITE_DEMO_ACCESS_CODE=explicit-public-demo-code",
+        )
+        assert result.returncode == 0, result.stderr
+
+        bundle_check = subprocess.run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--entrypoint",
+                "grep",
+                tag,
+                "-R",
+                "-q",
+                "explicit-public-demo-code",
+                "/usr/share/nginx/html/assets",
+            ],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        assert bundle_check.returncode == 0, bundle_check.stderr
+    finally:
+        _remove_image(tag)
+
+
+@pytest.mark.integration
+@pytest.mark.slow
 def test_frontend_container_rejects_missing_production_service_urls():
     """A production image must not silently fall back to browser localhost."""
     tag = f"ssf-frontend-config-test:{uuid.uuid4().hex}"
     try:
-        result = _docker_build(tag, "VITE_APP_PASSWORD=test-password")
+        result = _docker_build(tag, "VITE_DEMO_ACCESS_CODE=test-password")
         assert result.returncode != 0
         assert "VITE_API_BASE_URL and VITE_WS_BASE_URL must be set" in result.stderr
     finally:
@@ -127,7 +163,7 @@ def test_frontend_container_rejects_case_insensitive_localhost_urls(
             tag,
             f"VITE_API_BASE_URL={api_base_url}",
             f"VITE_WS_BASE_URL={ws_base_url}",
-            "VITE_APP_PASSWORD=test-password",
+            "VITE_DEMO_ACCESS_CODE=test-password",
         )
         assert result.returncode != 0
         assert expected_error in result.stderr
