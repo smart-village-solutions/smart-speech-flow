@@ -24,6 +24,29 @@ COPY tsconfig.json ./
 COPY tsconfig.node.json ./
 COPY vite.config.ts ./
 
+# Vite replaces these values while compiling the static SPA. Runtime
+# environment variables in the Nginx container cannot change the bundle.
+ARG VITE_API_BASE_URL
+ARG VITE_WS_BASE_URL
+ARG VITE_APP_PASSWORD
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_WS_BASE_URL=${VITE_WS_BASE_URL}
+ENV VITE_APP_PASSWORD=${VITE_APP_PASSWORD}
+
+# Never produce a deployable image that sends browser traffic to localhost.
+RUN if [ -z "${VITE_API_BASE_URL}" ] || [ -z "${VITE_WS_BASE_URL}" ]; then \
+      echo >&2 "VITE_API_BASE_URL and VITE_WS_BASE_URL must be set"; \
+      exit 1; \
+    fi \
+ && api_base_url_lower="$(printf '%s' "${VITE_API_BASE_URL}" | tr '[:upper:]' '[:lower:]')" \
+ && ws_base_url_lower="$(printf '%s' "${VITE_WS_BASE_URL}" | tr '[:upper:]' '[:lower:]')" \
+ && case "${api_base_url_lower}" in \
+      *localhost*|*127.0.0.1*) echo >&2 "VITE_API_BASE_URL must not target localhost"; exit 1 ;; \
+    esac \
+ && case "${ws_base_url_lower}" in \
+      *localhost*|*127.0.0.1*) echo >&2 "VITE_WS_BASE_URL must not target localhost"; exit 1 ;; \
+    esac
+
 # Build the application
 RUN npm run build
 
