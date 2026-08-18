@@ -15,7 +15,11 @@ from typing import Optional, Tuple
 logger = logging.getLogger(__name__)
 
 from services.api_gateway.log_safety import sanitize_log_value
-from services.api_gateway.pipeline_logic import AudioSpecs, AudioValidationResult
+from services.api_gateway.pipeline_logic import (
+    AudioSpecs,
+    AudioValidationResult,
+    build_file_too_large_result,
+)
 
 
 @dataclass
@@ -357,16 +361,11 @@ def enhanced_validate_audio_input(
     max_size_bytes = int(specs.MAX_FILE_SIZE_MB * 1024 * 1024)
 
     if file_size_bytes > max_size_bytes:
-        return AudioValidationResult(
-            is_valid=False,
-            error_code="FILE_TOO_LARGE",
-            error_message=f"Audio file too large: {file_size_bytes / 1024 / 1024:.1f}MB. Maximum allowed: {specs.MAX_FILE_SIZE_MB}MB",
-            details={
-                "file_size_bytes": file_size_bytes,
-                "max_size_bytes": max_size_bytes,
-                "file_size_mb": round(file_size_bytes / 1024 / 1024, 2),
-            },
-            validation_time_ms=int((time.perf_counter() - start_time) * 1000),
+        return build_file_too_large_result(
+            file_size_bytes=file_size_bytes,
+            max_size_bytes=max_size_bytes,
+            specs=specs,
+            start_time=start_time,
         )
 
     # 2. Enhanced Format Detection & Conversion
