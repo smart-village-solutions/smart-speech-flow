@@ -27,7 +27,7 @@ Welcome to the Smart Speech Flow Backend documentation! This guide helps you fin
 - [WebSocket Production Checklist](operations/WEBSOCKET_PRODUCTION_CHECKLIST.md) - Pre-deployment checklist
 - [Audio Recording Rollback Strategy](operations/AUDIO_RECORDING_ROLLBACK_STRATEGY.md) - Rollback procedures
 - [WebSocket Broadcast Failures Runbook](operations/runbooks/websocket-broadcast-failures.md) - Troubleshooting guide
-- [Conversation Quality KPI Catalog](operations/conversation-quality-kpis.md) - Precise quality, reliability, and privacy-aware telemetry definitions
+- [Conversation Quality KPI Catalog](operations/conversation-quality-kpis.en.md) - Precise quality, reliability, and privacy-aware telemetry definitions ([German](operations/conversation-quality-kpis.md))
 
 ### For Testers
 - [User Testing Strategy](testing/USER_TESTING_STRATEGY.md) - How product-oriented user testing should be designed and used
@@ -71,7 +71,7 @@ Deployment procedures, monitoring, and incident response.
 - `deployment-websocket-reconnection.md` - WebSocket reconnection handling
 - `WEBSOCKET_PRODUCTION_CHECKLIST.md` - Pre-deployment checklist
 - `AUDIO_RECORDING_ROLLBACK_STRATEGY.md` - Audio feature rollback
-- `conversation-quality-kpis.md` - KPI definitions, event schema, SLO structure, and privacy constraints
+- `conversation-quality-kpis.md` / `conversation-quality-kpis.en.md` - KPI definitions, event schema, SLO structure, and privacy constraints
 - **`/runbooks/`** - Troubleshooting runbooks
   - `websocket-broadcast-failures.md` - WebSocket broadcast issues
 
