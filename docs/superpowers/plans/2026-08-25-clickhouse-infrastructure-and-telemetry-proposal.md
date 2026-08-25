@@ -28,22 +28,39 @@
 - Modify: `docker-compose.yml`
 
 **Interfaces:**
-- Consumes: Compose configuration parsed from repository-root `docker-compose.yml`.
+- Consumes: the resolved Compose configuration emitted by `docker compose config` with an isolated test environment.
 - Produces: `test_clickhouse_service_is_internal_and_persistent()` and `test_clickhouse_service_requires_credentials()` as regression checks for the deployment contract.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 
 import yaml
 
 
-COMPOSE = Path(__file__).parents[1] / "docker-compose.yml"
+ROOT = Path(__file__).parents[1]
 
 
 def _clickhouse_service():
-    return yaml.safe_load(COMPOSE.read_text())["services"]["clickhouse"]
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as env_file:
+        env_file.write("CLICKHOUSE_DB=ssf_analytics_test\n")
+        env_file.write("CLICKHOUSE_USER=ssf_telemetry_test\n")
+        env_file.write("CLICKHOUSE_PASSWORD=test-only-password\n")
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "--env-file", env_file.name, "config"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        os.unlink(env_file.name)
+    return yaml.safe_load(result.stdout)["services"]["clickhouse"]
 
 
 def test_clickhouse_service_is_internal_and_persistent():
@@ -58,9 +75,9 @@ def test_clickhouse_service_is_internal_and_persistent():
 
 def test_clickhouse_service_requires_credentials():
     environment = _clickhouse_service()["environment"]
-    assert "CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}" in environment
-    assert "CLICKHOUSE_USER=${CLICKHOUSE_USER:?set CLICKHOUSE_USER in .env}" in environment
-    assert "CLICKHOUSE_DB=${CLICKHOUSE_DB:?set CLICKHOUSE_DB in .env}" in environment
+    assert environment["CLICKHOUSE_PASSWORD"] == "test-only-password"
+    assert environment["CLICKHOUSE_USER"] == "ssf_telemetry_test"
+    assert environment["CLICKHOUSE_DB"] == "ssf_analytics_test"
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
