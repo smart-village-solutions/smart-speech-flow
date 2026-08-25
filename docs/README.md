@@ -30,6 +30,7 @@ Welcome to the Smart Speech Flow Backend documentation! This guide helps you fin
 - [ClickHouse Operations Runbook](operations/runbooks/clickhouse-operations.md) - Internal analytics database operations
 - [Keycloak Operations Runbook](operations/runbooks/keycloak-operations.md) - Identity-provider operations and recovery
 - [Conversation Quality KPI Catalog](operations/conversation-quality-kpis.en.md) - Precise quality, reliability, and privacy-aware telemetry definitions ([German](operations/conversation-quality-kpis.md))
+- [Conversation Quality KPI Ideas CSV](operations/conversation-quality-kpis.csv) - Filterable inventory of defined KPIs and supplementary measurement candidates
 
 ### For KasselDIALOG Rollout
 - [KasselDIALOG Information and Training Foundation](guides/kasseldialog-information-and-training-foundation.md) - German working basis for local information and training materials
@@ -80,6 +81,7 @@ Deployment procedures, monitoring, and incident response.
 - `WEBSOCKET_PRODUCTION_CHECKLIST.md` - Pre-deployment checklist
 - `AUDIO_RECORDING_ROLLBACK_STRATEGY.md` - Audio feature rollback
 - `conversation-quality-kpis.md` / `conversation-quality-kpis.en.md` - KPI definitions, event schema, SLO structure, and privacy constraints
+- `conversation-quality-kpis.csv` - Filterable KPI and measurement-idea inventory
 - **`/runbooks/`** - Troubleshooting runbooks
   - `websocket-broadcast-failures.md` - WebSocket broadcast issues
 
