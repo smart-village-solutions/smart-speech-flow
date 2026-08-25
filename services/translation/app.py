@@ -10,6 +10,11 @@ from fastapi.responses import JSONResponse, Response
 from prometheus_client import Counter, Gauge, Histogram, generate_latest
 
 from services.gpu_metrics import collect_gpu_metrics
+from services.resource_metrics import (
+    collect_resource_metrics,
+    derive_auto_scaling_signal,
+    get_system_stats,
+)
 
 try:
     import psutil
@@ -30,16 +35,7 @@ TRANSLATION_ERROR_RESPONSES = {
 
 
 def _get_system_stats() -> Dict[str, Any]:
-    if psutil is None:
-        return {"cpu": None, "ram": None}
-
-    try:
-        return {
-            "cpu": psutil.cpu_percent(),
-            "ram": psutil.virtual_memory().percent,
-        }
-    except Exception:  # pragma: no cover - psutil rarely fails at runtime
-        return {"cpu": None, "ram": None}
+    return get_system_stats(psutil)
 
 
 def _build_debug_response(
@@ -75,54 +71,11 @@ def _collect_gpu_metrics() -> Dict[str, Any]:
 
 
 def _collect_resource_metrics() -> Dict[str, Any]:
-    metrics: Dict[str, Any] = {
-        "cpu_percent": None,
-        "memory_percent": None,
-        "memory_total": None,
-        "memory_available": None,
-        "gpu": _collect_gpu_metrics(),
-    }
-
-    if psutil is not None:
-        try:
-            metrics["cpu_percent"] = psutil.cpu_percent(interval=None)
-            virtual_mem = psutil.virtual_memory()
-            metrics["memory_percent"] = virtual_mem.percent
-            metrics["memory_total"] = virtual_mem.total
-            metrics["memory_available"] = virtual_mem.available
-        except Exception as exc:  # pragma: no cover - psutil rarely fails
-            metrics["psutil_error"] = str(exc)
-    else:
-        metrics["psutil_error"] = "psutil_not_installed"
-
-    return metrics
+    return collect_resource_metrics(psutil, _collect_gpu_metrics)
 
 
 def _derive_auto_scaling_signal(metrics: Dict[str, Any]) -> Dict[str, Any]:
-    threshold_cpu = 85
-    threshold_mem = 85
-    threshold_gpu = 85
-    reasons: List[str] = []
-
-    cpu_percent = metrics.get("cpu_percent")
-    if cpu_percent is not None and cpu_percent >= threshold_cpu:
-        reasons.append(f"cpu>={threshold_cpu}")
-
-    mem_percent = metrics.get("memory_percent")
-    if mem_percent is not None and mem_percent >= threshold_mem:
-        reasons.append(f"memory>={threshold_mem}")
-
-    gpu_info = metrics.get("gpu", {})
-    for device in gpu_info.get("devices", []):
-        gpu_util = device.get("utilization_percent")
-        mem_util = device.get("memory_utilization")
-        if gpu_util is not None and gpu_util >= threshold_gpu:
-            reasons.append(f"gpu{device.get('index')}_util>={threshold_gpu}")
-        if mem_util is not None and mem_util >= threshold_gpu:
-            reasons.append(f"gpu{device.get('index')}_mem>={threshold_gpu}")
-
-    recommended_action = "scale_up" if reasons else "steady"
-    return {"recommended_action": recommended_action, "reasons": reasons}
+    return derive_auto_scaling_signal(metrics)
 
 
 try:

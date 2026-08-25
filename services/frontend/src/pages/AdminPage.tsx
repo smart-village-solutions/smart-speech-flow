@@ -23,30 +23,38 @@ export default function AdminPage() {
     addMessage,
   } = useSession();
 
-  // Start WebSocket connection immediately when session is created (pending or active)
+  // Hydrate the session before opening its WebSocket. Calling startSession twice
+  // can use a stale callback closure and close a socket while it is connecting.
   useEffect(() => {
     const needsAdminConnection =
       sessionId &&
       (sessionStatus === 'pending' || sessionStatus === 'active') &&
       (activeSessionId !== sessionId || activeClientType !== 'admin');
 
-    if (needsAdminConnection) {
-      startSession(sessionId, 'admin');
+    if (!needsAdminConnection) return;
 
-      // Start the session connection immediately, then hydrate state from the API.
-      Promise.all([
-        SessionService.getSessionStatus(sessionId),
-        MessageService.getMessages(sessionId)
-      ])
-        .then(([sessionInfo, history]) => {
-          history.forEach((msg) => addMessage(msg));
-          // Start session with customer language if available
-          startSession(sessionId, 'admin', sessionInfo.customer_language || undefined);
-        })
-        .catch(() => {
-          console.warn('Failed to load session data');
-        });
-    }
+    let cancelled = false;
+
+    Promise.all([
+      SessionService.getSessionStatus(sessionId),
+      MessageService.getMessages(sessionId),
+    ])
+      .then(([sessionInfo, history]) => {
+        if (cancelled) return;
+
+        history.forEach((message) => addMessage(message));
+        startSession(sessionId, 'admin', sessionInfo.customer_language || undefined);
+      })
+      .catch(() => {
+        if (cancelled) return;
+
+        console.warn('Failed to load session data');
+        startSession(sessionId, 'admin');
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId, sessionStatus, activeSessionId, activeClientType, startSession, addMessage]);
 
   // Update session status when session becomes active via WebSocket
