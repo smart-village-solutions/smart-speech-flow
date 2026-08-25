@@ -26,6 +26,7 @@ metrics system; ClickHouse is the analytical event store.
   deployment schema assets, Grafana dashboards, and tests.
 - Dependency: the internal ClickHouse service is installed separately.
 - Dependency: consent-governed content storage is a separate future capability.
+- GitHub issue: https://github.com/smart-village-solutions/smart-speech-flow/issues/199
 
 ## Non-Goals
 
