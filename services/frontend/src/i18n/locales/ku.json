@@ -1,0 +1,84 @@
+{
+  "header": {
+    "back": "Vegere",
+    "home": "Destpêk",
+    "feedback": "Nêrîn",
+    "theme": "Temayê biguhere",
+    "brand": "Markê biguhere"
+  },
+  "accessCode": {
+    "title": "Kodê binivîse",
+    "continue": "Bidomîne",
+    "adminLogin": "Têketina rêveber",
+    "digitLabel": "Tîpa {{position}}",
+    "notFound": "Bi vê kodê tu danişîneke vekirî tune.",
+    "invalid": "Ji kerema xwe her heşt tîpan binivîse."
+  },
+  "language": {
+    "title": "Zimanê xwe hilbijêre",
+    "loadFailed": "Lîsteya zimanan nehat barkirin.",
+    "retry": "Dîsa biceribîne"
+  },
+  "consent": {
+    "intro": "Smart Speech Flow xizmeteke wergerandinê ya otomatîk û demdemî ye ku ji bo piştgiriya axaftinên di navbera kesên bi zimanên cuda diaxivin hatiye çêkirin. Xizmet tenê li ser serverek taybet a veqetandî dixebite.",
+    "howTo": "Ji bo destpêkirina tomarkirinê, li bişkoka mîkrofonê bitikîne. Paşê 20 çirke wextê te heye ku biaxivî. Bi tikandineke din tu dikarî tomarkirinê zûtir biqedînî. Wekî din, tu dikarî têketina nivîsê bi kar bînî.",
+    "retention": "Ji xwe, daneyên deng û nivîsandinê tenê di dema danişîna çalak de tên pêvajokirin û paşê nayên hilanîn. Piştî ku axaftin diqede, dane bixweber tên jêbirin. Tu dikarî her dem bi fonksiyona nêrînan a di sepanê de kêşeyan ragihînî an pêşniyarên baştirkirinê parve bikî.",
+    "optIn": "Heke tu bixwazî alîkariya me bikî ku Smart Speech Flow baştir bibe, tu dikarî destûrê bidî ku daneyên axaftina te heta 180 rojan bên hilanîn. Ev dane tenê ji bo analîz û baştirkirina kalîteyê di çarçoveya projeya Smart Speech Flow de tên bikaranîn.",
+    "checkbox": "Ez razî me ku daneyên axaftina min ji bo baştirkirina Smart Speech Flow heta 180 rojan bên hilanîn.",
+    "getStarted": "Dest pê bike"
+  },
+  "conversation": {
+    "record": "Tomar bike",
+    "sendRecording": "Tomarê bişîne",
+    "openKeyboard": "Klavyeyê veke",
+    "sendText": "Nivîsê bişîne",
+    "placeholder": "Peyama xwe binivîse…",
+    "play": "Lêde",
+    "replay": "Dîsa lêde",
+    "sendFailed": "Ev peyam nehat şandin.",
+    "retry": "Dîsa biceribîne",
+    "micDenied": "Gihîştina mîkrofonê hat redkirin. Tu dikarî li şûna wê peyama xwe binivîsî.",
+    "reconnecting": "Ji nû ve tê girêdan…",
+    "ended": "Ev axaftin qediya."
+  },
+  "feedback": {
+    "title": "Nêrîna xwe parve bike",
+    "close": "Bigire",
+    "quality": {
+      "label": "Kalîteya wergerê",
+      "question": "Werger çiqas rast bûn?"
+    },
+    "performance": {
+      "label": "Performans",
+      "question": "Sepan çiqas bilez û bersivdar bû?"
+    },
+    "usability": {
+      "label": "Navrû / Bikaranîn",
+      "question": "Bikaranîna navrûyê çiqas hêsan û xweş bû?"
+    },
+    "nps": {
+      "label": "Pêşniyar",
+      "question": "Îhtîmal çiqas e ku tu Smart Speech Flow ji hevkarekî re pêşniyar bikî?",
+      "low": "Qet ne muhtemel",
+      "high": "Pir muhtemel",
+      "option": "Puan {{score}}"
+    },
+    "improvements": {
+      "label": "Pêşniyarên baştirkirinê",
+      "question": "Çi dê Smart Speech Flow hê baştir bike?",
+      "placeholder": "Ramanên te, daxwazên te, an her tiştê ku te aciz kir…"
+    },
+    "stars": "{{count}} stêrk",
+    "submit": "Nêrînê bişîne",
+    "thanksTitle": "Spas dikin!",
+    "thanksBody": "Nêrîna te alî me dike ku em Smart Speech Flow ji bo her kesî baştir bikin."
+  },
+  "errors": {
+    "network": "Girêdan bi serverê re tune.",
+    "timeout": "Ev pir dirêj kişand. Ji kerema xwe dîsa biceribîne.",
+    "notFound": "Nehat dîtin.",
+    "validation": "Ev daxwaz nehat pêvajokirin.",
+    "server": "Li aliyê me tiştek çewt çû.",
+    "unknown": "Tiştek çewt çû."
+  }
+}

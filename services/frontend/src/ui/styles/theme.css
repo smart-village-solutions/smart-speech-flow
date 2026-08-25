@@ -1,0 +1,101 @@
+/* Theme tokens. Derived mechanically from the Figma export's
+   t(theme, dark, light) pairs — one token per distinct pair.
+   Source: ../Smart Speech Flow Figma/src/app/App.tsx (relative to the repo root)
+   Light is the :root default; .dark overrides. The app defaults to dark. */
+
+:root {
+  /* Surfaces */
+  --surface-page: #f4f4f5;              /* bg-[#f4f4f5] */
+  --surface-card: #ffffff;              /* bg-white */
+  --surface-panel: #ffffff;             /* feedback sheet */
+  --surface-scrim: rgb(0 0 0 / 0.4);    /* bg-black/40 */
+  --surface-code-box: #ffffff;          /* OTP box */
+  --surface-handle: rgb(0 0 0 / 0.12);  /* bg-black/12 */
+  --surface-field: rgb(0 0 0 / 0.05);   /* bg-black/5 */
+  --surface-nps: rgb(0 0 0 / 0.06);     /* bg-black/6 */
+  --surface-nps-hover: rgb(0 0 0 / 0.12);
+  --surface-disabled: rgb(0 0 0 / 0.06);
+  --surface-row-hover: rgb(0 0 0 / 0.05);
+  --surface-row-active: rgb(0 0 0 / 0.1);
+  --surface-icon-hover: rgb(0 0 0 / 0.08);
+  --surface-wave-idle: #ffffff;
+
+  /* Foregrounds */
+  --fg-strong: #1a1a1a;                 /* text-[#1a1a1a] */
+  --fg-chat: #1a1a1a;
+  --fg-body: rgb(0 0 0 / 0.7);          /* text-black/70 */
+  --fg-consent: rgb(0 0 0 / 0.6);
+  --fg-consent-hover: rgb(0 0 0 / 0.8);
+  --fg-muted: rgb(0 0 0 / 0.4);         /* text-black/40 */
+  --fg-subtle: rgb(0 0 0 / 0.4);        /* distinct pair, same light value */
+  --fg-icon: rgb(0 0 0 / 0.5);
+  --fg-icon-close: rgb(0 0 0 / 0.35);
+  --fg-link: rgb(0 0 0 / 0.3);
+  --fg-link-hover: rgb(0 0 0 / 0.6);
+  --fg-placeholder: rgb(0 0 0 / 0.25);
+  --fg-faint: rgb(0 0 0 / 0.2);
+  --fg-disabled: rgb(0 0 0 / 0.2);
+
+  /* Borders */
+  --border-header: rgb(0 0 0 / 0.08);
+  --border-card: rgb(0 0 0 / 0.1);
+  --border-divider: rgb(0 0 0 / 0.06);
+  --border-play: rgb(0 0 0 / 0.15);
+  --border-checkbox: rgb(0 0 0 / 0.3);
+  --border-checkbox-hover: rgb(0 0 0 / 0.6);
+  --border-code-empty: #e5e7eb;         /* border-gray-200 */
+
+  /* Status. Not in the export — it has no error or connection states.
+     Added 2026-08-24 for the conversation status pill. */
+  --fg-status: rgb(0 0 0 / 0.65);
+  --fg-status-alert: #b42318;
+  --surface-status: #ffffff;
+  --border-status: rgb(0 0 0 / 0.1);
+  --border-status-alert: rgb(180 35 24 / 0.35);
+}
+
+.dark {
+  --surface-page: #202020;
+  --surface-card: #2a2a2a;
+  --surface-panel: #1a1a1a;
+  --surface-scrim: rgb(0 0 0 / 0.7);
+  --surface-code-box: #000000;
+  --surface-handle: rgb(255 255 255 / 0.15);
+  --surface-field: rgb(255 255 255 / 0.05);
+  --surface-nps: rgb(255 255 255 / 0.08);
+  --surface-nps-hover: rgb(255 255 255 / 0.15);
+  --surface-disabled: rgb(255 255 255 / 0.08);
+  --surface-row-hover: rgb(255 255 255 / 0.05);
+  --surface-row-active: rgb(255 255 255 / 0.1);
+  --surface-icon-hover: rgb(255 255 255 / 0.1);
+  --surface-wave-idle: #2a2a2a;
+
+  --fg-strong: #ffffff;
+  --fg-chat: rgb(255 255 255 / 0.9);
+  --fg-body: rgb(255 255 255 / 0.8);
+  --fg-consent: rgb(255 255 255 / 0.7);
+  --fg-consent-hover: rgb(255 255 255 / 0.9);
+  --fg-muted: rgb(255 255 255 / 0.5);
+  --fg-subtle: rgb(255 255 255 / 0.4);
+  --fg-icon: rgb(255 255 255 / 0.6);
+  --fg-icon-close: rgb(255 255 255 / 0.4);
+  --fg-link: rgb(255 255 255 / 0.4);
+  --fg-link-hover: rgb(255 255 255 / 0.7);
+  --fg-placeholder: rgb(255 255 255 / 0.25);
+  --fg-faint: rgb(255 255 255 / 0.2);
+  --fg-disabled: rgb(255 255 255 / 0.25);
+
+  --border-header: rgb(255 255 255 / 0.08);
+  --border-card: rgb(255 255 255 / 0.1);
+  --border-divider: rgb(255 255 255 / 0.06);
+  --border-play: rgb(255 255 255 / 0.2);
+  --border-checkbox: rgb(255 255 255 / 0.3);
+  --border-checkbox-hover: rgb(255 255 255 / 0.6);
+  --border-code-empty: transparent;
+
+  --fg-status: rgb(255 255 255 / 0.75);
+  --fg-status-alert: #fda29b;
+  --surface-status: #333333;
+  --border-status: rgb(255 255 255 / 0.14);
+  --border-status-alert: rgb(253 162 155 / 0.4);
+}

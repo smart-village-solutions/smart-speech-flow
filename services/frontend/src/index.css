@@ -1,14 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-@layer base {
-  body {
-    @apply bg-background text-text;
-    font-size: 18px;
-    line-height: 1.6;
-  }
-}
+@import './ui/styles/tokens.css';
 
 @layer utilities {
   @keyframes slide-in {
@@ -25,15 +15,160 @@
   .animate-slide-in {
     animation: slide-in 0.3s ease-out;
   }
+
+  /* The feedback sheet's 300ms slide and fade. Radix keeps the panel mounted
+     for the duration of an animation, so these are animations, not transitions. */
+  @keyframes sheet-in {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes sheet-out {
+    from {
+      transform: translateY(0);
+    }
+    to {
+      transform: translateY(100%);
+    }
+  }
+
+  @keyframes scrim-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes scrim-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  .animate-sheet-in {
+    animation: sheet-in 0.3s ease-out;
+  }
+
+  .animate-sheet-out {
+    animation: sheet-out 0.3s ease-in;
+  }
+
+  .animate-scrim-in {
+    animation: scrim-in 0.3s ease-out;
+  }
+
+  .animate-scrim-out {
+    animation: scrim-out 0.3s ease-in;
+  }
+
+  /* The export uses rounded-[0_14px_14px_14px] and rounded-[14px_0_14px_14px]. */
+  .rounded-bubble-self {
+    border-radius: var(--radius-bubble);
+    border-start-start-radius: 0;
+  }
+
+  .rounded-bubble-peer {
+    border-radius: var(--radius-bubble);
+    border-start-end-radius: 0;
+  }
+
+  /* A sent composer box turns into a dots box and flies onto the pending
+     bubble, narrowing to its size on the way. The geometry is computed in
+     useSendFlight; only the timing lives here. Opacity holds until the last
+     moment, where the box already matches what it is landing on, so the fade
+     only hides the drop shadow.
+     650ms must stay in step with FLIGHT_MS in useSendFlight.ts. */
+  .send-flight {
+    overflow: hidden;
+    transform-origin: top left;
+    transition:
+      transform 650ms cubic-bezier(0.32, 0.72, 0.34, 1),
+      width 650ms cubic-bezier(0.32, 0.72, 0.34, 1),
+      height 650ms cubic-bezier(0.32, 0.72, 0.34, 1),
+      box-shadow 650ms ease-out,
+      opacity 140ms ease-in 510ms;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .send-flight {
+      transition: none;
+    }
+  }
+
+  /* The status pill drops in under the header rather than blinking on. */
+  @keyframes status-in {
+    from {
+      transform: translateY(-6px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .animate-status-in {
+    animation: status-in 200ms ease-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-status-in {
+      animation: none;
+    }
+  }
+
+  @keyframes bounce-dot {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    40% {
+      transform: translateY(-6px);
+    }
+  }
 }
 
+/* body belongs to the legacy pages: these are the v3 base values, so /admin,
+   /customer and /legacy render exactly as they did before the revamp. The new
+   UI never inherits from here — ScreenShell sets its own surface, colour and
+   typeface. Putting the theme on body instead cost /admin white-on-white text,
+   found on 2026-08-25. */
 body {
   margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  font-family: var(--font-legacy);
+}
+
+/* The new UI's surface, typeface and colour scheme live on its own root, not on
+   body, so /admin, /customer and /legacy inherit exactly what they did before
+   the revamp. The :has() rule is only for overscroll — ScreenShell already
+   paints the area the customer can see. */
+html:has([data-screen-shell]) {
+  background: var(--surface-page);
+}
+
+[data-screen-shell] {
+  color-scheme: light;
+}
+
+.dark [data-screen-shell] {
+  color-scheme: dark;
 }
 
 #root {
   width: 100%;
-  min-height: 100vh;
+  min-height: 100dvh;
 }

@@ -1,0 +1,84 @@
+{
+  "header": {
+    "back": "Geri",
+    "home": "Başlangıç",
+    "feedback": "Geri bildirim",
+    "theme": "Temayı değiştir",
+    "brand": "Markayı değiştir"
+  },
+  "accessCode": {
+    "title": "Kodu girin",
+    "continue": "Devam",
+    "adminLogin": "Yönetici girişi",
+    "digitLabel": "{{position}}. karakter",
+    "notFound": "Bu kodla eşleşen açık bir oturum yok.",
+    "invalid": "Lütfen sekiz karakterin tamamını girin."
+  },
+  "language": {
+    "title": "Dilinizi seçin",
+    "loadFailed": "Dil listesi yüklenemedi.",
+    "retry": "Tekrar deneyin"
+  },
+  "consent": {
+    "intro": "Smart Speech Flow, farklı diller konuşan kişiler arasındaki görüşmeleri desteklemek için tasarlanmış otomatik bir gerçek zamanlı çeviri hizmetidir. Hizmet yalnızca ayrılmış, özel bir sunucuda çalışır.",
+    "howTo": "Kaydı başlatmak için mikrofon düğmesine dokunun. Konuşmak için 20 saniyeniz olacak. Bir kez daha dokunarak kaydı daha erken sonlandırabilirsiniz. Alternatif olarak metin girişini kullanabilirsiniz.",
+    "retention": "Varsayılan olarak ses ve yazıya dökme verileri yalnızca etkin oturum sırasında işlenir ve sonrasında saklanmaz. Görüşme sona erdiğinde veriler otomatik olarak silinir. Uygulama içindeki geri bildirim işlevini kullanarak istediğiniz zaman sorun bildirebilir veya iyileştirme önerileri paylaşabilirsiniz.",
+    "optIn": "Smart Speech Flow'u geliştirmemize yardımcı olmak isterseniz, görüşme verilerinizin 180 güne kadar saklanmasına izin verebilirsiniz. Bu veriler yalnızca Smart Speech Flow projesi kapsamında analiz ve kalite iyileştirme amacıyla kullanılır.",
+    "checkbox": "Smart Speech Flow'un geliştirilmesi amacıyla görüşme verilerimin 180 güne kadar saklanmasını kabul ediyorum.",
+    "getStarted": "Başlayın"
+  },
+  "conversation": {
+    "record": "Kaydet",
+    "sendRecording": "Kaydı gönder",
+    "openKeyboard": "Klavyeyi aç",
+    "sendText": "Metni gönder",
+    "placeholder": "Mesajınızı yazın…",
+    "play": "Oynat",
+    "replay": "Yeniden oynat",
+    "sendFailed": "Bu mesaj gönderilemedi.",
+    "retry": "Tekrar dene",
+    "micDenied": "Mikrofon erişimi reddedildi. Bunun yerine mesajınızı yazabilirsiniz.",
+    "reconnecting": "Yeniden bağlanılıyor…",
+    "ended": "Bu görüşme sona erdi."
+  },
+  "feedback": {
+    "title": "Geri bildiriminizi paylaşın",
+    "close": "Kapat",
+    "quality": {
+      "label": "Çeviri kalitesi",
+      "question": "Çeviriler ne kadar doğruydu?"
+    },
+    "performance": {
+      "label": "Performans",
+      "question": "Uygulama ne kadar hızlı ve akıcı hissettirdi?"
+    },
+    "usability": {
+      "label": "Arayüz / Kullanım",
+      "question": "Arayüzü kullanmak ne kadar kolay ve keyifliydi?"
+    },
+    "nps": {
+      "label": "Tavsiye",
+      "question": "Smart Speech Flow'u bir meslektaşınıza tavsiye etme olasılığınız nedir?",
+      "low": "Hiç olası değil",
+      "high": "Son derece olası",
+      "option": "Puan {{score}}"
+    },
+    "improvements": {
+      "label": "İyileştirme önerileri",
+      "question": "Smart Speech Flow'u daha da iyi yapacak şey ne olurdu?",
+      "placeholder": "Fikirleriniz, istekleriniz veya sizi rahatsız eden her şey…"
+    },
+    "stars": "{{count}} yıldız",
+    "submit": "Geri bildirim gönder",
+    "thanksTitle": "Teşekkür ederiz!",
+    "thanksBody": "Geri bildiriminiz Smart Speech Flow'u herkes için geliştirmemize yardımcı oluyor."
+  },
+  "errors": {
+    "network": "Sunucuya bağlanılamıyor.",
+    "timeout": "Bu işlem çok uzun sürdü. Lütfen tekrar deneyin.",
+    "notFound": "Bulunamadı.",
+    "validation": "Bu istek işlenemedi.",
+    "server": "Bizim tarafımızda bir sorun oluştu.",
+    "unknown": "Bir şeyler ters gitti."
+  }
+}
