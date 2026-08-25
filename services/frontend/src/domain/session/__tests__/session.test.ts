@@ -125,6 +125,6 @@ describe('mergeActivatedSession', () => {
   it('takes the activation whole when nothing was read before', () => {
     const activated: Session = { ...previous, status: 'active', customerLanguage: 'en' };
 
-    expect(mergeActivatedSession(activated, undefined)).toBe(activated);
+    expect(mergeActivatedSession(activated)).toBe(activated);
   });
 });
