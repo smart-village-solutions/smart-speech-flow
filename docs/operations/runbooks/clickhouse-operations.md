@@ -47,9 +47,9 @@ diagnostics, use:
 
 Confirm that no host port is published:
 
-    docker compose port clickhouse 8123
+    docker inspect "$(docker compose ps -q clickhouse)" --format '{{json .HostConfig.PortBindings}}'
 
-The command must return no mapping and a non-zero exit status.
+The command must return `{}`, which proves that Docker has no host-port binding.
 
 ## Backup and Restore
 

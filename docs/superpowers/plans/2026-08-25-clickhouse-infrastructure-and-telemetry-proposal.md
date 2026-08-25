@@ -240,7 +240,7 @@ Expected: `/ping` returns `Ok.` and the query prints a version. Do not include t
 Run:
 
 ```bash
-docker compose port clickhouse 8123
+docker inspect "$(docker compose ps -q clickhouse)" --format '{{json .HostConfig.PortBindings}}'
 docker compose exec clickhouse clickhouse-client \
   --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" \
   --query 'CREATE TABLE IF NOT EXISTS ssf_install_check (id UInt8) ENGINE = MergeTree ORDER BY id'
@@ -248,6 +248,7 @@ docker compose exec clickhouse clickhouse-client \
   --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" \
   --query 'INSERT INTO ssf_install_check VALUES (1)'
 docker compose up -d --force-recreate clickhouse
+until docker compose exec -T clickhouse wget -qO- http://localhost:8123/ping | grep -qx 'Ok.'; do sleep 3; done
 docker compose ps clickhouse
 docker compose exec clickhouse clickhouse-client \
   --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" \
@@ -257,7 +258,7 @@ docker compose exec clickhouse clickhouse-client \
   --query 'DROP TABLE ssf_install_check'
 ```
 
-Expected: `docker compose port` returns no mapping; the container returns healthy; the post-recreation query returns `1`; and the temporary installation-check table is removed. This does not create a future telemetry schema.
+Expected: Docker inspection returns `{}` for host port bindings; the container returns healthy; the post-recreation query returns `1`; and the temporary installation-check table is removed. This does not create a future telemetry schema.
 
 - [ ] **Step 4: Run project checks**
 
