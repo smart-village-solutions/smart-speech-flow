@@ -25,6 +25,9 @@ def _docker_build(tag: str, *build_args: str) -> subprocess.CompletedProcess[str
 def _compose_build(project_name: str) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     environment["FRONTEND_DEMO_PASSWORD"] = "container-build-test-password"
+    environment["CLICKHOUSE_DB"] = "ssf_analytics_test"
+    environment["CLICKHOUSE_USER"] = "ssf_telemetry_test"
+    environment["CLICKHOUSE_PASSWORD"] = "test-only-password"
     return subprocess.run(
         [
             "docker",
