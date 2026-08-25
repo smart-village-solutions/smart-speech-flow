@@ -8,7 +8,7 @@ interface FlagAvatarProps {
   className?: string;
 }
 
-export function FlagAvatar({ language, size = 'sm', className }: FlagAvatarProps) {
+export function FlagAvatar({ language, size = 'sm', className }: Readonly<FlagAvatarProps>) {
   const flagCode = flagCodeFor(language.code);
   const dimension = size === 'sm' ? 'size-10' : 'size-flag-lg';
 

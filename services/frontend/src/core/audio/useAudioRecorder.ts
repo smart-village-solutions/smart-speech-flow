@@ -26,6 +26,43 @@ export interface AudioRecorderState {
 /** Ticks at the export's cadence (App.tsx:838): 100ms steps. */
 const TICK_MS = 100;
 
+/**
+ * Averages the meter across one window and commits a bar when the window is
+ * full, so each bar is the loudness actually measured over its slice of time.
+ * Returns null while the window is still filling.
+ */
+function createBarCollector(ticksPerBar: number): (level: number) => number | null {
+  let window: number[] = [];
+
+  return (level) => {
+    window.push(level);
+
+    if (window.length < ticksPerBar) {
+      return null;
+    }
+
+    const mean = window.reduce((total, value) => total + value, 0) / window.length;
+    window = [];
+    return heightFromRms(mean);
+  };
+}
+
+/**
+ * The waveform is a nicety: a browser without Web Audio still records, so
+ * neither reaching for the stream nor tapping it may take the recording down.
+ */
+function openMeter(
+  getStream: () => MediaStream | null,
+  createLevelMeter: (stream: MediaStream) => LevelMeter
+): LevelMeter | null {
+  try {
+    const stream = getStream();
+    return stream === null ? null : createLevelMeter(stream);
+  } catch {
+    return null;
+  }
+}
+
 export function useAudioRecorder(options: UseAudioRecorderOptions): AudioRecorderState {
   const {
     onComplete,
@@ -43,13 +80,13 @@ export function useAudioRecorder(options: UseAudioRecorderOptions): AudioRecorde
   const recorderRef = useRef<AudioRecorderWithWAVConversion | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const meterRef = useRef<LevelMeter | null>(null);
-  const windowRef = useRef<number[]>([]);
-  const onCompleteRef = useRef(onComplete);
-  const onErrorRef = useRef(onError);
+  const collectRef = useRef<((level: number) => number | null) | null>(null);
+  // Held together in one ref so a new callback identity never restarts a
+  // recording in progress; they are always replaced as a pair.
+  const handlersRef = useRef({ onComplete, onError });
 
   useEffect(() => {
-    onCompleteRef.current = onComplete;
-    onErrorRef.current = onError;
+    handlersRef.current = { onComplete, onError };
   });
 
   const clearTick = useCallback(() => {
@@ -62,7 +99,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions): AudioRecorde
   const closeMeter = useCallback(() => {
     meterRef.current?.close();
     meterRef.current = null;
-    windowRef.current = [];
+    collectRef.current = null;
   }, []);
 
   const reset = useCallback(() => {
@@ -74,59 +111,53 @@ export function useAudioRecorder(options: UseAudioRecorderOptions): AudioRecorde
   }, [clearTick, closeMeter]);
 
   const start = useCallback(async () => {
+    // startRecording() reports its own failures through onError and resolves
+    // regardless, so a refused microphone is invisible to the await below.
+    // Without this flag the hook goes on to show a recording that is not
+    // happening, and stop() cannot end it — the recorder has already cleaned up.
+    let refused = false;
+
     const recorder = new AudioRecorderWithWAVConversion({
       maxDurationMs: maxSeconds * 1000,
       onDataAvailable: (wav) => {
         reset();
-        onCompleteRef.current(wav);
+        handlersRef.current.onComplete(wav);
       },
       onError: (error) => {
+        refused = true;
         reset();
-        onErrorRef.current(error);
+        handlersRef.current.onError(error);
       },
     });
 
     recorderRef.current = recorder;
     await recorder.startRecording();
 
-    setElapsedMs(0);
-    setPhase('recording');
-
-    // The waveform is a nicety: a browser without Web Audio still records.
-    try {
-      const stream = recorder.getStream();
-      meterRef.current = stream === null ? null : createLevelMeter(stream);
-    } catch {
-      meterRef.current = null;
+    if (refused) {
+      recorderRef.current = null;
+      return;
     }
 
+    setElapsedMs(0);
+    setPhase('recording');
     setLevels([]);
-    windowRef.current = [];
 
-    const ticksPerBar = Math.max(
-      1,
-      Math.round((maxSeconds * 1000) / BAR_COUNT / TICK_MS)
+    meterRef.current = openMeter(() => recorder.getStream(), createLevelMeter);
+    collectRef.current = createBarCollector(
+      Math.max(1, Math.round((maxSeconds * 1000) / BAR_COUNT / TICK_MS))
     );
 
     tickRef.current = setInterval(() => {
       setElapsedMs((previous) => Math.min(maxSeconds * 1000, previous + TICK_MS));
 
-      const meter = meterRef.current;
-      if (meter === null) {
+      const level = meterRef.current?.read();
+      const bar = level === undefined ? null : collectRef.current?.(level);
+
+      if (bar === null || bar === undefined) {
         return;
       }
 
-      windowRef.current.push(meter.read());
-      if (windowRef.current.length < ticksPerBar) {
-        return;
-      }
-
-      const mean =
-        windowRef.current.reduce((total, level) => total + level, 0) / windowRef.current.length;
-      windowRef.current = [];
-      setLevels((previous) =>
-        previous.length >= BAR_COUNT ? previous : [...previous, heightFromRms(mean)]
-      );
+      setLevels((previous) => (previous.length >= BAR_COUNT ? previous : [...previous, bar]));
     }, TICK_MS);
   }, [createLevelMeter, maxSeconds, reset]);
 

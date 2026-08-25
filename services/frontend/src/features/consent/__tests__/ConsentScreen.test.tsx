@@ -1,18 +1,37 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useQuery } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { ConsentScreen } from '@/features/consent/ConsentScreen';
 import { createStubConsentSink } from '@/domain/consent/StubConsentSink';
+import { useServices } from '@/app/providers/services';
 
-function tree() {
+function tree(live: React.ReactNode = <p>conversation screen</p>) {
   return (
     <Routes>
       <Route path="/s/:sessionId/info/:languageCode" element={<ConsentScreen />} />
-      <Route path="/s/:sessionId/live" element={<p>conversation screen</p>} />
+      <Route path="/s/:sessionId/live" element={live} />
     </Routes>
   );
+}
+
+/**
+ * Stands in for the conversation screen, which reads the same cache entry the
+ * route guard filled before activation. What matters is the first value it
+ * sees: a send in that window goes out under the wrong source language.
+ */
+function SessionLanguage({ observed }: Readonly<{ observed: (string | null)[] }>) {
+  const { session } = useServices();
+  const query = useQuery({
+    queryKey: ['session', 'A1B2C3D4'],
+    queryFn: () => session.getSession('A1B2C3D4'),
+  });
+
+  observed.push(query.data?.customerLanguage ?? null);
+
+  return <span data-testid="source-language">{query.data?.customerLanguage ?? 'none'}</span>;
 }
 
 const route = '/s/A1B2C3D4/info/en';
@@ -82,5 +101,43 @@ describe('ConsentScreen', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Get started' }));
 
     expect(activate).toHaveBeenCalledWith('A1B2C3D4', 'en');
+  });
+
+  // The route guard has already cached the session as it was before activation,
+  // where the customer's language is still null. Landing on the conversation
+  // with that entry sends the first message under the wrong source language,
+  // which the gateway rejects with a 400.
+  it('publishes the activated session, so the next screen never sees the stale one', async () => {
+    const preActivation = {
+      id: 'A1B2C3D4',
+      status: 'pending' as const,
+      customerLanguage: null,
+      adminLanguage: 'de',
+      createdAt: '2026-08-21T10:00:00+00:00',
+      messageCount: 0,
+      adminConnected: true,
+      customerConnected: false,
+    };
+    const activated = { ...preActivation, status: 'active' as const, customerLanguage: 'en' };
+    const observed: (string | null)[] = [];
+
+    renderWithProviders(tree(<SessionLanguage observed={observed} />), {
+      route,
+      services: {
+        session: {
+          // Any read after activation sees the activated session, as the
+          // gateway reports it. The stale one is the entry already cached.
+          getSession: vi.fn().mockResolvedValue(activated),
+          activate: vi.fn().mockResolvedValue(activated),
+          reportActivity: vi.fn(),
+        },
+      },
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Get started' }));
+    await screen.findByTestId('source-language');
+
+    expect(observed[0]).toBe('en');
+    expect(observed).not.toContain(null);
   });
 });

@@ -48,7 +48,7 @@ export function renderWithProviders(ui: ReactElement, options: Options = {}): Re
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
 
-  function Localised({ children }: { children: ReactNode }) {
+  function Localised({ children }: Readonly<{ children: ReactNode }>) {
     const { locale: active } = useLocale();
     return <I18nProvider locale={active}>{children}</I18nProvider>;
   }

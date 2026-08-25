@@ -4,6 +4,13 @@ import { SUPPORTED_UI_LOCALES } from '@/i18n';
 export interface LocaleContextValue {
   locale: string;
   setLocale: (locale: string) => void;
+  /**
+   * The locale in force right now, for readers outside the render cycle — the
+   * request interceptor, which needs the current one rather than whichever was
+   * captured when the client was built. Stable, so depending on it does not
+   * rebuild anything when the language changes.
+   */
+  getLocale: () => string;
 }
 
 export const LocaleContext = createContext<LocaleContextValue | null>(null);

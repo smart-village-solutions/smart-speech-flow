@@ -7,7 +7,10 @@ import { createMessageRepository } from '@/domain/message/message.repository';
 
 const config = readConfig({ VITE_API_BASE_URL: 'http://api.test' });
 const client = createHttpClient(config, () => 'en');
-const repository = createMessageRepository(client, { pipelineTimeoutMs: config.pipelineTimeoutMs });
+const repository = createMessageRepository(client, {
+  pipelineTimeoutMs: config.pipelineTimeoutMs,
+  apiBaseUrl: config.apiBaseUrl,
+});
 
 describe('message repository', () => {
   it('sends text as JSON with the client type', async () => {
@@ -50,7 +53,7 @@ describe('message repository', () => {
     server.use(
       http.post('http://api.test/api/session/A1B2C3D4/message', async ({ request }) => {
         const form = await request.formData();
-        fields = [...form.keys()].sort();
+        fields = [...form.keys()].sort((a, b) => a.localeCompare(b));
         return HttpResponse.json({
           status: 'success',
           message_id: 'm10',
@@ -100,5 +103,14 @@ describe('message repository', () => {
     expect(messages).toHaveLength(1);
     expect(messages[0].origin).toBe('peer');
     expect(messages[0].text).toBe('en text');
+    // The browser fetches this one itself, without axios and its baseURL, so
+    // a relative path would be requested from the SPA origin.
+    expect(messages[0].audioUrl).toBe('http://api.test/api/audio/m1.wav');
+  });
+
+  it('resolves a gateway audio path onto the gateway origin', () => {
+    expect(repository.resolveAudioUrl('/api/audio/m9.wav')).toBe(
+      'http://api.test/api/audio/m9.wav'
+    );
   });
 });

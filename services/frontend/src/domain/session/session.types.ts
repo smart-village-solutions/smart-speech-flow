@@ -1,6 +1,4 @@
-export const SESSION_STATUSES = ['inactive', 'pending', 'active', 'terminated'] as const;
-
-export type SessionStatus = (typeof SESSION_STATUSES)[number];
+export type SessionStatus = 'inactive' | 'pending' | 'active' | 'terminated';
 
 export interface Session {
   id: string;

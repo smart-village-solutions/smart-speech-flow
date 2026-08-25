@@ -22,7 +22,7 @@ export function ConversationStatus({
   hasConnected,
   errorKey,
   onRetry = null,
-}: ConversationStatusProps) {
+}: Readonly<ConversationStatusProps>) {
   const { t } = useTranslation();
 
   if (errorKey !== null) {
@@ -68,7 +68,7 @@ interface PillProps {
   alert?: boolean;
 }
 
-function Pill({ children, icon, role, alert = false }: PillProps) {
+function Pill({ children, icon, role, alert = false }: Readonly<PillProps>) {
   return (
     <div className="absolute inset-x-0 top-header z-10 flex justify-center px-5 pt-2">
       <div

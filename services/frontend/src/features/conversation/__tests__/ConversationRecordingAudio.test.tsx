@@ -23,6 +23,7 @@ vi.mock('@/utils/AudioRecorderWithWAVConversion', () => ({
   AudioRecorderWithWAVConversion: class {
     startRecording = mocks.startRecording;
     stopRecording = mocks.stopRecording;
+    getStream = () => null;
 
     constructor(config: RecorderConfig) {
       mocks.capturedConfig = config;
@@ -81,7 +82,7 @@ function setup() {
           getHistory: vi.fn().mockResolvedValue([]),
           sendText: vi.fn(),
           sendAudio: vi.fn().mockReturnValue(new Promise(() => undefined)),
-          audioUrlFor: (id: string) => `/api/audio/${id}.wav`,
+          resolveAudioUrl: (url: string) => url,
         },
         createRealtime: () => wire.transport,
       },

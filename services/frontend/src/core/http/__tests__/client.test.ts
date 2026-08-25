@@ -27,6 +27,31 @@ describe('createHttpClient', () => {
     expect(seen.locale).toBe('ar');
   });
 
+  // randomUUID exists only in a secure context. An on-site tablet reaching a
+  // locally hosted gateway over http:// has none, and this interceptor runs for
+  // every request — an unguarded call there fails the whole app, not one call.
+  it('still stamps a correlation id where randomUUID is unavailable', async () => {
+    const original = crypto.randomUUID;
+    Object.defineProperty(crypto, 'randomUUID', { value: undefined, configurable: true });
+
+    try {
+      let correlationId = '';
+      server.use(
+        http.get('http://api.test/insecure', ({ request }) => {
+          correlationId = request.headers.get('X-Correlation-Id') ?? '';
+          return HttpResponse.json({ ok: true });
+        })
+      );
+
+      const client = createHttpClient(config, () => 'en');
+      await client.get('/insecure');
+
+      expect(correlationId).not.toBe('');
+    } finally {
+      Object.defineProperty(crypto, 'randomUUID', { value: original, configurable: true });
+    }
+  });
+
   it('rejects with a typed AppError rather than a raw axios error', async () => {
     server.use(http.get('http://api.test/missing', () => new HttpResponse(null, { status: 404 })));
 

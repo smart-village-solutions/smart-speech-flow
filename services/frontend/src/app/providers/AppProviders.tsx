@@ -4,7 +4,7 @@ import { ToastProvider } from '@/contexts/ToastContext';
 import { readConfig } from '@/app/config/env';
 import { AppProvidersInner } from './AppProvidersInner';
 
-export function AppProviders({ children }: { children: ReactNode }) {
+export function AppProviders({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <BrowserRouter>
       <ToastProvider>

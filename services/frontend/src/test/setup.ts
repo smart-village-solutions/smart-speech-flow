@@ -27,3 +27,8 @@ if (!window.matchMedia) {
 if (!Element.prototype.scrollTo) {
   Element.prototype.scrollTo = () => {};
 }
+
+// jsdom implements no media element at all. Screens are given a fake player;
+// this covers the provider tests that exercise the real composition root.
+HTMLMediaElement.prototype.play = () => Promise.resolve();
+HTMLMediaElement.prototype.pause = () => {};

@@ -36,6 +36,7 @@
     "play": "Oynat",
     "replay": "Yeniden oynat",
     "sendFailed": "Bu mesaj gönderilemedi.",
+    "notSent": "Gönderilmedi",
     "retry": "Tekrar dene",
     "micDenied": "Mikrofon erişimi reddedildi. Bunun yerine mesajınızı yazabilirsiniz.",
     "reconnecting": "Yeniden bağlanılıyor…",

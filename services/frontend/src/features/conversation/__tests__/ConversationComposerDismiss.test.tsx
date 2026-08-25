@@ -17,7 +17,7 @@ function setup(sendText = vi.fn()) {
           getHistory: vi.fn().mockResolvedValue([]),
           sendText,
           sendAudio: vi.fn(),
-          audioUrlFor: (id: string) => `/api/audio/${id}.wav`,
+          resolveAudioUrl: (url: string) => url,
         },
       },
     }

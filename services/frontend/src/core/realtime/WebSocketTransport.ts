@@ -20,6 +20,7 @@ export interface WebSocketTransportOptions {
   heartbeatIntervalMs?: number;
 }
 
+const CONNECTING = 0;
 const OPEN = 1;
 
 /**
@@ -95,14 +96,28 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
     setStatus('connecting');
     const next = createSocket(buildWebSocketUrl(wsBaseUrl, id, 'customer'));
 
+    // Close events arrive after the fact, so a socket this transport has since
+    // replaced can still call back. Every handler answers for its own socket
+    // only: the alternative is a superseded close stopping the live socket's
+    // heartbeat and reconnecting past it, leaving that connection open on the
+    // gateway. A remount — StrictMode does one on every mount — is enough.
+    const isCurrent = () => socket === next;
+
     // A successful open clears the budget, so it counts consecutive failures.
     next.onopen = () => {
+      if (!isCurrent()) {
+        return;
+      }
       reconnectAttempts = 0;
       setStatus('connected');
       startHeartbeat();
     };
 
     next.onmessage = (event) => {
+      if (!isCurrent()) {
+        return;
+      }
+
       let parsed: unknown;
       try {
         parsed = JSON.parse(event.data);
@@ -124,9 +139,17 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
       }
     };
 
-    next.onerror = () => setStatus('error');
+    next.onerror = () => {
+      if (isCurrent()) {
+        setStatus('error');
+      }
+    };
 
     next.onclose = () => {
+      if (!isCurrent()) {
+        return;
+      }
+
       stopHeartbeat();
       if (!intentionallyClosed) {
         setStatus('disconnected');
@@ -139,7 +162,9 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
 
   return {
     connect(id) {
-      if (socket?.readyState === OPEN) {
+      // A socket still negotiating is a connection in progress, not an absent
+      // one; opening a second would leak the first.
+      if (socket !== null && (socket.readyState === OPEN || socket.readyState === CONNECTING)) {
         return;
       }
       intentionallyClosed = false;

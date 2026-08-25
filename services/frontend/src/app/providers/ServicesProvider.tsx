@@ -6,6 +6,6 @@ interface ServicesProviderProps {
   services: Services;
 }
 
-export function ServicesProvider({ children, services }: ServicesProviderProps) {
+export function ServicesProvider({ children, services }: Readonly<ServicesProviderProps>) {
   return <ServicesContext.Provider value={services}>{children}</ServicesContext.Provider>;
 }

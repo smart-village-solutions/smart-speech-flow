@@ -22,6 +22,6 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & VariantProps<typeof
  * Accent colouring comes from the brand tokens, so a disabled sheet button is
  * styled by the caller: the export uses a distinct muted surface for it.
  */
-export function Button({ className, variant, type = 'button', ...props }: ButtonProps) {
+export function Button({ className, variant, type = 'button', ...props }: Readonly<ButtonProps>) {
   return <button type={type} className={cn(button({ variant }), className)} {...props} />;
 }

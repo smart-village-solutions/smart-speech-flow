@@ -5,7 +5,7 @@
  * ISO 3166 country code, and picking one would be a political statement. It
  * falls back to a neutral text chip. See docs/frontend/API_GAPS.md.
  */
-export const LANGUAGE_FLAG_CODES: Record<string, string> = {
+const LANGUAGE_FLAG_CODES: Record<string, string> = {
   en: 'gb',
   ar: 'sa',
   tr: 'tr',

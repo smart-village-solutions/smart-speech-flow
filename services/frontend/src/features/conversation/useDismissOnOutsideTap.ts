@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 
 /** Marks what an outside tap must not treat as outside. */
-export const KEEP_OPEN_ATTRIBUTE = 'data-composer-keep';
+const KEEP_OPEN_ATTRIBUTE = 'data-composer-keep';
 
 /**
  * Closes the text composer on a tap that lands away from it. Without this the

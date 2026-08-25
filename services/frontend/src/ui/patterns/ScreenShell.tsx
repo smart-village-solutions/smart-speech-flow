@@ -15,7 +15,7 @@ interface ScreenShellProps {
  * toolbar, the document scrolls, and whatever is anchored to the shell's bottom
  * goes with it. That is what buried the conversation screen's buttons.
  */
-export function ScreenShell({ children, className }: ScreenShellProps) {
+export function ScreenShell({ children, className }: Readonly<ScreenShellProps>) {
   return (
     <div
       data-screen-shell=""

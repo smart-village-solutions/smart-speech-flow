@@ -36,6 +36,7 @@
     "play": "Play",
     "replay": "Play again",
     "sendFailed": "That message could not be sent.",
+    "notSent": "Not sent",
     "retry": "Retry",
     "micDenied": "Microphone access was declined. You can type your message instead.",
     "reconnecting": "Reconnecting…",

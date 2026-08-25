@@ -14,7 +14,7 @@ interface BrandLogoProps {
  * mark ships as one PNG per theme, exactly as the export does. All 18 paths
  * share currentColor with no opacity, so their paint order is immaterial.
  */
-export function BrandLogo({ className }: BrandLogoProps) {
+export function BrandLogo({ className }: Readonly<BrandLogoProps>) {
   const { brand, displayName } = useBrand();
   const { theme } = useTheme();
 

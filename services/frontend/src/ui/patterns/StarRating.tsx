@@ -10,12 +10,14 @@ interface StarRatingProps {
   label: string;
 }
 
-export function StarRating({ value, onChange, label }: StarRatingProps) {
+export function StarRating({ value, onChange, label }: Readonly<StarRatingProps>) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState(0);
 
   return (
-    <div role="group" aria-label={label} className="flex gap-1">
+    // <fieldset> carries role="group" itself; Tailwind's preflight strips its
+    // default border, padding and margin.
+    <fieldset aria-label={label} className="flex gap-1">
       {[1, 2, 3, 4, 5].map((score) => {
         const filled = (hovered || value) >= score;
 
@@ -38,6 +40,6 @@ export function StarRating({ value, onChange, label }: StarRatingProps) {
           </button>
         );
       })}
-    </div>
+    </fieldset>
   );
 }

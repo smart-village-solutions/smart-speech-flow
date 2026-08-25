@@ -64,6 +64,11 @@ export function createPlaybackQueue(
   // Guards the async gap in play(): a clip interrupted while its promise is
   // still pending must not drive the queue when that promise settles.
   let generation = 0;
+  // True once play() has resolved, i.e. the clip is genuinely audible. A source
+  // that fails to load both rejects play() and fires the player's error event;
+  // the rejection handles it, and the event must not advance the queue a second
+  // time and skip whatever was waiting behind it.
+  let audible = false;
 
   const emit = (next: PlaybackState) => {
     state = next;
@@ -76,15 +81,23 @@ export function createPlaybackQueue(
     const era = (generation += 1);
     heard.add(clip.id);
     playing = clip;
+    audible = false;
     emit({ playingId: clip.id, progress: 0 });
 
-    player.play(resolveUrl(clip.url)).catch(() => {
-      // A rejected play is the browser refusing autoplay, or a bad source.
-      // Either way this clip is done; carry on with the queue.
-      if (era === generation) {
-        advance();
+    player.play(resolveUrl(clip.url)).then(
+      () => {
+        if (era === generation) {
+          audible = true;
+        }
+      },
+      () => {
+        // A rejected play is the browser refusing autoplay, or a bad source.
+        // Either way this clip is done; carry on with the queue.
+        if (era === generation) {
+          advance();
+        }
       }
-    });
+    );
   };
 
   function advance() {
@@ -92,6 +105,7 @@ export function createPlaybackQueue(
     if (next === undefined) {
       generation += 1;
       playing = null;
+      audible = false;
       emit(IDLE);
       return;
     }
@@ -102,6 +116,7 @@ export function createPlaybackQueue(
     generation += 1;
     queue.length = 0;
     playing = null;
+    audible = false;
     held = false;
     player.stop();
     emit(IDLE);
@@ -116,6 +131,7 @@ export function createPlaybackQueue(
     const interrupted = playing;
     generation += 1;
     playing = null;
+    audible = false;
     player.stop();
 
     if (interrupted !== null) {
@@ -142,7 +158,13 @@ export function createPlaybackQueue(
 
     connect() {
       const offEnded = player.onEnded(advance);
-      const offError = player.onError(advance);
+      // Only a clip that actually started playing can fail this way; a source
+      // that never loaded has already been dealt with by play()'s rejection.
+      const offError = player.onError(() => {
+        if (audible) {
+          advance();
+        }
+      });
       const offProgress = player.onProgress((progress) => {
         if (state.playingId !== null) {
           emit({ ...state, progress });

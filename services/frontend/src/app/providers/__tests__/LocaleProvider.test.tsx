@@ -8,7 +8,7 @@ function Readout() {
   return <p data-testid="locale">{locale}</p>;
 }
 
-function Screen({ declares }: { declares: string }) {
+function Screen({ declares }: Readonly<{ declares: string }>) {
   useScreenLocale(declares);
   return <Readout />;
 }

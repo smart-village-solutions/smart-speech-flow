@@ -5,10 +5,10 @@ import type { RefObject } from 'react';
 export const FLIGHT_MS = 650;
 
 /** Marks the bubble a flight aims for. Set by `MessageBubble` while pending. */
-export const LANDING_ATTRIBUTE = 'data-pending';
+const LANDING_ATTRIBUTE = 'data-pending';
 
 /** Every bubble, in case the send confirms before the flight is measured. */
-export const BUBBLE_ATTRIBUTE = 'data-bubble';
+const BUBBLE_ATTRIBUTE = 'data-bubble';
 
 export type FlightKind = 'recording' | 'typing';
 

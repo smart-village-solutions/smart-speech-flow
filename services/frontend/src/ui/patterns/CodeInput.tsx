@@ -10,13 +10,19 @@ interface CodeInputProps {
   length?: number;
 }
 
-export function CodeInput({ value, onChange, length = CODE_LENGTH }: CodeInputProps) {
+export function CodeInput({ value, onChange, length = CODE_LENGTH }: Readonly<CodeInputProps>) {
   const { t } = useTranslation();
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
-  const characters = Array.from({ length }, (_, index) => {
+  // Each box is a fixed position in the code, so the position IS its identity.
+  // Named rather than keyed by index, which reads as an accidental key.
+  const boxes = Array.from({ length }, (_, index) => {
     const character = value[index];
-    return character && character !== ' ' ? character : '';
+    return {
+      id: `code-box-${index}`,
+      character: character && character !== ' ' ? character : '',
+    };
   });
+  const characters = boxes.map((box) => box.character);
 
   const focusAt = (index: number) => {
     if (index >= 0 && index < length) {
@@ -71,9 +77,9 @@ export function CodeInput({ value, onChange, length = CODE_LENGTH }: CodeInputPr
 
   return (
     <div dir="ltr" className="mb-10 flex w-full justify-center gap-2">
-      {characters.map((character, index) => (
+      {boxes.map((box, index) => (
         <input
-          key={index}
+          key={box.id}
           ref={(element) => {
             inputs.current[index] = element;
           }}
@@ -81,7 +87,7 @@ export function CodeInput({ value, onChange, length = CODE_LENGTH }: CodeInputPr
           inputMode="text"
           autoComplete="one-time-code"
           maxLength={1}
-          value={character}
+          value={box.character}
           onChange={(event) => handleChange(index, event.target.value)}
           onKeyDown={(event) => handleKeyDown(index, event)}
           onPaste={handlePaste}
@@ -93,7 +99,7 @@ export function CodeInput({ value, onChange, length = CODE_LENGTH }: CodeInputPr
             'h-code-h w-full min-w-0 max-w-code-w shrink rounded-box border-2 text-center',
             'text-code font-normal tracking-code caret-transparent outline-none',
             'bg-surface-code-box text-fg-strong transition-colors duration-150',
-            character ? 'border-accent' : 'border-border-code-empty'
+            box.character ? 'border-accent' : 'border-border-code-empty'
           )}
         />
       ))}

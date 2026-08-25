@@ -4,11 +4,15 @@ import { MIN_BAR_HEIGHT } from '@/core/audio/levels';
 
 function deps(overrides: Partial<ClipLoaderDeps> = {}) {
   let issued = 0;
+  const nextUrl = () => {
+    issued += 1;
+    return `blob:clip-${issued}`;
+  };
 
   const base: ClipLoaderDeps = {
     fetchBytes: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
     decode: vi.fn().mockResolvedValue(new Float32Array([0.5, -0.5, 0.5, -0.5])),
-    createObjectUrl: vi.fn(() => `blob:clip-${(issued += 1)}`),
+    createObjectUrl: vi.fn(nextUrl),
     revokeObjectUrl: vi.fn(),
     bars: 4,
     ...overrides,

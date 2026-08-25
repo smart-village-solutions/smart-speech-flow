@@ -9,7 +9,7 @@ interface I18nProviderProps {
   locale?: string;
 }
 
-export function I18nProvider({ children, locale = 'de' }: I18nProviderProps) {
+export function I18nProvider({ children, locale = 'de' }: Readonly<I18nProviderProps>) {
   // Created once; the locale is switched through the effect below rather than
   // by rebuilding the instance.
   // eslint-disable-next-line react-hooks/exhaustive-deps

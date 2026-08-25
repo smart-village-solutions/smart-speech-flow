@@ -46,3 +46,23 @@ export function activationToSession(dto: ActivateSessionDto, previous?: Session)
     customerConnected: true,
   };
 }
+
+/**
+ * The activation response carries only what activation decides: the status and
+ * the customer's language. It says nothing about the admin's language, the
+ * history count or who else is connected, so an earlier read of the session
+ * stands for those rather than being replaced by a default.
+ */
+export function mergeActivatedSession(activated: Session, previous?: Session): Session {
+  if (previous === undefined) {
+    return activated;
+  }
+
+  return {
+    ...previous,
+    id: activated.id,
+    status: activated.status,
+    customerLanguage: activated.customerLanguage,
+    customerConnected: activated.customerConnected,
+  };
+}

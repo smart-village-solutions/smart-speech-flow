@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { FeedbackSheet } from '@/features/feedback/FeedbackSheet';
 import { FeedbackContext } from './feedback';
 
-export function FeedbackProvider({ children }: { children: ReactNode }) {
+export function FeedbackProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [open, setOpen] = useState(false);
   const openFeedback = useCallback(() => setOpen(true), []);
   const value = useMemo(() => ({ openFeedback }), [openFeedback]);

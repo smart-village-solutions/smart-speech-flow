@@ -11,7 +11,7 @@ interface AppHeaderProps {
   onFeedback: () => void;
 }
 
-export function AppHeader({ onBack, onHome, onFeedback }: AppHeaderProps) {
+export function AppHeader({ onBack, onHome, onFeedback }: Readonly<AppHeaderProps>) {
   const { t } = useTranslation();
   const { theme, toggleTheme } = useTheme();
   const { brand, toggleBrand } = useBrand();

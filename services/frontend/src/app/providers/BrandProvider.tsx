@@ -9,12 +9,12 @@ interface BrandProviderProps {
   source: BrandSource;
 }
 
-export function BrandProvider({ children, source }: BrandProviderProps) {
+export function BrandProvider({ children, source }: Readonly<BrandProviderProps>) {
   const brands = useMemo(() => source.list(), [source]);
   const [brand, setBrand] = useState<BrandId>(() => source.getDefault());
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-brand', brand);
+    document.documentElement.dataset.brand = brand;
   }, [brand]);
 
   const toggleBrand = useCallback(() => {

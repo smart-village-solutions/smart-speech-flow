@@ -18,12 +18,15 @@ function read(catalogue: Record<string, unknown>, key: string): unknown {
     .reduce<unknown>((node, part) => (node as Record<string, unknown>)[part], catalogue);
 }
 
+/** Explicit, because the default sort compares by UTF-16 code unit. */
+const byName = (a: string, b: string) => a.localeCompare(b);
+
 describe('translation catalogues', () => {
-  const reference = flatten(de).sort();
+  const reference = flatten(de).sort(byName);
 
   it('covers every language the gateway offers', () => {
-    expect([...SUPPORTED_UI_LOCALES].sort()).toEqual(
-      ['am', 'ar', 'de', 'en', 'fa', 'ku', 'ru', 'ti', 'tr', 'uk'].sort()
+    expect([...SUPPORTED_UI_LOCALES].sort(byName)).toEqual(
+      ['am', 'ar', 'de', 'en', 'fa', 'ku', 'ru', 'ti', 'tr', 'uk'].sort(byName)
     );
   });
 
@@ -35,7 +38,7 @@ describe('translation catalogues', () => {
 
   it('define exactly the same keys', () => {
     for (const locale of SUPPORTED_UI_LOCALES) {
-      expect(flatten(CATALOGUES[locale]).sort(), locale).toEqual(reference);
+      expect(flatten(CATALOGUES[locale]).sort(byName), locale).toEqual(reference);
     }
   });
 
@@ -62,7 +65,7 @@ describe('translation catalogues', () => {
   });
 
   it('keep the interpolation placeholders of the source', () => {
-    const placeholders = (value: string) => (value.match(/{{\s*\w+\s*}}/g) ?? []).sort();
+    const placeholders = (value: string) => (value.match(/{{\s*\w+\s*}}/g) ?? []).sort(byName);
     const interpolated = reference.filter(
       (key) => placeholders(read(de, key) as string).length > 0
     );

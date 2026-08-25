@@ -15,19 +15,27 @@ cd "$(dirname "$0")/.."
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 rm -rf dist
-npx vite build > /tmp/ssf-css-build.log 2>&1 || {
-  cat /tmp/ssf-css-build.log >&2
+
+# The locally installed binary, not `npx`: npx will fetch a package from the
+# registry and run its lifecycle scripts when the name is not already present,
+# which is not something a verification script should be able to do.
+build_log=$(mktemp)
+trap 'rm -f "$build_log"' EXIT
+
+./node_modules/.bin/vite build > "$build_log" 2>&1 || {
+  cat "$build_log" >&2
   fail "vite build did not succeed"
 }
 
 css=$(cat dist/assets/*.css | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
 
 assert() {
+  local expected="$1"
   local needle
-  needle=$(printf '%s' "$1" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+  needle=$(printf '%s' "$expected" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
   case "$css" in
     *"$needle"*) ;;
-    *) fail "missing from built CSS: $1" ;;
+    *) fail "missing from built CSS: $expected" ;;
   esac
 }
 
@@ -49,12 +57,13 @@ assert '--text-base: 18px'
 # "color:var(--color-text)" also matches the .text-text utility and so passes
 # whatever body actually says.
 body_rule=$(grep -ohE '(^|\})body\{[^}]*\}' dist/assets/*.css | head -1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
-[ -n "$body_rule" ] || fail "no body rule found in built CSS"
+[[ -n "$body_rule" ]] || fail "no body rule found in built CSS"
 
 assert_body() {
+  local expected="$1"
   case "$body_rule" in
-    *"$1"*) ;;
-    *) fail "body must declare $1, but is: $body_rule" ;;
+    *"$expected"*) ;;
+    *) fail "body must declare $expected, but is: $body_rule" ;;
   esac
 }
 

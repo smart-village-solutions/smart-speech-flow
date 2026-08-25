@@ -1,11 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useFeedback } from '@/app/providers/feedback';
-import { usePlayback } from '@/app/providers/playback';
-import { useQuery } from '@tanstack/react-query';
-import { useScreenLocale } from '@/app/providers/locale';
-import { useServices } from '@/app/providers/services';
-import { useAudioRecorder } from '@/core/audio/useAudioRecorder';
 import { cn } from '@/lib/cn';
 import { AppHeader } from '@/ui/patterns/AppHeader';
 import { MessageBubble } from '@/ui/patterns/MessageBubble';
@@ -13,103 +7,35 @@ import { ScreenShell } from '@/ui/patterns/ScreenShell';
 import { ComposerBoxes } from './ComposerBoxes';
 import { ComposerControls } from './ComposerControls';
 import { ConversationStatus } from './ConversationStatus';
-import { hasConversationStatus } from './conversation.status';
-import { useConversation } from './useConversation';
-import { useDismissOnOutsideTap } from './useDismissOnOutsideTap';
-import { useKeyboardOffset } from './useKeyboardOffset';
-import { useSendFlight } from './useSendFlight';
+import { useConversationScreen } from './useConversationScreen';
 
 export function ConversationScreen() {
   const { openFeedback } = useFeedback();
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
-  const { session } = useServices();
-  const { enqueue, stop: stopPlayback, hold, release } = usePlayback();
-  const keyboardOffset = useKeyboardOffset();
-  const chatRef = useRef<HTMLDivElement | null>(null);
-  const composerRef = useRef<HTMLTextAreaElement | null>(null);
-  const [draft, setDraft] = useState('');
 
-  const sessionQuery = useQuery({
-    queryKey: ['session', sessionId],
-    queryFn: () => session.getSession(sessionId as string),
-  });
-
-  // The url carries no language code, so the session is what says which one
-  // the customer reads. Nothing is declared until the query answers.
-  useScreenLocale(sessionQuery.data?.customerLanguage ?? '');
-
-  const customerLanguage = sessionQuery.data?.customerLanguage ?? 'en';
-  const adminLanguage = sessionQuery.data?.adminLanguage ?? 'de';
-
-  const { state, dispatch, sendText, sendAudio, retryLast } = useConversation(
-    sessionId as string,
-    { source: customerLanguage, target: adminLanguage },
-    { onPeerAudio: enqueue }
-  );
-
-  const { flight, sourceRef, launch } = useSendFlight(chatRef);
-
-  // The recorder callback runs outside render, so the offset it launches from
-  // is mirrored into a ref after each commit.
-  const bottomRef = useRef('');
-
-  const recorder = useAudioRecorder({
-    onComplete: (wav) => {
-      launch('recording', bottomRef.current);
-      void sendAudio(wav);
-    },
-    onError: () =>
-      dispatch({ type: 'send/failed', tempId: '', errorKey: 'conversation.micDenied' }),
-  });
-
-  useEffect(() => {
-    chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
-  }, [state.messages]);
-
-  // Leaving the conversation silences it; the player outlives this screen.
-  useEffect(() => stopPlayback, [stopPlayback]);
-
-  // The pill floats over the top of the stack, so the stack keeps clear of it.
-  const showsStatus = hasConversationStatus(state);
-
-  const isTyping = state.composer === 'typing';
-  const isRecording = recorder.phase === 'recording';
-
-  // A tap outside puts the composer away, which is what frees the mic again.
-  // The draft is kept, so reopening the keyboard picks up where it left off.
-  const closeComposer = useCallback(
-    () => dispatch({ type: 'composer/mode', mode: 'idle' }),
-    [dispatch]
-  );
-  useDismissOnOutsideTap(isTyping, closeComposer);
-
-  // Nothing is spoken aloud into an open microphone: arrivals queue instead,
-  // and whatever was playing is replayed in full once the mic closes.
-  useEffect(() => {
-    if (!isRecording) {
-      return;
-    }
-    hold();
-    return release;
-  }, [isRecording, hold, release]);
-  const canCompose = !state.sending && !state.ended;
-  const bottom = `calc(${keyboardOffset}px + max(var(--spacing-mic-bottom), env(safe-area-inset-bottom)))`;
-
-  useEffect(() => {
-    bottomRef.current = bottom;
-  });
-
-  const submitDraft = () => {
-    const text = draft.trim();
-    if (!text || !canCompose) {
-      return;
-    }
-    launch('typing', bottom);
-    setDraft('');
-    dispatch({ type: 'composer/mode', mode: 'idle' });
-    void sendText(text);
-  };
+  const {
+    state,
+    recorder,
+    retryLast,
+    flight,
+    chatRef,
+    composerRef,
+    sourceRef,
+    keyboardOffset,
+    bottom,
+    draft,
+    setDraft,
+    isTyping,
+    isRecording,
+    canCompose,
+    hasDraft,
+    showsStatus,
+    submitDraft,
+    cancelDraft,
+    toggleMic,
+    toggleKeyboard,
+  } = useConversationScreen(sessionId as string);
 
   return (
     <ScreenShell>
@@ -146,10 +72,7 @@ export function ConversationScreen() {
         draft={draft}
         onDraftChange={setDraft}
         onSubmit={submitDraft}
-        onCancel={() => {
-          setDraft('');
-          dispatch({ type: 'composer/mode', mode: 'idle' });
-        }}
+        onCancel={cancelDraft}
       />
 
       <ComposerControls
@@ -157,23 +80,9 @@ export function ConversationScreen() {
         recording={isRecording}
         typing={isTyping}
         canCompose={canCompose}
-        hasDraft={draft.trim() !== ''}
-        onMic={() => {
-          if (isRecording) {
-            recorder.stop();
-            return;
-          }
-          dispatch({ type: 'composer/mode', mode: 'recording' });
-          void recorder.start();
-        }}
-        onKeyboard={() => {
-          if (isTyping) {
-            submitDraft();
-            return;
-          }
-          dispatch({ type: 'composer/mode', mode: 'typing' });
-          window.setTimeout(() => composerRef.current?.focus(), 50);
-        }}
+        hasDraft={hasDraft}
+        onMic={toggleMic}
+        onKeyboard={toggleKeyboard}
       />
 
       <ConversationStatus

@@ -12,7 +12,7 @@ interface MessageContentProps {
   readonly isOwnMessage: boolean;
 }
 
-function MessageContent({ message, isOwnMessage }: MessageContentProps) {
+function MessageContent({ message, isOwnMessage }: Readonly<MessageContentProps>) {
   return (
     <>
       {message.status === 'sending' && (
@@ -65,11 +65,30 @@ function MessageContent({ message, isOwnMessage }: MessageContentProps) {
   );
 }
 
-export default function MessageBubble({ message, isOwnMessage, showMetadata = false }: MessageBubbleProps) {
+export default function MessageBubble({ message, isOwnMessage, showMetadata = false }: Readonly<MessageBubbleProps>) {
   const [showMetadataModal, setShowMetadataModal] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const hasAutoPlayed = useRef(false);
   const canOpenMetadata = Boolean(showMetadata && message.pipeline_metadata);
+
+  const playAudio = async (url: string) => {
+    try {
+      // Verwende absolute URL für Audio
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || `${'http'}://localhost:8000`;
+      const absoluteUrl = url.startsWith('http') ? url : `${apiBaseUrl}${url}`;
+
+      const audio = new Audio(absoluteUrl);
+      audio.onplay = () => setAudioPlaying(true);
+      audio.onended = () => setAudioPlaying(false);
+      audio.onerror = () => {
+        console.error('Audio playback error');
+        setAudioPlaying(false);
+      };
+      await audio.play();
+    } catch {
+      console.error('Failed to play audio');
+    }
+  };
 
   // Autoplay für empfangene Nachrichten
   useEffect(() => {
@@ -93,25 +112,6 @@ export default function MessageBubble({ message, isOwnMessage, showMetadata = fa
     globalThis.addEventListener('keydown', handleKeyDown);
     return () => globalThis.removeEventListener('keydown', handleKeyDown);
   }, [showMetadataModal]);
-
-  const playAudio = async (url: string) => {
-    try {
-      // Verwende absolute URL für Audio
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || `${'http'}://localhost:8000`;
-      const absoluteUrl = url.startsWith('http') ? url : `${apiBaseUrl}${url}`;
-
-      const audio = new Audio(absoluteUrl);
-      audio.onplay = () => setAudioPlaying(true);
-      audio.onended = () => setAudioPlaying(false);
-      audio.onerror = () => {
-        console.error('Audio playback error');
-        setAudioPlaying(false);
-      };
-      await audio.play();
-    } catch {
-      console.error('Failed to play audio');
-    }
-  };
 
   const formatTime = (timestamp: string): string => {
     const date = new Date(timestamp);

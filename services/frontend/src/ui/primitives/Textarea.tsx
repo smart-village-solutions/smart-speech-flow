@@ -5,7 +5,7 @@ interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   ref?: Ref<HTMLTextAreaElement>;
 }
 
-export function Textarea({ className, ...props }: TextareaProps) {
+export function Textarea({ className, ...props }: Readonly<TextareaProps>) {
   return (
     <textarea
       className={cn(

@@ -182,6 +182,21 @@ describe('PlaybackProvider', () => {
     expect(player.played).toEqual(['/a.wav', '/b.wav']);
   });
 
+  // A bad source both rejects play() and fires the element's error event. They
+  // describe one failure, so only the first may move the queue on — otherwise
+  // the clip behind it is skipped without ever being heard.
+  it('advances once when a clip both refuses and errors', async () => {
+    const player = setup();
+
+    await click('enqueue a');
+    await click('enqueue b');
+    await player.rejected();
+    await player.fail();
+
+    expect(playing()).toBe('b');
+    expect(player.played).toEqual(['/a.wav', '/b.wav']);
+  });
+
   it('keeps working through the StrictMode double mount', async () => {
     const player = createFakeAudioPlayer();
     render(

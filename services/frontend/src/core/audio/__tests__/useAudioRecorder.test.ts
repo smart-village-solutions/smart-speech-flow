@@ -43,6 +43,24 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+/** A meter the test drives; one reading per 100ms tick. */
+function meter(readings: number[]) {
+  let index = 0;
+  const close = vi.fn();
+
+  return {
+    close,
+    create: vi.fn(() => ({
+      read: () => {
+        const reading = readings[Math.min(index, readings.length - 1)] ?? 0;
+        index += 1;
+        return reading;
+      },
+      close,
+    })),
+  };
+}
+
 describe('useAudioRecorder', () => {
   it('starts idle with no elapsed time', () => {
     const { result } = renderHook(() =>
@@ -120,6 +138,46 @@ describe('useAudioRecorder', () => {
     expect(result.current.phase).toBe('idle');
   });
 
+  it('stays idle when the microphone is refused at start', async () => {
+    const onError = vi.fn();
+    const failure = new Error('microphone blocked');
+    // The recorder reports a failed start through onError and resolves anyway,
+    // which is what a denied getUserMedia looks like from here.
+    mocks.startRecording.mockImplementationOnce(async () => {
+      config().onError(failure);
+    });
+
+    const { result } = renderHook(() => useAudioRecorder({ onComplete: vi.fn(), onError }));
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(onError).toHaveBeenCalledWith(failure);
+    expect(result.current.phase).toBe('idle');
+  });
+
+  it('leaves no timer running when the microphone is refused at start', async () => {
+    mocks.startRecording.mockImplementationOnce(async () => {
+      config().onError(new Error('microphone blocked'));
+    });
+
+    const { result } = renderHook(() =>
+      useAudioRecorder({ onComplete: vi.fn(), onError: vi.fn() })
+    );
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(result.current.elapsedSeconds).toBe(0);
+    expect(result.current.phase).toBe('idle');
+  });
+
   it('passes the recording limit to the underlying recorder', async () => {
     const { result } = renderHook(() =>
       useAudioRecorder({ onComplete: vi.fn(), onError: vi.fn() })
@@ -148,19 +206,6 @@ describe('useAudioRecorder', () => {
   });
 
   describe('live input levels', () => {
-    /** A meter the test drives; one reading per 100ms tick. */
-    function meter(readings: number[]) {
-      let index = 0;
-      const close = vi.fn();
-      return {
-        close,
-        create: vi.fn(() => ({
-          read: () => readings[Math.min(index++, readings.length - 1)] ?? 0,
-          close,
-        })),
-      };
-    }
-
     it('starts with no bars at all', async () => {
       const fake = meter([0.2]);
       const { result } = renderHook(() =>

@@ -13,15 +13,26 @@ export interface ConversationState {
   hasConnected: boolean;
   ended: boolean;
   errorKey: string | null;
+  /** True only while the error on show came from a send that can be repeated. */
+  canRetry: boolean;
 }
 
 export type ConversationAction =
   | { type: 'history/loaded'; messages: ChatMessage[] }
   | { type: 'history/reloaded'; messages: ChatMessage[] }
   | { type: 'composer/mode'; mode: ComposerMode }
-  | { type: 'send/started'; tempId: string; sourceLanguage: string; targetLanguage: string }
+  | {
+      type: 'send/started';
+      tempId: string;
+      /** Empty for a recording, whose transcript does not exist yet. */
+      text: string;
+      sourceLanguage: string;
+      targetLanguage: string;
+    }
   | { type: 'send/confirmed'; tempId: string; message: ChatMessage }
   | { type: 'send/failed'; tempId: string; errorKey: string }
+  /** A failure with nothing to send again — a refused microphone, say. */
+  | { type: 'error/raised'; errorKey: string }
   | { type: 'realtime/message'; message: ChatMessage }
   | { type: 'realtime/status'; status: RealtimeStatus }
   | { type: 'session/ended' }
@@ -35,7 +46,54 @@ export const initialConversationState: ConversationState = {
   hasConnected: false,
   ended: false,
   errorKey: null,
+  canRetry: false,
 };
+
+/**
+ * A reconnect refetches, because a message broadcast while the socket was down
+ * is never resent by the gateway. Anything still in flight locally has no
+ * server copy yet and must survive the merge.
+ */
+function mergeReloadedHistory(state: ConversationState, loaded: ChatMessage[]): ChatMessage[] {
+  const confirmed = new Set(loaded.map((message) => message.id));
+
+  const inFlight = state.messages.filter(
+    (message) =>
+      (message.state === 'pending' || message.state === 'failed') && !confirmed.has(message.id)
+  );
+
+  return [...loaded, ...inFlight];
+}
+
+/**
+ * The REST response and the WebSocket confirmation describe the same message,
+ * so whichever lands second must not duplicate it.
+ *
+ * An id check alone only catches the response-first order. The gateway
+ * broadcasts before that response returns, so the confirmation can overtake it,
+ * and the copy it would clash with is still filed under a temp id. One send is
+ * in flight at a time, so a self message arriving now IS the pending one: adopt
+ * it rather than add a second bubble.
+ */
+function withRealtimeMessage(state: ConversationState, arrived: ChatMessage): ChatMessage[] | null {
+  if (state.messages.some((message) => message.id === arrived.id)) {
+    return null;
+  }
+
+  if (arrived.origin !== 'self') {
+    return [...state.messages, arrived];
+  }
+
+  const inFlight = state.messages.findIndex(
+    (message) => message.origin === 'self' && message.state === 'pending'
+  );
+
+  if (inFlight === -1) {
+    return [...state.messages, arrived];
+  }
+
+  return state.messages.map((message, index) => (index === inFlight ? arrived : message));
+}
 
 export function conversationReducer(
   state: ConversationState,
@@ -45,19 +103,8 @@ export function conversationReducer(
     case 'history/loaded':
       return { ...state, messages: action.messages };
 
-    case 'history/reloaded': {
-      // A reconnect refetches, because a message broadcast while the socket was
-      // down is never resent by the gateway. Anything still in flight locally
-      // has no server copy yet and must survive the merge.
-      const confirmed = new Set(action.messages.map((message) => message.id));
-      const inFlight = state.messages.filter(
-        (message) =>
-          (message.state === 'pending' || message.state === 'failed') &&
-          !confirmed.has(message.id)
-      );
-
-      return { ...state, messages: [...action.messages, ...inFlight] };
-    }
+    case 'history/reloaded':
+      return { ...state, messages: mergeReloadedHistory(state, action.messages) };
 
     case 'composer/mode':
       // A finished session, or a send in flight, keeps the composer shut.
@@ -71,12 +118,12 @@ export function conversationReducer(
         return state;
       }
 
-      // Placeholder text stays empty on purpose: for audio the transcript does
-      // not exist yet, and the export renders typing dots for both kinds.
+      // Typing dots cover both kinds while the send is in flight. The words are
+      // kept all the same, so a text message that fails still shows what it was.
       const placeholder: ChatMessage = {
         id: action.tempId,
         origin: 'self',
-        text: '',
+        text: action.text,
         audioUrl: null,
         sourceLanguage: action.sourceLanguage,
         targetLanguage: action.targetLanguage,
@@ -90,6 +137,7 @@ export function conversationReducer(
         composer: 'idle',
         sending: true,
         errorKey: null,
+        canRetry: false,
       };
     }
 
@@ -107,39 +155,15 @@ export function conversationReducer(
         ...state,
         sending: false,
         errorKey: action.errorKey,
+        canRetry: true,
         messages: state.messages.map((message) =>
           message.id === action.tempId ? { ...message, state: 'failed' } : message
         ),
       };
 
     case 'realtime/message': {
-      // The REST response and the WebSocket confirmation describe the same
-      // message, so whichever lands second must not duplicate it.
-      if (state.messages.some((message) => message.id === action.message.id)) {
-        return state;
-      }
-
-      // An id check alone only catches the response-first order. The gateway
-      // broadcasts before that response returns, so the confirmation can
-      // overtake it, and the copy it would clash with is still filed under a
-      // temp id. One send is in flight at a time, so a self message arriving
-      // now IS the pending one: adopt it rather than add a second bubble.
-      if (action.message.origin === 'self') {
-        const inFlight = state.messages.findIndex(
-          (message) => message.origin === 'self' && message.state === 'pending'
-        );
-
-        if (inFlight !== -1) {
-          return {
-            ...state,
-            messages: state.messages.map((message, index) =>
-              index === inFlight ? action.message : message
-            ),
-          };
-        }
-      }
-
-      return { ...state, messages: [...state.messages, action.message] };
+      const messages = withRealtimeMessage(state, action.message);
+      return messages === null ? state : { ...state, messages };
     }
 
     case 'realtime/status':
@@ -152,8 +176,11 @@ export function conversationReducer(
     case 'session/ended':
       return { ...state, ended: true, composer: 'idle' };
 
+    case 'error/raised':
+      return { ...state, errorKey: action.errorKey, canRetry: false };
+
     case 'error/cleared':
-      return { ...state, errorKey: null };
+      return { ...state, errorKey: null, canRetry: false };
 
     default:
       return state;

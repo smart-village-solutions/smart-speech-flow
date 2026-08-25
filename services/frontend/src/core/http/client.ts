@@ -1,5 +1,6 @@
 import axios, { type AxiosInstance } from 'axios';
 import type { AppConfig } from '@/app/config/env';
+import { randomId } from '@/core/ids';
 import { toAppError } from './AppError';
 
 /**
@@ -14,7 +15,7 @@ export function createHttpClient(config: AppConfig, getLocale: () => string): Ax
   });
 
   client.interceptors.request.use((request) => {
-    request.headers.set('X-Correlation-Id', crypto.randomUUID());
+    request.headers.set('X-Correlation-Id', randomId());
     request.headers.set('Accept-Language', getLocale());
     return request;
   });

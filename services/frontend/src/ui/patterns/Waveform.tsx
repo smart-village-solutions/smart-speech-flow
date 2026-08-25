@@ -17,7 +17,7 @@ interface WaveformProps {
   heights?: number[];
 }
 
-export function Waveform({ activeBars, barColorClass, heights = WAVE_HEIGHTS }: WaveformProps) {
+export function Waveform({ activeBars, barColorClass, heights = WAVE_HEIGHTS }: Readonly<WaveformProps>) {
   return (
     <div className="flex h-10 items-center gap-[3px] overflow-hidden" aria-hidden="true">
       {Array.from({ length: BAR_COUNT }, (_, index) => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { useServices } from '@/app/providers/services';
 import { AppError } from '@/core/http/AppError';
+import { randomId } from '@/core/ids';
 import { realtimeToChatMessage } from '@/domain/message/message.mapper';
 import type { ChatMessage } from '@/domain/message/message.types';
 import {
@@ -70,7 +71,7 @@ export function useConversation(
         return;
       }
 
-      const mapped = realtimeToChatMessage(event);
+      const mapped = realtimeToChatMessage(event, message.resolveAudioUrl);
       if (mapped !== null && mapped.id !== '') {
         dispatch({ type: 'realtime/message', message: mapped });
 
@@ -121,11 +122,15 @@ export function useConversation(
   }, [session, sessionId]);
 
   const send = useCallback(
-    async (perform: () => Promise<{ messageId: string; originalText: string }>) => {
-      const tempId = `temp-${crypto.randomUUID()}`;
+    async (
+      perform: () => Promise<{ messageId: string; originalText: string }>,
+      text: string
+    ) => {
+      const tempId = `temp-${randomId()}`;
       dispatch({
         type: 'send/started',
         tempId,
+        text,
         sourceLanguage: languages.source,
         targetLanguage: languages.target,
       });
@@ -143,9 +148,9 @@ export function useConversation(
           state: 'sent',
         };
         dispatch({ type: 'send/confirmed', tempId, message: confirmed });
-      } catch (failure) {
+      } catch (error) {
         const errorKey =
-          failure instanceof AppError ? failure.userMessageKey : 'conversation.sendFailed';
+          error instanceof AppError ? error.userMessageKey : 'conversation.sendFailed';
         dispatch({ type: 'send/failed', tempId, errorKey });
       }
     },
@@ -158,12 +163,14 @@ export function useConversation(
   const sendText = useCallback(
     (text: string) => {
       const attempt = () =>
-        send(() =>
-          message.sendText(sessionId, {
-            text,
-            sourceLanguage: languages.source,
-            targetLanguage: languages.target,
-          })
+        send(
+          () =>
+            message.sendText(sessionId, {
+              text,
+              sourceLanguage: languages.source,
+              targetLanguage: languages.target,
+            }),
+          text
         );
       lastAttempt.current = attempt;
       return attempt();
@@ -174,12 +181,15 @@ export function useConversation(
   const sendAudio = useCallback(
     (wav: Blob) => {
       const attempt = () =>
-        send(() =>
-          message.sendAudio(sessionId, {
-            wav,
-            sourceLanguage: languages.source,
-            targetLanguage: languages.target,
-          })
+        send(
+          () =>
+            message.sendAudio(sessionId, {
+              wav,
+              sourceLanguage: languages.source,
+              targetLanguage: languages.target,
+            }),
+          // A recording has no transcript until the gateway returns one.
+          ''
         );
       lastAttempt.current = attempt;
       return attempt();
@@ -193,6 +203,9 @@ export function useConversation(
     sendText,
     sendAudio,
     // Each send path remembers its own payload, so one control retries either.
-    retryLast: state.errorKey === null ? null : retry,
+    // Gated on the send having failed, not merely on an error being on show: a
+    // refused microphone leaves the last attempt untouched, and offering it
+    // there would send the previous message a second time.
+    retryLast: state.canRetry ? retry : null,
   };
 }

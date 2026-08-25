@@ -1,6 +1,7 @@
 import type { AxiosInstance } from 'axios';
 import { requirePathIdentifier } from '@/utils/identifiers';
-import { audioUrlFor, historyToChatMessages } from './message.mapper';
+import { resolveApiUrl } from '@/core/http/url';
+import { historyToChatMessages } from './message.mapper';
 import type { MessageHistoryDto } from './message.mapper';
 import type { ChatMessage, SendResult } from './message.types';
 
@@ -32,7 +33,12 @@ export interface MessageRepository {
   getHistory(sessionId: string): Promise<ChatMessage[]>;
   sendText(sessionId: string, input: SendTextInput): Promise<SendResult>;
   sendAudio(sessionId: string, input: SendAudioInput): Promise<SendResult>;
-  audioUrlFor(messageId: string): string;
+  /**
+   * Puts a gateway audio path on the gateway origin. Exposed because the
+   * socket delivers its own paths, which the screen has to resolve the same
+   * way the history does.
+   */
+  resolveAudioUrl(url: string): string;
 }
 
 function toSendResult(dto: SendResponseDto): SendResult {
@@ -47,13 +53,15 @@ function toSendResult(dto: SendResponseDto): SendResult {
 
 export function createMessageRepository(
   http: AxiosInstance,
-  options: { pipelineTimeoutMs: number }
+  options: { pipelineTimeoutMs: number; apiBaseUrl: string }
 ): MessageRepository {
+  const resolveAudioUrl = (url: string) => resolveApiUrl(options.apiBaseUrl, url);
+
   return {
     async getHistory(sessionId) {
       const safeId = requirePathIdentifier(sessionId, 'session');
       const response = await http.get<MessageHistoryDto>(`/api/session/${safeId}/messages`);
-      return historyToChatMessages(response.data);
+      return historyToChatMessages(response.data, resolveAudioUrl);
     },
 
     async sendText(sessionId, input) {
@@ -85,6 +93,6 @@ export function createMessageRepository(
       return toSendResult(response.data);
     },
 
-    audioUrlFor,
+    resolveAudioUrl,
   };
 }

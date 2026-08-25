@@ -16,10 +16,11 @@ const peerMessage: ChatMessage = {
   state: 'sent',
 };
 
-function afterSend() {
+function afterSend(text = '') {
   return conversationReducer(initialConversationState, {
     type: 'send/started',
     tempId: 'temp-1',
+    text,
     sourceLanguage: 'en',
     targetLanguage: 'de',
   });
@@ -66,6 +67,50 @@ describe('conversationReducer', () => {
     expect(state.sending).toBe(false);
     expect(state.messages[0].state).toBe('failed');
     expect(state.errorKey).toBe('conversation.sendFailed');
+  });
+
+  it('keeps the typed words on the placeholder, so a failed send still reads', () => {
+    const state = afterSend('my words');
+
+    expect(state.messages[0]).toMatchObject({ text: 'my words', state: 'pending' });
+  });
+
+  it('offers a retry only after a send has failed', () => {
+    expect(initialConversationState.canRetry).toBe(false);
+    expect(afterSend().canRetry).toBe(false);
+
+    const failed = conversationReducer(afterSend(), {
+      type: 'send/failed',
+      tempId: 'temp-1',
+      errorKey: 'conversation.sendFailed',
+    });
+
+    expect(failed.canRetry).toBe(true);
+  });
+
+  // A refused microphone is not a failed send: there is nothing to send again,
+  // and retrying would re-send whatever went out last.
+  it('raises an error with nothing to retry and no message touched', () => {
+    const state = conversationReducer(afterSend(), {
+      type: 'error/raised',
+      errorKey: 'conversation.micDenied',
+    });
+
+    expect(state.errorKey).toBe('conversation.micDenied');
+    expect(state.canRetry).toBe(false);
+    expect(state.messages[0].state).toBe('pending');
+  });
+
+  it('withdraws the retry when the error is cleared', () => {
+    const failed = conversationReducer(afterSend(), {
+      type: 'send/failed',
+      tempId: 'temp-1',
+      errorKey: 'conversation.sendFailed',
+    });
+    const cleared = conversationReducer(failed, { type: 'error/cleared' });
+
+    expect(cleared.canRetry).toBe(false);
+    expect(cleared.errorKey).toBeNull();
   });
 
   it('appends realtime messages', () => {
@@ -117,6 +162,7 @@ describe('conversationReducer', () => {
   it('refuses to start a second send while one is in flight', () => {
     const state = conversationReducer(afterSend(), {
       type: 'send/started',
+      text: '',
       tempId: 'temp-2',
       sourceLanguage: 'en',
       targetLanguage: 'de',
@@ -164,6 +210,7 @@ describe('conversationReducer', () => {
     it('keeps a send that is still in flight', () => {
       const withPending = conversationReducer(initialConversationState, {
         type: 'send/started',
+        text: '',
         tempId: 'temp-1',
         sourceLanguage: 'en',
         targetLanguage: 'de',
@@ -182,6 +229,7 @@ describe('conversationReducer', () => {
       const failed = conversationReducer(
         conversationReducer(initialConversationState, {
           type: 'send/started',
+          text: '',
           tempId: 'temp-1',
           sourceLanguage: 'en',
           targetLanguage: 'de',
@@ -200,6 +248,7 @@ describe('conversationReducer', () => {
     it('drops a local copy the server has since confirmed', () => {
       const withPending = conversationReducer(initialConversationState, {
         type: 'send/started',
+        text: '',
         tempId: 'temp-1',
         sourceLanguage: 'en',
         targetLanguage: 'de',
@@ -230,6 +279,7 @@ describe('conversationReducer', () => {
     const sending = () =>
       conversationReducer(initialConversationState, {
         type: 'send/started',
+        text: '',
         tempId: 'temp-1',
         sourceLanguage: 'en',
         targetLanguage: 'de',

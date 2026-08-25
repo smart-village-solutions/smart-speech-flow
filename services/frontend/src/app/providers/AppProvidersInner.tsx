@@ -17,7 +17,7 @@ interface Props {
   config: AppConfig;
 }
 
-export function AppProvidersInner({ children, config }: Props) {
+export function AppProvidersInner({ children, config }: Readonly<Props>) {
   return (
     <LocaleProvider>
       <LocalisedProviders config={config}>{children}</LocalisedProviders>
@@ -30,9 +30,14 @@ export function AppProvidersInner({ children, config }: Props) {
  * i18next needs it to pick a catalogue, and the http client sends it as the
  * request locale.
  */
-function LocalisedProviders({ children, config }: Props) {
-  const { locale } = useLocale();
-  const services = useMemo(() => createServices(config, () => locale), [config, locale]);
+function LocalisedProviders({ children, config }: Readonly<Props>) {
+  const { locale, getLocale } = useLocale();
+
+  // `getLocale` is stable, so a language change does not rebuild the graph. The
+  // services own the socket factory and the repositories: a new set tears down
+  // the live conversation socket and refetches its history the moment the
+  // session's language lands, which is every load of the conversation screen.
+  const services = useMemo(() => createServices(config, getLocale), [config, getLocale]);
 
   return (
     <I18nProvider locale={locale}>

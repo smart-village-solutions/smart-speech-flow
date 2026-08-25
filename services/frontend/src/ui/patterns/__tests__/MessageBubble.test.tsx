@@ -49,6 +49,23 @@ describe('MessageBubble', () => {
     expect(screen.getByTestId('typing-dots')).toBeInTheDocument();
   });
 
+  // A failed send stops being pending, so without its own branch the bubble
+  // rendered the placeholder's empty text: a blank card with no explanation.
+  it('shows the words that failed to send', () => {
+    renderWithProviders(
+      <MessageBubble message={{ ...own, text: 'I need a passport', state: 'failed' }} />
+    );
+
+    expect(screen.getByText('I need a passport')).toBeInTheDocument();
+    expect(screen.getByTestId('failed-message')).toBeInTheDocument();
+  });
+
+  it('names a failed recording, which never had a transcript', () => {
+    renderWithProviders(<MessageBubble message={{ ...own, text: '', state: 'failed' }} />);
+
+    expect(screen.getByText('Not sent')).toBeInTheDocument();
+  });
+
   it('sizes a pending bubble to its content and a settled one to the stack', () => {
     const { container: pendingTree } = renderWithProviders(
       <MessageBubble message={{ ...own, text: '', state: 'pending' }} />

@@ -15,7 +15,7 @@ function Probe() {
 }
 
 afterEach(() => {
-  document.documentElement.removeAttribute('data-brand');
+  delete document.documentElement.dataset.brand;
 });
 
 describe('BrandProvider', () => {

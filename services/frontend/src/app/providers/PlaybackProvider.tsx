@@ -14,7 +14,7 @@ interface PlaybackProviderProps {
 }
 
 /** Owns the conversation's single audio player; see `createPlaybackQueue`. */
-export function PlaybackProvider({ children, player, clips }: PlaybackProviderProps) {
+export function PlaybackProvider({ children, player, clips }: Readonly<PlaybackProviderProps>) {
   const loader = useMemo(() => clips ?? createBrowserClipLoader(), [clips]);
 
   const queue = useMemo(

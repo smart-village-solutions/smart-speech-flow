@@ -7,5 +7,5 @@ export const CODE_LENGTH = 8;
  * later character one place to the left. Callers strip the spaces first.
  */
 export function normalizeCode(value: string): string {
-  return value.replace(/ /g, '');
+  return value.replaceAll(' ', '');
 }

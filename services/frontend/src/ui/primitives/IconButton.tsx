@@ -15,7 +15,7 @@ export function IconButton({
   children,
   type = 'button',
   ...props
-}: IconButtonProps) {
+}: Readonly<IconButtonProps>) {
   return (
     <button
       type={type}

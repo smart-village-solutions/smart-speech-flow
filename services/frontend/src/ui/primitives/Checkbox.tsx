@@ -8,7 +8,7 @@ interface CheckboxProps {
   className?: string;
 }
 
-export function Checkbox({ checked, onCheckedChange, children, className }: CheckboxProps) {
+export function Checkbox({ checked, onCheckedChange, children, className }: Readonly<CheckboxProps>) {
   const id = useId();
 
   return (

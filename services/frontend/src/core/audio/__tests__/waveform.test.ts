@@ -7,7 +7,7 @@ describe('WAVE_HEIGHTS', () => {
   });
 
   it('leaves the lead-in bars flat, matching the export', () => {
-    expect(WAVE_HEIGHTS.slice(0, LEAD_BARS)).toEqual(Array(LEAD_BARS).fill(0));
+    expect(WAVE_HEIGHTS.slice(0, LEAD_BARS)).toEqual(new Array(LEAD_BARS).fill(0));
   });
 
   it('keeps every other bar inside the export range of 0.25 to 1', () => {

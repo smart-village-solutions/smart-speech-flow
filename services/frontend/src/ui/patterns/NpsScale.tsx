@@ -6,7 +6,7 @@ interface NpsScaleProps {
   onChange: (value: number) => void;
 }
 
-export function NpsScale({ value, onChange }: NpsScaleProps) {
+export function NpsScale({ value, onChange }: Readonly<NpsScaleProps>) {
   const { t } = useTranslation();
 
   return (

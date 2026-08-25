@@ -60,6 +60,12 @@ export default function AdminPage() {
   // Update session status when session becomes active via WebSocket
   useEffect(() => {
     if (isActive && sessionStatus === 'pending') {
+      // Deriving this instead would be the usual answer to the lint, but it
+      // would also stop `sessionStatus` ever changing, and the hydration effect
+      // above depends on it — that effect documents a race where calling
+      // startSession twice closes a socket mid-connect. Left exactly as it was;
+      // revisit with the rest of the admin UI, which this branch does not touch.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSessionStatus('active');
     }
   }, [isActive, sessionStatus]);

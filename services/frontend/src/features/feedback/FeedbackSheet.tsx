@@ -29,7 +29,7 @@ const RATING_SECTIONS = [
  * while closed. Radix holds the node until the exit animation finishes, so the
  * design's 300ms slide survives.
  */
-export function FeedbackSheet({ open, onOpenChange, sessionId = null }: FeedbackSheetProps) {
+export function FeedbackSheet({ open, onOpenChange, sessionId = null }: Readonly<FeedbackSheetProps>) {
   const { t } = useTranslation();
   const { feedback } = useServices();
   const [form, setForm] = useState(EMPTY);

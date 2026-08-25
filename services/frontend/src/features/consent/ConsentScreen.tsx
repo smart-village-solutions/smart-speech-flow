@@ -4,9 +4,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useScreenLocale } from '@/app/providers/locale';
 import { useFeedback } from '@/app/providers/feedback';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
 import { AppError } from '@/core/http/AppError';
+import { mergeActivatedSession } from '@/domain/session/session.mapper';
+import type { Session } from '@/domain/session/session.types';
 import { AppHeader } from '@/ui/patterns/AppHeader';
 import { FlagAvatar } from '@/ui/patterns/FlagAvatar';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
@@ -21,6 +23,7 @@ export function ConsentScreen() {
   const navigate = useNavigate();
   const { session, consent } = useServices();
   const languages = useLanguages();
+  const queryClient = useQueryClient();
 
   useScreenLocale(languageCode ?? '');
 
@@ -37,7 +40,14 @@ export function ConsentScreen() {
       });
       return session.activate(sessionId as string, languageCode as string);
     },
-    onSuccess: () => {
+    // The route guard cached this session before activation, when the customer
+    // had no language yet. Publishing the activated one keeps the conversation
+    // screen from opening on the stale entry and sending its first message
+    // under the wrong source language, which the gateway rejects.
+    onSuccess: (activated) => {
+      queryClient.setQueryData<Session>(['session', sessionId], (previous) =>
+        mergeActivatedSession(activated, previous)
+      );
       void navigate(`/s/${sessionId}/live`);
     },
   });

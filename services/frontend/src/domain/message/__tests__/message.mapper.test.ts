@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { historyToChatMessages, realtimeToChatMessage } from '@/domain/message/message.mapper';
 
+/** Development, where the dev server proxies /api to the gateway. */
+const sameOrigin = (url: string) => url;
+/** Production, where the gateway is on its own host. */
+const gatewayOrigin = (url: string) => `https://ssf.example${url}`;
+
 describe('historyToChatMessages', () => {
   const dto = {
     session_id: 'A1B2C3D4',
@@ -29,7 +34,7 @@ describe('historyToChatMessages', () => {
   };
 
   it('shows the original text and no audio for the customer own message', () => {
-    const [own] = historyToChatMessages(dto);
+    const [own] = historyToChatMessages(dto, sameOrigin);
 
     expect(own).toEqual({
       id: 'm1',
@@ -44,7 +49,7 @@ describe('historyToChatMessages', () => {
   });
 
   it('shows the translated text and TTS audio for the agent message', () => {
-    const [, incoming] = historyToChatMessages(dto);
+    const [, incoming] = historyToChatMessages(dto, sameOrigin);
 
     expect(incoming).toEqual({
       id: 'm2',
@@ -59,12 +64,23 @@ describe('historyToChatMessages', () => {
   });
 
   it('omits the audio URL when the agent message has no synthesised audio', () => {
-    const [incoming] = historyToChatMessages({
-      session_id: 'A1B2C3D4',
-      messages: [{ ...dto.messages[1], audio_base64: null }],
-    });
+    const [incoming] = historyToChatMessages(
+      {
+        session_id: 'A1B2C3D4',
+        messages: [{ ...dto.messages[1], audio_base64: null }],
+      },
+      sameOrigin
+    );
 
     expect(incoming.audioUrl).toBeNull();
+  });
+
+  // The deployed SPA and the gateway are on different hosts, so a relative
+  // path is fetched from the SPA origin, where no audio exists.
+  it('resolves history audio against the gateway origin', () => {
+    const [, incoming] = historyToChatMessages(dto, gatewayOrigin);
+
+    expect(incoming.audioUrl).toBe('https://ssf.example/api/audio/m2.wav');
   });
 });
 
@@ -80,12 +96,15 @@ describe('realtimeToChatMessage', () => {
   };
 
   it('maps a sender confirmation to a sent self message', () => {
-    const message = realtimeToChatMessage({
-      ...base,
-      role: 'sender_confirmation',
-      text: 'my words',
-      audio_available: false,
-    });
+    const message = realtimeToChatMessage(
+      {
+        ...base,
+        role: 'sender_confirmation',
+        text: 'my words',
+        audio_available: false,
+      },
+      sameOrigin
+    );
 
     expect(message).toEqual({
       id: 'm3',
@@ -100,20 +119,40 @@ describe('realtimeToChatMessage', () => {
   });
 
   it('maps a receiver message to a peer message carrying its audio URL', () => {
-    const message = realtimeToChatMessage({
-      ...base,
-      sender: 'admin',
-      role: 'receiver_message',
-      text: 'translated words',
-      audio_available: true,
-      audio_url: '/api/audio/m3.wav',
-    });
+    const message = realtimeToChatMessage(
+      {
+        ...base,
+        sender: 'admin',
+        role: 'receiver_message',
+        text: 'translated words',
+        audio_available: true,
+        audio_url: '/api/audio/m3.wav',
+      },
+      sameOrigin
+    );
 
     expect(message?.origin).toBe('peer');
     expect(message?.audioUrl).toBe('/api/audio/m3.wav');
   });
 
+  // The gateway sends a path, not a url; it is fetched by the browser as-is.
+  it('resolves incoming audio against the gateway origin', () => {
+    const message = realtimeToChatMessage(
+      {
+        ...base,
+        sender: 'admin',
+        role: 'receiver_message',
+        text: 'translated words',
+        audio_available: true,
+        audio_url: '/api/audio/m3.wav',
+      },
+      gatewayOrigin
+    );
+
+    expect(message?.audioUrl).toBe('https://ssf.example/api/audio/m3.wav');
+  });
+
   it('returns null for roles that are not messages', () => {
-    expect(realtimeToChatMessage({ ...base, role: 'client_joined' })).toBeNull();
+    expect(realtimeToChatMessage({ ...base, role: 'client_joined' }, sameOrigin)).toBeNull();
   });
 });

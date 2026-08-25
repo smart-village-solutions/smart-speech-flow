@@ -8,7 +8,7 @@ interface ThemeProviderProps {
   initialTheme?: Theme;
 }
 
-export function ThemeProvider({ children, initialTheme = 'dark' }: ThemeProviderProps) {
+export function ThemeProvider({ children, initialTheme = 'dark' }: Readonly<ThemeProviderProps>) {
   const [theme, setTheme] = useState<Theme>(initialTheme);
 
   useEffect(() => {

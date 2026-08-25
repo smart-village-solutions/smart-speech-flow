@@ -17,7 +17,7 @@ interface MessageInputProps {
   readonly disabled?: boolean;
 }
 
-export default function MessageInput({ disabled = false }: MessageInputProps) {
+export default function MessageInput({ disabled = false }: Readonly<MessageInputProps>) {
   const { sessionId, clientType, addMessage, updateMessage, customerLanguage, adminLanguage, registerTempId, isActive } = useSession();
   const [inputMode, setInputMode] = useState<InputMode>('text');
   const [textMessage, setTextMessage] = useState('');

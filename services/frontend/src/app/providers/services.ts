@@ -35,7 +35,10 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     config,
     session: createSessionRepository(http),
     language: createLanguageRepository(http),
-    message: createMessageRepository(http, { pipelineTimeoutMs: config.pipelineTimeoutMs }),
+    message: createMessageRepository(http, {
+      pipelineTimeoutMs: config.pipelineTimeoutMs,
+      apiBaseUrl: config.apiBaseUrl,
+    }),
     feedback: createStubFeedbackSink(),
     consent: createStubConsentSink(),
     brand: createStaticBrandSource(config.brand),

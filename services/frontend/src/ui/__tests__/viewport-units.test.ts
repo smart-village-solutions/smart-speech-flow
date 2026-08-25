@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
  * device gives it. The legacy pages under `pages/` and `components/` still use
  * `vh` and are deliberately not scanned.
  */
-const FORBIDDEN = [/\b(min-h-screen|h-screen)\b/, /\d+vh\b/];
+const FORBIDDEN = [/\b(?:min-)?h-screen\b/, /\d+vh\b/];
 
 const sources = import.meta.glob('/src/{features,ui}/**/*.tsx', {
   query: '?raw',

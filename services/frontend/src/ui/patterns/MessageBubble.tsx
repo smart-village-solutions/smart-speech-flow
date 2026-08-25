@@ -20,12 +20,13 @@ interface MessageBubbleProps {
  * on arrival and only one clip is ever audible, so the state lives in
  * `PlaybackProvider` and the control here always restarts from the beginning.
  */
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message }: Readonly<MessageBubbleProps>) {
   const { t } = useTranslation();
   const { playingId, progress, playNow } = usePlayback();
 
   const isOwn = message.origin === 'self';
   const isPending = message.state === 'pending';
+  const isFailed = message.state === 'failed';
   const isPlaying = playingId === message.id;
   const hasAudio = !isOwn && message.audioUrl !== null && !isPending;
   const peaks = useClipPeaks(hasAudio ? message.audioUrl : null);
@@ -44,6 +45,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         'max-w-bubble border border-border-card bg-surface-card p-4',
         // A typing bubble hugs the dots instead of stretching to the stack width.
         isPending && 'w-fit',
+        isFailed && 'border-border-status-alert',
         isOwn
           ? 'ms-bubble-inset me-bubble-gutter rounded-bubble-self'
           : 'ms-bubble-gutter me-bubble-inset self-end rounded-bubble-peer'
@@ -54,6 +56,14 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       ) : (
         <p className={cn('text-body leading-chat text-fg-chat', hasAudio && 'mb-4')}>
           {message.text}
+        </p>
+      )}
+
+      {/* A failed send stops being pending, so without this the bubble showed
+          the placeholder's empty text: a blank card with nothing to act on. */}
+      {isFailed && (
+        <p data-testid="failed-message" className="text-meta text-fg-status-alert">
+          {t('conversation.notSent')}
         </p>
       )}
 

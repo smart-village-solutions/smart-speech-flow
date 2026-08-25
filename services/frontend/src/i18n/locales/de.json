@@ -36,6 +36,7 @@
     "play": "Abspielen",
     "replay": "Erneut abspielen",
     "sendFailed": "Diese Nachricht konnte nicht gesendet werden.",
+    "notSent": "Nicht gesendet",
     "retry": "Erneut senden",
     "micDenied": "Der Zugriff auf das Mikrofon wurde abgelehnt. Sie können Ihre Nachricht stattdessen eingeben.",
     "reconnecting": "Verbindung wird wiederhergestellt…",

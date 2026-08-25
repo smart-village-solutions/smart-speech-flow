@@ -28,15 +28,25 @@ export interface RealtimePayload {
   audio_url?: string | null;
 }
 
-export function audioUrlFor(messageId: string): string {
+/** The gateway path a message's synthesised audio is served from. */
+function audioUrlFor(messageId: string): string {
   return `/api/audio/${encodeURIComponent(messageId)}.wav`;
 }
+
+/**
+ * Turns a gateway path into something the browser can fetch. Passed in rather
+ * than read from config, so the mappers stay pure; see `resolveApiUrl`.
+ */
+export type ResolveAudioUrl = (url: string) => string;
 
 /**
  * The gateway stores both halves of every message. The customer sees their own
  * words as spoken and the agent's words translated, so `sender` picks the half.
  */
-export function historyToChatMessages(dto: MessageHistoryDto): ChatMessage[] {
+export function historyToChatMessages(
+  dto: MessageHistoryDto,
+  resolveAudioUrl: ResolveAudioUrl
+): ChatMessage[] {
   return dto.messages.map((message) => {
     const isOwn = message.sender === 'customer';
 
@@ -44,7 +54,7 @@ export function historyToChatMessages(dto: MessageHistoryDto): ChatMessage[] {
       id: message.id,
       origin: isOwn ? 'self' : 'peer',
       text: isOwn ? message.original_text : message.translated_text,
-      audioUrl: !isOwn && message.audio_base64 ? audioUrlFor(message.id) : null,
+      audioUrl: !isOwn && message.audio_base64 ? resolveAudioUrl(audioUrlFor(message.id)) : null,
       sourceLanguage: message.source_lang,
       targetLanguage: message.target_lang,
       timestamp: message.timestamp,
@@ -53,7 +63,10 @@ export function historyToChatMessages(dto: MessageHistoryDto): ChatMessage[] {
   });
 }
 
-export function realtimeToChatMessage(payload: RealtimePayload): ChatMessage | null {
+export function realtimeToChatMessage(
+  payload: RealtimePayload,
+  resolveAudioUrl: ResolveAudioUrl
+): ChatMessage | null {
   if (payload.role !== 'sender_confirmation' && payload.role !== 'receiver_message') {
     return null;
   }
@@ -64,7 +77,7 @@ export function realtimeToChatMessage(payload: RealtimePayload): ChatMessage | n
     id: payload.message_id ?? '',
     origin: isOwn ? 'self' : 'peer',
     text: payload.text ?? '',
-    audioUrl: isOwn ? null : (payload.audio_url ?? null),
+    audioUrl: isOwn || !payload.audio_url ? null : resolveAudioUrl(payload.audio_url),
     sourceLanguage: payload.source_lang ?? '',
     targetLanguage: payload.target_lang ?? '',
     timestamp: payload.timestamp ?? '',

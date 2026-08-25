@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RECORDING_SECONDS } from '@/core/audio/waveform';
 import { cn } from '@/lib/cn';
@@ -25,46 +25,102 @@ interface ComposerBoxesProps {
 /** Offsets above the buttons row, per SCREEN_SPECS (export 935-936, 953-954). */
 const OFFSET = { recording: '120px', typing: '96px' } as const;
 
-/**
- * The two boxes above the mic and keyboard buttons, and the dots box that
- * replaces either one on send and flies to the chat stack.
- */
-export function ComposerBoxes({
+function Slot({
   bottom,
-  flight,
+  offset,
+  children,
+}: Readonly<{ bottom: string; offset: string; children: ReactNode }>) {
+  return (
+    <div
+      className="absolute inset-x-0 transition-[bottom] duration-300"
+      style={{ bottom: `calc(${bottom} + ${offset})` }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** The dots box in flight; `to` is null until the landing rect is measured. */
+function FlightBox({ flight }: Readonly<{ flight: SendFlight }>) {
+  const { from, to } = flight;
+
+  return (
+    <div
+      className={cn(
+        'send-flight ms-bubble-inset me-bubble-gutter rounded-bubble-self border border-border-card bg-surface-card p-4',
+        // The lift goes as it lands, so it settles flush with the bubble.
+        to === null && 'shadow-xl'
+      )}
+      style={{
+        width: to?.width ?? from.width,
+        height: to?.height ?? from.height,
+        transform: to?.transform,
+        opacity: to === null ? 1 : 0,
+      }}
+    >
+      <TypingDots />
+    </div>
+  );
+}
+
+function DraftBox({
   sourceRef,
   composerRef,
-  recording,
-  levels,
-  elapsedSeconds,
-  typing,
   draft,
   onDraftChange,
   onSubmit,
   onCancel,
-}: ComposerBoxesProps) {
+}: Readonly<
+  Pick<
+    ComposerBoxesProps,
+    'sourceRef' | 'composerRef' | 'draft' | 'onDraftChange' | 'onSubmit' | 'onCancel'
+  >
+>) {
   const { t } = useTranslation();
 
-  if (flight !== null) {
-    const { from, to } = flight;
+  // Enter sends and Shift+Enter breaks the line, as the export does.
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Escape') {
+      onCancel();
+      return;
+    }
 
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      onSubmit();
+    }
+  };
+
+  return (
+    <div
+      ref={sourceRef}
+      data-composer-keep=""
+      className="mx-bubble-inset max-w-bubble rounded-bubble-self border border-border-card bg-surface-card shadow-xl"
+    >
+      <Textarea
+        ref={composerRef}
+        rows={3}
+        value={draft}
+        onChange={(event) => onDraftChange(event.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={t('conversation.placeholder')}
+        className="px-4 pb-2 pt-4"
+      />
+    </div>
+  );
+}
+
+/**
+ * The two boxes above the mic and keyboard buttons, and the dots box that
+ * replaces either one on send and flies to the chat stack.
+ */
+export function ComposerBoxes(props: Readonly<ComposerBoxesProps>) {
+  const { bottom, flight, sourceRef, recording, levels, elapsedSeconds, typing } = props;
+
+  if (flight !== null) {
     return (
       <Slot bottom={bottom} offset={OFFSET[flight.kind]}>
-        <div
-          className={cn(
-            'send-flight ms-bubble-inset me-bubble-gutter rounded-bubble-self border border-border-card bg-surface-card p-4',
-            // The lift goes as it lands, so it settles flush with the bubble.
-            to === null && 'shadow-xl'
-          )}
-          style={{
-            width: to?.width ?? from.width,
-            height: to?.height ?? from.height,
-            transform: to?.transform,
-            opacity: to === null ? 1 : 0,
-          }}
-        >
-          <TypingDots />
-        </div>
+        <FlightBox flight={flight} />
       </Slot>
     );
   }
@@ -88,48 +144,14 @@ export function ComposerBoxes({
 
   return (
     <Slot bottom={bottom} offset={OFFSET.typing}>
-      <div
-        ref={sourceRef}
-        data-composer-keep=""
-        className="mx-bubble-inset max-w-bubble rounded-bubble-self border border-border-card bg-surface-card shadow-xl"
-      >
-        <Textarea
-          ref={composerRef}
-          rows={3}
-          value={draft}
-          onChange={(event) => onDraftChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              onSubmit();
-            }
-            if (event.key === 'Escape') {
-              onCancel();
-            }
-          }}
-          placeholder={t('conversation.placeholder')}
-          className="px-4 pb-2 pt-4"
-        />
-      </div>
+      <DraftBox
+        sourceRef={sourceRef}
+        composerRef={props.composerRef}
+        draft={props.draft}
+        onDraftChange={props.onDraftChange}
+        onSubmit={props.onSubmit}
+        onCancel={props.onCancel}
+      />
     </Slot>
-  );
-}
-
-function Slot({
-  bottom,
-  offset,
-  children,
-}: {
-  bottom: string;
-  offset: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className={cn('absolute inset-x-0 transition-[bottom] duration-300')}
-      style={{ bottom: `calc(${bottom} + ${offset})` }}
-    >
-      {children}
-    </div>
   );
 }

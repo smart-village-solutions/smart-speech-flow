@@ -383,11 +383,70 @@ jobs:
           --quiet > fallow-audit.json || true
         jq -e '.verdict != "fail"' fallow-audit.json
 
+  # Job 6b: Frontend test, lint and build
+  frontend-checks:
+    name: Frontend Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Detect frontend changes
+      id: frontend-changes
+      run: |
+        if [ "${{ github.event_name }}" != "pull_request" ]; then
+          echo "frontend_changed=true" >> "$GITHUB_OUTPUT"
+        elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -q '^services/frontend/'; then
+          echo "frontend_changed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "frontend_changed=false" >> "$GITHUB_OUTPUT"
+          echo "No frontend changes detected; skipping frontend checks."
+        fi
+
+    - name: Setup Node.js
+      if: steps.frontend-changes.outputs.frontend_changed == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: services/frontend/package-lock.json
+
+    - name: Install frontend dependencies
+      if: steps.frontend-changes.outputs.frontend_changed == 'true'
+      working-directory: services/frontend
+      run: npm ci
+
+    - name: Lint
+      if: steps.frontend-changes.outputs.frontend_changed == 'true'
+      working-directory: services/frontend
+      run: npm run lint
+
+    - name: Test
+      if: steps.frontend-changes.outputs.frontend_changed == 'true'
+      working-directory: services/frontend
+      run: npm test -- --run
+
+    - name: Build
+      if: steps.frontend-changes.outputs.frontend_changed == 'true'
+      working-directory: services/frontend
+      run: npm run build
+
+    # Asserts the legacy Tailwind v3 values still reach the built CSS, so the
+    # untouched /admin and /customer pages cannot be restyled by accident.
+    - name: Design tokens survive the build
+      if: steps.frontend-changes.outputs.frontend_changed == 'true'
+      working-directory: services/frontend
+      run: bash scripts/check-tokens.sh
+
   # Job 7: Quality Gate Evaluation
   quality-gate:
     name: Quality Gate
     runs-on: ubuntu-latest
-    needs: [code-quality, security-analysis, sonar-analysis, fallow-analysis]
+    needs: [code-quality, security-analysis, sonar-analysis, fallow-analysis, frontend-checks]
     if: always()
 
     steps:
@@ -398,12 +457,14 @@ jobs:
         SONAR_RESULT="${{ needs.sonar-analysis.result }}"
         SONAR_ENABLED="${{ needs.sonar-analysis.outputs.enabled }}"
         FALLOW_RESULT="${{ needs.fallow-analysis.result }}"
+        FRONTEND_RESULT="${{ needs.frontend-checks.result }}"
 
         echo "Code Quality Result: $CODE_QUALITY_RESULT"
         echo "Security Analysis Result: $SECURITY_RESULT"
         echo "Sonar Result: $SONAR_RESULT"
         echo "Sonar Enabled: $SONAR_ENABLED"
         echo "Fallow Result: $FALLOW_RESULT"
+        echo "Frontend Result: $FRONTEND_RESULT"
 
         # Sonar is blocking once configured; missing secrets/vars keep the job skipped.
         if [ "$SONAR_RESULT" = "failure" ]; then
@@ -413,6 +474,12 @@ jobs:
 
         if [ "$FALLOW_RESULT" = "failure" ]; then
           echo "❌ Fallow frontend audit failed"
+          exit 1
+        fi
+
+        # The frontend suite is blocking: a red test, lint or build must not merge.
+        if [ "$FRONTEND_RESULT" = "failure" ]; then
+          echo "❌ Frontend test, lint or build failed"
           exit 1
         fi
 
@@ -430,7 +497,7 @@ jobs:
   quality-summary:
     name: Quality Summary
     runs-on: ubuntu-latest
-    needs: [code-quality, security-analysis, type-checking, dependency-analysis, sonar-analysis, fallow-analysis, quality-gate]
+    needs: [code-quality, security-analysis, type-checking, dependency-analysis, sonar-analysis, fallow-analysis, frontend-checks, quality-gate]
     if: always()
 
     steps:
@@ -477,6 +544,15 @@ jobs:
           echo "| Fallow | ❌ Failed | Changed frontend files introduced fallow findings |" >> $GITHUB_STEP_SUMMARY
         else
           echo "| Fallow | ⚠️ Incomplete | Check fallow job logs |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # Frontend
+        if [ "${{ needs.frontend-checks.result }}" == "success" ]; then
+          echo "| Frontend | ✅ Passed | Lint, tests, build and design tokens |" >> $GITHUB_STEP_SUMMARY
+        elif [ "${{ needs.frontend-checks.result }}" == "failure" ]; then
+          echo "| Frontend | ❌ Failed | Check frontend job logs |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Frontend | ⚠️ Incomplete | Check frontend job logs |" >> $GITHUB_STEP_SUMMARY
         fi
 
         # Type Checking (optional)

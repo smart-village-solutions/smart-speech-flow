@@ -16,8 +16,7 @@ export function useKeyboardOffset(): number {
     }
 
     const update = () => {
-      const next = window.innerHeight - viewport.height - viewport.offsetTop;
-      setOffset(next > 0 ? next : 0);
+      setOffset(Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop));
     };
 
     viewport.addEventListener('resize', update);

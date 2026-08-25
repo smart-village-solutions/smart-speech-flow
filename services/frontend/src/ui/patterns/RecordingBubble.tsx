@@ -30,7 +30,7 @@ export function RecordingBubble({
   className,
   style,
   ref,
-}: RecordingBubbleProps) {
+}: Readonly<RecordingBubbleProps>) {
   return (
     <div
       ref={ref}
