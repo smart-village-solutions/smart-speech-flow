@@ -32,12 +32,18 @@
 - Session metadata
 - Circuit breaker states
 
-### 3. System Configuration (Weekly)
+### 3. ClickHouse Analytics Data (Before Upgrade and Schema Changes)
+- Logical, compressed exports of approved analytics tables only
+- Restore verification into a temporary database before any production restore
+- Archive metadata: image version, table, UTC timestamp, checksum, and restore result
+- Never include credentials, audio, transcripts, translations, or other content data
+
+### 4. System Configuration (Weekly)
 - Docker volumes
 - Traefik certificates
 - Alert rules & monitoring configs
 
-### 4. Models (One-time + updates)
+### 5. Models (One-time + updates)
 - ASR models
 - Translation models
 - TTS models
@@ -117,6 +123,11 @@
 ---
 
 ## Backup Scripts
+
+ClickHouse exports are table-specific and begin only after the future telemetry
+schema is approved. Use the [ClickHouse Operations Runbook](../operations/runbooks/clickhouse-operations.md)
+for the export and temporary-restore procedure; include the resulting encrypted
+archive in the existing retention rotation.
 
 ### 1. Daily Backup Script
 ```bash

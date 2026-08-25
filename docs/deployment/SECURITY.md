@@ -33,6 +33,7 @@ The following services are now **only accessible within Docker network** (not ex
 | Loki | 3100 (public) | `expose: 3100` (internal) | Via Grafana |
 | cAdvisor | 8080 (public) | `expose: 8080` (internal) | Via Prometheus |
 | Ollama | 11434 (public) | `expose: 11434` (internal) | Via API Gateway |
+| ClickHouse | 8123 (public) | `expose: 8123` (internal) | Via authenticated Compose exec only |
 
 **Benefits:**
 - ✅ No direct public access to metrics
@@ -53,6 +54,8 @@ The following services are now **only accessible within Docker network** (not ex
 - [ ] Generate strong Grafana password: `openssl rand -base64 32`
 - [ ] Set `GRAFANA_ADMIN_PASSWORD` in `.env`
 - [ ] Verify `GRAFANA_ADMIN_USER` (default: `admin`)
+- [ ] Generate a ClickHouse password: `openssl rand -base64 32`
+- [ ] Set `CLICKHOUSE_DB`, `CLICKHOUSE_USER`, and `CLICKHOUSE_PASSWORD` in `.env`
 - [ ] Review all other environment variables in `.env`
 
 ### Security Verification
@@ -63,6 +66,7 @@ docker compose config | grep -A 5 "prometheus:"
 docker compose config | grep -A 5 "loki:"
 docker compose config | grep -A 5 "cadvisor:"
 docker compose config | grep -A 5 "ollama:"
+docker compose config | grep -A 20 "clickhouse:"
 
 # 2. Verify Grafana uses environment variables
 docker compose config | grep -A 10 "grafana:" | grep GRAFANA
@@ -109,17 +113,23 @@ curl -u "admin:YOUR_PASSWORD" http://localhost:3000/api/health
 - All monitoring services communicate internally via Docker network
 - Grafana accesses Prometheus/Loki via internal DNS (`prometheus:9090`, `loki:3100`)
 - API Gateway accesses Ollama via internal DNS (`ollama:11434`)
+- ClickHouse is internal-only on `clickhouse:8123`; it has no `ports` entry,
+  no Traefik labels, and no public SQL UI. Its credentials are required through
+  `.env`; never enable `CLICKHOUSE_SKIP_USER_SETUP`.
+
+For start-up, verification, backup, restore, upgrade, rollback, and incident
+procedures, see the [ClickHouse Operations Runbook](../operations/runbooks/clickhouse-operations.md).
 
 ## Default Passwords
 
-### ⚠️ Frontend Demo Password
+### ⚠️ Frontend Demo Access Code
 
-The frontend uses a demo password for the landing page:
-- **Configuration:** Set in `.env` → `FRONTEND_DEMO_PASSWORD`
+The frontend uses a client-visible demo access code for the landing page:
+- **Configuration:** Set in `.env` using the legacy variable name `FRONTEND_DEMO_PASSWORD`
 - **Default:** `ssf2025kassel`
-- **Docker:** Passed via `docker-compose.yml` → `VITE_APP_PASSWORD`
-- **Security:** Client-side only, no backend validation
-- **Production:** Change password in `.env` file
+- **Docker:** `FRONTEND_DEMO_PASSWORD` is mapped to the intentionally public `VITE_DEMO_ACCESS_CODE` build argument and then embedded in the browser bundle
+- **Security:** Client-side only, with no backend validation; never treat it as authentication or authorization
+- **Production:** Customize it if desired, but enforce access restrictions through server-side authentication
 
 ### ✅ Grafana Admin Password
 

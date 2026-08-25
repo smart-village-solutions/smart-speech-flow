@@ -1,0 +1,462 @@
+{
+  "meta": {
+    "version": "1.4.1",
+    "updatedAt": "2026-08-09",
+    "source": "docs/local-notes/konzept.md (Leistungskonzept KasselDIALOG); Kundenplanung mit Mehrorganisationsbetrieb ab 2026-10"
+  },
+  "statusModel": {
+    "idea": 0,
+    "commissioned": 0,
+    "planned": 10,
+    "prototype": 20,
+    "implementation": 45,
+    "optimization": 70,
+    "testing": 80,
+    "acceptance": 90,
+    "done": 100
+  },
+  "healthModel": ["on_track", "needs_attention", "at_risk", "blocked"],
+  "priorityModel": {
+    "must": "1: Muss sein",
+    "replacement_required": "2: Notwendig für die Ablösung des Alt-Systems",
+    "valuable": "3: Neu, aber sehr sinnvoll",
+    "requested": "4: Neu und gewünscht",
+    "funded_optional": "5: Nicht so wichtig, aber finanziert",
+    "unfunded_nice_to_have": "6: Nice to have, noch ohne Finanzierung",
+    "irrelevant": "7: Irrelevant"
+  },
+  "milestones": [
+    {
+      "id": "M1",
+      "title": "Grundlagen & UI-Prototyp (Deadline: 13.08.2026)",
+      "plannedEffortPt": 20,
+      "sortOrder": 1,
+      "workPackages": [
+        {
+          "id": "WP-001",
+          "complexity": "medium",
+          "title": "Allgemeine Server-Aktualisierung",
+          "area": "Betrieb und Infrastruktur",
+          "priority": "must",
+          "effortPt": 3,
+          "status": "done",
+          "health": "on_track",
+          "dependsOn": [],
+          "acceptanceCriteria": ["Der aktualisierte Serverstand ist erfolgreich in Betrieb genommen."],
+          "featureSummary": "Der technische Ausgangsstand für die weitere Entwicklung ist aktualisiert."
+        },
+        {
+          "id": "WP-002",
+          "complexity": "medium",
+          "title": "Recherche aktueller KI-Modelle",
+          "area": "KI-Qualität",
+          "priority": "valuable",
+          "effortPt": 3,
+          "status": "done",
+          "health": "on_track",
+          "dependsOn": [],
+          "acceptanceCriteria": ["Aktuellere Modelloptionen und ihre Eignung für SSF sind dokumentiert."],
+          "featureSummary": "Die weitere Modellauswahl kann auf einem aktuellen Markt- und Technologiestand aufbauen."
+        },
+        {
+          "id": "WP-003",
+          "complexity": "high",
+          "title": "Neuer UI-Prototyp",
+          "area": "Produktdesign",
+          "priority": "must",
+          "effortPt": 6,
+          "status": "prototype",
+          "health": "on_track",
+          "dependsOn": [],
+          "acceptanceCriteria": ["Ein demonstrierbarer UI-Prototyp liegt zum Kundenmeeting vor."],
+          "todos": ["Prototyp im Kundenmeeting vorstellen.", "Feedback und Änderungswünsche erfassen."],
+          "featureSummary": "Der Prototyp macht den geplanten Gesprächsfluss und die Bedienung vor dem Ausbau des Produktkerns sichtbar."
+        },
+        {
+          "id": "WP-013",
+          "complexity": "medium",
+          "title": "Rechtliche Prüfung durchführen",
+          "area": "Recht und Compliance",
+          "priority": "must",
+          "effortPt": 2,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": [],
+          "acceptanceCriteria": ["Die rechtliche Prüfung startet am 13.08.2026.", "Die Ergebnisse liegen voraussichtlich bis zum 27.08.2026 vor."],
+          "todos": ["Prüfungsumfang und Ansprechpartner festlegen.", "Rechtliche Prüfung begleiten.", "Ergebnisse und Auflagen dokumentieren."],
+          "featureSummary": "Die rechtliche Prüfung begleitet die technische Entwicklung parallel und schafft eine belastbare Grundlage für den späteren Regelbetrieb."
+        },
+        {
+          "id": "WP-018",
+          "complexity": "high",
+          "title": "Architektur-Review, Zielarchitektur und Migrationspfad",
+          "area": "Architektur und Produktreife",
+          "priority": "must",
+          "effortPt": 6,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-001"],
+          "acceptanceCriteria": ["Bestehende Komponenten, Schnittstellen und Betriebsartefakte sind bewertet.", "Zielarchitektur und Migrationspfad sind dokumentiert und abgestimmt."],
+          "todos": ["MVP-Architektur reviewen.", "Zielarchitektur dokumentieren.", "Migrationsrisiken und -schritte festlegen."],
+          "featureSummary": "Das Arbeitspaket schafft die abgestimmte technische Grundlage für die weitere Produktreifung und Nachnutzbarkeit."
+        }
+      ]
+    },
+    {
+      "id": "M2",
+      "title": "Gesprächs- und Audiofluss (Deadline: 20.08.2026)",
+      "plannedEffortPt": 46,
+      "sortOrder": 2,
+      "workPackages": [
+        {
+          "id": "WP-004",
+          "complexity": "very_high",
+          "title": "Gesprächsfluss stabilisieren",
+          "area": "Session und WebSocket",
+          "priority": "must",
+          "effortPt": 16,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-003"],
+          "acceptanceCriteria": ["Admin und Customer können ein Gespräch zuverlässig starten, führen und beenden.", "Kritische Session- und WebSocket-Pfade sind automatisiert getestet."],
+          "todos": ["Session-Erstellung, -Beitritt und -Beendigung vereinheitlichen.", "Nachrichtenfluss absichern.", "WebSocket-Reconnect und Cleanup stabilisieren.", "Verwaiste Sessions bereinigen."],
+          "featureSummary": "Der zentrale Gesprächsfluss funktioniert stabil in realen Nutzungssituationen."
+        },
+        {
+          "id": "WP-005",
+          "complexity": "high",
+          "title": "Audio-Verarbeitung robust machen",
+          "area": "Audio-Pipeline",
+          "priority": "must",
+          "effortPt": 14,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-004"],
+          "acceptanceCriteria": ["Fehlerhafte, unvollständige und zu große Audiodateien werden nachvollziehbar behandelt.", "Ausfälle in ASR-, Übersetzungs- und TTS-Pipeline führen zu klaren Fehlerzuständen."],
+          "todos": ["Audioeingaben und Formate validieren.", "Timeouts in der Pipeline abfangen.", "Verhalten bei Verbindungsabbrüchen verbessern.", "Audio-End-to-End-Tests ergänzen."],
+          "featureSummary": "Die Audio-Pipeline bleibt auch bei ungünstigen Eingaben und Netzsituationen zuverlässig."
+        },
+        {
+          "id": "WP-019",
+          "complexity": "high",
+          "title": "Barrierefreie und flexible Gesprächsoberflächen ausbauen",
+          "area": "Produktdesign und Barrierefreiheit",
+          "priority": "must",
+          "effortPt": 10,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-003", "WP-004"],
+          "acceptanceCriteria": ["Die Oberflächen unterstützen barrierearme Bedienung und verständliche Status- und Fehlermeldungen.", "Mobile und Ein-Gerät-Szenarien sind als nutzbare Varianten erprobt.", "Wiederholung, erneute Ausgabe und Recovery sind bedienbar."],
+          "todos": ["BITV-relevante Anforderungen prüfen.", "Mobile und Ein-Gerät-Szenario umsetzen.", "Sprachwahl und Gesprächseinrichtung vereinfachen.", "Interaktions- und Recovery-Muster testen."],
+          "featureSummary": "Die Gesprächsoberflächen werden für zeitkritische kommunale Beratungssituationen einfacher, zugänglicher und robuster."
+        },
+        {
+          "id": "WP-020",
+          "complexity": "medium",
+          "title": "Geforderte Sprach- und Einsatzprofile absichern",
+          "area": "KI-Qualität und Sprachunterstützung",
+          "priority": "must",
+          "effortPt": 6,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-002", "WP-005"],
+          "acceptanceCriteria": ["Deutsch, Englisch, Arabisch, Türkisch, Italienisch, Persisch, Russisch und Ukrainisch sind als Grundausbaustufe geprüft.", "Sprach- und Einsatzprofile sind konfigurierbar dokumentiert."],
+          "todos": ["Sprachprofile konfigurieren.", "Qualität je geforderter Sprache prüfen.", "Erweiterungsprozess für zusätzliche Sprachen dokumentieren."],
+          "featureSummary": "Die geforderte Sprachabdeckung wird nachvollziehbar geprüft und für weitere Einsatzkontexte konfigurierbar gemacht."
+        }
+      ]
+    },
+    {
+      "id": "M3",
+      "title": "Umbau weitgehend abschließen (Deadline: 27.08.2026)",
+      "plannedEffortPt": 46,
+      "sortOrder": 3,
+      "workPackages": [
+        {
+          "id": "WP-006",
+          "complexity": "medium",
+          "title": "Status, Fehlerbehandlung und Transparenz verbessern",
+          "area": "Produktverhalten und Monitoring",
+          "priority": "must",
+          "effortPt": 10,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-004", "WP-005"],
+          "acceptanceCriteria": ["Statusübergänge sind für beide Gesprächsrollen nachvollziehbar.", "Technische Fehler werden verständlich und handlungsorientiert kommuniziert."],
+          "todos": ["Einheitliches Zustandsmodell definieren.", "Statusübergänge sichtbar machen.", "Fehler im Monitoring sichtbar machen."],
+          "featureSummary": "Nutzende und Betriebsteam können Zustand und Fehlerursachen nachvollziehen."
+        },
+        {
+          "id": "WP-007",
+          "complexity": "high",
+          "title": "Kernmodule wartbar machen",
+          "area": "API-Gateway",
+          "priority": "must",
+          "effortPt": 12,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-004"],
+          "acceptanceCriteria": ["Kernverantwortlichkeiten sind klar getrennt.", "Refactorings sind durch Tests abgesichert."],
+          "todos": ["Technische Schulden priorisieren.", "Stark gekoppelte Module entkoppeln.", "Logging konsolidieren."],
+          "featureSummary": "Die Kernlogik des API-Gateways bleibt veränderbar und testbar."
+        },
+        {
+          "id": "WP-015",
+          "complexity": "high",
+          "title": "Mandantenmodell und Datenisolation konzipieren",
+          "area": "Mandantenfähigkeit",
+          "priority": "must",
+          "effortPt": 8,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-013"],
+          "acceptanceCriteria": ["Tenant-Kontext, Datenzugriffsgrenzen und Rollenmodell sind verbindlich definiert.", "Die rechtlichen Anforderungen sind im technischen Mandantenmodell berücksichtigt."],
+          "todos": ["Tenant-Identifikation und Lebenszyklus festlegen.", "Daten-, Session-, Audio- und Log-Isolation definieren.", "Rollen, Betreibergrenzen und Provisionierungskonzept festlegen."],
+          "featureSummary": "Das Mandantenmodell schafft die fachliche und technische Grundlage dafür, mehrere Organisationen sicher auf einer SSF-Instanz zu betreiben."
+        },
+        {
+          "id": "WP-021",
+          "complexity": "medium",
+          "title": "Schnittstellen, Deployment und Nachnutzung dokumentieren",
+          "area": "Integration und Open Source",
+          "priority": "must",
+          "effortPt": 6,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-007", "WP-018"],
+          "acceptanceCriteria": ["Schnittstellen, Datenflüsse und Integrationspunkte sind dokumentiert.", "Container-Bereitstellung und Deployment-Wege sind reproduzierbar beschrieben."],
+          "todos": ["API- und Datenflussdokumentation aktualisieren.", "Deployment- und Integrationsleitfäden erstellen.", "Nachnutzungsartefakte prüfen."],
+          "featureSummary": "KasselDIALOG wird für Fachverfahren, weitere Einrichtungen und kommunale Nachnutzung technisch nachvollziehbar."
+        },
+        {
+          "id": "WP-022",
+          "complexity": "very_high",
+          "title": "Skalierbarkeit und Belastungsgrenzen nachweisen",
+          "area": "Performance und Betrieb",
+          "priority": "must",
+          "effortPt": 10,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-004", "WP-005", "WP-007", "WP-016"],
+          "acceptanceCriteria": ["Last- und Performance-Tests decken mindestens 250 gleichzeitige Zugriffe ab.", "Monitoring, Kapazitätsbetrachtung und dokumentierte Betriebsplanung liegen vor."],
+          "todos": ["Last- und Chaos-Tests ergänzen.", "Kapazitätsgrenzen messen.", "Monitoring für Lastzustände vervollständigen.", "Betriebsplanung dokumentieren."],
+          "featureSummary": "Die Lösung weist ihre Belastbarkeit unter realistischen Mehrorganisations- und Lastbedingungen nach."
+        }
+      ]
+    },
+    {
+      "id": "M4",
+      "title": "Interne Optimierungsrunde (Deadline: 03.09.2026)",
+      "plannedEffortPt": 38,
+      "sortOrder": 4,
+      "workPackages": [
+        {
+          "id": "WP-008",
+          "complexity": "high",
+          "title": "Qualitätssicherung der kritischen Produktpfade",
+          "area": "Testautomatisierung",
+          "priority": "must",
+          "effortPt": 10,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-004", "WP-005", "WP-006", "WP-007"],
+          "acceptanceCriteria": ["Kritische End-to-End-Flows sind als Testfälle dokumentiert und automatisiert.", "Flaky Tests sind identifiziert und priorisiert."],
+          "todos": ["End-to-End-Flows definieren.", "Regressionstests ausbauen.", "Flaky Tests stabilisieren.", "Abnahmekriterien festlegen."],
+          "featureSummary": "Die wesentlichen Nutzerpfade sind regressionsgesichert."
+        },
+        {
+          "id": "WP-014",
+          "complexity": "medium",
+          "title": "Ergebnisse der rechtlichen Prüfung einarbeiten",
+          "area": "Recht und Compliance",
+          "priority": "must",
+          "effortPt": 4,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-013"],
+          "acceptanceCriteria": ["Rechtliche Ergebnisse und Auflagen sind bewertet.", "Notwendige Anpassungen sind umgesetzt oder als verbindliche Folgeaufgaben eingeplant."],
+          "todos": ["Prüfungsergebnisse auswerten.", "Auswirkungen auf Produkt, Betrieb und Kommunikation bewerten.", "Erforderliche Anpassungen umsetzen oder priorisieren."],
+          "featureSummary": "Die Erkenntnisse aus der zweiwöchigen Prüfung werden vor der öffentlichen Optimierungsrunde in Produkt und Betrieb überführt."
+        },
+        {
+          "id": "WP-016",
+          "complexity": "very_high",
+          "title": "Mandantenkontext und technische Isolation implementieren",
+          "area": "Mandantenfähigkeit",
+          "priority": "must",
+          "effortPt": 14,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-004", "WP-007", "WP-014", "WP-015"],
+          "acceptanceCriteria": ["Jede Anfrage wird einem eindeutigen Tenant-Kontext zugeordnet.", "Sessions, Nachrichten, Audiodaten, Konfigurationen und Protokolle können tenantübergreifend nicht gelesen oder verändert werden.", "Die Isolation ist durch automatisierte Tests nachgewiesen."],
+          "todos": ["Tenant-Kontext im Authentifizierungs- und Requestpfad verankern.", "Datenzugriffe und Speicherpfade tenant-sicher machen.", "Tenant-spezifische Konfigurationen und Berechtigungsprüfungen ergänzen.", "Isolations- und Negativtests implementieren."],
+          "featureSummary": "Dieses Arbeitspaket liefert die minimale technische Mandantenfähigkeit für einen sicheren Mehrorganisationsbetrieb."
+        },
+        {
+          "id": "WP-023",
+          "complexity": "high",
+          "title": "Datenschutz-, Sicherheits- und Betriebsnachweise vervollständigen",
+          "area": "Recht, Sicherheit und Betrieb",
+          "priority": "must",
+          "effortPt": 10,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-014", "WP-016"],
+          "acceptanceCriteria": ["Auditierbarkeit, Lösch- und Retentionspfade sowie Schutz sensibler Daten sind nachgewiesen.", "Update-, Rollback- und Migrationsverfahren sind dokumentiert und testbar."],
+          "todos": ["Audit- und Retentionsanforderungen umsetzen.", "Sicherheitsrelevante Monitoring- und Loggingpfade prüfen.", "Update-, Rollback- und Migrationsrunbooks vervollständigen."],
+          "featureSummary": "Die Plattform erhält die für kommunalen Betrieb notwendigen Datenschutz-, Sicherheits- und Betriebsnachweise."
+        }
+      ]
+    },
+    {
+      "id": "M5",
+      "title": "Interne Optimierung abschließen (Deadline: 10.09.2026)",
+      "plannedEffortPt": 40,
+      "sortOrder": 5,
+      "workPackages": [
+        {
+          "id": "WP-009",
+          "complexity": "medium",
+          "title": "Pilotierung und Nutzerforschung",
+          "area": "Produktvalidierung",
+          "priority": "valuable",
+          "effortPt": 8,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-004", "WP-005", "WP-006", "WP-008"],
+          "acceptanceCriteria": ["Reale oder realitätsnahe Nutzungsszenarien wurden getestet.", "Friktionen, Abbruchgründe und Anforderungen sind priorisiert dokumentiert."],
+          "todos": ["Gesprächsszenarien definieren.", "Nutzertests durchführen.", "Friktionen erfassen.", "Folge-Backlog erstellen."],
+          "featureSummary": "Produktentscheidungen basieren auf beobachteter Nutzung."
+        },
+        {
+          "id": "WP-010",
+          "complexity": "medium",
+          "title": "Modelle und Konfigurationen evaluieren",
+          "area": "KI-Qualität",
+          "priority": "valuable",
+          "effortPt": 8,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-002", "WP-005", "WP-008"],
+          "acceptanceCriteria": ["Vergleichsdaten für ASR, Übersetzung und TTS liegen vor.", "Eine begründete Baseline ist dokumentiert."],
+          "todos": ["Vergleichsszenarien festlegen.", "Qualitäts- und Stabilitätsdaten erfassen.", "Baselines festlegen.", "Entscheidungen dokumentieren."],
+          "featureSummary": "Die abgeschlossene Modellrecherche wird durch vergleichbare Produkt- und Betriebsdaten ergänzt."
+        },
+        {
+          "id": "WP-017",
+          "complexity": "high",
+          "title": "Mehrorganisations-Pilot und Tenant-Provisionierung",
+          "area": "Mandantenfähigkeit",
+          "priority": "must",
+          "effortPt": 10,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-014", "WP-015", "WP-016"],
+          "acceptanceCriteria": ["Mindestens zwei Organisationen können getrennt provisioniert und betrieben werden.", "Der Mehrorganisations-Pilot bestätigt die Tenant-Isolation und die administrativen Abläufe."],
+          "todos": ["Pilotorganisationen anlegen und konfigurieren.", "Tenant-spezifische Zugriffs- und Gesprächsflüsse testen.", "Betriebs- und Supportabläufe für mehrere Organisationen dokumentieren."],
+          "featureSummary": "Der Pilot überprüft vor der öffentlichen Optimierungsrunde, ob mehrere Organisationen SSF unabhängig und sicher nutzen können."
+        },
+        {
+          "id": "WP-024",
+          "complexity": "high",
+          "title": "Pilot im ersten Stadtteilzentrum durchführen",
+          "area": "Einführung und Produktvalidierung",
+          "priority": "must",
+          "effortPt": 6,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-009", "WP-016", "WP-023"],
+          "acceptanceCriteria": ["Ein priorisierter kommunaler Einsatzkontext ist vorbereitet und begleitet pilotiert.", "Nutzungserkenntnisse fließen in Produkt, Betrieb und Dokumentation ein."],
+          "todos": ["Pilotstandort vorbereiten.", "Admin- und Customer-Tests begleiten.", "Ergebnisse auswerten und priorisieren."],
+          "featureSummary": "Der erste Stadtteilzentrum-Pilot überprüft die technische und organisatorische Nutzbarkeit im kommunalen Alltag."
+        },
+        {
+          "id": "WP-025",
+          "complexity": "medium",
+          "title": "Schulungs-, Nutzungs- und Handover-Materialien erstellen",
+          "area": "Einführung und Dokumentation",
+          "priority": "must",
+          "effortPt": 8,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-021", "WP-024"],
+          "acceptanceCriteria": ["Tutorial, kompakte Bedienhinweise und Handover-Dokumentation liegen vor.", "Technische, betriebliche und nutzungsbezogene Dokumentation sind zielgruppengerecht verfügbar."],
+          "todos": ["Tutorial und Bedienhinweise erstellen.", "Betriebs- und Handover-Dokumentation erstellen.", "Schulungs- und Präsentationsmaterial vorbereiten."],
+          "featureSummary": "Einrichtungen können KasselDIALOG mit zugänglichen Materialien einführen, nutzen und an den Betrieb übergeben."
+        }
+      ]
+    },
+    {
+      "id": "M6",
+      "title": "Öffentliche Optimierungsrunde und Rollout-Vorbereitung (Deadline: Mitte September 2026)",
+      "plannedEffortPt": 20,
+      "sortOrder": 6,
+      "workPackages": [
+        {
+          "id": "WP-011",
+          "complexity": "medium",
+          "title": "Öffentliche Optimierungsrunde durchführen",
+          "area": "Produktvalidierung",
+          "priority": "valuable",
+          "effortPt": 8,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-009", "WP-010", "WP-017"],
+          "acceptanceCriteria": ["Die optimierte Lösung wird in öffentlichen oder realitätsnahen Nutzungsszenarien erprobt.", "Erkenntnisse und priorisierte Optimierungen sind dokumentiert."],
+          "todos": ["Teilnehmende und Szenarien festlegen.", "Öffentliche Optimierungsrunde durchführen.", "Feedback auswerten und priorisieren."],
+          "featureSummary": "Die zweite Optimierungsrunde überprüft die intern verfeinerte Lösung mit realem Nutzungskontext."
+        },
+        {
+          "id": "WP-026",
+          "complexity": "high",
+          "title": "Rollout für Stadtteile und Testkommunen vorbereiten",
+          "area": "Einführung und Betrieb",
+          "priority": "must",
+          "effortPt": 12,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-017", "WP-024", "WP-025"],
+          "acceptanceCriteria": ["Einführungs- und Betriebsplan für weitere Einrichtungen in den 23 Stadtteilen liegt vor.", "Bis zu drei Testkommunen mit jeweils einer Teststelle sind organisatorisch und technisch vorbereitet."],
+          "todos": ["Einführungsreihenfolge abstimmen.", "Organisationen provisionieren und vorbereiten.", "Schulungs- und Supportbedarf erfassen.", "Rollout-Checkliste erstellen."],
+          "featureSummary": "Der Rollout wird für die weiteren Stadtteile und Testkommunen organisatorisch und technisch vorbereitet."
+        }
+      ]
+    },
+    {
+      "id": "M7",
+      "title": "Regulärer Betrieb (Start: Oktober 2026)",
+      "plannedEffortPt": 30,
+      "sortOrder": 7,
+      "workPackages": [
+        {
+          "id": "WP-012",
+          "complexity": "high",
+          "title": "Regelbetrieb aufnehmen",
+          "area": "Betrieb und Produktübergabe",
+          "priority": "must",
+          "effortPt": 5,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-011", "WP-017"],
+          "acceptanceCriteria": ["Der Regelbetrieb für mehrere Organisationen ist organisatorisch und technisch vorbereitet.", "Verantwortlichkeiten, Supportwege und Monitoring sind tenantfähig geklärt."],
+          "todos": ["Betriebsfreigabe vorbereiten.", "Support- und Eskalationswege festlegen.", "Produktionsstart begleiten."],
+          "featureSummary": "Nach den Optimierungsrunden wird SSF in einen geregelten Betriebsmodus überführt."
+        },
+        {
+          "id": "WP-027",
+          "complexity": "very_high",
+          "title": "Rollout in Stadtteilen und Testkommunen begleiten",
+          "area": "Einführung und Betrieb",
+          "priority": "must",
+          "effortPt": 25,
+          "status": "planned",
+          "health": "on_track",
+          "dependsOn": ["WP-011", "WP-017", "WP-025", "WP-026"],
+          "acceptanceCriteria": ["Weitere Einrichtungen der 23 Stadtteile werden nach erfolgreichem Pilot eingeführt.", "Bis zu drei Testkommunen mit jeweils einer Teststelle sind in den Rollout einbezogen.", "Einführung, Betrieb und Support sind je Organisation nachvollziehbar übergeben."],
+          "todos": ["Rollout in der abgestimmten Reihenfolge durchführen.", "Einrichtungen und Testkommunen begleiten.", "Schulungen und Handover durchführen.", "Rollout-Erkenntnisse dokumentieren."],
+          "featureSummary": "Der geplante kommunale Einsatz wird vom ersten Pilot auf weitere Stadtteilkontexte und Testkommunen übertragen."
+        }
+      ]
+    }
+  ]
+}

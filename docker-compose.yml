@@ -184,6 +184,29 @@ services:
       - redis-data:/data
     restart: always
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.3.17.110
+    restart: always
+    expose:
+      - "8123"
+    environment:
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB:?set CLICKHOUSE_DB in .env}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:?set CLICKHOUSE_USER in .env}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?required}
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping | grep -qx 'Ok.'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   frontend-archive:
     build:
       context: ../ssf-frontend
@@ -201,10 +224,10 @@ services:
     build:
       context: ./services/frontend
       dockerfile: Dockerfile
-    environment:
-      - VITE_API_BASE_URL=https://ssf.smart-village.solutions
-      - VITE_WS_BASE_URL=wss://ssf.smart-village.solutions
-      - VITE_APP_PASSWORD=${FRONTEND_DEMO_PASSWORD:-ssf2025kassel}
+      args:
+        VITE_API_BASE_URL: https://ssf.smart-village.solutions
+        VITE_WS_BASE_URL: wss://ssf.smart-village.solutions
+        VITE_DEMO_ACCESS_CODE: ${FRONTEND_DEMO_PASSWORD:-ssf2025kassel}
     networks:
       - default
     labels:
@@ -345,3 +368,4 @@ volumes:
   redis-data:
   ollama-data:
   audio-data:
+  clickhouse-data:
