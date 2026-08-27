@@ -1,3 +1,4 @@
+import type { ClientRole } from '@/core/roles';
 import type { ChatMessage } from './message.types';
 
 export interface MessageDto {
@@ -40,15 +41,18 @@ function audioUrlFor(messageId: string): string {
 export type ResolveAudioUrl = (url: string) => string;
 
 /**
- * The gateway stores both halves of every message. The customer sees their own
- * words as spoken and the agent's words translated, so `sender` picks the half.
+ * The gateway stores both halves of every message: `original_text` is the
+ * sender's own words and `translated_text` the other side's language. So the
+ * reader sees their own turns as spoken and their counterpart's translated,
+ * whichever end they are — `sender === role` is the whole of it.
  */
 export function historyToChatMessages(
   dto: MessageHistoryDto,
-  resolveAudioUrl: ResolveAudioUrl
+  resolveAudioUrl: ResolveAudioUrl,
+  role: ClientRole
 ): ChatMessage[] {
   return dto.messages.map((message) => {
-    const isOwn = message.sender === 'customer';
+    const isOwn = message.sender === role;
 
     return {
       id: message.id,

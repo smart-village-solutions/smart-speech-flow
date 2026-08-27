@@ -1,0 +1,32 @@
+/* Keycloak chrome. This screen imitates the identity provider that replaces it,
+   so these three colours are deliberately outside the design system and are
+   deleted together with src/features/admin/AdminLoginScreen.tsx when the real
+   Keycloak login lands. Nothing else may reference them. */
+@theme {
+  --color-kc-chrome: #f0f2f5;
+  --color-kc-brand: #0d4a73;
+  --color-kc-badge: #6ab3d4;
+}
+
+/* The imitation is one light page in both themes, because the identity provider
+   it stands in for is its own site and will not follow the app's theme — the
+   export carries no t(theme, dark, light) pair anywhere in KeycloakScreen
+   (App.tsx:559-625).
+
+   The chrome above is theme-independent already. This pins the design-system
+   colours that the shared primitives inside the card read, so `TextField` paints
+   the export's dark ink on white rather than the app theme's. Without it, dark
+   mode puts --fg-strong (#fff) on the card's hardcoded white and the fields
+   become unreadable. Values are the export's own; the placeholder and the error
+   are recorded in SCREEN_SPECS "Admin login". */
+.kc-page {
+  --fg-strong: #111827;
+  --fg-body: #374151;
+  --fg-muted: #6b7280;
+  --fg-placeholder: #9ca3af;
+  --surface-field: #ffffff;
+  --border-card: #d1d5db;
+  --fg-status-alert: #b42318;
+  /* The focus ring is the provider's blue, not the tenant's accent. */
+  --ac: var(--color-kc-brand);
+}

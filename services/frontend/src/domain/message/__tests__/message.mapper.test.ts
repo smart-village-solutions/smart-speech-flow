@@ -34,7 +34,7 @@ describe('historyToChatMessages', () => {
   };
 
   it('shows the original text and no audio for the customer own message', () => {
-    const [own] = historyToChatMessages(dto, sameOrigin);
+    const [own] = historyToChatMessages(dto, sameOrigin, 'customer');
 
     expect(own).toEqual({
       id: 'm1',
@@ -49,7 +49,7 @@ describe('historyToChatMessages', () => {
   });
 
   it('shows the translated text and TTS audio for the agent message', () => {
-    const [, incoming] = historyToChatMessages(dto, sameOrigin);
+    const [, incoming] = historyToChatMessages(dto, sameOrigin, 'customer');
 
     expect(incoming).toEqual({
       id: 'm2',
@@ -69,7 +69,8 @@ describe('historyToChatMessages', () => {
         session_id: 'A1B2C3D4',
         messages: [{ ...dto.messages[1], audio_base64: null }],
       },
-      sameOrigin
+      sameOrigin,
+      'customer'
     );
 
     expect(incoming.audioUrl).toBeNull();
@@ -78,9 +79,50 @@ describe('historyToChatMessages', () => {
   // The deployed SPA and the gateway are on different hosts, so a relative
   // path is fetched from the SPA origin, where no audio exists.
   it('resolves history audio against the gateway origin', () => {
-    const [, incoming] = historyToChatMessages(dto, gatewayOrigin);
+    const [, incoming] = historyToChatMessages(dto, gatewayOrigin, 'customer');
 
     expect(incoming.audioUrl).toBe('https://ssf.example/api/audio/m2.wav');
+  });
+
+  it('reads the admin as the owner of their own messages', () => {
+    const [own, peer] = historyToChatMessages(
+      {
+        session_id: 'A1B2C3D4',
+        messages: [
+          {
+            id: 'm1',
+            sender: 'admin' as const,
+            original_text: 'Guten Tag',
+            translated_text: '\u0645\u0631\u062d\u0628\u0627',
+            audio_base64: null,
+            source_lang: 'de',
+            target_lang: 'ar',
+            timestamp: '2026-08-26T10:00:00+00:00',
+          },
+          {
+            id: 'm2',
+            sender: 'customer' as const,
+            original_text: '\u0645\u0631\u062d\u0628\u0627',
+            translated_text: 'Guten Tag',
+            audio_base64: 'AAAA',
+            source_lang: 'ar',
+            target_lang: 'de',
+            timestamp: '2026-08-26T10:01:00+00:00',
+          },
+        ],
+      },
+      sameOrigin,
+      'admin'
+    );
+
+    expect(own.origin).toBe('self');
+    expect(own.text).toBe('Guten Tag');
+    expect(own.audioUrl).toBeNull();
+
+    // The admin reads the customer's turn in German, and only a peer turn plays.
+    expect(peer.origin).toBe('peer');
+    expect(peer.text).toBe('Guten Tag');
+    expect(peer.audioUrl).not.toBeNull();
   });
 });
 

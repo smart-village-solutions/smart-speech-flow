@@ -1,4 +1,5 @@
 import { buildWebSocketUrl } from '@/utils/identifiers';
+import type { ClientRole } from '@/core/roles';
 import type { RealtimeEvent, RealtimeStatus, RealtimeTransport } from './realtime.port';
 
 /** The subset of WebSocket this transport uses, so tests can supply a fake. */
@@ -46,6 +47,7 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
 
   let socket: WebSocketLike | null = null;
   let sessionId: string | null = null;
+  let role: ClientRole | null = null;
   let status: RealtimeStatus = 'disconnected';
   let reconnectAttempts = 0;
   let intentionallyClosed = false;
@@ -94,7 +96,7 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
 
   function open(id: string): void {
     setStatus('connecting');
-    const next = createSocket(buildWebSocketUrl(wsBaseUrl, id, 'customer'));
+    const next = createSocket(buildWebSocketUrl(wsBaseUrl, id, role as ClientRole));
 
     // Close events arrive after the fact, so a socket this transport has since
     // replaced can still call back. Every handler answers for its own socket
@@ -161,7 +163,7 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
   }
 
   return {
-    connect(id) {
+    connect(id, clientRole) {
       // A socket still negotiating is a connection in progress, not an absent
       // one; opening a second would leak the first.
       if (socket !== null && (socket.readyState === OPEN || socket.readyState === CONNECTING)) {
@@ -170,6 +172,7 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
       intentionallyClosed = false;
       reconnectAttempts = 0;
       sessionId = id;
+      role = clientRole;
       open(id);
     },
 

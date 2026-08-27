@@ -21,14 +21,14 @@ describe('AppRoutes', () => {
     expect(await screen.findByPlaceholderText('Passwort')).toBeInTheDocument();
   });
 
-  it('sends an unauthenticated /admin visit to the password gate', async () => {
-    renderWithProviders(<AppRoutes />, { route: '/admin' });
+  it('sends an unauthenticated /legacy/admin visit to the password gate', async () => {
+    renderWithProviders(<AppRoutes />, { route: '/legacy/admin' });
 
     expect(await screen.findByPlaceholderText('Passwort')).toBeInTheDocument();
   });
 
-  it('lands on the admin page once the password gate accepts the password', async () => {
-    renderWithProviders(<AppRoutes />, { route: '/admin' });
+  it('lands on the legacy admin page once the password gate accepts the password', async () => {
+    renderWithProviders(<AppRoutes />, { route: '/legacy/admin' });
 
     await userEvent.type(await screen.findByPlaceholderText('Passwort'), 'ssf2025kassel');
     await userEvent.click(screen.getByRole('button', { name: 'Anmelden' }));

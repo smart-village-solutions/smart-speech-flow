@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { ArrowLeft, Home, Lightbulb, Moon, Sun } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { IconButton } from '@/ui/primitives/IconButton';
@@ -9,15 +10,22 @@ interface AppHeaderProps {
   onBack: () => void;
   onHome: () => void;
   onFeedback: () => void;
+  /** The admin header puts its user menu here, after the theme toggle. */
+  trailing?: ReactNode;
 }
 
-export function AppHeader({ onBack, onHome, onFeedback }: Readonly<AppHeaderProps>) {
+export function AppHeader({ onBack, onHome, onFeedback, trailing }: Readonly<AppHeaderProps>) {
   const { t } = useTranslation();
   const { theme, toggleTheme } = useTheme();
   const { brand, toggleBrand } = useBrand();
 
   return (
-    <header className="fixed inset-x-0 top-0 z-10 border-b border-border-header bg-surface-page">
+    // z-20, above the z-10 the status overlays use. `fixed` with a z-index makes
+    // this a stacking context, so the user menu's own z-50 is scoped inside the
+    // header and cannot lift it over a sibling: at an equal z-10 the overlay won
+    // on document order alone, and painted straight over the open menu. The
+    // header's z is therefore what decides it, not the menu's.
+    <header className="fixed inset-x-0 top-0 z-20 border-b border-border-header bg-surface-page">
       <div className="mx-auto flex h-header max-w-app items-center px-5">
         <div className="flex shrink-0 items-center gap-6">
           <button
@@ -58,6 +66,8 @@ export function AppHeader({ onBack, onHome, onFeedback }: Readonly<AppHeaderProp
               <Moon size={18} strokeWidth={2} />
             )}
           </IconButton>
+
+          {trailing}
         </div>
       </div>
     </header>

@@ -4,13 +4,21 @@ import { flagCodeFor } from './flags';
 
 interface FlagAvatarProps {
   language: Language;
-  size?: 'sm' | 'lg';
+  size?: '2xs' | 'xs' | 'sm' | 'lg';
   className?: string;
 }
 
+/** `2xs` is the session status pill, `xs` the session-list row. */
+const DIMENSION = {
+  '2xs': 'size-flag-pill',
+  xs: 'size-flag-row',
+  sm: 'size-10',
+  lg: 'size-flag-lg',
+} as const;
+
 export function FlagAvatar({ language, size = 'sm', className }: Readonly<FlagAvatarProps>) {
   const flagCode = flagCodeFor(language.code);
-  const dimension = size === 'sm' ? 'size-10' : 'size-flag-lg';
+  const dimension = DIMENSION[size];
 
   return (
     <div

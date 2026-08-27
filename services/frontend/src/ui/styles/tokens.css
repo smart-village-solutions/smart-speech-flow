@@ -2,6 +2,7 @@
 @import './fonts.css';
 @import './theme.css';
 @import './brand.css';
+@import './keycloak.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -70,6 +71,27 @@
   --spacing-mic-bottom: 40px;
   --container-app: 800px;
   --container-bubble: 500px;
+  /* A bubble's own width once both its inline margins are taken off, so an
+     audio bubble can be given a definite width without overflowing the stack.
+     Capped by --container-bubble, as every bubble is. */
+  --container-bubble-span: calc(
+    100% - var(--spacing-bubble-gutter) - var(--spacing-bubble-inset)
+  );
+  --container-menu: 288px;
+  --container-kc-card: 384px;
+  --spacing-menu-row: 44px;
+
+  /* Admin sessions, Phase 2. */
+  --spacing-code-lg: 64px;
+  --spacing-flag-row: 22px;
+  --container-invite: 500px;
+  --container-dialog: 400px;
+  --text-code-lg: 28px;
+  --text-overlay-title: 22px;
+  --spacing-admin-content: 128px;
+  --spacing-status-top: 80px;
+  --spacing-composer-lift: 40px;
+  --spacing-flag-pill: 16px;
 
   /* ── Static colours ── */
   --color-recording: #22c55e;
@@ -120,6 +142,14 @@
   --color-border-checkbox: var(--border-checkbox);
   --color-border-checkbox-hover: var(--border-checkbox-hover);
   --color-border-code-empty: var(--border-code-empty);
+
+  --color-status-ok: var(--status-ok);
+  --color-status-warn: var(--status-warn);
+  --color-status-down: var(--status-down);
+  --color-status-idle: var(--status-idle);
+  --color-fg-danger: var(--fg-danger);
+  --color-surface-danger-hover: var(--surface-danger-hover);
+  --color-qr-plate: var(--qr-plate);
 
   --color-accent: var(--ac);
   --color-accent-hover: var(--ac-hover);

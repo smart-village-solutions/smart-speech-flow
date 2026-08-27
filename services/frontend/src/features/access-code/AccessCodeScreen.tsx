@@ -92,6 +92,8 @@ export function AccessCodeScreen() {
           </p>
         )}
 
+        {/* The admin UI is the real one now; the legacy page lives on at
+            /legacy/admin for comparison. */}
         <Link
           to="/admin"
           className="mt-32 text-note font-normal tracking-link text-fg-link underline underline-offset-2 transition-colors duration-200 hover:text-fg-link-hover"

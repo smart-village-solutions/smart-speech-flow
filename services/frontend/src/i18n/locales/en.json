@@ -34,7 +34,7 @@
     "sendText": "Send text",
     "placeholder": "Type your message…",
     "play": "Play",
-    "replay": "Play again",
+    "pause": "Pause",
     "sendFailed": "That message could not be sent.",
     "notSent": "Not sent",
     "retry": "Retry",
@@ -81,5 +81,97 @@
     "validation": "That request could not be processed.",
     "server": "Something went wrong on our side.",
     "unknown": "Something went wrong."
+  },
+  "admin": {
+    "login": {
+      "tenant": "Smart Speech Flow",
+      "title": "Sign in",
+      "topBar": "Keycloak — Smart Speech Flow",
+      "email": "Email address",
+      "emailPlaceholder": "admin@example.com",
+      "password": "Password",
+      "passwordPlaceholder": "••••••••",
+      "submit": "Sign in",
+      "back": "Back to Smart Speech Flow",
+      "invalidEmail": "Please enter a valid email address.",
+      "invalidCredentials": "Invalid credentials."
+    },
+    "menu": {
+      "open": "User account",
+      "changePassword": "Change password",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm",
+      "changeEmail": "Change email address",
+      "newEmail": "New email address",
+      "save": "Save",
+      "signOut": "Sign out"
+    },
+    "dashboard": {
+      "welcome": {
+        "ssf": "Welcome to Smart Speech Flow",
+        "kassel": "Welcome to KasselDIALOG"
+      },
+      "intro": "Smart Speech Flow provides a virtual real-time interpreter. Start a new conversation to speak with someone in another language straight away — no waiting and no prior setup.",
+      "newSession": "Start a new conversation"
+    },
+    "load": {
+      "title": "System load",
+      "ok": "Sufficient capacity available",
+      "delayed": "Short waiting times are possible",
+      "unavailable": "No further conversations are possible right now",
+      "unknown": "System load unavailable"
+    },
+    "invite": {
+      "title": "New conversation",
+      "subtitle": "Share the code or the link with your counterpart",
+      "codeLabel": "Session code {{code}}",
+      "copyLink": "Copy link",
+      "copied": "Copied ✓",
+      "copyFailed": "Copying is not available",
+      "qr": "QR code",
+      "qrTitle": "QR code for the join link",
+      "waiting": "The conversation starts automatically as soon as your counterpart joins.",
+      "enterNow": "Go to the conversation",
+      "cancel": "Cancel",
+      "createFailed": "The conversation could not be created."
+    },
+    "confirm": {
+      "title": "End the running conversation?",
+      "body": "Starting a new conversation ends the running conversation {{id}}, for privacy reasons.",
+      "confirm": "Start anyway",
+      "cancel": "Cancel"
+    },
+    "sessions": {
+      "title": "Past conversations",
+      "empty": "No conversations yet.",
+      "loadFailed": "The conversation list could not be loaded.",
+      "today": "Today, {{time}}",
+      "yesterday": "Yesterday, {{time}}",
+      "on": "{{day}}, {{time}}",
+      "minutes": "{{count}} min",
+      "unknownLanguage": "Language pending",
+      "reenter": "Resume conversation {{id}}",
+      "status": {
+        "connected": "connected",
+        "open": "open",
+        "completed": "completed"
+      }
+    },
+    "session": {
+      "connection": {
+        "connected": "Connected",
+        "connecting": "Connecting …",
+        "interrupted": "Connection interrupted"
+      },
+      "terminate": "End conversation",
+      "terminateConfirm": {
+        "title": "End the conversation?",
+        "body": "Conversation {{id}} ends for both sides and cannot be resumed.",
+        "confirm": "End it",
+        "cancel": "Cancel"
+      },
+      "terminateFailed": "The conversation could not be ended.",
+      "backToDashboard": "Back to the overview"
+    }
   }
 }

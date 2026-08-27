@@ -1,5 +1,21 @@
 @import './ui/styles/tokens.css';
 
+/* Tailwind v3's preflight set `cursor: pointer` on buttons; v4 dropped it in
+   favour of the browser default, which is the arrow. Every button in the app
+   lost its pointer in the migration — the header icons, the session rows, the
+   dialogs, the composer. Restored here rather than as a utility on each button,
+   which is what v3 effectively did and what the mockup was built against.
+
+   `:not(:disabled)` keeps the arrow on a button that cannot be pressed. The
+   `cursor-not-allowed` utility still wins over this rule either way: utilities
+   are a later cascade layer than base. */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
 @layer utilities {
   @keyframes slide-in {
     from {

@@ -8,12 +8,14 @@ import { usePlayback } from '@/app/providers/playback';
 import { createFakeAudioPlayer } from '@/test/fakeAudioPlayer';
 
 function Probe() {
-  const { playingId, progress, enqueue, playNow, hold, release } = usePlayback();
+  const { playingId, progress, paused, enqueue, playNow, pause, resume, hold, release } =
+    usePlayback();
 
   return (
     <div>
       <span data-testid="playing">{playingId ?? 'none'}</span>
       <span data-testid="progress">{progress}</span>
+      <span data-testid="paused">{paused ? 'yes' : 'no'}</span>
       <button type="button" onClick={() => enqueue('a', '/a.wav')}>
         enqueue a
       </button>
@@ -25,6 +27,12 @@ function Probe() {
       </button>
       <button type="button" onClick={() => playNow('c', '/c.wav')}>
         play c
+      </button>
+      <button type="button" onClick={pause}>
+        pause
+      </button>
+      <button type="button" onClick={resume}>
+        resume
       </button>
       <button type="button" onClick={hold}>
         hold
@@ -44,6 +52,7 @@ function setup(children: ReactNode = <Probe />) {
 
 const click = (name: string) => userEvent.click(screen.getByRole('button', { name }));
 const playing = () => screen.getByTestId('playing').textContent;
+const paused = () => screen.getByTestId('paused').textContent;
 
 describe('PlaybackProvider', () => {
   it('plays an enqueued clip straight away when idle', async () => {
@@ -321,5 +330,66 @@ describe('usePlayback', () => {
     expect(() => render(<Probe />)).toThrow('usePlayback must be used inside a PlaybackProvider');
 
     quiet.mockRestore();
+  });
+
+  it('holds the clip and its progress across a pause, then carries on', async () => {
+    const player = setup();
+
+    await click('enqueue a');
+    await player.started();
+    await player.progress(0.4);
+
+    await click('pause');
+    expect(player.paused).toHaveBeenCalledTimes(1);
+    expect(paused()).toBe('yes');
+    // Still the playing clip: pausing is not stopping, and the waveform must
+    // stay where the listener left it rather than emptying.
+    expect(playing()).toBe('a');
+    expect(screen.getByTestId('progress').textContent).toBe('0.4');
+
+    await click('resume');
+    expect(player.resumed).toHaveBeenCalledTimes(1);
+    expect(paused()).toBe('no');
+    // A resume reuses the loaded clip; it is not a second play().
+    expect(player.played).toEqual(['/a.wav']);
+  });
+
+  it('ignores a resume when nothing was paused, and a pause when nothing plays', async () => {
+    const player = setup();
+
+    await click('resume');
+    await click('pause');
+
+    expect(player.resumed).not.toHaveBeenCalled();
+    expect(player.paused).not.toHaveBeenCalled();
+  });
+
+  // A pause must not stall the conversation. The clip someone stopped half way
+  // is worth less than speech arriving now, so an arrival takes the player.
+  it('lets a new arrival take over from a paused clip', async () => {
+    const player = setup();
+
+    await click('enqueue a');
+    await player.started();
+    await click('pause');
+
+    await click('enqueue b');
+    await player.started();
+
+    expect(player.played).toEqual(['/a.wav', '/b.wav']);
+    expect(playing()).toBe('b');
+    expect(paused()).toBe('no');
+  });
+
+  it('drops the pause when the conversation stops', async () => {
+    const player = setup();
+
+    await click('enqueue a');
+    await player.started();
+    await click('pause');
+    await click('hold');
+
+    expect(playing()).toBe('none');
+    expect(paused()).toBe('no');
   });
 });
