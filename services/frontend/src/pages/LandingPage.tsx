@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { SubmitEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
 
@@ -8,6 +8,8 @@ import { Footer } from '../components/Footer';
 const CORRECT_PASSWORD = import.meta.env.VITE_APP_PASSWORD || 'ssf2025kassel';
 
 export default function LandingPage() {
+  const location = useLocation();
+  const returnTo = (location.state as { from?: string } | null)?.from ?? null;
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(
@@ -24,6 +26,10 @@ export default function LandingPage() {
       setError('Ungültiges Passwort');
     }
   };
+
+  if (isAuthenticated && returnTo !== null) {
+    return <Navigate to={returnTo} replace />;
+  }
 
   if (isAuthenticated) {
     return (

@@ -206,6 +206,14 @@ export class AudioRecorderWithWAVConversion {
   }
 
   /**
+   * The live microphone stream, for callers that want to observe the input —
+   * a level meter driving the waveform, for instance. Null unless recording.
+   */
+  getStream(): MediaStream | null {
+    return this.stream;
+  }
+
+  /**
    * Stop audio recording
    * Triggers WAV conversion and cleanup
    */

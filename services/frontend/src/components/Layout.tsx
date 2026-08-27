@@ -9,7 +9,7 @@ export default function Layout({ children, showHeader = false }: Readonly<Layout
   return (
     <div className="min-h-screen bg-gray-50">
       {showHeader && (
-        <header className="bg-white border-b border-gray-200 shadow-sm">
+        <header className="bg-white border-b border-gray-200 shadow-xs">
           <div className="max-w-7xl mx-auto px-4 py-4">
             <h1 className="text-xl font-bold text-indigo-600">Smart Speech Flow</h1>
           </div>

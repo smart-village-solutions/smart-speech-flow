@@ -1,0 +1,85 @@
+{
+  "header": {
+    "back": "Back",
+    "home": "Home",
+    "feedback": "Feedback",
+    "theme": "Toggle theme",
+    "brand": "Switch brand"
+  },
+  "accessCode": {
+    "title": "Enter code",
+    "continue": "Continue",
+    "adminLogin": "Admin login",
+    "digitLabel": "Character {{position}}",
+    "notFound": "That code does not match an open session.",
+    "invalid": "Enter all eight characters."
+  },
+  "language": {
+    "title": "Choose your language",
+    "loadFailed": "The language list could not be loaded.",
+    "retry": "Try again"
+  },
+  "consent": {
+    "intro": "Smart Speech Flow is an automatic real-time language translation service designed to support conversations between people who speak different languages. The service runs exclusively on a dedicated private server.",
+    "howTo": "To start recording, tap the microphone button. You will then have 20 seconds to speak your input. You can also end the recording earlier with another tap. Alternatively, you can use the text input instead.",
+    "retention": "By default, audio and transcription data are processed only during the active session and are not retained afterwards. Once the conversation ends, the data is discarded automatically. You can report issues or share ideas for improvement at any time using the in-app feedback function.",
+    "optIn": "If you would like to help us improve Smart Speech Flow, you have the option to allow your conversation data to be stored for up to 180 days. This data may be used solely for analysis and quality improvement purposes within the Smart Speech Flow project.",
+    "checkbox": "I agree to the storage of my conversation data for up to 180 days for the purpose of improving Smart Speech Flow.",
+    "getStarted": "Get started"
+  },
+  "conversation": {
+    "record": "Record",
+    "sendRecording": "Send recording",
+    "openKeyboard": "Open keyboard",
+    "sendText": "Send text",
+    "placeholder": "Type your message…",
+    "play": "Play",
+    "replay": "Play again",
+    "sendFailed": "That message could not be sent.",
+    "notSent": "Not sent",
+    "retry": "Retry",
+    "micDenied": "Microphone access was declined. You can type your message instead.",
+    "reconnecting": "Reconnecting…",
+    "ended": "This conversation has ended."
+  },
+  "feedback": {
+    "title": "Share your feedback",
+    "close": "Close",
+    "quality": {
+      "label": "Translation quality",
+      "question": "How accurate were the translations?"
+    },
+    "performance": {
+      "label": "Performance",
+      "question": "How fast and responsive did the app feel?"
+    },
+    "usability": {
+      "label": "UI / UX",
+      "question": "How easy and pleasant was the interface to use?"
+    },
+    "nps": {
+      "label": "Recommendation",
+      "question": "How likely are you to recommend Smart Speech Flow to a colleague?",
+      "low": "Not at all likely",
+      "high": "Extremely likely",
+      "option": "Score {{score}}"
+    },
+    "improvements": {
+      "label": "Improvement ideas",
+      "question": "What would make Smart Speech Flow even better?",
+      "placeholder": "Your ideas, feature requests, or anything that bothered you…"
+    },
+    "stars": "{{count}} stars",
+    "submit": "Send feedback",
+    "thanksTitle": "Thank you!",
+    "thanksBody": "Your feedback helps us improve Smart Speech Flow for everyone."
+  },
+  "errors": {
+    "network": "No connection to the server.",
+    "timeout": "That took too long. Please try again.",
+    "notFound": "That was not found.",
+    "validation": "That request could not be processed.",
+    "server": "Something went wrong on our side.",
+    "unknown": "Something went wrong."
+  }
+}

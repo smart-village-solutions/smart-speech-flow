@@ -12,6 +12,10 @@ export default function MessageList({ showMetadata = false }: Readonly<MessageLi
   const containerRef = useRef<HTMLDivElement>(null);
   const previousMessageCountRef = useRef(0);
 
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (messages.length > previousMessageCountRef.current) {
@@ -19,10 +23,6 @@ export default function MessageList({ showMetadata = false }: Readonly<MessageLi
     }
     previousMessageCountRef.current = messages.length;
   }, [messages.length]);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
 
   if (messages.length === 0) {
     return (

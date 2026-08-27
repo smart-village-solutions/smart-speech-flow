@@ -1,0 +1,131 @@
+@import 'tailwindcss';
+@import './fonts.css';
+@import './theme.css';
+@import './brand.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* ── Legacy Tailwind v3 theme, preserved for /legacy, /admin, /customer ── */
+  --color-primary: #00a99d;
+  --color-primary-dark: #0a2342;
+  --color-background: #f8f8f8;
+  --color-text: #333333;
+  --radius-card: 12px;
+  --radius-card-lg: 16px;
+  --shadow-card: 0 4px 16px rgb(0 0 0 / 0.08);
+  --text-base: 18px;
+  --leading-relaxed: 1.6;
+  /* What the legacy pages actually rendered in: the v3 stack listed Inter
+     first, but no @font-face and no font link ever loaded it, so it fell
+     through to system-ui. Naming Inter here would restyle /admin. */
+  --font-legacy: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  --font-sans:
+    'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    sans-serif;
+
+  /* ── Type scale, exact px from the export ── */
+  --text-caption: 11px;
+  --text-meta: 12px;
+  --text-label: 13px;
+  --text-note: 14px;
+  --text-body: 15px;
+  --text-item: 16px;
+  --text-thanks: 17px;
+  --text-code: 18px;
+  --text-dots: 20px;
+  --text-title: 24px;
+
+  /* ── Line heights ── */
+  --leading-tight: 1.3;
+  --leading-snug: 1.5;
+  --leading-chat: 1.6;
+  --leading-prose: 1.65;
+
+  /* ── Letter spacing ── */
+  --tracking-title: 0.48px;
+  --tracking-code: 0.36px;
+  --tracking-item: 0.32px;
+  --tracking-back: 0.3px;
+  --tracking-link: 0.28px;
+  --tracking-meta: 0.24px;
+  --tracking-prose: 0.2px;
+  --tracking-button: 0.15px;
+
+  /* ── Radii ── */
+  --radius-box: 4px;
+  --radius-row: 8px;
+  --radius-bubble: 14px;
+  --radius-sheet: 24px;
+  --radius-pill: 360px;
+
+  /* ── Named sizes ── */
+  --spacing-header: 72px;
+  --spacing-code-w: 46px;
+  --spacing-code-h: 48px;
+  --spacing-flag-lg: 72px;
+  --spacing-bubble-inset: 16px;
+  --spacing-bubble-gutter: 46px;
+  --spacing-mic-bottom: 40px;
+  --container-app: 800px;
+  --container-bubble: 500px;
+
+  /* ── Static colours ── */
+  --color-recording: #22c55e;
+  --color-recording-hover: #16a34a;
+  --color-flag-ring: rgb(115 115 115 / 0.6);
+}
+
+@theme inline {
+  --color-surface-page: var(--surface-page);
+  --color-surface-card: var(--surface-card);
+  --color-surface-panel: var(--surface-panel);
+  --color-surface-scrim: var(--surface-scrim);
+  --color-surface-code-box: var(--surface-code-box);
+  --color-surface-handle: var(--surface-handle);
+  --color-surface-field: var(--surface-field);
+  --color-surface-nps: var(--surface-nps);
+  --color-surface-nps-hover: var(--surface-nps-hover);
+  --color-surface-disabled: var(--surface-disabled);
+  --color-surface-row-hover: var(--surface-row-hover);
+  --color-surface-row-active: var(--surface-row-active);
+  --color-surface-icon-hover: var(--surface-icon-hover);
+  --color-surface-wave-idle: var(--surface-wave-idle);
+  --color-surface-status: var(--surface-status);
+
+  --color-fg-strong: var(--fg-strong);
+  --color-fg-chat: var(--fg-chat);
+  --color-fg-body: var(--fg-body);
+  --color-fg-consent: var(--fg-consent);
+  --color-fg-consent-hover: var(--fg-consent-hover);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-status: var(--fg-status);
+  --color-fg-status-alert: var(--fg-status-alert);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-fg-icon: var(--fg-icon);
+  --color-fg-icon-close: var(--fg-icon-close);
+  --color-fg-link: var(--fg-link);
+  --color-fg-link-hover: var(--fg-link-hover);
+  --color-fg-placeholder: var(--fg-placeholder);
+  --color-fg-faint: var(--fg-faint);
+  --color-fg-disabled: var(--fg-disabled);
+
+  --color-border-header: var(--border-header);
+  --color-border-card: var(--border-card);
+  --color-border-status: var(--border-status);
+  --color-border-status-alert: var(--border-status-alert);
+  --color-border-divider: var(--border-divider);
+  --color-border-play: var(--border-play);
+  --color-border-checkbox: var(--border-checkbox);
+  --color-border-checkbox-hover: var(--border-checkbox-hover);
+  --color-border-code-empty: var(--border-code-empty);
+
+  --color-accent: var(--ac);
+  --color-accent-hover: var(--ac-hover);
+  --color-accent-on: var(--ac-on);
+  --color-accent-60: var(--ac-60);
+  --color-accent-40: var(--ac-40);
+  --color-accent-15: var(--ac-15);
+  --color-accent-10: var(--ac-10);
+}

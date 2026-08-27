@@ -1,0 +1,23 @@
+/* Brand accents. BrandProvider (Task 11) sets data-brand on <html>.
+   Source: BRAND_COLORS in the Figma export, App.tsx:26-29. */
+
+:root,
+html[data-brand='ssf'] {
+  --ac: #06b6d4;
+  --ac-hover: #22d3ee;
+  --ac-on: #083344;
+  --ac-60: #06b6d499;
+  --ac-40: #06b6d466;
+  --ac-15: #06b6d426;
+  --ac-10: #06b6d41a;
+}
+
+html[data-brand='kassel'] {
+  --ac: #2464a5;
+  --ac-hover: #2d79c7;
+  --ac-on: #ffffff;
+  --ac-60: #2464a599;
+  --ac-40: #2464a566;
+  --ac-15: #2464a526;
+  --ac-10: #2464a51a;
+}

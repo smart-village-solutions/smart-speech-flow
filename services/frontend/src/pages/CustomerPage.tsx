@@ -14,6 +14,19 @@ import { validatePathIdentifier } from '../utils/identifiers';
 
 type ViewMode = 'input' | 'language' | 'active';
 
+/** Used when the gateway cannot be reached; unchanged from the inline list. */
+const FALLBACK_LANGUAGES: Language[] = [
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'it', name: 'Italian' },
+  { code: 'tr', name: 'Turkish' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'ru', name: 'Russian' },
+  { code: 'pl', name: 'Polish' },
+  { code: 'uk', name: 'Ukrainian' },
+];
+
 export default function CustomerPage() {
   const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
@@ -32,11 +45,26 @@ export default function CustomerPage() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load languages on mount
+  // Load languages on mount. The result is dropped if the page goes first,
+  // which also keeps the state out of the effect body itself.
   useEffect(() => {
-    loadLanguages();
+    let cancelled = false;
+
+    CustomerService.getLanguages()
+      .then((langs) => {
+        if (!cancelled) setLanguages(langs);
+      })
+      .catch(() => {
+        console.error('Failed to load languages');
+        if (!cancelled) setLanguages(FALLBACK_LANGUAGES);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
+  // Resets the screen when the gateway ends the session under us.
   useEffect(() => {
     const sessionEndedWhileActive =
       viewMode === 'active' && !activeSessionId && !isActive;
@@ -45,6 +73,10 @@ export default function CustomerPage() {
       return;
     }
 
+    // The end arrives from outside React, over the socket, and the whole screen
+    // resets in one go. Left as it was: this is the untouched customer page,
+    // and the new UI handles termination in its own reducer.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setError('Diese Session wurde beendet. Bitte geben Sie eine neue Session-ID ein.');
     setViewMode('input');
     setSessionId('');
@@ -52,27 +84,6 @@ export default function CustomerPage() {
     setSessionIdError(null);
     setLoading(false);
   }, [activeSessionId, isActive, viewMode]);
-
-  const loadLanguages = async () => {
-    try {
-      const langs = await CustomerService.getLanguages();
-      setLanguages(langs);
-    } catch {
-      console.error('Failed to load languages');
-      // Fallback to hardcoded languages if API fails
-      setLanguages([
-        { code: 'en', name: 'English' },
-        { code: 'es', name: 'Spanish' },
-        { code: 'fr', name: 'French' },
-        { code: 'it', name: 'Italian' },
-        { code: 'tr', name: 'Turkish' },
-        { code: 'ar', name: 'Arabic' },
-        { code: 'ru', name: 'Russian' },
-        { code: 'pl', name: 'Polish' },
-        { code: 'uk', name: 'Ukrainian' },
-      ]);
-    }
-  };
 
   const handleSessionIdChange = (e: ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.toUpperCase();
