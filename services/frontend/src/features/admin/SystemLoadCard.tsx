@@ -5,9 +5,9 @@ import { useSystemLoad } from './useSystemLoad';
 
 /** The lamp is theme-independent by design; see SCREEN_SPECS "Traffic-light states". */
 const LAMP: Record<SystemLoadLevel, string> = {
-  ok: 'bg-status-ok shadow-[0_0_10px_var(--status-ok)]',
-  delayed: 'bg-status-warn shadow-[0_0_10px_var(--status-warn)]',
-  unavailable: 'bg-status-down shadow-[0_0_10px_var(--status-down)]',
+  ok: 'bg-status-ok shadow-lamp-ok',
+  delayed: 'bg-status-warn shadow-lamp-warn',
+  unavailable: 'bg-status-down shadow-lamp-down',
   unknown: 'bg-status-idle',
 };
 

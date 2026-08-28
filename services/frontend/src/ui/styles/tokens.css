@@ -93,6 +93,15 @@
   --spacing-composer-lift: 40px;
   --spacing-flag-pill: 16px;
 
+  /* The load lamp's glow. SCREEN_SPECS "Admin dashboard" gives it as the lamp's
+     own colour at 0.56 alpha, which the export writes as `${color}90`
+     (0x90 = 144, 144/255 = 0.565). Derived from the lamp tokens rather than
+     repeating the three hexes, so the glow cannot drift from the dot it
+     surrounds. Theme-independent for the same reason the lamps are. */
+  --shadow-lamp-ok: 0 0 10px color-mix(in srgb, var(--status-ok) 56%, transparent);
+  --shadow-lamp-warn: 0 0 10px color-mix(in srgb, var(--status-warn) 56%, transparent);
+  --shadow-lamp-down: 0 0 10px color-mix(in srgb, var(--status-down) 56%, transparent);
+
   /* ── Static colours ── */
   --color-recording: #22c55e;
   --color-recording-hover: #16a34a;
