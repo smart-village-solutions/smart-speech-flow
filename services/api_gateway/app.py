@@ -328,6 +328,7 @@ def setup_cors_for_websockets():
             "User-Agent",
             "Cache-Control",
             "Pragma",
+            "X-Correlation-Id",
             # WebSocket-specific headers
             "Upgrade",
             "Connection",

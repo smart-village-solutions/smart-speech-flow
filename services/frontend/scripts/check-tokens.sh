@@ -84,4 +84,69 @@ assert '--surface-card: #2a2a2a'
 assert '--ac: #06b6d4'
 assert '--ac: #2464a5'
 
+# Admin tokens. The lamp colours are asserted once, not per theme, because they
+# are deliberately theme-independent.
+assert '--status-ok: #22c55e'
+assert '--status-warn: #f59e0b'
+assert '--status-down: #ef4444'
+assert '--color-kc-brand: #0d4a73'
+
+# Phase 2 tokens. The QR plate and ink are asserted once rather than per theme,
+# because a dark-on-dark QR does not scan and they deliberately have no .dark
+# override. Lightning CSS shortens both to three digits on the way out, the same
+# normalisation the header of this script documents for --color-text.
+assert '--qr-plate: #fff'
+assert '--qr-ink: #111'
+assert '--spacing-code-lg: 64px'
+assert '--spacing-flag-row: 22px'
+assert '--container-invite: 500px'
+assert '--container-dialog: 400px'
+assert '--text-code-lg: 28px'
+assert '--text-overlay-title: 22px'
+
+# Phase 3 tokens.
+assert '--spacing-admin-content: 128px'
+assert '--spacing-status-top: 80px'
+assert '--spacing-composer-lift: 40px'
+assert '--spacing-flag-pill: 16px'
+
+# The Keycloak imitation stays light in both themes. Asserted because the failure
+# is invisible in the light theme: without these pins, dark mode paints
+# --fg-strong (#fff) onto the card's white and the fields become unreadable.
+assert '.kc-page'
+assert '--fg-strong: #111827'
+assert '--surface-field: #fff'
+assert '--border-card: #d1d5db'
+
+# Tailwind v4 dropped v3's preflight `button { cursor: pointer }`, so every
+# button in the app fell back to the browser default arrow. The needle is the
+# selector, not `cursor:pointer` on its own: that string already appears in the
+# bundle from a `cursor-pointer` utility elsewhere and would match with the base
+# rule gone.
+assert 'button:not(:disabled)'
+
+# The waveform has no idle track. It draws itself as the clip plays and stays
+# solid once heard, so an unplayed message shows an empty row — the export gets
+# that by painting unplayed bars the card's own colour in each theme, and this
+# says it plainly instead. Asserted because a grey track is the obvious thing to
+# reach for and looks deliberate: it was added on 2026-08-27 to fix an invisible
+# waveform, and the real fault was the bar width, not the colour.
+assert '--surface-wave-idle: transparent'
+
+wave_overrides=$(grep -oE '\-\-surface-wave-idle:[^;}]*' dist/assets/*.css | wc -l)
+[[ "$wave_overrides" -eq 1 ]] ||
+  fail "--surface-wave-idle is declared $wave_overrides times; the waveform has one colour in both themes"
+
+# The bars are all flex-1, so they add nothing to a bubble sized by its content:
+# without a width on the bubble the row collapses to its 49 gaps and every bar
+# is drawn zero pixels wide.
+#
+# This pair covers the token going missing, not the component dropping the
+# class: Tailwind scans the test files too, so `.w-bubble-span` is emitted from
+# MessageBubble.test.tsx whatever the component says. The component's own use of
+# it is held by that test instead — the two guards cover different halves and
+# neither is sufficient alone.
+assert '--container-bubble-span: calc(100% - var(--spacing-bubble-gutter) - var(--spacing-bubble-inset))'
+assert '.w-bubble-span{width:var(--container-bubble-span)}'
+
 echo "PASS: tokens present in built CSS"

@@ -65,6 +65,20 @@ describe('session repository', () => {
     expect(session.status).toBe('active');
     expect(session.customerLanguage).toBe('ar');
   });
+
+  it('reports activity as the role it is given', async () => {
+    let body: Record<string, unknown> = {};
+    server.use(
+      http.post('http://api.test/api/session/A1B2C3D4/activity', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ status: 'ok' });
+      })
+    );
+
+    await repository.reportActivity('A1B2C3D4', 'admin');
+
+    expect(body.client_type).toBe('admin');
+  });
 });
 
 describe('isJoinable', () => {

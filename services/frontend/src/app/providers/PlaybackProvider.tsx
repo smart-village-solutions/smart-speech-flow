@@ -38,6 +38,8 @@ export function PlaybackProvider({ children, player, clips }: Readonly<PlaybackP
       enqueue: queue.enqueue,
       playNow: queue.playNow,
       stop: queue.stop,
+      pause: queue.pause,
+      resume: queue.resume,
       hold: queue.hold,
       release: queue.release,
       clips: loader,

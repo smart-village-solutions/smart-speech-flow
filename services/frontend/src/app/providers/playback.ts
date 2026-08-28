@@ -7,12 +7,20 @@ export interface PlaybackContextValue {
   playingId: string | null;
   /** Progress of the playing clip, 0 to 1. Zero whenever nothing is playing. */
   progress: number;
+  /** True while the listener has paused the clip named by `playingId`. */
+  paused: boolean;
+  /** Clips heard through to the end; their waveforms stay solid. */
+  completedIds: ReadonlySet<string>;
   /** Autoplay an arriving message; waits its turn if something is playing. */
   enqueue: (id: string, url: string) => void;
   /** Play now, from the beginning, interrupting whatever is playing. */
   playNow: (id: string, url: string) => void;
   /** Silence now and drop anything waiting — used on leaving the conversation. */
   stop: () => void;
+  /** Hold the clip where it is; the waveform stays put. */
+  pause: () => void;
+  /** Carry on from where `pause` stopped. */
+  resume: () => void;
   /** Suspend playback while the microphone is open; arrivals still queue. */
   hold: () => void;
   /** Resume after a hold. */

@@ -77,14 +77,32 @@ afterEach(() => {
 describe('createWebSocketTransport', () => {
   it('builds the customer socket URL from the session id', () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
 
     expect(FakeSocket.instances[0].url).toBe('ws://api.test/ws/A1B2C3D4/customer');
   });
 
+  it('opens the admin socket on the admin path', () => {
+    const { transport } = makeTransport();
+    transport.connect('A1B2C3D4', 'admin');
+
+    expect(FakeSocket.instances[0].url).toBe('ws://api.test/ws/A1B2C3D4/admin');
+  });
+
+  it('keeps the role across a reconnect', () => {
+    const { transport } = makeTransport();
+    transport.connect('A1B2C3D4', 'admin');
+    FakeSocket.instances[0].open();
+    FakeSocket.instances[0].drop();
+    vi.advanceTimersByTime(1000);
+
+    expect(FakeSocket.instances).toHaveLength(2);
+    expect(FakeSocket.instances[1].url).toContain('/admin');
+  });
+
   it('reports connecting then connected', () => {
     const { transport, statuses } = makeTransport();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
 
     expect(statuses).toEqual(['connecting', 'connected']);
@@ -92,7 +110,7 @@ describe('createWebSocketTransport', () => {
 
   it('dispatches parsed events to subscribers', () => {
     const { transport, events } = makeTransport();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     FakeSocket.instances[0].receive({ role: 'receiver_message', text: 'hi' });
 
@@ -101,7 +119,7 @@ describe('createWebSocketTransport', () => {
 
   it('ignores payloads that are not valid JSON', () => {
     const { transport, events } = makeTransport();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     FakeSocket.instances[0].onmessage?.({ data: 'not json' });
 
@@ -114,7 +132,7 @@ describe('createWebSocketTransport', () => {
   // wording of these messages is load-bearing, not cosmetic.
   it('sends the heartbeat the gateway recognises, on the configured interval', () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     vi.advanceTimersByTime(30_000);
 
@@ -123,7 +141,7 @@ describe('createWebSocketTransport', () => {
 
   it('answers the gateway heartbeat ping at once, without waiting for the interval', () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     FakeSocket.instances[0].receive({ type: 'heartbeat_ping', timestamp: '2026-08-24T10:00:00Z' });
 
@@ -132,7 +150,7 @@ describe('createWebSocketTransport', () => {
 
   it('keeps heartbeat pings out of the conversation', () => {
     const { transport, events } = makeTransport();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     FakeSocket.instances[0].receive({ type: 'heartbeat_ping' });
 
@@ -141,7 +159,7 @@ describe('createWebSocketTransport', () => {
 
   it('reconnects after an unexpected close', () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     FakeSocket.instances[0].drop();
     vi.advanceTimersByTime(1000);
@@ -151,7 +169,7 @@ describe('createWebSocketTransport', () => {
 
   it('resets the attempt budget once a reconnect succeeds', () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
 
     // Four drops, each followed by a socket that opens successfully. Because a
@@ -168,7 +186,7 @@ describe('createWebSocketTransport', () => {
 
   it('stops reconnecting once the attempt budget is spent', () => {
     const { transport, statuses } = makeTransport();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
 
     // No socket opens after the first, so the failures are consecutive.
@@ -183,7 +201,7 @@ describe('createWebSocketTransport', () => {
 
   it('does not reconnect after an explicit disconnect', () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     transport.disconnect();
     FakeSocket.instances[0].drop(1000);
@@ -197,12 +215,12 @@ describe('createWebSocketTransport', () => {
   // is already open, and must not be mistaken for the live socket dropping.
   it('ignores the close of a socket it has already replaced', () => {
     const { transport, statuses } = makeTransport();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     const first = FakeSocket.instances[0];
     first.open();
 
     transport.disconnect();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     const second = FakeSocket.instances[1];
     second.open();
 
@@ -216,12 +234,12 @@ describe('createWebSocketTransport', () => {
 
   it('keeps the live socket beating when a replaced socket closes', () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     const first = FakeSocket.instances[0];
     first.open();
 
     transport.disconnect();
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     const second = FakeSocket.instances[1];
     second.open();
 
@@ -233,8 +251,8 @@ describe('createWebSocketTransport', () => {
 
   it('opens no second socket while the first is still connecting', () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4');
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
+    transport.connect('A1B2C3D4', 'customer');
 
     expect(FakeSocket.instances).toHaveLength(1);
   });
@@ -243,7 +261,7 @@ describe('createWebSocketTransport', () => {
     const { transport } = makeTransport();
     const seen: RealtimeEvent[] = [];
     const unsubscribe = transport.onEvent((event) => seen.push(event));
-    transport.connect('A1B2C3D4');
+    transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     unsubscribe();
     FakeSocket.instances[0].receive({ role: 'error' });

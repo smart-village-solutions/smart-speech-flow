@@ -5,6 +5,14 @@ export interface PlaybackState {
   playingId: string | null;
   /** Progress of the playing clip, 0 to 1. Zero whenever nothing is playing. */
   progress: number;
+  /** True while the listener has paused the clip named by `playingId`. */
+  paused: boolean;
+  /**
+   * Clips heard through to the end. Their waveforms stay solid rather than
+   * emptying, which is what the export does: on the last bar it stops the
+   * animation but keeps the bar count (export 1212).
+   */
+  completedIds: ReadonlySet<string>;
 }
 
 export interface PlaybackQueue {
@@ -14,6 +22,15 @@ export interface PlaybackQueue {
   playNow: (id: string, url: string) => void;
   /** Silence now and drop anything waiting. */
   stop: () => void;
+  /**
+   * Hold the current clip where it is. Distinct from `hold`, which belongs to
+   * the microphone: a pause keeps the clip playing-but-silent so the waveform
+   * stays where the listener stopped it, where a hold hands the clip back to
+   * the queue to be heard again in full.
+   */
+  pause: () => void;
+  /** Carry on from where `pause` stopped. */
+  resume: () => void;
   /**
    * Suspend playback while the microphone is open, so synthesised speech is
    * not recorded back. Arrivals still queue; the clip playing is silenced and
@@ -35,7 +52,9 @@ interface Clip {
   url: string;
 }
 
-const IDLE: PlaybackState = { playingId: null, progress: 0 };
+type Playing = Omit<PlaybackState, 'completedIds'>;
+
+const IDLE: Playing = { playingId: null, progress: 0, paused: false };
 
 /**
  * One clip at a time, for the whole conversation.
@@ -58,7 +77,7 @@ export function createPlaybackQueue(
   const queue: Clip[] = [];
   const heard = new Set<string>();
 
-  let state: PlaybackState = IDLE;
+  let state: PlaybackState = { ...IDLE, completedIds: new Set<string>() };
   let playing: Clip | null = null;
   let held = false;
   // Guards the async gap in play(): a clip interrupted while its promise is
@@ -70,8 +89,25 @@ export function createPlaybackQueue(
   // time and skip whatever was waiting behind it.
   let audible = false;
 
-  const emit = (next: PlaybackState) => {
-    state = next;
+  // Carried alongside every emit rather than passed in, so no caller has to
+  // remember it: the set changes only when a clip finishes or is played again.
+  let completedIds: ReadonlySet<string> = new Set<string>();
+
+  const setCompleted = (id: string, completed: boolean) => {
+    if (completedIds.has(id) === completed) {
+      return;
+    }
+    const next = new Set(completedIds);
+    if (completed) {
+      next.add(id);
+    } else {
+      next.delete(id);
+    }
+    completedIds = next;
+  };
+
+  const emit = (next: Playing) => {
+    state = { ...next, completedIds };
     for (const listener of listeners) {
       listener();
     }
@@ -80,9 +116,12 @@ export function createPlaybackQueue(
   const start = (clip: Clip) => {
     const era = (generation += 1);
     heard.add(clip.id);
+    // Playing it again draws the waveform afresh, so it must stop counting as
+    // heard in full until it is.
+    setCompleted(clip.id, false);
     playing = clip;
     audible = false;
-    emit({ playingId: clip.id, progress: 0 });
+    emit({ playingId: clip.id, progress: 0, paused: false });
 
     player.play(resolveUrl(clip.url)).then(
       () => {
@@ -122,6 +161,48 @@ export function createPlaybackQueue(
     emit(IDLE);
   };
 
+  const pause = () => {
+    if (state.playingId === null || state.paused) {
+      return;
+    }
+    // Pausing a clip whose play() has not settled yet rejects that promise with
+    // AbortError, which would otherwise reach start()'s rejection arm and
+    // advance past the very clip the listener just paused. Every other path
+    // into the player bumps the generation before calling it, for this reason.
+    generation += 1;
+    player.pause();
+    emit({ ...state, paused: true });
+  };
+
+  const resume = () => {
+    if (!state.paused) {
+      return;
+    }
+
+    const era = generation;
+    emit({ ...state, paused: false });
+
+    player.resume().then(
+      // Restores the invariant `pause` broke: the clip's original play() may
+      // have been aborted before it resolved, leaving `audible` false, and the
+      // error event relies on it to know whether a failure has already been
+      // dealt with by a rejection.
+      () => {
+        if (era === generation) {
+          audible = true;
+        }
+      },
+      // A resume can fail the same way a play can — a source that has since
+      // gone away. Treat it as the clip being over rather than leaving a button
+      // that says pause over silence.
+      () => {
+        if (era === generation) {
+          advance();
+        }
+      }
+    );
+  };
+
   const hold = () => {
     if (held) {
       return;
@@ -157,7 +238,15 @@ export function createPlaybackQueue(
     getState: () => state,
 
     connect() {
-      const offEnded = player.onEnded(advance);
+      const offEnded = player.onEnded(() => {
+        // Only a clip that reached its end is solid afterwards. A clip cut
+        // short — by the microphone, by a tap on another bubble — is not, and
+        // neither path comes through here.
+        if (playing !== null) {
+          setCompleted(playing.id, true);
+        }
+        advance();
+      });
       // Only a clip that actually started playing can fail this way; a source
       // that never loaded has already been dealt with by play()'s rejection.
       const offError = player.onError(() => {
@@ -196,7 +285,13 @@ export function createPlaybackQueue(
         return;
       }
 
-      if (state.playingId === null) {
+      // A paused clip must not stall the conversation: speech arriving now is
+      // worth more than a replay someone stopped half way, so the arrival takes
+      // the player rather than waiting behind a pause that may never be lifted.
+      if (state.playingId === null || state.paused) {
+        if (state.paused) {
+          player.stop();
+        }
         start({ id, url });
         return;
       }
@@ -221,6 +316,8 @@ export function createPlaybackQueue(
     },
 
     stop,
+    pause,
+    resume,
     hold,
     release,
   };

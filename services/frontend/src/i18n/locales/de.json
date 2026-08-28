@@ -34,7 +34,7 @@
     "sendText": "Text senden",
     "placeholder": "Nachricht eingeben…",
     "play": "Abspielen",
-    "replay": "Erneut abspielen",
+    "pause": "Pausieren",
     "sendFailed": "Diese Nachricht konnte nicht gesendet werden.",
     "notSent": "Nicht gesendet",
     "retry": "Erneut senden",
@@ -81,5 +81,97 @@
     "validation": "Diese Anfrage konnte nicht verarbeitet werden.",
     "server": "Auf unserer Seite ist etwas schiefgelaufen.",
     "unknown": "Etwas ist schiefgelaufen."
+  },
+  "admin": {
+    "login": {
+      "tenant": "Smart Speech Flow",
+      "title": "Anmelden",
+      "topBar": "Keycloak — Smart Speech Flow",
+      "email": "E-Mail-Adresse",
+      "emailPlaceholder": "admin@example.com",
+      "password": "Passwort",
+      "passwordPlaceholder": "••••••••",
+      "submit": "Anmelden",
+      "back": "Zurück zu Smart Speech Flow",
+      "invalidEmail": "Bitte eine gültige E-Mail-Adresse eingeben.",
+      "invalidCredentials": "Ungültige Anmeldedaten."
+    },
+    "menu": {
+      "open": "Benutzerkonto",
+      "changePassword": "Passwort ändern",
+      "newPassword": "Neues Passwort",
+      "confirmPassword": "Bestätigen",
+      "changeEmail": "E-Mail-Adresse ändern",
+      "newEmail": "Neue E-Mail-Adresse",
+      "save": "Speichern",
+      "signOut": "Abmelden"
+    },
+    "dashboard": {
+      "welcome": {
+        "ssf": "Willkommen bei Smart Speech Flow",
+        "kassel": "Willkommen bei KasselDIALOG"
+      },
+      "intro": "Smart Speech Flow stellt einen virtuellen Echtzeit-Dolmetscher bereit. Starten Sie ein neues Gespräch, um sofort mit einer anderssprachigen Person zu kommunizieren — ohne Wartezeit und ohne Vorkenntnisse.",
+      "newSession": "Neues Gespräch starten"
+    },
+    "load": {
+      "title": "Systemauslastung",
+      "ok": "Ausreichend Kapazitäten verfügbar",
+      "delayed": "Es kann zu kurzen Wartezeiten kommen",
+      "unavailable": "Derzeit sind keine weiteren Gespräche möglich",
+      "unknown": "Systemauslastung nicht abrufbar"
+    },
+    "invite": {
+      "title": "Neues Gespräch",
+      "subtitle": "Code oder Link mit dem Gesprächspartner teilen",
+      "codeLabel": "Sitzungscode {{code}}",
+      "copyLink": "Link kopieren",
+      "copied": "Kopiert ✓",
+      "copyFailed": "Kopieren nicht möglich",
+      "qr": "QR-Code",
+      "qrTitle": "QR-Code für den Beitrittslink",
+      "waiting": "Das Gespräch startet automatisch, sobald der Gesprächspartner beigetreten ist.",
+      "enterNow": "Zum Gespräch wechseln",
+      "cancel": "Abbrechen",
+      "createFailed": "Das Gespräch konnte nicht erstellt werden."
+    },
+    "confirm": {
+      "title": "Laufendes Gespräch beenden?",
+      "body": "Mit einem neuen Gespräch wird das laufende Gespräch {{id}} aus Datenschutzgründen beendet.",
+      "confirm": "Trotzdem starten",
+      "cancel": "Abbrechen"
+    },
+    "sessions": {
+      "title": "Vergangene Gespräche",
+      "empty": "Noch keine Gespräche.",
+      "loadFailed": "Die Gesprächsliste konnte nicht geladen werden.",
+      "today": "Heute, {{time}}",
+      "yesterday": "Gestern, {{time}}",
+      "on": "{{day}}, {{time}}",
+      "minutes": "{{count}} Min.",
+      "unknownLanguage": "Sprache offen",
+      "reenter": "Gespräch {{id}} fortsetzen",
+      "status": {
+        "connected": "verbunden",
+        "open": "offen",
+        "completed": "abgeschlossen"
+      }
+    },
+    "session": {
+      "connection": {
+        "connected": "Verbunden",
+        "connecting": "Verbindung wird hergestellt …",
+        "interrupted": "Verbindung unterbrochen"
+      },
+      "terminate": "Gespräch beenden",
+      "terminateConfirm": {
+        "title": "Gespräch beenden?",
+        "body": "Das Gespräch {{id}} wird für beide Seiten beendet und kann nicht fortgesetzt werden.",
+        "confirm": "Beenden",
+        "cancel": "Abbrechen"
+      },
+      "terminateFailed": "Das Gespräch konnte nicht beendet werden.",
+      "backToDashboard": "Zurück zur Übersicht"
+    }
   }
 }

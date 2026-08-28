@@ -34,7 +34,7 @@
     "sendText": "Metni gönder",
     "placeholder": "Mesajınızı yazın…",
     "play": "Oynat",
-    "replay": "Yeniden oynat",
+    "pause": "Duraklat",
     "sendFailed": "Bu mesaj gönderilemedi.",
     "notSent": "Gönderilmedi",
     "retry": "Tekrar dene",

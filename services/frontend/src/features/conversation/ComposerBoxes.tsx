@@ -94,7 +94,7 @@ function DraftBox({
   return (
     <div
       ref={sourceRef}
-      data-composer-keep=""
+      data-dismiss-keep=""
       className="mx-bubble-inset max-w-bubble rounded-bubble-self border border-border-card bg-surface-card shadow-xl"
     >
       <Textarea

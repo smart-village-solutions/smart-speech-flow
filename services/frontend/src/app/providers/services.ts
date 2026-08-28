@@ -13,6 +13,10 @@ import { createStubFeedbackSink } from '@/domain/feedback/StubFeedbackSink';
 import type { FeedbackSink } from '@/domain/feedback/feedback.port';
 import { createStubConsentSink } from '@/domain/consent/StubConsentSink';
 import type { ConsentSink } from '@/domain/consent/consent.port';
+import { createAdminRepository } from '@/domain/admin/admin.repository';
+import type { AdminRepository } from '@/domain/admin/admin.repository';
+import { createHealthRepository } from '@/domain/health/health.repository';
+import type { HealthRepository } from '@/domain/health/health.repository';
 import { createStaticBrandSource } from '@/domain/brand/StaticBrandSource';
 import type { BrandSource } from '@/domain/brand/brand.port';
 
@@ -21,6 +25,8 @@ export interface Services {
   session: SessionRepository;
   language: LanguageRepository;
   message: MessageRepository;
+  health: HealthRepository;
+  admin: AdminRepository;
   feedback: FeedbackSink;
   consent: ConsentSink;
   brand: BrandSource;
@@ -41,6 +47,8 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     }),
     feedback: createStubFeedbackSink(),
     consent: createStubConsentSink(),
+    health: createHealthRepository(http),
+    admin: createAdminRepository(http),
     brand: createStaticBrandSource(config.brand),
     createRealtime: () => createWebSocketTransport({ wsBaseUrl: config.wsBaseUrl }),
   };

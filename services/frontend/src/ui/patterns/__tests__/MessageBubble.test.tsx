@@ -96,32 +96,74 @@ describe('MessageBubble', () => {
     expect(screen.queryByRole('button', { name: 'Play' })).not.toBeInTheDocument();
   });
 
-  it('restarts the clip from the beginning every time the button is tapped', async () => {
+  it('turns into a pause button while its own clip is playing', async () => {
+    const player = createFakeAudioPlayer();
+    const { container } = renderWithProviders(<MessageBubble message={incoming} />, {
+      player: player.port,
+    });
+
+    expect(container.querySelector('[data-icon="play"]')).not.toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Play' }));
+    await player.started();
+
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+    expect(container.querySelector('[data-icon="pause"]')).not.toBeNull();
+
+    await player.end();
+
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
+    expect(container.querySelector('[data-icon="play"]')).not.toBeNull();
+  });
+
+  it('pauses where it stands and resumes from there, rather than restarting', async () => {
     const player = createFakeAudioPlayer();
     renderWithProviders(<MessageBubble message={incoming} />, { player: player.port });
 
     await userEvent.click(screen.getByRole('button', { name: 'Play' }));
     await player.started();
     await player.progress(0.5);
-    await userEvent.click(screen.getByRole('button', { name: 'Play again' }));
 
-    expect(player.played).toEqual(['/api/audio/m2.wav', '/api/audio/m2.wav']);
-  });
-
-  it('labels the button as a repeat only while its own clip plays', async () => {
-    const player = createFakeAudioPlayer();
-    renderWithProviders(<MessageBubble message={incoming} />, { player: player.port });
-
+    await userEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    expect(player.paused).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Play' }));
+    expect(player.resumed).toHaveBeenCalledTimes(1);
+    // A resume is not a fresh play: the clip was never loaded a second time.
+    expect(player.played).toEqual(['/api/audio/m2.wav']);
+  });
+
+  it('keeps the waveform where it was paused', async () => {
+    const player = createFakeAudioPlayer();
+    const { container } = renderWithProviders(<MessageBubble message={incoming} />, {
+      player: player.port,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Play' }));
     await player.started();
+    await player.progress(0.5);
+    await userEvent.click(screen.getByRole('button', { name: 'Pause' }));
 
-    expect(screen.getByRole('button', { name: 'Play again' })).toBeInTheDocument();
+    expect(container.querySelectorAll('.bg-accent').length).toBe(BAR_COUNT / 2);
+  });
 
-    await player.end();
+  it('starts a fresh clip rather than resuming when a different bubble is playing', async () => {
+    const player = createFakeAudioPlayer();
+    renderWithProviders(
+      <>
+        <MessageBubble message={incoming} />
+        <MessageBubble message={{ ...incoming, id: 'm3', audioUrl: '/api/audio/m3.wav' }} />
+      </>,
+      { player: player.port }
+    );
 
-    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
+    const [first, second] = screen.getAllByRole('button', { name: 'Play' });
+    await userEvent.click(first);
+    await player.started();
+    await userEvent.click(second as HTMLElement);
+
+    expect(player.played).toEqual(['/api/audio/m2.wav', '/api/audio/m3.wav']);
   });
 
   it('fills the waveform in step with playback progress', async () => {
@@ -139,9 +181,44 @@ describe('MessageBubble', () => {
 
     expect(filled()).toBe(BAR_COUNT / 2);
 
+    // A clip heard to the end leaves a solid waveform rather than emptying:
+    // the export stops its animation on the last bar and keeps the count.
     await player.end();
 
-    expect(filled()).toBe(0);
+    expect(filled()).toBe(BAR_COUNT);
+  });
+
+  it('shows no waveform at all until its clip has been played', () => {
+    const { container } = renderWithProviders(<MessageBubble message={incoming} />);
+
+    // There is no idle track behind the bars, so an unheard message draws an
+    // empty row — every slot holds its width and none of them is painted.
+    expect(container.querySelectorAll('.bg-accent')).toHaveLength(0);
+    const slots = container.querySelectorAll('[aria-hidden="true"] > div');
+    expect(slots).toHaveLength(BAR_COUNT);
+    expect([...slots].every((slot) => slot.className.includes('bg-surface-wave-idle'))).toBe(true);
+  });
+
+  it('empties the waveform again when a clip is cut short rather than ended', async () => {
+    const player = createFakeAudioPlayer();
+    const { container } = renderWithProviders(
+      <>
+        <MessageBubble message={incoming} />
+        <MessageBubble message={{ ...incoming, id: 'm3', audioUrl: '/api/audio/m3.wav' }} />
+      </>,
+      { player: player.port }
+    );
+
+    const [first, second] = screen.getAllByRole('button', { name: 'Play' });
+    await userEvent.click(first);
+    await player.started();
+    await player.progress(0.5);
+
+    // Interrupted at the half way mark, so it was never heard in full.
+    await userEvent.click(second as HTMLElement);
+    await player.started();
+
+    expect(container.querySelectorAll('.bg-accent')).toHaveLength(0);
   });
 
   it('leaves its waveform empty while a different bubble is the one playing', async () => {
@@ -197,5 +274,22 @@ describe('MessageBubble', () => {
     renderWithProviders(<MessageBubble message={own} />, { clips });
 
     expect(clips.loaded).toEqual([]);
+  });
+
+  // Measured in Chrome: with the bubble sized by `self-end` shrink-to-fit, the
+  // 50 flex-1 bars contribute nothing to its intrinsic width, so the row was
+  // just its 49 gaps and every bar came out 0.00px wide. Only bubbles whose
+  // text happened to be longer than the row showed a waveform at all, which is
+  // why bar width differed from bubble to bubble.
+  it('gives an audio bubble a definite width, so its bars cannot collapse', () => {
+    const { container: audioTree } = renderWithProviders(<MessageBubble message={incoming} />);
+    expect(audioTree.querySelector('.rounded-bubble-peer')).toHaveClass('w-bubble-span');
+
+    // A peer bubble with nothing to play still hugs its text.
+    const { container: textTree } = renderWithProviders(
+      <MessageBubble message={{ ...incoming, audioUrl: null }} />
+    );
+    expect(textTree.querySelector('.rounded-bubble-peer')).toHaveClass('self-end');
+    expect(textTree.querySelector('.rounded-bubble-peer')).not.toHaveClass('w-bubble-span');
   });
 });
