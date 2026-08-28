@@ -165,6 +165,11 @@ export function createPlaybackQueue(
     if (state.playingId === null || state.paused) {
       return;
     }
+    // Pausing a clip whose play() has not settled yet rejects that promise with
+    // AbortError, which would otherwise reach start()'s rejection arm and
+    // advance past the very clip the listener just paused. Every other path
+    // into the player bumps the generation before calling it, for this reason.
+    generation += 1;
     player.pause();
     emit({ ...state, paused: true });
   };
@@ -177,14 +182,25 @@ export function createPlaybackQueue(
     const era = generation;
     emit({ ...state, paused: false });
 
-    // A resume can fail the same way a play can — a source that has since gone
-    // away. Treat it as the clip being over rather than leaving a button that
-    // says pause over silence.
-    player.resume().catch(() => {
-      if (era === generation) {
-        advance();
+    player.resume().then(
+      // Restores the invariant `pause` broke: the clip's original play() may
+      // have been aborted before it resolved, leaving `audible` false, and the
+      // error event relies on it to know whether a failure has already been
+      // dealt with by a rejection.
+      () => {
+        if (era === generation) {
+          audible = true;
+        }
+      },
+      // A resume can fail the same way a play can — a source that has since
+      // gone away. Treat it as the clip being over rather than leaving a button
+      // that says pause over silence.
+      () => {
+        if (era === generation) {
+          advance();
+        }
       }
-    });
+    );
   };
 
   const hold = () => {

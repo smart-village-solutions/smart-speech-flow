@@ -364,6 +364,22 @@ describe('usePlayback', () => {
     expect(player.paused).not.toHaveBeenCalled();
   });
 
+  // Every other test here pauses a clip that is already audible. Pausing inside
+  // the load window is the case that regressed: a real element rejects the
+  // pending play() with AbortError, and the queue used to read that as the clip
+  // being over and advance past it, emptying the waveform of the clip the
+  // listener had just paused.
+  it('keeps a clip paused when pausing aborts its pending play', async () => {
+    const player = setup();
+
+    await click('enqueue a');
+    await click('pause');
+    await player.rejected('AbortError');
+
+    expect(playing()).toBe('a');
+    expect(paused()).toBe('yes');
+  });
+
   // A pause must not stall the conversation. The clip someone stopped half way
   // is worth less than speech arriving now, so an arrival takes the player.
   it('lets a new arrival take over from a paused clip', async () => {
