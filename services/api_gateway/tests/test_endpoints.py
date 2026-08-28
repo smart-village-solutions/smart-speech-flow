@@ -26,3 +26,19 @@ def test_public_languages_endpoint():
     assert "languages" in payload
     assert isinstance(payload["languages"], dict)
     assert "de" in payload["languages"]
+
+
+def test_cors_preflight_allows_correlation_id_from_customer_ui():
+    response = client.options(
+        "/api/session/D311FB67",
+        headers={
+            "Origin": "https://translate.smart-village.solutions",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "X-Correlation-Id",
+        },
+    )
+
+    assert response.status_code == 200
+    assert (
+        "x-correlation-id" in response.headers["access-control-allow-headers"].lower()
+    )
