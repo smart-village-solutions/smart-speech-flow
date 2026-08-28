@@ -22,7 +22,13 @@ function read(catalogue: Record<string, unknown>, key: string): unknown {
 const byName = (a: string, b: string) => a.localeCompare(b);
 
 describe('translation catalogues', () => {
-  const reference = flatten(de).sort(byName);
+  // Customer keys must exist in all ten locales. The admin namespace is
+  // German and English only and has its own parity test below.
+  const customerKeys = (catalogue: Record<string, unknown>) =>
+    flatten(catalogue)
+      .filter((key) => !key.startsWith('admin.'))
+      .sort(byName);
+  const reference = customerKeys(de);
 
   it('covers every language the gateway offers', () => {
     expect([...SUPPORTED_UI_LOCALES].sort(byName)).toEqual(
@@ -36,9 +42,9 @@ describe('translation catalogues', () => {
     }
   });
 
-  it('define exactly the same keys', () => {
+  it('define exactly the same customer keys', () => {
     for (const locale of SUPPORTED_UI_LOCALES) {
-      expect(flatten(CATALOGUES[locale]).sort(byName), locale).toEqual(reference);
+      expect(customerKeys(CATALOGUES[locale]), locale).toEqual(reference);
     }
   });
 
@@ -97,5 +103,56 @@ describe('translation catalogues', () => {
     expect(instance.t('feedback.stars', { count: 3 })).toBe('3 stars');
     expect(instance.t('accessCode.digitLabel', { position: 2 })).toBe('Character 2');
     expect(instance.t('feedback.nps.option', { score: 7 })).toBe('Score 7');
+  });
+});
+
+describe('the admin namespace', () => {
+  const ADMIN_LOCALES = ['de', 'en'] as const;
+  const adminKeys = (locale: string) =>
+    flatten(CATALOGUES[locale as keyof typeof CATALOGUES]).filter((key) =>
+      key.startsWith('admin.')
+    );
+
+  it('is defined in German and English', () => {
+    for (const locale of ADMIN_LOCALES) {
+      expect(adminKeys(locale), locale).not.toEqual([]);
+    }
+  });
+
+  it('defines the same admin keys in German and English', () => {
+    expect(adminKeys('en').sort(byName)).toEqual(adminKeys('de').sort(byName));
+  });
+
+  // Staff-facing copy. A machine translation into a customer language would
+  // read as reviewed and not be, which is the failure the parity test above
+  // exists to prevent — so the namespace is deliberately absent there.
+  it('is absent from the customer locales', () => {
+    for (const locale of SUPPORTED_UI_LOCALES) {
+      if ((ADMIN_LOCALES as readonly string[]).includes(locale)) {
+        continue;
+      }
+      expect(adminKeys(locale), locale).toEqual([]);
+    }
+  });
+
+  it('has no empty strings', () => {
+    for (const locale of ADMIN_LOCALES) {
+      for (const key of adminKeys(locale)) {
+        expect(read(CATALOGUES[locale], key), `${locale}.${key}`).not.toBe('');
+      }
+    }
+  });
+
+  it('translates the admin screens rather than copying the German', () => {
+    expect(en.admin.dashboard.newSession).not.toBe(de.admin.dashboard.newSession);
+  });
+
+  // `count` makes i18next look for minutes_one/minutes_other before the base
+  // key. The fallback is proven for the customer catalogue above; a silent miss
+  // here would render the raw key in the session list.
+  it('renders the duration plural rather than swallowing the key', () => {
+    const instance = createI18n('de');
+    expect(instance.t('admin.sessions.minutes', { count: 8 })).toBe('8 Min.');
+    expect(instance.t('admin.sessions.minutes', { count: 1 })).toBe('1 Min.');
   });
 });

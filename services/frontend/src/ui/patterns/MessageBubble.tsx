@@ -1,11 +1,8 @@
-import { Play } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useClipPeaks, usePlayback } from '@/app/providers/playback';
 import { cn } from '@/lib/cn';
-import { activeBarsForProgress } from '@/core/audio/waveform';
 import type { ChatMessage } from '@/domain/message/message.types';
+import { BubblePlayer } from './BubblePlayer';
 import { TypingDots } from './TypingDots';
-import { Waveform } from './Waveform';
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -16,20 +13,17 @@ interface MessageBubbleProps {
  * with a 46px left gutter. That is the reverse of the usual chat convention and
  * is what the design specifies.
  *
- * Playback belongs to the conversation, not the bubble: incoming audio autoplays
- * on arrival and only one clip is ever audible, so the state lives in
- * `PlaybackProvider` and the control here always restarts from the beginning.
+ * The player itself is `BubblePlayer`, which owns everything to do with
+ * playback; the bubble only needs to know whether there is any, to give itself a
+ * width and to space the text above it.
  */
 export function MessageBubble({ message }: Readonly<MessageBubbleProps>) {
   const { t } = useTranslation();
-  const { playingId, progress, playNow } = usePlayback();
 
   const isOwn = message.origin === 'self';
   const isPending = message.state === 'pending';
   const isFailed = message.state === 'failed';
-  const isPlaying = playingId === message.id;
   const hasAudio = !isOwn && message.audioUrl !== null && !isPending;
-  const peaks = useClipPeaks(hasAudio ? message.audioUrl : null);
 
   return (
     <div
@@ -48,7 +42,14 @@ export function MessageBubble({ message }: Readonly<MessageBubbleProps>) {
         isFailed && 'border-border-status-alert',
         isOwn
           ? 'ms-bubble-inset me-bubble-gutter rounded-bubble-self'
-          : 'ms-bubble-gutter me-bubble-inset self-end rounded-bubble-peer'
+          : 'ms-bubble-gutter me-bubble-inset self-end rounded-bubble-peer',
+        // `self-end` sizes a bubble to its content, and the waveform's bars are
+        // all `flex-1` — they contribute nothing to that measurement, so the row
+        // collapsed to its 49 gaps and every bar came out zero pixels wide. A
+        // definite width settles the row before the bars divide it, which is
+        // also what makes bar width the same in every bubble instead of a
+        // function of how long the message happened to be.
+        hasAudio && 'w-bubble-span'
       )}
     >
       {isPending ? (
@@ -67,26 +68,7 @@ export function MessageBubble({ message }: Readonly<MessageBubbleProps>) {
         </p>
       )}
 
-      {hasAudio && (
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => playNow(message.id, message.audioUrl as string)}
-            aria-label={isPlaying ? t('conversation.replay') : t('conversation.play')}
-            className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border-play text-fg-consent transition-colors duration-150"
-          >
-            <Play size={15} strokeWidth={2} />
-          </button>
-
-          <div className="flex-1">
-            <Waveform
-              activeBars={isPlaying ? activeBarsForProgress(progress) : 0}
-              barColorClass="bg-accent"
-              heights={peaks}
-            />
-          </div>
-        </div>
-      )}
+      {hasAudio && <BubblePlayer messageId={message.id} audioUrl={message.audioUrl as string} />}
     </div>
   );
 }

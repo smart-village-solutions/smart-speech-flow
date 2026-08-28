@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { useServices } from '@/app/providers/services';
+import type { ClientRole } from '@/core/roles';
 import { AppError } from '@/core/http/AppError';
 import { randomId } from '@/core/ids';
 import { realtimeToChatMessage } from '@/domain/message/message.mapper';
@@ -14,6 +15,8 @@ import {
 const HEARTBEAT_MS = 30_000;
 
 interface UseConversationOptions {
+  /** Which end of the session this screen is. Never defaulted. */
+  role: ClientRole;
   /**
    * Fired for a peer message that arrives over the wire carrying audio — the
    * autoplay hook. History never routes through here, which is what keeps old
@@ -34,9 +37,10 @@ interface UseConversationResult {
 export function useConversation(
   sessionId: string,
   languages: { source: string; target: string },
-  options: UseConversationOptions = {}
+  options: UseConversationOptions
 ): UseConversationResult {
   const { message, session, createRealtime } = useServices();
+  const { role } = options;
   const [state, dispatch] = useReducer(conversationReducer, initialConversationState);
   const transport = useMemo(() => createRealtime(), [createRealtime]);
 
@@ -51,7 +55,7 @@ export function useConversation(
     let cancelled = false;
 
     void message
-      .getHistory(sessionId)
+      .getHistory(sessionId, role)
       .then((messages) => {
         if (!cancelled) {
           dispatch({ type: 'history/loaded', messages });
@@ -62,7 +66,7 @@ export function useConversation(
     return () => {
       cancelled = true;
     };
-  }, [message, sessionId]);
+  }, [message, role, sessionId]);
 
   useEffect(() => {
     const offEvent = transport.onEvent((event) => {
@@ -96,7 +100,7 @@ export function useConversation(
 
       if (seenConnected) {
         void message
-          .getHistory(sessionId)
+          .getHistory(sessionId, role)
           .then((messages) => dispatch({ type: 'history/reloaded', messages }))
           .catch(() => undefined);
       }
@@ -104,22 +108,22 @@ export function useConversation(
       seenConnected = true;
     });
 
-    transport.connect(sessionId);
+    transport.connect(sessionId, role);
 
     return () => {
       offEvent();
       offStatus();
       transport.disconnect();
     };
-  }, [message, sessionId, transport]);
+  }, [message, role, sessionId, transport]);
 
   useEffect(() => {
     const beat = setInterval(
-      () => void session.reportActivity(sessionId).catch(() => undefined),
+      () => void session.reportActivity(sessionId, role).catch(() => undefined),
       HEARTBEAT_MS
     );
     return () => clearInterval(beat);
-  }, [session, sessionId]);
+  }, [role, session, sessionId]);
 
   const send = useCallback(
     async (
@@ -169,13 +173,14 @@ export function useConversation(
               text,
               sourceLanguage: languages.source,
               targetLanguage: languages.target,
+              role,
             }),
           text
         );
       lastAttempt.current = attempt;
       return attempt();
     },
-    [languages.source, languages.target, message, send, sessionId]
+    [languages.source, languages.target, message, role, send, sessionId]
   );
 
   const sendAudio = useCallback(
@@ -187,6 +192,7 @@ export function useConversation(
               wav,
               sourceLanguage: languages.source,
               targetLanguage: languages.target,
+              role,
             }),
           // A recording has no transcript until the gateway returns one.
           ''
@@ -194,7 +200,7 @@ export function useConversation(
       lastAttempt.current = attempt;
       return attempt();
     },
-    [languages.source, languages.target, message, send, sessionId]
+    [languages.source, languages.target, message, role, send, sessionId]
   );
 
   return {

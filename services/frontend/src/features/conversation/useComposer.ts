@@ -2,7 +2,7 @@ import { useCallback, useState, type RefObject } from 'react';
 import type { AudioRecorderState } from '@/core/audio/useAudioRecorder';
 import type { ConversationAction } from './conversation.reducer';
 import type { SendFlight } from './useSendFlight';
-import { useDismissOnOutsideTap } from './useDismissOnOutsideTap';
+import { useDismissOnOutsideTap } from '@/ui/hooks/useDismissOnOutsideTap';
 
 interface ComposerDeps {
   sending: boolean;

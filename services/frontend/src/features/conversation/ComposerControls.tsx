@@ -95,7 +95,7 @@ export function ComposerControls({
 }: Readonly<ComposerControlsProps>) {
   return (
     <div
-      data-composer-keep=""
+      data-dismiss-keep=""
       className="absolute inset-x-0 flex justify-center gap-5 transition-[bottom] duration-300"
       style={{ bottom }}
     >

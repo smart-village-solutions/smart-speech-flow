@@ -5,6 +5,9 @@
 export interface AudioPlayerPort {
   /** Always starts from the beginning, including for the clip already loaded. */
   play(url: string): Promise<void>;
+  /** Holds the playhead where it is, so `resume` carries on from there. */
+  pause(): void;
+  resume(): Promise<void>;
   stop(): void;
   /** Each returns an unsubscribe function. */
   onProgress(handler: (fraction: number) => void): () => void;
@@ -36,6 +39,16 @@ export function createDomAudioPlayer(element: HTMLAudioElement): AudioPlayerPort
         loaded = url;
       }
       element.currentTime = 0;
+      return element.play();
+    },
+
+    pause() {
+      element.pause();
+    },
+
+    // Deliberately not `play(loaded)`: that would rewind. The element keeps its
+    // position across a pause, so playing it again continues from there.
+    resume() {
       return element.play();
     },
 

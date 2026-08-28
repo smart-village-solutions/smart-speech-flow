@@ -7,6 +7,8 @@ export interface FakeAudioPlayer {
   /** Urls passed to play(), in order. */
   played: string[];
   stop: ReturnType<typeof vi.fn>;
+  paused: ReturnType<typeof vi.fn>;
+  resumed: ReturnType<typeof vi.fn>;
   /** Resolve the pending play() — the clip is now audible. */
   started: () => Promise<void>;
   /** Reject the pending play(), as a browser refusing autoplay does. */
@@ -34,6 +36,8 @@ export function createFakeAudioPlayer(): FakeAudioPlayer {
   };
 
   const stop = vi.fn();
+  const paused = vi.fn();
+  const resumed = vi.fn(() => Promise.resolve());
 
   const port: AudioPlayerPort = {
     play: vi.fn((url: string) => {
@@ -42,6 +46,8 @@ export function createFakeAudioPlayer(): FakeAudioPlayer {
         settle = { resolve, reject };
       });
     }),
+    pause: paused,
+    resume: resumed,
     stop,
     onProgress: (handler) => listen(handlers.progress, handler),
     onEnded: (handler) => listen(handlers.ended, handler),
@@ -58,6 +64,8 @@ export function createFakeAudioPlayer(): FakeAudioPlayer {
     port,
     played,
     stop,
+    paused,
+    resumed,
     started: () => fire(() => settle?.resolve()),
     rejected: (message = 'NotAllowedError') => fire(() => settle?.reject(new Error(message))),
     end: () => fire(() => handlers.ended.forEach((handler) => handler())),

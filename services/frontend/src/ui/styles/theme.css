@@ -18,7 +18,11 @@
   --surface-row-hover: rgb(0 0 0 / 0.05);
   --surface-row-active: rgb(0 0 0 / 0.1);
   --surface-icon-hover: rgb(0 0 0 / 0.08);
-  --surface-wave-idle: #ffffff;
+  /* No idle track: the waveform draws itself as it plays and there is nothing
+     behind it. The export gets this by painting unplayed bars the card's own
+     colour in each theme; transparent is the same result said plainly, and
+     needs no .dark override. */
+  --surface-wave-idle: transparent;
 
   /* Foregrounds */
   --fg-strong: #1a1a1a;                 /* text-[#1a1a1a] */
@@ -52,6 +56,21 @@
   --surface-status: #ffffff;
   --border-status: rgb(0 0 0 / 0.1);
   --border-status-alert: rgb(180 35 24 / 0.35);
+
+  /* Admin. The lamp colours are theme-independent: the export uses one hex per
+     level in both themes, because a traffic light that changes hue with the
+     theme stops being a traffic light. */
+  --status-ok: #22c55e;
+  --status-warn: #f59e0b;
+  --status-down: #ef4444;
+  --status-idle: rgb(0 0 0 / 0.25);
+  --fg-danger: #dc2626;
+  --surface-danger-hover: rgb(220 38 38 / 0.1);
+
+  /* The QR plate is theme-independent for the same reason the lamps are: a
+     dark-on-dark code does not scan. No .dark override, deliberately. */
+  --qr-plate: #ffffff;
+  --qr-ink: #111111;
 }
 
 .dark {
@@ -68,7 +87,6 @@
   --surface-row-hover: rgb(255 255 255 / 0.05);
   --surface-row-active: rgb(255 255 255 / 0.1);
   --surface-icon-hover: rgb(255 255 255 / 0.1);
-  --surface-wave-idle: #2a2a2a;
 
   --fg-strong: #ffffff;
   --fg-chat: rgb(255 255 255 / 0.9);
@@ -98,4 +116,8 @@
   --surface-status: #333333;
   --border-status: rgb(255 255 255 / 0.14);
   --border-status-alert: rgb(253 162 155 / 0.4);
+
+  /* Only the two that must follow the theme; the lamps deliberately do not. */
+  --status-idle: rgb(255 255 255 / 0.25);
+  --fg-danger: #f87171;
 }

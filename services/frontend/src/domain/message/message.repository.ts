@@ -1,5 +1,6 @@
 import type { AxiosInstance } from 'axios';
 import { requirePathIdentifier } from '@/utils/identifiers';
+import type { ClientRole } from '@/core/roles';
 import { resolveApiUrl } from '@/core/http/url';
 import { historyToChatMessages } from './message.mapper';
 import type { MessageHistoryDto } from './message.mapper';
@@ -9,12 +10,14 @@ interface SendTextInput {
   text: string;
   sourceLanguage: string;
   targetLanguage: string;
+  role: ClientRole;
 }
 
 interface SendAudioInput {
   wav: Blob;
   sourceLanguage: string;
   targetLanguage: string;
+  role: ClientRole;
 }
 
 interface SendResponseDto {
@@ -30,7 +33,7 @@ interface SendResponseDto {
 }
 
 export interface MessageRepository {
-  getHistory(sessionId: string): Promise<ChatMessage[]>;
+  getHistory(sessionId: string, role: ClientRole): Promise<ChatMessage[]>;
   sendText(sessionId: string, input: SendTextInput): Promise<SendResult>;
   sendAudio(sessionId: string, input: SendAudioInput): Promise<SendResult>;
   /**
@@ -58,10 +61,10 @@ export function createMessageRepository(
   const resolveAudioUrl = (url: string) => resolveApiUrl(options.apiBaseUrl, url);
 
   return {
-    async getHistory(sessionId) {
+    async getHistory(sessionId, role) {
       const safeId = requirePathIdentifier(sessionId, 'session');
       const response = await http.get<MessageHistoryDto>(`/api/session/${safeId}/messages`);
-      return historyToChatMessages(response.data, resolveAudioUrl);
+      return historyToChatMessages(response.data, resolveAudioUrl, role);
     },
 
     async sendText(sessionId, input) {
@@ -72,7 +75,7 @@ export function createMessageRepository(
           text: input.text,
           source_lang: input.sourceLanguage,
           target_lang: input.targetLanguage,
-          client_type: 'customer',
+          client_type: input.role,
         },
         { timeout: options.pipelineTimeoutMs }
       );
@@ -85,7 +88,7 @@ export function createMessageRepository(
       form.append('file', input.wav, 'recording.wav');
       form.append('source_lang', input.sourceLanguage);
       form.append('target_lang', input.targetLanguage);
-      form.append('client_type', 'customer');
+      form.append('client_type', input.role);
 
       const response = await http.post<SendResponseDto>(`/api/session/${safeId}/message`, form, {
         timeout: options.pipelineTimeoutMs,

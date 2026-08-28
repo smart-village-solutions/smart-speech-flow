@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import { usePlayback } from '@/app/providers/playback';
+import type { ClientRole } from '@/core/roles';
 import { useAudioRecorder } from '@/core/audio/useAudioRecorder';
 import type { ChatMessage } from '@/domain/message/message.types';
 import { hasConversationStatus } from './conversation.status';
@@ -24,9 +25,9 @@ function useScrollToLatest(ref: RefObject<HTMLDivElement | null>, messages: Chat
  * recorder, the player and the send flight meet; holding that in the component
  * made it the largest file in the feature.
  */
-export function useConversationScreen(sessionId: string) {
+export function useConversationScreen(sessionId: string, role: ClientRole) {
   const playback = usePlayback();
-  const languages = useSessionLanguages(sessionId);
+  const languages = useSessionLanguages(sessionId, role);
   const keyboardOffset = useKeyboardOffset();
   const chatRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -34,12 +35,16 @@ export function useConversationScreen(sessionId: string) {
   const { state, dispatch, sendText, sendAudio, retryLast } = useConversation(
     sessionId,
     languages,
-    { onPeerAudio: playback.enqueue }
+    { role, onPeerAudio: playback.enqueue }
   );
 
   const { flight, sourceRef, launch } = useSendFlight(chatRef);
 
-  const bottom = `calc(${keyboardOffset}px + max(var(--spacing-mic-bottom), env(safe-area-inset-bottom)))`;
+  // The admin surface carries a terminate link at the customer's composer
+  // baseline, so its composer sits a step higher. Applied here rather than in
+  // the surface because the send flight launches from this value.
+  const composerLift = role === 'admin' ? 'var(--spacing-composer-lift)' : '0px';
+  const bottom = `calc(${keyboardOffset}px + max(var(--spacing-mic-bottom), env(safe-area-inset-bottom)) + ${composerLift})`;
   // The recorder callback runs outside render, so the offset it launches from
   // is mirrored into a ref after each commit.
   const bottomRef = useLatestRef(bottom);
@@ -83,9 +88,14 @@ export function useConversationScreen(sessionId: string) {
     sourceRef,
     keyboardOffset,
     bottom,
+    composerLift,
     isTyping,
     isRecording,
     // The pill floats over the top of the stack, so the stack keeps clear of it.
     showsStatus: hasConversationStatus(state),
+    // The admin's status overlay names the customer's language.
+    customerLanguage: languages.customerLanguage,
   };
 }
+
+export type ConversationScreenState = ReturnType<typeof useConversationScreen>;
