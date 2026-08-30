@@ -1,0 +1,10 @@
+[Unit]
+Description=Create a verified monthly Smart Speech Flow backup
+After=ssf-production.service
+Requires=ssf-production.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/flock -n /var/lock/ssf-production-backup.lock /root/projects/ssf-backend/scripts/backup-production.sh --tier monthly
+ExecStartPost=/bin/sh -ec '/root/projects/ssf-backend/scripts/restore-production-drill.sh "$(readlink -f /root/projects/ssf-backend/backups/monthly/latest)"'
+TimeoutStartSec=8h

@@ -1,0 +1,9 @@
+[Unit]
+Description=Verify Smart Speech Flow production health
+After=ssf-production.service
+Requires=ssf-production.service
+
+[Service]
+Type=oneshot
+ExecStart=/root/projects/ssf-backend/scripts/production-health-check.sh --timeout-seconds 300
+TimeoutStartSec=330

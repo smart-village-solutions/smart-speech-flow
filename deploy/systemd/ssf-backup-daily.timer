@@ -1,0 +1,10 @@
+[Unit]
+Description=Schedule the verified daily Smart Speech Flow backup
+
+[Timer]
+OnCalendar=*-*-* 00:15:00 UTC
+Persistent=true
+Unit=ssf-backup-daily.service
+
+[Install]
+WantedBy=timers.target

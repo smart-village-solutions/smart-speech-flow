@@ -1,0 +1,25 @@
+[Unit]
+Description=Smart Speech Flow production workload
+Wants=network-online.target
+After=network-online.target docker.service nvidia-persistenced.service
+Requires=docker.service
+PartOf=docker.service
+StartLimitIntervalSec=5min
+StartLimitBurst=30
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/root/projects/ssf-backend
+ExecStartPre=/usr/bin/docker info
+ExecStartPre=/usr/bin/nvidia-smi -L
+ExecStart=/usr/bin/docker compose --project-name ssf-backend --env-file /root/projects/ssf-backend/.env --file /root/projects/ssf-backend/deploy/production/docker-compose.production.yml up --detach --no-build --pull never --no-recreate
+ExecStartPost=/root/projects/ssf-backend/scripts/production-health-check.sh --timeout-seconds 300
+ExecStop=/usr/bin/docker compose --project-name ssf-backend --env-file /root/projects/ssf-backend/.env --file /root/projects/ssf-backend/deploy/production/docker-compose.production.yml stop
+TimeoutStartSec=330
+TimeoutStopSec=120
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
