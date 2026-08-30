@@ -64,8 +64,8 @@ if [[ ! "$clickhouse_database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
   exit 1
 fi
 production_compose exec -T clickhouse clickhouse-client --query \
-  "BACKUP DATABASE \`${clickhouse_database}\` TO File('/tmp/ssf-clickhouse-backup.zip')"
-production_compose exec -T clickhouse cat /tmp/ssf-clickhouse-backup.zip \
+  "BACKUP DATABASE \`${clickhouse_database}\` TO File('backups/ssf-clickhouse-backup.zip')"
+production_compose exec -T clickhouse cat /var/lib/clickhouse/backups/ssf-clickhouse-backup.zip \
   > "$staging_dir/clickhouse-native-backup.zip"
 
 tar -C "$SSF_PROJECT_ROOT" -czf "$staging_dir/configuration.tar.gz" \

@@ -30,7 +30,7 @@ cleanup() {
 trap cleanup EXIT
 
 docker run --detach --pull=never --network none --name "$container" \
-  --volume "$backup_dir:/backup:ro" "$clickhouse_image" >/dev/null
+  --volume "$backup_dir:/var/lib/clickhouse/backups:ro" "$clickhouse_image" >/dev/null
 
 for _ in $(seq 1 30); do
   if docker exec "$container" clickhouse-client --query 'SELECT 1' >/dev/null 2>&1; then
@@ -40,7 +40,7 @@ for _ in $(seq 1 30); do
 done
 docker exec "$container" clickhouse-client --query 'SELECT 1' >/dev/null
 docker exec "$container" clickhouse-client --query \
-  "RESTORE DATABASE \`${source_database}\` AS \`${target_database}\` FROM File('/backup/clickhouse-native-backup.zip')"
+  "RESTORE DATABASE \`${source_database}\` AS \`${target_database}\` FROM File('clickhouse-native-backup.zip')"
 docker exec "$container" clickhouse-client --query \
   "EXISTS DATABASE \`${target_database}\`" | grep -qx 1
 printf 'Isolated ClickHouse restore drill passed for %s.\n' "$backup_dir"
