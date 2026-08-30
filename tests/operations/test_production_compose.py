@@ -57,6 +57,20 @@ def test_production_compose_preserves_the_existing_prometheus_volume():
     assert compose["volumes"]["prometheus-data"]["external"] is True
 
 
+def test_keycloak_realm_mount_resolves_to_the_versioned_file():
+    keycloak = load_production_compose()["services"]["keycloak"]
+    realm_mount = next(
+        volume
+        for volume in keycloak["volumes"]
+        if volume.endswith(":/opt/keycloak/data/import/ssf-realm.json:ro")
+    )
+    source = (COMPOSE_PATH.parent / realm_mount.split(":", maxsplit=1)[0]).resolve()
+    expected_source = Path("deploy/production/keycloak/ssf-realm.json").resolve()
+
+    assert source == expected_source
+    assert source.is_file()
+
+
 def test_recovery_unit_never_recreates_existing_containers():
     unit = Path("deploy/systemd/ssf-production.service").read_text()
     assert "up --detach --no-build --pull never --no-recreate" in unit
