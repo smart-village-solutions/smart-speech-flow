@@ -66,9 +66,9 @@ if [[ ! "$clickhouse_database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
 fi
 production_compose exec -T clickhouse clickhouse-client --query \
   "BACKUP DATABASE \`${clickhouse_database}\` TO File('${clickhouse_backup_filename}')"
-production_compose exec -T clickhouse cat "/var/lib/clickhouse/backups/backups/${clickhouse_backup_filename}" \
+production_compose exec -T clickhouse cat "/var/lib/clickhouse/backups/${clickhouse_backup_filename}" \
   > "$staging_dir/clickhouse-native-backup.zip"
-production_compose exec -T clickhouse rm -f "/var/lib/clickhouse/backups/backups/${clickhouse_backup_filename}"
+production_compose exec -T clickhouse rm -f "/var/lib/clickhouse/backups/${clickhouse_backup_filename}"
 
 tar -C "$SSF_PROJECT_ROOT" -czf "$staging_dir/configuration.tar.gz" \
   deploy/production monitoring letsencrypt models
