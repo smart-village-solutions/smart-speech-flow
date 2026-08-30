@@ -77,7 +77,7 @@ describe('rankWorkPackages', () => {
       actions: [{ description: 'Run the recovery exercise.', owner: 'Operations', due: '2026-09-05' }],
       risks: ['Recovery evidence is incomplete.'],
       sources: ['Meeting notes, 2026-08-30'],
-      rawNotes: 'Password: do-not-retain',
+      rawNotes: 'Sensitive transcript detail: do-not-retain',
     });
 
     expect(minutes).toContain('# Meeting Minutes: Production recovery');
