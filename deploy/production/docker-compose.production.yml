@@ -243,7 +243,7 @@ services:
       KC_HTTP_ENABLED: 'true'
       KC_HEALTH_ENABLED: 'true'
     volumes:
-    - ./keycloak/ssf-realm.json:/opt/keycloak/data/import/ssf-realm.json:ro
+    - ./deploy/production/keycloak/ssf-realm.json:/opt/keycloak/data/import/ssf-realm.json:ro
     depends_on:
       keycloak-postgres:
         condition: service_healthy
