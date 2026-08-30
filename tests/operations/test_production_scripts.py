@@ -84,6 +84,6 @@ def test_clickhouse_backup_uses_the_configured_allowed_backup_path():
 
     assert 'clickhouse_backup_filename="ssf-clickhouse-${timestamp}.zip"' in script
     assert "File('${clickhouse_backup_filename}')" in script
-    assert "/var/lib/clickhouse/backups/backups/${clickhouse_backup_filename}" in script
-    assert 'rm -f "/var/lib/clickhouse/backups/backups/${clickhouse_backup_filename}"' in script
+    assert "/var/lib/clickhouse/backups/${clickhouse_backup_filename}" in script
+    assert 'rm -f "/var/lib/clickhouse/backups/${clickhouse_backup_filename}"' in script
     assert "/tmp/ssf-clickhouse-backup.zip" not in script
