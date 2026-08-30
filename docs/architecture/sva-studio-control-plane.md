@@ -17,13 +17,13 @@ One Studio deployment runs with exactly one SSF installation in the same server
 or deployment boundary. One logical Studio instance represents exactly one SSF
 tenant.
 
-\`\`\`text
+```text
 SSF server or deployment
 ├── Smart Speech Flow
 ├── SSF Keycloak
 ├── SVA Studio
 └── PostgreSQL database of the SSF plugin
-\`\`\`
+```
 
 The shared deployment boundary does not remove system boundaries. Studio and
 SSF have no shared domain database and do not access each other's persistence
@@ -36,10 +36,10 @@ SSF business roles and Studio technical roles remain distinct:
 
 | SSF business role | Technical Studio mapping |
 | --- | --- |
-| \`system_admin\` | Root scope with \`instance_registry_admin\` |
-| \`tenant_admin\` | Tenant-local Studio \`system_admin\` in the realm of the Studio instance |
-| \`admin\` | Tenant-local user with selected \`ssf.*\` permissions |
-| \`customer\` | No regular Studio identity; access through a restricted SSF session |
+| `system_admin` | Root scope with `instance_registry_admin` |
+| `tenant_admin` | Tenant-local Studio `system_admin` in the realm of the Studio instance |
+| `admin` | Tenant-local user with selected `ssf.*` permissions |
+| `customer` | No regular Studio identity; access through a restricted SSF session |
 
 The root system administrator creates a tenant and its initial tenant
 administrator. The tenant administrator then manages users and roles in its
@@ -55,7 +55,7 @@ generic plugin capabilities that can serve other plugins as well.
 | Layer | Studio Core | SSF plugin |
 | --- | --- | --- |
 | Root | Plugin catalogue, instance lifecycle, root authorisation, Keycloak provisioning, initial tenant administrator, secrets, jobs, and audit | SSF root navigation, tenant status, installation-wide SSF configuration, and SSF-specific root actions |
-| Tenant | Authentication, IAM, users, roles, groups, effective permissions, and module activation | SSF configuration, \`ssf.*\` permissions, tenant UI, and internal SSF domain contracts |
+| Tenant | Authentication, IAM, users, roles, groups, effective permissions, and module activation | SSF configuration, `ssf.*` permissions, tenant UI, and internal SSF domain contracts |
 | Persistence | Studio governance: instances, IAM, audit, and plugin activation state | One tenant-aware PostgreSQL database for installation-wide and tenant-specific SSF data |
 | Runtime | Host-managed authentication, authorisation, error contracts, audit, and job execution | SSF handlers, validation, repositories, and calls to internal SSF APIs |
 
@@ -69,26 +69,26 @@ separate authorisation paths.
 The Studio installation determines which plugins are included in a deployment.
 A Studio is SSF-capable when the SSF plugin is in the installed,
 host-validated plugin catalogue. The Core requires no SSF-specific operating
-mode such as \`isSsfStudio\`.
+mode such as `isSsfStudio`.
 
 The generic plugin contract defines three tenant activation policies:
 
 | Policy | Initial state | Manually deactivatable |
 | --- | --- | :---: |
-| \`optional\` | disabled | Yes |
-| \`automatic\` | enabled | Yes |
-| \`required\` | enabled | No |
+| `optional` | disabled | Yes |
+| `automatic` | enabled | Yes |
+| `required` | enabled | No |
 
-The SSF plugin initially uses \`automatic\`. Manual deactivation of an
+The SSF plugin initially uses `automatic`. Manual deactivation of an
 automatically activated plugin is a persistent desired state and must not be
 reversed by restart or reconciliation.
 
 When a plugin is installed later:
 
-- \`optional\` remains disabled initially for existing and new tenants.
-- \`automatic\` is activated for existing tenants through a controlled,
+- `optional` remains disabled initially for existing and new tenants.
+- `automatic` is activated for existing tenants through a controlled,
   audited reconciliation and directly for new tenants.
-- \`required\` is activated for every existing and new tenant. Installation is
+- `required` is activated for every existing and new tenant. Installation is
   ready only after reconciliation succeeds.
 
 A required plugin remains technically a plugin, not a Core component. Tenant
@@ -101,7 +101,7 @@ delete plugin data or history.
 Studio and SSF use the dedicated Keycloak of the SSF server. Realm boundaries
 represent organisational tenant boundaries:
 
-\`\`\`text
+```text
 SSF Keycloak
 ├── Root realm
 │   └── System administrators
@@ -111,7 +111,7 @@ SSF Keycloak
 └── Tenant realm B
     ├── Tenant administrators
     └── Operational administrators
-\`\`\`
+```
 
 Each tenant receives its own realm. A user belongs to exactly one tenant. The
 same natural person needs separate identities for two tenants; matching email
@@ -127,7 +127,7 @@ The SSF plugin owns one PostgreSQL database per SSF installation. It contains
 both installation-wide and tenant-specific configuration. The Studio Core
 knows no SSF tables or domain fields.
 
-Tenant records use the canonical Studio \`instanceId\` as their tenant key.
+Tenant records use the canonical Studio `instanceId` as their tenant key.
 Tenant access is bound server-side to this context and secured with row-level
 security. Root access follows a separate, explicitly authorised database path.
 Migrations, repositories, and schema ownership belong to the SSF plugin.
@@ -144,7 +144,7 @@ references to SSF.
 
 SSF determines the tenant from a valid session token or Keycloak login. The SSF
 backend then calls the internal Studio API with its own service identity and a
-short-lived signed tenant assertion. A freely supplied \`instanceId\` is not a
+short-lived signed tenant assertion. A freely supplied `instanceId` is not a
 trust boundary.
 
 The Studio host validates the technical identity, audience, validity,
@@ -156,7 +156,7 @@ direct access to this internal API.
 
 ### Create a tenant
 
-\`\`\`text
+```text
 Root system administrator creates a Studio instance
     → Core provisions tenant realm and separate OIDC clients
     → Core creates the initial tenant administrator
@@ -165,7 +165,7 @@ Root system administrator creates a Studio instance
     → SSF plugin creates tenant baseline data
     → Readiness checks confirm realm, clients, IAM, and plugin data
     → Tenant is reported usable
-\`\`\`
+```
 
 Every step has persistent, diagnosable status. Retries reconcile the same
 desired state and create neither a second realm nor a second SSF tenant record.
@@ -180,18 +180,18 @@ do not grant tenant-local rights, and tenant roles grant no root rights.
 
 ### Deactivate and reactivate the SSF plugin
 
-For an \`automatic\` plugin, the root system administrator may manually remove
+For an `automatic` plugin, the root system administrator may manually remove
 a tenant's activation. This blocks tenant SSF routes and internal SSF
 configuration access. Persisted configuration and audit records remain. A later
 reactivation reconciles schema, IAM baseline, and tenant baseline data before
-the status becomes \`ready\` again.
+the status becomes `ready` again.
 
 ## Scope and Later Stages
 
 ### First delivery slice
 
 - Generic platform-bound plugin contributions.
-- \`optional\`, \`automatic\`, and \`required\` activation policies.
+- `optional`, `automatic`, and `required` activation policies.
 - Installation and automatic tenant activation of the SSF plugin.
 - Root and tenant realm provisioning in the existing SSF Keycloak.
 - Initial tenant administrator.
