@@ -32,6 +32,12 @@ describe('collectEvidence', () => {
       ['gh', ['pr', 'list']],
       ['gh', ['project', 'item-list']],
     ]));
+    const issueArgs = calls.find(([, args]) => args[0] === 'issue')[1];
+    const pullRequestArgs = calls.find(([, args]) => args[0] === 'pr')[1];
+    expect(issueArgs).toEqual(expect.arrayContaining(['--state', 'all']));
+    expect(issueArgs.at(-1)).toContain('state');
+    expect(pullRequestArgs).toEqual(expect.arrayContaining(['--state', 'all']));
+    expect(pullRequestArgs.at(-1)).toContain('mergedAt');
     expect(calls.filter(([command]) => command === 'gh')).toEqual(expect.arrayContaining([
       ['gh', expect.arrayContaining(['--repo', 'smart-village-solutions/smart-speech-flow']), expect.objectContaining({ cwd: expect.any(String) })],
     ]));

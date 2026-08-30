@@ -89,6 +89,82 @@ describe('rankWorkPackages', () => {
     expect(result.conflicts).toEqual([]);
   });
 
+  it('uses linked GitHub issue evidence before OpenSpec and the status snapshot', () => {
+    const projectStatus = report();
+    projectStatus.milestones[0].workPackages[0].status = 'done';
+    projectStatus.milestones[0].workPackages[0].tracking = {
+      githubIssues: [42],
+      openSpecChanges: ['secure-boundary'],
+    };
+
+    const result = rankEvidence({
+      projectStatus,
+      issues: [{ number: 42, state: 'OPEN' }],
+      openSpec: [{
+        id: 'secure-boundary',
+        taskStatus: { total: 2, completed: 2 },
+      }],
+    }, { limit: 3, today: '2026-08-30' });
+
+    expect(result.priorities[0]).toMatchObject({
+      workPackageId: 'WP-001',
+      status: 'planned',
+      source: 'GitHub issue #42',
+    });
+  });
+
+  it('uses a linked open pull request as current implementation evidence', () => {
+    const projectStatus = report();
+    projectStatus.milestones[0].workPackages[0].tracking = { githubPullRequests: [99] };
+
+    const result = rankEvidence({
+      projectStatus,
+      pullRequests: [{ number: 99, state: 'OPEN', title: 'Implement the boundary' }],
+    }, { limit: 3, today: '2026-08-30' });
+
+    expect(result.priorities[0]).toMatchObject({
+      workPackageId: 'WP-001',
+      status: 'implementation',
+      source: 'GitHub pull request #99',
+    });
+  });
+
+  it('uses linked OpenSpec task progress before the status snapshot', () => {
+    const projectStatus = report();
+    projectStatus.milestones[0].workPackages[0].status = 'planned';
+    projectStatus.milestones[0].workPackages[0].tracking = {
+      openSpecChanges: ['secure-boundary'],
+    };
+
+    const result = rankEvidence({
+      projectStatus,
+      openSpec: [{
+        id: 'secure-boundary',
+        taskStatus: { total: 2, completed: 1 },
+      }],
+    }, { limit: 3, today: '2026-08-30' });
+
+    expect(result.priorities[0]).toMatchObject({
+      workPackageId: 'WP-001',
+      status: 'implementation',
+      source: 'OpenSpec change secure-boundary',
+    });
+  });
+
+  it('uses a documented decision before conflicting current GitHub evidence', () => {
+    const projectStatus = report();
+    projectStatus.milestones[0].workPackages[0].tracking = { githubIssues: [42] };
+
+    const result = rankEvidence({
+      projectStatus,
+      decisions: [{ workPackageId: 'WP-001', status: 'done' }],
+      issues: [{ number: 42, state: 'OPEN' }],
+    }, { limit: 3, today: '2026-08-30' });
+
+    expect(result.priorities.map((item) => item.workPackageId)).not.toContain('WP-001');
+    expect(result.conflicts).toEqual([]);
+  });
+
   it('reports conflicting GitHub Project status instead of silently ranking it', () => {
     const result = rankEvidence({
       projectStatus: report(),
@@ -107,6 +183,24 @@ describe('rankWorkPackages', () => {
     expect(result.priorities.map((item) => item.workPackageId)).not.toContain('WP-001');
     expect(renderPriorityMarkdown(result)).toContain('## Conflicts');
     expect(renderPriorityMarkdown(result)).toContain('WP-001: GitHub Project status conflicts (Done, Planned). No plan update.');
+  });
+
+  it('reports conflicting GitHub source evidence rather than selecting a status', () => {
+    const projectStatus = report();
+    projectStatus.milestones[0].workPackages[0].tracking = { githubIssues: [42] };
+    const result = rankEvidence({
+      projectStatus,
+      issues: [{ number: 42, state: 'OPEN' }],
+      projectItems: { items: [{ status: 'Done', 'work Package': 'WP-001' }] },
+    }, { limit: 3, today: '2026-08-30' });
+
+    expect(result.conflicts).toEqual([{
+      workPackageId: 'WP-001',
+      source: 'GitHub evidence',
+      field: 'status',
+      values: ['Done', 'Planned'],
+    }]);
+    expect(result.priorities.map((item) => item.workPackageId)).not.toContain('WP-001');
   });
 
   it('renders decisions and actions without retaining raw sensitive notes', () => {

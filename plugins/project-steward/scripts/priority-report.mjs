@@ -60,37 +60,97 @@ const projectItemsFor = (workPackage, projectItems) => projectItems.filter((item
     || workPackage.tracking?.githubIssues?.includes(item.content?.number);
 });
 
-export const reconcileEvidence = ({ projectStatus, projectItems = { items: [] }, decisions = [] }) => {
+const linkedIssuesFor = (workPackage, issues) => issues
+  .filter((issue) => workPackage.tracking?.githubIssues?.includes(issue.number));
+
+const linkedPullRequestsFor = (workPackage, pullRequests) => pullRequests.filter((pullRequest) => (
+  workPackage.tracking?.githubPullRequests?.includes(pullRequest.number)
+  || [pullRequest.title, pullRequest.headRefName].some((value) => String(value ?? '').includes(workPackage.id))
+));
+
+const linkedOpenSpecChangesFor = (workPackage, openSpec) => (Array.isArray(openSpec) ? openSpec : openSpec.changes ?? [])
+  .filter((change) => workPackage.tracking?.openSpecChanges?.includes(change.id));
+
+const statusForOpenSpecChange = (change) => {
+  const { total = 0, completed = 0 } = change.taskStatus ?? {};
+  if (total > 0 && completed >= total) return 'done';
+  if (completed > 0) return 'implementation';
+  return 'planned';
+};
+
+const sourceTier = [
+  { name: 'documented project decision', key: 'decision' },
+  { name: 'GitHub evidence', key: 'github' },
+  { name: 'OpenSpec', key: 'openSpec' },
+  { name: 'project-status.json', key: 'snapshot' },
+];
+
+const resolveStatus = (workPackage, evidence) => {
+  const observations = {
+    decision: (evidence.decisions ?? [])
+      .filter((decision) => decision.workPackageId === workPackage.id && decision.status)
+      .map((decision) => ({ status: decision.status, source: 'documented project decision' })),
+    github: [
+      ...projectItemsFor(workPackage, evidence.projectItems?.items ?? [])
+        .map((item) => ({ status: statusByProjectStatus[item.status], source: 'GitHub Project' }))
+        .filter((item) => item.status),
+      ...linkedIssuesFor(workPackage, evidence.issues ?? [])
+        .map((issue) => ({
+          status: String(issue.state ?? 'OPEN').toUpperCase() === 'CLOSED' ? 'done' : 'planned',
+          source: `GitHub issue #${issue.number}`,
+        })),
+      ...linkedPullRequestsFor(workPackage, evidence.pullRequests ?? [])
+        .flatMap((pullRequest) => {
+          const state = String(pullRequest.state ?? 'OPEN').toUpperCase();
+          if (pullRequest.mergedAt || state === 'MERGED') return [{ status: 'done', source: `GitHub pull request #${pullRequest.number}` }];
+          if (state === 'OPEN') return [{ status: 'implementation', source: `GitHub pull request #${pullRequest.number}` }];
+          return [];
+        }),
+    ],
+    openSpec: linkedOpenSpecChangesFor(workPackage, evidence.openSpec ?? [])
+      .map((change) => ({ status: statusForOpenSpecChange(change), source: `OpenSpec change ${change.id}` })),
+    snapshot: [{ status: workPackage.status, source: 'project-status.json' }],
+  };
+
+  for (const tier of sourceTier) {
+    const values = observations[tier.key];
+    if (values.length === 0) continue;
+    const statuses = [...new Set(values.map((value) => value.status))].sort();
+    if (statuses.length > 1) {
+      const sources = [...new Set(values.map((value) => value.source))];
+      return {
+        conflict: {
+          workPackageId: workPackage.id,
+          source: sources.length === 1 ? sources[0] : tier.name,
+          field: 'status',
+          values: statuses.map((status) => status[0].toUpperCase() + status.slice(1)),
+        },
+      };
+    }
+    return { status: statuses[0], source: [...new Set(values.map((value) => value.source))].sort().join(', ') };
+  }
+  return {};
+};
+
+export const reconcileEvidence = (evidence) => {
+  const { projectStatus } = evidence;
   const report = structuredClone(projectStatus);
   const conflicts = [];
 
   for (const milestone of report.milestones) {
     for (const workPackage of milestone.workPackages) {
-      const items = projectItemsFor(workPackage, projectItems.items ?? []);
-      const statuses = [...new Set(items.map((item) => item.status).filter(Boolean))].sort();
-      if (statuses.length > 1) {
-        conflicts.push({
-          workPackageId: workPackage.id,
-          source: 'GitHub Project',
-          field: 'status',
-          values: statuses,
-        });
+      const resolution = resolveStatus(workPackage, evidence);
+      if (resolution.conflict) {
+        conflicts.push(resolution.conflict);
         continue;
       }
-      if (statuses.length === 1 && statusByProjectStatus[statuses[0]]) {
-        workPackage.status = statusByProjectStatus[statuses[0]];
-        workPackage.source = 'GitHub Project';
+      if (resolution.status) {
+        workPackage.status = resolution.status;
+        workPackage.source = resolution.source;
       }
+      const decision = (evidence.decisions ?? []).find((candidate) => candidate.workPackageId === workPackage.id);
+      if (decision?.priority) workPackage.priority = decision.priority;
     }
-  }
-
-  for (const decision of decisions) {
-    const workPackage = report.milestones.flatMap((milestone) => milestone.workPackages)
-      .find((candidate) => candidate.id === decision.workPackageId);
-    if (!workPackage) continue;
-    if (decision.status) workPackage.status = decision.status;
-    if (decision.priority) workPackage.priority = decision.priority;
-    workPackage.source = 'documented project decision';
   }
 
   return { report, conflicts };

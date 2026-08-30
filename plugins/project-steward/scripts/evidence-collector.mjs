@@ -22,12 +22,12 @@ export const collectEvidence = ({
     openSpec: parseJson(run('openspec', ['change', 'list', '--json'], runOptions)),
     projectStatus: parseJson(readReport(reportPath, 'utf8')),
     issues: parseJson(run('gh', [
-      'issue', 'list', '--repo', repository, '--state', 'open', '--limit', '100',
-      '--json', 'number,title,labels,url,updatedAt',
+      'issue', 'list', '--repo', repository, '--state', 'all', '--limit', '100',
+      '--json', 'number,state,title,labels,url,updatedAt',
     ], runOptions)),
     pullRequests: parseJson(run('gh', [
-      'pr', 'list', '--repo', repository, '--state', 'open', '--limit', '100',
-      '--json', 'number,title,headRefName,reviewDecision,statusCheckRollup,url,updatedAt',
+      'pr', 'list', '--repo', repository, '--state', 'all', '--limit', '100',
+      '--json', 'number,state,mergedAt,title,headRefName,reviewDecision,statusCheckRollup,url,updatedAt',
     ], runOptions)),
     projectItems: parseJson(run('gh', [
       'project', 'item-list', projectNumber, '--owner', owner, '--limit', '100', '--format', 'json',
