@@ -17,9 +17,11 @@ sudo systemctl start ssf-production-health.timer
 sudo systemctl start ssf-backup-daily.timer ssf-backup-weekly.timer ssf-backup-monthly.timer
 ```
 
-`ssf-production.service` only starts locally available pinned images
-(`--pull never`, `--no-build`) and then applies the five-minute health gate.
-It must be enabled only after the controlled activation procedure below.
+`ssf-production.service` relies on Docker's `unless-stopped` restart policies
+to recover existing containers and then applies the five-minute health gate.
+It deliberately does not run `docker compose up`, so a reboot cannot reconcile
+or replace running containers from a changed Compose definition. Controlled
+Compose deployments remain a separate, reviewed operation.
 
 ## Verify recovery
 
@@ -80,10 +82,20 @@ docker compose --env-file .env -f deploy/production/docker-compose.production.ym
 ./scripts/production-health-check.sh --timeout-seconds 300
 ```
 
-Make a verified backup first. Start the canonical workload with the systemd
-unit, then run the health gate. If it does not pass within five minutes, stop
-the unit and restore the last known-good container set and backup data; do not
-pull images or use the mutable root Compose definition while investigating.
+Make a verified backup first. Apply the reviewed canonical definition with:
+
+```bash
+docker compose --project-name ssf-backend --env-file .env \
+  -f deploy/production/docker-compose.production.yml \
+  up --detach --no-build --pull never
+sudo systemctl restart ssf-production.service
+```
+
+The systemd unit only verifies Docker-managed recovery; it does not deploy or
+stop containers. If the health gate does not pass within five minutes, restore
+the last known-good Compose definition and backup data, then run the same
+explicit Compose activation and health gate. Do not pull images or use the
+mutable root Compose definition while investigating.
 
 ## Operating-system updates
 

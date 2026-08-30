@@ -71,7 +71,10 @@ def test_keycloak_realm_mount_resolves_to_the_versioned_file():
     assert source.is_file()
 
 
-def test_recovery_unit_never_recreates_existing_containers():
+def test_recovery_unit_relies_on_docker_restart_policies_without_compose_reconciliation():
     unit = Path("deploy/systemd/ssf-production.service").read_text()
-    assert "up --detach --no-build --pull never --no-recreate" in unit
+    assert "ExecStart=/usr/bin/true" in unit
+    assert "docker compose" not in unit
+    assert "ExecStop=" not in unit
+    assert "ExecStartPost=/root/projects/ssf-backend/scripts/production-health-check.sh --timeout-seconds 300" in unit
     assert "Restart=on-failure" in unit
