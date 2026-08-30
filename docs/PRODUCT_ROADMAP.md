@@ -174,6 +174,22 @@ Die Vision von SSF lebt davon, dass es sowohl direkt eingesetzt als auch in ande
 
 ## Phase 4: Betriebs- und Betreiberfaehigkeit professionalisieren
 
+### Deliberately brought-forward foundation
+
+Before the wider Phase-4 scope, SSF will implement a deliberately narrow
+Control Plane Foundation because real operator and tenant pilots require a
+safe administrative boundary. This includes tenant provisioning, root and
+tenant-local identity separation, an initial tenant administrator,
+tenant-local user and role administration, auditable and idempotent
+reconciliation, readiness, and the SSF plugin's minimal configuration
+contract with Studio.
+
+This foundation is not deep enterprise administration. It does not include
+ClickHouse or session-data analytics, usage or cost reporting, billing,
+conversation-content access, regular support access, or full export and
+deletion workflows. Phase 1 and Phase 2 retain priority for reliable
+conversation flows and a simple standalone experience.
+
 ### Produktziel
 
 SSF soll in gemeinsamen Betreiber- und Partnerstrukturen wirtschaftlich und organisatorisch tragfaehig werden.

@@ -12,7 +12,7 @@ Welcome to the Smart Speech Flow Backend documentation! This guide helps you fin
 - [Architecture Overview](architecture/SYSTEM_ARCHITECTURE.md) - System design and components
 - [Roles and Permissions](architecture/roles-and-permissions.md) - Target model for multi-tenant roles and authorization
 - [Customer Journey](architecture/customer-journey.md) - Tenant lifecycle from onboarding through decommissioning
-- [SVA Studio Control Plane](architecture/sva-studio-control-plane.md) - Cross-product administration boundary and required Studio capabilities
+- [SVA Studio Control Plane](architecture/sva-studio-control-plane.md) - Canonical SSF administrative boundary, first delivery scope, and later-stage limits
 - [Frontend Integration Guide](guides/frontend-integration.md) - How to integrate with the frontend
 - [API Conventions](guides/api-conventions.md) - API design patterns and standards
 - [Code Quality Standards](testing/code-quality.md) - Coding standards and quality checks
@@ -51,7 +51,7 @@ High-level system design, component interactions, and architectural decisions.
 - `models.md` - Data models and schemas
 - `roles-and-permissions.md` - Target role hierarchy, responsibilities, and authorization principles
 - `customer-journey.md` - Tenant lifecycle, role handoffs, and shutdown process
-- `sva-studio-control-plane.md` - Studio–SSF administrative boundary, API contracts, and implementation scope
+- `sva-studio-control-plane.md` - Canonical Studio–SSF administrative boundary, first delivery scope, and later-stage limits
 
 ### `/guides/` - User & Integration Guides
 Step-by-step guides for common tasks and integrations.
@@ -161,5 +161,5 @@ If you can't find what you're looking for:
 
 ---
 
-**Last Updated:** 2026-07-20
+**Last Updated:** 2026-08-30
 **Maintained by:** Smart Village Solutions Team
