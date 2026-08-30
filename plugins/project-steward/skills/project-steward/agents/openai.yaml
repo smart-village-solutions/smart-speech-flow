@@ -1,0 +1,6 @@
+interface:
+  display_name: "Project Steward"
+  short_description: "Prioritize delivery and govern follow-ups"
+  default_prompt: "Use $project-steward to identify the next Smart Speech Flow delivery priorities."
+policy:
+  allow_implicit_invocation: true

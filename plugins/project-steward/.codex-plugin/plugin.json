@@ -1,0 +1,21 @@
+{
+  "name": "project-steward",
+  "version": "0.1.0",
+  "description": "Evidence-based delivery planning and GitHub stewardship for Smart Speech Flow.",
+  "author": {
+    "name": "Smart Village Solutions"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Project Steward",
+    "shortDescription": "Keep delivery priorities and follow-ups current.",
+    "longDescription": "Ranks Smart Speech Flow delivery work, turns meeting notes into actions, and maintains governed GitHub follow-ups.",
+    "developerName": "Smart Village Solutions",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": "Use Project Steward to identify the next delivery priorities."
+  }
+}
