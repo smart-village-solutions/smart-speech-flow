@@ -64,9 +64,10 @@ def test_keycloak_realm_mount_resolves_to_the_versioned_file():
         for volume in keycloak["volumes"]
         if volume.endswith(":/opt/keycloak/data/import/ssf-realm.json:ro")
     )
-    source = Path(realm_mount.split(":", maxsplit=1)[0])
+    source = (COMPOSE_PATH.parent / realm_mount.split(":", maxsplit=1)[0]).resolve()
+    expected_source = Path("deploy/production/keycloak/ssf-realm.json").resolve()
 
-    assert source == Path("deploy/production/keycloak/ssf-realm.json")
+    assert source == expected_source
     assert source.is_file()
 
 
