@@ -30,6 +30,10 @@ Welcome to the Smart Speech Flow Backend documentation! This guide helps you fin
 - [ClickHouse Operations Runbook](operations/runbooks/clickhouse-operations.md) - Internal analytics database operations
 - [Conversation Quality KPI Catalog](operations/conversation-quality-kpis.en.md) - Precise quality, reliability, and privacy-aware telemetry definitions ([German](operations/conversation-quality-kpis.md))
 
+### For KasselDIALOG Rollout
+- [KasselDIALOG Information and Training Foundation](guides/kasseldialog-information-and-training-foundation.md) - German working basis for local information and training materials
+- [KasselDIALOG One-Pager for Project Partners and Testers](guides/kasseldialog-one-pager-project-partners-and-testers.md) - German outreach draft for interested project partners and potential testers
+
 ### For Testers
 - [User Testing Strategy](testing/USER_TESTING_STRATEGY.md) - How product-oriented user testing should be designed and used
 - [Integration Tests Status](testing/INTEGRATION_TESTS_STATUS.md) - Current test coverage
@@ -63,6 +67,8 @@ Step-by-step guides for common tasks and integrations.
 - `api-conventions.md` - API design patterns
 - `customer-api.md` - Customer-facing API documentation
 - `frontend_api.md` - Frontend API reference
+- `kasseldialog-information-and-training-foundation.md` - German working basis for KasselDIALOG information and training materials
+- `kasseldialog-one-pager-project-partners-and-testers.md` - German outreach draft for interested project partners and potential testers
 
 ### `/operations/` - Operational Documentation
 Deployment procedures, monitoring, and incident response.
