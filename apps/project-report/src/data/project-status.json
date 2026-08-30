@@ -74,7 +74,7 @@
           "area": "Produktdesign",
           "priority": "must",
           "effortPt": 6,
-          "status": "prototype",
+          "status": "done",
           "health": "on_track",
           "dependsOn": [],
           "acceptanceCriteria": [
