@@ -5,30 +5,35 @@ import { fileURLToPath } from 'node:url';
 
 const parseJson = (value) => JSON.parse(value);
 
-const defaultRun = (command, args) => execFileSync(command, args, { encoding: 'utf8' });
+const defaultRun = (command, args, options = {}) => execFileSync(command, args, { encoding: 'utf8', ...options });
 
 export const collectEvidence = ({
   run = defaultRun,
   readReport = readFileSync,
   owner = 'smart-village-solutions',
   projectNumber = '7',
-  reportPath = resolve(fileURLToPath(new URL('../../../apps/project-report/src/data/project-status.json', import.meta.url))),
-} = {}) => ({
-  collectedAt: new Date().toISOString(),
-  openSpec: parseJson(run('openspec', ['change', 'list', '--json'])),
-  projectStatus: parseJson(readReport(reportPath, 'utf8')),
-  issues: parseJson(run('gh', [
-    'issue', 'list', '--state', 'open', '--limit', '100',
-    '--json', 'number,title,labels,url,updatedAt',
-  ])),
-  pullRequests: parseJson(run('gh', [
-    'pr', 'list', '--state', 'open', '--limit', '100',
-    '--json', 'number,title,headRefName,reviewDecision,statusCheckRollup,url,updatedAt',
-  ])),
-  projectItems: parseJson(run('gh', [
-    'project', 'item-list', projectNumber, '--owner', owner, '--limit', '100', '--format', 'json',
-  ])),
-});
+  repositoryRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url))),
+  reportPath = resolve(repositoryRoot, 'apps/project-report/src/data/project-status.json'),
+} = {}) => {
+  const repository = `${owner}/smart-speech-flow`;
+  const runOptions = { cwd: repositoryRoot };
+  return {
+    collectedAt: new Date().toISOString(),
+    openSpec: parseJson(run('openspec', ['change', 'list', '--json'], runOptions)),
+    projectStatus: parseJson(readReport(reportPath, 'utf8')),
+    issues: parseJson(run('gh', [
+      'issue', 'list', '--repo', repository, '--state', 'open', '--limit', '100',
+      '--json', 'number,title,labels,url,updatedAt',
+    ], runOptions)),
+    pullRequests: parseJson(run('gh', [
+      'pr', 'list', '--repo', repository, '--state', 'open', '--limit', '100',
+      '--json', 'number,title,headRefName,reviewDecision,statusCheckRollup,url,updatedAt',
+    ], runOptions)),
+    projectItems: parseJson(run('gh', [
+      'project', 'item-list', projectNumber, '--owner', owner, '--limit', '100', '--format', 'json',
+    ], runOptions)),
+  };
+};
 
 const isMainModule = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 

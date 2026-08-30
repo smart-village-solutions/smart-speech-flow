@@ -4,8 +4,8 @@ import { collectEvidence } from './evidence-collector.mjs';
 describe('collectEvidence', () => {
   it('collects the project plan, OpenSpec, issues, pull requests, and Project items', () => {
     const calls = [];
-    const run = (command, args) => {
-      calls.push([command, args]);
+    const run = (command, args, options) => {
+      calls.push([command, args, options]);
       if (command === 'openspec') return JSON.stringify({ changes: [{ id: 'stabilize-production-operations' }] });
       if (args[0] === 'issue') return JSON.stringify([{ number: 221, title: 'Secure service ports' }]);
       if (args[0] === 'pr') return JSON.stringify([{ number: 233, title: 'Boot health gate' }]);
@@ -26,11 +26,14 @@ describe('collectEvidence', () => {
       pullRequests: [{ number: 233 }],
       projectItems: { items: [{ id: 'PVTI_1' }] },
     });
-    expect(calls).toEqual(expect.arrayContaining([
-      ['openspec', ['change', 'list', '--json']],
-      ['gh', expect.arrayContaining(['issue', 'list'])],
-      ['gh', expect.arrayContaining(['pr', 'list'])],
-      ['gh', expect.arrayContaining(['project', 'item-list', '7'])],
+    expect(calls[0].slice(0, 2)).toEqual(['openspec', ['change', 'list', '--json']]);
+    expect(calls.map(([command, args]) => [command, args.slice(0, 2)])).toEqual(expect.arrayContaining([
+      ['gh', ['issue', 'list']],
+      ['gh', ['pr', 'list']],
+      ['gh', ['project', 'item-list']],
+    ]));
+    expect(calls.filter(([command]) => command === 'gh')).toEqual(expect.arrayContaining([
+      ['gh', expect.arrayContaining(['--repo', 'smart-village-solutions/smart-speech-flow']), expect.objectContaining({ cwd: expect.any(String) })],
     ]));
   });
 });

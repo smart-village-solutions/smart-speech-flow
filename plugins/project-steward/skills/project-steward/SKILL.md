@@ -17,15 +17,13 @@ repository documentation. Refresh GitHub evidence before a write:
 
 ```bash
 gh auth status
-gh issue list --state open --limit 100
-gh pr list --state open --limit 100
-gh project item-list 7 --owner smart-village-solutions --limit 100 --format json
-node plugins/project-steward/scripts/priority-report.mjs --format markdown
+node plugins/project-steward/scripts/priority-report.mjs --live --format markdown
 ```
 
 Resolve sources in this order: documented project decisions, current GitHub
 issues and PRs, OpenSpec state, project-status snapshot, then roadmap. Report a
-same-precedence conflict; do not silently choose a status.
+same-precedence conflict; do not silently choose a status or update the plan
+until the conflict is resolved.
 
 ## Define the next priorities
 

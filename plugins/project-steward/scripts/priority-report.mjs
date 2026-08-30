@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { collectEvidence } from './evidence-collector.mjs';
 
 const priorityWeight = {
   must: 0,
@@ -17,6 +18,18 @@ const healthWeight = {
   needs_attention: 1,
   at_risk: 2,
   blocked: 3,
+};
+
+const statusByProjectStatus = {
+  Idea: 'idea',
+  Commissioned: 'commissioned',
+  Planned: 'planned',
+  Prototype: 'prototype',
+  Implementation: 'implementation',
+  Optimization: 'optimization',
+  Testing: 'testing',
+  Acceptance: 'acceptance',
+  Done: 'done',
 };
 
 const parseDeadline = (title) => {
@@ -36,6 +49,51 @@ const rationaleFor = (workPackage, dependencyState, dependentCount, deadline) =>
   if (dependentCount > 0) rationale.push(`Unblocks ${dependentCount} direct work package${dependentCount === 1 ? '' : 's'}.`);
   if (deadline) rationale.push(`Milestone deadline: ${deadline}.`);
   return rationale;
+};
+
+const projectItemsFor = (workPackage, projectItems) => projectItems.filter((item) => {
+  const linkedWorkPackages = String(item['roadmap links'] ?? item['roadmap Links'] ?? item['Roadmap links'] ?? '')
+    .split(',')
+    .map((value) => value.trim());
+  return item['work Package'] === workPackage.id
+    || linkedWorkPackages.includes(workPackage.id)
+    || workPackage.tracking?.githubIssues?.includes(item.content?.number);
+});
+
+export const reconcileEvidence = ({ projectStatus, projectItems = { items: [] }, decisions = [] }) => {
+  const report = structuredClone(projectStatus);
+  const conflicts = [];
+
+  for (const milestone of report.milestones) {
+    for (const workPackage of milestone.workPackages) {
+      const items = projectItemsFor(workPackage, projectItems.items ?? []);
+      const statuses = [...new Set(items.map((item) => item.status).filter(Boolean))].sort();
+      if (statuses.length > 1) {
+        conflicts.push({
+          workPackageId: workPackage.id,
+          source: 'GitHub Project',
+          field: 'status',
+          values: statuses,
+        });
+        continue;
+      }
+      if (statuses.length === 1 && statusByProjectStatus[statuses[0]]) {
+        workPackage.status = statusByProjectStatus[statuses[0]];
+        workPackage.source = 'GitHub Project';
+      }
+    }
+  }
+
+  for (const decision of decisions) {
+    const workPackage = report.milestones.flatMap((milestone) => milestone.workPackages)
+      .find((candidate) => candidate.id === decision.workPackageId);
+    if (!workPackage) continue;
+    if (decision.status) workPackage.status = decision.status;
+    if (decision.priority) workPackage.priority = decision.priority;
+    workPackage.source = 'documented project decision';
+  }
+
+  return { report, conflicts };
 };
 
 export const rankWorkPackages = (report, { limit = 5, today = new Date().toISOString().slice(0, 10) } = {}) => {
@@ -62,7 +120,7 @@ export const rankWorkPackages = (report, { limit = 5, today = new Date().toISOSt
       health: workPackage.health ?? 'on_track',
       deadline: workPackage.deadline,
       dependencyState,
-      source: 'project-status.json',
+      source: workPackage.source ?? 'project-status.json',
       rationale: rationaleFor(workPackage, dependencyState, dependentCount, workPackage.deadline),
       priorityWeight: priorityWeight[workPackage.priority] ?? Number.MAX_SAFE_INTEGER,
       readinessWeight: dependencyState === 'ready' ? 0 : 1,
@@ -81,7 +139,18 @@ export const rankWorkPackages = (report, { limit = 5, today = new Date().toISOSt
   return { generatedAt: today, priorities };
 };
 
-export const renderPriorityMarkdown = ({ generatedAt, priorities }) => [
+export const rankEvidence = (evidence, options = {}) => {
+  const { report, conflicts } = reconcileEvidence(evidence);
+  const conflictedWorkPackages = new Set(conflicts.map((conflict) => conflict.workPackageId));
+  const actionableReport = structuredClone(report);
+  for (const milestone of actionableReport.milestones) {
+    milestone.workPackages = milestone.workPackages
+      .filter((workPackage) => !conflictedWorkPackages.has(workPackage.id));
+  }
+  return { ...rankWorkPackages(actionableReport, options), conflicts };
+};
+
+export const renderPriorityMarkdown = ({ generatedAt, priorities, conflicts = [] }) => [
   `# Next Priorities (${generatedAt})`,
   '',
   ...priorities.flatMap((priority, index) => [
@@ -94,14 +163,24 @@ export const renderPriorityMarkdown = ({ generatedAt, priorities }) => [
     ...priority.rationale.map((reason) => `- ${reason}`),
     '',
   ]),
+  ...(conflicts.length === 0 ? [] : [
+    '## Conflicts',
+    '',
+    ...conflicts.map((conflict) => `- ${conflict.workPackageId}: ${conflict.source} ${conflict.field} conflicts (${conflict.values.join(', ')}). No plan update.`),
+    '',
+  ]),
 ].join('\n');
+
+const sanitizeMinuteText = (value) => String(value)
+  .replace(/(?:password|token|api(?:[- ]?key)?|secret)\s*[:=]\s*[^;\s]+/gi, '[REDACTED_SECRET]')
+  .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[REDACTED_EMAIL]');
 
 const listSection = (heading, entries) => entries.length === 0
   ? []
   : [
     `## ${heading}`,
     '',
-    ...entries.map((entry) => `- ${entry}`),
+    ...entries.map((entry) => `- ${sanitizeMinuteText(entry)}`),
     '',
   ];
 
@@ -113,7 +192,7 @@ export const renderMeetingMinutes = ({
   risks = [],
   sources = [],
 }) => [
-  `# Meeting Minutes: ${topic}`,
+  `# Meeting Minutes: ${sanitizeMinuteText(topic)}`,
   '',
   `- Date: ${date}`,
   '',
@@ -138,9 +217,12 @@ if (isMainModule) {
   const repositoryRoot = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
   const reportPath = argumentValue('--report', resolve(repositoryRoot, 'apps/project-report/src/data/project-status.json'));
   const format = argumentValue('--format', 'json');
-  const result = rankWorkPackages(JSON.parse(readFileSync(reportPath, 'utf8')), {
+  const options = {
     limit: Number(argumentValue('--limit', '5')),
     today: argumentValue('--today', new Date().toISOString().slice(0, 10)),
-  });
+  };
+  const result = process.argv.includes('--live')
+    ? rankEvidence(collectEvidence({ repositoryRoot, reportPath }), options)
+    : rankWorkPackages(JSON.parse(readFileSync(reportPath, 'utf8')), options);
   console.log(format === 'markdown' ? renderPriorityMarkdown(result) : JSON.stringify(result, null, 2));
 }
