@@ -5,9 +5,7 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 import { AppRoutes } from '@/app/router/AppRoutes';
 import { readConfig } from '@/app/config/env';
 
-const servicesWith = (adminDevEntry: boolean) => ({
-  config: { ...readConfig({}), adminDevEntry },
-});
+const services = { config: readConfig({}) };
 
 const signIn = async () => {
   await userEvent.type(await screen.findByLabelText('E-Mail-Adresse'), 'admin@example.com');
@@ -22,7 +20,7 @@ describe('the admin entry', () => {
     renderWithProviders(<AppRoutes />, {
       route: '/admin',
       locale: 'de',
-      services: servicesWith(false),
+      services,
     });
 
     expect(await screen.findByRole('heading', { name: 'Anmelden' })).toBeInTheDocument();
@@ -32,7 +30,7 @@ describe('the admin entry', () => {
     renderWithProviders(<AppRoutes />, {
       route: '/admin',
       locale: 'de',
-      services: servicesWith(false),
+      services,
     });
 
     await signIn();
@@ -44,7 +42,7 @@ describe('the admin entry', () => {
     renderWithProviders(<AppRoutes />, {
       route: '/admin',
       locale: 'de',
-      services: servicesWith(false),
+      services,
     });
 
     await userEvent.type(await screen.findByLabelText('E-Mail-Adresse'), 'admin@example.com');
@@ -55,21 +53,11 @@ describe('the admin entry', () => {
     expect(screen.queryByText('Willkommen bei Smart Speech Flow')).not.toBeInTheDocument();
   });
 
-  it('skips the login at /admin/dev when the flag is set', async () => {
+  it('does not serve the removed /admin/dev bypass', async () => {
     renderWithProviders(<AppRoutes />, {
       route: '/admin/dev',
       locale: 'de',
-      services: servicesWith(true),
-    });
-
-    expect(await screen.findByText('Willkommen bei Smart Speech Flow')).toBeInTheDocument();
-  });
-
-  it('does not serve /admin/dev when the flag is off', async () => {
-    renderWithProviders(<AppRoutes />, {
-      route: '/admin/dev',
-      locale: 'de',
-      services: servicesWith(false),
+      services,
     });
 
     expect(await screen.findByText('404')).toBeInTheDocument();
@@ -80,7 +68,7 @@ describe('the admin entry', () => {
     renderWithProviders(<AppRoutes />, {
       route: '/legacy/admin',
       locale: 'de',
-      services: servicesWith(false),
+      services,
     });
 
     expect(await screen.findByText('Admin - Session Verwaltung')).toBeInTheDocument();
@@ -93,7 +81,7 @@ describe('the admin entry', () => {
     renderWithProviders(<AppRoutes />, {
       route: '/admin',
       locale: 'de',
-      services: servicesWith(false),
+      services,
     });
 
     await signIn();
@@ -106,10 +94,12 @@ describe('the admin entry', () => {
 
   it('leaves the admin UI for the access-code screen from a conversation', async () => {
     renderWithProviders(<AppRoutes />, {
-      route: '/admin/dev',
+      route: '/admin',
       locale: 'de',
-      services: servicesWith(true),
+      services,
     });
+
+    await signIn();
 
     await userEvent.click(
       await screen.findByRole('button', { name: 'Gespräch AR000001 fortsetzen' })
@@ -125,7 +115,7 @@ describe('the admin entry', () => {
     renderWithProviders(<AppRoutes />, {
       route: '/admin',
       locale: 'de',
-      services: servicesWith(false),
+      services,
     });
 
     await signIn();
@@ -145,7 +135,7 @@ describe('the admin entry', () => {
       route: '/admin',
       theme: 'dark',
       locale: 'de',
-      services: servicesWith(false),
+      services,
     });
 
     await signIn();

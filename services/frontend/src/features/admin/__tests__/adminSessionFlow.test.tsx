@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -6,19 +6,30 @@ import { installFakeClipboard } from '@/test/fakeClipboard';
 import { readConfig } from '@/app/config/env';
 import { AppRoutes } from '@/app/router/AppRoutes';
 
-const withDevEntry = { config: { ...readConfig({}), adminDevEntry: true } };
+const services = { config: readConfig({}) };
 
-const renderApp = () =>
+const signIn = async () => {
+  await userEvent.type(await screen.findByLabelText('E-Mail-Adresse'), 'admin@example.com');
+  await userEvent.type(screen.getByLabelText('Passwort'), 'ssf2025kassel');
+  await userEvent.click(screen.getByRole('button', { name: 'Anmelden' }));
+};
+
+const renderApp = async () => {
   renderWithProviders(<AppRoutes />, {
-    route: '/admin/dev',
+    route: '/admin',
     locale: 'de',
-    services: withDevEntry,
+    services,
   });
 
+  await signIn();
+};
+
 describe('the admin session flow', () => {
+  beforeEach(() => sessionStorage.clear());
+
   it('creates a session, hands out the invite, and enters the conversation', async () => {
     installFakeClipboard();
-    renderApp();
+    await renderApp();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Neues Gespräch starten' }));
 
@@ -36,7 +47,7 @@ describe('the admin session flow', () => {
   });
 
   it('re-enters a session that is still open', async () => {
-    renderApp();
+    await renderApp();
 
     await userEvent.click(
       await screen.findByRole('button', { name: 'Gespräch AR000001 fortsetzen' })
@@ -46,7 +57,7 @@ describe('the admin session flow', () => {
   });
 
   it('leaves a completed session alone', async () => {
-    renderApp();
+    await renderApp();
 
     // Waiting on the rows, not the heading: the heading renders before the
     // query answers, and "no button for TR000001" is only meaningful once the
@@ -56,7 +67,7 @@ describe('the admin session flow', () => {
   });
 
   it('drops the open session when the admin signs out', async () => {
-    renderApp();
+    await renderApp();
 
     await userEvent.click(
       await screen.findByRole('button', { name: 'Gespräch AR000001 fortsetzen' })
@@ -66,9 +77,7 @@ describe('the admin session flow', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
     await userEvent.click(screen.getByRole('button', { name: 'Abmelden' }));
 
-    // Signing out leaves the admin UI entirely, on /admin/dev as anywhere else.
-    // Before, this route skipped the login, so a sign-out re-rendered the
-    // dashboard and looked like nothing had happened.
+    // Signing out returns to the legacy admin login and drops the active session.
     expect(await screen.findByRole('heading', { name: 'Code eingeben' })).toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });

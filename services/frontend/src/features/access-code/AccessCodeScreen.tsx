@@ -92,14 +92,20 @@ export function AccessCodeScreen() {
           </p>
         )}
 
-        {/* The admin UI is the real one now; the legacy page lives on at
-            /legacy/admin for comparison. */}
-        <Link
-          to="/admin"
-          className="mt-32 text-note font-normal tracking-link text-fg-link underline underline-offset-2 transition-colors duration-200 hover:text-fg-link-hover"
-        >
-          {t('accessCode.adminLogin')}
-        </Link>
+        <div className="mt-32 flex flex-col items-center gap-3">
+          <Link
+            to="/login"
+            className="text-note font-normal tracking-link text-fg-link underline underline-offset-2 transition-colors duration-200 hover:text-fg-link-hover"
+          >
+            Neuer Admin-Login
+          </Link>
+          <Link
+            to="/admin"
+            className="text-note font-normal tracking-link text-fg-link underline underline-offset-2 transition-colors duration-200 hover:text-fg-link-hover"
+          >
+            {t('accessCode.adminLogin')}
+          </Link>
+        </div>
       </div>
     </ScreenShell>
   );

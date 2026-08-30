@@ -33,7 +33,7 @@ docker compose build frontend
 **Ergebnis**: Image `ssf-backend-frontend` erfolgreich gebaut (verified ✓)
 
 Build-Basis:
-- Builder: `node:22-alpine`
+- Builder: `node:24-alpine`
 - Runtime: `nginxinc/nginx-unprivileged:alpine`
 
 ### 2. Container starten

@@ -9,6 +9,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from services.api_gateway.app import app
+from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.session_manager import session_manager
 
 client = TestClient(app)
@@ -17,9 +18,13 @@ client = TestClient(app)
 class TestAdminRoutes:
     def setup_method(self):
         """Reset session manager before each test."""
+        app.dependency_overrides[require_ssf_user] = lambda: {"sub": "test-admin"}
         os.environ.pop("SSF_ALLOW_PARALLEL_SESSIONS", None)
         session_manager.allow_parallel_sessions = False
         session_manager.reset(clear_persistence=True)
+
+    def teardown_method(self):
+        app.dependency_overrides.clear()
 
     def test_create_admin_session_terminates_previous_active_session_by_default(self):
         first_response = client.post("/api/admin/session/create")

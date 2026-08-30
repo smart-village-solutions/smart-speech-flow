@@ -114,6 +114,11 @@ services:
     - MESSAGE_RATE_WINDOW_SECONDS=${MESSAGE_RATE_WINDOW_SECONDS:-10}
     - ENVIRONMENT=${ENVIRONMENT:-production}
     - DEVELOPMENT_CORS_ORIGINS=${DEVELOPMENT_CORS_ORIGINS:-http://localhost:5173,http://localhost:5174}
+    - KEYCLOAK_ISSUER=${KEYCLOAK_ISSUER:-https://auth.kassel.smartspeechflow.de/realms/ssf}
+    - KEYCLOAK_AUDIENCE=${KEYCLOAK_AUDIENCE:-ssf-frontend}
+    - KEYCLOAK_REQUIRED_ROLE=${KEYCLOAK_REQUIRED_ROLE:-ssf-user}
+    - SSF_ENABLE_LEGACY_ADMIN_ACCESS=${SSF_ENABLE_LEGACY_ADMIN_ACCESS:-false}
+    - SSF_LEGACY_ADMIN_ACCESS_CODE=${SSF_LEGACY_ADMIN_ACCESS_CODE:-}
     healthcheck:
       test:
       - CMD
@@ -221,6 +226,7 @@ services:
     command:
     - start
     - --optimized
+    - --import-realm
     restart: unless-stopped
     expose:
     - '8080'
@@ -236,6 +242,8 @@ services:
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: 'true'
       KC_HEALTH_ENABLED: 'true'
+    volumes:
+    - ./keycloak/ssf-realm.json:/opt/keycloak/data/import/ssf-realm.json:ro
     depends_on:
       keycloak-postgres:
         condition: service_healthy

@@ -1,0 +1,53 @@
+{
+  "realm": "ssf",
+  "enabled": true,
+  "displayName": "Smart Speech Flow",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "ssf-user",
+        "description": "Administrative access to Smart Speech Flow"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "ssf-frontend",
+      "name": "Smart Speech Flow Frontend",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "https://translate.smart-village.solutions/",
+        "https://translate.smart-village.solutions/login"
+      ],
+      "webOrigins": [
+        "https://translate.smart-village.solutions"
+      ],
+      "protocolMappers": [
+        {
+          "name": "ssf-frontend audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "ssf-frontend",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    }
+  ]
+}

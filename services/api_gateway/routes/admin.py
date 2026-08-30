@@ -9,10 +9,11 @@ from hashlib import sha256
 from types import TracebackType
 from typing import Annotated, Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from ..auth import require_ssf_user
 from ..log_safety import sanitize_log_value
 from ..session_manager import SessionStatus, session_manager
 
@@ -20,7 +21,9 @@ from ..session_manager import SessionStatus, session_manager
 logger = logging.getLogger(__name__)
 
 # Router setup
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(
+    prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_ssf_user)]
+)
 
 ADMIN_ROUTE_RESPONSES = {
     404: {"description": "Session not found"},
