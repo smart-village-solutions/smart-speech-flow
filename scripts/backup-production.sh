@@ -59,14 +59,16 @@ production_compose exec -T redis redis-cli --rdb /tmp/ssf-backup.rdb >/dev/null
 production_compose exec -T redis cat /tmp/ssf-backup.rdb > "$staging_dir/redis.rdb"
 
 clickhouse_database="${SSF_CLICKHOUSE_DATABASE:-$(grep '^CLICKHOUSE_DB=' "$SSF_PROJECT_ROOT/.env" | head -n 1 | cut -d= -f2-)}"
+clickhouse_backup_filename="ssf-clickhouse-${timestamp}.zip"
 if [[ ! "$clickhouse_database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
   printf 'CLICKHOUSE_DB must be a simple SQL identifier for native backups.\n' >&2
   exit 1
 fi
 production_compose exec -T clickhouse clickhouse-client --query \
-  "BACKUP DATABASE \`${clickhouse_database}\` TO File('ssf-clickhouse-backup.zip')"
-production_compose exec -T clickhouse cat /var/lib/clickhouse/backups/backups/ssf-clickhouse-backup.zip \
+  "BACKUP DATABASE \`${clickhouse_database}\` TO File('${clickhouse_backup_filename}')"
+production_compose exec -T clickhouse cat "/var/lib/clickhouse/backups/backups/${clickhouse_backup_filename}" \
   > "$staging_dir/clickhouse-native-backup.zip"
+production_compose exec -T clickhouse rm -f "/var/lib/clickhouse/backups/backups/${clickhouse_backup_filename}"
 
 tar -C "$SSF_PROJECT_ROOT" -czf "$staging_dir/configuration.tar.gz" \
   deploy/production monitoring letsencrypt models
