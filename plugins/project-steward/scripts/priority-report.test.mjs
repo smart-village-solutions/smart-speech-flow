@@ -129,6 +129,22 @@ describe('rankWorkPackages', () => {
     });
   });
 
+  it('does not treat a closed issue as completion evidence', () => {
+    const projectStatus = report();
+    projectStatus.milestones[0].workPackages[0].tracking = { githubIssues: [42] };
+
+    const result = rankEvidence({
+      projectStatus,
+      issues: [{ number: 42, state: 'CLOSED' }],
+    }, { limit: 3, today: '2026-08-30' });
+
+    expect(result.priorities[0]).toMatchObject({
+      workPackageId: 'WP-001',
+      status: 'planned',
+      source: 'project-status.json',
+    });
+  });
+
   it('uses linked OpenSpec task progress before the status snapshot', () => {
     const projectStatus = report();
     projectStatus.milestones[0].workPackages[0].status = 'planned';

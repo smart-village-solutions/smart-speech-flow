@@ -95,10 +95,9 @@ const resolveStatus = (workPackage, evidence) => {
         .map((item) => ({ status: statusByProjectStatus[item.status], source: 'GitHub Project' }))
         .filter((item) => item.status),
       ...linkedIssuesFor(workPackage, evidence.issues ?? [])
-        .map((issue) => ({
-          status: String(issue.state ?? 'OPEN').toUpperCase() === 'CLOSED' ? 'done' : 'planned',
-          source: `GitHub issue #${issue.number}`,
-        })),
+        .flatMap((issue) => String(issue.state ?? 'OPEN').toUpperCase() === 'OPEN'
+          ? [{ status: 'planned', source: `GitHub issue #${issue.number}` }]
+          : []),
       ...linkedPullRequestsFor(workPackage, evidence.pullRequests ?? [])
         .flatMap((pullRequest) => {
           const state = String(pullRequest.state ?? 'OPEN').toUpperCase();
