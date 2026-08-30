@@ -48,3 +48,10 @@ def test_production_compose_forbids_builds_and_mutable_image_tags():
 def test_production_services_restart_automatically():
     for name, service in load_production_compose()["services"].items():
         assert service.get("restart") == "unless-stopped", name
+
+
+def test_production_compose_preserves_the_existing_prometheus_volume():
+    compose = load_production_compose()
+    prometheus = compose["services"]["prometheus"]
+    assert "prometheus-data:/prometheus" in prometheus["volumes"]
+    assert compose["volumes"]["prometheus-data"]["external"] is True

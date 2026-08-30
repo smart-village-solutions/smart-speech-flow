@@ -36,6 +36,7 @@ required=(
   volumes/ssf-backend_keycloak-postgres-data.tar.gz
   volumes/ssf-backend_ollama-data.tar.gz
   volumes/ssf-backend_redis-data.tar.gz
+  volumes/prometheus-data.tar.gz
 )
 
 cleanup() {
@@ -62,13 +63,18 @@ for volume in \
   ssf-backend_clickhouse-data \
   ssf-backend_keycloak-postgres-data \
   ssf-backend_ollama-data \
-  ssf-backend_redis-data; do
+  ssf-backend_redis-data \
+  1980baddd3a6bd8bcade314d6f81d3716e73ae9bba6655b90d4179ff7b1990a7; do
   docker volume inspect "$volume" >/dev/null
+  archive_name="$volume"
+  if [[ "$volume" == 1980baddd3a6bd8bcade314d6f81d3716e73ae9bba6655b90d4179ff7b1990a7 ]]; then
+    archive_name=prometheus-data
+  fi
   docker run --rm --pull=never \
     --volume "$volume:/source:ro" \
     --volume "$staging_dir:/backup" \
     ssf-backup-helper:prod-e409a06 \
-    tar -C /source -czf "/backup/volumes/${volume}.tar.gz" .
+    tar -C /source -czf "/backup/volumes/${archive_name}.tar.gz" .
 done
 
 python3 - "$staging_dir/manifest.json" "${required[@]}" <<'PY'

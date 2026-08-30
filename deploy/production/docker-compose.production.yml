@@ -284,6 +284,7 @@ services:
     volumes:
     - ../../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
     - ../../monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
+    - prometheus-data:/prometheus
     expose:
     - '9090'
     labels:
@@ -411,3 +412,6 @@ volumes:
   audio-data: null
   clickhouse-data: null
   keycloak-postgres-data: null
+  prometheus-data:
+    external: true
+    name: 1980baddd3a6bd8bcade314d6f81d3716e73ae9bba6655b90d4179ff7b1990a7
