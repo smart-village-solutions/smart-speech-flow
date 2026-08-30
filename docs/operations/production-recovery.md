@@ -38,9 +38,13 @@ Redis, and ClickHouse.
 
 Daily, weekly, and monthly timers create complete local backups under
 `backups/<tier>/<UTC timestamp>`. Retention is seven daily, four weekly, and
-twelve monthly backups. Every backup contains all production Docker volumes,
-a logical Keycloak PostgreSQL export, Redis snapshot, configuration and state
-directories, checksum manifests, and archive readability validation.
+twelve monthly backups. Every backup contains the stateful production Docker
+volumes (except reproducible Ollama model weights), a logical Keycloak
+PostgreSQL export, Redis snapshot, configuration and state directories,
+checksum manifests, and archive readability validation. `ollama-models.txt`
+records the installed model identifiers; after recovery, pull those models
+again from the configured Ollama registry. This keeps recurring backups small
+while retaining the information needed to restore the service configuration.
 The monthly job also restores the ClickHouse native backup into a temporary,
 network-isolated ClickHouse container and fails if that drill cannot complete.
 The backup directory stores `.env` with mode `0600` and the Git revision needed
