@@ -1,0 +1,413 @@
+name: ssf-backend
+services:
+  traefik:
+    image: traefik@sha256:ca0f90490fe3091f5f4e582a28638652edb3b26b4d7a1d9ee621ce88fb2bff86
+    command:
+    - --api.dashboard=true
+    - --log.level=DEBUG
+    - --providers.docker=true
+    - --providers.docker.exposedbydefault=false
+    - --entrypoints.web.address=:80
+    - --entrypoints.websecure.address=:443
+    - --certificatesresolvers.le.acme.tlschallenge=true
+    - --certificatesresolvers.le.acme.email=admin@smart-village.solutions
+    - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+    environment:
+    - DOCKER_API_VERSION=1.41
+    ports:
+    - 80:80
+    - 443:443
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+    - ../../letsencrypt:/letsencrypt
+    restart: unless-stopped
+    pull_policy: never
+  asr:
+    ports:
+    - 8001:8000
+    volumes:
+    - ../../models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: all
+            capabilities:
+            - gpu
+    image: ssf-backend-asr:prod-e409a06
+    restart: unless-stopped
+    pull_policy: never
+  translation:
+    ports:
+    - 8002:8000
+    volumes:
+    - ../../models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: all
+            capabilities:
+            - gpu
+    image: ssf-backend-translation:prod-e409a06
+    restart: unless-stopped
+    pull_policy: never
+  tts:
+    ports:
+    - 8003:8000
+    volumes:
+    - ../../models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: all
+            capabilities:
+            - gpu
+    image: ssf-backend-tts:prod-e409a06
+    restart: unless-stopped
+    pull_policy: never
+  api_gateway:
+    ports:
+    - 8000:8000
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+    volumes:
+    - audio-data:/data/audio
+    - type: tmpfs
+      target: /tmp/audio
+      tmpfs:
+        size: 1G
+    environment:
+    - REDIS_URL=redis://redis:6379/0
+    - REDIS_NAMESPACE=ssf
+    - CLIENT_BASE_URL=https://translate.smart-village.solutions
+    - AUDIO_STORAGE_PATH=/data/audio
+    - AUDIO_RETENTION_HOURS=24
+    - AUDIO_TEMP_PATH=/tmp/audio
+    - AUDIO_MAX_DISK_USAGE_GB=9
+    - AUDIO_CLEANUP_INTERVAL_MINUTES=60
+    - ENABLE_PIPELINE_METADATA=true
+    - LLM_REFINEMENT_ENABLED=${LLM_REFINEMENT_ENABLED:-true}
+    - LLM_REFINEMENT_MODEL=${LLM_REFINEMENT_MODEL:-gpt-oss:20b}
+    - LLM_REFINEMENT_MODE=${LLM_REFINEMENT_MODE:-primary_only}
+    - LLM_REFINEMENT_PRIMARY_MODEL=${LLM_REFINEMENT_PRIMARY_MODEL:-gpt-oss:20b}
+    - LLM_REFINEMENT_CANDIDATE_MODEL=${LLM_REFINEMENT_CANDIDATE_MODEL:-phi4-mini}
+    - LLM_REFINEMENT_SHADOW_QUEUE_LIMIT=${LLM_REFINEMENT_SHADOW_QUEUE_LIMIT:-4}
+    - LLM_REFINEMENT_ENDPOINT=${LLM_REFINEMENT_ENDPOINT:-http://ollama:11434}
+    - LLM_REFINEMENT_TIMEOUT=${LLM_REFINEMENT_TIMEOUT:-4.0}
+    - LLM_REFINEMENT_TEMPERATURE=${LLM_REFINEMENT_TEMPERATURE:-0.7}
+    - LLM_REFINEMENT_THINK=${LLM_REFINEMENT_THINK:-false}
+    - LLM_REFINEMENT_MAX_RETRIES=${LLM_REFINEMENT_MAX_RETRIES:-1}
+    - GLOBAL_RATE_LIMIT=${GLOBAL_RATE_LIMIT:-1200}
+    - GLOBAL_RATE_WINDOW_SECONDS=${GLOBAL_RATE_WINDOW_SECONDS:-60}
+    - MESSAGE_RATE_LIMIT=${MESSAGE_RATE_LIMIT:-50}
+    - MESSAGE_RATE_WINDOW_SECONDS=${MESSAGE_RATE_WINDOW_SECONDS:-10}
+    - ENVIRONMENT=${ENVIRONMENT:-production}
+    - DEVELOPMENT_CORS_ORIGINS=${DEVELOPMENT_CORS_ORIGINS:-http://localhost:5173,http://localhost:5174}
+    healthcheck:
+      test:
+      - CMD
+      - curl
+      - -f
+      - http://localhost:8000/health
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: '5'
+    depends_on:
+    - redis
+    - ollama
+    labels:
+    - traefik.enable=true
+    - traefik.http.routers.api_gateway.rule=Host(`ssf.smart-village.solutions`)
+    - traefik.http.routers.api_gateway.entrypoints=websecure
+    - traefik.http.routers.api_gateway.tls.certresolver=le
+    - traefik.http.services.api_gateway.loadbalancer.server.port=8000
+    - traefik.http.services.api_gateway.loadbalancer.passhostheader=true
+    - traefik.http.middlewares.websocket-headers.headers.customrequestheaders.X-Forwarded-Proto=https
+    restart: unless-stopped
+    image: ssf-backend-api_gateway:prod-e409a06
+    pull_policy: never
+  ollama:
+    image: ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a
+    expose:
+    - '11434'
+    environment:
+    - OLLAMA_HOST=0.0.0.0
+    volumes:
+    - ollama-data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: all
+            capabilities:
+            - gpu
+    restart: unless-stopped
+    pull_policy: never
+  redis:
+    image: redis@sha256:3b73847e72874be07e6657b129a94761662b79bc0f679273757d4218573b2a98
+    command:
+    - redis-server
+    - --appendonly
+    - 'yes'
+    expose:
+    - '6379'
+    volumes:
+    - redis-data:/data
+    restart: unless-stopped
+    pull_policy: never
+  clickhouse:
+    image: clickhouse/clickhouse-server@sha256:2ef11bbe2e44ab7022f37ff3019b3f2125ed09e919ea6194660be6130b7ca4b7
+    restart: unless-stopped
+    expose:
+    - '8123'
+    environment:
+    - CLICKHOUSE_DB=${CLICKHOUSE_DB:?set CLICKHOUSE_DB in .env}
+    - CLICKHOUSE_USER=${CLICKHOUSE_USER:?set CLICKHOUSE_USER in .env}
+    - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?required}
+    - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+    - clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - wget -qO- http://localhost:8123/ping | grep -qx 'Ok.'
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    pull_policy: never
+  keycloak-postgres:
+    image: postgres@sha256:bb377b7239d2774ac8cc76f481596ce96c5a6b5e9d141f6d0a0ee371a6e7c0f2
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${KEYCLOAK_DB_NAME:?required}
+      POSTGRES_USER: ${KEYCLOAK_DB_USER:?required}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?required}
+    volumes:
+    - keycloak-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    pull_policy: never
+  keycloak:
+    image: ssf-keycloak:prod-e409a06
+    command:
+    - start
+    - --optimized
+    restart: unless-stopped
+    expose:
+    - '8080'
+    environment:
+      KC_DB: postgres
+      KC_DB_URL_HOST: keycloak-postgres
+      KC_DB_URL_DATABASE: ${KEYCLOAK_DB_NAME:?required}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:?required}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?required}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME:?required}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:?required}
+      KC_HOSTNAME: https://auth.kassel.smartspeechflow.de
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: 'true'
+      KC_HEALTH_ENABLED: 'true'
+    depends_on:
+      keycloak-postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - 'bash -ec ''exec 3<>/dev/tcp/127.0.0.1/9000; printf "GET /health/ready HTTP/1.1\r\nHost:
+        localhost\r\nConnection: close\r\n\r\n" >&3; grep -q "200 OK" <&3'''
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+    - traefik.enable=true
+    - traefik.http.routers.keycloak.rule=Host(`auth.kassel.smartspeechflow.de`)
+    - traefik.http.routers.keycloak.entrypoints=websecure
+    - traefik.http.routers.keycloak.tls.certresolver=le
+    - traefik.http.services.keycloak.loadbalancer.server.port=8080
+    pull_policy: never
+  frontend-archive:
+    ports:
+    - 5173:5173
+    labels:
+    - traefik.enable=true
+    - traefik.http.routers.frontend-archive.rule=Host(`translate-archive.smart-village.solutions`)
+    - traefik.http.routers.frontend-archive.entrypoints=websecure
+    - traefik.http.routers.frontend-archive.tls.certresolver=le
+    restart: unless-stopped
+    image: ssf-backend-frontend-archive:prod-e409a06
+    pull_policy: never
+  frontend:
+    networks:
+    - default
+    labels:
+    - traefik.enable=true
+    - traefik.http.routers.frontend.rule=Host(`translate.smart-village.solutions`)
+    - traefik.http.routers.frontend.entrypoints=websecure
+    - traefik.http.routers.frontend.tls.certresolver=le
+    - traefik.http.services.frontend.loadbalancer.server.port=8080
+    - traefik.docker.network=ssf-backend_default
+    restart: unless-stopped
+    image: ssf-backend-frontend:prod-e409a06
+    pull_policy: never
+  prometheus:
+    image: prom/prometheus@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    volumes:
+    - ../../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    - ../../monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
+    expose:
+    - '9090'
+    labels:
+    - traefik.enable=true
+    - traefik.http.routers.prometheus.rule=Host(`prometheus-ssf.smart-village.solutions`)
+    - traefik.http.routers.prometheus.entrypoints=websecure
+    - traefik.http.routers.prometheus.tls=true
+    - traefik.http.routers.prometheus.tls.certresolver=le
+    - traefik.http.routers.prometheus.service=prometheus
+    - traefik.http.services.prometheus.loadbalancer.server.port=9090
+    - traefik.http.routers.prometheus-http.rule=Host(`prometheus-ssf.smart-village.solutions`)
+    - traefik.http.routers.prometheus-http.entrypoints=web
+    - traefik.http.routers.prometheus-http.middlewares=redirect-to-https
+    - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+    restart: unless-stopped
+    pull_policy: never
+  grafana:
+    image: grafana/grafana@sha256:6b5b37eb35bbf30e7f64bd7f0fd41c0a5b7637f65d3bf93223b04a192b8bf3e2
+    restart: unless-stopped
+    depends_on:
+    - prometheus
+    ports:
+    - 3000:3000
+    environment:
+    - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+    - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+    - GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION=false
+    - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+    - ../../monitoring/grafana:/var/lib/grafana
+    - ../../monitoring/grafana-provisioning:/etc/grafana/provisioning:ro
+    - ../../monitoring/grafana-dashboards:/var/lib/grafana/dashboards
+    labels:
+    - traefik.enable=true
+    - traefik.http.routers.grafana.rule=Host(`grafana-ssf.smart-village.solutions`)
+    - traefik.http.routers.grafana.entrypoints=websecure
+    - traefik.http.routers.grafana.tls=true
+    - traefik.http.routers.grafana.tls.certresolver=le
+    - traefik.http.routers.grafana.service=grafana
+    - traefik.http.services.grafana.loadbalancer.server.port=3000
+    - traefik.http.routers.grafana-http.rule=Host(`grafana-ssf.smart-village.solutions`)
+    - traefik.http.routers.grafana-http.entrypoints=web
+    - traefik.http.routers.grafana-http.middlewares=redirect-to-https
+    - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+    pull_policy: never
+  dcgm_exporter:
+    image: nvidia/dcgm-exporter@sha256:a1d913783fd185d78ed8b725334f75adc86eb594afe82961a73aa63c5d0ef423
+    restart: unless-stopped
+    privileged: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: all
+            capabilities:
+            - gpu
+    environment:
+    - DCGM_EXPORTER_LISTEN=0.0.0.0:9400
+    - DCGM_EXPORTER_KUBERNETES=false
+    expose:
+    - '9400'
+    pull_policy: never
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor@sha256:adc29827d88730174181e9fe221938323baa6ba8c5734c2ec52aa2e86a0c303e
+    container_name: ssf-backend-cadvisor
+    restart: unless-stopped
+    privileged: true
+    expose:
+    - '8080'
+    volumes:
+    - /:/rootfs:ro
+    - /var/run:/var/run:ro
+    - /sys:/sys:ro
+    - /var/lib/docker:/var/lib/docker:ro
+    - /dev/disk:/dev/disk:ro
+    devices:
+    - /dev/kmsg
+    command:
+    - --housekeeping_interval=10s
+    - --store_container_labels=true
+    pull_policy: never
+  node_exporter:
+    image: prom/node-exporter@sha256:fa7fa12a57eff607176d5c363d8bb08dfbf636b36ac3cb5613a202f3c61a6631
+    container_name: ssf-backend-node-exporter
+    restart: unless-stopped
+    command:
+    - --path.procfs=/host/proc
+    - --path.sysfs=/host/sys
+    - --path.rootfs=/host/rootfs
+    - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|host|etc)($|/)
+    - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|pstore|rpc_pipefs|securityfs|squashfs|sysfs|tracefs|tmpfs)$
+    expose:
+    - '9100'
+    volumes:
+    - /:/host/rootfs:ro,rslave
+    - /proc:/host/proc:ro
+    - /sys:/host/sys:ro
+    pull_policy: never
+  loki:
+    image: grafana/loki@sha256:eb92f1a439171542fd718f929fad38c917b3cad15ec830ba4742e2ba5ab03313
+    restart: unless-stopped
+    command: -config.file=/etc/loki/config.yaml
+    expose:
+    - '3100'
+    volumes:
+    - ../../monitoring/loki-config.yaml:/etc/loki/config.yaml:ro
+    - ../../monitoring/loki-data:/loki
+    pull_policy: never
+  promtail:
+    image: grafana/promtail@sha256:b338a29de45ef8ffa96f882f3a36306b1e61262b2a560ff523e0e2633cccbbc4
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/config.yaml -log.level=debug
+    depends_on:
+    - loki
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+    - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    - ../../monitoring/promtail-config.yaml:/etc/promtail/config.yaml:ro
+    - ../../monitoring/promtail-data:/var/lib/promtail
+    pull_policy: never
+volumes:
+  redis-data: null
+  ollama-data: null
+  audio-data: null
+  clickhouse-data: null
+  keycloak-postgres-data: null

@@ -88,6 +88,7 @@ coverage.xml
 # Secrets
 .env
 .env.*
+deploy/production/production.env
 
 # Audio Storage (24h retention, auto-cleanup)
 data/audio/
