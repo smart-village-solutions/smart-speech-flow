@@ -30,7 +30,7 @@ cleanup() {
 trap cleanup EXIT
 
 docker run --detach --pull=never --network none --name "$container" \
-  --volume "$backup_dir:/var/lib/clickhouse/backups:ro" "$clickhouse_image" >/dev/null
+  --volume "$backup_dir:/var/lib/clickhouse/backups/backups:ro" "$clickhouse_image" >/dev/null
 
 for _ in $(seq 1 30); do
   if docker exec "$container" clickhouse-client --query 'SELECT 1' >/dev/null 2>&1; then

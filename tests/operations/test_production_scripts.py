@@ -82,5 +82,6 @@ def test_backup_verifier_rejects_empty_required_artifact(tmp_path):
 def test_clickhouse_backup_uses_the_configured_allowed_backup_path():
     script = (ROOT / "scripts/backup-production.sh").read_text()
 
-    assert "File('backups/ssf-clickhouse-backup.zip')" in script
+    assert "File('ssf-clickhouse-backup.zip')" in script
+    assert "/var/lib/clickhouse/backups/backups/ssf-clickhouse-backup.zip" in script
     assert "/tmp/ssf-clickhouse-backup.zip" not in script
