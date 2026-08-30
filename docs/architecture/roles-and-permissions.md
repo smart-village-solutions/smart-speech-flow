@@ -40,6 +40,14 @@ Berechtigungen. SSF akzeptiert den Tenant-Kontext nur aus einem signierten
 Studio-/OIDC-Kontext oder einer serverseitigen Introspection. Eine vom Client
 frei angegebene Mandanten-ID ist niemals vertrauenswürdig.
 
+For the deliberately prioritised Control Plane Foundation, the root system
+administrator creates tenants and their initial tenant administrators but does
+not perform routine cross-tenant user administration. Tenant administrators
+manage users and roles only in their own tenant realm. Root rights grant no
+tenant-local rights, and tenant roles grant no root rights. A future support
+or recovery path is a separately authorised, time-limited, fully audited
+exception and is not part of the first delivery slice.
+
 ## Geltungsbereiche
 
 Eine Berechtigung gilt immer in einem klaren Bereich (Scope):
@@ -64,21 +72,12 @@ deren Inhalte.
 
 **Aufgaben und Funktionen**
 
-- Mandanten anlegen, sperren, reaktivieren und löschen (unter Einhaltung von
-  Aufbewahrungs- und Löschfristen).
-- Mandantenweite Grenzwerte und Ressourcen zuteilen: Benutzerplätze,
-  Sitzungs-/Anfragekontingente, Speicher, erlaubte Sprachen und KI-/Modellbudget.
-- Globale Konfiguration verwalten: Feature Flags, verfügbare Modelle,
-  Integrationen, Standardrichtlinien und Wartungsfenster.
-- Systemgesundheit überwachen: Verfügbarkeit, Latenzen, Fehlerraten,
-  Warteschlangen, Kapazität und Kosten.
-- Alarme, Incidents, Backups und Wiederherstellungen steuern.
-- Sicherheitsrichtlinien festlegen: MFA, SSO, Passwort- und Sitzungsrichtlinien,
-  IP-/Netzwerkregeln sowie API-Schlüssel.
-- Globale Audit- und Compliance-Auswertungen einsehen; ein Zugriff auf
-  Gesprächsinhalte erfolgt nur über einen expliziten, protokollierten und
-  zeitlich begrenzten Supportzugriff.
-- Plattformweite Nutzungs-, Kapazitäts- und Abrechnungsberichte erzeugen.
+- Own the root-level tenant lifecycle and the initial tenant administrator.
+- Operate root-only plugin activation, provisioning, reconciliation, readiness,
+  and audit capabilities.
+- Later stages may add quotas, global configuration, operations dashboards,
+  support, reporting, and lifecycle/privacy workflows; they are not part of
+  the initial Control Plane Foundation.
 
 ### 2. Mandanten-Admin (`tenant_admin`)
 
@@ -89,15 +88,8 @@ und organisatorische Ansprechperson des Kunden, jedoch kein Plattformbetreiber.
 
 - Benutzer seines Mandanten einladen, deaktivieren und Rollen zuweisen.
 - Operative Admins verwalten und bei Bedarf den Zugang entziehen.
-- Mandanteneinstellungen pflegen: Name, Branding, Zeitzone, freigegebene
-  Sprachen, Benachrichtigungen und zulässige Integrationen.
-- Die vom System-Admin zugeteilten Ressourcen einsehen und innerhalb des
-  Mandanten verteilen, etwa Kontingente für Teams oder Standorte.
-- Mandantenweite Nutzungs-, Sicherheits- und Auditberichte einsehen.
-- Eigene Datenaufbewahrungs- und Löschrichtlinien konfigurieren, soweit sie die
-  globalen Vorgaben nicht unterschreiten.
-- Supportfälle eröffnen und einen begrenzten Supportzugriff ausdrücklich
-  freigeben bzw. widerrufen.
+- In later stages, manage branding, language, integration, resources,
+  reporting, retention, and support settings within global policies.
 
 **Nicht erlaubt:** andere Mandanten, globale Sicherheitsrichtlinien,
 plattformweite Modelle oder globale Betriebsparameter verwalten.
@@ -147,18 +139,26 @@ Mandantendaten einsehen oder verändern.
 | Funktion | System-Admin | Mandanten-Admin | Operativer Admin | Customer |
 | --- | :---: | :---: | :---: | :---: |
 | Mandanten verwalten | Ja | Nein | Nein | Nein |
-| Benutzer im eigenen Mandanten verwalten | Ja | Ja | Nein | Nein |
-| Globale Sicherheits- und Systemrichtlinien verwalten | Ja | Nein | Nein | Nein |
-| Mandanteneinstellungen verwalten | Ja | Ja | Nein | Nein |
-| Ressourcen und Kontingente zuweisen | Ja | Im eigenen Mandanten | Nein | Nein |
-| Plattformmonitoring und Incident-Management | Ja | Eigene Mandantenkennzahlen | Nein | Nein |
-| Mandanten-Audit-Logs einsehen | Global | Eigener Mandant | Eigene Aktionen | Eigene Aktionen |
-| Session erstellen und leiten | Optional für Support | Optional | Ja | Nein |
-| An einer zugewiesenen Session teilnehmen | Nein* | Optional | Ja | Ja |
-| Gesprächsinhalte einsehen | Nur freigegeben/protokolliert | Gemäß Mandantenrichtlinie | Zugewiesene Sessions | Eigene Session |
+| Benutzer im eigenen Mandanten verwalten | Nein (initial tenant admin only) | Ja | Nein | Nein |
+| Globale Sicherheits- und Systemrichtlinien verwalten | Later stage | Nein | Nein | Nein |
+| Mandanteneinstellungen verwalten | Tenant lifecycle only | Later stage | Nein | Nein |
+| Ressourcen und Kontingente zuweisen | Later stage | Later stage | Nein | Nein |
+| Plattformmonitoring und Incident-Management | Later stage | Later stage | Nein | Nein |
+| Mandanten-Audit-Logs einsehen | Audit scope | Audit scope | Own actions | Own actions |
+| Session erstellen and lead | No | Optional | Yes | No |
+| Join an assigned session | No | Optional | Yes | Yes |
+| View conversation content | Later-stage, authorised exception | Later-stage tenant policy | Assigned sessions | Own session |
 
-\* Ein System-Admin verwendet für Supportzwecke keinen regulären
-Teilnehmerzugang, sondern einen zeitlich begrenzten, auditierten Supportmodus.
+Conversation-content access and support are later-stage capabilities; they are
+not part of the first delivery slice.
+
+## First Delivery Boundary
+
+The first Control Plane delivery provides tenant provisioning and status,
+tenant-local IAM, SSF plugin activation, an SSF plugin database and baseline
+record, a minimal internal configuration API, audit, reconciliation, and
+readiness. It excludes ClickHouse and session-data analytics, conversation
+content, usage and cost reports, and support access.
 
 ## Benötigte Produktfunktionen
 
@@ -170,7 +170,7 @@ Damit diese Rollen praktisch nutzbar und sicher durchsetzbar sind, braucht SSF:
   Hintergrundaufgaben; jede Anfrage wird gegen Rolle und Mandant geprüft.
 - **Mandantenisolation:** Mandanten-ID an allen relevanten Datenobjekten,
   Abfragen und Speichern; keine mandantenübergreifenden Standardabfragen.
-- **Ressourcenverwaltung:** Quoten, Verbrauchsmessung, Warnschwellen und
+- **Ressourcenverwaltung (later stage):** Quoten, Verbrauchsmessung, Warnschwellen und
   Durchsetzung von Limits; Pooling nur in Multi-Tenant-Installationen,
   dedizierte Zuteilung in Dedicated- und Eigenbetriebsmodellen.
 - **Admin-Oberflächen und APIs:** getrennte Ansichten für Systemverwaltung,
@@ -179,13 +179,14 @@ Damit diese Rollen praktisch nutzbar und sicher durchsetzbar sind, braucht SSF:
   Rollenänderungen, Konfigurationsänderungen, Supportzugriffe und Datenexporte.
 - **Sicherheitsfunktionen:** MFA, sichere Passwort- bzw. SSO-Anmeldung,
   Sitzungsverwaltung, Rechteentzug und Secret-/API-Key-Verwaltung.
-- **Monitoring und Alarmierung:** technische und fachliche Kennzahlen,
+- **Monitoring und Alarmierung (later stage):** technische und fachliche Kennzahlen,
   Grenzwerte, Benachrichtigungen sowie Incident- und Wartungsprotokolle.
-- **Datenschutzfunktionen:** Einwilligungen, Datenexport, Löschung,
+- **Datenschutzfunktionen (later stage):** Einwilligungen, Datenexport, Löschung,
   Aufbewahrungsfristen und kontrollierter Supportzugriff.
-- **Control-Plane-Integration:** versionierte, idempotente APIs und Ereignisse
-  für Provisionierung, Konfiguration, Ressourcen, Nutzungsaggregate,
-  Runtime-Status und Löschbestätigungen; keine gemeinsame Datenbank mit Studio.
+- **Control-Plane-Integration:** versionierte, idempotente APIs and events for
+  provisioning, baseline configuration, reconciliation, readiness, and runtime
+  status; Studio and SSF have no shared domain database. Resource aggregates
+  and deletion confirmations are later-stage contracts.
 
 ## Sicherheitsprinzipien
 

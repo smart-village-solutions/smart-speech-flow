@@ -81,6 +81,22 @@ Die Plattform unterscheidet dabei die technische Betreiberrolle von den Rollen e
 
 SVA Studio kann diese Control Plane als einheitliche Betreiber- und Mandanten-Admin-Oberfläche bereitstellen. Studio verantwortet dann Mandanten, administrative Identitäten, Rollen, Konfigurationen und Lebenszyklusworkflows; SSF verantwortet Sessions und die Sprach-KI-Runtime. Die Systeme kommunizieren über versionierte APIs und Ereignisse, nicht über eine gemeinsame Datenbank.
 
+## Deliberately Prioritised Control Plane Foundation
+
+SSF is deliberately bringing forward a narrow Control Plane Foundation for
+real operator and tenant pilots. SVA Studio will provide tenant lifecycle,
+tenant-local administrative IAM, plugin activation, audit, and provisioning
+workflows, while SSF remains the authority for sessions and speech-AI runtime
+behaviour. The foundation uses versioned internal APIs and explicit service
+identities; it does not introduce a shared domain database.
+
+This is not a decision to build the full operating platform before the product
+core is reliable. Usage and cost reporting, ClickHouse or session-data
+analytics, conversation content, controlled support access, and complete
+lifecycle and privacy workflows remain later stages. Root administration and
+tenant administration are separate: root creates a tenant and its initial
+tenant administrator; routine cross-tenant user management is not included.
+
 ## Nordstern
 
 Jedes wichtige Gespraech soll auch dann sofort fuehrbar sein, wenn die Beteiligten keine gemeinsame Sprache sprechen.

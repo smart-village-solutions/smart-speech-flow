@@ -13,6 +13,11 @@ Schritte zur Mandanten-, Benutzer-, Ressourcen- und Lifecycle-Verwaltung in
 Studio. SSF bestätigt Provisionierung, Konfigurationsanwendung,
 Runtime-Gesundheit und Löschvorgänge über versionierte APIs bzw. Ereignisse.
 
+The current Control Plane Foundation covers tenant provisioning, tenant-local
+user and role administration, plugin activation, audit, reconciliation, and
+readiness only. Resources, support, export, deletion, and the broader
+lifecycle described below remain target capabilities for later stages.
+
 ## Beteiligte Rollen
 
 | Rolle | Verantwortungsbereich in der Journey |
