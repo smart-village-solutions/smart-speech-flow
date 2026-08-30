@@ -80,9 +80,7 @@ def test_admin_endpoints_reject_requests_without_a_bearer_token():
     assert response.status_code == 401
 
 
-def test_admin_endpoints_reject_valid_tokens_without_the_ssf_user_role(
-    monkeypatch, signing_key
-):
+def test_admin_endpoints_reject_valid_tokens_without_the_ssf_user_role(monkeypatch, signing_key):
     mock_keycloak(monkeypatch, signing_key)
 
     response = client.get(
@@ -98,9 +96,7 @@ def test_admin_endpoints_accept_valid_ssf_user_tokens(monkeypatch, signing_key):
 
     response = client.get(
         "/api/admin/session/history",
-        headers={
-            "Authorization": f"Bearer {access_token(signing_key, roles=['ssf-user'])}"
-        },
+        headers={"Authorization": f"Bearer {access_token(signing_key, roles=['ssf-user'])}"},
     )
 
     assert response.status_code == 200

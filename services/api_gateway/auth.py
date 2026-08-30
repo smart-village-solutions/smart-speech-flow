@@ -59,7 +59,7 @@ def _unauthorized() -> HTTPException:
     )
 
 
-async def require_ssf_user(request: Request) -> dict[str, Any]:
+def require_ssf_user(request: Request) -> dict[str, Any]:
     """Validate an administrative bearer token and return its claims."""
     legacy_enabled = os.environ.get("SSF_ENABLE_LEGACY_ADMIN_ACCESS", "false") == "true"
     legacy_code = os.environ.get("SSF_LEGACY_ADMIN_ACCESS_CODE", "")
