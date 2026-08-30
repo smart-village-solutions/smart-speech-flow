@@ -34,10 +34,10 @@ required=(
   configuration.tar.gz
   environment.env
   git-revision.txt
+  ollama-models.txt
   volumes/ssf-backend_audio-data.tar.gz
   volumes/ssf-backend_clickhouse-data.tar.gz
   volumes/ssf-backend_keycloak-postgres-data.tar.gz
-  volumes/ssf-backend_ollama-data.tar.gz
   volumes/ssf-backend_redis-data.tar.gz
   volumes/prometheus-data.tar.gz
 )
@@ -57,6 +57,10 @@ production_compose exec -T keycloak-postgres sh -ec \
 
 production_compose exec -T redis redis-cli --rdb /tmp/ssf-backup.rdb >/dev/null
 production_compose exec -T redis cat /tmp/ssf-backup.rdb > "$staging_dir/redis.rdb"
+
+# Ollama model weights are reproducible downloads. Preserve the requested model
+# identifiers for recovery without retaining a large duplicate of their volume.
+production_compose exec -T ollama ollama list > "$staging_dir/ollama-models.txt"
 
 clickhouse_database="${SSF_CLICKHOUSE_DATABASE:-$(grep '^CLICKHOUSE_DB=' "$SSF_PROJECT_ROOT/.env" | head -n 1 | cut -d= -f2-)}"
 clickhouse_backup_filename="ssf-clickhouse-${timestamp}.zip"
@@ -79,7 +83,6 @@ for volume in \
   ssf-backend_audio-data \
   ssf-backend_clickhouse-data \
   ssf-backend_keycloak-postgres-data \
-  ssf-backend_ollama-data \
   ssf-backend_redis-data \
   1980baddd3a6bd8bcade314d6f81d3716e73ae9bba6655b90d4179ff7b1990a7; do
   docker volume inspect "$volume" >/dev/null
