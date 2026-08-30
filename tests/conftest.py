@@ -10,6 +10,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from services.api_gateway.app import app
+from services.api_gateway.auth import require_ssf_user
+
 try:  # pragma: no cover - optional dependency detection
     import pytest_asyncio  # type: ignore  # noqa: F401
     HAS_PYTEST_ASYNCIO = True
@@ -52,6 +55,24 @@ def pytest_configure(config):  # pragma: no cover - exercised via pytest hooks
         "markers",
         "load: mark test as generating significant load against local services",
     )
+
+
+@pytest.fixture(autouse=True)
+def bypass_admin_auth_for_legacy_route_tests(request):
+    """Keep pre-auth route tests focused on their domain behavior.
+
+    Authorization behavior is covered explicitly in
+    ``services/api_gateway/tests/test_auth.py``.  Existing route, OpenAPI, and
+    pipeline tests create sessions through the administrative endpoint and are
+    not authentication tests, so supply a test principal for their duration.
+    """
+    if request.path.name == "test_auth.py":
+        yield
+        return
+
+    app.dependency_overrides[require_ssf_user] = lambda: {"sub": "test-admin"}
+    yield
+    app.dependency_overrides.pop(require_ssf_user, None)
 
 
 def pytest_collection_modifyitems(config, items):  # pragma: no cover - exercised via pytest hooks

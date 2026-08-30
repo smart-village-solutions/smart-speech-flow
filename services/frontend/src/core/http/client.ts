@@ -2,6 +2,7 @@ import axios, { type AxiosInstance } from 'axios';
 import type { AppConfig } from '@/app/config/env';
 import { randomId } from '@/core/ids';
 import { toAppError } from './AppError';
+import { getAdminAccessToken } from '@/app/auth/keycloak';
 
 /**
  * No default Content-Type is set on purpose: axios infers application/json for
@@ -14,9 +15,17 @@ export function createHttpClient(config: AppConfig, getLocale: () => string): Ax
     timeout: config.requestTimeoutMs,
   });
 
-  client.interceptors.request.use((request) => {
+  client.interceptors.request.use(async (request) => {
     request.headers.set('X-Correlation-Id', randomId());
     request.headers.set('Accept-Language', getLocale());
+    if (request.url?.startsWith('/api/admin/')) {
+      const token = await getAdminAccessToken();
+      if (token !== null) {
+        request.headers.set('Authorization', `Bearer ${token}`);
+      } else {
+        request.headers.set('X-SSF-Legacy-Access', config.adminPassword);
+      }
+    }
     return request;
   });
 

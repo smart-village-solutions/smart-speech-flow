@@ -4,12 +4,16 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 import { AccessCodeScreen } from '@/features/access-code/AccessCodeScreen';
 
 describe('the admin entry link', () => {
-  it('points at the new admin UI whatever the flag says', async () => {
+  it('keeps both temporary administrative entrypoints reachable', async () => {
     renderWithProviders(<AccessCodeScreen />, { locale: 'de' });
 
     expect(await screen.findByRole('link', { name: 'Admin-Login' })).toHaveAttribute(
       'href',
       '/admin'
+    );
+    expect(screen.getByRole('link', { name: 'Neuer Admin-Login' })).toHaveAttribute(
+      'href',
+      '/login'
     );
   });
 });

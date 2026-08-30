@@ -8,25 +8,19 @@ const envSchema = z.object({
   /** Empty means "derive from window.location". */
   VITE_WS_BASE_URL: z.string().default(''),
   VITE_BRAND: z.enum(['ssf', 'kassel']).default('ssf'),
+  VITE_KEYCLOAK_URL: z.string().url().default('https://auth.kassel.smartspeechflow.de'),
+  VITE_KEYCLOAK_REALM: z.string().min(1).default('ssf'),
+  VITE_KEYCLOAK_CLIENT_ID: z.string().min(1).default('ssf-frontend'),
+  VITE_APP_PASSWORD: z.string().default('ssf2025kassel'),
   /**
-   * The admin bypass. Only the literal 'true' enables it: a typo must leave the
-   * bypass off rather than throw, so a malformed value can never take the app
-   * down and can never accidentally open the door.
-   */
-  VITE_ADMIN_DEV_ENTRY: z
-    .string()
-    .default('false')
-    .transform((value) => value === 'true'),
-  /**
-   * The interim admin password, shared with the legacy `/legacy` chooser so the
-   * product has one rather than two. `z.string()` with a default, not a required
-   * value: a build that forgets it must fall back rather than fail to start.
+   * Temporary legacy `/admin` password. `z.string()` with a default, not a
+   * required value: a build that forgets it must fall back rather than fail to
+   * start.
    *
    * This is not a secret. Vite inlines it into the bundle at build time, so
-   * anyone who opens the JavaScript can read it, and `/api/admin/*` accepts
-   * unauthenticated requests regardless. It is a speed bump until Keycloak.
+   * anyone who opens the JavaScript can read it. It is a speed bump during the
+   * Keycloak migration, not a security control.
    */
-  VITE_APP_PASSWORD: z.string().default('ssf2025kassel'),
   VITE_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   /** The message endpoint runs ASR, translation and TTS synchronously. */
   VITE_PIPELINE_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
@@ -36,7 +30,9 @@ export interface AppConfig {
   apiBaseUrl: string;
   wsBaseUrl: string;
   brand: BrandId;
-  adminDevEntry: boolean;
+  keycloakUrl: string;
+  keycloakRealm: string;
+  keycloakClientId: string;
   adminPassword: string;
   requestTimeoutMs: number;
   pipelineTimeoutMs: number;
@@ -60,7 +56,9 @@ export function readConfig(source: Record<string, unknown> = import.meta.env): A
     apiBaseUrl: env.VITE_API_BASE_URL,
     wsBaseUrl: env.VITE_WS_BASE_URL || defaultWsBaseUrl(),
     brand: env.VITE_BRAND,
-    adminDevEntry: env.VITE_ADMIN_DEV_ENTRY,
+    keycloakUrl: env.VITE_KEYCLOAK_URL,
+    keycloakRealm: env.VITE_KEYCLOAK_REALM,
+    keycloakClientId: env.VITE_KEYCLOAK_CLIENT_ID,
     adminPassword: env.VITE_APP_PASSWORD,
     requestTimeoutMs: env.VITE_REQUEST_TIMEOUT_MS,
     pipelineTimeoutMs: env.VITE_PIPELINE_TIMEOUT_MS,

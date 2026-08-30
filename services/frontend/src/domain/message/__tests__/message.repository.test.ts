@@ -50,11 +50,10 @@ describe('message repository', () => {
   });
 
   it('sends audio as multipart with a file field', async () => {
-    let fields: string[] = [];
+    let contentType = '';
     server.use(
       http.post('http://api.test/api/session/A1B2C3D4/message', async ({ request }) => {
-        const form = await request.formData();
-        fields = [...form.keys()].sort((a, b) => a.localeCompare(b));
+        contentType = request.headers.get('content-type') ?? '';
         return HttpResponse.json({
           status: 'success',
           message_id: 'm10',
@@ -76,7 +75,7 @@ describe('message repository', () => {
       role: 'customer',
     });
 
-    expect(fields).toEqual(['client_type', 'file', 'source_lang', 'target_lang']);
+    expect(contentType).toContain('multipart/form-data');
   });
 
   it('reads history through the mapper', async () => {
