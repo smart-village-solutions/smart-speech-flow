@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sync:github-project": "node scripts/project-status-sync.mjs"
   },
   "dependencies": {
     "react": "^19.2.0",
