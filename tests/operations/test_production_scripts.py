@@ -1,6 +1,7 @@
 import os
 import subprocess
 import json
+import sqlite3
 from pathlib import Path
 
 
@@ -123,21 +124,6 @@ fi
 """
     )
     fake_docker.chmod(0o755)
-    fake_tar = fake_bin / "tar"
-    fake_tar.write_text(
-        """#!/usr/bin/env bash
-set -euo pipefail
-for ((index = 1; index <= $#; index++)); do
-  if [[ "${!index}" == "-czf" ]]; then
-    next_index=$((index + 1))
-    /usr/bin/tar -C /tmp -czf "${!next_index}" --files-from /dev/null
-    exit 0
-  fi
-done
-exec /usr/bin/tar "$@"
-"""
-    )
-    fake_tar.chmod(0o755)
     fake_git = fake_bin / "git"
     fake_git.write_text("#!/usr/bin/env bash\nprintf 'test-revision\\n'\n")
     fake_git.chmod(0o755)
@@ -145,24 +131,63 @@ exec /usr/bin/tar "$@"
     project_root = tmp_path / "project"
     for directory in ("deploy/production", "monitoring", "letsencrypt", "models"):
         (project_root / directory).mkdir(parents=True, exist_ok=True)
+    (project_root / "monitoring/loki-data").mkdir()
+    (project_root / "monitoring/promtail-data").mkdir()
+    (project_root / "monitoring/loki-data/live.log").write_text("live log data\n")
+    (project_root / "monitoring/promtail-data/positions.yaml").write_text("positions\n")
+    (project_root / "monitoring/prometheus.yml").write_text("global: {}\n")
+    grafana_database = project_root / "monitoring/grafana/grafana.db"
+    grafana_database.parent.mkdir()
+    source_connection = sqlite3.connect(grafana_database)
+    source_connection.execute("PRAGMA journal_mode=WAL")
+    source_connection.execute("CREATE TABLE backup_check (value TEXT)")
+    source_connection.execute("INSERT INTO backup_check VALUES ('consistent snapshot')")
+    source_connection.commit()
+    assert grafana_database.with_name("grafana.db-wal").exists()
     (project_root / ".env").write_text("CLICKHOUSE_DB=ssf\n")
 
     backup_root = tmp_path / "backups"
-    result = run_script(
-        "scripts/backup-production.sh",
-        environment={
-            "PATH": f"{fake_bin}:{os.environ['PATH']}",
-            "FAKE_DOCKER_LOG": str(docker_log),
-            "SSF_BACKUP_ROOT": str(backup_root),
-            "SSF_CLICKHOUSE_DATABASE": "ssf",
-            "SSF_PROJECT_ROOT": str(project_root),
-        },
-    )
+    environment = {
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "FAKE_DOCKER_LOG": str(docker_log),
+        "SSF_BACKUP_ROOT": str(backup_root),
+        "SSF_CLICKHOUSE_DATABASE": "ssf",
+        "SSF_PROJECT_ROOT": str(project_root),
+    }
+    try:
+        result = run_script("scripts/backup-production.sh", environment=environment)
+    finally:
+        source_connection.close()
 
     assert result.returncode == 0, result.stderr
     backup = next(path for path in backup_root.iterdir() if path.is_dir())
     manifest = json.loads((backup / "manifest.json").read_text())
+    assert "grafana.db" in manifest["required"]
     assert "ollama-models.txt" in manifest["required"]
     assert "volumes/ssf-backend_ollama-data.tar.gz" not in manifest["required"]
     assert "gpt-oss:20b" in (backup / "ollama-models.txt").read_text()
     assert "ssf-backend_ollama-data" not in docker_log.read_text()
+    with sqlite3.connect(backup / "grafana.db") as connection:
+        assert connection.execute("SELECT value FROM backup_check").fetchone() == (
+            "consistent snapshot",
+        )
+    configuration_listing = subprocess.run(
+        ["tar", "-tzf", backup / "configuration.tar.gz"],
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout
+    assert "monitoring/prometheus.yml" in configuration_listing
+    assert "monitoring/loki-data/live.log" not in configuration_listing
+    assert "monitoring/promtail-data/positions.yaml" not in configuration_listing
+    assert "monitoring/grafana/grafana.db" not in configuration_listing
+
+    grafana_database.unlink()
+    grafana_database.with_name("grafana.db-wal").unlink(missing_ok=True)
+    grafana_database.with_name("grafana.db-shm").unlink(missing_ok=True)
+    missing_database_root = tmp_path / "missing-database-backups"
+    missing_database_result = run_script(
+        "scripts/backup-production.sh",
+        environment={**environment, "SSF_BACKUP_ROOT": str(missing_database_root)},
+    )
+    assert missing_database_result.returncode == 1

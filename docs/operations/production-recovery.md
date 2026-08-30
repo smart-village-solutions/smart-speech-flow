@@ -45,6 +45,15 @@ checksum manifests, and archive readability validation. `ollama-models.txt`
 records the installed model identifiers; after recovery, pull those models
 again from the configured Ollama registry. This keeps recurring backups small
 while retaining the information needed to restore the service configuration.
+The Grafana SQLite database is captured separately using a consistent SQLite
+snapshot. Loki log chunks and Promtail read positions are intentionally not
+backed up: they change continuously and are not required to restore the
+application or monitoring configuration.
+
+To restore Grafana state, stop Grafana, replace
+`monitoring/grafana/grafana.db` with the backup's `grafana.db`, remove any
+stale `grafana.db-wal` and `grafana.db-shm` files, then start Grafana again.
+Do not restore Loki history or Promtail positions.
 The monthly job also restores the ClickHouse native backup into a temporary,
 network-isolated ClickHouse container and fails if that drill cannot complete.
 The backup directory stores `.env` with mode `0600` and the Git revision needed

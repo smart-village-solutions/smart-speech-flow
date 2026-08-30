@@ -34,6 +34,7 @@ required=(
   configuration.tar.gz
   environment.env
   git-revision.txt
+  grafana.db
   ollama-models.txt
   volumes/ssf-backend_audio-data.tar.gz
   volumes/ssf-backend_clickhouse-data.tar.gz
@@ -62,6 +63,22 @@ production_compose exec -T redis cat /tmp/ssf-backup.rdb > "$staging_dir/redis.r
 # identifiers for recovery without retaining a large duplicate of their volume.
 production_compose exec -T ollama ollama list > "$staging_dir/ollama-models.txt"
 
+# Grafana stores its mutable state in SQLite. Use SQLite's backup API for a
+# consistent snapshot instead of copying a live database and its WAL files.
+python3 - "$SSF_PROJECT_ROOT/monitoring/grafana/grafana.db" "$staging_dir/grafana.db" <<'PY'
+import sqlite3
+import sys
+from pathlib import Path
+
+source = sqlite3.connect(f"{Path(sys.argv[1]).resolve().as_uri()}?mode=ro", uri=True)
+destination = sqlite3.connect(sys.argv[2])
+try:
+    source.backup(destination)
+finally:
+    destination.close()
+    source.close()
+PY
+
 clickhouse_database="${SSF_CLICKHOUSE_DATABASE:-$(grep '^CLICKHOUSE_DB=' "$SSF_PROJECT_ROOT/.env" | head -n 1 | cut -d= -f2-)}"
 clickhouse_backup_filename="ssf-clickhouse-${timestamp}.zip"
 if [[ ! "$clickhouse_database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
@@ -75,6 +92,13 @@ production_compose exec -T clickhouse cat "/var/lib/clickhouse/backups/${clickho
 production_compose exec -T clickhouse rm -f "/var/lib/clickhouse/backups/${clickhouse_backup_filename}"
 
 tar -C "$SSF_PROJECT_ROOT" -czf "$staging_dir/configuration.tar.gz" \
+  --exclude='monitoring/grafana/grafana.db' \
+  --exclude='monitoring/grafana/grafana.db-shm' \
+  --exclude='monitoring/grafana/grafana.db-wal' \
+  --exclude='monitoring/loki-data' \
+  --exclude='monitoring/loki-data/*' \
+  --exclude='monitoring/promtail-data' \
+  --exclude='monitoring/promtail-data/*' \
   deploy/production monitoring letsencrypt models
 install -m 0600 "$SSF_PROJECT_ROOT/.env" "$staging_dir/environment.env"
 git -C "$SSF_PROJECT_ROOT" rev-parse HEAD > "$staging_dir/git-revision.txt"
