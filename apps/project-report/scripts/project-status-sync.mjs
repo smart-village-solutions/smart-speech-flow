@@ -41,18 +41,19 @@ const healthSeverity = {
   blocked: 3,
 };
 
-const statusFor = (items) => {
-  if (items.every((item) => item.status === 'Done')) return statusByProjectStatus.Done;
-  return items
-    .map((item) => statusByProjectStatus[item.status])
-    .filter(Boolean)
-    .reduce((leastAdvanced, status) => progressByStatus[status] < progressByStatus[leastAdvanced] ? status : leastAdvanced, 'done');
+const statusFor = (items, fallback) => {
+  const statuses = items.map((item) => statusByProjectStatus[item.status]);
+  if (statuses.some((status) => !status)) return fallback;
+  return statuses.reduce((leastAdvanced, status) => progressByStatus[status] < progressByStatus[leastAdvanced] ? status : leastAdvanced);
 };
 
-const healthFor = (items, fallback) => items
-  .map((item) => healthByProjectHealth[item.health])
-  .filter(Boolean)
-  .reduce((current, health) => healthSeverity[health] > healthSeverity[current] ? health : current, fallback);
+const healthFor = (items, fallback) => {
+  const healths = items
+    .map((item) => healthByProjectHealth[item.health])
+    .filter(Boolean);
+  if (healths.length === 0) return fallback;
+  return healths.reduce((current, health) => healthSeverity[health] > healthSeverity[current] ? health : current);
+};
 
 const matchesWorkPackage = (workPackage, item) =>
   item.workPackageId === workPackage.id ||
@@ -67,7 +68,7 @@ export const applyProjectSnapshot = (report, projectItems, updatedAt) => {
     for (const workPackage of milestone.workPackages) {
       const matches = projectItems.filter((item) => matchesWorkPackage(workPackage, item));
       if (matches.length === 0) continue;
-      workPackage.status = statusFor(matches);
+      workPackage.status = statusFor(matches, workPackage.status);
       workPackage.health = healthFor(matches, workPackage.health);
     }
   }

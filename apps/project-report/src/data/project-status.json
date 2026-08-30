@@ -94,7 +94,7 @@
           "priority": "must",
           "effortPt": 2,
           "status": "implementation",
-          "health": "blocked",
+          "health": "on_track",
           "dependsOn": [],
           "acceptanceCriteria": [
             "Die rechtliche Prüfung startet am 13.08.2026.",
@@ -489,7 +489,7 @@
           "priority": "must",
           "effortPt": 4,
           "status": "planned",
-          "health": "blocked",
+          "health": "on_track",
           "dependsOn": [
             "WP-013"
           ],

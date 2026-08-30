@@ -35,6 +35,26 @@ describe('applyProjectSnapshot', () => {
     expect(result.milestones[0].workPackages[0]).toMatchObject({ status: 'planned', health: 'needs_attention' });
   });
 
+  it('reflects a recovered Project health instead of retaining a stale blocked snapshot', () => {
+    const recovered = report();
+    recovered.milestones[0].workPackages[0].health = 'blocked';
+
+    const result = applyProjectSnapshot(recovered, [
+      { issueNumber: 189, status: 'Implementation', health: 'On track' },
+    ], '2026-08-31');
+
+    expect(result.milestones[0].workPackages[0]).toMatchObject({ health: 'on_track' });
+  });
+
+  it('preserves the current status when a matching Project item has no recognized status', () => {
+    const result = applyProjectSnapshot(report(), [
+      { issueNumber: 189, status: 'Done', health: 'On track' },
+      { issueNumber: 189, status: undefined, health: 'On track' },
+    ], '2026-08-31');
+
+    expect(result.milestones[0].workPackages[0]).toMatchObject({ status: 'planned' });
+  });
+
   it('preserves the roadmap-specific Prototype state from a Project item', () => {
     const result = applyProjectSnapshot(report(), [
       { workPackageId: 'WP-002', status: 'Prototype', health: 'On track' },
