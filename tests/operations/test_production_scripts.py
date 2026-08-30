@@ -42,3 +42,26 @@ def test_health_script_reports_missing_gpu(tmp_path):
 
     assert result.returncode == 1
     assert "GPU" in result.stderr
+
+
+def test_backup_verifier_rejects_missing_required_artifact(tmp_path):
+    backup = tmp_path / "backup"
+    backup.mkdir()
+    (backup / "manifest.json").write_text('{"required": ["postgres.sql.gz"]}')
+
+    result = run_script("scripts/verify-production-backup.sh", str(backup))
+
+    assert result.returncode == 1
+    assert "postgres.sql.gz" in result.stderr
+
+
+def test_backup_verifier_rejects_latest_symlink(tmp_path):
+    backup = tmp_path / "20260830_000000"
+    backup.mkdir()
+    latest = tmp_path / "latest"
+    latest.symlink_to(backup, target_is_directory=True)
+
+    result = run_script("scripts/verify-production-backup.sh", str(latest))
+
+    assert result.returncode == 2
+    assert "concrete backup directory" in result.stderr

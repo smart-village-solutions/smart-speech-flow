@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Smart Speech Flow production health gate every 15 minutes
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=15min
+Persistent=true
+Unit=ssf-production-health.service
+
+[Install]
+WantedBy=timers.target
