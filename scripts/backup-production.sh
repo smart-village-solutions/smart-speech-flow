@@ -30,7 +30,10 @@ staging_dir="$(mktemp -d "$backup_root/.staging-${timestamp}.XXXXXX")"
 required=(
   keycloak-postgres.sql.gz
   redis.rdb
+  clickhouse-native-backup.zip
   configuration.tar.gz
+  environment.env
+  git-revision.txt
   volumes/ssf-backend_audio-data.tar.gz
   volumes/ssf-backend_clickhouse-data.tar.gz
   volumes/ssf-backend_keycloak-postgres-data.tar.gz
@@ -55,8 +58,20 @@ production_compose exec -T keycloak-postgres sh -ec \
 production_compose exec -T redis redis-cli --rdb /tmp/ssf-backup.rdb >/dev/null
 production_compose exec -T redis cat /tmp/ssf-backup.rdb > "$staging_dir/redis.rdb"
 
+clickhouse_database="${SSF_CLICKHOUSE_DATABASE:-$(grep '^CLICKHOUSE_DB=' "$SSF_PROJECT_ROOT/.env" | head -n 1 | cut -d= -f2-)}"
+if [[ ! "$clickhouse_database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+  printf 'CLICKHOUSE_DB must be a simple SQL identifier for native backups.\n' >&2
+  exit 1
+fi
+production_compose exec -T clickhouse clickhouse-client --query \
+  "BACKUP DATABASE \`${clickhouse_database}\` TO File('/tmp/ssf-clickhouse-backup.zip')"
+production_compose exec -T clickhouse cat /tmp/ssf-clickhouse-backup.zip \
+  > "$staging_dir/clickhouse-native-backup.zip"
+
 tar -C "$SSF_PROJECT_ROOT" -czf "$staging_dir/configuration.tar.gz" \
   deploy/production monitoring letsencrypt models
+install -m 0600 "$SSF_PROJECT_ROOT/.env" "$staging_dir/environment.env"
+git -C "$SSF_PROJECT_ROOT" rev-parse HEAD > "$staging_dir/git-revision.txt"
 
 for volume in \
   ssf-backend_audio-data \

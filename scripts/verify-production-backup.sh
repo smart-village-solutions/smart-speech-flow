@@ -42,6 +42,9 @@ for artifact in "${required[@]}"; do
   if [[ ! -f "$backup_dir/$artifact" ]]; then
     printf 'Missing required backup artifact: %s\n' "$artifact" >&2
     failed=1
+  elif [[ ! -s "$backup_dir/$artifact" ]]; then
+    printf 'Required backup artifact is empty: %s\n' "$artifact" >&2
+    failed=1
   fi
 done
 (( failed == 0 )) || exit 1

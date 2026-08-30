@@ -65,3 +65,15 @@ def test_backup_verifier_rejects_latest_symlink(tmp_path):
 
     assert result.returncode == 2
     assert "concrete backup directory" in result.stderr
+
+
+def test_backup_verifier_rejects_empty_required_artifact(tmp_path):
+    backup = tmp_path / "backup"
+    backup.mkdir()
+    (backup / "redis.rdb").touch()
+    (backup / "manifest.json").write_text('{"required": ["redis.rdb"]}')
+
+    result = run_script("scripts/verify-production-backup.sh", str(backup))
+
+    assert result.returncode == 1
+    assert "empty" in result.stderr

@@ -11,10 +11,10 @@ After a reviewed deployment to `/root/projects/ssf-backend`, install the unit
 files and enable automatic recovery and verification:
 
 ```bash
-sudo install -m 0644 deploy/systemd/ssf-*.service deploy/systemd/ssf-*.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now ssf-production.service ssf-production-health.timer
-sudo systemctl enable --now ssf-backup-daily.timer ssf-backup-weekly.timer ssf-backup-monthly.timer
+sudo ./scripts/install-production-systemd.sh
+sudo systemctl start ssf-production.service
+sudo systemctl start ssf-production-health.timer
+sudo systemctl start ssf-backup-daily.timer ssf-backup-weekly.timer ssf-backup-monthly.timer
 ```
 
 `ssf-production.service` only starts locally available pinned images
@@ -41,6 +41,10 @@ Daily, weekly, and monthly timers create complete local backups under
 twelve monthly backups. Every backup contains all production Docker volumes,
 a logical Keycloak PostgreSQL export, Redis snapshot, configuration and state
 directories, checksum manifests, and archive readability validation.
+The monthly job also restores the ClickHouse native backup into a temporary,
+network-isolated ClickHouse container and fails if that drill cannot complete.
+The backup directory stores `.env` with mode `0600` and the Git revision needed
+for recovery; local backup access must therefore be restricted to operators.
 
 Verify a concrete timestamp directory, never the `latest` symlink:
 
@@ -71,7 +75,7 @@ pull images or use the mutable root Compose definition while investigating.
 Create and verify a concrete backup first, then run the preflight:
 
 ```bash
-./scripts/prepare-os-update.sh backups/daily/20260830_001500
+./scripts/prepare-os-update.sh
 sudo apt-get -y upgrade
 sudo reboot
 ./scripts/verify-os-update.sh

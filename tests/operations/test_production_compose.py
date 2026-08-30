@@ -55,3 +55,9 @@ def test_production_compose_preserves_the_existing_prometheus_volume():
     prometheus = compose["services"]["prometheus"]
     assert "prometheus-data:/prometheus" in prometheus["volumes"]
     assert compose["volumes"]["prometheus-data"]["external"] is True
+
+
+def test_recovery_unit_never_recreates_existing_containers():
+    unit = Path("deploy/systemd/ssf-production.service").read_text()
+    assert "up --detach --no-build --pull never --no-recreate" in unit
+    assert "Restart=on-failure" in unit
