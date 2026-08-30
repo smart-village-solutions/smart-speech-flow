@@ -164,9 +164,19 @@ fi
     manifest = json.loads((backup / "manifest.json").read_text())
     assert "grafana.db" in manifest["required"]
     assert "ollama-models.txt" in manifest["required"]
+    assert "volumes/ssf-backend_audio-data.tar.gz" in manifest["required"]
     assert "volumes/ssf-backend_ollama-data.tar.gz" not in manifest["required"]
     assert "gpt-oss:20b" in (backup / "ollama-models.txt").read_text()
-    assert "ssf-backend_ollama-data" not in docker_log.read_text()
+    docker_calls = docker_log.read_text()
+    for volume in (
+        "ssf-backend_ollama-data",
+        "ssf-backend_clickhouse-data",
+        "ssf-backend_keycloak-postgres-data",
+        "ssf-backend_redis-data",
+        "1980baddd3a6bd8bcade314d6f81d3716e73ae9bba6655b90d4179ff7b1990a7",
+    ):
+        assert volume not in manifest["required"]
+        assert volume not in docker_calls
     with sqlite3.connect(backup / "grafana.db") as connection:
         assert connection.execute("SELECT value FROM backup_check").fetchone() == (
             "consistent snapshot",
