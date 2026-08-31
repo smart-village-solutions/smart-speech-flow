@@ -60,8 +60,37 @@ Only tracked files count here: `LOCAL_SETUP.md` and `docs/frontend/` are in
   tuning guide in `LOCAL_SETUP.md` and the fuller narrative in
   `docs/frontend/API_CONTRACT.md`.
 
-## 5. Follow-ups (not this change)
+## 5. Translation service (#190)
 
-- [ ] 5.1 Raise `MAX_CONCURRENT_PIPELINES` from load-test evidence.
-- [ ] 5.2 Optional `AppError` `busy` kind and a dedicated i18n message.
-- [ ] 5.3 Cross-replica admission (#227).
+- [x] 5.1 Run `_translate_texts` on a worker thread so `m2m_model.generate()`
+  never holds the translation service's event loop.
+- [x] 5.2 Add a lifespan-owned `TranslationAdmission` bounding concurrent
+  inference, reading `MAX_CONCURRENT_TRANSLATIONS` (default `2`) and
+  `TRANSLATION_QUEUE_WAIT_SECONDS` (default `25.0`). Only an explicit `0`
+  disables; a negative limit falls back to the default.
+- [x] 5.3 Hold slots against the worker thread, as in task 1.4.
+- [x] 5.4 Reject saturation with `503` and `Retry-After`, ahead of the handler's
+  broad `except Exception` so it cannot surface as `500`. Register the response
+  in `TRANSLATION_ERROR_RESPONSES` so it reaches the generated schema.
+- [x] 5.5 Expose `translation_in_flight`, `translation_queue_wait_seconds` and
+  `translation_rejected_total`, observing the wait on the rejection path too.
+- [x] 5.6 Tests in `tests/`, not `services/translation/tests/`: CI runs
+  `pytest tests/` and `pytest.ini` pins `testpaths = tests`, so a guard placed
+  beside the service would never run.
+- [x] 5.7 Prove each guard fails: offload removed, tokenizer lock removed, slot
+  released by the awaiting task, busy clause removed, rejection unobserved.
+- [x] 5.8 Document both settings in `.env.example` and `docker-compose.yml`.
+
+## 6. Deployment defect found on the way (no issue)
+
+- [x] 6.1 Add `COPY services/resource_metrics.py` to the ASR, translation and TTS
+  Dockerfiles. All three import it at module level since `1fb7f09` but none copy
+  it, so the images cannot start; production runs a pre-`1fb7f09` image.
+
+## 7. Follow-ups (not this change)
+
+- [ ] 7.1 Raise `MAX_CONCURRENT_PIPELINES` and `MAX_CONCURRENT_TRANSLATIONS` from
+  load-test evidence.
+- [ ] 7.2 Optional `AppError` `busy` kind and a dedicated i18n message.
+- [ ] 7.3 Cross-replica admission (#227).
+- [ ] 7.4 Bound ASR and TTS inference, which already offload but are unbounded.

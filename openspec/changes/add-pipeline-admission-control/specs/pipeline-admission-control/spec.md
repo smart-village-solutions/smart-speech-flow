@@ -115,3 +115,73 @@ published on application state, not constructed at module import.
 
 - **WHEN** a pipeline route is reached with no admission component available
 - **THEN** the route executes the pipeline unbounded rather than failing
+
+### Requirement: Translation inference leaves its event loop free
+
+The translation service SHALL execute M2M100 inference off its event loop, so
+operational probes and further requests are served while a beam search runs.
+
+#### Scenario: A probe arrives during inference
+
+- **WHEN** `POST /translate` is executing `m2m_model.generate()`
+- **THEN** `GET /health` and `GET /metrics` respond normally
+
+#### Scenario: Two translations arrive together
+
+- **WHEN** two requests reach `POST /translate` within the configured limit
+- **THEN** both inferences make progress concurrently rather than serialising on
+  the event loop
+
+### Requirement: Bounded concurrent translation inference
+
+The translation service SHALL limit concurrent inference to a configured maximum,
+so the shared M2M100 instance and the GPU it sits on are not oversubscribed once
+inference no longer serialises on the event loop. The gateway bound remains the
+system-level capacity boundary.
+
+#### Scenario: Inference is bounded
+
+- **WHEN** more requests are in flight than `MAX_CONCURRENT_TRANSLATIONS`
+- **THEN** no more than that many inferences execute at once
+
+#### Scenario: The limit is disabled
+
+- **WHEN** `MAX_CONCURRENT_TRANSLATIONS` is `0`
+- **THEN** inference still runs off the event loop, without a bound
+
+#### Scenario: A negative limit is configured
+
+- **WHEN** `MAX_CONCURRENT_TRANSLATIONS` is negative
+- **THEN** the service logs a warning and applies the documented default rather
+  than running unbounded
+
+#### Scenario: No inference slot frees within the wait period
+
+- **WHEN** every slot is held for longer than `TRANSLATION_QUEUE_WAIT_SECONDS`
+- **THEN** `POST /translate` responds with status `503`
+- **AND THEN** the response carries a `Retry-After` header of at least `1` second
+- **AND THEN** the status is `503` and not `500`, despite the handler's broad
+  exception path
+
+### Requirement: Tokenizer safety under concurrency
+
+The translation service SHALL serialise the mutation of the tokenizer's
+`src_lang` and the encoding that depends on it, because the tokenizer is shared
+mutable state once inference runs on worker threads.
+
+#### Scenario: Two threads encode at once
+
+- **WHEN** two inferences run concurrently
+- **THEN** only one is inside the tokenizer's encode step at any moment
+
+### Requirement: Translation admission metrics
+
+The translation service SHALL expose in-flight, queue-wait and rejection metrics
+so its limit can be tuned from load tests.
+
+#### Scenario: A rejection occurs
+
+- **WHEN** a request is rejected for capacity
+- **THEN** `translation_rejected_total` increases
+- **AND THEN** `translation_queue_wait_seconds` records the wait it spent queued,
+  so the histogram is not blind at saturation

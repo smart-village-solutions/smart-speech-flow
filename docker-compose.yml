@@ -43,6 +43,13 @@ services:
       dockerfile: services/translation/Dockerfile
     ports:
       - "8002:8000"
+    environment:
+      # Inference Admission Control — inference runs off the event loop, so
+      # /health and /metrics stay responsive; these bound how many beam searches
+      # reach the shared M2M100 instance at once. Raise from load-test evidence
+      # using translation_queue_wait_seconds and translation_rejected_total.
+      - MAX_CONCURRENT_TRANSLATIONS=${MAX_CONCURRENT_TRANSLATIONS:-2}
+      - TRANSLATION_QUEUE_WAIT_SECONDS=${TRANSLATION_QUEUE_WAIT_SECONDS:-25.0}
     volumes:
       - ./models:/models
     deploy:
