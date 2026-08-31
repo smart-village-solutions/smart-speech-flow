@@ -1,7 +1,7 @@
 # Code Quality Tools
 setuptools<84  # flake8-import-order still requires pkg_resources
 black==26.3.1
-isort==5.13.2
+isort==9.0.1
 flake8==7.3.0
 mypy==1.13.0
 
