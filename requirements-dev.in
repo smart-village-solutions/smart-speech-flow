@@ -31,5 +31,5 @@ types-requests==2.33.0.20260402
 types-redis==4.6.0.20241004
 
 # Development Utilities
-pip-tools==7.5.3  # For dependency management
+pip-tools==7.6.1  # For dependency management
 psutil==7.2.2
