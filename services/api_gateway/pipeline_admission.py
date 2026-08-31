@@ -211,13 +211,22 @@ class PipelineAdmission:
                 # the pipeline's real lifetime rather than to the awaiting task.
                 # A cancelled request therefore cannot free capacity that its
                 # own uninterruptible thread is still using.
-                try:
-                    loop.call_soon_threadsafe(self._release)
-                except RuntimeError:
-                    # Loop already closed during shutdown; nothing left to bound.
-                    logger.debug("Event loop closed before pipeline slot release")
+                self._schedule_release(loop)
 
         return await asyncio.to_thread(guarded)
+
+    def _schedule_release(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Hands the slot back on the loop thread.
+
+        The semaphore is not thread-safe, so the release has to be marshalled
+        out of the worker thread. This runs in a ``finally`` inside that thread
+        and must never raise: at shutdown the loop can already be gone, and by
+        then there is no capacity left to account for.
+        """
+        try:
+            loop.call_soon_threadsafe(self._release)
+        except RuntimeError:
+            logger.debug("Event loop closed before pipeline slot release")
 
     async def _acquire(self) -> None:
         started = time.perf_counter()

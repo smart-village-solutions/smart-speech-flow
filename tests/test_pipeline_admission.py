@@ -1,17 +1,7 @@
-"""Coverage for issue #191: bounded pipeline admission control.
-
-One RTX 4000 Ada serves ASR, translation and TTS, and each of those services
-holds a single shared model with no lock of its own. Once #189 let pipelines run
-concurrently, nothing bounded how many reached the GPU at once. These tests pin
-the bound, the `SYSTEM_BUSY` rejection contract, and the property that the bound
-never touches non-pipeline traffic.
-"""
-
 import asyncio
-import importlib
 import threading
 import time
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import httpx
 import pytest
@@ -24,34 +14,25 @@ from services.api_gateway.pipeline_admission import (
     PipelineBusyError,
     run_pipeline,
 )
-from services.api_gateway.session_manager import SessionManager, SessionStatus
-
-# routes/__init__.py re-exports the endpoint functions under their module names,
-# so `routes.upload` is the handler rather than the module. Import by path.
-upload_route = importlib.import_module("services.api_gateway.routes.upload")
-pipeline_route = importlib.import_module("services.api_gateway.routes.pipeline")
-health_route = importlib.import_module("services.api_gateway.routes.health")
-
-AUDIO_BYTES = b"RIFF" + b"fake_wav_audio_data" + b"\x00" * 100
-
-PIPELINE_SUCCESS = {
-    "error": False,
-    "asr_text": "Guten Tag",
-    "translation_text": "Good day",
-    "audio_bytes": b"fake_output_audio",
-}
-
-TEXT_PIPELINE_SUCCESS = {
-    "error": False,
-    "translation_text": "Guten Tag",
-    "audio_bytes": b"fake_output_audio",
-    "debug": {},
-}
+from services.api_gateway.session_manager import SessionManager
+from tests.pipeline_helpers import (
+    PIPELINE_SUCCESS,
+    SAFETY_TIMEOUT,
+    TEXT_PIPELINE_SUCCESS,
+    audio_request,
+    health_route,
+    legacy_pipeline_request,
+    make_active_session,
+    pipeline_route,
+    request_with,
+    text_request,
+    upload_file,
+    upload_route,
+)
 
 # Short enough to keep the suite fast; every assertion below is about ordering
 # or rejection, never about a wall-clock duration.
 SHORT_WAIT = 0.05
-SAFETY_TIMEOUT = 15.0
 
 
 def _metrics() -> PipelineAdmissionMetrics:
@@ -110,50 +91,6 @@ def session_manager():
     return SessionManager()
 
 
-async def _make_active_session(manager) -> str:
-    session_id = await manager.create_admin_session()
-    session = manager.get_session(session_id)
-    session.status = SessionStatus.ACTIVE
-    session.customer_language = "en"
-    return session_id
-
-
-def _request_with(admission) -> Mock:
-    request = Mock()
-    request.app.state.pipeline_admission = admission
-    return request
-
-
-def _audio_request(admission=None) -> Mock:
-    request = _request_with(admission)
-    request.headers = {"content-type": "multipart/form-data; boundary=boundary"}
-    mock_file = Mock()
-    mock_file.read = AsyncMock(return_value=AUDIO_BYTES)
-    request.form = AsyncMock(
-        return_value={
-            "file": mock_file,
-            "source_lang": "de",
-            "target_lang": "en",
-            "client_type": "admin",
-        }
-    )
-    return request
-
-
-def _text_request(admission=None) -> Mock:
-    request = _request_with(admission)
-    request.headers = {"content-type": "application/json"}
-    request.json = AsyncMock(
-        return_value={
-            "text": "Guten Tag",
-            "source_lang": "de",
-            "target_lang": "en",
-            "client_type": "admin",
-        }
-    )
-    return request
-
-
 class TestConfiguration:
     """The limit and wait timeout are typed, documented configuration."""
 
@@ -198,6 +135,11 @@ class TestConfiguration:
         config = PipelineAdmissionConfig(max_concurrent=1, queue_wait_seconds=-5.0)
 
         assert config.queue_wait_seconds == pytest.approx(10.0)
+
+    def test_unparseable_wait_falls_back_to_default(self, monkeypatch):
+        monkeypatch.setenv("PIPELINE_QUEUE_WAIT_SECONDS", "ten-seconds")
+
+        assert PipelineAdmissionConfig().queue_wait_seconds == pytest.approx(10.0)
 
     def test_zero_is_the_documented_kill_switch(self, monkeypatch):
         monkeypatch.setenv("MAX_CONCURRENT_PIPELINES", "0")
@@ -330,6 +272,21 @@ class TestCancellationCannotFreeCapacityEarly:
         # Capacity comes back once the thread really is done.
         await admission.run(_noop)
 
+    def test_release_never_raises_when_the_loop_is_already_gone(self):
+        """Reaches for the private because this runs in a worker thread's finally.
+
+        At shutdown the loop can be closed before the pipeline returns. Raising
+        there would surface as a spurious pipeline error, and there is no
+        capacity left to account for anyway.
+        """
+        admission = _admission(1)
+        closed_loop = Mock()
+        closed_loop.call_soon_threadsafe.side_effect = RuntimeError("Event loop is closed")
+
+        admission._schedule_release(closed_loop)
+
+        closed_loop.call_soon_threadsafe.assert_called_once()
+
 
 class TestMetrics:
     """Metrics support capacity tuning through load tests."""
@@ -420,7 +377,7 @@ class TestRunPipelineHelper:
     @pytest.mark.asyncio
     async def test_enforces_when_a_real_component_is_present(self):
         admission = _admission(1)
-        request = _request_with(admission)
+        request = request_with(admission)
 
         async with _Saturated(admission):
             with pytest.raises(PipelineBusyError):
@@ -436,7 +393,7 @@ class TestSystemBusyResponse:
 
         from services.api_gateway.routes import session as session_routes
 
-        session_id = await _make_active_session(session_manager)
+        session_id = await make_active_session(session_manager)
         admission = _admission(1)
 
         with (
@@ -446,7 +403,7 @@ class TestSystemBusyResponse:
             async with _Saturated(admission):
                 with pytest.raises(HTTPException) as excinfo:
                     await session_routes.process_audio_input(
-                        session_id, _audio_request(admission), 0.0
+                        session_id, audio_request(admission), 0.0
                     )
 
         error = excinfo.value
@@ -460,7 +417,7 @@ class TestSystemBusyResponse:
 
         from services.api_gateway.routes import session as session_routes
 
-        session_id = await _make_active_session(session_manager)
+        session_id = await make_active_session(session_manager)
         admission = _admission(1)
 
         with (
@@ -472,7 +429,7 @@ class TestSystemBusyResponse:
             async with _Saturated(admission):
                 with pytest.raises(HTTPException) as excinfo:
                     await session_routes.process_text_input(
-                        session_id, _text_request(admission), 0.0
+                        session_id, text_request(admission), 0.0
                     )
 
         error = excinfo.value
@@ -487,7 +444,7 @@ class TestSystemBusyResponse:
 
         from services.api_gateway.routes import session as session_routes
 
-        session_id = await _make_active_session(session_manager)
+        session_id = await make_active_session(session_manager)
         admission = _admission(1, wait=0.2)
 
         with (
@@ -499,7 +456,7 @@ class TestSystemBusyResponse:
             async with _Saturated(admission):
                 with pytest.raises(HTTPException) as excinfo:
                     await session_routes.process_text_input(
-                        session_id, _text_request(admission), 0.0
+                        session_id, text_request(admission), 0.0
                     )
 
         error = excinfo.value
@@ -515,7 +472,7 @@ class TestSystemBusyResponse:
 
         from services.api_gateway.routes import session as session_routes
 
-        session_id = await _make_active_session(session_manager)
+        session_id = await make_active_session(session_manager)
         admission = _admission(1)
 
         with (
@@ -526,7 +483,7 @@ class TestSystemBusyResponse:
         ):
             async with _Saturated(admission):
                 with pytest.raises(HTTPException) as excinfo:
-                    await session_routes.send_unified_message(session_id, _text_request(admission))
+                    await session_routes.send_unified_message(session_id, text_request(admission))
 
         assert excinfo.value.status_code == 503
         assert excinfo.value.detail["error_code"] == "SYSTEM_BUSY"
@@ -535,7 +492,7 @@ class TestSystemBusyResponse:
     async def test_slot_is_released_so_the_next_message_succeeds(self, session_manager):
         from services.api_gateway.routes import session as session_routes
 
-        session_id = await _make_active_session(session_manager)
+        session_id = await make_active_session(session_manager)
         admission = _admission(1)
 
         with (
@@ -545,10 +502,10 @@ class TestSystemBusyResponse:
             ),
         ):
             first = await session_routes.process_text_input(
-                session_id, _text_request(admission), 0.0
+                session_id, text_request(admission), 0.0
             )
             second = await session_routes.process_text_input(
-                session_id, _text_request(admission), 0.0
+                session_id, text_request(admission), 0.0
             )
 
         assert first.status == "success"
@@ -586,7 +543,7 @@ class TestEndToEndOverTheWire:
         async with lifespan(app):
             assert app.state.pipeline_admission.config.max_concurrent == 1
 
-            session_id = await _make_active_session(live_manager)
+            session_id = await make_active_session(live_manager)
             url = f"/api/session/{session_id}/message"
 
             with patch.object(session_routes, "process_text_pipeline", new=blocking_text):
@@ -622,14 +579,11 @@ class TestLegacyRoutesAreGated:
     async def test_upload_route_reports_busy(self):
         admission = _admission(1)
 
-        upload_file = Mock()
-        upload_file.read = AsyncMock(return_value=AUDIO_BYTES)
-
         with patch.object(upload_route, "process_wav", return_value=dict(PIPELINE_SUCCESS)):
             async with _Saturated(admission):
                 response = await upload_route.upload(
-                    request=_request_with(admission),
-                    file=upload_file,
+                    request=request_with(admission),
+                    file=upload_file(),
                     source_lang="de",
                     target_lang="en",
                 )
@@ -641,18 +595,11 @@ class TestLegacyRoutesAreGated:
     async def test_pipeline_route_reports_busy(self):
         admission = _admission(1)
 
-        upload_file = Mock()
-        upload_file.read = AsyncMock(return_value=AUDIO_BYTES)
-
-        request = _request_with(admission)
-        request.query_params = {}
-        request.headers = {}
-
         with patch.object(pipeline_route, "process_wav", return_value=dict(PIPELINE_SUCCESS)):
             async with _Saturated(admission):
                 response = await pipeline_route.pipeline(
-                    request=request,
-                    file=upload_file,
+                    request=legacy_pipeline_request(admission),
+                    file=upload_file(),
                     source_lang="de",
                     target_lang="en",
                     debug=None,
@@ -670,7 +617,7 @@ class TestNonPipelineTrafficIsUnaffected:
     async def test_session_management_responds_while_saturated(self, session_manager):
         from services.api_gateway.routes import session as session_routes
 
-        session_id = await _make_active_session(session_manager)
+        session_id = await make_active_session(session_manager)
         admission = _admission(1)
 
         async with _Saturated(admission):
