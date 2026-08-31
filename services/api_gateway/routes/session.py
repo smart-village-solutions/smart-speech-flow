@@ -32,7 +32,12 @@ from ..log_safety import sanitize_log_value
 from ..pipeline_admission import PipelineBusyError, run_pipeline
 
 # Import der bestehenden Pipeline-Logik
-from ..pipeline_logic import process_text_pipeline, process_wav
+from ..pipeline_logic import (
+    DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS,
+    UPSTREAM_BUSY_ERROR_CODE,
+    process_text_pipeline,
+    process_wav,
+)
 from ..session_manager import ClientType, SessionMessage, SessionStatus, session_manager
 from ..websocket import MessageType, WebSocketManager, get_websocket_manager
 
@@ -427,6 +432,34 @@ def _system_busy_error(busy: PipelineBusyError) -> HTTPException:
             },
         ),
         headers={"Retry-After": busy.retry_after_header},
+    )
+
+
+def _raise_if_upstream_busy(result: Dict[str, Any]) -> None:
+    """Re-raises an upstream capacity rejection as a retryable 503 (#190).
+
+    A GPU service that shed load answered 503 with a Retry-After, which clears
+    on its own. The pipeline flattens it into ``result["error"]`` like any other
+    failure, and without this the audio path would report 500 PIPELINE_ERROR and
+    the text path 400 TEXT_PIPELINE_ERROR — the latter blaming the client for a
+    condition it did not cause. Same envelope as _system_busy_error, so the
+    frontend needs no new parsing whichever layer ran out of capacity.
+    """
+    if result.get("error_code") != UPSTREAM_BUSY_ERROR_CODE:
+        return
+
+    retry_after = int(result.get("retry_after_seconds", DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS))
+    raise HTTPException(
+        status_code=503,
+        detail=create_error_response(
+            "SYSTEM_BUSY",
+            "The translation pipeline is at capacity. Please retry shortly.",
+            {
+                "retry_after_seconds": retry_after,
+                "upstream_error": result.get("error_msg"),
+            },
+        ),
+        headers={"Retry-After": str(retry_after)},
     )
 
 
@@ -966,6 +999,7 @@ async def process_audio_input(
         raise _system_busy_error(busy) from busy
 
     if result.get("error", False):
+        _raise_if_upstream_busy(result)
         raise HTTPException(
             status_code=500,
             detail=create_error_response(
@@ -1070,6 +1104,7 @@ async def process_text_input(
 
     # Fehlerbehandlung
     if pipeline_result.get("error"):
+        _raise_if_upstream_busy(pipeline_result)
         raise HTTPException(
             status_code=400,
             detail=create_error_response(

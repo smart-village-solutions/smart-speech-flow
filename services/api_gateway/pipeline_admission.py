@@ -9,12 +9,18 @@ The component is owned by the application lifespan rather than module import, so
 the semaphore belongs to the running app and tests can build their own. The
 bound is process-local by design: coordinating across replicas is #227.
 
-A slot may only be held by running work. ``run()`` is the sole entry point for
-that reason: the pipeline functions are synchronous and execute on a worker
-thread, and ``asyncio.to_thread`` cannot interrupt a call it has started. If the
-slot were released by the awaiting task instead, a cancelled request would hand
-its capacity to the next caller while its own thread was still on the GPU, and
-real concurrency could exceed the limit.
+A slot may only be held by running work, and it must always come back. ``run()``
+is the sole entry point for both reasons: the pipeline functions are synchronous
+and execute on a worker thread, so the slot has two possible owners and exactly
+one of them must return it.
+
+``asyncio.to_thread`` cannot interrupt a call it has started, but it does cancel
+a work item that is still queued. So a cancelled request has two very different
+shapes. If the thread is already running, releasing from the awaiting task would
+hand capacity to the next caller while this request's uninterruptible thread was
+still on the GPU. If the work item was cancelled before any thread picked it up,
+releasing only from the thread loses the slot for the life of the process. Both
+are real; ``_SlotClaim`` decides between them.
 """
 
 from __future__ import annotations
@@ -23,9 +29,10 @@ import asyncio
 import logging
 import math
 import os
+import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Callable, NoReturn, Optional, TypeVar
 
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
 
@@ -72,6 +79,15 @@ class PipelineAdmissionConfig:
     inferred from the hardware, not measured, and the metrics in this module
     exist so load tests can raise it. Exactly ``0`` disables the bound.
 
+    ``PIPELINE_QUEUE_WAIT_SECONDS`` must exceed the p95 pipeline duration or
+    queued requests can never be seated: a slot is held for the whole round trip
+    through ASR, translation and TTS, so with a wait shorter than that, every
+    request arriving at saturation burns the wait and is then rejected. Exactly
+    ``0`` opts out of queueing altogether and sheds immediately instead.
+
+    Both settings treat a negative value as a typo and fall back to the default:
+    only an exact ``0`` is an opt-out.
+
     Defaults are read per instance rather than at import, so the values are
     testable and a container can set them without reload tricks.
     """
@@ -102,11 +118,46 @@ class PipelineAdmissionConfig:
 
         if self.queue_wait_seconds < 0:
             logger.warning(
-                "PIPELINE_QUEUE_WAIT_SECONDS=%s is negative; using default %s.",
+                "PIPELINE_QUEUE_WAIT_SECONDS=%s is negative; using default %s. "
+                "Set exactly 0 to shed instead of queueing.",
                 self.queue_wait_seconds,
                 DEFAULT_QUEUE_WAIT_SECONDS,
             )
             object.__setattr__(self, "queue_wait_seconds", DEFAULT_QUEUE_WAIT_SECONDS)
+
+
+class _SlotClaim:
+    """Settles which of two threads returns one slot, exactly once.
+
+    The awaiting task and the worker thread can both believe they own the
+    release, and a plain boolean is not enough to separate them: cancelling an
+    ``asyncio.to_thread`` resolves the awaiting task a loop tick *before* the
+    queued work item is cancelled, so the task's cleanup can observe "not
+    started" while the thread is on its way into the call. Whoever claims first
+    owns the release; the loser does nothing.
+    """
+
+    __slots__ = ("_lock", "_claimed")
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._claimed = False
+
+    def claim(self) -> bool:
+        with self._lock:
+            if self._claimed:
+                return False
+            self._claimed = True
+            return True
+
+
+class _WorkAbandoned(BaseException):
+    """The awaiting task gave up before this thread started; do not run the call.
+
+    Derived from BaseException so an ``except Exception`` inside a pipeline
+    function cannot swallow it. Never reaches a caller: by the time it is raised
+    the awaiting future is already cancelled, so the result is discarded.
+    """
 
 
 class PipelineBusyError(RuntimeError):
@@ -202,8 +253,14 @@ class PipelineAdmission:
 
         await self._acquire()
         loop = asyncio.get_running_loop()
+        claim = _SlotClaim()
 
         def guarded() -> T:
+            if not claim.claim():
+                # The awaiting task is gone and has already returned the slot.
+                # Starting the GPU call now would exceed the bound to produce a
+                # result nobody is waiting for.
+                raise _WorkAbandoned
             try:
                 return func(*args, **kwargs)
             finally:
@@ -213,7 +270,14 @@ class PipelineAdmission:
                 # own uninterruptible thread is still using.
                 self._schedule_release(loop)
 
-        return await asyncio.to_thread(guarded)
+        try:
+            return await asyncio.to_thread(guarded)
+        finally:
+            # Only wins the claim when the work item was cancelled while still
+            # queued, in which case ``guarded`` will never run and no thread
+            # will ever release. Already on the loop thread, so release directly.
+            if claim.claim():
+                self._release()
 
     def _schedule_release(self, loop: asyncio.AbstractEventLoop) -> None:
         """Hands the slot back on the loop thread.
@@ -230,29 +294,48 @@ class PipelineAdmission:
 
     async def _acquire(self) -> None:
         started = time.perf_counter()
-        try:
-            # Python 3.11+ returns the permit if the waiter is cancelled, so a
-            # timeout here cannot leak capacity.
-            await asyncio.wait_for(
-                self._semaphore.acquire(), timeout=self._config.queue_wait_seconds
-            )
-        except TimeoutError:
-            # Recorded on the rejection path too: a histogram that only sees
-            # admitted requests reports "everyone seated instantly" during the
-            # very saturation it exists to measure.
-            self._observe_wait(time.perf_counter() - started)
-            if self._metrics:
-                self._metrics.rejected.inc()
-            raise PipelineBusyError(
-                max_concurrent=self._config.max_concurrent,
-                queue_wait_seconds=self._config.queue_wait_seconds,
-                waited_seconds=time.perf_counter() - started,
-            ) from None
+
+        if self._config.queue_wait_seconds == 0:
+            # "Do not queue": shed straight away. This cannot go through
+            # wait_for, which wraps the acquire in a task and cancels it before
+            # it ever runs when the timeout is zero — rejecting every request,
+            # including on a completely idle gateway.
+            if self._semaphore.locked():
+                self._reject(time.perf_counter() - started)
+            # Uncontended, so this returns without suspending; there is no
+            # await point between the check above and the permit being taken.
+            await self._semaphore.acquire()
+        else:
+            try:
+                # Python 3.11+ returns the permit if the waiter is cancelled, so
+                # a timeout here cannot leak capacity.
+                await asyncio.wait_for(
+                    self._semaphore.acquire(), timeout=self._config.queue_wait_seconds
+                )
+            except TimeoutError:
+                self._reject(time.perf_counter() - started)
 
         self._in_flight += 1
         if self._metrics:
             self._metrics.in_flight.inc()
         self._observe_wait(time.perf_counter() - started)
+
+    def _reject(self, waited: float) -> NoReturn:
+        """Records the rejection and raises. One clock read, used everywhere.
+
+        The wait is observed on this path too: a histogram that only sees
+        admitted requests reports "everyone seated instantly" during the very
+        saturation it exists to measure. Reading the clock again for the error
+        body would make the metric and the response disagree about one request.
+        """
+        self._observe_wait(waited)
+        if self._metrics:
+            self._metrics.rejected.inc()
+        raise PipelineBusyError(
+            max_concurrent=self._config.max_concurrent,
+            queue_wait_seconds=self._config.queue_wait_seconds,
+            waited_seconds=waited,
+        ) from None
 
     def _observe_wait(self, waited: float) -> None:
         if self._metrics:

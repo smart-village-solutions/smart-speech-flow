@@ -1,6 +1,8 @@
 import asyncio
+import contextlib
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock, patch
 
 import httpx
@@ -12,6 +14,7 @@ from services.api_gateway.pipeline_admission import (
     PipelineAdmissionConfig,
     PipelineAdmissionMetrics,
     PipelineBusyError,
+    _SlotClaim,
     run_pipeline,
 )
 from services.api_gateway.session_manager import SessionManager
@@ -58,6 +61,35 @@ async def _wait_for_in_flight(admission: PipelineAdmission, count: int) -> None:
         if time.perf_counter() > deadline:
             raise AssertionError(f"in_flight settled at {admission.in_flight}, expected {count}")
         await asyncio.sleep(0.005)
+
+
+@contextlib.asynccontextmanager
+async def _pinned_default_executor():
+    """Occupies the loop's only worker, so the next ``to_thread`` item stays queued.
+
+    This is the sole way to observe a cancellation that lands after a slot is
+    acquired but before the worker thread picks the work up — the window in
+    which ``guarded`` never runs and therefore never releases.
+    """
+    loop = asyncio.get_running_loop()
+    pool = ThreadPoolExecutor(max_workers=1)
+    loop.set_default_executor(pool)
+    holding = threading.Event()
+    release = threading.Event()
+
+    def hold() -> None:
+        holding.set()
+        release.wait(SAFETY_TIMEOUT)
+
+    pool.submit(hold)
+    holding.wait(SAFETY_TIMEOUT)
+    try:
+        yield
+    finally:
+        release.set()
+        pool.shutdown(wait=False)
+        # set_default_executor rejects None, so hand the loop a usable pool back.
+        loop.set_default_executor(ThreadPoolExecutor())
 
 
 class _Saturated:
@@ -272,6 +304,111 @@ class TestCancellationCannotFreeCapacityEarly:
         # Capacity comes back once the thread really is done.
         await admission.run(_noop)
 
+    @pytest.mark.asyncio
+    async def test_cancelled_before_the_thread_starts_returns_its_slot(self):
+        """The inverse hole: no thread ever runs, so nothing ever releases.
+
+        ``asyncio.to_thread`` does cancel a work item that is still queued, so
+        ``guarded`` never executes. Releasing only from inside the worker thread
+        therefore loses the slot for the life of the process.
+        """
+        admission = _admission(1)
+        ran = threading.Event()
+
+        async with _pinned_default_executor():
+            task = asyncio.create_task(admission.run(ran.set))
+            await _wait_for_in_flight(admission, 1)
+
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+            assert not ran.is_set(), "work started; this test no longer covers its window"
+            await _wait_for_in_flight(admission, 0)
+
+        # Counted as free is not enough; the permit has to be usable again.
+        assert await asyncio.wait_for(admission.run(lambda: "ok"), SAFETY_TIMEOUT) == "ok"
+
+    def test_only_one_party_can_claim_a_slot(self):
+        """The claim is the whole safety argument, so it is tested directly.
+
+        Both the awaiting task and the worker thread reach for the release, and
+        the window between them is a few bytecodes wide: ``to_thread`` attempts
+        to cancel the work item *before* the awaiting task resumes, so a failed
+        cancel means the worker is already RUNNING but may not yet have executed
+        the first line of ``guarded``. A plain boolean can be read as False in
+        exactly that gap, and both parties release. Too narrow to reproduce from
+        a test, which is why the invariant is asserted rather than the race.
+        """
+        claim = _SlotClaim()
+        winners = []
+        barrier = threading.Barrier(8)
+
+        def contend():
+            barrier.wait(SAFETY_TIMEOUT)
+            if claim.claim():
+                winners.append(threading.get_ident())
+
+        threads = [threading.Thread(target=contend) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(SAFETY_TIMEOUT)
+
+        assert len(winners) == 1
+
+    @pytest.mark.asyncio
+    async def test_work_is_abandoned_rather_than_run_without_a_slot(self):
+        """If the awaiting task won the claim, the thread must not start the call.
+
+        Its slot has already gone back to the pool, so running now would put one
+        more pipeline on the GPU than the bound allows — for a result the
+        cancelled caller will never read.
+        """
+        admission = _admission(1)
+        ran = threading.Event()
+
+        async with _pinned_default_executor():
+            task = asyncio.create_task(admission.run(ran.set))
+            await _wait_for_in_flight(admission, 1)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        # The pool is free again here, so the abandoned item gets its turn.
+        await asyncio.sleep(0.1)
+        assert not ran.is_set()
+        assert admission.in_flight == 0
+
+    @pytest.mark.asyncio
+    async def test_a_cancelled_started_request_releases_once_it_finishes(self):
+        """The slot comes back exactly once, and only when the thread is done."""
+        admission = _admission(1)
+        running = threading.Event()
+        finish = threading.Event()
+
+        def blocking():
+            running.set()
+            finish.wait(SAFETY_TIMEOUT)
+            return dict(PIPELINE_SUCCESS)
+
+        task = asyncio.create_task(admission.run(blocking))
+        await asyncio.wait_for(
+            asyncio.to_thread(running.wait, SAFETY_TIMEOUT), timeout=SAFETY_TIMEOUT
+        )
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        finish.set()
+        await _wait_for_in_flight(admission, 0)
+
+        # A double release would leave two permits behind a limit of one.
+        async with _Saturated(admission):
+            with pytest.raises(PipelineBusyError):
+                await admission.run(_noop)
+
     def test_release_never_raises_when_the_loop_is_already_gone(self):
         """Reaches for the private because this runs in a worker thread's finally.
 
@@ -286,6 +423,50 @@ class TestCancellationCannotFreeCapacityEarly:
         admission._schedule_release(closed_loop)
 
         closed_loop.call_soon_threadsafe.assert_called_once()
+
+
+class TestZeroQueueWaitShedsRatherThanQueues:
+    """``PIPELINE_QUEUE_WAIT_SECONDS=0`` means "do not queue", not "reject everything".
+
+    ``asyncio.wait_for`` with a zero timeout cancels the acquire before it runs,
+    so the obvious implementation rejects even a completely idle gateway.
+    """
+
+    @pytest.mark.asyncio
+    async def test_idle_gateway_still_admits(self):
+        admission = _admission(2, wait=0.0)
+
+        assert await asyncio.wait_for(admission.run(lambda: "ok"), SAFETY_TIMEOUT) == "ok"
+
+    @pytest.mark.asyncio
+    async def test_every_slot_remains_usable(self):
+        """Not just the first: a fast path must not skip the accounting."""
+        admission = _admission(2, wait=0.0)
+
+        async with _Saturated(admission):
+            assert admission.in_flight == 2
+
+        await _wait_for_in_flight(admission, 0)
+
+    @pytest.mark.asyncio
+    async def test_saturated_gateway_is_rejected_without_waiting(self):
+        admission = _admission(1, wait=0.0)
+
+        async with _Saturated(admission):
+            started = time.perf_counter()
+            with pytest.raises(PipelineBusyError) as excinfo:
+                await admission.run(_noop)
+            elapsed = time.perf_counter() - started
+
+        assert elapsed < 1.0
+        # Never below one second, so the advice stays a valid Retry-After.
+        assert excinfo.value.retry_after_seconds == 1
+
+    def test_negative_wait_is_still_a_typo_not_an_opt_out(self):
+        """Only an exact 0 opts out; a negative value falls back to the default."""
+        config = PipelineAdmissionConfig(max_concurrent=2, queue_wait_seconds=-1.0)
+
+        assert config.queue_wait_seconds == 10.0
 
 
 class TestMetrics:
@@ -341,6 +522,26 @@ class TestMetrics:
         # One holder was admitted, one request was rejected: both waited.
         assert self._sample(metrics.queue_wait, "_count") == 2
         assert self._sample(metrics.rejected, "_total") == 1
+
+    @pytest.mark.asyncio
+    async def test_reported_wait_is_the_wait_that_was_observed(self):
+        """The histogram sample and the advice in the body come from one clock read.
+
+        Two separate ``perf_counter()`` calls make the metric and the response
+        body disagree about the same request, which is what docs/openapi.yaml
+        documents ``waited_seconds`` against.
+        """
+        metrics = _metrics()
+        admission = _admission(1, metrics=metrics)
+        # Takes the only permit without going through run(), so the histogram
+        # holds exactly one sample and the comparison can be exact.
+        await admission._semaphore.acquire()
+
+        with pytest.raises(PipelineBusyError) as excinfo:
+            await admission.run(_noop)
+
+        assert self._sample(metrics.queue_wait, "_count") == 1
+        assert self._sample(metrics.queue_wait, "_sum") == excinfo.value.waited_seconds
         # The rejected request waited the full window, so the sum must reflect
         # it rather than rounding to nothing.
         assert self._sample(metrics.queue_wait, "_sum") >= SHORT_WAIT
@@ -570,6 +771,145 @@ class TestEndToEndOverTheWire:
         assert body["detail"]["error_code"] == "SYSTEM_BUSY"
         assert body["detail"]["details"]["retry_after_seconds"] == 1
         assert admitted.status_code == 200
+
+
+class TestUpstreamSaturationStaysRetryable:
+    """Translation's own 503 must not arrive as a permanent error (#190).
+
+    ``process_wav`` flattens every upstream failure into ``result["error"]``, so
+    without a marker the audio route reports 500 PIPELINE_ERROR and the text
+    route 400 TEXT_PIPELINE_ERROR — the second of which blames the client for a
+    condition that clears on its own.
+    """
+
+    @staticmethod
+    def _busy_upstream(status_code=503, retry_after="25"):
+        response = Mock()
+        response.status_code = status_code
+        response.headers = {"Retry-After": retry_after} if retry_after else {}
+        response.json.return_value = {"detail": "at capacity"}
+        return response
+
+    def test_pipeline_result_marks_an_upstream_503(self):
+        from services.api_gateway import pipeline_logic
+
+        result = pipeline_logic._pipeline_error_result(
+            debug_info={"steps": []},
+            start_total=time.perf_counter(),
+            error_message="Translation-Fehler: at capacity",
+            asr_text="Guten Tag",
+            translation_text=None,
+            audio_bytes=None,
+            upstream_response=self._busy_upstream(),
+        )
+
+        assert result["error"] is True
+        assert result["error_code"] == "SYSTEM_BUSY"
+        assert result["retry_after_seconds"] == 25
+
+    def test_other_upstream_failures_are_not_marked_retryable(self):
+        from services.api_gateway import pipeline_logic
+
+        result = pipeline_logic._pipeline_error_result(
+            debug_info={"steps": []},
+            start_total=time.perf_counter(),
+            error_message="Translation-Fehler: boom",
+            asr_text=None,
+            translation_text=None,
+            audio_bytes=None,
+            upstream_response=self._busy_upstream(status_code=500),
+        )
+
+        assert "error_code" not in result
+
+    def test_unparseable_retry_after_falls_back_to_a_usable_delay(self):
+        from services.api_gateway import pipeline_logic
+
+        result = pipeline_logic._pipeline_error_result(
+            debug_info={"steps": []},
+            start_total=time.perf_counter(),
+            error_message="Translation-Fehler: at capacity",
+            asr_text=None,
+            translation_text=None,
+            audio_bytes=None,
+            upstream_response=self._busy_upstream(retry_after="soon"),
+        )
+
+        assert result["retry_after_seconds"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_audio_route_reports_503_not_500(self, session_manager):
+        from fastapi import HTTPException
+
+        from services.api_gateway.routes import session as session_routes
+
+        session_id = await make_active_session(session_manager)
+        busy_result = {
+            "error": True,
+            "error_msg": "Translation-Fehler: at capacity",
+            "error_code": "SYSTEM_BUSY",
+            "retry_after_seconds": 25,
+            "debug": {},
+        }
+
+        with (
+            patch.object(session_routes, "session_manager", session_manager),
+            patch.object(session_routes, "process_wav", return_value=busy_result),
+        ):
+            with pytest.raises(HTTPException) as excinfo:
+                await session_routes.process_audio_input(session_id, audio_request(), 0.0)
+
+        error = excinfo.value
+        assert error.status_code == 503
+        assert error.detail["error_code"] == "SYSTEM_BUSY"
+        assert error.headers["Retry-After"] == "25"
+
+    @pytest.mark.asyncio
+    async def test_text_route_reports_503_not_400(self, session_manager):
+        from fastapi import HTTPException
+
+        from services.api_gateway.routes import session as session_routes
+
+        session_id = await make_active_session(session_manager)
+        busy_result = {
+            "error": True,
+            "error_msg": "Translation-Fehler: at capacity",
+            "error_code": "SYSTEM_BUSY",
+            "retry_after_seconds": 25,
+            "debug": {},
+        }
+
+        with (
+            patch.object(session_routes, "session_manager", session_manager),
+            patch.object(session_routes, "process_text_pipeline", return_value=busy_result),
+        ):
+            with pytest.raises(HTTPException) as excinfo:
+                await session_routes.process_text_input(session_id, text_request(), 0.0)
+
+        error = excinfo.value
+        assert error.status_code == 503
+        assert error.detail["error_code"] == "SYSTEM_BUSY"
+        assert error.headers["Retry-After"] == "25"
+
+    @pytest.mark.asyncio
+    async def test_ordinary_pipeline_failures_still_report_their_own_error(self, session_manager):
+        """The marker must not swallow the existing contract for real failures."""
+        from fastapi import HTTPException
+
+        from services.api_gateway.routes import session as session_routes
+
+        session_id = await make_active_session(session_manager)
+        failed = {"error": True, "error_msg": "TTS-Fehler: boom", "debug": {}}
+
+        with (
+            patch.object(session_routes, "session_manager", session_manager),
+            patch.object(session_routes, "process_wav", return_value=failed),
+        ):
+            with pytest.raises(HTTPException) as excinfo:
+                await session_routes.process_audio_input(session_id, audio_request(), 0.0)
+
+        assert excinfo.value.status_code == 500
+        assert excinfo.value.detail["error_code"] == "PIPELINE_ERROR"
 
 
 class TestLegacyRoutesAreGated:

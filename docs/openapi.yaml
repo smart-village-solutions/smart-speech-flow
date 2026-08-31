@@ -272,6 +272,13 @@ paths:
 
             `detail.error_code` is the stable value `SYSTEM_BUSY`.
 
+            Two layers can produce this response, and clients handle both the
+            same way. The gateway's own bound rejects before any work starts and
+            reports the full `details` below. A GPU service that shed the request
+            mid-pipeline is relayed instead, reporting `retry_after_seconds` and
+            `upstream_error` only — its `Retry-After` is the one that service
+            asked for. Treat every field in `details` as optional.
+
             **Client handling.** Wait `Retry-After` seconds and resend the same
             request; nothing was consumed. `details.retry_after_seconds` always
             equals the header, so either may be used. Do not retry sooner, and
@@ -326,6 +333,13 @@ paths:
                             type: number
                             description: How long this request actually queued.
                             example: 10.001
+                          upstream_error:
+                            type: string
+                            description: >-
+                              Present only when a GPU service shed the request
+                              mid-pipeline rather than the gateway rejecting it
+                              up front. Diagnostic; not for display.
+                            example: "Translation-Fehler: at capacity"
         '500':
           description: Processing error
 

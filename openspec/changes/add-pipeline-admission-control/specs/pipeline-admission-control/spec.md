@@ -27,6 +27,26 @@ GPU pipeline work.
 - **WHEN** the pipeline raises an exception while holding a slot
 - **THEN** the gateway returns the slot before propagating the error
 
+### Requirement: Every slot is returned exactly once
+
+A slot SHALL be returned exactly once, whether or not the request that acquired
+it was cancelled, and SHALL NOT be returned while the work holding it is still
+running. Cancellation is the only case where ownership is ambiguous: a queued
+worker item is cancelled with the request, but one that has already started
+cannot be interrupted.
+
+#### Scenario: A request is cancelled after its work started
+
+- **WHEN** a client disconnects while its pipeline is executing on a worker thread
+- **THEN** the slot stays held until that thread finishes
+- **AND THEN** the slot is returned exactly once
+
+#### Scenario: A request is cancelled before its work started
+
+- **WHEN** a client disconnects while its work is still queued for a worker thread
+- **THEN** the slot is returned immediately
+- **AND THEN** the work is abandoned rather than executed without a slot
+
 ### Requirement: SYSTEM_BUSY rejection contract
 
 The API gateway SHALL reject a request with HTTP `503`, a `Retry-After` header
@@ -45,6 +65,14 @@ the endpoint's other failures.
 
 - **WHEN** the unified message endpoint rejects a request for capacity
 - **THEN** the response status is `503` and not `500`
+
+#### Scenario: An upstream service sheds the request instead
+
+- **WHEN** the translation service answers a pipeline step with `503`
+- **THEN** the audio endpoint responds `503` with `error_code` `SYSTEM_BUSY`, not `500`
+- **AND THEN** the text endpoint responds `503` with `error_code` `SYSTEM_BUSY`, not `400`
+- **AND THEN** the response carries a `Retry-After` header derived from the
+  upstream's own, so the client is not advised to retry sooner than the service asked
 
 #### Scenario: A legacy pipeline route is saturated
 
@@ -84,6 +112,17 @@ environment does not supply them.
 
 - **WHEN** an admission environment variable holds a non-numeric value
 - **THEN** the gateway logs a warning, applies the documented default, and starts
+
+#### Scenario: The queue wait is a negative value
+
+- **WHEN** a queue-wait variable is negative
+- **THEN** the service logs a warning and applies the documented default
+
+#### Scenario: Queueing is disabled
+
+- **WHEN** a queue-wait variable is exactly `0`
+- **THEN** a request is admitted immediately if a slot is free
+- **AND THEN** a request is rejected immediately, without waiting, if none is
 
 ### Requirement: Admission metrics
 
@@ -154,6 +193,20 @@ system-level capacity boundary.
 - **WHEN** `MAX_CONCURRENT_TRANSLATIONS` is negative
 - **THEN** the service logs a warning and applies the documented default rather
   than running unbounded
+
+#### Scenario: An admission setting cannot be parsed
+
+- **WHEN** `MAX_CONCURRENT_TRANSLATIONS` or `TRANSLATION_QUEUE_WAIT_SECONDS`
+  holds a non-numeric value
+- **THEN** the service logs a warning, applies the documented default and starts,
+  rather than raising before the server binds and crash-looping the container
+
+#### Scenario: An inference slot's owner is cancelled
+
+- **WHEN** a caller disconnects while its inference is running on a worker thread
+- **THEN** the slot stays held until that thread finishes
+- **WHEN** a caller disconnects while its inference is still queued
+- **THEN** the slot is returned immediately and the inference is abandoned
 
 #### Scenario: No inference slot frees within the wait period
 

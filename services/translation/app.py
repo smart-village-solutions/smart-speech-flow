@@ -7,7 +7,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, NoReturn, Optional
 
 import torch
 from fastapi import FastAPI, HTTPException, Request
@@ -129,16 +129,79 @@ DEFAULT_MAX_CONCURRENT_TRANSLATIONS = 2
 # answers with an attributable 503 rather than leaving the caller to time out.
 DEFAULT_TRANSLATION_QUEUE_WAIT_SECONDS = 25.0
 
-MAX_CONCURRENT_TRANSLATIONS = int(
-    os.getenv("MAX_CONCURRENT_TRANSLATIONS", str(DEFAULT_MAX_CONCURRENT_TRANSLATIONS))
+
+def _env_int(name: str, default: int) -> int:
+    """Reads an int env var, falling back rather than blocking service boot.
+
+    These are read at import, so an uncaught ValueError here happens before
+    uvicorn binds: the container never reports healthy and restarts forever over
+    one typo in an env file.
+    """
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("Ignoring unparseable %s=%r; using default %s", name, raw, default)
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("Ignoring unparseable %s=%r; using default %s", name, raw, default)
+        return default
+
+
+MAX_CONCURRENT_TRANSLATIONS = _env_int(
+    "MAX_CONCURRENT_TRANSLATIONS", DEFAULT_MAX_CONCURRENT_TRANSLATIONS
 )
-TRANSLATION_QUEUE_WAIT_SECONDS = float(
-    os.getenv("TRANSLATION_QUEUE_WAIT_SECONDS", str(DEFAULT_TRANSLATION_QUEUE_WAIT_SECONDS))
+TRANSLATION_QUEUE_WAIT_SECONDS = _env_float(
+    "TRANSLATION_QUEUE_WAIT_SECONDS", DEFAULT_TRANSLATION_QUEUE_WAIT_SECONDS
 )
 
 # Spread across the plausible wait range: most requests should be seated
 # immediately, and anything near the timeout is a capacity signal.
 QUEUE_WAIT_BUCKETS = (0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 25.0, float("inf"))
+
+
+class _SlotClaim:
+    """Settles which of two threads returns one inference slot, exactly once.
+
+    The awaiting task and the worker thread can both believe they own the
+    release, and a plain boolean cannot separate them: cancelling an
+    ``asyncio.to_thread`` resolves the awaiting task a loop tick *before* the
+    queued work item is cancelled, so the task's cleanup can observe "not
+    started" while the thread is on its way into the call. Whoever claims first
+    owns the release; the loser does nothing.
+    """
+
+    __slots__ = ("_lock", "_claimed")
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._claimed = False
+
+    def claim(self) -> bool:
+        with self._lock:
+            if self._claimed:
+                return False
+            self._claimed = True
+            return True
+
+
+class _WorkAbandoned(BaseException):
+    """The awaiting task gave up before this thread started; do not run inference.
+
+    Derived from BaseException so an ``except Exception`` inside the inference
+    path cannot swallow it. Never reaches a caller: by the time it is raised the
+    awaiting future is already cancelled, so the result is discarded.
+    """
 
 
 class TranslationBusyError(RuntimeError):
@@ -208,9 +271,12 @@ class TranslationAdmission:
             )
             limit = DEFAULT_MAX_CONCURRENT_TRANSLATIONS
 
-        if wait <= 0:
+        # Exactly 0 means "do not queue" and is handled in _acquire; a negative
+        # value is a typo, the same reading as the limit above.
+        if wait < 0:
             logger.warning(
-                "TRANSLATION_QUEUE_WAIT_SECONDS=%s is not positive; using default %s.",
+                "TRANSLATION_QUEUE_WAIT_SECONDS=%s is negative; using default %s. "
+                "Set exactly 0 to shed instead of queueing.",
                 wait,
                 DEFAULT_TRANSLATION_QUEUE_WAIT_SECONDS,
             )
@@ -243,8 +309,14 @@ class TranslationAdmission:
 
         await self._acquire()
         loop = asyncio.get_running_loop()
+        claim = _SlotClaim()
 
         def guarded() -> List[str]:
+            if not claim.claim():
+                # The awaiting task is gone and has already returned the slot.
+                # Starting inference now would exceed the bound to produce a
+                # result nobody is waiting for.
+                raise _WorkAbandoned
             try:
                 return func(*args, **kwargs)
             finally:
@@ -252,7 +324,14 @@ class TranslationAdmission:
                 # inference's real lifetime rather than the awaiting task's.
                 self._schedule_release(loop)
 
-        return await asyncio.to_thread(guarded)
+        try:
+            return await asyncio.to_thread(guarded)
+        finally:
+            # Only wins the claim when the work item was cancelled while still
+            # queued, in which case ``guarded`` never runs and no thread will
+            # ever release. Already on the loop thread, so release directly.
+            if claim.claim():
+                self._release()
 
     def _schedule_release(self, loop: asyncio.AbstractEventLoop) -> None:
         """Hands the slot back on the loop thread.
@@ -269,26 +348,43 @@ class TranslationAdmission:
 
     async def _acquire(self) -> None:
         started = time.perf_counter()
-        try:
-            # Python 3.11+ returns the permit if the waiter is cancelled, so a
-            # timeout here cannot leak capacity.
-            await asyncio.wait_for(self._semaphore.acquire(), timeout=self.queue_wait_seconds)
-        except TimeoutError:
-            # Observed on the rejection path too: a histogram that only sees
-            # admitted requests reports "everyone seated instantly" during the
-            # very saturation it exists to measure.
-            waited = time.perf_counter() - started
-            self._observe_wait(waited)
-            self._metrics.rejected.inc()
-            raise TranslationBusyError(
-                max_concurrent=self.max_concurrent,
-                queue_wait_seconds=self.queue_wait_seconds,
-                waited_seconds=waited,
-            ) from None
+
+        if self.queue_wait_seconds == 0:
+            # "Do not queue": shed straight away. This cannot go through
+            # wait_for, which wraps the acquire in a task and cancels it before
+            # it ever runs when the timeout is zero — rejecting every request,
+            # including on a completely idle service.
+            if self._semaphore.locked():
+                self._reject(time.perf_counter() - started)
+            # Uncontended, so this returns without suspending; there is no await
+            # point between the check above and the permit being taken.
+            await self._semaphore.acquire()
+        else:
+            try:
+                # Python 3.11+ returns the permit if the waiter is cancelled, so
+                # a timeout here cannot leak capacity.
+                await asyncio.wait_for(self._semaphore.acquire(), timeout=self.queue_wait_seconds)
+            except TimeoutError:
+                self._reject(time.perf_counter() - started)
 
         self._in_flight += 1
         self._metrics.in_flight.inc()
         self._observe_wait(time.perf_counter() - started)
+
+    def _reject(self, waited: float) -> NoReturn:
+        """Records the rejection and raises. One clock read, used everywhere.
+
+        The wait is observed on this path too: a histogram that only sees
+        admitted requests reports "everyone seated instantly" during the very
+        saturation it exists to measure.
+        """
+        self._observe_wait(waited)
+        self._metrics.rejected.inc()
+        raise TranslationBusyError(
+            max_concurrent=self.max_concurrent,
+            queue_wait_seconds=self.queue_wait_seconds,
+            waited_seconds=waited,
+        ) from None
 
     def _observe_wait(self, waited: float) -> None:
         self._metrics.queue_wait.observe(waited)

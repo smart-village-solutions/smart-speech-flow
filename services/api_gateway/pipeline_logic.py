@@ -52,6 +52,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 AUDIO_WAV_MIME = "audio/wav"
 
+# Marks a pipeline failure the client may usefully retry, so the routes can
+# answer 503 with a Retry-After instead of a permanent-looking error.
+UPSTREAM_BUSY_ERROR_CODE = "SYSTEM_BUSY"
+# Only used when a shedding service sent no parseable Retry-After of its own.
+DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS = 5
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -339,6 +345,15 @@ def _mark_pipeline_failure(
     debug_info["total_duration"] = round(time.perf_counter() - start_total, 3)
 
 
+def _upstream_retry_after(response: Any) -> int:
+    """The upstream's own Retry-After, or a delay short enough to still be useful."""
+    headers = getattr(response, "headers", None) or {}
+    try:
+        return max(1, int(headers.get("Retry-After", "")))
+    except (TypeError, ValueError):
+        return DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS
+
+
 def _pipeline_error_result(
     *,
     debug_info: Dict[str, Any],
@@ -348,7 +363,16 @@ def _pipeline_error_result(
     translation_text: Optional[str],
     audio_bytes: Optional[bytes],
     validation_result: Optional[Any] = None,
+    upstream_response: Optional[Any] = None,
 ) -> Dict[str, Any]:
+    """Flattens an upstream failure into the pipeline's result shape.
+
+    ``upstream_response`` exists so a 503 keeps its meaning. Since #190 the GPU
+    services shed load with a 503 and a Retry-After, which is transient, but
+    every failure here otherwise arrives at the routes as one undifferentiated
+    ``error`` — reported as 500 on the audio path and 400 on the text path, both
+    of which a client reads as permanent.
+    """
     _mark_pipeline_failure(debug_info, start_total, error_message)
     result = {
         "error": True,
@@ -360,6 +384,9 @@ def _pipeline_error_result(
     }
     if validation_result is not None:
         result["validation_result"] = validation_result
+    if getattr(upstream_response, "status_code", None) == 503:
+        result["error_code"] = UPSTREAM_BUSY_ERROR_CODE
+        result["retry_after_seconds"] = _upstream_retry_after(upstream_response)
     return result
 
 
@@ -1206,6 +1233,7 @@ def process_text_pipeline(
                 asr_text=processed_text,  # Original text as "ASR" result
                 translation_text=None,
                 audio_bytes=None,
+                upstream_response=translation_resp,
             )
 
         # Optional LLM refinement
@@ -1256,6 +1284,7 @@ def process_text_pipeline(
                 asr_text=processed_text,
                 translation_text=translation_text,
                 audio_bytes=None,
+                upstream_response=tts_resp,
             )
 
         audio_bytes = tts_resp.content
@@ -1411,6 +1440,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
             asr_text=asr_text,
             translation_text=None,
             audio_bytes=None,
+            upstream_response=translation_resp,
         )
     # Optional LLM refinement
     if translation_refiner.is_active:
@@ -1489,6 +1519,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
             asr_text=asr_text,
             translation_text=translation_text,
             audio_bytes=None,
+            upstream_response=tts_resp,
         )
     audio_bytes = tts_resp.content
     debug_info["steps"].append(

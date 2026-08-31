@@ -87,10 +87,36 @@ Only tracked files count here: `LOCAL_SETUP.md` and `docs/frontend/` are in
   Dockerfiles. All three import it at module level since `1fb7f09` but none copy
   it, so the images cannot start; production runs a pre-`1fb7f09` image.
 
-## 7. Follow-ups (not this change)
+## 7. Review findings (PR #265)
 
-- [ ] 7.1 Raise `MAX_CONCURRENT_PIPELINES` and `MAX_CONCURRENT_TRANSLATIONS` from
-  load-test evidence.
-- [ ] 7.2 Optional `AppError` `busy` kind and a dedicated i18n message.
-- [ ] 7.3 Cross-replica admission (#227).
-- [ ] 7.4 Bound ASR and TTS inference, which already offload but are unbounded.
+- [x] 7.1 Return a slot when the awaiting task is cancelled before its worker
+  item starts. Releasing only from inside the thread lost the slot permanently,
+  since `to_thread` does cancel an item that is still queued; two aborted
+  uploads were enough to answer `SYSTEM_BUSY` until restart. A `_SlotClaim`
+  settles ownership under a lock, because the awaiting task resumes before the
+  worker executes its first line, so a plain flag can let both release.
+  Abandoned work is not executed: its slot is already gone.
+- [x] 7.2 Same fix in `TranslationAdmission.run`.
+- [x] 7.3 Treat a queue wait of exactly `0` as "do not queue" via a non-blocking
+  check. `asyncio.wait_for(..., timeout=0)` cancels the acquire before it runs,
+  so the setting rejected every request even on an idle service. Negative stays
+  a typo and falls back to the default, in both services.
+- [x] 7.4 Parse the translation admission settings through guarded `_env_int` /
+  `_env_float`, as the gateway already did. They are read at import, so a typo
+  raised before uvicorn bound and crash-looped the container.
+- [x] 7.5 Keep an upstream `503` retryable: mark it on the pipeline result and
+  answer `503 SYSTEM_BUSY` with the upstream's `Retry-After`, instead of `500`
+  on the audio path and `400` on the text path. Applied to the TTS steps too.
+- [x] 7.6 Read the queue wait once per rejection, so the histogram sample and
+  the `waited_seconds` in the body describe the same request.
+- [x] 7.7 Document that a queue wait must exceed p95 pipeline latency: a slot is
+  held for the whole round trip, so a shorter wait means a request arriving at
+  saturation can never be seated. Default left at `10.0` pending 8.1.
+
+## 8. Follow-ups (not this change)
+
+- [ ] 8.1 Raise `MAX_CONCURRENT_PIPELINES` and `MAX_CONCURRENT_TRANSLATIONS` from
+  load-test evidence, and set the queue waits from the measured p95.
+- [ ] 8.2 Optional `AppError` `busy` kind and a dedicated i18n message.
+- [ ] 8.3 Cross-replica admission (#227).
+- [ ] 8.4 Bound ASR and TTS inference, which already offload but are unbounded.

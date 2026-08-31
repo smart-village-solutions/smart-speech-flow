@@ -11,11 +11,13 @@ would never run.
 """
 
 import asyncio
+import contextlib
 import importlib.util
 import sys
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -80,6 +82,34 @@ def request_with(admission=None, payload=None, query_params=None):
             return PAYLOAD if payload is None else payload
 
     return FakeRequest()
+
+
+@contextlib.asynccontextmanager
+async def _pinned_default_executor():
+    """Occupies the loop's only worker so the next ``to_thread`` item stays queued.
+
+    The only way to observe a cancellation landing after a slot is acquired but
+    before any thread picks the inference up.
+    """
+    loop = asyncio.get_running_loop()
+    pool = ThreadPoolExecutor(max_workers=1)
+    loop.set_default_executor(pool)
+    holding = threading.Event()
+    release = threading.Event()
+
+    def hold() -> None:
+        holding.set()
+        release.wait(SAFETY_TIMEOUT)
+
+    pool.submit(hold)
+    holding.wait(SAFETY_TIMEOUT)
+    try:
+        yield
+    finally:
+        release.set()
+        pool.shutdown(wait=False)
+        # set_default_executor rejects None, so hand the loop a usable pool back.
+        loop.set_default_executor(ThreadPoolExecutor())
 
 
 class _ThreadRecorder:
@@ -264,8 +294,10 @@ class TestConcurrencyBound:
         assert admission.max_concurrent == translation.DEFAULT_MAX_CONCURRENT_TRANSLATIONS
 
     @pytest.mark.asyncio
-    async def test_non_positive_queue_wait_falls_back_to_the_default(self, translation):
-        admission = translation.TranslationAdmission(queue_wait_seconds=0)
+    async def test_negative_queue_wait_falls_back_to_the_default(self, translation):
+        """A negative wait is a typo. Exactly 0 is the "do not queue" opt-out,
+        covered in TestAdmissionWiring."""
+        admission = translation.TranslationAdmission(queue_wait_seconds=-1)
 
         assert admission.queue_wait_seconds == translation.DEFAULT_TRANSLATION_QUEUE_WAIT_SECONDS
 
@@ -427,6 +459,100 @@ class TestSlotOwnership:
         assert admission.in_flight == 0, "the slot was never returned"
 
     @pytest.mark.asyncio
+    async def test_cancelled_before_the_thread_starts_returns_its_slot(self, translation):
+        """The inverse case: to_thread does cancel a work item still in the queue.
+
+        The inference function then never runs, so a release that only ever
+        happens inside the worker thread never happens at all, and the slot is
+        gone for the life of the process.
+        """
+        admission = translation.TranslationAdmission(
+            max_concurrent=1, queue_wait_seconds=5.0, metrics=_MetricsRecorder()
+        )
+        ran = threading.Event()
+
+        def never_reached(texts, *_args, **_kwargs):
+            ran.set()
+            return ["translated"]
+
+        translation._translate_texts = never_reached
+
+        async with _pinned_default_executor():
+            task = asyncio.create_task(translation.translate(request_with(admission)))
+            for _ in range(int(SAFETY_TIMEOUT / 0.01)):
+                await asyncio.sleep(0.01)
+                if admission.in_flight == 1:
+                    break
+            assert admission.in_flight == 1, "never acquired a slot to begin with"
+
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+            assert not ran.is_set(), "inference started; this no longer covers the window"
+            assert admission.in_flight == 0, "the slot was lost when the work never ran"
+
+        # Counted as free is not enough; the permit has to be usable again.
+        translation._translate_texts = lambda texts, *a, **k: ["translated"]
+        response = await asyncio.wait_for(
+            translation.translate(request_with(admission)), SAFETY_TIMEOUT
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_a_cancelled_started_request_releases_once_it_finishes(self, translation):
+        """The slot comes back exactly once, so the bound is not quietly lifted.
+
+        Both the awaiting task and the worker thread reach for the release. The
+        window where a plain boolean lets both act is a few bytecodes wide and
+        cannot be reproduced from a test; ``_SlotClaim`` closes it, and the
+        gateway suite asserts that invariant directly.
+        """
+        admission = translation.TranslationAdmission(
+            max_concurrent=1, queue_wait_seconds=0.05, metrics=_MetricsRecorder()
+        )
+        release = threading.Event()
+        started = threading.Event()
+
+        def hold(texts, *_args, **_kwargs):
+            started.set()
+            release.wait(timeout=SAFETY_TIMEOUT)
+            return ["translated"]
+
+        translation._translate_texts = hold
+
+        task = asyncio.create_task(translation.translate(request_with(admission)))
+        await asyncio.to_thread(started.wait, SAFETY_TIMEOUT)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        release.set()
+        for _ in range(int(SAFETY_TIMEOUT / 0.01)):
+            await asyncio.sleep(0.01)
+            if admission.in_flight == 0:
+                break
+        assert admission.in_flight == 0
+
+        # Two permits behind a limit of one would let both of these run.
+        hold_again = threading.Event()
+        translation._translate_texts = lambda texts, *a, **k: (
+            hold_again.wait(SAFETY_TIMEOUT),
+            ["translated"],
+        )[1]
+        holder = asyncio.create_task(translation.translate(request_with(admission)))
+        for _ in range(int(SAFETY_TIMEOUT / 0.01)):
+            await asyncio.sleep(0.01)
+            if admission.in_flight == 1:
+                break
+
+        with pytest.raises(translation.TranslationBusyError):
+            await admission._acquire()
+
+        hold_again.set()
+        await asyncio.wait_for(holder, SAFETY_TIMEOUT)
+
+    @pytest.mark.asyncio
     async def test_release_survives_a_loop_that_is_already_closed(self, translation):
         """The release runs in a `finally` inside a worker thread. At shutdown the
         loop can already be gone, and raising there would kill the thread for a
@@ -513,6 +639,63 @@ class TestAdmissionWiring:
         assert module.MAX_CONCURRENT_TRANSLATIONS == 3
         assert module.TRANSLATION_QUEUE_WAIT_SECONDS == 7.5
         assert module.TranslationAdmission().max_concurrent == 3
+
+    def test_unparseable_settings_do_not_stop_the_service_booting(self, monkeypatch):
+        """An unparseable value must not crash-loop the container.
+
+        These are read at module scope, so an uncaught ValueError happens before
+        uvicorn binds: the service never reports healthy and the pod restarts
+        forever over one typo in an env file.
+        """
+        module = load_translation(
+            monkeypatch,
+            MAX_CONCURRENT_TRANSLATIONS="two",
+            TRANSLATION_QUEUE_WAIT_SECONDS="25s",
+        )
+
+        assert module.MAX_CONCURRENT_TRANSLATIONS == module.DEFAULT_MAX_CONCURRENT_TRANSLATIONS
+        assert (
+            module.TRANSLATION_QUEUE_WAIT_SECONDS == module.DEFAULT_TRANSLATION_QUEUE_WAIT_SECONDS
+        )
+
+    def test_blank_settings_fall_back_to_the_defaults(self, monkeypatch):
+        """A declared-but-empty variable is how compose passes "unset"."""
+        module = load_translation(
+            monkeypatch,
+            MAX_CONCURRENT_TRANSLATIONS="",
+            TRANSLATION_QUEUE_WAIT_SECONDS="   ",
+        )
+
+        assert module.MAX_CONCURRENT_TRANSLATIONS == module.DEFAULT_MAX_CONCURRENT_TRANSLATIONS
+        assert (
+            module.TRANSLATION_QUEUE_WAIT_SECONDS == module.DEFAULT_TRANSLATION_QUEUE_WAIT_SECONDS
+        )
+
+    @pytest.mark.asyncio
+    async def test_zero_wait_still_admits_an_idle_service(self, translation):
+        """0 means "do not queue", and must not reject on an idle service.
+
+        asyncio.wait_for with a zero timeout cancels the acquire before it runs.
+        """
+        admission = translation.TranslationAdmission(
+            max_concurrent=2, queue_wait_seconds=0, metrics=_MetricsRecorder()
+        )
+        translation._translate_texts = lambda texts, *a, **k: ["translated"]
+
+        response = await asyncio.wait_for(
+            translation.translate(request_with(admission)), SAFETY_TIMEOUT
+        )
+
+        assert response.status_code == 200
+        assert admission.queue_wait_seconds == 0
+
+    @pytest.mark.asyncio
+    async def test_negative_wait_is_a_typo_and_falls_back(self, translation):
+        admission = translation.TranslationAdmission(
+            max_concurrent=2, queue_wait_seconds=-1, metrics=_MetricsRecorder()
+        )
+
+        assert admission.queue_wait_seconds == translation.DEFAULT_TRANSLATION_QUEUE_WAIT_SECONDS
 
     @pytest.mark.asyncio
     async def test_request_without_app_state_runs_unbounded(self, translation):
