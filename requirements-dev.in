@@ -18,7 +18,7 @@ httpx==0.28.1
 
 # Pre-commit Hooks
 pre-commit==4.3.0
-virtualenv>=20.36.1
+virtualenv>=21.7.5
 
 # Code Quality Extensions
 flake8-docstrings==1.7.0
