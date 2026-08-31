@@ -1,11 +1,12 @@
 import logging
 from html import escape
 
-from fastapi import File, Form, UploadFile
+from fastapi import File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
 from services.api_gateway.app import app
 from services.api_gateway.log_safety import safe_language_code, sanitize_log_value
+from services.api_gateway.pipeline_admission import PipelineBusyError, run_pipeline
 from services.api_gateway.pipeline_logic import process_wav
 
 logger = logging.getLogger("api_gateway")
@@ -20,6 +21,7 @@ def _safe_text_preview(value: object) -> str:
 
 @app.post("/upload")
 async def upload(
+    request: Request,
     file: UploadFile = File(...),
     source_lang: str = Form(...),
     target_lang: str = Form(...),
@@ -40,7 +42,18 @@ async def upload(
             status_code=400,
         )
     file_bytes = await file.read()
-    result = process_wav(file_bytes, source_lang, target_lang)
+    try:
+        result = await run_pipeline(
+            request, process_wav, file_bytes, source_lang, target_lang
+        )
+    except PipelineBusyError as busy:
+        logger.info("Upload rejected: pipeline at capacity")
+        return HTMLResponse(
+            content="<html><body><h2>System ausgelastet</h2><p>Die Verarbeitung ist derzeit"
+            " ausgelastet. Bitte in wenigen Sekunden erneut versuchen.</p></body></html>",
+            status_code=503,
+            headers={"Retry-After": busy.retry_after_header},
+        )
     if result["error"]:
         logger.info(
             "Upload pipeline error: error=%s, has_transcript=%s, has_translation=%s",

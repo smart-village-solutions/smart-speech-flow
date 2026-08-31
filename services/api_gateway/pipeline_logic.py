@@ -1,4 +1,3 @@
-import asyncio
 import audioop
 import io
 import logging
@@ -1514,19 +1513,3 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
         "audio_bytes": audio_bytes,
         "debug": debug_info,
     }
-
-
-async def process_wav_for_session(file, source_lang, target_lang, session_id=None):
-    """
-    Erweiterte Pipeline-Funktion mit Session-Support
-    Nutzt die bestehende process_wav-Logik
-    """
-    # Rufe bestehende Funktion auf
-    result = await asyncio.to_thread(process_wav, file, source_lang, target_lang)
-
-    # Zusätzliche Session-Logik (falls gewünscht)
-    if session_id:
-        # Hier könnten zusätzliche Session-spezifische Verarbeitungen stehen
-        pass
-
-    return result

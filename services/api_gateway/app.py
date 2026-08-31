@@ -17,6 +17,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CollectorRegistry, Counter
 
+from .pipeline_admission import (
+    PipelineAdmission,
+    PipelineAdmissionConfig,
+    PipelineAdmissionMetrics,
+)
 from .rate_limiter import RateLimitMiddleware
 
 # === Service-URLs für die Orchestrierung ===
@@ -185,6 +190,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     sys.stderr.write(f"WebSocketManager ready (ID: {id(manager)})\n")
     sys.stderr.flush()
 
+    # Bounded admission for GPU pipeline work (#191). Owned by the lifespan so
+    # the semaphore belongs to this running app rather than to import time.
+    admission_config = PipelineAdmissionConfig()
+    app.state.pipeline_admission = PipelineAdmission(
+        admission_config, metrics=pipeline_admission_metrics
+    )
+    sys.stderr.write(
+        "Pipeline admission ready "
+        f"(max_concurrent={admission_config.max_concurrent}, "
+        f"queue_wait_seconds={admission_config.queue_wait_seconds})\n"
+    )
+    sys.stderr.flush()
+
     # Start background tasks
     timeout_task = asyncio.create_task(session_timeout_monitor())
     circuit_breaker_task = asyncio.create_task(circuit_breaker_monitor())
@@ -227,6 +245,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             ):
                 print(f"Background task shutdown error: {result}")
 
+        app.state.pipeline_admission = None
+
         print("Shutdown complete", flush=True)
 
 
@@ -268,6 +288,11 @@ requests_total = Counter(
     "gateway_requests_total", "Total API Gateway requests", registry=registry
 )
 requests_total.inc(0)
+
+# Registered here rather than in the lifespan because a Prometheus series may be
+# created only once per registry, while the admission component itself is rebuilt
+# per lifespan.
+pipeline_admission_metrics = PipelineAdmissionMetrics(registry)
 
 # Attach to app state
 app.state.prometheus_registry = registry

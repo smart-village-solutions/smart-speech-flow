@@ -987,7 +987,10 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
             "audio_bytes": b"",
         },
     )
-    error_response = await upload_module.upload(FakeUploadFile(b"audio"), "de", "en")
+    # A request with no app carries no admission component, so the route runs
+    # unbounded — this test is about HTML escaping, not capacity.
+    request = SimpleNamespace()
+    error_response = await upload_module.upload(request, FakeUploadFile(b"audio"), "de", "en")
     assert error_response.status_code == 400
     assert b"&lt;script&gt;alert(1)&lt;/script&gt;" in error_response.body
     assert b"Keine Ausgabe verfuegbar." in error_response.body
@@ -1003,6 +1006,7 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
         },
     )
     success_response = await upload_module.upload(
+        request,
         FakeUploadFile(b"audio"),
         "<de>",
         "<en>",
