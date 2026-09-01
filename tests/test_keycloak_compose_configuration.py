@@ -9,6 +9,7 @@ import yaml
 
 
 ROOT = Path(__file__).parents[1]
+KEYCLOAK_DOCKERFILE = ROOT / "services/keycloak/Dockerfile"
 
 
 def _keycloak_services() -> tuple[dict, dict]:
@@ -95,3 +96,10 @@ def test_keycloak_runbook_uses_the_configured_hostname_and_preserves_private_por
 
     assert "KEYCLOAK_HOSTNAME" in runbook
     assert "management port 9000" in runbook
+
+
+def test_keycloak_runtime_image_explicitly_uses_the_unprivileged_image_user() -> None:
+    """Make the final Keycloak image's runtime identity unambiguous to scanners."""
+    final_stage = KEYCLOAK_DOCKERFILE.read_text().split("FROM quay.io/keycloak/keycloak:26.7.2\n", 1)[1]
+
+    assert "USER 1000" in final_stage
