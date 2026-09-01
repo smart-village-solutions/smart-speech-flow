@@ -58,7 +58,7 @@ The following services are now **only accessible within Docker network** (not ex
 - [ ] Generate a ClickHouse password: `openssl rand -base64 32`
 - [ ] Set `CLICKHOUSE_DB`, `CLICKHOUSE_USER`, and `CLICKHOUSE_PASSWORD` in `.env`
 - [ ] Generate Keycloak database and bootstrap-admin passwords: `openssl rand -base64 32`
-- [ ] Set the five required `KEYCLOAK_*` variables in `.env`
+- [ ] Set the six required `KEYCLOAK_*` variables in `.env`, including the non-secret `KEYCLOAK_HOSTNAME`
 - [ ] Review all other environment variables in `.env`
 
 ### Security Verification
@@ -123,7 +123,7 @@ curl -u "admin:YOUR_PASSWORD" http://localhost:3000/api/health
 For start-up, verification, backup, restore, upgrade, rollback, and incident
 procedures, see the [ClickHouse Operations Runbook](../operations/runbooks/clickhouse-operations.md).
 
-Keycloak is public only through Traefik at `auth.kassel.smartspeechflow.de`;
+Keycloak is public only through Traefik at the deployment-specific `KEYCLOAK_HOSTNAME`;
 its PostgreSQL database and management endpoint have no public route. See the
 [Keycloak Operations Runbook](../operations/runbooks/keycloak-operations.md).
 

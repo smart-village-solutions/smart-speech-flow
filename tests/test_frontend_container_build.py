@@ -33,6 +33,7 @@ def _compose_build(project_name: str) -> subprocess.CompletedProcess[str]:
     environment["KEYCLOAK_DB_PASSWORD"] = "test-only-db-password"
     environment["KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME"] = "bootstrap_admin"
     environment["KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD"] = "test-only-admin-password"
+    environment["KEYCLOAK_HOSTNAME"] = "auth.test.example"
     return subprocess.run(
         [
             "docker",

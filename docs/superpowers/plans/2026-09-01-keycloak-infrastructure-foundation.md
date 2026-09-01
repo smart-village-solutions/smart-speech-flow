@@ -142,7 +142,7 @@ Run:
 
 ```bash
 pytest tests/test_keycloak_compose_configuration.py -q
-docker compose --env-file <(printf '%s\\n' 'CLICKHOUSE_DB=test' 'CLICKHOUSE_USER=test' 'CLICKHOUSE_PASSWORD=test' 'KEYCLOAK_HOSTNAME=auth.test.example' 'KEYCLOAK_DB_NAME=keycloak' 'KEYCLOAK_DB_USER=keycloak' 'KEYCLOAK_DB_PASSWORD=test' 'KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=admin' 'KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=test') config --quiet
+env CLICKHOUSE_DB=test CLICKHOUSE_USER=test CLICKHOUSE_PASSWORD=test KEYCLOAK_HOSTNAME=auth.test.example KEYCLOAK_DB_NAME=keycloak KEYCLOAK_DB_USER=keycloak KEYCLOAK_DB_PASSWORD=test KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=admin KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=test docker compose config --quiet
 ```
 
 Expected: both commands exit successfully; the rendered configuration has no public database or management port.
@@ -311,7 +311,7 @@ Run:
 
 ```bash
 pytest tests/test_keycloak_compose_configuration.py tests/test_clickhouse_compose_configuration.py tests/test_frontend_container_build.py -q
-docker compose --env-file <(printf '%s\\n' 'CLICKHOUSE_DB=test' 'CLICKHOUSE_USER=test' 'CLICKHOUSE_PASSWORD=test' 'KEYCLOAK_HOSTNAME=auth.test.example' 'KEYCLOAK_DB_NAME=keycloak' 'KEYCLOAK_DB_USER=keycloak' 'KEYCLOAK_DB_PASSWORD=test' 'KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=admin' 'KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=test') config --quiet
+env CLICKHOUSE_DB=test CLICKHOUSE_USER=test CLICKHOUSE_PASSWORD=test KEYCLOAK_HOSTNAME=auth.test.example KEYCLOAK_DB_NAME=keycloak KEYCLOAK_DB_USER=keycloak KEYCLOAK_DB_PASSWORD=test KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=admin KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=test docker compose config --quiet
 git diff origin/main...HEAD --check
 git status --short
 ```

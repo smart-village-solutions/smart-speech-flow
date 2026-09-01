@@ -22,6 +22,7 @@ def _keycloak_services() -> tuple[dict, dict]:
         env_file.write("KEYCLOAK_DB_PASSWORD=test-only-db-password\n")
         env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=bootstrap_admin\n")
         env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=test-only-admin-password\n")
+        env_file.write("KEYCLOAK_HOSTNAME=auth.test.example\n")
 
     try:
         result = subprocess.run(
@@ -48,11 +49,11 @@ def test_keycloak_is_public_only_through_traefik() -> None:
     assert keycloak["expose"] == ["8080"]
     assert (
         keycloak["labels"]["traefik.http.routers.keycloak.rule"]
-        == "Host(`auth.kassel.smartspeechflow.de`)"
+        == "Host(`auth.test.example`)"
     )
     assert (
         keycloak["environment"]["KC_HOSTNAME"]
-        == "https://auth.kassel.smartspeechflow.de"
+        == "https://auth.test.example"
     )
     assert keycloak["environment"]["KC_PROXY_HEADERS"] == "xforwarded"
     assert keycloak["healthcheck"]
@@ -86,3 +87,11 @@ def test_keycloak_postgres_is_private_persistent_and_credentialed() -> None:
     assert keycloak["environment"]["KC_DB_PASSWORD"] == "test-only-db-password"
     assert keycloak["environment"]["KC_BOOTSTRAP_ADMIN_USERNAME"] == "bootstrap_admin"
     assert keycloak["environment"]["KC_BOOTSTRAP_ADMIN_PASSWORD"] == "test-only-admin-password"
+
+
+def test_keycloak_runbook_uses_the_configured_hostname_and_preserves_private_ports() -> None:
+    """Keep operational instructions aligned with the Compose security boundary."""
+    runbook = (ROOT / "docs/operations/runbooks/keycloak-operations.md").read_text()
+
+    assert "KEYCLOAK_HOSTNAME" in runbook
+    assert "management port 9000" in runbook

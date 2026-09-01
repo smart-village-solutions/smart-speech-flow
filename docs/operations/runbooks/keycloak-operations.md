@@ -1,15 +1,20 @@
 # Keycloak Operations Runbook
 
-Keycloak is public only through Traefik at `https://auth.kassel.smartspeechflow.de`.
+Keycloak is public only through Traefik at `https://${KEYCLOAK_HOSTNAME}`.
 Its PostgreSQL database and management endpoint remain private to the Compose network.
 This infrastructure does not yet authenticate SSF users.
 
 ## First deployment
 
-Confirm DNS resolves to the SSF host before starting Keycloak:
+Set `KEYCLOAK_HOSTNAME` in the ignored deployment `.env`, export it for the
+following checks, and confirm that its DNS record resolves to the SSF host
+before starting Keycloak:
 
 ```bash
-test "$(dig +short A auth.kassel.smartspeechflow.de | head -n1)" = "$(dig +short A translate.smart-village.solutions | head -n1)"
+set -a
+. ./.env
+set +a
+test -n "$(dig +short A "$KEYCLOAK_HOSTNAME" | head -n1)"
 ```
 
 If this fails, stop: Traefik cannot obtain a TLS certificate. Generate database
@@ -26,7 +31,7 @@ docker compose ps keycloak-postgres keycloak
 
 ```bash
 docker compose exec -T keycloak bash -ec 'exec 3<>/dev/tcp/127.0.0.1/9000; printf "GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3; grep -q "200 OK" <&3'
-curl --fail --silent --show-error https://auth.kassel.smartspeechflow.de/realms/master >/dev/null
+curl --fail --silent --show-error "https://${KEYCLOAK_HOSTNAME}/realms/master" >/dev/null
 docker inspect "$(docker compose ps -q keycloak-postgres)" --format '{{json .HostConfig.PortBindings}}'
 ```
 
