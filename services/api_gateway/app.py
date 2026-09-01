@@ -354,6 +354,7 @@ def setup_cors_for_websockets():
             "Cache-Control",
             "Pragma",
             "X-Correlation-Id",
+            "X-SSF-Legacy-Access",
             # WebSocket-specific headers
             "Upgrade",
             "Connection",
