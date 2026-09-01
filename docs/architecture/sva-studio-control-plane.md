@@ -14,8 +14,8 @@ support access are explicitly outside this initial scope.
 ## Deployment and Tenant Model
 
 One Studio deployment runs with exactly one SSF installation in the same server
-or deployment boundary. One logical Studio instance represents exactly one SSF
-tenant.
+or deployment boundary. A Studio deployment operates multiple logical tenants;
+each Studio tenant maps to exactly one SSF tenant.
 
 ```text
 SSF server or deployment
@@ -23,6 +23,8 @@ SSF server or deployment
 ├── SSF Keycloak
 ├── SVA Studio
 └── PostgreSQL database of the SSF plugin
+    ├── Studio tenant / SSF tenant A
+    └── Studio tenant / SSF tenant B
 ```
 
 The shared deployment boundary does not remove system boundaries. Studio and
@@ -37,9 +39,9 @@ SSF business roles and Studio technical roles remain distinct:
 | SSF business role | Technical Studio mapping |
 | --- | --- |
 | `system_admin` | Root scope with `instance_registry_admin` |
-| `tenant_admin` | Tenant-local Studio `system_admin` in the realm of the Studio instance |
-| `admin` | Tenant-local user with selected `ssf.*` permissions |
-| `customer` | No regular Studio identity; access through a restricted SSF session |
+| `tenant_admin` | Tenant-local Studio `system_admin` in the realm of the Studio tenant |
+| `user` | Tenant-local user with selected `ssf.*` permissions |
+| `guest` | No regular Studio identity; access through a restricted SSF session |
 
 The root system administrator creates a tenant and its initial tenant
 administrator. The tenant administrator then manages users and roles in its
@@ -127,7 +129,8 @@ The SSF plugin owns one PostgreSQL database per SSF installation. It contains
 both installation-wide and tenant-specific configuration. The Studio Core
 knows no SSF tables or domain fields.
 
-Tenant records use the canonical Studio `instanceId` as their tenant key.
+Tenant records use the canonical Studio `tenant_id` as their tenant key;
+`studio_instance_id` identifies only the enclosing Studio deployment.
 Tenant access is bound server-side to this context and secured with row-level
 security. Root access follows a separate, explicitly authorised database path.
 Migrations, repositories, and schema ownership belong to the SSF plugin.
@@ -142,22 +145,24 @@ references to SSF.
 
 ## Internal API Between SSF and Studio
 
-SSF determines the tenant from a valid session token or Keycloak login. The SSF
-backend then calls the internal Studio API with its own service identity and a
-short-lived signed tenant assertion. A freely supplied `instanceId` is not a
-trust boundary.
+SSF determines the tenant from a valid session token, Keycloak login, or
+server-resolved guest-join credential. The SSF backend then calls the internal
+Studio API with its own Client-Credentials service identity and an
+`X-Tenant-Id` header. A freely supplied tenant or instance ID is not a trust
+boundary.
 
-The Studio host validates the technical identity, audience, validity,
-replay protection, and tenant binding before invoking the SSF plugin handler in
-the bound tenant context. Browsers receive neither database credentials nor
-direct access to this internal API.
+The Studio host validates the technical identity, configured audience, validity,
+and `ssf.runtime-configuration.read` permission before invoking the SSF plugin
+handler in the bound tenant context. V1 does not require a second signed tenant
+assertion or replay protection for this read-only internal request. Browsers
+receive neither database credentials nor direct access to this internal API.
 
 ## First Delivery Runtime Flows
 
 ### Create a tenant
 
 ```text
-Root system administrator creates a Studio instance
+Root system administrator creates a Studio tenant
     → Core provisions tenant realm and separate OIDC clients
     → Core creates the initial tenant administrator
     → Core activates the installed automatic SSF plugin
