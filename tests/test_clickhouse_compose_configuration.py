@@ -17,6 +17,12 @@ def _clickhouse_service() -> dict:
         env_file.write("CLICKHOUSE_DB=ssf_analytics_test\n")
         env_file.write("CLICKHOUSE_USER=ssf_telemetry_test\n")
         env_file.write("CLICKHOUSE_PASSWORD=test-only-password\n")
+        env_file.write("KEYCLOAK_DB_NAME=keycloak_test\n")
+        env_file.write("KEYCLOAK_DB_USER=keycloak_test_user\n")
+        env_file.write("KEYCLOAK_DB_PASSWORD=test-only-db-password\n")
+        env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=bootstrap_admin\n")
+        env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=test-only-admin-password\n")
+        env_file.write("KEYCLOAK_HOSTNAME=auth.test.example\n")
 
     try:
         result = subprocess.run(

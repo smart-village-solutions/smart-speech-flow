@@ -28,6 +28,7 @@ Welcome to the Smart Speech Flow Backend documentation! This guide helps you fin
 - [Audio Recording Rollback Strategy](operations/AUDIO_RECORDING_ROLLBACK_STRATEGY.md) - Rollback procedures
 - [WebSocket Broadcast Failures Runbook](operations/runbooks/websocket-broadcast-failures.md) - Troubleshooting guide
 - [ClickHouse Operations Runbook](operations/runbooks/clickhouse-operations.md) - Internal analytics database operations
+- [Keycloak Operations Runbook](operations/runbooks/keycloak-operations.md) - Identity-provider operations and recovery
 - [Conversation Quality KPI Catalog](operations/conversation-quality-kpis.en.md) - Precise quality, reliability, and privacy-aware telemetry definitions ([German](operations/conversation-quality-kpis.md))
 
 ### For KasselDIALOG Rollout
