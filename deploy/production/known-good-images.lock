@@ -1,11 +1,11 @@
-# Captured from the running production containers on 2026-08-30.
+# Captured from the running production containers on 2026-09-01.
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
-api_gateway	sha256:4bdd5f737bf99bef080e1880f7919106fc1f26d768b96a833699eb7629527b27	ssf-backend-api_gateway:prod-b888119
-asr	sha256:ddf4fa94cf2b1a77e73a21b4a2774dab2a871f7e0b7be9f922443a8cf8e00e3d	ssf-backend-asr:prod-e409a06
-translation	sha256:ef77cc91908eded8e09bd13c799f459227a7cdb6292c6e9ef0c21b8df819d09f	ssf-backend-translation:prod-e409a06
-tts	sha256:19cab612eb39439c277d89865f2826ec226676fb34058648e92c64da5dff47e5	ssf-backend-tts:prod-e409a06
+api_gateway	sha256:195a766e9aff21374ea4326b58259d6e223b23ad7fda0f8cf1d7333813b6a44e	ssf-backend-api_gateway:prod-345add9
+asr	sha256:9f591a04df65f9b4048063080e1fa71763cdfca0dda2a7741cad2fa18624b790	ssf-backend-asr:prod-345add9
+translation	sha256:fff7d0e3df40fcaf657524de767b41babba75bb160cc74eae6d87510b6ca2ba0	ssf-backend-translation:prod-345add9
+tts	sha256:12c7e0851b72cad7f2847b505c1dfd9d9538cfe9411f9a30d39c4df6d6f424cd	ssf-backend-tts:prod-345add9
 frontend	sha256:cceb333f09f6cdb5af75ffb3a70c568b5e55140e4caa49d898de0dd269bb16fe	ssf-backend-frontend:prod-d4d1feb
 frontend-archive	sha256:5fe65474631a5f74c4ea81a5881ade417809f9c5905b593c6cc2d2699e50686d	ssf-backend-frontend-archive:prod-e409a06
 keycloak	sha256:d2b5957b314175678f3ff359122eabaad262d2db426cd9b5acf7799ab2067d65	ssf-keycloak:prod-e409a06
