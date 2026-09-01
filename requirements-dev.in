@@ -17,7 +17,7 @@ pytest-cov==7.1.0
 httpx==0.28.1
 
 # Pre-commit Hooks
-pre-commit==4.3.0
+pre-commit==4.6.2
 virtualenv>=20.36.1
 
 # Code Quality Extensions
