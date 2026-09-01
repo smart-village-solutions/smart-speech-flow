@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import importlib
 import importlib.util
 import inspect
@@ -22,6 +23,9 @@ class DummyMetric:
     def inc(self, *args, **kwargs):
         return None
 
+    def dec(self, *args, **kwargs):
+        return None
+
     def set(self, *args, **kwargs):
         return None
 
@@ -36,10 +40,13 @@ class DummyMetric:
 
 
 class StubHTTPException(Exception):
-    def __init__(self, status_code: int, detail: str):
+    # Mirrors fastapi.HTTPException, headers included: the translation service
+    # returns Retry-After on a saturation 503.
+    def __init__(self, status_code: int, detail: str, headers: dict | None = None):
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+        self.headers = headers
 
 
 class FakeDevice(str):
@@ -81,6 +88,9 @@ def build_torch_stub(cuda_available: bool = False) -> types.ModuleType:
     torch_stub.float32 = "float32"
     torch_stub.manual_seed = lambda seed: None
     torch_stub.device = lambda value: FakeDevice(value)
+    # Needed to reach the real inference bodies (translation's _generate_single).
+    torch_stub.inference_mode = contextlib.nullcontext
+    torch_stub.no_grad = contextlib.nullcontext
     return torch_stub
 
 
@@ -987,7 +997,10 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
             "audio_bytes": b"",
         },
     )
-    error_response = await upload_module.upload(FakeUploadFile(b"audio"), "de", "en")
+    # A request with no app carries no admission component, so the route runs
+    # unbounded — this test is about HTML escaping, not capacity.
+    request = SimpleNamespace()
+    error_response = await upload_module.upload(request, FakeUploadFile(b"audio"), "de", "en")
     assert error_response.status_code == 400
     assert b"&lt;script&gt;alert(1)&lt;/script&gt;" in error_response.body
     assert b"Keine Ausgabe verfuegbar." in error_response.body
@@ -1003,6 +1016,7 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
         },
     )
     success_response = await upload_module.upload(
+        request,
         FakeUploadFile(b"audio"),
         "<de>",
         "<en>",

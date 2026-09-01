@@ -45,6 +45,7 @@ COPY --from=wheel-builder /wheels /wheels
 COPY services/tts/requirements.txt ./requirements.txt
 COPY services/tts/app.py ./app.py
 COPY services/gpu_metrics.py ./services/gpu_metrics.py
+COPY services/resource_metrics.py ./services/resource_metrics.py
 
 RUN printf '%s%s\n' \
     'pip==25.1.1 --hash=sha256:' \

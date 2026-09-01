@@ -43,6 +43,13 @@ services:
       dockerfile: services/translation/Dockerfile
     ports:
       - "8002:8000"
+    environment:
+      # Inference Admission Control — inference runs off the event loop, so
+      # /health and /metrics stay responsive; these bound how many beam searches
+      # reach the shared M2M100 instance at once. Raise from load-test evidence
+      # using translation_queue_wait_seconds and translation_rejected_total.
+      - MAX_CONCURRENT_TRANSLATIONS=${MAX_CONCURRENT_TRANSLATIONS:-2}
+      - TRANSLATION_QUEUE_WAIT_SECONDS=${TRANSLATION_QUEUE_WAIT_SECONDS:-25.0}
     volumes:
       - ./models:/models
     deploy:
@@ -119,6 +126,13 @@ services:
       - LLM_REFINEMENT_TEMPERATURE=${LLM_REFINEMENT_TEMPERATURE:-0.7}
       - LLM_REFINEMENT_THINK=${LLM_REFINEMENT_THINK:-false}
       - LLM_REFINEMENT_MAX_RETRIES=${LLM_REFINEMENT_MAX_RETRIES:-1}
+      # Pipeline Admission Control — bounds concurrent GPU pipeline work.
+      # One GPU hosts asr, translation and tts together, so the default is
+      # deliberately low; raise it from load-test evidence and watch
+      # gateway_pipeline_in_flight / _queue_wait_seconds / _rejected_total.
+      # 0 disables the bound.
+      - MAX_CONCURRENT_PIPELINES=${MAX_CONCURRENT_PIPELINES:-2}
+      - PIPELINE_QUEUE_WAIT_SECONDS=${PIPELINE_QUEUE_WAIT_SECONDS:-10.0}
       # Rate Limiting Configuration für Produktion
       - GLOBAL_RATE_LIMIT=${GLOBAL_RATE_LIMIT:-1200}
       - GLOBAL_RATE_WINDOW_SECONDS=${GLOBAL_RATE_WINDOW_SECONDS:-60}

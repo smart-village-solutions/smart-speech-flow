@@ -1,8 +1,13 @@
+import asyncio
+import logging
+import math
 import os
 import re
 import threading
 import time
-from typing import Any, Dict, List
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, NoReturn, Optional
 
 import torch
 from fastapi import FastAPI, HTTPException, Request
@@ -26,11 +31,18 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     pynvml = None
 
+logger = logging.getLogger(__name__)
+
 _nvml_initialized = False
 TRANSLATION_ERROR_RESPONSES = {
     400: {"description": "Invalid translation request"},
     500: {"description": "Translation failed"},
-    503: {"description": "Translation model unavailable"},
+    503: {
+        "description": (
+            "Translation model unavailable, or no inference slot became available "
+            "within the configured queue wait. The latter carries a Retry-After header."
+        )
+    },
 }
 
 
@@ -105,9 +117,300 @@ MAX_INPUT_CHARS = int(os.getenv("MAX_INPUT_CHARS", "20000"))  # rudimentäres Sc
 DENY_EMPTY = os.getenv("DENY_EMPTY", "1") == "1"
 
 # ----------------------------
+# Inference admission control
+# ----------------------------
+# Matches the gateway's MAX_CONCURRENT_PIPELINES so this service is not a
+# tighter chokepoint than the system-level boundary. Exactly 0 disables the
+# bound. The figure is inferred from the hardware — one RTX 4000 Ada shared by
+# ASR, translation and TTS, one M2M100 instance here — not measured; the metrics
+# below exist so load tests can raise it.
+DEFAULT_MAX_CONCURRENT_TRANSLATIONS = 2
+# Under the gateway's 30s HTTP timeout for /translate, so a saturated queue
+# answers with an attributable 503 rather than leaving the caller to time out.
+DEFAULT_TRANSLATION_QUEUE_WAIT_SECONDS = 25.0
+
+
+def _env_int(name: str, default: int) -> int:
+    """Reads an int env var, falling back rather than blocking service boot.
+
+    These are read at import, so an uncaught ValueError here happens before
+    uvicorn binds: the container never reports healthy and restarts forever over
+    one typo in an env file.
+    """
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("Ignoring unparseable %s=%r; using default %s", name, raw, default)
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("Ignoring unparseable %s=%r; using default %s", name, raw, default)
+        return default
+
+
+MAX_CONCURRENT_TRANSLATIONS = _env_int(
+    "MAX_CONCURRENT_TRANSLATIONS", DEFAULT_MAX_CONCURRENT_TRANSLATIONS
+)
+TRANSLATION_QUEUE_WAIT_SECONDS = _env_float(
+    "TRANSLATION_QUEUE_WAIT_SECONDS", DEFAULT_TRANSLATION_QUEUE_WAIT_SECONDS
+)
+
+# Spread across the plausible wait range: most requests should be seated
+# immediately, and anything near the timeout is a capacity signal.
+QUEUE_WAIT_BUCKETS = (0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 25.0, float("inf"))
+
+
+class _SlotClaim:
+    """Settles which of two threads returns one inference slot, exactly once.
+
+    The awaiting task and the worker thread can both believe they own the
+    release, and a plain boolean cannot separate them: cancelling an
+    ``asyncio.to_thread`` resolves the awaiting task a loop tick *before* the
+    queued work item is cancelled, so the task's cleanup can observe "not
+    started" while the thread is on its way into the call. Whoever claims first
+    owns the release; the loser does nothing.
+    """
+
+    __slots__ = ("_lock", "_claimed")
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._claimed = False
+
+    def claim(self) -> bool:
+        with self._lock:
+            if self._claimed:
+                return False
+            self._claimed = True
+            return True
+
+
+class _WorkAbandoned(BaseException):
+    """The awaiting task gave up before this thread started; do not run inference.
+
+    Derived from BaseException so an ``except Exception`` inside the inference
+    path cannot swallow it. Never reaches a caller: by the time it is raised the
+    awaiting future is already cancelled, so the result is discarded.
+    """
+
+
+class TranslationBusyError(RuntimeError):
+    """Raised when no inference slot came free within the configured wait."""
+
+    def __init__(
+        self,
+        *,
+        max_concurrent: int,
+        queue_wait_seconds: float,
+        waited_seconds: float,
+    ) -> None:
+        super().__init__(
+            f"No inference slot available within {queue_wait_seconds:.2f}s "
+            f"(limit {max_concurrent})"
+        )
+        self.max_concurrent = max_concurrent
+        self.queue_wait_seconds = queue_wait_seconds
+        self.waited_seconds = waited_seconds
+        # Whole seconds and never below one, so a client reading the header and a
+        # client reading the message wait the same amount of time.
+        self.retry_after_seconds = max(1, math.ceil(queue_wait_seconds))
+
+    @property
+    def retry_after_header(self) -> str:
+        return str(self.retry_after_seconds)
+
+
+@dataclass(frozen=True)
+class TranslationAdmissionMetrics:
+    """The three series admission control reports on, injectable for tests."""
+
+    in_flight: Any
+    queue_wait: Any
+    rejected: Any
+
+
+class TranslationAdmission:
+    """Bounds concurrent GPU inference and keeps the event loop free.
+
+    ``run()`` is the sole entry point. The inference functions are synchronous
+    and execute on a worker thread, and ``asyncio.to_thread`` cannot interrupt a
+    call it has started; if the slot were released by the awaiting task instead,
+    a disconnected request would hand its capacity to the next caller while its
+    own thread was still on the GPU, and real concurrency could exceed the limit.
+    """
+
+    def __init__(
+        self,
+        max_concurrent: Optional[int] = None,
+        queue_wait_seconds: Optional[float] = None,
+        *,
+        metrics: Optional[Any] = None,
+    ) -> None:
+        limit = MAX_CONCURRENT_TRANSLATIONS if max_concurrent is None else max_concurrent
+        wait = TRANSLATION_QUEUE_WAIT_SECONDS if queue_wait_seconds is None else queue_wait_seconds
+
+        # A negative limit is a typo, not a request to run unbounded, and
+        # silently removing the bound is the dangerous reading of it. Only an
+        # explicit 0 disables.
+        if limit < 0:
+            logger.warning(
+                "MAX_CONCURRENT_TRANSLATIONS=%s is negative; using default %s. "
+                "Set exactly 0 to disable the bound.",
+                limit,
+                DEFAULT_MAX_CONCURRENT_TRANSLATIONS,
+            )
+            limit = DEFAULT_MAX_CONCURRENT_TRANSLATIONS
+
+        # Exactly 0 means "do not queue" and is handled in _acquire; a negative
+        # value is a typo, the same reading as the limit above.
+        if wait < 0:
+            logger.warning(
+                "TRANSLATION_QUEUE_WAIT_SECONDS=%s is negative; using default %s. "
+                "Set exactly 0 to shed instead of queueing.",
+                wait,
+                DEFAULT_TRANSLATION_QUEUE_WAIT_SECONDS,
+            )
+            wait = DEFAULT_TRANSLATION_QUEUE_WAIT_SECONDS
+
+        self.max_concurrent = limit
+        self.queue_wait_seconds = wait
+        self._metrics = metrics if metrics is not None else _admission_metrics()
+        self._in_flight = 0
+        # Sized once, so the limit cannot drift from the configuration it was
+        # built with.
+        self._semaphore = asyncio.Semaphore(max(1, limit))
+
+    @property
+    def enabled(self) -> bool:
+        return self.max_concurrent > 0
+
+    @property
+    def in_flight(self) -> int:
+        return self._in_flight
+
+    async def run(self, func: Callable[..., List[str]], /, *args: Any, **kwargs: Any) -> List[str]:
+        """Runs a synchronous inference function on a worker thread under the bound.
+
+        Raises ``TranslationBusyError`` if no slot comes free within the
+        configured wait.
+        """
+        if not self.enabled:
+            return await asyncio.to_thread(func, *args, **kwargs)
+
+        await self._acquire()
+        loop = asyncio.get_running_loop()
+        claim = _SlotClaim()
+
+        def guarded() -> List[str]:
+            if not claim.claim():
+                # The awaiting task is gone and has already returned the slot.
+                # Starting inference now would exceed the bound to produce a
+                # result nobody is waiting for.
+                raise _WorkAbandoned
+            try:
+                return func(*args, **kwargs)
+            finally:
+                # Released from inside the worker thread, so the slot tracks the
+                # inference's real lifetime rather than the awaiting task's.
+                self._schedule_release(loop)
+
+        try:
+            return await asyncio.to_thread(guarded)
+        finally:
+            # Only wins the claim when the work item was cancelled while still
+            # queued, in which case ``guarded`` never runs and no thread will
+            # ever release. Already on the loop thread, so release directly.
+            if claim.claim():
+                self._release()
+
+    def _schedule_release(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Hands the slot back on the loop thread.
+
+        The semaphore is not thread-safe, so the release is marshalled out of the
+        worker thread. This runs in a ``finally`` inside that thread and must
+        never raise: at shutdown the loop can already be gone, and by then there
+        is no capacity left to account for.
+        """
+        try:
+            loop.call_soon_threadsafe(self._release)
+        except RuntimeError:
+            logger.debug("Event loop closed before inference slot release")
+
+    async def _acquire(self) -> None:
+        started = time.perf_counter()
+
+        if self.queue_wait_seconds == 0:
+            # "Do not queue": shed straight away. This cannot go through
+            # wait_for, which wraps the acquire in a task and cancels it before
+            # it ever runs when the timeout is zero — rejecting every request,
+            # including on a completely idle service.
+            if self._semaphore.locked():
+                self._reject(time.perf_counter() - started)
+            # Uncontended, so this returns without suspending; there is no await
+            # point between the check above and the permit being taken.
+            await self._semaphore.acquire()
+        else:
+            try:
+                # Python 3.11+ returns the permit if the waiter is cancelled, so
+                # a timeout here cannot leak capacity.
+                await asyncio.wait_for(self._semaphore.acquire(), timeout=self.queue_wait_seconds)
+            except TimeoutError:
+                self._reject(time.perf_counter() - started)
+
+        self._in_flight += 1
+        self._metrics.in_flight.inc()
+        self._observe_wait(time.perf_counter() - started)
+
+    def _reject(self, waited: float) -> NoReturn:
+        """Records the rejection and raises. One clock read, used everywhere.
+
+        The wait is observed on this path too: a histogram that only sees
+        admitted requests reports "everyone seated instantly" during the very
+        saturation it exists to measure.
+        """
+        self._observe_wait(waited)
+        self._metrics.rejected.inc()
+        raise TranslationBusyError(
+            max_concurrent=self.max_concurrent,
+            queue_wait_seconds=self.queue_wait_seconds,
+            waited_seconds=waited,
+        ) from None
+
+    def _observe_wait(self, waited: float) -> None:
+        self._metrics.queue_wait.observe(waited)
+
+    def _release(self) -> None:
+        self._semaphore.release()
+        self._in_flight -= 1
+        self._metrics.in_flight.dec()
+
+
+def _resolve_admission(request: Any) -> Optional[TranslationAdmission]:
+    """The app's admission component, or ``None`` when there isn't one.
+
+    The isinstance check is load-bearing: this handler is also driven directly
+    with fake requests that have no ``app``, where attribute access invents a
+    truthy object rather than raising. Unbounded offload is the right answer
+    there, and for any request reached before lifespan startup.
+    """
+    state = getattr(getattr(request, "app", None), "state", None)
+    candidate = getattr(state, "translation_admission", None)
+    return candidate if isinstance(candidate, TranslationAdmission) else None
+
+
+# ----------------------------
 # App & Metrics
 # ----------------------------
-app = FastAPI(title="Translation Service (M2M100)")
 requests_total = Counter("translation_requests_total", "Total translation requests")
 errors_total = Counter("translation_errors_total", "Total translation errors")
 tokens_generated_total = Counter(
@@ -121,6 +424,48 @@ request_latency = Histogram(
     "Latency of translation requests",
     buckets=(0.05, 0.1, 0.2, 0.5, 1, 2, 4, 8, 16, 32),
 )
+translation_in_flight = Gauge(
+    "translation_in_flight", "Translations currently holding an inference slot"
+)
+translation_queue_wait_seconds = Histogram(
+    "translation_queue_wait_seconds",
+    "Time a request waited for an inference slot, admitted or rejected",
+    buckets=QUEUE_WAIT_BUCKETS,
+)
+translation_rejected_total = Counter(
+    "translation_rejected_total",
+    "Requests rejected because no inference slot came free",
+)
+
+
+def _admission_metrics() -> TranslationAdmissionMetrics:
+    return TranslationAdmissionMetrics(
+        in_flight=translation_in_flight,
+        queue_wait=translation_queue_wait_seconds,
+        rejected=translation_rejected_total,
+    )
+
+
+@asynccontextmanager
+async def lifespan(app_: Any):
+    """Owns the admission component for the life of the running app.
+
+    Built here rather than at import so the semaphore belongs to the loop that
+    will actually serve requests, and so tests can construct their own.
+    """
+    app_.state.translation_admission = TranslationAdmission()
+    logger.info(
+        "Translation admission control active: limit=%s queue_wait=%ss",
+        MAX_CONCURRENT_TRANSLATIONS,
+        TRANSLATION_QUEUE_WAIT_SECONDS,
+    )
+    try:
+        yield
+    finally:
+        app_.state.translation_admission = None
+
+
+app = FastAPI(title="Translation Service (M2M100)", lifespan=lifespan)
 
 # ----------------------------
 # Model Loading
@@ -224,6 +569,53 @@ def _translate_texts(
                 _generate_single(text, source_lang, target_lang, gen_overrides)
             )
     return outputs
+
+
+async def _run_inference_off_loop(
+    request: Any,
+    texts: List[str],
+    source_lang: str,
+    target_lang: str,
+    gen_overrides: Dict[str, Any],
+) -> List[str]:
+    """Runs blocking M2M100 inference on a worker thread, under the service bound.
+
+    Without an admission component the offload still happens: keeping the event
+    loop free is the point, and bounding is the defence that comes with it.
+    """
+    admission = _resolve_admission(request)
+    if admission is None:
+        return await asyncio.to_thread(
+            _translate_texts, texts, source_lang, target_lang, gen_overrides
+        )
+
+    return await admission.run(_translate_texts, texts, source_lang, target_lang, gen_overrides)
+
+
+def _busy_response(
+    busy: TranslationBusyError, *, debug_active: bool, debug_info: Dict[str, Any]
+) -> JSONResponse:
+    """503 for a saturated inference queue, carrying Retry-After.
+
+    Returns the debug envelope when debug is active and raises otherwise, rather
+    than going through ``_raise_http_error``: that one cannot attach headers, and
+    a Retry-After the client never receives is not a contract.
+    """
+    detail = (
+        f"Translation service busy: no inference slot became available within "
+        f"{busy.queue_wait_seconds:.1f}s (limit {busy.max_concurrent})"
+    )
+    debug_info["error"] = detail
+    debug_response = _build_debug_response(debug_active, debug_info, 503)
+    if debug_response is None:
+        raise HTTPException(
+            status_code=503,
+            detail=detail,
+            headers={"Retry-After": busy.retry_after_header},
+        )
+
+    debug_response.headers["retry-after"] = busy.retry_after_header
+    return debug_response
 
 
 def _maybe_uromanize(outputs: List[str], expect_list: bool) -> str | List[str] | None:
@@ -445,7 +837,9 @@ async def translate(request: Request):
     start = time.perf_counter()
 
     try:
-        outputs = _translate_texts(texts, source_lang, target_lang, gen_overrides)
+        outputs = await _run_inference_off_loop(
+            request, texts, source_lang, target_lang, gen_overrides
+        )
         elapsed = time.perf_counter() - start
         return _build_translation_response(
             outputs,
@@ -456,6 +850,10 @@ async def translate(request: Request):
             debug_active,
             debug_info,
         )
+    except TranslationBusyError as busy:
+        # Ahead of `except Exception`, which would otherwise turn a capacity
+        # rejection into a 500 "Translation failed".
+        return _busy_response(busy, debug_active=debug_active, debug_info=debug_info)
     except HTTPException as exc:
         try:
             _raise_http_error(

@@ -29,9 +29,15 @@ from fastapi import (
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from ..log_safety import sanitize_log_value
+from ..pipeline_admission import PipelineBusyError, run_pipeline
 
 # Import der bestehenden Pipeline-Logik
-from ..pipeline_logic import process_text_pipeline, process_wav
+from ..pipeline_logic import (
+    DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS,
+    UPSTREAM_BUSY_ERROR_CODE,
+    process_text_pipeline,
+    process_wav,
+)
 from ..session_manager import ClientType, SessionMessage, SessionStatus, session_manager
 from ..websocket import MessageType, WebSocketManager, get_websocket_manager
 
@@ -405,6 +411,58 @@ def _supports_extended_session_message_args() -> bool:
     )
 
 
+def _system_busy_error(busy: PipelineBusyError) -> HTTPException:
+    """503 for a saturated pipeline (#191).
+
+    Uses the same envelope as every other failure on this endpoint, so the
+    frontend needs no new parsing; it maps any 5xx to its generic server error.
+    """
+    return HTTPException(
+        status_code=503,
+        detail=create_error_response(
+            "SYSTEM_BUSY",
+            "The translation pipeline is at capacity. Please retry shortly.",
+            {
+                "max_concurrent_pipelines": busy.max_concurrent,
+                # Deliberately the same value as the Retry-After header, so a
+                # client reading the body cannot retry sooner than advised.
+                "retry_after_seconds": busy.retry_after_seconds,
+                "queue_wait_seconds": busy.queue_wait_seconds,
+                "waited_seconds": round(busy.waited_seconds, 3),
+            },
+        ),
+        headers={"Retry-After": busy.retry_after_header},
+    )
+
+
+def _raise_if_upstream_busy(result: Dict[str, Any]) -> None:
+    """Re-raises an upstream capacity rejection as a retryable 503 (#190).
+
+    A GPU service that shed load answered 503 with a Retry-After, which clears
+    on its own. The pipeline flattens it into ``result["error"]`` like any other
+    failure, and without this the audio path would report 500 PIPELINE_ERROR and
+    the text path 400 TEXT_PIPELINE_ERROR — the latter blaming the client for a
+    condition it did not cause. Same envelope as _system_busy_error, so the
+    frontend needs no new parsing whichever layer ran out of capacity.
+    """
+    if result.get("error_code") != UPSTREAM_BUSY_ERROR_CODE:
+        return
+
+    retry_after = int(result.get("retry_after_seconds", DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS))
+    raise HTTPException(
+        status_code=503,
+        detail=create_error_response(
+            "SYSTEM_BUSY",
+            "The translation pipeline is at capacity. Please retry shortly.",
+            {
+                "retry_after_seconds": retry_after,
+                "upstream_error": result.get("error_msg"),
+            },
+        ),
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
 def _store_audio_artifacts(
     message_id: str, file_bytes: bytes, audio_bytes: Optional[bytes]
 ) -> Optional[str]:
@@ -669,9 +727,27 @@ NOT_FOUND_RESPONSE = {404: {"model": ErrorResponse, "description": "Not found"}}
 SERVER_ERROR_RESPONSE = {
     500: {"model": ErrorResponse, "description": "Internal server error"}
 }
+# Pipeline capacity is bounded (#191): one GPU hosts ASR, translation and TTS.
+# Carries error_code SYSTEM_BUSY and a Retry-After header; retrying works.
+SERVICE_BUSY_RESPONSE = {
+    503: {
+        "model": ErrorResponse,
+        "description": (
+            "Pipeline at capacity. Returns error_code SYSTEM_BUSY and a "
+            "Retry-After header in whole seconds; the request may be retried."
+        ),
+        "headers": {
+            "Retry-After": {
+                "description": "Whole seconds to wait before retrying; never below 1.",
+                "schema": {"type": "integer", "minimum": 1},
+            }
+        },
+    }
+}
 MESSAGE_ROUTE_RESPONSES = {
     **BAD_REQUEST_RESPONSE,
     **NOT_FOUND_RESPONSE,
+    **SERVICE_BUSY_RESPONSE,
     **SERVER_ERROR_RESPONSE,
 }
 ACTIVITY_ROUTE_RESPONSES = {
@@ -904,12 +980,26 @@ async def process_audio_input(
     processed_file_bytes = _validate_audio_payload(file, file_bytes)
     _validate_supported_languages(source_lang, target_lang)
 
-    # Audio-Pipeline ausführen (Validation bereits durchgeführt)
-    result = process_wav(
-        processed_file_bytes, source_lang, target_lang, validate_audio=False
-    )
+    # Audio-Pipeline ausführen (Validation bereits durchgeführt).
+    # process_wav is synchronous and spends its time in blocking HTTP calls to
+    # ASR/translation/TTS, so it runs on a worker thread to keep the gateway
+    # event loop free for other sessions, health checks and WS heartbeats.
+    # run_pipeline also bounds how many reach the GPU at once, and covers only
+    # the GPU call: form parsing and audio storage need no capacity.
+    try:
+        result = await run_pipeline(
+            request,
+            process_wav,
+            processed_file_bytes,
+            source_lang,
+            target_lang,
+            validate_audio=False,
+        )
+    except PipelineBusyError as busy:
+        raise _system_busy_error(busy) from busy
 
     if result.get("error", False):
+        _raise_if_upstream_busy(result)
         raise HTTPException(
             status_code=500,
             detail=create_error_response(
@@ -998,16 +1088,23 @@ async def process_text_input(
             sanitize_log_value({"session_ref": _safe_identifier(session_id)}),
         )
 
-    # Text-Pipeline ausführen (ASR überspringen)
-    pipeline_result = process_text_pipeline(
-        text_request.text,
-        text_request.source_lang,
-        text_request.target_lang,
-        session_id=session_id,
-    )
+    # Text-Pipeline ausführen (ASR überspringen). Offloaded for the same reason
+    # as the audio pipeline: blocking translation/TTS calls must not hold the loop.
+    try:
+        pipeline_result = await run_pipeline(
+            request,
+            process_text_pipeline,
+            text_request.text,
+            text_request.source_lang,
+            text_request.target_lang,
+            session_id=session_id,
+        )
+    except PipelineBusyError as busy:
+        raise _system_busy_error(busy) from busy
 
     # Fehlerbehandlung
     if pipeline_result.get("error"):
+        _raise_if_upstream_busy(pipeline_result)
         raise HTTPException(
             status_code=400,
             detail=create_error_response(
