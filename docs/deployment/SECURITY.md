@@ -34,7 +34,7 @@ The following services are now **only accessible within Docker network** (not ex
 | cAdvisor | 8080 (public) | `expose: 8080` (internal) | Via Prometheus |
 | Ollama | 11434 (public) | `expose: 11434` (internal) | Via API Gateway |
 | ClickHouse | 8123 (public) | `expose: 8123` (internal) | Via authenticated Compose exec only |
-| Keycloak PostgreSQL | 5432 (public) | No host port or Traefik route | Via Keycloak on the Compose network only |
+| Keycloak PostgreSQL | N/A | No host port or Traefik route | Via Keycloak on the Compose network only |
 
 **Benefits:**
 - ✅ No direct public access to metrics
