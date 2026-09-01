@@ -209,7 +209,19 @@ storage prohibition apply to subsequent protected operations.
 
 The effective storage mode is `ask` or `disabled`. With `ask`, SSF presents the
 localized question to the guest before activating the session. The guest's
-choice is stored only as a minimal, content-free session consent status.
+choice is stored only as a minimal, content-free session consent status. The
+allowed status values are `pending`, `granted`, `declined`, and
+`policy_disabled`:
+
+- `pending` applies only while an `ask` session awaits the guest's answer and
+  permits no conversation-content persistence.
+- `granted` applies after an affirmative guest answer and permits persistence
+  of conversation content in accordance with the tenant's normal retention
+  policy.
+- `declined` applies after a negative guest answer and permits no
+  conversation-content persistence.
+- `policy_disabled` applies when the effective mode is `disabled` and permits
+  no conversation-content persistence.
 
 If the guest declines, the conversation MAY proceed, but SSF MUST process
 content only transiently for the live translation. It MUST NOT persist audio,
