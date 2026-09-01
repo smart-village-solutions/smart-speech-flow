@@ -28,6 +28,11 @@ def _compose_build(project_name: str) -> subprocess.CompletedProcess[str]:
     environment["CLICKHOUSE_DB"] = "ssf_analytics_test"
     environment["CLICKHOUSE_USER"] = "ssf_telemetry_test"
     environment["CLICKHOUSE_PASSWORD"] = "test-only-password"
+    environment["KEYCLOAK_DB_NAME"] = "keycloak_test"
+    environment["KEYCLOAK_DB_USER"] = "keycloak_test_user"
+    environment["KEYCLOAK_DB_PASSWORD"] = "test-only-db-password"
+    environment["KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME"] = "bootstrap_admin"
+    environment["KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD"] = "test-only-admin-password"
     return subprocess.run(
         [
             "docker",
