@@ -119,6 +119,10 @@ services:
     - KEYCLOAK_REQUIRED_ROLE=${KEYCLOAK_REQUIRED_ROLE:-ssf-user}
     - SSF_ENABLE_LEGACY_ADMIN_ACCESS=${SSF_ENABLE_LEGACY_ADMIN_ACCESS:-false}
     - SSF_LEGACY_ADMIN_ACCESS_CODE=${SSF_LEGACY_ADMIN_ACCESS_CODE:-}
+    - SSF_QUALITY_TELEMETRY_MODE=${SSF_QUALITY_TELEMETRY_MODE:-disabled}
+    - SSF_OTLP_LOGS_ENDPOINT=${SSF_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
+    - SSF_RELEASE_VERSION=${SSF_RELEASE_VERSION:-unknown}
+    - SSF_DEPLOYMENT_ENV=${SSF_DEPLOYMENT_ENV:-production}
     healthcheck:
       test:
       - CMD
@@ -183,6 +187,7 @@ services:
     restart: unless-stopped
     expose:
     - '8123'
+    - '9000'
     environment:
     - CLICKHOUSE_DB=${CLICKHOUSE_DB:?set CLICKHOUSE_DB in .env}
     - CLICKHOUSE_USER=${CLICKHOUSE_USER:?set CLICKHOUSE_USER in .env}
@@ -194,6 +199,7 @@ services:
         hard: 262144
     volumes:
     - clickhouse-data:/var/lib/clickhouse
+    - ../../deploy/clickhouse:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test:
       - CMD-SHELL
@@ -202,6 +208,24 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+    pull_policy: never
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib@sha256:1f2c54a30e713fac6b3ae77a1ec84010c2007e29ced8ec666214fc2f6739c1cc
+    restart: unless-stopped
+    command:
+    - --config=/etc/otelcol-contrib/config.yaml
+    expose:
+    - '4318'
+    - '13133'
+    environment:
+    - CLICKHOUSE_DB=${CLICKHOUSE_DB:?set CLICKHOUSE_DB in .env}
+    - CLICKHOUSE_USER=${CLICKHOUSE_USER:?set CLICKHOUSE_USER in .env}
+    - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?required}
+    volumes:
+    - ../../monitoring/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    depends_on:
+      clickhouse:
+        condition: service_healthy
     pull_policy: never
   keycloak-postgres:
     image: postgres@sha256:bb377b7239d2774ac8cc76f481596ce96c5a6b5e9d141f6d0a0ee371a6e7c0f2

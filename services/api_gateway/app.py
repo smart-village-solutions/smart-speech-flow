@@ -9,6 +9,8 @@ API Gateway Hauptdatei
 
 import asyncio
 import os
+import threading
+import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
@@ -169,6 +171,44 @@ async def audio_cleanup_task() -> None:
         print(f"❌ Audio-Cleanup-Task Startup Fehler: {e}")
 
 
+# Well inside Docker's 10s stop grace: telemetry is the least important thing
+# still holding the process open at teardown.
+QUALITY_TELEMETRY_SHUTDOWN_TIMEOUT_SECONDS = 2.0
+
+
+async def _shutdown_quality_telemetry(exporter: Any, timeout_seconds: float) -> None:
+    """Tear the OTLP exporter down off the event loop, on a bounded budget.
+
+    A daemon thread rather than `asyncio.to_thread`: the SDK's shutdown joins
+    its own export thread for a default 30s while it drains the queue, and a
+    `to_thread` worker cannot be abandoned — the loop's teardown joins the
+    default executor with a 300s timeout of its own. A collector that accepts
+    the connection and never answers would otherwise outlast Docker's 10s stop
+    grace and read as a hung container.
+    """
+    failures: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            exporter.shutdown()
+        except Exception as e:  # reported at teardown, never raised to the loop
+            failures.append(e)
+
+    thread = threading.Thread(
+        target=run, name="quality-telemetry-shutdown", daemon=True
+    )
+    thread.start()
+
+    deadline = time.monotonic() + timeout_seconds
+    while thread.is_alive() and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+
+    if thread.is_alive():
+        print("Quality telemetry shutdown timed out; export thread abandoned")
+    elif failures:
+        print(f"Error stopping quality telemetry: {failures[0]}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application Lifespan: Initialize singletons and start background tasks"""
@@ -201,6 +241,42 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         f"(max_concurrent={admission_config.max_concurrent}, "
         f"queue_wait_seconds={admission_config.queue_wait_seconds})\n"
     )
+    sys.stderr.flush()
+
+    from .quality_telemetry import QualityTelemetry, TelemetryMode, discard_event
+    from .quality_telemetry_otlp import build_otlp_exporter
+
+    telemetry_mode = TelemetryMode.parse(os.environ.get("SSF_QUALITY_TELEMETRY_MODE"))
+    # Built only when it will be used: the SDK provider runs a worker thread.
+    telemetry_exporter = None
+    if telemetry_mode is not TelemetryMode.DISABLED:
+        try:
+            telemetry_exporter = build_otlp_exporter(
+                endpoint=os.environ.get(
+                    "SSF_OTLP_LOGS_ENDPOINT", "http://otel-collector:4318/v1/logs"
+                ),
+                service_name="api_gateway",
+                service_version=os.environ.get("SSF_RELEASE_VERSION", "unknown"),
+                deployment_environment=os.environ.get("SSF_DEPLOYMENT_ENV", "unknown"),
+            )
+        except Exception as e:
+            # OTLPLogExporter parses OTEL_EXPORTER_OTLP_TIMEOUT and
+            # _COMPRESSION itself and raises on a malformed value. Same rule as
+            # TelemetryMode.parse: fall back to disabled rather than crashloop
+            # the gateway over an optional setting. Reported as disabled, not
+            # as a silent probe mode that exports nothing.
+            sys.stderr.write(
+                f"Quality telemetry disabled: exporter setup failed ({e})\n"
+            )
+            sys.stderr.flush()
+            telemetry_mode = TelemetryMode.DISABLED
+    app.state.quality_telemetry_exporter = telemetry_exporter
+    app.state.quality_telemetry = QualityTelemetry(
+        mode=telemetry_mode,
+        exporter=telemetry_exporter or discard_event,
+        registry=app.state.prometheus_registry,
+    )
+    sys.stderr.write(f"Quality telemetry ready (mode={telemetry_mode.value})\n")
     sys.stderr.flush()
 
     # Start background tasks
@@ -246,6 +322,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 print(f"Background task shutdown error: {result}")
 
         app.state.pipeline_admission = None
+
+        telemetry_exporter_at_exit = app.state.quality_telemetry_exporter
+        app.state.quality_telemetry_exporter = None
+        if telemetry_exporter_at_exit is not None:
+            await _shutdown_quality_telemetry(
+                telemetry_exporter_at_exit,
+                QUALITY_TELEMETRY_SHUTDOWN_TIMEOUT_SECONDS,
+            )
 
         print("Shutdown complete", flush=True)
 

@@ -141,6 +141,14 @@ services:
       # Production Configuration (allows Figma and translate.smart-village.solutions)
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - DEVELOPMENT_CORS_ORIGINS=${DEVELOPMENT_CORS_ORIGINS:-http://localhost:5173,http://localhost:5174}
+      # Quality telemetry (OTLP -> collector -> ClickHouse)
+      # `probe` by default so a local `compose up` produces rows to inspect.
+      # Production sets this to `disabled` explicitly in
+      # deploy/production/docker-compose.production.yml.
+      - SSF_QUALITY_TELEMETRY_MODE=${SSF_QUALITY_TELEMETRY_MODE:-probe}
+      - SSF_OTLP_LOGS_ENDPOINT=${SSF_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
+      - SSF_RELEASE_VERSION=${SSF_RELEASE_VERSION:-unknown}
+      - SSF_DEPLOYMENT_ENV=${SSF_DEPLOYMENT_ENV:-unknown}
 
     # Health Checks
     healthcheck:
@@ -214,12 +222,33 @@ services:
         hard: 262144
     volumes:
       - clickhouse-data:/var/lib/clickhouse
+      # Creates both medallion tiers before the collector's first export. Runs
+      # only when the data directory is empty; existing volumes need the manual
+      # apply in docs/operations/runbooks/clickhouse-operations.md.
+      - ./deploy/clickhouse:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping | grep -qx 'Ok.'"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 30s
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.159.0
+    restart: always
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    expose:
+      - "4318"
+      - "13133"
+    environment:
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB:?set CLICKHOUSE_DB in .env}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:?set CLICKHOUSE_USER in .env}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?required}
+    volumes:
+      - ./monitoring/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    depends_on:
+      clickhouse:
+        condition: service_healthy
 
   keycloak-postgres:
     image: postgres:17.7-alpine
