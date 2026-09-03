@@ -1,0 +1,73 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+extensions:
+  # The image is distroless, so a compose healthcheck cannot run a probe inside
+  # the container. This endpoint is how an operator gets a health signal at all
+  # — see the runbook's Quality Telemetry section.
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  # Fail closed. Only records carrying a quality event id continue; anything
+  # else that reaches this collector is dropped rather than silently rewritten
+  # by the allowlist below. A second telemetry customer gets its own pipeline.
+  filter/quality_only:
+    error_mode: propagate
+    logs:
+      log_record:
+        - log.attributes["ssf.quality.event_id"] == nil
+  # error_mode must stay `propagate`: with `ignore` a failing statement is
+  # skipped and the record continues with its original body and attributes,
+  # which turns this privacy guard into a no-op exactly when it is needed.
+  transform/allowlist:
+    error_mode: propagate
+    log_statements:
+      - context: log
+        statements:
+          - set(log.body, "")
+          - keep_keys(log.attributes, ["ssf.quality.event_id", "ssf.quality.schema_version"])
+          - keep_keys(resource.attributes, ["service.name", "service.version", "deployment.environment.name"])
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+
+exporters:
+  clickhouse:
+    # Native protocol on 9000. Verified reachable with no compose `expose:` change
+    # (spike finding 9.5 — `expose:` is documentation, not a firewall).
+    endpoint: tcp://clickhouse:9000?dial_timeout=10s
+    database: ${env:CLICKHOUSE_DB}
+    username: ${env:CLICKHOUSE_USER}
+    password: ${env:CLICKHOUSE_PASSWORD}
+    logs_table_name: otel_logs
+    # The repository owns both tiers (deploy/clickhouse/). Lazy exporter-created
+    # schema meant the silver view could not be applied until after the first
+    # export, and its TTL could never be retrofitted afterwards.
+    create_schema: false
+    sending_queue:
+      enabled: true
+      queue_size: 1000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+service:
+  extensions: [health_check]
+  telemetry:
+    metrics:
+      level: basic
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/quality_only, transform/allowlist, batch]
+      exporters: [clickhouse]

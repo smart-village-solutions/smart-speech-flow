@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from ..auth import require_ssf_user
 from ..log_safety import sanitize_log_value
+from ..quality_telemetry import QualityTelemetry, get_quality_telemetry
 from ..session_manager import SessionStatus, session_manager
 
 # Logger setup
@@ -379,6 +380,38 @@ async def get_session_status(session_id: str) -> SessionStatusResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fehler beim Abrufen des Status: {str(e)}",
         )
+
+
+class TelemetryProbeResponse(BaseModel):
+    event_id: Optional[str] = Field(
+        None, description="Generated probe event id, or null when disabled"
+    )
+    mode: str = Field(..., description="Effective telemetry mode")
+    outcome: str = Field(
+        ...,
+        description=(
+            "What actually happened: emitted, export_failed, "
+            "dropped_disallowed, or disabled. An event_id without "
+            "outcome=emitted will never appear in quality_events."
+        ),
+    )
+
+
+@router.post(
+    "/telemetry/probe",
+    responses=ADMIN_ROUTE_RESPONSES,
+    summary="Emit one quality telemetry probe event",
+)
+async def emit_telemetry_probe(
+    telemetry: Annotated[QualityTelemetry, Depends(get_quality_telemetry)],
+) -> TelemetryProbeResponse:
+    """Emit a single allowlisted probe event. Never fails on telemetry error."""
+    result = telemetry.emit_probe(event_type="telemetry_probe")
+    return TelemetryProbeResponse(
+        event_id=str(result.event_id) if result.event_id is not None else None,
+        mode=telemetry.mode.value,
+        outcome=result.outcome.value,
+    )
 
 
 # Note: Exception handlers werden auf App-Level registriert, nicht auf Router-Level
