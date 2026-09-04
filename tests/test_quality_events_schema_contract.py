@@ -22,9 +22,8 @@ from services.api_gateway.quality_telemetry import (
     AttributeKind,
 )
 
-MIGRATIONS = (
-    Path(__file__).resolve().parents[1] / "deploy" / "clickhouse" / "migrations"
-)
+ROOT = Path(__file__).resolve().parents[1]
+MIGRATIONS = ROOT / "deploy" / "clickhouse" / "migrations"
 
 SILVER = MIGRATIONS / "001_quality_events.sql"
 GOLD = MIGRATIONS / "002_quality_events_fields_and_gold.sql"
@@ -144,6 +143,35 @@ def test_every_migration_after_the_first_is_covered_by_these_guards() -> None:
         MESSAGE.name,
         LIFECYCLE.name,
     }
+
+
+class TestTheOperatorDocsNameEveryMigration:
+    """Enabling telemetry before a column migration is applied is unrepairable.
+
+    The attributes are dropped at projection time and bronze expires after
+    seven days, so a doc that under-states which migrations must be applied
+    first costs data that cannot be recovered. `production.env.example` said
+    "002 and 003" after 004 shipped.
+    """
+
+    OPERATOR_DOCS = (
+        ROOT / "deploy" / "production" / "production.env.example",
+        ROOT / "docs" / "operations" / "runbooks" / "clickhouse-operations.md",
+    )
+
+    @pytest.mark.parametrize("migration", FIELD_MIGRATIONS, ids=lambda path: path.name)
+    @pytest.mark.parametrize("doc", OPERATOR_DOCS, ids=lambda path: path.name)
+    def test_each_column_migration_is_named_where_operators_are_told_to_apply_it(
+        self, doc, migration
+    ):
+        number = migration.name[:3]
+        text = doc.read_text()
+        applied = re.findall(
+            r"migrations?\s+`?[0-9]{3}`?(?:[^.\n]*?`?[0-9]{3}`?)*", text
+        )
+        assert any(
+            number in phrase for phrase in applied
+        ), f"{doc.name} never lists migration {number} among those to apply"
 
 
 class TestLifecycleColumns:

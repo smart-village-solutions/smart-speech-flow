@@ -90,7 +90,8 @@ Updated as each bullet stops being true. What remains open:
 - Production remains `disabled` in
   `deploy/production/docker-compose.production.yml`, so merging changes nothing
   there. `probe` emits no pipeline events either; `enabled` is the value that
-  does, and migrations `002` and `003` must both be applied before it is set.
+  does, and migrations `002`, `003` and `004` must all be applied before it
+  is set.
   The ordered procedure is in the runbook under Quality Telemetry -> Enabling in
   production, step 11.
 - `SSF_QUALITY_TELEMETRY_SESSION_KEY` keys the telemetry pipeline's own
