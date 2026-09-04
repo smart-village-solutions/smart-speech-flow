@@ -196,7 +196,7 @@
           },
           "editorType": "sql",
           "format": 0,
-          "rawSql": "SELECT countIf(error_code != 'none') AS failures FROM quality_events FINAL WHERE event_type = 'refinement_attempt' AND $__timeFilter(emitted_at_utc)",
+          "rawSql": "SELECT countIf(error_code NOT IN ('none', '')) AS failures FROM quality_events FINAL WHERE event_type = 'refinement_attempt' AND $__timeFilter(emitted_at_utc)",
           "refId": "A"
         }
       ],
@@ -399,7 +399,7 @@
           },
           "editorType": "sql",
           "format": 1,
-          "rawSql": "SELECT error_code, count() AS attempts FROM quality_events FINAL WHERE event_type = 'refinement_attempt' AND $__timeFilter(emitted_at_utc) AND error_code != 'none' GROUP BY error_code ORDER BY attempts DESC",
+          "rawSql": "SELECT error_code, count() AS attempts FROM quality_events FINAL WHERE event_type = 'refinement_attempt' AND $__timeFilter(emitted_at_utc) AND error_code NOT IN ('none', '') GROUP BY error_code ORDER BY attempts DESC",
           "refId": "A"
         }
       ],
@@ -575,7 +575,7 @@
           },
           "editorType": "sql",
           "format": 0,
-          "rawSql": "SELECT event_date AS time, model_ref, uniqExactMerge(events) AS attempts FROM quality_events_daily WHERE event_type = 'refinement_attempt' AND model_ref != '' GROUP BY event_date, model_ref ORDER BY event_date",
+          "rawSql": "SELECT event_date AS time, model_ref, uniqExactMerge(events) AS attempts FROM quality_events_daily WHERE event_type = 'refinement_attempt' AND model_ref != '' AND $__dateFilter(event_date) GROUP BY event_date, model_ref ORDER BY event_date",
           "refId": "A"
         }
       ],

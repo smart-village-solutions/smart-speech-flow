@@ -213,12 +213,27 @@ def test_every_windowed_read_uses_the_dashboard_time_range() -> None:
 
     Retention verification is exempt by design: its whole purpose is to find the
     oldest surviving row, which a time filter would hide. The gold tier is
-    exempt because it is keyed on event_date, not emitted_at_utc.
+    keyed on event_date, a Date, so it takes the date-filter macro instead --
+    exempting it entirely meant it scanned all thirteen months on every refresh
+    and drew an x-axis the time picker did not control.
     """
     for sql in _clickhouse_queries():
-        if "oldest_row" in sql or "quality_events_daily" in sql:
+        if "oldest_row" in sql:
+            continue
+        if "quality_events_daily" in sql and "uniqExactMerge" in sql:
+            assert "$__dateFilter(event_date)" in sql, sql
             continue
         assert "$__timeFilter(emitted_at_utc)" in sql, sql
+
+
+def test_no_panel_counts_the_untyped_default_as_a_failure() -> None:
+    """error_code defaults to '' for rows written before migration 002. Counting
+    that as a failure makes "Failed Attempts" equal total attempts, which reads
+    as a total outage rather than the schema problem it actually is."""
+    for sql in _clickhouse_queries():
+        if "error_code" not in sql:
+            continue
+        assert "error_code != 'none'" not in sql, sql
 
 
 def test_the_dashboard_reads_both_medallion_tiers() -> None:

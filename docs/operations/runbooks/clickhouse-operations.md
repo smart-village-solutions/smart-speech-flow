@@ -7,11 +7,15 @@ the Docker Compose network at clickhouse:8123. It has no host port, Traefik
 route, or public SQL UI. Do not add ports, Traefik labels, or the insecure
 CLICKHOUSE_SKIP_USER_SETUP setting.
 
-This infrastructure installation creates no analytical tables and sends no SSF
-events to ClickHouse. A later approved change owns telemetry schemas and the
-event writer. ClickHouse must contain only pseudonymised quality metadata, never
-recordings, source text, transcripts, translations, IP addresses, or raw error
-messages.
+ClickHouse now holds the quality telemetry schema: three medallion tiers
+(`otel_logs`, `quality_events`, `quality_events_daily`), owned by
+`deploy/clickhouse/` and described under Quality Telemetry below. They are
+included in the backup procedure. Whether the gateway *sends* events depends on
+`SSF_QUALITY_TELEMETRY_MODE`, which is `disabled` in production until an
+operator completes the enablement steps.
+
+ClickHouse must contain only pseudonymised quality metadata, never recordings,
+source text, transcripts, translations, IP addresses, or raw error messages.
 
 ## Prerequisites
 
@@ -124,7 +128,7 @@ constrained to a label charset with no whitespace:
 
 | Field | Carried as | Shape |
 | --- | --- | --- |
-| Refiner role | `ssf.quality.refiner_role` | enum: primary, candidate |
+| Refiner role | `ssf.quality.refiner_role` | enum: primary (in-path), candidate (shadow) |
 | Model | `ssf.quality.model_ref` | label token, max 64 chars |
 | Outcome | `ssf.quality.refinement_outcome` | enum: success, error, skipped_overload, submission_failed |
 | Latency | `ssf.quality.refinement_latency_ms` | integer |
@@ -360,8 +364,15 @@ Then:
     $PC up -d --no-deps --force-recreate api_gateway
     $PC logs --tail=20 api_gateway | grep "Quality telemetry ready"
 
-Expect `Quality telemetry ready (mode=enabled)`. Events appear only when the
-shadow refiner actually runs, which needs `LLM_REFINEMENT_MODE=shadow_compare`.
+Expect `Quality telemetry ready (mode=enabled)`.
+
+`refinement_attempt` is emitted from the **in-path** refiner, so production's
+default `LLM_REFINEMENT_MODE=primary_only` produces rows with
+`refiner_role=primary`. Rows only stop entirely at
+`LLM_REFINEMENT_MODE=disabled`, where no refinement happens and there is no
+attempt to record. `shadow_compare` additionally produces
+`refiner_role=candidate` rows, which is what makes the `Latency p95 by Model`
+panel show two series instead of one.
 
 #### Rolling back
 
