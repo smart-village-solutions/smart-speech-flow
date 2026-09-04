@@ -33,7 +33,7 @@ processors:
       - context: log
         statements:
           - set(log.body, "")
-          - keep_keys(log.attributes, ["ssf.quality.event_id", "ssf.quality.schema_version"])
+          - keep_keys(log.attributes, ["ssf.quality.event_id", "ssf.quality.schema_version", "ssf.quality.error_code", "ssf.quality.model_ref", "ssf.quality.refinement_changed", "ssf.quality.refinement_latency_ms", "ssf.quality.refinement_outcome", "ssf.quality.refiner_role", "ssf.quality.source_lang", "ssf.quality.target_lang"])
           - keep_keys(resource.attributes, ["service.name", "service.version", "deployment.environment.name"])
   batch:
     timeout: 5s
@@ -66,6 +66,17 @@ service:
   telemetry:
     metrics:
       level: basic
+      # Bound to 0.0.0.0 so Prometheus can scrape it from another container; the
+      # default binds localhost, which is unreachable across the compose network.
+      # These counters are the only place the gateway SDK's queue-overflow drops
+      # become visible: the gateway counts what it queued, this counts what
+      # actually arrived, and the gap between them is the loss.
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
   pipelines:
     logs:
       receivers: [otlp]

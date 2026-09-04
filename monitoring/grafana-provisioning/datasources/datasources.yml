@@ -5,6 +5,8 @@ deleteDatasources:
     orgId: 1
   - name: Loki
     orgId: 1
+  - name: ClickHouse
+    orgId: 1
 
 datasources:
   - name: Prometheus
@@ -24,3 +26,17 @@ datasources:
     access: proxy
     url: http://loki:3100
     editable: false
+
+  - name: ClickHouse
+    uid: clickhouse-ssf
+    type: grafana-clickhouse-datasource
+    access: proxy
+    editable: false
+    jsonData:
+      host: clickhouse
+      port: 9000
+      protocol: native
+      defaultDatabase: $CLICKHOUSE_DB
+      username: $CLICKHOUSE_USER
+    secureJsonData:
+      password: $CLICKHOUSE_PASSWORD
