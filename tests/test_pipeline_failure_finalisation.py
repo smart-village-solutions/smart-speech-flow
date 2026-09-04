@@ -11,6 +11,7 @@ separate clock samples, so they disagreed.
 from unittest.mock import Mock, patch
 
 import pytest
+from requests import exceptions
 
 from services.api_gateway.pipeline_logic import (
     UPSTREAM_BUSY_ERROR_CODE,
@@ -161,3 +162,74 @@ class TestSingleClockRead:
         _mark_pipeline_failure(debug_info, 0.0, "ASR-Fehler: boom")
 
         assert debug_info["total_duration_ms"] == pytest.approx(debug_info["total_duration"] * 1000)
+
+
+class TestTheExceptionPathDoesNotLeakInternals:
+    """The audio route serialises error_msg and debug straight to the browser
+    (routes/pipeline.py), so a raw requests exception there discloses the
+    internal service hostname and port."""
+
+    @staticmethod
+    def _transport_error() -> Exception:
+        """The exception requests actually raises for an unreachable upstream."""
+        return exceptions.ConnectionError(
+            "HTTPConnectionPool(host='asr', port=8001): Max retries exceeded "
+            "with url: /transcribe (Caused by NewConnectionError(...))"
+        )
+
+    @patch("services.api_gateway.pipeline_logic.requests.post")
+    def test_the_upstream_hostname_and_port_are_not_in_the_result(self, mock_post):
+        mock_post.side_effect = self._transport_error()
+
+        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+
+        rendered = f"{result['error_msg']} {result['debug']}"
+        assert "HTTPConnectionPool" not in rendered
+        assert "8001" not in rendered
+        assert "Max retries exceeded" not in rendered
+
+    @patch("services.api_gateway.pipeline_logic.requests.post")
+    def test_the_failure_carries_a_stable_code_instead(self, mock_post):
+        mock_post.side_effect = self._transport_error()
+
+        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+
+        assert result["debug"]["error_code"] == "upstream_unreachable"
+
+    @patch("services.api_gateway.pipeline_logic.requests.post")
+    def test_a_timeout_is_classified_as_a_timeout(self, mock_post):
+        mock_post.side_effect = TimeoutError("read timed out")
+
+        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+
+        assert result["debug"]["error_code"] == "upstream_timeout"
+
+
+class TestTheExceptionPathKeepsWhatItAlreadyHas:
+    """The explicit non-200 branches pass the real asr_text and
+    translation_text; the exception branch discarded both. Two failure modes of
+    the same step should not produce two different payloads."""
+
+    @patch("services.api_gateway.pipeline_logic.requests.post")
+    def test_a_tts_transport_failure_keeps_the_transcript(self, mock_post):
+        asr = Mock()
+        asr.status_code = 200
+        asr.json.return_value = {"text": "Hello world"}
+        translation = _ok_translation()
+        mock_post.side_effect = [asr, translation, OSError("connection reset")]
+
+        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+
+        assert result["error"] is True
+        assert result["asr_text"] == "Hello world"
+        assert result["translation_text"] == "Hallo Welt"
+        assert result["audio_bytes"] is None
+
+    @patch("services.api_gateway.pipeline_logic.requests.post")
+    def test_an_asr_transport_failure_still_has_nothing_to_keep(self, mock_post):
+        mock_post.side_effect = OSError("connection reset")
+
+        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+
+        assert result["asr_text"] is None
+        assert result["translation_text"] is None

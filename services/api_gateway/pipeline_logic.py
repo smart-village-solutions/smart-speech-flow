@@ -14,6 +14,7 @@ import numpy as np
 import psutil
 import requests
 
+from .quality_telemetry import classify_exception
 from .translation_refiner import RefinementOutcome, translation_refiner
 
 # Import service URLs from app.py (respects DOCKER_COMPOSE env var)
@@ -387,6 +388,7 @@ def _pipeline_error_result(
     audio_bytes: Optional[bytes],
     validation_result: Optional[Any] = None,
     upstream_response: Optional[Any] = None,
+    error_code: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Flattens an upstream failure into the pipeline's result shape.
 
@@ -397,6 +399,8 @@ def _pipeline_error_result(
     of which a client reads as permanent.
     """
     _mark_pipeline_failure(debug_info, start_total, error_message)
+    if error_code is not None:
+        debug_info["error_code"] = error_code
     result = {
         "error": True,
         "error_msg": error_message,
@@ -1220,6 +1224,8 @@ def process_text_pipeline(
         "pipeline_started_at": pipeline_start_time.isoformat() + "Z",
     }
     start_total = time.perf_counter()
+    processed_text: Optional[str] = None
+    translation_text: Optional[str] = None
 
     try:
         # Step 1: Text validation (if enabled)
@@ -1343,13 +1349,20 @@ def process_text_pipeline(
         }
 
     except Exception as e:
+        # routes/pipeline.py serialises error_msg and debug straight to the
+        # browser, and a requests exception carries the internal service
+        # hostname and port. The detail goes to the server log; the client gets
+        # the stable taxonomy code.
+        code = classify_exception(e)
+        logging.warning("Pipeline failed (%s)", code.value, exc_info=True)
         return _pipeline_error_result(
             debug_info=debug_info,
             start_total=start_total,
-            error_message=f"Pipeline-Fehler: {str(e)}",
-            asr_text=None,
-            translation_text=None,
+            error_message=f"Pipeline-Fehler: {code.value}",
+            asr_text=processed_text,
+            translation_text=translation_text,
             audio_bytes=None,
+            error_code=code.value,
         )
 
 
@@ -1379,6 +1392,8 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
         "pipeline_started_at": pipeline_start_time.isoformat() + "Z",
     }
     start_total = time.perf_counter()
+    asr_text: Optional[str] = None
+    translation_text: Optional[str] = None
 
     try:
         # Audio Validation Step (if enabled)
@@ -1597,11 +1612,18 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
         }
 
     except Exception as e:
+        # routes/pipeline.py serialises error_msg and debug straight to the
+        # browser, and a requests exception carries the internal service
+        # hostname and port. The detail goes to the server log; the client gets
+        # the stable taxonomy code.
+        code = classify_exception(e)
+        logging.warning("Pipeline failed (%s)", code.value, exc_info=True)
         return _pipeline_error_result(
             debug_info=debug_info,
             start_total=start_total,
-            error_message=f"Pipeline-Fehler: {str(e)}",
-            asr_text=None,
-            translation_text=None,
+            error_message=f"Pipeline-Fehler: {code.value}",
+            asr_text=asr_text,
+            translation_text=translation_text,
             audio_bytes=None,
+            error_code=code.value,
         )
