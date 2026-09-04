@@ -70,7 +70,9 @@ def _production() -> dict:
 
 def _production_env(service: str) -> dict:
     return dict(
-        entry.split("=", 1) for entry in _production()[service]["environment"] if "=" in entry
+        entry.split("=", 1)
+        for entry in _production()[service]["environment"]
+        if "=" in entry
     )
 
 
@@ -199,7 +201,9 @@ def test_every_raw_tier_read_deduplicates() -> None:
     reads = [
         (match.group(1), bool(match.group(2)))
         for sql in queries
-        for match in re.finditer(r"FROM\s+(quality_events_daily|quality_events)\b(\s+FINAL)?", sql)
+        for match in re.finditer(
+            r"FROM\s+(quality_events_daily|quality_events)\b(\s+FINAL)?", sql
+        )
     ]
     assert reads, "no reads of either tier"
 
@@ -234,6 +238,66 @@ def test_no_panel_counts_the_untyped_default_as_a_failure() -> None:
         if "error_code" not in sql:
             continue
         assert "error_code != 'none'" not in sql, sql
+
+
+def test_every_gold_read_names_the_event_type_it_summarises() -> None:
+    """The gold tier's latency states are the refinement attempt's.
+
+    A `translation_message` row reaches it too and contributes a correct daily
+    count under its own event_type and a zero to every latency state, so a gold
+    query that does not filter on event_type averages a real population with a
+    column of zeros. Verified live: gold reported translation_message with
+    events = 1 and latency_ms_avg = 0.
+    """
+    for sql in _clickhouse_queries():
+        if "quality_events_daily" not in sql or "oldest_row" in sql:
+            continue
+        assert "event_type =" in sql, sql
+
+
+def test_message_panels_read_the_message_event_only() -> None:
+    """Every duration column is shared between the two event types, and a
+    refinement row's total_duration_ms is zero."""
+    for sql in _clickhouse_queries():
+        if "total_duration_ms" not in sql:
+            continue
+        assert "event_type = 'translation_message'" in sql, sql
+
+
+def test_no_panel_reads_a_message_stage_duration_without_excluding_zero() -> None:
+    """A text message has no ASR stage and a run with refinement off has no
+    refinement stage. Both store 0, and averaging those in reports every stage
+    as faster than it is."""
+    stages = (
+        "asr_duration_ms",
+        "translation_duration_ms",
+        "refinement_duration_ms",
+        "tts_duration_ms",
+    )
+    for sql in _clickhouse_queries():
+        for stage in stages:
+            if f"({stage})" not in sql:
+                continue
+            assert f"nullIf({stage}, 0)" in sql, (stage, sql)
+
+
+def test_lifecycle_panels_read_the_lifecycle_event_only() -> None:
+    """`session_duration_ms` and `message_count` are 0 on every other event
+    type, so a panel that omits the filter averages real sessions against a
+    column of zeros."""
+    for sql in _clickhouse_queries():
+        if "session_duration_ms" not in sql and "message_count" not in sql:
+            continue
+        assert "event_type = 'session_lifecycle'" in sql, sql
+
+
+def test_no_panel_reads_a_session_duration_outside_a_terminated_row() -> None:
+    """`created` and `activated` rows report a duration of 0 by construction --
+    the session has not ended, so there is nothing to measure yet."""
+    for sql in _clickhouse_queries():
+        if "session_duration_ms" not in sql and "avg(message_count)" not in sql:
+            continue
+        assert "lifecycle_phase = 'terminated'" in sql, sql
 
 
 def test_the_dashboard_reads_both_medallion_tiers() -> None:

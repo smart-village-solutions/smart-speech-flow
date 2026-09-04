@@ -24,6 +24,9 @@
   "liveNow": false,
   "panels": [
     {
+      "id": 30,
+      "type": "stat",
+      "title": "Sessions Created",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -33,6 +36,445 @@
         "w": 6,
         "x": 0,
         "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT count() AS sessions FROM quality_events FINAL WHERE event_type = 'session_lifecycle' AND $__timeFilter(emitted_at_utc) AND lifecycle_phase = 'created'"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "Sessions Activated",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT count() AS sessions FROM quality_events FINAL WHERE event_type = 'session_lifecycle' AND $__timeFilter(emitted_at_utc) AND lifecycle_phase = 'activated'"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "Median Session Duration",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT quantile(0.5)(session_duration_ms) AS p50 FROM quality_events FINAL WHERE event_type = 'session_lifecycle' AND $__timeFilter(emitted_at_utc) AND lifecycle_phase = 'terminated'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "Messages per Session",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT avg(message_count) AS messages FROM quality_events FINAL WHERE event_type = 'session_lifecycle' AND $__timeFilter(emitted_at_utc) AND lifecycle_phase = 'terminated'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "Session Funnel",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 1 HOUR) AS time, lifecycle_phase, count() AS sessions FROM quality_events FINAL WHERE event_type = 'session_lifecycle' AND $__timeFilter(emitted_at_utc) GROUP BY time, lifecycle_phase ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "type": "table",
+      "title": "Why Sessions End",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT termination_reason, count() AS sessions, round(avg(message_count), 1) AS avg_messages FROM quality_events FINAL WHERE event_type = 'session_lifecycle' AND $__timeFilter(emitted_at_utc) AND lifecycle_phase = 'terminated' GROUP BY termination_reason ORDER BY sessions DESC"
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "type": "stat",
+      "title": "Sessions That Carried No Message",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 12
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT countIf(message_count = 0) AS empty_sessions FROM quality_events FINAL WHERE event_type = 'session_lifecycle' AND $__timeFilter(emitted_at_utc) AND lifecycle_phase = 'terminated'"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Messages",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT count() AS messages FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc)"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Success Rate",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT 100 * countIf(terminal_outcome = 'success') / count() AS success_rate FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Message Latency p95",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT quantile(0.95)(total_duration_ms) AS p95 FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Failed Messages",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT countIf(terminal_outcome = 'failure') AS failures FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc)"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Message Latency Percentiles",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 5 MINUTE) AS time, quantile(0.5)(total_duration_ms) AS p50, quantile(0.95)(total_duration_ms) AS p95, quantile(0.99)(total_duration_ms) AS p99 FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "Stage Latency p95",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 5 MINUTE) AS time, quantile(0.95)(nullIf(asr_duration_ms, 0)) AS asr, quantile(0.95)(nullIf(translation_duration_ms, 0)) AS translation, quantile(0.95)(nullIf(refinement_duration_ms, 0)) AS refinement, quantile(0.95)(nullIf(tts_duration_ms, 0)) AS tts FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 26,
+      "type": "table",
+      "title": "Message Failures by Stage",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT failed_stage, error_code, count() AS messages FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc) AND terminal_outcome = 'failure' GROUP BY failed_stage, error_code ORDER BY messages DESC"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Messages by Direction and Input",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 5 MINUTE) AS time, concat(direction, ' / ', input_mode) AS flow, count() AS messages FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc) GROUP BY time, flow ORDER BY time"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 36
       },
       "id": 1,
       "targets": [
@@ -83,7 +525,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 0
+        "y": 36
       },
       "id": 2,
       "targets": [
@@ -134,7 +576,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 0
+        "y": 36
       },
       "id": 3,
       "targets": [
@@ -185,7 +627,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 0
+        "y": 36
       },
       "id": 4,
       "targets": [
@@ -236,7 +678,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 40
       },
       "id": 5,
       "targets": [
@@ -284,7 +726,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 4
+        "y": 40
       },
       "id": 6,
       "targets": [
@@ -333,7 +775,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 12
+        "y": 48
       },
       "id": 7,
       "targets": [
@@ -388,7 +830,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 12
+        "y": 48
       },
       "id": 8,
       "targets": [
@@ -428,7 +870,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 20
+        "y": 56
       },
       "id": 9,
       "targets": [
@@ -476,7 +918,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 20
+        "y": 56
       },
       "id": 10,
       "targets": [
@@ -524,7 +966,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 28
+        "y": 64
       },
       "id": 11,
       "targets": [
@@ -564,7 +1006,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 28
+        "y": 64
       },
       "id": 12,
       "targets": [
@@ -613,7 +1055,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 28
+        "y": 64
       },
       "id": 13,
       "targets": [
@@ -624,7 +1066,7 @@
           },
           "editorType": "sql",
           "format": 0,
-          "rawSql": "SELECT countIf(model_ref = '') AS untyped FROM quality_events FINAL WHERE event_type = 'refinement_attempt' AND $__timeFilter(emitted_at_utc)",
+          "rawSql": "SELECT countIf(event_type = 'refinement_attempt' AND model_ref = '') + countIf(event_type = 'translation_message' AND session_ref = '') + countIf(event_type = 'session_lifecycle' AND lifecycle_phase = '') AS untyped FROM quality_events FINAL WHERE $__timeFilter(emitted_at_utc)",
           "refId": "A"
         }
       ],
