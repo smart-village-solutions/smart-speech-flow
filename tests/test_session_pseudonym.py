@@ -28,7 +28,10 @@ class TestShape:
     def test_the_same_id_and_key_always_give_the_same_reference(self):
         pseudonymizer = SessionPseudonymizer(key=b"deployment-secret")
 
-        assert pseudonymizer.reference("42") == pseudonymizer.reference("42")
+        first = pseudonymizer.reference("42")
+        second = pseudonymizer.reference("42")
+
+        assert first == second
 
     def test_different_ids_give_different_references(self):
         pseudonymizer = SessionPseudonymizer(key=b"deployment-secret")
@@ -96,9 +99,12 @@ class TestKeyResolution:
         # repository, so it would pseudonymise nothing.
         monkeypatch.delenv(SESSION_KEY_ENV, raising=False)
 
-        assert SessionPseudonymizer.from_environment().reference(
-            "42"
-        ) != SessionPseudonymizer.from_environment().reference("42")
+        # Two separate instances: each generates its own key, which is the
+        # whole point -- textually alike, semantically unrelated.
+        one_process = SessionPseudonymizer.from_environment()
+        another_process = SessionPseudonymizer.from_environment()
+
+        assert one_process.reference("42") != another_process.reference("42")
 
     def test_an_unset_key_is_reported(self, monkeypatch, caplog):
         monkeypatch.delenv(SESSION_KEY_ENV, raising=False)
@@ -111,14 +117,18 @@ class TestKeyResolution:
     def test_a_blank_key_is_treated_as_unset(self, monkeypatch):
         monkeypatch.setenv(SESSION_KEY_ENV, "   ")
 
-        assert SessionPseudonymizer.from_environment().reference(
-            "42"
-        ) != SessionPseudonymizer.from_environment().reference("42")
+        one_process = SessionPseudonymizer.from_environment()
+        another_process = SessionPseudonymizer.from_environment()
+
+        assert one_process.reference("42") != another_process.reference("42")
 
 
 class TestModuleLevelHelper:
     def test_the_helper_is_stable_within_a_process(self):
-        assert session_ref("42") == session_ref("42")
+        first = session_ref("42")
+        second = session_ref("42")
+
+        assert first == second
 
     def test_the_helper_never_raises_on_hostile_input(self):
         for value in (None, "", 42, object()):
