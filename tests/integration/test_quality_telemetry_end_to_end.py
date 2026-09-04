@@ -26,6 +26,14 @@ _ALLOWED_RESOURCE_KEYS = {
     "deployment.environment.name",
 }
 
+# What a probe carries, and all it carries. Asserted instead of the whole
+# manifest: an earlier version compared the surviving keys against
+# ALLOWED_ATTRIBUTE_KEYS, which held only while the allowlist happened to be
+# exactly the envelope. Every event type opened since made it fail, and the
+# property it was reaching for -- nothing outside the allowlist survives -- is
+# a subset check, not an equality.
+_PROBE_KEYS = {"ssf.quality.event_id", "ssf.quality.schema_version"}
+
 _EMIT_THROUGH_LIFESPAN = """
 import asyncio, json
 from services.api_gateway.app import app, lifespan
@@ -93,7 +101,8 @@ def _emit_through_the_gateway(emissions: int = 1) -> list[dict]:
 def _await_silver(event_id: str, expected: str = "1") -> None:
     for _ in range(30):
         count = _query(
-            f"SELECT count() FROM quality_events FINAL " f"WHERE event_id = toUUID('{event_id}')"
+            f"SELECT count() FROM quality_events FINAL "
+            f"WHERE event_id = toUUID('{event_id}')"
         )
         if count == expected:
             return
@@ -129,8 +138,11 @@ def test_only_allowlisted_fields_survive_the_collector() -> None:
         f"WHERE LogAttributes['ssf.quality.event_id'] = '{result['event_id']}'"
     ).split("\t")
 
+    landed = set(json.loads(log_keys.replace("'", '"')))
+
     assert body_length == "0"
-    assert set(json.loads(log_keys.replace("'", '"'))) == set(ALLOWED_ATTRIBUTE_KEYS)
+    assert landed <= set(ALLOWED_ATTRIBUTE_KEYS), landed - set(ALLOWED_ATTRIBUTE_KEYS)
+    assert landed == _PROBE_KEYS
     assert set(json.loads(resource_keys.replace("'", '"'))) == _ALLOWED_RESOURCE_KEYS
 
 
@@ -176,7 +188,8 @@ def test_duplicate_delivery_is_counted_once() -> None:
     _await_silver(event_id)
     assert (
         _query(
-            f"SELECT count() FROM quality_events FINAL " f"WHERE event_id = toUUID('{event_id}')"
+            f"SELECT count() FROM quality_events FINAL "
+            f"WHERE event_id = toUUID('{event_id}')"
         )
         == "1"
     )
@@ -274,8 +287,15 @@ def test_the_collector_strips_content_a_rogue_sender_supplies() -> None:
         f"WHERE LogAttributes['ssf.quality.event_id'] = '{event_id}'"
     ).split("\t")
 
+    landed = set(json.loads(log_keys.replace("'", '"')))
+
     assert body_length == "0"
-    assert set(json.loads(log_keys.replace("'", '"'))) == set(ALLOWED_ATTRIBUTE_KEYS)
+    # The sender put `ssf.quality.source_text` on the wire under the allowlisted
+    # namespace prefix. Only the collector's keep_keys stands between that and
+    # a stored transcript, so name it rather than relying on the set equality.
+    assert "ssf.quality.source_text" not in landed
+    assert landed <= set(ALLOWED_ATTRIBUTE_KEYS), landed - set(ALLOWED_ATTRIBUTE_KEYS)
+    assert landed == _PROBE_KEYS
     assert set(json.loads(resource_keys.replace("'", '"'))) == _ALLOWED_RESOURCE_KEYS
 
 

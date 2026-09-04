@@ -14,6 +14,12 @@ import numpy as np
 import psutil
 import requests
 
+from .quality_telemetry import (
+    PipelineStage,
+    QualityErrorCode,
+    classify_exception,
+    classify_upstream_status,
+)
 from .translation_refiner import RefinementOutcome, translation_refiner
 
 # Import service URLs from app.py (respects DOCKER_COMPOSE env var)
@@ -337,12 +343,67 @@ def _collect_system_metrics() -> Dict[str, float]:
     }
 
 
+def _record_pipeline_duration(debug_info: Dict[str, Any], start_total: float) -> None:
+    """Record how long the pipeline ran, from a single clock sample.
+
+    Both duration fields used to be read from two separate ``perf_counter()``
+    calls, so they disagreed; and the failure path recorded only the seconds
+    field, leaving failure rows with no millisecond duration and no completion
+    timestamp to compare against a success row.
+    """
+    elapsed_seconds = time.perf_counter() - start_total
+    debug_info["pipeline_completed_at"] = utc_now().isoformat() + "Z"
+    debug_info["total_duration_ms"] = int(elapsed_seconds * 1000)
+    debug_info["total_duration"] = round(elapsed_seconds, 3)
+
+
+def _upstream_error_message(response: Any) -> str:
+    """Best-effort reason from a failed upstream reply, never raising."""
+    try:
+        payload = response.json()
+        return payload.get("detail") or payload.get("error") or str(payload)
+    except Exception:
+        return str(getattr(response, "text", ""))
+
+
 def _mark_pipeline_failure(
     debug_info: Dict[str, Any], start_total: float, error_message: str
 ) -> None:
     debug_info["error"] = error_message
+    _record_pipeline_duration(debug_info, start_total)
     debug_info["system"] = _collect_system_metrics()
-    debug_info["total_duration"] = round(time.perf_counter() - start_total, 3)
+
+
+_CONTENT_REJECTION_CODES: frozenset = frozenset({"SPAM_DETECTED", "HARMFUL_CONTENT"})
+
+
+def _classify_tts_failure(response: Any) -> QualityErrorCode:
+    """Both arms of the TTS failure condition, not just the status code.
+
+    The branch fires on a bad status *or* a reply that is not audio, and
+    ``classify_upstream_status`` maps every 2xx to ``NONE``. Deriving the code
+    from the status alone therefore wrote ``error_code: "none"`` onto a result
+    whose ``error`` flag was True, for exactly the case the branch's own
+    ``tts_resp.json()`` handling exists to cover: a 200 carrying a JSON error
+    body. A 2xx that reaches here was rejected on its content type, which is a
+    malformed reply.
+    """
+    code = classify_upstream_status(getattr(response, "status_code", 0))
+    if code is QualityErrorCode.NONE:
+        return QualityErrorCode.UPSTREAM_MALFORMED_RESPONSE
+    return code
+
+
+def _classify_text_validation(validation_result: Any) -> QualityErrorCode:
+    """Separate "we would not translate this" from "this is not usable text".
+
+    Both are validation failures, but only one is a moderation decision, and a
+    dashboard that cannot tell them apart reads a spam filter working correctly
+    as a broken client.
+    """
+    if getattr(validation_result, "error_code", None) in _CONTENT_REJECTION_CODES:
+        return QualityErrorCode.CONTENT_REJECTED
+    return QualityErrorCode.TEXT_VALIDATION_FAILED
 
 
 def _upstream_retry_after(response: Any) -> int:
@@ -359,6 +420,8 @@ def _pipeline_error_result(
     debug_info: Dict[str, Any],
     start_total: float,
     error_message: str,
+    failed_stage: PipelineStage,
+    error_code: QualityErrorCode,
     asr_text: Optional[str],
     translation_text: Optional[str],
     audio_bytes: Optional[bytes],
@@ -372,8 +435,16 @@ def _pipeline_error_result(
     every failure here otherwise arrives at the routes as one undifferentiated
     ``error`` — reported as 500 on the audio path and 400 on the text path, both
     of which a client reads as permanent.
+
+    ``failed_stage`` and ``error_code`` are required rather than inferred. The
+    only other places that record what went wrong are ``debug["steps"]``, whose
+    entries hold the transcript and the source text, and ``error_message``,
+    which holds the raw upstream reply — so anything reading them to classify a
+    failure would be reading content.
     """
     _mark_pipeline_failure(debug_info, start_total, error_message)
+    debug_info["failed_stage"] = failed_stage.value
+    debug_info["error_code"] = error_code.value
     result = {
         "error": True,
         "error_msg": error_message,
@@ -431,6 +502,8 @@ def _validate_and_normalize_text(
         debug_info=debug_info,
         start_total=start_total,
         error_message=error_message,
+        failed_stage=PipelineStage.VALIDATION,
+        error_code=_classify_text_validation(validation_result),
         asr_text=None,
         translation_text=None,
         audio_bytes=None,
@@ -656,6 +729,8 @@ def _apply_audio_validation(
         debug_info=debug_info,
         start_total=start_total,
         error_message=error_message,
+        failed_stage=PipelineStage.VALIDATION,
+        error_code=QualityErrorCode.AUDIO_VALIDATION_FAILED,
         asr_text=None,
         translation_text=None,
         audio_bytes=None,
@@ -664,11 +739,12 @@ def _apply_audio_validation(
 
 
 def _finalize_pipeline_success(debug_info: Dict[str, Any], start_total: float) -> None:
-    pipeline_completed_at = utc_now()
-    debug_info["pipeline_completed_at"] = pipeline_completed_at.isoformat() + "Z"
-    debug_info["total_duration_ms"] = int((time.perf_counter() - start_total) * 1000)
+    _record_pipeline_duration(debug_info, start_total)
+    # Written on success too, so a consumer reads the same two keys on every
+    # row rather than treating "absent" as a third, untyped outcome.
+    debug_info["failed_stage"] = PipelineStage.NONE.value
+    debug_info["error_code"] = QualityErrorCode.NONE.value
     debug_info["system"] = _collect_system_metrics()
-    debug_info["total_duration"] = round(time.perf_counter() - start_total, 3)
 
 
 # === Audio Validation Functions ===
@@ -1200,6 +1276,8 @@ def process_text_pipeline(
         "pipeline_started_at": pipeline_start_time.isoformat() + "Z",
     }
     start_total = time.perf_counter()
+    processed_text: Optional[str] = None
+    translation_text: Optional[str] = None
 
     try:
         # Step 1: Text validation (if enabled)
@@ -1230,6 +1308,8 @@ def process_text_pipeline(
                 debug_info=debug_info,
                 start_total=start_total,
                 error_message=f"Translation-Fehler: {error_msg}",
+                failed_stage=PipelineStage.TRANSLATION,
+                error_code=classify_upstream_status(translation_resp.status_code),
                 asr_text=processed_text,  # Original text as "ASR" result
                 translation_text=None,
                 audio_bytes=None,
@@ -1281,6 +1361,8 @@ def process_text_pipeline(
                 debug_info=debug_info,
                 start_total=start_total,
                 error_message=f"TTS-Fehler: {error_msg}",
+                failed_stage=PipelineStage.TTS,
+                error_code=_classify_tts_failure(tts_resp),
                 asr_text=processed_text,
                 translation_text=translation_text,
                 audio_bytes=None,
@@ -1323,12 +1405,20 @@ def process_text_pipeline(
         }
 
     except Exception as e:
+        # routes/pipeline.py serialises error_msg and debug straight to the
+        # browser, and a requests exception carries the internal service
+        # hostname and port. The detail goes to the server log; the client gets
+        # the stable taxonomy code.
+        code = classify_exception(e)
+        logging.warning("Pipeline failed (%s)", code.value, exc_info=True)
         return _pipeline_error_result(
             debug_info=debug_info,
             start_total=start_total,
-            error_message=f"Pipeline-Fehler: {str(e)}",
-            asr_text=None,
-            translation_text=None,
+            error_message=f"Pipeline-Fehler: {code.value}",
+            failed_stage=PipelineStage.UNKNOWN,
+            error_code=code,
+            asr_text=processed_text,
+            translation_text=translation_text,
             audio_bytes=None,
         )
 
@@ -1359,188 +1449,245 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
         "pipeline_started_at": pipeline_start_time.isoformat() + "Z",
     }
     start_total = time.perf_counter()
+    asr_text: Optional[str] = None
+    translation_text: Optional[str] = None
 
-    # Audio Validation Step (if enabled)
-    if validate_audio:
-        validated_bytes, validation_failure = _apply_audio_validation(
-            file_bytes,
-            debug_info=debug_info,
-            start_total=start_total,
+    try:
+        # Audio Validation Step (if enabled)
+        if validate_audio:
+            validated_bytes, validation_failure = _apply_audio_validation(
+                file_bytes,
+                debug_info=debug_info,
+                start_total=start_total,
+            )
+            if validation_failure is not None:
+                return validation_failure
+            file_bytes = validated_bytes
+
+        # ASR
+        start_asr = time.perf_counter()
+        asr_started_at = utc_now()
+        asr_resp = requests.post(
+            ASR_URL,
+            files={"file": ("input.wav", file_bytes, AUDIO_WAV_MIME)},
+            data={"lang": source_lang, "debug": str(debug).lower()},
+            timeout=60,  # ASR kann länger dauern
         )
-        if validation_failure is not None:
-            return validation_failure
-        file_bytes = validated_bytes
+        asr_completed_at = utc_now()
+        asr_duration_ms = int((time.perf_counter() - start_asr) * 1000)
 
-    # ASR
-    start_asr = time.perf_counter()
-    asr_started_at = utc_now()
-    asr_resp = requests.post(
-        ASR_URL,
-        files={"file": ("input.wav", file_bytes, AUDIO_WAV_MIME)},
-        data={"lang": source_lang, "debug": str(debug).lower()},
-        timeout=60,  # ASR kann länger dauern
-    )
-    asr_completed_at = utc_now()
-    asr_json = asr_resp.json()
-    asr_text = asr_json.get("text", "")
-    asr_duration_ms = int((time.perf_counter() - start_asr) * 1000)
+        # The status was never checked here, so a failed transcription became an
+        # empty string and went on to be "successfully" translated -- the audio
+        # path's failure rows went missing entirely. upstream_response keeps a
+        # 503 transient, exactly as the translation and TTS steps already do.
+        if asr_resp.status_code != 200:
+            error_msg = _upstream_error_message(asr_resp)
+            debug_info["steps"].append(
+                {
+                    "step": "ASR",
+                    "name": "asr",
+                    "input": {"lang": source_lang},
+                    "output": None,
+                    "error": error_msg,
+                    "duration": round(asr_duration_ms / 1000, 3),
+                    "started_at": asr_started_at.isoformat() + "Z",
+                    "completed_at": asr_completed_at.isoformat() + "Z",
+                    "duration_ms": asr_duration_ms,
+                }
+            )
+            return _pipeline_error_result(
+                debug_info=debug_info,
+                start_total=start_total,
+                error_message=f"ASR-Fehler: {error_msg}",
+                failed_stage=PipelineStage.ASR,
+                error_code=classify_upstream_status(asr_resp.status_code),
+                asr_text=None,
+                translation_text=None,
+                audio_bytes=None,
+                upstream_response=asr_resp,
+            )
 
-    debug_info["steps"].append(
-        {
-            "step": "ASR",
-            "name": "asr",
-            "input": {"lang": source_lang},
-            "output": asr_text,
-            "model": asr_json.get("debug", {}).get("model"),
-            "error": asr_json.get("error"),
-            "duration": round(time.perf_counter() - start_asr, 3),
-            "started_at": asr_started_at.isoformat() + "Z",
-            "completed_at": asr_completed_at.isoformat() + "Z",
-            "duration_ms": asr_duration_ms,
-        }
-    )
-    # Translation
-    start_trans = time.perf_counter()
-    translation_started_at = utc_now()
-    translation_payload = {
-        "text": asr_text,
-        "source_lang": source_lang,
-        "target_lang": target_lang,
-        "model": "m2m100_1.2B",
-        "debug": str(debug).lower(),
-    }
-    translation_resp = requests.post(
-        TRANSLATION_URL, json=translation_payload, timeout=30
-    )
-    translation_completed_at = utc_now()
-    translation_json = translation_resp.json()
-    translation_text = translation_json.get("translations", "")
-    translation_duration_ms = int((time.perf_counter() - start_trans) * 1000)
-
-    debug_info["steps"].append(
-        {
-            "step": "Translation",
-            "name": "translation",
-            "input": translation_payload,
-            "output": translation_text,
-            "error": translation_json.get("error"),
-            "duration": round(time.perf_counter() - start_trans, 3),
-            "started_at": translation_started_at.isoformat() + "Z",
-            "completed_at": translation_completed_at.isoformat() + "Z",
-            "duration_ms": translation_duration_ms,
-        }
-    )
-    # Fehlerbehandlung
-    if translation_resp.status_code != 200:
-        error_msg = translation_json.get("detail") or str(translation_json)
-        return _pipeline_error_result(
-            debug_info=debug_info,
-            start_total=start_total,
-            error_message=f"Translation-Fehler: {error_msg}",
-            asr_text=asr_text,
-            translation_text=None,
-            audio_bytes=None,
-            upstream_response=translation_resp,
-        )
-    # Optional LLM refinement
-    if translation_refiner.is_active:
-        refinement_started_at = utc_now()
-        outcome = translation_refiner.refine(
-            translation_text,
-            source_lang,
-            target_lang,
-            context={"original_text": asr_text, "pipeline": "audio"},
-        )
-        refinement_completed_at = utc_now()
-        translation_text = outcome.text
-        refinement_duration_ms = outcome.latency_ms or 0
+        asr_json = asr_resp.json()
+        asr_text = asr_json.get("text", "")
 
         debug_info["steps"].append(
             {
-                "step": "LLM_Refinement",
-                "name": "refinement",
-                "input": {"enabled": True, "changed": outcome.changed},
-                "output": translation_text,
-                "error": outcome.error,
-                "duration": round((outcome.latency_ms or 0.0) / 1000, 3),
-                "started_at": refinement_started_at.isoformat() + "Z",
-                "completed_at": refinement_completed_at.isoformat() + "Z",
-                "duration_ms": int(refinement_duration_ms),
-                "model": outcome.model,
-                "refinement_comparison": {
-                    "primary_model": outcome.model,
-                    "primary_status": "error" if outcome.error else "success",
-                    "candidate_model": outcome.candidate_model,
-                    "candidate_status": outcome.candidate_status,
-                },
+                "step": "ASR",
+                "name": "asr",
+                "input": {"lang": source_lang},
+                "output": asr_text,
+                "model": asr_json.get("debug", {}).get("model"),
+                "error": asr_json.get("error"),
+                "duration": round(time.perf_counter() - start_asr, 3),
+                "started_at": asr_started_at.isoformat() + "Z",
+                "completed_at": asr_completed_at.isoformat() + "Z",
+                "duration_ms": asr_duration_ms,
             }
         )
-    # TTS
-    start_tts = time.perf_counter()
-    tts_started_at = utc_now()
-    tts_resp = requests.post(
-        TTS_URL,
-        json={
-            "text": translation_text,
-            "lang": target_lang,
+        # Translation
+        start_trans = time.perf_counter()
+        translation_started_at = utc_now()
+        translation_payload = {
+            "text": asr_text,
+            "source_lang": source_lang,
+            "target_lang": target_lang,
+            "model": "m2m100_1.2B",
             "debug": str(debug).lower(),
-        },
-        timeout=45,  # TTS kann auch länger dauern
-    )
-    tts_completed_at = utc_now()
-    tts_duration_ms = int((time.perf_counter() - start_tts) * 1000)
+        }
+        translation_resp = requests.post(
+            TRANSLATION_URL, json=translation_payload, timeout=30
+        )
+        translation_completed_at = utc_now()
+        translation_json = translation_resp.json()
+        translation_text = translation_json.get("translations", "")
+        translation_duration_ms = int((time.perf_counter() - start_trans) * 1000)
 
-    if (
-        tts_resp.status_code != 200
-        or tts_resp.headers.get("content-type", "") != AUDIO_WAV_MIME
-    ):
-        try:
-            tts_json = tts_resp.json()
-            error_msg = tts_json.get("error") or str(tts_json)
-        except Exception:
-            error_msg = tts_resp.text
+        debug_info["steps"].append(
+            {
+                "step": "Translation",
+                "name": "translation",
+                "input": translation_payload,
+                "output": translation_text,
+                "error": translation_json.get("error"),
+                "duration": round(time.perf_counter() - start_trans, 3),
+                "started_at": translation_started_at.isoformat() + "Z",
+                "completed_at": translation_completed_at.isoformat() + "Z",
+                "duration_ms": translation_duration_ms,
+            }
+        )
+        # Fehlerbehandlung
+        if translation_resp.status_code != 200:
+            error_msg = translation_json.get("detail") or str(translation_json)
+            return _pipeline_error_result(
+                debug_info=debug_info,
+                start_total=start_total,
+                error_message=f"Translation-Fehler: {error_msg}",
+                failed_stage=PipelineStage.TRANSLATION,
+                error_code=classify_upstream_status(translation_resp.status_code),
+                asr_text=asr_text,
+                translation_text=None,
+                audio_bytes=None,
+                upstream_response=translation_resp,
+            )
+        # Optional LLM refinement
+        if translation_refiner.is_active:
+            refinement_started_at = utc_now()
+            outcome = translation_refiner.refine(
+                translation_text,
+                source_lang,
+                target_lang,
+                context={"original_text": asr_text, "pipeline": "audio"},
+            )
+            refinement_completed_at = utc_now()
+            translation_text = outcome.text
+            refinement_duration_ms = outcome.latency_ms or 0
+
+            debug_info["steps"].append(
+                {
+                    "step": "LLM_Refinement",
+                    "name": "refinement",
+                    "input": {"enabled": True, "changed": outcome.changed},
+                    "output": translation_text,
+                    "error": outcome.error,
+                    "duration": round((outcome.latency_ms or 0.0) / 1000, 3),
+                    "started_at": refinement_started_at.isoformat() + "Z",
+                    "completed_at": refinement_completed_at.isoformat() + "Z",
+                    "duration_ms": int(refinement_duration_ms),
+                    "model": outcome.model,
+                    "refinement_comparison": {
+                        "primary_model": outcome.model,
+                        "primary_status": "error" if outcome.error else "success",
+                        "candidate_model": outcome.candidate_model,
+                        "candidate_status": outcome.candidate_status,
+                    },
+                }
+            )
+        # TTS
+        start_tts = time.perf_counter()
+        tts_started_at = utc_now()
+        tts_resp = requests.post(
+            TTS_URL,
+            json={
+                "text": translation_text,
+                "lang": target_lang,
+                "debug": str(debug).lower(),
+            },
+            timeout=45,  # TTS kann auch länger dauern
+        )
+        tts_completed_at = utc_now()
+        tts_duration_ms = int((time.perf_counter() - start_tts) * 1000)
+
+        if (
+            tts_resp.status_code != 200
+            or tts_resp.headers.get("content-type", "") != AUDIO_WAV_MIME
+        ):
+            try:
+                tts_json = tts_resp.json()
+                error_msg = tts_json.get("error") or str(tts_json)
+            except Exception:
+                error_msg = tts_resp.text
+            debug_info["steps"].append(
+                {
+                    "step": "TTS",
+                    "name": "tts",
+                    "input": {"lang": target_lang, "text": translation_text},
+                    "output": None,
+                    "error": error_msg,
+                    "duration": round(time.perf_counter() - start_tts, 3),
+                    "started_at": tts_started_at.isoformat() + "Z",
+                    "completed_at": tts_completed_at.isoformat() + "Z",
+                    "duration_ms": tts_duration_ms,
+                }
+            )
+            return _pipeline_error_result(
+                debug_info=debug_info,
+                start_total=start_total,
+                error_message=f"TTS-Fehler: {error_msg}",
+                failed_stage=PipelineStage.TTS,
+                error_code=_classify_tts_failure(tts_resp),
+                asr_text=asr_text,
+                translation_text=translation_text,
+                audio_bytes=None,
+                upstream_response=tts_resp,
+            )
+        audio_bytes = tts_resp.content
         debug_info["steps"].append(
             {
                 "step": "TTS",
                 "name": "tts",
                 "input": {"lang": target_lang, "text": translation_text},
-                "output": None,
-                "error": error_msg,
+                "output": AUDIO_WAV_MIME,
+                "error": None,
                 "duration": round(time.perf_counter() - start_tts, 3),
                 "started_at": tts_started_at.isoformat() + "Z",
                 "completed_at": tts_completed_at.isoformat() + "Z",
                 "duration_ms": tts_duration_ms,
             }
         )
+
+        _finalize_pipeline_success(debug_info, start_total)
+        return {
+            "error": False,
+            "asr_text": asr_text,
+            "translation_text": translation_text,
+            "audio_bytes": audio_bytes,
+            "debug": debug_info,
+        }
+
+    except Exception as e:
+        # routes/pipeline.py serialises error_msg and debug straight to the
+        # browser, and a requests exception carries the internal service
+        # hostname and port. The detail goes to the server log; the client gets
+        # the stable taxonomy code.
+        code = classify_exception(e)
+        logging.warning("Pipeline failed (%s)", code.value, exc_info=True)
         return _pipeline_error_result(
             debug_info=debug_info,
             start_total=start_total,
-            error_message=f"TTS-Fehler: {error_msg}",
+            error_message=f"Pipeline-Fehler: {code.value}",
+            failed_stage=PipelineStage.UNKNOWN,
+            error_code=code,
             asr_text=asr_text,
             translation_text=translation_text,
             audio_bytes=None,
-            upstream_response=tts_resp,
         )
-    audio_bytes = tts_resp.content
-    debug_info["steps"].append(
-        {
-            "step": "TTS",
-            "name": "tts",
-            "input": {"lang": target_lang, "text": translation_text},
-            "output": AUDIO_WAV_MIME,
-            "error": None,
-            "duration": round(time.perf_counter() - start_tts, 3),
-            "started_at": tts_started_at.isoformat() + "Z",
-            "completed_at": tts_completed_at.isoformat() + "Z",
-            "duration_ms": tts_duration_ms,
-        }
-    )
-
-    _finalize_pipeline_success(debug_info, start_total)
-    return {
-        "error": False,
-        "asr_text": asr_text,
-        "translation_text": translation_text,
-        "audio_bytes": audio_bytes,
-        "debug": debug_info,
-    }

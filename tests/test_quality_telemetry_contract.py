@@ -13,8 +13,10 @@ import pytest
 import services.api_gateway.quality_telemetry as contract
 import services.api_gateway.quality_telemetry_otlp as adapter
 from services.api_gateway.quality_telemetry import (
+    ALLOWED_ATTRIBUTES,
     ALLOWED_ATTRIBUTE_KEYS,
     SCHEMA_VERSION,
+    AttributeKind,
     DisallowedTelemetryAttribute,
     QualityProbeEvent,
     TelemetryMode,
@@ -192,9 +194,74 @@ def test_event_name_is_not_an_attribute() -> None:
     assert "event.name" not in to_otlp_attributes(_event())
 
 
-def test_allowlist_contains_no_content_namespaces() -> None:
-    forbidden = ("text", "audio", "error", "ip", "transcript", "body")
-    assert not [k for k in ALLOWED_ATTRIBUTE_KEYS if any(f in k for f in forbidden)]
+# Whole segments, not substrings. The previous substring form rejected "ip"
+# inside "pipeline" and "error" inside "error_code" -- a closed enum, not a
+# message -- so it could not survive the allowlist widening past the envelope.
+# The real invariant now lives in the manifest: every key declares a value
+# shape, and there is no free-text kind to declare. This stays as a naming
+# tripwire on top of that.
+_CONTENT_SEGMENT = re.compile(
+    r"(?:^|[._])(?:text|transcript|message|detail|payload|url|uri|ip|body|prompt"
+    r"|email|username|useragent|token|secret)(?:[._]|$)"
+)
+
+
+# The kinds whose charset could hold a fragment of a sentence. NUMBER admits
+# only `-?[0-9]{1,19}`, ENUM only a member of a set defined in this module, and
+# UUID only a parseable uuid -- so for those three the key's *name* is
+# cosmetic, and `message_count` is a count however it reads.
+_TEXT_CAPABLE_KINDS = {
+    AttributeKind.LABEL,
+    AttributeKind.LANGUAGE,
+    AttributeKind.OPAQUE_REF,
+}
+
+
+def test_no_text_capable_key_is_named_after_content() -> None:
+    offenders = [
+        key
+        for key, spec in ALLOWED_ATTRIBUTES.items()
+        if spec.kind in _TEXT_CAPABLE_KINDS and _CONTENT_SEGMENT.search(key)
+    ]
+    assert not offenders, offenders
+
+
+def test_any_content_named_key_is_structurally_incapable_of_content() -> None:
+    """The other half of the same invariant.
+
+    `message_count` reads like content and is a `UInt32`. That is only safe
+    because its declared kind makes text unrepresentable, so the exemption is
+    asserted rather than assumed -- changing its kind to LABEL must fail here.
+    """
+    for key, spec in ALLOWED_ATTRIBUTES.items():
+        if not _CONTENT_SEGMENT.search(key):
+            continue
+        assert spec.kind in {
+            AttributeKind.NUMBER,
+            AttributeKind.ENUM,
+            AttributeKind.UUID,
+        }, (key, spec.kind)
+
+
+@pytest.mark.parametrize(
+    "content_key",
+    [
+        "ssf.quality.source_text",
+        "ssf.quality.asr_transcript",
+        "ssf.quality.error_message",
+        "ssf.quality.audio_url",
+        "net.peer.ip",
+        "ssf.quality.request_body",
+    ],
+)
+def test_the_naming_tripwire_rejects_a_content_bearing_key(content_key: str) -> None:
+    """Proving the guard fails: without this the regex above could match nothing."""
+    assert _CONTENT_SEGMENT.search(content_key)
+
+
+def test_no_attribute_may_be_declared_as_free_text() -> None:
+    """The structural guarantee behind the naming tripwire."""
+    assert not [k for k in dir(contract.AttributeKind) if k in ("TEXT", "FREEFORM")]
 
 
 @pytest.mark.parametrize(
@@ -204,7 +271,7 @@ def test_allowlist_contains_no_content_namespaces() -> None:
         ("probe", TelemetryMode.PROBE),
         ("  PROBE  ", TelemetryMode.PROBE),
         ("true", TelemetryMode.DISABLED),
-        ("enabled", TelemetryMode.DISABLED),
+        ("enabled", TelemetryMode.ENABLED),
         ("", TelemetryMode.DISABLED),
         (None, TelemetryMode.DISABLED),
     ],

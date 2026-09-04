@@ -290,3 +290,85 @@ groups:
         annotations:
           summary: High number of audio files stored
           description: "{{ $value }} audio files currently stored. This may indicate high traffic or cleanup issues."
+
+  # Quality telemetry is optional and must never page: a dead collector or a
+  # dead ClickHouse cannot affect translation, sessions or WebSocket delivery.
+  # Everything here is a warning by design. Metric names were read from a
+  # running collector's :8888 endpoint, not from documentation.
+  - name: ssf-quality-telemetry
+    rules:
+      - alert: QualityTelemetryExportFailing
+        expr: increase(ssf_quality_telemetry_events_total{outcome="export_failed"}[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: quality-telemetry
+        annotations:
+          summary: Quality telemetry emit calls are raising.
+          description: The emitter caught an exception on export. Note this fires only when the emit call itself raises; a collector or ClickHouse outage shows up as an SDK export warning in the gateway log instead. See the ClickHouse operations runbook.
+
+      - alert: QualityTelemetryAttributeRejected
+        expr: increase(ssf_quality_telemetry_events_total{outcome="dropped_disallowed"}[10m]) > 0
+        labels:
+          severity: warning
+          component: quality-telemetry
+        annotations:
+          summary: A quality telemetry attribute was rejected by the allowlist.
+          description: An event carried a key or value the manifest does not permit, so it was dropped before the wire. This is a code defect - the six places that must agree about a field have diverged - and it loses data silently. No delay before firing.
+
+      - alert: QualityTelemetryEventsLostBeforeCollector
+        expr: |
+          (
+            sum(increase(ssf_quality_telemetry_events_total{outcome="emitted"}[30m]))
+            - sum(increase(otelcol_receiver_accepted_log_records{receiver="otlp"}[30m]))
+          )
+          / clamp_min(sum(increase(ssf_quality_telemetry_events_total{outcome="emitted"}[30m])), 1)
+          > 0.01
+        for: 15m
+        labels:
+          severity: warning
+          component: quality-telemetry
+        annotations:
+          summary: More than 1% of queued quality events never reached the collector.
+          description: The gateway counted these as emitted, meaning accepted into the OTel SDK's in-process queue, but the collector never received them. That gap is the SDK's BatchLogRecordProcessor dropping on overflow, which it does not report anywhere else. This is the measurement that decides whether a bounded acknowledged writer is real work or theoretical - record the observed rate before acting on it.
+
+      - alert: QualityTelemetryClickHouseWritesFailing
+        expr: increase(otelcol_exporter_send_failed_log_records{exporter="clickhouse"}[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: quality-telemetry
+        annotations:
+          summary: The collector cannot write quality events to ClickHouse.
+          description: Exports are failing. The exporter retries with backoff for 300s and then drops the batch. Check that the migrations have been applied - an unapplied schema surfaces as UNKNOWN_TABLE - and that ClickHouse is reachable on the compose network.
+
+      - alert: QualityTelemetryExporterQueueFilling
+        expr: otelcol_exporter_queue_size{exporter="clickhouse"} / clamp_min(otelcol_exporter_queue_capacity{exporter="clickhouse"}, 1) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          component: quality-telemetry
+        annotations:
+          summary: The collector's ClickHouse send queue is over 80% full.
+          description: Events are arriving faster than they can be written. Once the queue is full the collector drops them. Check ClickHouse write latency and part counts before raising the queue size.
+
+      - alert: QualityTelemetryCollectorRefusingRecords
+        expr: increase(otelcol_receiver_refused_log_records[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: quality-telemetry
+        annotations:
+          summary: The collector is refusing quality telemetry records.
+          description: The memory_limiter is pushing back, so the receiver is rejecting records at the door. The collector is capped at 256 MiB; check for a volume increase or a stalled exporter holding batches in memory.
+
+      - alert: QualityTelemetryCollectorDown
+        expr: up{job="otel_collector"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: quality-telemetry
+        annotations:
+          summary: The quality telemetry collector is unreachable.
+          description: Prometheus cannot scrape otel-collector:8888. Quality events are being queued in the gateway and dropped once its queue fills. Translation, sessions and WebSocket delivery are unaffected by design.
+

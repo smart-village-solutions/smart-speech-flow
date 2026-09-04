@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.quality_telemetry import TelemetryMode
+from services.api_gateway.session_manager import session_manager
+from services.api_gateway.translation_refiner import translation_refiner
 
 
 def _batch_threads() -> list[str]:
@@ -24,7 +26,7 @@ def _quiet_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.setenv("SSF_AUDIO_BASE_DIR", str(tmp_path))
 
 
-@pytest.mark.parametrize("bad_mode", ["enabled", "true", "1", "on", "", "  ", "PROBE!"])
+@pytest.mark.parametrize("bad_mode", ["true", "1", "on", "", "  ", "PROBE!"])
 def test_an_unknown_mode_disables_telemetry_instead_of_killing_the_gateway(
     monkeypatch: pytest.MonkeyPatch, bad_mode: str
 ) -> None:
@@ -136,8 +138,99 @@ def test_a_failing_telemetry_shutdown_is_reported_and_teardown_continues(
 
     with TestClient(app):
         app.state.quality_telemetry_exporter.shutdown()
-        monkeypatch.setattr(
-            app.state, "quality_telemetry_exporter", _BrokenExporter()
-        )
+        monkeypatch.setattr(app.state, "quality_telemetry_exporter", _BrokenExporter())
 
     assert "collector connection reset" in capsys.readouterr().out
+
+
+def test_the_shadow_refiner_is_given_the_telemetry_the_lifespan_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refiner is a module-level singleton created at import time, while
+    telemetry is built per lifespan -- so the two only meet if the lifespan
+    says so. Without this the refinement event silently never fires."""
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
+
+    with TestClient(app):
+        assert translation_refiner.quality_telemetry is app.state.quality_telemetry
+
+
+def test_the_refiner_is_released_when_the_lifespan_ends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stale QualityTelemetry outliving its exporter would emit into a
+    provider that has already been shut down."""
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
+
+    with TestClient(app):
+        pass
+
+    assert translation_refiner.quality_telemetry is None
+
+
+def test_the_session_manager_is_given_the_telemetry_the_lifespan_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same problem as the refiner, one layer over: SessionManager is a
+    process-wide singleton with no request behind it, so nothing hands it an
+    emitter unless the lifespan does."""
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
+
+    with TestClient(app):
+        assert session_manager.quality_telemetry is app.state.quality_telemetry
+
+
+def test_the_session_manager_is_released_when_the_lifespan_ends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
+
+    with TestClient(app):
+        pass
+
+    assert session_manager.quality_telemetry is None
+
+
+def test_a_registry_that_cannot_take_the_counter_still_yields_telemetry() -> None:
+    """The counter helper reached into registry._names_to_collectors, a private
+    attribute. A prometheus_client rename, or a non-Counter collector already
+    holding the name, raised inside lifespan -- so an optional subsystem could
+    take down translation, sessions and WebSocket delivery."""
+    from prometheus_client import CollectorRegistry, Gauge
+
+    from services.api_gateway.quality_telemetry import _events_counter
+
+    registry = CollectorRegistry()
+    Gauge(
+        "ssf_quality_telemetry_events_total",
+        "an impostor holding the name",
+        registry=registry,
+    )
+
+    counter = _events_counter(registry)
+
+    counter.labels(outcome="emitted").inc()
+
+
+def test_a_hostile_registry_leaves_a_serving_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """QualityTelemetry sat outside the exporter's fallback-to-disabled block,
+    so a registry it could not register into raised inside lifespan.
+
+    The counter helper now ends every path in a counter, so this asserts the
+    outcome that matters -- a gateway that serves, with telemetry present and
+    usable -- rather than a specific internal fallback.
+    """
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
+
+    class _HostileRegistry:
+        def register(self, _collector):
+            raise RuntimeError("registry moved")
+
+    monkeypatch.setattr(app.state, "prometheus_registry", _HostileRegistry())
+
+    with TestClient(app) as client:
+        assert client.get("/health").status_code == 200
+        assert app.state.quality_telemetry is not None
+        app.state.quality_telemetry.emit_probe(event_type="telemetry_probe")
