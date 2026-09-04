@@ -168,6 +168,94 @@ class TestPipelineResult:
         assert emitted["failed_stage"] is PipelineStage.UNKNOWN
         assert emitted["error_code"] is QualityErrorCode.UNKNOWN
 
+    def test_a_success_with_no_recorded_stage_still_emits_a_row(self):
+        """The UNKNOWN default is right for a failure and wrong for a success.
+
+        SUCCESS with a failed_stage or an error_code violates the event's own
+        invariant, so the row was rejected before export and silently lost --
+        against this module's stated rule that a missing row makes the
+        denominator wrong for every ratio built on it.
+        """
+        recorder = _armed()
+        recorder.record_pipeline_result({"error": False, "debug": {"steps": []}})
+
+        emitted = _emit(recorder)
+
+        assert emitted["terminal_outcome"] is TerminalOutcome.SUCCESS
+        assert emitted["failed_stage"] is PipelineStage.NONE
+        assert emitted["error_code"] is QualityErrorCode.NONE
+
+    def test_a_success_row_survives_the_events_own_invariant(self):
+        """End to end through the real event, not just the recorder's fields.
+
+        The recorder can be self-consistent and still produce a combination
+        TranslationMessageEvent rejects, which is how this was lost silently.
+        """
+        from prometheus_client import CollectorRegistry
+
+        from services.api_gateway.quality_telemetry import (
+            QualityTelemetry,
+            TelemetryMode,
+        )
+
+        exported = []
+        telemetry = QualityTelemetry(
+            mode=TelemetryMode.ENABLED,
+            exporter=lambda name, attributes, at: exported.append(name),
+            registry=CollectorRegistry(),
+        )
+        recorder = _armed()
+        recorder.record_pipeline_result({"error": False, "debug": {"steps": []}})
+
+        recorder.emit(telemetry)
+
+        assert exported == ["translation_message"]
+
+    def test_a_failure_with_no_recorded_stage_is_still_unknown(self):
+        """The default must stay UNKNOWN where it was right."""
+        recorder = _armed()
+        recorder.record_pipeline_result({"error": True, "debug": {"steps": []}})
+
+        emitted = _emit(recorder)
+
+        assert emitted["terminal_outcome"] is TerminalOutcome.FAILURE
+        assert emitted["failed_stage"] is PipelineStage.UNKNOWN
+        assert emitted["error_code"] is QualityErrorCode.UNKNOWN
+
+    def test_a_failure_the_pipeline_labelled_none_is_recorded_as_unknown(self):
+        """`none` on a row flagged as an error is a contradiction, not a value.
+
+        The event's invariant rejects that pair, so storing it verbatim would
+        lose the row.
+        """
+        recorder = _armed()
+        recorder.record_pipeline_result(
+            {
+                "error": True,
+                "debug": {"failed_stage": "tts", "error_code": "none", "steps": []},
+            }
+        )
+
+        emitted = _emit(recorder)
+
+        assert emitted["terminal_outcome"] is TerminalOutcome.FAILURE
+        assert emitted["error_code"] is QualityErrorCode.UNKNOWN
+
+    def test_a_success_the_pipeline_mislabelled_still_emits(self):
+        """The mirror case: a clean result whose debug names a stage."""
+        recorder = _armed()
+        recorder.record_pipeline_result(
+            {
+                "error": False,
+                "debug": {"failed_stage": "tts", "error_code": "upstream_error"},
+            }
+        )
+
+        emitted = _emit(recorder)
+
+        assert emitted["failed_stage"] is PipelineStage.NONE
+        assert emitted["error_code"] is QualityErrorCode.NONE
+
     def test_a_result_with_no_debug_at_all_is_survivable(self):
         recorder = _armed()
         recorder.record_pipeline_result({"error": True})

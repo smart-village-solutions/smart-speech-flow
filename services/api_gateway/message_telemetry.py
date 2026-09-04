@@ -96,27 +96,43 @@ class MessageTelemetryRecorder:
         self._target_lang = target_lang
 
     def record_pipeline_result(self, result: Optional[Mapping[str, Any]]) -> None:
+        """Take the outcome and the reason from the pipeline, never from steps.
+
+        Each branch is fully determined here rather than repaired afterwards:
+        the two fields are only meaningful as a pair, and a partial assignment
+        produces a combination `TranslationMessageEvent` rejects -- which loses
+        the row silently, and a missing row makes the denominator wrong for
+        every ratio built on it.
+        """
         if not isinstance(result, Mapping):
             return
         self._pipeline_ran = True
         debug = result.get("debug")
-        if isinstance(debug, Mapping):
-            self._record_step_durations(debug.get("steps"))
-            self._failed_stage = _member(
-                PipelineStage, debug.get("failed_stage"), PipelineStage.UNKNOWN
-            )
-            self._error_code = _member(
-                QualityErrorCode, debug.get("error_code"), QualityErrorCode.UNKNOWN
-            )
+        if not isinstance(debug, Mapping):
+            debug = {}
+        self._record_step_durations(debug.get("steps"))
+
         if not result.get("error"):
+            # A success cannot name a failure, whatever the pipeline wrote.
             self._outcome = TerminalOutcome.SUCCESS
+            self._failed_stage = PipelineStage.NONE
+            self._error_code = QualityErrorCode.NONE
             return
+
         self._outcome = TerminalOutcome.FAILURE
-        # A failure the pipeline did not classify still has to say something,
-        # or the event's own invariant rejects the row and the denominator is
-        # short by one.
-        if self._error_code is QualityErrorCode.NONE:
-            self._error_code = QualityErrorCode.UNKNOWN
+        self._failed_stage = _member(
+            PipelineStage, debug.get("failed_stage"), PipelineStage.UNKNOWN
+        )
+        code = _member(
+            QualityErrorCode, debug.get("error_code"), QualityErrorCode.UNKNOWN
+        )
+        # `none` on a row flagged as an error is not a classification. It has
+        # been reachable before -- a TTS reply of 200 with a JSON error body
+        # classified off its status code alone -- and the event's invariant
+        # would reject the row rather than store the contradiction.
+        if code is QualityErrorCode.NONE:
+            code = QualityErrorCode.UNKNOWN
+        self._error_code = code
 
     def record_http_failure(self, status_code: int) -> None:
         """Classify an exit the pipeline did not reach, or did not explain.
