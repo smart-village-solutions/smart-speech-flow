@@ -288,11 +288,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.quality_telemetry_exporter = telemetry_exporter
     app.state.quality_telemetry = quality_telemetry
-    # The refiner is a module-level singleton built at import time; telemetry is
-    # built here, per lifespan. Nothing connects them unless this line does.
+    # The refiner and the session manager are module-level singletons built at
+    # import time; telemetry is built here, per lifespan. Nothing connects them
+    # unless these lines do.
+    from .session_manager import session_manager
     from .translation_refiner import translation_refiner
 
     translation_refiner.attach_quality_telemetry(app.state.quality_telemetry)
+    session_manager.attach_quality_telemetry(app.state.quality_telemetry)
     sys.stderr.write(f"Quality telemetry ready (mode={telemetry_mode.value})\n")
     sys.stderr.flush()
 
@@ -340,9 +343,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         app.state.pipeline_admission = None
 
-        # Released before the provider is shut down: a refiner still holding
-        # this would emit into a provider that no longer has an export thread.
+        # Released before the provider is shut down: a holder still using this
+        # would emit into a provider that no longer has an export thread.
         translation_refiner.attach_quality_telemetry(None)
+        session_manager.attach_quality_telemetry(None)
         telemetry_exporter_at_exit = app.state.quality_telemetry_exporter
         app.state.quality_telemetry_exporter = None
         if telemetry_exporter_at_exit is not None:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import uuid
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
@@ -18,6 +19,11 @@ if TYPE_CHECKING:
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+
+from .quality_telemetry import SessionLifecyclePhase, SessionTerminationReason
+from .session_pseudonym import session_ref
+
+logger = logging.getLogger(__name__)
 
 try:  # Optional dependency for persistence
     from redis import Redis
@@ -49,6 +55,19 @@ def _ensure_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.astimezone().astimezone(timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+def _session_duration_ms(session: "Session") -> int:
+    """How long the session has been open, in whole milliseconds.
+
+    Measured to ``terminated_at`` when it is set and to now otherwise, so a
+    `created` row reports 0 rather than a duration that has not happened yet.
+    Legacy sessions restored from Redis can carry naive timestamps, hence
+    ``_ensure_utc`` on both ends.
+    """
+    ended = session.terminated_at or session.created_at
+    elapsed = (_ensure_utc(ended) - _ensure_utc(session.created_at)).total_seconds()
+    return max(0, int(elapsed * 1000))
 
 
 def _minutes_since(dt: datetime) -> float:
@@ -220,6 +239,12 @@ def _set_global_session_manager(manager: SessionManager) -> None:  # type: ignor
 class SessionManager:
     _instance: Optional[SessionManager] = None  # type: ignore[name-defined]
 
+    # A class attribute, not set in __init__: __new__ returns the singleton but
+    # Python still runs __init__ on every `SessionManager()`, and the test suite
+    # builds many. Initialising it there would detach the gateway's emitter the
+    # first time anything constructed a manager after startup.
+    quality_telemetry: Optional[Any] = None
+
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -236,6 +261,36 @@ class SessionManager:
         self.reset()
         _set_global_session_manager(self)
         self._init_persistence()
+
+    def attach_quality_telemetry(self, telemetry: Optional[Any]) -> None:
+        """Wired by the gateway's lifespan; None detaches it on teardown.
+
+        The manager is a process-wide singleton with no request behind it, so
+        it cannot reach `app.state` the way a route dependency does. This
+        mirrors how `translation_refiner` receives the same emitter.
+        """
+        self.quality_telemetry = telemetry
+
+    def _emit_lifecycle(
+        self,
+        session: "Session",
+        phase: SessionLifecyclePhase,
+        reason: SessionTerminationReason = SessionTerminationReason.NONE,
+    ) -> None:
+        """Never raises. Telemetry must not decide whether a session opens."""
+        telemetry = self.quality_telemetry
+        if telemetry is None:
+            return
+        try:
+            telemetry.emit_session_lifecycle(
+                session_ref=session_ref(session.id),
+                phase=phase,
+                termination_reason=reason,
+                session_duration_ms=_session_duration_ms(session),
+                message_count=len(session.messages),
+            )
+        except Exception:  # telemetry must never reach the caller
+            logger.warning("Session quality telemetry failed", exc_info=True)
 
     def reset(self, *, clear_persistence: bool = False):
         """SessionManager Zustand auf Initialwerte zurücksetzen."""
@@ -369,6 +424,8 @@ class SessionManager:
         self._persist_session(session)
         self._persist_active_sessions()
 
+        self._emit_lifecycle(session, SessionLifecyclePhase.CREATED)
+
         print(f"✅ Neue Admin-Session erstellt: {session_id}")
         return session_id
 
@@ -410,6 +467,15 @@ class SessionManager:
         session.termination_reason = reason
         session.admin_connected = False
         session.customer_connected = False
+
+        # Emitted here rather than after the notifications below: this is the
+        # last point at which the session's own state is the reason it ended.
+        # A WebSocket failure further down must not lose the row.
+        self._emit_lifecycle(
+            session,
+            SessionLifecyclePhase.TERMINATED,
+            SessionTerminationReason.classify(reason),
+        )
 
         if session_id in self.active_admin_sessions:
             self.active_admin_sessions.discard(session_id)
@@ -590,10 +656,17 @@ class SessionManager:
 
         # Sprache und Status aktualisieren
         session.customer_language = customer_language
-        if session.status == SessionStatus.PENDING:
+        # This method doubles as the language-update path, so the transition --
+        # not the call -- is what counts. Emitting unconditionally would report
+        # one session as activated once per language change.
+        activated = session.status == SessionStatus.PENDING
+        if activated:
             session.status = SessionStatus.ACTIVE
         session.customer_connected = True
         self._persist_session(session)
+
+        if activated:
+            self._emit_lifecycle(session, SessionLifecyclePhase.ACTIVATED)
 
         print(
             f"🎯 Session {session_id} aktiviert/aktualisiert mit Sprache: {customer_language}"

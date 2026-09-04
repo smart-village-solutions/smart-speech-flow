@@ -16,15 +16,37 @@ from pathlib import Path
 
 import pytest
 
-from services.api_gateway.quality_telemetry import ALLOWED_ATTRIBUTE_KEYS
+from services.api_gateway.quality_telemetry import (
+    ALLOWED_ATTRIBUTES,
+    ALLOWED_ATTRIBUTE_KEYS,
+    AttributeKind,
+)
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "deploy" / "clickhouse" / "migrations"
+MIGRATIONS = (
+    Path(__file__).resolve().parents[1] / "deploy" / "clickhouse" / "migrations"
+)
 
 SILVER = MIGRATIONS / "001_quality_events.sql"
 GOLD = MIGRATIONS / "002_quality_events_fields_and_gold.sql"
+MESSAGE = MIGRATIONS / "003_translation_message_fields.sql"
+LIFECYCLE = MIGRATIONS / "004_session_lifecycle_fields.sql"
 
-# The envelope keys 001 already projects; everything else must arrive in 002.
+# The envelope keys 001 already projects; everything else must arrive in a later
+# migration. Which one does not matter -- only that some migration gives the key
+# a column and projects it -- so the per-key guard reads the tail of the series
+# rather than one named file.
 ENVELOPE_KEYS = {"ssf.quality.event_id", "ssf.quality.schema_version"}
+
+# Everything after 001, discovered rather than listed: a migration added
+# without being named here would otherwise be exempt from every guard below,
+# which is the opposite of what this file is for.
+FIELD_MIGRATIONS = tuple(
+    path for path in sorted(MIGRATIONS.glob("*.sql")) if path.name[:3] > "001"
+)
+
+
+def _field_migration_sql() -> str:
+    return "\n".join(path.read_text() for path in FIELD_MIGRATIONS)
 
 
 def _sql() -> str:
@@ -45,8 +67,19 @@ class TestEveryAllowlistedKeyReachesAColumn:
         assert not extra, f"projected but not allowlisted: {extra}"
 
     @pytest.mark.parametrize("key", sorted(set(ALLOWED_ATTRIBUTE_KEYS) - ENVELOPE_KEYS))
-    def test_each_non_envelope_key_is_projected_by_the_second_migration(self, key):
-        assert key in _projected_attribute_keys(GOLD.read_text())
+    def test_each_non_envelope_key_is_projected_by_a_field_migration(self, key):
+        assert key in _projected_attribute_keys(_field_migration_sql())
+
+    def test_the_latest_view_definition_projects_every_key(self):
+        """MODIFY QUERY replaces the whole view, so only the last one counts.
+
+        A migration that adds columns but re-states an older SELECT would drop
+        the fields an earlier migration opened, with no error anywhere: the
+        columns stay, and silently fill with their defaults.
+        """
+        latest = sorted(MIGRATIONS.glob("*.sql"))[-1].read_text()
+        missing = set(ALLOWED_ATTRIBUTE_KEYS) - _projected_attribute_keys(latest)
+        assert not missing, f"dropped by the newest MODIFY QUERY: {missing}"
 
 
 class TestSilverGainsTypedColumns:
@@ -56,8 +89,9 @@ class TestSilverGainsTypedColumns:
         assert "ALTER TABLE quality_events" in sql
         assert "DROP TABLE quality_events" not in sql
 
-    def test_adding_a_column_twice_is_safe(self):
-        adds = re.findall(r"ADD COLUMN(?! IF NOT EXISTS)", GOLD.read_text())
+    @pytest.mark.parametrize("migration", FIELD_MIGRATIONS, ids=lambda p: p.name)
+    def test_adding_a_column_twice_is_safe(self, migration):
+        adds = re.findall(r"ADD COLUMN(?! IF NOT EXISTS)", migration.read_text())
         assert not adds, "every ADD COLUMN must be IF NOT EXISTS; apply.sh re-runs"
 
     @pytest.mark.parametrize(
@@ -79,8 +113,95 @@ class TestSilverGainsTypedColumns:
     def test_numeric_projections_cannot_throw(self):
         """A view that throws fails the INSERT into otel_logs; the collector
         then retries that batch forever."""
-        sql = GOLD.read_text()
-        assert "toUInt32OrZero(LogAttributes['ssf.quality.refinement_latency_ms'])" in sql
+        sql = _field_migration_sql()
+        assert (
+            "toUInt32OrZero(LogAttributes['ssf.quality.refinement_latency_ms'])" in sql
+        )
+
+    @pytest.mark.parametrize(
+        "key",
+        sorted(
+            key
+            for key, spec in ALLOWED_ATTRIBUTES.items()
+            if spec.kind is AttributeKind.NUMBER and key != "ssf.quality.schema_version"
+        ),
+    )
+    def test_every_numeric_key_is_projected_through_a_non_throwing_cast(self, key):
+        """`toUInt32(x)` raises on a non-numeric string; `...OrZero` does not.
+
+        The emitter's shape guard means a non-numeric value should be
+        unreachable, but the view also sees whatever a rogue sender puts in
+        bronze, and there the cost of a raising cast is an INSERT the collector
+        retries forever.
+        """
+        assert f"toUInt32OrZero(LogAttributes['{key}'])" in _field_migration_sql()
+
+
+def test_every_migration_after_the_first_is_covered_by_these_guards() -> None:
+    """The discovery above is the guard's reach; assert it actually found them."""
+    assert {path.name for path in FIELD_MIGRATIONS} == {
+        GOLD.name,
+        MESSAGE.name,
+        LIFECYCLE.name,
+    }
+
+
+class TestLifecycleColumns:
+    @pytest.mark.parametrize(
+        "column",
+        [
+            "lifecycle_phase",
+            "termination_reason",
+            "session_duration_ms",
+            "message_count",
+        ],
+    )
+    def test_the_silver_table_has_a_column_for_each_lifecycle_field(self, column):
+        assert re.search(
+            rf"ADD COLUMN IF NOT EXISTS\s+{column}\b", LIFECYCLE.read_text()
+        )
+
+    def test_the_lifecycle_migration_alters_rather_than_recreates(self):
+        sql = LIFECYCLE.read_text()
+        assert "ALTER TABLE quality_events" in sql
+        assert "DROP TABLE" not in sql
+
+    def test_the_raw_retention_is_left_alone(self):
+        assert "MODIFY TTL" not in LIFECYCLE.read_text()
+
+
+class TestMessageColumns:
+    @pytest.mark.parametrize(
+        "column",
+        [
+            "session_ref",
+            "direction",
+            "input_mode",
+            "terminal_outcome",
+            "failed_stage",
+            "total_duration_ms",
+            "asr_duration_ms",
+            "translation_duration_ms",
+            "refinement_duration_ms",
+            "tts_duration_ms",
+        ],
+    )
+    def test_the_silver_table_has_a_column_for_each_message_field(self, column):
+        assert re.search(rf"ADD COLUMN IF NOT EXISTS\s+{column}\b", MESSAGE.read_text())
+
+    def test_the_session_reference_is_not_low_cardinality(self):
+        """A keyed HMAC is as high-cardinality as the session count, and a
+        LowCardinality dictionary that overflows costs more than it saves."""
+        assert re.search(r"session_ref\s+String", MESSAGE.read_text())
+        assert not re.search(r"session_ref\s+LowCardinality", MESSAGE.read_text())
+
+    def test_the_message_migration_alters_rather_than_recreates(self):
+        sql = MESSAGE.read_text()
+        assert "ALTER TABLE quality_events" in sql
+        assert "DROP TABLE" not in sql
+
+    def test_the_raw_retention_is_left_alone(self):
+        assert "MODIFY TTL" not in MESSAGE.read_text()
 
 
 class TestGoldTier:
@@ -88,7 +209,9 @@ class TestGoldTier:
         assert "CREATE TABLE IF NOT EXISTS quality_events_daily" in GOLD.read_text()
 
     def test_the_gold_tier_expires_after_thirteen_months(self):
-        assert re.search(r"TTL\s+event_date\s*\+\s*INTERVAL\s+13\s+MONTH", GOLD.read_text())
+        assert re.search(
+            r"TTL\s+event_date\s*\+\s*INTERVAL\s+13\s+MONTH", GOLD.read_text()
+        )
 
     def test_the_raw_tier_keeps_its_thirty_day_retention(self):
         """002 must not silently change what 001 fixed at table creation."""
