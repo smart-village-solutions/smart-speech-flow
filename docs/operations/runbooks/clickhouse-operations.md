@@ -105,18 +105,39 @@ design.
 
 ### What leaves the gateway
 
-Six values are *declared* by the gateway. No source text, transcript,
-translation, audio, audio URL, IP address, session id, raw error, or debug
-payload is among them:
+No source text, transcript, translation, audio, audio URL, IP address, session
+id, raw error, or debug payload is among the declared values. The envelope, on
+every event:
 
 | Field | Carried as |
 | --- | --- |
-| Event type | top-level OTLP `event_name` (`telemetry_probe`) |
+| Event type | top-level OTLP `event_name` |
 | Event id | log attribute `ssf.quality.event_id` |
 | Schema version | log attribute `ssf.quality.schema_version` |
 | Service name | resource attribute `service.name` |
 | Service version | resource attribute `service.version` |
 | Deployment environment | resource attribute `deployment.environment.name` |
+
+And on `refinement_attempt` (mode `enabled` only), eight more — every one a
+number or a closed enum except `model_ref`, which is operator-set configuration
+constrained to a label charset with no whitespace:
+
+| Field | Carried as | Shape |
+| --- | --- | --- |
+| Refiner role | `ssf.quality.refiner_role` | enum: primary, candidate |
+| Model | `ssf.quality.model_ref` | label token, max 64 chars |
+| Outcome | `ssf.quality.refinement_outcome` | enum: success, error, skipped_overload, submission_failed |
+| Latency | `ssf.quality.refinement_latency_ms` | integer |
+| Changed | `ssf.quality.refinement_changed` | enum: true, false |
+| Source language | `ssf.quality.source_lang` | language code, else `und` |
+| Target language | `ssf.quality.target_lang` | language code, else `und` |
+| Error | `ssf.quality.error_code` | enum from the error taxonomy |
+
+`ALLOWED_ATTRIBUTES` in `services/api_gateway/quality_telemetry.py` is the
+single manifest. It declares a *value shape* per key, not just a key, and there
+is deliberately no free-text kind to declare — so an `error_code` carrying a
+raw upstream message is rejected as firmly as an unknown key would be. Widening
+it means opening six places that must agree; the tests fail until they do.
 
 OTLP also carries protocol fields the gateway does not choose: the record
 `Timestamp` (set from the event's own emission time), `ScopeName`
@@ -154,9 +175,20 @@ none of it is stored.
 
 ### Kill switch
 
-`SSF_QUALITY_TELEMETRY_MODE` accepts exactly `disabled` (the default) or
-`probe`. When disabled, no SDK provider is built, no event is constructed, and
-no export is attempted.
+`SSF_QUALITY_TELEMETRY_MODE` accepts exactly `disabled` (the default), `probe`
+or `enabled`. When disabled, no SDK provider is built, no event is constructed,
+and no export is attempted.
+
+| Mode | SDK provider | Admin probe | Pipeline events |
+| --- | --- | --- | --- |
+| `disabled` | not built | reports `disabled` | none |
+| `probe` | built | emits | **none** |
+| `enabled` | built | emits | `refinement_attempt` |
+
+`probe` deliberately emits no pipeline events. It is a pure transport check, so
+an operator can prove the path end to end without switching on production event
+volume — and so a deployment already running `probe` does not silently start
+emitting real events merely by being upgraded.
 
 Any other value logs a warning and falls back to `disabled`. It never stops the
 gateway from serving translations — telemetry is optional, the gateway is not.
@@ -304,6 +336,33 @@ row is the proof. If it never arrives, check
 captured from the running containers, so refresh it after the deploy and commit
 the result — it should now list `otel-collector`.
 
+**11. Turn real pipeline events on (optional, and separate).** Steps 1-10 leave
+the gateway on `probe`, which emits no pipeline events. Before switching to
+`enabled`, confirm migration `002` has been applied — it is the one that gives
+`quality_events` its typed columns, and `initdb` does **not** re-run on a volume
+that already has data:
+
+    $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT name FROM system.tables WHERE database = currentDatabase() ORDER BY name"'
+
+Expect `otel_logs`, `quality_events`, `quality_events_daily`,
+`quality_events_daily_mv`, `quality_events_mv`. If the gold tier is missing,
+re-run `apply.sh` (step 5) — it is idempotent.
+
+**Order matters.** Emitting `refinement_attempt` while `002` is unapplied writes
+rows whose typed columns are all defaults, and those rows cannot be repaired:
+the attributes were dropped at projection time and bronze expires after 7 days.
+The dashboard's `Rows Missing Typed Fields` panel exists to catch exactly this
+and should read zero.
+
+Then:
+
+    SSF_QUALITY_TELEMETRY_MODE=enabled
+    $PC up -d --no-deps --force-recreate api_gateway
+    $PC logs --tail=20 api_gateway | grep "Quality telemetry ready"
+
+Expect `Quality telemetry ready (mode=enabled)`. Events appear only when the
+shadow refiner actually runs, which needs `LLM_REFINEMENT_MODE=shadow_compare`.
+
 #### Rolling back
 
 Set `SSF_QUALITY_TELEMETRY_MODE=disabled`, recreate `api_gateway`, and the
@@ -313,13 +372,61 @@ expires after 7 days and silver after 30, and neither is read by anything else.
 
 ### Retention
 
-Bronze `otel_logs` keeps 7 days, silver `quality_events` keeps 30 days. Both
-TTLs live in `deploy/clickhouse/`. ClickHouse fixes TTL at table-creation time,
-so a TTL added to the DDL later does not reach an existing table — check and
-retrofit:
+Bronze `otel_logs` keeps 7 days, silver `quality_events` keeps 30 days, and gold
+`quality_events_daily` keeps 13 months. All three TTLs live in
+`deploy/clickhouse/`. ClickHouse fixes TTL at table-creation time, so a TTL
+added to the DDL later does not reach an existing table — check and retrofit:
 
     docker compose exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SHOW CREATE TABLE otel_logs"'
     docker compose exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "ALTER TABLE otel_logs MODIFY TTL toDateTime(Timestamp) + INTERVAL 7 DAY"'
+
+#### Verifying retention is actually running
+
+A TTL in the DDL is a claim; the oldest surviving row is the evidence. The
+`Retention Verification` panel on the SSF Telemetry dashboard shows this, and
+the same query by hand:
+
+    docker compose exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "
+      SELECT '\''quality_events'\'' AS tier, min(emitted_at_utc) AS oldest, dateDiff('\''day'\'', min(emitted_at_utc), now()) AS age_days FROM quality_events FINAL
+      UNION ALL
+      SELECT '\''quality_events_daily'\'', toDateTime(min(event_date)), dateDiff('\''day'\'', toDateTime(min(event_date)), now()) FROM quality_events_daily"'
+
+`age_days` materially above the tier's window means expiry is not running.
+Confirm the TTL is on the table at all before anything else — a tier created
+without one cannot be given one, only recreated:
+
+    docker compose exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SHOW CREATE TABLE quality_events_daily"' | grep -i ttl
+
+Expect `toIntervalMonth(13)`. TTL removal happens during background merges, so
+a recently-expired partition can survive briefly; `OPTIMIZE TABLE ... FINAL`
+forces it if you need a definitive answer.
+
+### Writer-health alerts
+
+`monitoring/alert_rules.yml` group `ssf-quality-telemetry`. Every rule is a
+**warning** by design: telemetry is optional and a dead collector cannot affect
+translation, sessions or WebSocket delivery, so none of this should page anyone.
+
+The alerts read two sources, because neither alone can see the whole path:
+
+- `ssf_quality_telemetry_events_total` from the gateway — what was *queued*.
+- `otelcol_*` from the collector's own `:8888` endpoint — what *arrived*.
+
+`QualityTelemetryEventsLostBeforeCollector` is the difference between them, and
+it exists because the OTel SDK's `BatchLogRecordProcessor` drops on queue
+overflow and reports that **nowhere** — not in the gateway's counter, not as an
+`export_failed` outcome. The gap is the only measurement of it. Record the
+observed rate before deciding whether a bounded acknowledged writer (task 2.1)
+is real work: if it stays at zero at production volume, the SDK's 2048-event
+queue is adequate and that is a finding, not a gap.
+
+`QualityTelemetryAttributeRejected` is different in kind from the rest. It fires
+without a delay because it means the six places that must agree about a field
+have diverged, which loses data silently — a code defect, not a transient.
+
+The collector's internal metrics are bound to `0.0.0.0:8888` in
+`monitoring/otel-collector-config.yaml`; the default binds localhost, which no
+other container can reach. The port is `expose`d, never published.
 
 ### Verifying the pipeline
 
@@ -359,6 +466,107 @@ port 13133 is the health signal; query it from another container on the network:
 `docker compose logs otel-collector` is the other signal. A mis-configured
 collector fails at startup and `restart: always` will loop it, so a container
 that keeps restarting means the config, not the pipeline.
+
+### Grafana Dashboard
+
+Grafana reaches ClickHouse over the compose network only — `clickhouse:9000`,
+native protocol — never through a host port or Traefik route. The
+`grafana-clickhouse-datasource` plugin is installed at container start via
+`GF_INSTALL_PLUGINS`, so it is not baked into the pinned image and requires
+outbound internet access from the Grafana container the first time it starts
+(or after the plugin volume is cleared).
+
+The plugin version is pinned in both Compose files — `GF_INSTALL_PLUGINS=grafana-clickhouse-datasource 4.21.2`.
+Grafana's entrypoint word-splits the value into `grafana cli plugins install
+<id> <version>`, so the separator is a space, not a colon or an `@`. Pinning
+matters because every production image is pinned by digest; an unpinned plugin
+would let a restart install a version the dashboard was never verified against.
+To upgrade, change the version in both files, clear
+`monitoring/grafana/plugins/grafana-clickhouse-datasource`, recreate the
+container, and confirm the startup log reports the version you asked for.
+
+Open the dashboard at `http://localhost:3000` locally, or
+`https://grafana-ssf.smart-village.solutions` in production, folder **SSF**,
+dashboard **SSF Telemetry**. The datasource is provisioned as **ClickHouse**
+(`uid: clickhouse-ssf`); `Save & test` on it must return `Data source is
+working`.
+
+**What it shows today, and no more:** exactly one event type exists —
+`telemetry_probe`, the manually-triggered event from
+`POST /api/admin/telemetry/probe`. There are no pipeline hooks yet (openspec
+task 2.3 is what adds them), so the dashboard can chart only "probe calls over
+time" — it is proof that the transport works, not a quality dashboard. Every
+panel queries `quality_events FINAL` (required — see "Verifying the pipeline"
+above) filtered with the `$__timeFilter(emitted_at_utc)` macro, so the time
+picker controls what each panel shows.
+
+If a panel is empty, first check the time range: probe events are sparse and
+manually triggered, so the default range can easily miss them. If it is still
+empty, work backwards through "Verifying the pipeline" above rather than
+assuming the dashboard is broken.
+
+#### Enabling the dashboard in production
+
+Merging is not enough. No new `.env` variables are needed — `CLICKHOUSE_DB`,
+`CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD` are already required by the running
+`clickhouse` and `otel-collector` services, and Grafana's provisioning
+substitutes the same three. But the plugin and the datasource are read only at
+Grafana startup, so the container must be recreated.
+
+The dashboard JSON is the exception: the provider re-reads
+`/var/lib/grafana/dashboards` every 30s (`updateIntervalSeconds: 30`), so
+`ssf-telemetry.json` appears within half a minute of `git pull` on its own.
+
+Using the same `PC` invocation as "Enabling in production" above:
+
+**1. Pull, then recreate Grafana.**
+
+    git pull --ff-only
+    $PC up -d --no-deps --force-recreate grafana
+
+**2. Confirm the pinned plugin installed.** This step needs outbound access to
+grafana.com from the Grafana container — the plugin is not in the pinned image:
+
+    $PC logs grafana | grep -i clickhouse-datasource
+
+Expect `Downloaded and extracted grafana-clickhouse-datasource v4.21.2` on the
+first start, then `Plugin registered`. On later starts the download is skipped
+because the plugin is already on the bind mount.
+
+**If egress is blocked**, install it without the network. `monitoring/grafana`
+is a bind mount from the checkout, so the host filesystem *is* Grafana's plugin
+directory:
+
+    curl -L -o /tmp/ch.zip \
+      https://grafana.com/api/plugins/grafana-clickhouse-datasource/versions/4.21.2/download
+    unzip -q -d monitoring/grafana/plugins /tmp/ch.zip
+    chown -R 472:472 monitoring/grafana/plugins/grafana-clickhouse-datasource
+    $PC up -d --no-deps --force-recreate grafana
+
+The archive unpacks to a single `grafana-clickhouse-datasource/` directory and
+is about 75 MB (it ships binaries for every platform). Use `curl -L` with `GET`
+— that endpoint rejects `HEAD`, so a `curl -I` probe returns 405 and tells you
+nothing.
+
+Grafana runs as uid 472; a plugin directory it cannot read is silently ignored.
+
+**3. Confirm the datasource provisioned.**
+
+    $PC logs grafana | grep "inserting datasource"
+
+Expect `name=ClickHouse uid=clickhouse-ssf`. A `plugin not found` error here
+means step 2 did not actually succeed.
+
+**4. Confirm Grafana can reach ClickHouse** over the compose network:
+
+    $PC exec -T grafana wget -qO- http://clickhouse:8123/ping
+
+Expect `Ok.` This uses 8123 only as a reachability check; the datasource itself
+uses the native protocol on 9000.
+
+**5. Open the dashboard** and confirm a panel returns data. The schema must
+already exist — steps 5 and 6 of "Enabling in production" above. A panel error
+mentioning `UNKNOWN_TABLE` means the migrations were never applied.
 
 ## Incident Response
 
