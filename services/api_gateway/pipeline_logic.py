@@ -377,6 +377,23 @@ def _mark_pipeline_failure(
 _CONTENT_REJECTION_CODES: frozenset = frozenset({"SPAM_DETECTED", "HARMFUL_CONTENT"})
 
 
+def _classify_tts_failure(response: Any) -> QualityErrorCode:
+    """Both arms of the TTS failure condition, not just the status code.
+
+    The branch fires on a bad status *or* a reply that is not audio, and
+    ``classify_upstream_status`` maps every 2xx to ``NONE``. Deriving the code
+    from the status alone therefore wrote ``error_code: "none"`` onto a result
+    whose ``error`` flag was True, for exactly the case the branch's own
+    ``tts_resp.json()`` handling exists to cover: a 200 carrying a JSON error
+    body. A 2xx that reaches here was rejected on its content type, which is a
+    malformed reply.
+    """
+    code = classify_upstream_status(getattr(response, "status_code", 0))
+    if code is QualityErrorCode.NONE:
+        return QualityErrorCode.UPSTREAM_MALFORMED_RESPONSE
+    return code
+
+
 def _classify_text_validation(validation_result: Any) -> QualityErrorCode:
     """Separate "we would not translate this" from "this is not usable text".
 
@@ -1345,7 +1362,7 @@ def process_text_pipeline(
                 start_total=start_total,
                 error_message=f"TTS-Fehler: {error_msg}",
                 failed_stage=PipelineStage.TTS,
-                error_code=classify_upstream_status(tts_resp.status_code),
+                error_code=_classify_tts_failure(tts_resp),
                 asr_text=processed_text,
                 translation_text=translation_text,
                 audio_bytes=None,
@@ -1627,7 +1644,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
                 start_total=start_total,
                 error_message=f"TTS-Fehler: {error_msg}",
                 failed_stage=PipelineStage.TTS,
-                error_code=classify_upstream_status(tts_resp.status_code),
+                error_code=_classify_tts_failure(tts_resp),
                 asr_text=asr_text,
                 translation_text=translation_text,
                 audio_bytes=None,
