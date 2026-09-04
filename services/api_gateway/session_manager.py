@@ -58,10 +58,16 @@ def _ensure_utc(dt: datetime) -> datetime:
 
 
 def _session_duration_ms(session: "Session") -> int:
-    """How long the session has been open, in whole milliseconds.
+    """How long the session ran, in whole milliseconds.
 
-    Measured to ``terminated_at`` when it is set and to now otherwise, so a
-    `created` row reports 0 rather than a duration that has not happened yet.
+    Measured to ``terminated_at``, falling back to ``created_at`` -- so a
+    `created` or `activated` row reports exactly 0, and only a `terminated` row
+    carries a duration. Deliberately not "to now": a running session's age is
+    not its duration, and every dashboard panel reading this column filters on
+    `lifecycle_phase = 'terminated'` for that reason. Measuring to now here
+    would silently change emitted data those panels are asserted against, so
+    time-to-activation needs its own field rather than a change to this one.
+
     Legacy sessions restored from Redis can carry naive timestamps, hence
     ``_ensure_utc`` on both ends.
     """
@@ -558,6 +564,15 @@ class SessionManager:
         )
         self.sessions[session_id] = session
         self._persist_session(session)
+
+        # Both phases: this path opens the session already ACTIVE, with the
+        # customer language known, so the transition `activate_session` would
+        # otherwise report has already happened -- and its PENDING check would
+        # never fire. Emitting only `created` would leave the funnel showing a
+        # termination for a session that was never activated.
+        self._emit_lifecycle(session, SessionLifecyclePhase.CREATED)
+        self._emit_lifecycle(session, SessionLifecyclePhase.ACTIVATED)
+
         return session_id
 
     def get_session(self, session_id: str) -> Optional[Session]:

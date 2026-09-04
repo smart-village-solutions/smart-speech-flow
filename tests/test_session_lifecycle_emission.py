@@ -130,6 +130,59 @@ class TestTheThreeTransitions:
         )
 
 
+class TestTheLegacyCreationPath:
+    """`create_session` is deprecated and still routed: POST /api/session/create.
+
+    It was the one creation path with no emit, so a session opened through it
+    produced a `terminated` row with no `created` row -- making Sessions
+    Created, Sessions Activated and the empty-session panel mutually
+    inconsistent for exactly the population this event exists to measure.
+    """
+
+    def test_the_legacy_route_still_reaches_this_method(self):
+        from services.api_gateway.app import app
+
+        assert "/api/session/create" in app.openapi()["paths"]
+
+    def test_creating_a_legacy_session_emits_created(self, manager, spy):
+        manager.create_session("en")
+
+        assert SessionLifecyclePhase.CREATED in spy.phases()
+
+    def test_a_session_that_starts_active_is_also_reported_activated(
+        self, manager, spy
+    ):
+        """It goes straight to ACTIVE with the customer language already known,
+        so the transition `activate_session` normally reports has happened."""
+        manager.create_session("en")
+
+        assert spy.phases() == [
+            SessionLifecyclePhase.CREATED,
+            SessionLifecyclePhase.ACTIVATED,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_the_funnel_never_shows_a_termination_without_a_creation(
+        self, manager, spy
+    ):
+        session_id = manager.create_session("en")
+
+        await manager.terminate_session(session_id, "manual_termination")
+
+        phases = spy.phases()
+        assert phases.count(SessionLifecyclePhase.CREATED) == 1
+        assert phases.count(SessionLifecyclePhase.TERMINATED) == 1
+
+    @pytest.mark.asyncio
+    async def test_every_creation_path_emits_a_created_row(self, manager, spy):
+        """Named rather than enumerated by hand: a third creation path added
+        later must either emit or fail here."""
+        manager.create_session("en")
+        await manager.create_admin_session()
+
+        assert spy.phases().count(SessionLifecyclePhase.CREATED) == 2
+
+
 class TestWhatTheRowCarries:
     @pytest.mark.asyncio
     async def test_a_created_session_reports_no_duration_and_no_messages(
