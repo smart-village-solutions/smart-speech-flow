@@ -64,7 +64,7 @@ def _refiner(monkeypatch, telemetry, *, outcome: RefinementOutcome):
         def __init__(self, *args, **kwargs) -> None:
             pass
 
-        def refine(self, *args, **kwargs) -> RefinementOutcome:
+        def _perform_refinement(self, *args, **kwargs) -> RefinementOutcome:
             return outcome
 
     monkeypatch.setattr(
@@ -125,9 +125,18 @@ class TestTheModeGatesPipelineEvents:
 
 class TestTheEventDescribesWhatHappened:
     def test_a_failed_candidate_is_classified_not_quoted(self, monkeypatch):
+        """Asserts the specific code, not merely that it differs from `none`.
+
+        The weaker assertion passed while every failure collapsed to
+        `internal_error`, which is exactly the bug it should have caught.
+        """
         exporter = _RecordingExporter()
         outcome = RefinementOutcome(
-            text="Hallo", changed=False, latency_ms=12.0, error="connection refused"
+            text="Hallo",
+            changed=False,
+            latency_ms=12.0,
+            error="connection refused",
+            error_code=QualityErrorCode.UPSTREAM_UNREACHABLE,
         )
         refiner = _refiner(
             monkeypatch, _telemetry(TelemetryMode.ENABLED, exporter), outcome=outcome
@@ -137,7 +146,7 @@ class TestTheEventDescribesWhatHappened:
 
         _, attributes, _ = exporter.calls[0]
         assert attributes["ssf.quality.refinement_outcome"] == "error"
-        assert attributes["ssf.quality.error_code"] != "none"
+        assert attributes["ssf.quality.error_code"] == QualityErrorCode.UPSTREAM_UNREACHABLE.value
         assert "connection refused" not in str(attributes)
 
     def test_keyword_call_sites_still_yield_the_languages(self, monkeypatch):
@@ -222,3 +231,128 @@ class TestTelemetryNeverChangesTheRefiner:
             {"outcome": ProbeOutcome.EMITTED.value},
         )
         assert emitted == 1.0
+
+
+class TestThePrimaryPathEmitsToo:
+    """Production runs LLM_REFINEMENT_MODE=primary_only, so a refinement event
+    reachable only from the shadow candidate is a dashboard that is empty
+    exactly where it matters. RefinerRole.PRIMARY must be reachable."""
+
+    @staticmethod
+    def _primary(monkeypatch, telemetry, *, payload=None, raises=None):
+        from services.api_gateway.translation_refiner import OllamaTranslationRefiner
+
+        refiner = OllamaTranslationRefiner("http://ollama:11434", "gpt-oss:20b", 4.0, 0.7, 1, False)
+        refiner.attach_quality_telemetry(telemetry)
+
+        def post(*_args, **_kwargs):
+            if raises is not None:
+                raise raises
+            response = Mock()
+            response.status_code = 200
+            response.raise_for_status.return_value = None
+            response.json.return_value = payload
+            return response
+
+        monkeypatch.setattr("services.api_gateway.translation_refiner.requests.post", post)
+        return refiner
+
+    def test_a_primary_refinement_emits_with_the_primary_role(self, monkeypatch):
+        exporter = _RecordingExporter()
+        refiner = self._primary(
+            monkeypatch,
+            _telemetry(TelemetryMode.ENABLED, exporter),
+            payload={"response": "Hallo Welt"},
+        )
+
+        refiner.refine("Hello world", "en", "de")
+
+        assert len(exporter.calls) == 1
+        _, attributes, _ = exporter.calls[0]
+        assert attributes["ssf.quality.refiner_role"] == RefinerRole.PRIMARY.value
+        assert attributes["ssf.quality.model_ref"] == "gpt-oss:20b"
+        assert attributes["ssf.quality.error_code"] == QualityErrorCode.NONE.value
+
+    def test_a_primary_timeout_records_upstream_timeout_not_internal_error(self, monkeypatch):
+        from requests import exceptions
+
+        exporter = _RecordingExporter()
+        refiner = self._primary(
+            monkeypatch,
+            _telemetry(TelemetryMode.ENABLED, exporter),
+            raises=exceptions.ReadTimeout("read timed out"),
+        )
+
+        refiner.refine("Hello world", "en", "de")
+
+        _, attributes, _ = exporter.calls[0]
+        assert attributes["ssf.quality.error_code"] == QualityErrorCode.UPSTREAM_TIMEOUT.value
+        assert attributes["ssf.quality.refinement_outcome"] == "error"
+
+    def test_a_noop_refiner_emits_nothing(self, monkeypatch):
+        """No refinement happened, so there is no attempt to record."""
+        from services.api_gateway.translation_refiner import NoOpTranslationRefiner
+
+        exporter = _RecordingExporter()
+        refiner = NoOpTranslationRefiner()
+        refiner.attach_quality_telemetry(_telemetry(TelemetryMode.ENABLED, exporter))
+
+        refiner.refine("Hello world", "en", "de")
+
+        assert exporter.calls == []
+
+
+class TestShadowQueueOverloadIsVisible:
+    """`skipped_overload` and `submission_failed` are reserved enum members and
+    were unreachable: the candidate never runs, so nothing emitted them."""
+
+    @staticmethod
+    def _shadow(monkeypatch, telemetry, *, pending):
+        refiner = ShadowComparisonRefiner(
+            "http://ollama:11434",
+            "gpt-oss:20b",
+            4.0,
+            0.7,
+            1,
+            False,
+            candidate_model="phi4-mini",
+            queue_limit=1,
+        )
+        refiner.attach_quality_telemetry(telemetry)
+        refiner.pending = pending
+
+        def post(*_args, **_kwargs):
+            response = Mock()
+            response.status_code = 200
+            response.raise_for_status.return_value = None
+            response.json.return_value = {"response": "Hallo Welt"}
+            return response
+
+        monkeypatch.setattr("services.api_gateway.translation_refiner.requests.post", post)
+        return refiner
+
+    def test_a_skipped_candidate_is_recorded(self, monkeypatch):
+        exporter = _RecordingExporter()
+        refiner = self._shadow(monkeypatch, _telemetry(TelemetryMode.ENABLED, exporter), pending=1)
+
+        outcome = refiner.refine("Hello world", "en", "de")
+
+        assert outcome.candidate_status == "skipped_overload"
+        roles = [a["ssf.quality.refiner_role"] for _, a, _ in exporter.calls]
+        outcomes = [a["ssf.quality.refinement_outcome"] for _, a, _ in exporter.calls]
+        assert RefinerRole.PRIMARY.value in roles
+        assert RefinementOutcomeCode.SKIPPED_OVERLOAD.value in outcomes
+
+    def test_a_skipped_candidate_reports_the_candidate_model(self, monkeypatch):
+        exporter = _RecordingExporter()
+        refiner = self._shadow(monkeypatch, _telemetry(TelemetryMode.ENABLED, exporter), pending=1)
+
+        refiner.refine("Hello world", "en", "de")
+
+        skipped = [
+            a
+            for _, a, _ in exporter.calls
+            if a["ssf.quality.refinement_outcome"] == RefinementOutcomeCode.SKIPPED_OVERLOAD.value
+        ]
+        assert skipped[0]["ssf.quality.model_ref"] == "phi4-mini"
+        assert skipped[0]["ssf.quality.error_code"] == QualityErrorCode.REFINEMENT_OVERLOADED.value
