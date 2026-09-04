@@ -98,10 +98,16 @@ class AttributeKind(str, Enum):
 
 # A label is operator-set configuration (a model name, a release token), not
 # user content: no whitespace, no punctuation that would let a sentence through.
-_LABEL_PATTERN: Final = re.compile(r"^[A-Za-z0-9._:+/-]{1,64}$")
-_NUMBER_PATTERN: Final = re.compile(r"^-?\d{1,19}$")
-_LANGUAGE_PATTERN: Final = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?$")
-_OPAQUE_REF_PATTERN: Final = re.compile(r"^[0-9a-f]{16,64}$")
+# \Z, not $: `$` also matches immediately before a trailing newline, so a
+# "no whitespace" guard was accepting "gpt-oss:20b\n". [0-9] and re.ASCII, not
+# \d: \d accepts Unicode decimal digits, and "١٢٣" is not a number ClickHouse
+# will parse into a UInt32 -- toUInt32OrZero turns it into a silent 0.
+_LABEL_PATTERN: Final = re.compile(r"\A[A-Za-z0-9._:+/-]{1,64}\Z", re.ASCII)
+_NUMBER_PATTERN: Final = re.compile(r"\A-?[0-9]{1,19}\Z", re.ASCII)
+_LANGUAGE_PATTERN: Final = re.compile(
+    r"\A[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?\Z", re.ASCII
+)
+_OPAQUE_REF_PATTERN: Final = re.compile(r"\A[0-9a-f]{16,64}\Z", re.ASCII)
 
 
 @dataclass(frozen=True, slots=True)
@@ -414,15 +420,40 @@ def _events_counter(registry: CollectorRegistry) -> Counter:
     prometheus_client raises on a second registration of the same metric name,
     so this mirrors app.py's own precedent of registering a series once and
     reusing it thereafter.
+
+    Registration is attempted through the public API first, and every fallback
+    ends in a counter rather than an exception. Telemetry is optional; a
+    registry this cannot register into must not be able to stop the gateway.
     """
-    existing = registry._names_to_collectors.get(_EVENTS_COUNTER_NAME)
+    try:
+        return Counter(
+            _EVENTS_COUNTER_NAME,
+            "Quality telemetry events by outcome",
+            ["outcome"],
+            registry=registry,
+        )
+    except ValueError:
+        pass  # already registered on this registry, or the name is taken
+
+    # _names_to_collectors is private and may be renamed by a library bump, so
+    # reuse is best-effort and never the only path out of here.
+    existing = getattr(registry, "_names_to_collectors", {}).get(_EVENTS_COUNTER_NAME)
     if isinstance(existing, Counter):
         return existing
+
+    # The name is held by something that is not our counter. Count into an
+    # unregistered collector rather than raising: the series will not be
+    # scraped, which is a reporting gap, not an outage.
+    logger.warning(
+        "%s is not available on the gateway registry; telemetry counters "
+        "will not be scraped",
+        _EVENTS_COUNTER_NAME,
+    )
     return Counter(
         _EVENTS_COUNTER_NAME,
         "Quality telemetry events by outcome",
         ["outcome"],
-        registry=registry,
+        registry=CollectorRegistry(),
     )
 
 

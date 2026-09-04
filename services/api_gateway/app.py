@@ -249,8 +249,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     telemetry_mode = TelemetryMode.parse(os.environ.get("SSF_QUALITY_TELEMETRY_MODE"))
     # Built only when it will be used: the SDK provider runs a worker thread.
     telemetry_exporter = None
-    if telemetry_mode is not TelemetryMode.DISABLED:
-        try:
+    quality_telemetry = None
+    try:
+        if telemetry_mode is not TelemetryMode.DISABLED:
             telemetry_exporter = build_otlp_exporter(
                 endpoint=os.environ.get(
                     "SSF_OTLP_LOGS_ENDPOINT", "http://otel-collector:4318/v1/logs"
@@ -259,23 +260,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 service_version=os.environ.get("SSF_RELEASE_VERSION", "unknown"),
                 deployment_environment=os.environ.get("SSF_DEPLOYMENT_ENV", "unknown"),
             )
-        except Exception as e:
-            # OTLPLogExporter parses OTEL_EXPORTER_OTLP_TIMEOUT and
-            # _COMPRESSION itself and raises on a malformed value. Same rule as
-            # TelemetryMode.parse: fall back to disabled rather than crashloop
-            # the gateway over an optional setting. Reported as disabled, not
-            # as a silent probe mode that exports nothing.
-            sys.stderr.write(
-                f"Quality telemetry disabled: exporter setup failed ({e})\n"
-            )
-            sys.stderr.flush()
-            telemetry_mode = TelemetryMode.DISABLED
+        quality_telemetry = QualityTelemetry(
+            mode=telemetry_mode,
+            exporter=telemetry_exporter or discard_event,
+            registry=app.state.prometheus_registry,
+        )
+    except Exception as e:
+        # OTLPLogExporter parses OTEL_EXPORTER_OTLP_TIMEOUT and _COMPRESSION
+        # itself and raises on a malformed value, and QualityTelemetry has to
+        # register a Prometheus counter. Same rule as TelemetryMode.parse: fall
+        # back to disabled rather than crashloop the gateway over an optional
+        # setting. Reported as disabled, not as a silent probe mode that
+        # exports nothing.
+        sys.stderr.write(f"Quality telemetry disabled: setup failed ({e})\n")
+        sys.stderr.flush()
+        telemetry_mode = TelemetryMode.DISABLED
+        telemetry_exporter = None
+
+    if quality_telemetry is None:
+        # Last resort: an unregistered registry cannot collide with anything,
+        # so this construction has nothing left to fail on.
+        quality_telemetry = QualityTelemetry(
+            mode=TelemetryMode.DISABLED,
+            exporter=discard_event,
+            registry=CollectorRegistry(),
+        )
+
     app.state.quality_telemetry_exporter = telemetry_exporter
-    app.state.quality_telemetry = QualityTelemetry(
-        mode=telemetry_mode,
-        exporter=telemetry_exporter or discard_event,
-        registry=app.state.prometheus_registry,
-    )
+    app.state.quality_telemetry = quality_telemetry
     # The refiner is a module-level singleton built at import time; telemetry is
     # built here, per lifespan. Nothing connects them unless this line does.
     from .translation_refiner import translation_refiner

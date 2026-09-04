@@ -203,3 +203,68 @@ class TestTelemetryModeGainsAnEventsValue:
 
     def test_an_unknown_mode_still_falls_back_to_disabled(self):
         assert TelemetryMode.parse("on") is TelemetryMode.DISABLED
+
+
+class TestTheAdapterIsActuallyTheLastCheckpoint:
+    """`__call__` enforced only the key allowlist, while value shapes were
+    checked in to_otlp_attributes. Any emitter building its own dict therefore
+    shipped an unvalidated value for an allowlisted key -- exactly the
+    error_code-carrying-a-raw-message case the manifest exists to prevent."""
+
+    @staticmethod
+    def _adapter():
+        from unittest.mock import Mock
+
+        from services.api_gateway.quality_telemetry_otlp import OtlpQualityExporter
+
+        provider = Mock()
+        provider.get_logger.return_value = Mock()
+        return OtlpQualityExporter(provider), provider.get_logger.return_value
+
+    def test_an_allowlisted_key_with_a_raw_message_is_rejected_at_the_wire(self):
+        from datetime import datetime, timezone
+
+        adapter, sink = self._adapter()
+        smuggled = {
+            "ssf.quality.event_id": str(uuid4()),
+            "ssf.quality.schema_version": "1",
+            "ssf.quality.error_code": "ASR said: guten Tag, wie geht es Ihnen",
+        }
+
+        with pytest.raises(DisallowedTelemetryValue):
+            adapter("refinement_attempt", smuggled, datetime.now(timezone.utc))
+
+        sink.emit.assert_not_called()
+
+    def test_a_well_formed_event_still_ships(self):
+        adapter, sink = self._adapter()
+        event = _refinement_event()
+
+        adapter(
+            event.event_type.value,
+            to_otlp_attributes(event),
+            event.emitted_at_utc,
+        )
+
+        sink.emit.assert_called_once()
+
+
+class TestShapePatternsRejectTrailingWhitespaceAndUnicodeDigits:
+    """`$` matches before a trailing newline and `\\d` accepts Unicode digits,
+    so a guard whose stated purpose is that a label carry no whitespace was
+    accepting `gpt-oss:20b\\n`."""
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("ssf.quality.model_ref", "gpt-oss:20b\n"),
+            ("ssf.quality.refinement_latency_ms", "123\n"),
+            ("ssf.quality.source_lang", "de\n"),
+            ("ssf.quality.refinement_latency_ms", "١٢٣"),
+        ],
+    )
+    def test_the_value_is_rejected(self, key, value):
+        attributes = to_otlp_attributes(_refinement_event())
+        attributes[key] = value
+        with pytest.raises(DisallowedTelemetryValue):
+            enforce_value_shapes(attributes)

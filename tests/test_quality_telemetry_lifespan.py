@@ -163,3 +163,48 @@ def test_the_refiner_is_released_when_the_lifespan_ends(
         pass
 
     assert translation_refiner.quality_telemetry is None
+
+
+def test_a_registry_that_cannot_take_the_counter_still_yields_telemetry() -> None:
+    """The counter helper reached into registry._names_to_collectors, a private
+    attribute. A prometheus_client rename, or a non-Counter collector already
+    holding the name, raised inside lifespan -- so an optional subsystem could
+    take down translation, sessions and WebSocket delivery."""
+    from prometheus_client import CollectorRegistry, Gauge
+
+    from services.api_gateway.quality_telemetry import _events_counter
+
+    registry = CollectorRegistry()
+    Gauge(
+        "ssf_quality_telemetry_events_total",
+        "an impostor holding the name",
+        registry=registry,
+    )
+
+    counter = _events_counter(registry)
+
+    counter.labels(outcome="emitted").inc()
+
+
+def test_a_hostile_registry_leaves_a_serving_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """QualityTelemetry sat outside the exporter's fallback-to-disabled block,
+    so a registry it could not register into raised inside lifespan.
+
+    The counter helper now ends every path in a counter, so this asserts the
+    outcome that matters -- a gateway that serves, with telemetry present and
+    usable -- rather than a specific internal fallback.
+    """
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
+
+    class _HostileRegistry:
+        def register(self, _collector):
+            raise RuntimeError("registry moved")
+
+    monkeypatch.setattr(app.state, "prometheus_registry", _HostileRegistry())
+
+    with TestClient(app) as client:
+        assert client.get("/health").status_code == 200
+        assert app.state.quality_telemetry is not None
+        app.state.quality_telemetry.emit_probe(event_type="telemetry_probe")
