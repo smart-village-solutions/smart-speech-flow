@@ -102,8 +102,8 @@ verification:
 
 ## Quality Telemetry
 
-The API Gateway emits one allowlisted probe event over OTLP/HTTP to an
-internal-only `otel-collector` service, which writes it into ClickHouse. See
+The API Gateway emits allowlisted quality events over OTLP/HTTP to an
+internal-only `otel-collector` service, which writes them into ClickHouse. See
 `openspec/changes/add-clickhouse-quality-telemetry/design.md` for the full
 design.
 
@@ -136,6 +136,63 @@ constrained to a label charset with no whitespace:
 | Source language | `ssf.quality.source_lang` | language code, else `und` |
 | Target language | `ssf.quality.target_lang` | language code, else `und` |
 | Error | `ssf.quality.error_code` | enum from the error taxonomy |
+
+And on `translation_message` (mode `enabled` only), one row per processed
+message, thirteen more. Every one is a number, a closed enum or an opaque
+reference — there is no `model_ref` equivalent here, because nothing on a
+message row is operator-set configuration:
+
+| Field | Carried as | Shape |
+| --- | --- | --- |
+| Session reference | `ssf.quality.session_ref` | 32 hex chars, keyed HMAC (see below) |
+| Direction | `ssf.quality.direction` | enum: admin_to_customer, customer_to_admin, unknown |
+| Input mode | `ssf.quality.input_mode` | enum: audio, text, unknown |
+| Source language | `ssf.quality.source_lang` | language code, else `und` |
+| Target language | `ssf.quality.target_lang` | language code, else `und` |
+| Terminal outcome | `ssf.quality.terminal_outcome` | enum: success, failure |
+| Failed stage | `ssf.quality.failed_stage` | enum: none, admission, validation, asr, translation, refinement, tts, delivery, unknown |
+| Error | `ssf.quality.error_code` | enum from the error taxonomy |
+| Total duration | `ssf.quality.total_duration_ms` | integer, whole request |
+| ASR duration | `ssf.quality.asr_duration_ms` | integer, 0 on the text path |
+| Translation duration | `ssf.quality.translation_duration_ms` | integer |
+| Refinement duration | `ssf.quality.refinement_duration_ms` | integer, 0 when refinement is off |
+| TTS duration | `ssf.quality.tts_duration_ms` | integer |
+
+`session_ref` is an **HMAC-SHA256 keyed by
+`SSF_QUALITY_TELEMETRY_SESSION_KEY`**, truncated to 128 bits. It is deliberately
+not the `sha256(session_id)[:12]` the gateway logs use: session ids are 32-bit,
+so an unkeyed digest of one is reversible by enumerating the id space in
+milliseconds, which is an encoding rather than a pseudonymisation. Rows that
+carry no session id store 32 zeros, a value no HMAC produces.
+
+Leaving the key unset does not fail: the gateway generates one per process and
+logs a warning. The rows stay one-way, but they no longer group by session
+across gateway restarts or replicas, so set it in production.
+
+A message request that never became a message — an unknown session, an inactive
+one, an unsupported content type — emits **nothing**. Counting those would put
+requests the gateway declined into the denominator of every success ratio built
+on this event.
+
+And on `session_lifecycle` (mode `enabled` only), one row per session
+transition, four more. Every field already exists on the `Session` dataclass:
+
+| Field | Carried as | Shape |
+| --- | --- | --- |
+| Session reference | `ssf.quality.session_ref` | the same keyed HMAC as the message event |
+| Phase | `ssf.quality.lifecycle_phase` | enum: created, activated, terminated |
+| Termination reason | `ssf.quality.termination_reason` | enum: none, manual_admin_termination, manual_termination, new_session_created, session_timeout, system_cleanup, other |
+| Session duration | `ssf.quality.session_duration_ms` | integer, 0 until the session ends |
+| Messages carried | `ssf.quality.message_count` | integer — a count, never the messages |
+
+`SessionManager.terminate_session` takes its `reason` as a free-form `str`, so
+anything the gateway does not already name lands as `other`. It is never stored
+verbatim; that is what keeps the reason from becoming a free-text channel into
+a store with no free-text kind.
+
+`session_ref` is derived identically on both events, which is what makes
+"messages per session" and "sessions that carried no message" computable
+without a join key the pipeline would otherwise have to invent.
 
 `ALLOWED_ATTRIBUTES` in `services/api_gateway/quality_telemetry.py` is the
 single manifest. It declares a *value shape* per key, not just a key, and there
@@ -187,7 +244,7 @@ and no export is attempted.
 | --- | --- | --- | --- |
 | `disabled` | not built | reports `disabled` | none |
 | `probe` | built | emits | **none** |
-| `enabled` | built | emits | `refinement_attempt` |
+| `enabled` | built | emits | `refinement_attempt`, `translation_message`, `session_lifecycle` |
 
 `probe` deliberately emits no pipeline events. It is a pure transport check, so
 an operator can prove the path end to end without switching on production event
@@ -279,11 +336,19 @@ telemetry variables, leaving the mode off for now:
 
     SSF_QUALITY_TELEMETRY_MODE=disabled
     SSF_OTLP_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
+    SSF_QUALITY_TELEMETRY_SESSION_KEY=<openssl rand -hex 32>
     SSF_RELEASE_VERSION=<deployed git sha>
     SSF_DEPLOYMENT_ENV=production
 
 `SSF_RELEASE_VERSION` lands in `quality_events.service_version`; use the same
 sha as the deployed `prod-<sha>` image tags or the column is useless.
+
+`SSF_QUALITY_TELEMETRY_SESSION_KEY` keys the HMAC behind `session_ref`. Generate
+it once and keep it: **changing it re-pseudonymises every future row**, so
+sessions before and after the change never group together. Treat it as a
+secret — it is what stops a 32-bit session id space being enumerated against
+the stored references. It has no effect while the mode is `disabled` or
+`probe`, so setting it now costs nothing.
 
 **4. Recreate ClickHouse** to pick up the new mount and exposed port. The named
 volume is untouched, so no data is lost.
@@ -303,8 +368,9 @@ Every statement is `IF NOT EXISTS`; re-running is safe.
 
     $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT name FROM system.tables WHERE database = currentDatabase() ORDER BY name"'
 
-Expect exactly `otel_logs`, `quality_events`, `quality_events_mv`. Do not
-continue if any is missing.
+Expect exactly `otel_logs`, `quality_events`, `quality_events_daily`,
+`quality_events_daily_mv`, `quality_events_mv`. Do not continue if any is
+missing.
 
 **7. Start the collector** and confirm it came up clean:
 
@@ -342,9 +408,9 @@ the result — it should now list `otel-collector`.
 
 **11. Turn real pipeline events on (optional, and separate).** Steps 1-10 leave
 the gateway on `probe`, which emits no pipeline events. Before switching to
-`enabled`, confirm migration `002` has been applied — it is the one that gives
-`quality_events` its typed columns, and `initdb` does **not** re-run on a volume
-that already has data:
+`enabled`, confirm migrations `002`, `003` and `004` have been applied — they
+are what give `quality_events` its typed columns, and `initdb` does **not**
+re-run on a volume that already has data:
 
     $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT name FROM system.tables WHERE database = currentDatabase() ORDER BY name"'
 
@@ -352,11 +418,18 @@ Expect `otel_logs`, `quality_events`, `quality_events_daily`,
 `quality_events_daily_mv`, `quality_events_mv`. If the gold tier is missing,
 re-run `apply.sh` (step 5) — it is idempotent.
 
-**Order matters.** Emitting `refinement_attempt` while `002` is unapplied writes
-rows whose typed columns are all defaults, and those rows cannot be repaired:
-the attributes were dropped at projection time and bronze expires after 7 days.
-The dashboard's `Rows Missing Typed Fields` panel exists to catch exactly this
-and should read zero.
+The table list does not distinguish `002` from `003` and `004`, because those
+two only add columns. Check them directly:
+
+    $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = '"'"'quality_events'"'"'"'
+
+Expect `30`. Fewer means a migration has not been applied; re-run `apply.sh`.
+
+**Order matters.** Emitting events while any of `002`-`004` is unapplied writes rows
+whose typed columns are all defaults, and those rows cannot be repaired: the
+attributes were dropped at projection time and bronze expires after 7 days. The
+dashboard's `Rows Missing Typed Fields` panel exists to catch exactly this and
+should read zero.
 
 Then:
 
@@ -373,6 +446,19 @@ default `LLM_REFINEMENT_MODE=primary_only` produces rows with
 attempt to record. `shadow_compare` additionally produces
 `refiner_role=candidate` rows, which is what makes the `Latency p95 by Model`
 panel show two series instead of one.
+
+`session_lifecycle` is emitted from the session manager, so it appears as soon
+as an admin opens a session — before any message exists. It is the first
+evidence that `enabled` took effect.
+
+`translation_message` is emitted once per processed message regardless of
+refinement configuration, so it is the next to appear and the one to check if
+the message panels stay empty. **Expect roughly one row per message** —
+the volume is the message rate, not a multiple of it. At the rates this
+deployment sees that is negligible against the 30-day silver TTL, but it is the
+first event whose volume scales with traffic rather than with operator action,
+so watch `Rows Missing Typed Fields` and the writer-health panels for the first
+day.
 
 #### Rolling back
 
@@ -502,19 +588,58 @@ dashboard **SSF Telemetry**. The datasource is provisioned as **ClickHouse**
 (`uid: clickhouse-ssf`); `Save & test` on it must return `Data source is
 working`.
 
-**What it shows today, and no more:** exactly one event type exists —
-`telemetry_probe`, the manually-triggered event from
-`POST /api/admin/telemetry/probe`. There are no pipeline hooks yet (openspec
-task 2.3 is what adds them), so the dashboard can chart only "probe calls over
-time" — it is proof that the transport works, not a quality dashboard. Every
-panel queries `quality_events FINAL` (required — see "Verifying the pipeline"
-above) filtered with the `$__timeFilter(emitted_at_utc)` macro, so the time
-picker controls what each panel shows.
+**What it shows, and what fills it.** Three event types exist, and each fills a
+different part of the dashboard:
 
-If a panel is empty, first check the time range: probe events are sparse and
-manually triggered, so the default range can easily miss them. If it is still
-empty, work backwards through "Verifying the pipeline" above rather than
-assuming the dashboard is broken.
+| Event | Panels | Emitted when |
+| --- | --- | --- |
+| `telemetry_probe` | none — it is a transport check | `POST /api/admin/telemetry/probe`, in `probe` or `enabled` |
+| `session_lifecycle` | the top four stats and the three panels below them | a session is created, activated or terminated, in `enabled` |
+| `translation_message` | the next four stats and the four panels below those | every processed message, in `enabled` |
+| `refinement_attempt` | `Refinement Attempts` through `Failures by Error Code`, and the gold-tier panel | every LLM refinement, in `enabled` |
+
+The remaining panels — `Writer Health by Outcome`, `Events Lost Before The
+Collector`, `Retention Verification` and `Rows Missing Typed Fields` — are about
+the pipeline itself and fill in every mode.
+
+ClickHouse panels query `quality_events FINAL` (required — see "Verifying the
+pipeline" above) filtered with `$__timeFilter(emitted_at_utc)`, so the time
+picker controls them. The gold-tier panel is the exception: it reads
+`quality_events_daily`, which is keyed on a `Date`, so it takes
+`$__dateFilter(event_date)` instead.
+
+**An empty dashboard almost always means the mode, not the dashboard.** In
+order:
+
+1. `SSF_QUALITY_TELEMETRY_MODE` must be `enabled`. On `probe` every ClickHouse
+   panel is correctly empty, because `probe` emits no pipeline events.
+2. Check the time range. Probe and refinement events are sparse; message events
+   follow real traffic, so an idle window is genuinely empty.
+3. If `translation_message` rows exist but refinement panels are empty, that is
+   `LLM_REFINEMENT_MODE=disabled` and not a fault.
+4. `session_lifecycle` rows appear the moment an admin opens a session, before
+   any message exists — so an empty session funnel with populated message
+   panels means the gateway was restarted mid-session, not that sessions are
+   uncounted.
+5. Only then work backwards through "Verifying the pipeline" above.
+
+**Gold-tier panels must filter on `event_type`.** The gold tier's latency
+aggregates are the refinement attempt's; a `translation_message` row reaching it
+contributes a correct daily count and a zero to every latency state. A gold
+query without that filter averages a real population against a column of zeros.
+`tests/test_grafana_clickhouse_datasource_configuration.py` enforces this.
+
+Message stage latencies come from silver only, and read
+`nullIf(<stage>_duration_ms, 0)`: a text message has no ASR stage and a run with
+refinement off has no refinement stage, and both store `0`. Averaging those in
+reports every stage as faster than it is.
+
+Session duration and message count are read only from `lifecycle_phase =
+'terminated'` rows, for the same reason: a `created` or `activated` row reports
+zero because the session has not ended yet, not because it was empty. The
+`Sessions That Carried No Message` panel is the one that counts genuinely empty
+sessions — an admin opened one, a customer joined, and nothing was translated —
+which nothing could measure before this event existed.
 
 #### Enabling the dashboard in production
 
