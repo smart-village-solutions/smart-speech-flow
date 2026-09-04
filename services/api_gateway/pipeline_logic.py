@@ -14,7 +14,12 @@ import numpy as np
 import psutil
 import requests
 
-from .quality_telemetry import classify_exception
+from .quality_telemetry import (
+    PipelineStage,
+    QualityErrorCode,
+    classify_exception,
+    classify_upstream_status,
+)
 from .translation_refiner import RefinementOutcome, translation_refiner
 
 # Import service URLs from app.py (respects DOCKER_COMPOSE env var)
@@ -369,6 +374,21 @@ def _mark_pipeline_failure(
     debug_info["system"] = _collect_system_metrics()
 
 
+_CONTENT_REJECTION_CODES: frozenset = frozenset({"SPAM_DETECTED", "HARMFUL_CONTENT"})
+
+
+def _classify_text_validation(validation_result: Any) -> QualityErrorCode:
+    """Separate "we would not translate this" from "this is not usable text".
+
+    Both are validation failures, but only one is a moderation decision, and a
+    dashboard that cannot tell them apart reads a spam filter working correctly
+    as a broken client.
+    """
+    if getattr(validation_result, "error_code", None) in _CONTENT_REJECTION_CODES:
+        return QualityErrorCode.CONTENT_REJECTED
+    return QualityErrorCode.TEXT_VALIDATION_FAILED
+
+
 def _upstream_retry_after(response: Any) -> int:
     """The upstream's own Retry-After, or a delay short enough to still be useful."""
     headers = getattr(response, "headers", None) or {}
@@ -383,12 +403,13 @@ def _pipeline_error_result(
     debug_info: Dict[str, Any],
     start_total: float,
     error_message: str,
+    failed_stage: PipelineStage,
+    error_code: QualityErrorCode,
     asr_text: Optional[str],
     translation_text: Optional[str],
     audio_bytes: Optional[bytes],
     validation_result: Optional[Any] = None,
     upstream_response: Optional[Any] = None,
-    error_code: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Flattens an upstream failure into the pipeline's result shape.
 
@@ -397,10 +418,16 @@ def _pipeline_error_result(
     every failure here otherwise arrives at the routes as one undifferentiated
     ``error`` — reported as 500 on the audio path and 400 on the text path, both
     of which a client reads as permanent.
+
+    ``failed_stage`` and ``error_code`` are required rather than inferred. The
+    only other places that record what went wrong are ``debug["steps"]``, whose
+    entries hold the transcript and the source text, and ``error_message``,
+    which holds the raw upstream reply — so anything reading them to classify a
+    failure would be reading content.
     """
     _mark_pipeline_failure(debug_info, start_total, error_message)
-    if error_code is not None:
-        debug_info["error_code"] = error_code
+    debug_info["failed_stage"] = failed_stage.value
+    debug_info["error_code"] = error_code.value
     result = {
         "error": True,
         "error_msg": error_message,
@@ -458,6 +485,8 @@ def _validate_and_normalize_text(
         debug_info=debug_info,
         start_total=start_total,
         error_message=error_message,
+        failed_stage=PipelineStage.VALIDATION,
+        error_code=_classify_text_validation(validation_result),
         asr_text=None,
         translation_text=None,
         audio_bytes=None,
@@ -683,6 +712,8 @@ def _apply_audio_validation(
         debug_info=debug_info,
         start_total=start_total,
         error_message=error_message,
+        failed_stage=PipelineStage.VALIDATION,
+        error_code=QualityErrorCode.AUDIO_VALIDATION_FAILED,
         asr_text=None,
         translation_text=None,
         audio_bytes=None,
@@ -692,6 +723,10 @@ def _apply_audio_validation(
 
 def _finalize_pipeline_success(debug_info: Dict[str, Any], start_total: float) -> None:
     _record_pipeline_duration(debug_info, start_total)
+    # Written on success too, so a consumer reads the same two keys on every
+    # row rather than treating "absent" as a third, untyped outcome.
+    debug_info["failed_stage"] = PipelineStage.NONE.value
+    debug_info["error_code"] = QualityErrorCode.NONE.value
     debug_info["system"] = _collect_system_metrics()
 
 
@@ -1256,6 +1291,8 @@ def process_text_pipeline(
                 debug_info=debug_info,
                 start_total=start_total,
                 error_message=f"Translation-Fehler: {error_msg}",
+                failed_stage=PipelineStage.TRANSLATION,
+                error_code=classify_upstream_status(translation_resp.status_code),
                 asr_text=processed_text,  # Original text as "ASR" result
                 translation_text=None,
                 audio_bytes=None,
@@ -1307,6 +1344,8 @@ def process_text_pipeline(
                 debug_info=debug_info,
                 start_total=start_total,
                 error_message=f"TTS-Fehler: {error_msg}",
+                failed_stage=PipelineStage.TTS,
+                error_code=classify_upstream_status(tts_resp.status_code),
                 asr_text=processed_text,
                 translation_text=translation_text,
                 audio_bytes=None,
@@ -1359,10 +1398,11 @@ def process_text_pipeline(
             debug_info=debug_info,
             start_total=start_total,
             error_message=f"Pipeline-Fehler: {code.value}",
+            failed_stage=PipelineStage.UNKNOWN,
+            error_code=code,
             asr_text=processed_text,
             translation_text=translation_text,
             audio_bytes=None,
-            error_code=code.value,
         )
 
 
@@ -1442,6 +1482,8 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
                 debug_info=debug_info,
                 start_total=start_total,
                 error_message=f"ASR-Fehler: {error_msg}",
+                failed_stage=PipelineStage.ASR,
+                error_code=classify_upstream_status(asr_resp.status_code),
                 asr_text=None,
                 translation_text=None,
                 audio_bytes=None,
@@ -1503,6 +1545,8 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
                 debug_info=debug_info,
                 start_total=start_total,
                 error_message=f"Translation-Fehler: {error_msg}",
+                failed_stage=PipelineStage.TRANSLATION,
+                error_code=classify_upstream_status(translation_resp.status_code),
                 asr_text=asr_text,
                 translation_text=None,
                 audio_bytes=None,
@@ -1582,6 +1626,8 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
                 debug_info=debug_info,
                 start_total=start_total,
                 error_message=f"TTS-Fehler: {error_msg}",
+                failed_stage=PipelineStage.TTS,
+                error_code=classify_upstream_status(tts_resp.status_code),
                 asr_text=asr_text,
                 translation_text=translation_text,
                 audio_bytes=None,
@@ -1622,8 +1668,9 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
             debug_info=debug_info,
             start_total=start_total,
             error_message=f"Pipeline-Fehler: {code.value}",
+            failed_stage=PipelineStage.UNKNOWN,
+            error_code=code,
             asr_text=asr_text,
             translation_text=translation_text,
             audio_bytes=None,
-            error_code=code.value,
         )
