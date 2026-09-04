@@ -87,6 +87,13 @@ class BaseTranslationRefiner:
 
     is_active: bool = False
 
+    #: Set by the gateway's lifespan. None means telemetry is not wired up,
+    #: which must be indistinguishable from telemetry being switched off.
+    quality_telemetry: Optional[Any] = None
+
+    def attach_quality_telemetry(self, telemetry: Optional[Any]) -> None:
+        self.quality_telemetry = telemetry
+
     def refine(
         self,
         text: str,
@@ -267,6 +274,55 @@ class ShadowComparisonRefiner(OllamaTranslationRefiner):
         self.pending = 0
         self.lock = Lock()
 
+    @staticmethod
+    def _requested_languages(args: Any, kwargs: Any) -> tuple[str, str]:
+        """`refine(text, source_lang, target_lang, context=None)`, called either
+        way round by the two pipelines."""
+        source = kwargs.get("source_lang") or (args[1] if len(args) > 1 else "")
+        target = kwargs.get("target_lang") or (args[2] if len(args) > 2 else "")
+        return str(source), str(target)
+
+    def _emit_attempt(self, result: RefinementOutcome, args: Any, kwargs: Any) -> None:
+        """Record the attempt. Never allowed to affect the caller.
+
+        The candidate's latency is measured here and has never been retained --
+        it went into a log line and nowhere else. The refinement benchmarking
+        work asks exactly this question and has no data for it.
+        """
+        telemetry = self.quality_telemetry
+        if telemetry is None:
+            return
+        try:
+            from .quality_telemetry import (
+                QualityErrorCode,
+                RefinementOutcomeCode,
+                RefinerRole,
+                classify_exception,
+            )
+
+            source_lang, target_lang = self._requested_languages(args, kwargs)
+            failed = bool(result.error)
+            telemetry.emit_refinement_attempt(
+                refiner_role=RefinerRole.CANDIDATE,
+                model_ref=self.candidate_model,
+                outcome=(
+                    RefinementOutcomeCode.ERROR
+                    if failed
+                    else RefinementOutcomeCode.SUCCESS
+                ),
+                latency_ms=int(result.latency_ms or 0),
+                changed=bool(result.changed),
+                source_lang=source_lang,
+                target_lang=target_lang,
+                error_code=(
+                    classify_exception(RuntimeError(result.error))
+                    if failed
+                    else QualityErrorCode.NONE
+                ),
+            )
+        except Exception:  # telemetry must never change an outcome
+            logger.warning("Quality telemetry emit failed for shadow candidate")
+
     def _run_candidate(self, *args: Any, **kwargs: Any) -> None:
         try:
             candidate = OllamaTranslationRefiner(
@@ -285,6 +341,7 @@ class ShadowComparisonRefiner(OllamaTranslationRefiner):
                 status,
                 result.latency_ms,
             )
+            self._emit_attempt(result, args, kwargs)
         finally:
             with self.lock:
                 self.pending -= 1

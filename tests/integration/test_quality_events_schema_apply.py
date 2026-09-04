@@ -5,6 +5,7 @@ grep for "ReplacingMergeTree" proves the file says it, not that a duplicate
 collapses or that a malformed id is kept out.
 """
 
+import re
 import subprocess
 import time
 import uuid
@@ -17,6 +18,15 @@ pytestmark = pytest.mark.integration
 ROOT = Path(__file__).parents[2]
 MIGRATIONS = sorted((ROOT / "deploy" / "clickhouse" / "migrations").glob("*.sql"))
 SCRATCH_DB = "ssf_schema_apply_test"
+
+# Every object the repository's migrations own, in ORDER BY name order.
+EXPECTED_TABLES = [
+    "otel_logs",
+    "quality_events",
+    "quality_events_daily",
+    "quality_events_daily_mv",
+    "quality_events_mv",
+]
 
 # Exactly the columns the ClickHouse exporter names in its INSERT. Bronze must
 # accept all of them or every export fails.
@@ -89,7 +99,7 @@ def test_the_migrations_apply_to_an_empty_database(scratch_db: str) -> None:
         "SELECT name FROM system.tables WHERE database = currentDatabase() ORDER BY name",
         database=scratch_db,
     ).splitlines()
-    assert tables == ["otel_logs", "quality_events", "quality_events_mv"]
+    assert tables == EXPECTED_TABLES
 
 
 def test_bronze_accepts_every_column_the_exporter_inserts(scratch_db: str) -> None:
@@ -151,14 +161,16 @@ def test_a_duplicated_delivery_collapses_to_one_silver_row(scratch_db: str) -> N
     assert count == "1"
 
 
-def test_both_tiers_expire_on_their_documented_retention(scratch_db: str) -> None:
-    """7 days bronze, 30 days silver. A missing TTL grows the disk forever."""
+def test_every_tier_expires_on_its_documented_retention(scratch_db: str) -> None:
+    """7 days bronze, 30 days silver, 13 months gold. ClickHouse fixes TTL at
+    creation, so a tier that ships without one can never be given one."""
     ddl = {
         table: _client(f"SHOW CREATE TABLE {table}", database=scratch_db)
-        for table in ("otel_logs", "quality_events")
+        for table in ("otel_logs", "quality_events", "quality_events_daily")
     }
     assert "toIntervalDay(7)" in ddl["otel_logs"], ddl["otel_logs"]
     assert "toIntervalDay(30)" in ddl["quality_events"], ddl["quality_events"]
+    assert "toIntervalMonth(13)" in ddl["quality_events_daily"], ddl["quality_events_daily"]
 
 
 def test_silver_stores_no_content_column(scratch_db: str) -> None:
@@ -168,8 +180,94 @@ def test_silver_stores_no_content_column(scratch_db: str) -> None:
         "AND table = 'quality_events'",
         database=scratch_db,
     ).splitlines()
-    forbidden = ("body", "text", "audio", "transcript", "error", "ip", "session")
-    assert not [c for c in columns if any(f in c for f in forbidden)], columns
+    # Whole segments, not substrings: "error" also matches `error_code`, a
+    # closed enum from the taxonomy, and "ip" matches "pipeline". The value-level
+    # guarantee lives in the attribute manifest, which declares a shape for every
+    # key and has no free-text kind; this stays a naming tripwire on top of it.
+    forbidden = re.compile(
+        r"(?:^|_)(?:body|text|transcript|message|detail|payload|url|uri|ip|prompt)(?:_|$)"
+    )
+    assert not [c for c in columns if forbidden.search(c)], columns
+
+
+def _insert_refinement(db: str, event_id: str, *, latency_ms: str, changed: str) -> None:
+    _client(
+        f"INSERT INTO otel_logs ({', '.join(_EXPORTER_COLUMNS)}) VALUES "
+        f"(now64(9), '', '', 0, '', 0, 'api_gateway', '', '', "
+        f"{{'service.version': 'itest', 'deployment.environment.name': 'itest'}}, "
+        f"'', 'ssf.quality', '', {{}}, "
+        f"{{'ssf.quality.event_id': '{event_id}', 'ssf.quality.schema_version': '1', "
+        f"'ssf.quality.refiner_role': 'candidate', 'ssf.quality.model_ref': 'phi4-mini', "
+        f"'ssf.quality.refinement_outcome': 'success', "
+        f"'ssf.quality.refinement_latency_ms': '{latency_ms}', "
+        f"'ssf.quality.refinement_changed': '{changed}', "
+        f"'ssf.quality.source_lang': 'en', 'ssf.quality.target_lang': 'de', "
+        f"'ssf.quality.error_code': 'none'}}, 'refinement_attempt')",
+        database=db,
+    )
+
+
+def test_the_silver_view_projects_every_typed_field(scratch_db: str) -> None:
+    event_id = str(uuid.uuid4())
+    _insert_refinement(scratch_db, event_id, latency_ms="340", changed="true")
+
+    row = _client(
+        "SELECT refiner_role, model_ref, refinement_outcome, refinement_latency_ms, "
+        f"refinement_changed, source_lang, target_lang, error_code FROM quality_events "
+        f"FINAL WHERE event_id = '{event_id}'",
+        database=scratch_db,
+    )
+    assert row.split("\t") == [
+        "candidate",
+        "phi4-mini",
+        "success",
+        "340",
+        "1",
+        "en",
+        "de",
+        "none",
+    ]
+
+
+def test_a_gold_count_is_not_inflated_by_a_duplicated_delivery(scratch_db: str) -> None:
+    """Task 4.4, aggregate correctness.
+
+    The retry path delivers the same event_id twice and silver's
+    ReplacingMergeTree only collapses that at merge time, so a plain counter in
+    gold would over-report permanently -- an aggregate cannot be un-counted.
+    A sumState-based `changed_events` was observed reporting 2 for one event.
+    """
+    event_id = str(uuid.uuid4())
+    for _ in range(2):
+        _insert_refinement(scratch_db, event_id, latency_ms="500", changed="true")
+
+    counts = _client(
+        "SELECT uniqExactMerge(events), uniqExactMerge(changed_events) "
+        "FROM quality_events_daily WHERE model_ref = 'phi4-mini'",
+        database=scratch_db,
+    )
+    events, changed = counts.split("\t")
+    duplicates = _client(
+        f"SELECT count() FROM otel_logs WHERE LogAttributes['ssf.quality.event_id'] = '{event_id}'",
+        database=scratch_db,
+    )
+
+    assert duplicates == "2", "the duplicate delivery must actually have landed"
+    assert int(events) == int(changed), (events, changed)
+
+
+def test_gold_totals_agree_with_the_silver_rows_they_summarise(scratch_db: str) -> None:
+    gold = _client(
+        "SELECT uniqExactMerge(events) FROM quality_events_daily "
+        "WHERE event_type = 'refinement_attempt'",
+        database=scratch_db,
+    )
+    silver = _client(
+        "SELECT uniqExact(event_id) FROM quality_events FINAL "
+        "WHERE event_type = 'refinement_attempt'",
+        database=scratch_db,
+    )
+    assert gold == silver, (gold, silver)
 
 
 def test_a_fresh_volume_gets_both_tiers_in_the_configured_database() -> None:
@@ -204,11 +302,11 @@ def test_a_fresh_volume_gets_both_tiers_in_the_configured_database() -> None:
         check=True,
     )
     try:
-        tables = _await_tables(container)
+        tables = _await_tables(container, EXPECTED_TABLES)
     finally:
         subprocess.run(["docker", "rm", "-f", container], capture_output=True, check=False)
 
-    assert tables == ["otel_logs", "quality_events", "quality_events_mv"], tables
+    assert tables == EXPECTED_TABLES, tables
 
 
 def _clickhouse_image() -> str:
@@ -219,7 +317,7 @@ def _clickhouse_image() -> str:
     raise AssertionError("clickhouse image not found in docker-compose.yml")
 
 
-def _await_tables(container: str) -> list[str]:
+def _await_tables(container: str, expected: list[str]) -> list[str]:
     """Poll past the entrypoint's temporary init server to the real one."""
     query = [
         "docker",
@@ -236,9 +334,9 @@ def _await_tables(container: str) -> list[str]:
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
         completed = subprocess.run(query, capture_output=True, text=True)
-        names = completed.stdout.split()
-        if len(names) == 3:
-            return sorted(names)
+        names = sorted(completed.stdout.split())
+        if names == expected:
+            return names
         time.sleep(2)
     pytest.fail(
         f"fresh container never created the tables: {completed.stdout!r} {completed.stderr!r}"

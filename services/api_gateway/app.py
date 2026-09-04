@@ -276,6 +276,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         exporter=telemetry_exporter or discard_event,
         registry=app.state.prometheus_registry,
     )
+    # The refiner is a module-level singleton built at import time; telemetry is
+    # built here, per lifespan. Nothing connects them unless this line does.
+    from .translation_refiner import translation_refiner
+
+    translation_refiner.attach_quality_telemetry(app.state.quality_telemetry)
     sys.stderr.write(f"Quality telemetry ready (mode={telemetry_mode.value})\n")
     sys.stderr.flush()
 
@@ -323,6 +328,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         app.state.pipeline_admission = None
 
+        # Released before the provider is shut down: a refiner still holding
+        # this would emit into a provider that no longer has an export thread.
+        translation_refiner.attach_quality_telemetry(None)
         telemetry_exporter_at_exit = app.state.quality_telemetry_exporter
         app.state.quality_telemetry_exporter = None
         if telemetry_exporter_at_exit is not None:

@@ -192,9 +192,42 @@ def test_event_name_is_not_an_attribute() -> None:
     assert "event.name" not in to_otlp_attributes(_event())
 
 
-def test_allowlist_contains_no_content_namespaces() -> None:
-    forbidden = ("text", "audio", "error", "ip", "transcript", "body")
-    assert not [k for k in ALLOWED_ATTRIBUTE_KEYS if any(f in k for f in forbidden)]
+# Whole segments, not substrings. The previous substring form rejected "ip"
+# inside "pipeline" and "error" inside "error_code" -- a closed enum, not a
+# message -- so it could not survive the allowlist widening past the envelope.
+# The real invariant now lives in the manifest: every key declares a value
+# shape, and there is no free-text kind to declare. This stays as a naming
+# tripwire on top of that.
+_CONTENT_SEGMENT = re.compile(
+    r"(?:^|[._])(?:text|transcript|message|detail|payload|url|uri|ip|body|prompt"
+    r"|email|username|useragent|token|secret)(?:[._]|$)"
+)
+
+
+def test_allowlist_contains_no_content_bearing_segment() -> None:
+    offenders = [k for k in ALLOWED_ATTRIBUTE_KEYS if _CONTENT_SEGMENT.search(k)]
+    assert not offenders, offenders
+
+
+@pytest.mark.parametrize(
+    "content_key",
+    [
+        "ssf.quality.source_text",
+        "ssf.quality.asr_transcript",
+        "ssf.quality.error_message",
+        "ssf.quality.audio_url",
+        "net.peer.ip",
+        "ssf.quality.request_body",
+    ],
+)
+def test_the_naming_tripwire_rejects_a_content_bearing_key(content_key: str) -> None:
+    """Proving the guard fails: without this the regex above could match nothing."""
+    assert _CONTENT_SEGMENT.search(content_key)
+
+
+def test_no_attribute_may_be_declared_as_free_text() -> None:
+    """The structural guarantee behind the naming tripwire."""
+    assert not [k for k in dir(contract.AttributeKind) if k in ("TEXT", "FREEFORM")]
 
 
 @pytest.mark.parametrize(
@@ -204,7 +237,7 @@ def test_allowlist_contains_no_content_namespaces() -> None:
         ("probe", TelemetryMode.PROBE),
         ("  PROBE  ", TelemetryMode.PROBE),
         ("true", TelemetryMode.DISABLED),
-        ("enabled", TelemetryMode.DISABLED),
+        ("enabled", TelemetryMode.ENABLED),
         ("", TelemetryMode.DISABLED),
         (None, TelemetryMode.DISABLED),
     ],

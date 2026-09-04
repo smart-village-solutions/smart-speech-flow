@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.quality_telemetry import TelemetryMode
+from services.api_gateway.translation_refiner import translation_refiner
 
 
 def _batch_threads() -> list[str]:
@@ -24,7 +25,7 @@ def _quiet_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.setenv("SSF_AUDIO_BASE_DIR", str(tmp_path))
 
 
-@pytest.mark.parametrize("bad_mode", ["enabled", "true", "1", "on", "", "  ", "PROBE!"])
+@pytest.mark.parametrize("bad_mode", ["true", "1", "on", "", "  ", "PROBE!"])
 def test_an_unknown_mode_disables_telemetry_instead_of_killing_the_gateway(
     monkeypatch: pytest.MonkeyPatch, bad_mode: str
 ) -> None:
@@ -113,9 +114,7 @@ def test_a_wedged_telemetry_shutdown_does_not_hold_the_gateway_open(
     try:
         with TestClient(app):
             app.state.quality_telemetry_exporter.shutdown()
-            monkeypatch.setattr(
-                app.state, "quality_telemetry_exporter", _WedgedExporter()
-            )
+            monkeypatch.setattr(app.state, "quality_telemetry_exporter", _WedgedExporter())
             started = time.monotonic()
         elapsed = time.monotonic() - started
     finally:
@@ -136,8 +135,31 @@ def test_a_failing_telemetry_shutdown_is_reported_and_teardown_continues(
 
     with TestClient(app):
         app.state.quality_telemetry_exporter.shutdown()
-        monkeypatch.setattr(
-            app.state, "quality_telemetry_exporter", _BrokenExporter()
-        )
+        monkeypatch.setattr(app.state, "quality_telemetry_exporter", _BrokenExporter())
 
     assert "collector connection reset" in capsys.readouterr().out
+
+
+def test_the_shadow_refiner_is_given_the_telemetry_the_lifespan_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refiner is a module-level singleton created at import time, while
+    telemetry is built per lifespan -- so the two only meet if the lifespan
+    says so. Without this the refinement event silently never fires."""
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
+
+    with TestClient(app):
+        assert translation_refiner.quality_telemetry is app.state.quality_telemetry
+
+
+def test_the_refiner_is_released_when_the_lifespan_ends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stale QualityTelemetry outliving its exporter would emit into a
+    provider that has already been shut down."""
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
+
+    with TestClient(app):
+        pass
+
+    assert translation_refiner.quality_telemetry is None
