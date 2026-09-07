@@ -29,6 +29,7 @@ from fastapi import (
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from ..log_safety import sanitize_log_value
+from ..message_telemetry import MessageTelemetryRecorder
 from ..pipeline_admission import PipelineBusyError, run_pipeline
 
 # Import der bestehenden Pipeline-Logik
@@ -38,6 +39,7 @@ from ..pipeline_logic import (
     process_text_pipeline,
     process_wav,
 )
+from ..quality_telemetry import InputMode
 from ..session_manager import ClientType, SessionMessage, SessionStatus, session_manager
 from ..websocket import MessageType, WebSocketManager, get_websocket_manager
 
@@ -64,6 +66,18 @@ def utc_now() -> datetime:
 
 def iso_utc_now() -> str:
     return utc_now().isoformat()
+
+
+def _quality_telemetry(request: Request) -> Any:
+    """The gateway's emitter, or None when there is no app behind the request.
+
+    Never raises: the route's `finally` calls this, so an exception here would
+    replace whatever the request was actually about to return.
+    """
+    try:
+        return request.app.state.quality_telemetry
+    except Exception:
+        return None
 
 
 def _safe_identifier(value: Optional[str]) -> str:
@@ -448,7 +462,9 @@ def _raise_if_upstream_busy(result: Dict[str, Any]) -> None:
     if result.get("error_code") != UPSTREAM_BUSY_ERROR_CODE:
         return
 
-    retry_after = int(result.get("retry_after_seconds", DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS))
+    retry_after = int(
+        result.get("retry_after_seconds", DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS)
+    )
     raise HTTPException(
         status_code=503,
         detail=create_error_response(
@@ -874,6 +890,9 @@ async def send_unified_message(
     logger = logging.getLogger(__name__)
 
     start_time = time.perf_counter()
+    # One row per processed message, assembled across every exit below and
+    # emitted once from the `finally`. See message_telemetry.py.
+    recorder = MessageTelemetryRecorder(session_id=session_id, start_time=start_time)
     _log_session_event("🚀 Processing message", session_id)
 
     # Session-Validation
@@ -915,14 +934,20 @@ async def send_unified_message(
     try:
         if content_type.startswith("multipart/form-data"):
             # Audio-Pipeline
+            recorder.arm(InputMode.AUDIO)
             _log_session_event("🎵 Starte Audio-Pipeline", session_id)
-            result = await process_audio_input(session_id, request, start_time, manager)
+            result = await process_audio_input(
+                session_id, request, start_time, manager, recorder=recorder
+            )
             _log_session_event("✅ Audio-Pipeline erfolgreich", session_id)
             return result
         elif content_type.startswith("application/json"):
             # Text-Pipeline
+            recorder.arm(InputMode.TEXT)
             _log_session_event("📝 Starte Text-Pipeline", session_id)
-            result = await process_text_input(session_id, request, start_time, manager)
+            result = await process_text_input(
+                session_id, request, start_time, manager, recorder=recorder
+            )
             _log_session_event("✅ Text-Pipeline erfolgreich", session_id)
             return result
         else:
@@ -939,7 +964,8 @@ async def send_unified_message(
                 ),
             )
 
-    except HTTPException:
+    except HTTPException as exc:
+        recorder.record_http_failure(exc.status_code)
         _log_session_event("⚠️ HTTPException in send_unified_message", session_id)
         raise
     except Exception as e:
@@ -951,6 +977,7 @@ async def send_unified_message(
         import traceback
 
         traceback.print_exc()
+        recorder.record_http_failure(500)
         raise HTTPException(
             status_code=500,
             detail=create_error_response(
@@ -959,6 +986,8 @@ async def send_unified_message(
                 {"session_id": session_id, "error_details": str(e)},
             ),
         )
+    finally:
+        recorder.emit(_quality_telemetry(request))
 
 
 async def process_audio_input(
@@ -966,9 +995,18 @@ async def process_audio_input(
     request: Request,
     start_time: float,
     manager: Optional[WebSocketManager] = None,
+    recorder: Optional[MessageTelemetryRecorder] = None,
 ) -> MessageResponse:
     """Audio-Input verarbeiten (multipart/form-data)"""
+    # A recorder nobody armed emits nothing, so a direct caller -- every test
+    # that drives this function without the route -- needs to pass nothing.
+    recorder = recorder or MessageTelemetryRecorder(
+        session_id=session_id, start_time=start_time
+    )
     file, source_lang, target_lang, client_type = await _parse_audio_form(request)
+    recorder.record_request(
+        client_type=client_type, source_lang=source_lang, target_lang=target_lang
+    )
 
     # Validate languages match session configuration
     session = session_manager.get_session(session_id)
@@ -997,6 +1035,8 @@ async def process_audio_input(
         )
     except PipelineBusyError as busy:
         raise _system_busy_error(busy) from busy
+
+    recorder.record_pipeline_result(result)
 
     if result.get("error", False):
         _raise_if_upstream_busy(result)
@@ -1047,9 +1087,18 @@ async def process_text_input(
     request: Request,
     start_time: float,
     manager: Optional[WebSocketManager] = None,
+    recorder: Optional[MessageTelemetryRecorder] = None,
 ) -> MessageResponse:
     """Text-Input verarbeiten (application/json)"""
+    recorder = recorder or MessageTelemetryRecorder(
+        session_id=session_id, start_time=start_time
+    )
     text_request = await _parse_text_request(request)
+    recorder.record_request(
+        client_type=text_request.client_type,
+        source_lang=text_request.source_lang,
+        target_lang=text_request.target_lang,
+    )
 
     # Language validation
     logger.info(
@@ -1101,6 +1150,8 @@ async def process_text_input(
         )
     except PipelineBusyError as busy:
         raise _system_busy_error(busy) from busy
+
+    recorder.record_pipeline_result(pipeline_result)
 
     # Fehlerbehandlung
     if pipeline_result.get("error"):

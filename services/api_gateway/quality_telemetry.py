@@ -31,6 +31,8 @@ class QualityEventType(str, Enum):
 
     TELEMETRY_PROBE = "telemetry_probe"
     REFINEMENT_ATTEMPT = "refinement_attempt"
+    TRANSLATION_MESSAGE = "translation_message"
+    SESSION_LIFECYCLE = "session_lifecycle"
 
 
 class QualityErrorCode(str, Enum):
@@ -66,6 +68,14 @@ class PipelineStage(str, Enum):
     REFINEMENT = "refinement"
     TTS = "tts"
     DELIVERY = "delivery"
+    # Shed before any stage ran. Distinct from VALIDATION: the request was
+    # well formed, the gateway was simply at capacity, and folding the two
+    # together reads a load-shedding event as a broken client.
+    ADMISSION = "admission"
+    # A blanket exception handler wraps every upstream call, so it cannot know
+    # which one raised. Attributing the failure to whichever stage happened to
+    # run last would read as a defect in that stage.
+    UNKNOWN = "unknown"
 
 
 class RefinerRole(str, Enum):
@@ -78,6 +88,75 @@ class RefinementOutcomeCode(str, Enum):
     ERROR = "error"
     SKIPPED_OVERLOAD = "skipped_overload"
     SUBMISSION_FAILED = "submission_failed"
+
+
+class MessageDirection(str, Enum):
+    """Which side of the session spoke.
+
+    Derived from the sending client's type rather than from the languages: a
+    session where both participants share a language would otherwise be
+    indistinguishable in either direction.
+    """
+
+    ADMIN_TO_CUSTOMER = "admin_to_customer"
+    CUSTOMER_TO_ADMIN = "customer_to_admin"
+    UNKNOWN = "unknown"
+
+
+class InputMode(str, Enum):
+    """Which pipeline ran. Audio adds an ASR stage that text never has."""
+
+    AUDIO = "audio"
+    TEXT = "text"
+    UNKNOWN = "unknown"
+
+
+class TerminalOutcome(str, Enum):
+    """How the request ended, from the caller's point of view."""
+
+    SUCCESS = "success"
+    FAILURE = "failure"
+
+
+class SessionLifecyclePhase(str, Enum):
+    """The three points a session passes through.
+
+    `terminated` is the funnel: it is the only one that knows how long the
+    session lasted and how many messages it carried.
+    """
+
+    CREATED = "created"
+    ACTIVATED = "activated"
+    TERMINATED = "terminated"
+
+
+class SessionTerminationReason(str, Enum):
+    """Why a session ended, as a closed set.
+
+    `SessionManager.terminate_session` takes `reason` as a free-form `str`, so
+    without this the reason would be a free-text channel into a store that has
+    no free-text kind. Every value the gateway actually passes has a member;
+    anything else becomes `other`.
+    """
+
+    NONE = "none"
+    MANUAL_ADMIN_TERMINATION = "manual_admin_termination"
+    MANUAL_TERMINATION = "manual_termination"
+    NEW_SESSION_CREATED = "new_session_created"
+    SESSION_TIMEOUT = "session_timeout"
+    SYSTEM_CLEANUP = "system_cleanup"
+    OTHER = "other"
+
+    @classmethod
+    def classify(cls, raw: object) -> "SessionTerminationReason":
+        """Never raise, and never store the value it was given."""
+        try:
+            reason = cls(raw)
+        except (ValueError, TypeError):
+            return cls.OTHER
+        # `none` is the absence of a termination, not something a caller may
+        # name -- a terminated session claiming `none` fails the invariant.
+        return cls.OTHER if reason is cls.NONE else reason
 
 
 class AttributeKind(str, Enum):
@@ -149,6 +228,32 @@ ALLOWED_ATTRIBUTES: Final[Mapping[str, AttributeSpec]] = {
     "ssf.quality.error_code": AttributeSpec(
         AttributeKind.ENUM, _enum_values(QualityErrorCode)
     ),
+    "ssf.quality.session_ref": AttributeSpec(AttributeKind.OPAQUE_REF),
+    "ssf.quality.direction": AttributeSpec(
+        AttributeKind.ENUM, _enum_values(MessageDirection)
+    ),
+    "ssf.quality.input_mode": AttributeSpec(
+        AttributeKind.ENUM, _enum_values(InputMode)
+    ),
+    "ssf.quality.terminal_outcome": AttributeSpec(
+        AttributeKind.ENUM, _enum_values(TerminalOutcome)
+    ),
+    "ssf.quality.failed_stage": AttributeSpec(
+        AttributeKind.ENUM, _enum_values(PipelineStage)
+    ),
+    "ssf.quality.total_duration_ms": AttributeSpec(AttributeKind.NUMBER),
+    "ssf.quality.asr_duration_ms": AttributeSpec(AttributeKind.NUMBER),
+    "ssf.quality.translation_duration_ms": AttributeSpec(AttributeKind.NUMBER),
+    "ssf.quality.refinement_duration_ms": AttributeSpec(AttributeKind.NUMBER),
+    "ssf.quality.tts_duration_ms": AttributeSpec(AttributeKind.NUMBER),
+    "ssf.quality.lifecycle_phase": AttributeSpec(
+        AttributeKind.ENUM, _enum_values(SessionLifecyclePhase)
+    ),
+    "ssf.quality.termination_reason": AttributeSpec(
+        AttributeKind.ENUM, _enum_values(SessionTerminationReason)
+    ),
+    "ssf.quality.session_duration_ms": AttributeSpec(AttributeKind.NUMBER),
+    "ssf.quality.message_count": AttributeSpec(AttributeKind.NUMBER),
 }
 
 ALLOWED_ATTRIBUTE_KEYS: Final[frozenset[str]] = frozenset(ALLOWED_ATTRIBUTES)
@@ -285,7 +390,135 @@ class RefinementAttemptEvent:
         }
 
 
-QualityEvent = QualityProbeEvent | RefinementAttemptEvent
+@dataclass(frozen=True, slots=True)
+class TranslationMessageEvent:
+    """One processed message, successful or not.
+
+    Deliberately narrow: this is the denominator every ratio in the dashboards
+    divides by, so it has to be cheap enough to emit on every message and small
+    enough to be obviously content-free. No field here is a LABEL -- the widest
+    kind, and the only one a sentence fragment could fit through -- because
+    nothing on a message row is operator-set configuration.
+
+    ``session_ref`` is a keyed HMAC, never a session id and never the unkeyed
+    digest the logs use. See session_pseudonym.py.
+    """
+
+    event_id: UUID
+    schema_version: int
+    emitted_at_utc: datetime
+    event_type: QualityEventType
+    session_ref: str
+    direction: MessageDirection
+    input_mode: InputMode
+    source_lang: str
+    target_lang: str
+    terminal_outcome: TerminalOutcome
+    failed_stage: PipelineStage
+    error_code: QualityErrorCode
+    total_duration_ms: int
+    asr_duration_ms: int
+    translation_duration_ms: int
+    refinement_duration_ms: int
+    tts_duration_ms: int
+
+    def __post_init__(self) -> None:
+        _validate_envelope(self.emitted_at_utc, self.event_type, self.schema_version)
+        for name in _MESSAGE_DURATION_FIELDS:
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must not be negative")
+        if not _OPAQUE_REF_PATTERN.match(self.session_ref):
+            raise ValueError("session_ref is not an opaque reference")
+        for code in (self.source_lang, self.target_lang):
+            if not _LANGUAGE_PATTERN.match(code):
+                raise ValueError(f"not a language code: {code!r}")
+        # A half-filled row is worse than no row: it reads as a real outcome.
+        # These pairs are the ones a partially populated recorder would get
+        # wrong, and every dashboard panel keys off them.
+        succeeded = self.terminal_outcome is TerminalOutcome.SUCCESS
+        blamed = self.failed_stage is not PipelineStage.NONE
+        explained = self.error_code is not QualityErrorCode.NONE
+        if succeeded and (blamed or explained):
+            raise ValueError("a successful message cannot name a failure")
+        if not succeeded and not explained:
+            raise ValueError("a failed message must carry an error code")
+
+    def _attributes(self) -> dict[str, str]:
+        return {
+            "ssf.quality.session_ref": self.session_ref,
+            "ssf.quality.direction": self.direction.value,
+            "ssf.quality.input_mode": self.input_mode.value,
+            "ssf.quality.source_lang": self.source_lang,
+            "ssf.quality.target_lang": self.target_lang,
+            "ssf.quality.terminal_outcome": self.terminal_outcome.value,
+            "ssf.quality.failed_stage": self.failed_stage.value,
+            "ssf.quality.error_code": self.error_code.value,
+            "ssf.quality.total_duration_ms": str(self.total_duration_ms),
+            "ssf.quality.asr_duration_ms": str(self.asr_duration_ms),
+            "ssf.quality.translation_duration_ms": str(self.translation_duration_ms),
+            "ssf.quality.refinement_duration_ms": str(self.refinement_duration_ms),
+            "ssf.quality.tts_duration_ms": str(self.tts_duration_ms),
+        }
+
+
+_MESSAGE_DURATION_FIELDS: Final[tuple[str, ...]] = (
+    "total_duration_ms",
+    "asr_duration_ms",
+    "translation_duration_ms",
+    "refinement_duration_ms",
+    "tts_duration_ms",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SessionLifecycleEvent:
+    """One session transition. The denominator for every per-session ratio.
+
+    Every field already exists on the `Session` dataclass; none of them is
+    content. `message_count` is a count, not the messages, and
+    `session_duration_ms` is derived from two timestamps the session already
+    keeps.
+    """
+
+    event_id: UUID
+    schema_version: int
+    emitted_at_utc: datetime
+    event_type: QualityEventType
+    session_ref: str
+    phase: SessionLifecyclePhase
+    termination_reason: SessionTerminationReason
+    session_duration_ms: int
+    message_count: int
+
+    def __post_init__(self) -> None:
+        _validate_envelope(self.emitted_at_utc, self.event_type, self.schema_version)
+        if self.session_duration_ms < 0:
+            raise ValueError("session_duration_ms must not be negative")
+        if self.message_count < 0:
+            raise ValueError("message_count must not be negative")
+        if not _OPAQUE_REF_PATTERN.match(self.session_ref):
+            raise ValueError("session_ref is not an opaque reference")
+        ended = self.phase is SessionLifecyclePhase.TERMINATED
+        named = self.termination_reason is not SessionTerminationReason.NONE
+        if ended != named:
+            raise ValueError("exactly a terminated session carries a reason")
+
+    def _attributes(self) -> dict[str, str]:
+        return {
+            "ssf.quality.session_ref": self.session_ref,
+            "ssf.quality.lifecycle_phase": self.phase.value,
+            "ssf.quality.termination_reason": self.termination_reason.value,
+            "ssf.quality.session_duration_ms": str(self.session_duration_ms),
+            "ssf.quality.message_count": str(self.message_count),
+        }
+
+
+QualityEvent = (
+    QualityProbeEvent
+    | RefinementAttemptEvent
+    | TranslationMessageEvent
+    | SessionLifecycleEvent
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -356,10 +589,23 @@ def to_otlp_attributes(event: QualityEvent) -> dict[str, str]:
 
 UNDETERMINED_LANGUAGE: Final[str] = "und"
 UNKNOWN_LABEL: Final[str] = "unknown"
+# Same width and charset as a real reference so it passes the OPAQUE_REF shape;
+# no HMAC will collide with it. Mirrors session_pseudonym.MISSING_REFERENCE.
+UNKNOWN_REFERENCE: Final[str] = "0" * 32
 
 
 def _as_label(value: str) -> str:
     return value if _LABEL_PATTERN.match(str(value or "")) else UNKNOWN_LABEL
+
+
+def _as_opaque_ref(value: str) -> str:
+    """Anything that is not already a reference becomes the missing sentinel.
+
+    A caller that hands this a raw session id has a bug, and storing the id
+    would be the exact leak the module exists to prevent -- so it is discarded
+    rather than repaired here.
+    """
+    return value if _OPAQUE_REF_PATTERN.match(str(value or "")) else UNKNOWN_REFERENCE
 
 
 def _as_language(value: str) -> str:
@@ -545,6 +791,95 @@ class QualityTelemetry:
                 source_lang=_as_language(source_lang),
                 target_lang=_as_language(target_lang),
                 error_code=error_code,
+            )
+        except (ValueError, TypeError):
+            logger.warning("Quality telemetry event rejected before export")
+            return self._record(ProbeOutcome.DROPPED_DISALLOWED, None)
+
+        return self._export(event)
+
+    def emit_translation_message(
+        self,
+        *,
+        session_ref: str,
+        direction: MessageDirection,
+        input_mode: InputMode,
+        source_lang: str,
+        target_lang: str,
+        terminal_outcome: TerminalOutcome,
+        failed_stage: PipelineStage,
+        error_code: QualityErrorCode,
+        total_duration_ms: int,
+        asr_duration_ms: int,
+        translation_duration_ms: int,
+        refinement_duration_ms: int,
+        tts_duration_ms: int,
+    ) -> ProbeResult:
+        """One processed message, successful or not.
+
+        Gated on ENABLED for the same reason as the refinement event: PROBE
+        stays a pure transport check. Every argument is coerced rather than
+        trusted, because this is the row every ratio divides by and a dropped
+        row makes each of those ratios wrong for as long as it is retained.
+        """
+        if not self._mode.emits_pipeline_events:
+            return self._record(ProbeOutcome.DISABLED, None)
+
+        try:
+            event = TranslationMessageEvent(
+                event_id=uuid4(),
+                schema_version=SCHEMA_VERSION,
+                emitted_at_utc=datetime.now(timezone.utc),
+                event_type=QualityEventType.TRANSLATION_MESSAGE,
+                session_ref=_as_opaque_ref(session_ref),
+                direction=direction,
+                input_mode=input_mode,
+                source_lang=_as_language(source_lang),
+                target_lang=_as_language(target_lang),
+                terminal_outcome=terminal_outcome,
+                failed_stage=failed_stage,
+                error_code=error_code,
+                total_duration_ms=max(0, int(total_duration_ms or 0)),
+                asr_duration_ms=max(0, int(asr_duration_ms or 0)),
+                translation_duration_ms=max(0, int(translation_duration_ms or 0)),
+                refinement_duration_ms=max(0, int(refinement_duration_ms or 0)),
+                tts_duration_ms=max(0, int(tts_duration_ms or 0)),
+            )
+        except (ValueError, TypeError):
+            logger.warning("Quality telemetry event rejected before export")
+            return self._record(ProbeOutcome.DROPPED_DISALLOWED, None)
+
+        return self._export(event)
+
+    def emit_session_lifecycle(
+        self,
+        *,
+        session_ref: str,
+        phase: SessionLifecyclePhase,
+        termination_reason: SessionTerminationReason,
+        session_duration_ms: int,
+        message_count: int,
+    ) -> ProbeResult:
+        """One session transition.
+
+        Gated on ENABLED like the other pipeline events. Coerces rather than
+        trusts: this is the denominator for every per-session ratio, and a
+        dropped row makes each of them wrong for as long as it is retained.
+        """
+        if not self._mode.emits_pipeline_events:
+            return self._record(ProbeOutcome.DISABLED, None)
+
+        try:
+            event = SessionLifecycleEvent(
+                event_id=uuid4(),
+                schema_version=SCHEMA_VERSION,
+                emitted_at_utc=datetime.now(timezone.utc),
+                event_type=QualityEventType.SESSION_LIFECYCLE,
+                session_ref=_as_opaque_ref(session_ref),
+                phase=phase,
+                termination_reason=termination_reason,
+                session_duration_ms=max(0, int(session_duration_ms or 0)),
+                message_count=max(0, int(message_count or 0)),
             )
         except (ValueError, TypeError):
             logger.warning("Quality telemetry event rejected before export")

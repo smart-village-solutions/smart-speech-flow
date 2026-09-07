@@ -17,6 +17,10 @@ from services.api_gateway.pipeline_admission import (
     _SlotClaim,
     run_pipeline,
 )
+from services.api_gateway.quality_telemetry import (
+    PipelineStage,
+    QualityErrorCode,
+)
 from services.api_gateway.session_manager import SessionManager
 from tests.pipeline_helpers import (
     PIPELINE_SUCCESS,
@@ -43,7 +47,9 @@ def _metrics() -> PipelineAdmissionMetrics:
     return PipelineAdmissionMetrics(CollectorRegistry())
 
 
-def _admission(max_concurrent: int, wait: float = SHORT_WAIT, *, metrics=None) -> PipelineAdmission:
+def _admission(
+    max_concurrent: int, wait: float = SHORT_WAIT, *, metrics=None
+) -> PipelineAdmission:
     return PipelineAdmission(
         PipelineAdmissionConfig(max_concurrent=max_concurrent, queue_wait_seconds=wait),
         metrics=metrics,
@@ -59,7 +65,9 @@ async def _wait_for_in_flight(admission: PipelineAdmission, count: int) -> None:
     deadline = time.perf_counter() + SAFETY_TIMEOUT
     while admission.in_flight != count:
         if time.perf_counter() > deadline:
-            raise AssertionError(f"in_flight settled at {admission.in_flight}, expected {count}")
+            raise AssertionError(
+                f"in_flight settled at {admission.in_flight}, expected {count}"
+            )
         await asyncio.sleep(0.005)
 
 
@@ -252,7 +260,9 @@ class TestSlotBounding:
         second_task = asyncio.create_task(admission.run(second))
 
         finish.set()
-        await asyncio.wait_for(asyncio.gather(first_task, second_task), timeout=SAFETY_TIMEOUT)
+        await asyncio.wait_for(
+            asyncio.gather(first_task, second_task), timeout=SAFETY_TIMEOUT
+        )
 
         assert order == ["first-in", "first-out", "second-in"]
 
@@ -323,11 +333,15 @@ class TestCancellationCannotFreeCapacityEarly:
             with pytest.raises(asyncio.CancelledError):
                 await task
 
-            assert not ran.is_set(), "work started; this test no longer covers its window"
+            assert (
+                not ran.is_set()
+            ), "work started; this test no longer covers its window"
             await _wait_for_in_flight(admission, 0)
 
         # Counted as free is not enough; the permit has to be usable again.
-        assert await asyncio.wait_for(admission.run(lambda: "ok"), SAFETY_TIMEOUT) == "ok"
+        assert (
+            await asyncio.wait_for(admission.run(lambda: "ok"), SAFETY_TIMEOUT) == "ok"
+        )
 
     def test_only_one_party_can_claim_a_slot(self):
         """The claim is the whole safety argument, so it is tested directly.
@@ -418,7 +432,9 @@ class TestCancellationCannotFreeCapacityEarly:
         """
         admission = _admission(1)
         closed_loop = Mock()
-        closed_loop.call_soon_threadsafe.side_effect = RuntimeError("Event loop is closed")
+        closed_loop.call_soon_threadsafe.side_effect = RuntimeError(
+            "Event loop is closed"
+        )
 
         admission._schedule_release(closed_loop)
 
@@ -436,7 +452,9 @@ class TestZeroQueueWaitShedsRatherThanQueues:
     async def test_idle_gateway_still_admits(self):
         admission = _admission(2, wait=0.0)
 
-        assert await asyncio.wait_for(admission.run(lambda: "ok"), SAFETY_TIMEOUT) == "ok"
+        assert (
+            await asyncio.wait_for(admission.run(lambda: "ok"), SAFETY_TIMEOUT) == "ok"
+        )
 
     @pytest.mark.asyncio
     async def test_every_slot_remains_usable(self):
@@ -599,7 +617,9 @@ class TestSystemBusyResponse:
 
         with (
             patch.object(session_routes, "session_manager", session_manager),
-            patch.object(session_routes, "process_wav", return_value=dict(PIPELINE_SUCCESS)),
+            patch.object(
+                session_routes, "process_wav", return_value=dict(PIPELINE_SUCCESS)
+            ),
         ):
             async with _Saturated(admission):
                 with pytest.raises(HTTPException) as excinfo:
@@ -624,7 +644,9 @@ class TestSystemBusyResponse:
         with (
             patch.object(session_routes, "session_manager", session_manager),
             patch.object(
-                session_routes, "process_text_pipeline", return_value=dict(TEXT_PIPELINE_SUCCESS)
+                session_routes,
+                "process_text_pipeline",
+                return_value=dict(TEXT_PIPELINE_SUCCESS),
             ),
         ):
             async with _Saturated(admission):
@@ -651,7 +673,9 @@ class TestSystemBusyResponse:
         with (
             patch.object(session_routes, "session_manager", session_manager),
             patch.object(
-                session_routes, "process_text_pipeline", return_value=dict(TEXT_PIPELINE_SUCCESS)
+                session_routes,
+                "process_text_pipeline",
+                return_value=dict(TEXT_PIPELINE_SUCCESS),
             ),
         ):
             async with _Saturated(admission):
@@ -661,7 +685,9 @@ class TestSystemBusyResponse:
                     )
 
         error = excinfo.value
-        assert error.detail["details"]["retry_after_seconds"] == int(error.headers["Retry-After"])
+        assert error.detail["details"]["retry_after_seconds"] == int(
+            error.headers["Retry-After"]
+        )
         # The raw window stays available, under a name that cannot be mistaken
         # for an advised delay.
         assert error.detail["details"]["queue_wait_seconds"] == pytest.approx(0.2)
@@ -679,12 +705,16 @@ class TestSystemBusyResponse:
         with (
             patch.object(session_routes, "session_manager", session_manager),
             patch.object(
-                session_routes, "process_text_pipeline", return_value=dict(TEXT_PIPELINE_SUCCESS)
+                session_routes,
+                "process_text_pipeline",
+                return_value=dict(TEXT_PIPELINE_SUCCESS),
             ),
         ):
             async with _Saturated(admission):
                 with pytest.raises(HTTPException) as excinfo:
-                    await session_routes.send_unified_message(session_id, text_request(admission))
+                    await session_routes.send_unified_message(
+                        session_id, text_request(admission)
+                    )
 
         assert excinfo.value.status_code == 503
         assert excinfo.value.detail["error_code"] == "SYSTEM_BUSY"
@@ -699,7 +729,9 @@ class TestSystemBusyResponse:
         with (
             patch.object(session_routes, "session_manager", session_manager),
             patch.object(
-                session_routes, "process_text_pipeline", return_value=dict(TEXT_PIPELINE_SUCCESS)
+                session_routes,
+                "process_text_pipeline",
+                return_value=dict(TEXT_PIPELINE_SUCCESS),
             ),
         ):
             first = await session_routes.process_text_input(
@@ -747,7 +779,9 @@ class TestEndToEndOverTheWire:
             session_id = await make_active_session(live_manager)
             url = f"/api/session/{session_id}/message"
 
-            with patch.object(session_routes, "process_text_pipeline", new=blocking_text):
+            with patch.object(
+                session_routes, "process_text_pipeline", new=blocking_text
+            ):
                 transport = httpx.ASGITransport(app=app)
                 async with httpx.AsyncClient(
                     transport=transport, base_url="http://gateway.test"
@@ -797,6 +831,8 @@ class TestUpstreamSaturationStaysRetryable:
             debug_info={"steps": []},
             start_total=time.perf_counter(),
             error_message="Translation-Fehler: at capacity",
+            failed_stage=PipelineStage.TRANSLATION,
+            error_code=QualityErrorCode.UPSTREAM_BUSY,
             asr_text="Guten Tag",
             translation_text=None,
             audio_bytes=None,
@@ -814,6 +850,8 @@ class TestUpstreamSaturationStaysRetryable:
             debug_info={"steps": []},
             start_total=time.perf_counter(),
             error_message="Translation-Fehler: boom",
+            failed_stage=PipelineStage.TRANSLATION,
+            error_code=QualityErrorCode.UPSTREAM_ERROR,
             asr_text=None,
             translation_text=None,
             audio_bytes=None,
@@ -829,6 +867,8 @@ class TestUpstreamSaturationStaysRetryable:
             debug_info={"steps": []},
             start_total=time.perf_counter(),
             error_message="Translation-Fehler: at capacity",
+            failed_stage=PipelineStage.TRANSLATION,
+            error_code=QualityErrorCode.UPSTREAM_BUSY,
             asr_text=None,
             translation_text=None,
             audio_bytes=None,
@@ -857,7 +897,9 @@ class TestUpstreamSaturationStaysRetryable:
             patch.object(session_routes, "process_wav", return_value=busy_result),
         ):
             with pytest.raises(HTTPException) as excinfo:
-                await session_routes.process_audio_input(session_id, audio_request(), 0.0)
+                await session_routes.process_audio_input(
+                    session_id, audio_request(), 0.0
+                )
 
         error = excinfo.value
         assert error.status_code == 503
@@ -881,7 +923,9 @@ class TestUpstreamSaturationStaysRetryable:
 
         with (
             patch.object(session_routes, "session_manager", session_manager),
-            patch.object(session_routes, "process_text_pipeline", return_value=busy_result),
+            patch.object(
+                session_routes, "process_text_pipeline", return_value=busy_result
+            ),
         ):
             with pytest.raises(HTTPException) as excinfo:
                 await session_routes.process_text_input(session_id, text_request(), 0.0)
@@ -892,7 +936,9 @@ class TestUpstreamSaturationStaysRetryable:
         assert error.headers["Retry-After"] == "25"
 
     @pytest.mark.asyncio
-    async def test_ordinary_pipeline_failures_still_report_their_own_error(self, session_manager):
+    async def test_ordinary_pipeline_failures_still_report_their_own_error(
+        self, session_manager
+    ):
         """The marker must not swallow the existing contract for real failures."""
         from fastapi import HTTPException
 
@@ -906,7 +952,9 @@ class TestUpstreamSaturationStaysRetryable:
             patch.object(session_routes, "process_wav", return_value=failed),
         ):
             with pytest.raises(HTTPException) as excinfo:
-                await session_routes.process_audio_input(session_id, audio_request(), 0.0)
+                await session_routes.process_audio_input(
+                    session_id, audio_request(), 0.0
+                )
 
         assert excinfo.value.status_code == 500
         assert excinfo.value.detail["error_code"] == "PIPELINE_ERROR"
@@ -919,7 +967,9 @@ class TestLegacyRoutesAreGated:
     async def test_upload_route_reports_busy(self):
         admission = _admission(1)
 
-        with patch.object(upload_route, "process_wav", return_value=dict(PIPELINE_SUCCESS)):
+        with patch.object(
+            upload_route, "process_wav", return_value=dict(PIPELINE_SUCCESS)
+        ):
             async with _Saturated(admission):
                 response = await upload_route.upload(
                     request=request_with(admission),
@@ -935,7 +985,9 @@ class TestLegacyRoutesAreGated:
     async def test_pipeline_route_reports_busy(self):
         admission = _admission(1)
 
-        with patch.object(pipeline_route, "process_wav", return_value=dict(PIPELINE_SUCCESS)):
+        with patch.object(
+            pipeline_route, "process_wav", return_value=dict(PIPELINE_SUCCESS)
+        ):
             async with _Saturated(admission):
                 response = await pipeline_route.pipeline(
                     request=legacy_pipeline_request(admission),
@@ -965,7 +1017,9 @@ class TestNonPipelineTrafficIsUnaffected:
                 info = await asyncio.wait_for(
                     session_routes.get_session_info(session_id), timeout=1.0
                 )
-                active = await asyncio.wait_for(session_routes.get_active_sessions(), timeout=1.0)
+                active = await asyncio.wait_for(
+                    session_routes.get_active_sessions(), timeout=1.0
+                )
 
         assert info["id"] == session_id
         assert "sessions" in active
@@ -978,7 +1032,9 @@ class TestNonPipelineTrafficIsUnaffected:
         async with _Saturated(admission):
             with patch.object(health_route, "requests") as mock_requests:
                 mock_requests.get.return_value = Mock(status_code=200)
-                result = await asyncio.wait_for(asyncio.to_thread(health_route.health), timeout=1.0)
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(health_route.health), timeout=1.0
+                )
 
         assert set(result["services"].values()) == {"ok"}
 

@@ -22,6 +22,7 @@ from services.api_gateway.pipeline_logic import (
     _pipeline_error_result,
     _validate_and_normalize_text,
 )
+from services.api_gateway.quality_telemetry import PipelineStage, QualityErrorCode
 
 
 def create_test_wav(
@@ -29,7 +30,7 @@ def create_test_wav(
     sample_rate: int = 16000,
     bit_depth: int = 16,
     channels: int = 1,
-    amplitude: float = 0.5
+    amplitude: float = 0.5,
 ) -> bytes:
     """Helper function to create test WAV files"""
 
@@ -55,12 +56,14 @@ def create_test_wav(
         raise ValueError(f"Unsupported bit depth: {bit_depth}")
 
     if channels > 1:
-        wave_data = np.tile(wave_data.reshape(-1, 1), (1, channels)).astype(wave_data.dtype)
+        wave_data = np.tile(wave_data.reshape(-1, 1), (1, channels)).astype(
+            wave_data.dtype
+        )
         wave_data = wave_data.flatten()
 
     # Create WAV file in memory
     wav_io = io.BytesIO()
-    with wave.open(wav_io, 'wb') as wav_file:
+    with wave.open(wav_io, "wb") as wav_file:
         wav_file.setnchannels(channels)
         wav_file.setsampwidth(bit_depth // 8)
         wav_file.setframerate(sample_rate)
@@ -75,10 +78,7 @@ class TestAudioValidation:
     def test_valid_audio_16khz_16bit_mono(self):
         """Test: Gültiges Audio (16kHz, 16-bit, Mono) wird akzeptiert"""
         audio_bytes = create_test_wav(
-            duration_seconds=5.0,
-            sample_rate=16000,
-            bit_depth=16,
-            channels=1
+            duration_seconds=5.0, sample_rate=16000, bit_depth=16, channels=1
         )
 
         result = validate_audio_input(audio_bytes)
@@ -102,7 +102,9 @@ class TestAudioValidation:
         assert result.is_valid is False
         assert result.error_code == "FILE_TOO_LARGE"
         assert "too large" in result.error_message.lower()
-        assert result.details["file_size_bytes"] > int(specs.MAX_FILE_SIZE_MB * 1024 * 1024)
+        assert result.details["file_size_bytes"] > int(
+            specs.MAX_FILE_SIZE_MB * 1024 * 1024
+        )
 
     def test_wrong_sample_rate_auto_conversion(self):
         """Test: Sample-Rate wird automatisch auf 16kHz konvertiert"""
@@ -110,7 +112,7 @@ class TestAudioValidation:
             duration_seconds=2.0,
             sample_rate=44100,  # Wrong sample rate
             bit_depth=16,
-            channels=1
+            channels=1,
         )
 
         result = validate_audio_input(audio_bytes)
@@ -128,7 +130,7 @@ class TestAudioValidation:
             duration_seconds=2.0,
             sample_rate=16000,
             bit_depth=32,  # Wrong bit depth
-            channels=1
+            channels=1,
         )
 
         result = validate_audio_input(audio_bytes)
@@ -145,7 +147,7 @@ class TestAudioValidation:
             duration_seconds=2.0,
             sample_rate=16000,
             bit_depth=16,
-            channels=2  # Stereo instead of Mono
+            channels=2,  # Stereo instead of Mono
         )
 
         result = validate_audio_input(audio_bytes)
@@ -162,7 +164,7 @@ class TestAudioValidation:
             duration_seconds=0.05,  # 50ms - too short
             sample_rate=16000,
             bit_depth=16,
-            channels=1
+            channels=1,
         )
 
         result = validate_audio_input(audio_bytes)
@@ -178,7 +180,7 @@ class TestAudioValidation:
             duration_seconds=250.0,  # 250 seconds - too long
             sample_rate=16000,
             bit_depth=16,
-            channels=1
+            channels=1,
         )
 
         result = validate_audio_input(audio_bytes)
@@ -217,10 +219,7 @@ class TestAudioNormalization:
     def test_audio_normalization_applied(self):
         """Test: Audio-Normalisierung wird angewendet"""
         # Create quiet audio that needs boosting
-        audio_bytes = create_test_wav(
-            duration_seconds=2.0,
-            amplitude=0.1  # Very quiet
-        )
+        audio_bytes = create_test_wav(duration_seconds=2.0, amplitude=0.1)  # Very quiet
 
         result = validate_audio_input(audio_bytes, normalize=True)
 
@@ -240,15 +239,11 @@ class TestAudioNormalization:
     def test_normalize_audio_function(self):
         """Test: normalize_audio Funktion arbeitet korrekt"""
         original_audio = create_test_wav(
-            duration_seconds=1.0,
-            amplitude=0.2  # Quiet audio
+            duration_seconds=1.0, amplitude=0.2  # Quiet audio
         )
 
         normalized_audio = normalize_audio(
-            original_audio,
-            sample_rate=16000,
-            bit_depth=16,
-            channels=1
+            original_audio, sample_rate=16000, bit_depth=16, channels=1
         )
 
         # Normalized audio should be different from original
@@ -303,7 +298,9 @@ class TestPipelineHelpers:
         assert any("Bit depth 8-bit" in error for error in errors)
         assert any("Channels 2" in error for error in errors)
         assert any("too short" in error for error in errors)
-        assert any("automatic conversion failed: ffmpeg failed" in error for error in errors)
+        assert any(
+            "automatic conversion failed: ffmpeg failed" in error for error in errors
+        )
 
     def test_normalize_audio_if_requested_skips_when_disabled(self):
         audio_bytes = create_test_wav(duration_seconds=0.2)
@@ -322,7 +319,9 @@ class TestPipelineHelpers:
     def test_validate_and_normalize_text_returns_pipeline_error_for_invalid_text(self):
         debug_info = {"steps": []}
 
-        processed_text, failure = _validate_and_normalize_text("", debug_info, start_total=0.0)
+        processed_text, failure = _validate_and_normalize_text(
+            "", debug_info, start_total=0.0
+        )
 
         assert processed_text is None
         assert failure is not None
@@ -338,6 +337,8 @@ class TestPipelineHelpers:
             debug_info=debug_info,
             start_total=0.0,
             error_message="Audio validation failed",
+            failed_stage=PipelineStage.VALIDATION,
+            error_code=QualityErrorCode.AUDIO_VALIDATION_FAILED,
             asr_text=None,
             translation_text=None,
             audio_bytes=None,
@@ -379,7 +380,7 @@ class TestAudioValidationPerformance:
 class TestProcessWavIntegration:
     """Tests für Integration mit process_wav"""
 
-    @patch('services.api_gateway.pipeline_logic.requests.post')
+    @patch("services.api_gateway.pipeline_logic.requests.post")
     def test_process_wav_with_validation_enabled(self, mock_post):
         """Test: process_wav mit aktivierter Validation"""
         # Mock ASR response
@@ -398,7 +399,11 @@ class TestProcessWavIntegration:
         mock_tts_response.status_code = 200
         mock_tts_response.headers = {"content-type": "audio/wav"}
 
-        mock_post.side_effect = [mock_asr_response, mock_translation_response, mock_tts_response]
+        mock_post.side_effect = [
+            mock_asr_response,
+            mock_translation_response,
+            mock_tts_response,
+        ]
 
         # Valid audio
         audio_bytes = create_test_wav(duration_seconds=3.0)
@@ -410,10 +415,17 @@ class TestProcessWavIntegration:
 
         # Check for debug info (can be 'debug' or 'debug_info')
         debug_key = "debug" if "debug" in result else "debug_info"
-        assert "Audio_Validation" in [step.get("step", step.get("name")) for step in result[debug_key]["steps"]]
+        assert "Audio_Validation" in [
+            step.get("step", step.get("name")) for step in result[debug_key]["steps"]
+        ]
 
         # Find validation step
-        validation_step = next(step for step in result[debug_key]["steps"] if step.get("step") == "Audio_Validation" or step.get("name") == "Audio_Validation")
+        validation_step = next(
+            step
+            for step in result[debug_key]["steps"]
+            if step.get("step") == "Audio_Validation"
+            or step.get("name") == "Audio_Validation"
+        )
         assert validation_step["output"] is True  # Validation passed
         assert validation_step.get("error") is None
 
@@ -423,7 +435,7 @@ class TestProcessWavIntegration:
         audio_bytes = create_test_wav(
             duration_seconds=2.0,
             sample_rate=44100,
-            channels=4  # Unsupported channel layout
+            channels=4,  # Unsupported channel layout
         )
 
         result = process_wav(audio_bytes, "en", "de", debug=True, validate_audio=True)
@@ -433,7 +445,10 @@ class TestProcessWavIntegration:
         assert "Audio validation failed" in result.get("error_msg", "")
         assert result.get("validation_result") is not None
         assert result["validation_result"].error_code == "INVALID_AUDIO_SPECS"
-        assert "automatic conversion failed" in result["validation_result"].error_message.lower()
+        assert (
+            "automatic conversion failed"
+            in result["validation_result"].error_message.lower()
+        )
 
         # Should not proceed to ASR/Translation/TTS
         assert result["asr_text"] is None
@@ -442,7 +457,7 @@ class TestProcessWavIntegration:
 
     def test_process_wav_validation_disabled(self):
         """Test: process_wav mit deaktivierter Validation"""
-        with patch('services.api_gateway.pipeline_logic.requests.post') as mock_post:
+        with patch("services.api_gateway.pipeline_logic.requests.post") as mock_post:
             # Mock successful responses
             mock_asr = Mock()
             mock_asr.json.return_value = {"text": "Test"}
@@ -463,7 +478,11 @@ class TestProcessWavIntegration:
 
             # Should not have validation step
             if "debug" in result and "steps" in result["debug"]:
-                validation_steps = [step for step in result["debug"]["steps"] if step["step"] == "Audio_Validation"]
+                validation_steps = [
+                    step
+                    for step in result["debug"]["steps"]
+                    if step["step"] == "Audio_Validation"
+                ]
                 assert len(validation_steps) == 0
 
 
@@ -505,7 +524,7 @@ class TestAudioValidationEdgeCases:
             is_valid=True,
             duration_seconds=5.0,
             file_size_bytes=1024,
-            validation_time_ms=100
+            validation_time_ms=100,
         )
 
         assert result.is_valid is True

@@ -146,6 +146,7 @@ services:
       # Production sets this to `disabled` explicitly in
       # deploy/production/docker-compose.production.yml.
       - SSF_QUALITY_TELEMETRY_MODE=${SSF_QUALITY_TELEMETRY_MODE:-probe}
+      - SSF_QUALITY_TELEMETRY_SESSION_KEY=${SSF_QUALITY_TELEMETRY_SESSION_KEY:-}
       - SSF_OTLP_LOGS_ENDPOINT=${SSF_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
       - SSF_RELEASE_VERSION=${SSF_RELEASE_VERSION:-unknown}
       - SSF_DEPLOYMENT_ENV=${SSF_DEPLOYMENT_ENV:-unknown}

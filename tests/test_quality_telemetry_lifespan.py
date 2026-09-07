@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.quality_telemetry import TelemetryMode
+from services.api_gateway.session_manager import session_manager
 from services.api_gateway.translation_refiner import translation_refiner
 
 
@@ -114,7 +115,9 @@ def test_a_wedged_telemetry_shutdown_does_not_hold_the_gateway_open(
     try:
         with TestClient(app):
             app.state.quality_telemetry_exporter.shutdown()
-            monkeypatch.setattr(app.state, "quality_telemetry_exporter", _WedgedExporter())
+            monkeypatch.setattr(
+                app.state, "quality_telemetry_exporter", _WedgedExporter()
+            )
             started = time.monotonic()
         elapsed = time.monotonic() - started
     finally:
@@ -163,6 +166,29 @@ def test_the_refiner_is_released_when_the_lifespan_ends(
         pass
 
     assert translation_refiner.quality_telemetry is None
+
+
+def test_the_session_manager_is_given_the_telemetry_the_lifespan_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same problem as the refiner, one layer over: SessionManager is a
+    process-wide singleton with no request behind it, so nothing hands it an
+    emitter unless the lifespan does."""
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
+
+    with TestClient(app):
+        assert session_manager.quality_telemetry is app.state.quality_telemetry
+
+
+def test_the_session_manager_is_released_when_the_lifespan_ends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
+
+    with TestClient(app):
+        pass
+
+    assert session_manager.quality_telemetry is None
 
 
 def test_a_registry_that_cannot_take_the_counter_still_yields_telemetry() -> None:
