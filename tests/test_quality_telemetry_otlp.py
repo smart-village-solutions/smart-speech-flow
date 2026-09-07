@@ -14,6 +14,7 @@ from services.api_gateway.quality_telemetry_otlp import build_otlp_exporter
 
 ROOT = pathlib.Path(__file__).parents[1]
 CONTRACT_MODULE = ROOT / "services" / "api_gateway" / "quality_telemetry.py"
+_EVENT_ID = "6f1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5d"
 _EMITTED_AT = datetime(2026, 9, 1, 12, 34, 56, tzinfo=timezone.utc)
 
 
@@ -91,7 +92,7 @@ def test_the_resource_carries_only_the_three_declared_fields(
     exporter = _build(monkeypatch, sink)
 
     try:
-        exporter("telemetry_probe", {"ssf.quality.event_id": "abc"}, _EMITTED_AT)
+        exporter("telemetry_probe", {'ssf.quality.event_id': _EVENT_ID}, _EMITTED_AT)
 
         resource = _one_record(exporter, sink).resource
         assert dict(resource.attributes) == {
@@ -118,7 +119,7 @@ def test_the_events_own_emission_time_becomes_the_otlp_timestamp(exported) -> No
     """Silver's emitted_at_utc must be the event's time, not an exporter fallback."""
     exporter, sink = exported
 
-    exporter("telemetry_probe", {"ssf.quality.event_id": "abc"}, _EMITTED_AT)
+    exporter("telemetry_probe", {'ssf.quality.event_id': _EVENT_ID}, _EMITTED_AT)
 
     record = _one_record(exporter, sink).log_record
     assert record.timestamp is not None
@@ -129,7 +130,7 @@ def test_the_exporter_always_sends_an_empty_body(exported) -> None:
     """Body must always be empty — the bronze table indexes lower(Body)."""
     exporter, sink = exported
 
-    exporter("telemetry_probe", {"ssf.quality.event_id": "abc"}, _EMITTED_AT)
+    exporter("telemetry_probe", {'ssf.quality.event_id': _EVENT_ID}, _EMITTED_AT)
 
     assert _one_record(exporter, sink).log_record.body == ""
 
@@ -138,7 +139,7 @@ def test_the_event_type_travels_as_the_top_level_event_name(exported) -> None:
     """Not as an attribute — it must reach the typed EventName column."""
     exporter, sink = exported
 
-    exporter("telemetry_probe", {"ssf.quality.event_id": "abc"}, _EMITTED_AT)
+    exporter("telemetry_probe", {'ssf.quality.event_id': _EVENT_ID}, _EMITTED_AT)
 
     record = _one_record(exporter, sink).log_record
     assert record.event_name == "telemetry_probe"

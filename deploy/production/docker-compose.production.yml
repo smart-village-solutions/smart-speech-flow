@@ -217,6 +217,7 @@ services:
     expose:
     - '4318'
     - '13133'
+    - '8888'
     environment:
     - CLICKHOUSE_DB=${CLICKHOUSE_DB:?set CLICKHOUSE_DB in .env}
     - CLICKHOUSE_USER=${CLICKHOUSE_USER:?set CLICKHOUSE_USER in .env}
@@ -345,6 +346,10 @@ services:
     - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
     - GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION=false
     - GF_USERS_ALLOW_SIGN_UP=false
+    - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource 4.21.2
+    - CLICKHOUSE_DB=${CLICKHOUSE_DB:?set CLICKHOUSE_DB in .env}
+    - CLICKHOUSE_USER=${CLICKHOUSE_USER:?set CLICKHOUSE_USER in .env}
+    - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?required}
     volumes:
     - ../../monitoring/grafana:/var/lib/grafana
     - ../../monitoring/grafana-provisioning:/etc/grafana/provisioning:ro

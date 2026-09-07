@@ -73,7 +73,14 @@ docs/local-notes
 *.pid
 monitoring/loki-data/
 monitoring/promtail-data/
+# monitoring/grafana is the container's /var/lib/grafana; it writes these
+# back into the working tree as root, and git cannot even read csv/pdf/png.
 monitoring/grafana/grafana.db
+monitoring/grafana/plugins/
+monitoring/grafana/csv/
+monitoring/grafana/pdf/
+monitoring/grafana/png/
+monitoring/grafana/dashboards/
 
 # OS
 .DS_Store

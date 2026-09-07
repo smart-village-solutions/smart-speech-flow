@@ -166,7 +166,7 @@ def test_the_production_collector_is_not_publicly_reachable() -> None:
 
     assert service.get("ports") is None
     assert service.get("labels") is None
-    assert sorted(str(port) for port in service["expose"]) == ["13133", "4318"]
+    assert sorted(str(port) for port in service["expose"]) == ["13133", "4318", "8888"]
 
 
 def test_the_production_collector_mounts_its_config_read_only() -> None:

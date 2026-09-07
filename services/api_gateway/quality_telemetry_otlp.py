@@ -14,7 +14,7 @@ from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.resources import Resource
 
-from .quality_telemetry import enforce_allowlist
+from .quality_telemetry import enforce_allowlist, enforce_value_shapes
 
 _NANOS_PER_SECOND = 1_000_000_000
 
@@ -37,8 +37,11 @@ class OtlpQualityExporter:
         attributes: Mapping[str, str],
         emitted_at_utc: datetime,
     ) -> None:
-        # Last checkpoint before the wire, so no caller can widen what ships.
+        # Last checkpoint before the wire, so no caller can widen what ships --
+        # keys *and* values. Enforcing only the keys here let an emitter that
+        # built its own dict ship a raw message under an allowlisted key.
         enforce_allowlist(attributes)
+        enforce_value_shapes(attributes)
         # emit() takes kwargs directly; no LogRecord is constructed. event_name is
         # a top-level OTLP field and reaches the typed EventName column. Without
         # an explicit timestamp the SDK sends none and the column silently
