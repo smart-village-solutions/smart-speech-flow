@@ -1,9 +1,9 @@
-# Updated from the running production containers on 2026-09-03 for
-# api_gateway and otel-collector; remaining entries were captured on 2026-09-01.
+# Updated from the running production containers on 2026-09-07 for
+# api_gateway; remaining entries were captured on 2026-09-01 or later.
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
-api_gateway	sha256:8c9f58056dbd3114ccf5a3d5332375768debfcfe37a2bbb6c73e6910676fea6f	ssf-backend-api_gateway:prod-7b6e8f9
+api_gateway	sha256:5d7ab5fa534487cad1e32242d5aee9f004a9b7d9188c258ad498f66fe20fabae	ssf-backend-api_gateway:prod-c3c69e9
 asr	sha256:9f591a04df65f9b4048063080e1fa71763cdfca0dda2a7741cad2fa18624b790	ssf-backend-asr:prod-345add9
 translation	sha256:fff7d0e3df40fcaf657524de767b41babba75bb160cc74eae6d87510b6ca2ba0	ssf-backend-translation:prod-345add9
 tts	sha256:12c7e0851b72cad7f2847b505c1dfd9d9538cfe9411f9a30d39c4df6d6f424cd	ssf-backend-tts:prod-345add9
