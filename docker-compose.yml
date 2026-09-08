@@ -25,8 +25,11 @@ services:
     build:
       context: .
       dockerfile: services/asr/Dockerfile
-    ports:
-      - "8001:8000"
+    # #221: no host port. The gateway reaches this as http://asr:8000 over the
+    # compose network; publishing 8001 handed unauthenticated GPU capacity to
+    # anyone who could route to the host.
+    expose:
+      - "8000"
     volumes:
       - ./models:/models
     deploy:
@@ -41,8 +44,8 @@ services:
     build:
       context: .
       dockerfile: services/translation/Dockerfile
-    ports:
-      - "8002:8000"
+    expose:
+      - "8000"
     environment:
       # Inference Admission Control — inference runs off the event loop, so
       # /health and /metrics stay responsive; these bound how many beam searches
@@ -63,8 +66,8 @@ services:
     build:
       context: .
       dockerfile: services/tts/Dockerfile
-    ports:
-      - "8003:8000"
+    expose:
+      - "8000"
     volumes:
       - ./models:/models
     deploy:
