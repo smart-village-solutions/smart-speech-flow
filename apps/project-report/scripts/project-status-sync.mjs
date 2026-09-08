@@ -55,10 +55,7 @@ const healthFor = (items, fallback) => {
   return healths.reduce((current, health) => healthSeverity[health] > healthSeverity[current] ? health : current);
 };
 
-const matchesWorkPackage = (workPackage, item) =>
-  item.workPackageId === workPackage.id ||
-  item.workPackageIds?.includes(workPackage.id) ||
-  workPackage.tracking?.githubIssues?.includes(item.issueNumber);
+const matchesWorkPackage = (workPackage, item) => item.workPackageId === workPackage.id;
 
 export const applyProjectSnapshot = (report, projectItems, updatedAt) => {
   const result = structuredClone(report);
