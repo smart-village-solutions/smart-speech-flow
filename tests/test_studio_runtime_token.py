@@ -142,3 +142,15 @@ def test_rejects_unbounded_or_incomplete_configuration() -> None:
         config(refresh_skew_seconds=-1.0)
     with pytest.raises(StudioTokenError):
         config(client_secret="")
+
+
+def test_loads_contract_defaults_and_fixed_token_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("STUDIO_RUNTIME_FIXED_TOKEN", "local-token")
+    monkeypatch.delenv("STUDIO_RUNTIME_TOKEN_URL", raising=False)
+    monkeypatch.delenv("STUDIO_RUNTIME_CLIENT_SECRET", raising=False)
+
+    loaded = StudioTokenConfig.from_env()
+
+    assert loaded.fixed_token == "local-token"
+    assert loaded.client_id == DEFAULT_CLIENT_ID
+    assert loaded.audience == DEFAULT_AUDIENCE
