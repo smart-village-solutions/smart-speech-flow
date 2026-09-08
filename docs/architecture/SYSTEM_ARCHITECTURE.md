@@ -84,7 +84,7 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 ### **Microservices Layer**
 
 **ASR Service** *(Interner Host: `http://asr:8000`, Port nach außen via Traefik nicht freigegeben)* - Spracherkennung
-- Whisper large-v3-turbo: Multilingual, GPU-optimized ASR
+- Whisper large-v3-turbo: Mehrsprachige, GPU-optimierte Spracherkennung
 - Audio Processing: Format Detection, Normalisierung, Quality Enhancement
 
 **Translation Service** *(Interner Host: `http://translation:8000`)* - Textübersetzung

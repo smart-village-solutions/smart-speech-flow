@@ -9,19 +9,17 @@ client = TestClient(app)
 SAMPLE_WAV = Path(__file__).with_name("sample.wav")
 
 
-def test_model_loader_uses_large_v3_turbo():
+def test_model_loader_uses_large_v3_turbo(monkeypatch):
     calls = []
 
     def load_model(model_name, *, device):
         calls.append((model_name, device))
         return object()
 
-    original_loader = asr_app.whisper.load_model
-    asr_app.whisper.load_model = load_model
-    try:
-        asr_app._load_asr_model()
-    finally:
-        asr_app.whisper.load_model = original_loader
+    monkeypatch.setattr(asr_app.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(asr_app.whisper, "load_model", load_model)
+
+    asr_app._load_asr_model()
 
     assert calls == [("large-v3-turbo", "cpu")]
 

@@ -56,7 +56,7 @@ Prometheus-kompatible Metriken für Monitoring.
 
 ## Architektur & Funktionsweise
 1. **Modellwahl:**
-   - The ASR service permanently loads Whisper `large-v3-turbo` locally.
+   - Der ASR-Service lädt Whisper `large-v3-turbo` dauerhaft lokal.
    - Die Verarbeitung erfolgt immer lokal, keine Daten werden an externe APIs gesendet.
 2. **Caching:**
    - Geladene Modelle werden im Speicher gehalten, um die Performance zu optimieren.
