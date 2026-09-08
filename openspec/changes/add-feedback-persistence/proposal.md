@@ -35,6 +35,7 @@ must not enter the telemetry pipeline.
   worker, access audit, and tests.
 - Dependency: `add-clickhouse-quality-telemetry` provides the existing OTLP,
   pseudonymisation, and ClickHouse medallion pipeline.
+- Tracking issue: https://github.com/smart-village-solutions/smart-speech-flow/issues/301
 
 ## Non-Goals
 
