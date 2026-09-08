@@ -129,10 +129,10 @@ The SSF plugin owns one PostgreSQL database per SSF installation. It contains
 both installation-wide and tenant-specific configuration. The Studio Core
 knows no SSF tables or domain fields.
 
-Tenant records use the canonical Studio `tenant_id` as their tenant key;
-`studio_instance_id` identifies only the enclosing Studio deployment.
+Tenant records use the canonical Studio `tenant_id` as their SSF tenant key.
 Tenant access is bound server-side to this context and secured with row-level
-security. Root access follows a separate, explicitly authorised database path.
+security. An `organization_id` is not a tenant identifier or an access-security
+boundary. Root access follows a separate, explicitly authorised database path.
 Migrations, repositories, and schema ownership belong to the SSF plugin.
 
 The database can later contain installation-wide model, integration, and
@@ -148,8 +148,8 @@ references to SSF.
 SSF determines the tenant from a valid session token, Keycloak login, or
 server-resolved guest-join credential. The SSF backend then calls the internal
 Studio API with its own Client-Credentials service identity and an
-`X-Tenant-Id` header. A freely supplied tenant or instance ID is not a trust
-boundary.
+`X-Studio-Tenant-Id` header. The later user-token claim is
+`studio_tenant_id`. A freely supplied tenant ID is not a trust boundary.
 
 The Studio host validates the technical identity, configured audience, validity,
 and `ssf.runtime-configuration.read` permission before invoking the SSF plugin

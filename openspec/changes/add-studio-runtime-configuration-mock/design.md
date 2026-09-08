@@ -10,7 +10,10 @@ adding a shortcut inside SSF.
 - The mock is a standalone FastAPI service at the exact V1 path.
 - It reads no real credentials but models fixed service-token authentication
   and `ssf.runtime-configuration.read` authorization.
-- A request header selects a documented error scenario only in the mock.
+- `X-Studio-Tenant-Id` is the only tenant selector. The mock does not accept
+  legacy tenant or Studio deployment headers.
+- A request header selects one of four documented error scenarios only in the
+  mock.
 - Docker Compose publishes the mock as `http://127.0.0.1:8010` only through
   the explicitly selected `studio-mock` profile. It does not use Traefik or
   TLS because this is an internal test dependency.
@@ -19,7 +22,7 @@ adding a shortcut inside SSF.
 ## Risks and Mitigations
 
 - Contract drift: verify response schemas and error envelopes in tests.
-- Contract drift: validate the mandatory V1 headers, V1 locale names, error
-  envelopes, and canonical revisions in tests.
+- Contract drift: validate the mandatory V1 headers, V1 locale names, the
+  seven stable error envelopes, and canonical revisions in tests.
 - Accidental exposure: isolate the service behind an opt-in profile and bind
   it only to loopback.

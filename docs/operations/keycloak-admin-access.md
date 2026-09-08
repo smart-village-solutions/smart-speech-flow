@@ -35,7 +35,7 @@ Every request requires these headers:
 
 ```text
 Authorization: Bearer studio-mock-authorized-token
-X-Studio-Instance-Id: tenant-kassel
+X-Studio-Tenant-Id: tenant-kassel
 X-Correlation-Id: local-test-correlation-id
 ```
 
@@ -43,8 +43,9 @@ X-Correlation-Id: local-test-correlation-id
 `ssf.runtime-configuration.read`; `Bearer studio-mock-unauthorized-token`
 models an authenticated caller without that permission. `tenant-kassel`
 returns storage mode `ask`; `tenant-fulda` returns `disabled`. Send
-`X-Mock-Scenario: authorization-pending` or `unavailable` to exercise `409`
-or `503`. Send an unknown Studio instance ID to exercise `404`.
+`X-Mock-Scenario: tenant-suspended`, `plugin-inactive`,
+`tenant-not-ready`, or `unavailable` to exercise the documented `409` and
+`503` failures. Send an unknown Studio tenant ID to exercise `404`.
 Every error response has the Studio V1 `contractVersion` and `error` envelope
 documented in the mock's OpenAPI description.
 

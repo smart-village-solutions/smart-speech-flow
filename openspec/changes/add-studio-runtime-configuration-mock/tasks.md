@@ -17,3 +17,12 @@
   token authorization.
 - [x] 3.2 Align authorization and locale response fields with Contract V1.
 - [x] 3.3 Restore loopback-only operation and document the swappable endpoint.
+
+## 4. Studio tenant naming correction
+
+- [x] 4.1 Replace the mock tenant selector with `X-Studio-Tenant-Id` and use
+  `tenant_id` for the mock's SSF-internal revision input.
+- [x] 4.2 Remove legacy headers, uppercase error codes, and the
+  `authorization-pending` scenario; model the four explicit scenarios.
+- [x] 4.3 Update the OpenAPI, operational runbook, architecture documentation,
+  and contract tests for the V1 Studio tenant boundary.

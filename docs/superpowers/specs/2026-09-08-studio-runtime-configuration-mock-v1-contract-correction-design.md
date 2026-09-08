@@ -4,14 +4,14 @@
 
 The existing mock was intentionally made browser-accessible over public HTTP.
 Review feedback establishes that this differs from the current Studio--SSF V1
-contract: Studio instance identity, a service token with an explicit
+contract: Studio tenant identity, a service token with an explicit
 permission, and a correlation identifier are required. The response structure
 also needs authorization metadata and locale naming aligned with the contract.
 
 ## Goals
 
 - Exercise the V1 request contract with `Authorization`,
-  `X-Studio-Instance-Id`, and `X-Correlation-Id`.
+  `X-Studio-Tenant-Id`, and `X-Correlation-Id`.
 - Model deterministic authentication, authorization, tenant, authorization
   projection, and dependency failures with the stable V1 error envelope.
 - Return contract-correct locale fields plus deterministic SHA-256
@@ -33,13 +33,14 @@ studio-mock-authorized-token` has `ssf.runtime-configuration.read` and is the
 only token that can receive a configuration. `Bearer
 studio-mock-unauthorized-token` represents an authenticated caller without
 that permission. A missing or unknown token produces `401
-SERVICE_UNAUTHENTICATED`; the known unauthorized token produces `403
-SERVICE_FORBIDDEN`.
+service_authentication_invalid`; the known unauthorized token produces `403
+service_action_forbidden`.
 
-`X-Studio-Instance-Id` is the sole tenant selector. `X-Correlation-Id` is
-required and echoed in every error envelope. Missing either required header
-produces a stable `400` envelope. The removed `tenantId` query parameter is
-not interpreted.
+`X-Studio-Tenant-Id` is the sole tenant selector. `X-Correlation-Id` is
+required and echoed in every error envelope. After successful authentication,
+missing or invalid tenant or correlation selection produces `404
+tenant_not_found`, matching the Studio endpoint's stable behavior. Legacy
+tenant and Studio deployment headers are not interpreted.
 
 ### Response and revisions
 
@@ -48,16 +49,17 @@ Configuration fixtures use `localization.defaultLocale`,
 configuration excluding `configurationRevision` is serialized deterministically
 with sorted keys and compact separators, then SHA-256 hashed. The mock uses
 the same deterministic process for the authorization fixture excluding
-`authorizationRevision`; both values are emitted as `sha256:` followed by 64
-lowercase hexadecimal characters.
+`authorizationRevision`, using `tenant_id` as the SSF-internal key; both values
+are emitted as `sha256:` followed by 64 lowercase hexadecimal characters.
 
 ### Failure simulation
 
-`X-Mock-Scenario: authorization-pending` returns `409
-AUTHORIZATION_PROJECTION_PENDING`. `X-Mock-Scenario: unavailable` returns
-`503 RUNTIME_CONFIGURATION_UNAVAILABLE`. An unknown Studio instance returns
-`404 TENANT_NOT_FOUND`. These, authentication, authorization, and missing
-header failures share the V1 `contractVersion` and `error` envelope.
+`X-Mock-Scenario: tenant-suspended` returns `409 tenant_suspended`,
+`plugin-inactive` returns `409 ssf_plugin_inactive`, `tenant-not-ready` returns
+`409 ssf_tenant_not_ready` with `retryable: true`, and `unavailable` returns
+`503 runtime_configuration_unavailable` with `retryable: true`. An unknown
+Studio tenant returns `404 tenant_not_found`. These and the authentication and
+authorization failures share the V1 `contractVersion` and `error` envelope.
 
 ### Exposure
 

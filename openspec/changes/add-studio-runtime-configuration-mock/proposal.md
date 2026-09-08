@@ -11,8 +11,8 @@ is available in every developer environment.
 - Add an opt-in FastAPI mock for the Studio Runtime Configuration V1 read API.
 - Serve deterministic configurations for two tenants and the `ask` and
   `disabled` conversation-storage policies.
-- Provide deterministic `400`, `401`, `403`, `404`, `409`, and `503` error
-  envelopes.
+- Provide deterministic V1 error envelopes using only the seven stable
+  lowercase snake_case error codes.
 - Package the mock in a dedicated Docker Compose profile with loopback-only
   HTTP exposure.
 
