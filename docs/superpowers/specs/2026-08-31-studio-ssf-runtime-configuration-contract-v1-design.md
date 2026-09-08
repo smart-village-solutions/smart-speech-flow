@@ -1,5 +1,11 @@
 # Studio--SSF Runtime Configuration Contract V1
 
+> **Status: Superseded historical design record.** Preserve this document as a
+> record of its original proposal. The cross-system contract is pending in
+> [sva-studio#1286](https://github.com/smart-village-solutions/sva-studio/issues/1286);
+> the SSF mock work is tracked by the active
+> `openspec/changes/add-studio-runtime-configuration-mock/` change.
+
 ## Status and purpose
 
 This is the implementation-ready revision of the Studio--SSF runtime
@@ -15,11 +21,10 @@ out of scope.
 
 ## Terms and ownership
 
-- `X-Studio-Tenant-Id` identifies one stable Studio tenant and exactly one SSF
-  tenant at the Studio--SSF boundary.
-- `tenant_id` is the SSF-internal key for that tenant. It is not an external
-  alias, and an `organization_id` is neither a tenant ID nor an access-security
-  boundary.
+- `studio_instance_id` identifies a Studio installation. It is contextual
+  metadata and MUST NOT be used as an SSF data-access boundary.
+- `tenant_id` identifies one stable Studio tenant and exactly one SSF tenant.
+  It is the canonical tenant identifier for this contract.
 - Studio Core owns tenant records, tenant lifecycle, Keycloak provisioning,
   user accounts, policies, media, configuration, readiness, and audit.
 - The Studio SSF plugin owns resolution of server-wide, tenant-specific, and
@@ -41,7 +46,8 @@ the following signed claims in addition to standard OIDC claims:
 ```json
 {
   "sub": "keycloak-user-id",
-  "studio_tenant_id": "01J...",
+  "studio_instance_id": "01J...",
+  "tenant_id": "01J...",
   "ssf_roles": ["user"],
   "ssf_permissions": ["ssf.sessions.create"],
   "preferred_username": "erika",
@@ -62,7 +68,7 @@ operational permission catalogue is:
 The token roles are `system_admin`, `tenant_admin`, and `user`. A
 `tenant_admin` has no operational SSF conversation permissions unless it also
 has `user` and the corresponding permissions. A `system_admin` has no
-`studio_tenant_id` and MUST NOT access tenant conversations or tenant data; tenant
+`tenant_id` and MUST NOT access tenant conversations or tenant data; tenant
 configuration and inspection remain Studio responsibilities.
 
 Guests receive neither a Studio account nor a regular Keycloak token. The
@@ -94,14 +100,14 @@ conflicting context MUST fail closed.
 ```http
 GET /internal/plugins/ssf/v1/runtime-configuration
 Authorization: Bearer <service-token>
-X-Studio-Tenant-Id: <canonical-tenant-id>
+X-Tenant-Id: <tenant-id-derived-by-SSF>
 X-Correlation-Id: <correlation-id>
 ```
 
 The endpoint is internal-network only and is callable only by the SSF backend.
 SSF uses a dedicated Keycloak client with Client Credentials. Its token MUST
 carry the configured audience and `ssf.runtime-configuration.read`. It is
-separate from browser and user clients. Studio treats `X-Studio-Tenant-Id` as a
+separate from browser and user clients. Studio treats `X-Tenant-Id` as a
 statement by the authenticated SSF backend. V1 requires neither a second
 tenant assertion, replay storage, nor mTLS.
 
@@ -126,9 +132,9 @@ tenant ID in `tenant.id`.
     "icon": { "url": "https://example.org/icon.png", "alternativeText": "Icon" }
   },
   "localization": {
-    "defaultLocale": "de-DE",
-    "locales": [{
-      "locale": "de-DE",
+    "defaultLanguage": "de-DE",
+    "languages": [{
+      "language": "de-DE",
       "authenticatedHomeExplanationHtml": "<p>...</p>",
       "guestExplanationHtml": "<p>...</p>",
       "conversationContentStorageQuestionHtml": "<p>...</p>"
@@ -140,13 +146,13 @@ tenant ID in `tenant.id`.
 
 `branding.logo` and `branding.icon` MAY each be `null`. If the effective
 storage mode is `disabled`, `conversationContentStorageQuestionHtml` MUST be
-`null` for every locale.
+`null` for every language.
 
 `configurationRevision` is `sha256:` followed by SHA-256 over the RFC 8785
 JSON Canonicalization Scheme representation of the fully resolved configuration
 excluding `configurationRevision` itself.
 
-The effective value of every field and locale is resolved independently:
+The effective value of every field and language is resolved independently:
 
 ```text
 tenant customization
@@ -171,14 +177,14 @@ processing only.
 
 ## Languages, texts, and branding
 
-All external locale values in this contract MUST use BCP-47 language tags,
-including enabled locales, default locale, text variants, session language
-selection, and SSF API data. SSF displays only the enabled locales from
+All external language values in this contract MUST use BCP-47 language tags,
+including enabled languages, default language, text variants, session language
+selection, and SSF API data. SSF displays only the enabled languages from
 Studio. Mapping a BCP-47 value to an ASR, translation, or TTS provider code is
 an SSF-internal implementation detail. V1 does not require server-side denial
 of a pipeline language code that is called outside the UI.
 
-For every enabled locale Studio returns the authenticated-home explanation,
+For every enabled language Studio returns the authenticated-home explanation,
 guest explanation, and, when applicable, conversation-storage question. The
 default language MUST be enabled. At least one language MUST remain enabled.
 Existing tenant overrides MAY remain stored while their language is disabled.
@@ -238,13 +244,10 @@ is outside this integration contract.
 
 Runtime errors use the stable `contractVersion` and `error` envelope with a
 machine-readable `code`, generic `message`, boolean `retryable`, and
-`correlationId`. The only stable codes are `service_authentication_invalid`
-(`401`, not retryable), `service_action_forbidden` (`403`, not retryable),
-`tenant_not_found` (`404`, not retryable), `tenant_suspended` (`409`, not
-retryable), `ssf_plugin_inactive` (`409`, not retryable),
-`ssf_tenant_not_ready` (`409`, retryable), and
-`runtime_configuration_unavailable` (`503`, retryable). Responses MUST NOT
-disclose secrets, internal persistence details, or data of another tenant.
+`correlationId`. `401` and `403` apply to the service client, `404` to an
+unknown tenant, `409` to unavailable tenant states, and `503` to temporary
+runtime-configuration unavailability. Responses MUST NOT disclose secrets,
+internal persistence details, or data of another tenant.
 
 Studio durably audits configuration and policy changes. Normal runtime reads
 produce only technical metrics and structured logs. `X-Correlation-Id` links

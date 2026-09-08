@@ -148,7 +148,7 @@ references to SSF.
 SSF determines the tenant from a valid session token, Keycloak login, or
 server-resolved guest-join credential. The SSF backend then calls the internal
 Studio API with its own Client-Credentials service identity and an
-`X-Studio-Tenant-Id` header. The later user-token claim is
+`X-Studio-Tenant-Id` header. The signed user-token claim is
 `studio_tenant_id`. A freely supplied tenant ID is not a trust boundary.
 
 The Studio host validates the technical identity, configured audience, validity,
