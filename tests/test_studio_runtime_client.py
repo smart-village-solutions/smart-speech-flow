@@ -225,11 +225,11 @@ async def test_rejects_header_control_characters_before_transport() -> None:
 async def test_rejects_empty_service_token_before_transport() -> None:
     transport = StubTransport(RuntimeHttpResponse(200, valid_configuration()))
 
-    async def empty_token_provider() -> str:
+    async def invalid_token_provider() -> str:
         return ""
 
     runtime_client = StudioRuntimeClient(
-        "https://studio.test", empty_token_provider, transport=transport
+        "https://studio.test", invalid_token_provider, transport=transport
     )
 
     with pytest.raises(StudioRuntimeClientError) as caught:
