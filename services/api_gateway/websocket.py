@@ -363,6 +363,24 @@ class WebSocketManager:
         """
         return f"{session_id}_{client_type.value}_{uuid4().hex[:12]}"
 
+    def _registered_connection_id(
+        self, connection: "WebSocketConnection"
+    ) -> Optional[str]:
+        """The id this connection is registered under, or None if it is not.
+
+        Callers that hold a connection object and need its id must ask the map
+        that broadcast_to_session iterates. Rebuilding the id from the
+        connection's own fields worked only while it ended in a timestamp the
+        caller could recompute, and silently stopped matching anything once ids
+        became unique -- which included the sender in its own broadcast.
+        """
+        for connection_id, candidate in self.session_connections.get(
+            connection.session_id, {}
+        ).items():
+            if candidate is connection:
+                return connection_id
+        return None
+
     async def connect_websocket(
         self,
         websocket: WebSocket,
@@ -957,7 +975,7 @@ class WebSocketManager:
         await self.broadcast_to_session(
             connection.session_id,
             forward_message,
-            exclude_connection=f"{connection.session_id}_{connection.client_type.value}_{int(connection.connected_at.timestamp())}",
+            exclude_connection=self._registered_connection_id(connection),
         )
 
     async def _handle_typing_indicator(
@@ -977,7 +995,7 @@ class WebSocketManager:
         await self.broadcast_to_session(
             connection.session_id,
             typing_message,
-            exclude_connection=f"{connection.session_id}_{connection.client_type.value}_{int(connection.connected_at.timestamp())}",
+            exclude_connection=self._registered_connection_id(connection),
         )
 
     async def _send_connection_ack(self, connection: WebSocketConnection):
