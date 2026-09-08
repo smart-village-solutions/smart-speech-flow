@@ -32,7 +32,12 @@ class ConnectionState(Enum):
 
 
 class DisconnectReason(Enum):
-    """WebSocket disconnect reasons"""
+    """WebSocket disconnect reasons.
+
+    The values are the Prometheus label written to `websocket_disconnects_total`
+    and matched by the WebSocketConnectionFailures and WebSocketOriginBlocked
+    rules in monitoring/alert_rules.yml. Renaming one breaks an alert silently.
+    """
 
     CLIENT_DISCONNECT = "client_disconnect"
     SERVER_DISCONNECT = "server_disconnect"
@@ -42,6 +47,36 @@ class DisconnectReason(Enum):
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
     AUTHENTICATION_FAILED = "authentication_failed"
     PROTOCOL_ERROR = "protocol_error"
+    ORIGIN_NOT_ALLOWED = "origin_not_allowed"
+
+    @classmethod
+    def from_wire(cls, value: str) -> "DisconnectReason":
+        """Map the free-text reason the socket layer passes around.
+
+        Unknown values become PROTOCOL_ERROR, never CLIENT_DISCONNECT: an
+        unrecognised cause is not evidence of a clean client exit, and folding
+        it into the clean bucket is exactly the defect this replaces.
+        """
+        try:
+            return cls(value)
+        except ValueError:
+            return _WIRE_ALIASES.get(value, cls.PROTOCOL_ERROR)
+
+
+_WIRE_ALIASES = {
+    "no_connections": DisconnectReason.SERVER_DISCONNECT,
+    "session_timeout": DisconnectReason.SESSION_EXPIRED,
+    "new_session_created": DisconnectReason.SERVER_DISCONNECT,
+    "battery_optimization": DisconnectReason.SERVER_DISCONNECT,
+    # handle_session_termination's default reason. A deliberate server-side
+    # termination is not a fault, so it must not land in PROTOCOL_ERROR.
+    "session_ended": DisconnectReason.SERVER_DISCONNECT,
+    # An operator (or the operator-facing admin UI) ending a session on
+    # purpose is a deliberate server-side termination, not a protocol
+    # violation -- it must not land in PROTOCOL_ERROR either.
+    "manual_termination": DisconnectReason.SERVER_DISCONNECT,
+    "manual_admin_termination": DisconnectReason.SERVER_DISCONNECT,
+}
 
 
 @dataclass
@@ -307,6 +342,17 @@ class WebSocketMonitor:
             f"(duration: {metrics.connection_duration:.2f}s, reason: {reason.value})"
         )
         return metrics
+
+    def record_rejected_connection(self, reason: DisconnectReason) -> None:
+        """Count a socket refused before it was ever registered.
+
+        `connection_closed` cannot serve these: there is no ConnectionMetrics to
+        pop, so it logs "non-existent connection" and returns None. The
+        WebSocketOriginBlocked alert needs the counter incremented anyway.
+        """
+        self.disconnects_total.labels(
+            client_type="unknown", disconnect_reason=reason.value
+        ).inc()
 
     def message_sent(
         self, connection_id: str, message_data: str, message_type: str = "unknown"
