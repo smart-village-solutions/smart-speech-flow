@@ -54,7 +54,7 @@ class StudioTokenConfig:
         """Load the provider configuration from environment variables."""
         fixed_token = (os.getenv("STUDIO_RUNTIME_FIXED_TOKEN") or "").strip() or None
         token_url = os.getenv("STUDIO_RUNTIME_TOKEN_URL", "").strip()
-        client_secret = os.getenv("STUDIO_RUNTIME_CLIENT_SECRET", "")
+        client_secret = os.getenv("STUDIO_RUNTIME_CLIENT_SECRET", "").strip()
         if not fixed_token and (not token_url or not client_secret):
             raise StudioTokenError("studio_token_configuration_invalid", retryable=False)
         try:
@@ -160,6 +160,8 @@ class StudioRuntimeTokenProvider:
             raise
         except Exception:
             raise StudioTokenError("studio_token_network_error", retryable=True) from None
+        except Exception:
+            raise StudioTokenError("studio_token_network_error", retryable=False) from None
 
         if response.status < 200 or response.status >= 300:
             raise StudioTokenError(
