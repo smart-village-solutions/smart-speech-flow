@@ -1,18 +1,20 @@
-"""Contract-faithful local implementation of Studio Runtime Configuration V1."""
+"""Contract-faithful Studio Runtime Configuration V1 mock."""
 
 import hashlib
 import json
 from copy import deepcopy
 from typing import Any
 
-from fastapi import FastAPI, Header, Query
+from fastapi import FastAPI, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 app = FastAPI(title="Studio Runtime Configuration Mock")
 
-_UNAVAILABLE_MESSAGE = "The requested tenant is unavailable."
 _CONTRACT_VERSION = "1.0"
+_AUTHORIZED_TOKEN = "Bearer studio-mock-authorized-token"
+_UNAUTHORIZED_TOKEN = "Bearer studio-mock-unauthorized-token"
+_UNAVAILABLE_MESSAGE = "The requested tenant is unavailable."
 
 
 class RuntimeError(BaseModel):
@@ -38,15 +40,23 @@ class RuntimeErrorEnvelope(BaseModel):
 _ERROR_RESPONSES = {
     400: {
         "model": RuntimeErrorEnvelope,
-        "description": "The tenant header and query parameter conflict.",
+        "description": "A required header is missing.",
+    },
+    401: {
+        "model": RuntimeErrorEnvelope,
+        "description": "Service authentication failed.",
+    },
+    403: {
+        "model": RuntimeErrorEnvelope,
+        "description": "Service permission is missing.",
     },
     404: {
         "model": RuntimeErrorEnvelope,
-        "description": "The requested tenant does not exist.",
+        "description": "The Studio instance does not exist.",
     },
     409: {
         "model": RuntimeErrorEnvelope,
-        "description": "The requested tenant is not ready.",
+        "description": "Authorization projection is pending.",
     },
     503: {
         "model": RuntimeErrorEnvelope,
@@ -64,10 +74,10 @@ _TENANT_CONFIGURATION_TEMPLATES: dict[str, dict[str, Any]] = {
         },
         "branding": {"logo": None, "icon": None},
         "localization": {
-            "defaultLanguage": "de-DE",
-            "languages": [
+            "defaultLocale": "de-DE",
+            "locales": [
                 {
-                    "language": "de-DE",
+                    "locale": "de-DE",
                     "authenticatedHomeExplanationHtml": "<p>Test environment</p>",
                     "guestExplanationHtml": "<p>Guest test environment</p>",
                     "conversationContentStorageQuestionHtml": "<p>Store this conversation?</p>",
@@ -85,10 +95,10 @@ _TENANT_CONFIGURATION_TEMPLATES: dict[str, dict[str, Any]] = {
         },
         "branding": {"logo": None, "icon": None},
         "localization": {
-            "defaultLanguage": "de-DE",
-            "languages": [
+            "defaultLocale": "de-DE",
+            "locales": [
                 {
-                    "language": "de-DE",
+                    "locale": "de-DE",
                     "authenticatedHomeExplanationHtml": "<p>Test environment</p>",
                     "guestExplanationHtml": "<p>Guest test environment</p>",
                     "conversationContentStorageQuestionHtml": None,
@@ -100,15 +110,23 @@ _TENANT_CONFIGURATION_TEMPLATES: dict[str, dict[str, Any]] = {
 }
 
 
-def _configuration_for(tenant_id: str) -> dict[str, Any]:
-    """Return a configuration with its revision derived from canonical payload JSON."""
-    configuration = deepcopy(_TENANT_CONFIGURATION_TEMPLATES[tenant_id])
+def _revision(payload: dict[str, Any]) -> str:
+    """Return the V1 SHA-256 revision for a canonical JSON payload."""
     canonical_json = json.dumps(
-        configuration, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True
     ).encode()
-    configuration["configurationRevision"] = (
-        f"sha256:{hashlib.sha256(canonical_json).hexdigest()}"
-    )
+    return f"sha256:{hashlib.sha256(canonical_json).hexdigest()}"
+
+
+def _configuration_for(studio_instance_id: str) -> dict[str, Any]:
+    """Return the effective configuration and its two deterministic revisions."""
+    configuration = deepcopy(_TENANT_CONFIGURATION_TEMPLATES[studio_instance_id])
+    authorization = {
+        "studioInstanceId": studio_instance_id,
+        "permissions": ["ssf.runtime-configuration.read"],
+    }
+    configuration["authorizationRevision"] = _revision(authorization)
+    configuration["configurationRevision"] = _revision(configuration)
     return configuration
 
 
@@ -140,31 +158,30 @@ def _error_response(
     responses=_ERROR_RESPONSES,
 )
 def runtime_configuration(
-    x_tenant_id: str | None = Header(default=None),
-    tenant_id_query: str | None = Query(default=None, alias="tenantId"),
+    authorization: str | None = Header(default=None),
+    x_studio_instance_id: str | None = Header(default=None),
     x_correlation_id: str | None = Header(default=None),
     x_mock_scenario: str | None = Header(default=None),
 ) -> dict[str, Any] | JSONResponse:
-    """Return deterministic Runtime Configuration V1 data for local integration tests."""
-    if (
-        x_tenant_id is not None
-        and tenant_id_query is not None
-        and x_tenant_id != tenant_id_query
-    ):
+    """Return deterministic V1 data for authorized Studio service callers."""
+    if authorization not in {_AUTHORIZED_TOKEN, _UNAUTHORIZED_TOKEN}:
+        return _error_response(401, "SERVICE_UNAUTHENTICATED", x_correlation_id, False)
+    if authorization == _UNAUTHORIZED_TOKEN:
+        return _error_response(403, "SERVICE_FORBIDDEN", x_correlation_id, False)
+    if x_studio_instance_id is None:
         return _error_response(
-            400,
-            "TENANT_ID_CONFLICT",
-            x_correlation_id,
-            False,
-            "X-Tenant-Id and tenantId must match.",
+            400, "STUDIO_INSTANCE_ID_REQUIRED", x_correlation_id, False
         )
-    if x_mock_scenario == "not-ready":
-        return _error_response(409, "TENANT_NOT_READY", x_correlation_id, False)
+    if x_correlation_id is None:
+        return _error_response(400, "CORRELATION_ID_REQUIRED", None, False)
+    if x_mock_scenario == "authorization-pending":
+        return _error_response(
+            409, "AUTHORIZATION_PROJECTION_PENDING", x_correlation_id, True
+        )
     if x_mock_scenario == "unavailable":
         return _error_response(
             503, "RUNTIME_CONFIGURATION_UNAVAILABLE", x_correlation_id, True
         )
-    tenant_id = tenant_id_query if tenant_id_query is not None else x_tenant_id
-    if tenant_id not in _TENANT_CONFIGURATION_TEMPLATES:
+    if x_studio_instance_id not in _TENANT_CONFIGURATION_TEMPLATES:
         return _error_response(404, "TENANT_NOT_FOUND", x_correlation_id, False)
-    return _configuration_for(tenant_id)
+    return _configuration_for(x_studio_instance_id)

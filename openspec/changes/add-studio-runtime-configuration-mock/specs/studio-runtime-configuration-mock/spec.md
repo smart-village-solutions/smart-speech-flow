@@ -8,35 +8,34 @@ Configuration Contract V1 development and tests.
 
 #### Scenario: Tenant configuration is returned
 
-- **WHEN** a request presents a supported `X-Tenant-Id` header or `tenantId`
-  query parameter
+- **WHEN** a request presents an authorized bearer service token,
+  `X-Studio-Instance-Id`, and `X-Correlation-Id`
 - **THEN** the service returns a Contract V1 configuration for that tenant
 
-#### Scenario: Browser query parameter conflicts with header
+#### Scenario: Service token lacks permission
 
-- **WHEN** a request presents different tenant IDs in `X-Tenant-Id` and
-  `tenantId`
-- **THEN** the service returns a `400` error envelope
+- **WHEN** a request uses the known mock service token without
+  `ssf.runtime-configuration.read`
+- **THEN** the service returns a `403` error envelope
 
 ### Requirement: Deterministic storage-policy and error testing
 
 The mock SHALL provide two tenant configurations with `ask` and `disabled`
 conversation-content storage policies and the documented error envelopes.
 
-#### Scenario: Tenant is not ready
+#### Scenario: Authorization projection is pending
 
-- **WHEN** a request selects the mock not-ready scenario
+- **WHEN** a request selects the mock authorization-pending scenario
 - **THEN** the service returns a `409` error envelope without tenant content
 
-### Requirement: Explicitly enabled HTTP exposure
+### Requirement: Protected internal mock exposure
 
-The mock MUST publish `http://<host-ip>:8010` on all host network interfaces
-only when an operator explicitly enables its `studio-mock` Compose profile.
-The mock MUST NOT require authentication because it serves only fixed,
-non-sensitive test data.
+The mock MUST publish `http://127.0.0.1:8010` only when an operator explicitly
+enables its `studio-mock` Compose profile. It MUST NOT publish a Traefik route
+or accept an unauthenticated runtime-configuration request.
 
 #### Scenario: Explicit profile startup
 
 - **WHEN** an operator starts Docker Compose with the `studio-mock` profile
-- **THEN** a network client can request the mock through the host IP and port
-  8010 without authentication
+- **THEN** an internal caller can request the mock through loopback port 8010
+  with the required V1 request headers
