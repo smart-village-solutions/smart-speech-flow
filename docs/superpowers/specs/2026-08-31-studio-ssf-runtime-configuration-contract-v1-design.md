@@ -40,8 +40,7 @@ the following signed claims in addition to standard OIDC claims:
 ```json
 {
   "sub": "keycloak-user-id",
-  "studio_instance_id": "01J...",
-  "tenant_id": "01J...",
+  "studio_tenant_id": "01J...",
   "ssf_roles": ["user"],
   "ssf_permissions": ["ssf.sessions.create"],
   "preferred_username": "erika",
@@ -59,7 +58,9 @@ operational permission catalogue is:
 - `ssf.sessions.terminate`
 - `ssf.conversations.participate`
 
-The token roles are `system_admin`, `tenant_admin`, and `user`. A
+`studio_tenant_id` is the only accepted tenant claim. SSF maps it to its
+internal `tenant_id`; legacy `tenant_id` and `studio_instance_id` claim aliases
+are rejected. The token roles are `system_admin`, `tenant_admin`, and `user`. A
 `tenant_admin` has no operational SSF conversation permissions unless it also
 has `user` and the corresponding permissions. A `system_admin` has no
 `tenant_id` and MUST NOT access tenant conversations or tenant data; tenant
@@ -72,9 +73,11 @@ separate SSF change.
 
 ## Tenant context and guest sessions
 
-SSF MUST derive `tenant_id` from a validated user token for every authenticated
-tenant operation. When a user creates a session, SSF MUST bind that tenant ID
-to the session permanently.
+SSF MUST derive its internal `tenant_id` from the signed `studio_tenant_id`
+claim of a validated user token for every authenticated tenant operation. A
+tenant selector in a query parameter, request body, header, cookie, or other
+browser state MUST be rejected. When a user creates a session, SSF MUST bind
+the derived tenant ID to the session permanently.
 
 Guests join without logging in. SSF issues both an eight-character, human-
 usable session code and a high-entropy, session-scoped join token embedded in
