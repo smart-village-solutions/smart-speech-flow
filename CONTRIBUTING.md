@@ -318,10 +318,13 @@ docker compose up
 # For direct access from the host, use an SSH tunnel that binds both the
 # Docker bridge (serving the socat containers) and loopback (serving the
 # native-gateway workflow):
+# The tunnel targets the containers on port 8000, not the GPU host's own
+# 8001-8003 -- those are what #221 closed. Read the container addresses first
+# (sudo docker inspect on the GPU host), the way the ollama tunnel does:
 #   ssh -N \
-#     -L 172.17.0.1:8001:localhost:8001 -L 127.0.0.1:8001:localhost:8001 \
-#     -L 172.17.0.1:8002:localhost:8002 -L 127.0.0.1:8002:localhost:8002 \
-#     -L 172.17.0.1:8003:localhost:8003 -L 127.0.0.1:8003:localhost:8003 \
+#     -L 172.17.0.1:8001:<asr-ip>:8000 -L 127.0.0.1:8001:<asr-ip>:8000 \
+#     -L 172.17.0.1:8002:<translation-ip>:8000 -L 127.0.0.1:8002:<translation-ip>:8000 \
+#     -L 172.17.0.1:8003:<tts-ip>:8000 -L 127.0.0.1:8003:<tts-ip>:8000 \
 #     <user>@<gpu-host>
 # <gpu-host> is the GPU server running the model containers; its address comes
 # from the deployment inventory, not from this repository.

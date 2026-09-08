@@ -54,11 +54,23 @@ access from the host, through an SSH tunnel that binds both the Docker bridge
 (serving the socat containers) and loopback (serving the native-gateway
 workflow):
 
+The tunnel must target the containers, not the GPU host's own ports -- those
+are what this change closed. Take the same route the `ollama` tunnel does:
+read the container addresses on the GPU host, then forward to them on 8000.
+
 ```bash
+# 1. Container addresses (they change on every recreate)
+ssh <user>@<gpu-host> \
+  'for s in asr translation tts; do sudo docker inspect \
+     -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" \
+     $(sudo docker ps -qf name=$s | head -1); done'
+
+# 2. Forward to those addresses on port 8000, binding both the Docker bridge
+#    (serving the socat containers) and loopback (serving the native gateway)
 ssh -N \
-  -L 172.17.0.1:8001:localhost:8001 -L 127.0.0.1:8001:localhost:8001 \
-  -L 172.17.0.1:8002:localhost:8002 -L 127.0.0.1:8002:localhost:8002 \
-  -L 172.17.0.1:8003:localhost:8003 -L 127.0.0.1:8003:localhost:8003 \
+  -L 172.17.0.1:8001:<asr-ip>:8000 -L 127.0.0.1:8001:<asr-ip>:8000 \
+  -L 172.17.0.1:8002:<translation-ip>:8000 -L 127.0.0.1:8002:<translation-ip>:8000 \
+  -L 172.17.0.1:8003:<tts-ip>:8000 -L 127.0.0.1:8003:<tts-ip>:8000 \
   <user>@<gpu-host>
 ```
 

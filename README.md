@@ -112,11 +112,24 @@ Der aktuelle Haupt-Workflow fuer Admin/Customer-Kommunikation ist sessionbasiert
 > `localhost` gleichzeitig bindet (die Bridge bedient die socat-Container,
 > `localhost` den nativen Gateway-Workflow):
 >
+> Der Tunnel muss auf die Container zeigen, nicht auf die Host-Ports des
+> GPU-Servers -- die schliesst genau diese Aenderung. Gleicher Weg wie beim
+> `ollama`-Tunnel: Container-Adressen auf dem GPU-Server auslesen, dann auf
+> Port 8000 weiterleiten.
+>
 > ```bash
+> # 1. Container-Adressen (aendern sich bei jedem Recreate)
+> ssh <user>@<gpu-host> \
+>   'for s in asr translation tts; do sudo docker inspect \
+>      -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" \
+>      $(sudo docker ps -qf name=$s | head -1); done'
+>
+> # 2. Auf diese Adressen weiterleiten, Port 8000; gebunden an Docker-Bridge
+> #    (fuer die socat-Container) und loopback (fuer das native Gateway)
 > ssh -N \
->   -L 172.17.0.1:8001:localhost:8001 -L 127.0.0.1:8001:localhost:8001 \
->   -L 172.17.0.1:8002:localhost:8002 -L 127.0.0.1:8002:localhost:8002 \
->   -L 172.17.0.1:8003:localhost:8003 -L 127.0.0.1:8003:localhost:8003 \
+>   -L 172.17.0.1:8001:<asr-ip>:8000 -L 127.0.0.1:8001:<asr-ip>:8000 \
+>   -L 172.17.0.1:8002:<translation-ip>:8000 -L 127.0.0.1:8002:<translation-ip>:8000 \
+>   -L 172.17.0.1:8003:<tts-ip>:8000 -L 127.0.0.1:8003:<tts-ip>:8000 \
 >   <user>@<gpu-host>
 > ```
 >
@@ -134,7 +147,7 @@ Der aktuelle Haupt-Workflow fuer Admin/Customer-Kommunikation ist sessionbasiert
 - **Beispiel:**
    ```bash
    docker compose exec api_gateway \
-          curl -F "file=@sample.wav" http://asr:8000/transcribe
+          curl -F "file=@examples/audio/sample.wav" http://asr:8000/transcribe
    ```
 
 ### 2. Translation Service

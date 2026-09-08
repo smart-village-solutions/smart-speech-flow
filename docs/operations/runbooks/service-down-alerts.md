@@ -33,8 +33,16 @@ loaded and the new ones silent — the exact failure #220 exists to eliminate.
 docker compose restart prometheus
 
 # Confirm the four scrape rules are loaded (expect: 4)
-curl -s localhost:9090/api/v1/rules | grep -c ScrapeDown
+docker compose exec api_gateway \
+  curl -s http://prometheus:9090/api/v1/rules | grep -o ScrapeDown | wc -l
 ```
+
+Two details in that command are load-bearing. Prometheus is declared
+`expose: "9090"` and publishes no host port, so `curl localhost:9090` from the
+host is refused — the query has to run inside the compose network. And the
+rules API returns one single-line JSON body, so `grep -c` counts that one line
+and reports `1` no matter how many rules matched; `grep -o | wc -l` counts the
+matches. Both mistakes read as "the rules did not load" when they did.
 
 If that count is 0, the container is still running the previous rule file. If
 it is anything other than 4, the file was edited without updating
