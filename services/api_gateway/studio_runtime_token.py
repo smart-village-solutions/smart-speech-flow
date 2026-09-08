@@ -6,7 +6,7 @@ import asyncio
 import os
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
 
 import aiohttp
 
@@ -36,6 +36,8 @@ class StudioTokenConfig:
     fixed_token: str | None = None
 
     def __post_init__(self) -> None:
+        normalized_fixed_token = self.fixed_token.strip() if self.fixed_token else None
+        object.__setattr__(self, "fixed_token", normalized_fixed_token or None)
         if not self.fixed_token and (
             not self.token_url or not self.client_id or not self.client_secret or not self.audience
         ):
@@ -46,20 +48,25 @@ class StudioTokenConfig:
     @classmethod
     def from_env(cls) -> "StudioTokenConfig":
         """Load the provider configuration from environment variables."""
-        fixed_token = os.getenv("STUDIO_RUNTIME_FIXED_TOKEN") or None
+        fixed_token = (os.getenv("STUDIO_RUNTIME_FIXED_TOKEN") or "").strip() or None
         token_url = os.getenv("STUDIO_RUNTIME_TOKEN_URL", "").strip()
         client_secret = os.getenv("STUDIO_RUNTIME_CLIENT_SECRET", "")
         if not fixed_token and (not token_url or not client_secret):
             raise StudioTokenError("studio_token_configuration_invalid", retryable=False)
+        try:
+            timeout_seconds = float(os.getenv("STUDIO_RUNTIME_TOKEN_TIMEOUT_SECONDS", "5"))
+            refresh_skew_seconds = float(
+                os.getenv("STUDIO_RUNTIME_TOKEN_REFRESH_SKEW_SECONDS", "30")
+            )
+        except ValueError:
+            raise StudioTokenError("studio_token_configuration_invalid", retryable=False) from None
         return cls(
             token_url=token_url,
             client_secret=client_secret,
             client_id=os.getenv("STUDIO_RUNTIME_CLIENT_ID", DEFAULT_CLIENT_ID),
             audience=os.getenv("STUDIO_RUNTIME_AUDIENCE", DEFAULT_AUDIENCE),
-            timeout_seconds=float(os.getenv("STUDIO_RUNTIME_TOKEN_TIMEOUT_SECONDS", "5")),
-            refresh_skew_seconds=float(
-                os.getenv("STUDIO_RUNTIME_TOKEN_REFRESH_SKEW_SECONDS", "30")
-            ),
+            timeout_seconds=timeout_seconds,
+            refresh_skew_seconds=refresh_skew_seconds,
             fixed_token=fixed_token,
         )
 

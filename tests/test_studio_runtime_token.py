@@ -145,7 +145,7 @@ def test_rejects_unbounded_or_incomplete_configuration() -> None:
 
 
 def test_loads_contract_defaults_and_fixed_token_from_environment(monkeypatch) -> None:
-    monkeypatch.setenv("STUDIO_RUNTIME_FIXED_TOKEN", "local-token")
+    monkeypatch.setenv("STUDIO_RUNTIME_FIXED_TOKEN", "  local-token  ")
     monkeypatch.delenv("STUDIO_RUNTIME_TOKEN_URL", raising=False)
     monkeypatch.delenv("STUDIO_RUNTIME_CLIENT_SECRET", raising=False)
 
@@ -154,3 +154,13 @@ def test_loads_contract_defaults_and_fixed_token_from_environment(monkeypatch) -
     assert loaded.fixed_token == "local-token"
     assert loaded.client_id == DEFAULT_CLIENT_ID
     assert loaded.audience == DEFAULT_AUDIENCE
+
+
+def test_classifies_invalid_numeric_environment_configuration(monkeypatch) -> None:
+    monkeypatch.setenv("STUDIO_RUNTIME_FIXED_TOKEN", "local-token")
+    monkeypatch.setenv("STUDIO_RUNTIME_TOKEN_TIMEOUT_SECONDS", "invalid")
+
+    with pytest.raises(StudioTokenError) as caught:
+        StudioTokenConfig.from_env()
+
+    assert caught.value.code == "studio_token_configuration_invalid"
