@@ -221,6 +221,48 @@ async def test_rejects_header_control_characters_before_transport() -> None:
     assert transport.calls == []
 
 
+@pytest.mark.asyncio
+async def test_rejects_empty_service_token_before_transport() -> None:
+    transport = StubTransport(RuntimeHttpResponse(200, valid_configuration()))
+
+    async def empty_token_provider() -> str:
+        return ""
+
+    runtime_client = StudioRuntimeClient(
+        "https://studio.test", empty_token_provider, transport=transport
+    )
+
+    with pytest.raises(StudioRuntimeClientError) as caught:
+        await runtime_client.fetch("tenant-kassel", "correlation-1")
+
+    assert caught.value.code == "studio_runtime_token_invalid"
+    assert caught.value.retryable is False
+    assert transport.calls == []
+
+
+@pytest.mark.asyncio
+async def test_classifies_transport_timeout_as_retryable() -> None:
+    class TimeoutTransport:
+        async def get(
+            self, url: str, headers: Mapping[str, str], timeout_seconds: float
+        ) -> RuntimeHttpResponse:
+            raise TimeoutError("transport details")
+
+    async def token_provider() -> str:
+        return "service-token"
+
+    runtime_client = StudioRuntimeClient(
+        "https://studio.test", token_provider, transport=TimeoutTransport()
+    )
+
+    with pytest.raises(StudioRuntimeClientError) as caught:
+        await runtime_client.fetch("tenant-kassel", "correlation-1")
+
+    assert caught.value.code == "studio_runtime_network_error"
+    assert caught.value.retryable is True
+    assert caught.value.__cause__ is None
+
+
 def test_rejects_base_url_that_could_change_the_fixed_path() -> None:
     async def token_provider() -> str:
         return "service-token"
