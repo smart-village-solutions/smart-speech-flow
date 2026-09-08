@@ -414,6 +414,13 @@ from .websocket_monitor import initialize_websocket_monitor
 
 websocket_monitor = initialize_websocket_monitor(registry)
 
+# The fallback manager is a module-level singleton built before this registry
+# exists; without this its drop counter would sit on prometheus_client's global
+# default registry, which /metrics does not serve.
+from .websocket_fallback import fallback_manager
+
+fallback_manager.bind_metrics_registry(registry)
+
 
 # === CORS Middleware ===
 # Enhanced CORS Configuration for WebSocket Support

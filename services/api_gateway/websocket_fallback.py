@@ -6,14 +6,79 @@ failure detection, CORS error handling, and seamless user experience.
 
 import asyncio
 import logging
-import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
+from uuid import uuid4
+
+from prometheus_client import CollectorRegistry, Counter
+
+from .log_safety import sanitize_log_value
+from .session_manager import ClientType
 
 logger = logging.getLogger(__name__)
+
+# The bound stays: an unbounded per-client queue is a memory risk. What changes
+# is that crossing it is counted and reported rather than silently discarded.
+POLLING_QUEUE_MAX_MESSAGES = 100
+
+_DROPPED_COUNTER_NAME = "websocket_polling_messages_dropped_total"
+
+
+def _dropped_counter(registry: CollectorRegistry) -> Counter:
+    """Register the drop counter once per registry, reusing it on repeat calls.
+
+    The counter must live on the gateway's own registry: routes/metrics.py
+    serves app.state.prometheus_registry, so a series left on
+    prometheus_client's global default is counted in-process and never
+    scraped. prometheus_client raises on a second registration of the same
+    name and the test suite reloads services.api_gateway.app, so registration
+    is attempted through the public API first and every fallback ends in a
+    counter rather than an exception.
+    """
+    try:
+        return Counter(
+            _DROPPED_COUNTER_NAME,
+            "Messages discarded because a polling client's queue was full",
+            ["client_type"],
+            registry=registry,
+        )
+    except ValueError:
+        pass  # already registered on this registry, or the name is taken
+
+    # _names_to_collectors is private and may be renamed by a library bump, so
+    # reuse is best-effort and never the only path out of here.
+    existing = getattr(registry, "_names_to_collectors", {}).get(_DROPPED_COUNTER_NAME)
+    if isinstance(existing, Counter):
+        return existing
+
+    logger.warning(
+        "%s is not available on the gateway registry; polling drops will not "
+        "be scraped",
+        _DROPPED_COUNTER_NAME,
+    )
+    return Counter(
+        _DROPPED_COUNTER_NAME,
+        "Messages discarded because a polling client's queue was full",
+        ["client_type"],
+        registry=CollectorRegistry(),
+    )
+
+
+def _known_client_type(value: Any) -> str:
+    """Clamp a client type to the enum before it becomes a Prometheus label.
+
+    `client_type` reaches this module straight from the body of
+    POST /api/websocket/polling/activate, which declares it as a bare `str`.
+    An unbounded label value is a cardinality attack, so anything outside
+    ClientType is folded into "unknown".
+    """
+    try:
+        return ClientType(value).value
+    except ValueError:
+        return "unknown"
 
 
 def utc_now() -> datetime:
@@ -127,7 +192,21 @@ class WebSocketFallbackManager:
         # Notification callbacks
         self.notification_callbacks: List[Callable] = []
 
+        # Defaults to a registry of its own so that importing this module never
+        # touches prometheus_client's global default, which /metrics does not
+        # serve. app.py rebinds it to the gateway registry.
+        self.messages_dropped = _dropped_counter(CollectorRegistry())
+
         logger.info("🔄 WebSocket Fallback Manager initialized")
+
+    def bind_metrics_registry(self, registry: CollectorRegistry) -> None:
+        """Move the drop counter onto the registry /metrics actually serves.
+
+        This module is imported before app.py has built that registry and
+        cannot import app.py back, so the wiring is a call from app.py rather
+        than a constructor argument.
+        """
+        self.messages_dropped = _dropped_counter(registry)
 
     def evaluate_websocket_failure(
         self,
@@ -252,8 +331,11 @@ class WebSocketFallbackManager:
     ) -> str:
         """Activate polling fallback for a client"""
 
-        # Generate unique polling ID
-        polling_id = f"poll_{session_id}_{client_type}_{int(time.time())}"
+        # A polling id must be unique, not merely descriptive: it keys
+        # self.polling_clients, so two activations for one session and client
+        # type inside the same second used to overwrite each other and discard
+        # the loser's entire message queue.
+        polling_id = f"poll_{session_id}_{client_type}_{uuid4().hex[:12]}"
 
         # Create polling client
         polling_client = PollingClient(
@@ -300,7 +382,16 @@ class WebSocketFallbackManager:
     def send_message_to_polling_client(
         self, polling_id: str, message: Dict[str, Any]
     ) -> bool:
-        """Send message to polling client's queue"""
+        """Queue a message for a polling client.
+
+        Returns True when nothing was lost. False does **not** mean the message
+        passed in was rejected: it was appended, and a *different, older*
+        message was evicted to keep the queue within
+        POLLING_QUEUE_MAX_MESSAGES. Retrying on False therefore duplicates the
+        newest message and evicts one more. False is a signal to report or
+        alert on, not to resend. (An unknown polling id also returns False,
+        and there the message was not queued at all.)
+        """
         client = self.polling_clients.get(polling_id)
         if not client:
             return False
@@ -316,9 +407,18 @@ class WebSocketFallbackManager:
 
         client.message_queue.append(message_with_meta)
 
-        # Limit queue size to prevent memory issues
-        if len(client.message_queue) > 100:
-            client.message_queue.popleft()
+        if len(client.message_queue) > POLLING_QUEUE_MAX_MESSAGES:
+            dropped = client.message_queue.popleft()
+            self.messages_dropped.labels(
+                client_type=_known_client_type(client.client_type)
+            ).inc()
+            logger.warning(
+                "Polling queue full (%d); dropped the oldest queued message of "
+                "type %s. The recipient will never see it.",
+                POLLING_QUEUE_MAX_MESSAGES,
+                sanitize_log_value(dropped.get("type", "unknown")),
+            )
+            return False
 
         return True
 
