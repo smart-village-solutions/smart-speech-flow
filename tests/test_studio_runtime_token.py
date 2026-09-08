@@ -144,6 +144,13 @@ def test_rejects_unbounded_or_incomplete_configuration() -> None:
         config(client_secret="")
 
 
+def test_configuration_representation_redacts_credentials() -> None:
+    representation = repr(config(fixed_token="fixed-secret-token"))
+
+    assert "top-secret" not in representation
+    assert "fixed-secret-token" not in representation
+
+
 def test_loads_contract_defaults_and_fixed_token_from_environment(monkeypatch) -> None:
     monkeypatch.setenv("STUDIO_RUNTIME_FIXED_TOKEN", "  local-token  ")
     monkeypatch.delenv("STUDIO_RUNTIME_TOKEN_URL", raising=False)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Protocol
 
 import aiohttp
@@ -28,14 +28,17 @@ class StudioTokenConfig:
     """Configuration for Studio service-token acquisition."""
 
     token_url: str
-    client_secret: str
+    client_secret: str = field(repr=False)
     client_id: str = DEFAULT_CLIENT_ID
     audience: str = DEFAULT_AUDIENCE
     timeout_seconds: float = 5.0
     refresh_skew_seconds: float = 30.0
-    fixed_token: str | None = None
+    fixed_token: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "token_url", self.token_url.strip())
+        object.__setattr__(self, "client_id", self.client_id.strip())
+        object.__setattr__(self, "audience", self.audience.strip())
         normalized_fixed_token = self.fixed_token.strip() if self.fixed_token else None
         object.__setattr__(self, "fixed_token", normalized_fixed_token or None)
         if not self.fixed_token and (
@@ -125,11 +128,13 @@ class StudioRuntimeTokenProvider:
         if self._config.fixed_token:
             return self._config.fixed_token
         if self._is_valid():
-            return self._token or ""
+            assert self._token is not None
+            return self._token
 
         async with self._lock:
             if self._is_valid():
-                return self._token or ""
+                assert self._token is not None
+                return self._token
             return await self._refresh()
 
     def _is_valid(self) -> bool:
