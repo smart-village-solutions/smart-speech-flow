@@ -11,7 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 app = FastAPI(title="Studio Runtime Configuration Mock")
 
-_SERVICE_TOKEN = "Bearer studio-mock-service-token"
 _UNAVAILABLE_MESSAGE = "The requested tenant is unavailable."
 _CONTRACT_VERSION = "1.0"
 
@@ -37,14 +36,6 @@ class RuntimeErrorEnvelope(BaseModel):
 
 
 _ERROR_RESPONSES = {
-    401: {
-        "model": RuntimeErrorEnvelope,
-        "description": "Service authentication is missing.",
-    },
-    403: {
-        "model": RuntimeErrorEnvelope,
-        "description": "Service authentication is invalid.",
-    },
     404: {
         "model": RuntimeErrorEnvelope,
         "description": "The requested tenant does not exist.",
@@ -144,16 +135,11 @@ def _error_response(
     responses=_ERROR_RESPONSES,
 )
 def runtime_configuration(
-    authorization: str | None = Header(default=None),
     x_tenant_id: str | None = Header(default=None),
     x_correlation_id: str | None = Header(default=None),
     x_mock_scenario: str | None = Header(default=None),
 ) -> dict[str, Any] | JSONResponse:
     """Return deterministic Runtime Configuration V1 data for local integration tests."""
-    if authorization is None:
-        return _error_response(401, "SERVICE_UNAUTHENTICATED", x_correlation_id, False)
-    if authorization != _SERVICE_TOKEN:
-        return _error_response(403, "SERVICE_FORBIDDEN", x_correlation_id, False)
     if x_mock_scenario == "not-ready":
         return _error_response(409, "TENANT_NOT_READY", x_correlation_id, False)
     if x_mock_scenario == "unavailable":

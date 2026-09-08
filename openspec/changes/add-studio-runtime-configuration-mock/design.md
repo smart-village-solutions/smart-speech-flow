@@ -8,13 +8,20 @@ adding a shortcut inside SSF.
 ## Decisions
 
 - The mock is a standalone FastAPI service at the exact V1 path.
-- It reads no real credentials and accepts only documented test bearer tokens.
+- It reads no real credentials and deliberately accepts unauthenticated
+  requests because it serves only fixed, non-sensitive test data.
 - A request header selects a documented error scenario only in the mock.
-- Docker Compose exposes it only through the `studio-mock` profile.
-- Production Compose services never depend on, route to, or enable the mock.
+- Docker Compose publishes the mock as `http://<host-ip>:8010` only through
+  the explicitly selected `studio-mock` profile. It does not use Traefik or
+  TLS because this is a temporary test dependency.
+- Production Compose services never depend on or route to the mock. Operators
+  who enable the profile accept that its HTTP port is externally reachable.
 
 ## Risks and Mitigations
 
 - Contract drift: verify response schemas and error envelopes in tests.
-- Accidental production use: isolate the service behind an opt-in profile and
-  use a distinct local URL.
+- Misuse as a production dependency: the endpoint is intentionally
+  unauthenticated and unencrypted, so it remains isolated behind an explicit
+  profile and contains only fixed test data.
+- Accidental exposure: isolate the service behind an opt-in profile and
+  document that the port binds to all interfaces.

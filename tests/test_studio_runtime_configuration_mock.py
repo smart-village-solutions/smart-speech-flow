@@ -10,12 +10,8 @@ from services.studio_mock.app import app
 
 CLIENT = TestClient(app)
 PATH = "/internal/plugins/ssf/v1/runtime-configuration"
-TOKEN = "Bearer studio-mock-service-token"
-
-
 def _headers(tenant_id: str = "tenant-kassel", **additional: str) -> dict[str, str]:
     return {
-        "Authorization": TOKEN,
         "X-Tenant-Id": tenant_id,
         "X-Correlation-Id": "test-correlation-id",
         **additional,
@@ -67,16 +63,17 @@ def test_returns_disabled_policy_for_second_test_tenant() -> None:
     assert payload["localization"]["languages"][0]["conversationContentStorageQuestionHtml"] is None
 
 
-def test_rejects_missing_or_invalid_service_token() -> None:
-    unauthenticated = CLIENT.get(PATH, headers={"X-Tenant-Id": "tenant-kassel"})
-    assert unauthenticated.status_code == 401
-    assert unauthenticated.json()["contractVersion"] == "1.0"
+def test_returns_configuration_without_authorization() -> None:
+    response = CLIENT.get(
+        PATH,
+        headers={
+            "X-Tenant-Id": "tenant-kassel",
+            "X-Correlation-Id": "test-correlation-id",
+        },
+    )
 
-    response = CLIENT.get(PATH, headers=_headers(Authorization="Bearer wrong-token"))
-
-    assert response.status_code == 403
-    assert response.json()["contractVersion"] == "1.0"
-    assert response.json()["error"]["code"] == "SERVICE_FORBIDDEN"
+    assert response.status_code == 200
+    assert response.json()["tenant"]["id"] == "tenant-kassel"
 
 
 def test_returns_not_found_for_unknown_tenant() -> None:
@@ -116,7 +113,7 @@ def test_returns_documented_mock_failure_envelopes() -> None:
 def test_openapi_documents_every_runtime_configuration_error() -> None:
     responses = CLIENT.get("/openapi.json").json()["paths"][PATH]["get"]["responses"]
 
-    for status_code in ("401", "403", "404", "409", "503"):
+    for status_code in ("404", "409", "503"):
         assert responses[status_code]["description"]
         assert responses[status_code]["content"]["application/json"]["schema"]["$ref"].endswith(
             "RuntimeErrorEnvelope"

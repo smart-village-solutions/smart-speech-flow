@@ -8,16 +8,18 @@ is available in every developer environment.
 
 ## What Changes
 
-- Add a local-only FastAPI mock for the Studio Runtime Configuration V1 read API.
+- Add an opt-in FastAPI mock for the Studio Runtime Configuration V1 read API.
 - Serve deterministic configurations for two tenants and the `ask` and
   `disabled` conversation-storage policies.
-- Provide deterministic `401`, `403`, `404`, `409`, and `503` error envelopes.
-- Package the mock in a dedicated Docker Compose profile that production
-  deployments do not enable.
+- Provide deterministic `404`, `409`, and `503` error envelopes.
+- Package the mock in a dedicated Docker Compose profile and publish its HTTP
+  port on all host network interfaces when that profile is explicitly enabled.
 
 ## Impact
 
 - Affected capability: Studio--SSF runtime configuration integration.
-- Affected code: local development Compose configuration, mock service, and
+- Affected code: Compose configuration, mock service documentation, and
   contract tests.
 - No production authentication, tenant isolation, or persistence path changes.
+  The mock deliberately has no authentication because it serves only fixed,
+  non-sensitive test data.
