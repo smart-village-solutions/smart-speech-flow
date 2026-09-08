@@ -2,6 +2,7 @@
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Annotated, Any, Mapping
 
@@ -13,12 +14,12 @@ _TENANT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _LEGACY_CLAIM_NAMES = frozenset({"tenant_id", "studio_instance_id"})
 _SELECTOR_NAMES = frozenset(
     {
-        "instanceId",
         "studio_instance_id",
         "studio_tenant_id",
-        "studioTenantId",
+        "studiotenantid",
         "tenant_id",
-        "tenantId",
+        "tenantid",
+        "instanceid",
     }
 )
 _SELECTOR_HEADER_NAMES = frozenset({"x-studio-instance-id", "x-studio-tenant-id", "x-tenant-id"})
@@ -59,9 +60,9 @@ async def require_studio_tenant_context(
 
 
 def _request_has_tenant_selector(request: Request, body: object) -> bool:
-    if _SELECTOR_NAMES.intersection(request.query_params.keys()):
+    if _has_selector_name(request.query_params.keys()):
         return True
-    if _SELECTOR_NAMES.intersection(request.cookies.keys()):
+    if _has_selector_name(request.cookies.keys()):
         return True
     if _SELECTOR_HEADER_NAMES.intersection(name.lower() for name in request.headers.keys()):
         return True
@@ -69,13 +70,20 @@ def _request_has_tenant_selector(request: Request, body: object) -> bool:
 
 
 def _contains_tenant_selector(value: object) -> bool:
-    if isinstance(value, dict):
-        if _SELECTOR_NAMES.intersection(value.keys()):
-            return True
-        return any(_contains_tenant_selector(item) for item in value.values())
-    if isinstance(value, list):
-        return any(_contains_tenant_selector(item) for item in value)
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, dict):
+            if _has_selector_name(item.keys()):
+                return True
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
     return False
+
+
+def _has_selector_name(names: Iterable[object]) -> bool:
+    return any(isinstance(name, str) and name.lower() in _SELECTOR_NAMES for name in names)
 
 
 async def _json_body(request: Request) -> object:
@@ -84,8 +92,11 @@ async def _json_body(request: Request) -> object:
         return None
     try:
         return json.loads(await request.body())
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return None
+    except (json.JSONDecodeError, RecursionError, UnicodeDecodeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The JSON request body must be valid",
+        ) from None
 
 
 def _invalid_tenant_claim() -> HTTPException:

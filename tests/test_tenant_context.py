@@ -66,8 +66,10 @@ def test_dependency_uses_only_the_validated_claim() -> None:
     ("request_kwargs"),
     [
         {"params": {"tenantId": "tenant-berlin"}},
+        {"params": {"TENANT_ID": "tenant-berlin"}},
         {"json": {"tenant_id": "tenant-berlin"}},
         {"json": {"payload": [{"tenant_id": "tenant-berlin"}]}},
+        {"json": {"payload": [[{"TenantId": "tenant-berlin"}]]}},
         {
             "content": '{"payload":{"tenant_id":"tenant-berlin"}}',
             "headers": {"Content-Type": "application/vnd.api+json"},
