@@ -6,7 +6,7 @@
 - **Link:** [https://github.com/openai/whisper](https://github.com/openai/whisper)
 - **Verwendung im Code:**
   - **Datei:** `services/asr/app.py`
-  - **Details:** Wird über `import whisper` eingebunden und mit `whisper.load_model("base", ...)` geladen. Die Transkription erfolgt über die Funktion `model.transcribe(...)`.
+  - **Details:** Loaded through `import whisper` with `whisper.load_model("large-v3-turbo", ...)`. Transcription uses `model.transcribe(...)`.
 
 
 ## **2. M2M100** (Translation Service)

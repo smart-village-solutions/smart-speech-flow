@@ -9,7 +9,7 @@ Ein containerisiertes Microservice-Backend für Echtzeit-Sprachverarbeitung und 
 
 ## ✨ Features at a Glance
 
-- 🎤 **Automatic Speech Recognition** – Transkription mit OpenAI Whisper
+- 🎤 **Automatic Speech Recognition** – Transcription with OpenAI Whisper large-v3-turbo
 - 🌍 **Multi-Language Translation** – 100+ Sprachen mit Facebook M2M100
 - 🔊 **Text-to-Speech** – Natürliche Sprachsynthese mit Coqui-TTS & HuggingFace MMS
 - ⚡ **GPU-Accelerated** – CUDA-Support für optimale Performance
@@ -107,7 +107,7 @@ Der aktuelle Haupt-Workflow fuer Admin/Customer-Kommunikation ist sessionbasiert
 ### 1. ASR Service (Speech-to-Text)
 - **Port:** 8001
 - **Funktion:** Automatische Spracherkennung für verschiedene Sprachen und Audioformate
-- **Modelle:** Whisper, Wav2Vec, etc. (lokal geladen)
+- **Model:** OpenAI Whisper large-v3-turbo (loaded locally)
 - **Endpunkte:** `/transcribe` (POST), `/health` (GET), `/metrics` (GET), `/supported-languages` (GET)
 - **Beispiel:**
    ```bash
@@ -424,7 +424,7 @@ Falls die Sprachparameter fehlen oder ungültig sind, liefert das Backend eine F
 Eine ausführliche Dokumentation zu den in den Services verwendeten KI-Modellen, deren Quellen und Lizenzen findest du unter [models.md](./models.md).
 
 ### Hauptmodelle
-- **ASR:** OpenAI Whisper (verschiedene Größen)
+- **ASR:** OpenAI Whisper large-v3-turbo
 - **Translation:** Facebook M2M100 (1.2B Parameter)
 - **TTS:** Coqui-TTS (europäische Sprachen), HuggingFace MMS-TTS (weitere Sprachen)
 

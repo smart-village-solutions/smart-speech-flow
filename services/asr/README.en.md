@@ -45,7 +45,7 @@ Validation errors use FastAPI's error payload format, for example:
 
 ## Implementation notes
 
-- Models such as Whisper or Wav2Vec are loaded locally; audio is not sent to an external API.
+- The service permanently loads Whisper `large-v3-turbo` locally; audio is not sent to an external API.
 - Loaded models remain in memory to improve performance.
 - If the ASR model is not loaded, the endpoint returns the configured fallback response instead of failing the request.
 

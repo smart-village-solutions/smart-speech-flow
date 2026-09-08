@@ -7,7 +7,7 @@ This roadmap outlines completed v1.0 features, ongoing work, and planned improve
 ### ✅ Completed Features
 
 #### Core Services
-- ✅ **ASR Service** – Speech recognition with OpenAI Whisper
+- ✅ **ASR Service** – Speech recognition with OpenAI Whisper large-v3-turbo
 - ✅ **Translation Service** – 100+ languages with Facebook M2M100
 - ✅ **TTS Service** – Text-to-speech with Coqui-TTS & HuggingFace MMS
 - ✅ **API Gateway** – Unified REST API and pipeline orchestration

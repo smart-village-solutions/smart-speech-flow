@@ -26,7 +26,7 @@ class TestPipelineMetadataTransformation:
                     "name": "asr",
                     "input": {"lang": "de"},
                     "output": "Hallo Welt",
-                    "model": "whisper-base",
+                    "model": "whisper-large-v3-turbo",
                     "started_at": "2025-11-05T20:00:55.000Z",
                     "completed_at": "2025-11-05T20:00:57.500Z",
                     "duration_ms": 2500
@@ -74,7 +74,7 @@ class TestPipelineMetadataTransformation:
         asr_step = result["steps"][0]
         assert asr_step["name"] == "asr"
         assert asr_step["output"]["text"] == "Hallo Welt"
-        assert asr_step["output"]["model"] == "whisper-base"
+        assert asr_step["output"]["model"] == "whisper-large-v3-turbo"
         assert asr_step["duration_ms"] == 2500
 
         # Translation step
