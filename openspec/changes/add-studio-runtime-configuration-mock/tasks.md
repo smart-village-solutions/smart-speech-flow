@@ -16,4 +16,4 @@
 - [x] 3.1 Require Studio instance and correlation headers, and model service
   token authorization.
 - [x] 3.2 Align authorization and locale response fields with Contract V1.
-- [ ] 3.3 Restore loopback-only operation and document the swappable endpoint.
+- [x] 3.3 Restore loopback-only operation and document the swappable endpoint.

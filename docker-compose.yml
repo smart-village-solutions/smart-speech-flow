@@ -187,7 +187,7 @@ services:
       context: .
       dockerfile: services/studio_mock/Dockerfile
     ports:
-      - "8010:8000"
+      - "127.0.0.1:8010:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/openapi.json"]
       interval: 10s

@@ -25,17 +25,29 @@ Studio--SSF Runtime Configuration V1 API. Start it explicitly:
 docker compose --profile studio-mock up --build studio-mock
 ```
 
-It listens on all host interfaces at `http://<host-ip>:8010`. Browser access
-uses `http://<host-ip>:8010/internal/plugins/ssf/v1/runtime-configuration?tenantId=tenant-kassel`.
-Service callers can instead send `X-Tenant-Id` set to `tenant-kassel` or
-`tenant-fulda`, and a correlation ID. When both are present, their values must
-match or the mock returns `400`. `tenant-kassel` returns storage mode `ask`;
-`tenant-fulda` returns `disabled`. Send `X-Mock-Scenario: not-ready` or
-`unavailable` to exercise the `409` or `503` error envelopes. Send an unknown
-tenant ID to exercise the `404` envelope.
+It listens only on loopback at `http://127.0.0.1:8010`. SSF containers on the
+same Compose network use `http://studio-mock:8000` as their base URL. Configure
+the consumer through `STUDIO_RUNTIME_CONFIGURATION_BASE_URL` and retain the
+path `/internal/plugins/ssf/v1/runtime-configuration`; replacing the mock with
+Studio then requires only a base-URL change.
+
+Every request requires these headers:
+
+```text
+Authorization: Bearer studio-mock-authorized-token
+X-Studio-Instance-Id: tenant-kassel
+X-Correlation-Id: local-test-correlation-id
+```
+
+`Bearer studio-mock-authorized-token` has
+`ssf.runtime-configuration.read`; `Bearer studio-mock-unauthorized-token`
+models an authenticated caller without that permission. `tenant-kassel`
+returns storage mode `ask`; `tenant-fulda` returns `disabled`. Send
+`X-Mock-Scenario: authorization-pending` or `unavailable` to exercise `409`
+or `503`. Send an unknown Studio instance ID to exercise `404`.
 Every error response has the Studio V1 `contractVersion` and `error` envelope
 documented in the mock's OpenAPI description.
 
-The mock does not require authentication and contains only fixed,
-non-sensitive test data. It is intentionally HTTP-only for temporary external
-test access; do not use it as a production Studio service.
+The mock contains only fixed, non-sensitive test data, but it requires the V1
+mock service token and is intentionally not publicly reachable. Do not use it
+as a production Studio service.

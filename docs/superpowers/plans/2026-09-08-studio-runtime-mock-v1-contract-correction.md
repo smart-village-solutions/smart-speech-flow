@@ -85,7 +85,7 @@ git commit -m "fix(dev): align Studio mock with V1 contract"
 - Consumes: opt-in `studio-mock` Compose profile.
 - Produces: loopback URL `http://127.0.0.1:8010` for host checks and Docker-network base URL `http://studio-mock:8000` for SSF implementation.
 
-- [ ] **Step 1: Write failing Compose and runbook tests**
+- [x] **Step 1: Write failing Compose and runbook tests**
 
 ```python
 assert service["ports"] == ["127.0.0.1:8010:8000"]
@@ -93,17 +93,17 @@ assert "http://studio-mock:8000" in runbook
 assert "studio-mock-authorized-token" in runbook
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pytest tests/test_studio_runtime_configuration_mock_compose.py -q`
 
 Expected: FAIL because the current mock binds to all host interfaces and the runbook documents an unauthenticated browser URL.
 
-- [ ] **Step 3: Apply protected-operation configuration and documentation**
+- [x] **Step 3: Apply protected-operation configuration and documentation**
 
 Restore `127.0.0.1:8010:8000`. Document the required headers, both fixed test tokens, and the two base URLs. State that SSF must obtain the base URL from configuration (for example, `STUDIO_RUNTIME_CONFIGURATION_BASE_URL`) and retain `/internal/plugins/ssf/v1/runtime-configuration`, so replacing the mock requires only the base URL change.
 
-- [ ] **Step 4: Update implementation issue #287**
+- [x] **Step 4: Update implementation issue #287**
 
 Post an English comment containing:
 
@@ -116,13 +116,13 @@ Authorized test token: Bearer studio-mock-authorized-token
 
 State that the client must make its base URL configurable and that production switches only that setting to Studio.
 
-- [ ] **Step 5: Rebuild, restart, and smoke test**
+- [x] **Step 5: Rebuild, restart, and smoke test**
 
 Run: `docker compose --profile studio-mock up -d --build --force-recreate studio-mock`
 
 Verify an authorized `curl` to `127.0.0.1:8010` returns `tenant-kassel`, and verify Docker reports the loopback port mapping.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docker-compose.yml docs/operations/keycloak-admin-access.md tests/test_studio_runtime_configuration_mock_compose.py
