@@ -24,6 +24,15 @@ logger = logging.getLogger(__name__)
 # is that crossing it is counted and reported rather than silently discarded.
 POLLING_QUEUE_MAX_MESSAGES = 100
 
+# /api/websocket/polling/activate has no authentication -- it validates only
+# that the session exists. Unique polling ids removed the accidental bound that
+# id collisions used to provide, so an unauthenticated caller could mint one
+# PollingClient (and its queue) per request until periodic_cleanup reaped them
+# 30 minutes later. A client legitimately re-activates during a reconnect race,
+# so the cap is not 1; beyond it the oldest entry for the same session and
+# client type is reclaimed.
+POLLING_MAX_CLIENTS_PER_SESSION_CLIENT_TYPE = 3
+
 _DROPPED_COUNTER_NAME = "websocket_polling_messages_dropped_total"
 
 
@@ -148,6 +157,10 @@ class PollingClient:
     fallback_reason: FallbackReason = FallbackReason.MANUAL_FALLBACK
     retry_count: int = 0
     websocket_retry_after: Optional[datetime] = None
+    # Drops since this client last polled. A wedged client saturates its queue
+    # and then drops every subsequent message, so this bounds the log to one
+    # line per saturation episode instead of one per lost message.
+    dropped_since_last_poll: int = 0
 
 
 @dataclass
@@ -352,6 +365,8 @@ class WebSocketFallbackManager:
         self.polling_clients[polling_id] = polling_client
         self.session_polling_clients[session_id].add(polling_id)
 
+        self._enforce_polling_client_cap(session_id, client_type)
+
         # Update statistics
         self.fallback_stats["total_fallbacks"] += 1
         self.fallback_stats["active_polling_clients"] = len(self.polling_clients)
@@ -412,12 +427,25 @@ class WebSocketFallbackManager:
             self.messages_dropped.labels(
                 client_type=_known_client_type(client.client_type)
             ).inc()
-            logger.warning(
-                "Polling queue full (%d); dropped the oldest queued message of "
-                "type %s. The recipient will never see it.",
-                POLLING_QUEUE_MAX_MESSAGES,
-                sanitize_log_value(dropped.get("type", "unknown")),
-            )
+            client.dropped_since_last_poll += 1
+            dropped_type = sanitize_log_value(dropped.get("type", "unknown"))
+            if client.dropped_since_last_poll == 1:
+                logger.warning(
+                    "Polling queue full (%d); dropped the oldest queued message "
+                    "of type %s. The recipient will never see it. Further drops "
+                    "for this client log at debug until it polls again; "
+                    "%s carries the true count.",
+                    POLLING_QUEUE_MAX_MESSAGES,
+                    dropped_type,
+                    _DROPPED_COUNTER_NAME,
+                )
+            else:
+                logger.debug(
+                    "Polling queue still full; dropped message of type %s "
+                    "(%d since last poll)",
+                    dropped_type,
+                    client.dropped_since_last_poll,
+                )
             return False
 
         return True
@@ -430,6 +458,14 @@ class WebSocketFallbackManager:
 
         # Update last poll time
         client.last_poll = utc_now()
+
+        if client.dropped_since_last_poll:
+            logger.warning(
+                "Polling client drained after overflow: %d message(s) lost while "
+                "its queue was full",
+                client.dropped_since_last_poll,
+            )
+            client.dropped_since_last_poll = 0
 
         # Get all queued messages
         messages = list(client.message_queue)
@@ -692,6 +728,37 @@ class WebSocketFallbackManager:
             reason,
             "Connection using compatibility mode. All features remain available.",
         )
+
+    def _enforce_polling_client_cap(self, session_id: str, client_type: str) -> int:
+        """Reclaim the oldest entries past the per-session-and-type cap.
+
+        Returns how many were reclaimed. Oldest-first, so the activation that
+        just happened is the one kept: a client repairing its connection gets
+        the live queue, and a caller minting entries in a loop reclaims its own
+        rather than growing the map.
+        """
+        peers = sorted(
+            (
+                client
+                for polling_id in self.session_polling_clients.get(session_id, set())
+                if (client := self.polling_clients.get(polling_id)) is not None
+                and client.client_type == client_type
+            ),
+            key=lambda client: client.created_at,
+        )
+
+        reclaimed = 0
+        for client in peers[:-POLLING_MAX_CLIENTS_PER_SESSION_CLIENT_TYPE]:
+            queued = len(client.message_queue)
+            if self._cleanup_polling_client(client.polling_id):
+                reclaimed += 1
+                logger.warning(
+                    "♻️ Polling client reclaimed at cap: session=%s type=%s queued=%d",
+                    sanitize_log_value(session_id),
+                    sanitize_log_value(_known_client_type(client_type)),
+                    queued,
+                )
+        return reclaimed
 
     def _cleanup_polling_client(self, polling_id: str) -> bool:
         """Remove polling client and cleanup resources"""

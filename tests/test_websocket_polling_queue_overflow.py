@@ -13,6 +13,7 @@ import pytest
 from services.api_gateway.websocket_fallback import (
     FallbackConfig,
     FallbackReason,
+    POLLING_MAX_CLIENTS_PER_SESSION_CLIENT_TYPE,
     POLLING_QUEUE_MAX_MESSAGES,
     WebSocketFallbackManager,
 )
@@ -177,3 +178,116 @@ class TestTheOverflowWarningIsSafeToLog:
         assert "\n" not in warning, "an unescaped newline can forge a log record"
         assert session_id not in warning
         assert polling_id not in warning
+
+
+class TestThePollingClientMapIsBounded:
+    """`/api/websocket/polling/activate` has no authentication -- it checks
+    only that the session exists. While polling ids ended in a timestamp,
+    repeat activations inside one second collided and overwrote each other,
+    which accidentally capped the map. Unique ids removed that accident, so the
+    bound has to be explicit."""
+
+    async def test_repeat_activations_do_not_grow_the_map_without_limit(self):
+        manager = WebSocketFallbackManager(
+            FallbackConfig(enable_jitter=False, enable_user_notifications=False)
+        )
+
+        for _ in range(50):
+            await manager.activate_polling_fallback(
+                "session-1", "customer", None, FallbackReason.NETWORK_ERROR
+            )
+
+        assert (
+            len(manager.polling_clients)
+            == POLLING_MAX_CLIENTS_PER_SESSION_CLIENT_TYPE
+        )
+        assert (
+            len(manager.session_polling_clients["session-1"])
+            == POLLING_MAX_CLIENTS_PER_SESSION_CLIENT_TYPE
+        )
+
+    async def test_the_newest_activation_survives(self):
+        """The client repairing its connection keeps the queue it will poll."""
+        manager = WebSocketFallbackManager(
+            FallbackConfig(enable_jitter=False, enable_user_notifications=False)
+        )
+
+        ids = [
+            await manager.activate_polling_fallback(
+                "session-1", "customer", None, FallbackReason.NETWORK_ERROR
+            )
+            for _ in range(POLLING_MAX_CLIENTS_PER_SESSION_CLIENT_TYPE + 2)
+        ]
+
+        assert ids[-1] in manager.polling_clients
+        assert ids[0] not in manager.polling_clients
+
+    async def test_the_cap_is_per_client_type_not_per_process(self):
+        """An admin activating must not evict the customer on the same session."""
+        manager = WebSocketFallbackManager(
+            FallbackConfig(enable_jitter=False, enable_user_notifications=False)
+        )
+
+        customer = await manager.activate_polling_fallback(
+            "session-1", "customer", None, FallbackReason.NETWORK_ERROR
+        )
+        for _ in range(POLLING_MAX_CLIENTS_PER_SESSION_CLIENT_TYPE + 2):
+            await manager.activate_polling_fallback(
+                "session-1", "admin", None, FallbackReason.NETWORK_ERROR
+            )
+
+        assert customer in manager.polling_clients
+
+
+class TestTheDropLogDoesNotFlood:
+    """A wedged client -- queue full, not yet 30-minute-stale -- drops every
+    subsequent message. One WARNING per drop meant a line per translation for
+    up to half an hour, for exactly the client this code exists to report."""
+
+    def test_a_saturated_queue_warns_once_not_per_message(
+        self, polling_client, caplog
+    ):
+        manager, polling_id = polling_client
+
+        with caplog.at_level(logging.WARNING):
+            for index in range(POLLING_QUEUE_MAX_MESSAGES + 200):
+                manager.send_message_to_polling_client(
+                    polling_id, {"type": "translation", "seq": index}
+                )
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1, (
+            f"{len(warnings)} warnings for 200 drops -- the log floods for a "
+            "single wedged client"
+        )
+
+    def test_the_counter_still_records_every_drop(self, polling_client):
+        """Bounding the log must not bound the metric."""
+        manager, polling_id = polling_client
+        before = _dropped(manager)
+
+        for index in range(POLLING_QUEUE_MAX_MESSAGES + 200):
+            manager.send_message_to_polling_client(
+                polling_id, {"type": "translation", "seq": index}
+            )
+
+        assert _dropped(manager) - before == 200
+
+    def test_a_client_that_recovers_and_saturates_again_warns_again(
+        self, polling_client, caplog
+    ):
+        manager, polling_id = polling_client
+
+        with caplog.at_level(logging.WARNING):
+            for index in range(POLLING_QUEUE_MAX_MESSAGES + 5):
+                manager.send_message_to_polling_client(
+                    polling_id, {"type": "translation", "seq": index}
+                )
+            manager.poll_messages(polling_id)
+            for index in range(POLLING_QUEUE_MAX_MESSAGES + 5):
+                manager.send_message_to_polling_client(
+                    polling_id, {"type": "translation", "seq": index}
+                )
+
+        # One per episode, plus the drain summary between them.
+        assert len([r for r in caplog.records if r.levelno == logging.WARNING]) == 3
