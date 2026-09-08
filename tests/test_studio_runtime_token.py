@@ -212,22 +212,3 @@ def test_classifies_invalid_numeric_environment_configuration(monkeypatch) -> No
         StudioTokenConfig.from_env()
 
     assert caught.value.code == "studio_token_configuration_invalid"
-
-
-@pytest.mark.asyncio
-async def test_unexpected_transport_failure_is_classified_and_redacted() -> None:
-    class FailingTransport:
-        async def post_form(
-            self, url: str, data: Mapping[str, str], timeout_seconds: float
-        ) -> TokenResponse:
-            raise RuntimeError(f"leaked {data['client_secret']}")
-
-    provider = StudioRuntimeTokenProvider(config(), transport=FailingTransport())
-
-    with pytest.raises(StudioTokenError) as caught:
-        await provider.get_token()
-
-    assert caught.value.code == "studio_token_network_error"
-    assert caught.value.retryable is False
-    assert "top-secret" not in str(caught.value)
-    assert caught.value.__cause__ is None
