@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping, Protocol
@@ -181,7 +180,7 @@ class AiohttpRuntimeTransport:
             async with session.get(url, headers=headers) as response:
                 try:
                     payload = await response.json()
-                except (aiohttp.ContentTypeError, json.JSONDecodeError, ValueError):
+                except (aiohttp.ContentTypeError, ValueError):
                     raise StudioRuntimeClientError(
                         "studio_runtime_response_invalid", retryable=False, status=response.status
                     ) from None
@@ -222,14 +221,7 @@ class StudioRuntimeClient:
         self._timeout_seconds = timeout_seconds
 
     async def fetch(self, tenant_id: str, correlation_id: str) -> RuntimeConfiguration:
-        if not tenant_id or len(tenant_id) > 128:
-            raise ValueError("tenant_id must contain between 1 and 128 characters")
-        if (
-            not correlation_id
-            or len(correlation_id) > 128
-            or any(ord(character) < 32 or ord(character) > 126 for character in correlation_id)
-        ):
-            raise ValueError("correlation_id must be printable ASCII with at most 128 characters")
+        _validate_request_context(tenant_id, correlation_id)
 
         token = await self._token_provider()
         if not token:
@@ -281,3 +273,14 @@ class StudioRuntimeClient:
             retryable=envelope.error.retryable,
             status=response.status,
         )
+
+
+def _validate_request_context(tenant_id: str, correlation_id: str) -> None:
+    if not tenant_id or len(tenant_id) > 128:
+        raise ValueError("tenant_id must contain between 1 and 128 characters")
+    if (
+        not correlation_id
+        or len(correlation_id) > 128
+        or any(ord(character) < 32 or ord(character) > 126 for character in correlation_id)
+    ):
+        raise ValueError("correlation_id must be printable ASCII with at most 128 characters")
