@@ -158,8 +158,6 @@ class StudioRuntimeTokenProvider:
             )
         except StudioTokenError:
             raise
-        except (TimeoutError, asyncio.TimeoutError, aiohttp.ClientError):
-            raise StudioTokenError("studio_token_network_error", retryable=True) from None
         except Exception:
             raise StudioTokenError("studio_token_network_error", retryable=True) from None
 
