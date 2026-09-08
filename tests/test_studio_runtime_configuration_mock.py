@@ -146,3 +146,39 @@ def test_openapi_documents_every_runtime_configuration_error() -> None:
         assert responses[status_code]["content"]["application/json"]["schema"]["$ref"].endswith(
             "RuntimeErrorEnvelope"
         )
+
+
+def test_openapi_documents_required_v1_headers_and_success_contract() -> None:
+    schema = CLIENT.get("/openapi.json").json()
+    operation = schema["paths"][PATH]["get"]
+    headers = {
+        parameter["name"]: parameter
+        for parameter in operation["parameters"]
+        if parameter["in"] == "header"
+    }
+
+    for header_name in (
+        "authorization",
+        "x-studio-instance-id",
+        "x-correlation-id",
+    ):
+        assert headers[header_name]["required"] is True
+        assert headers[header_name]["schema"] == {"type": "string"}
+
+    success_schema = operation["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ]
+    assert success_schema["$ref"].endswith("RuntimeConfigurationResponse")
+    response_definition = schema["components"]["schemas"]["RuntimeConfigurationResponse"]
+    assert {"configurationRevision", "authorizationRevision", "localization"} <= set(
+        response_definition["properties"]
+    )
+    branding_definition = schema["components"]["schemas"]["BrandingResponse"]
+    logo_schema = branding_definition["properties"]["logo"]
+    assert {
+        item["$ref"]
+        for item in logo_schema["anyOf"]
+        if "$ref" in item
+    } == {"#/components/schemas/BrandingAssetResponse"}
+    asset_definition = schema["components"]["schemas"]["BrandingAssetResponse"]
+    assert {"url", "alternativeText"} <= set(asset_definition["properties"])

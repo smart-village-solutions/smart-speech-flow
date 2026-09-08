@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any
 
 from fastapi import FastAPI, Header
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,6 +34,78 @@ class RuntimeErrorEnvelope(BaseModel):
 
     contract_version: str = Field(alias="contractVersion")
     error: RuntimeError
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class TenantResponse(BaseModel):
+    """The tenant section of a V1 runtime configuration."""
+
+    id: str
+    display_name: str = Field(alias="displayName")
+    time_zone: str = Field(alias="timeZone")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class BrandingAssetResponse(BaseModel):
+    """An optional logo or icon asset in a V1 runtime configuration."""
+
+    url: str
+    alternative_text: str = Field(alias="alternativeText")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class BrandingResponse(BaseModel):
+    """The branding section of a V1 runtime configuration."""
+
+    logo: BrandingAssetResponse | None
+    icon: BrandingAssetResponse | None
+
+
+class LocaleResponse(BaseModel):
+    """A localized V1 runtime configuration entry."""
+
+    locale: str
+    authenticated_home_explanation_html: str = Field(
+        alias="authenticatedHomeExplanationHtml"
+    )
+    guest_explanation_html: str = Field(alias="guestExplanationHtml")
+    conversation_content_storage_question_html: str | None = Field(
+        alias="conversationContentStorageQuestionHtml"
+    )
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class LocalizationResponse(BaseModel):
+    """The localization section of a V1 runtime configuration."""
+
+    default_locale: str = Field(alias="defaultLocale")
+    locales: list[LocaleResponse]
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ConversationContentStorageResponse(BaseModel):
+    """The conversation-content storage policy section."""
+
+    mode: str
+
+
+class RuntimeConfigurationResponse(BaseModel):
+    """The successful Studio Runtime Configuration V1 response."""
+
+    contract_version: str = Field(alias="contractVersion")
+    configuration_revision: str = Field(alias="configurationRevision")
+    authorization_revision: str = Field(alias="authorizationRevision")
+    tenant: TenantResponse
+    branding: BrandingResponse
+    localization: LocalizationResponse
+    conversation_content_storage: ConversationContentStorageResponse = Field(
+        alias="conversationContentStorage"
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -154,7 +227,7 @@ def _error_response(
 
 @app.get(
     "/internal/plugins/ssf/v1/runtime-configuration",
-    response_model=None,
+    response_model=RuntimeConfigurationResponse,
     responses=_ERROR_RESPONSES,
 )
 def runtime_configuration(
@@ -185,3 +258,26 @@ def runtime_configuration(
     if x_studio_instance_id not in _TENANT_CONFIGURATION_TEMPLATES:
         return _error_response(404, "TENANT_NOT_FOUND", x_correlation_id, False)
     return _configuration_for(x_studio_instance_id)
+
+
+def _custom_openapi() -> dict[str, Any]:
+    """Document V1-required headers while preserving custom error envelopes."""
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+    parameters = schema["paths"]["/internal/plugins/ssf/v1/runtime-configuration"][
+        "get"
+    ]["parameters"]
+    for parameter in parameters:
+        if parameter["in"] == "header" and parameter["name"] in {
+            "authorization",
+            "x-studio-instance-id",
+            "x-correlation-id",
+        }:
+            parameter["required"] = True
+            parameter["schema"] = {"type": "string"}
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+
+app.openapi = _custom_openapi
