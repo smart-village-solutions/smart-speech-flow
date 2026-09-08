@@ -241,10 +241,10 @@ class StudioRuntimeClient:
         if response.status == 200:
             try:
                 configuration = RuntimeConfiguration.model_validate(response.payload)
-            except ValidationError as error:
+            except ValidationError:
                 raise StudioRuntimeClientError(
                     "studio_runtime_response_invalid", retryable=False, status=200
-                ) from error
+                ) from None
             if configuration.tenant.id != tenant_id:
                 raise StudioRuntimeClientError(
                     "studio_runtime_tenant_mismatch", retryable=False, status=200
@@ -259,10 +259,10 @@ class StudioRuntimeClient:
             )
         try:
             envelope = RuntimeErrorEnvelope.model_validate(response.payload)
-        except ValidationError as error:
+        except ValidationError:
             raise StudioRuntimeClientError(
                 "studio_runtime_error_invalid", retryable=False, status=response.status
-            ) from error
+            ) from None
         expected_codes = EXPECTED_ERROR_CODES.get(response.status)
         if expected_codes is not None and envelope.error.code not in expected_codes:
             raise StudioRuntimeClientError(
@@ -276,8 +276,12 @@ class StudioRuntimeClient:
 
 
 def _validate_request_context(tenant_id: str, correlation_id: str) -> None:
-    if not tenant_id or len(tenant_id) > 128:
-        raise ValueError("tenant_id must contain between 1 and 128 characters")
+    if (
+        not tenant_id
+        or len(tenant_id) > 128
+        or any(ord(character) < 32 or ord(character) > 126 for character in tenant_id)
+    ):
+        raise ValueError("tenant_id must be printable ASCII with at most 128 characters")
     if (
         not correlation_id
         or len(correlation_id) > 128

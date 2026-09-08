@@ -194,6 +194,16 @@ async def test_rejects_disabled_storage_with_non_null_question() -> None:
     assert caught.value.code == "studio_runtime_response_invalid"
 
 
+@pytest.mark.asyncio
+async def test_rejects_header_control_characters_before_transport() -> None:
+    runtime_client, transport = client(RuntimeHttpResponse(200, valid_configuration()))
+
+    with pytest.raises(ValueError):
+        await runtime_client.fetch("tenant-kassel\r\nX-Forged: true", "correlation-1")
+
+    assert transport.calls == []
+
+
 def test_rejects_base_url_that_could_change_the_fixed_path() -> None:
     async def token_provider() -> str:
         return "service-token"
