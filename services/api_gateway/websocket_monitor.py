@@ -76,6 +76,16 @@ _WIRE_ALIASES = {
     # violation -- it must not land in PROTOCOL_ERROR either.
     "manual_termination": DisconnectReason.SERVER_DISCONNECT,
     "manual_admin_termination": DisconnectReason.SERVER_DISCONNECT,
+    # terminate_all_active_sessions' default, and a member of the closed
+    # SessionTerminationReason enum. Maintenance is a deliberate server-side
+    # action; without this an operator's cleanup pages critical.
+    "system_cleanup": DisconnectReason.SERVER_DISCONNECT,
+    # _get_termination_message's inactivity reason -- the same event as
+    # session_timeout, spelled differently by the caller.
+    "timeout": DisconnectReason.SESSION_EXPIRED,
+    # _get_termination_message's fault reason. It still pages, but it is a
+    # connection error, not evidence the client broke the protocol.
+    "error": DisconnectReason.CONNECTION_ERROR,
 }
 
 

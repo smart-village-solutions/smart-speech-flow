@@ -229,6 +229,8 @@ class TestNormalSessionEndDoesNotPageWebSocketConnectionFailures:
             "session_timeout",
             "manual_termination",
             "manual_admin_termination",
+            "system_cleanup",
+            "timeout",
         ],
     )
     def test_a_normal_session_end_reason_is_excluded(self, wire_reason: str):
@@ -239,8 +241,68 @@ class TestNormalSessionEndDoesNotPageWebSocketConnectionFailures:
             "routine session lifecycle"
         )
 
+    def test_every_termination_reason_the_session_layer_can_name_is_excluded(self):
+        """Enumerated from the enum, not listed by hand.
+
+        The hand-written list above is what let system_cleanup -- a member of
+        this closed enum and the default of terminate_all_active_sessions --
+        map to PROTOCOL_ERROR and page critical for a deliberate operator
+        action. A new member of SessionTerminationReason now fails here
+        instead.
+        """
+        from services.api_gateway.quality_telemetry import SessionTerminationReason
+
+        excluded = _excluded_disconnect_reasons()
+        offenders = {}
+        for reason in SessionTerminationReason:
+            if reason in (
+                SessionTerminationReason.NONE,
+                SessionTerminationReason.OTHER,
+            ):
+                continue
+            mapped = DisconnectReason.from_wire(reason.value)
+            if mapped.value not in excluded:
+                offenders[reason.value] = mapped.value
+
+        assert not offenders, (
+            f"deliberate session terminations mapping outside the exclusion "
+            f"list: {offenders} -- each would contribute to "
+            "WebSocketConnectionFailures and page critical"
+        )
+
+    def test_a_session_error_is_an_error_not_a_protocol_violation(self):
+        """_get_termination_message carries "error"; it is a fault and must
+        still page, but calling it a protocol violation misroutes triage."""
+        assert DisconnectReason.from_wire("error") is DisconnectReason.CONNECTION_ERROR
+        assert (
+            DisconnectReason.CONNECTION_ERROR.value not in _excluded_disconnect_reasons()
+        )
+
     def test_a_genuine_connection_error_still_pages(self):
         assert (
             DisconnectReason.CONNECTION_ERROR.value
             not in _excluded_disconnect_reasons()
         )
+
+
+class TestOneCauseDoesNotRaiseTwoAlerts:
+    """A blocked origin is a configuration problem with a purpose-built rule.
+    Leaving it in the generic failure rate as well pages critical for the same
+    cause the warning already covers, ten times less sensitively."""
+
+    def test_a_blocked_origin_is_owned_by_its_own_rule(self):
+        assert (
+            DisconnectReason.ORIGIN_NOT_ALLOWED.value in _excluded_disconnect_reasons()
+        ), (
+            "origin_not_allowed contributes to WebSocketConnectionFailures "
+            "(critical) as well as WebSocketOriginBlocked (warning)"
+        )
+
+    def test_the_dedicated_rule_still_matches_it(self):
+        """Excluding it from the generic rule is only safe while this exists."""
+        groups = yaml.safe_load(ALERT_RULES.read_text())["groups"]
+        group = next(g for g in groups if g["name"] == "websocket-health")
+        rule = next(r for r in group["rules"] if r["alert"] == "WebSocketOriginBlocked")
+
+        assert 'disconnect_reason="origin_not_allowed"' in rule["expr"]
+        assert rule["labels"]["severity"] == "warning"

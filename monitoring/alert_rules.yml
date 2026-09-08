@@ -222,14 +222,18 @@ groups:
       # authentication_failed, protocol_error, origin_not_allowed -- still
       # match.
       - alert: WebSocketConnectionFailures
-        expr: rate(websocket_disconnects_total{disconnect_reason!~"client_disconnect|server_disconnect|session_expired"}[5m]) > 0.1
+        # origin_not_allowed is excluded because WebSocketOriginBlocked below
+        # owns it at 0.01/s -- ten times more sensitive than this rule, so the
+        # warning always fires first. Counting it here as well pages critical
+        # for a CORS misconfiguration and says less than the rule built for it.
+        expr: rate(websocket_disconnects_total{disconnect_reason!~"client_disconnect|server_disconnect|session_expired|origin_not_allowed"}[5m]) > 0.1
         for: 1m
         labels:
           severity: critical
           component: websocket
         annotations:
           summary: High WebSocket connection failure rate
-          description: "WebSocket disconnect rate of {{ $value }}/sec for disconnects that were neither a clean client exit, a deliberate server-side termination, nor an ordinary session expiry. Check network connectivity and server health."
+          description: "WebSocket disconnect rate of {{ $value }}/sec for disconnects that were neither a clean client exit, a deliberate server-side termination, an ordinary session expiry, nor a blocked origin (see WebSocketOriginBlocked). Check network connectivity and server health."
 
       - alert: WebSocketHeartbeatLatencyHigh
         expr: histogram_quantile(0.95, sum(rate(websocket_heartbeat_latency_seconds_bucket[5m])) by (le)) > 1.0
