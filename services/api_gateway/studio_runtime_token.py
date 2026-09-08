@@ -99,6 +99,8 @@ class AiohttpTokenTransport:
                 try:
                     payload = await response.json()
                 except (aiohttp.ContentTypeError, ValueError):
+                    if response.status < 200 or response.status >= 300:
+                        return TokenResponse(status=response.status, payload={})
                     raise StudioTokenError(
                         "studio_token_response_invalid", retryable=False
                     ) from None
@@ -156,7 +158,7 @@ class StudioRuntimeTokenProvider:
             )
         except StudioTokenError:
             raise
-        except (TimeoutError, asyncio.TimeoutError, aiohttp.ClientError):
+        except Exception:
             raise StudioTokenError("studio_token_network_error", retryable=True) from None
 
         if response.status < 200 or response.status >= 300:

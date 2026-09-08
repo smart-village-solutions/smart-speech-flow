@@ -135,6 +135,25 @@ async def test_network_failure_is_retryable_and_redacted() -> None:
     assert caught.value.__cause__ is None
 
 
+@pytest.mark.asyncio
+async def test_unexpected_transport_failure_is_retryable_and_redacted() -> None:
+    class FailingTransport:
+        async def post_form(
+            self, url: str, data: Mapping[str, str], timeout_seconds: float
+        ) -> TokenResponse:
+            raise RuntimeError(f"leaked {data['client_secret']}")
+
+    provider = StudioRuntimeTokenProvider(config(), transport=FailingTransport())
+
+    with pytest.raises(StudioTokenError) as caught:
+        await provider.get_token()
+
+    assert caught.value.code == "studio_token_network_error"
+    assert caught.value.retryable is True
+    assert "top-secret" not in str(caught.value)
+    assert caught.value.__cause__ is None
+
+
 def test_rejects_unbounded_or_incomplete_configuration() -> None:
     with pytest.raises(StudioTokenError):
         config(timeout_seconds=31.0)
