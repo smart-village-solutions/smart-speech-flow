@@ -34,7 +34,7 @@ import tracemalloc
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class TestResult(Enum):
+class WebSocketCheckResult(Enum):
     PASSED = "✅ PASSED"
     FAILED = "❌ FAILED"
     SKIPPED = "⏭️ SKIPPED"
@@ -70,10 +70,10 @@ class PerformanceMetrics:
         return statistics.quantiles(self.response_times, n=100)[98] if len(self.response_times) > 1 else 0
 
 @dataclass
-class TestCase:
+class WebSocketCheckCase:
     name: str
     description: str
-    result: TestResult = TestResult.SKIPPED
+    result: WebSocketCheckResult = WebSocketCheckResult.SKIPPED
     duration: float = 0.0
     error_message: str = ""
     details: Dict = None
@@ -92,7 +92,7 @@ class LoadTestingFramework:
     def __init__(self, base_url: str = "http://localhost:8000", max_sessions: int = 150):
         self.base_url = base_url
         self.max_sessions = max_sessions
-        self.test_cases: List[TestCase] = []
+        self.test_cases: List[WebSocketCheckCase] = []
         self.session_timeout = 30
         self.concurrent_limit = 50  # Concurrent connection limit
 
@@ -159,9 +159,9 @@ class LoadTestingFramework:
             logger.warning(f"Session creation failed for index {index}: {e}")
         return None
 
-    async def test_concurrent_session_handling(self) -> TestCase:
+    async def test_concurrent_session_handling(self) -> WebSocketCheckCase:
         """Test system capability to handle 100+ concurrent sessions"""
-        test = TestCase(
+        test = WebSocketCheckCase(
             name="Concurrent Session Handling",
             description="Validate system performance with 100+ concurrent sessions",
             success_criteria=[
@@ -223,26 +223,26 @@ class LoadTestingFramework:
                 test.metrics.p95_response_time <= self.thresholds["p95_response_time"]):
 
                 if test.metrics.success_rate >= 99.0 and test.metrics.avg_response_time <= 1.0:
-                    test.result = TestResult.EXCELLENT
+                    test.result = WebSocketCheckResult.EXCELLENT
                 else:
-                    test.result = TestResult.PASSED
+                    test.result = WebSocketCheckResult.PASSED
             elif (test.metrics.success_rate >= 80.0 and
                   test.metrics.avg_response_time <= self.thresholds["avg_response_time"] * 1.5):
-                test.result = TestResult.WARNING
+                test.result = WebSocketCheckResult.WARNING
             else:
-                test.result = TestResult.FAILED
+                test.result = WebSocketCheckResult.FAILED
                 test.error_message = f"Performance below thresholds: {test.metrics.success_rate:.1f}% success, {test.metrics.avg_response_time:.2f}s avg response"
 
         except Exception as e:
             test.error_message = f"Concurrent session test failed: {str(e)}"
-            test.result = TestResult.FAILED
+            test.result = WebSocketCheckResult.FAILED
 
         test.duration = time.time() - start_time
         return test
 
-    async def test_message_throughput_under_load(self) -> TestCase:
+    async def test_message_throughput_under_load(self) -> WebSocketCheckCase:
         """Test message processing throughput under high load"""
-        test = TestCase(
+        test = WebSocketCheckCase(
             name="Message Throughput Under Load",
             description="Validate message processing performance with concurrent sessions",
             success_criteria=[
@@ -267,7 +267,7 @@ class LoadTestingFramework:
 
             if len(session_ids) < session_count // 2:
                 test.error_message = f"Insufficient sessions created: {len(session_ids)}/{session_count}"
-                test.result = TestResult.FAILED
+                test.result = WebSocketCheckResult.FAILED
                 return test
 
             # Activate fallback for all sessions
@@ -326,26 +326,26 @@ class LoadTestingFramework:
             # Evaluate performance
             if (test.metrics.success_rate >= 95.0 and
                 test.metrics.throughput >= self.thresholds["throughput"]):
-                test.result = TestResult.PASSED
+                test.result = WebSocketCheckResult.PASSED
                 if test.metrics.throughput >= self.thresholds["throughput"] * 2:
-                    test.result = TestResult.EXCELLENT
+                    test.result = WebSocketCheckResult.EXCELLENT
             elif (test.metrics.success_rate >= 80.0 and
                   test.metrics.throughput >= self.thresholds["throughput"] * 0.7):
-                test.result = TestResult.WARNING
+                test.result = WebSocketCheckResult.WARNING
             else:
-                test.result = TestResult.FAILED
+                test.result = WebSocketCheckResult.FAILED
                 test.error_message = f"Throughput below threshold: {test.metrics.throughput:.1f} < {self.thresholds['throughput']}"
 
         except Exception as e:
             test.error_message = f"Message throughput test failed: {str(e)}"
-            test.result = TestResult.FAILED
+            test.result = WebSocketCheckResult.FAILED
 
         test.duration = time.time() - start_time
         return test
 
-    async def test_fallback_performance_peak_usage(self) -> TestCase:
+    async def test_fallback_performance_peak_usage(self) -> WebSocketCheckCase:
         """Test fallback system performance during peak usage simulation"""
-        test = TestCase(
+        test = WebSocketCheckCase(
             name="Fallback Performance at Peak Usage",
             description="Validate fallback system under sustained peak load conditions",
             success_criteria=[
@@ -382,7 +382,7 @@ class LoadTestingFramework:
             # Simplified peak usage simulation focusing on available operations
             if len(fallback_pools) == 0:
                 test.error_message = "No fallback pools available for peak testing"
-                test.result = TestResult.FAILED
+                test.result = WebSocketCheckResult.FAILED
                 return test
 
             peak_start = time.time()
@@ -467,27 +467,27 @@ class LoadTestingFramework:
             if (success_rate >= 95.0 and
                 avg_ops_per_sec >= 10.0 and
                 memory_growth < 100):  # Less than 100MB growth
-                test.result = TestResult.PASSED
+                test.result = WebSocketCheckResult.PASSED
                 if success_rate >= 98.0 and memory_growth < 50:
-                    test.result = TestResult.EXCELLENT
+                    test.result = WebSocketCheckResult.EXCELLENT
             elif (success_rate >= 85.0 and
                   avg_ops_per_sec >= 5.0 and
                   memory_growth < 200):
-                test.result = TestResult.WARNING
+                test.result = WebSocketCheckResult.WARNING
             else:
-                test.result = TestResult.FAILED
+                test.result = WebSocketCheckResult.FAILED
                 test.error_message = f"Peak performance insufficient: {success_rate:.1f}% success, {avg_ops_per_sec:.1f} ops/sec, {memory_growth:.1f}MB growth"
 
         except Exception as e:
             test.error_message = f"Peak usage test failed: {str(e)}"
-            test.result = TestResult.FAILED
+            test.result = WebSocketCheckResult.FAILED
 
         test.duration = time.time() - start_time
         return test
 
-    async def test_scalability_limits_analysis(self) -> TestCase:
+    async def test_scalability_limits_analysis(self) -> WebSocketCheckCase:
         """Analyze system scalability limits and identify bottlenecks"""
-        test = TestCase(
+        test = WebSocketCheckCase(
             name="Scalability Limits Analysis",
             description="Determine system capacity limits and performance degradation points",
             success_criteria=[
@@ -577,18 +577,18 @@ class LoadTestingFramework:
 
             # Evaluate scalability
             if max_sessions >= 100 and len(degradation_points) <= 1:
-                test.result = TestResult.PASSED
+                test.result = WebSocketCheckResult.PASSED
                 if max_sessions >= 150 and len(degradation_points) == 0:
-                    test.result = TestResult.EXCELLENT
+                    test.result = WebSocketCheckResult.EXCELLENT
             elif max_sessions >= 75:
-                test.result = TestResult.WARNING
+                test.result = WebSocketCheckResult.WARNING
             else:
-                test.result = TestResult.FAILED
+                test.result = WebSocketCheckResult.FAILED
                 test.error_message = f"Insufficient scalability: max {max_sessions} sessions"
 
         except Exception as e:
             test.error_message = f"Scalability analysis failed: {str(e)}"
-            test.result = TestResult.FAILED
+            test.result = WebSocketCheckResult.FAILED
 
         test.duration = time.time() - start_time
         return test
@@ -696,10 +696,10 @@ class LoadTestingFramework:
         total_duration = time.time() - start_time
 
         # Calculate overall results
-        passed = len([t for t in tests if t.result in [TestResult.PASSED, TestResult.EXCELLENT]])
-        failed = len([t for t in tests if t.result == TestResult.FAILED])
-        warnings = len([t for t in tests if t.result == TestResult.WARNING])
-        excellent = len([t for t in tests if t.result == TestResult.EXCELLENT])
+        passed = len([t for t in tests if t.result in [WebSocketCheckResult.PASSED, WebSocketCheckResult.EXCELLENT]])
+        failed = len([t for t in tests if t.result == WebSocketCheckResult.FAILED])
+        warnings = len([t for t in tests if t.result == WebSocketCheckResult.WARNING])
+        excellent = len([t for t in tests if t.result == WebSocketCheckResult.EXCELLENT])
 
         success_rate = (passed / len(tests)) * 100 if tests else 0
 
@@ -759,7 +759,7 @@ class LoadTestingFramework:
         print("-" * 80)
 
         for test in self.test_cases:
-            icon = "🏆" if test.result == TestResult.EXCELLENT else test.result.value.split()[0]
+            icon = "🏆" if test.result == WebSocketCheckResult.EXCELLENT else test.result.value.split()[0]
             print(f"\n{test.result.value} {test.name}")
             print(f"   📝 {test.description}")
             print(f"   ⏱️  Duration: {test.duration:.2f}s")

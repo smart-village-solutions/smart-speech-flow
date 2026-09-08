@@ -32,7 +32,7 @@ from urllib.parse import urlparse
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class TestResult(Enum):
+class WebSocketCheckResult(Enum):
     PASSED = "✅ PASSED"
     FAILED = "❌ FAILED"
     SKIPPED = "⏭️ SKIPPED"
@@ -51,10 +51,10 @@ class SecurityValidation:
     websocket_upgrade_secure: bool = False
 
 @dataclass
-class TestCase:
+class WebSocketCheckCase:
     name: str
     description: str
-    result: TestResult = TestResult.SKIPPED
+    result: WebSocketCheckResult = WebSocketCheckResult.SKIPPED
     duration: float = 0.0
     error_message: str = ""
     details: Dict = None
@@ -73,7 +73,7 @@ class ProductionEnvironmentValidator:
     def __init__(self, base_url: str = "http://localhost:8000", production_url: Optional[str] = None):
         self.base_url = base_url
         self.production_url = production_url or base_url
-        self.test_cases: List[TestCase] = []
+        self.test_cases: List[WebSocketCheckCase] = []
 
         # Production-like test configurations
         self.production_origins = [
@@ -100,9 +100,9 @@ class ProductionEnvironmentValidator:
             "Access-Control-Allow-Credentials"
         ]
 
-    async def test_ssl_tls_websocket_connections(self) -> TestCase:
+    async def test_ssl_tls_websocket_connections(self) -> WebSocketCheckCase:
         """Test SSL/TLS WebSocket connections (wss://) functionality"""
-        test = TestCase(
+        test = WebSocketCheckCase(
             name="SSL/TLS WebSocket Connections",
             description="Validate secure WebSocket connections and SSL certificate validation",
             success_criteria=[
@@ -192,26 +192,26 @@ class ProductionEnvironmentValidator:
             if parsed_url.scheme == "https":
                 if (test.security_validation.ssl_certificate_valid and
                     test.security_validation.websocket_upgrade_secure):
-                    test.result = TestResult.EXCELLENT
+                    test.result = WebSocketCheckResult.EXCELLENT
                 elif test.security_validation.ssl_certificate_valid:
-                    test.result = TestResult.PASSED
+                    test.result = WebSocketCheckResult.PASSED
                 else:
-                    test.result = TestResult.WARNING
+                    test.result = WebSocketCheckResult.WARNING
                     test.error_message = "SSL certificate validation issues detected"
             else:
-                test.result = TestResult.INFO
+                test.result = WebSocketCheckResult.INFO
                 test.error_message = "HTTP-only environment detected - HTTPS recommended for production"
 
         except Exception as e:
             test.error_message = f"SSL/TLS validation failed: {str(e)}"
-            test.result = TestResult.FAILED
+            test.result = WebSocketCheckResult.FAILED
 
         test.duration = time.time() - start_time
         return test
 
-    async def test_load_balancer_compatibility(self) -> TestCase:
+    async def test_load_balancer_compatibility(self) -> WebSocketCheckCase:
         """Test load balancer and proxy WebSocket support"""
-        test = TestCase(
+        test = WebSocketCheckCase(
             name="Load Balancer & Proxy Compatibility",
             description="Validate WebSocket functionality through load balancers and reverse proxies",
             success_criteria=[
@@ -299,24 +299,24 @@ class ProductionEnvironmentValidator:
             fallback_works = test.details.get("fallback_proxy_status", 0) == 200
 
             if session_works and websocket_status in [101, 426] and fallback_works:
-                test.result = TestResult.PASSED
+                test.result = WebSocketCheckResult.PASSED
             elif session_works and fallback_works:
-                test.result = TestResult.WARNING
+                test.result = WebSocketCheckResult.WARNING
                 test.error_message = "WebSocket upgrade may need proxy configuration"
             else:
-                test.result = TestResult.FAILED
+                test.result = WebSocketCheckResult.FAILED
                 test.error_message = "Load balancer compatibility issues detected"
 
         except Exception as e:
             test.error_message = f"Load balancer test failed: {str(e)}"
-            test.result = TestResult.FAILED
+            test.result = WebSocketCheckResult.FAILED
 
         test.duration = time.time() - start_time
         return test
 
-    async def test_real_world_origin_validation(self) -> TestCase:
+    async def test_real_world_origin_validation(self) -> WebSocketCheckCase:
         """Test real-world origin validation with production URLs"""
-        test = TestCase(
+        test = WebSocketCheckCase(
             name="Real-World Origin Validation",
             description="Validate CORS and origin handling with production-like URLs",
             success_criteria=[
@@ -432,25 +432,25 @@ class ProductionEnvironmentValidator:
             cors_rate = test.details["cors_compliant_origins"] / test.details["total_origins_tested"] * 100
 
             if success_rate >= 80 and cors_rate >= 60:
-                test.result = TestResult.PASSED
+                test.result = WebSocketCheckResult.PASSED
                 if success_rate >= 90 and cors_rate >= 80:
-                    test.result = TestResult.EXCELLENT
+                    test.result = WebSocketCheckResult.EXCELLENT
             elif success_rate >= 60:
-                test.result = TestResult.WARNING
+                test.result = WebSocketCheckResult.WARNING
             else:
-                test.result = TestResult.FAILED
+                test.result = WebSocketCheckResult.FAILED
                 test.error_message = f"Origin validation insufficient: {success_rate:.1f}% success rate"
 
         except Exception as e:
             test.error_message = f"Origin validation test failed: {str(e)}"
-            test.result = TestResult.FAILED
+            test.result = WebSocketCheckResult.FAILED
 
         test.duration = time.time() - start_time
         return test
 
-    async def test_production_configuration_validation(self) -> TestCase:
+    async def test_production_configuration_validation(self) -> WebSocketCheckCase:
         """Validate production configuration and deployment readiness"""
-        test = TestCase(
+        test = WebSocketCheckCase(
             name="Production Configuration Validation",
             description="Comprehensive validation of production deployment configuration",
             success_criteria=[
@@ -584,18 +584,18 @@ class ProductionEnvironmentValidator:
             endpoint_success_rate = (endpoints_accessible / total_endpoints * 100) if total_endpoints > 0 else 0
 
             if health_ok and endpoint_success_rate >= 80 and performance_ok:
-                test.result = TestResult.PASSED
+                test.result = WebSocketCheckResult.PASSED
                 if endpoint_success_rate == 100:
-                    test.result = TestResult.EXCELLENT
+                    test.result = WebSocketCheckResult.EXCELLENT
             elif health_ok and endpoint_success_rate >= 60:
-                test.result = TestResult.WARNING
+                test.result = WebSocketCheckResult.WARNING
             else:
-                test.result = TestResult.FAILED
+                test.result = WebSocketCheckResult.FAILED
                 test.error_message = f"Production configuration insufficient: {endpoint_success_rate:.1f}% endpoints accessible"
 
         except Exception as e:
             test.error_message = f"Production configuration validation failed: {str(e)}"
-            test.result = TestResult.FAILED
+            test.result = WebSocketCheckResult.FAILED
 
         test.duration = time.time() - start_time
         return test
@@ -630,11 +630,11 @@ class ProductionEnvironmentValidator:
         total_duration = time.time() - start_time
 
         # Calculate overall results
-        passed = len([t for t in tests if t.result in [TestResult.PASSED, TestResult.EXCELLENT]])
-        failed = len([t for t in tests if t.result == TestResult.FAILED])
-        warnings = len([t for t in tests if t.result == TestResult.WARNING])
-        excellent = len([t for t in tests if t.result == TestResult.EXCELLENT])
-        info = len([t for t in tests if t.result == TestResult.INFO])
+        passed = len([t for t in tests if t.result in [WebSocketCheckResult.PASSED, WebSocketCheckResult.EXCELLENT]])
+        failed = len([t for t in tests if t.result == WebSocketCheckResult.FAILED])
+        warnings = len([t for t in tests if t.result == WebSocketCheckResult.WARNING])
+        excellent = len([t for t in tests if t.result == WebSocketCheckResult.EXCELLENT])
+        info = len([t for t in tests if t.result == WebSocketCheckResult.INFO])
 
         success_rate = ((passed + info) / len(tests)) * 100 if tests else 0  # INFO counts as success for production validation
 

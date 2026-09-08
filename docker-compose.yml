@@ -184,6 +184,19 @@ services:
       - "traefik.http.middlewares.websocket-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
     restart: always
 
+  studio-mock:
+    profiles: ["studio-mock"]
+    build:
+      context: .
+      dockerfile: services/studio_mock/Dockerfile
+    ports:
+      - "127.0.0.1:8010:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/openapi.json"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   ollama:
     image: ollama/ollama:0.32.0
     expose:
