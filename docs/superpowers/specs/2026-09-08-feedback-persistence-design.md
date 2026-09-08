@@ -23,6 +23,10 @@ snapshot, `retention_policy_version`, `created_at`, and `expires_at`. ClickHouse
 receives a `feedback_submitted` event with ratings, NPS, form version,
 `session_ref`, and a keyed hash of `feedback_id`; it never receives the text.
 
+Submitting the voluntary form is the active agreement to the disclosed
+processing purpose and twelve-month storage. A concise notice and withdrawal
+route appear beside the submit action; no separate checkbox is required.
+
 ## Retention
 
 Free-text feedback expires 12 months after submission. The expiry processor

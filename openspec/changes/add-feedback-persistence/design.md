@@ -36,6 +36,13 @@ expiry timestamps, `retention_policy_version`, the purpose/consent snapshot,
 and minimal processing metadata. The free text is encrypted at rest; reads are
 restricted by role and recorded in an access audit.
 
+Submission of the voluntary feedback form is the user's active agreement to
+the disclosed feedback-processing purpose and twelve-month storage period; no
+separate checkbox is required. The form SHALL place that concise notice,
+including the withdrawal route, immediately beside the submit action. The
+Gateway stores the accepted form version and this consent manifestation in the
+purpose/consent snapshot.
+
 The analytics event contains ratings, NPS, form version, submission time,
 `session_ref`, and `feedback_ref` (a keyed hash of `feedback_id`). It contains
 no free text, raw session ID, user identity, consent prose, IP address, or

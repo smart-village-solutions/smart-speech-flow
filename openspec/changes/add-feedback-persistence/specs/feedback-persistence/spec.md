@@ -15,6 +15,18 @@ attributes.
 - **AND THEN** the associated analytics event contains only structured fields
   and opaque references.
 
+### Requirement: Disclose feedback processing at submission
+
+The system SHALL state beside the feedback submit action that submitting the
+voluntary form constitutes agreement to feedback processing and twelve-month
+storage, and SHALL provide a route for withdrawal.
+
+#### Scenario: User reviews the feedback form before submitting
+
+- **WHEN** the feedback form presents its submit action
+- **THEN** the processing purpose and twelve-month storage period are visible
+- **AND THEN** the user can find the withdrawal route before submitting.
+
 ### Requirement: Correlate feedback to quality telemetry pseudonymously
 
 The system SHALL derive feedback correlation references and `session_ref` in

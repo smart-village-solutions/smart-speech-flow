@@ -24,6 +24,8 @@ must not enter the telemetry pipeline.
   `session_ref`.
 - Add expiry and deletion processing, including the data model needed for a
   later retention-policy control without implementing its administration UI.
+- Treat submission of the voluntary feedback form as the active agreement to
+  processing and twelve-month storage disclosed beside its submit action.
 
 ## Impact
 
