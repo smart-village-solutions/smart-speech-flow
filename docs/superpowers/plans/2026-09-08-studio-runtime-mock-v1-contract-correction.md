@@ -4,7 +4,7 @@
 
 **Goal:** Make the Studio Runtime Configuration mock contract-faithful, protected, and directly swappable with the future Studio endpoint.
 
-**Architecture:** The mock keeps the real V1 path but requires a fixed mock service token, a Studio instance header, and a correlation ID. Compose returns to loopback-only exposure. Consumers address it through a configurable base URL: local SSF containers use `http://studio-mock:8000`; replacing that single base URL with the Studio origin preserves the endpoint path and request/response contract.
+**Architecture:** The mock keeps the real V1 path but requires a fixed mock service token, the canonical Studio tenant header, and a correlation ID. Compose returns to loopback-only exposure. Consumers address it through a configurable base URL: local SSF containers use `http://studio-mock:8000`; replacing that single base URL with the Studio origin preserves the endpoint path and request/response contract.
 
 **Tech Stack:** FastAPI, Pydantic, Docker Compose, pytest, GitHub Issues.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- The mock MUST use `Authorization`, `X-Studio-Instance-Id`, and `X-Correlation-Id`; it MUST NOT use `tenantId` query selection.
+- The mock MUST use `Authorization`, `X-Studio-Tenant-Id`, and `X-Correlation-Id`; it MUST reject legacy headers and every query selector.
 - The mock MUST bind only to `127.0.0.1:8010` when its profile is explicitly enabled.
 - The mock MUST return only fixed, non-sensitive data and no Traefik route.
 - The caller-facing base URL is configurable; never hard-code a mock host in SSF client code.
@@ -27,7 +27,7 @@
 - Modify: `openspec/changes/add-studio-runtime-configuration-mock/`
 
 **Interfaces:**
-- Consumes: `Authorization: Bearer studio-mock-authorized-token`, `X-Studio-Instance-Id`, and `X-Correlation-Id`.
+- Consumes: `Authorization: Bearer studio-mock-authorized-token`, `X-Studio-Tenant-Id`, and `X-Correlation-Id`.
 - Produces: a V1 configuration containing canonical SHA-256 `configurationRevision` and `authorizationRevision`.
 
 - [x] **Step 1: Write failing V1 request-contract tests**
@@ -38,7 +38,7 @@ def test_returns_v1_configuration_for_authorized_studio_instance() -> None:
         PATH,
         headers={
             "Authorization": "Bearer studio-mock-authorized-token",
-            "X-Studio-Instance-Id": "tenant-kassel",
+            "X-Studio-Tenant-Id": "tenant-kassel",
             "X-Correlation-Id": "test-correlation-id",
         },
     )
@@ -110,7 +110,7 @@ Post an English comment containing:
 ```text
 Mock base URL for SSF containers: http://studio-mock:8000
 Path: /internal/plugins/ssf/v1/runtime-configuration
-Required headers: Authorization, X-Studio-Instance-Id, X-Correlation-Id
+Required headers: Authorization, X-Studio-Tenant-Id, X-Correlation-Id
 Authorized test token: Bearer studio-mock-authorized-token
 ```
 

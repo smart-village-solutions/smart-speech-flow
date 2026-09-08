@@ -11,6 +11,8 @@ adding a shortcut inside SSF.
 - It reads no real credentials but models fixed service-token authentication
   and `ssf.runtime-configuration.read` authorization.
 - A request header selects a documented error scenario only in the mock.
+- `X-Studio-Tenant-Id` is the only accepted tenant selector. Legacy tenant
+  headers and query selectors are rejected without compatibility aliases.
 - Docker Compose publishes the mock as `http://127.0.0.1:8010` only through
   the explicitly selected `studio-mock` profile. It does not use Traefik or
   TLS because this is an internal test dependency.
