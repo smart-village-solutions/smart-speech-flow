@@ -28,17 +28,17 @@ from enum import Enum
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class TestResult(Enum):
+class WebSocketCheckResult(Enum):
     PASSED = "✅ PASSED"
     FAILED = "❌ FAILED"
     SKIPPED = "⏭️ SKIPPED"
     WARNING = "⚠️ WARNING"
 
 @dataclass
-class TestCase:
+class WebSocketCheckCase:
     name: str
     description: str
-    result: TestResult = TestResult.SKIPPED
+    result: WebSocketCheckResult = WebSocketCheckResult.SKIPPED
     duration: float = 0.0
     error_message: str = ""
     details: Dict = None
@@ -53,7 +53,7 @@ class WebSocketIntegrationTester:
     def __init__(self, base_url: str = "http://localhost:8000"):
         self.base_url = base_url
         self.ws_url = base_url.replace("http", "ws")
-        self.test_results: List[TestCase] = []
+        self.test_results: List[WebSocketCheckCase] = []
         self.session = None
         self.current_session_id = None
 
@@ -66,9 +66,9 @@ class WebSocketIntegrationTester:
         if self.session:
             await self.session.close()
 
-    async def run_test(self, test_func, test_name: str, test_description: str) -> TestCase:
+    async def run_test(self, test_func, test_name: str, test_description: str) -> WebSocketCheckCase:
         """Run a single test with error handling and timing"""
-        test_case = TestCase(
+        test_case = WebSocketCheckCase(
             name=test_name,
             description=test_description
         )
@@ -85,18 +85,18 @@ class WebSocketIntegrationTester:
                 result = test_func()
 
             if result is True:
-                test_case.result = TestResult.PASSED
+                test_case.result = WebSocketCheckResult.PASSED
                 logger.info(f"✅ {test_name} - PASSED")
             elif result is False:
-                test_case.result = TestResult.FAILED
+                test_case.result = WebSocketCheckResult.FAILED
                 logger.error(f"❌ {test_name} - FAILED")
             else:
-                test_case.result = TestResult.WARNING
+                test_case.result = WebSocketCheckResult.WARNING
                 test_case.error_message = str(result)
                 logger.warning(f"⚠️ {test_name} - WARNING: {result}")
 
         except Exception as e:
-            test_case.result = TestResult.FAILED
+            test_case.result = WebSocketCheckResult.FAILED
             test_case.error_message = str(e)
             logger.error(f"❌ {test_name} - FAILED: {e}")
 
@@ -439,7 +439,7 @@ class WebSocketIntegrationTester:
             )
 
             session_result = None
-            if session_test.result == TestResult.PASSED and hasattr(session_test, 'session_data'):
+            if session_test.result == WebSocketCheckResult.PASSED and hasattr(session_test, 'session_data'):
                 session_result = session_test.session_data
             else:
                 # Try to get session result directly for further tests
@@ -448,7 +448,7 @@ class WebSocketIntegrationTester:
                 except:
                     session_result = (False, "")
 
-            if session_test.result == TestResult.PASSED and self.current_session_id:
+            if session_test.result == WebSocketCheckResult.PASSED and self.current_session_id:
                 session_id = self.current_session_id
                 session_test.details["session_id"] = session_id
 
@@ -520,9 +520,9 @@ class WebSocketIntegrationTester:
     def generate_report(self) -> Dict:
         """Generate comprehensive test report"""
         total_tests = len(self.test_results)
-        passed_tests = sum(1 for t in self.test_results if t.result == TestResult.PASSED)
-        failed_tests = sum(1 for t in self.test_results if t.result == TestResult.FAILED)
-        warning_tests = sum(1 for t in self.test_results if t.result == TestResult.WARNING)
+        passed_tests = sum(1 for t in self.test_results if t.result == WebSocketCheckResult.PASSED)
+        failed_tests = sum(1 for t in self.test_results if t.result == WebSocketCheckResult.FAILED)
+        warning_tests = sum(1 for t in self.test_results if t.result == WebSocketCheckResult.WARNING)
 
         total_duration = sum(t.duration for t in self.test_results)
 

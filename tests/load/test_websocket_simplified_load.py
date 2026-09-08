@@ -30,7 +30,7 @@ import tracemalloc
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class TestResult(Enum):
+class WebSocketCheckResult(Enum):
     PASSED = "✅ PASSED"
     FAILED = "❌ FAILED"
     SKIPPED = "⏭️ SKIPPED"
@@ -65,10 +65,10 @@ class PerformanceMetrics:
         return statistics.quantiles(self.response_times, n=100)[98] if len(self.response_times) > 1 else 0
 
 @dataclass
-class TestCase:
+class WebSocketCheckCase:
     name: str
     description: str
-    result: TestResult = TestResult.SKIPPED
+    result: WebSocketCheckResult = WebSocketCheckResult.SKIPPED
     duration: float = 0.0
     error_message: str = ""
     details: Dict = None
@@ -86,7 +86,7 @@ class TestCase:
 class SimplifiedLoadTester:
     def __init__(self, base_url: str = "http://localhost:8000"):
         self.base_url = base_url
-        self.test_cases: List[TestCase] = []
+        self.test_cases: List[WebSocketCheckCase] = []
         self.concurrent_limit = 50
 
         # Performance thresholds
@@ -137,9 +137,9 @@ class SimplifiedLoadTester:
             logger.debug(f"Session creation failed for index {index}: {e}")
         return None
 
-    async def test_massive_concurrent_sessions(self) -> TestCase:
+    async def test_massive_concurrent_sessions(self) -> WebSocketCheckCase:
         """Test creating 200+ concurrent sessions for maximum load validation"""
-        test = TestCase(
+        test = WebSocketCheckCase(
             name="Massive Concurrent Session Creation",
             description="Validate system performance with 200+ concurrent sessions",
             success_criteria=[
@@ -210,26 +210,26 @@ class SimplifiedLoadTester:
                 if (test.metrics.success_rate >= 99.0 and
                     test.metrics.avg_response_time <= 1.0 and
                     test.metrics.throughput >= 200.0):
-                    test.result = TestResult.EXCELLENT
+                    test.result = WebSocketCheckResult.EXCELLENT
                 else:
-                    test.result = TestResult.PASSED
+                    test.result = WebSocketCheckResult.PASSED
             elif (test.metrics.success_rate >= 85.0 and
                   test.metrics.avg_response_time <= self.thresholds["avg_response_time"] * 1.5):
-                test.result = TestResult.WARNING
+                test.result = WebSocketCheckResult.WARNING
             else:
-                test.result = TestResult.FAILED
+                test.result = WebSocketCheckResult.FAILED
                 test.error_message = f"Performance below thresholds: {test.metrics.success_rate:.1f}% success, {test.metrics.avg_response_time:.2f}s avg response"
 
         except Exception as e:
             test.error_message = f"Massive concurrent test failed: {str(e)}"
-            test.result = TestResult.FAILED
+            test.result = WebSocketCheckResult.FAILED
 
         test.duration = time.time() - start_time
         return test
 
-    async def test_session_info_retrieval_load(self) -> TestCase:
+    async def test_session_info_retrieval_load(self) -> WebSocketCheckCase:
         """Test session info retrieval performance under load"""
-        test = TestCase(
+        test = WebSocketCheckCase(
             name="Session Info Retrieval Under Load",
             description="Validate session information retrieval performance with concurrent requests",
             success_criteria=[
@@ -249,7 +249,7 @@ class SimplifiedLoadTester:
 
             if len(session_ids) < session_count // 2:
                 test.error_message = f"Insufficient sessions created: {len(session_ids)}/{session_count}"
-                test.result = TestResult.FAILED
+                test.result = WebSocketCheckResult.FAILED
                 return test
 
             # Test concurrent session info retrieval
@@ -289,25 +289,25 @@ class SimplifiedLoadTester:
             # Evaluate performance
             avg_response_time = info_duration / len(session_ids)
             if (test.metrics.success_rate >= 95.0 and avg_response_time <= 1.0):
-                test.result = TestResult.PASSED
+                test.result = WebSocketCheckResult.PASSED
                 if test.metrics.success_rate >= 99.0 and avg_response_time <= 0.5:
-                    test.result = TestResult.EXCELLENT
+                    test.result = WebSocketCheckResult.EXCELLENT
             elif (test.metrics.success_rate >= 85.0 and avg_response_time <= 2.0):
-                test.result = TestResult.WARNING
+                test.result = WebSocketCheckResult.WARNING
             else:
-                test.result = TestResult.FAILED
+                test.result = WebSocketCheckResult.FAILED
                 test.error_message = f"Info retrieval performance insufficient: {test.metrics.success_rate:.1f}% success, {avg_response_time:.3f}s avg"
 
         except Exception as e:
             test.error_message = f"Session info load test failed: {str(e)}"
-            test.result = TestResult.FAILED
+            test.result = WebSocketCheckResult.FAILED
 
         test.duration = time.time() - start_time
         return test
 
-    async def test_sustained_load_stability(self) -> TestCase:
+    async def test_sustained_load_stability(self) -> WebSocketCheckCase:
         """Test system stability under sustained load for extended period"""
-        test = TestCase(
+        test = WebSocketCheckCase(
             name="Sustained Load Stability",
             description="Validate system stability under continuous load for 2 minutes",
             success_criteria=[
@@ -384,29 +384,29 @@ class SimplifiedLoadTester:
                 avg_response_time <= 1.0 and
                 memory_growth < 100 and
                 response_time_variance < 0.1):
-                test.result = TestResult.PASSED
+                test.result = WebSocketCheckResult.PASSED
                 if (operations_completed >= 200 and
                     avg_response_time <= 0.5 and
                     memory_growth < 50):
-                    test.result = TestResult.EXCELLENT
+                    test.result = WebSocketCheckResult.EXCELLENT
             elif (operations_completed >= 50 and
                   avg_response_time <= 2.0 and
                   memory_growth < 200):
-                test.result = TestResult.WARNING
+                test.result = WebSocketCheckResult.WARNING
             else:
-                test.result = TestResult.FAILED
+                test.result = WebSocketCheckResult.FAILED
                 test.error_message = f"Insufficient stability: {operations_completed} ops, {avg_response_time:.3f}s avg, {memory_growth:.1f}MB growth"
 
         except Exception as e:
             test.error_message = f"Sustained load test failed: {str(e)}"
-            test.result = TestResult.FAILED
+            test.result = WebSocketCheckResult.FAILED
 
         test.duration = time.time() - start_time
         return test
 
-    async def test_api_endpoint_stress(self) -> TestCase:
+    async def test_api_endpoint_stress(self) -> WebSocketCheckCase:
         """Stress test various API endpoints to identify bottlenecks"""
-        test = TestCase(
+        test = WebSocketCheckCase(
             name="API Endpoint Stress Testing",
             description="Identify performance limits and bottlenecks across API endpoints",
             success_criteria=[
@@ -479,18 +479,18 @@ class SimplifiedLoadTester:
             min_rps = min(ep["rps"] for ep in endpoint_results.values())
 
             if overall_success_rate >= 95.0 and min_rps >= 20.0:
-                test.result = TestResult.PASSED
+                test.result = WebSocketCheckResult.PASSED
                 if overall_success_rate >= 98.0 and min_rps >= 50.0:
-                    test.result = TestResult.EXCELLENT
+                    test.result = WebSocketCheckResult.EXCELLENT
             elif overall_success_rate >= 85.0 and min_rps >= 10.0:
-                test.result = TestResult.WARNING
+                test.result = WebSocketCheckResult.WARNING
             else:
-                test.result = TestResult.FAILED
+                test.result = WebSocketCheckResult.FAILED
                 test.error_message = f"API stress performance insufficient: {overall_success_rate:.1f}% success, {min_rps:.1f} min RPS"
 
         except Exception as e:
             test.error_message = f"API stress test failed: {str(e)}"
-            test.result = TestResult.FAILED
+            test.result = WebSocketCheckResult.FAILED
 
         test.duration = time.time() - start_time
         return test
@@ -546,10 +546,10 @@ class SimplifiedLoadTester:
         total_duration = time.time() - start_time
 
         # Calculate overall results
-        passed = len([t for t in tests if t.result in [TestResult.PASSED, TestResult.EXCELLENT]])
-        failed = len([t for t in tests if t.result == TestResult.FAILED])
-        warnings = len([t for t in tests if t.result == TestResult.WARNING])
-        excellent = len([t for t in tests if t.result == TestResult.EXCELLENT])
+        passed = len([t for t in tests if t.result in [WebSocketCheckResult.PASSED, WebSocketCheckResult.EXCELLENT]])
+        failed = len([t for t in tests if t.result == WebSocketCheckResult.FAILED])
+        warnings = len([t for t in tests if t.result == WebSocketCheckResult.WARNING])
+        excellent = len([t for t in tests if t.result == WebSocketCheckResult.EXCELLENT])
 
         success_rate = (passed / len(tests)) * 100 if tests else 0
 
