@@ -241,6 +241,25 @@ async def test_rejects_empty_service_token_before_transport() -> None:
 
 
 @pytest.mark.asyncio
+async def test_rejects_service_token_with_header_control_characters_before_transport() -> None:
+    transport = StubTransport(RuntimeHttpResponse(200, valid_configuration()))
+
+    async def invalid_token_provider() -> str:
+        return "service-token\r\nX-Forged: true"
+
+    runtime_client = StudioRuntimeClient(
+        "https://studio.test", invalid_token_provider, transport=transport
+    )
+
+    with pytest.raises(StudioRuntimeClientError) as caught:
+        await runtime_client.fetch("tenant-kassel", "correlation-1")
+
+    assert caught.value.code == "studio_runtime_token_invalid"
+    assert caught.value.retryable is False
+    assert transport.calls == []
+
+
+@pytest.mark.asyncio
 async def test_classifies_transport_timeout_as_retryable() -> None:
     class TimeoutTransport:
         async def get(

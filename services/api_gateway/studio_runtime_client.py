@@ -225,7 +225,7 @@ class StudioRuntimeClient:
         _validate_request_context(tenant_id, correlation_id)
 
         token = await self._token_provider()
-        if not token:
+        if not token or any(ord(character) < 32 or ord(character) > 126 for character in token):
             raise StudioRuntimeClientError("studio_runtime_token_invalid", retryable=False)
         headers = {
             "Authorization": f"Bearer {token}",
