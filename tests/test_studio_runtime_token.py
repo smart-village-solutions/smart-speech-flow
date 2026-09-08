@@ -156,6 +156,20 @@ async def test_unexpected_transport_failure_is_not_retryable_and_redacted() -> N
 
 
 @pytest.mark.asyncio
+async def test_transport_cancellation_propagates() -> None:
+    class CancelledTransport:
+        async def post_form(
+            self, url: str, data: Mapping[str, str], timeout_seconds: float
+        ) -> TokenResponse:
+            raise asyncio.CancelledError
+
+    provider = StudioRuntimeTokenProvider(config(), transport=CancelledTransport())
+
+    with pytest.raises(asyncio.CancelledError):
+        await provider.get_token()
+
+
+@pytest.mark.asyncio
 async def test_aiohttp_transport_preserves_non_2xx_status_with_non_mapping_json(
     monkeypatch,
 ) -> None:
