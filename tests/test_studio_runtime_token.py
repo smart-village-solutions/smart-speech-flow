@@ -144,13 +144,6 @@ def test_rejects_unbounded_or_incomplete_configuration() -> None:
         config(client_secret="")
 
 
-def test_configuration_representation_redacts_credentials() -> None:
-    representation = repr(config(fixed_token="fixed-secret-token"))
-
-    assert "top-secret" not in representation
-    assert "fixed-secret-token" not in representation
-
-
 def test_loads_contract_defaults_and_fixed_token_from_environment(monkeypatch) -> None:
     monkeypatch.setenv("STUDIO_RUNTIME_FIXED_TOKEN", "  local-token  ")
     monkeypatch.delenv("STUDIO_RUNTIME_TOKEN_URL", raising=False)
@@ -161,6 +154,24 @@ def test_loads_contract_defaults_and_fixed_token_from_environment(monkeypatch) -
     assert loaded.fixed_token == "local-token"
     assert loaded.client_id == DEFAULT_CLIENT_ID
     assert loaded.audience == DEFAULT_AUDIENCE
+
+
+def test_normalizes_configuration_values_and_redacts_sensitive_repr() -> None:
+    loaded = StudioTokenConfig(
+        token_url="  https://keycloak.test/token  ",
+        client_secret="  top-secret  ",
+        client_id="  runtime-client  ",
+        audience="  runtime-audience  ",
+        fixed_token="  fixed-token  ",
+    )
+
+    assert loaded.token_url == "https://keycloak.test/token"
+    assert loaded.client_secret == "top-secret"
+    assert loaded.client_id == "runtime-client"
+    assert loaded.audience == "runtime-audience"
+    assert loaded.fixed_token == "fixed-token"
+    assert "top-secret" not in repr(loaded)
+    assert "fixed-token" not in repr(loaded)
 
 
 def test_classifies_invalid_numeric_environment_configuration(monkeypatch) -> None:

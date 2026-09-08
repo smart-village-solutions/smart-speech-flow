@@ -37,6 +37,7 @@ class StudioTokenConfig:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "token_url", self.token_url.strip())
+        object.__setattr__(self, "client_secret", self.client_secret.strip())
         object.__setattr__(self, "client_id", self.client_id.strip())
         object.__setattr__(self, "audience", self.audience.strip())
         normalized_fixed_token = self.fixed_token.strip() if self.fixed_token else None
