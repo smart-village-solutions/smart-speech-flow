@@ -32,6 +32,18 @@ const statusByProjectStatus = {
   Done: 'done',
 };
 
+const statusProgress = {
+  idea: 0,
+  commissioned: 0,
+  planned: 10,
+  prototype: 20,
+  implementation: 45,
+  optimization: 70,
+  testing: 80,
+  acceptance: 90,
+  done: 100,
+};
+
 const parseDeadline = (title) => {
   const match = /Deadline:\s*(\d{2})\.(\d{2})\.(\d{4})/.exec(title ?? '');
   return match ? `${match[3]}-${match[2]}-${match[1]}` : undefined;
@@ -51,14 +63,19 @@ const rationaleFor = (workPackage, dependencyState, dependentCount, deadline) =>
   return rationale;
 };
 
-const projectItemsFor = (workPackage, projectItems) => projectItems.filter((item) => {
-  const linkedWorkPackages = String(item['roadmap links'] ?? item['roadmap Links'] ?? item['Roadmap links'] ?? '')
-    .split(',')
-    .map((value) => value.trim());
-  return item['work Package'] === workPackage.id
-    || linkedWorkPackages.includes(workPackage.id)
-    || workPackage.tracking?.githubIssues?.includes(item.content?.number);
-});
+const projectItemsFor = (workPackage, projectItems) => projectItems.filter(
+  (item) => item['work Package'] === workPackage.id,
+);
+
+const statusForProjectItems = (items) => {
+  const statuses = items
+    .map((item) => statusByProjectStatus[item.status])
+    .filter(Boolean);
+  if (statuses.length === 0) return undefined;
+  return statuses.reduce((leastAdvanced, status) => (
+    statusProgress[status] < statusProgress[leastAdvanced] ? status : leastAdvanced
+  ));
+};
 
 const linkedIssuesFor = (workPackage, issues) => issues
   .filter((issue) => workPackage.tracking?.githubIssues?.includes(issue.number));
@@ -91,9 +108,12 @@ const resolveStatus = (workPackage, evidence) => {
       .filter((decision) => decision.workPackageId === workPackage.id && decision.status)
       .map((decision) => ({ status: decision.status, source: 'documented project decision' })),
     github: [
-      ...projectItemsFor(workPackage, evidence.projectItems?.items ?? [])
-        .map((item) => ({ status: statusByProjectStatus[item.status], source: 'GitHub Project' }))
-        .filter((item) => item.status),
+      ...(() => {
+        const status = statusForProjectItems(
+          projectItemsFor(workPackage, evidence.projectItems?.items ?? []),
+        );
+        return status ? [{ status, source: 'GitHub Project' }] : [];
+      })(),
       ...linkedIssuesFor(workPackage, evidence.issues ?? [])
         .flatMap((issue) => String(issue.state ?? 'OPEN').toUpperCase() === 'OPEN'
           ? [{ status: 'planned', source: `GitHub issue #${issue.number}` }]
