@@ -170,14 +170,31 @@ async def test_preserves_stable_error_retryability(status: int, code: str, retry
 @pytest.mark.asyncio
 async def test_rejects_invalid_error_envelope_and_unexpected_status() -> None:
     invalid_error_client, _ = client(RuntimeHttpResponse(404, {"error": "tenant secret"}))
+    wrong_code_client, _ = client(
+        RuntimeHttpResponse(
+            400,
+            {
+                "contractVersion": "1.0",
+                "error": {
+                    "code": "unexpected_code",
+                    "message": "Unavailable.",
+                    "retryable": False,
+                    "correlationId": "correlation-1",
+                },
+            },
+        )
+    )
     unexpected_client, _ = client(RuntimeHttpResponse(502, {"secret": "do-not-expose"}))
 
     with pytest.raises(StudioRuntimeClientError) as invalid_error:
         await invalid_error_client.fetch("tenant-kassel", "correlation-1")
+    with pytest.raises(StudioRuntimeClientError) as wrong_code:
+        await wrong_code_client.fetch("tenant-kassel", "correlation-1")
     with pytest.raises(StudioRuntimeClientError) as unexpected:
         await unexpected_client.fetch("tenant-kassel", "correlation-1")
 
     assert str(invalid_error.value) == "studio_runtime_error_invalid"
+    assert str(wrong_code.value) == "studio_runtime_error_invalid"
     assert str(unexpected.value) == "studio_runtime_unexpected_status"
     assert unexpected.value.retryable is True
 

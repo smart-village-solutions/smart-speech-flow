@@ -25,6 +25,7 @@ REVISION_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 LOCALE_PATTERN = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$")
 SUPPORTED_ERROR_STATUSES = {400, 401, 403, 404, 409, 503}
 EXPECTED_ERROR_CODES = {
+    400: {"malformed_request"},
     401: {"service_authentication_invalid"},
     403: {"service_action_forbidden"},
     404: {"tenant_not_found"},
