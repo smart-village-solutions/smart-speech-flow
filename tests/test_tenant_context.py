@@ -67,6 +67,11 @@ def test_dependency_uses_only_the_validated_claim() -> None:
     [
         {"params": {"tenantId": "tenant-berlin"}},
         {"json": {"tenant_id": "tenant-berlin"}},
+        {"json": {"payload": [{"tenant_id": "tenant-berlin"}]}},
+        {
+            "content": '{"payload":{"tenant_id":"tenant-berlin"}}',
+            "headers": {"Content-Type": "application/vnd.api+json"},
+        },
         {"headers": {"X-Studio-Tenant-Id": "tenant-berlin"}},
         {"cookies": {"studio_tenant_id": "tenant-berlin"}},
     ],
@@ -75,7 +80,7 @@ def test_dependency_rejects_browser_controlled_tenant_selectors(
     request_kwargs: dict[str, Any],
 ) -> None:
     client = _tenant_test_client()
-    method = client.post if "json" in request_kwargs else client.get
+    method = client.post if {"json", "content"}.intersection(request_kwargs) else client.get
 
     response = method("/tenant-operation", **request_kwargs)
 

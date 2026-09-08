@@ -65,11 +65,22 @@ def _request_has_tenant_selector(request: Request, body: object) -> bool:
         return True
     if _SELECTOR_HEADER_NAMES.intersection(name.lower() for name in request.headers.keys()):
         return True
-    return isinstance(body, dict) and bool(_SELECTOR_NAMES.intersection(body.keys()))
+    return _contains_tenant_selector(body)
+
+
+def _contains_tenant_selector(value: object) -> bool:
+    if isinstance(value, dict):
+        if _SELECTOR_NAMES.intersection(value.keys()):
+            return True
+        return any(_contains_tenant_selector(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_tenant_selector(item) for item in value)
+    return False
 
 
 async def _json_body(request: Request) -> object:
-    if request.headers.get("content-type", "").partition(";")[0].strip() != "application/json":
+    media_type = request.headers.get("content-type", "").partition(";")[0].strip().lower()
+    if media_type != "application/json" and not media_type.endswith("+json"):
         return None
     try:
         return json.loads(await request.body())
