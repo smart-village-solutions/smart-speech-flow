@@ -136,7 +136,7 @@ async def test_network_failure_is_retryable_and_redacted() -> None:
 
 
 @pytest.mark.asyncio
-async def test_unexpected_transport_failure_is_retryable_and_redacted() -> None:
+async def test_unexpected_transport_failure_is_not_retryable_and_redacted() -> None:
     class FailingTransport:
         async def post_form(
             self, url: str, data: Mapping[str, str], timeout_seconds: float
@@ -149,7 +149,7 @@ async def test_unexpected_transport_failure_is_retryable_and_redacted() -> None:
         await provider.get_token()
 
     assert caught.value.code == "studio_token_network_error"
-    assert caught.value.retryable is True
+    assert caught.value.retryable is False
     assert "top-secret" not in str(caught.value)
     assert caught.value.__cause__ is None
 
