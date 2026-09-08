@@ -112,7 +112,15 @@ def test_rejects_missing_tenant_and_correlation_headers() -> None:
     assert missing_tenant.status_code == 404
     assert missing_tenant.json()["error"]["code"] == "tenant_not_found"
     assert missing_correlation.status_code == 404
-    assert missing_correlation.json()["error"]["code"] == "tenant_not_found"
+    assert missing_correlation.json() == {
+        "contractVersion": "1.0",
+        "error": {
+            "code": "tenant_not_found",
+            "message": "Runtime configuration is unavailable.",
+            "retryable": False,
+            "correlationId": "unavailable",
+        },
+    }
 
 
 def test_rejects_competing_tenant_selectors() -> None:

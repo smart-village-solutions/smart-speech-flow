@@ -37,7 +37,9 @@ service_authentication_invalid`; the known unauthorized token produces `403
 service_action_forbidden`.
 
 `X-Studio-Tenant-Id` is the sole tenant selector and is returned unchanged as
-`tenant.id`. `X-Correlation-Id` is required and echoed in every error envelope.
+`tenant.id`. `X-Correlation-Id` is required and echoed in every error envelope
+when present; malformed requests without it use the Studio-compatible,
+non-empty fallback `unavailable` required by the V1 error schema.
 Missing or competing selectors produce `404 tenant_not_found` just like the
 Studio endpoint. `X-Studio-Instance-Id`, `X-Tenant-Id`, and all query selectors
 are rejected without compatibility aliases.

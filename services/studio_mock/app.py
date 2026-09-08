@@ -35,7 +35,7 @@ class RuntimeError(BaseModel):
     code: RuntimeErrorCode
     message: str
     retryable: bool
-    correlation_id: str | None = Field(alias="correlationId")
+    correlation_id: str = Field(alias="correlationId")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -211,7 +211,7 @@ def _configuration_for(tenant_id: str) -> dict[str, Any]:
 def _error_response(
     status_code: int,
     code: RuntimeErrorCode,
-    correlation_id: str | None,
+    correlation_id: str,
     retryable: bool,
     message: str = _UNAVAILABLE_MESSAGE,
 ) -> JSONResponse:
