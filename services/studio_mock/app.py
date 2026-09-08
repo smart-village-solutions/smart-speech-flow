@@ -5,7 +5,7 @@ import json
 from copy import deepcopy
 from typing import Any
 
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -36,6 +36,10 @@ class RuntimeErrorEnvelope(BaseModel):
 
 
 _ERROR_RESPONSES = {
+    400: {
+        "model": RuntimeErrorEnvelope,
+        "description": "The tenant header and query parameter conflict.",
+    },
     404: {
         "model": RuntimeErrorEnvelope,
         "description": "The requested tenant does not exist.",
@@ -113,6 +117,7 @@ def _error_response(
     code: str,
     correlation_id: str | None,
     retryable: bool,
+    message: str = _UNAVAILABLE_MESSAGE,
 ) -> JSONResponse:
     """Return the stable Studio V1 error envelope without tenant content."""
     return JSONResponse(
@@ -121,7 +126,7 @@ def _error_response(
             "contractVersion": _CONTRACT_VERSION,
             "error": {
                 "code": code,
-                "message": _UNAVAILABLE_MESSAGE,
+                "message": message,
                 "retryable": retryable,
                 "correlationId": correlation_id,
             },
@@ -136,16 +141,30 @@ def _error_response(
 )
 def runtime_configuration(
     x_tenant_id: str | None = Header(default=None),
+    tenant_id_query: str | None = Query(default=None, alias="tenantId"),
     x_correlation_id: str | None = Header(default=None),
     x_mock_scenario: str | None = Header(default=None),
 ) -> dict[str, Any] | JSONResponse:
     """Return deterministic Runtime Configuration V1 data for local integration tests."""
+    if (
+        x_tenant_id is not None
+        and tenant_id_query is not None
+        and x_tenant_id != tenant_id_query
+    ):
+        return _error_response(
+            400,
+            "TENANT_ID_CONFLICT",
+            x_correlation_id,
+            False,
+            "X-Tenant-Id and tenantId must match.",
+        )
     if x_mock_scenario == "not-ready":
         return _error_response(409, "TENANT_NOT_READY", x_correlation_id, False)
     if x_mock_scenario == "unavailable":
         return _error_response(
             503, "RUNTIME_CONFIGURATION_UNAVAILABLE", x_correlation_id, True
         )
-    if x_tenant_id not in _TENANT_CONFIGURATION_TEMPLATES:
+    tenant_id = tenant_id_query if tenant_id_query is not None else x_tenant_id
+    if tenant_id not in _TENANT_CONFIGURATION_TEMPLATES:
         return _error_response(404, "TENANT_NOT_FOUND", x_correlation_id, False)
-    return _configuration_for(x_tenant_id)
+    return _configuration_for(tenant_id)

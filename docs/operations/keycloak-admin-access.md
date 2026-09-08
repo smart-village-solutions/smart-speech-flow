@@ -25,12 +25,14 @@ Studio--SSF Runtime Configuration V1 API. Start it explicitly:
 docker compose --profile studio-mock up --build studio-mock
 ```
 
-It listens on all host interfaces at `http://<host-ip>:8010`. Request
-`/internal/plugins/ssf/v1/runtime-configuration` with `X-Tenant-Id` set to
-`tenant-kassel` or `tenant-fulda`, and a correlation ID. `tenant-kassel`
-returns storage mode `ask`; `tenant-fulda` returns `disabled`. Send
-`X-Mock-Scenario: not-ready` or `unavailable` to exercise the `409` or `503`
-error envelopes. Send an unknown tenant ID to exercise the `404` envelope.
+It listens on all host interfaces at `http://<host-ip>:8010`. Browser access
+uses `http://<host-ip>:8010/internal/plugins/ssf/v1/runtime-configuration?tenantId=tenant-kassel`.
+Service callers can instead send `X-Tenant-Id` set to `tenant-kassel` or
+`tenant-fulda`, and a correlation ID. When both are present, their values must
+match or the mock returns `400`. `tenant-kassel` returns storage mode `ask`;
+`tenant-fulda` returns `disabled`. Send `X-Mock-Scenario: not-ready` or
+`unavailable` to exercise the `409` or `503` error envelopes. Send an unknown
+tenant ID to exercise the `404` envelope.
 Every error response has the Studio V1 `contractVersion` and `error` envelope
 documented in the mock's OpenAPI description.
 

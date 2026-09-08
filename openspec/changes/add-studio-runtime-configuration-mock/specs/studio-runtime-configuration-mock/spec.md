@@ -8,8 +8,15 @@ Configuration Contract V1 development and tests.
 
 #### Scenario: Tenant configuration is returned
 
-- **WHEN** a request presents a supported `X-Tenant-Id`
+- **WHEN** a request presents a supported `X-Tenant-Id` header or `tenantId`
+  query parameter
 - **THEN** the service returns a Contract V1 configuration for that tenant
+
+#### Scenario: Browser query parameter conflicts with header
+
+- **WHEN** a request presents different tenant IDs in `X-Tenant-Id` and
+  `tenantId`
+- **THEN** the service returns a `400` error envelope
 
 ### Requirement: Deterministic storage-policy and error testing
 
