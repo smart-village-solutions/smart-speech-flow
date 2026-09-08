@@ -104,6 +104,10 @@ class AiohttpTokenTransport:
                     raise StudioTokenError(
                         "studio_token_response_invalid", retryable=False
                     ) from None
+                if response.status < 200 or response.status >= 300:
+                    if not isinstance(payload, Mapping):
+                        payload = {}
+                    return TokenResponse(status=response.status, payload=payload)
                 if not isinstance(payload, Mapping):
                     raise StudioTokenError("studio_token_response_invalid", retryable=False)
                 return TokenResponse(status=response.status, payload=payload)

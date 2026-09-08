@@ -6,6 +6,7 @@ from typing import Mapping
 import pytest
 
 from services.api_gateway.studio_runtime_token import (
+    AiohttpTokenTransport,
     DEFAULT_AUDIENCE,
     DEFAULT_CLIENT_ID,
     StudioRuntimeTokenProvider,
@@ -152,6 +153,47 @@ async def test_unexpected_transport_failure_is_not_retryable_and_redacted() -> N
     assert caught.value.retryable is False
     assert "top-secret" not in str(caught.value)
     assert caught.value.__cause__ is None
+
+
+@pytest.mark.asyncio
+async def test_aiohttp_transport_preserves_non_2xx_status_with_non_mapping_json(
+    monkeypatch,
+) -> None:
+    class FakeResponse:
+        status = 401
+
+        async def json(self) -> list[str]:
+            return ["invalid_client"]
+
+        async def __aenter__(self) -> "FakeResponse":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class FakeSession:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def post(self, url: str, data: Mapping[str, str]) -> FakeResponse:
+            return FakeResponse()
+
+        async def __aenter__(self) -> "FakeSession":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "services.api_gateway.studio_runtime_token.aiohttp.ClientSession", FakeSession
+    )
+
+    response = await AiohttpTokenTransport().post_form(
+        "https://keycloak.test/token", {"grant_type": "client_credentials"}, 2.0
+    )
+
+    assert response.status == 401
+    assert response.payload == {}
 
 
 def test_rejects_unbounded_or_incomplete_configuration() -> None:
