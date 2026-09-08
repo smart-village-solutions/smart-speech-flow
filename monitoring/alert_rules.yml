@@ -83,6 +83,63 @@ groups:
 
   - name: ssf-service-health
     rules:
+      # #220: the *ServiceDown rules below match a metric scraped from the
+      # service itself, so a stopped container makes the series vanish rather
+      # than go to zero and the expression matches nothing. These fire on the
+      # scrape failing, which is the signal that survives the target's death.
+      - alert: ASRScrapeDown
+        expr: up{job="asr"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: asr
+        annotations:
+          summary: "ASR service is not answering Prometheus"
+          description: >-
+            Prometheus has failed to scrape asr:8000 for 2 minutes. Speech
+            recognition is unavailable; every audio message will fail at the ASR
+            stage.
+          runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/service-down-alerts.md"
+
+      - alert: TranslationScrapeDown
+        expr: up{job="translation"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: translation
+        annotations:
+          summary: "Translation service is not answering Prometheus"
+          description: >-
+            Prometheus has failed to scrape translation:8000 for 2 minutes. No
+            message in either direction can be translated.
+          runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/service-down-alerts.md"
+
+      - alert: TTSScrapeDown
+        expr: up{job="tts"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: tts
+        annotations:
+          summary: "TTS service is not answering Prometheus"
+          description: >-
+            Prometheus has failed to scrape tts:8000 for 2 minutes. Text
+            translation may still succeed; spoken output will not.
+          runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/service-down-alerts.md"
+
+      - alert: APIGatewayScrapeDown
+        expr: up{job="api_gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: api_gateway
+        annotations:
+          summary: "API gateway is not answering Prometheus"
+          description: >-
+            Prometheus has failed to scrape api_gateway:8000 for 1 minute. The
+            whole product is down, including the WebSocket transport.
+          runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/service-down-alerts.md"
+
       - alert: ASRServiceDown
         expr: asr_health_status == 0
         for: 2m
@@ -155,15 +212,24 @@ groups:
           summary: High number of active WebSocket connections
           description: "Currently {{ $value }} active WebSocket connections. Monitor system resources and connection patterns."
 
+      # server_disconnect is excluded alongside client_disconnect: a session
+      # ending on purpose (new_session_created, manual_termination,
+      # manual_admin_termination) is routine traffic, not a failure, and
+      # terminate_all_active_sessions runs on every new session.
+      # session_expired is excluded too: a session ageing out on its own is
+      # normal lifecycle, not a connection failure. Abnormal causes --
+      # connection_error, heartbeat_timeout, rate_limit_exceeded,
+      # authentication_failed, protocol_error, origin_not_allowed -- still
+      # match.
       - alert: WebSocketConnectionFailures
-        expr: rate(websocket_disconnects_total{disconnect_reason!="client_disconnect"}[5m]) > 0.1
+        expr: rate(websocket_disconnects_total{disconnect_reason!~"client_disconnect|server_disconnect|session_expired"}[5m]) > 0.1
         for: 1m
         labels:
           severity: critical
           component: websocket
         annotations:
           summary: High WebSocket connection failure rate
-          description: "WebSocket disconnect rate of {{ $value }}/sec for non-client disconnects. Check network connectivity and server health."
+          description: "WebSocket disconnect rate of {{ $value }}/sec for disconnects that were neither a clean client exit, a deliberate server-side termination, nor an ordinary session expiry. Check network connectivity and server health."
 
       - alert: WebSocketHeartbeatLatencyHigh
         expr: histogram_quantile(0.95, sum(rate(websocket_heartbeat_latency_seconds_bucket[5m])) by (le)) > 1.0
@@ -215,7 +281,7 @@ groups:
         annotations:
           summary: High WebSocket broadcast failure rate (>1%)
           description: "Broadcast failure rate is {{ $value | humanizePercentage }}. Check WebSocketManager health and connection state."
-          runbook_url: "https://docs.smart-village.solutions/runbooks/websocket-broadcast-failures"
+          runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/websocket-broadcast-failures.md"
 
       - alert: WebSocketBroadcastMessagesNotDelivered
         expr: rate(websocket_broadcast_messages_failed_total[5m]) > 0.05
