@@ -1,5 +1,10 @@
 """Behavior tests for the tenant-bound Studio runtime integration."""
 
+import hashlib
+import json
+from collections.abc import Mapping
+from urllib.parse import urlsplit
+
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
@@ -8,6 +13,8 @@ import services.api_gateway.studio_runtime_flow as runtime_flow_module
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.studio_runtime_client import (
     RuntimeConfiguration,
+    RuntimeHttpResponse,
+    StudioRuntimeClient,
     StudioRuntimeClientError,
 )
 from services.api_gateway.studio_runtime_flow import (
@@ -16,7 +23,9 @@ from services.api_gateway.studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
     require_validated_runtime_configuration,
 )
+from services.api_gateway.studio_runtime_token import StudioTokenError
 from services.api_gateway.tenant_context import StudioTenantContext
+from services.studio_mock.app import app as studio_mock_app
 
 REVISION = f"sha256:{'a' * 64}"
 OTHER_REVISION = f"sha256:{'b' * 64}"
@@ -114,6 +123,91 @@ async def test_preserves_safe_upstream_failure_without_a_configuration() -> None
 
     assert caught.value.code == "runtime_configuration_unavailable"
     assert caught.value.retryable is True
+
+
+@pytest.mark.asyncio
+async def test_preserves_safe_service_token_failure_without_a_configuration() -> None:
+    flow = StudioRuntimeFlow(
+        StubRuntimeClient(StudioTokenError("studio_token_network_error", retryable=True))
+    )
+
+    with pytest.raises(StudioRuntimeFlowError) as caught:
+        await flow.resolve(_context(), "correlation-1")
+
+    assert caught.value.code == "studio_token_network_error"
+    assert caught.value.retryable is True
+
+
+class MockStudioTransport:
+    """Run the V1 client against the local Studio mock at its HTTP boundary."""
+
+    def __init__(self) -> None:
+        self.client = TestClient(studio_mock_app)
+
+    async def get(
+        self,
+        url: str,
+        headers: Mapping[str, str],
+        timeout_seconds: float,
+    ) -> RuntimeHttpResponse:
+        response = self.client.get(urlsplit(url).path, headers=dict(headers))
+        return RuntimeHttpResponse(status=response.status_code, payload=response.json())
+
+
+def _mock_authorization_revision(tenant_id: str) -> str:
+    authorization = {
+        "permissions": ["ssf.runtime-configuration.read"],
+        "tenantId": tenant_id,
+    }
+    encoded = json.dumps(authorization, separators=(",", ":"), sort_keys=True).encode()
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+@pytest.mark.asyncio
+async def test_mock_backed_flow_accepts_only_the_matching_tenant_revision() -> None:
+    tenant_id = "tenant-kassel"
+    authorization_revision = _mock_authorization_revision(tenant_id)
+
+    async def service_token() -> str:
+        return "studio-mock-authorized-token"
+
+    flow = StudioRuntimeFlow(
+        StudioRuntimeClient(
+            "http://studio-mock.test",
+            service_token,
+            transport=MockStudioTransport(),
+        )
+    )
+
+    result = await flow.resolve(
+        StudioTenantContext(tenant_id, authorization_revision),
+        "mock-flow-correlation",
+    )
+
+    assert result.configuration.tenant.id == tenant_id
+    assert result.configuration.authorization_revision == authorization_revision
+
+
+@pytest.mark.asyncio
+async def test_mock_backed_flow_rejects_a_token_revision_that_does_not_match() -> None:
+    async def service_token() -> str:
+        return "studio-mock-authorized-token"
+
+    flow = StudioRuntimeFlow(
+        StudioRuntimeClient(
+            "http://studio-mock.test",
+            service_token,
+            transport=MockStudioTransport(),
+        )
+    )
+
+    with pytest.raises(StudioRuntimeFlowError) as caught:
+        await flow.resolve(
+            StudioTenantContext("tenant-kassel", OTHER_REVISION),
+            "mock-flow-correlation",
+        )
+
+    assert caught.value.code == "studio_runtime_authorization_mismatch"
 
 
 class StubRuntimeFlow:
