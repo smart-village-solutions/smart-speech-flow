@@ -11,6 +11,7 @@ from fastapi import Depends, HTTPException, Request, status
 from .auth import require_ssf_user
 
 _TENANT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_AUTHORIZATION_REVISION_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 _LEGACY_CLAIM_NAMES = frozenset({"tenant_id", "studio_instance_id"})
 _SELECTOR_NAMES = frozenset(
     {
@@ -22,7 +23,9 @@ _SELECTOR_NAMES = frozenset(
         "instanceid",
     }
 )
-_SELECTOR_HEADER_NAMES = frozenset({"x-studio-instance-id", "x-studio-tenant-id", "x-tenant-id"})
+_SELECTOR_HEADER_NAMES = frozenset(
+    {"x-studio-instance-id", "x-studio-tenant-id", "x-tenant-id"}
+)
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,7 @@ class StudioTenantContext:
     """One trusted tenant identity represented with SSF terminology."""
 
     tenant_id: str
+    authorization_revision: str
 
 
 def studio_tenant_context_from_claims(
@@ -43,7 +47,16 @@ def studio_tenant_context_from_claims(
     if not isinstance(tenant_id, str) or not _TENANT_ID_PATTERN.fullmatch(tenant_id):
         raise _invalid_tenant_claim()
 
-    return StudioTenantContext(tenant_id=tenant_id)
+    authorization_revision = claims.get("ssf_authorization_revision")
+    if not isinstance(
+        authorization_revision, str
+    ) or not _AUTHORIZATION_REVISION_PATTERN.fullmatch(authorization_revision):
+        raise _invalid_tenant_claim()
+
+    return StudioTenantContext(
+        tenant_id=tenant_id,
+        authorization_revision=authorization_revision,
+    )
 
 
 async def require_studio_tenant_context(
@@ -64,7 +77,9 @@ def _request_has_tenant_selector(request: Request, body: object) -> bool:
         return True
     if _has_selector_name(request.cookies.keys()):
         return True
-    if _SELECTOR_HEADER_NAMES.intersection(name.lower() for name in request.headers.keys()):
+    if _SELECTOR_HEADER_NAMES.intersection(
+        name.lower() for name in request.headers.keys()
+    ):
         return True
     return _contains_tenant_selector(body)
 
@@ -83,11 +98,15 @@ def _contains_tenant_selector(value: object) -> bool:
 
 
 def _has_selector_name(names: Iterable[object]) -> bool:
-    return any(isinstance(name, str) and name.lower() in _SELECTOR_NAMES for name in names)
+    return any(
+        isinstance(name, str) and name.lower() in _SELECTOR_NAMES for name in names
+    )
 
 
 async def _json_body(request: Request) -> object:
-    media_type = request.headers.get("content-type", "").partition(";")[0].strip().lower()
+    media_type = (
+        request.headers.get("content-type", "").partition(";")[0].strip().lower()
+    )
     if media_type != "application/json" and not media_type.endswith("+json"):
         return None
     try:

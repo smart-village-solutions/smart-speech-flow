@@ -11,13 +11,21 @@ from services.api_gateway.tenant_context import (
     studio_tenant_context_from_claims,
 )
 
+REVISION = f"sha256:{'a' * 64}"
+
 
 def test_canonical_validated_claim_creates_one_internal_tenant_context() -> None:
     context = studio_tenant_context_from_claims(
-        {"sub": "user-1", "studio_tenant_id": "tenant-kassel"}
+        {
+            "sub": "user-1",
+            "studio_tenant_id": "tenant-kassel",
+            "ssf_authorization_revision": REVISION,
+        }
     )
 
-    assert context == StudioTenantContext(tenant_id="tenant-kassel")
+    assert context == StudioTenantContext(
+        tenant_id="tenant-kassel", authorization_revision=REVISION
+    )
 
 
 @pytest.mark.parametrize(
@@ -30,6 +38,12 @@ def test_canonical_validated_claim_creates_one_internal_tenant_context() -> None
         {"tenant_id": "tenant-kassel"},
         {"studio_instance_id": "tenant-kassel"},
         {"studio_tenant_id": "tenant-kassel", "tenant_id": "tenant-berlin"},
+        {"studio_tenant_id": "tenant-kassel"},
+        {"studio_tenant_id": "tenant-kassel", "ssf_authorization_revision": ""},
+        {
+            "studio_tenant_id": "tenant-kassel",
+            "ssf_authorization_revision": "sha256:UPPERCASE",
+        },
     ],
 )
 def test_missing_malformed_or_legacy_claims_fail_closed(claims: dict[str, Any]) -> None:
@@ -44,6 +58,7 @@ def _tenant_test_client() -> TestClient:
     app.dependency_overrides[require_ssf_user] = lambda: {
         "sub": "user-1",
         "studio_tenant_id": "tenant-kassel",
+        "ssf_authorization_revision": REVISION,
     }
 
     @app.api_route("/tenant-operation", methods=["GET", "POST"])
