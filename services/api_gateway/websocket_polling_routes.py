@@ -5,6 +5,7 @@ due to CORS, network, or compatibility issues.
 """
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Annotated, Any, Dict, Optional
 
@@ -14,6 +15,8 @@ from pydantic import BaseModel
 
 from .session_manager import ClientType, session_manager
 from .websocket_fallback import FallbackReason, fallback_manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/websocket/polling", tags=["WebSocket Polling Fallback"])
 POLLING_ROUTE_RESPONSES = {
@@ -237,18 +240,42 @@ async def send_message_via_polling(polling_id: str, message: PollingMessage):
         session_fallback_status = fallback_manager.get_session_fallback_status(
             message.session_id
         )
+        recipients = 0
+        overflowed = 0
         for client_info in session_fallback_status["polling_clients"]:
             if client_info["polling_id"] != polling_id:  # Don't send to sender
-                fallback_manager.send_message_to_polling_client(
+                recipients += 1
+                queued = fallback_manager.send_message_to_polling_client(
                     polling_id=client_info["polling_id"], message=broadcast_message
                 )
+                if not queued:
+                    overflowed += 1
+
+        # A False from send_message_to_polling_client does not mean this
+        # message was rejected -- it was queued, and a different, older message
+        # was evicted from a full recipient queue. Retrying would duplicate
+        # this message and evict one more, so the caller is told not to.
+        if overflowed:
+            logger.warning(
+                "Polling send overflowed %d of %d recipient queue(s)",
+                overflowed,
+                recipients,
+            )
 
         return JSONResponse(
             status_code=200,
             content={
-                "status": "success",
-                "message": "Message sent successfully",
+                "status": "partial_overflow" if overflowed else "success",
+                "message": (
+                    "Message queued, but a full recipient queue evicted an older "
+                    "message"
+                    if overflowed
+                    else "Message sent successfully"
+                ),
                 "broadcast_count": 1,
+                "polling_recipients": recipients,
+                "polling_overflow_recipients": overflowed,
+                "retryable": False,
                 "timestamp": utc_now_iso(),
             },
         )

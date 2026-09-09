@@ -52,6 +52,14 @@ async def test_poll_rejects_unknown_client_before_accessing_queue(monkeypatch):
 
 
 @pytest.mark.asyncio
+def _recording_send(queued):
+    def send(polling_id, message):
+        queued.append((polling_id, message))
+        return True
+
+    return send
+
+
 async def test_polling_send_broadcasts_and_queues_only_other_clients(monkeypatch):
     websocket_manager = Mock()
     websocket_manager.broadcast_to_session = AsyncMock()
@@ -74,7 +82,10 @@ async def test_polling_send_broadcasts_and_queues_only_other_clients(monkeypatch
     monkeypatch.setattr(
         polling_routes.fallback_manager,
         "send_message_to_polling_client",
-        lambda polling_id, message: queued.append((polling_id, message)),
+        # The real function returns True when the message was queued with
+        # nothing evicted; list.append returns None, which the route now reads
+        # as an overflowed recipient queue.
+        _recording_send(queued),
     )
     from services.api_gateway import websocket
 
