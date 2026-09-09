@@ -737,12 +737,15 @@ class WebSocketFallbackManager:
         the live queue, and a caller minting entries in a loop reclaims its own
         rather than growing the map.
         """
+        candidates = (
+            self.polling_clients.get(polling_id)
+            for polling_id in self.session_polling_clients.get(session_id, set())
+        )
         peers = sorted(
             (
                 client
-                for polling_id in self.session_polling_clients.get(session_id, set())
-                if (client := self.polling_clients.get(polling_id)) is not None
-                and client.client_type == client_type
+                for client in candidates
+                if client is not None and client.client_type == client_type
             ),
             key=lambda client: client.created_at,
         )
