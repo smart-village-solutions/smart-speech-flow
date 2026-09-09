@@ -59,7 +59,7 @@ Prometheus-kompatible Metriken für Monitoring.
 
 ## Architektur & Funktionsweise
 1. **Modellwahl:**
-   - Die Spracherkennung erfolgt über lokal geladene Modelle (z. B. Whisper, Wav2Vec, etc.), je nach Konfiguration in `app.py`.
+   - Der ASR-Service lädt Whisper `large-v3-turbo` dauerhaft lokal.
    - Die Verarbeitung erfolgt immer lokal, keine Daten werden an externe APIs gesendet.
 2. **Caching:**
    - Geladene Modelle werden im Speicher gehalten, um die Performance zu optimieren.

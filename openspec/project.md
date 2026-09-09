@@ -20,7 +20,7 @@ Smart Speech Flow Backend ist ein containerisiertes Microservice-System für meh
 - **NVIDIA CUDA 13.0** - GPU-Beschleunigung für KI-Modelle
 
 ### AI/ML Components
-- **OpenAI Whisper** - Automatische Spracherkennung (ASR)
+- **OpenAI Whisper large-v3-turbo** - Automatische Spracherkennung (ASR)
 - **Facebook M2M100** - Mehrsprachige Übersetzung (100+ Sprachen)
 - **Coqui-TTS & HuggingFace MMS-TTS** - Text-zu-Sprache-Synthese
 - **Ollama (gpt-oss:20b)** - LLM-basierte Übersetzungsverfeinerung (optional)

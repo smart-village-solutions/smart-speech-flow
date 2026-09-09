@@ -148,7 +148,9 @@ references to SSF.
 SSF determines the tenant from a valid session token, Keycloak login, or
 server-resolved guest-join credential. The SSF backend then calls the internal
 Studio API with its own Client-Credentials service identity and an
-`X-Tenant-Id` header. A freely supplied tenant or instance ID is not a trust
+`X-Studio-Tenant-Id` header. Studio returns that canonical value unchanged as
+`tenant.id`. Legacy tenant headers and query selectors are rejected without
+compatibility aliases. A freely supplied tenant or instance ID is not a trust
 boundary.
 
 The Studio host validates the technical identity, configured audience, validity,
