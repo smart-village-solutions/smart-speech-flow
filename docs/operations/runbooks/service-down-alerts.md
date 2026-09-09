@@ -25,19 +25,31 @@ Keep both. They detect different failures, and neither subsumes the other.
 **A rule change is not live until Prometheus is restarted.** Neither compose
 file gives the `prometheus` service a `command:`, so `--web.enable-lifecycle` is
 off and there is no `POST /-/reload` endpoint. `alert_rules.yml` is a bind
-mount, so `docker compose up -d` sees no change to the service definition and
+mount, so `production_compose up -d` sees no change to the service definition and
 does not recreate the container. Editing the file alone leaves the old rules
 loaded and the new ones silent — the exact failure #220 exists to eliminate.
 
+**Every command in this runbook must name the production stack.** A bare
+`docker compose` from the repository root reads `docker-compose.yml` plus any
+local `docker-compose.override.yml`, under a project name derived from the
+directory — a *different* stack from the one production runs. Source the
+helper the deployment scripts use and go through `production_compose`:
+
 ```bash
-docker compose restart prometheus
+source scripts/lib/production-common.sh
+
+production_compose restart prometheus
 
 # Confirm the four scrape rules are loaded (expect: 4)
-docker compose exec api_gateway \
+production_compose exec api_gateway \
   curl -s http://prometheus:9090/api/v1/rules | grep -o ScrapeDown | wc -l
 ```
 
-Two details in that command are load-bearing. Prometheus is declared
+`production_compose` is `docker compose --project-name ssf-backend --env-file
+.env --file deploy/production/docker-compose.production.yml`; spell that out
+in full if you would rather not source the helper.
+
+Two details in the query are load-bearing. Prometheus is declared
 `expose: "9090"` and publishes no host port, so `curl localhost:9090` from the
 host is refused — the query has to run inside the compose network. And the
 rules API returns one single-line JSON body, so `grep -c` counts that one line
@@ -73,11 +85,15 @@ baselining that KPIs Q4 (delivery SLO breach rate) and R10 (SLO compliance) need
 
 ## Response
 
-1. `docker compose ps` — is the container running?
-2. `docker compose logs --tail=200 <service>` — model load failure, OOM, CUDA error?
+Source `scripts/lib/production-common.sh` first; every step below goes through
+`production_compose`, not a bare `docker compose` (see above).
+
+1. `production_compose ps` — is the container running?
+2. `production_compose logs --tail=200 <service>` — model load failure, OOM,
+   CUDA error?
 3. `nvidia-smi` — is the GPU visible and does it have free memory?
-4. `docker compose restart <service>`, then confirm the alert clears within one
-   scrape interval plus the `for` duration.
+4. `production_compose restart <service>`, then confirm the alert clears within
+   one scrape interval plus the `for` duration.
 5. If it recurs, capture the logs before restarting again and open an issue.
 
 ## Verification
