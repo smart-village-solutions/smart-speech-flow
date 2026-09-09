@@ -94,6 +94,40 @@ async def validate_websocket_origin(origin: Optional[str]) -> bool:
     return bool(re.match(production_pattern, origin))
 
 
+# RFC 6455 close codes, mapped onto the wire reasons DisconnectReason.from_wire
+# understands. A WebSocketDisconnect carries the code, and treating them all as
+# a clean client exit is what hid network and server failures from the
+# unexpected-disconnect KPI and WebSocketConnectionFailures.
+_CLOSE_CODE_REASONS = {
+    1000: "client_disconnect",  # normal closure
+    1001: "client_disconnect",  # going away: tab closed, navigation
+    1005: "client_disconnect",  # close frame carried no code
+    1002: "protocol_error",
+    1003: "protocol_error",  # unsupported data
+    1007: "protocol_error",  # invalid payload
+    1008: "protocol_error",  # policy violation
+    1009: "protocol_error",  # message too big
+    1010: "protocol_error",  # mandatory extension missing
+    1006: "connection_error",  # abnormal closure: no close frame at all
+    1011: "connection_error",  # internal server error
+    1012: "connection_error",  # service restart
+    1013: "connection_error",  # try again later
+    1014: "connection_error",  # bad gateway
+    1015: "connection_error",  # TLS handshake failure
+}
+
+
+def disconnect_reason_for_close_code(code: Optional[int]) -> str:
+    """Classify a WebSocket close code into a disconnect reason.
+
+    An unrecognised code is a connection error, not a clean exit -- the same
+    rule DisconnectReason.from_wire applies to unrecognised wire reasons.
+    """
+    if code is None:
+        return "connection_error"
+    return _CLOSE_CODE_REASONS.get(code, "connection_error")
+
+
 class ConnectionState(str, Enum):
     CONNECTING = "connecting"
     CONNECTED = "connected"
@@ -1514,9 +1548,10 @@ async def websocket_endpoint(
         return
 
     connection_id = None
-    # Only a clean break out of the receive loop keeps this. Every other exit
-    # is an abnormal termination, and reporting it as a clean client exit is
-    # what kept the unexpected-disconnect rate reading near zero.
+    # A close frame replaces this with the reason its code classifies to, and
+    # every non-close exit path sets connection_error. Reporting an abnormal
+    # termination as a clean client exit is what kept the unexpected-disconnect
+    # rate reading near zero.
     exit_reason = "client_disconnect"
 
     try:
@@ -1536,8 +1571,14 @@ async def websocket_endpoint(
                 data = await websocket.receive_json()
                 await manager.handle_websocket_message(connection_id, data)
 
-            except WebSocketDisconnect:
-                logger.info(f"🔌 WebSocket-Disconnect: {connection_id}")
+            except WebSocketDisconnect as disconnect:
+                exit_reason = disconnect_reason_for_close_code(disconnect.code)
+                logger.info(
+                    "🔌 WebSocket-Disconnect: %s (code %s, reason %s)",
+                    sanitize_log_value(str(connection_id)),
+                    disconnect.code,
+                    exit_reason,
+                )
                 break
 
             except Exception:
