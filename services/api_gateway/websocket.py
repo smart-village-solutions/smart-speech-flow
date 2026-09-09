@@ -29,6 +29,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 
+from .client_origin import configured_client_origin
 from .log_safety import sanitize_log_value
 from .session_manager import ClientType, SessionManager, SessionStatus
 from .websocket_fallback import FallbackReason, fallback_manager
@@ -89,9 +90,12 @@ async def validate_websocket_origin(origin: Optional[str]) -> bool:
     if not origin:
         return False  # Reject connections without Origin header in production
 
+    if origin == configured_client_origin():
+        return True
+
     # ✅ FIX: Korrektes Regex-Pattern (* → .*)
     production_pattern = r"https://.*\.figma\.site|https://.*\.smart-village\.solutions"
-    return bool(re.match(production_pattern, origin))
+    return bool(re.fullmatch(production_pattern, origin))
 
 
 # RFC 6455 close codes, mapped onto the wire reasons DisconnectReason.from_wire

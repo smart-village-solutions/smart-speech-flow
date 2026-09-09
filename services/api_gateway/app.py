@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CollectorRegistry, Counter
 
+from .client_origin import configured_client_origin
 from .pipeline_admission import (
     PipelineAdmission,
     PipelineAdmissionConfig,
@@ -450,7 +451,8 @@ def setup_cors_for_websockets():
         allow_origin_regex = None
     else:
         # Production: strict validation
-        allow_origins = []
+        client_origin = configured_client_origin()
+        allow_origins = [client_origin] if client_origin else []
         allow_origin_regex = production_pattern
 
     app.add_middleware(
