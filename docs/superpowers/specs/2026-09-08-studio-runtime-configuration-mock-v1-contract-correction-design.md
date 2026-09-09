@@ -4,14 +4,14 @@
 
 The existing mock was intentionally made browser-accessible over public HTTP.
 Review feedback establishes that this differs from the current Studio--SSF V1
-contract: Studio instance identity, a service token with an explicit
+contract: canonical tenant identity, a service token with an explicit
 permission, and a correlation identifier are required. The response structure
 also needs authorization metadata and locale naming aligned with the contract.
 
 ## Goals
 
 - Exercise the V1 request contract with `Authorization`,
-  `X-Studio-Instance-Id`, and `X-Correlation-Id`.
+  `X-Studio-Tenant-Id`, and `X-Correlation-Id`.
 - Model deterministic authentication, authorization, tenant, authorization
   projection, and dependency failures with the stable V1 error envelope.
 - Return contract-correct locale fields plus deterministic SHA-256
@@ -33,13 +33,16 @@ studio-mock-authorized-token` has `ssf.runtime-configuration.read` and is the
 only token that can receive a configuration. `Bearer
 studio-mock-unauthorized-token` represents an authenticated caller without
 that permission. A missing or unknown token produces `401
-SERVICE_UNAUTHENTICATED`; the known unauthorized token produces `403
-SERVICE_FORBIDDEN`.
+service_authentication_invalid`; the known unauthorized token produces `403
+service_action_forbidden`.
 
-`X-Studio-Instance-Id` is the sole tenant selector. `X-Correlation-Id` is
-required and echoed in every error envelope. Missing either required header
-produces a stable `400` envelope. The removed `tenantId` query parameter is
-not interpreted.
+`X-Studio-Tenant-Id` is the sole tenant selector and is returned unchanged as
+`tenant.id`. `X-Correlation-Id` is required and echoed in every error envelope
+when present; malformed requests without it use the Studio-compatible,
+non-empty fallback `unavailable` required by the V1 error schema.
+Missing or competing selectors produce `404 tenant_not_found` just like the
+Studio endpoint. `X-Studio-Instance-Id`, `X-Tenant-Id`, and all query selectors
+are rejected without compatibility aliases.
 
 ### Response and revisions
 
@@ -53,11 +56,11 @@ lowercase hexadecimal characters.
 
 ### Failure simulation
 
-`X-Mock-Scenario: authorization-pending` returns `409
-AUTHORIZATION_PROJECTION_PENDING`. `X-Mock-Scenario: unavailable` returns
-`503 RUNTIME_CONFIGURATION_UNAVAILABLE`. An unknown Studio instance returns
-`404 TENANT_NOT_FOUND`. These, authentication, authorization, and missing
-header failures share the V1 `contractVersion` and `error` envelope.
+The `suspended`, `plugin-inactive`, and `tenant-not-ready` scenarios return
+the contract's exact `409` codes and retryability. `unavailable` returns
+`503 runtime_configuration_unavailable`. An unknown tenant returns
+`404 tenant_not_found`. These, authentication, authorization, and malformed
+selector failures share the V1 `contractVersion` and `error` envelope.
 
 ### Exposure
 

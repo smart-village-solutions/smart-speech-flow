@@ -17,3 +17,14 @@
   token authorization.
 - [x] 3.2 Align authorization and locale response fields with Contract V1.
 - [x] 3.3 Restore loopback-only operation and document the swappable endpoint.
+
+## 4. Canonical tenant boundary
+
+- [x] 4.1 Replace `X-Studio-Instance-Id` with `X-Studio-Tenant-Id` and return
+  the selected value unchanged as `tenant.id`.
+- [x] 4.2 Reject legacy headers and query selectors without aliases.
+- [x] 4.3 Align stable error codes, statuses, messages, and retryability with
+  the frozen Studio V1 contract.
+- [x] 4.4 Replace the authorization-pending scenario with suspended,
+  plugin-inactive, tenant-not-ready, and unavailable scenarios.
+- [x] 4.5 Update focused tests, OpenAPI, operations, and architecture docs.

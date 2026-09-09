@@ -11,8 +11,10 @@ is available in every developer environment.
 - Add an opt-in FastAPI mock for the Studio Runtime Configuration V1 read API.
 - Serve deterministic configurations for two tenants and the `ask` and
   `disabled` conversation-storage policies.
-- Provide deterministic `400`, `401`, `403`, `404`, `409`, and `503` error
+- Provide deterministic `401`, `403`, `404`, `409`, and `503` error
   envelopes.
+- Use `X-Studio-Tenant-Id` as the only tenant selector and reject legacy
+  headers and query selectors without compatibility aliases.
 - Package the mock in a dedicated Docker Compose profile with loopback-only
   HTTP exposure.
 
