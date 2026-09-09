@@ -265,7 +265,7 @@ Variable groups currently interpolated by Compose include:
 In the current Compose stack, `REDIS_URL`, `REDIS_NAMESPACE`, and `CLIENT_BASE_URL` are assigned in `docker-compose.yml` rather than interpolated from `.env`. The `AUDIO_*` variables are likewise documented and passed by Compose, but the gateway currently reads only `SSF_AUDIO_BASE_DIR`; it uses a fixed 24-hour retention period and an hourly cleanup interval. Do not rely on `.env` changes to the `AUDIO_*` variables to change runtime audio-storage behaviour. The following values document those fixed settings:
 
 - `REDIS_URL` and `REDIS_NAMESPACE` for session storage.
-- `CLIENT_BASE_URL` for generated customer links.
+- `CLIENT_BASE_URL` for generated customer links and one additional exact production browser origin for HTTP CORS and WebSocket connections. For a standalone frontend, set it to an HTTPS origin such as `https://dialog.kassel.de` in the effective API container environment. Credentials, wildcard hosts, paths other than `/`, query strings, and fragments are not accepted as browser origins. Existing production origins remain available; an unset or invalid value adds no origin. Configure the frontend Keycloak URL and the Keycloak client redirect URIs separately.
 
 Pull the optional refinement model after the stack starts:
 
