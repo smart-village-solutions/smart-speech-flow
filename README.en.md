@@ -37,14 +37,45 @@ The dependency sources are `requirements*.in` and `services/*/requirements.in`. 
 
 ## Services
 
-| Service | Development port | Responsibility |
+| Service | Reachable at | Responsibility |
 | --- | --- | --- |
-| API Gateway | 8000 | REST/WebSocket entry point and pipeline orchestration |
-| ASR | 8001 | Audio transcription |
-| Translation | 8002 | M2M100 text translation |
-| TTS | 8003 | Speech synthesis |
+| API Gateway | `localhost:8000` | REST/WebSocket entry point and pipeline orchestration |
+| ASR | `http://asr:8000`, internal | Audio transcription |
+| Translation | `http://translation:8000`, internal | M2M100 text translation |
+| TTS | `http://tts:8000`, internal | Speech synthesis |
 | Redis | internal | Session and message persistence |
 | Ollama | internal | Optional translation refinement |
+
+Since #221 the three model services are not published on the host at all: they
+listen on port 8000 inside the compose network and nothing maps them to
+`localhost:8001-8003` any more. Reach them with
+`docker compose exec api_gateway curl http://asr:8000/health`, or, for direct
+access from the host, through an SSH tunnel that binds both the Docker bridge
+(serving the socat containers) and loopback (serving the native-gateway
+workflow):
+
+The tunnel must target the containers, not the GPU host's own ports -- those
+are what this change closed. Take the same route the `ollama` tunnel does:
+read the container addresses on the GPU host, then forward to them on 8000.
+
+```bash
+# 1. Container addresses (they change on every recreate)
+ssh <user>@<gpu-host> \
+  'for s in asr translation tts; do sudo docker inspect \
+     -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" \
+     $(sudo docker ps -qf name=$s | head -1); done'
+
+# 2. Forward to those addresses on port 8000, binding both the Docker bridge
+#    (serving the socat containers) and loopback (serving the native gateway)
+ssh -N \
+  -L 172.17.0.1:8001:<asr-ip>:8000 -L 127.0.0.1:8001:<asr-ip>:8000 \
+  -L 172.17.0.1:8002:<translation-ip>:8000 -L 127.0.0.1:8002:<translation-ip>:8000 \
+  -L 172.17.0.1:8003:<tts-ip>:8000 -L 127.0.0.1:8003:<tts-ip>:8000 \
+  <user>@<gpu-host>
+```
+
+`<gpu-host>` is the GPU server that runs the model containers; its address
+comes from the deployment inventory, not from this repository.
 
 The gateway is the public integration boundary. Clients should use the session and messaging endpoints under `/api/*`; `/pipeline` and `/upload` remain low-level/legacy endpoints.
 

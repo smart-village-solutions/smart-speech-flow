@@ -14,11 +14,11 @@ import hashlib
 import logging
 import os
 import re
-import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Annotated, Any, Dict, List, Optional, Set
+from uuid import uuid4
 
 from fastapi import (
     APIRouter,
@@ -92,6 +92,40 @@ async def validate_websocket_origin(origin: Optional[str]) -> bool:
     # ✅ FIX: Korrektes Regex-Pattern (* → .*)
     production_pattern = r"https://.*\.figma\.site|https://.*\.smart-village\.solutions"
     return bool(re.match(production_pattern, origin))
+
+
+# RFC 6455 close codes, mapped onto the wire reasons DisconnectReason.from_wire
+# understands. A WebSocketDisconnect carries the code, and treating them all as
+# a clean client exit is what hid network and server failures from the
+# unexpected-disconnect KPI and WebSocketConnectionFailures.
+_CLOSE_CODE_REASONS = {
+    1000: "client_disconnect",  # normal closure
+    1001: "client_disconnect",  # going away: tab closed, navigation
+    1005: "client_disconnect",  # close frame carried no code
+    1002: "protocol_error",
+    1003: "protocol_error",  # unsupported data
+    1007: "protocol_error",  # invalid payload
+    1008: "protocol_error",  # policy violation
+    1009: "protocol_error",  # message too big
+    1010: "protocol_error",  # mandatory extension missing
+    1006: "connection_error",  # abnormal closure: no close frame at all
+    1011: "connection_error",  # internal server error
+    1012: "connection_error",  # service restart
+    1013: "connection_error",  # try again later
+    1014: "connection_error",  # bad gateway
+    1015: "connection_error",  # TLS handshake failure
+}
+
+
+def disconnect_reason_for_close_code(code: Optional[int]) -> str:
+    """Classify a WebSocket close code into a disconnect reason.
+
+    An unrecognised code is a connection error, not a clean exit -- the same
+    rule DisconnectReason.from_wire applies to unrecognised wire reasons.
+    """
+    if code is None:
+        return "connection_error"
+    return _CLOSE_CODE_REASONS.get(code, "connection_error")
 
 
 class ConnectionState(str, Enum):
@@ -351,6 +385,36 @@ class WebSocketManager:
             self.heartbeat_task = None
         logger.info("💓 Heartbeat-System gestoppt")
 
+    @staticmethod
+    def _build_connection_id(session_id: str, client_type: ClientType) -> str:
+        """A connection id must be unique, not merely descriptive.
+
+        The previous form ended in `int(time.time())`, so two sockets opened for
+        one session inside the same second collided — and the monitor keys its
+        active-connection map by this value, so the loser's metrics silently
+        became the winner's. Reconnect storms are when that happens and when the
+        connection KPIs matter most.
+        """
+        return f"{session_id}_{client_type.value}_{uuid4().hex[:12]}"
+
+    def _registered_connection_id(
+        self, connection: "WebSocketConnection"
+    ) -> Optional[str]:
+        """The id this connection is registered under, or None if it is not.
+
+        Callers that hold a connection object and need its id must ask the map
+        that broadcast_to_session iterates. Rebuilding the id from the
+        connection's own fields worked only while it ended in a timestamp the
+        caller could recompute, and silently stopped matching anything once ids
+        became unique -- which included the sender in its own broadcast.
+        """
+        for connection_id, candidate in self.session_connections.get(
+            connection.session_id, {}
+        ).items():
+            if candidate is connection:
+                return connection_id
+        return None
+
     async def connect_websocket(
         self,
         websocket: WebSocket,
@@ -365,7 +429,7 @@ class WebSocketManager:
         await websocket.accept()
 
         # Connection-ID generieren
-        connection_id = f"{session_id}_{client_type.value}_{int(time.time())}"
+        connection_id = self._build_connection_id(session_id, client_type)
 
         # 📱 Mobile-Detection aus client_info
         is_mobile = False
@@ -467,7 +531,9 @@ class WebSocketManager:
 
         finally:
             # Connection-Cleanup
-            await self._cleanup_connection(connection_id)
+            await self._cleanup_connection(
+                connection_id, DisconnectReason.from_wire(reason)
+            )
 
             # Anderen Clients mitteilen
             await self._broadcast_client_left(
@@ -787,7 +853,7 @@ class WebSocketManager:
         """
         Polling-Fallback für Client aktivieren
         """
-        polling_id = f"poll_{session_id}_{client_type.value}_{int(time.time())}"
+        polling_id = f"poll_{session_id}_{client_type.value}_{uuid4().hex[:12]}"
         self.polling_clients.add(polling_id)
         self.connection_stats["polling_fallbacks"] += 1
 
@@ -897,7 +963,9 @@ class WebSocketManager:
 
         # Tote Verbindungen cleanup
         for connection_id in dead_connections:
-            await self._cleanup_connection(connection_id)
+            await self._cleanup_connection(
+                connection_id, DisconnectReason.CONNECTION_ERROR
+            )
 
     async def _check_heartbeat_timeouts(self):
         """
@@ -941,7 +1009,7 @@ class WebSocketManager:
         await self.broadcast_to_session(
             connection.session_id,
             forward_message,
-            exclude_connection=f"{connection.session_id}_{connection.client_type.value}_{int(connection.connected_at.timestamp())}",
+            exclude_connection=self._registered_connection_id(connection),
         )
 
     async def _handle_typing_indicator(
@@ -961,7 +1029,7 @@ class WebSocketManager:
         await self.broadcast_to_session(
             connection.session_id,
             typing_message,
-            exclude_connection=f"{connection.session_id}_{connection.client_type.value}_{int(connection.connected_at.timestamp())}",
+            exclude_connection=self._registered_connection_id(connection),
         )
 
     async def _send_connection_ack(self, connection: WebSocketConnection):
@@ -1030,9 +1098,22 @@ class WebSocketManager:
                     break
 
             if connection_id:
-                await self._cleanup_connection(connection_id)
+                # The termination message already carries the real cause
+                # (session_timeout, new_session_created). Recording every one
+                # of them as CONNECTION_ERROR would feed routine session ends
+                # into a critical alert.
+                await self._cleanup_connection(
+                    connection_id,
+                    DisconnectReason.from_wire(
+                        termination_message.get("reason", "session_ended")
+                    ),
+                )
 
-    async def _cleanup_connection(self, connection_id: str):
+    async def _cleanup_connection(
+        self,
+        connection_id: str,
+        reason: DisconnectReason = DisconnectReason.CLIENT_DISCONNECT,
+    ):
         """
         Connection-Cleanup nach Disconnect
         """
@@ -1061,7 +1142,7 @@ class WebSocketManager:
         # 📊 Monitoring: Connection closed
         get_websocket_monitor().connection_closed(
             connection_id=connection_id,
-            reason=DisconnectReason.CLIENT_DISCONNECT,  # Default reason
+            reason=reason,
         )
 
         self._update_active_connections_count()
@@ -1075,11 +1156,13 @@ class WebSocketManager:
         """
         try:
             # Prepare error details for evaluation
+            # No connection_id: the only one available here was rebuilt from
+            # the old timestamp format, so it named no real connection, and
+            # nothing downstream of evaluate_websocket_failure reads it.
             error_details = {
                 "message": str(error),
                 "type": type(error).__name__,
                 "context": error_context,
-                "connection_id": f"{connection.session_id}_{connection.client_type.value}_{int(time.time())}",
             }
 
             # Extract additional error information
@@ -1437,6 +1520,9 @@ async def websocket_endpoint(
     """
     # 1. CORS Origin Validation (before WebSocket accept)
     if not await validate_websocket_origin(origin):
+        get_websocket_monitor().record_rejected_connection(
+            DisconnectReason.ORIGIN_NOT_ALLOWED
+        )
         await websocket.close(code=1008, reason="Origin not allowed")
         logger.warning(
             "❌ WebSocket connection rejected - invalid origin: %s",
@@ -1462,6 +1548,11 @@ async def websocket_endpoint(
         return
 
     connection_id = None
+    # A close frame replaces this with the reason its code classifies to, and
+    # every non-close exit path sets connection_error. Reporting an abnormal
+    # termination as a clean client exit is what kept the unexpected-disconnect
+    # rate reading near zero.
+    exit_reason = "client_disconnect"
 
     try:
         # 4. WebSocket-Verbindung herstellen mit origin logging
@@ -1480,8 +1571,14 @@ async def websocket_endpoint(
                 data = await websocket.receive_json()
                 await manager.handle_websocket_message(connection_id, data)
 
-            except WebSocketDisconnect:
-                logger.info(f"🔌 WebSocket-Disconnect: {connection_id}")
+            except WebSocketDisconnect as disconnect:
+                exit_reason = disconnect_reason_for_close_code(disconnect.code)
+                logger.info(
+                    "🔌 WebSocket-Disconnect: %s (code %s, reason %s)",
+                    sanitize_log_value(str(connection_id)),
+                    disconnect.code,
+                    exit_reason,
+                )
                 break
 
             except Exception:
@@ -1495,15 +1592,17 @@ async def websocket_endpoint(
                 try:
                     await websocket.send_json(error_message)
                 except Exception:
+                    exit_reason = "connection_error"
                     break
 
     except Exception:
+        exit_reason = "connection_error"
         logger.exception("WebSocket connection failed")
 
     finally:
         # Cleanup bei Disconnect
         if connection_id:
-            await manager.disconnect_websocket(connection_id, "client_disconnect")
+            await manager.disconnect_websocket(connection_id, exit_reason)
 
 
 @router.get("/api/websocket/stats")

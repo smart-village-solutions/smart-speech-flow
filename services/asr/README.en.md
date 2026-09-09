@@ -12,7 +12,10 @@ This standalone FastAPI microservice provides automatic speech recognition (ASR)
 - `lang`: optional language code, for example `de`, `en`, or `ar`
 
 ```bash
-curl -F "file=@sample.wav" -F "lang=de" http://localhost:8001/transcribe
+# Since #221 the service is not published on the host; inside the compose
+# network it listens on asr:8000.
+docker compose exec api_gateway \
+  curl -F "file=@examples/audio/sample.wav" -F "lang=de" http://asr:8000/transcribe
 ```
 
 ### Output

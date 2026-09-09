@@ -23,8 +23,8 @@ services:
     restart: unless-stopped
     pull_policy: never
   asr:
-    ports:
-    - 8001:8000
+    expose:
+    - '8000'
     volumes:
     - ../../models:/models
     deploy:
@@ -39,8 +39,8 @@ services:
     restart: unless-stopped
     pull_policy: never
   translation:
-    ports:
-    - 8002:8000
+    expose:
+    - '8000'
     volumes:
     - ../../models:/models
     deploy:
@@ -55,8 +55,8 @@ services:
     restart: unless-stopped
     pull_policy: never
   tts:
-    ports:
-    - 8003:8000
+    expose:
+    - '8000'
     volumes:
     - ../../models:/models
     deploy:

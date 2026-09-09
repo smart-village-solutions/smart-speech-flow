@@ -100,38 +100,74 @@ Der aktuelle Haupt-Workflow fuer Admin/Customer-Kommunikation ist sessionbasiert
       ┌────▼────┐    ┌─────▼─────┐   ┌────▼────┐   ┌────▼────┐
       │   ASR   │    │Translation│   │   TTS   │   │ Ollama  │
       │(Whisper)│    │  (M2M100) │   │(Coqui)  │   │(Refiner)│
-      │Port:8001│    │ Port:8002 │   │Port:8003│   │Port:11434│
+      │Port:8000│    │ Port:8000 │   │Port:8000│   │Port:11434│
       └─────────┘    └───────────┘   └─────────┘   └─────────┘
 ```
 
+> **Hinweis zur Erreichbarkeit (#221):** ASR, Translation und TTS lauschen
+> containerintern auf Port 8000 und werden **nicht** mehr auf dem Host
+> veröffentlicht. Im Compose-Netz erreicht man sie als `http://asr:8000`,
+> `http://translation:8000` und `http://tts:8000`; vom Host aus nur über
+> `docker compose exec` oder einen SSH-Tunnel, der die Docker-Bridge und
+> `localhost` gleichzeitig bindet (die Bridge bedient die socat-Container,
+> `localhost` den nativen Gateway-Workflow):
+>
+> Der Tunnel muss auf die Container zeigen, nicht auf die Host-Ports des
+> GPU-Servers -- die schliesst genau diese Aenderung. Gleicher Weg wie beim
+> `ollama`-Tunnel: Container-Adressen auf dem GPU-Server auslesen, dann auf
+> Port 8000 weiterleiten.
+>
+> ```bash
+> # 1. Container-Adressen (aendern sich bei jedem Recreate)
+> ssh <user>@<gpu-host> \
+>   'for s in asr translation tts; do sudo docker inspect \
+>      -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" \
+>      $(sudo docker ps -qf name=$s | head -1); done'
+>
+> # 2. Auf diese Adressen weiterleiten, Port 8000; gebunden an Docker-Bridge
+> #    (fuer die socat-Container) und loopback (fuer das native Gateway)
+> ssh -N \
+>   -L 172.17.0.1:8001:<asr-ip>:8000 -L 127.0.0.1:8001:<asr-ip>:8000 \
+>   -L 172.17.0.1:8002:<translation-ip>:8000 -L 127.0.0.1:8002:<translation-ip>:8000 \
+>   -L 172.17.0.1:8003:<tts-ip>:8000 -L 127.0.0.1:8003:<tts-ip>:8000 \
+>   <user>@<gpu-host>
+> ```
+>
+> `<gpu-host>` ist der GPU-Server mit den Modell-Containern; die Adresse steht
+> in der Deployment-Dokumentation, nicht in diesem Repository.
+>
+> Beispiele, die die Container über `localhost:8001-8003` ansprechen,
+> funktionieren nicht mehr.
+
 ### 1. ASR Service (Speech-to-Text)
-- **Port:** 8001
+- **Port:** 8000, nur im Compose-Netz (`http://asr:8000`)
 - **Funktion:** Automatische Spracherkennung für verschiedene Sprachen und Audioformate
 - **Modell:** OpenAI Whisper large-v3-turbo (lokal geladen)
 - **Endpunkte:** `/transcribe` (POST), `/health` (GET), `/metrics` (GET), `/supported-languages` (GET)
 - **Beispiel:**
    ```bash
-   curl -F "file=@sample.wav" http://localhost:8001/transcribe
+   docker compose exec api_gateway \
+          curl -F "file=@examples/audio/sample.wav" http://asr:8000/transcribe
    ```
 
 ### 2. Translation Service
-- **Port:** 8002
+- **Port:** 8000, nur im Compose-Netz (`http://translation:8000`)
 - **Funktion:** KI-basierte Übersetzung mit Facebooks m2m100_1.2B-Modell
 - **Endpunkte:** `/translate` (POST), `/languages` (GET), `/health` (GET), `/metrics` (GET)
 - **Beispiel:**
    ```bash
-   curl -X POST http://localhost:8002/translate \
+   docker compose exec api_gateway curl -X POST http://translation:8000/translate \
           -H "Content-Type: application/json" \
           -d '{"text": "Hallo Welt", "source_lang": "de", "target_lang": "en"}'
    ```
 
 ### 3. TTS Service (Text-to-Speech)
-- **Port:** 8003
+- **Port:** 8000, nur im Compose-Netz (`http://tts:8000`)
 - **Funktion:** Sprachsynthese für viele Sprachen mit Coqui-TTS und HuggingFace MMS-TTS
 - **Endpunkte:** `/synthesize` (POST), `/health` (GET), `/metrics` (GET), `/supported-languages` (GET)
 - **Beispiel:**
    ```bash
-   curl -X POST http://localhost:8003/synthesize \
+   docker compose exec api_gateway curl -X POST http://tts:8000/synthesize \
           -H "Content-Type: application/json" \
           -d '{"text": "Hello world", "lang": "en"}' --output out.wav
    ```
@@ -234,7 +270,8 @@ pip install -r requirements-dev.txt
 # Run tests
 pytest
 
-# Start individual services
+# Einzelne Services direkt auf dem Host starten (ohne Container; die Container
+# selbst veröffentlichen diese Ports seit #221 nicht mehr)
 uvicorn services/asr/app:app --port 8001 --reload
 uvicorn services/translation/app:app --port 8002 --reload
 uvicorn services/tts/app:app --port 8003 --reload
@@ -448,10 +485,10 @@ Eine ausführliche Dokumentation zu den in den Services verwendeten KI-Modellen,
 # Alle Services prüfen
 curl http://localhost:8000/health
 
-# Einzelne Services
-curl http://localhost:8001/health  # ASR
-curl http://localhost:8002/health  # Translation
-curl http://localhost:8003/health  # TTS
+# Einzelne Modell-Dienste (nur im Compose-Netz erreichbar, siehe #221)
+docker compose exec api_gateway curl http://asr:8000/health          # ASR
+docker compose exec api_gateway curl http://translation:8000/health  # Translation
+docker compose exec api_gateway curl http://tts:8000/health          # TTS
 ```
 
 ## 🐛 Troubleshooting

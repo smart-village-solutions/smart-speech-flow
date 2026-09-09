@@ -23,20 +23,20 @@ from services.api_gateway.websocket_monitor import (
 
 
 @pytest.mark.asyncio
-async def test_fallback_activation_queues_messages_and_suggests_recovery(monkeypatch):
+async def test_fallback_activation_queues_messages_and_suggests_recovery():
     """Polling clients receive queued messages and due recovery instructions."""
     manager = WebSocketFallbackManager(
         FallbackConfig(enable_jitter=False, enable_user_notifications=False)
     )
-    monkeypatch.setattr("services.api_gateway.websocket_fallback.time.time", lambda: 42)
-
     polling_id = await manager.activate_polling_fallback(
         "session-1",
         "admin",
         "https://console.example",
         FallbackReason.NETWORK_ERROR,
     )
-    assert polling_id == "poll_session-1_admin_42"
+    # The id ends in a random suffix, not a timestamp: two activations for one
+    # session and client type inside a second used to collide and drop a queue.
+    assert polling_id.startswith("poll_session-1_admin_")
     assert manager.send_message_to_polling_client(polling_id, {"type": "transcript"})
 
     client = manager.polling_clients[polling_id]

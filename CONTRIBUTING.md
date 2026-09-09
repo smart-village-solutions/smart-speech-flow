@@ -310,7 +310,24 @@ ssf-backend/
 # Start services in development mode
 docker compose up
 
-# Run specific service locally (for debugging)
+# Run specific service locally (for debugging). This binds a host port for a
+# process you started yourself; the asr, translation and tts containers do not
+# publish 8001-8003 any more (#221) and are reachable only inside the compose
+# network, as http://asr:8000 and so on:
+#   docker compose exec api_gateway curl http://asr:8000/health
+# For direct access from the host, use an SSH tunnel that binds both the
+# Docker bridge (serving the socat containers) and loopback (serving the
+# native-gateway workflow):
+# The tunnel targets the containers on port 8000, not the GPU host's own
+# 8001-8003 -- those are what #221 closed. Read the container addresses first
+# (sudo docker inspect on the GPU host), the way the ollama tunnel does:
+#   ssh -N \
+#     -L 172.17.0.1:8001:<asr-ip>:8000 -L 127.0.0.1:8001:<asr-ip>:8000 \
+#     -L 172.17.0.1:8002:<translation-ip>:8000 -L 127.0.0.1:8002:<translation-ip>:8000 \
+#     -L 172.17.0.1:8003:<tts-ip>:8000 -L 127.0.0.1:8003:<tts-ip>:8000 \
+#     <user>@<gpu-host>
+# <gpu-host> is the GPU server running the model containers; its address comes
+# from the deployment inventory, not from this repository.
 source .venv/bin/activate
 uvicorn services/asr/app:app --port 8001 --reload
 

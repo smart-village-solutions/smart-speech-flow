@@ -1188,10 +1188,13 @@ def test_websocket_fallback_classifies_failures_and_limits_queue():
     manager.polling_clients[polling_id] = client
     manager.session_polling_clients["session-1"].add(polling_id)
 
+    # Overflow now returns False instead of silently dropping the oldest
+    # queued message, so sends past the 100-message bound must fail.
     for index in range(105):
-        assert manager.send_message_to_polling_client(
+        sent = manager.send_message_to_polling_client(
             polling_id, {"type": "msg", "index": index}
         )
+        assert sent is (index < 100)
 
     assert len(manager.polling_clients[polling_id].message_queue) == 100
     session_status = manager.get_session_fallback_status("session-1")
