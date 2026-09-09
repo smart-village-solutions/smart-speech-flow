@@ -95,7 +95,7 @@ async def validate_websocket_origin(origin: Optional[str]) -> bool:
 
     # ✅ FIX: Korrektes Regex-Pattern (* → .*)
     production_pattern = r"https://.*\.figma\.site|https://.*\.smart-village\.solutions"
-    return bool(re.match(production_pattern, origin))
+    return bool(re.fullmatch(production_pattern, origin))
 
 
 # RFC 6455 close codes, mapped onto the wire reasons DisconnectReason.from_wire

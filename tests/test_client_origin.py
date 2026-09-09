@@ -59,6 +59,8 @@ async def test_production_http_and_websocket_use_exact_configured_origin(monkeyp
         ("https://translate.smart-village.solutions", True),
         ("https://evil.dialog.kassel.de", False),
         ("https://dialog.kassel.de.evil.invalid", False),
+        ("https://translate.smart-village.solutions.evil.invalid", False),
+        ("https://example.figma.site.evil.invalid", False),
         ("https://dialog.kassel.de:8443", False),
         ("http://dialog.kassel.de", False),
     ]:
@@ -82,3 +84,13 @@ async def test_unconfigured_origin_keeps_existing_production_defaults(monkeypatc
     assert not await validate_websocket_origin("https://dialog.kassel.de")
     assert cors.is_allowed_origin("https://translate.smart-village.solutions")
     assert await validate_websocket_origin("https://translate.smart-village.solutions")
+
+
+@pytest.mark.asyncio
+async def test_existing_websocket_subdomain_policy_is_preserved(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.delenv("CLIENT_BASE_URL", raising=False)
+    assert await validate_websocket_origin("https://existing.smart-village.solutions")
+    assert not await validate_websocket_origin(
+        "https://existing.smart-village.solutions.evil.invalid"
+    )
