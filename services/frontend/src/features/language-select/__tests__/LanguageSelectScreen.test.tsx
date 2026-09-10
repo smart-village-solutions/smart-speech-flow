@@ -19,7 +19,7 @@ function tree() {
 const route = '/s/A1B2C3D4/language';
 
 describe('LanguageSelectScreen', () => {
-  it('offsets its content by the shared header height', () => {
+  it('positions content below the header with the shared content offset', () => {
     renderWithProviders(tree(), { route });
 
     expect(

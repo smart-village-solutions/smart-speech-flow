@@ -37,7 +37,7 @@ function SessionLanguage({ observed }: Readonly<{ observed: (string | null)[] }>
 const route = '/s/A1B2C3D4/info/en';
 
 describe('ConsentScreen', () => {
-  it('offsets its content by the shared header height', () => {
+  it('positions content below the header with the shared content offset', () => {
     renderWithProviders(tree(), { route });
 
     expect(
