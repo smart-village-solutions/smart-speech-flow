@@ -1,10 +1,26 @@
 <!doctype html>
-<html lang="de" class="dark">
+<html lang="de">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Smart Speech Flow</title>
+    <script>
+      (() => {
+        try {
+          const savedTheme = localStorage.getItem('ssf-theme');
+          const theme =
+            savedTheme === 'dark' || savedTheme === 'light'
+              ? savedTheme
+              : window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light';
+          document.documentElement.classList.toggle('dark', theme === 'dark');
+        } catch {
+          // Keep the light default if browser preferences or storage are unavailable.
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
