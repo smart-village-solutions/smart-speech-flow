@@ -90,7 +90,7 @@ services:
     environment:
     - REDIS_URL=redis://redis:6379/0
     - REDIS_NAMESPACE=ssf
-    - CLIENT_BASE_URL=https://translate.smart-village.solutions
+    - CLIENT_BASE_URL=https://dialog.kassel.de
     - AUDIO_STORAGE_PATH=/data/audio
     - AUDIO_RETENTION_HOURS=24
     - AUDIO_TEMP_PATH=/tmp/audio
@@ -269,7 +269,7 @@ services:
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?required}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME:?required}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:?required}
-      KC_HOSTNAME: https://auth.kassel.smartspeechflow.de
+      KC_HOSTNAME: https://auth.dialog.kassel.de
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: 'true'
       KC_HEALTH_ENABLED: 'true'
@@ -287,7 +287,7 @@ services:
       start_period: 60s
     labels:
     - traefik.enable=true
-    - traefik.http.routers.keycloak.rule=Host(`auth.kassel.smartspeechflow.de`)
+    - traefik.http.routers.keycloak.rule=Host(`auth.dialog.kassel.de`)
     - traefik.http.routers.keycloak.entrypoints=websecure
     - traefik.http.routers.keycloak.tls.certresolver=le
     - traefik.http.services.keycloak.loadbalancer.server.port=8080
@@ -308,7 +308,7 @@ services:
     - default
     labels:
     - traefik.enable=true
-    - traefik.http.routers.frontend.rule=Host(`translate.smart-village.solutions`)
+    - traefik.http.routers.frontend.rule=Host(`dialog.kassel.de`)
     - traefik.http.routers.frontend.entrypoints=websecure
     - traefik.http.routers.frontend.tls.certresolver=le
     - traefik.http.services.frontend.loadbalancer.server.port=8080

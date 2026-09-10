@@ -100,6 +100,28 @@ def test_production_gateway_uses_studio_backed_multi_realm_configuration():
     assert "KEYCLOAK_ISSUER" not in environment
 
 
+def test_production_routes_match_the_trusted_frontend_and_keycloak_origins():
+    services = load_production_compose()["services"]
+    gateway_environment = _environment_by_name(services["api_gateway"])
+    keycloak = services["keycloak"]
+
+    assert gateway_environment["CLIENT_BASE_URL"] == "https://dialog.kassel.de"
+    assert gateway_environment["KEYCLOAK_BASE_URL"] == (
+        "${KEYCLOAK_BASE_URL:-https://auth.dialog.kassel.de}"
+    )
+    assert keycloak["environment"]["KC_HOSTNAME"] == (
+        "https://auth.dialog.kassel.de"
+    )
+    assert (
+        "traefik.http.routers.keycloak.rule=Host(`auth.dialog.kassel.de`)"
+        in keycloak["labels"]
+    )
+    assert (
+        "traefik.http.routers.frontend.rule=Host(`dialog.kassel.de`)"
+        in services["frontend"]["labels"]
+    )
+
+
 def test_production_example_documents_tenant_login_configuration_without_secrets():
     environment = _load_env_example()
 
