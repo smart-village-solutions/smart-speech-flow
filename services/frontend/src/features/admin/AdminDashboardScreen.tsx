@@ -40,7 +40,7 @@ export function AdminDashboardScreen({
         onSignOut={onSignOut}
       />
 
-      <div className="flex flex-col gap-6 px-5 pb-16 pt-24">
+      <div className="flex flex-col gap-6 px-5 pb-16 pt-content-top">
         <div className="flex gap-4">
           <div className="basis-2/3 rounded-2xl border border-border-card bg-surface-card p-5">
             <p className="mb-1.5 text-thanks font-semibold text-fg-strong">

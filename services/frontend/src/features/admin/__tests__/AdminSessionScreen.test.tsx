@@ -54,6 +54,16 @@ const renderScreen = (onLeave = vi.fn()) => {
 };
 
 describe('AdminSessionScreen', () => {
+  it('starts the chat stack below the shared header', async () => {
+    arabicSession();
+    renderScreen();
+
+    expect(await screen.findByText('A1B2C3D4'));
+    expect(document.querySelector('[data-chat-stack=""]')).toHaveStyle({
+      top: 'var(--spacing-content-top)',
+    });
+  });
+
   it('carries the admin header and the account menu', async () => {
     arabicSession();
     renderScreen();

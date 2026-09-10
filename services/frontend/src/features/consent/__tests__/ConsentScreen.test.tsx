@@ -37,6 +37,15 @@ function SessionLanguage({ observed }: Readonly<{ observed: (string | null)[] }>
 const route = '/s/A1B2C3D4/info/en';
 
 describe('ConsentScreen', () => {
+  it('offsets its content by the shared header height', () => {
+    renderWithProviders(tree(), { route });
+
+    expect(
+      screen.getByText(/Smart Speech Flow is an automatic real-time/).parentElement?.parentElement
+        ?.parentElement
+    ).toHaveClass('pt-content-top');
+  });
+
   it('shows the chosen language flag', async () => {
     renderWithProviders(tree(), { route });
 
