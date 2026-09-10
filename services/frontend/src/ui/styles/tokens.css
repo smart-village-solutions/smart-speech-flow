@@ -63,6 +63,7 @@
 
   /* ── Named sizes ── */
   --spacing-header: 180px;
+  --spacing-content-top: calc(var(--spacing-header) + 24px);
   --spacing-code-w: 46px;
   --spacing-code-h: 48px;
   --spacing-flag-lg: 72px;

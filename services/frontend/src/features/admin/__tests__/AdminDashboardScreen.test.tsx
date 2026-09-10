@@ -7,6 +7,13 @@ import { AdminDashboardScreen } from '@/features/admin/AdminDashboardScreen';
 const noop = () => undefined;
 
 describe('AdminDashboardScreen', () => {
+  it('positions the dashboard below the header with the shared content offset', async () => {
+    renderWithProviders(<AdminDashboardScreen onEnterSession={noop} onSignOut={noop} />);
+
+    expect((await screen.findByText('Willkommen bei Smart Speech Flow')).closest('div[class*="pt-"]'))
+      .toHaveClass('pt-content-top');
+  });
+
   it('welcomes the SSF tenant', async () => {
     renderWithProviders(<AdminDashboardScreen onEnterSession={noop} onSignOut={noop} />, {
       brand: 'ssf',

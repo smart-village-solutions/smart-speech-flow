@@ -19,6 +19,14 @@ function tree() {
 const route = '/s/A1B2C3D4/language';
 
 describe('LanguageSelectScreen', () => {
+  it('positions content below the header with the shared content offset', () => {
+    renderWithProviders(tree(), { route });
+
+    expect(
+      screen.getByRole('heading', { name: 'Choose your language' }).parentElement?.parentElement
+    ).toHaveClass('pt-content-top');
+  });
+
   it('lists the gateway languages without the admin default', async () => {
     renderWithProviders(tree(), { route });
 

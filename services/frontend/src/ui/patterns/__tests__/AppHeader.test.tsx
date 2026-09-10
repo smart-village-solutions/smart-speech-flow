@@ -41,7 +41,7 @@ describe('AppHeader', () => {
     expect(logo).toHaveClass('w-full');
 
     const header = screen.getByRole('banner');
-    expect(header).toHaveClass('bg-white');
-    expect(header.firstElementChild).toHaveClass('h-[180px]');
+    expect(header).toHaveClass('bg-white', 'shadow-[0_2px_6px_rgba(0,0,0,0.08)]');
+    expect(header.firstElementChild).toHaveClass('h-[180px]', 'content-start');
   });
 });

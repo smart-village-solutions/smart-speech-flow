@@ -69,6 +69,16 @@ const peerAudioEvent = {
 };
 
 describe('ConversationScreen', () => {
+  it('starts the customer chat stack below the shared header', async () => {
+    renderWithProviders(tree(), { route });
+
+    await screen.findByRole('button', { name: 'Record' });
+
+    expect(document.querySelector('[data-chat-stack=""]')).toHaveStyle({
+      top: 'var(--spacing-content-top)',
+    });
+  });
+
   it('does not open a browser WebSocket when the test does not provide realtime', async () => {
     const socket = vi.spyOn(globalThis, 'WebSocket');
 
