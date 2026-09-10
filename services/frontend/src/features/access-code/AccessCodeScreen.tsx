@@ -107,6 +107,21 @@ export function AccessCodeScreen() {
           </Link>
         </div>
       </div>
+
+      <footer className="mt-auto w-full self-stretch bg-white">
+        <div className="grid w-full grid-cols-2 items-center gap-x-4 px-5 py-6 sm:gap-x-12 sm:px-8 lg:gap-x-28 lg:px-12">
+          <img
+            src="/assets/Foerdermittelgeber.png"
+            alt="Fördermittelgeber"
+            className="h-auto w-full max-w-[389px] justify-self-start"
+          />
+          <img
+            src="/assets/Stadt.png"
+            alt="Stadt Kassel"
+            className="h-auto w-full max-w-[388px] justify-self-end"
+          />
+        </div>
+      </footer>
     </ScreenShell>
   );
 }

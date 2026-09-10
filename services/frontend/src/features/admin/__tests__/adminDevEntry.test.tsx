@@ -63,15 +63,14 @@ describe('the admin entry', () => {
     expect(await screen.findByText('404')).toBeInTheDocument();
   });
 
-  it('keeps the legacy admin page reachable at /legacy/admin', async () => {
-    sessionStorage.setItem('authenticated', 'true');
+  it('does not serve the removed legacy admin route', async () => {
     renderWithProviders(<AppRoutes />, {
       route: '/legacy/admin',
       locale: 'de',
       services,
     });
 
-    expect(await screen.findByText('Admin - Session Verwaltung')).toBeInTheDocument();
+    expect(await screen.findByText('404')).toBeInTheDocument();
   });
 
   // The export has one `goHome` for every screen and it returns to the OTP

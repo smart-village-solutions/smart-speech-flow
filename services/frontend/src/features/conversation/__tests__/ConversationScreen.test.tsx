@@ -69,6 +69,16 @@ const peerAudioEvent = {
 };
 
 describe('ConversationScreen', () => {
+  it('does not open a browser WebSocket when the test does not provide realtime', async () => {
+    const socket = vi.spyOn(globalThis, 'WebSocket');
+
+    renderWithProviders(tree(), { route });
+
+    await screen.findByRole('button', { name: 'Record' });
+
+    expect(socket).not.toHaveBeenCalled();
+  });
+
   it('offers the record and keyboard controls', async () => {
     renderWithProviders(tree(), { route });
 

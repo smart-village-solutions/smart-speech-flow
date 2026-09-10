@@ -92,7 +92,9 @@ export function AdminUserMenu({ onSignOut }: Readonly<AdminUserMenuProps>) {
       <IconButton
         label={t('admin.menu.open')}
         onClick={() => (open ? close() : setOpen(true))}
-        className={open ? 'bg-surface-icon-hover text-fg-strong' : undefined}
+        className={
+          open ? 'bg-black/8 !text-black' : 'text-black/50 hover:bg-black/8 hover:text-black'
+        }
       >
         <User size={16} strokeWidth={2} />
       </IconButton>

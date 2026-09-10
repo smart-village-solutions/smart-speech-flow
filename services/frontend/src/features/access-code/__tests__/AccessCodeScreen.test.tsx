@@ -58,4 +58,16 @@ describe('AccessCodeScreen', () => {
     renderWithProviders(tree());
     expect(screen.getByRole('link', { name: 'Admin-Login' })).toHaveAttribute('href', '/admin');
   });
+
+  it('keeps both funding logos side by side in the start-page footer', () => {
+    renderWithProviders(tree());
+
+    const funding = screen.getByRole('img', { name: 'Fördermittelgeber' });
+    const city = screen.getByRole('img', { name: 'Stadt Kassel' });
+
+    expect(funding).toHaveAttribute('src', '/assets/Foerdermittelgeber.png');
+    expect(city).toHaveAttribute('src', '/assets/Stadt.png');
+    expect(funding.parentElement).toBe(city.parentElement);
+    expect(funding.parentElement).toHaveClass('grid-cols-2');
+  });
 });

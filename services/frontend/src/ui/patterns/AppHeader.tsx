@@ -2,9 +2,7 @@ import type { ReactNode } from 'react';
 import { ArrowLeft, Home, Lightbulb, Moon, Sun } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { IconButton } from '@/ui/primitives/IconButton';
-import { useBrand } from '@/app/providers/brand';
 import { useTheme } from '@/app/providers/theme';
-import { BrandLogo } from './BrandLogo';
 
 interface AppHeaderProps {
   onBack: () => void;
@@ -17,7 +15,6 @@ interface AppHeaderProps {
 export function AppHeader({ onBack, onHome, onFeedback, trailing }: Readonly<AppHeaderProps>) {
   const { t } = useTranslation();
   const { theme, toggleTheme } = useTheme();
-  const { brand, toggleBrand } = useBrand();
 
   return (
     // z-20, above the z-10 the status overlays use. `fixed` with a z-index makes
@@ -25,41 +22,50 @@ export function AppHeader({ onBack, onHome, onFeedback, trailing }: Readonly<App
     // header and cannot lift it over a sibling: at an equal z-10 the overlay won
     // on document order alone, and painted straight over the open menu. The
     // header's z is therefore what decides it, not the menu's.
-    <header className="fixed inset-x-0 top-0 z-20 border-b border-border-header bg-surface-page">
-      <div className="mx-auto flex h-header max-w-app items-center px-5">
-        <div className="flex shrink-0 items-center gap-6">
+    <header className="fixed inset-x-0 top-0 z-20 border-b border-black/10 bg-white">
+      <div className="mx-auto flex h-[180px] max-w-app flex-wrap items-center px-5 md:flex-nowrap">
+        <div className="order-2 flex flex-1 items-center gap-6 md:order-1 md:flex-none">
           <button
             type="button"
             onClick={onBack}
             aria-label={t('header.back')}
-            className="flex items-center gap-1.5 text-fg-consent transition-colors duration-150 hover:text-fg-strong"
+            className="flex items-center gap-1.5 text-black/60 transition-colors duration-150 hover:text-black"
           >
             <ArrowLeft size={17} strokeWidth={2.5} className="rtl:-scale-x-100" />
             <span className="text-note font-medium tracking-back">{t('header.back')}</span>
           </button>
 
-          <IconButton label={t('header.home')} onClick={onHome}>
+          <IconButton
+            label={t('header.home')}
+            onClick={onHome}
+            className="text-black/50 hover:bg-black/8 hover:text-black"
+          >
             <Home size={17} strokeWidth={2} />
           </IconButton>
         </div>
 
-        <div className="flex flex-1 justify-center">
-          <button
-            type="button"
-            onClick={toggleBrand}
-            aria-label={t('header.brand')}
-            className="flex h-header items-center justify-center text-fg-strong transition-opacity hover:opacity-80 active:opacity-60"
-          >
-            <BrandLogo className={brand === 'ssf' ? 'scale-[0.55]' : undefined} />
-          </button>
+        <div className="order-1 flex h-[108px] w-full flex-none justify-center md:order-2 md:h-full md:flex-1">
+          <img
+            src="/assets/Logo.png"
+            alt="Smart Speech Flow"
+            className="h-full w-full object-contain"
+          />
         </div>
 
-        <div className="flex items-center gap-6">
-          <IconButton label={t('header.feedback')} onClick={onFeedback}>
+        <div className="order-3 flex flex-1 items-center justify-end gap-6 md:flex-none">
+          <IconButton
+            label={t('header.feedback')}
+            onClick={onFeedback}
+            className="text-black/50 hover:bg-black/8 hover:text-black"
+          >
             <Lightbulb size={18} strokeWidth={2} />
           </IconButton>
 
-          <IconButton label={t('header.theme')} onClick={toggleTheme}>
+          <IconButton
+            label={t('header.theme')}
+            onClick={toggleTheme}
+            className="text-black/50 hover:bg-black/8 hover:text-black"
+          >
             {theme === 'dark' ? (
               <Sun size={18} strokeWidth={2} />
             ) : (

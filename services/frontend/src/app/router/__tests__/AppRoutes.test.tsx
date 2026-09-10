@@ -1,5 +1,4 @@
 import { screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { AppRoutes } from '@/app/router/AppRoutes';
@@ -15,27 +14,16 @@ describe('AppRoutes', () => {
     expect(await screen.findByRole('heading', { name: 'Code eingeben' })).toBeInTheDocument();
   });
 
-  it('keeps the legacy landing page reachable at /legacy', async () => {
+  it('renders the not-found page for the removed legacy landing route', async () => {
     renderWithProviders(<AppRoutes />, { route: '/legacy' });
 
-    expect(await screen.findByPlaceholderText('Passwort')).toBeInTheDocument();
+    expect(await screen.findByText(/404/)).toBeInTheDocument();
   });
 
-  it('sends an unauthenticated /legacy/admin visit to the password gate', async () => {
+  it('renders the not-found page for the removed legacy admin route', async () => {
     renderWithProviders(<AppRoutes />, { route: '/legacy/admin' });
 
-    expect(await screen.findByPlaceholderText('Passwort')).toBeInTheDocument();
-  });
-
-  it('lands on the legacy admin page once the password gate accepts the password', async () => {
-    renderWithProviders(<AppRoutes />, { route: '/legacy/admin' });
-
-    await userEvent.type(await screen.findByPlaceholderText('Passwort'), 'ssf2025kassel');
-    await userEvent.click(screen.getByRole('button', { name: 'Anmelden' }));
-
-    expect(
-      await screen.findByRole('heading', { name: 'Admin - Session Verwaltung' })
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/404/)).toBeInTheDocument();
   });
 
   it('renders the not-found page for an unknown path', async () => {

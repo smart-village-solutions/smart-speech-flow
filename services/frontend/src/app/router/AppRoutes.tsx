@@ -6,8 +6,6 @@ import { LanguageSelectScreen } from '@/features/language-select/LanguageSelectS
 import { ConsentScreen } from '@/features/consent/ConsentScreen';
 import { ConversationScreen } from '@/features/conversation/ConversationScreen';
 import { SessionProvider } from '@/contexts/SessionContext';
-import LandingPage from '@/pages/LandingPage';
-import AdminPage from '@/pages/AdminPage';
 import CustomerPage from '@/pages/CustomerPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -89,20 +87,6 @@ export function AppRoutes() {
       <Route path="/login" element={<LoginEntry />} />
       <Route path="/admin" element={<LegacyAdminEntry />} />
 
-      {/* Legacy surfaces, unstyled, kept reachable rather than deleted.
-          SessionProvider is mounted per route rather than at the root: only
-          these two pages consume it. */}
-      <Route path="/legacy" element={<LandingPage />} />
-      <Route
-        path="/legacy/admin"
-        element={
-          <ProtectedRoute>
-            <SessionProvider>
-              <AdminPage />
-            </SessionProvider>
-          </ProtectedRoute>
-        }
-      />
       <Route
         path="/customer"
         element={

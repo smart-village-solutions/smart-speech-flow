@@ -11,14 +11,14 @@ function setup() {
 }
 
 describe('AppHeader', () => {
-  it('exposes back, home, feedback, theme and brand controls', () => {
+  it('exposes back, home, feedback and theme controls', () => {
     setup();
 
     expect(screen.getByRole('button', { name: /^back$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /home/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^feedback$/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /theme/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /brand/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /brand/i })).not.toBeInTheDocument();
   });
 
   it('calls each handler', async () => {
@@ -33,13 +33,15 @@ describe('AppHeader', () => {
     expect(handlers.onFeedback).toHaveBeenCalledOnce();
   });
 
-  it('switches the brand logo when the brand control is used', async () => {
+  it('renders the fixed logo in a white 180px header', () => {
     setup();
 
-    expect(screen.getByRole('img', { name: 'Smart Speech Flow' })).toBeInTheDocument();
+    const logo = screen.getByRole('img', { name: 'Smart Speech Flow' });
+    expect(logo).toHaveAttribute('src', '/assets/Logo.png');
+    expect(logo).toHaveClass('w-full');
 
-    await userEvent.click(screen.getByRole('button', { name: /brand/i }));
-
-    expect(screen.getByRole('img', { name: 'Kassel Dialog' })).toBeInTheDocument();
+    const header = screen.getByRole('banner');
+    expect(header).toHaveClass('bg-white');
+    expect(header.firstElementChild).toHaveClass('h-[180px]');
   });
 });

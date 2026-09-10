@@ -19,6 +19,7 @@ import type { AudioPlayerPort } from '@/core/audio/player.port';
 import type { ClipLoader } from '@/core/audio/clips';
 import { createFakeAudioPlayer } from './fakeAudioPlayer';
 import { createFakeClipLoader } from './fakeClipLoader';
+import { createFakeRealtimeTransport } from './fakeRealtimeTransport';
 
 interface Options {
   route?: string;
@@ -40,6 +41,7 @@ export function renderWithProviders(ui: ReactElement, options: Options = {}): Re
 
   const services: Services = {
     ...createServices(readConfig({}), () => locale),
+    createRealtime: createFakeRealtimeTransport,
     ...options.services,
   };
 

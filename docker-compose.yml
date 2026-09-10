@@ -345,12 +345,13 @@ services:
       args:
         VITE_API_BASE_URL: https://ssf.smart-village.solutions
         VITE_WS_BASE_URL: wss://ssf.smart-village.solutions
+        VITE_KEYCLOAK_URL: https://auth.dialog.kassel.de
         VITE_DEMO_ACCESS_CODE: ${FRONTEND_DEMO_PASSWORD:-ssf2025kassel}
     networks:
       - default
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`translate.smart-village.solutions`)"
+      - "traefik.http.routers.frontend.rule=Host(`dialog.kassel.de`) || Host(`translate.smart-village.solutions`)"
       - "traefik.http.routers.frontend.entrypoints=websecure"
       - "traefik.http.routers.frontend.tls.certresolver=le"
       - "traefik.http.services.frontend.loadbalancer.server.port=8080"
