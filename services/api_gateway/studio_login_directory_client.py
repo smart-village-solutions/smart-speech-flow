@@ -35,7 +35,9 @@ EXPECTED_ERROR_CODES = {
 class StudioLoginTenant(BaseModel):
     """One publicly displayable Studio tenant and its provisioned realm."""
 
-    model_config = ConfigDict(extra="allow", strict=True, populate_by_name=True)
+    model_config = ConfigDict(
+        extra="ignore", frozen=True, strict=True, populate_by_name=True
+    )
 
     id: str
     display_name: str = Field(alias="displayName", min_length=1, max_length=200)
@@ -59,11 +61,13 @@ class StudioLoginTenant(BaseModel):
 class StudioLoginDirectory(BaseModel):
     """The validated tenant-unbound Studio login directory."""
 
-    model_config = ConfigDict(extra="allow", strict=True, populate_by_name=True)
+    model_config = ConfigDict(
+        extra="ignore", frozen=True, strict=True, populate_by_name=True
+    )
 
     contract_version: str = Field(alias="contractVersion", pattern=r"^1[.]0$")
     directory_revision: str = Field(alias="directoryRevision")
-    tenants: list[StudioLoginTenant] = Field(max_length=10_000)
+    tenants: tuple[StudioLoginTenant, ...] = Field(max_length=10_000, strict=False)
 
     @field_validator("directory_revision")
     @classmethod

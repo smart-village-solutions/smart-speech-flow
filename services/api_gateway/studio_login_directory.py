@@ -51,6 +51,7 @@ class StudioLoginDirectoryService:
         self._directory: StudioLoginDirectory | None = None
         self._expires_at = 0.0
         self._lock = asyncio.Lock()
+        self._refresh_task: asyncio.Task[StudioLoginDirectory] | None = None
 
     async def get(self, correlation_id: str) -> StudioLoginDirectory:
         """Return a current directory, refreshing it once for concurrent callers."""
@@ -62,13 +63,27 @@ class StudioLoginDirectoryService:
             if self._is_current():
                 assert self._directory is not None
                 return self._directory
-            directory = await self._client.fetch(correlation_id)
-            self._directory = directory
-            self._expires_at = self._clock() + self._cache_seconds
-            return directory
+            refresh_task = self._refresh_task
+            if refresh_task is None or refresh_task.done():
+                refresh_task = asyncio.create_task(self._refresh(correlation_id))
+                self._refresh_task = refresh_task
+
+        try:
+            return await asyncio.shield(refresh_task)
+        finally:
+            if refresh_task.done():
+                async with self._lock:
+                    if self._refresh_task is refresh_task:
+                        self._refresh_task = None
 
     def _is_current(self) -> bool:
         return self._directory is not None and self._clock() < self._expires_at
+
+    async def _refresh(self, correlation_id: str) -> StudioLoginDirectory:
+        directory = await self._client.fetch(correlation_id)
+        self._directory = directory
+        self._expires_at = self._clock() + self._cache_seconds
+        return directory
 
 
 @lru_cache(maxsize=1)

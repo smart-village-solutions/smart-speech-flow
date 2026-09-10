@@ -93,7 +93,7 @@ async def test_accepts_an_empty_tenant_directory() -> None:
 
     directory = await directory_client.fetch("correlation-1")
 
-    assert directory.tenants == []
+    assert directory.tenants == ()
 
 
 @pytest.mark.asyncio

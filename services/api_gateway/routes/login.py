@@ -35,6 +35,20 @@ class LoginTenantDirectoryResponse(BaseModel):
     tenants: list[LoginTenantResponse]
 
 
+def _correlation_id(request: Request) -> str:
+    correlation_id = request.headers.get("X-Correlation-Id")
+    if not correlation_id:
+        return str(uuid4())
+    if len(correlation_id) > 128 or any(
+        ord(character) < 32 or ord(character) > 126 for character in correlation_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A valid X-Correlation-Id is required when supplied",
+        )
+    return correlation_id
+
+
 @router.get("/tenants", response_model=LoginTenantDirectoryResponse)
 async def list_login_tenants(
     request: Request,
@@ -44,7 +58,7 @@ async def list_login_tenants(
     ],
 ) -> LoginTenantDirectoryResponse:
     """Return only validated fields that are safe for an anonymous browser."""
-    correlation_id = request.headers.get("X-Correlation-Id") or str(uuid4())
+    correlation_id = _correlation_id(request)
     try:
         result = await directory.get(correlation_id)
     except (

@@ -94,6 +94,22 @@ def test_generates_a_correlation_id_when_the_header_is_absent() -> None:
     assert str(UUID(service.correlation_ids[0])) == service.correlation_ids[0]
 
 
+@pytest.mark.parametrize("correlation_id", ["x" * 129, "correlation-\x7f"])
+def test_rejects_a_malformed_correlation_id(correlation_id: str) -> None:
+    service = StubDirectoryService(directory(empty=True))
+
+    response = route_client(service).get(
+        "/api/login/tenants",
+        headers={"X-Correlation-Id": correlation_id},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "A valid X-Correlation-Id is required when supplied"
+    }
+    assert service.correlation_ids == []
+
+
 @pytest.mark.parametrize(
     "failure",
     [
