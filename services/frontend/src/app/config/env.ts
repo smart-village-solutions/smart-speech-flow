@@ -2,15 +2,29 @@ import { z } from 'zod';
 
 export type BrandId = 'ssf' | 'kassel';
 
+function isHttpOrigin(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === 'https:' || url.protocol === 'http:') &&
+      (value === url.origin || value === `${url.origin}/`)
+    );
+  } catch {
+    return false;
+  }
+}
+
 const envSchema = z.object({
   /** Empty in development: the Vite proxy forwards /api to the gateway. */
   VITE_API_BASE_URL: z.string().default(''),
   /** Empty means "derive from window.location". */
   VITE_WS_BASE_URL: z.string().default(''),
   VITE_BRAND: z.enum(['ssf', 'kassel']).default('ssf'),
-  VITE_KEYCLOAK_URL: z.string().url().default('https://auth.kassel.smartspeechflow.de'),
-  VITE_KEYCLOAK_REALM: z.string().min(1).default('ssf'),
-  VITE_KEYCLOAK_CLIENT_ID: z.string().min(1).default('ssf-frontend'),
+  VITE_KEYCLOAK_URL: z
+    .string()
+    .refine(isHttpOrigin, 'Expected an HTTP(S) origin')
+    .default('https://auth.kassel.smartspeechflow.de'),
+  VITE_KEYCLOAK_CLIENT_ID: z.string().trim().min(1).default('ssf-frontend'),
   VITE_APP_PASSWORD: z.string().default('ssf2025kassel'),
   /**
    * Temporary legacy `/admin` password. `z.string()` with a default, not a
@@ -31,7 +45,6 @@ export interface AppConfig {
   wsBaseUrl: string;
   brand: BrandId;
   keycloakUrl: string;
-  keycloakRealm: string;
   keycloakClientId: string;
   adminPassword: string;
   requestTimeoutMs: number;
@@ -56,8 +69,7 @@ export function readConfig(source: Record<string, unknown> = import.meta.env): A
     apiBaseUrl: env.VITE_API_BASE_URL,
     wsBaseUrl: env.VITE_WS_BASE_URL || defaultWsBaseUrl(),
     brand: env.VITE_BRAND,
-    keycloakUrl: env.VITE_KEYCLOAK_URL,
-    keycloakRealm: env.VITE_KEYCLOAK_REALM,
+    keycloakUrl: env.VITE_KEYCLOAK_URL.replace(/\/$/, ''),
     keycloakClientId: env.VITE_KEYCLOAK_CLIENT_ID,
     adminPassword: env.VITE_APP_PASSWORD,
     requestTimeoutMs: env.VITE_REQUEST_TIMEOUT_MS,

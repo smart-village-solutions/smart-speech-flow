@@ -1,13 +1,50 @@
 import { http, HttpResponse } from 'msw';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { server } from '@/test/setup';
 import { AppError } from '@/core/http/AppError';
 import { createHttpClient } from '@/core/http/client';
 import { readConfig } from '@/app/config/env';
+import { getAdminAccessToken } from '@/app/auth/keycloak';
+
+vi.mock('@/app/auth/keycloak', () => ({ getAdminAccessToken: vi.fn() }));
 
 const config = readConfig({ VITE_API_BASE_URL: 'http://api.test' });
 
 describe('createHttpClient', () => {
+  beforeEach(() => vi.mocked(getAdminAccessToken).mockReset().mockResolvedValue(null));
+
+  it.each([
+    ['tenant-token', 'Bearer tenant-token', null],
+    [null, null, 'ssf2025kassel'],
+  ])('selects only the permitted credential for token %s', async (token, bearer, legacy) => {
+    vi.mocked(getAdminAccessToken).mockResolvedValue(token);
+    let seen: Headers | undefined;
+    server.use(
+      http.get('http://api.test/api/admin/history', ({ request }) => {
+        seen = request.headers;
+        return HttpResponse.json([]);
+      })
+    );
+    await createHttpClient(config, () => 'en').get('/api/admin/history');
+    expect(seen?.get('Authorization')).toBe(bearer);
+    expect(seen?.get('X-SSF-Legacy-Access')).toBe(legacy);
+  });
+
+  it('keeps the directory anonymous even with an active Keycloak session', async () => {
+    vi.mocked(getAdminAccessToken).mockResolvedValue('tenant-token');
+    let seen: Headers | undefined;
+    server.use(
+      http.get('http://api.test/api/login/tenants', ({ request }) => {
+        seen = request.headers;
+        return HttpResponse.json({ tenants: [] });
+      })
+    );
+    await createHttpClient(config, () => 'en').get('/api/login/tenants');
+    expect(seen?.get('Authorization')).toBeNull();
+    expect(seen?.get('X-SSF-Legacy-Access')).toBeNull();
+    expect(getAdminAccessToken).not.toHaveBeenCalled();
+  });
+
   it('attaches a correlation id and the active locale to every request', async () => {
     let seen: Record<string, string> = {};
     server.use(
