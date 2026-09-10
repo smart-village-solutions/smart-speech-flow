@@ -289,7 +289,9 @@ services:
     build:
       context: ./services/keycloak
       dockerfile: Dockerfile
-    command: ["start", "--optimized"]
+    # The fixed realm is a local-development fixture only. Production realms
+    # are provisioned by Studio and are never imported by production Compose.
+    command: ["start", "--optimized", "--import-realm"]
     restart: always
     expose:
       - "8080"
@@ -305,6 +307,8 @@ services:
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./deploy/production/keycloak/ssf-realm.json:/opt/keycloak/data/import/ssf-realm.json:ro
     depends_on:
       keycloak-postgres:
         condition: service_healthy
@@ -346,6 +350,7 @@ services:
         VITE_API_BASE_URL: https://ssf.smart-village.solutions
         VITE_WS_BASE_URL: wss://ssf.smart-village.solutions
         VITE_KEYCLOAK_URL: https://auth.dialog.kassel.de
+        VITE_KEYCLOAK_CLIENT_ID: ssf-frontend
         VITE_DEMO_ACCESS_CODE: ${FRONTEND_DEMO_PASSWORD:-ssf2025kassel}
     networks:
       - default
