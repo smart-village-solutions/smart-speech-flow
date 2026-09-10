@@ -70,9 +70,9 @@ describe('AccessCodeScreen', () => {
     expect(screen.getAllByRole('textbox')[0]).toHaveValue('Z');
   });
 
-  it('offers the admin login link', () => {
+  it('offers the tenant login chooser link', () => {
     renderWithProviders(tree());
-    expect(screen.getByRole('link', { name: 'Admin-Login' })).toHaveAttribute('href', '/admin');
+    expect(screen.getByRole('link', { name: 'Login' })).toHaveAttribute('href', '/login');
   });
 
   it('keeps both funding logos side by side in the start-page footer', () => {

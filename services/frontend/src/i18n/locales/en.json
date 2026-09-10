@@ -96,6 +96,14 @@
       "invalidEmail": "Please enter a valid email address.",
       "invalidCredentials": "Invalid credentials."
     },
+    "tenantLogin": {
+      "title": "Login",
+      "instruction": "Please select your department or organisation from the list.",
+      "empty": "There are currently no organisations available.",
+      "unavailable": "The list of organisations is currently unavailable.",
+      "retry": "Try again",
+      "loading": "Loading organisations"
+    },
     "menu": {
       "open": "User account",
       "changePassword": "Change password",

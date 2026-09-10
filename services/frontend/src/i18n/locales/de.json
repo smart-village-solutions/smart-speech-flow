@@ -96,6 +96,14 @@
       "invalidEmail": "Bitte eine gültige E-Mail-Adresse eingeben.",
       "invalidCredentials": "Ungültige Anmeldedaten."
     },
+    "tenantLogin": {
+      "title": "Login",
+      "instruction": "Bitte wählen Sie Ihre Abteilung oder Organisation aus der Liste aus.",
+      "empty": "Derzeit sind keine Organisationen verfügbar.",
+      "unavailable": "Die Liste der Organisationen ist derzeit nicht verfügbar.",
+      "retry": "Erneut versuchen",
+      "loading": "Organisationen werden geladen"
+    },
     "menu": {
       "open": "Benutzerkonto",
       "changePassword": "Passwort ändern",
