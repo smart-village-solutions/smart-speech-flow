@@ -73,6 +73,8 @@ async def require_studio_tenant_context(
 
 
 def _request_has_tenant_selector(request: Request, body: object) -> bool:
+    if _has_selector_name(request.path_params.keys()):
+        return True
     if _has_selector_name(request.query_params.keys()):
         return True
     if _has_selector_name(request.cookies.keys()):
