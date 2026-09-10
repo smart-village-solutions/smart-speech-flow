@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import jwt
 import requests
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Depends, HTTPException, Request, status
 from jwt.algorithms import RSAAlgorithm
 from jwt.exceptions import InvalidKeyError, InvalidTokenError
@@ -124,11 +125,7 @@ async def require_ssf_user(
     legacy_enabled = os.environ.get("SSF_ENABLE_LEGACY_ADMIN_ACCESS", "false") == "true"
     legacy_code = os.environ.get("SSF_LEGACY_ADMIN_ACCESS_CODE", "")
     legacy_header = request.headers.get("X-SSF-Legacy-Access", "")
-    if (
-        legacy_enabled
-        and legacy_code
-        and hmac.compare_digest(legacy_header, legacy_code)
-    ):
+    if legacy_enabled and legacy_code and hmac.compare_digest(legacy_header, legacy_code):
         return {"sub": "legacy-admin", "auth_method": "legacy-transition"}
 
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
@@ -157,11 +154,7 @@ async def require_ssf_user(
         ) from None
 
     matched_tenant = next(
-        (
-            tenant
-            for tenant in directory.tenants
-            if settings.issuer_for(tenant.realm) == issuer
-        ),
+        (tenant for tenant in directory.tenants if settings.issuer_for(tenant.realm) == issuer),
         None,
     )
     if matched_tenant is None:
@@ -173,9 +166,12 @@ async def require_ssf_user(
             raise _unauthorized()
         keys = await run_in_threadpool(_key_cache.keys_for, issuer)
         signing_key = keys[header["kid"]]
+        public_key = RSAAlgorithm.from_jwk(json.dumps(signing_key))
+        if not isinstance(public_key, rsa.RSAPublicKey):
+            raise InvalidKeyError("OIDC signing key must be an RSA public key")
         claims = jwt.decode(
             token,
-            RSAAlgorithm.from_jwk(json.dumps(signing_key)),
+            public_key,
             algorithms=["RS256"],
             audience=settings.audience,
             issuer=issuer,

@@ -104,9 +104,7 @@ def test_rejects_a_malformed_correlation_id(correlation_id: str) -> None:
     )
 
     assert response.status_code == 400
-    assert response.json() == {
-        "detail": "A valid X-Correlation-Id is required when supplied"
-    }
+    assert response.json() == {"detail": "A valid X-Correlation-Id is required when supplied"}
     assert service.correlation_ids == []
 
 

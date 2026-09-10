@@ -66,7 +66,7 @@
 ## 4. Verification and documentation
 
 - [x] 4.1 Run frontend lint, type checks, and focused frontend tests.
-- [ ] 4.2 Run gateway formatting/type checks and focused authorization tests.
+- [x] 4.2 Run gateway formatting/type checks and focused authorization tests.
 - [ ] 4.3 Verify production-like login, logout, authorized and denied requests,
   cross-tenant isolation for at least two realms, and unchanged customer/QR-code
   flow.

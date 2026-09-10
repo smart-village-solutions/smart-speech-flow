@@ -16,10 +16,7 @@ from services.api_gateway.studio_login_directory_client import (
     StudioLoginDirectory,
     StudioLoginDirectoryClientError,
 )
-from services.api_gateway.tenant_context import (
-    StudioTenantContext,
-    require_studio_tenant_context,
-)
+from services.api_gateway.tenant_context import StudioTenantContext, require_studio_tenant_context
 
 client = TestClient(app)
 BASE_URL = "https://auth.example.test"
@@ -62,9 +59,7 @@ def auth_environment(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_REQUIRED_ROLE", "ssf-user")
     monkeypatch.setenv("SSF_ENABLE_LEGACY_ADMIN_ACCESS", "false")
     service = StudioLoginDirectoryService(DirectoryFetcher(), cache_seconds=60)
-    app.dependency_overrides[get_auth_login_directory_provider] = (
-        lambda: lambda: service
-    )
+    app.dependency_overrides[get_auth_login_directory_provider] = lambda: lambda: service
     yield service
     app.dependency_overrides.pop(get_auth_login_directory_provider, None)
     _key_cache.entries.clear()
@@ -145,9 +140,7 @@ def mock_keycloak(
 
 
 def request_with_token(token):
-    return client.get(
-        "/api/admin/session/history", headers={"Authorization": f"Bearer {token}"}
-    )
+    return client.get("/api/admin/session/history", headers={"Authorization": f"Bearer {token}"})
 
 
 def test_admin_endpoints_reject_requests_without_a_bearer_token():
@@ -161,13 +154,9 @@ def test_admin_endpoints_reject_requests_without_a_bearer_token():
         (FULDA_ISSUER, "tenant-fulda"),
     ],
 )
-def test_admin_endpoints_accept_each_allowlisted_realm(
-    monkeypatch, signing_key, issuer, tenant_id
-):
+def test_admin_endpoints_accept_each_allowlisted_realm(monkeypatch, signing_key, issuer, tenant_id):
     calls = mock_keycloak(monkeypatch, signing_key)
-    response = request_with_token(
-        access_token(signing_key, iss=issuer, studio_tenant_id=tenant_id)
-    )
+    response = request_with_token(access_token(signing_key, iss=issuer, studio_tenant_id=tenant_id))
     assert response.status_code == 200
     assert calls == [
         f"{issuer}/.well-known/openid-configuration",
@@ -211,9 +200,7 @@ def test_unadmitted_issuers_are_rejected_without_oidc_network_access(
         {"exp": None},
     ],
 )
-def test_signed_claims_must_be_valid_and_bound_to_the_realm(
-    monkeypatch, signing_key, overrides
-):
+def test_signed_claims_must_be_valid_and_bound_to_the_realm(monkeypatch, signing_key, overrides):
     mock_keycloak(monkeypatch, signing_key)
     assert request_with_token(access_token(signing_key, **overrides)).status_code == 401
 
@@ -229,16 +216,11 @@ def test_non_rsa_jwk_fails_closed(monkeypatch, signing_key):
     assert request_with_token(access_token(signing_key)).status_code == 401
 
 
-@pytest.mark.parametrize(
-    "realm_access", [{"roles": []}, None, [], {"roles": "ssf-user"}]
-)
+@pytest.mark.parametrize("realm_access", [{"roles": []}, None, [], {"roles": "ssf-user"}])
 def test_missing_or_malformed_role_is_rejected(monkeypatch, signing_key, realm_access):
     mock_keycloak(monkeypatch, signing_key)
     assert (
-        request_with_token(
-            access_token(signing_key, realm_access=realm_access)
-        ).status_code
-        == 403
+        request_with_token(access_token(signing_key, realm_access=realm_access)).status_code == 403
     )
 
 
@@ -268,12 +250,8 @@ def test_oidc_redirects_are_rejected(monkeypatch, signing_key, redirect_suffix):
 def test_cached_signing_keys_do_not_admit_a_removed_realm(monkeypatch, signing_key):
     now = [0]
     fetcher = DirectoryFetcher()
-    service = StudioLoginDirectoryService(
-        fetcher, cache_seconds=60, clock=lambda: now[0]
-    )
-    app.dependency_overrides[get_auth_login_directory_provider] = (
-        lambda: lambda: service
-    )
+    service = StudioLoginDirectoryService(fetcher, cache_seconds=60, clock=lambda: now[0])
+    app.dependency_overrides[get_auth_login_directory_provider] = lambda: lambda: service
     calls = mock_keycloak(monkeypatch, signing_key)
     token = access_token(signing_key)
     assert request_with_token(token).status_code == 200
@@ -286,21 +264,15 @@ def test_cached_signing_keys_do_not_admit_a_removed_realm(monkeypatch, signing_k
 
 
 @pytest.mark.parametrize("previously_cached", [False, True])
-def test_unavailable_or_expired_directory_fails_closed(
-    monkeypatch, signing_key, previously_cached
-):
+def test_unavailable_or_expired_directory_fails_closed(monkeypatch, signing_key, previously_cached):
     now = [0]
     fetcher = DirectoryFetcher()
-    service = StudioLoginDirectoryService(
-        fetcher, cache_seconds=60, clock=lambda: now[0]
-    )
+    service = StudioLoginDirectoryService(fetcher, cache_seconds=60, clock=lambda: now[0])
     if previously_cached:
         asyncio.run(service.get("prime-cache"))
         now[0] = 61
     fetcher.unavailable = True
-    app.dependency_overrides[get_auth_login_directory_provider] = (
-        lambda: lambda: service
-    )
+    app.dependency_overrides[get_auth_login_directory_provider] = lambda: lambda: service
     calls = mock_keycloak(monkeypatch, signing_key)
     assert request_with_token(access_token(signing_key)).status_code == 503
     assert calls == []
@@ -325,26 +297,20 @@ def test_tenant_dependency_receives_verified_claims_from_async_auth(
         }
 
     token = access_token(signing_key, iss=FULDA_ISSUER, studio_tenant_id="tenant-fulda")
-    response = TestClient(tenant_app).get(
-        "/tenant", headers={"Authorization": f"Bearer {token}"}
-    )
+    response = TestClient(tenant_app).get("/tenant", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     assert response.json() == {"tenant_id": "tenant-fulda", "revision": REVISION}
 
 
 @pytest.mark.parametrize("configured", [False, True])
-def test_legacy_access_works_without_available_studio_directory(
-    monkeypatch, configured
-):
+def test_legacy_access_works_without_available_studio_directory(monkeypatch, configured):
     monkeypatch.setenv("SSF_ENABLE_LEGACY_ADMIN_ACCESS", "true")
     monkeypatch.setenv("SSF_LEGACY_ADMIN_ACCESS_CODE", "transition-code")
     if configured:
         fetcher = DirectoryFetcher()
         fetcher.unavailable = True
         service = StudioLoginDirectoryService(fetcher, cache_seconds=60)
-        app.dependency_overrides[get_auth_login_directory_provider] = (
-            lambda: lambda: service
-        )
+        app.dependency_overrides[get_auth_login_directory_provider] = lambda: lambda: service
     else:
         app.dependency_overrides.pop(get_auth_login_directory_provider)
         monkeypatch.delenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", raising=False)
