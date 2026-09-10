@@ -3,6 +3,15 @@ import { http, HttpResponse } from 'msw';
 export const SESSION_ID = 'A1B2C3D4';
 
 export const handlers = [
+  http.get('*/api/login/tenants', () =>
+    HttpResponse.json({
+      tenants: [
+        { id: 'tenant-fulda', displayName: 'Amt Fulda', realm: 'fulda-ssf-2025' },
+        { id: 'tenant-kassel', displayName: 'Stadt Kassel', realm: 'kassel-ssf-2025' },
+      ],
+    })
+  ),
+
   http.get('*/api/health/summary', () =>
     HttpResponse.json({
       status: 'success',
