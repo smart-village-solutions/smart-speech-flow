@@ -5,11 +5,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { AppRoutes } from '@/app/router/AppRoutes';
 import { requireKeycloakLogin, logoutFromKeycloak } from '@/app/auth/keycloak';
+import type { AdminSession } from '@/domain/admin/admin.types';
+
+const { expirationListeners } = vi.hoisted(() => ({ expirationListeners: new Set<() => void>() }));
 
 vi.mock('@/app/auth/keycloak', () => ({
   requireKeycloakLogin: vi.fn(),
   logoutFromKeycloak: vi.fn(),
   getAdminAccessToken: vi.fn().mockResolvedValue('tenant-token'),
+  subscribeToKeycloakExpiration: (listener: () => void) => {
+    expirationListeners.add(listener);
+    return () => expirationListeners.delete(listener);
+  },
 }));
 
 const kassel = { id: 'tenant-kassel', displayName: 'Stadt Kassel', realm: 'kassel-ssf-2025' };
@@ -100,6 +107,84 @@ describe('tenant login routes', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Abmelden' }));
     expect(await screen.findByRole('link', { name: 'Stadt Kassel' })).toBeInTheDocument();
     expect(logoutFromKeycloak).toHaveBeenCalledOnce();
+  });
+
+  it('returns to the chooser when the authenticated session expires', async () => {
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel' });
+    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
+    act(() => {
+      for (const listener of expirationListeners) listener();
+    });
+    expect(await screen.findByRole('link', { name: 'Stadt Kassel' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Neues Gespräch starten' })
+    ).not.toBeInTheDocument();
+  });
+
+  it.each(['cached', 'pending'])('isolates %s tenant A history from tenant B', async (state) => {
+    const row = (id: string): AdminSession => ({
+      id,
+      status: 'open',
+      customerLanguage: null,
+      createdAt: '2026-09-10T10:00:00Z',
+      terminatedAt: null,
+    });
+    let finishA!: (rows: AdminSession[]) => void;
+    let finishB!: (rows: AdminSession[]) => void;
+    const listSessions = vi
+      .fn()
+      .mockImplementationOnce(() =>
+        state === 'cached'
+          ? Promise.resolve([row('TENANTA1')])
+          : new Promise<AdminSession[]>((resolve) => {
+              finishA = resolve;
+            })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<AdminSession[]>((resolve) => {
+            finishB = resolve;
+          })
+      );
+    renderWithProviders(
+      <>
+        <AppRoutes />
+        <Link to="/login/tenant-fulda">Switch tenant</Link>
+      </>,
+      {
+        route: '/login/tenant-kassel',
+        services: {
+          admin: {
+            listSessions,
+            createSession: vi.fn(),
+            terminateSession: vi.fn(),
+          },
+        },
+      }
+    );
+    await waitFor(() => expect(listSessions).toHaveBeenCalledTimes(1));
+    if (state === 'cached')
+      await screen.findByRole('button', { name: 'Gespräch TENANTA1 fortsetzen' });
+    await userEvent.click(screen.getByRole('link', { name: 'Switch tenant' }));
+    await waitFor(() =>
+      expect(requireKeycloakLogin).toHaveBeenLastCalledWith(expect.any(Object), {
+        id: 'tenant-fulda',
+        displayName: 'Amt Fulda',
+        realm: 'fulda-ssf-2025',
+      })
+    );
+    if (state === 'pending') await act(async () => finishA([row('TENANTA1')]));
+    expect(
+      screen.queryByRole('button', { name: 'Gespräch TENANTA1 fortsetzen' })
+    ).not.toBeInTheDocument();
+    await waitFor(() => expect(listSessions).toHaveBeenCalledTimes(2));
+    await act(async () => finishB([row('TENANTB1')]));
+    expect(
+      await screen.findByRole('button', { name: 'Gespräch TENANTB1 fortsetzen' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Gespräch TENANTA1 fortsetzen' })
+    ).not.toBeInTheDocument();
   });
 
   it('cannot expose a previous dashboard after navigating to an unknown tenant', async () => {

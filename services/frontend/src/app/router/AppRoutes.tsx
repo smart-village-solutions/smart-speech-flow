@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { RequireSession } from './RequireSession';
@@ -13,7 +14,11 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import { useServices } from '@/app/providers/services';
 import { AdminDashboardScreen } from '@/features/admin/AdminDashboardScreen';
 import { AdminSessionScreen } from '@/features/admin/AdminSessionScreen';
-import { logoutFromKeycloak, requireKeycloakLogin } from '@/app/auth/keycloak';
+import {
+  logoutFromKeycloak,
+  requireKeycloakLogin,
+  subscribeToKeycloakExpiration,
+} from '@/app/auth/keycloak';
 import { AdminLoginScreen } from '@/features/admin/AdminLoginScreen';
 import { useAdminAuth } from '@/features/admin/useAdminAuth';
 import { TenantLoginScreen } from '@/features/login/TenantLoginScreen';
@@ -26,7 +31,24 @@ function JoinRedirect() {
 
 function TenantLoginEntry() {
   const { tenantId = '' } = useParams<{ tenantId: string }>();
-  return <TenantLoginSession key={tenantId} tenantId={tenantId} />;
+  return (
+    <AdminQueryBoundary key={tenantId}>
+      <TenantLoginSession tenantId={tenantId} />
+    </AdminQueryBoundary>
+  );
+}
+
+/** Each administrative entry owns its entire query cache, including session queries. */
+function AdminQueryBoundary({ children }: { children: ReactNode }) {
+  const parent = useQueryClient();
+  const [client] = useState(() => new QueryClient({ defaultOptions: parent.getDefaultOptions() }));
+  useEffect(
+    () => () => {
+      client.clear();
+    },
+    [client]
+  );
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
 /** Resolve the route ID through the validated directory before using a realm. */
@@ -38,6 +60,14 @@ function TenantLoginSession({ tenantId }: { tenantId: string }) {
   );
   const [sessionId, setSessionId] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  useEffect(
+    () =>
+      subscribeToKeycloakExpiration(() => {
+        void navigate('/login', { replace: true });
+      }),
+    [navigate]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -115,7 +145,14 @@ export function AppRoutes() {
 
       <Route path="/login" element={<TenantLoginScreen />} />
       <Route path="/login/:tenantId" element={<TenantLoginEntry />} />
-      <Route path="/admin" element={<LegacyAdminEntry />} />
+      <Route
+        path="/admin"
+        element={
+          <AdminQueryBoundary>
+            <LegacyAdminEntry />
+          </AdminQueryBoundary>
+        }
+      />
 
       <Route
         path="/customer"

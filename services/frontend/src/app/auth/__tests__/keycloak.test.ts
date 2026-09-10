@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readConfig } from '@/app/config/env';
+import { http, HttpResponse } from 'msw';
+import { server } from '@/test/setup';
 
 const { construct, clients } = vi.hoisted(() => ({
   construct: vi.fn(),
@@ -112,6 +114,8 @@ describe('tenant Keycloak session', () => {
 
   it('refreshes before returning a token and clears failed refreshes', async () => {
     const auth = await import('../keycloak');
+    const onExpired = vi.fn();
+    const unsubscribe = auth.subscribeToKeycloakExpiration(onExpired);
     expect(await auth.getAdminAccessToken()).toBeNull();
     await auth.requireKeycloakLogin(config, kassel);
     clients[0].updateToken.mockImplementation(async () => {
@@ -120,8 +124,31 @@ describe('tenant Keycloak session', () => {
     expect(await auth.getAdminAccessToken()).toBe('fresh');
     expect(clients[0].updateToken).toHaveBeenCalledWith(30);
     clients[0].updateToken.mockRejectedValue(new Error('expired'));
-    expect(await auth.getAdminAccessToken()).toBeNull();
+    await expect(auth.getAdminAccessToken()).rejects.toThrow('Keycloak session expired');
+    expect(onExpired).toHaveBeenCalledOnce();
+    unsubscribe();
     expect(clients[0].clearToken).toHaveBeenCalledOnce();
+    expect(await auth.requireKeycloakLogin(config, kassel)).toBe(true);
+    expect(construct).toHaveBeenCalledTimes(2);
+    expect(await auth.getAdminAccessToken()).toBe('access-token');
+  });
+
+  it('never sends legacy credentials after a refresh failure', async () => {
+    const auth = await import('../keycloak');
+    const { createHttpClient } = await import('@/core/http/client');
+    await auth.requireKeycloakLogin(config, kassel);
+    clients[0].updateToken.mockRejectedValue(new Error('expired'));
+    let requests = 0;
+    server.use(
+      http.get('*/api/admin/probe', () => {
+        requests += 1;
+        return HttpResponse.json({ ok: true });
+      })
+    );
+    const client = createHttpClient(config, () => 'en');
+    await expect(client.get('/api/admin/probe')).rejects.toThrow();
+    await expect(client.get('/api/admin/probe')).rejects.toThrow();
+    expect(requests).toBe(0);
   });
 
   it('never returns a token from a tenant replaced during refresh', async () => {
@@ -137,7 +164,7 @@ describe('tenant Keycloak session', () => {
     const pending = auth.getAdminAccessToken();
     await auth.requireKeycloakLogin(config, fulda);
     finish();
-    expect(await pending).toBeNull();
+    await expect(pending).rejects.toThrow('Keycloak session changed');
   });
 
   it('logs out to the chooser and discards the in-memory token', async () => {

@@ -11,6 +11,24 @@ interface ActiveKeycloakSession {
 }
 
 let active: ActiveKeycloakSession | null = null;
+let expired = false;
+const expirationListeners = new Set<() => void>();
+
+export function subscribeToKeycloakExpiration(listener: () => void): () => void {
+  expirationListeners.add(listener);
+  return () => {
+    expirationListeners.delete(listener);
+  };
+}
+
+function expireSession(session: ActiveKeycloakSession): void {
+  clearSession(session);
+  if (active === session) {
+    active = null;
+    expired = true;
+    for (const listener of expirationListeners) listener();
+  }
+}
 
 function clearSession(session: ActiveKeycloakSession): void {
   // clearToken otherwise starts another login when init used login-required.
@@ -50,6 +68,7 @@ export async function requireKeycloakLogin(
       return false;
     }
     session.initialized = true;
+    expired = false;
     return authenticated;
   } catch (error) {
     clearSession(session);
@@ -60,19 +79,30 @@ export async function requireKeycloakLogin(
 
 export async function getAdminAccessToken(): Promise<string | null> {
   const session = active;
-  if (session === null || !session.client.authenticated) return null;
-  try {
-    await session.client.updateToken(30);
-    return active === session ? (session.client.token ?? null) : null;
-  } catch {
-    clearSession(session);
+  if (session === null) {
+    if (expired) throw new Error('Keycloak session expired');
     return null;
   }
+  if (!session.initialized) throw new Error('Keycloak session not ready');
+  try {
+    if (!session.client.authenticated) throw new Error('Keycloak session expired');
+    await session.client.updateToken(30);
+  } catch {
+    expireSession(session);
+    throw new Error('Keycloak session expired');
+  }
+  if (active !== session) throw new Error('Keycloak session changed');
+  if (!session.client.token) {
+    expireSession(session);
+    throw new Error('Keycloak session expired');
+  }
+  return session.client.token;
 }
 
 export async function logoutFromKeycloak(): Promise<void> {
   const session = active;
   active = null;
+  expired = false;
   if (session !== null) {
     try {
       await session.client.logout({ redirectUri: `${window.location.origin}/login` });

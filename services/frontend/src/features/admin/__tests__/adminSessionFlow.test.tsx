@@ -10,6 +10,7 @@ vi.mock('@/app/auth/keycloak', () => ({
   requireKeycloakLogin: vi.fn().mockResolvedValue(true),
   getAdminAccessToken: vi.fn().mockResolvedValue('tenant-token'),
   logoutFromKeycloak: vi.fn().mockResolvedValue(undefined),
+  subscribeToKeycloakExpiration: () => () => {},
 }));
 
 const services = { config: readConfig({}) };
