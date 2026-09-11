@@ -5,10 +5,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/production-common.sh"
 
-if [[ "${1:-}" != "--destructive-reset-production" || "$#" -ne 1 ]]; then
-  log_error "Usage: $0 --destructive-reset-production"
+if [[ "$#" -ne 1 ]]; then
+  log_error "Usage: $0 --dry-run|--destructive-reset-production"
   exit 2
 fi
+
+case "$1" in
+  --dry-run)
+    cutover_args=(--dry-run)
+    ;;
+  --destructive-reset-production)
+    cutover_args=(--apply --confirm-empty-production)
+    ;;
+  *)
+    log_error "Usage: $0 --dry-run|--destructive-reset-production"
+    exit 2
+    ;;
+esac
 
 running_services="$(production_compose ps --status running --services)"
 if grep -qx 'api_gateway' <<<"$running_services"; then
@@ -22,4 +35,4 @@ fi
 
 production_compose run --rm --no-deps api_gateway \
   python -m services.api_gateway.tenant_cutover \
-  --apply --confirm-empty-production
+  "${cutover_args[@]}"

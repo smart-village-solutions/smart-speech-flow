@@ -382,7 +382,8 @@ app = FastAPI(
 
     1. **Admin** erstellt Session via `/api/admin/session/create`
     2. **Customer** aktiviert Session via `/api/customer/session/activate`
-    3. Beide verbinden sich via WebSocket `/ws/{session_id}/{connection_type}`
+    3. Beide beziehen ein kurzlebiges Realtime-Ticket und verbinden sich über
+       ihren rollenspezifischen WebSocket-Endpunkt
     4. Nachrichten werden bidirektional übersetzt und zugestellt
 
     ## Connection Types

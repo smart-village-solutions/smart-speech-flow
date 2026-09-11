@@ -249,3 +249,31 @@ def test_tenant_cutover_wrapper_runs_only_the_guarded_one_off_command(tmp_path):
         "run --rm --no-deps api_gateway python -m services.api_gateway.tenant_cutover "
         "--apply --confirm-empty-production"
     ) in calls
+
+
+def test_tenant_cutover_wrapper_exposes_a_non_destructive_preview(tmp_path):
+    docker_log = tmp_path / "docker.log"
+    fake_docker = tmp_path / "docker"
+    fake_docker.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$*\" >> \"$FAKE_DOCKER_LOG\"\n"
+        "exit 0\n"
+    )
+    fake_docker.chmod(0o755)
+
+    result = run_script(
+        "scripts/reset-legacy-conversation-state.sh",
+        "--dry-run",
+        environment={
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "FAKE_DOCKER_LOG": str(docker_log),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    calls = docker_log.read_text()
+    assert (
+        "run --rm --no-deps api_gateway python -m services.api_gateway.tenant_cutover "
+        "--dry-run"
+    ) in calls
+    assert "--apply" not in calls

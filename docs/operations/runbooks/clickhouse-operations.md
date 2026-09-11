@@ -423,7 +423,7 @@ two only add columns. Check them directly:
 
     $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = '"'"'quality_events'"'"'"'
 
-Expect `30`. Fewer means a migration has not been applied; re-run `apply.sh`.
+Expect `31`. Fewer means a migration has not been applied; re-run `apply.sh`.
 
 **Order matters.** Emitting events while any of `002`-`005` is unapplied writes rows
 whose typed columns are all defaults, and those rows cannot be repaired: the

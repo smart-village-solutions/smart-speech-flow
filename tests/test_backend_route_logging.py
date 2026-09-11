@@ -7,13 +7,38 @@ import pytest
 from fastapi import HTTPException
 
 from services.api_gateway import app as app_module
-from services.api_gateway.routes import customer
+from services.api_gateway.routes import admin, customer
 from services.api_gateway.session_manager import SessionStatus
 from services.api_gateway.tenant_session import TenantSessionKey
+from services.api_gateway.tenant_context import StudioTenantContext
 
 
 class SensitiveRouteError(RuntimeError):
     pass
+
+
+@pytest.mark.asyncio
+async def test_admin_history_redacts_internal_exception_from_response(
+    monkeypatch, caplog
+):
+    exception_text = "private-history-exception"
+    context = StudioTenantContext(
+        tenant_id="tenant-test",
+        authorization_revision=f"sha256:{'a' * 64}",
+    )
+    monkeypatch.setattr(
+        admin.session_manager,
+        "get_session_history",
+        lambda **_kwargs: (_ for _ in ()).throw(SensitiveRouteError(exception_text)),
+    )
+
+    with caplog.at_level(logging.ERROR, logger=admin.logger.name):
+        with pytest.raises(HTTPException) as raised:
+            await admin.get_session_history(context)
+
+    assert raised.value.status_code == 500
+    assert raised.value.detail == "Session history lookup failed"
+    assert exception_text not in caplog.text
 
 
 def test_customer_exception_log_keeps_traceback_without_sensitive_message(

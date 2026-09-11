@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import time
 from typing import TYPE_CHECKING
 
@@ -72,7 +71,7 @@ class ConversationService:
         result: list[dict[str, object]] = []
         for message in session.messages:
             item = message.to_dict()
-            if message.audio_base64:
+            if audio_path(key, message.id, AudioVariant.TRANSLATED).is_file():
                 item["audio_url"] = scoped_audio_url(
                     key, role.value, message.id, AudioVariant.TRANSLATED
                 )
@@ -112,11 +111,6 @@ class ConversationService:
         )
         if message is None:
             raise HTTPException(status_code=404, detail="Audio file not found")
-        if variant is AudioVariant.TRANSLATED and message.audio_base64:
-            return Response(
-                content=base64.b64decode(message.audio_base64),
-                media_type="audio/wav",
-            )
         path = audio_path(key, message_id, variant)
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Audio file not found")

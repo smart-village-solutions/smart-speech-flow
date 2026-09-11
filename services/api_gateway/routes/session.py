@@ -486,7 +486,6 @@ def _store_audio_artifacts(
     _sender: ClientType,
     message_id: str,
     file_bytes: bytes,
-    audio_bytes: Optional[bytes],
 ) -> bool:
     from ..audio_storage import AudioVariant, save_audio
 
@@ -496,12 +495,6 @@ def _store_audio_artifacts(
         original_audio_available = True
     except Exception as e:
         logger.warning("⚠️ Failed to save original audio: %s", type(e).__name__)
-
-    if audio_bytes:
-        try:
-            save_audio(key, message_id, AudioVariant.TRANSLATED, audio_bytes)
-        except Exception as e:
-            logger.warning("⚠️ Failed to save translated audio: %s", type(e).__name__)
 
     return original_audio_available
 
@@ -564,10 +557,10 @@ def _build_message_response(
         session_id=key.session_id,
         original_text=message.original_text,
         translated_text=message.translated_text,
-        audio_available=message.audio_base64 is not None,
+        audio_available=message.translated_audio_available,
         audio_url=(
             scoped_audio_url(key, sender.value, message.id, AudioVariant.TRANSLATED)
-            if message.audio_base64
+            if message.translated_audio_available
             else None
         ),
         processing_time_ms=processing_time_ms,
@@ -602,7 +595,7 @@ async def _parse_text_request(request: Request) -> TextMessageRequest:
         )
         raise HTTPException(
             status_code=400,
-            detail=create_error_response("INVALID_JSON", f"Invalid JSON: {str(e)}", {}),
+            detail=create_error_response("INVALID_JSON", "Invalid JSON", {}),
         )
 
     try:
@@ -946,16 +939,17 @@ async def send_unified_message(
             session_id,
             error_type=type(e).__name__,
         )
-        import traceback
-
-        traceback.print_exc()
+        logger.exception(
+            "Unexpected message processing failure",
+            exc_info=_redacted_exception_info(e),
+        )
         recorder.record_http_failure(500)
         raise HTTPException(
             status_code=500,
             detail=create_error_response(
                 "PROCESSING_ERROR",
-                f"Error processing message: {str(e)}",
-                {"session_id": session_id, "error_details": str(e)},
+                "Message processing failed",
+                {},
             ),
         )
     finally:
@@ -1025,7 +1019,7 @@ async def process_audio_input(
     message_id = str(uuid.uuid4())
     audio_bytes = result.get("audio_bytes")
     original_audio_available = _store_audio_artifacts(
-        key, client_type, message_id, file_bytes, audio_bytes
+        key, client_type, message_id, file_bytes
     )
 
     pipeline_metadata = transform_pipeline_metadata(
@@ -1206,17 +1200,36 @@ async def create_session_message(
     """Session-Message erstellen und zur Session hinzufügen"""
     import logging
 
+    from ..audio_storage import AudioVariant, save_audio
+
     logger = logging.getLogger(__name__)
 
+    resolved_message_id = message_id or str(uuid.uuid4())
+    translated_audio_available = False
+    if audio_bytes:
+        try:
+            save_audio(
+                session_id,
+                resolved_message_id,
+                AudioVariant.TRANSLATED,
+                audio_bytes,
+            )
+            translated_audio_available = True
+        except Exception as error:
+            logger.warning(
+                "⚠️ Failed to save translated audio: %s", type(error).__name__
+            )
+
     message = SessionMessage(
-        id=message_id or str(uuid.uuid4()),  # Use provided ID or generate new one
+        id=resolved_message_id,
         sender=client_type,
         original_text=original_text,
         translated_text=translated_text,
-        audio_base64=base64.b64encode(audio_bytes).decode() if audio_bytes else None,
+        audio_base64=None,
         source_lang=source_lang,
         target_lang=target_lang,
         timestamp=utc_now(),
+        translated_audio_available=translated_audio_available,
         pipeline_metadata=pipeline_metadata,
         original_audio_url=original_audio_url,
     )
@@ -1355,7 +1368,7 @@ async def broadcast_message_to_session(
         "target_lang": message.target_lang,
         "sender": message.sender.value,
         "timestamp": message.timestamp.isoformat(),
-        "audio_available": message.audio_base64 is not None,
+        "audio_available": message.translated_audio_available,
         "audio_url": (
             scoped_audio_url(
                 session_id,
@@ -1363,7 +1376,7 @@ async def broadcast_message_to_session(
                 message.id,
                 AudioVariant.TRANSLATED,
             )
-            if message.audio_base64
+            if message.translated_audio_available
             else None
         ),
         "role": "receiver_message",

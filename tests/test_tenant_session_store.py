@@ -4,8 +4,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from datetime import datetime, timezone
 
-from services.api_gateway.session_manager import Session, SessionStatus
+from services.api_gateway.session_manager import (
+    ClientType,
+    Session,
+    SessionMessage,
+    SessionStatus,
+)
 from services.api_gateway.tenant_session import (
     RuntimeConfigurationSnapshot,
     TenantSessionKey,
@@ -107,6 +113,27 @@ def test_redis_create_is_one_atomic_script_with_exact_v2_keys() -> None:
         tenant_active_sessions_key("ssf", "tenant-a"),
     )
     assert json.loads(call[8])["active"] is True
+
+
+def test_redis_session_payload_never_contains_audio_bytes() -> None:
+    session = make_session("tenant-a", "ABC12345")
+    session.messages.append(
+        SessionMessage(
+            id="message-1",
+            sender=ClientType.ADMIN,
+            original_text="Hallo",
+            translated_text="Hello",
+            audio_base64="UklGRnNlbnNpdGl2ZS1hdWRpbw==",
+            source_lang="de",
+            target_lang="en",
+            timestamp=datetime.now(timezone.utc),
+        )
+    )
+
+    payload = RedisTenantSessionStore._session_payload(session)
+
+    assert "audio_base64" not in payload
+    assert "UklGRnNlbnNpdGl2ZS1hdWRpbw==" not in payload
 
 
 def test_redis_terminate_updates_tombstone_in_one_atomic_script() -> None:

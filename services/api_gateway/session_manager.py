@@ -114,6 +114,7 @@ class SessionMessage:
     source_lang: str
     target_lang: str
     timestamp: datetime
+    translated_audio_available: bool = False
     # NEW: Pipeline Metadata
     pipeline_metadata: Optional[Dict[str, Any]] = None
     original_audio_url: Optional[str] = None  # URL to original input audio
@@ -124,10 +125,10 @@ class SessionMessage:
             "sender": self.sender.value,
             "original_text": self.original_text,
             "translated_text": self.translated_text,
-            "audio_base64": self.audio_base64,
             "source_lang": self.source_lang,
             "target_lang": self.target_lang,
             "timestamp": self.timestamp.isoformat(),
+            "translated_audio_available": self.translated_audio_available,
         }
         # Include pipeline metadata if available
         if self.pipeline_metadata:
@@ -143,10 +144,15 @@ class SessionMessage:
             sender=ClientType(data["sender"]),
             original_text=data.get("original_text", ""),
             translated_text=data.get("translated_text", ""),
-            audio_base64=data.get("audio_base64"),
+            # Audio bytes belong in the tenant-scoped, retention-managed file
+            # store. Ignore legacy Redis payloads that embedded the bytes.
+            audio_base64=None,
             source_lang=data.get("source_lang", ""),
             target_lang=data.get("target_lang", ""),
             timestamp=_ensure_utc(datetime.fromisoformat(data["timestamp"])),
+            translated_audio_available=bool(
+                data.get("translated_audio_available", False)
+            ),
             pipeline_metadata=data.get("pipeline_metadata"),
             original_audio_url=data.get("original_audio_url"),
         )
@@ -257,6 +263,13 @@ class Session:
         if include_messages:
             data["messages"] = [message.to_dict() for message in self.messages]
 
+        return data
+
+    def to_public_dict(self) -> Dict[str, Any]:
+        """Serialize dashboard-safe session state without tenant internals."""
+        data = self.to_dict()
+        data.pop("tenant_id", None)
+        data.pop("runtime_configuration", None)
         return data
 
     def update_activity(self):
@@ -962,7 +975,7 @@ class SessionManager:
                     "Mehrere aktive Sessions vorhanden; explizite session_id erforderlich"
                 )
             candidates.sort(key=lambda item: item.created_at, reverse=True)
-            return candidates[0].to_dict()
+            return candidates[0].to_public_dict()
 
         if session_id:
             session = self.get_session(session_id)
@@ -985,7 +998,7 @@ class SessionManager:
             )
 
         active_sessions.sort(key=lambda s: s.created_at, reverse=True)
-        return active_sessions[0].to_dict()
+        return active_sessions[0].to_public_dict()
 
     def get_active_sessions(self, *, tenant_id: Optional[str] = None) -> List[Dict]:
         """Alle aktiven oder ausstehende Sessions zurückgeben."""
@@ -993,12 +1006,12 @@ class SessionManager:
             if self.store is None:
                 return []
             return [
-                session.to_dict()
+                session.to_public_dict()
                 for session in self.store.list_for_tenant(tenant_id)
                 if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
             ]
         return [
-            session.to_dict()
+            session.to_public_dict()
             for session in self.sessions.values()
             if session.status in [SessionStatus.PENDING, SessionStatus.ACTIVE]
         ]
@@ -1011,7 +1024,7 @@ class SessionManager:
             if self.store is None:
                 return []
             terminated_sessions = [
-                session.to_dict()
+                session.to_public_dict()
                 for session in self.store.list_for_tenant(tenant_id)
                 if session.status == SessionStatus.TERMINATED
             ]
@@ -1020,7 +1033,7 @@ class SessionManager:
             )
             return terminated_sessions[:limit]
         terminated_sessions = [
-            session.to_dict()
+            session.to_public_dict()
             for session in self.sessions.values()
             if session.status == SessionStatus.TERMINATED
         ]

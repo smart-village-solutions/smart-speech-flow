@@ -305,7 +305,7 @@ async def create_admin_session(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Session-Erstellung fehlgeschlagen: {str(e)}",
+            detail="Session creation failed",
         )
 
 
@@ -372,10 +372,10 @@ async def get_current_session(
 
     except HTTPException:
         raise
-    except ValueError as e:
+    except ValueError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=str(e),
+            detail="Multiple active sessions require an explicit session_id",
         )
     except Exception as e:
         logger.exception(
@@ -384,7 +384,7 @@ async def get_current_session(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Fehler beim Abrufen der Session: {str(e)}",
+            detail="Current session lookup failed",
         )
 
 
@@ -448,7 +448,7 @@ async def terminate_session(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Fehler beim Beenden der Session: {str(e)}",
+            detail="Session termination failed",
         )
 
 
@@ -493,7 +493,7 @@ async def get_session_history(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Fehler beim Abrufen der Historie: {str(e)}",
+            detail="Session history lookup failed",
         )
 
 
@@ -546,7 +546,7 @@ async def get_session_status(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Fehler beim Abrufen des Status: {str(e)}",
+            detail="Session status lookup failed",
         )
 
 

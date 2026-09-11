@@ -260,7 +260,7 @@ async def activate_session(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Fehler bei der Session-Aktivierung: {str(e)}",
+            detail="Session activation failed",
         )
 
 
@@ -306,7 +306,7 @@ async def get_customer_session_status(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Fehler beim Abrufen des Session-Status: {str(e)}",
+            detail="Session status lookup failed",
         )
 
 

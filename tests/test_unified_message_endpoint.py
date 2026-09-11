@@ -101,6 +101,37 @@ async def test_unified_message_rejects_unsupported_content_type(active_session) 
 
 
 @pytest.mark.asyncio
+async def test_unified_message_redacts_unexpected_exception_from_response_and_output(
+    active_session,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _manager, session = active_session
+    request = AsyncMock()
+    request.headers = {"content-type": "application/json"}
+    secret = "private-upstream-exception"
+    monkeypatch.setattr(
+        session_routes,
+        "process_text_input",
+        AsyncMock(side_effect=RuntimeError(secret)),
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        await session_routes.send_unified_message(
+            session.key,
+            ClientType.ADMIN,
+            request,
+            None,
+        )
+
+    captured = capsys.readouterr()
+    assert caught.value.status_code == 500
+    assert caught.value.detail["error_message"] == "Message processing failed"
+    assert secret not in repr(caught.value.detail)
+    assert secret not in captured.out + captured.err
+
+
+@pytest.mark.asyncio
 async def test_audio_pipeline_requires_only_file_and_languages(active_session) -> None:
     _manager, session = active_session
     request = AsyncMock()

@@ -323,6 +323,10 @@ def test_history_lists_only_the_authenticated_tenant(two_tenant_system) -> None:
 
     assert two_tenant_system.resources["tenant-a"].session_id in visible_ids
     assert two_tenant_system.resources["tenant-b"].session_id not in visible_ids
+    for group in (body["sessions"], body["active_sessions"]):
+        for item in group:
+            assert "tenant_id" not in item
+            assert "runtime_configuration" not in item
 
 
 def test_customer_join_link_resolves_only_through_the_public_capability(

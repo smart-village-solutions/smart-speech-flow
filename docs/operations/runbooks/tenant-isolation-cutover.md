@@ -42,7 +42,16 @@ and intentionally has no data-restore path.
    `api_gateway` and `frontend` must not appear. Redis remains running so the
    one-off cutover container can remove the allowlisted keys.
 
-5. Run the guarded reset from the repository root:
+5. Preview the guarded reset from the repository root:
+
+   ```bash
+   scripts/reset-legacy-conversation-state.sh --dry-run
+   ```
+
+   Record and review the reported Redis-key and audio-directory match counts.
+   Stop if they differ from the expected empty-production legacy state.
+
+6. Apply the reviewed reset:
 
    ```bash
    scripts/reset-legacy-conversation-state.sh --destructive-reset-production
@@ -53,13 +62,13 @@ and intentionally has no data-restore path.
    `ssf:v2:*`, uses Redis `UNLINK`, prints counts rather than identifiers, and
    is safe to repeat.
 
-6. Start the reviewed v2 images:
+7. Start the reviewed v2 images:
 
    ```bash
    production_compose up -d api_gateway frontend
    ```
 
-7. Run the production health check and the credential-safe two-tenant smoke
+8. Run the production health check and the credential-safe two-tenant smoke
    test described in the tenant-isolation release commit. Verify that each
    tenant can complete its own flow and receives the same neutral `404` for the
    other tenant's sessions.
