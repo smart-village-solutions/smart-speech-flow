@@ -828,48 +828,6 @@ SUPPORTED_LANGUAGES: Dict[str, Dict[str, str]] = {
 }
 
 
-@router.post("/session/create", responses=BAD_REQUEST_RESPONSE)
-async def create_session(customer_language: str) -> Dict[str, Any]:
-    """Neue Session für Admin-Kunde Gespräch erstellen"""
-    if customer_language not in SUPPORTED_LANGUAGES:
-        raise HTTPException(400, f"Sprache '{customer_language}' nicht unterstützt")
-
-    session_id = session_manager.create_session(customer_language)
-
-    return {
-        "session_id": session_id,
-        "customer_language": customer_language,
-        "admin_url": f"/admin?session={session_id}",
-        "customer_url": f"/customer?session={session_id}",
-        "status": "created",
-    }
-
-
-@router.get("/session/{session_id}", responses=NOT_FOUND_RESPONSE)
-async def get_session_info(session_id: str) -> Dict[str, Any]:
-    """Session-Informationen abrufen"""
-    session = session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(404, SESSION_NOT_FOUND_MESSAGE)
-
-    return {
-        "id": session.id,
-        "customer_language": session.customer_language,
-        "admin_language": session.admin_language,
-        "status": session.status,
-        "created_at": session.created_at.isoformat(),
-        "message_count": len(session.messages),
-        "admin_connected": session.admin_connected,
-        "customer_connected": session.customer_connected,
-    }
-
-
-@router.get("/sessions/active")
-async def get_active_sessions() -> Dict[str, Any]:
-    """Aktive Sessions für Admin-Übersicht"""
-    return {"sessions": session_manager.get_active_sessions()}
-
-
 @router.post("/session/{session_id}/message", responses=MESSAGE_ROUTE_RESPONSES)
 async def send_unified_message(
     session_id: str,

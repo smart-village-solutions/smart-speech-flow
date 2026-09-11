@@ -119,6 +119,10 @@ class MemoryTenantSessionStore:
         self._sessions: dict[TenantSessionKey, Session] = {}
         self._joins: dict[str, tuple[TenantSessionKey, bool]] = {}
 
+    def clear(self) -> None:
+        self._sessions.clear()
+        self._joins.clear()
+
     def create(self, session: Session) -> bool:
         if session.id in self._joins:
             return False

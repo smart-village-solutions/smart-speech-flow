@@ -1,6 +1,5 @@
 """Keycloak bearer-token validation for administrative API routes."""
 
-import hmac
 import json
 import os
 import re
@@ -122,12 +121,6 @@ async def require_ssf_user(
     ],
 ) -> dict[str, Any]:
     """Validate an administrative bearer token and return its claims."""
-    legacy_enabled = os.environ.get("SSF_ENABLE_LEGACY_ADMIN_ACCESS", "false") == "true"
-    legacy_code = os.environ.get("SSF_LEGACY_ADMIN_ACCESS_CODE", "")
-    legacy_header = request.headers.get("X-SSF-Legacy-Access", "")
-    if legacy_enabled and legacy_code and hmac.compare_digest(legacy_header, legacy_code):
-        return {"sub": "legacy-admin", "auth_method": "legacy-transition"}
-
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise _unauthorized()
@@ -154,7 +147,11 @@ async def require_ssf_user(
         ) from None
 
     matched_tenant = next(
-        (tenant for tenant in directory.tenants if settings.issuer_for(tenant.realm) == issuer),
+        (
+            tenant
+            for tenant in directory.tenants
+            if settings.issuer_for(tenant.realm) == issuer
+        ),
         None,
     )
     if matched_tenant is None:
@@ -203,3 +200,16 @@ async def require_ssf_user(
             detail="The bearer token lacks the required role",
         )
     return claims
+
+
+async def optional_ssf_user(
+    request: Request,
+    directory_provider: Annotated[
+        Callable[[], StudioLoginDirectoryService],
+        Depends(get_auth_login_directory_provider),
+    ],
+) -> dict[str, Any] | None:
+    """Authenticate a supplied bearer token while allowing no token at all."""
+    if "Authorization" not in request.headers:
+        return None
+    return await require_ssf_user(request, directory_provider)

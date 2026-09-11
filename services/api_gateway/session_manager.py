@@ -329,12 +329,6 @@ class Session:
         return session
 
 
-def _set_global_session_manager(manager: SessionManager) -> None:  # type: ignore[name-defined]
-    """Global SessionManager-Referenz aktualisieren."""
-    global session_manager
-    session_manager = manager
-
-
 class SessionManager:
     quality_telemetry: Optional[Any] = None
 
@@ -359,7 +353,6 @@ class SessionManager:
         self.tenant_mode = store is not None
 
         self.reset()
-        _set_global_session_manager(self)
         if not self.tenant_mode:
             self._init_persistence()
 
@@ -395,6 +388,8 @@ class SessionManager:
 
     def reset(self, *, clear_persistence: bool = False):
         """SessionManager Zustand auf Initialwerte zurücksetzen."""
+        if clear_persistence and isinstance(self.store, MemoryTenantSessionStore):
+            self.store.clear()
         if self.tenant_mode:
             self.sessions: Dict[Any, Session] = {}
             self.websocket_connections: Dict[Any, Dict[str, Any]] = {}
@@ -831,13 +826,36 @@ class SessionManager:
             session.update_activity()
             self._persist_session(session)
 
-    def get_active_session(self, session_id: Optional[str] = None) -> Optional[Dict]:
+    def get_active_session(
+        self,
+        session_id: Optional[str] = None,
+        *,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[Dict]:
         """Aktive Admin-Session abrufen.
 
         Wenn eine Session-ID übergeben wird, wird genau diese Session zurückgegeben,
         sofern sie noch nicht beendet wurde. Ohne Session-ID wird die zuletzt erstellte
         aktive Session geliefert, solange diese eindeutig ist.
         """
+
+        if tenant_id is not None:
+            if self.store is None:
+                return None
+            candidates = [
+                session
+                for session in self.store.list_for_tenant(tenant_id)
+                if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
+                and (session_id is None or session.id == session_id)
+            ]
+            if not candidates:
+                return None
+            if len(candidates) > 1 and session_id is None:
+                raise ValueError(
+                    "Mehrere aktive Sessions vorhanden; explizite session_id erforderlich"
+                )
+            candidates.sort(key=lambda item: item.created_at, reverse=True)
+            return candidates[0].to_dict()
 
         if session_id:
             session = self.get_session(session_id)
@@ -862,16 +880,38 @@ class SessionManager:
         active_sessions.sort(key=lambda s: s.created_at, reverse=True)
         return active_sessions[0].to_dict()
 
-    def get_active_sessions(self) -> List[Dict]:
+    def get_active_sessions(self, *, tenant_id: Optional[str] = None) -> List[Dict]:
         """Alle aktiven oder ausstehende Sessions zurückgeben."""
+        if tenant_id is not None:
+            if self.store is None:
+                return []
+            return [
+                session.to_dict()
+                for session in self.store.list_for_tenant(tenant_id)
+                if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
+            ]
         return [
             session.to_dict()
             for session in self.sessions.values()
             if session.status in [SessionStatus.PENDING, SessionStatus.ACTIVE]
         ]
 
-    def get_session_history(self, limit: int = 10) -> List[Dict]:
+    def get_session_history(
+        self, limit: int = 10, *, tenant_id: Optional[str] = None
+    ) -> List[Dict]:
         """Vergangene Sessions für Admin-Dashboard"""
+        if tenant_id is not None:
+            if self.store is None:
+                return []
+            terminated_sessions = [
+                session.to_dict()
+                for session in self.store.list_for_tenant(tenant_id)
+                if session.status == SessionStatus.TERMINATED
+            ]
+            terminated_sessions.sort(
+                key=lambda item: item.get("terminated_at", ""), reverse=True
+            )
+            return terminated_sessions[:limit]
         terminated_sessions = [
             session.to_dict()
             for session in self.sessions.values()
@@ -883,7 +923,7 @@ class SessionManager:
 
         return terminated_sessions[:limit]
 
-    async def activate_session(self, session_id: str, customer_language: str):
+    async def activate_session(self, session_id: Any, customer_language: str):
         """Session aktivieren wenn Customer beitritt oder Sprache ändern"""
         await asyncio.sleep(0)
         session = self.get_session(session_id)
@@ -905,7 +945,12 @@ class SessionManager:
         if activated:
             session.status = SessionStatus.ACTIVE
         session.customer_connected = True
-        self._persist_session(session)
+        if isinstance(session_id, TenantSessionKey):
+            if self.store is None:
+                raise RuntimeError("tenant session store is unavailable")
+            self.store.save(session)
+        else:
+            self._persist_session(session)
 
         if activated:
             self._emit_lifecycle(session, SessionLifecyclePhase.ACTIVATED)
@@ -1044,4 +1089,4 @@ class SessionManager:
 
 
 # Globale Instanz
-session_manager = SessionManager()
+session_manager = SessionManager(store=MemoryTenantSessionStore())

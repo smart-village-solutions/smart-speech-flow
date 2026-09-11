@@ -8,13 +8,16 @@ import logging
 from datetime import datetime, timezone
 from hashlib import sha256
 from types import TracebackType
-from typing import Optional
+from typing import Annotated, Any, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from ..auth import optional_ssf_user
 from ..log_safety import safe_language_code, sanitize_log_value
+from ..session_access import require_customer_session_key
 from ..session_manager import SessionStatus, session_manager
+from ..tenant_session import TenantSessionKey
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -85,7 +88,10 @@ def _safe_session_ref(session_id: Optional[str]) -> str:
     description="Übernimmt eine Session vom pending in den active Status. Idempotent - kann mehrmals aufgerufen werden.",
     responses=CUSTOMER_ROUTE_RESPONSES,
 )
-async def activate_session(request: ActivateSessionRequest) -> ActivateSessionResponse:
+async def activate_session(
+    request: ActivateSessionRequest,
+    principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
+) -> ActivateSessionResponse:
     """
     Aktiviert eine Session für Customer-Teilnahme
 
@@ -113,18 +119,10 @@ async def activate_session(request: ActivateSessionRequest) -> ActivateSessionRe
         )
 
         # Session validieren
-        session = session_manager.get_session(request.session_id)
-        if not session:
-            logger.warning(
-                "❌ Session nicht gefunden | %s",
-                sanitize_log_value(
-                    {"session_ref": _safe_session_ref(request.session_id)}
-                ),
-            )
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Session {request.session_id} nicht gefunden oder abgelaufen",
-            )
+        key = require_customer_session_key(request.session_id, principal)
+        session = session_manager.get_session(key)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
 
         # Status prüfen
         if session.status == SessionStatus.TERMINATED:
@@ -153,10 +151,8 @@ async def activate_session(request: ActivateSessionRequest) -> ActivateSessionRe
                         }
                     ),
                 )
-                await session_manager.activate_session(
-                    request.session_id, request.customer_language
-                )
-                session = session_manager.get_session(request.session_id)  # Neu laden
+                await session_manager.activate_session(key, request.customer_language)
+                session = session_manager.get_session(key)
             else:
                 logger.info(
                     "ℹ️ Session bereits aktiv - idempotente Antwort | %s",
@@ -191,9 +187,7 @@ async def activate_session(request: ActivateSessionRequest) -> ActivateSessionRe
             # Warnung, aber nicht blockieren - der TTS-Service entscheidet final
 
         # Session aktivieren
-        await session_manager.activate_session(
-            request.session_id, request.customer_language
-        )
+        await session_manager.activate_session(key, request.customer_language)
 
         # Erfolgsmeldung
         logger.info(
@@ -228,24 +222,24 @@ async def activate_session(request: ActivateSessionRequest) -> ActivateSessionRe
 
 
 @router.get(
-    "/session/{session_id}/status",
+    "/session/{session_id}",
     summary="Session-Status für Kunden abrufen",
     description="Ermöglicht Kunden zu prüfen ob eine Session bereit ist",
     responses=CUSTOMER_ROUTE_RESPONSES,
 )
-async def get_customer_session_status(session_id: str) -> dict[str, object]:
+async def get_customer_session_status(
+    session_id: str,
+    key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
+) -> dict[str, object]:
     """
     Session-Status für Customer-Interface abrufen
 
     Weniger Details als die Admin-Variante, fokussiert auf Customer-Bedürfnisse
     """
     try:
-        session = session_manager.get_session(session_id)
-        if not session:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Session {session_id} nicht gefunden",
-            )
+        session = session_manager.get_session(key)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
 
         return {
             "session_id": session_id,
@@ -256,6 +250,8 @@ async def get_customer_session_status(session_id: str) -> dict[str, object]:
             "is_active": session.status == SessionStatus.ACTIVE,
             "can_send_messages": session.status == SessionStatus.ACTIVE,
             "created_at": session.created_at.isoformat(),
+            "warning_at": session.warning_at().isoformat(),
+            "timeout_at": session.next_timeout_at().isoformat(),
         }
 
     except HTTPException:

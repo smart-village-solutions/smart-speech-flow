@@ -50,7 +50,7 @@ class TestCustomerRoutes:
 
         response = client.post("/api/customer/session/activate", json=activate_payload)
         assert response.status_code == 404
-        assert "nicht gefunden" in response.json()["detail"]
+        assert response.json() == {"detail": "Session not found"}
 
     def test_activate_session_idempotent(self):
         """Test that activating an already active session is idempotent"""
@@ -85,8 +85,8 @@ class TestCustomerRoutes:
         activate_payload = {"session_id": session_id, "customer_language": "en"}
 
         response = client.post("/api/customer/session/activate", json=activate_payload)
-        assert response.status_code == 400
-        assert "bereits beendet" in response.json()["detail"]
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Session not found"}
 
     def test_get_customer_session_status(self):
         """Test customer session status endpoint"""
@@ -95,7 +95,7 @@ class TestCustomerRoutes:
         session_id = response.json()["session_id"]
 
         # Get status (should be pending)
-        response = client.get(f"/api/customer/session/{session_id}/status")
+        response = client.get(f"/api/customer/session/{session_id}")
         assert response.status_code == 200
 
         data = response.json()
@@ -109,7 +109,7 @@ class TestCustomerRoutes:
         client.post("/api/customer/session/activate", json=activate_payload)
 
         # Get status again (should be active)
-        response = client.get(f"/api/customer/session/{session_id}/status")
+        response = client.get(f"/api/customer/session/{session_id}")
         assert response.status_code == 200
 
         data = response.json()
@@ -118,8 +118,8 @@ class TestCustomerRoutes:
         assert data["is_active"] is True
         assert data["can_send_messages"] is True
 
-    def test_customer_session_status_reflects_admin_termination(self):
-        """Terminated sessions must be visible to the customer status endpoint."""
+    def test_customer_session_status_hides_admin_termination(self):
+        """An inactive join capability has the same response as an unknown one."""
         response = client.post("/api/admin/session/create")
         session_id = response.json()["session_id"]
 
@@ -132,15 +132,9 @@ class TestCustomerRoutes:
         terminate_response = client.delete(f"/api/admin/session/{session_id}/terminate")
         assert terminate_response.status_code == 200
 
-        status_response = client.get(f"/api/customer/session/{session_id}/status")
-        assert status_response.status_code == 200
-
-        data = status_response.json()
-        assert data["session_id"] == session_id
-        assert data["status"] == "terminated"
-        assert data["customer_language"] == "ru"
-        assert data["is_active"] is False
-        assert data["can_send_messages"] is False
+        status_response = client.get(f"/api/customer/session/{session_id}")
+        assert status_response.status_code == 404
+        assert status_response.json() == {"detail": "Session not found"}
 
     def test_customer_supported_languages(self):
         """Test customer languages endpoint"""
@@ -170,8 +164,8 @@ class TestCustomerRoutes:
         assert response.status_code == 200
         assert response.json()["customer_language"] == "xyz"
 
-    def test_activation_enables_messaging(self):
-        """Test that messages work after activation"""
+    def test_generic_message_route_is_not_a_tenant_boundary(self):
+        """The former role-spoofable route cannot address tenant sessions."""
         # Create session
         response = client.post("/api/admin/session/create")
         session_id = response.json()["session_id"]
@@ -189,23 +183,4 @@ class TestCustomerRoutes:
             json=message_payload,
             headers={"Content-Type": "application/json"},
         )
-        assert response.status_code == 400
-        assert "SESSION_NOT_ACTIVE" in response.json()["detail"]["error_code"]
-
-        # Activate session
-        activate_payload = {"session_id": session_id, "customer_language": "en"}
-        response = client.post("/api/customer/session/activate", json=activate_payload)
-        assert response.status_code == 200
-
-        # Try to send message after activation
-        # Note: Will fail with circuit breaker error since services aren't running,
-        # but should NOT fail with SESSION_NOT_ACTIVE anymore
-        response = client.post(
-            f"/api/session/{session_id}/message",
-            json=message_payload,
-            headers={"Content-Type": "application/json"},
-        )
-        assert response.status_code == 400
-        # Should be circuit breaker error, NOT session error
-        error_detail = response.json()["detail"]
-        assert "SESSION_NOT_ACTIVE" not in str(error_detail)
+        assert response.status_code == 404
