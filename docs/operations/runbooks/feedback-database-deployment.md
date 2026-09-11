@@ -10,10 +10,20 @@ the checks that prove each step worked.
 Follow it top to bottom. Every step states what to expect, so a step that
 produces different output should stop the deployment rather than be repeated.
 
-**Until this runbook is completed, `POST /api/feedback` answers a retryable 503
-and nothing else is affected.** The gateway logs `Feedback persistence disabled`
-at startup and serves conversations normally. There is no rush and no partial
-state to clean up: deploy this when it suits, not during an incident.
+**Complete this runbook in the same deployment window that ships the compose
+file.** All six variables below are declared `:?required`, and Compose
+interpolates the whole file before running any command, so until `.env` has all
+six, *every* `production_compose` command fails — `up`, `ps`, `logs`, the
+systemd backup timers and `production-health-check.sh` alike. That is a
+deliberate trade: a mistyped variable stops the deployment instead of producing
+a silently broken one. It does mean the host is not in a usable state between
+receiving this compose file and finishing Step 1.
+
+Once the variables are set, the rest is unhurried. The gateway starts without
+waiting for the database, retries the connection in the background, and answers
+`POST /api/feedback` with a retryable 503 until it connects. Conversations are
+unaffected throughout: a feedback database that is missing, slow or broken must
+never cost a customer their session.
 
 ## Security boundary
 
@@ -77,6 +87,11 @@ printf 'SSF_POSTGRES_DB=ssf\nSSF_POSTGRES_USER=ssf\nSSF_DEFAULT_TENANT_ID=defaul
 `deploy/production/production.env.example` documents all of them with the same
 names.
 
+Any output these generators produce is safe to use. The role passwords reach
+PostgreSQL as psql variables and reach the gateway in their own environment
+variables, never inside a connection URL — `/` and `@` in a URL password break
+asyncpg, one loudly and one silently.
+
 ### The encryption key has no recovery path
 
 This is the one irreversible decision in this runbook. The key is never derived
@@ -107,7 +122,12 @@ production_compose up -d ssf-postgres
 production_compose ps ssf-postgres
 ```
 
-Wait for the health check to report healthy, then confirm both migrations ran:
+Wait for the health check to report healthy. It probes over TCP
+(`pg_isready -h 127.0.0.1`) rather than the unix socket, because during the
+first start the image runs a temporary socket-only server while the migrations
+execute — a socket probe reports healthy before the roles exist.
+
+Then confirm both migrations ran:
 
 ```bash
 production_compose logs ssf-postgres | grep 'apply.sh'
@@ -159,25 +179,45 @@ Expect `f`.
 
 ## Step 4 — Restart the gateway
 
-The gateway reads both connection strings at startup. They are assembled in the
-compose file from the passwords set in Step 1, so nothing further is needed:
+The gateway reads both connection strings and both passwords at startup. They
+are assembled in the compose file from the values set in Step 1, so nothing
+further is needed:
 
 ```bash
 production_compose up -d api_gateway
 production_compose logs api_gateway | grep -i feedback
 ```
 
-Expect `Feedback persistence ready`.
+Expect both of these:
 
-Two other lines are possible and both mean something is wrong:
+```
+Feedback persistence ready
+Feedback maintenance ready
+```
 
-- `Feedback persistence disabled: SSF_FEEDBACK_DATABASE_URL is not set` — the
-  variable did not reach the container. Check the `.env` the helper points at.
-- `Feedback persistence unavailable (<ErrorType>)` — the database refused the
-  connection. The type name is deliberate: a connection error carries the DSN,
-  and the DSN carries the password, so the message never includes either.
-  `InvalidPasswordError` means Step 1 and Step 2 disagree about a password,
-  usually because the volume predates the current `.env`.
+The gateway does not wait for the database to be healthy — a failed migration
+must not stop the service that carries every conversation — so on a first
+deploy it usually starts before the database is listening and connects on a
+later retry. A line reporting one half unavailable is therefore normal for the
+first minute or so, and the matching `ready` line should follow within about
+that long.
+
+Lines that mean something is actually wrong:
+
+- `Feedback persistence unavailable (<ErrorType>)` repeating past a couple of
+  minutes — the database is refusing the connection. The type name is
+  deliberate: a connection error carries the DSN, and the DSN carries the
+  password, so the message never includes either. `InvalidPasswordError` means
+  Step 1 and Step 2 disagree about a password, usually because the volume
+  predates the current `.env`.
+- `Feedback maintenance unavailable (<ErrorType>)` on its own — submissions are
+  being stored, but neither analytics recovery nor twelve-month deletion is
+  running. Reported separately from the line above precisely because the two
+  fail independently.
+- `Feedback persistence disabled: SSF_FEEDBACK_ENCRYPTION_KEY is missing or
+  malformed` — the key failed to decode to 32 bytes. The gateway keeps serving
+  conversations and answers every submission with a 503; it does not retry,
+  because a key does not appear on its own.
 
 ## Step 5 — Apply the ClickHouse migration
 
@@ -225,44 +265,68 @@ production_compose exec -T api_gateway curl -s http://localhost:8000/metrics \
 ```
 
 Expect `ssf_feedback_reconciliation_total`,
-`ssf_feedback_reconciliation_backlog`, `ssf_feedback_retention_deleted_total`
-and `ssf_feedback_maintenance_failures_total`. The backlog gauge should sit at
-or near zero.
+`ssf_feedback_reconciliation_backlog`, `ssf_feedback_retention_deleted_total`,
+`ssf_feedback_retention_overdue` and `ssf_feedback_maintenance_failures_total`.
+Both gauges should sit at or near zero.
 
-Four alert rules cover these and load with the Prometheus configuration:
+Five alert rules cover these and load with the Prometheus configuration:
 `FeedbackReconciliationBacklogGrowing`, `FeedbackReconciliationFailing`,
-`FeedbackRetentionNotRunning` and `FeedbackMaintenanceJobFailing`.
+`FeedbackRetentionNotRunning`, `FeedbackRetentionDeletingNothing` and
+`FeedbackMaintenanceJobFailing`.
 
-`FeedbackRetentionNotRunning` fires on the *absence* of the retention counter for
-six hours, not on a failure count, because a retention pass that never runs
-produces no failures to count.
+The two retention rules catch different failures, and neither catches the
+other's. `FeedbackRetentionNotRunning` fires on the *absence* of the counter,
+because a pass that never runs produces no failures to count.
+`FeedbackRetentionDeletingNothing` fires when rows are past expiry and nothing
+has been deleted for six hours — the case where the pass runs, reports success
+and removes nothing, which is what a maintenance role that lost `BYPASSRLS`
+does on every cycle.
+
+Note the reconciliation backlog gauge is capped by the batch limit of 200: a
+larger backlog reads as exactly 200 until it drains below that.
 
 ## Backups
 
 `scripts/backup-production.sh` already includes `ssf-postgres.sql.gz` and runs
 `pg_dump` as the owner. No change is needed, but verify the dump appears after
-the first scheduled run:
+the first scheduled run. A backup is a directory with a `latest` symlink beside
+it, not an archive:
 
 ```bash
-tar -tzf <latest backup archive> | grep ssf-postgres
+ls -l backups/daily/latest/ssf-postgres.sql.gz
 ```
 
-Without this dump, twelve months of retained feedback has no recovery path. Note
-that the dump is only half of what a restore needs: **the encryption key is the
+If the file is absent, check the backup's stderr for
+`ssf-postgres is not running`. The script skips this one dump when the service
+is not up, rather than aborting and taking the Keycloak, Redis and ClickHouse
+backups down with it — but a skip on a host where the service *should* be
+running means twelve months of feedback is going unbacked-up.
+
+The dump is only half of what a restore needs: **the encryption key is the
 other half**, and a backup taken without it restores unreadable rows.
 
 ## Rollback
 
-The feedback store is additive. Nothing else depends on it, so rolling back is
-removing it from the gateway's view rather than undoing a migration:
+The feedback store is additive: nothing else reads it, and no other service
+changes behaviour when it stops. Rolling back means taking the database out of
+service, not undoing a migration.
+
+`SSF_FEEDBACK_DATABASE_URL` is assembled in the tracked compose file, so it
+cannot be unset from `.env` and must not be edited on the host. Stop the
+database instead:
 
 ```bash
-# Stop accepting submissions; the endpoint returns a retryable 503 again.
-# Comment out SSF_FEEDBACK_DATABASE_URL in the gateway environment, then:
-production_compose up -d api_gateway
+# Submissions answer a retryable 503; conversations are unaffected.
+production_compose stop ssf-postgres
 ```
 
-Leave `ssf-postgres` and its volume running. Removing the volume destroys every
+The gateway keeps running, retries in the background, and reconnects by itself
+when the database comes back — no gateway restart is needed in either
+direction. Leave the variables in `.env`: removing them breaks every
+`production_compose` command on the host, including the backups for every other
+service.
+
+Leave the volume in place. Removing the volume destroys every
 stored submission, and the twelve-month retention promise made to the people who
 submitted them is a commitment to hold the data, not a licence to discard it
 early.
@@ -301,6 +365,29 @@ These are properties of the design, not defects to report:
   distinct-by form, so a re-emitted submission contributes twice to the gold
   table's rating averages. Counts and rates stay exact. Read averages from
   silver's thirty days when exactness matters.
+- **`delivered` means accepted, not received.** The analytics event is marked
+  delivered once the OTLP batch processor takes it; the export happens later on
+  a worker thread and its result never returns. During a Collector outage rows
+  are marked delivered and the events are lost, so the reconciler sees no
+  backlog — the one outage it was built for is the one it cannot detect. Watch
+  `QualityTelemetryCollectorDown` for that case instead.
+- **Backups outlive the retention promise.** Feedback is deleted from the
+  database at twelve months, but monthly backups are kept for twelve more, so a
+  deleted submission can persist in backup storage for up to about twenty-four
+  months. Restoring an old backup restores deleted feedback; the next retention
+  pass removes it again within the hour. If the twelve-month figure in the
+  submission notice has to hold for backups too, the backup retention needs
+  shortening — that is a decision for the privacy owner, not a code change.
+- **Feedback cannot be withdrawn on request.** The submission notice offers a
+  withdrawal route through staff, and no procedure implements it: there is no
+  lookup by person or session, and `feedback_deletion_audit.reason` only ever
+  records `retention_expiry`. Deletion happens on the twelve-month schedule
+  alone. A GDPR erasure request arriving before then cannot currently be
+  served.
+- **The endpoint is open.** Submission needs no authentication, by the same
+  design as the rest of the customer flow, and is bounded only by the global
+  per-client rate limit. Anyone who can reach the gateway can add rows that are
+  kept for a year.
 - **All feedback lands under one tenant.** `SSF_DEFAULT_TENANT_ID` supplies it
   until sessions carry a real tenant. The `tenant_id` column and the isolation
   policy are already in place, so that change needs no migration — but feedback
