@@ -182,8 +182,8 @@ services:
         max-size: "100m"
         max-file: "5"
 
-    # Map form rather than a list: ssf-postgres needs a health condition, and
-    # Compose does not allow the two forms to be mixed.
+    # Map form rather than a list: Compose does not allow the two forms to be
+    # mixed, and redis and ollama already use conditions here.
     depends_on:
       redis:
         condition: service_started

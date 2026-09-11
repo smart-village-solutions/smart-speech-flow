@@ -181,10 +181,24 @@ async def _connect_feedback_request_path(dsn: str, sessions: Any) -> bool:
     if app.state.feedback_service is not None:
         return True
 
-    from .feedback.crypto import FeedbackCipher, MissingEncryptionKey
-    from .feedback.repository import PostgresFeedbackRepository
-    from .feedback.service import FeedbackService
-    from .feedback.tenant import ConfiguredTenantResolver
+    # Imported inside their own guard: crypto.py depends on `cryptography`,
+    # which reaches the image only as PyJWT's `[crypto]` extra. An ImportError
+    # escaping this function would propagate through the lifespan and stop the
+    # gateway booting -- turning a missing feedback dependency into a total
+    # outage, which is the opposite of what this whole path promises. It has
+    # to be its own block, because the handler below names an exception this
+    # import is what binds.
+    try:
+        from .feedback.crypto import FeedbackCipher, MissingEncryptionKey
+        from .feedback.repository import PostgresFeedbackRepository
+        from .feedback.service import FeedbackService
+        from .feedback.tenant import ConfiguredTenantResolver
+    except ImportError as error:
+        sys.stderr.write(
+            f"Feedback persistence disabled: {type(error).__name__}; "
+            "POST /api/feedback will answer 503\n"
+        )
+        return True
 
     try:
         cipher = FeedbackCipher.from_environment()
@@ -264,6 +278,30 @@ async def _connect_feedback_maintenance(dsn: str) -> bool:
     return True
 
 
+async def _wire_feedback(request_dsn: str, maintenance_dsn: str, sessions: Any) -> bool:
+    """Wire both halves. Returns False only when retrying could help.
+
+    The two are reached independently on purpose. Unsetting
+    SSF_FEEDBACK_DATABASE_URL is the documented way to stop accepting feedback
+    while keeping the database, and the rows already stored still carry a
+    twelve-month expiry that the submission notice promises in ten languages.
+    Gating the passes on the submission path would stop enforcing it with no
+    code path having decided to.
+    """
+    if not request_dsn:
+        sys.stderr.write(
+            "Feedback persistence disabled: SSF_FEEDBACK_DATABASE_URL is not set; "
+            "POST /api/feedback will answer 503\n"
+        )
+        connected = True
+    else:
+        connected = await _connect_feedback_request_path(request_dsn, sessions)
+
+    maintained = await _connect_feedback_maintenance(maintenance_dsn)
+    sys.stderr.flush()
+    return connected and maintained
+
+
 async def feedback_connect_task(request_dsn: str, maintenance_dsn: str, sessions: Any) -> None:
     """Keep retrying whichever half did not connect at startup.
 
@@ -274,7 +312,7 @@ async def feedback_connect_task(request_dsn: str, maintenance_dsn: str, sessions
     race leaves POST /api/feedback answering 503 until someone restarts the
     container.
     """
-    if not request_dsn:
+    if not request_dsn and not maintenance_dsn:
         return
 
     delay = FEEDBACK_CONNECT_RETRY_SECONDS
@@ -283,9 +321,7 @@ async def feedback_connect_task(request_dsn: str, maintenance_dsn: str, sessions
             await asyncio.sleep(delay)
             delay = min(delay * 2, FEEDBACK_CONNECT_RETRY_CEILING_SECONDS)
 
-            connected = await _connect_feedback_request_path(request_dsn, sessions)
-            maintained = await _connect_feedback_maintenance(maintenance_dsn)
-            if connected and maintained:
+            if await _wire_feedback(request_dsn, maintenance_dsn, sessions):
                 return
         except asyncio.CancelledError:
             raise
@@ -478,15 +514,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 002_feedback_roles.sql. Sharing the request pool would leave both passes
     # seeing no rows and reporting success.
     maintenance_dsn = os.environ.get("SSF_FEEDBACK_MAINTENANCE_DATABASE_URL", "").strip()
-    if not feedback_dsn:
-        sys.stderr.write(
-            "Feedback persistence disabled: SSF_FEEDBACK_DATABASE_URL is not set; "
-            "POST /api/feedback will answer 503\n"
-        )
-    else:
-        await _connect_feedback_request_path(feedback_dsn, session_manager)
-        await _connect_feedback_maintenance(maintenance_dsn)
-    sys.stderr.flush()
+    await _wire_feedback(feedback_dsn, maintenance_dsn, session_manager)
 
     # Start background tasks
     timeout_task = asyncio.create_task(session_timeout_monitor())

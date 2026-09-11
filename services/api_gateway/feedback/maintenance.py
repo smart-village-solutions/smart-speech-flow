@@ -38,16 +38,23 @@ from prometheus_client import CollectorRegistry, Counter, Gauge
 from ..quality_telemetry import ProbeOutcome
 from ..session_pseudonym import feedback_ref
 from .models import AnalyticsState
-from .repository import FeedbackRepository, RetentionLockUnavailable
+from .repository import (
+    FeedbackRepository,
+    ReconciliationLockUnavailable,
+    RetentionLockUnavailable,
+)
 
 logger = logging.getLogger(__name__)
 
 RECONCILIATION_BATCH_LIMIT = 200
 RETENTION_BATCH_LIMIT = 500
 
-# A fixed key for pg_try_advisory_xact_lock. Arbitrary but stable: every
-# replica must derive the same number or the lock protects nothing.
+# Fixed keys for the advisory locks. Arbitrary but stable: every replica must
+# derive the same number or the lock protects nothing. Distinct from each
+# other, because the two passes run on different periods and must not exclude
+# one another -- reconciliation every five minutes, retention every hour.
 RETENTION_LOCK_KEY = 0x55F_FEED
+RECONCILIATION_LOCK_KEY = 0x55F_FEEE
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +63,7 @@ class ReconciliationPass:
     failed: int = 0
     drained: int = 0
     unavailable: bool = False
+    skipped: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,10 +110,16 @@ class FeedbackMaintenanceMetrics:
             "ssf_feedback_reconciliation_total",
         )
         # A gauge, not a counter: the number has to fall when the backlog drains.
+        #
+        # It reports the batch, which is capped at RECONCILIATION_BATCH_LIMIT,
+        # so a deeper backlog reads as exactly that limit until it drains below
+        # it. The help text says so rather than promising a depth it cannot
+        # measure; the alert only tests the threshold, so it still fires.
         self.backlog = _register(
             lambda: Gauge(
                 "ssf_feedback_reconciliation_backlog",
-                "Feedback rows awaiting analytics delivery at the last pass",
+                "Feedback rows claimed for analytics delivery at the last pass "
+                f"(capped at the batch limit of {RECONCILIATION_BATCH_LIMIT})",
                 registry=registry,
             ),
             registry,
@@ -189,12 +203,34 @@ class FeedbackMaintenance:
         self._retention_limit = retention_limit
 
     async def reconcile_once(self) -> ReconciliationPass:
+        """Re-emit what never reached the pipeline, one replica at a time.
+
+        The lock spans the whole pass rather than the claim, because the claim
+        marks nothing: it is a plain SELECT of everything still `pending`. Two
+        replicas reading it concurrently both re-emit every row, and while
+        `uniqExactState(event_id)` keeps the counts honest, `avgState` has no
+        distinct-by form -- so the rating and NPS averages would skew by a
+        factor scaling with replica count.
+        """
         try:
-            pending = await self._repository.claim_pending_analytics(self._reconciliation_limit)
+            async with self._repository.pass_lock(RECONCILIATION_LOCK_KEY):
+                return await self._reconcile_under_lock()
+        except ReconciliationLockUnavailable:
+            # Normal with more than one replica: exactly one wins each pass.
+            #
+            # Zero rather than nothing. A gauge keeps its last value, so a
+            # replica that wins once with a backlog and then always loses
+            # would leave that number standing for good. The winner publishes
+            # the real depth every pass, so max() across replicas is right.
+            self._metrics.observed_backlog(0)
+            return ReconciliationPass(skipped=True)
         except Exception as error:  # noqa: BLE001 - reported, never raised
             logger.warning("Feedback reconciliation could not read: %s", type(error).__name__)
             self._metrics.job_failed("reconciliation")
             return ReconciliationPass(unavailable=True)
+
+    async def _reconcile_under_lock(self) -> ReconciliationPass:
+        pending = await self._repository.claim_pending_analytics(self._reconciliation_limit)
 
         self._metrics.observed_backlog(len(pending))
 
@@ -253,8 +289,8 @@ class FeedbackMaintenance:
             )
         except RetentionLockUnavailable:
             # Normal with more than one replica: exactly one wins each pass.
-            # It looked at nothing, so it reports nothing: a skipped replica
-            # publishing a stale zero would mask the winner's backlog.
+            # Zero rather than nothing, for the reason reconcile_once gives.
+            self._metrics.observed_overdue(0)
             return RetentionPass(skipped=True)
         except Exception as error:  # noqa: BLE001 - reported, never raised
             logger.warning("Feedback retention pass failed: %s", type(error).__name__)

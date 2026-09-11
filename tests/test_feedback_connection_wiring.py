@@ -155,3 +155,57 @@ class TestReconnectingIsIdempotent:
         await gateway._connect_feedback_request_path(APP_URL, object())
 
         assert len(RecordingRepository.opened) == 1
+
+
+class TestTheHalvesAreIndependentlyReachable:
+    """Turning submission off must not turn retention off with it.
+
+    Unsetting SSF_FEEDBACK_DATABASE_URL is the documented way to stop
+    accepting feedback while keeping the database. The rows already stored
+    still carry a twelve-month expiry the submission notice promises in ten
+    languages, and nothing else enforces it.
+    """
+
+    async def test_the_passes_run_even_when_submission_is_switched_off(self, wired) -> None:
+        await gateway._wire_feedback("", MAINTENANCE_URL, object())
+
+        assert wired.feedback_service is None
+        assert wired.feedback_maintenance is not None
+
+    async def test_the_retry_loop_keeps_trying_the_maintenance_half_alone(self, wired) -> None:
+        """Otherwise a database that is briefly down disables retention until
+        someone restarts the gateway."""
+        RecordingRepository.fail_for = {MAINTENANCE_URL}
+
+        assert await gateway._wire_feedback("", MAINTENANCE_URL, object()) is False
+
+    async def test_neither_url_set_is_settled_rather_than_retried(self, wired) -> None:
+        assert await gateway._wire_feedback("", "", object()) is True
+
+
+class TestAMissingDependencyCostsFeedbackNotTheGateway:
+    """The feedback modules are imported lazily and must stay non-fatal.
+
+    `crypto.py` imports `cryptography` directly, which reaches the image only
+    as the `[crypto]` extra on PyJWT. Dropping that extra -- or any other
+    import error inside this subtree -- would otherwise propagate out of the
+    lifespan and stop the gateway booting at all, which is the opposite of
+    what every comment in this path promises.
+    """
+
+    async def test_an_import_error_degrades_to_503_rather_than_failing_startup(
+        self, wired, monkeypatch
+    ) -> None:
+        import builtins
+
+        real_import = builtins.__import__
+
+        def refuse_cryptography(name, *args, **kwargs):
+            if "feedback.crypto" in name or name == "cryptography":
+                raise ImportError("No module named 'cryptography'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", refuse_cryptography)
+
+        assert await gateway._connect_feedback_request_path(APP_URL, object()) is True
+        assert wired.feedback_service is None

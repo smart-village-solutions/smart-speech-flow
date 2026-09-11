@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol, Sequence
+from contextlib import AbstractAsyncContextManager
+from typing import AsyncIterator, Protocol, Sequence
 from uuid import UUID
 
 import asyncpg
@@ -24,6 +26,29 @@ import asyncpg
 from .models import AnalyticsState, FeedbackRecord
 
 logger = logging.getLogger(__name__)
+
+
+# Everything the driver can raise at this boundary, so the route can answer
+# 503 rather than 500. asyncpg has no single base class: InterfaceError and
+# InternalClientError descend from Exception directly, not from PostgresError.
+# Both arrive during an ordinary restart -- InterfaceError is what a pooled
+# connection closed by the server raises, and what `acquire()` raises once the
+# pool is closing -- so leaving them uncaught would lose submissions on every
+# deploy and put an asyncpg error, which carries the bound parameters, into a
+# response body.
+_DRIVER_FAILURE = (
+    asyncpg.PostgresError,
+    asyncpg.InterfaceError,
+    asyncpg.InternalClientError,
+    OSError,
+)
+
+
+class ReconciliationLockUnavailable(RuntimeError):
+    """Another replica is already reconciling.
+
+    Not a failure, for the same reason RetentionLockUnavailable is not.
+    """
 
 
 class RetentionLockUnavailable(RuntimeError):
@@ -74,6 +99,8 @@ class FeedbackRepository(Protocol):
 
     async def count_expired(self, now: datetime) -> int: ...
 
+    def pass_lock(self, lock_key: int) -> "AbstractAsyncContextManager[None]": ...
+
 
 _INSERT = """
 INSERT INTO feedback (
@@ -109,6 +136,13 @@ RETURNING feedback_id, tenant_id, created_at, expires_at
 _COUNT_EXPIRED = "SELECT count(*) FROM feedback WHERE expires_at <= $1"
 
 _TRY_LOCK = "SELECT pg_try_advisory_xact_lock($1)"
+
+# The session form, not the xact form, because this one is held across work
+# that is not a transaction: the reconciler emits to the collector between the
+# claim and the state update. PostgreSQL releases session locks when the
+# backend dies, and the unlock below runs even when the pass raises.
+_TRY_SESSION_LOCK = "SELECT pg_try_advisory_lock($1)"
+_SESSION_UNLOCK = "SELECT pg_advisory_unlock($1)"
 
 _AUDIT_DELETION = """
 INSERT INTO feedback_deletion_audit (
@@ -161,7 +195,7 @@ class PostgresFeedbackRepository:
                         record.created_at,
                         record.expires_at,
                     )
-        except (asyncpg.PostgresError, OSError) as error:
+        except _DRIVER_FAILURE as error:
             # Type name only. The exception string and its __cause__ chain both
             # carry the bound parameters.
             logger.warning("Feedback write failed: %s", type(error).__name__)
@@ -189,6 +223,32 @@ class PostgresFeedbackRepository:
                     feedback_id,
                     state.value,
                 )
+
+    @asynccontextmanager
+    async def pass_lock(self, lock_key: int) -> AsyncIterator[None]:
+        """Hold a lock for a whole maintenance pass, not one transaction.
+
+        `claim_pending_analytics` selects; it marks nothing and takes no row
+        locks, so with N replicas every pending row was re-emitted N times per
+        pass. ClickHouse deduplicates the counts on `event_id`, but `avgState`
+        has no distinct-by form, so the rating and NPS averages skewed by a
+        factor scaling with replica count whenever a pass found a backlog.
+
+        A transaction-scoped lock cannot serve here -- it would be released at
+        the claim's commit, before anything is emitted -- so this holds a
+        pooled connection for the pass. That is affordable because emitting is
+        an append to the exporter's in-memory batch queue, not network I/O.
+        """
+        connection = await self._pool.acquire()
+        try:
+            if not await connection.fetchval(_TRY_SESSION_LOCK, lock_key):
+                raise ReconciliationLockUnavailable("another replica holds the pass lock")
+            try:
+                yield
+            finally:
+                await connection.fetchval(_SESSION_UNLOCK, lock_key)
+        finally:
+            await self._pool.release(connection)
 
     async def claim_pending_analytics(self, limit: int) -> Sequence[PendingAnalytics]:
         async with self._pool.acquire() as connection:

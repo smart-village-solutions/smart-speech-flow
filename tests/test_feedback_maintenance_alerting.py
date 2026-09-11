@@ -103,5 +103,25 @@ class TestTheExpressionsUseMetricsThatExist:
         """
         expr = _rules()["FeedbackRetentionDeletingNothing"]["expr"]
 
-        assert "ssf_feedback_retention_overdue > 0" in expr
-        assert "increase(ssf_feedback_retention_deleted_total[6h]) == 0" in expr
+        assert "ssf_feedback_retention_overdue" in expr
+        assert "increase(ssf_feedback_retention_deleted_total[6h])" in expr
+        assert "> 0" in expr and "== 0" in expr
+
+
+class TestNoAlertFiresOnOneReplicasStaleSeries:
+    """Both gauges are per-replica, and only one replica works per pass.
+
+    A gauge keeps its last value, so an unaggregated expression lets a replica
+    that won a pass months ago -- and has lost every pass since -- hold an
+    alert open against a backlog that drained long ago.
+    """
+
+    @pytest.mark.parametrize(
+        "alert", ["FeedbackReconciliationBacklogGrowing", "FeedbackRetentionDeletingNothing"]
+    )
+    def test_the_gauge_is_aggregated_across_replicas(self, alert):
+        expr = _rules()[alert]["expr"]
+
+        for gauge in ("ssf_feedback_reconciliation_backlog", "ssf_feedback_retention_overdue"):
+            if gauge in expr:
+                assert f"max({gauge})" in expr, expr

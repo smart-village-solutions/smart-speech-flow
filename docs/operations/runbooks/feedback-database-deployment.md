@@ -195,6 +195,9 @@ Feedback persistence ready
 Feedback maintenance ready
 ```
 
+They are reported separately because the two halves connect, fail and recover
+independently: either line can appear without the other.
+
 The gateway does not wait for the database to be healthy — a failed migration
 must not stop the service that carries every conversation — so on a first
 deploy it usually starts before the database is listening and connects on a
@@ -282,8 +285,9 @@ has been deleted for six hours — the case where the pass runs, reports success
 and removes nothing, which is what a maintenance role that lost `BYPASSRLS`
 does on every cycle.
 
-Note the reconciliation backlog gauge is capped by the batch limit of 200: a
-larger backlog reads as exactly 200 until it drains below that.
+Note the reconciliation backlog gauge reports the claimed batch, capped at the
+batch limit of 200, so a larger backlog reads as exactly 200 until it drains
+below that. The alert only tests the threshold, so it still fires.
 
 ## Backups
 
@@ -340,13 +344,23 @@ cause is that `SSF_FEEDBACK_MAINTENANCE_DATABASE_URL` is unset, in which case
 the startup log says `Feedback maintenance disabled` and both passes are
 skipped while submissions keep working.
 
+**Stopping submissions without stopping retention.** Unsetting
+`SSF_FEEDBACK_DATABASE_URL` turns off `POST /api/feedback` and leaves both
+background passes running, so rows already stored are still deleted at their
+twelve-month expiry. The two halves are wired independently on purpose: the
+notice promises that deletion in ten languages, and no code path should be able
+to stop enforcing it as a side effect of switching submission off.
+
 **Retention never deletes anything.** Expected on a deployment younger than
 twelve months — nothing has expired yet. `ssf_feedback_retention_deleted_total`
 exists and stays at zero; the pass is running.
 
-**Two replicas and retention seems to skip.** By design. The pass takes a
-transaction-scoped advisory lock so only one replica deletes per cycle; the
-others record a skip, which is not a failure and is not counted as one.
+**Two replicas and a pass seems to skip.** By design, and true of both passes.
+Each takes an advisory lock so only one replica works per cycle; the others
+record a skip, which is not a failure and is not counted as one. Without it the
+reconciler would re-emit every pending row once per replica, and while
+ClickHouse deduplicates the counts on `event_id`, the rating averages would
+skew by a factor scaling with replica count.
 
 **`permission denied for table feedback`.** Something is connecting as the wrong
 role. Check which DSN the failing path uses; the request path and the background

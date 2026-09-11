@@ -10,12 +10,15 @@ and `_CLAIM_PENDING` does not select the column, so the recovery path is
 structurally unable to leak the improvement text rather than merely careful.
 """
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from prometheus_client import CollectorRegistry
 
 from services.api_gateway.feedback.maintenance import (
+    RECONCILIATION_LOCK_KEY,
+    RETENTION_LOCK_KEY,
     FeedbackMaintenance,
     FeedbackMaintenanceMetrics,
 )
@@ -23,6 +26,7 @@ from services.api_gateway.feedback.models import AnalyticsState
 from services.api_gateway.feedback.repository import (
     FeedbackStorageUnavailable,
     PendingAnalytics,
+    ReconciliationLockUnavailable,
     RetentionLockUnavailable,
 )
 from services.api_gateway.quality_telemetry import ProbeOutcome, ProbeResult
@@ -58,16 +62,26 @@ class FakeRepository:
         delete_raises: Exception | None = None,
         overdue: int = 0,
         overdue_raises: Exception | None = None,
+        lock_held: bool = False,
     ) -> None:
         self._pending = pending or []
         self._deleted = deleted or []
         self._overdue = overdue
         self._overdue_raises = overdue_raises
+        self._lock_held = lock_held
+        self.lock_keys: list[int] = []
         self._claim_raises = claim_raises
         self._delete_raises = delete_raises
         self.states: dict[UUID, AnalyticsState] = {}
         self.marked_tenants: dict[UUID, str] = {}
         self.delete_calls: list[dict] = []
+
+    @asynccontextmanager
+    async def pass_lock(self, lock_key):
+        self.lock_keys.append(lock_key)
+        if self._lock_held:
+            raise ReconciliationLockUnavailable("another replica holds it")
+        yield
 
     async def claim_pending_analytics(self, limit):
         if self._claim_raises is not None:
@@ -410,3 +424,91 @@ class TestRetentionReportsWhatItDidNotDelete:
 
         assert result.deleted == 1
         assert result.failed is False
+
+
+class TestOnlyOneReplicaReconcilesPerPass:
+    """The claim is not a claim: it selects, and marks nothing.
+
+    Retention already takes an advisory lock so exactly one replica deletes per
+    pass. Reconciliation had no equivalent, so with N replicas every pending
+    row was re-emitted N times. uniqExactState(event_id) absorbs that for
+    counts and rates, but avgState has no distinct-by form -- migration 005
+    says so -- and the rating and NPS averages skew by a factor that scales
+    with replica count on any pass that finds a backlog.
+    """
+
+    async def test_the_pass_is_taken_under_a_lock(self):
+        repository = FakeRepository([_pending()])
+
+        await _maintenance(repository).reconcile_once()
+
+        assert repository.lock_keys == [RECONCILIATION_LOCK_KEY]
+
+    async def test_the_lock_is_not_the_one_retention_uses(self):
+        """Sharing a key would make the two passes exclude each other, and
+        retention runs hourly while reconciliation runs every five minutes."""
+        assert RECONCILIATION_LOCK_KEY != RETENTION_LOCK_KEY
+
+    async def test_a_replica_that_loses_the_lock_emits_nothing(self):
+        row = _pending()
+        repository = FakeRepository([row], lock_held=True)
+        telemetry = FakeTelemetry()
+
+        result = await _maintenance(repository, telemetry).reconcile_once()
+
+        assert telemetry.calls == []
+        assert result.skipped is True
+        assert result.recovered == 0
+
+    async def test_losing_the_lock_is_not_a_failure(self):
+        """With N replicas, N-1 skip every pass by design."""
+        registry = CollectorRegistry()
+        repository = FakeRepository([_pending()], lock_held=True)
+
+        await _maintenance(repository, registry=registry).reconcile_once()
+
+        assert (
+            _value(registry, "ssf_feedback_maintenance_failures_total", job="reconciliation") == 0
+        )
+
+    async def test_a_skipped_replica_does_not_publish_a_backlog_it_never_read(self):
+        registry = CollectorRegistry()
+        repository = FakeRepository([_pending(), _pending()], lock_held=True)
+
+        await _maintenance(repository, registry=registry).reconcile_once()
+
+        assert _value(registry, "ssf_feedback_reconciliation_backlog") == 0
+
+
+class TestASkippedPassDoesNotLeaveAStaleGauge:
+    """A Prometheus gauge keeps its last value; not setting it clears nothing.
+
+    Concretely, with two replicas: A wins a pass while 150 rows are pending and
+    publishes 150. B wins every pass afterwards and drains the backlog to zero.
+    A's series still reads 150, so an unaggregated alert on it latches and
+    never clears. Exactly one replica does the work each pass, so the losers
+    publish zero and the alerts aggregate with max() -- the winner's number
+    always survives that.
+    """
+
+    async def test_a_skipped_reconciliation_publishes_zero_not_the_last_backlog(self):
+        registry = CollectorRegistry()
+        winner = FakeRepository([_pending(), _pending()])
+        await _maintenance(winner, registry=registry).reconcile_once()
+        assert _value(registry, "ssf_feedback_reconciliation_backlog") == 2
+
+        loser = FakeRepository([_pending(), _pending()], lock_held=True)
+        await _maintenance(loser, registry=registry).reconcile_once()
+
+        assert _value(registry, "ssf_feedback_reconciliation_backlog") == 0
+
+    async def test_a_skipped_retention_publishes_zero_not_the_last_overdue(self):
+        registry = CollectorRegistry()
+        winner = FakeRepository(deleted=[uuid4()], overdue=9)
+        await _maintenance(winner, registry=registry).expire_once()
+        assert _value(registry, "ssf_feedback_retention_overdue") == 9
+
+        loser = FakeRepository(delete_raises=RetentionLockUnavailable("held"), overdue=9)
+        await _maintenance(loser, registry=registry).expire_once()
+
+        assert _value(registry, "ssf_feedback_retention_overdue") == 0

@@ -58,3 +58,48 @@ async def test_the_same_password_supplied_separately_reaches_the_socket() -> Non
         error = await _connect(f"postgresql://ssf_feedback_app@{UNREACHABLE}/ssf", password)
 
         assert isinstance(error, CONNECT_REACHED), (password, error)
+
+
+class TestEveryDriverFailureIsRetryable:
+    """`store()` must map any driver failure onto FeedbackStorageUnavailable.
+
+    The route catches that one exception and answers 503 with Retry-After.
+    Anything else reaches FastAPI as a 500 with a traceback -- which loses the
+    submission and, worse, puts the asyncpg error into a response, and an
+    asyncpg error carries the bound parameters.
+    """
+
+    # Neither of these inherits from PostgresError or OSError. InterfaceError
+    # is what a pooled connection closed by the server raises, and what
+    # `pool.acquire()` raises once the pool is closing -- so both arrive during
+    # an ordinary restart, not only in exotic failures.
+    @pytest.mark.parametrize(
+        "error",
+        [asyncpg.InterfaceError("connection is closed"), asyncpg.InternalClientError("broken")],
+    )
+    def test_the_driver_error_does_not_inherit_from_what_the_handler_caught(self, error) -> None:
+        assert not isinstance(error, (asyncpg.PostgresError, OSError))
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            asyncpg.InterfaceError("connection is closed"),
+            asyncpg.InternalClientError("broken"),
+            asyncpg.PostgresError("server said no"),
+            OSError("network is unreachable"),
+        ],
+    )
+    async def test_it_is_reported_as_unavailable_rather_than_escaping(self, error) -> None:
+        from services.api_gateway.feedback.repository import (
+            FeedbackStorageUnavailable,
+            PostgresFeedbackRepository,
+        )
+
+        class FailingPool:
+            def acquire(self):
+                raise error
+
+        repository = PostgresFeedbackRepository(FailingPool())
+
+        with pytest.raises(FeedbackStorageUnavailable):
+            await repository.store(object())

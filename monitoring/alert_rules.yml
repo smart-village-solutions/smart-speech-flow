@@ -449,8 +449,11 @@ groups:
   # submission notice promises deletion after twelve months in ten languages.
   - name: ssf-feedback-maintenance
     rules:
+      # max() across replicas, not the bare series: only one replica performs
+      # each pass and the others publish zero, so the aggregate is the real
+      # depth and no single replica's series can fire on its own.
       - alert: FeedbackReconciliationBacklogGrowing
-        expr: ssf_feedback_reconciliation_backlog > 100
+        expr: max(ssf_feedback_reconciliation_backlog) > 100
         for: 30m
         labels:
           severity: warning
@@ -491,7 +494,7 @@ groups:
       # in batches of 500, and zero deletions alone are normal on a young
       # deployment.
       - alert: FeedbackRetentionDeletingNothing
-        expr: ssf_feedback_retention_overdue > 0 and increase(ssf_feedback_retention_deleted_total[6h]) == 0
+        expr: max(ssf_feedback_retention_overdue) > 0 and sum(increase(ssf_feedback_retention_deleted_total[6h])) == 0
         for: 1h
         labels:
           severity: warning

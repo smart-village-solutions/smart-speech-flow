@@ -309,6 +309,57 @@ async def test_no_advisory_lock_survives_a_completed_pass(repository) -> None:
     assert len(await repository.delete_expired(now, 100, RETENTION_LOCK_KEY)) == 1
 
 
+async def test_the_pass_lock_excludes_a_second_replica(repository) -> None:
+    """The reconciliation lock, proven against PostgreSQL rather than a fake.
+
+    It must be the session form. The xact form would be released at the end of
+    the transaction that took it, which is before the reconciler emits
+    anything -- so two replicas would still both re-emit every pending row.
+    """
+    from services.api_gateway.feedback.maintenance import RECONCILIATION_LOCK_KEY
+    from services.api_gateway.feedback.repository import ReconciliationLockUnavailable
+
+    rival = await PostgresFeedbackRepository.create(dsn=DSN, password=PASSWORD)
+    try:
+        async with repository.pass_lock(RECONCILIATION_LOCK_KEY):
+            with pytest.raises(ReconciliationLockUnavailable):
+                async with rival.pass_lock(RECONCILIATION_LOCK_KEY):
+                    pass
+
+        # Released with the block, not with the transaction that took it.
+        async with rival.pass_lock(RECONCILIATION_LOCK_KEY):
+            pass
+    finally:
+        await rival.close()
+
+
+async def test_the_pass_lock_is_released_when_the_pass_raises(repository) -> None:
+    """A pass that dies mid-flight must not lock reconciliation out forever."""
+    from services.api_gateway.feedback.maintenance import RECONCILIATION_LOCK_KEY
+
+    with pytest.raises(RuntimeError):
+        async with repository.pass_lock(RECONCILIATION_LOCK_KEY):
+            raise RuntimeError("the pass blew up")
+
+    async with repository.pass_lock(RECONCILIATION_LOCK_KEY):
+        pass
+
+
+async def test_the_two_passes_do_not_exclude_each_other(repository) -> None:
+    """Retention runs hourly and reconciliation every five minutes; sharing a
+    key would make each starve the other."""
+    from services.api_gateway.feedback.maintenance import (
+        RECONCILIATION_LOCK_KEY,
+        RETENTION_LOCK_KEY,
+    )
+
+    now = datetime.now(timezone.utc)
+    await _store(_record(expires_at=now - timedelta(days=1)))
+
+    async with repository.pass_lock(RECONCILIATION_LOCK_KEY):
+        assert len(await repository.delete_expired(now, 100, RETENTION_LOCK_KEY)) == 1
+
+
 async def test_deleting_without_a_lock_key_still_works(repository) -> None:
     """The parameter is optional so #302's callers are unchanged."""
     now = datetime.now(timezone.utc)

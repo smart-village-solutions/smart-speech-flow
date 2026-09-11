@@ -18,8 +18,8 @@ fi
 
 required_services=(
   traefik asr translation tts api_gateway ollama redis clickhouse
-  keycloak-postgres keycloak frontend-archive frontend prometheus grafana
-  dcgm_exporter cadvisor node_exporter loki promtail
+  keycloak-postgres ssf-postgres keycloak frontend-archive frontend prometheus
+  grafana dcgm_exporter cadvisor node_exporter loki promtail
 )
 
 all_containers_running() {

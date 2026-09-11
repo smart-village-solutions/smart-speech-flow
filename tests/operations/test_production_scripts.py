@@ -107,8 +107,14 @@ def _prepare_backup_fixture(tmp_path):
 set -euo pipefail
 printf '%s\\n' "$*" >> "$FAKE_DOCKER_LOG"
 arguments="$*"
-if [[ "$arguments" == *"ps --services --status running"* ]]; then
-  printf '%s\\n' ${FAKE_RUNNING_SERVICES-keycloak-postgres ssf-postgres redis clickhouse ollama}
+if [[ "${1:-}" == "volume" && "${2:-}" == "inspect" ]]; then
+  # The feedback store's volume is the deployed-ever marker; absent means the
+  # runbook has never been run here. Every other volume still resolves, or the
+  # archiving step below would stop looking for them.
+  if [[ "${3:-}" == *ssf-postgres-data ]] && [[ "${FAKE_FEEDBACK_VOLUME-yes}" != "yes" ]]; then
+    exit 1
+  fi
+  printf '[]\\n'
 elif [[ "$arguments" == *"exec -T ssf-postgres"* ]]; then
   if [[ " ${FAKE_RUNNING_SERVICES-ssf-postgres} " != *" ssf-postgres "* ]]; then
     printf 'service "ssf-postgres" is not running\\n' >&2
@@ -320,7 +326,7 @@ def test_backup_survives_a_host_without_the_feedback_database(tmp_path):
     nothing would notice until a restore.
     """
     environment, backup_root, _, _, source_connection = _prepare_backup_fixture(tmp_path)
-    environment["FAKE_RUNNING_SERVICES"] = "keycloak-postgres redis clickhouse ollama"
+    environment["FAKE_FEEDBACK_VOLUME"] = "no"
 
     try:
         result = run_script("scripts/backup-production.sh", environment=environment)
@@ -328,10 +334,34 @@ def test_backup_survives_a_host_without_the_feedback_database(tmp_path):
         source_connection.close()
 
     assert result.returncode == 0, result.stderr
-    assert "ssf-postgres is not running" in result.stderr
+    assert "has never been deployed" in result.stderr
 
     backup = next(path for path in backup_root.iterdir() if path.is_dir())
     manifest = json.loads((backup / "manifest.json").read_text())
     assert "ssf-postgres.sql.gz" not in manifest["required"]
     assert "keycloak-postgres.sql.gz" in manifest["required"]
     assert "clickhouse-native-backup.zip" in manifest["required"]
+
+
+def test_backup_fails_rather_than_skipping_a_deployed_feedback_database(tmp_path):
+    """A stopped container and a host that never deployed the store look the
+    same to `compose ps`, and they are not the same thing.
+
+    The first has up to twelve months of feedback to lose. Skipping it would
+    drop ssf-postgres.sql.gz from `required`, so verify-production-backup.sh
+    would pass and the backup would report complete with the one irreplaceable
+    database missing -- the failure nobody notices until a restore.
+    """
+    environment, backup_root, _, _, source_connection = _prepare_backup_fixture(tmp_path)
+    environment["FAKE_FEEDBACK_VOLUME"] = "yes"
+    environment["FAKE_RUNNING_SERVICES"] = "keycloak-postgres redis clickhouse ollama"
+
+    try:
+        result = run_script("scripts/backup-production.sh", environment=environment)
+    finally:
+        source_connection.close()
+
+    assert result.returncode != 0, result.stdout
+    assert not list(backup_root.iterdir()) or all(
+        path.name.startswith(".staging-") for path in backup_root.iterdir()
+    )
