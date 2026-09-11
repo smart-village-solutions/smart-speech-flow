@@ -13,9 +13,13 @@ from services.api_gateway.session_manager import (
     SessionManager,
     SessionStatus,
 )
-from services.api_gateway.session_store import MemoryTenantSessionStore
+from services.api_gateway.session_store import (
+    MemoryTenantSessionStore,
+    SessionStoreConsistencyError,
+)
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 from services.api_gateway.websocket import WebSocketManager
+from services.api_gateway.websocket_polling_routes import TenantPollingStore
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
@@ -199,6 +203,77 @@ async def test_termination_persists_tombstone_before_socket_presence_cleanup(
     assert stored.status is SessionStatus.TERMINATED
     assert stored.admin_connection_count == 0
     assert session.key not in sockets.session_connections
+
+
+@pytest.mark.asyncio
+async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime(
+    monkeypatch: pytest.MonkeyPatch,
+    clock: Clock,
+) -> None:
+    from services.api_gateway.realtime_ticket import (
+        MemoryRealtimeTicketBackend,
+        RealtimeTicketStore,
+    )
+
+    class FailOnceStore(MemoryTenantSessionStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.termination_attempts = 0
+
+        def terminate(self, session) -> None:
+            self.termination_attempts += 1
+            if self.termination_attempts == 1:
+                raise SessionStoreConsistencyError("atomic Redis mutation failed")
+            super().terminate(session)
+
+    store = FailOnceStore()
+    manager = SessionManager(
+        store=store,
+        clock=clock,
+        session_id_factory=lambda: "RETRY123",
+    )
+    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    tickets = RealtimeTicketStore(MemoryRealtimeTicketBackend(clock=clock), clock=clock)
+    usable_after_failure = tickets.issue(session.key, "websocket")
+    revoked_after_success = tickets.issue(session.key, "websocket")
+    polling = TenantPollingStore(clock=lambda: 0.0)
+    polling_client = polling.activate(session.key, ClientType.CUSTOMER)
+    monkeypatch.setattr(
+        "services.api_gateway.realtime_ticket.realtime_ticket_store", tickets
+    )
+    monkeypatch.setattr(
+        "services.api_gateway.websocket_polling_routes.polling_store", polling
+    )
+
+    sockets = WebSocketManager(manager)
+    sockets.start_heartbeat_system = AsyncMock()
+    websocket = AsyncMock()
+    websocket.client_state = WebSocketState.CONNECTED
+    await sockets.connect_websocket(websocket, session.key, ClientType.ADMIN)
+
+    with pytest.raises(SessionStoreConsistencyError):
+        await manager.terminate_session(session.key, "manual_admin_termination")
+
+    assert session.status is SessionStatus.PENDING
+    assert store.load(session.key) is session
+    assert store.load(session.key).status is SessionStatus.PENDING
+    assert manager.active_admin_sessions == {"tenant-a": {session.id}}
+    assert polling_client.terminated is False
+    assert session.key in sockets.session_connections
+    assert tickets.consume(
+        usable_after_failure.ticket, session.key, "websocket"
+    ) is True
+
+    await manager.terminate_session(session.key, "manual_admin_termination")
+
+    assert store.termination_attempts == 2
+    assert session.status is SessionStatus.TERMINATED
+    assert manager.active_admin_sessions == {}
+    assert polling_client.terminated is True
+    assert session.key not in sockets.session_connections
+    assert tickets.consume(
+        revoked_after_success.ticket, session.key, "websocket"
+    ) is False
 
 
 @pytest.mark.asyncio

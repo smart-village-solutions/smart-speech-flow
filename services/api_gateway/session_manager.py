@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 if TYPE_CHECKING:
     from .websocket import WebSocketManager
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 
@@ -621,34 +621,54 @@ class SessionManager:
     ):
         """Einzelne Session beenden mit WebSocket-Notifications"""
         session = self.get_session(session_id)
-        if not session or session.status == SessionStatus.TERMINATED:
+        if not session:
             return
 
-        # Session-Status aktualisieren
-        session.status = SessionStatus.TERMINATED
-        session.terminated_at = utc_now()
-        session.termination_reason = reason
-        session.admin_connected = False
-        session.customer_connected = False
-        session.admin_connection_count = 0
-        session.customer_connection_count = 0
-
-        # Emitted here rather than after the notifications below: this is the
-        # last point at which the session's own state is the reason it ended.
-        # A WebSocket failure further down must not lose the row.
-        self._emit_lifecycle(
-            session,
-            SessionLifecyclePhase.TERMINATED,
-            SessionTerminationReason.classify(reason),
-        )
-
         if isinstance(session_id, TenantSessionKey):
-            tenant_active = self.active_admin_sessions.get(session_id.tenant_id, set())
-            tenant_active.discard(session_id.session_id)
-            if not tenant_active:
-                self.active_admin_sessions.pop(session_id.tenant_id, None)
             if self.store is None:
                 raise RuntimeError("tenant session store is unavailable")
+
+            if session.status != SessionStatus.TERMINATED:
+                # Redis termination is the security-sensitive commit point. Keep
+                # the cached object and runtime indexes untouched until the atomic
+                # record/index/tombstone mutation succeeds, so a transient store
+                # failure remains both internally consistent and retryable.
+                terminal_session = replace(
+                    session,
+                    status=SessionStatus.TERMINATED,
+                    terminated_at=utc_now(),
+                    termination_reason=reason,
+                    admin_connected=False,
+                    customer_connected=False,
+                    admin_connection_count=0,
+                    customer_connection_count=0,
+                )
+                self.store.terminate(terminal_session)
+
+                session.status = terminal_session.status
+                session.terminated_at = terminal_session.terminated_at
+                session.termination_reason = terminal_session.termination_reason
+                session.admin_connected = terminal_session.admin_connected
+                session.customer_connected = terminal_session.customer_connected
+                session.admin_connection_count = terminal_session.admin_connection_count
+                session.customer_connection_count = (
+                    terminal_session.customer_connection_count
+                )
+                tenant_active = self.active_admin_sessions.get(
+                    session_id.tenant_id, set()
+                )
+                tenant_active.discard(session_id.session_id)
+                if not tenant_active:
+                    self.active_admin_sessions.pop(session_id.tenant_id, None)
+                self._emit_lifecycle(
+                    session,
+                    SessionLifecyclePhase.TERMINATED,
+                    SessionTerminationReason.classify(reason),
+                )
+
+            # Cleanup is deliberately idempotent and also runs for a terminal
+            # session. If notification/socket cleanup was interrupted after the
+            # Redis commit, a retry can still revoke capabilities and finish it.
             from .realtime_ticket import (
                 RealtimeTicketUnavailable,
                 realtime_ticket_store,
@@ -661,16 +681,31 @@ class SessionManager:
                     "realtime_ticket_revocation_unavailable",
                     extra={"tenant_ref": session_id.tenant_ref},
                 )
-            # Persist the inactive join tombstone before socket cleanup. The
-            # cleanup callbacks update presence through the store, which must
-            # already agree with the session's TERMINATED status.
-            self.store.terminate(session)
             from .websocket_polling_routes import polling_store
 
             polling_store.terminate(session_id, reason)
             await self._send_termination_notifications(session_id, reason)
             await self._cleanup_websocket_connections(session_id)
             return
+
+        if session.status == SessionStatus.TERMINATED:
+            return
+
+        # Legacy session mutation remains process-local and follows its
+        # established persistence path.
+        session.status = SessionStatus.TERMINATED
+        session.terminated_at = utc_now()
+        session.termination_reason = reason
+        session.admin_connected = False
+        session.customer_connected = False
+        session.admin_connection_count = 0
+        session.customer_connection_count = 0
+
+        self._emit_lifecycle(
+            session,
+            SessionLifecyclePhase.TERMINATED,
+            SessionTerminationReason.classify(reason),
+        )
 
         if session_id in self.active_admin_sessions:
             self.active_admin_sessions.discard(session_id)
@@ -987,9 +1022,17 @@ class SessionManager:
         if activated:
             self._emit_lifecycle(session, SessionLifecyclePhase.ACTIVATED)
 
-        print(
-            f"🎯 Session {session_id} aktiviert/aktualisiert mit Sprache: {customer_language}"
-        )
+        if isinstance(session_id, TenantSessionKey):
+            logger.info(
+                "tenant_session_activation tenant_ref=%s session_ref=%s",
+                tenant_ref(session_id.tenant_id),
+                session_ref(session_id.session_id),
+            )
+        else:
+            print(
+                f"🎯 Session {session_id} aktiviert/aktualisiert mit Sprache: "
+                f"{customer_language}"
+            )
 
     async def add_websocket_connection(
         self, session_id: Any, client_type: ClientType, websocket

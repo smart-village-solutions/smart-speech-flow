@@ -222,6 +222,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     sys.stderr.write("=" * 80 + "\n")
     sys.stderr.flush()
 
+    # The v2 session record, tenant indexes, join tombstone, and single-use
+    # realtime ticket must share one verified Redis connection in production.
+    # This happens before any WebSocket manager or background task can observe
+    # process-local tenant state.
+    from .tenant_persistence import configure_tenant_persistence
+
+    tenant_persistence = configure_tenant_persistence()
+
     # Initialize WebSocketManager singleton
     from .websocket import get_websocket_manager
 
@@ -348,6 +356,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # would emit into a provider that no longer has an export thread.
         translation_refiner.attach_quality_telemetry(None)
         session_manager.attach_quality_telemetry(None)
+        if tenant_persistence is not None:
+            tenant_persistence.close()
         telemetry_exporter_at_exit = app.state.quality_telemetry_exporter
         app.state.quality_telemetry_exporter = None
         if telemetry_exporter_at_exit is not None:
