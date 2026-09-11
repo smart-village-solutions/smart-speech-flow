@@ -30,7 +30,7 @@ class TestTheTaskExists:
         assert "feedback_maintenance_task" in _function_names()
 
     def test_the_task_is_started_by_the_lifespan(self):
-        assert "asyncio.create_task(feedback_maintenance_task())" in SOURCE
+        assert "asyncio.create_task(feedback_maintenance_task(app.state))" in SOURCE
 
     def test_the_task_is_cancelled_at_shutdown(self):
         """An uncancelled task keeps the loop alive past the stop grace."""

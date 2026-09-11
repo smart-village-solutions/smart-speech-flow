@@ -323,7 +323,8 @@ class TestTheLifespanWiresTheAppItWasGiven:
 
         original = gateway.app
         # Exactly what a reload does to the global the helpers used to read.
-        monkeypatch.setattr(gateway, "app", FastAPI())
+        stale = FastAPI()
+        monkeypatch.setattr(gateway, "app", stale)
         monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
         for variable in (
             "SSF_FEEDBACK_DATABASE_URL",
@@ -336,3 +337,40 @@ class TestTheLifespanWiresTheAppItWasGiven:
             assert original.state.feedback_service is None
             assert original.state.feedback_maintenance is None
             assert original.state.feedback_read_service is None
+
+    async def test_each_path_wires_the_state_it_was_given(self, wired_reader) -> None:
+        """With no DSN set, the helpers return before touching any state.
+
+        The assertions above therefore pass whatever the helpers read, which
+        is how a getattr(app.state, ...) survived in the read path. These call
+        the helpers with a DSN, against a live state object, while the module
+        global points at a stale app that already looks fully wired.
+        """
+        from fastapi import FastAPI
+
+        stale = FastAPI()
+        stale.state.feedback_service = object()
+        stale.state.feedback_read_service = object()
+        stale.state.feedback_maintenance = object()
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(gateway, "app", stale)
+        try:
+            live = FastAPI()
+            live.state.feedback_repository = None
+            live.state.feedback_read_repository = None
+            live.state.feedback_maintenance_repository = None
+            live.state.feedback_service = None
+            live.state.feedback_read_service = None
+            live.state.feedback_maintenance = None
+            live.state.quality_telemetry = object()
+            live.state.prometheus_registry = CollectorRegistry()
+
+            await gateway._connect_feedback_request_path(live.state, APP_URL, object())
+            await gateway._connect_feedback_read_path(live.state, READER_URL)
+            await gateway._connect_feedback_maintenance(live.state, MAINTENANCE_URL)
+        finally:
+            monkeypatch.undo()
+
+        assert live.state.feedback_service is not None, "request path wired the wrong app"
+        assert live.state.feedback_read_service is not None, "read path wired the wrong app"
+        assert live.state.feedback_maintenance is not None, "maintenance wired the wrong app"

@@ -260,7 +260,7 @@ async def _connect_feedback_read_path(state: Any, dsn: str) -> bool:
         )
         return True
 
-    if getattr(app.state, "feedback_read_service", None) is not None:
+    if getattr(state, "feedback_read_service", None) is not None:
         return True
 
     # Its own import guard, for the reason _connect_feedback_request_path
@@ -403,7 +403,7 @@ async def feedback_connect_task(
             print(f"\u26a0\ufe0f Feedback connection attempt failed: {type(error).__name__}")
 
 
-async def feedback_maintenance_task() -> None:
+async def feedback_maintenance_task(state: Any) -> None:
     """Drive analytics recovery and retention expiry (#305).
 
     One task for both passes on different periods: reconciliation is a cheap
@@ -421,7 +421,7 @@ async def feedback_maintenance_task() -> None:
             await asyncio.sleep(FEEDBACK_RECONCILIATION_INTERVAL_SECONDS)
             elapsed += FEEDBACK_RECONCILIATION_INTERVAL_SECONDS
 
-            maintenance = getattr(app.state, "feedback_maintenance", None)
+            maintenance = getattr(state, "feedback_maintenance", None)
             if maintenance is None:
                 continue
 
@@ -602,7 +602,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     websocket_monitor_bg_task = asyncio.create_task(websocket_monitor_task())
     websocket_fallback_bg_task = asyncio.create_task(websocket_fallback_task())
     audio_cleanup_bg_task = asyncio.create_task(audio_cleanup_task())
-    feedback_maintenance_bg_task = asyncio.create_task(feedback_maintenance_task())
+    feedback_maintenance_bg_task = asyncio.create_task(feedback_maintenance_task(app.state))
     feedback_connect_bg_task = asyncio.create_task(
         feedback_connect_task(app.state, feedback_dsn, maintenance_dsn, session_manager, read_dsn)
     )
