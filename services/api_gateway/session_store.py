@@ -25,6 +25,28 @@ redis.call('SADD', KEYS[4], ARGV[2])
 return 1
 """
 
+SAVE_SESSION_LUA = """
+local current_session = redis.call('GET', KEYS[1])
+local current_join = redis.call('GET', KEYS[2])
+if not current_session or not current_join then return 0 end
+local current_decoded, current = pcall(cjson.decode, current_session)
+local proposed_decoded, proposed = pcall(cjson.decode, ARGV[1])
+if not current_decoded or not proposed_decoded then return 0 end
+if current['id'] ~= ARGV[2] or current['tenant_id'] ~= ARGV[3] then return 0 end
+if proposed['id'] ~= ARGV[2] or proposed['tenant_id'] ~= ARGV[3] then return 0 end
+if current['status'] == 'terminated' then
+  if current_join ~= ARGV[5] then return 0 end
+  if redis.call('SISMEMBER', KEYS[3], ARGV[2]) ~= 0 then return 0 end
+  if current_session ~= ARGV[1] then return 0 end
+  return 1
+end
+if current_join ~= ARGV[4] then return 0 end
+if redis.call('SISMEMBER', KEYS[3], ARGV[2]) ~= 1 then return 0 end
+if proposed['status'] == 'terminated' then return 0 end
+redis.call('SET', KEYS[1], ARGV[1])
+return 1
+"""
+
 TERMINATE_SESSION_LUA = """
 local current_join = redis.call('GET', KEYS[3])
 if current_join == ARGV[3] then
@@ -225,9 +247,21 @@ class RedisTenantSessionStore:
         return result == 1
 
     def save(self, session: Session) -> None:
-        self.redis.set(
-            session_key(self.namespace, session.key), self._session_payload(session)
+        key = session.key
+        result = self.redis.eval(
+            SAVE_SESSION_LUA,
+            3,
+            session_key(self.namespace, key),
+            join_key(self.namespace, key.session_id),
+            tenant_active_sessions_key(self.namespace, key.tenant_id),
+            self._session_payload(session),
+            key.session_id,
+            key.tenant_id,
+            _join_payload(key, active=True),
+            _join_payload(key, active=False),
         )
+        if result != 1:
+            raise SessionStoreConsistencyError("session lifecycle does not permit save")
 
     def load(self, key: TenantSessionKey) -> Session | None:
         raw_session = self.redis.get(session_key(self.namespace, key))

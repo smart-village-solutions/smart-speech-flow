@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 if TYPE_CHECKING:
     from .websocket import WebSocketManager
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 
@@ -680,17 +680,16 @@ class SessionManager:
                 if committed_terminal is None:
                     committed_terminal = terminal_session
 
-                session.status = committed_terminal.status
-                session.terminated_at = committed_terminal.terminated_at
-                session.termination_reason = committed_terminal.termination_reason
-                session.admin_connected = committed_terminal.admin_connected
-                session.customer_connected = committed_terminal.customer_connected
-                session.admin_connection_count = (
-                    committed_terminal.admin_connection_count
-                )
-                session.customer_connection_count = (
-                    committed_terminal.customer_connection_count
-                )
+                # Preserve references held by handlers while replacing every
+                # cached field with Redis' canonical terminal snapshot. This
+                # discards any stale mutations made after a committed
+                # termination whose response was lost.
+                for session_field in fields(Session):
+                    setattr(
+                        session,
+                        session_field.name,
+                        getattr(committed_terminal, session_field.name),
+                    )
                 tenant_active = self.active_admin_sessions.get(
                     session_id.tenant_id, set()
                 )
@@ -885,6 +884,8 @@ class SessionManager:
         session = self.get_session(key)
         if session is None:
             raise KeyError("session not found")
+        if session.status == SessionStatus.TERMINATED:
+            return
         session.admin_connection_count = max(0, session.admin_connection_count - 1)
         session.admin_connected = session.admin_connection_count > 0
         if session.admin_connection_count == 0:
@@ -905,6 +906,8 @@ class SessionManager:
         session = self.get_session(key)
         if session is None:
             raise KeyError("session not found")
+        if session.status == SessionStatus.TERMINATED:
+            return
         session.customer_connection_count = max(
             0, session.customer_connection_count - 1
         )

@@ -14,11 +14,13 @@ from services.api_gateway.app import app, lifespan
 from services.api_gateway.realtime_ticket import realtime_ticket_store
 from services.api_gateway.session_manager import (
     ClientType,
+    SessionMessage,
     SessionStatus,
     session_manager,
 )
 from services.api_gateway.session_store import (
     RedisTenantSessionStore,
+    SessionStoreConsistencyError,
     join_key,
     session_key as persisted_session_key,
 )
@@ -77,6 +79,45 @@ class PersistentFakeRedis:
             self.sets.setdefault(tenant_index, set()).add(session_id)
             self.values[join_key] = join_payload
             self.sets.setdefault(active_index, set()).add(session_id)
+            return 1
+
+        if ":v2:join:" in keys[1]:
+            session_key_value, join_key_value, active_index = keys
+            (
+                session_payload,
+                session_id,
+                tenant_id,
+                expected_join,
+                terminal_join,
+            ) = argv
+            current_payload = self.values.get(session_key_value)
+            current_join = self.values.get(join_key_value)
+            if current_payload is None:
+                return 0
+            current = json.loads(current_payload)
+            proposed = json.loads(session_payload)
+            if (
+                current["id"] != session_id
+                or current["tenant_id"] != tenant_id
+                or proposed["id"] != session_id
+                or proposed["tenant_id"] != tenant_id
+            ):
+                return 0
+            if current["status"] == "terminated":
+                if (
+                    current_join != terminal_join
+                    or session_id in self.sets.setdefault(active_index, set())
+                    or session_payload != current_payload
+                ):
+                    return 0
+                return 1
+            if (
+                current_join != expected_join
+                or session_id not in self.sets.setdefault(active_index, set())
+                or proposed["status"] == "terminated"
+            ):
+                return 0
+            self.values[session_key_value] = session_payload
             return 1
 
         session_key_value, active_index, join_key_value = keys
@@ -204,7 +245,7 @@ async def test_configured_redis_connection_failure_aborts_startup(
 
 
 @pytest.mark.asyncio
-async def test_ambiguous_termination_commit_is_reconciled_before_cleanup_retry(
+async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import services.api_gateway.tenant_persistence as persistence
@@ -239,6 +280,7 @@ async def test_ambiguous_termination_commit_is_reconciled_before_cleanup_retry(
         committed = json.loads(
             redis.get(persisted_session_key("ssf", session.key))
         )
+        committed_payload = redis.get(persisted_session_key("ssf", session.key))
         assert committed["status"] == "terminated"
         assert polling_client.terminated is False
         assert session.key in sockets.session_connections
@@ -249,10 +291,39 @@ async def test_ambiguous_termination_commit_is_reconciled_before_cleanup_retry(
             is True
         )
 
+        with pytest.raises(
+            SessionStoreConsistencyError, match="session lifecycle does not permit save"
+        ):
+            session_manager.admin_disconnected(session.key)
+
+        stale_message = SessionMessage(
+            id="stale-after-terminal-commit",
+            sender=ClientType.ADMIN,
+            original_text="must not persist",
+            translated_text="must not persist",
+            audio_base64=None,
+            source_lang="de",
+            target_lang="en",
+            timestamp=datetime(2026, 9, 11, 8, 0, tzinfo=timezone.utc),
+        )
+        with pytest.raises(
+            SessionStoreConsistencyError, match="session lifecycle does not permit save"
+        ):
+            session_manager.add_message(session.key, stale_message)
+
+        assert redis.get(persisted_session_key("ssf", session.key)) == committed_payload
+        assert json.loads(redis.get(join_key("ssf", session.id))) == {
+            "active": False,
+            "session_id": session.id,
+            "tenant_id": "tenant-a",
+        }
+
         await session_manager.terminate_session(session.key)
 
         assert session.status is SessionStatus.TERMINATED
         assert session.terminated_at.isoformat() == committed["terminated_at"]
+        assert session.messages == []
+        assert redis.get(persisted_session_key("ssf", session.key)) == committed_payload
         assert polling_client.terminated is True
         assert session.key not in sockets.session_connections
         assert (
