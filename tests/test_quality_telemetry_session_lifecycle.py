@@ -28,6 +28,7 @@ from services.api_gateway.quality_telemetry import (
 )
 
 REFERENCE = "c" * 32
+TENANT_REFERENCE = "d" * 12
 
 
 def _event(**overrides) -> SessionLifecycleEvent:
@@ -37,6 +38,7 @@ def _event(**overrides) -> SessionLifecycleEvent:
         emitted_at_utc=datetime.now(timezone.utc),
         event_type=QualityEventType.SESSION_LIFECYCLE,
         session_ref=REFERENCE,
+        tenant_ref=TENANT_REFERENCE,
         phase=SessionLifecyclePhase.TERMINATED,
         termination_reason=SessionTerminationReason.SESSION_TIMEOUT,
         session_duration_ms=1_800_000,
@@ -63,6 +65,7 @@ def _telemetry(mode=TelemetryMode.ENABLED, exporter=None):
 def _emit(telemetry, **overrides):
     fields = dict(
         session_ref=REFERENCE,
+        tenant_ref=TENANT_REFERENCE,
         phase=SessionLifecyclePhase.TERMINATED,
         termination_reason=SessionTerminationReason.SESSION_TIMEOUT,
         session_duration_ms=1_800_000,
@@ -81,6 +84,7 @@ class TestTheEventCarriesNoContent:
             AttributeKind.NUMBER,
             AttributeKind.ENUM,
             AttributeKind.OPAQUE_REF,
+            AttributeKind.TENANT_REF,
         }
 
     def test_it_has_no_label_or_language_field(self):
@@ -148,6 +152,7 @@ class TestTheSixPlacesAgree:
             "ssf.quality.termination_reason",
             "ssf.quality.session_duration_ms",
             "ssf.quality.message_count",
+            "ssf.quality.tenant_ref",
         ],
     )
     def test_the_event_emits_each_of_its_declared_fields(self, key):

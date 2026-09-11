@@ -29,6 +29,7 @@ SILVER = MIGRATIONS / "001_quality_events.sql"
 GOLD = MIGRATIONS / "002_quality_events_fields_and_gold.sql"
 MESSAGE = MIGRATIONS / "003_translation_message_fields.sql"
 LIFECYCLE = MIGRATIONS / "004_session_lifecycle_fields.sql"
+TENANT = MIGRATIONS / "005_tenant_reference.sql"
 
 # The envelope keys 001 already projects; everything else must arrive in a later
 # migration. Which one does not matter -- only that some migration gives the key
@@ -142,6 +143,7 @@ def test_every_migration_after_the_first_is_covered_by_these_guards() -> None:
         GOLD.name,
         MESSAGE.name,
         LIFECYCLE.name,
+        TENANT.name,
     }
 
 

@@ -67,7 +67,9 @@ class Tenant(ContractModel):
 
 class LocaleConfiguration(ContractModel):
     locale: str = Field(min_length=1, max_length=35)
-    authenticated_home_explanation_html: str = Field(alias="authenticatedHomeExplanationHtml")
+    authenticated_home_explanation_html: str = Field(
+        alias="authenticatedHomeExplanationHtml"
+    )
     guest_explanation_html: str = Field(alias="guestExplanationHtml")
     conversation_content_storage_question_html: str | None = Field(
         alias="conversationContentStorageQuestionHtml"
@@ -153,7 +155,9 @@ class RuntimeErrorEnvelope(ContractModel):
 class StudioRuntimeClientError(RuntimeError):
     """Safe failure surfaced by the Studio runtime client."""
 
-    def __init__(self, code: str, *, retryable: bool, status: int | None = None) -> None:
+    def __init__(
+        self, code: str, *, retryable: bool, status: int | None = None
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.retryable = retryable
@@ -167,7 +171,7 @@ class RuntimeHttpResponse:
 
 
 class RuntimeTransport(Protocol):
-    async def get(
+    async def get(  # noqa: E704
         self, url: str, headers: Mapping[str, str], timeout_seconds: float
     ) -> RuntimeHttpResponse: ...
 
@@ -183,11 +187,15 @@ class AiohttpRuntimeTransport:
                     payload = await response.json()
                 except (aiohttp.ContentTypeError, ValueError):
                     raise StudioRuntimeClientError(
-                        "studio_runtime_response_invalid", retryable=False, status=response.status
+                        "studio_runtime_response_invalid",
+                        retryable=False,
+                        status=response.status,
                     ) from None
                 if not isinstance(payload, Mapping):
                     raise StudioRuntimeClientError(
-                        "studio_runtime_response_invalid", retryable=False, status=response.status
+                        "studio_runtime_response_invalid",
+                        retryable=False,
+                        status=response.status,
                     )
                 return RuntimeHttpResponse(status=response.status, payload=payload)
 
@@ -225,19 +233,27 @@ class StudioRuntimeClient:
         _validate_request_context(tenant_id, correlation_id)
 
         token = await self._token_provider()
-        if not token or any(ord(character) < 32 or ord(character) > 126 for character in token):
-            raise StudioRuntimeClientError("studio_runtime_token_invalid", retryable=False)
+        if not token or any(
+            ord(character) < 32 or ord(character) > 126 for character in token
+        ):
+            raise StudioRuntimeClientError(
+                "studio_runtime_token_invalid", retryable=False
+            )
         headers = {
             "Authorization": f"Bearer {token}",
             "X-Studio-Tenant-Id": tenant_id,
             "X-Correlation-Id": correlation_id,
         }
         try:
-            response = await self._transport.get(self._url, headers, self._timeout_seconds)
+            response = await self._transport.get(
+                self._url, headers, self._timeout_seconds
+            )
         except StudioRuntimeClientError:
             raise
         except (TimeoutError, asyncio.TimeoutError, aiohttp.ClientError):
-            raise StudioRuntimeClientError("studio_runtime_network_error", retryable=True) from None
+            raise StudioRuntimeClientError(
+                "studio_runtime_network_error", retryable=True
+            ) from None
 
         if response.status == 200:
             try:
@@ -282,10 +298,16 @@ def _validate_request_context(tenant_id: str, correlation_id: str) -> None:
         or len(tenant_id) > 128
         or any(ord(character) < 32 or ord(character) > 126 for character in tenant_id)
     ):
-        raise ValueError("tenant_id must be printable ASCII with at most 128 characters")
+        raise ValueError(
+            "tenant_id must be printable ASCII with at most 128 characters"
+        )
     if (
         not correlation_id
         or len(correlation_id) > 128
-        or any(ord(character) < 32 or ord(character) > 126 for character in correlation_id)
+        or any(
+            ord(character) < 32 or ord(character) > 126 for character in correlation_id
+        )
     ):
-        raise ValueError("correlation_id must be printable ASCII with at most 128 characters")
+        raise ValueError(
+            "correlation_id must be printable ASCII with at most 128 characters"
+        )

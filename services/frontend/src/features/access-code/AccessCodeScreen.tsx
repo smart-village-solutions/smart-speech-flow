@@ -25,7 +25,7 @@ export function AccessCodeScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const submit = useMutation({
-    mutationFn: (candidate: string) => session.getSession(candidate),
+    mutationFn: (candidate: string) => session.getSession(candidate, 'customer'),
     onSuccess: (found) => {
       if (!isJoinable(found)) {
         setError(t('accessCode.notFound'));

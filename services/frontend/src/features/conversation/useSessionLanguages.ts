@@ -31,7 +31,7 @@ export function useSessionLanguages(sessionId: string, role: ClientRole): Sessio
 
   const query = useQuery({
     queryKey: ['session', sessionId],
-    queryFn: () => session.getSession(sessionId),
+    queryFn: () => session.getSession(sessionId, role),
   });
 
   const customerLanguage = query.data?.customerLanguage ?? null;

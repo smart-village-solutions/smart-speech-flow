@@ -7,21 +7,24 @@ Speichert Sessions in-memory (für Entwicklung) oder Redis (für Produktion)
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import os
 import uuid
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 if TYPE_CHECKING:
     from .websocket import WebSocketManager
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass, field, fields, replace
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 from .quality_telemetry import SessionLifecyclePhase, SessionTerminationReason
-from .session_pseudonym import session_ref
+from .session_pseudonym import MISSING_TENANT_REFERENCE, session_ref, tenant_ref
+from .session_store import MemoryTenantSessionStore, TenantSessionStore
+from .tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +91,19 @@ def _env_flag(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _positive_env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a positive integer") from error
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
 @dataclass
 class SessionMessage:
     id: str
@@ -98,6 +114,7 @@ class SessionMessage:
     source_lang: str
     target_lang: str
     timestamp: datetime
+    translated_audio_available: bool = False
     # NEW: Pipeline Metadata
     pipeline_metadata: Optional[Dict[str, Any]] = None
     original_audio_url: Optional[str] = None  # URL to original input audio
@@ -108,10 +125,10 @@ class SessionMessage:
             "sender": self.sender.value,
             "original_text": self.original_text,
             "translated_text": self.translated_text,
-            "audio_base64": self.audio_base64,
             "source_lang": self.source_lang,
             "target_lang": self.target_lang,
             "timestamp": self.timestamp.isoformat(),
+            "translated_audio_available": self.translated_audio_available,
         }
         # Include pipeline metadata if available
         if self.pipeline_metadata:
@@ -127,10 +144,15 @@ class SessionMessage:
             sender=ClientType(data["sender"]),
             original_text=data.get("original_text", ""),
             translated_text=data.get("translated_text", ""),
-            audio_base64=data.get("audio_base64"),
+            # Audio bytes belong in the tenant-scoped, retention-managed file
+            # store. Ignore legacy Redis payloads that embedded the bytes.
+            audio_base64=None,
             source_lang=data.get("source_lang", ""),
             target_lang=data.get("target_lang", ""),
             timestamp=_ensure_utc(datetime.fromisoformat(data["timestamp"])),
+            translated_audio_available=bool(
+                data.get("translated_audio_available", False)
+            ),
             pipeline_metadata=data.get("pipeline_metadata"),
             original_audio_url=data.get("original_audio_url"),
         )
@@ -139,6 +161,10 @@ class SessionMessage:
 @dataclass
 class Session:
     id: str
+    # Transitional defaults keep untouched legacy call sites importable while
+    # the hard-cut routes are migrated. Persistence rejects missing scope.
+    tenant_id: Optional[str] = None
+    runtime_configuration: Optional[RuntimeConfigurationSnapshot] = None
     customer_language: Optional[str] = None  # Wird erst bei Client-Join gesetzt
     admin_language: str = "de"
     status: SessionStatus = SessionStatus.PENDING
@@ -154,10 +180,54 @@ class Session:
     timeout_warning_sent: bool = False
     session_timeout_minutes: int = 30  # Auto-close nach 30 Minuten
     warning_timeout_minutes: int = 25  # Warning nach 25 Minuten
+    admin_connection_count: int = 0
+    customer_connection_count: int = 0
+    admin_disconnected_at: Optional[datetime] = None
+    reconnect_grace_minutes: int = 30
+    timeout_warning_minutes: int = 5
+    maximum_lifetime_hours: int = 8
+
+    @property
+    def key(self) -> TenantSessionKey:
+        if self.tenant_id is None:
+            raise ValueError("session has no tenant scope")
+        return TenantSessionKey(self.tenant_id, self.id)
+
+    def next_timeout_at(self) -> datetime:
+        absolute_deadline = self.created_at + timedelta(
+            hours=self.maximum_lifetime_hours
+        )
+        if self.admin_connection_count > 0:
+            return absolute_deadline
+        grace_anchor = self.admin_disconnected_at or self.created_at
+        reconnect_deadline = grace_anchor + timedelta(
+            minutes=self.reconnect_grace_minutes
+        )
+        return min(absolute_deadline, reconnect_deadline)
+
+    def warning_at(self) -> datetime:
+        return self.next_timeout_at() - timedelta(minutes=self.timeout_warning_minutes)
+
+    def warning_due(self, now: datetime) -> bool:
+        if self.timeout_warning_sent or self.status == SessionStatus.TERMINATED:
+            return False
+        current = _ensure_utc(now)
+        return self.warning_at() <= current < self.next_timeout_at()
+
+    def timeout_due(self, now: datetime) -> bool:
+        if self.status == SessionStatus.TERMINATED:
+            return False
+        return _ensure_utc(now) >= self.next_timeout_at()
 
     def to_dict(self, include_messages: bool = False) -> Dict[str, Any]:
         data = {
             "id": self.id,
+            "tenant_id": self.tenant_id,
+            "runtime_configuration": (
+                self.runtime_configuration.to_dict()
+                if self.runtime_configuration is not None
+                else None
+            ),
             "customer_language": self.customer_language,
             "admin_language": self.admin_language,
             "status": self.status.value,
@@ -174,11 +244,32 @@ class Session:
             "session_timeout_minutes": self.session_timeout_minutes,
             "warning_timeout_minutes": self.warning_timeout_minutes,
             "minutes_since_activity": int(_minutes_since(self.last_activity)),
+            "admin_connection_count": self.admin_connection_count,
+            "customer_connection_count": self.customer_connection_count,
+            "admin_disconnected_at": (
+                self.admin_disconnected_at.isoformat()
+                if self.admin_disconnected_at is not None
+                else None
+            ),
+            "reconnect_grace_minutes": self.reconnect_grace_minutes,
+            "timeout_warning_minutes": self.timeout_warning_minutes,
+            "maximum_lifetime_hours": self.maximum_lifetime_hours,
+            "warning_at": self.warning_at().isoformat() if self.tenant_id else None,
+            "timeout_at": (
+                self.next_timeout_at().isoformat() if self.tenant_id else None
+            ),
         }
 
         if include_messages:
             data["messages"] = [message.to_dict() for message in self.messages]
 
+        return data
+
+    def to_public_dict(self) -> Dict[str, Any]:
+        """Serialize dashboard-safe session state without tenant internals."""
+        data = self.to_dict()
+        data.pop("tenant_id", None)
+        data.pop("runtime_configuration", None)
         return data
 
     def update_activity(self):
@@ -215,9 +306,14 @@ class Session:
             else None
         )
         last_activity_raw = data.get("last_activity", data["created_at"])
+        admin_disconnected_raw = data.get("admin_disconnected_at")
 
         session = cls(
             id=data["id"],
+            tenant_id=data["tenant_id"],
+            runtime_configuration=RuntimeConfigurationSnapshot.from_dict(
+                data["runtime_configuration"]
+            ),
             customer_language=data.get("customer_language"),
             admin_language=data.get("admin_language", "de"),
             status=SessionStatus(data.get("status", SessionStatus.PENDING.value)),
@@ -231,42 +327,47 @@ class Session:
             timeout_warning_sent=data.get("timeout_warning_sent", False),
             session_timeout_minutes=data.get("session_timeout_minutes", 30),
             warning_timeout_minutes=data.get("warning_timeout_minutes", 25),
+            admin_connection_count=data.get("admin_connection_count", 0),
+            customer_connection_count=data.get("customer_connection_count", 0),
+            admin_disconnected_at=(
+                _ensure_utc(datetime.fromisoformat(admin_disconnected_raw))
+                if admin_disconnected_raw
+                else None
+            ),
+            reconnect_grace_minutes=data.get("reconnect_grace_minutes", 30),
+            timeout_warning_minutes=data.get("timeout_warning_minutes", 5),
+            maximum_lifetime_hours=data.get("maximum_lifetime_hours", 8),
         )
 
         return session
 
 
-def _set_global_session_manager(manager: SessionManager) -> None:  # type: ignore[name-defined]
-    """Global SessionManager-Referenz aktualisieren."""
-    global session_manager
-    session_manager = manager
-
-
 class SessionManager:
-    _instance: Optional[SessionManager] = None  # type: ignore[name-defined]
-
-    # A class attribute, not set in __init__: __new__ returns the singleton but
-    # Python still runs __init__ on every `SessionManager()`, and the test suite
-    # builds many. Initialising it there would detach the gateway's emitter the
-    # first time anything constructed a manager after startup.
     quality_telemetry: Optional[Any] = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        store: Optional[TenantSessionStore] = None,
+        clock: Callable[[], datetime] = utc_now,
+        session_id_factory: Optional[Callable[[], str]] = None,
+    ):
         self.redis_client: Optional[Redis] = None
         self.redis_namespace: str = os.getenv("REDIS_NAMESPACE", "ssf")
         self.redis_enabled: bool = False
         self.allow_parallel_sessions: bool = _env_flag(
             "SSF_ALLOW_PARALLEL_SESSIONS", False
         )
+        self.store = store
+        self.clock = clock
+        self.session_id_factory = session_id_factory or (
+            lambda: str(uuid.uuid4())[:8].upper()
+        )
+        self.tenant_mode = store is not None
 
         self.reset()
-        _set_global_session_manager(self)
-        self._init_persistence()
+        if not self.tenant_mode:
+            self._init_persistence()
 
     def attach_quality_telemetry(self, telemetry: Optional[Any]) -> None:
         """Wired by the gateway's lifespan; None detaches it on teardown.
@@ -290,6 +391,11 @@ class SessionManager:
         try:
             telemetry.emit_session_lifecycle(
                 session_ref=session_ref(session.id),
+                tenant_ref=(
+                    tenant_ref(session.tenant_id)
+                    if session.tenant_id
+                    else MISSING_TENANT_REFERENCE
+                ),
                 phase=phase,
                 termination_reason=reason,
                 session_duration_ms=_session_duration_ms(session),
@@ -300,9 +406,16 @@ class SessionManager:
 
     def reset(self, *, clear_persistence: bool = False):
         """SessionManager Zustand auf Initialwerte zurücksetzen."""
-        self.sessions: Dict[str, Session] = {}
-        self.websocket_connections: Dict[str, Dict[str, Any]] = {}
-        self.active_admin_sessions: Set[str] = set()  # Mehrere parallele Admin-Sessions
+        if clear_persistence and isinstance(self.store, MemoryTenantSessionStore):
+            self.store.clear()
+        if self.tenant_mode:
+            self.sessions: Dict[Any, Session] = {}
+            self.websocket_connections: Dict[Any, Dict[str, Any]] = {}
+            self.active_admin_sessions: Any = {}
+        else:
+            self.sessions = {}
+            self.websocket_connections = {}
+            self.active_admin_sessions = set()
         self.websocket_manager: Optional["WebSocketManager"] = None
 
         if clear_persistence and self.redis_enabled:
@@ -310,6 +423,39 @@ class SessionManager:
 
         if self.redis_enabled:
             self._load_sessions_from_persistence()
+
+    def rehydrate_tenant_sessions(self) -> None:
+        """Restore active v2 sessions and discard process-local presence.
+
+        Redis connection counts describe sockets owned by the process that
+        wrote them. They cannot survive a gateway restart. A previously
+        connected administrator receives a fresh reconnect-grace anchor at
+        restart; an already disconnected administrator retains its original
+        anchor so restarting cannot extend an expired session indefinitely.
+        """
+
+        if self.store is None:
+            raise RuntimeError("tenant session store is unavailable")
+        restored = self.store.list_active()
+        restarted_at = self.clock()
+        for session in restored:
+            stale_admin_presence = (
+                session.admin_connected or session.admin_connection_count > 0
+            )
+            session.admin_connected = False
+            session.customer_connected = False
+            session.admin_connection_count = 0
+            session.customer_connection_count = 0
+            if stale_admin_presence:
+                session.admin_disconnected_at = restarted_at
+                session.timeout_warning_sent = False
+            elif session.admin_disconnected_at is None:
+                session.admin_disconnected_at = session.created_at
+            self.store.save(session)
+            self.sessions[session.key] = session
+            self.active_admin_sessions.setdefault(session.tenant_id, set()).add(
+                session.id
+            )
 
     # === Persistence Helpers ===
 
@@ -409,7 +555,11 @@ class SessionManager:
         except RedisError as exc:
             print(f"⚠️ Bereinigung des Session-Stores fehlgeschlagen: {exc}")
 
-    async def create_admin_session(self) -> str:
+    async def create_admin_session(
+        self,
+        tenant_id: Optional[str] = None,
+        runtime_configuration: Optional[RuntimeConfigurationSnapshot] = None,
+    ) -> Any:
         """Neue Admin-Session erstellen.
 
         Standardmäßig wird aus Datenschutzgründen genau eine aktive Admin-Session
@@ -417,13 +567,17 @@ class SessionManager:
         ``SSF_ALLOW_PARALLEL_SESSIONS=true`` reaktiviert werden.
         """
         await asyncio.sleep(0)
+        if tenant_id is not None and runtime_configuration is not None:
+            return await self._create_tenant_admin_session(
+                tenant_id, runtime_configuration
+            )
         if not self.allow_parallel_sessions:
             await self.terminate_all_active_sessions(reason="new_session_created")
 
         session_id = str(uuid.uuid4())[:8].upper()
         session = Session(
-            id=session_id, status=SessionStatus.PENDING  # Wartet auf Customer-Join
-        )
+            id=session_id, status=SessionStatus.PENDING
+        )  # Wartet auf Customer-Join
         self.sessions[session_id] = session
         self.active_admin_sessions.add(session_id)
 
@@ -435,8 +589,57 @@ class SessionManager:
         print(f"✅ Neue Admin-Session erstellt: {session_id}")
         return session_id
 
-    async def terminate_all_active_sessions(self, reason: str = "system_cleanup"):
+    async def _create_tenant_admin_session(
+        self,
+        tenant_id: str,
+        runtime_configuration: RuntimeConfigurationSnapshot,
+    ) -> Session:
+        if self.store is None:
+            self.store = MemoryTenantSessionStore()
+        if not self.allow_parallel_sessions:
+            await self.terminate_all_active_sessions(
+                reason="new_session_created", tenant_id=tenant_id
+            )
+        for _attempt in range(32):
+            created_at = self.clock()
+            session = Session(
+                id=self.session_id_factory(),
+                tenant_id=tenant_id,
+                runtime_configuration=runtime_configuration,
+                status=SessionStatus.PENDING,
+                created_at=created_at,
+                last_activity=created_at,
+                admin_disconnected_at=created_at,
+                reconnect_grace_minutes=_positive_env_int(
+                    "SSF_SESSION_RECONNECT_GRACE_MINUTES", 30
+                ),
+                timeout_warning_minutes=_positive_env_int(
+                    "SSF_SESSION_TIMEOUT_WARNING_MINUTES", 5
+                ),
+                maximum_lifetime_hours=_positive_env_int("SSF_SESSION_MAX_HOURS", 8),
+            )
+            if self.store.create(session):
+                self.sessions[session.key] = session
+                self.active_admin_sessions.setdefault(tenant_id, set()).add(session.id)
+                self._emit_lifecycle(session, SessionLifecyclePhase.CREATED)
+                return session
+        raise RuntimeError("could not allocate a globally unique session id")
+
+    async def terminate_all_active_sessions(
+        self, reason: str = "system_cleanup", tenant_id: Optional[str] = None
+    ):
         """Alle aktiven Sessions beenden (manueller Cleanup)"""
+        if tenant_id is not None:
+            keys = [
+                key
+                for key, session in tuple(self.sessions.items())
+                if isinstance(key, TenantSessionKey)
+                and hmac.compare_digest(key.tenant_id, tenant_id)
+                and session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
+            ]
+            for key in keys:
+                await self.terminate_session(key, reason)
+            return
         terminated_count = 0
         terminated_session_ids: set[str] = set()
 
@@ -460,23 +663,93 @@ class SessionManager:
         self._persist_active_sessions()
 
     async def terminate_session(
-        self, session_id: str, reason: str = "manual_termination"
+        self, session_id: Any, reason: str = "manual_termination"
     ):
         """Einzelne Session beenden mit WebSocket-Notifications"""
         session = self.get_session(session_id)
-        if not session or session.status == SessionStatus.TERMINATED:
+        if not session:
             return
 
-        # Session-Status aktualisieren
+        if isinstance(session_id, TenantSessionKey):
+            if self.store is None:
+                raise RuntimeError("tenant session store is unavailable")
+
+            if session.status != SessionStatus.TERMINATED:
+                # Redis termination is the security-sensitive commit point. Keep
+                # the cached object and runtime indexes untouched until the atomic
+                # record/index/tombstone mutation succeeds, so a transient store
+                # failure remains both internally consistent and retryable.
+                terminal_session = replace(
+                    session,
+                    status=SessionStatus.TERMINATED,
+                    terminated_at=utc_now(),
+                    termination_reason=reason,
+                    admin_connected=False,
+                    customer_connected=False,
+                    admin_connection_count=0,
+                    customer_connection_count=0,
+                )
+                committed_terminal = self.store.terminate(terminal_session)
+                if committed_terminal is None:
+                    committed_terminal = terminal_session
+
+                # Preserve references held by handlers while replacing every
+                # cached field with Redis' canonical terminal snapshot. This
+                # discards any stale mutations made after a committed
+                # termination whose response was lost.
+                for session_field in fields(Session):
+                    setattr(
+                        session,
+                        session_field.name,
+                        getattr(committed_terminal, session_field.name),
+                    )
+                tenant_active = self.active_admin_sessions.get(
+                    session_id.tenant_id, set()
+                )
+                tenant_active.discard(session_id.session_id)
+                if not tenant_active:
+                    self.active_admin_sessions.pop(session_id.tenant_id, None)
+                self._emit_lifecycle(
+                    session,
+                    SessionLifecyclePhase.TERMINATED,
+                    SessionTerminationReason.classify(reason),
+                )
+
+            # Cleanup is deliberately idempotent and also runs for a terminal
+            # session. If notification/socket cleanup was interrupted after the
+            # Redis commit, a retry can still revoke capabilities and finish it.
+            from .realtime_ticket import (
+                RealtimeTicketUnavailable,
+                realtime_ticket_store,
+            )
+
+            try:
+                realtime_ticket_store.revoke(session_id)
+            except RealtimeTicketUnavailable:
+                logger.error(
+                    "realtime_ticket_revocation_unavailable",
+                    extra={"tenant_ref": session_id.tenant_ref},
+                )
+            from .websocket_polling_routes import polling_store
+
+            polling_store.terminate(session_id, reason)
+            await self._send_termination_notifications(session_id, reason)
+            await self._cleanup_websocket_connections(session_id)
+            return
+
+        if session.status == SessionStatus.TERMINATED:
+            return
+
+        # Legacy session mutation remains process-local and follows its
+        # established persistence path.
         session.status = SessionStatus.TERMINATED
         session.terminated_at = utc_now()
         session.termination_reason = reason
         session.admin_connected = False
         session.customer_connected = False
+        session.admin_connection_count = 0
+        session.customer_connection_count = 0
 
-        # Emitted here rather than after the notifications below: this is the
-        # last point at which the session's own state is the reason it ended.
-        # A WebSocket failure further down must not lose the row.
         self._emit_lifecycle(
             session,
             SessionLifecyclePhase.TERMINATED,
@@ -499,7 +772,7 @@ class SessionManager:
         print(f"🔚 Session {session_id} beendet. Grund: {reason}")
 
     async def _send_termination_notifications(
-        self, session_id: str, reason: str
+        self, session_id: Any, reason: str
     ) -> bool:
         """WebSocket-Benachrichtigungen bei Session-Beendigung"""
         if self.websocket_manager:
@@ -544,7 +817,7 @@ class SessionManager:
         }
         return messages.get(reason, "Die Session wurde beendet.")
 
-    async def _cleanup_websocket_connections(self, session_id: str):
+    async def _cleanup_websocket_connections(self, session_id: Any):
         """WebSocket-Connection-Pool cleanup"""
         await asyncio.sleep(0)
         if session_id in self.websocket_connections:
@@ -575,8 +848,15 @@ class SessionManager:
 
         return session_id
 
-    def get_session(self, session_id: str) -> Optional[Session]:
+    def get_session(self, session_id: Any) -> Optional[Session]:
         """Session abrufen"""
+        if isinstance(session_id, TenantSessionKey):
+            session = self.sessions.get(session_id)
+            if session is None and self.store is not None:
+                session = self.store.load(session_id)
+                if session is not None:
+                    self.sessions[session_id] = session
+            return session
         session = self.sessions.get(session_id)
         if session is None and self.redis_enabled and self.redis_client:
             try:
@@ -591,26 +871,111 @@ class SessionManager:
                 )
         return session
 
+    def resolve_customer_session(self, session_id: str) -> Optional[TenantSessionKey]:
+        if self.store is None:
+            return None
+        key = self.store.resolve_join(session_id)
+        if key is None:
+            return None
+        session = self.get_session(key)
+        if session is None or session.status == SessionStatus.TERMINATED:
+            return None
+        return key
+
+    def admin_connected(self, key: TenantSessionKey) -> None:
+        session = self.get_session(key)
+        if session is None or session.status == SessionStatus.TERMINATED:
+            raise KeyError("session not found")
+        session.admin_connection_count += 1
+        session.admin_connected = True
+        session.admin_disconnected_at = None
+        session.timeout_warning_sent = False
+        if self.store is not None:
+            self.store.save(session)
+
+    def admin_disconnected(self, key: TenantSessionKey) -> None:
+        session = self.get_session(key)
+        if session is None:
+            raise KeyError("session not found")
+        if session.status == SessionStatus.TERMINATED:
+            return
+        session.admin_connection_count = max(0, session.admin_connection_count - 1)
+        session.admin_connected = session.admin_connection_count > 0
+        if session.admin_connection_count == 0:
+            session.admin_disconnected_at = self.clock()
+        if self.store is not None:
+            self.store.save(session)
+
+    def customer_connected(self, key: TenantSessionKey) -> None:
+        session = self.get_session(key)
+        if session is None or session.status == SessionStatus.TERMINATED:
+            raise KeyError("session not found")
+        session.customer_connection_count += 1
+        session.customer_connected = True
+        if self.store is not None:
+            self.store.save(session)
+
+    def customer_disconnected(self, key: TenantSessionKey) -> None:
+        session = self.get_session(key)
+        if session is None:
+            raise KeyError("session not found")
+        if session.status == SessionStatus.TERMINATED:
+            return
+        session.customer_connection_count = max(
+            0, session.customer_connection_count - 1
+        )
+        session.customer_connected = session.customer_connection_count > 0
+        if self.store is not None:
+            self.store.save(session)
+
     def get_session_status(self, session_id: str) -> Optional[SessionStatus]:
         """Session-Status abrufen"""
         session = self.get_session(session_id)
         return session.status if session else None
 
-    def add_message(self, session_id: str, message: SessionMessage):
+    def add_message(self, session_id: Any, message: SessionMessage):
         """Nachricht zur Session hinzufügen"""
         if session := self.get_session(session_id):
             session.messages.append(message)
             # ✨ Session-Aktivität bei neuer Nachricht aktualisieren
             session.update_activity()
-            self._persist_session(session)
+            if isinstance(session_id, TenantSessionKey):
+                if self.store is None:
+                    raise RuntimeError("tenant session store is unavailable")
+                self.store.save(session)
+            else:
+                self._persist_session(session)
 
-    def get_active_session(self, session_id: Optional[str] = None) -> Optional[Dict]:
+    def get_active_session(
+        self,
+        session_id: Optional[str] = None,
+        *,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[Dict]:
         """Aktive Admin-Session abrufen.
 
         Wenn eine Session-ID übergeben wird, wird genau diese Session zurückgegeben,
         sofern sie noch nicht beendet wurde. Ohne Session-ID wird die zuletzt erstellte
         aktive Session geliefert, solange diese eindeutig ist.
         """
+
+        if tenant_id is not None:
+            if self.store is None:
+                return None
+            candidates = [
+                session
+                for session in self.store.list_for_tenant(tenant_id)
+                if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
+                and (session_id is None or session.id == session_id)
+            ]
+            if not candidates:
+                return None
+            if len(candidates) > 1 and session_id is None:
+                raise ValueError(
+                    "Mehrere aktive Sessions vorhanden; explizite session_id erforderlich"
+                )
+            candidates.sort(key=lambda item: item.created_at, reverse=True)
+            return candidates[0].to_public_dict()
 
         if session_id:
             session = self.get_session(session_id)
@@ -633,20 +998,42 @@ class SessionManager:
             )
 
         active_sessions.sort(key=lambda s: s.created_at, reverse=True)
-        return active_sessions[0].to_dict()
+        return active_sessions[0].to_public_dict()
 
-    def get_active_sessions(self) -> List[Dict]:
+    def get_active_sessions(self, *, tenant_id: Optional[str] = None) -> List[Dict]:
         """Alle aktiven oder ausstehende Sessions zurückgeben."""
+        if tenant_id is not None:
+            if self.store is None:
+                return []
+            return [
+                session.to_public_dict()
+                for session in self.store.list_for_tenant(tenant_id)
+                if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
+            ]
         return [
-            session.to_dict()
+            session.to_public_dict()
             for session in self.sessions.values()
             if session.status in [SessionStatus.PENDING, SessionStatus.ACTIVE]
         ]
 
-    def get_session_history(self, limit: int = 10) -> List[Dict]:
+    def get_session_history(
+        self, limit: int = 10, *, tenant_id: Optional[str] = None
+    ) -> List[Dict]:
         """Vergangene Sessions für Admin-Dashboard"""
+        if tenant_id is not None:
+            if self.store is None:
+                return []
+            terminated_sessions = [
+                session.to_public_dict()
+                for session in self.store.list_for_tenant(tenant_id)
+                if session.status == SessionStatus.TERMINATED
+            ]
+            terminated_sessions.sort(
+                key=lambda item: item.get("terminated_at", ""), reverse=True
+            )
+            return terminated_sessions[:limit]
         terminated_sessions = [
-            session.to_dict()
+            session.to_public_dict()
             for session in self.sessions.values()
             if session.status == SessionStatus.TERMINATED
         ]
@@ -656,7 +1043,7 @@ class SessionManager:
 
         return terminated_sessions[:limit]
 
-    async def activate_session(self, session_id: str, customer_language: str):
+    async def activate_session(self, session_id: Any, customer_language: str):
         """Session aktivieren wenn Customer beitritt oder Sprache ändern"""
         await asyncio.sleep(0)
         session = self.get_session(session_id)
@@ -678,20 +1065,44 @@ class SessionManager:
         if activated:
             session.status = SessionStatus.ACTIVE
         session.customer_connected = True
-        self._persist_session(session)
+        if isinstance(session_id, TenantSessionKey):
+            if self.store is None:
+                raise RuntimeError("tenant session store is unavailable")
+            self.store.save(session)
+        else:
+            self._persist_session(session)
 
         if activated:
             self._emit_lifecycle(session, SessionLifecyclePhase.ACTIVATED)
 
-        print(
-            f"🎯 Session {session_id} aktiviert/aktualisiert mit Sprache: {customer_language}"
-        )
+        if isinstance(session_id, TenantSessionKey):
+            logger.info(
+                "tenant_session_activation tenant_ref=%s session_ref=%s",
+                tenant_ref(session_id.tenant_id),
+                session_ref(session_id.session_id),
+            )
+        else:
+            print(
+                f"🎯 Session {session_id} aktiviert/aktualisiert mit Sprache: "
+                f"{customer_language}"
+            )
 
     async def add_websocket_connection(
-        self, session_id: str, client_type: ClientType, websocket
+        self, session_id: Any, client_type: ClientType, websocket
     ):
         """WebSocket-Verbindung zur Session hinzufügen"""
         await asyncio.sleep(0)
+        if isinstance(session_id, TenantSessionKey):
+            if client_type == ClientType.ADMIN:
+                self.admin_connected(session_id)
+            else:
+                self.customer_connected(session_id)
+            logger.info(
+                "tenant_websocket_registered",
+                extra={"tenant_ref": session_id.tenant_ref},
+            )
+            return
+
         if session_id not in self.websocket_connections:
             self.websocket_connections[session_id] = {}
 
@@ -711,10 +1122,21 @@ class SessionManager:
         )
 
     async def remove_websocket_connection(
-        self, session_id: str, client_type: ClientType
+        self, session_id: Any, client_type: ClientType
     ):
         """WebSocket-Verbindung von Session entfernen"""
         await asyncio.sleep(0)
+        if isinstance(session_id, TenantSessionKey):
+            if client_type == ClientType.ADMIN:
+                self.admin_disconnected(session_id)
+            else:
+                self.customer_disconnected(session_id)
+            logger.info(
+                "tenant_websocket_unregistered",
+                extra={"tenant_ref": session_id.tenant_ref},
+            )
+            return
+
         if session_id in self.websocket_connections:
             self.websocket_connections[session_id].pop(client_type.value, None)
 
@@ -750,25 +1172,48 @@ class SessionManager:
 
     async def check_session_timeouts(self):
         """Alle Sessions auf Timeouts prüfen und entsprechende Aktionen durchführen"""
+        from .websocket_polling_routes import polling_store
+
+        for client in polling_store.prune():
+            try:
+                if client.client_type is ClientType.ADMIN:
+                    self.admin_disconnected(client.key)
+                else:
+                    self.customer_disconnected(client.key)
+            except KeyError:
+                pass
+
         current_sessions = tuple(self.sessions.values())
 
         for session in current_sessions:
             if session.status == SessionStatus.TERMINATED:
                 continue
 
-            # Timeout-Warning prüfen
-            if session.is_timeout_warning_due():
+            warning_due = (
+                session.warning_due(self.clock())
+                if session.tenant_id
+                else session.is_timeout_warning_due()
+            )
+            timeout_due = (
+                session.timeout_due(self.clock())
+                if session.tenant_id
+                else session.is_timeout_due()
+            )
+            if warning_due:
                 await self._send_timeout_warning(session)
-
-            # Auto-Termination prüfen
-            if session.is_timeout_due():
-                await self.terminate_session(session.id, reason="session_timeout")
+            if timeout_due:
+                await self.terminate_session(
+                    session.key if session.tenant_id else session.id,
+                    reason="session_timeout",
+                )
 
     async def _send_timeout_warning(self, session: Session):
         """Timeout-Warning an alle WebSocket-Clients der Session senden"""
         if self.websocket_manager:
             remaining_minutes = (
-                session.session_timeout_minutes - session.warning_timeout_minutes
+                session.timeout_warning_minutes
+                if session.tenant_id
+                else session.session_timeout_minutes - session.warning_timeout_minutes
             )
 
             warning_message = {
@@ -780,11 +1225,14 @@ class SessionManager:
             }
 
             await self.websocket_manager.broadcast_to_session(
-                session.id, warning_message
+                session.key if session.tenant_id else session.id,
+                warning_message,
             )
             session.timeout_warning_sent = True
-            self._persist_session(session)
-            print(f"⚠️ Timeout-Warning gesendet für Session {session.id}")
+            if session.tenant_id and self.store is not None:
+                self.store.save(session)
+            else:
+                self._persist_session(session)
 
     def get_sessions_requiring_timeout_check(self) -> List[Session]:
         """Sessions zurückgeben, die Timeout-Checks benötigen"""
@@ -794,15 +1242,20 @@ class SessionManager:
             if session.status in [SessionStatus.ACTIVE, SessionStatus.PENDING]
         ]
 
-    async def heartbeat_received(self, session_id: str, client_type: ClientType):
+    async def heartbeat_received(self, session_id: Any, client_type: ClientType):
         """Heartbeat von Client empfangen - Aktivität aktualisieren"""
-        self.update_session_activity(session_id)
+        if not isinstance(session_id, TenantSessionKey):
+            self.update_session_activity(session_id)
 
         # Optional: Heartbeat-Response senden
         if self.websocket_manager:
             response = {
                 "type": "heartbeat_response",
-                "session_id": session_id,
+                "session_id": (
+                    session_id.session_id
+                    if isinstance(session_id, TenantSessionKey)
+                    else session_id
+                ),
                 "client_type": client_type.value,
                 "timestamp": utc_now().isoformat(),
             }
@@ -812,4 +1265,4 @@ class SessionManager:
 
 
 # Globale Instanz
-session_manager = SessionManager()
+session_manager = SessionManager(store=MemoryTenantSessionStore())

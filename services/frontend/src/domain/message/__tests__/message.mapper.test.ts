@@ -19,6 +19,7 @@ describe('historyToChatMessages', () => {
         source_lang: 'en',
         target_lang: 'de',
         timestamp: '2026-08-21T10:00:00+00:00',
+        audio_url: '/api/customer/session/A1B2C3D4/audio/m1/translated.wav',
       },
       {
         id: 'm2',
@@ -29,6 +30,7 @@ describe('historyToChatMessages', () => {
         source_lang: 'de',
         target_lang: 'en',
         timestamp: '2026-08-21T10:00:05+00:00',
+        audio_url: '/api/customer/session/A1B2C3D4/audio/m2/translated.wav',
       },
     ],
   };
@@ -55,7 +57,7 @@ describe('historyToChatMessages', () => {
       id: 'm2',
       origin: 'peer',
       text: 'Do you have your old passport with you?',
-      audioUrl: '/api/audio/m2.wav',
+      audioUrl: '/api/customer/session/A1B2C3D4/audio/m2/translated.wav',
       sourceLanguage: 'de',
       targetLanguage: 'en',
       timestamp: '2026-08-21T10:00:05+00:00',
@@ -81,7 +83,9 @@ describe('historyToChatMessages', () => {
   it('resolves history audio against the gateway origin', () => {
     const [, incoming] = historyToChatMessages(dto, gatewayOrigin, 'customer');
 
-    expect(incoming.audioUrl).toBe('https://ssf.example/api/audio/m2.wav');
+    expect(incoming.audioUrl).toBe(
+      'https://ssf.example/api/customer/session/A1B2C3D4/audio/m2/translated.wav'
+    );
   });
 
   it('reads the admin as the owner of their own messages', () => {
@@ -98,6 +102,7 @@ describe('historyToChatMessages', () => {
             source_lang: 'de',
             target_lang: 'ar',
             timestamp: '2026-08-26T10:00:00+00:00',
+            audio_url: '/api/admin/session/A1B2C3D4/audio/m1/translated.wav',
           },
           {
             id: 'm2',
@@ -108,6 +113,7 @@ describe('historyToChatMessages', () => {
             source_lang: 'ar',
             target_lang: 'de',
             timestamp: '2026-08-26T10:01:00+00:00',
+            audio_url: '/api/admin/session/A1B2C3D4/audio/m2/translated.wav',
           },
         ],
       },
@@ -168,16 +174,18 @@ describe('realtimeToChatMessage', () => {
         role: 'receiver_message',
         text: 'translated words',
         audio_available: true,
-        audio_url: '/api/audio/m3.wav',
+        audio_url: '/api/customer/session/A1B2C3D4/audio/m3/translated.wav',
       },
       sameOrigin
     );
 
     expect(message?.origin).toBe('peer');
-    expect(message?.audioUrl).toBe('/api/audio/m3.wav');
+    expect(message?.audioUrl).toBe(
+      '/api/customer/session/A1B2C3D4/audio/m3/translated.wav'
+    );
   });
 
-  // The gateway sends a path, not a url; it is fetched by the browser as-is.
+  // The gateway sends a path, which becomes the authenticated loader's cache key.
   it('resolves incoming audio against the gateway origin', () => {
     const message = realtimeToChatMessage(
       {
@@ -186,12 +194,14 @@ describe('realtimeToChatMessage', () => {
         role: 'receiver_message',
         text: 'translated words',
         audio_available: true,
-        audio_url: '/api/audio/m3.wav',
+        audio_url: '/api/customer/session/A1B2C3D4/audio/m3/translated.wav',
       },
       gatewayOrigin
     );
 
-    expect(message?.audioUrl).toBe('https://ssf.example/api/audio/m3.wav');
+    expect(message?.audioUrl).toBe(
+      'https://ssf.example/api/customer/session/A1B2C3D4/audio/m3/translated.wav'
+    );
   });
 
   it('returns null for roles that are not messages', () => {

@@ -201,3 +201,79 @@ fi
         environment={**environment, "SSF_BACKUP_ROOT": str(missing_database_root)},
     )
     assert missing_database_result.returncode == 1
+
+
+def test_tenant_cutover_wrapper_refuses_a_running_gateway(tmp_path):
+    fake_docker = tmp_path / "docker"
+    fake_docker.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"$*\" == *\"ps --status running --services\"* ]]; then\n"
+        "  printf 'api_gateway\\nredis\\n'\n"
+        "fi\n"
+    )
+    fake_docker.chmod(0o755)
+
+    result = run_script(
+        "scripts/reset-legacy-conversation-state.sh",
+        "--destructive-reset-production",
+        environment={"PATH": f"{tmp_path}:{os.environ['PATH']}"},
+    )
+
+    assert result.returncode == 1
+    assert "api_gateway is still running" in result.stderr
+
+
+def test_tenant_cutover_wrapper_runs_only_the_guarded_one_off_command(tmp_path):
+    docker_log = tmp_path / "docker.log"
+    fake_docker = tmp_path / "docker"
+    fake_docker.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$*\" >> \"$FAKE_DOCKER_LOG\"\n"
+        "exit 0\n"
+    )
+    fake_docker.chmod(0o755)
+
+    result = run_script(
+        "scripts/reset-legacy-conversation-state.sh",
+        "--destructive-reset-production",
+        environment={
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "FAKE_DOCKER_LOG": str(docker_log),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    calls = docker_log.read_text()
+    assert "ps --status running --services" in calls
+    assert (
+        "run --rm --no-deps api_gateway python -m services.api_gateway.tenant_cutover "
+        "--apply --confirm-empty-production"
+    ) in calls
+
+
+def test_tenant_cutover_wrapper_exposes_a_non_destructive_preview(tmp_path):
+    docker_log = tmp_path / "docker.log"
+    fake_docker = tmp_path / "docker"
+    fake_docker.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$*\" >> \"$FAKE_DOCKER_LOG\"\n"
+        "exit 0\n"
+    )
+    fake_docker.chmod(0o755)
+
+    result = run_script(
+        "scripts/reset-legacy-conversation-state.sh",
+        "--dry-run",
+        environment={
+            "PATH": f"{tmp_path}:{os.environ['PATH']}",
+            "FAKE_DOCKER_LOG": str(docker_log),
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    calls = docker_log.read_text()
+    assert (
+        "run --rm --no-deps api_gateway python -m services.api_gateway.tenant_cutover "
+        "--dry-run"
+    ) in calls
+    assert "--apply" not in calls

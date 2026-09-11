@@ -26,7 +26,8 @@ from .quality_telemetry import (
     TerminalOutcome,
 )
 from .session_manager import ClientType
-from .session_pseudonym import session_ref
+from .session_pseudonym import MISSING_TENANT_REFERENCE, session_ref
+from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
 
@@ -173,8 +174,16 @@ class MessageTelemetryRecorder:
         if emit is None:
             return
         try:
+            key = self._session_id
             emit(
-                session_ref=session_ref(self._session_id),
+                session_ref=session_ref(
+                    key.session_id if isinstance(key, TenantSessionKey) else key
+                ),
+                tenant_ref=(
+                    key.tenant_ref
+                    if isinstance(key, TenantSessionKey)
+                    else MISSING_TENANT_REFERENCE
+                ),
                 direction=self._direction,
                 input_mode=self._input_mode,
                 source_lang=self._source_lang,

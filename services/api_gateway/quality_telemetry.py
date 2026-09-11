@@ -21,6 +21,8 @@ from uuid import UUID, uuid4
 from fastapi import Request
 from prometheus_client import CollectorRegistry, Counter
 
+from .session_pseudonym import MISSING_TENANT_REFERENCE
+
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION: Final[int] = 1
@@ -173,6 +175,7 @@ class AttributeKind(str, Enum):
     LABEL = "label"
     LANGUAGE = "language"
     OPAQUE_REF = "opaque_ref"
+    TENANT_REF = "tenant_ref"
 
 
 # A label is operator-set configuration (a model name, a release token), not
@@ -187,6 +190,7 @@ _LANGUAGE_PATTERN: Final = re.compile(
     r"\A[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?\Z", re.ASCII
 )
 _OPAQUE_REF_PATTERN: Final = re.compile(r"\A[0-9a-f]{16,64}\Z", re.ASCII)
+_TENANT_REF_PATTERN: Final = re.compile(r"\A[0-9a-f]{12}\Z", re.ASCII)
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,6 +233,7 @@ ALLOWED_ATTRIBUTES: Final[Mapping[str, AttributeSpec]] = {
         AttributeKind.ENUM, _enum_values(QualityErrorCode)
     ),
     "ssf.quality.session_ref": AttributeSpec(AttributeKind.OPAQUE_REF),
+    "ssf.quality.tenant_ref": AttributeSpec(AttributeKind.TENANT_REF),
     "ssf.quality.direction": AttributeSpec(
         AttributeKind.ENUM, _enum_values(MessageDirection)
     ),
@@ -421,6 +426,7 @@ class TranslationMessageEvent:
     translation_duration_ms: int
     refinement_duration_ms: int
     tts_duration_ms: int
+    tenant_ref: str = MISSING_TENANT_REFERENCE
 
     def __post_init__(self) -> None:
         _validate_envelope(self.emitted_at_utc, self.event_type, self.schema_version)
@@ -429,6 +435,8 @@ class TranslationMessageEvent:
                 raise ValueError(f"{name} must not be negative")
         if not _OPAQUE_REF_PATTERN.match(self.session_ref):
             raise ValueError("session_ref is not an opaque reference")
+        if not _TENANT_REF_PATTERN.match(self.tenant_ref):
+            raise ValueError("tenant_ref is not a bounded tenant reference")
         for code in (self.source_lang, self.target_lang):
             if not _LANGUAGE_PATTERN.match(code):
                 raise ValueError(f"not a language code: {code!r}")
@@ -446,6 +454,7 @@ class TranslationMessageEvent:
     def _attributes(self) -> dict[str, str]:
         return {
             "ssf.quality.session_ref": self.session_ref,
+            "ssf.quality.tenant_ref": self.tenant_ref,
             "ssf.quality.direction": self.direction.value,
             "ssf.quality.input_mode": self.input_mode.value,
             "ssf.quality.source_lang": self.source_lang,
@@ -489,6 +498,7 @@ class SessionLifecycleEvent:
     termination_reason: SessionTerminationReason
     session_duration_ms: int
     message_count: int
+    tenant_ref: str = MISSING_TENANT_REFERENCE
 
     def __post_init__(self) -> None:
         _validate_envelope(self.emitted_at_utc, self.event_type, self.schema_version)
@@ -498,6 +508,8 @@ class SessionLifecycleEvent:
             raise ValueError("message_count must not be negative")
         if not _OPAQUE_REF_PATTERN.match(self.session_ref):
             raise ValueError("session_ref is not an opaque reference")
+        if not _TENANT_REF_PATTERN.match(self.tenant_ref):
+            raise ValueError("tenant_ref is not a bounded tenant reference")
         ended = self.phase is SessionLifecyclePhase.TERMINATED
         named = self.termination_reason is not SessionTerminationReason.NONE
         if ended != named:
@@ -506,6 +518,7 @@ class SessionLifecycleEvent:
     def _attributes(self) -> dict[str, str]:
         return {
             "ssf.quality.session_ref": self.session_ref,
+            "ssf.quality.tenant_ref": self.tenant_ref,
             "ssf.quality.lifecycle_phase": self.phase.value,
             "ssf.quality.termination_reason": self.termination_reason.value,
             "ssf.quality.session_duration_ms": str(self.session_duration_ms),
@@ -541,6 +554,7 @@ _SHAPE_PATTERNS: Final[Mapping[AttributeKind, "re.Pattern[str]"]] = {
     AttributeKind.LABEL: _LABEL_PATTERN,
     AttributeKind.LANGUAGE: _LANGUAGE_PATTERN,
     AttributeKind.OPAQUE_REF: _OPAQUE_REF_PATTERN,
+    AttributeKind.TENANT_REF: _TENANT_REF_PATTERN,
 }
 
 
@@ -814,6 +828,7 @@ class QualityTelemetry:
         translation_duration_ms: int,
         refinement_duration_ms: int,
         tts_duration_ms: int,
+        tenant_ref: str = MISSING_TENANT_REFERENCE,
     ) -> ProbeResult:
         """One processed message, successful or not.
 
@@ -832,6 +847,11 @@ class QualityTelemetry:
                 emitted_at_utc=datetime.now(timezone.utc),
                 event_type=QualityEventType.TRANSLATION_MESSAGE,
                 session_ref=_as_opaque_ref(session_ref),
+                tenant_ref=(
+                    tenant_ref
+                    if _TENANT_REF_PATTERN.match(str(tenant_ref))
+                    else MISSING_TENANT_REFERENCE
+                ),
                 direction=direction,
                 input_mode=input_mode,
                 source_lang=_as_language(source_lang),
@@ -859,6 +879,7 @@ class QualityTelemetry:
         termination_reason: SessionTerminationReason,
         session_duration_ms: int,
         message_count: int,
+        tenant_ref: str = MISSING_TENANT_REFERENCE,
     ) -> ProbeResult:
         """One session transition.
 
@@ -876,6 +897,11 @@ class QualityTelemetry:
                 emitted_at_utc=datetime.now(timezone.utc),
                 event_type=QualityEventType.SESSION_LIFECYCLE,
                 session_ref=_as_opaque_ref(session_ref),
+                tenant_ref=(
+                    tenant_ref
+                    if _TENANT_REF_PATTERN.match(str(tenant_ref))
+                    else MISSING_TENANT_REFERENCE
+                ),
                 phase=phase,
                 termination_reason=termination_reason,
                 session_duration_ms=max(0, int(session_duration_ms or 0)),

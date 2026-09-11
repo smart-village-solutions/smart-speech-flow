@@ -56,7 +56,9 @@ describe('AccessCodeScreen', () => {
   });
 
   it('shows an inline error and keeps the code when the session is unknown', async () => {
-    server.use(http.get('*/api/session/ZZZZZZZZ', () => new HttpResponse(null, { status: 404 })));
+    server.use(
+      http.get('*/api/customer/session/ZZZZZZZZ', () => new HttpResponse(null, { status: 404 }))
+    );
 
     renderWithProviders(tree());
 

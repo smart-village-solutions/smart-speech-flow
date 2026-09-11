@@ -5,7 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from services.api_gateway.session_manager import SessionManager
+from services.api_gateway.session_manager import ClientType, SessionManager
+from services.api_gateway.session_store import MemoryTenantSessionStore
 from tests.pipeline_helpers import (
     PIPELINE_SUCCESS,
     SAFETY_TIMEOUT,
@@ -27,7 +28,7 @@ BLOCK_SECONDS = 0.4
 
 @pytest.fixture
 def session_manager():
-    return SessionManager()
+    return SessionManager(store=MemoryTenantSessionStore())
 
 
 class _ThreadRecorder:
@@ -57,7 +58,9 @@ class TestPipelineRunsOffTheEventLoop:
             patch.object(session_routes, "session_manager", session_manager),
             patch.object(session_routes, "process_wav", new=recorder),
         ):
-            await session_routes.process_audio_input(session_id, audio_request(), 0.0)
+            await session_routes.process_audio_input(
+                session_id, ClientType.ADMIN, audio_request(), 0.0
+            )
 
         assert recorder.thread_ids, "process_wav was never called"
         assert recorder.thread_ids[0] != loop_thread_id, (
@@ -77,7 +80,9 @@ class TestPipelineRunsOffTheEventLoop:
             patch.object(session_routes, "session_manager", session_manager),
             patch.object(session_routes, "process_text_pipeline", new=recorder),
         ):
-            await session_routes.process_text_input(session_id, text_request(), 0.0)
+            await session_routes.process_text_input(
+                session_id, ClientType.ADMIN, text_request(), 0.0
+            )
 
         assert recorder.thread_ids, "process_text_pipeline was never called"
         assert (
@@ -146,8 +151,12 @@ class TestConcurrentProgress:
         ):
             results = await asyncio.wait_for(
                 asyncio.gather(
-                    session_routes.process_audio_input(first, audio_request(), 0.0),
-                    session_routes.process_audio_input(second, audio_request(), 0.0),
+                    session_routes.process_audio_input(
+                        first, ClientType.ADMIN, audio_request(), 0.0
+                    ),
+                    session_routes.process_audio_input(
+                        second, ClientType.ADMIN, audio_request(), 0.0
+                    ),
                 ),
                 timeout=SAFETY_TIMEOUT,
             )
@@ -205,7 +214,9 @@ class TestEventLoopResponsiveness:
             ),
         ):
             ticks = await self._count_ticks_during(
-                session_routes.process_audio_input(session_id, audio_request(), 0.0),
+                session_routes.process_audio_input(
+                    session_id, ClientType.ADMIN, audio_request(), 0.0
+                ),
                 entered,
             )
 
@@ -233,7 +244,9 @@ class TestEventLoopResponsiveness:
             ),
         ):
             ticks = await self._count_ticks_during(
-                session_routes.process_text_input(session_id, text_request(), 0.0),
+                session_routes.process_text_input(
+                    session_id, ClientType.ADMIN, text_request(), 0.0
+                ),
                 entered,
             )
 

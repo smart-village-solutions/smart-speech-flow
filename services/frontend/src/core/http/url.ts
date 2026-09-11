@@ -6,9 +6,8 @@ const ABSOLUTE = /^([a-z][a-z\d+\-.]*:|\/\/)/i;
  *
  * The deployed SPA and the gateway are on different hosts —
  * `translate.smart-village.solutions` and `ssf.smart-village.solutions`. Axios
- * applies its own `baseURL`, but a url the browser fetches by itself does not
- * go through axios: an `<audio>` src and the waveform's `fetch` both resolve a
- * relative path against the page, where no audio exists.
+ * applies its own `baseURL`; resolving here also gives live and historical
+ * messages one stable cache key in the authenticated audio loader.
  *
  * In development `apiBaseUrl` is empty, because the dev server proxies `/api`.
  */

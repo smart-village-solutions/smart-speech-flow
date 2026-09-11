@@ -49,3 +49,10 @@ def safe_language_code(value: Any) -> str:
         return "invalid"
 
     return normalized[:32]
+
+
+def safe_closed_value(
+    value: Any, allowed: frozenset[str], *, fallback: str = "invalid"
+) -> str:
+    """Keep an operational field fixed-cardinality and free of caller text."""
+    return value if isinstance(value, str) and value in allowed else fallback

@@ -142,12 +142,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         parts = [segment for segment in path.split("/") if segment]
         if (
-            len(parts) >= 4
+            len(parts) == 5
             and parts[0] == "api"
-            and parts[1] == "session"
-            and parts[3] == "message"
+            and parts[1] in {"admin", "customer"}
+            and parts[2] == "session"
+            and parts[4] == "message"
         ):
-            session_id = parts[2]
+            session_id = parts[3]
             return f"session:{session_id}"
         return None
 

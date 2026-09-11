@@ -23,7 +23,9 @@ from services.api_gateway.quality_telemetry import (
     discard_event,
 )
 from services.api_gateway.routes import session as session_routes
-from services.api_gateway.session_manager import SessionManager, SessionStatus
+from services.api_gateway.session_manager import ClientType, SessionManager
+from services.api_gateway.session_store import MemoryTenantSessionStore
+from services.api_gateway.tenant_session import TenantSessionKey
 from tests.pipeline_helpers import AUDIO_BYTES, make_active_session
 
 TRANSCRIPT = "Guten Tag"
@@ -33,7 +35,7 @@ UPSTREAM_DETAIL = "HTTPConnectionPool(host='asr', port=8001): Max retries exceed
 
 @pytest.fixture
 def manager():
-    return SessionManager()
+    return SessionManager(store=MemoryTenantSessionStore())
 
 
 class _CapturingExporter:
@@ -130,7 +132,7 @@ async def _send(manager, telemetry, *, content_type, pipeline_result):
         patch.object(session_routes, "_store_audio_artifacts", return_value=None),
     ):
         return await session_routes.send_unified_message(
-            session_id, _request(content_type, telemetry)
+            session_id, ClientType.ADMIN, _request(content_type, telemetry)
         )
 
 
@@ -227,7 +229,8 @@ class TestOneRowPerMessage:
         with patch.object(session_routes, "session_manager", manager):
             with pytest.raises(HTTPException) as excinfo:
                 await session_routes.send_unified_message(
-                    "no-such-session",
+                    TenantSessionKey("tenant-test", "UNKNOWN1"),
+                    ClientType.ADMIN,
                     _request("application/json", _telemetry(exporter)),
                 )
 
@@ -242,7 +245,9 @@ class TestOneRowPerMessage:
         with patch.object(session_routes, "session_manager", manager):
             with pytest.raises(HTTPException):
                 await session_routes.send_unified_message(
-                    session_id, _request("text/plain", _telemetry(exporter))
+                    session_id,
+                    ClientType.ADMIN,
+                    _request("text/plain", _telemetry(exporter)),
                 )
 
         assert exporter.messages == []
@@ -283,7 +288,9 @@ class TestNoContentLeavesTheGateway:
             ),
         ):
             await session_routes.send_unified_message(
-                session_id, _request("application/json", _telemetry(exporter))
+                session_id,
+                ClientType.ADMIN,
+                _request("application/json", _telemetry(exporter)),
             )
 
         assert session_id not in exporter.messages[0].values()
@@ -342,7 +349,9 @@ class TestTelemetryNeverChangesTheOutcome:
                 session_routes, "process_text_pipeline", return_value=_success()
             ),
         ):
-            response = await session_routes.send_unified_message(session_id, request)
+            response = await session_routes.send_unified_message(
+                session_id, ClientType.ADMIN, request
+            )
 
         assert response.status == "success"
 

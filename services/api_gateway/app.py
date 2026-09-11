@@ -222,6 +222,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     sys.stderr.write("=" * 80 + "\n")
     sys.stderr.flush()
 
+    # The v2 session record, tenant indexes, join tombstone, and single-use
+    # realtime ticket must share one verified Redis connection in production.
+    # This happens before any WebSocket manager or background task can observe
+    # process-local tenant state.
+    from .tenant_persistence import configure_tenant_persistence
+
+    tenant_persistence = configure_tenant_persistence()
+
     # Initialize WebSocketManager singleton
     from .websocket import get_websocket_manager
 
@@ -297,6 +305,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     translation_refiner.attach_quality_telemetry(app.state.quality_telemetry)
     session_manager.attach_quality_telemetry(app.state.quality_telemetry)
+    # Rehydrated sessions must enforce reconnect and absolute deadlines before
+    # the lifespan yields and the gateway can accept a request.
+    await session_manager.check_session_timeouts()
     sys.stderr.write(f"Quality telemetry ready (mode={telemetry_mode.value})\n")
     sys.stderr.flush()
 
@@ -348,6 +359,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # would emit into a provider that no longer has an export thread.
         translation_refiner.attach_quality_telemetry(None)
         session_manager.attach_quality_telemetry(None)
+        if tenant_persistence is not None:
+            tenant_persistence.close()
         telemetry_exporter_at_exit = app.state.quality_telemetry_exporter
         app.state.quality_telemetry_exporter = None
         if telemetry_exporter_at_exit is not None:
@@ -369,7 +382,8 @@ app = FastAPI(
 
     1. **Admin** erstellt Session via `/api/admin/session/create`
     2. **Customer** aktiviert Session via `/api/customer/session/activate`
-    3. Beide verbinden sich via WebSocket `/ws/{session_id}/{connection_type}`
+    3. Beide beziehen ein kurzlebiges Realtime-Ticket und verbinden sich über
+       ihren rollenspezifischen WebSocket-Endpunkt
     4. Nachrichten werden bidirektional übersetzt und zugestellt
 
     ## Connection Types
@@ -421,6 +435,10 @@ websocket_monitor = initialize_websocket_monitor(registry)
 from .websocket_fallback import fallback_manager
 
 fallback_manager.bind_metrics_registry(registry)
+
+from .websocket_polling_routes import polling_store
+
+polling_store.bind_metrics_registry(registry)
 
 
 # === CORS Middleware ===

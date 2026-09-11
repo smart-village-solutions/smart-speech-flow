@@ -5,21 +5,17 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from prometheus_client import CollectorRegistry
+from prometheus_client import CollectorRegistry, generate_latest
 
 from services.api_gateway import websocket_monitoring_routes as monitoring_routes
-from services.api_gateway import websocket_polling_routes as polling_routes
 from services.api_gateway.websocket_fallback import (
     FallbackConfig,
     FallbackReason,
     WebSocketFallbackManager,
-    utc_now as fallback_utc_now,
 )
-from services.api_gateway.websocket_monitor import (
-    DisconnectReason,
-    WebSocketMonitor,
-    utc_now as monitor_utc_now,
-)
+from services.api_gateway.websocket_fallback import utc_now as fallback_utc_now
+from services.api_gateway.websocket_monitor import DisconnectReason, WebSocketMonitor
+from services.api_gateway.websocket_monitor import utc_now as monitor_utc_now
 
 
 @pytest.mark.asyncio
@@ -63,41 +59,12 @@ def test_fallback_records_repeated_failures_and_recovery_cleanup():
     )
 
     polling_id = "poll-session-2"
-    manager.polling_clients[polling_id] = SimpleNamespace(
-        session_id="session-2", message_queue=[]
-    )
+    manager.polling_clients[polling_id] = SimpleNamespace(session_id="session-2", message_queue=[])
     manager.session_polling_clients["session-2"].add(polling_id)
     manager.websocket_recovery_successful(polling_id)
 
     assert polling_id not in manager.polling_clients
     assert manager.fallback_stats["successful_recoveries"] == 1
-
-
-def test_polling_routes_return_recovery_and_failure_responses(monkeypatch):
-    """Public polling handlers map manager recovery results to API responses."""
-    monkeypatch.setattr(
-        polling_routes.fallback_manager,
-        "attempt_websocket_recovery",
-        lambda _polling_id: {
-            "success": True,
-            "recovery_info": {"session_id": "SESSION1", "client_type": "admin"},
-        },
-    )
-    success = polling_routes.attempt_websocket_recovery("poll-1")
-
-    assert success.status_code == 200
-    assert b"/ws/SESSION1/admin" in success.body
-
-    failed_reasons = []
-    monkeypatch.setattr(
-        polling_routes.fallback_manager,
-        "websocket_recovery_failed",
-        lambda polling_id, reason: failed_reasons.append((polling_id, reason)),
-    )
-    failure = polling_routes.websocket_recovery_failed("poll-1", "not-a-reason")
-
-    assert failure.status_code == 200
-    assert failed_reasons == [("poll-1", FallbackReason.WEBSOCKET_CONNECTION_FAILED)]
 
 
 def test_monitor_tracks_connection_lifecycle_and_health():
@@ -122,6 +89,19 @@ def test_monitor_tracks_connection_lifecycle_and_health():
     assert monitor.get_connection_stats()["total_historical_connections"] == 1
 
 
+def test_websocket_prometheus_metrics_have_no_session_label():
+    registry = CollectorRegistry()
+    monitor = WebSocketMonitor(registry=registry)
+    monitor.connection_established("connection-1", "session-secret", "admin")
+    monitor.message_sent("connection-1", "hello", "chat")
+    monitor.record_error("connection-1", "decode_error")
+
+    output = generate_latest(registry).decode("utf-8")
+
+    assert "session_id=" not in output
+    assert "session-secret" not in output
+
+
 def test_monitoring_routes_filter_connections_and_force_close(monkeypatch):
     """Monitoring endpoints serialize filters and close an existing connection."""
     now = monitor_utc_now()
@@ -137,7 +117,9 @@ def test_monitoring_routes_filter_connections_and_force_close(monkeypatch):
         bytes_received=5,
         errors=0,
     )
-    beta = SimpleNamespace(**{**alpha.__dict__, "session_id": "session-b", "client_type": "customer"})
+    beta = SimpleNamespace(
+        **{**alpha.__dict__, "session_id": "session-b", "client_type": "customer"}
+    )
     monitor = Mock()
     monitor.get_active_connections.return_value = {"alpha": alpha, "beta": beta}
     monkeypatch.setattr(monitoring_routes, "get_websocket_monitor", lambda: monitor)

@@ -42,7 +42,7 @@ class FakeSocket implements WebSocketLike {
   }
 }
 
-function makeTransport() {
+function makeTransport(issueTicket = vi.fn().mockResolvedValue('opaque-ticket')) {
   const statuses: RealtimeStatus[] = [];
   const events: RealtimeEvent[] = [];
   const transport = createWebSocketTransport({
@@ -51,10 +51,11 @@ function makeTransport() {
     reconnectDelayMs: 1000,
     heartbeatIntervalMs: 30_000,
     maxReconnectAttempts: 2,
+    issueAdminTicket: issueTicket,
   });
   transport.onStatus((status) => statuses.push(status));
   transport.onEvent((event) => events.push(event));
-  return { transport, statuses, events };
+  return { transport, statuses, events, issueTicket };
 }
 
 function lastSocket(): FakeSocket {
@@ -75,29 +76,54 @@ afterEach(() => {
 });
 
 describe('createWebSocketTransport', () => {
-  it('builds the customer socket URL from the session id', () => {
+  it('builds the customer socket URL from the session id', async () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
 
-    expect(FakeSocket.instances[0].url).toBe('ws://api.test/ws/A1B2C3D4/customer');
+    expect(FakeSocket.instances[0].url).toBe('ws://api.test/ws/customer/A1B2C3D4');
   });
 
-  it('opens the admin socket on the admin path', () => {
-    const { transport } = makeTransport();
-    transport.connect('A1B2C3D4', 'admin');
+  it('opens the admin socket with an opaque ticket', async () => {
+    const { transport, issueTicket } = makeTransport();
+    await transport.connect('A1B2C3D4', 'admin');
 
-    expect(FakeSocket.instances[0].url).toBe('ws://api.test/ws/A1B2C3D4/admin');
+    expect(issueTicket).toHaveBeenCalledWith('A1B2C3D4', 'websocket');
+    expect(FakeSocket.instances[0].url).toBe(
+      'ws://api.test/ws/admin/A1B2C3D4?ticket=opaque-ticket'
+    );
   });
 
-  it('keeps the role across a reconnect', () => {
-    const { transport } = makeTransport();
-    transport.connect('A1B2C3D4', 'admin');
+  it('fetches a fresh admin ticket for every reconnect', async () => {
+    const issueTicket = vi
+      .fn()
+      .mockResolvedValueOnce('first-ticket')
+      .mockResolvedValueOnce('second-ticket');
+    const { transport } = makeTransport(issueTicket);
+    await transport.connect('A1B2C3D4', 'admin');
     FakeSocket.instances[0].open();
     FakeSocket.instances[0].drop();
-    vi.advanceTimersByTime(1000);
+    await vi.advanceTimersByTimeAsync(1000);
 
     expect(FakeSocket.instances).toHaveLength(2);
-    expect(FakeSocket.instances[1].url).toContain('/admin');
+    expect(issueTicket).toHaveBeenCalledTimes(2);
+    expect(FakeSocket.instances[1].url).toBe(
+      'ws://api.test/ws/admin/A1B2C3D4?ticket=second-ticket'
+    );
+  });
+
+  it('does not open a socket when an admin ticket arrives after disconnect', async () => {
+    let resolveTicket: (ticket: string) => void = () => undefined;
+    const ticket = new Promise<string>((resolve) => {
+      resolveTicket = resolve;
+    });
+    const { transport } = makeTransport(vi.fn().mockReturnValue(ticket));
+
+    const connecting = transport.connect('A1B2C3D4', 'admin');
+    transport.disconnect();
+    resolveTicket('too-late');
+    await connecting;
+
+    expect(FakeSocket.instances).toHaveLength(0);
   });
 
   it('reports connecting then connected', () => {

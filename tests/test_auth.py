@@ -303,7 +303,7 @@ def test_tenant_dependency_receives_verified_claims_from_async_auth(
 
 
 @pytest.mark.parametrize("configured", [False, True])
-def test_legacy_access_works_without_available_studio_directory(monkeypatch, configured):
+def test_legacy_access_is_rejected_even_when_environment_flag_is_set(monkeypatch, configured):
     monkeypatch.setenv("SSF_ENABLE_LEGACY_ADMIN_ACCESS", "true")
     monkeypatch.setenv("SSF_LEGACY_ADMIN_ACCESS_CODE", "transition-code")
     if configured:
@@ -317,7 +317,7 @@ def test_legacy_access_works_without_available_studio_directory(monkeypatch, con
     response = client.get(
         "/api/admin/session/history", headers={"X-SSF-Legacy-Access": "transition-code"}
     )
-    assert response.status_code == 200
+    assert response.status_code == 401
 
 
 def test_admin_endpoints_reject_legacy_access_after_transition_is_disabled(monkeypatch):

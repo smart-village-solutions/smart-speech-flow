@@ -43,11 +43,21 @@ class StudioTokenConfig:
         normalized_fixed_token = self.fixed_token.strip() if self.fixed_token else None
         object.__setattr__(self, "fixed_token", normalized_fixed_token or None)
         if not self.fixed_token and (
-            not self.token_url or not self.client_id or not self.client_secret or not self.audience
+            not self.token_url
+            or not self.client_id
+            or not self.client_secret
+            or not self.audience
         ):
-            raise StudioTokenError("studio_token_configuration_invalid", retryable=False)
-        if not 0 < self.timeout_seconds <= 30 or not 0 <= self.refresh_skew_seconds <= 300:
-            raise StudioTokenError("studio_token_configuration_invalid", retryable=False)
+            raise StudioTokenError(
+                "studio_token_configuration_invalid", retryable=False
+            )
+        if (
+            not 0 < self.timeout_seconds <= 30
+            or not 0 <= self.refresh_skew_seconds <= 300
+        ):
+            raise StudioTokenError(
+                "studio_token_configuration_invalid", retryable=False
+            )
 
     @classmethod
     def from_env(cls) -> "StudioTokenConfig":
@@ -56,14 +66,20 @@ class StudioTokenConfig:
         token_url = os.getenv("STUDIO_RUNTIME_TOKEN_URL", "").strip()
         client_secret = os.getenv("STUDIO_RUNTIME_CLIENT_SECRET", "").strip()
         if not fixed_token and (not token_url or not client_secret):
-            raise StudioTokenError("studio_token_configuration_invalid", retryable=False)
+            raise StudioTokenError(
+                "studio_token_configuration_invalid", retryable=False
+            )
         try:
-            timeout_seconds = float(os.getenv("STUDIO_RUNTIME_TOKEN_TIMEOUT_SECONDS", "5"))
+            timeout_seconds = float(
+                os.getenv("STUDIO_RUNTIME_TOKEN_TIMEOUT_SECONDS", "5")
+            )
             refresh_skew_seconds = float(
                 os.getenv("STUDIO_RUNTIME_TOKEN_REFRESH_SKEW_SECONDS", "30")
             )
         except ValueError:
-            raise StudioTokenError("studio_token_configuration_invalid", retryable=False) from None
+            raise StudioTokenError(
+                "studio_token_configuration_invalid", retryable=False
+            ) from None
         return cls(
             token_url=token_url,
             client_secret=client_secret,
@@ -82,7 +98,7 @@ class TokenResponse:
 
 
 class TokenTransport(Protocol):
-    async def post_form(
+    async def post_form(  # noqa: E704
         self, url: str, data: Mapping[str, str], timeout_seconds: float
     ) -> TokenResponse: ...
 
@@ -109,7 +125,9 @@ class AiohttpTokenTransport:
                         payload = {}
                     return TokenResponse(status=response.status, payload=payload)
                 if not isinstance(payload, Mapping):
-                    raise StudioTokenError("studio_token_response_invalid", retryable=False)
+                    raise StudioTokenError(
+                        "studio_token_response_invalid", retryable=False
+                    )
                 return TokenResponse(status=response.status, payload=payload)
 
 
@@ -146,7 +164,8 @@ class StudioRuntimeTokenProvider:
 
     def _is_valid(self) -> bool:
         return bool(
-            self._token and self._expires_at - self._config.refresh_skew_seconds > self._clock()
+            self._token
+            and self._expires_at - self._config.refresh_skew_seconds > self._clock()
         )
 
     async def _refresh(self) -> str:
@@ -163,9 +182,13 @@ class StudioRuntimeTokenProvider:
         except StudioTokenError:
             raise
         except (TimeoutError, asyncio.TimeoutError, aiohttp.ClientError):
-            raise StudioTokenError("studio_token_network_error", retryable=True) from None
+            raise StudioTokenError(
+                "studio_token_network_error", retryable=True
+            ) from None
         except Exception:
-            raise StudioTokenError("studio_token_network_error", retryable=False) from None
+            raise StudioTokenError(
+                "studio_token_network_error", retryable=False
+            ) from None
 
         if response.status < 200 or response.status >= 300:
             raise StudioTokenError(

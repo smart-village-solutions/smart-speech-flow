@@ -11,6 +11,10 @@ from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, Mock
 
 from services.api_gateway.session_manager import SessionStatus
+from services.api_gateway.tenant_session import (
+    RuntimeConfigurationSnapshot,
+    TenantSessionKey,
+)
 
 # routes/__init__.py re-exports the endpoint functions under their module names,
 # so `routes.upload` is the handler rather than the module. Import by path.
@@ -39,17 +43,21 @@ TEXT_PIPELINE_SUCCESS: Dict[str, Any] = {
 SAFETY_TIMEOUT = 15.0
 
 
-async def make_active_session(manager) -> str:
+REVISION = f"sha256:{'a' * 64}"
+SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
+
+
+async def make_active_session(manager) -> TenantSessionKey:
     """An ACTIVE admin session whose customer speaks English.
 
     Admin sends de -> en, which is what the request builders below produce; a
     mismatch trips validate_session_languages before the pipeline is reached.
     """
-    session_id = await manager.create_admin_session()
-    session = manager.get_session(session_id)
+    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
-    return session_id
+    manager.store.save(session)
+    return session.key
 
 
 def request_with(admission: Optional[Any] = None) -> Mock:

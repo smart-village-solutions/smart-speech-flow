@@ -35,8 +35,8 @@ pytest tests/integration/ -v
 # Unit tests only
 pytest tests/ -v --ignore=tests/integration --ignore=tests/load
 
-# Audio upload tests
-pytest tests/test_audio_upload_integration.py -v
+# Tenant-owned audio route tests
+pytest tests/test_tenant_message_routes.py -v
 
 # WebSocket tests
 pytest tests/integration/test_websocket_integration.py -v
@@ -67,7 +67,7 @@ bandit -r services/
 Located in `tests/` root directory. Test individual components in isolation.
 
 **Examples:**
-- `test_admin_routes.py` - Admin API endpoints
+- `test_tenant_session_access.py` - Tenant-scoped admin API endpoints
 - `test_audio_validation.py` - Audio validation logic
 - `test_circuit_breaker_integration.py` - Circuit breaker functionality
 
@@ -141,7 +141,7 @@ See [Browser Test Matrix](AUDIO_RECORDING_BROWSER_TEST.md) for coverage.
 ## Test Categories by Feature
 
 ### Audio Recording
-- **Unit Tests:** `test_audio_upload_integration.py`, `test_audio_validation.py`
+- **Unit Tests:** `test_tenant_message_routes.py`, `test_audio_validation.py`
 - **Integration:** `tests/integration/test_audio_validation_integration.py`
 - **Manual:** [Manual Test Checklist](AUDIO_RECORDING_MANUAL_TEST_CHECKLIST.md)
 - **Browser:** [Browser Compatibility](AUDIO_RECORDING_BROWSER_TEST.md)
@@ -153,12 +153,12 @@ See [Browser Test Matrix](AUDIO_RECORDING_BROWSER_TEST.md) for coverage.
 - **Load Tests:** `tests/load/test_websocket_load_performance.py`
 
 ### Session Management
-- **Unit Tests:** `test_admin_routes.py`, `test_session_routes.py`
+- **Unit Tests:** `test_tenant_session_access.py`, `test_tenant_session_manager.py`
 - **Integration:** Session lifecycle tests in integration suite
 
 ### API Contract
-- **Validation:** `test_api_contract_integration.py`
-- **OpenAPI:** `test_openapi_validation.py`
+- **Validation:** `test_tenant_message_routes.py`
+- **OpenAPI:** `test_tenant_message_routes.py`
 
 ## Test Fixtures
 
@@ -213,7 +213,7 @@ Some tests may fail intermittently due to:
 
 **Solution:** Run flaky tests individually to verify they work:
 ```bash
-pytest tests/test_audio_upload_integration.py::test_specific_test -v
+pytest tests/test_tenant_message_routes.py::test_audio_lookup_requires_message_ownership -v
 ```
 
 ### Docker Service Issues

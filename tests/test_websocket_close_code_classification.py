@@ -12,7 +12,8 @@ import pytest
 from fastapi import WebSocketDisconnect
 
 from services.api_gateway import websocket as ws
-from services.api_gateway.session_manager import SessionStatus
+from services.api_gateway.session_manager import ClientType, SessionStatus
+from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket_monitor import DisconnectReason
 
 
@@ -96,8 +97,8 @@ class TestTheReasonReachesCleanup:
         monkeypatch.setattr(ws, "validate_websocket_origin", _always_allowed)
         await ws.websocket_endpoint(
             websocket=_Socket(),
-            session_id="session-1",
-            client_type="customer",
+            key=TenantSessionKey("tenant-a", "SESSION1"),
+            client_type=ClientType.CUSTOMER,
             manager=_Manager(),
             origin="https://console.example",
         )

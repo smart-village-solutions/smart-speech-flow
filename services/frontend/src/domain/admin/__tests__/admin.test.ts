@@ -1,7 +1,36 @@
+import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
+import { readConfig } from '@/app/config/env';
+import { createHttpClient } from '@/core/http/client';
 import { toAdminSessions, toCreatedSession } from '@/domain/admin/admin.mapper';
 import type { AdminSessionDto } from '@/domain/admin/admin.mapper';
+import { createAdminRepository } from '@/domain/admin/admin.repository';
 import { isReenterable } from '@/domain/admin/admin.types';
+import { server } from '@/test/setup';
+
+const repository = createAdminRepository(
+  createHttpClient(readConfig({ VITE_API_BASE_URL: 'http://api.test' }), () => 'en')
+);
+
+describe('admin repository', () => {
+  it('issues a transport-scoped realtime ticket', async () => {
+    let body: Record<string, unknown> = {};
+    server.use(
+      http.post(
+        'http://api.test/api/admin/session/A1B2C3D4/realtime-ticket',
+        async ({ request }) => {
+          body = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({ ticket: 'opaque-ticket', expires_at: '2026-09-11T12:00:00Z' });
+        }
+      )
+    );
+
+    await expect(repository.issueRealtimeTicket('A1B2C3D4', 'websocket')).resolves.toBe(
+      'opaque-ticket'
+    );
+    expect(body).toEqual({ transport: 'websocket' });
+  });
+});
 
 const row = (over: Partial<AdminSessionDto>): AdminSessionDto => ({
   id: 'AAAAAAAA',

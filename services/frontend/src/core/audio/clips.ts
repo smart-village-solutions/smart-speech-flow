@@ -1,3 +1,4 @@
+import type { AxiosInstance } from 'axios';
 import { BAR_COUNT } from './waveform';
 import { peaksFromSamples } from './levels';
 
@@ -31,7 +32,7 @@ export interface ClipLoader {
  * the same clip again for every play.
  *
  * A failure is not cached: the waveform falls back to its decorative shape and
- * playback to the network url, and a later attempt is free to try again.
+ * a later authenticated attempt is free to try again.
  */
 export function createClipLoader(deps: ClipLoaderDeps): ClipLoader {
   const { fetchBytes, decode, createObjectUrl, revokeObjectUrl, bars = BAR_COUNT } = deps;
@@ -83,7 +84,7 @@ export function createClipLoader(deps: ClipLoaderDeps): ClipLoader {
 }
 
 /** The real thing: fetch, decode through Web Audio, keep the bytes as a blob. */
-export function createBrowserClipLoader(): ClipLoader {
+export function createBrowserClipLoader(http: AxiosInstance): ClipLoader {
   let context: AudioContext | null = null;
 
   const audioContext = (): AudioContext => {
@@ -103,11 +104,10 @@ export function createBrowserClipLoader(): ClipLoader {
 
   return createClipLoader({
     fetchBytes: async (url) => {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Audio request failed: ${response.status}`);
-      }
-      return response.arrayBuffer();
+      const response = await http.get<ArrayBuffer>(url, {
+        responseType: 'arraybuffer',
+      });
+      return response.data;
     },
 
     // decodeAudioData detaches the buffer it is given, so it gets a copy —

@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { AppConfig } from '@/app/config/env';
 import { createHttpClient } from '@/core/http/client';
+import { createBrowserClipLoader, type ClipLoader } from '@/core/audio/clips';
 import { createWebSocketTransport } from '@/core/realtime/WebSocketTransport';
 import type { RealtimeTransport } from '@/core/realtime/realtime.port';
 import { createSessionRepository } from '@/domain/session/session.repository';
@@ -33,12 +34,14 @@ export interface Services {
   feedback: FeedbackSink;
   consent: ConsentSink;
   brand: BrandSource;
+  clips: ClipLoader;
   createRealtime: () => RealtimeTransport;
 }
 
 /** The composition root. The only place implementations are chosen. */
 export function createServices(config: AppConfig, getLocale: () => string): Services {
   const http = createHttpClient(config, getLocale);
+  const admin = createAdminRepository(http);
 
   return {
     config,
@@ -51,10 +54,16 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     feedback: createStubFeedbackSink(),
     consent: createStubConsentSink(),
     health: createHealthRepository(http),
-    admin: createAdminRepository(http),
+    admin,
     loginTenant: createLoginTenantRepository(http),
     brand: createStaticBrandSource(config.brand),
-    createRealtime: () => createWebSocketTransport({ wsBaseUrl: config.wsBaseUrl }),
+    clips: createBrowserClipLoader(http),
+    createRealtime: () =>
+      createWebSocketTransport({
+        wsBaseUrl: config.wsBaseUrl,
+        issueAdminTicket: (sessionId, transport) =>
+          admin.issueRealtimeTicket(sessionId, transport),
+      }),
   };
 }
 

@@ -137,7 +137,7 @@ Tests are required for every behaviour change. Choose the smallest test scope th
 Run focused tests while developing and the project suite before requesting review:
 
 ```bash
-pytest tests/test_admin_routes.py
+pytest tests/test_tenant_session_access.py
 pytest tests/integration/
 pytest
 ```

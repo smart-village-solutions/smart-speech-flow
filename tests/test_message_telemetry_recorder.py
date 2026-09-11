@@ -18,6 +18,7 @@ from services.api_gateway.quality_telemetry import (
     TerminalOutcome,
 )
 from services.api_gateway.session_manager import ClientType
+from services.api_gateway.tenant_session import TenantSessionKey
 
 
 class _Spy:
@@ -65,6 +66,20 @@ def _emit(recorder) -> dict:
 
 
 class TestArming:
+    def test_a_tenant_message_carries_only_the_pseudonymous_tenant_reference(self):
+        recorder = MessageTelemetryRecorder(
+            session_id=TenantSessionKey("secret-tenant", "ABC12345"), start_time=0.0
+        )
+        recorder.arm(InputMode.TEXT)
+
+        emitted = _emit(recorder)
+
+        assert emitted["tenant_ref"] == TenantSessionKey(
+            "secret-tenant", "ABC12345"
+        ).tenant_ref
+        assert "secret-tenant" not in repr(emitted)
+        assert "ABC12345" not in repr(emitted)
+
     def test_a_request_that_never_became_a_message_emits_nothing(self):
         """A 404 for an unknown session is not a message that failed.
 
