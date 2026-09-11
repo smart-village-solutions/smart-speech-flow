@@ -38,3 +38,29 @@ GRANT SELECT ON feedback TO ssf_feedback_reader;
 -- read what.
 GRANT SELECT, INSERT ON feedback_access_audit TO ssf_feedback_reader;
 GRANT USAGE ON SEQUENCE feedback_access_audit_audit_id_seq TO ssf_feedback_reader;
+
+-- The audit table needs the same isolation as the table it describes.
+--
+-- The SELECT grant above is what makes this necessary: without a policy it
+-- returns every tenant's audit rows to whichever tenant asks, which is the
+-- failure `feedback_tenant_isolation` exists to prevent, one table over.
+-- Nothing reads the audit yet, so this closes the hole while it is still
+-- theoretical rather than after an endpoint has shipped on top of it.
+--
+-- `feedback_deletion_audit` deliberately gets no policy here: no role holds
+-- SELECT on it, and the only role that writes it bypasses RLS by design.
+ALTER TABLE feedback_access_audit ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'feedback_access_audit'
+          AND policyname = 'feedback_access_audit_tenant_isolation'
+    ) THEN
+        CREATE POLICY feedback_access_audit_tenant_isolation ON feedback_access_audit
+            USING (tenant_id = current_setting('ssf.tenant_id', TRUE))
+            WITH CHECK (tenant_id = current_setting('ssf.tenant_id', TRUE));
+    END IF;
+END
+$$;

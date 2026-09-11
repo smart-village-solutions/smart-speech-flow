@@ -152,3 +152,96 @@ class TestTheAccessAuditIsWritable:
         assert row["tenant_id"] == TENANT_A
         assert row["accessed_by"] == "operator-1"
         assert row["access_scope"] == "detail"
+
+
+class TestABatchedAuditIsStillOneRowPerRecord:
+    async def test_a_listing_audits_every_record_it_returned(self, owner, repository) -> None:
+        """The batch is an efficiency change, not a reduction in what is recorded."""
+        first = await _seed(owner, TENANT_A)
+        second = await _seed(owner, TENANT_A)
+
+        await repository.record_accesses(
+            feedback_ids=[first, second],
+            tenant_id=TENANT_A,
+            accessed_by="operator-1",
+            access_scope="list",
+        )
+
+        rows = await owner.fetch(
+            "SELECT feedback_id, tenant_id, accessed_by, access_scope"
+            " FROM feedback_access_audit ORDER BY audit_id"
+        )
+        assert [row["feedback_id"] for row in rows] == [first, second]
+        assert {row["access_scope"] for row in rows} == {"list"}
+        assert {row["accessed_by"] for row in rows} == {"operator-1"}
+
+    async def test_an_empty_page_writes_nothing(self, owner, repository) -> None:
+        await repository.record_accesses(
+            feedback_ids=[], tenant_id=TENANT_A, accessed_by="operator-1", access_scope="list"
+        )
+
+        assert await owner.fetchval("SELECT count(*) FROM feedback_access_audit") == 0
+
+
+class TestTheAccessAuditIsTenantScopedToo:
+    """The reader holds SELECT on feedback_access_audit (migration 003).
+
+    Without a policy of its own that grant returns every tenant's audit rows
+    to whichever tenant asks -- the same failure `feedback_tenant_isolation`
+    exists to prevent, one table over. Nothing reads the audit yet, so this
+    guards the grant rather than a live endpoint.
+    """
+
+    async def test_the_audit_table_has_row_level_security(self, reader_connection) -> None:
+        enabled = await reader_connection.fetchval(
+            "SELECT relrowsecurity FROM pg_class WHERE relname = 'feedback_access_audit'"
+        )
+
+        assert enabled is True
+
+    async def test_one_tenants_audit_rows_are_invisible_to_another(
+        self, owner, repository, reader_connection
+    ) -> None:
+        theirs = await _seed(owner, TENANT_B)
+        await repository.record_access(
+            feedback_id=theirs,
+            tenant_id=TENANT_B,
+            accessed_by="operator-b",
+            access_scope="detail",
+        )
+
+        # One transaction: set_config(..., TRUE) is transaction-local, so a
+        # bind on its own statement is gone before the SELECT runs -- and the
+        # unbound setting is NULL, which filters everything and would make this
+        # assertion pass whether or not the policy exists.
+        async with reader_connection.transaction():
+            await reader_connection.execute(
+                "SELECT set_config('ssf.tenant_id', $1, TRUE)", TENANT_A
+            )
+            visible = await reader_connection.fetchval(
+                "SELECT count(*) FROM feedback_access_audit WHERE feedback_id = $1", theirs
+            )
+
+        assert visible == 0
+
+    async def test_a_tenant_still_sees_its_own_audit_rows(
+        self, owner, repository, reader_connection
+    ) -> None:
+        """The negative above must not pass because the reader sees nothing."""
+        mine = await _seed(owner, TENANT_A)
+        await repository.record_access(
+            feedback_id=mine,
+            tenant_id=TENANT_A,
+            accessed_by="operator-a",
+            access_scope="detail",
+        )
+
+        async with reader_connection.transaction():
+            await reader_connection.execute(
+                "SELECT set_config('ssf.tenant_id', $1, TRUE)", TENANT_A
+            )
+            visible = await reader_connection.fetchval(
+                "SELECT count(*) FROM feedback_access_audit WHERE feedback_id = $1", mine
+            )
+
+        assert visible == 1

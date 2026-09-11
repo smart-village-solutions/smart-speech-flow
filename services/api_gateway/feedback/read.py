@@ -77,9 +77,12 @@ class FeedbackReadService:
             tenant_id=tenant_id, limit=limit, offset=offset
         )
         summaries = [_summarise(record) for record in records]
-        for summary in summaries:
-            await self._repository.record_access(
-                feedback_id=summary.feedback_id,
+        if summaries:
+            # One write, not one per row: record_access takes a pooled
+            # connection each time, and a full page on a pool of five would
+            # otherwise be two hundred round trips for a single request.
+            await self._repository.record_accesses(
+                feedback_ids=[summary.feedback_id for summary in summaries],
                 tenant_id=tenant_id,
                 accessed_by=accessed_by,
                 access_scope="list",
@@ -96,13 +99,19 @@ class FeedbackReadService:
             # read.
             raise FeedbackNotFound("no such feedback record for this tenant")
 
-        improvements = self._decrypt(record)
+        # Audited before the decrypt, not after. Reaching this line is the
+        # disclosure: the caller already learns the record exists, because an
+        # unreadable envelope answers 500 where an absent record answers 404.
+        # Auditing afterwards would leave that disclosure unrecorded. An audit
+        # that cannot be written still raises here, so nothing is disclosed
+        # without a record of it.
         await self._repository.record_access(
             feedback_id=record.feedback_id,
             tenant_id=tenant_id,
             accessed_by=accessed_by,
             access_scope="detail",
         )
+        improvements = self._decrypt(record)
         return FeedbackDetail(summary=_summarise(record), improvements=improvements)
 
     def _decrypt(self, record: Any) -> str | None:

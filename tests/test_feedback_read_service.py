@@ -66,6 +66,7 @@ class FakeReadRepository:
     def __init__(self, records=()):
         self.records = list(records)
         self.audited: list = []
+        self.access_calls = 0
 
     async def list_records(self, *, tenant_id, limit, offset):
         visible = [r for r in self.records if r.tenant_id == tenant_id]
@@ -78,7 +79,13 @@ class FakeReadRepository:
         return None
 
     async def record_access(self, *, feedback_id, tenant_id, accessed_by, access_scope):
+        self.access_calls += 1
         self.audited.append((feedback_id, tenant_id, accessed_by, access_scope))
+
+    async def record_accesses(self, *, feedback_ids, tenant_id, accessed_by, access_scope):
+        self.access_calls += 1
+        for feedback_id in feedback_ids:
+            self.audited.append((feedback_id, tenant_id, accessed_by, access_scope))
 
 
 def _service(records=()):
@@ -177,3 +184,42 @@ async def test_an_unreadable_envelope_is_not_reported_as_empty_text() -> None:
         await service.read_for_tenant(
             feedback_id=tampered.feedback_id, tenant_id=TENANT, accessed_by=OPERATOR
         )
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_record_is_still_audited() -> None:
+    """Its existence was disclosed: the caller gets 500, not the 404 for absent.
+
+    Auditing only after a successful decrypt leaves that disclosure unrecorded,
+    which is the one thing feedback_access_audit exists to prevent.
+    """
+    from services.api_gateway.feedback.read import FeedbackTextUnreadable
+
+    record = _record()
+    tampered = FeedbackRecord(
+        **{
+            **{f: getattr(record, f) for f in record.__slots__},
+            "improvements_ciphertext": b"not-the-envelope-this-row-was-sealed-with",
+        }
+    )
+    service, repository = _service([tampered])
+
+    with pytest.raises(FeedbackTextUnreadable):
+        await service.read_for_tenant(
+            feedback_id=tampered.feedback_id, tenant_id=TENANT, accessed_by=OPERATOR
+        )
+
+    assert repository.audited == [(tampered.feedback_id, TENANT, OPERATOR, "detail")]
+
+
+@pytest.mark.asyncio
+async def test_a_listing_writes_its_audit_in_one_call() -> None:
+    """Per-row writes take a pooled connection each: a 200-row page is 200
+    round trips on a pool of 5."""
+    records = [_record() for _ in range(5)]
+    service, repository = _service(records)
+
+    await service.list_for_tenant(tenant_id=TENANT, accessed_by=OPERATOR, limit=50, offset=0)
+
+    assert repository.access_calls == 1
+    assert len(repository.audited) == 5

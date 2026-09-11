@@ -378,19 +378,52 @@ class PostgresFeedbackReadRepository:
             raise _read_failed(error) from None
         return _record_from_row(row) if row is not None else None
 
+    async def record_accesses(
+        self,
+        *,
+        feedback_ids: Sequence[UUID],
+        tenant_id: str,
+        accessed_by: str,
+        access_scope: str,
+    ) -> None:
+        """One round trip for a whole page, sharing an accessed_at.
+
+        executemany sends the rows as a single batch, so a listing costs one
+        pooled connection rather than one per disclosed record.
+        """
+        if not feedback_ids:
+            return
+        accessed_at = datetime.now(timezone.utc)
+        rows = [
+            (feedback_id, tenant_id, accessed_by, accessed_at, access_scope)
+            for feedback_id in feedback_ids
+        ]
+        try:
+            async with self._pool.acquire() as connection:
+                async with connection.transaction():
+                    await _bind_tenant(connection, tenant_id)
+                    await connection.executemany(_AUDIT_ACCESS, rows)
+        except _DRIVER_FAILURE as error:
+            raise _read_failed(error) from None
+
     async def record_access(
         self, *, feedback_id: UUID, tenant_id: str, accessed_by: str, access_scope: str
     ) -> None:
         try:
             async with self._pool.acquire() as connection:
-                await connection.execute(
-                    _AUDIT_ACCESS,
-                    feedback_id,
-                    tenant_id,
-                    accessed_by,
-                    datetime.now(timezone.utc),
-                    access_scope,
-                )
+                async with connection.transaction():
+                    # Bound like every other write: the audit table carries the
+                    # same tenant policy as the table it describes, so an
+                    # unbound insert is refused by WITH CHECK.
+                    await _bind_tenant(connection, tenant_id)
+                    await connection.execute(
+                        _AUDIT_ACCESS,
+                        feedback_id,
+                        tenant_id,
+                        accessed_by,
+                        datetime.now(timezone.utc),
+                        access_scope,
+                    )
         except _DRIVER_FAILURE as error:
             raise _read_failed(error) from None
 
