@@ -21,6 +21,12 @@ conversations until every item below is complete:
    logout, an unknown tenant route, a Studio outage, and cross-tenant negative
    access paths in the deployed environment.
 
+The canonical production Compose file deliberately retains its legacy
+single-realm configuration while it pins legacy gateway or frontend images.
+Switch the image pins and tenant-login configuration together in one reviewed
+deployment change; never activate the configuration with older application
+images.
+
 Build the frontend image with the trusted Keycloak origin and common public
 client ID. These values are public browser configuration, not credentials:
 

@@ -90,7 +90,7 @@ services:
     environment:
     - REDIS_URL=redis://redis:6379/0
     - REDIS_NAMESPACE=ssf
-    - CLIENT_BASE_URL=https://dialog.kassel.de
+    - CLIENT_BASE_URL=https://translate.smart-village.solutions
     - AUDIO_STORAGE_PATH=/data/audio
     - AUDIO_RETENTION_HOURS=24
     - AUDIO_TEMP_PATH=/tmp/audio
@@ -114,15 +114,9 @@ services:
     - MESSAGE_RATE_WINDOW_SECONDS=${MESSAGE_RATE_WINDOW_SECONDS:-10}
     - ENVIRONMENT=${ENVIRONMENT:-production}
     - DEVELOPMENT_CORS_ORIGINS=${DEVELOPMENT_CORS_ORIGINS:-http://localhost:5173,http://localhost:5174}
-    - KEYCLOAK_BASE_URL=${KEYCLOAK_BASE_URL:-https://auth.dialog.kassel.de}
+    - KEYCLOAK_ISSUER=${KEYCLOAK_ISSUER:-https://auth.kassel.smartspeechflow.de/realms/ssf}
     - KEYCLOAK_AUDIENCE=${KEYCLOAK_AUDIENCE:-ssf-frontend}
     - KEYCLOAK_REQUIRED_ROLE=${KEYCLOAK_REQUIRED_ROLE:-ssf-user}
-    - STUDIO_RUNTIME_CONFIGURATION_BASE_URL=${STUDIO_RUNTIME_CONFIGURATION_BASE_URL:-https://studio.dialog.kassel.de}
-    - STUDIO_RUNTIME_TOKEN_URL=${STUDIO_RUNTIME_TOKEN_URL:?required}
-    - STUDIO_RUNTIME_CLIENT_ID=${STUDIO_RUNTIME_CLIENT_ID:-ssf-runtime}
-    - STUDIO_RUNTIME_AUDIENCE=${STUDIO_RUNTIME_AUDIENCE:-sva-studio-ssf-runtime}
-    - STUDIO_RUNTIME_CLIENT_SECRET=${STUDIO_RUNTIME_CLIENT_SECRET:?required}
-    - STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS=${STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS:-60}
     - SSF_ENABLE_LEGACY_ADMIN_ACCESS=${SSF_ENABLE_LEGACY_ADMIN_ACCESS:-false}
     - SSF_LEGACY_ADMIN_ACCESS_CODE=${SSF_LEGACY_ADMIN_ACCESS_CODE:-}
     - SSF_QUALITY_TELEMETRY_MODE=${SSF_QUALITY_TELEMETRY_MODE:-disabled}
@@ -258,6 +252,7 @@ services:
     command:
     - start
     - --optimized
+    - --import-realm
     restart: unless-stopped
     expose:
     - '8080'
@@ -269,10 +264,12 @@ services:
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?required}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME:?required}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:?required}
-      KC_HOSTNAME: https://auth.dialog.kassel.de
+      KC_HOSTNAME: https://auth.kassel.smartspeechflow.de
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: 'true'
       KC_HEALTH_ENABLED: 'true'
+    volumes:
+    - ./keycloak/ssf-realm.json:/opt/keycloak/data/import/ssf-realm.json:ro
     depends_on:
       keycloak-postgres:
         condition: service_healthy
@@ -287,7 +284,7 @@ services:
       start_period: 60s
     labels:
     - traefik.enable=true
-    - traefik.http.routers.keycloak.rule=Host(`auth.dialog.kassel.de`)
+    - traefik.http.routers.keycloak.rule=Host(`auth.kassel.smartspeechflow.de`)
     - traefik.http.routers.keycloak.entrypoints=websecure
     - traefik.http.routers.keycloak.tls.certresolver=le
     - traefik.http.services.keycloak.loadbalancer.server.port=8080
@@ -308,7 +305,7 @@ services:
     - default
     labels:
     - traefik.enable=true
-    - traefik.http.routers.frontend.rule=Host(`dialog.kassel.de`)
+    - traefik.http.routers.frontend.rule=Host(`translate.smart-village.solutions`)
     - traefik.http.routers.frontend.entrypoints=websecure
     - traefik.http.routers.frontend.tls.certresolver=le
     - traefik.http.services.frontend.loadbalancer.server.port=8080
