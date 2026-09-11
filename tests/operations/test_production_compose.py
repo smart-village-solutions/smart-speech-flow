@@ -100,6 +100,16 @@ def test_production_gateway_uses_studio_backed_multi_realm_configuration():
     assert "KEYCLOAK_ISSUER" not in environment
 
 
+def test_production_gateway_uses_the_approved_tenant_timeout_and_cutover_values():
+    gateway = load_production_compose()["services"]["api_gateway"]
+    environment = _environment_by_name(gateway)
+
+    assert environment["SSF_ENABLE_LEGACY_ADMIN_ACCESS"] == "false"
+    assert environment["SSF_SESSION_RECONNECT_GRACE_MINUTES"] == "30"
+    assert environment["SSF_SESSION_TIMEOUT_WARNING_MINUTES"] == "5"
+    assert environment["SSF_SESSION_MAX_HOURS"] == "8"
+
+
 def test_production_routes_match_the_trusted_frontend_and_keycloak_origins():
     services = load_production_compose()["services"]
     gateway_environment = _environment_by_name(services["api_gateway"])
