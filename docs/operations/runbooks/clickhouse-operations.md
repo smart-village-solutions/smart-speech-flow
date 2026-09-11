@@ -414,16 +414,17 @@ re-run on a volume that already has data:
 
     $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT name FROM system.tables WHERE database = currentDatabase() ORDER BY name"'
 
-Expect `otel_logs`, `quality_events`, `quality_events_daily`,
-`quality_events_daily_mv`, `quality_events_mv`. If the gold tier is missing,
+Expect `feedback_daily`, `feedback_daily_mv`, `otel_logs`, `quality_events`,
+`quality_events_daily`, `quality_events_daily_mv`, `quality_events_mv`. If the
+gold tier or the feedback aggregate is missing,
 re-run `apply.sh` (step 5) — it is idempotent.
 
 The table list does not distinguish `002` from `003`, `004`, `005` and `006`, because those
-two only add columns. Check them directly:
+only add columns. Check them directly:
 
     $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = '"'"'quality_events'"'"'"'
 
-Expect `31`. Fewer means a migration has not been applied; re-run `apply.sh`.
+Expect `37`. Fewer means a migration has not been applied; re-run `apply.sh`.
 
 **Order matters.** Emitting events while any of `002`-`006` is unapplied writes rows
 whose typed columns are all defaults, and those rows cannot be repaired: the

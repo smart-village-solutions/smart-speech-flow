@@ -3,17 +3,17 @@
 ## Scope
 
 This runbook brings the feedback store (#301) into production from nothing. It
-covers the PostgreSQL service `ssf-postgres`, its two application roles, the six
-required secrets, the ClickHouse migration the analytics half depends on, and
-the checks that prove each step worked.
+covers the PostgreSQL service `ssf-postgres`, its three application roles, the
+seven required secrets, the two ClickHouse migrations the analytics half depends
+on, the Studio read endpoints, and the checks that prove each step worked.
 
 Follow it top to bottom. Every step states what to expect, so a step that
 produces different output should stop the deployment rather than be repeated.
 
 **Complete this runbook in the same deployment window that ships the compose
-file.** All six variables below are declared `:?required`, and Compose
+file.** All seven variables below are declared `:?required`, and Compose
 interpolates the whole file before running any command, so until `.env` has all
-six, *every* `production_compose` command fails — `up`, `ps`, `logs`, the
+seven, *every* `production_compose` command fails — `up`, `ps`, `logs`, the
 systemd backup timers and `production-health-check.sh` alike. That is a
 deliberate trade: a mistyped variable stops the deployment instead of producing
 a silently broken one. It does mean the host is not in a usable state between
@@ -263,8 +263,11 @@ Lines that mean something is actually wrong:
 
 ## Step 5 — Apply the ClickHouse migration
 
-The analytics half needs migration `006`, which adds the feedback columns and
-the `feedback_daily` aggregate.
+The analytics half needs ClickHouse migrations `005` and `006`, in that order.
+`006` adds the feedback columns and the `feedback_daily` aggregate; its view
+projection also reads `tenant_ref`, a column only `005` creates, so `006` cannot
+be applied on its own. `apply.sh` runs every migration in filename order, so
+following the procedure below applies both.
 
 **Apply it before setting `SSF_QUALITY_TELEMETRY_MODE=enabled`.** Feedback
 events emitted while the columns are missing land with only their envelope
@@ -272,8 +275,9 @@ populated, and those rows cannot be repaired afterwards — the attributes never
 reached ClickHouse.
 
 Follow the enablement procedure in
-[clickhouse-operations.md](clickhouse-operations.md); migration `006` applies the
-same way as `002` through `004`.
+[clickhouse-operations.md](clickhouse-operations.md); migrations `005` and `006` apply the
+same way as `002` through `004`. Afterwards `quality_events` has 37 columns, as
+that runbook's column check expects.
 
 ## Step 6 — Confirm a real submission is stored
 
