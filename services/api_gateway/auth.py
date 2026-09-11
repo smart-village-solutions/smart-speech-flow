@@ -13,10 +13,11 @@ from uuid import uuid4
 import jwt
 import requests
 from cryptography.hazmat.primitives.asymmetric import rsa
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, status
 from jwt.algorithms import RSAAlgorithm
 from jwt.exceptions import InvalidKeyError, InvalidTokenError
 from starlette.concurrency import run_in_threadpool
+from starlette.requests import HTTPConnection
 
 from .studio_login_directory import (
     StudioLoginDirectoryConfigurationError,
@@ -114,7 +115,7 @@ def get_auth_login_directory_provider() -> Callable[[], StudioLoginDirectoryServ
 
 
 async def require_ssf_user(
-    request: Request,
+    request: HTTPConnection,
     directory_provider: Annotated[
         Callable[[], StudioLoginDirectoryService],
         Depends(get_auth_login_directory_provider),
@@ -203,7 +204,7 @@ async def require_ssf_user(
 
 
 async def optional_ssf_user(
-    request: Request,
+    request: HTTPConnection,
     directory_provider: Annotated[
         Callable[[], StudioLoginDirectoryService],
         Depends(get_auth_login_directory_provider),

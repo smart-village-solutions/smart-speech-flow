@@ -10,9 +10,11 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 from prometheus_client import CollectorRegistry
+from starlette.testclient import WebSocketDenialResponse
 from starlette.websockets import WebSocketDisconnect
 
 from services.api_gateway.app import app
+from services.api_gateway.auth import optional_ssf_user
 from services.api_gateway.routes.admin import list_tenant_realtime_connections
 from services.api_gateway.session_manager import (
     ClientType,
@@ -38,6 +40,7 @@ from services.api_gateway.websocket_polling_routes import (
 )
 
 REVISION = f"sha256:{'a' * 64}"
+ALLOWED_ORIGIN = "https://translate.smart-village.solutions"
 
 
 class _PresenceManager:
@@ -90,6 +93,87 @@ def test_admin_websocket_rejects_invalid_ticket_before_accept() -> None:
             pass
 
     assert closed.value.code == 4404
+
+
+@pytest.fixture
+def customer_websocket_client():
+    from services.api_gateway import websocket as websocket_module
+    from services.api_gateway.session_manager import session_manager
+
+    original_overrides = app.dependency_overrides.copy()
+    original_websocket_manager = websocket_module.websocket_manager
+    session_manager.reset(clear_persistence=True)
+    websocket_module.websocket_manager = None
+    client = TestClient(app)
+    try:
+        created = client.post("/api/admin/session/create")
+        assert created.status_code == 201
+        yield client, created.json()["session_id"]
+    finally:
+        client.close()
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(original_overrides)
+        websocket_module.websocket_manager = original_websocket_manager
+        session_manager.reset(clear_persistence=True)
+        if original_websocket_manager is not None:
+            session_manager.register_websocket_manager(original_websocket_manager)
+
+
+def test_customer_websocket_rejects_a_cross_tenant_supplied_bearer_before_accept(
+    customer_websocket_client,
+) -> None:
+    client, session_id = customer_websocket_client
+    app.dependency_overrides[optional_ssf_user] = lambda: {
+        "studio_tenant_id": "another-tenant",
+        "ssf_authorization_revision": REVISION,
+    }
+
+    with pytest.raises(WebSocketDenialResponse) as denied:
+        with client.websocket_connect(
+            f"/ws/customer/{session_id}",
+            headers={
+                "Authorization": "Bearer valid-for-another-tenant",
+                "Origin": ALLOWED_ORIGIN,
+            },
+        ):
+            pass
+
+    assert denied.value.status_code == 404
+    assert denied.value.json() == {"detail": "Session not found"}
+
+
+def test_customer_websocket_rejects_a_malformed_supplied_bearer_before_accept(
+    customer_websocket_client,
+) -> None:
+    client, session_id = customer_websocket_client
+
+    with pytest.raises(WebSocketDenialResponse) as denied:
+        with client.websocket_connect(
+            f"/ws/customer/{session_id}",
+            headers={
+                "Authorization": "Bearer malformed",
+                "Origin": ALLOWED_ORIGIN,
+            },
+        ):
+            pass
+
+    assert denied.value.status_code == 401
+    assert denied.value.json() == {"detail": "A valid bearer token is required"}
+
+
+def test_customer_websocket_still_accepts_an_anonymous_capability(
+    customer_websocket_client,
+) -> None:
+    client, session_id = customer_websocket_client
+
+    with client.websocket_connect(
+        f"/ws/customer/{session_id}", headers={"Origin": ALLOWED_ORIGIN}
+    ) as websocket:
+        acknowledgement = websocket.receive_json()
+
+    assert acknowledgement["type"] == "connection_ack"
+    assert acknowledgement["session_id"] == session_id
+    assert acknowledgement["client_type"] == "customer"
 
 
 def test_legacy_client_selected_websocket_route_is_absent() -> None:

@@ -32,6 +32,7 @@ from fastapi import (
 from .client_origin import configured_client_origin
 from .log_safety import sanitize_log_value
 from .realtime_ticket import RealtimeTicketUnavailable, realtime_ticket_store
+from .session_access import require_customer_session_key
 from .session_manager import ClientType, SessionManager, SessionStatus
 from .tenant_session import TenantSessionKey
 from .websocket_fallback import FallbackReason, fallback_manager
@@ -1656,13 +1657,10 @@ async def admin_websocket_endpoint(
 async def customer_websocket_endpoint(
     websocket: WebSocket,
     session_id: str,
+    key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
     manager: WebSocketManagerDependency,
     origin: Annotated[Optional[str], Header()] = None,
 ):
-    key = manager.session_manager.resolve_customer_session(session_id)
-    if key is None:
-        await websocket.close(code=4404, reason="Session not found")
-        return
     await websocket_endpoint(websocket, key, ClientType.CUSTOMER, manager, origin)
 
 
