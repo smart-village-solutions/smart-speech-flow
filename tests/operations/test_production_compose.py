@@ -4,6 +4,7 @@ import yaml
 
 
 COMPOSE_PATH = Path("deploy/production/docker-compose.production.yml")
+DEVELOPMENT_COMPOSE_PATH = Path("docker-compose.yml")
 
 
 def load_production_compose():
@@ -45,6 +46,25 @@ def test_production_compose_forbids_builds_and_mutable_image_tags():
         assert "@sha256:" in image or ":prod-" in image, name
 
 
+def test_pinned_legacy_application_images_keep_the_legacy_auth_contract():
+    services = load_production_compose()["services"]
+    gateway = services["api_gateway"]
+    frontend = services["frontend"]
+    environment = _environment_by_name(gateway)
+
+    legacy_application_images_are_pinned = (
+        gateway["image"] == "ssf-backend-api_gateway:prod-c3c69e9"
+        or frontend["image"] == "ssf-backend-frontend:prod-d4d1feb"
+    )
+
+    if legacy_application_images_are_pinned:
+        assert environment["KEYCLOAK_ISSUER"] == (
+            "${KEYCLOAK_ISSUER:-https://auth.kassel.smartspeechflow.de/realms/ssf}"
+        )
+        assert "KEYCLOAK_BASE_URL" not in environment
+        assert "STUDIO_RUNTIME_CONFIGURATION_BASE_URL" not in environment
+
+
 def test_production_services_restart_automatically():
     for name, service in load_production_compose()["services"].items():
         assert service.get("restart") == "unless-stopped", name
@@ -55,6 +75,13 @@ def test_production_compose_preserves_the_existing_prometheus_volume():
     prometheus = compose["services"]["prometheus"]
     assert "prometheus-data:/prometheus" in prometheus["volumes"]
     assert compose["volumes"]["prometheus-data"]["external"] is True
+
+
+def _environment_by_name(service):
+    return {
+        entry.split("=", maxsplit=1)[0]: entry.split("=", maxsplit=1)[1]
+        for entry in service["environment"]
+    }
 
 
 def test_keycloak_realm_mount_resolves_to_the_versioned_file():
@@ -69,6 +96,15 @@ def test_keycloak_realm_mount_resolves_to_the_versioned_file():
 
     assert source == expected_source
     assert source.is_file()
+
+
+def test_frontend_build_receives_public_multi_realm_configuration():
+    compose = yaml.safe_load(DEVELOPMENT_COMPOSE_PATH.read_text())
+    build_args = compose["services"]["frontend"]["build"]["args"]
+
+    assert build_args["VITE_KEYCLOAK_URL"] == "https://auth.dialog.kassel.de"
+    assert build_args["VITE_KEYCLOAK_CLIENT_ID"] == "ssf-frontend"
+    assert "VITE_KEYCLOAK_REALM" not in build_args
 
 
 def test_recovery_unit_relies_on_docker_restart_policies_without_compose_reconciliation():

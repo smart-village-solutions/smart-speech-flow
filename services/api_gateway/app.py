@@ -501,11 +501,12 @@ app.add_middleware(RateLimitMiddleware)
 
 # === Module Imports (AFTER app initialization) ===
 from . import websocket, websocket_monitoring_routes, websocket_polling_routes
-from .routes import admin, circuit_breaker, customer, session
+from .routes import admin, circuit_breaker, customer, login, session
 from .routes.metrics import metrics
 
 # === Session-Routen registrieren ===
 app.include_router(session.router, prefix="/api", tags=["sessions"])
+app.include_router(login.router)
 app.include_router(admin.router, tags=["admin"])
 app.include_router(customer.router, tags=["customer"])
 app.include_router(websocket_monitoring_routes.router, tags=["websocket-monitoring"])

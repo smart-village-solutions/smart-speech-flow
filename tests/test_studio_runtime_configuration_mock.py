@@ -11,6 +11,7 @@ from services.studio_mock.app import app
 
 CLIENT = TestClient(app)
 PATH = "/internal/plugins/ssf/v1/runtime-configuration"
+DIRECTORY_PATH = "/internal/plugins/ssf/v1/admin-login-tenants"
 AUTHORIZED_TOKEN = "Bearer studio-mock-authorized-token"
 UNAUTHORIZED_TOKEN = "Bearer studio-mock-unauthorized-token"
 
@@ -102,11 +103,17 @@ def test_rejects_service_token_without_runtime_configuration_permission() -> Non
 def test_rejects_missing_tenant_and_correlation_headers() -> None:
     missing_tenant = CLIENT.get(
         PATH,
-        headers={"Authorization": AUTHORIZED_TOKEN, "X-Correlation-Id": "test-correlation-id"},
+        headers={
+            "Authorization": AUTHORIZED_TOKEN,
+            "X-Correlation-Id": "test-correlation-id",
+        },
     )
     missing_correlation = CLIENT.get(
         PATH,
-        headers={"Authorization": AUTHORIZED_TOKEN, "X-Studio-Tenant-Id": "tenant-kassel"},
+        headers={
+            "Authorization": AUTHORIZED_TOKEN,
+            "X-Studio-Tenant-Id": "tenant-kassel",
+        },
     )
 
     assert missing_tenant.status_code == 404
@@ -210,3 +217,106 @@ def test_openapi_documents_required_v1_headers_and_success_contract() -> None:
     }
     asset_definition = schema["components"]["schemas"]["BrandingAssetResponse"]
     assert {"url", "alternativeText"} <= set(asset_definition["properties"])
+
+
+def _directory_headers(**additional: str) -> dict[str, str]:
+    return {
+        "Authorization": AUTHORIZED_TOKEN,
+        "X-Correlation-Id": "test-correlation-id",
+        **additional,
+    }
+
+
+def test_returns_deterministic_v1_login_directory_for_authorized_service() -> None:
+    first = CLIENT.get(DIRECTORY_PATH, headers=_directory_headers())
+    second = CLIENT.get(DIRECTORY_PATH, headers=_directory_headers())
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json() == second.json()
+    payload = first.json()
+    assert payload == {
+        "contractVersion": "1.0",
+        "directoryRevision": payload["directoryRevision"],
+        "tenants": [
+            {
+                "id": "tenant-kassel",
+                "displayName": "Stadt Kassel",
+                "realm": "kassel-ssf-2025",
+            },
+            {
+                "id": "tenant-fulda",
+                "displayName": "Stadt Fulda",
+                "realm": "fulda-ssf-2025",
+            },
+        ],
+    }
+    revision = payload.pop("directoryRevision")
+    expected_revision = hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+    ).hexdigest()
+    assert revision == f"sha256:{expected_revision}"
+
+
+def test_login_directory_requires_authorization_and_correlation_id() -> None:
+    missing_token = CLIENT.get(DIRECTORY_PATH, headers={"X-Correlation-Id": "test-correlation-id"})
+    missing_correlation = CLIENT.get(DIRECTORY_PATH, headers={"Authorization": AUTHORIZED_TOKEN})
+
+    assert missing_token.status_code == 401
+    assert missing_token.json()["error"]["code"] == "service_authentication_invalid"
+    assert missing_correlation.status_code != 200
+
+
+def test_login_directory_rejects_tenant_selectors_and_supports_service_scenarios() -> None:
+    selector_responses = [
+        CLIENT.get(
+            DIRECTORY_PATH,
+            headers=_directory_headers(**{"X-Studio-Tenant-Id": "tenant-kassel"}),
+        ),
+        CLIENT.get(
+            DIRECTORY_PATH,
+            headers=_directory_headers(**{"X-Studio-Instance-Id": "tenant-kassel"}),
+        ),
+        CLIENT.get(
+            DIRECTORY_PATH,
+            headers=_directory_headers(**{"X-Tenant-Id": "tenant-kassel"}),
+        ),
+        CLIENT.get(
+            DIRECTORY_PATH,
+            params={"tenantId": "tenant-kassel"},
+            headers=_directory_headers(),
+        ),
+    ]
+    forbidden = CLIENT.get(
+        DIRECTORY_PATH, headers=_directory_headers(Authorization=UNAUTHORIZED_TOKEN)
+    )
+    unavailable = CLIENT.get(
+        DIRECTORY_PATH, headers=_directory_headers(**{"X-Mock-Scenario": "unavailable"})
+    )
+
+    assert all(response.status_code != 200 for response in selector_responses)
+    assert forbidden.status_code == 403
+    assert forbidden.json()["error"]["code"] == "service_action_forbidden"
+    assert unavailable.status_code == 503
+    assert unavailable.json()["error"]["code"] == "admin_login_directory_unavailable"
+
+
+def test_openapi_documents_login_directory_contract_and_required_headers() -> None:
+    schema = CLIENT.get("/openapi.json").json()
+    operation = schema["paths"][DIRECTORY_PATH]["get"]
+    headers = {
+        parameter["name"]: parameter
+        for parameter in operation["parameters"]
+        if parameter["in"] == "header"
+    }
+
+    for header_name in ("authorization", "x-correlation-id"):
+        assert headers[header_name]["required"] is True
+        assert headers[header_name]["schema"] == {"type": "string"}
+    assert "x-studio-tenant-id" not in headers
+    success_schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
+    assert success_schema["$ref"].endswith("AdminLoginDirectoryResponse")
+    response_definition = schema["components"]["schemas"]["AdminLoginDirectoryResponse"]
+    assert {"contractVersion", "directoryRevision", "tenants"} <= set(
+        response_definition["properties"]
+    )
