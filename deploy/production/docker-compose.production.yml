@@ -130,6 +130,19 @@ services:
     - SSF_LEGACY_ADMIN_ACCESS_CODE=${SSF_LEGACY_ADMIN_ACCESS_CODE:-}
     - SSF_QUALITY_TELEMETRY_MODE=${SSF_QUALITY_TELEMETRY_MODE:-disabled}
     - SSF_QUALITY_TELEMETRY_SESSION_KEY=${SSF_QUALITY_TELEMETRY_SESSION_KEY:-}
+    # Two roles, not one: the request path is filtered by the tenant policy,
+    # the background passes are deployment-wide. See migration 002.
+    # The passwords are passed beside these URLs, not inside them: a
+    # generated password is not URL-safe, and asyncpg parses a DSN as a
+    # URL. See PostgresFeedbackRepository.create.
+    - SSF_FEEDBACK_DATABASE_URL=postgresql://ssf_feedback_app@ssf-postgres:5432/${SSF_POSTGRES_DB}
+    - SSF_FEEDBACK_DATABASE_PASSWORD=${SSF_FEEDBACK_APP_PASSWORD}
+    - SSF_FEEDBACK_MAINTENANCE_DATABASE_URL=postgresql://ssf_feedback_maintenance@ssf-postgres:5432/${SSF_POSTGRES_DB}
+    - SSF_FEEDBACK_MAINTENANCE_DATABASE_PASSWORD=${SSF_FEEDBACK_MAINTENANCE_PASSWORD}
+    - SSF_FEEDBACK_READER_DATABASE_URL=postgresql://ssf_feedback_reader@ssf-postgres:5432/${SSF_POSTGRES_DB}
+    - SSF_FEEDBACK_READER_DATABASE_PASSWORD=${SSF_FEEDBACK_READER_PASSWORD}
+    - SSF_FEEDBACK_ENCRYPTION_KEY=${SSF_FEEDBACK_ENCRYPTION_KEY:?required}
+    - SSF_DEFAULT_TENANT_ID=${SSF_DEFAULT_TENANT_ID:-default}
     - SSF_OTLP_LOGS_ENDPOINT=${SSF_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
     - SSF_RELEASE_VERSION=${SSF_RELEASE_VERSION:-unknown}
     - SSF_DEPLOYMENT_ENV=${SSF_DEPLOYMENT_ENV:-production}
@@ -149,8 +162,12 @@ services:
         max-size: 100m
         max-file: '5'
     depends_on:
-    - redis
-    - ollama
+      redis:
+        condition: service_started
+      ollama:
+        condition: service_started
+      ssf-postgres:
+        condition: service_started
     labels:
     - traefik.enable=true
     - traefik.http.routers.api_gateway.rule=Host(`ssf.smart-village.solutions`)
@@ -237,6 +254,31 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
+    pull_policy: never
+  ssf-postgres:
+    image: postgres@sha256:bb377b7239d2774ac8cc76f481596ce96c5a6b5e9d141f6d0a0ee371a6e7c0f2
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${SSF_POSTGRES_DB:?required}
+      POSTGRES_USER: ${SSF_POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${SSF_POSTGRES_PASSWORD:?required}
+      # apply.sh sets these on the two application roles in migration 002. The
+      # owner above runs migrations and backups only; nothing connects as it at
+      # runtime, because a superuser bypasses the tenant policy entirely.
+      SSF_FEEDBACK_APP_PASSWORD: ${SSF_FEEDBACK_APP_PASSWORD:?required}
+      SSF_FEEDBACK_MAINTENANCE_PASSWORD: ${SSF_FEEDBACK_MAINTENANCE_PASSWORD:?required}
+      SSF_FEEDBACK_READER_PASSWORD: ${SSF_FEEDBACK_READER_PASSWORD:?required}
+    volumes:
+    - ssf-postgres-data:/var/lib/postgresql/data
+    - ../../deploy/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     pull_policy: never
   keycloak-postgres:
     image: postgres@sha256:bb377b7239d2774ac8cc76f481596ce96c5a6b5e9d141f6d0a0ee371a6e7c0f2
@@ -456,6 +498,7 @@ volumes:
   audio-data: null
   clickhouse-data: null
   keycloak-postgres-data: null
+  ssf-postgres-data: null
   prometheus-data:
     external: true
     name: 1980baddd3a6bd8bcade314d6f81d3716e73ae9bba6655b90d4179ff7b1990a7

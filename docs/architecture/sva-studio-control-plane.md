@@ -222,6 +222,44 @@ content. Studio will consume those data later through an internal SSF
 administration or reporting API rather than accessing SSF runtime databases
 directly.
 
+## Feedback Tenancy
+
+Feedback is the first SSF-owned data with a tenant column. Both of its halves
+are tenant-isolated, by different mechanisms, because they sit on opposite
+sides of the trust boundary above.
+
+**Reading.** `GET /api/feedback` and `GET /api/feedback/{feedback_id}` resolve
+the tenant through `require_studio_tenant_context`, which reads the signed
+`studio_tenant_id` claim and rejects any tenant selector supplied by the
+request. The gateway connects as `ssf_feedback_reader`, a `NOBYPASSRLS` role,
+so the row-level security policy in `001_feedback.sql` filters every read
+inside PostgreSQL rather than in application code. A record belonging to
+another tenant is invisible, not merely unselected.
+
+**Writing.** `POST /api/feedback` is unauthenticated by design — the customer
+flow carries no Keycloak identity, and this document's trust boundary keeps
+customers outside Studio IAM — so its tenant cannot come from a token. It comes
+from the session instead. Every admin session is created through the tenant
+flow and stored under a `TenantSessionKey`, and `SessionTenantResolver` reaches
+that key from the bare session id through the session store's join index. The
+tenant a row is stored under is therefore the tenant whose conversation it
+describes.
+
+Two cases have no session to take a tenant from, and both are deliberate
+limits rather than gaps in the mechanism:
+
+- **Feedback that names no session** — from the access-code screen, the tenant
+  login screen or the admin dashboard — falls back to `SSF_DEFAULT_TENANT_ID`.
+  That tenant's operators see all of it, from every tenant.
+- **Feedback for a terminated conversation** is refused as an unknown session,
+  because termination revokes the join link the lookup depends on. That is the
+  session store's capability design working as intended; accepting feedback for
+  a short grace window without weakening it is #324.
+
+See `docs/operations/runbooks/feedback-database-deployment.md` for the
+deployment consequences, including how to confirm no stored tenant is one that
+no operator can read.
+
 ## Security and Quality Boundaries
 
 - Authentication, tenant resolution, and authorisation are enforced server-side.

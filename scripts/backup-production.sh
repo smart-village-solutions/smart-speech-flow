@@ -52,6 +52,31 @@ production_compose exec -T keycloak-postgres sh -ec \
   'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
   | gzip -c > "$staging_dir/keycloak-postgres.sql.gz"
 
+# The authoritative feedback store. Without this, twelve months of retained
+# feedback has no recovery path -- so a dump that fails while the service is
+# running still aborts the backup.
+#
+# A host that has not yet run the feedback deployment runbook has no store at
+# all, and there the dump is skipped rather than fatal: aborting would take the
+# Keycloak, Redis and ClickHouse backups down with it, which is a far worse
+# outcome than not backing up a database that does not exist.
+#
+# The volume decides, not the running container set. A stopped container and a
+# host that never deployed the store look identical to `compose ps`, and they
+# are not the same thing -- the first has up to twelve months of feedback to
+# lose. Skipping it would drop ssf-postgres.sql.gz from `required`, so the
+# verifier would pass and the backup would report complete with the one
+# irreplaceable database missing. The volume outlives the container and only
+# the deployment runbook creates it.
+if docker volume inspect "${SSF_PROJECT_NAME}_ssf-postgres-data" >/dev/null 2>&1; then
+  production_compose exec -T ssf-postgres sh -ec \
+    'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+    | gzip -c > "$staging_dir/ssf-postgres.sql.gz"
+  required+=(ssf-postgres.sql.gz)
+else
+  printf 'WARNING: the feedback database has never been deployed on this host; skipping its backup\n' >&2
+fi
+
 production_compose exec -T redis redis-cli --rdb /tmp/ssf-backup.rdb >/dev/null
 production_compose exec -T redis cat /tmp/ssf-backup.rdb > "$staging_dir/redis.rdb"
 

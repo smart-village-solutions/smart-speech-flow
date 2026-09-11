@@ -69,8 +69,16 @@
       "question": "Was würde Smart Speech Flow noch besser machen?",
       "placeholder": "Ihre Ideen, Wünsche oder alles, was gestört hat…"
     },
+    "notice": {
+      "purpose": "Ihre Angaben werden ausschließlich zur Verbesserung von Smart Speech Flow ausgewertet.",
+      "retention": "Wir speichern das Feedback zwölf Monate lang und löschen es danach automatisch.",
+      "withdrawal": "Sie können Ihr Feedback jederzeit widerrufen lassen – wenden Sie sich dazu an das Personal vor Ort."
+    },
     "stars": "{{count}} Sterne",
     "submit": "Feedback senden",
+    "submitting": "Wird gesendet…",
+    "retry": "Erneut senden",
+    "failed": "Ihr Feedback konnte nicht gesendet werden. Ihre Eingaben bleiben erhalten.",
     "thanksTitle": "Vielen Dank!",
     "thanksBody": "Ihr Feedback hilft uns, Smart Speech Flow für alle zu verbessern."
   },

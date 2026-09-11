@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "Quality telemetry: refinement attempts from ClickHouse, writer health from Prometheus. Empty panels in production are expected until SSF_QUALITY_TELEMETRY_MODE is set to `enabled`.",
+  "description": "Quality telemetry: refinement attempts from ClickHouse, writer health from Prometheus. Empty panels in production are expected until SSF_QUALITY_TELEMETRY_MODE is set to `enabled`. Feedback KPIs (#304) read the silver tier for exact averages and the gold tier for history; the gold averages are approximate under re-emission and say so.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -1096,6 +1096,287 @@
         "textMode": "auto"
       },
       "description": "Should be zero. Anything else means refinement events were written while migration 002 was not yet applied, so the view projected only the envelope. Apply the migrations before switching the mode to `enabled`."
+    },
+    {
+      "id": 40,
+      "type": "stat",
+      "title": "Feedback Submissions",
+      "description": "Distinct submissions. uniqExact over event_id rather than count(), because #305 re-emits a failed delivery under the same id and the ReplacingMergeTree only collapses that duplicate at merge time.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 70
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT uniqExact(event_id) AS submissions FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND $__timeFilter(emitted_at_utc)"
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "type": "stat",
+      "title": "Feedback Response Rate",
+      "description": "Sessions that submitted feedback, over sessions that were activated. Submissions carrying no session reference are excluded from the numerator: the access-code and admin-dashboard screens submit without one, and every such row shares the same placeholder reference, so counting them would both collapse them into one session and let the rate exceed 100%.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 70
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT round(100 * uniqExactIf(session_ref, event_type = 'feedback_submitted' AND session_ref != '00000000000000000000000000000000') / nullIf(uniqExactIf(session_ref, event_type = 'session_lifecycle' AND lifecycle_phase = 'activated'), 0), 1) AS response_rate FROM quality_events FINAL WHERE $__timeFilter(emitted_at_utc)"
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "type": "stat",
+      "title": "Net Promoter Score",
+      "description": "Promoters (9-10) minus detractors (0-6) as a percentage of submissions. Built on uniqExact, so it stays exact under re-emission -- unlike the gold tier's rating averages.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 70
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": -100,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT round(100 * (uniqExactIf(event_id, net_promoter_score >= 9) - uniqExactIf(event_id, net_promoter_score <= 6)) / nullIf(uniqExact(event_id), 0)) AS nps FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND $__timeFilter(emitted_at_utc)"
+        }
+      ]
+    },
+    {
+      "id": 43,
+      "type": "stat",
+      "title": "Submissions Awaiting Analytics",
+      "description": "Rows stored in PostgreSQL whose analytics event has not been delivered, as seen by the last reconciliation pass. The feedback itself is safe; only the ClickHouse half is behind, so the numbers on this row understate until it drains. Capped at the batch limit of 200.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 70
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "editorType": "code",
+          "expr": "max(ssf_feedback_reconciliation_backlog)",
+          "legendFormat": "awaiting delivery",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 44,
+      "type": "timeseries",
+      "title": "Rating Averages",
+      "description": "Exact: averaged over the deduplicated silver rows. Silver keeps 30 days, so a longer time range silently truncates here -- use the gold panel below for history, and read its caveat first.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 74
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 1,
+          "max": 5
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 1 DAY) AS time, avg(translation_quality) AS translation_quality, avg(performance) AS performance, avg(usability) AS usability FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 45,
+      "type": "timeseries",
+      "title": "Promoters, Passives and Detractors",
+      "description": "The split behind the score, so a moving NPS can be read as gaining promoters or losing detractors rather than as one number.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 74
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 1 DAY) AS time, uniqExactIf(event_id, net_promoter_score >= 9) AS promoters, uniqExactIf(event_id, net_promoter_score >= 7 AND net_promoter_score <= 8) AS passives, uniqExactIf(event_id, net_promoter_score <= 6) AS detractors FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 46,
+      "type": "timeseries",
+      "title": "Daily Submissions (Gold Tier)",
+      "description": "Thirteen months of history, split by form version so a revised question set is visible rather than pooled. Exact: gold counts with uniqExact over event_id, so a re-emission does not inflate them.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 82
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT event_date AS time, feedback_form_version, uniqExactMerge(submissions) AS submissions FROM feedback_daily WHERE $__dateFilter(event_date) GROUP BY event_date, feedback_form_version ORDER BY event_date"
+        }
+      ]
+    },
+    {
+      "id": 47,
+      "type": "timeseries",
+      "title": "Rating Averages (Gold Tier, approximate)",
+      "description": "APPROXIMATE BY CONSTRUCTION. avgState has no distinct-by form, so a submission re-emitted by the #305 reconciler contributes its ratings twice -- and #305 re-emits by design, not only after a fault. Verified against ClickHouse 26.3.17: two submissions of 9 and 3 read as an average of 7 after one retry, where the true value is 6. Counts and NPS on this dashboard are exact; these four averages are not. Inside 30 days, read 'Rating Averages'.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 82
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 1,
+          "max": 5
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT event_date AS time, avgMerge(translation_quality_avg) AS translation_quality, avgMerge(performance_avg) AS performance, avgMerge(usability_avg) AS usability FROM feedback_daily WHERE $__dateFilter(event_date) GROUP BY event_date ORDER BY event_date"
+        }
+      ]
+    },
+    {
+      "id": 48,
+      "type": "table",
+      "title": "Ratings by Form Version",
+      "description": "The denominator beside the averages, which #304 asks for explicitly: an average of four submissions and an average of four hundred look identical without it.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 82
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT feedback_form_version AS form_version, uniqExact(event_id) AS submissions, round(avg(translation_quality), 2) AS translation_quality, round(avg(performance), 2) AS performance, round(avg(usability), 2) AS usability, round(avg(net_promoter_score), 2) AS nps_mean FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND $__timeFilter(emitted_at_utc) GROUP BY form_version ORDER BY submissions DESC"
+        }
+      ]
     }
   ],
   "refresh": "30s",
@@ -1116,6 +1397,6 @@
   "timezone": "utc",
   "title": "SSF Telemetry",
   "uid": "ssf-telemetry",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }

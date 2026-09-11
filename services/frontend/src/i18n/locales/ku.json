@@ -69,8 +69,16 @@
       "question": "Çi dê Smart Speech Flow hê baştir bike?",
       "placeholder": "Ramanên te, daxwazên te, an her tiştê ku te aciz kir…"
     },
+    "notice": {
+      "purpose": "Bersivên te tenê ji bo baştirkirina Smart Speech Flow tên bikaranîn.",
+      "retention": "Em nêrînan diwanzdeh mehan hildidin û paşê bixweber jê dibin.",
+      "withdrawal": "Tu dikarî her dem nêrîna xwe vekişînî – ji bo vê xwe bigihîne karmendên li cihî."
+    },
     "stars": "{{count}} stêrk",
     "submit": "Nêrînê bişîne",
+    "submitting": "Tê şandin…",
+    "retry": "Dîsa bişîne",
+    "failed": "Nêrîna te nehat şandin. Tiştên ku te nivîsîne mane.",
     "thanksTitle": "Spas dikin!",
     "thanksBody": "Nêrîna te alî me dike ku em Smart Speech Flow ji bo her kesî baştir bikin."
   },

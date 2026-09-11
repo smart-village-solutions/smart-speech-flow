@@ -69,8 +69,16 @@
       "question": "Smart Speech Flow'u daha da iyi yapacak şey ne olurdu?",
       "placeholder": "Fikirleriniz, istekleriniz veya sizi rahatsız eden her şey…"
     },
+    "notice": {
+      "purpose": "Yanıtlarınız yalnızca Smart Speech Flow'u geliştirmek için kullanılır.",
+      "retention": "Geri bildirimi on iki ay saklıyor ve bu sürenin sonunda otomatik olarak siliyoruz.",
+      "withdrawal": "Geri bildiriminizi dilediğiniz zaman geri çektirebilirsiniz; bunun için görevlilere başvurun."
+    },
     "stars": "{{count}} yıldız",
     "submit": "Geri bildirim gönder",
+    "submitting": "Gönderiliyor…",
+    "retry": "Tekrar gönder",
+    "failed": "Geri bildiriminiz gönderilemedi. Yanıtlarınız korundu.",
     "thanksTitle": "Teşekkür ederiz!",
     "thanksBody": "Geri bildiriminiz Smart Speech Flow'u herkes için geliştirmemize yardımcı oluyor."
   },

@@ -1,9 +1,10 @@
 import type { FeedbackSubmission } from './feedback.types';
 
 /**
- * The gateway has no feedback endpoint yet (docs/frontend/API_GAPS.md). When
- * POST /api/feedback exists, an ApiFeedbackSink replaces the stub in the
- * provider and no component changes.
+ * `Promise<void>` on purpose: the confirmation identifier the gateway returns
+ * is an internal handle, not something the sheet shows or the customer needs.
+ * Failures arrive as the `AppError` the HTTP client normalises, which is what
+ * the sheet turns into a reason and a retry.
  */
 export interface FeedbackSink {
   submit(submission: FeedbackSubmission): Promise<void>;

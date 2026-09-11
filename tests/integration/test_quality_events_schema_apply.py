@@ -21,6 +21,11 @@ SCRATCH_DB = "ssf_schema_apply_test"
 
 # Every object the repository's migrations own, in ORDER BY name order.
 EXPECTED_TABLES = [
+    # feedback_daily and its view come from 006: the feedback ratings get their
+    # own gold aggregate rather than sharing quality_events_daily, because they
+    # are averaged per day while everything else there is counted.
+    "feedback_daily",
+    "feedback_daily_mv",
     "otel_logs",
     "quality_events",
     "quality_events_daily",

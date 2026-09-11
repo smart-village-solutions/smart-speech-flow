@@ -6,6 +6,7 @@ Compose file's own text, mirroring
 tests/test_otel_collector_compose_configuration.py.
 """
 
+import base64
 import json
 import os
 import re
@@ -14,6 +15,11 @@ import tempfile
 from pathlib import Path
 
 import yaml
+
+# Encoded here rather than written out, so no base64 blob that looks like a real
+# key is committed next to the name of one. Secret scanners cannot tell a fake
+# from the real thing, and they are right not to try.
+TEST_ENCRYPTION_KEY = base64.b64encode(b"test-only-32-byte-key-for-units!").decode()
 
 ROOT = Path(__file__).parents[1]
 DATASOURCES_CONFIG = (
@@ -37,6 +43,13 @@ def _services() -> dict:
         env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=bootstrap_admin\n")
         env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=test-only-admin-password\n")
         env_file.write("KEYCLOAK_HOSTNAME=auth.test.example\n")
+        env_file.write("SSF_POSTGRES_DB=ssf_test\n")
+        env_file.write("SSF_POSTGRES_USER=ssf_test_user\n")
+        env_file.write("SSF_POSTGRES_PASSWORD=test-only-db-password\n")
+        env_file.write("SSF_FEEDBACK_APP_PASSWORD=test-only-app-password\n")
+        env_file.write("SSF_FEEDBACK_MAINTENANCE_PASSWORD=test-only-maint-password\n")
+        env_file.write("SSF_FEEDBACK_READER_PASSWORD=test-only-reader-password\n")
+        env_file.write(f"SSF_FEEDBACK_ENCRYPTION_KEY={TEST_ENCRYPTION_KEY}\n")
     try:
         # -f pins to the committed base file only: a developer's local, untracked
         # docker-compose.override.yml (see CLAUDE.md) may gate monitoring services
@@ -70,9 +83,7 @@ def _production() -> dict:
 
 def _production_env(service: str) -> dict:
     return dict(
-        entry.split("=", 1)
-        for entry in _production()[service]["environment"]
-        if "=" in entry
+        entry.split("=", 1) for entry in _production()[service]["environment"] if "=" in entry
     )
 
 
@@ -173,6 +184,13 @@ def test_dashboard_json_is_valid() -> None:
     json.loads(DASHBOARD.read_text())
 
 
+# The medallion tiers, named once. `quality_events` is the raw ReplacingMergeTree
+# every read must deduplicate; the gold tables are AggregatingMergeTrees keyed on
+# event_date, already idempotent and filtered by date rather than by timestamp.
+RAW_TIER = "quality_events"
+GOLD_TIERS = ("quality_events_daily", "feedback_daily")
+
+
 def _clickhouse_queries() -> list[str]:
     """Only the ClickHouse targets. The dashboard also carries Prometheus
     panels for writer health, which have an expr and no rawSql."""
@@ -198,17 +216,16 @@ def test_every_raw_tier_read_deduplicates() -> None:
 
     # Per FROM clause, not per query: the retention panel unions both tiers, so
     # asking whether the whole statement mentions FINAL answers nothing.
+    tables = "|".join((*GOLD_TIERS, RAW_TIER))
     reads = [
         (match.group(1), bool(match.group(2)))
         for sql in queries
-        for match in re.finditer(
-            r"FROM\s+(quality_events_daily|quality_events)\b(\s+FINAL)?", sql
-        )
+        for match in re.finditer(rf"FROM\s+({tables})\b(\s+FINAL)?", sql)
     ]
-    assert reads, "no reads of either tier"
+    assert reads, "no reads of any tier"
 
     for table, deduplicated in reads:
-        assert deduplicated is (table == "quality_events"), (table, deduplicated)
+        assert deduplicated is (table == RAW_TIER), (table, deduplicated)
 
 
 def test_every_windowed_read_uses_the_dashboard_time_range() -> None:
@@ -216,15 +233,15 @@ def test_every_windowed_read_uses_the_dashboard_time_range() -> None:
     silently disagrees with every other panel on screen.
 
     Retention verification is exempt by design: its whole purpose is to find the
-    oldest surviving row, which a time filter would hide. The gold tier is
+    oldest surviving row, which a time filter would hide. Every gold table is
     keyed on event_date, a Date, so it takes the date-filter macro instead --
-    exempting it entirely meant it scanned all thirteen months on every refresh
-    and drew an x-axis the time picker did not control.
+    exempting them entirely meant they scanned all thirteen months on every
+    refresh and drew an x-axis the time picker did not control.
     """
     for sql in _clickhouse_queries():
         if "oldest_row" in sql:
             continue
-        if "quality_events_daily" in sql and "uniqExactMerge" in sql:
+        if any(tier in sql for tier in GOLD_TIERS):
             assert "$__dateFilter(event_date)" in sql, sql
             continue
         assert "$__timeFilter(emitted_at_utc)" in sql, sql
@@ -298,6 +315,72 @@ def test_no_panel_reads_a_session_duration_outside_a_terminated_row() -> None:
         if "session_duration_ms" not in sql and "avg(message_count)" not in sql:
             continue
         assert "lifecycle_phase = 'terminated'" in sql, sql
+
+
+RATING_COLUMNS = (
+    "translation_quality",
+    "performance",
+    "usability",
+    "net_promoter_score",
+)
+
+
+def test_feedback_panels_read_the_feedback_event_only() -> None:
+    """Every rating column defaults to 0 on every other event type.
+
+    Migration 005 adds them to the shared silver table, so a session or message
+    row carries four zeros. A panel that averages them without the filter
+    divides real ratings by the whole event population -- the same failure the
+    lifecycle panels guard against, and it reads as satisfaction collapsing
+    rather than as a missing WHERE clause.
+    """
+    for sql in _clickhouse_queries():
+        if not any(f"({column})" in sql or f"({column}," in sql for column in RATING_COLUMNS):
+            continue
+        assert "event_type = 'feedback_submitted'" in sql, sql
+
+
+def test_the_response_rate_excludes_submissions_carrying_no_session() -> None:
+    """The access-code and admin-dashboard screens submit without a session.
+
+    Every such row stores the same all-zero placeholder reference, so counting
+    them would collapse them into one session and still let the rate climb
+    above 100% against a smaller denominator.
+    """
+    rates = [sql for sql in _clickhouse_queries() if "response_rate" in sql]
+    assert rates, "the response rate panel is missing"
+
+    for sql in rates:
+        assert f"session_ref != '{'0' * 32}'" in sql, sql
+
+
+def test_the_gold_rating_averages_admit_they_are_approximate() -> None:
+    """avgState has no distinct-by form, so a re-emitted submission counts twice.
+
+    #305 re-emits by design rather than only after a fault, so this is a number
+    a reader will meet in normal operation. The panel has to say so where it is
+    read, not only in the migration that created it.
+    """
+    dashboard = json.loads(DASHBOARD.read_text())
+    approximate = [
+        panel
+        for panel in dashboard["panels"]
+        for target in panel.get("targets", []) or []
+        if "avgMerge" in (target.get("rawSql") or "")
+    ]
+    assert approximate, "no gold rating average panel"
+
+    for panel in approximate:
+        assert "approximate" in panel.get("description", "").lower(), panel["title"]
+        assert "approximate" in panel["title"].lower(), panel["title"]
+
+
+def test_the_dashboard_reads_the_feedback_gold_tier() -> None:
+    """A gold tier nothing reads is a tier nobody notices has stopped filling."""
+    queries = _clickhouse_queries()
+
+    assert any("feedback_daily" in sql for sql in queries)
+    assert any("feedback_submitted" in sql and "quality_events FINAL" in sql for sql in queries)
 
 
 def test_the_dashboard_reads_both_medallion_tiers() -> None:
