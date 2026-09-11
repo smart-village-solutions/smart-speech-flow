@@ -103,3 +103,56 @@ class TestEveryDriverFailureIsRetryable:
 
         with pytest.raises(FeedbackStorageUnavailable):
             await repository.store(object())
+
+
+class TestTheReadPathFailsTheSameWay:
+    """The Studio read path gets the same mapping `store()` has.
+
+    Without it, an ordinary PostgreSQL restart turns both GET endpoints into a
+    500, when the lifespan and the provider both promise a retryable 503.
+    """
+
+    ERRORS = [
+        asyncpg.InterfaceError("connection is closed"),
+        asyncpg.InternalClientError("broken"),
+        asyncpg.PostgresError("server said no"),
+        OSError("network is unreachable"),
+    ]
+
+    @staticmethod
+    def _repository(error):
+        from services.api_gateway.feedback.repository import PostgresFeedbackReadRepository
+
+        class FailingPool:
+            def acquire(self):
+                raise error
+
+        return PostgresFeedbackReadRepository(FailingPool())
+
+    @pytest.mark.parametrize("error", ERRORS)
+    async def test_listing_is_reported_as_unavailable(self, error) -> None:
+        from services.api_gateway.feedback.repository import FeedbackStorageUnavailable
+
+        with pytest.raises(FeedbackStorageUnavailable):
+            await self._repository(error).list_records(tenant_id="t", limit=1, offset=0)
+
+    @pytest.mark.parametrize("error", ERRORS)
+    async def test_fetching_is_reported_as_unavailable(self, error) -> None:
+        from uuid import uuid4
+
+        from services.api_gateway.feedback.repository import FeedbackStorageUnavailable
+
+        with pytest.raises(FeedbackStorageUnavailable):
+            await self._repository(error).fetch_record(feedback_id=uuid4(), tenant_id="t")
+
+    @pytest.mark.parametrize("error", ERRORS)
+    async def test_auditing_is_reported_as_unavailable(self, error) -> None:
+        """An audit that cannot be written must stop the disclosure, not 500 it."""
+        from uuid import uuid4
+
+        from services.api_gateway.feedback.repository import FeedbackStorageUnavailable
+
+        with pytest.raises(FeedbackStorageUnavailable):
+            await self._repository(error).record_access(
+                feedback_id=uuid4(), tenant_id="t", accessed_by="op", access_scope="detail"
+            )

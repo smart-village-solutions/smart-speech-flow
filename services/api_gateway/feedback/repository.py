@@ -359,31 +359,46 @@ class PostgresFeedbackReadRepository:
     async def list_records(
         self, *, tenant_id: str, limit: int, offset: int
     ) -> Sequence[FeedbackRecord]:
-        async with self._pool.acquire() as connection:
-            async with connection.transaction():
-                await _bind_tenant(connection, tenant_id)
-                rows = await connection.fetch(_LIST_RECORDS, limit, offset)
+        try:
+            async with self._pool.acquire() as connection:
+                async with connection.transaction():
+                    await _bind_tenant(connection, tenant_id)
+                    rows = await connection.fetch(_LIST_RECORDS, limit, offset)
+        except _DRIVER_FAILURE as error:
+            raise _read_failed(error) from None
         return [_record_from_row(row) for row in rows]
 
     async def fetch_record(self, *, feedback_id: UUID, tenant_id: str) -> FeedbackRecord | None:
-        async with self._pool.acquire() as connection:
-            async with connection.transaction():
-                await _bind_tenant(connection, tenant_id)
-                row = await connection.fetchrow(_FETCH_RECORD, feedback_id)
+        try:
+            async with self._pool.acquire() as connection:
+                async with connection.transaction():
+                    await _bind_tenant(connection, tenant_id)
+                    row = await connection.fetchrow(_FETCH_RECORD, feedback_id)
+        except _DRIVER_FAILURE as error:
+            raise _read_failed(error) from None
         return _record_from_row(row) if row is not None else None
 
     async def record_access(
         self, *, feedback_id: UUID, tenant_id: str, accessed_by: str, access_scope: str
     ) -> None:
-        async with self._pool.acquire() as connection:
-            await connection.execute(
-                _AUDIT_ACCESS,
-                feedback_id,
-                tenant_id,
-                accessed_by,
-                datetime.now(timezone.utc),
-                access_scope,
-            )
+        try:
+            async with self._pool.acquire() as connection:
+                await connection.execute(
+                    _AUDIT_ACCESS,
+                    feedback_id,
+                    tenant_id,
+                    accessed_by,
+                    datetime.now(timezone.utc),
+                    access_scope,
+                )
+        except _DRIVER_FAILURE as error:
+            raise _read_failed(error) from None
+
+
+def _read_failed(error: BaseException) -> FeedbackStorageUnavailable:
+    """Type name only, as in store(): a fetched row is in the error's DETAIL."""
+    logger.warning("Feedback read failed: %s", type(error).__name__)
+    return FeedbackStorageUnavailable("the feedback store could not be read")
 
 
 def _record_from_row(row: asyncpg.Record) -> FeedbackRecord:

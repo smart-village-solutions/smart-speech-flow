@@ -176,3 +176,40 @@ def test_reading_answers_503_when_the_read_role_is_unconfigured() -> None:
         app.dependency_overrides.pop(require_ssf_user, None)
 
     assert response.status_code == 503
+
+
+class RaisingReadService:
+    """A read service whose every call fails with the given exception."""
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def list_for_tenant(self, **_):
+        raise self._error
+
+    async def read_for_tenant(self, **_):
+        raise self._error
+
+
+def test_an_undecryptable_record_is_reported_as_such(client_for) -> None:
+    """A wrong or rotated key must not surface as a bare 500 with no reason."""
+    from services.api_gateway.feedback.read import FeedbackTextUnreadable
+
+    service = RaisingReadService(FeedbackTextUnreadable("did not authenticate"))
+
+    response = client_for(service).get(f"/api/feedback/{RECORD_ID}")
+
+    assert response.status_code == 500
+    assert "decrypt" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("path", ["/api/feedback", f"/api/feedback/{RECORD_ID}"])
+def test_an_unreachable_store_answers_a_retryable_503(client_for, path) -> None:
+    from services.api_gateway.feedback.repository import FeedbackStorageUnavailable
+
+    service = RaisingReadService(FeedbackStorageUnavailable("unreachable"))
+
+    response = client_for(service).get(path)
+
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "30"

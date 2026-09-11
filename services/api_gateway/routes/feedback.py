@@ -32,7 +32,12 @@ from ..feedback.models import (
     FeedbackTextTooLong,
 )
 from ..auth import require_ssf_user
-from ..feedback.read import FeedbackDetail, FeedbackNotFound, FeedbackSummary
+from ..feedback.read import (
+    FeedbackDetail,
+    FeedbackNotFound,
+    FeedbackSummary,
+    FeedbackTextUnreadable,
+)
 from ..feedback.repository import FeedbackStorageUnavailable
 from ..feedback.service import UnknownSession
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
@@ -158,12 +163,15 @@ async def list_feedback(
     limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(default=0, ge=0),
 ) -> FeedbackListResponse:
-    summaries = await service.list_for_tenant(
-        tenant_id=context.tenant_id,
-        accessed_by=_operator(claims),
-        limit=limit,
-        offset=offset,
-    )
+    try:
+        summaries = await service.list_for_tenant(
+            tenant_id=context.tenant_id,
+            accessed_by=_operator(claims),
+            limit=limit,
+            offset=offset,
+        )
+    except FeedbackStorageUnavailable:
+        raise _read_unavailable() from None
     return FeedbackListResponse(
         items=[FeedbackSummaryResponse.of(summary) for summary in summaries]
     )
@@ -207,4 +215,22 @@ async def read_feedback(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No such feedback record",
         ) from None
+    except FeedbackTextUnreadable:
+        # Not retryable and not the caller's fault: the record exists but the
+        # deployment's key cannot open it. Said explicitly, because a bare 500
+        # sends an operator looking for a crash rather than at the key.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The stored text could not be decrypted with the configured key",
+        ) from None
+    except FeedbackStorageUnavailable:
+        raise _read_unavailable() from None
     return FeedbackDetailResponse.of_detail(detail)
+
+
+def _read_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Feedback could not be read; please retry",
+        headers={"Retry-After": _RETRY_AFTER_SECONDS},
+    )
