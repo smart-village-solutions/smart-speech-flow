@@ -313,10 +313,12 @@ async def test_connected_admin_is_not_terminated_at_legacy_30_minute_deadline(
 @pytest.mark.asyncio
 async def test_timeout_monitor_releases_idle_polling_presence(
     manager: SessionManager,
+    monkeypatch,
 ) -> None:
-    from services.api_gateway.websocket_polling_routes import polling_store
-
-    polling_store.clients.clear()
+    polling_store = TenantPollingStore(clock=lambda: 121.0)
+    monkeypatch.setattr(
+        "services.api_gateway.websocket_polling_routes.polling_store", polling_store
+    )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     client = polling_store.activate(session.key, ClientType.ADMIN)
     manager.admin_connected(session.key)

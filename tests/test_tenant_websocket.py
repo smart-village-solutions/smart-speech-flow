@@ -310,7 +310,11 @@ async def test_termination_cleans_only_the_addressed_tenant() -> None:
 
 
 @pytest.mark.asyncio
-async def test_admin_connection_listing_is_filtered_by_token_tenant() -> None:
+async def test_admin_connection_listing_is_filtered_by_token_tenant(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "services.api_gateway.websocket_polling_routes.polling_store",
+        TenantPollingStore(),
+    )
     session_manager = _PresenceManager()
     socket_manager = WebSocketManager(session_manager)
     socket_manager.start_heartbeat_system = AsyncMock()
