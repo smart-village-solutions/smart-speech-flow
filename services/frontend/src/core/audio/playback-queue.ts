@@ -83,6 +83,8 @@ export function createPlaybackQueue(
   // Guards the async gap in play(): a clip interrupted while its promise is
   // still pending must not drive the queue when that promise settles.
   let generation = 0;
+  let pendingLoad: object | null = null;
+  let preparedUrl: string | null = null;
   // True once play() has resolved, i.e. the clip is genuinely audible. A source
   // that fails to load both rejects play() and fires the player's error event;
   // the rejection handles it, and the event must not advance the queue a second
@@ -113,22 +115,9 @@ export function createPlaybackQueue(
     }
   };
 
-  const start = (clip: Clip) => {
-    const era = (generation += 1);
-    heard.add(clip.id);
-    // Playing it again draws the waveform afresh, so it must stop counting as
-    // heard in full until it is.
-    setCompleted(clip.id, false);
-    playing = clip;
-    audible = false;
-    emit({ playingId: clip.id, progress: 0, paused: false });
-
-    Promise.resolve(resolveUrl(clip.url)).then((url) => {
-      if (era !== generation) {
-        return;
-      }
-      return player.play(url);
-    }).then(
+  const playPrepared = (url: string) => {
+    const era = generation;
+    player.play(url).then(
       () => {
         if (era === generation) {
           audible = true;
@@ -144,12 +133,49 @@ export function createPlaybackQueue(
     );
   };
 
+  const start = (clip: Clip) => {
+    const era = (generation += 1);
+    const load = {};
+    heard.add(clip.id);
+    // Playing it again draws the waveform afresh, so it must stop counting as
+    // heard in full until it is.
+    setCompleted(clip.id, false);
+    playing = clip;
+    audible = false;
+    pendingLoad = load;
+    preparedUrl = null;
+    emit({ playingId: clip.id, progress: 0, paused: false });
+
+    Promise.resolve(resolveUrl(clip.url)).then(
+      (url) => {
+        if (pendingLoad !== load) {
+          return;
+        }
+        pendingLoad = null;
+        preparedUrl = url;
+        if (!state.paused) {
+          playPrepared(url);
+        }
+      },
+      () => {
+        if (pendingLoad === load) {
+          pendingLoad = null;
+        }
+        if (era === generation) {
+          advance();
+        }
+      }
+    );
+  };
+
   function advance() {
     const next = held ? undefined : queue.shift();
     if (next === undefined) {
       generation += 1;
       playing = null;
       audible = false;
+      pendingLoad = null;
+      preparedUrl = null;
       emit(IDLE);
       return;
     }
@@ -161,6 +187,8 @@ export function createPlaybackQueue(
     queue.length = 0;
     playing = null;
     audible = false;
+    pendingLoad = null;
+    preparedUrl = null;
     held = false;
     player.stop();
     emit(IDLE);
@@ -186,6 +214,13 @@ export function createPlaybackQueue(
 
     const era = generation;
     emit({ ...state, paused: false });
+
+    if (!audible) {
+      if (preparedUrl !== null) {
+        playPrepared(preparedUrl);
+      }
+      return;
+    }
 
     player.resume().then(
       // Restores the invariant `pause` broke: the clip's original play() may
@@ -218,6 +253,8 @@ export function createPlaybackQueue(
     generation += 1;
     playing = null;
     audible = false;
+    pendingLoad = null;
+    preparedUrl = null;
     player.stop();
 
     if (interrupted !== null) {

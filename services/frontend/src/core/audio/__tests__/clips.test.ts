@@ -164,4 +164,39 @@ describe('createBrowserClipLoader', () => {
     expect(authorization).toBe('Bearer tenant-token');
     expect(clip.objectUrl).toBe('blob:authenticated-audio');
   });
+
+  it('does not send the admin bearer token to a foreign absolute audio url', async () => {
+    vi.mocked(getAdminAccessToken).mockReset().mockResolvedValue('tenant-token');
+    const config = readConfig({ VITE_API_BASE_URL: 'http://api.test' });
+    const http = createHttpClient(config, () => 'en');
+    let authorization: string | undefined;
+    http.defaults.adapter = async (request) => {
+      authorization = request.headers.get('Authorization')?.toString();
+      return {
+        data: new ArrayBuffer(8),
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: request,
+      };
+    };
+    vi.stubGlobal(
+      'AudioContext',
+      class {
+        async decodeAudioData() {
+          return { getChannelData: () => new Float32Array([0.5, -0.5]) };
+        }
+      }
+    );
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn().mockReturnValue('blob:foreign-audio'),
+    });
+
+    const loader = createBrowserClipLoader(http);
+    await loader.load('http://foreign.test/api/admin/session/A1B2C3D4/audio/m1/translated.wav');
+
+    expect(authorization).toBeUndefined();
+    expect(getAdminAccessToken).not.toHaveBeenCalled();
+  });
 });

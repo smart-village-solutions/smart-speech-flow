@@ -1,5 +1,5 @@
 import { StrictMode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
@@ -420,6 +420,37 @@ describe('usePlayback', () => {
 
     expect(playing()).toBe('a');
     expect(paused()).toBe('yes');
+  });
+
+  it('plays the authenticated clip after pausing while its download is pending', async () => {
+    let finishDownload!: (clip: { objectUrl: string; peaks: number[] }) => void;
+    const clips: ClipLoader = {
+      load: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            finishDownload = resolve;
+          })
+      ),
+      peek: vi.fn().mockReturnValue(null),
+      dispose: vi.fn(),
+    };
+    const player = setup(<Probe />, clips);
+
+    await click('enqueue a');
+    await vi.waitFor(() => expect(clips.load).toHaveBeenCalledWith('/a.wav'));
+    await click('pause');
+
+    await act(async () => {
+      finishDownload({ objectUrl: 'blob:authenticated-a', peaks: [] });
+    });
+    expect(player.played).toEqual([]);
+
+    await click('resume');
+    await vi.waitFor(() => expect(player.played).toEqual(['blob:authenticated-a']));
+
+    expect(player.resumed).not.toHaveBeenCalled();
+    expect(playing()).toBe('a');
+    expect(paused()).toBe('no');
   });
 
   // A pause must not stall the conversation. The clip someone stopped half way
