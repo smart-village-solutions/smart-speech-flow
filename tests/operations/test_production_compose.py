@@ -47,6 +47,25 @@ def test_production_compose_forbids_builds_and_mutable_image_tags():
         assert "@sha256:" in image or ":prod-" in image, name
 
 
+def test_pinned_legacy_application_images_keep_the_legacy_auth_contract():
+    services = load_production_compose()["services"]
+    gateway = services["api_gateway"]
+    frontend = services["frontend"]
+    environment = _environment_by_name(gateway)
+
+    legacy_application_images_are_pinned = (
+        gateway["image"] == "ssf-backend-api_gateway:prod-c3c69e9"
+        or frontend["image"] == "ssf-backend-frontend:prod-d4d1feb"
+    )
+
+    if legacy_application_images_are_pinned:
+        assert environment["KEYCLOAK_ISSUER"] == (
+            "${KEYCLOAK_ISSUER:-https://auth.kassel.smartspeechflow.de/realms/ssf}"
+        )
+        assert "KEYCLOAK_BASE_URL" not in environment
+        assert "STUDIO_RUNTIME_CONFIGURATION_BASE_URL" not in environment
+
+
 def test_production_services_restart_automatically():
     for name, service in load_production_compose()["services"].items():
         assert service.get("restart") == "unless-stopped", name

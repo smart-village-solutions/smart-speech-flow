@@ -10,7 +10,7 @@ import type { ConversationScreenState } from './useConversationScreen';
 interface ConversationSurfaceProps {
   screen: ConversationScreenState;
   header: ReactNode;
-  /** A CSS length: where the chat stack starts. 72px customer, 128px admin. */
+  /** A CSS length: where the chat stack starts below the shared fixed header. */
   contentTop: string;
   /** The admin's status pill. Rendered directly under the header. */
   overlay?: ReactNode;

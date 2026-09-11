@@ -1,13 +1,13 @@
-# Updated from the running production containers on 2026-09-07 for
-# api_gateway; remaining entries were captured on 2026-09-01 or later.
+# Updated from the running production containers on 2026-09-11 for
+# api_gateway and frontend; remaining entries were captured on 2026-09-01 or later.
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
-api_gateway	sha256:5d7ab5fa534487cad1e32242d5aee9f004a9b7d9188c258ad498f66fe20fabae	ssf-backend-api_gateway:prod-c3c69e9
+api_gateway	sha256:4ba715d47ccab24192adf18fe9b1be29d8df93c9c973582d52d7748e59ebd23f	ssf-backend-api_gateway:prod-57455c0
 asr	sha256:9f591a04df65f9b4048063080e1fa71763cdfca0dda2a7741cad2fa18624b790	ssf-backend-asr:prod-345add9
 translation	sha256:fff7d0e3df40fcaf657524de767b41babba75bb160cc74eae6d87510b6ca2ba0	ssf-backend-translation:prod-345add9
 tts	sha256:12c7e0851b72cad7f2847b505c1dfd9d9538cfe9411f9a30d39c4df6d6f424cd	ssf-backend-tts:prod-345add9
-frontend	sha256:cceb333f09f6cdb5af75ffb3a70c568b5e55140e4caa49d898de0dd269bb16fe	ssf-backend-frontend:prod-d4d1feb
+frontend	sha256:ba1ce1b00ab3de8bd64e0a3896fa3ba7c9dfbdd68f7360d4b00743e98b412af2	ssf-backend-frontend:prod-57455c0
 frontend-archive	sha256:5fe65474631a5f74c4ea81a5881ade417809f9c5905b593c6cc2d2699e50686d	ssf-backend-frontend-archive:prod-e409a06
 keycloak	sha256:d2b5957b314175678f3ff359122eabaad262d2db426cd9b5acf7799ab2067d65	ssf-keycloak:prod-e409a06
 traefik	sha256:76de233753150da70cde36a5d845c231d408a041b6fcf5a36f924c1322bd98fd	traefik@sha256:ca0f90490fe3091f5f4e582a28638652edb3b26b4d7a1d9ee621ce88fb2bff86

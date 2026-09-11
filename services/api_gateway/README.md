@@ -8,7 +8,7 @@ realms. The gateway uses one trusted `KEYCLOAK_BASE_URL`, admits only issuers
 derived from current directory entries, and binds a validated token to its
 signed `studio_tenant_id` and `ssf_authorization_revision` claims.
 
-Production requires these settings:
+The tenant-login production rollout requires these settings:
 
 ```text
 KEYCLOAK_BASE_URL=https://auth.dialog.kassel.de
@@ -24,8 +24,11 @@ STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS=60
 
 The client secret must come from the deployment environment or secret store;
 it must never be embedded in an image, browser bundle, or checked-in file.
-Production Compose intentionally does not import the fixed local `ssf` realm.
-Studio owns production realm provisioning.
+Studio owns production realm provisioning once the tenant-login rollout is
+activated. Until compatible gateway and frontend images are built, verified,
+and pinned atomically, the canonical production Compose file remains on the
+legacy single-realm contract. Do not combine its legacy application image pins
+with the settings above.
 
 ## Multi-tenant rollout gate
 
