@@ -147,9 +147,11 @@ class TestFeedbackReference:
         assert OPAQUE_REF.match(feedback_ref("11111111-2222-3333-4444-555555555555"))
 
     def test_the_same_id_always_gives_the_same_reference(self):
+        """A per-call salt would break every join the reference exists for."""
         value = "11111111-2222-3333-4444-555555555555"
+        first = feedback_ref(value)
 
-        assert feedback_ref(value) == feedback_ref(value)
+        assert feedback_ref(value) == first
 
     def test_different_ids_give_different_references(self):
         assert feedback_ref("a") != feedback_ref("b")

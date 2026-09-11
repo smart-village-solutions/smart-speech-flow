@@ -67,7 +67,7 @@ describe('feedback repository', () => {
 
     await repository.submit(SUBMISSION);
 
-    expect(Object.keys(body).sort()).toEqual([
+    expect(Object.keys(body).sort((a, b) => a.localeCompare(b))).toEqual([
       'form_version',
       'improvements',
       'net_promoter_score',
