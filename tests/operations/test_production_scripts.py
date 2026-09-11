@@ -164,6 +164,9 @@ fi
     manifest = json.loads((backup / "manifest.json").read_text())
     assert "grafana.db" in manifest["required"]
     assert "ollama-models.txt" in manifest["required"]
+    # The authoritative feedback store: retained for twelve months, and until
+    # this line it was the one stateful service with no recovery path.
+    assert "ssf-postgres.sql.gz" in manifest["required"]
     assert "volumes/ssf-backend_audio-data.tar.gz" in manifest["required"]
     assert "volumes/ssf-backend_ollama-data.tar.gz" not in manifest["required"]
     assert "gpt-oss:20b" in (backup / "ollama-models.txt").read_text()

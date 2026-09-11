@@ -30,6 +30,7 @@ GOLD = MIGRATIONS / "002_quality_events_fields_and_gold.sql"
 MESSAGE = MIGRATIONS / "003_translation_message_fields.sql"
 LIFECYCLE = MIGRATIONS / "004_session_lifecycle_fields.sql"
 TENANT = MIGRATIONS / "005_tenant_reference.sql"
+FEEDBACK = MIGRATIONS / "006_feedback_submitted_fields.sql"
 
 # The envelope keys 001 already projects; everything else must arrive in a later
 # migration. Which one does not matter -- only that some migration gives the key
@@ -40,9 +41,7 @@ ENVELOPE_KEYS = {"ssf.quality.event_id", "ssf.quality.schema_version"}
 # Everything after 001, discovered rather than listed: a migration added
 # without being named here would otherwise be exempt from every guard below,
 # which is the opposite of what this file is for.
-FIELD_MIGRATIONS = tuple(
-    path for path in sorted(MIGRATIONS.glob("*.sql")) if path.name[:3] > "001"
-)
+FIELD_MIGRATIONS = tuple(path for path in sorted(MIGRATIONS.glob("*.sql")) if path.name[:3] > "001")
 
 
 def _field_migration_sql() -> str:
@@ -114,9 +113,7 @@ class TestSilverGainsTypedColumns:
         """A view that throws fails the INSERT into otel_logs; the collector
         then retries that batch forever."""
         sql = _field_migration_sql()
-        assert (
-            "toUInt32OrZero(LogAttributes['ssf.quality.refinement_latency_ms'])" in sql
-        )
+        assert "toUInt32OrZero(LogAttributes['ssf.quality.refinement_latency_ms'])" in sql
 
     @pytest.mark.parametrize(
         "key",
@@ -134,7 +131,14 @@ class TestSilverGainsTypedColumns:
         bronze, and there the cost of a raising cast is an INSERT the collector
         retries forever.
         """
-        assert f"toUInt32OrZero(LogAttributes['{key}'])" in _field_migration_sql()
+        # Any width, so long as it is the OrZero form: ratings and NPS are
+        # UInt8 columns and cast with toUInt8OrZero, which is as non-throwing
+        # as toUInt32OrZero. Pinning one width would force every future field
+        # to be UInt32 to satisfy a guard about raising, not about size.
+        cast = re.compile(
+            r"toUInt(?:8|16|32|64)OrZero\(LogAttributes\['" + re.escape(key) + r"'\]\)"
+        )
+        assert cast.search(_field_migration_sql()), key
 
 
 def test_every_migration_after_the_first_is_covered_by_these_guards() -> None:
@@ -144,6 +148,7 @@ def test_every_migration_after_the_first_is_covered_by_these_guards() -> None:
         MESSAGE.name,
         LIFECYCLE.name,
         TENANT.name,
+        FEEDBACK.name,
     }
 
 
@@ -168,9 +173,7 @@ class TestTheOperatorDocsNameEveryMigration:
     ):
         number = migration.name[:3]
         text = doc.read_text()
-        applied = re.findall(
-            r"migrations?\s+`?[0-9]{3}`?(?:[^.\n]*?`?[0-9]{3}`?)*", text
-        )
+        applied = re.findall(r"migrations?\s+`?[0-9]{3}`?(?:[^.\n]*?`?[0-9]{3}`?)*", text)
         assert any(
             number in phrase for phrase in applied
         ), f"{doc.name} never lists migration {number} among those to apply"
@@ -187,9 +190,7 @@ class TestLifecycleColumns:
         ],
     )
     def test_the_silver_table_has_a_column_for_each_lifecycle_field(self, column):
-        assert re.search(
-            rf"ADD COLUMN IF NOT EXISTS\s+{column}\b", LIFECYCLE.read_text()
-        )
+        assert re.search(rf"ADD COLUMN IF NOT EXISTS\s+{column}\b", LIFECYCLE.read_text())
 
     def test_the_lifecycle_migration_alters_rather_than_recreates(self):
         sql = LIFECYCLE.read_text()
@@ -239,9 +240,7 @@ class TestGoldTier:
         assert "CREATE TABLE IF NOT EXISTS quality_events_daily" in GOLD.read_text()
 
     def test_the_gold_tier_expires_after_thirteen_months(self):
-        assert re.search(
-            r"TTL\s+event_date\s*\+\s*INTERVAL\s+13\s+MONTH", GOLD.read_text()
-        )
+        assert re.search(r"TTL\s+event_date\s*\+\s*INTERVAL\s+13\s+MONTH", GOLD.read_text())
 
     def test_the_raw_tier_keeps_its_thirty_day_retention(self):
         """002 must not silently change what 001 fixed at table creation."""

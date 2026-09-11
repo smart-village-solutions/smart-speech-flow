@@ -1,7 +1,11 @@
 import { createContext, useContext } from 'react';
 
 export interface FeedbackContextValue {
-  openFeedback: () => void;
+  /**
+   * The provider renders above <Routes>, so it cannot read the session from
+   * the URL. Callers pass what they hold; the admin dashboard holds nothing.
+   */
+  openFeedback: (sessionId: string | null) => void;
 }
 
 export const FeedbackContext = createContext<FeedbackContextValue | null>(null);

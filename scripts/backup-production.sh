@@ -29,6 +29,7 @@ mkdir -p "$backup_root"
 staging_dir="$(mktemp -d "$backup_root/.staging-${timestamp}.XXXXXX")"
 required=(
   keycloak-postgres.sql.gz
+  ssf-postgres.sql.gz
   redis.rdb
   clickhouse-native-backup.zip
   configuration.tar.gz
@@ -51,6 +52,12 @@ mkdir -p "$staging_dir/volumes"
 production_compose exec -T keycloak-postgres sh -ec \
   'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
   | gzip -c > "$staging_dir/keycloak-postgres.sql.gz"
+
+# The authoritative feedback store. Without this, twelve months of retained
+# feedback has no recovery path.
+production_compose exec -T ssf-postgres sh -ec \
+  'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  | gzip -c > "$staging_dir/ssf-postgres.sql.gz"
 
 production_compose exec -T redis redis-cli --rdb /tmp/ssf-backup.rdb >/dev/null
 production_compose exec -T redis cat /tmp/ssf-backup.rdb > "$staging_dir/redis.rdb"

@@ -1,12 +1,17 @@
 """Regression tests for frontend configuration embedded by the container build."""
 
-from pathlib import Path
+import base64
 import os
 import subprocess
 import uuid
+from pathlib import Path
 
 import pytest
 
+# Encoded here rather than written out, so no base64 blob that looks like a real
+# key is committed next to the name of one. Secret scanners cannot tell a fake
+# from the real thing, and they are right not to try.
+TEST_ENCRYPTION_KEY = base64.b64encode(b"test-only-32-byte-key-for-units!").decode()
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_ROOT = REPOSITORY_ROOT / "services" / "frontend"
@@ -34,6 +39,13 @@ def _compose_build(project_name: str) -> subprocess.CompletedProcess[str]:
     environment["KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME"] = "bootstrap_admin"
     environment["KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD"] = "test-only-admin-password"
     environment["KEYCLOAK_HOSTNAME"] = "auth.test.example"
+    # Compose interpolates every service in the file, not just the one being
+    # built, so each `:?required` variable anywhere in docker-compose.yml has
+    # to be satisfied here or the build never starts.
+    environment["SSF_POSTGRES_DB"] = "ssf_test"
+    environment["SSF_POSTGRES_USER"] = "ssf_test_user"
+    environment["SSF_POSTGRES_PASSWORD"] = "test-only-db-password"
+    environment["SSF_FEEDBACK_ENCRYPTION_KEY"] = TEST_ENCRYPTION_KEY
     return subprocess.run(
         [
             "docker",

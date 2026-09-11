@@ -51,28 +51,20 @@ def _localhost_origin(port: int, *, secure: bool = False) -> str:
 if DOCKER_ENV:
     # Docker-Service-URLs für Microservices
     SERVICE_URLS = {
-        "ASR": _build_service_url(
-            "asr", 8000, HEALTH_PATH, scheme=DEFAULT_INTERNAL_SCHEME
-        ),
+        "ASR": _build_service_url("asr", 8000, HEALTH_PATH, scheme=DEFAULT_INTERNAL_SCHEME),
         "Translation": _build_service_url(
             "translation", 8000, HEALTH_PATH, scheme=DEFAULT_INTERNAL_SCHEME
         ),
-        "TTS": _build_service_url(
-            "tts", 8000, HEALTH_PATH, scheme=DEFAULT_INTERNAL_SCHEME
-        ),
+        "TTS": _build_service_url("tts", 8000, HEALTH_PATH, scheme=DEFAULT_INTERNAL_SCHEME),
     }
 else:
     # Lokale Service-URLs für Entwicklung ohne Docker
     SERVICE_URLS = {
-        "ASR": _build_service_url(
-            "localhost", 8001, HEALTH_PATH, scheme=DEFAULT_LOCAL_SCHEME
-        ),
+        "ASR": _build_service_url("localhost", 8001, HEALTH_PATH, scheme=DEFAULT_LOCAL_SCHEME),
         "Translation": _build_service_url(
             "localhost", 8002, HEALTH_PATH, scheme=DEFAULT_LOCAL_SCHEME
         ),
-        "TTS": _build_service_url(
-            "localhost", 8003, HEALTH_PATH, scheme=DEFAULT_LOCAL_SCHEME
-        ),
+        "TTS": _build_service_url("localhost", 8003, HEALTH_PATH, scheme=DEFAULT_LOCAL_SCHEME),
     }
 
 
@@ -154,22 +146,55 @@ async def audio_cleanup_task() -> None:
 
                 # Cleanup durchführen
                 stats = cleanup_old_audio_files()
-                print(
-                    f"🧹 Audio-Cleanup abgeschlossen: {stats['total_deleted']} Dateien gelöscht"
-                )
+                print(f"🧹 Audio-Cleanup abgeschlossen: {stats['total_deleted']} Dateien gelöscht")
 
                 # Disk Usage loggen
                 disk_stats = get_disk_usage()
                 total_mb = disk_stats["total_bytes"] / (1024 * 1024)
-                print(
-                    f"💾 Audio Storage: {disk_stats['total_files']} Dateien, {total_mb:.2f} MB"
-                )
+                print(f"💾 Audio Storage: {disk_stats['total_files']} Dateien, {total_mb:.2f} MB")
 
             except Exception as e:
                 print(f"⚠️ Fehler im Audio-Cleanup-Task: {e}")
                 await asyncio.sleep(3600)
     except Exception as e:
         print(f"❌ Audio-Cleanup-Task Startup Fehler: {e}")
+
+
+FEEDBACK_RECONCILIATION_INTERVAL_SECONDS = 300
+FEEDBACK_RETENTION_INTERVAL_SECONDS = 3600
+
+
+async def feedback_maintenance_task() -> None:
+    """Drive analytics recovery and retention expiry (#305).
+
+    One task for both passes on different periods: reconciliation is a cheap
+    indexed read and wants to be prompt, while deletion is neither and only
+    one replica performs it per pass anyway.
+
+    Nothing here raises. FeedbackMaintenance already contains its own failures,
+    and the loop is guarded besides: a task that dies takes every future pass
+    with it, which is how retention silently stops being enforced.
+    """
+    elapsed = 0
+
+    while True:
+        try:
+            await asyncio.sleep(FEEDBACK_RECONCILIATION_INTERVAL_SECONDS)
+            elapsed += FEEDBACK_RECONCILIATION_INTERVAL_SECONDS
+
+            maintenance = getattr(app.state, "feedback_maintenance", None)
+            if maintenance is None:
+                continue
+
+            await maintenance.reconcile_once()
+
+            if elapsed >= FEEDBACK_RETENTION_INTERVAL_SECONDS:
+                elapsed = 0
+                await maintenance.expire_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 - the loop must outlive it
+            print(f"\u26a0\ufe0f Feedback maintenance pass failed: {type(error).__name__}")
 
 
 # Well inside Docker's 10s stop grace: telemetry is the least important thing
@@ -195,9 +220,7 @@ async def _shutdown_quality_telemetry(exporter: Any, timeout_seconds: float) -> 
         except Exception as e:  # reported at teardown, never raised to the loop
             failures.append(e)
 
-    thread = threading.Thread(
-        target=run, name="quality-telemetry-shutdown", daemon=True
-    )
+    thread = threading.Thread(target=run, name="quality-telemetry-shutdown", daemon=True)
     thread.start()
 
     deadline = time.monotonic() + timeout_seconds
@@ -311,12 +334,64 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     sys.stderr.write(f"Quality telemetry ready (mode={telemetry_mode.value})\n")
     sys.stderr.flush()
 
+    # Feedback persistence (#302). Deliberately non-fatal: the gateway serves
+    # the whole conversation pipeline, and an unreachable feedback database
+    # must cost submissions a retryable 503 rather than cost every customer
+    # their session. Compose already enforces the variables with :?required, so
+    # a container reaching this branch is misconfigured or the database is
+    # briefly down -- both of which the route reports as retryable.
+    app.state.feedback_repository = None
+    app.state.feedback_service = None
+    app.state.feedback_maintenance = None
+    feedback_dsn = os.environ.get("SSF_FEEDBACK_DATABASE_URL", "").strip()
+    if not feedback_dsn:
+        sys.stderr.write(
+            "Feedback persistence disabled: SSF_FEEDBACK_DATABASE_URL is not set; "
+            "POST /api/feedback will answer 503\n"
+        )
+    else:
+        from .feedback.crypto import FeedbackCipher
+        from .feedback.maintenance import (
+            FeedbackMaintenance,
+            FeedbackMaintenanceMetrics,
+        )
+        from .feedback.repository import PostgresFeedbackRepository
+        from .feedback.service import FeedbackService
+        from .feedback.tenant import ConfiguredTenantResolver
+
+        try:
+            feedback_repository = await PostgresFeedbackRepository.create(dsn=feedback_dsn)
+            app.state.feedback_repository = feedback_repository
+            app.state.feedback_service = FeedbackService(
+                repository=feedback_repository,
+                cipher=FeedbackCipher.from_environment(),
+                tenant_resolver=ConfiguredTenantResolver.from_environment(),
+                session_manager=session_manager,
+                telemetry=app.state.quality_telemetry,
+            )
+            app.state.feedback_maintenance = FeedbackMaintenance(
+                repository=feedback_repository,
+                telemetry=app.state.quality_telemetry,
+                metrics=FeedbackMaintenanceMetrics(app.state.prometheus_registry),
+            )
+            sys.stderr.write("Feedback persistence ready\n")
+        except Exception as feedback_error:  # noqa: BLE001 - reported, not raised
+            # Type name only: a connection error can carry the DSN, and the DSN
+            # carries the database password.
+            sys.stderr.write(
+                "Feedback persistence unavailable "
+                f"({type(feedback_error).__name__}); "
+                "POST /api/feedback will answer 503\n"
+            )
+    sys.stderr.flush()
+
     # Start background tasks
     timeout_task = asyncio.create_task(session_timeout_monitor())
     circuit_breaker_task = asyncio.create_task(circuit_breaker_monitor())
     websocket_monitor_bg_task = asyncio.create_task(websocket_monitor_task())
     websocket_fallback_bg_task = asyncio.create_task(websocket_fallback_task())
     audio_cleanup_bg_task = asyncio.create_task(audio_cleanup_task())
+    feedback_maintenance_bg_task = asyncio.create_task(feedback_maintenance_task())
     sys.stderr.write("All background tasks started\n")
     sys.stderr.flush()
     sys.stderr.write("=" * 80 + "\n")
@@ -332,6 +407,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         websocket_monitor_bg_task.cancel()
         websocket_fallback_bg_task.cancel()
         audio_cleanup_bg_task.cancel()
+        feedback_maintenance_bg_task.cancel()
 
         try:
             await circuit_breaker_client.stop_health_monitoring()
@@ -344,13 +420,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             websocket_monitor_bg_task,
             websocket_fallback_bg_task,
             audio_cleanup_bg_task,
+            feedback_maintenance_bg_task,
             return_exceptions=True,
         )
 
         for result in task_results:
-            if isinstance(result, Exception) and not isinstance(
-                result, asyncio.CancelledError
-            ):
+            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
                 print(f"Background task shutdown error: {result}")
 
         app.state.pipeline_admission = None
@@ -368,6 +443,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 telemetry_exporter_at_exit,
                 QUALITY_TELEMETRY_SHUTDOWN_TIMEOUT_SECONDS,
             )
+
+        feedback_repository_at_exit = getattr(app.state, "feedback_repository", None)
+        app.state.feedback_repository = None
+        app.state.feedback_service = None
+        app.state.feedback_maintenance = None
+        if feedback_repository_at_exit is not None:
+            await feedback_repository_at_exit.close()
 
         print("Shutdown complete", flush=True)
 
@@ -407,9 +489,7 @@ app = FastAPI(
 # === Monitoring Setup (BEFORE any module imports) ===
 # Eigene Registry erstellen um doppelte Registrierung zu vermeiden
 registry = CollectorRegistry()
-requests_total = Counter(
-    "gateway_requests_total", "Total API Gateway requests", registry=registry
-)
+requests_total = Counter("gateway_requests_total", "Total API Gateway requests", registry=registry)
 requests_total.inc(0)
 
 # Registered here rather than in the lifespan because a Prometheus series may be
@@ -447,13 +527,9 @@ def setup_cors_for_websockets():
     """Configure CORS for both REST API and WebSocket connections"""
     # Development vs Production CORS
     development_origins = os.environ.get("DEVELOPMENT_CORS_ORIGINS", "").split(",")
-    development_origins = [
-        origin.strip() for origin in development_origins if origin.strip()
-    ]
+    development_origins = [origin.strip() for origin in development_origins if origin.strip()]
 
-    production_pattern = (
-        r"https://.*\.figma\.site|https://translate\.smart-village\.solutions"
-    )
+    production_pattern = r"https://.*\.figma\.site|https://translate\.smart-village\.solutions"
     environment = os.environ.get("ENVIRONMENT", "production")
 
     if environment == "development":
@@ -519,7 +595,7 @@ app.add_middleware(RateLimitMiddleware)
 
 # === Module Imports (AFTER app initialization) ===
 from . import websocket, websocket_monitoring_routes, websocket_polling_routes
-from .routes import admin, circuit_breaker, customer, login, session
+from .routes import admin, circuit_breaker, customer, feedback, login, session
 from .routes.metrics import metrics
 
 # === Session-Routen registrieren ===
@@ -531,6 +607,7 @@ app.include_router(websocket_monitoring_routes.router, tags=["websocket-monitori
 app.include_router(websocket_polling_routes.router, tags=["websocket-polling-fallback"])
 app.include_router(websocket.router, tags=["websocket"])
 app.include_router(circuit_breaker.router, prefix="/api", tags=["circuit-breaker"])
+app.include_router(feedback.router, tags=["feedback"])
 
 # Metrics-Route direkt an App binden
 app.get("/metrics")(metrics)

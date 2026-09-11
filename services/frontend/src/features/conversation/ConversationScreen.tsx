@@ -18,7 +18,7 @@ export function ConversationScreen() {
         <AppHeader
           onBack={() => void navigate(`/s/${sessionId}/language`)}
           onHome={() => void navigate('/')}
-          onFeedback={openFeedback}
+          onFeedback={() => openFeedback(sessionId ?? null)}
         />
       }
     />

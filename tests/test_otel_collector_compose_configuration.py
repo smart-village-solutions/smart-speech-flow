@@ -4,6 +4,7 @@ Assertions run against `docker compose config` — the resolved configuration a
 deploy actually gets — not against the compose file's text.
 """
 
+import base64
 import os
 import subprocess
 import tempfile
@@ -12,6 +13,11 @@ from pathlib import Path
 import yaml
 
 from services.api_gateway.quality_telemetry import ALLOWED_ATTRIBUTE_KEYS
+
+# Encoded here rather than written out, so no base64 blob that looks like a real
+# key is committed next to the name of one. Secret scanners cannot tell a fake
+# from the real thing, and they are right not to try.
+TEST_ENCRYPTION_KEY = base64.b64encode(b"test-only-32-byte-key-for-units!").decode()
 
 ROOT = Path(__file__).parents[1]
 COLLECTOR_CONFIG = ROOT / "monitoring" / "otel-collector-config.yaml"
@@ -41,6 +47,10 @@ def _services() -> dict:
         env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=bootstrap_admin\n")
         env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=test-only-admin-password\n")
         env_file.write("KEYCLOAK_HOSTNAME=auth.test.example\n")
+        env_file.write("SSF_POSTGRES_DB=ssf_test\n")
+        env_file.write("SSF_POSTGRES_USER=ssf_test_user\n")
+        env_file.write("SSF_POSTGRES_PASSWORD=test-only-db-password\n")
+        env_file.write("SSF_FEEDBACK_ENCRYPTION_KEY=" f"{TEST_ENCRYPTION_KEY}\n")
     try:
         result = subprocess.run(
             ["docker", "compose", "--env-file", env_file.name, "config"],

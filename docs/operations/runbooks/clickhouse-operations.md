@@ -408,7 +408,7 @@ the result — it should now list `otel-collector`.
 
 **11. Turn real pipeline events on (optional, and separate).** Steps 1-10 leave
 the gateway on `probe`, which emits no pipeline events. Before switching to
-`enabled`, confirm migrations `002`, `003`, `004` and `005` have been applied — they
+`enabled`, confirm migrations `002`, `003`, `004`, `005` and `006` have been applied — they
 are what give `quality_events` its typed columns, and `initdb` does **not**
 re-run on a volume that already has data:
 
@@ -418,14 +418,14 @@ Expect `otel_logs`, `quality_events`, `quality_events_daily`,
 `quality_events_daily_mv`, `quality_events_mv`. If the gold tier is missing,
 re-run `apply.sh` (step 5) — it is idempotent.
 
-The table list does not distinguish `002` from `003`, `004` and `005`, because those
+The table list does not distinguish `002` from `003`, `004`, `005` and `006`, because those
 two only add columns. Check them directly:
 
     $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = '"'"'quality_events'"'"'"'
 
 Expect `31`. Fewer means a migration has not been applied; re-run `apply.sh`.
 
-**Order matters.** Emitting events while any of `002`-`005` is unapplied writes rows
+**Order matters.** Emitting events while any of `002`-`006` is unapplied writes rows
 whose typed columns are all defaults, and those rows cannot be repaired: the
 attributes were dropped at projection time and bronze expires after 7 days. The
 dashboard's `Rows Missing Typed Fields` panel exists to catch exactly this and

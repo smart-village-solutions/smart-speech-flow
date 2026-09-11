@@ -442,3 +442,53 @@ groups:
           summary: The quality telemetry collector is unreachable.
           description: Prometheus cannot scrape otel-collector:8888. Quality events are being queued in the gateway and dropped once its queue fills. Translation, sessions and WebSocket delivery are unaffected by design.
 
+
+  # Feedback maintenance (#305). Warnings only, like ssf-quality-telemetry:
+  # feedback is voluntary and its analytics are optional, so none of this may
+  # page. FeedbackRetentionNotRunning is the one to act on promptly -- the
+  # submission notice promises deletion after twelve months in ten languages.
+  - name: ssf-feedback-maintenance
+    rules:
+      - alert: FeedbackReconciliationBacklogGrowing
+        expr: ssf_feedback_reconciliation_backlog > 100
+        for: 30m
+        labels:
+          severity: warning
+          component: feedback
+        annotations:
+          summary: Feedback submissions are not reaching analytics.
+          description: "{{ $value }} stored submissions still await analytics delivery after a full pass. The feedback itself is safe in PostgreSQL; only the ClickHouse half is behind. Check the collector before the gateway."
+
+      - alert: FeedbackReconciliationFailing
+        expr: increase(ssf_feedback_reconciliation_total{outcome="failed"}[30m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: feedback
+        annotations:
+          summary: Feedback analytics re-emission keeps failing.
+          description: Re-emission attempts are being rejected or are raising. Rows stay pending and will be retried, so nothing is lost yet, but the backlog will grow until this clears.
+
+      # Absence, not failure: a pass that never runs emits no failure metric,
+      # which is exactly the case this has to catch. absent() covers a task
+      # that died; the rate arm covers one that runs and deletes nothing while
+      # rows are demonstrably past expiry.
+      - alert: FeedbackRetentionNotRunning
+        expr: absent(ssf_feedback_retention_deleted_total)
+        for: 6h
+        labels:
+          severity: warning
+          component: feedback
+        annotations:
+          summary: The feedback retention pass is not reporting.
+          description: No retention metric has been scraped for six hours, so the twelve-month deletion promised in the submission notice may not be running. Check that the gateway's feedback maintenance task is alive and that one replica can take the advisory lock.
+
+      - alert: FeedbackMaintenanceJobFailing
+        expr: increase(ssf_feedback_maintenance_failures_total[1h]) > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: feedback
+        annotations:
+          summary: A feedback maintenance pass could not complete.
+          description: "The {{ $labels.job }} pass failed to reach the database. Losing the advisory lock is not counted here, so this is a real outage of the feedback store rather than normal multi-replica contention."

@@ -6,6 +6,7 @@ Compose file's own text, mirroring
 tests/test_otel_collector_compose_configuration.py.
 """
 
+import base64
 import json
 import os
 import re
@@ -14,6 +15,11 @@ import tempfile
 from pathlib import Path
 
 import yaml
+
+# Encoded here rather than written out, so no base64 blob that looks like a real
+# key is committed next to the name of one. Secret scanners cannot tell a fake
+# from the real thing, and they are right not to try.
+TEST_ENCRYPTION_KEY = base64.b64encode(b"test-only-32-byte-key-for-units!").decode()
 
 ROOT = Path(__file__).parents[1]
 DATASOURCES_CONFIG = (
@@ -37,6 +43,10 @@ def _services() -> dict:
         env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=bootstrap_admin\n")
         env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=test-only-admin-password\n")
         env_file.write("KEYCLOAK_HOSTNAME=auth.test.example\n")
+        env_file.write("SSF_POSTGRES_DB=ssf_test\n")
+        env_file.write("SSF_POSTGRES_USER=ssf_test_user\n")
+        env_file.write("SSF_POSTGRES_PASSWORD=test-only-db-password\n")
+        env_file.write("SSF_FEEDBACK_ENCRYPTION_KEY=" f"{TEST_ENCRYPTION_KEY}\n")
     try:
         # -f pins to the committed base file only: a developer's local, untracked
         # docker-compose.override.yml (see CLAUDE.md) may gate monitoring services
@@ -70,9 +80,7 @@ def _production() -> dict:
 
 def _production_env(service: str) -> dict:
     return dict(
-        entry.split("=", 1)
-        for entry in _production()[service]["environment"]
-        if "=" in entry
+        entry.split("=", 1) for entry in _production()[service]["environment"] if "=" in entry
     )
 
 
@@ -201,9 +209,7 @@ def test_every_raw_tier_read_deduplicates() -> None:
     reads = [
         (match.group(1), bool(match.group(2)))
         for sql in queries
-        for match in re.finditer(
-            r"FROM\s+(quality_events_daily|quality_events)\b(\s+FINAL)?", sql
-        )
+        for match in re.finditer(r"FROM\s+(quality_events_daily|quality_events)\b(\s+FINAL)?", sql)
     ]
     assert reads, "no reads of either tier"
 
