@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timezone
 from hashlib import sha256
 from types import TracebackType
-from typing import Annotated, Any, Dict, Optional
+from typing import Annotated, Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -18,6 +18,11 @@ from ..auth import require_ssf_user
 from ..conversation_service import conversation_service
 from ..log_safety import sanitize_log_value
 from ..quality_telemetry import QualityTelemetry, get_quality_telemetry
+from ..realtime_ticket import (
+    RealtimeTicketStore,
+    RealtimeTicketUnavailable,
+    realtime_ticket_store,
+)
 from ..session_access import require_admin_session_key
 from ..session_manager import ClientType, SessionStatus, session_manager
 from ..studio_runtime_flow import (
@@ -86,6 +91,46 @@ class ErrorResponse(BaseModel):
     error: str
     message: str
     timestamp: str
+
+
+class RealtimeTicketRequest(BaseModel):
+    transport: Literal["websocket", "polling"]
+
+
+class RealtimeTicketResponse(BaseModel):
+    ticket: str
+    expires_at: str
+
+
+def get_realtime_ticket_store() -> RealtimeTicketStore:
+    return realtime_ticket_store
+
+
+@router.post(
+    "/session/{session_id}/realtime-ticket",
+    response_model=RealtimeTicketResponse,
+    responses={
+        404: {"description": "Session not found"},
+        503: {"description": "Ticket store unavailable"},
+    },
+)
+async def issue_realtime_ticket(
+    session_id: str,
+    request: RealtimeTicketRequest,
+    key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
+    store: Annotated[RealtimeTicketStore, Depends(get_realtime_ticket_store)],
+) -> RealtimeTicketResponse:
+    try:
+        issued = store.issue(key, request.transport, ttl_seconds=60)
+    except RealtimeTicketUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Realtime ticket service unavailable",
+        ) from None
+    return RealtimeTicketResponse(
+        ticket=issued.ticket,
+        expires_at=issued.expires_at.isoformat(),
+    )
 
 
 @router.post(
