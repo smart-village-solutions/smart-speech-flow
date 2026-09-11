@@ -86,13 +86,13 @@ def wired(monkeypatch):
 
 class TestEachHalfOpensItsOwnPool:
     async def test_the_request_path_opens_the_request_role(self, wired) -> None:
-        await gateway._connect_feedback_request_path(APP_URL, object())
+        await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
 
         assert RecordingRepository.opened == [{"dsn": APP_URL, "password": APP_PASSWORD}]
         assert wired.feedback_service is not None
 
     async def test_the_passes_open_the_maintenance_role(self, wired) -> None:
-        await gateway._connect_feedback_maintenance(MAINTENANCE_URL)
+        await gateway._connect_feedback_maintenance(gateway.app.state, MAINTENANCE_URL)
 
         assert RecordingRepository.opened == [
             {"dsn": MAINTENANCE_URL, "password": MAINTENANCE_PASSWORD}
@@ -100,15 +100,15 @@ class TestEachHalfOpensItsOwnPool:
         assert wired.feedback_maintenance is not None
 
     async def test_the_two_pools_are_not_the_same_pool(self, wired) -> None:
-        await gateway._connect_feedback_request_path(APP_URL, object())
-        await gateway._connect_feedback_maintenance(MAINTENANCE_URL)
+        await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
+        await gateway._connect_feedback_maintenance(gateway.app.state, MAINTENANCE_URL)
 
         assert wired.feedback_repository is not wired.feedback_maintenance_repository
         assert wired.feedback_maintenance_repository.dsn == MAINTENANCE_URL
 
     async def test_a_generated_password_is_not_pasted_into_the_url(self, wired) -> None:
         """`/` in a URL password raises before any I/O; `@` corrupts the host."""
-        await gateway._connect_feedback_request_path(APP_URL, object())
+        await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
 
         opened = RecordingRepository.opened[0]
         assert APP_PASSWORD not in opened["dsn"]
@@ -120,8 +120,13 @@ class TestTheHalvesFailIndependently:
         """Collecting feedback matters more than reconciling it."""
         RecordingRepository.fail_for = {MAINTENANCE_URL}
 
-        assert await gateway._connect_feedback_request_path(APP_URL, object()) is True
-        assert await gateway._connect_feedback_maintenance(MAINTENANCE_URL) is False
+        assert (
+            await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
+            is True
+        )
+        assert (
+            await gateway._connect_feedback_maintenance(gateway.app.state, MAINTENANCE_URL) is False
+        )
 
         assert wired.feedback_service is not None
         assert wired.feedback_maintenance is None
@@ -129,12 +134,15 @@ class TestTheHalvesFailIndependently:
     async def test_an_unreachable_request_role_is_reported_as_retryable(self, wired) -> None:
         RecordingRepository.fail_for = {APP_URL}
 
-        assert await gateway._connect_feedback_request_path(APP_URL, object()) is False
+        assert (
+            await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
+            is False
+        )
         assert wired.feedback_service is None
 
     async def test_a_missing_maintenance_url_is_settled_rather_than_retried(self, wired) -> None:
         """Unset is a decision, not an outage: retrying it would never end."""
-        assert await gateway._connect_feedback_maintenance("") is True
+        assert await gateway._connect_feedback_maintenance(gateway.app.state, "") is True
         assert wired.feedback_maintenance is None
 
     async def test_a_missing_encryption_key_is_settled_rather_than_retried(
@@ -143,7 +151,10 @@ class TestTheHalvesFailIndependently:
         """No key appears on its own, so this must not retry forever."""
         monkeypatch.delenv("SSF_FEEDBACK_ENCRYPTION_KEY", raising=False)
 
-        assert await gateway._connect_feedback_request_path(APP_URL, object()) is True
+        assert (
+            await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
+            is True
+        )
         assert wired.feedback_service is None
         assert RecordingRepository.opened == []
 
@@ -151,8 +162,8 @@ class TestTheHalvesFailIndependently:
 class TestReconnectingIsIdempotent:
     async def test_an_already_wired_half_is_not_opened_twice(self, wired) -> None:
         """The retry loop calls both halves on every tick."""
-        await gateway._connect_feedback_request_path(APP_URL, object())
-        await gateway._connect_feedback_request_path(APP_URL, object())
+        await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
+        await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
 
         assert len(RecordingRepository.opened) == 1
 
@@ -167,7 +178,7 @@ class TestTheHalvesAreIndependentlyReachable:
     """
 
     async def test_the_passes_run_even_when_submission_is_switched_off(self, wired) -> None:
-        await gateway._wire_feedback("", MAINTENANCE_URL, object())
+        await gateway._wire_feedback(gateway.app.state, "", MAINTENANCE_URL, object())
 
         assert wired.feedback_service is None
         assert wired.feedback_maintenance is not None
@@ -177,10 +188,12 @@ class TestTheHalvesAreIndependentlyReachable:
         someone restarts the gateway."""
         RecordingRepository.fail_for = {MAINTENANCE_URL}
 
-        assert await gateway._wire_feedback("", MAINTENANCE_URL, object()) is False
+        assert (
+            await gateway._wire_feedback(gateway.app.state, "", MAINTENANCE_URL, object()) is False
+        )
 
     async def test_neither_url_set_is_settled_rather_than_retried(self, wired) -> None:
-        assert await gateway._wire_feedback("", "", object()) is True
+        assert await gateway._wire_feedback(gateway.app.state, "", "", object()) is True
 
 
 class TestAMissingDependencyCostsFeedbackNotTheGateway:
@@ -207,7 +220,10 @@ class TestAMissingDependencyCostsFeedbackNotTheGateway:
 
         monkeypatch.setattr(builtins, "__import__", refuse_cryptography)
 
-        assert await gateway._connect_feedback_request_path(APP_URL, object()) is True
+        assert (
+            await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
+            is True
+        )
         assert wired.feedback_service is None
 
 
@@ -239,23 +255,23 @@ def wired_reader(wired, monkeypatch):
 
 class TestTheReadPathOpensItsOwnRole:
     async def test_the_read_path_opens_the_read_role(self, wired_reader) -> None:
-        await gateway._connect_feedback_read_path(READER_URL)
+        await gateway._connect_feedback_read_path(gateway.app.state, READER_URL)
 
         assert RecordingReadRepository.opened == [{"dsn": READER_URL, "password": READER_PASSWORD}]
         assert wired_reader.feedback_read_service is not None
 
     async def test_the_read_pool_is_not_the_request_pool(self, wired_reader) -> None:
         """Sharing would give the unauthenticated submit path audit privileges."""
-        await gateway._connect_feedback_request_path(APP_URL, object())
-        await gateway._connect_feedback_read_path(READER_URL)
+        await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
+        await gateway._connect_feedback_read_path(gateway.app.state, READER_URL)
 
         assert wired_reader.feedback_read_repository is not wired_reader.feedback_repository
 
     async def test_an_unconfigured_read_role_leaves_submissions_working(self, wired_reader) -> None:
         """Not every deployment grants Studio read access; that is not a fault."""
-        await gateway._connect_feedback_request_path(APP_URL, object())
+        await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
 
-        assert await gateway._connect_feedback_read_path("") is True
+        assert await gateway._connect_feedback_read_path(gateway.app.state, "") is True
         assert wired_reader.feedback_read_service is None
         assert wired_reader.feedback_service is not None
 
@@ -264,15 +280,15 @@ class TestTheReadPathOpensItsOwnRole:
     ) -> None:
         RecordingReadRepository.fail_for = {READER_URL}
 
-        await gateway._connect_feedback_request_path(APP_URL, object())
-        connected = await gateway._connect_feedback_read_path(READER_URL)
+        await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
+        connected = await gateway._connect_feedback_read_path(gateway.app.state, READER_URL)
 
         assert connected is False
         assert wired_reader.feedback_read_service is None
         assert wired_reader.feedback_service is not None
 
     async def test_a_generated_read_password_is_not_pasted_into_the_url(self, wired_reader) -> None:
-        await gateway._connect_feedback_read_path(READER_URL)
+        await gateway._connect_feedback_read_path(gateway.app.state, READER_URL)
 
         opened = RecordingReadRepository.opened[0]
         assert READER_PASSWORD not in opened["dsn"]
@@ -286,6 +302,37 @@ class TestTheRequestPathTakesTheTenantFromTheSession:
         one tenant's operators and hide it from all the others."""
         from services.api_gateway.feedback.tenant import SessionTenantResolver
 
-        await gateway._connect_feedback_request_path(APP_URL, object())
+        await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
 
         assert isinstance(wired.feedback_service._tenant_resolver, SessionTenantResolver)
+
+
+class TestTheLifespanWiresTheAppItWasGiven:
+    """The feedback helpers must act on the lifespan's app, not the module's.
+
+    `lifespan(app)` receives its app as a parameter. When the helpers read the
+    module-level `app` instead, the two are the same object only by
+    coincidence -- and `importlib.reload(services.api_gateway.app)`, which
+    tests/test_sonar_backlog_coverage.py does, rebinds the module global to a
+    fresh app. Every later lifespan then initialised one app's state and wired
+    feedback into another's, and failed with AttributeError before yielding.
+    """
+
+    async def test_a_rebound_module_global_does_not_redirect_the_wiring(self, monkeypatch) -> None:
+        from fastapi import FastAPI
+
+        original = gateway.app
+        # Exactly what a reload does to the global the helpers used to read.
+        monkeypatch.setattr(gateway, "app", FastAPI())
+        monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
+        for variable in (
+            "SSF_FEEDBACK_DATABASE_URL",
+            "SSF_FEEDBACK_MAINTENANCE_DATABASE_URL",
+            "SSF_FEEDBACK_READER_DATABASE_URL",
+        ):
+            monkeypatch.delenv(variable, raising=False)
+
+        async with gateway.lifespan(original):
+            assert original.state.feedback_service is None
+            assert original.state.feedback_maintenance is None
+            assert original.state.feedback_read_service is None

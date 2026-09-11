@@ -176,9 +176,9 @@ def _feedback_password(variable: str) -> str | None:
     return os.environ.get(variable, "").strip() or None
 
 
-async def _connect_feedback_request_path(dsn: str, sessions: Any) -> bool:
+async def _connect_feedback_request_path(state: Any, dsn: str, sessions: Any) -> bool:
     """Wire POST /api/feedback. Returns False only when retrying could help."""
-    if app.state.feedback_service is not None:
+    if state.feedback_service is not None:
         return True
 
     # Imported inside their own guard: crypto.py depends on `cryptography`,
@@ -224,8 +224,8 @@ async def _connect_feedback_request_path(dsn: str, sessions: Any) -> bool:
         )
         return False
 
-    app.state.feedback_repository = repository
-    app.state.feedback_service = FeedbackService(
+    state.feedback_repository = repository
+    state.feedback_service = FeedbackService(
         repository=repository,
         cipher=cipher,
         # The session's own tenant; the configured one only for a legacy
@@ -235,13 +235,13 @@ async def _connect_feedback_request_path(dsn: str, sessions: Any) -> bool:
             fallback=ConfiguredTenantResolver.from_environment(),
         ),
         session_manager=sessions,
-        telemetry=app.state.quality_telemetry,
+        telemetry=state.quality_telemetry,
     )
     sys.stderr.write("Feedback persistence ready\n")
     return True
 
 
-async def _connect_feedback_read_path(dsn: str) -> bool:
+async def _connect_feedback_read_path(state: Any, dsn: str) -> bool:
     """Wire the authorised Studio read endpoints. Returns False to retry.
 
     A third role and a third pool, because the read path's privileges are
@@ -299,20 +299,20 @@ async def _connect_feedback_read_path(dsn: str) -> bool:
         )
         return False
 
-    app.state.feedback_read_repository = repository
-    app.state.feedback_read_service = FeedbackReadService(repository=repository, cipher=cipher)
+    state.feedback_read_repository = repository
+    state.feedback_read_service = FeedbackReadService(repository=repository, cipher=cipher)
     sys.stderr.write("Feedback reading ready\n")
     return True
 
 
-async def _connect_feedback_maintenance(dsn: str) -> bool:
+async def _connect_feedback_maintenance(state: Any, dsn: str) -> bool:
     """Wire the recovery and retention passes, reporting on their own.
 
     Separate from the request path in both directions: collecting feedback
     matters more than reconciling it, and a maintenance pool that never opens
     must not be announced as an endpoint outage.
     """
-    if app.state.feedback_maintenance is not None:
+    if state.feedback_maintenance is not None:
         return True
     if not dsn:
         sys.stderr.write(
@@ -337,18 +337,18 @@ async def _connect_feedback_maintenance(dsn: str) -> bool:
         )
         return False
 
-    app.state.feedback_maintenance_repository = repository
-    app.state.feedback_maintenance = FeedbackMaintenance(
+    state.feedback_maintenance_repository = repository
+    state.feedback_maintenance = FeedbackMaintenance(
         repository=repository,
-        telemetry=app.state.quality_telemetry,
-        metrics=FeedbackMaintenanceMetrics(app.state.prometheus_registry),
+        telemetry=state.quality_telemetry,
+        metrics=FeedbackMaintenanceMetrics(state.prometheus_registry),
     )
     sys.stderr.write("Feedback maintenance ready\n")
     return True
 
 
 async def _wire_feedback(
-    request_dsn: str, maintenance_dsn: str, sessions: Any, read_dsn: str = ""
+    state: Any, request_dsn: str, maintenance_dsn: str, sessions: Any, read_dsn: str = ""
 ) -> bool:
     """Wire both halves. Returns False only when retrying could help.
 
@@ -366,16 +366,16 @@ async def _wire_feedback(
         )
         connected = True
     else:
-        connected = await _connect_feedback_request_path(request_dsn, sessions)
+        connected = await _connect_feedback_request_path(state, request_dsn, sessions)
 
-    maintained = await _connect_feedback_maintenance(maintenance_dsn)
-    readable = await _connect_feedback_read_path(read_dsn)
+    maintained = await _connect_feedback_maintenance(state, maintenance_dsn)
+    readable = await _connect_feedback_read_path(state, read_dsn)
     sys.stderr.flush()
     return connected and maintained and readable
 
 
 async def feedback_connect_task(
-    request_dsn: str, maintenance_dsn: str, sessions: Any, read_dsn: str = ""
+    state: Any, request_dsn: str, maintenance_dsn: str, sessions: Any, read_dsn: str = ""
 ) -> None:
     """Keep retrying whichever half did not connect at startup.
 
@@ -395,7 +395,7 @@ async def feedback_connect_task(
             await asyncio.sleep(delay)
             delay = min(delay * 2, FEEDBACK_CONNECT_RETRY_CEILING_SECONDS)
 
-            if await _wire_feedback(request_dsn, maintenance_dsn, sessions, read_dsn):
+            if await _wire_feedback(state, request_dsn, maintenance_dsn, sessions, read_dsn):
                 return
         except asyncio.CancelledError:
             raise
@@ -594,7 +594,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # must stay inside the tenant policy while gaining the audit privileges the
     # submit path deliberately lacks. See 003_feedback_reader.sql.
     read_dsn = os.environ.get("SSF_FEEDBACK_READER_DATABASE_URL", "").strip()
-    await _wire_feedback(feedback_dsn, maintenance_dsn, session_manager, read_dsn)
+    await _wire_feedback(app.state, feedback_dsn, maintenance_dsn, session_manager, read_dsn)
 
     # Start background tasks
     timeout_task = asyncio.create_task(session_timeout_monitor())
@@ -604,7 +604,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     audio_cleanup_bg_task = asyncio.create_task(audio_cleanup_task())
     feedback_maintenance_bg_task = asyncio.create_task(feedback_maintenance_task())
     feedback_connect_bg_task = asyncio.create_task(
-        feedback_connect_task(feedback_dsn, maintenance_dsn, session_manager, read_dsn)
+        feedback_connect_task(app.state, feedback_dsn, maintenance_dsn, session_manager, read_dsn)
     )
     sys.stderr.write("All background tasks started\n")
     sys.stderr.flush()
