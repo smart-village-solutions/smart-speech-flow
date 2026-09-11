@@ -11,11 +11,14 @@ Manages persistent storage of audio files with automatic cleanup.
 import base64
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
 from .log_safety import sanitize_log_value
+from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
 WAV_GLOB_PATTERN = "*.wav"
@@ -59,6 +62,58 @@ TRANSLATED_AUDIO_DIR = AUDIO_BASE_DIR / "translated"
 
 # Retention policy
 RETENTION_HOURS = 24
+_STORAGE_IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+
+class AudioVariant(str, Enum):
+    ORIGINAL = "original"
+    TRANSLATED = "translated"
+
+
+def _storage_identifier(value: str) -> str:
+    if not _STORAGE_IDENTIFIER.fullmatch(value):
+        raise ValueError("invalid storage identifier")
+    return value
+
+
+def audio_path(
+    key: TenantSessionKey,
+    message_id: str,
+    variant: AudioVariant,
+    *,
+    base_dir: Path = AUDIO_BASE_DIR,
+) -> Path:
+    """Return a v2 path without exposing the raw tenant identifier."""
+    safe_message_id = _storage_identifier(message_id)
+    return (
+        base_dir
+        / "v2"
+        / key.tenant_ref
+        / key.session_id
+        / variant.value
+        / f"{safe_message_id}.wav"
+    )
+
+
+def save_audio(
+    key: TenantSessionKey,
+    message_id: str,
+    variant: AudioVariant,
+    data: bytes,
+    *,
+    base_dir: Path = AUDIO_BASE_DIR,
+) -> Path:
+    """Persist one audio artifact below its tenant and session scope."""
+    if not data:
+        raise ValueError("audio data cannot be empty")
+    path = audio_path(key, message_id, variant, base_dir=base_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    logger.info(
+        "tenant_audio_saved",
+        extra={"tenant_ref": key.tenant_ref, "variant": variant.value},
+    )
+    return path
 
 
 def ensure_directories():

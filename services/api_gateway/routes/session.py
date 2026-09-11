@@ -41,6 +41,7 @@ from ..pipeline_logic import (
 )
 from ..quality_telemetry import InputMode
 from ..session_manager import ClientType, SessionMessage, SessionStatus, session_manager
+from ..tenant_session import TenantSessionKey
 from ..websocket import MessageType, WebSocketManager, get_websocket_manager
 
 router = APIRouter()
@@ -346,9 +347,9 @@ def _validate_supported_languages(source_lang: str, target_lang: str) -> None:
     )
 
 
-async def _parse_audio_form(request: Request) -> tuple[Any, str, str, ClientType]:
+async def _parse_audio_form(request: Request) -> tuple[Any, str, str]:
     form = await request.form()
-    required_fields = ["file", "source_lang", "target_lang", "client_type"]
+    required_fields = ["file", "source_lang", "target_lang"]
     missing_fields = [field for field in required_fields if field not in form]
     if missing_fields:
         raise HTTPException(
@@ -364,7 +365,6 @@ async def _parse_audio_form(request: Request) -> tuple[Any, str, str, ClientType
         form["file"],
         form["source_lang"],
         form["target_lang"],
-        ClientType(form["client_type"]),
     )
 
 
@@ -480,21 +480,27 @@ def _raise_if_upstream_busy(result: Dict[str, Any]) -> None:
 
 
 def _store_audio_artifacts(
-    message_id: str, file_bytes: bytes, audio_bytes: Optional[bytes]
+    key: TenantSessionKey,
+    sender: ClientType,
+    message_id: str,
+    file_bytes: bytes,
+    audio_bytes: Optional[bytes],
 ) -> Optional[str]:
-    from ..audio_storage import save_original_audio, save_translated_audio
+    from ..audio_storage import AudioVariant, save_audio
 
     original_audio_url = None
     try:
-        original_audio_b64 = base64.b64encode(file_bytes).decode()
-        original_audio_url = save_original_audio(message_id, original_audio_b64)
+        save_audio(key, message_id, AudioVariant.ORIGINAL, file_bytes)
+        original_audio_url = (
+            f"/api/{sender.value}/session/{key.session_id}/audio/"
+            f"{message_id}/original.wav"
+        )
     except Exception as e:
         logger.warning("⚠️ Failed to save original audio: %s", type(e).__name__)
 
     if audio_bytes:
         try:
-            translated_audio_b64 = base64.b64encode(audio_bytes).decode()
-            save_translated_audio(message_id, translated_audio_b64)
+            save_audio(key, message_id, AudioVariant.TRANSLATED, audio_bytes)
         except Exception as e:
             logger.warning("⚠️ Failed to save translated audio: %s", type(e).__name__)
 
@@ -503,7 +509,7 @@ def _store_audio_artifacts(
 
 async def _create_session_message_with_fallback(
     *,
-    session_id: str,
+    session_id: TenantSessionKey,
     client_type: ClientType,
     original_text: str,
     translated_text: str,
@@ -550,6 +556,7 @@ def _build_message_response(
     pipeline_type: str,
     pipeline_metadata: Optional[Dict[str, Any]],
     start_time: float,
+    sender: ClientType,
 ) -> MessageResponse:
     processing_time_ms = max(1, int((time.perf_counter() - start_time) * 1000))
     return MessageResponse(
@@ -559,7 +566,12 @@ def _build_message_response(
         original_text=message.original_text,
         translated_text=message.translated_text,
         audio_available=message.audio_base64 is not None,
-        audio_url=f"/api/audio/{message.id}.wav" if message.audio_base64 else None,
+        audio_url=(
+            f"/api/{sender.value}/session/{session_id}/audio/"
+            f"{message.id}/translated.wav"
+            if message.audio_base64
+            else None
+        ),
         processing_time_ms=processing_time_ms,
         pipeline_type=pipeline_type,
         source_lang=source_lang,
@@ -651,7 +663,6 @@ class TextMessageRequest(BaseModel):
     )
     source_lang: str = Field(..., description="Source language code")
     target_lang: str = Field(..., description="Target language code")
-    client_type: ClientType = Field(..., description="Client type (admin or customer)")
 
     @field_validator("text")
     @classmethod
@@ -828,9 +839,9 @@ SUPPORTED_LANGUAGES: Dict[str, Dict[str, str]] = {
 }
 
 
-@router.post("/session/{session_id}/message", responses=MESSAGE_ROUTE_RESPONSES)
 async def send_unified_message(
-    session_id: str,
+    key: TenantSessionKey,
+    sender: ClientType,
     request: Request,
     manager: OptionalManagerDependency = None,
 ) -> MessageResponse:
@@ -847,6 +858,7 @@ async def send_unified_message(
 
     logger = logging.getLogger(__name__)
 
+    session_id = key.session_id
     start_time = time.perf_counter()
     # One row per processed message, assembled across every exit below and
     # emitted once from the `finally`. See message_telemetry.py.
@@ -855,7 +867,7 @@ async def send_unified_message(
 
     # Session-Validation
     logger.debug("🔍 Validating session")
-    session = session_manager.get_session(session_id)
+    session = session_manager.get_session(key)
     if not session:
         _log_session_event("❌ Session nicht gefunden", session_id)
         raise HTTPException(
@@ -895,7 +907,7 @@ async def send_unified_message(
             recorder.arm(InputMode.AUDIO)
             _log_session_event("🎵 Starte Audio-Pipeline", session_id)
             result = await process_audio_input(
-                session_id, request, start_time, manager, recorder=recorder
+                key, sender, request, start_time, manager, recorder=recorder
             )
             _log_session_event("✅ Audio-Pipeline erfolgreich", session_id)
             return result
@@ -904,7 +916,7 @@ async def send_unified_message(
             recorder.arm(InputMode.TEXT)
             _log_session_event("📝 Starte Text-Pipeline", session_id)
             result = await process_text_input(
-                session_id, request, start_time, manager, recorder=recorder
+                key, sender, request, start_time, manager, recorder=recorder
             )
             _log_session_event("✅ Text-Pipeline erfolgreich", session_id)
             return result
@@ -949,7 +961,8 @@ async def send_unified_message(
 
 
 async def process_audio_input(
-    session_id: str,
+    key: TenantSessionKey,
+    client_type: ClientType,
     request: Request,
     start_time: float,
     manager: Optional[WebSocketManager] = None,
@@ -958,16 +971,17 @@ async def process_audio_input(
     """Audio-Input verarbeiten (multipart/form-data)"""
     # A recorder nobody armed emits nothing, so a direct caller -- every test
     # that drives this function without the route -- needs to pass nothing.
+    session_id = key.session_id
     recorder = recorder or MessageTelemetryRecorder(
         session_id=session_id, start_time=start_time
     )
-    file, source_lang, target_lang, client_type = await _parse_audio_form(request)
+    file, source_lang, target_lang = await _parse_audio_form(request)
     recorder.record_request(
         client_type=client_type, source_lang=source_lang, target_lang=target_lang
     )
 
     # Validate languages match session configuration
-    session = session_manager.get_session(session_id)
+    session = session_manager.get_session(key)
     if session:
         validate_session_languages(session, source_lang, target_lang, client_type)
 
@@ -1009,14 +1023,16 @@ async def process_audio_input(
 
     message_id = str(uuid.uuid4())
     audio_bytes = result.get("audio_bytes")
-    original_audio_url = _store_audio_artifacts(message_id, file_bytes, audio_bytes)
+    original_audio_url = _store_audio_artifacts(
+        key, client_type, message_id, file_bytes, audio_bytes
+    )
 
     pipeline_metadata = transform_pipeline_metadata(
         result.get("debug"), source_lang, target_lang, original_audio_url, message_id
     )
 
     message = await _create_session_message_with_fallback(
-        session_id=session_id,
+        session_id=key,
         client_type=client_type,
         original_text=result.get("asr_text", ""),
         translated_text=result.get("translation_text", ""),
@@ -1037,23 +1053,26 @@ async def process_audio_input(
         pipeline_type="audio",
         pipeline_metadata=pipeline_metadata,
         start_time=start_time,
+        sender=client_type,
     )
 
 
 async def process_text_input(
-    session_id: str,
+    key: TenantSessionKey,
+    client_type: ClientType,
     request: Request,
     start_time: float,
     manager: Optional[WebSocketManager] = None,
     recorder: Optional[MessageTelemetryRecorder] = None,
 ) -> MessageResponse:
     """Text-Input verarbeiten (application/json)"""
+    session_id = key.session_id
     recorder = recorder or MessageTelemetryRecorder(
         session_id=session_id, start_time=start_time
     )
     text_request = await _parse_text_request(request)
     recorder.record_request(
-        client_type=text_request.client_type,
+        client_type=client_type,
         source_lang=text_request.source_lang,
         target_lang=text_request.target_lang,
     )
@@ -1065,14 +1084,14 @@ async def process_text_input(
             {
                 "source_lang": text_request.source_lang,
                 "target_lang": text_request.target_lang,
-                "client_type": text_request.client_type.value,
+                "client_type": client_type.value,
             }
         ),
     )
     _validate_supported_languages(text_request.source_lang, text_request.target_lang)
 
     # Validate languages match session configuration
-    session = session_manager.get_session(session_id)
+    session = session_manager.get_session(key)
     logger.info(
         "🔎 Session lookup for text input | %s",
         sanitize_log_value(
@@ -1087,7 +1106,7 @@ async def process_text_input(
             session,
             text_request.source_lang,
             text_request.target_lang,
-            text_request.client_type,
+            client_type,
         )
     else:
         logger.warning(
@@ -1139,8 +1158,8 @@ async def process_text_input(
     )
 
     message = await _create_session_message_with_fallback(
-        session_id=session_id,
-        client_type=text_request.client_type,
+        session_id=key,
+        client_type=client_type,
         original_text=pipeline_result.get("asr_text", text_request.text),
         translated_text=translated_text,
         audio_bytes=audio_bytes,
@@ -1160,11 +1179,12 @@ async def process_text_input(
         pipeline_type="text",
         pipeline_metadata=pipeline_metadata,
         start_time=start_time,
+        sender=client_type,
     )
 
 
 async def create_session_message(
-    session_id: str,
+    session_id: TenantSessionKey,
     client_type: ClientType,
     original_text: str,
     translated_text: str,
@@ -1200,14 +1220,14 @@ async def create_session_message(
     # ✨ WebSocket Broadcasting mit differentiated content
     _log_session_event(
         "🔄 Starte WebSocket-Broadcasting",
-        session_id,
+        session_id.session_id,
         sender=client_type.value,
     )
     try:
         # Only attempt broadcasting if a WebSocketManager was provided
         if manager is not None:
             result = await broadcast_message_to_session(
-                session_id, message, client_type, manager
+                session_id.session_id, message, client_type, manager
             )
         else:
             # No manager available (e.g., unit tests running without DI)
@@ -1226,7 +1246,7 @@ async def create_session_message(
         if result.success:
             _log_session_event(
                 "✅ WebSocket-Broadcasting erfolgreich",
-                session_id,
+                session_id.session_id,
                 successful_sends=result.successful_sends,
                 total_connections=result.total_connections,
             )
@@ -1359,7 +1379,6 @@ def create_error_response(
     ).model_dump()
 
 
-@router.get("/session/{session_id}/messages", responses=NOT_FOUND_RESPONSE)
 async def get_session_messages(session_id: str) -> Dict[str, Any]:
     """Nachrichten einer Session abrufen"""
     session = session_manager.get_session(session_id)
@@ -1372,7 +1391,6 @@ async def get_session_messages(session_id: str) -> Dict[str, Any]:
     }
 
 
-@router.get("/audio/{message_id}.wav", responses=NOT_FOUND_RESPONSE)
 async def get_message_audio(message_id: str):
     """Audio-Datei einer Nachricht abrufen (übersetztes Audio)"""
     from fastapi.responses import Response
@@ -1393,7 +1411,6 @@ async def get_message_audio(message_id: str):
     raise HTTPException(404, "Audio file not found")
 
 
-@router.get("/audio/input_{message_id}.wav", responses=NOT_FOUND_RESPONSE)
 async def get_original_audio(message_id: str):
     """
     Original-Audio einer Nachricht abrufen (Sprecher-Aufnahme)

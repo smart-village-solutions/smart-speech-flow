@@ -818,13 +818,18 @@ class SessionManager:
         session = self.get_session(session_id)
         return session.status if session else None
 
-    def add_message(self, session_id: str, message: SessionMessage):
+    def add_message(self, session_id: Any, message: SessionMessage):
         """Nachricht zur Session hinzufügen"""
         if session := self.get_session(session_id):
             session.messages.append(message)
             # ✨ Session-Aktivität bei neuer Nachricht aktualisieren
             session.update_activity()
-            self._persist_session(session)
+            if isinstance(session_id, TenantSessionKey):
+                if self.store is None:
+                    raise RuntimeError("tenant session store is unavailable")
+                self.store.save(session)
+            else:
+                self._persist_session(session)
 
     def get_active_session(
         self,

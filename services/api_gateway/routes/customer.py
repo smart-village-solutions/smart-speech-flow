@@ -10,14 +10,17 @@ from hashlib import sha256
 from types import TracebackType
 from typing import Annotated, Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
+from ..audio_storage import AudioVariant
 from ..auth import optional_ssf_user
+from ..conversation_service import conversation_service
 from ..log_safety import safe_language_code, sanitize_log_value
 from ..session_access import require_customer_session_key
-from ..session_manager import SessionStatus, session_manager
+from ..session_manager import ClientType, SessionStatus, session_manager
 from ..tenant_session import TenantSessionKey
+from ..websocket import WebSocketManager, get_websocket_manager
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -69,6 +72,43 @@ class ErrorResponse(BaseModel):
     message: str
     timestamp: str
     session_id: Optional[str] = None
+
+
+@router.post(
+    "/session/{session_id}/message",
+    summary="Process a customer message",
+    responses=CUSTOMER_ROUTE_RESPONSES,
+)
+async def send_customer_message(
+    session_id: str,
+    request: Request,
+    key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
+    manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
+):
+    return await conversation_service.process(
+        key, ClientType.CUSTOMER, request, manager
+    )
+
+
+@router.get("/session/{session_id}/messages", responses=CUSTOMER_ROUTE_RESPONSES)
+async def get_customer_messages(
+    session_id: str,
+    key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
+) -> dict[str, object]:
+    return {"session_id": session_id, "messages": conversation_service.messages(key)}
+
+
+@router.get(
+    "/session/{session_id}/audio/{message_id}/{variant}.wav",
+    responses=CUSTOMER_ROUTE_RESPONSES,
+)
+async def get_customer_audio(
+    session_id: str,
+    message_id: str,
+    variant: AudioVariant,
+    key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
+) -> Response:
+    return conversation_service.audio(key, message_id, variant)
 
 
 def utc_now() -> datetime:

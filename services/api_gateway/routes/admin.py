@@ -9,21 +9,24 @@ from hashlib import sha256
 from types import TracebackType
 from typing import Annotated, Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from ..audio_storage import AudioVariant
 from ..auth import require_ssf_user
+from ..conversation_service import conversation_service
 from ..log_safety import sanitize_log_value
 from ..quality_telemetry import QualityTelemetry, get_quality_telemetry
 from ..session_access import require_admin_session_key
-from ..session_manager import SessionStatus, session_manager
+from ..session_manager import ClientType, SessionStatus, session_manager
 from ..studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
     require_validated_runtime_configuration,
 )
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
 from ..tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from ..websocket import WebSocketManager, get_websocket_manager
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -83,6 +86,41 @@ class ErrorResponse(BaseModel):
     error: str
     message: str
     timestamp: str
+
+
+@router.post(
+    "/session/{session_id}/message",
+    summary="Process an admin message",
+    responses=ADMIN_ROUTE_RESPONSES,
+)
+async def send_admin_message(
+    session_id: str,
+    request: Request,
+    key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
+    manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
+):
+    return await conversation_service.process(key, ClientType.ADMIN, request, manager)
+
+
+@router.get("/session/{session_id}/messages", responses=ADMIN_ROUTE_RESPONSES)
+async def get_admin_messages(
+    session_id: str,
+    key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
+) -> dict[str, object]:
+    return {"session_id": session_id, "messages": conversation_service.messages(key)}
+
+
+@router.get(
+    "/session/{session_id}/audio/{message_id}/{variant}.wav",
+    responses=ADMIN_ROUTE_RESPONSES,
+)
+async def get_admin_audio(
+    session_id: str,
+    message_id: str,
+    variant: AudioVariant,
+    key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
+) -> Response:
+    return conversation_service.audio(key, message_id, variant)
 
 
 def utc_now() -> datetime:
