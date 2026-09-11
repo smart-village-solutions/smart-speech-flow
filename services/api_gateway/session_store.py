@@ -26,11 +26,23 @@ return 1
 """
 
 TERMINATE_SESSION_LUA = """
-if redis.call('GET', KEYS[3]) ~= ARGV[3] then return 0 end
-redis.call('SET', KEYS[1], ARGV[1])
-redis.call('SREM', KEYS[2], ARGV[2])
-redis.call('SET', KEYS[3], ARGV[4])
-return 1
+local current_join = redis.call('GET', KEYS[3])
+if current_join == ARGV[3] then
+  redis.call('SET', KEYS[1], ARGV[1])
+  redis.call('SREM', KEYS[2], ARGV[2])
+  redis.call('SET', KEYS[3], ARGV[4])
+  return 1
+end
+if current_join ~= ARGV[4] then return 0 end
+if redis.call('SISMEMBER', KEYS[2], ARGV[2]) ~= 0 then return 0 end
+local current_session = redis.call('GET', KEYS[1])
+if not current_session then return 0 end
+local decoded, payload = pcall(cjson.decode, current_session)
+if not decoded then return 0 end
+if payload['id'] ~= ARGV[2] then return 0 end
+if payload['tenant_id'] ~= ARGV[5] then return 0 end
+if payload['status'] ~= 'terminated' then return 0 end
+return 2
 """
 
 
@@ -54,7 +66,10 @@ class TenantSessionStore(Protocol):
     def list_for_tenant(self, tenant_id: str) -> list[Session]:
         raise NotImplementedError
 
-    def terminate(self, session: Session) -> None:
+    def list_active(self) -> list[Session]:
+        raise NotImplementedError
+
+    def terminate(self, session: Session) -> Session:
         raise NotImplementedError
 
 
@@ -163,12 +178,28 @@ class MemoryTenantSessionStore:
             and (session := self.load(key)) is not None
         ]
 
-    def terminate(self, session: Session) -> None:
+    def list_active(self) -> list[Session]:
+        return [
+            session
+            for key in tuple(self._sessions)
+            if (session := self.load(key)) is not None
+            and session.status.value != "terminated"
+        ]
+
+    def terminate(self, session: Session) -> Session:
         join = self._joins.get(session.id)
         if join is None or not _same_key(join[0], session.key):
             raise SessionStoreConsistencyError("join index does not match session")
+        if not join[1]:
+            persisted = self._sessions.get(session.key)
+            if persisted is None or persisted.status.value != "terminated":
+                raise SessionStoreConsistencyError(
+                    "terminal join index does not match session"
+                )
+            return persisted
         self._sessions[session.key] = session
         self._joins[session.id] = (session.key, False)
+        return session
 
 
 class RedisTenantSessionStore:
@@ -245,7 +276,58 @@ class RedisTenantSessionStore:
                 sessions.append(session)
         return sessions
 
-    def terminate(self, session: Session) -> None:
+    def list_active(self) -> list[Session]:
+        """Load the installation's active indexes only during startup.
+
+        Request handlers continue to use the tenant-specific index. The global
+        scan exists solely to rebuild process-local timeout and replacement
+        enforcement after a gateway restart.
+        """
+
+        sessions: list[Session] = []
+        pattern = f"{self.namespace}:v2:tenant:*:active-admin"
+        for raw_active_key in self.redis.scan_iter(match=pattern):
+            active_key = (
+                raw_active_key.decode("utf-8")
+                if isinstance(raw_active_key, bytes)
+                else raw_active_key
+            )
+            for raw_session_id in self.redis.smembers(active_key):
+                session_id = (
+                    raw_session_id.decode("utf-8")
+                    if isinstance(raw_session_id, bytes)
+                    else raw_session_id
+                )
+                record_key = active_key.removesuffix(":active-admin")
+                raw_session = self.redis.get(f"{record_key}:session:{session_id}")
+                try:
+                    from .session_manager import Session
+
+                    session = Session.from_dict(json.loads(raw_session))
+                    key = session.key
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                    raise SessionStoreConsistencyError(
+                        "active session index does not match session"
+                    ) from None
+                if (
+                    session.id != session_id
+                    or tenant_active_sessions_key(self.namespace, key.tenant_id)
+                    != active_key
+                    or session_key(self.namespace, key)
+                    != f"{record_key}:session:{session_id}"
+                ):
+                    raise SessionStoreConsistencyError(
+                        "active session index does not match session"
+                    )
+                loaded = self.load(key)
+                if loaded is None or loaded.status.value == "terminated":
+                    raise SessionStoreConsistencyError(
+                        "active session index does not match session"
+                    )
+                sessions.append(loaded)
+        return sessions
+
+    def terminate(self, session: Session) -> Session:
         key = session.key
         result = self.redis.eval(
             TERMINATE_SESSION_LUA,
@@ -257,9 +339,15 @@ class RedisTenantSessionStore:
             key.session_id,
             _join_payload(key, active=True),
             _join_payload(key, active=False),
+            key.tenant_id,
         )
-        if result != 1:
-            raise SessionStoreConsistencyError("join index does not match session")
+        if result == 1:
+            return session
+        if result == 2:
+            persisted = self.load(key)
+            if persisted is not None and persisted.status.value == "terminated":
+                return persisted
+        raise SessionStoreConsistencyError("join index does not match session")
 
     @staticmethod
     def _session_payload(session: Session) -> str:

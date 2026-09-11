@@ -124,4 +124,5 @@ def test_redis_terminate_updates_tombstone_in_one_atomic_script() -> None:
         tenant_active_sessions_key("ssf", "tenant-a"),
         join_key("ssf", "ABC12345"),
     )
-    assert json.loads(call[-1])["active"] is False
+    assert json.loads(call[-2])["active"] is False
+    assert call[-1] == "tenant-a"

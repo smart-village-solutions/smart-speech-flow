@@ -411,6 +411,39 @@ class SessionManager:
         if self.redis_enabled:
             self._load_sessions_from_persistence()
 
+    def rehydrate_tenant_sessions(self) -> None:
+        """Restore active v2 sessions and discard process-local presence.
+
+        Redis connection counts describe sockets owned by the process that
+        wrote them. They cannot survive a gateway restart. A previously
+        connected administrator receives a fresh reconnect-grace anchor at
+        restart; an already disconnected administrator retains its original
+        anchor so restarting cannot extend an expired session indefinitely.
+        """
+
+        if self.store is None:
+            raise RuntimeError("tenant session store is unavailable")
+        restored = self.store.list_active()
+        restarted_at = self.clock()
+        for session in restored:
+            stale_admin_presence = (
+                session.admin_connected or session.admin_connection_count > 0
+            )
+            session.admin_connected = False
+            session.customer_connected = False
+            session.admin_connection_count = 0
+            session.customer_connection_count = 0
+            if stale_admin_presence:
+                session.admin_disconnected_at = restarted_at
+                session.timeout_warning_sent = False
+            elif session.admin_disconnected_at is None:
+                session.admin_disconnected_at = session.created_at
+            self.store.save(session)
+            self.sessions[session.key] = session
+            self.active_admin_sessions.setdefault(session.tenant_id, set()).add(
+                session.id
+            )
+
     # === Persistence Helpers ===
 
     def _init_persistence(self):
@@ -643,16 +676,20 @@ class SessionManager:
                     admin_connection_count=0,
                     customer_connection_count=0,
                 )
-                self.store.terminate(terminal_session)
+                committed_terminal = self.store.terminate(terminal_session)
+                if committed_terminal is None:
+                    committed_terminal = terminal_session
 
-                session.status = terminal_session.status
-                session.terminated_at = terminal_session.terminated_at
-                session.termination_reason = terminal_session.termination_reason
-                session.admin_connected = terminal_session.admin_connected
-                session.customer_connected = terminal_session.customer_connected
-                session.admin_connection_count = terminal_session.admin_connection_count
+                session.status = committed_terminal.status
+                session.terminated_at = committed_terminal.terminated_at
+                session.termination_reason = committed_terminal.termination_reason
+                session.admin_connected = committed_terminal.admin_connected
+                session.customer_connected = committed_terminal.customer_connected
+                session.admin_connection_count = (
+                    committed_terminal.admin_connection_count
+                )
                 session.customer_connection_count = (
-                    terminal_session.customer_connection_count
+                    committed_terminal.customer_connection_count
                 )
                 tenant_active = self.active_admin_sessions.get(
                     session_id.tenant_id, set()

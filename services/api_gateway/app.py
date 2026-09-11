@@ -305,6 +305,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     translation_refiner.attach_quality_telemetry(app.state.quality_telemetry)
     session_manager.attach_quality_telemetry(app.state.quality_telemetry)
+    # Rehydrated sessions must enforce reconnect and absolute deadlines before
+    # the lifespan yields and the gateway can accept a request.
+    await session_manager.check_session_timeouts()
     sys.stderr.write(f"Quality telemetry ready (mode={telemetry_mode.value})\n")
     sys.stderr.flush()
 

@@ -104,5 +104,6 @@ def configure_tenant_persistence() -> TenantPersistenceBinding | None:
     _reset_runtime(session_manager)
     realtime_ticket_store.redis = redis
     realtime_ticket_store.namespace = namespace
+    session_manager.rehydrate_tenant_sessions()
     logger.info("tenant_redis_persistence_ready")
     return binding
