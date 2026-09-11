@@ -289,6 +289,28 @@ Note the reconciliation backlog gauge reports the claimed batch, capped at the
 batch limit of 200, so a larger backlog reads as exactly 200 until it drains
 below that. The alert only tests the threshold, so it still fires.
 
+## Step 8 — Read the numbers
+
+The **SSF Telemetry** dashboard in Grafana's SSF folder carries the feedback
+KPIs: submissions, response rate, NPS with its promoter/passive/detractor
+split, the three rating averages, and a per-form-version table that shows the
+denominator beside each average.
+
+Two panels need reading carefully, and both say so in their own descriptions:
+
+- **Rating Averages** is exact but reads the silver tier, which keeps 30 days.
+  A longer time range truncates silently.
+- **Rating Averages (Gold Tier, approximate)** covers thirteen months and is
+  approximate by construction: `avgState` has no distinct-by form, so a
+  submission re-emitted by the reconciler contributes its ratings twice.
+  Measured against ClickHouse 26.3.17 with one re-emission, gold reported 3.5
+  where the true average was 3.0. Counts and NPS are built on `uniqExact` and
+  stay exact in both tiers.
+
+If the panels are empty after a real submission, check Step 5 first: without
+ClickHouse migration `005` the feedback columns do not exist, and the events
+land carrying only their envelope.
+
 ## Backups
 
 `scripts/backup-production.sh` already includes `ssf-postgres.sql.gz` and runs
