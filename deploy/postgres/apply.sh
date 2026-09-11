@@ -15,6 +15,8 @@ set -eu
 # a role created with a guessable password is worse than a failed start.
 : "${SSF_FEEDBACK_APP_PASSWORD:?SSF_FEEDBACK_APP_PASSWORD must be set}"
 : "${SSF_FEEDBACK_MAINTENANCE_PASSWORD:?SSF_FEEDBACK_MAINTENANCE_PASSWORD must be set}"
+# 003 sets this on the authorised read role that serves Studio.
+: "${SSF_FEEDBACK_READER_PASSWORD:?SSF_FEEDBACK_READER_PASSWORD must be set}"
 
 migrations="$(dirname "$0")/migrations"
 
@@ -28,6 +30,7 @@ for migration in "$migrations"/*.sql; do
          --set database="$POSTGRES_DB" \
          --set app_password="$SSF_FEEDBACK_APP_PASSWORD" \
          --set maintenance_password="$SSF_FEEDBACK_MAINTENANCE_PASSWORD" \
+         --set reader_password="$SSF_FEEDBACK_READER_PASSWORD" \
          --file "$migration"
 done
 

@@ -16,7 +16,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from contextlib import AbstractAsyncContextManager
 from typing import AsyncIterator, Protocol, Sequence
 from uuid import UUID
@@ -301,3 +301,106 @@ class PostgresFeedbackRepository:
 async def _bind_tenant(connection: asyncpg.Connection, tenant_id: str) -> None:
     """Set the row-level-security context for this transaction."""
     await connection.execute("SELECT set_config('ssf.tenant_id', $1, TRUE)", tenant_id)
+
+
+_SELECT_COLUMNS = """
+    feedback_id, tenant_id, session_ref, translation_quality, performance,
+    usability, net_promoter_score, improvements_ciphertext, form_version,
+    retention_policy_version, consent_snapshot, analytics_event_id,
+    analytics_state, created_at, expires_at
+"""
+
+# No tenant predicate in either statement, deliberately. The tenant is bound on
+# the connection and feedback_tenant_isolation filters the read, so a row from
+# another tenant is not merely unselected -- it is not visible to this role at
+# all. A WHERE clause here would hide whether the policy still works.
+_LIST_RECORDS = f"""
+SELECT {_SELECT_COLUMNS}
+FROM feedback
+ORDER BY created_at DESC, feedback_id
+LIMIT $1 OFFSET $2
+"""
+
+_FETCH_RECORD = f"""
+SELECT {_SELECT_COLUMNS}
+FROM feedback
+WHERE feedback_id = $1
+"""
+
+_AUDIT_ACCESS = """
+INSERT INTO feedback_access_audit (
+    feedback_id, tenant_id, accessed_by, accessed_at, access_scope
+) VALUES ($1, $2, $3, $4, $5)
+"""
+
+
+class PostgresFeedbackReadRepository:
+    """The authorised read path's store, as `ssf_feedback_reader`.
+
+    A separate class rather than more methods on PostgresFeedbackRepository
+    because it is a separate connection as a separate role. Sharing the class
+    would mean one pool whose privileges are the union of both, which is the
+    thing migration 003 exists to avoid.
+    """
+
+    def __init__(self, pool: asyncpg.Pool) -> None:
+        self._pool = pool
+
+    @classmethod
+    async def create(
+        cls, *, dsn: str, password: str | None = None
+    ) -> "PostgresFeedbackReadRepository":
+        pool = await asyncpg.create_pool(dsn=dsn, password=password or None, min_size=1, max_size=5)
+        return cls(pool)
+
+    async def close(self) -> None:
+        await self._pool.close()
+
+    async def list_records(
+        self, *, tenant_id: str, limit: int, offset: int
+    ) -> Sequence[FeedbackRecord]:
+        async with self._pool.acquire() as connection:
+            async with connection.transaction():
+                await _bind_tenant(connection, tenant_id)
+                rows = await connection.fetch(_LIST_RECORDS, limit, offset)
+        return [_record_from_row(row) for row in rows]
+
+    async def fetch_record(self, *, feedback_id: UUID, tenant_id: str) -> FeedbackRecord | None:
+        async with self._pool.acquire() as connection:
+            async with connection.transaction():
+                await _bind_tenant(connection, tenant_id)
+                row = await connection.fetchrow(_FETCH_RECORD, feedback_id)
+        return _record_from_row(row) if row is not None else None
+
+    async def record_access(
+        self, *, feedback_id: UUID, tenant_id: str, accessed_by: str, access_scope: str
+    ) -> None:
+        async with self._pool.acquire() as connection:
+            await connection.execute(
+                _AUDIT_ACCESS,
+                feedback_id,
+                tenant_id,
+                accessed_by,
+                datetime.now(timezone.utc),
+                access_scope,
+            )
+
+
+def _record_from_row(row: asyncpg.Record) -> FeedbackRecord:
+    return FeedbackRecord(
+        feedback_id=row["feedback_id"],
+        tenant_id=row["tenant_id"],
+        session_ref=row["session_ref"],
+        translation_quality=row["translation_quality"],
+        performance=row["performance"],
+        usability=row["usability"],
+        net_promoter_score=row["net_promoter_score"],
+        improvements_ciphertext=row["improvements_ciphertext"],
+        form_version=row["form_version"],
+        retention_policy_version=row["retention_policy_version"],
+        consent_snapshot=json.loads(row["consent_snapshot"]),
+        analytics_event_id=row["analytics_event_id"],
+        analytics_state=AnalyticsState(row["analytics_state"]),
+        created_at=row["created_at"],
+        expires_at=row["expires_at"],
+    )

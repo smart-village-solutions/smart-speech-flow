@@ -139,6 +139,8 @@ services:
     - SSF_FEEDBACK_DATABASE_PASSWORD=${SSF_FEEDBACK_APP_PASSWORD}
     - SSF_FEEDBACK_MAINTENANCE_DATABASE_URL=postgresql://ssf_feedback_maintenance@ssf-postgres:5432/${SSF_POSTGRES_DB}
     - SSF_FEEDBACK_MAINTENANCE_DATABASE_PASSWORD=${SSF_FEEDBACK_MAINTENANCE_PASSWORD}
+    - SSF_FEEDBACK_READER_DATABASE_URL=postgresql://ssf_feedback_reader@ssf-postgres:5432/${SSF_POSTGRES_DB}
+    - SSF_FEEDBACK_READER_DATABASE_PASSWORD=${SSF_FEEDBACK_READER_PASSWORD}
     - SSF_FEEDBACK_ENCRYPTION_KEY=${SSF_FEEDBACK_ENCRYPTION_KEY:?required}
     - SSF_DEFAULT_TENANT_ID=${SSF_DEFAULT_TENANT_ID:-default}
     - SSF_OTLP_LOGS_ENDPOINT=${SSF_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
@@ -265,6 +267,7 @@ services:
       # runtime, because a superuser bypasses the tenant policy entirely.
       SSF_FEEDBACK_APP_PASSWORD: ${SSF_FEEDBACK_APP_PASSWORD:?required}
       SSF_FEEDBACK_MAINTENANCE_PASSWORD: ${SSF_FEEDBACK_MAINTENANCE_PASSWORD:?required}
+      SSF_FEEDBACK_READER_PASSWORD: ${SSF_FEEDBACK_READER_PASSWORD:?required}
     volumes:
     - ssf-postgres-data:/var/lib/postgresql/data
     - ../../deploy/postgres:/docker-entrypoint-initdb.d:ro

@@ -34,6 +34,7 @@ def _keycloak_services() -> tuple[dict, dict]:
         env_file.write("SSF_POSTGRES_PASSWORD=test-only-db-password\n")
         env_file.write("SSF_FEEDBACK_APP_PASSWORD=test-only-app-password\n")
         env_file.write("SSF_FEEDBACK_MAINTENANCE_PASSWORD=test-only-maint-password\n")
+        env_file.write("SSF_FEEDBACK_READER_PASSWORD=test-only-reader-password\n")
         env_file.write(f"SSF_FEEDBACK_ENCRYPTION_KEY={TEST_ENCRYPTION_KEY}\n")
 
     try:

@@ -209,3 +209,71 @@ class TestAMissingDependencyCostsFeedbackNotTheGateway:
 
         assert await gateway._connect_feedback_request_path(APP_URL, object()) is True
         assert wired.feedback_service is None
+
+
+READER_URL = "postgresql://ssf_feedback_reader@db:5432/ssf"
+READER_PASSWORD = "reader/secret+value="
+
+
+class RecordingReadRepository(RecordingRepository):
+    """The read role's pool, recorded separately from the other two."""
+
+    opened: list[dict] = []
+    fail_for: set[str] = set()
+
+
+@pytest.fixture
+def wired_reader(wired, monkeypatch):
+    RecordingReadRepository.opened = []
+    RecordingReadRepository.fail_for = set()
+    monkeypatch.setattr(
+        repository_module, "PostgresFeedbackReadRepository", RecordingReadRepository
+    )
+    monkeypatch.setenv("SSF_FEEDBACK_READER_DATABASE_PASSWORD", READER_PASSWORD)
+    previous = getattr(wired, "feedback_read_service", None)
+    wired.feedback_read_service = None
+    wired.feedback_read_repository = None
+    yield wired
+    wired.feedback_read_service = previous
+
+
+class TestTheReadPathOpensItsOwnRole:
+    async def test_the_read_path_opens_the_read_role(self, wired_reader) -> None:
+        await gateway._connect_feedback_read_path(READER_URL)
+
+        assert RecordingReadRepository.opened == [{"dsn": READER_URL, "password": READER_PASSWORD}]
+        assert wired_reader.feedback_read_service is not None
+
+    async def test_the_read_pool_is_not_the_request_pool(self, wired_reader) -> None:
+        """Sharing would give the unauthenticated submit path audit privileges."""
+        await gateway._connect_feedback_request_path(APP_URL, object())
+        await gateway._connect_feedback_read_path(READER_URL)
+
+        assert wired_reader.feedback_read_repository is not wired_reader.feedback_repository
+
+    async def test_an_unconfigured_read_role_leaves_submissions_working(self, wired_reader) -> None:
+        """Not every deployment grants Studio read access; that is not a fault."""
+        await gateway._connect_feedback_request_path(APP_URL, object())
+
+        assert await gateway._connect_feedback_read_path("") is True
+        assert wired_reader.feedback_read_service is None
+        assert wired_reader.feedback_service is not None
+
+    async def test_an_unreachable_read_role_does_not_disable_submissions(
+        self, wired_reader
+    ) -> None:
+        RecordingReadRepository.fail_for = {READER_URL}
+
+        await gateway._connect_feedback_request_path(APP_URL, object())
+        connected = await gateway._connect_feedback_read_path(READER_URL)
+
+        assert connected is False
+        assert wired_reader.feedback_read_service is None
+        assert wired_reader.feedback_service is not None
+
+    async def test_a_generated_read_password_is_not_pasted_into_the_url(self, wired_reader) -> None:
+        await gateway._connect_feedback_read_path(READER_URL)
+
+        opened = RecordingReadRepository.opened[0]
+        assert READER_PASSWORD not in opened["dsn"]
+        assert opened["password"] == READER_PASSWORD

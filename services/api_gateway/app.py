@@ -236,6 +236,70 @@ async def _connect_feedback_request_path(dsn: str, sessions: Any) -> bool:
     return True
 
 
+async def _connect_feedback_read_path(dsn: str) -> bool:
+    """Wire the authorised Studio read endpoints. Returns False to retry.
+
+    A third role and a third pool, because the read path's privileges are
+    deliberately not the union of the other two: it may SELECT and write an
+    access audit row, and it may not write or delete feedback. See migration
+    003, which explains why neither existing role can serve these reads.
+
+    An unset DSN is a supported deployment, not a fault: a site that never
+    granted Studio read access keeps collecting feedback, and the read
+    endpoints answer 503.
+    """
+    if not dsn:
+        sys.stderr.write(
+            "Feedback reading disabled: SSF_FEEDBACK_READER_DATABASE_URL is not set; "
+            "the Studio feedback endpoints will answer 503\n"
+        )
+        return True
+
+    if getattr(app.state, "feedback_read_service", None) is not None:
+        return True
+
+    # Its own import guard, for the reason _connect_feedback_request_path
+    # documents: crypto.py's dependency arrives as an extra, and an ImportError
+    # escaping here would stop the gateway booting.
+    try:
+        from .feedback.crypto import FeedbackCipher, MissingEncryptionKey
+        from .feedback.read import FeedbackReadService
+        from .feedback.repository import PostgresFeedbackReadRepository
+    except ImportError as error:
+        sys.stderr.write(
+            f"Feedback reading disabled: {type(error).__name__}; "
+            "the Studio feedback endpoints will answer 503\n"
+        )
+        return True
+
+    try:
+        cipher = FeedbackCipher.from_environment()
+    except MissingEncryptionKey:
+        sys.stderr.write(
+            "Feedback reading disabled: SSF_FEEDBACK_ENCRYPTION_KEY is missing or "
+            "malformed; the Studio feedback endpoints will answer 503\n"
+        )
+        return True
+
+    try:
+        repository = await PostgresFeedbackReadRepository.create(
+            dsn=dsn, password=_feedback_password("SSF_FEEDBACK_READER_DATABASE_PASSWORD")
+        )
+    except Exception as error:  # noqa: BLE001 - reported, not raised
+        # Type name only: a connection error can carry the DSN, and the DSN
+        # carries the database password.
+        sys.stderr.write(
+            f"Feedback reading unavailable ({type(error).__name__}); the Studio "
+            "feedback endpoints will answer 503 until it connects\n"
+        )
+        return False
+
+    app.state.feedback_read_repository = repository
+    app.state.feedback_read_service = FeedbackReadService(repository=repository, cipher=cipher)
+    sys.stderr.write("Feedback reading ready\n")
+    return True
+
+
 async def _connect_feedback_maintenance(dsn: str) -> bool:
     """Wire the recovery and retention passes, reporting on their own.
 
@@ -278,7 +342,9 @@ async def _connect_feedback_maintenance(dsn: str) -> bool:
     return True
 
 
-async def _wire_feedback(request_dsn: str, maintenance_dsn: str, sessions: Any) -> bool:
+async def _wire_feedback(
+    request_dsn: str, maintenance_dsn: str, sessions: Any, read_dsn: str = ""
+) -> bool:
     """Wire both halves. Returns False only when retrying could help.
 
     The two are reached independently on purpose. Unsetting
@@ -298,11 +364,14 @@ async def _wire_feedback(request_dsn: str, maintenance_dsn: str, sessions: Any) 
         connected = await _connect_feedback_request_path(request_dsn, sessions)
 
     maintained = await _connect_feedback_maintenance(maintenance_dsn)
+    readable = await _connect_feedback_read_path(read_dsn)
     sys.stderr.flush()
-    return connected and maintained
+    return connected and maintained and readable
 
 
-async def feedback_connect_task(request_dsn: str, maintenance_dsn: str, sessions: Any) -> None:
+async def feedback_connect_task(
+    request_dsn: str, maintenance_dsn: str, sessions: Any, read_dsn: str = ""
+) -> None:
     """Keep retrying whichever half did not connect at startup.
 
     The gateway deliberately does not wait for a healthy feedback database --
@@ -312,7 +381,7 @@ async def feedback_connect_task(request_dsn: str, maintenance_dsn: str, sessions
     race leaves POST /api/feedback answering 503 until someone restarts the
     container.
     """
-    if not request_dsn and not maintenance_dsn:
+    if not request_dsn and not maintenance_dsn and not read_dsn:
         return
 
     delay = FEEDBACK_CONNECT_RETRY_SECONDS
@@ -321,7 +390,7 @@ async def feedback_connect_task(request_dsn: str, maintenance_dsn: str, sessions
             await asyncio.sleep(delay)
             delay = min(delay * 2, FEEDBACK_CONNECT_RETRY_CEILING_SECONDS)
 
-            if await _wire_feedback(request_dsn, maintenance_dsn, sessions):
+            if await _wire_feedback(request_dsn, maintenance_dsn, sessions, read_dsn):
                 return
         except asyncio.CancelledError:
             raise
@@ -506,7 +575,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # normal first-deploy event, so feedback_connect_task keeps retrying.
     app.state.feedback_repository = None
     app.state.feedback_maintenance_repository = None
+    app.state.feedback_read_repository = None
     app.state.feedback_service = None
+    app.state.feedback_read_service = None
     app.state.feedback_maintenance = None
     feedback_dsn = os.environ.get("SSF_FEEDBACK_DATABASE_URL", "").strip()
     # Reconciliation and retention are deployment-wide, so they connect as a
@@ -514,7 +585,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 002_feedback_roles.sql. Sharing the request pool would leave both passes
     # seeing no rows and reporting success.
     maintenance_dsn = os.environ.get("SSF_FEEDBACK_MAINTENANCE_DATABASE_URL", "").strip()
-    await _wire_feedback(feedback_dsn, maintenance_dsn, session_manager)
+    # A third role again, for the opposite reason: the Studio read endpoints
+    # must stay inside the tenant policy while gaining the audit privileges the
+    # submit path deliberately lacks. See 003_feedback_reader.sql.
+    read_dsn = os.environ.get("SSF_FEEDBACK_READER_DATABASE_URL", "").strip()
+    await _wire_feedback(feedback_dsn, maintenance_dsn, session_manager, read_dsn)
 
     # Start background tasks
     timeout_task = asyncio.create_task(session_timeout_monitor())
@@ -524,7 +599,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     audio_cleanup_bg_task = asyncio.create_task(audio_cleanup_task())
     feedback_maintenance_bg_task = asyncio.create_task(feedback_maintenance_task())
     feedback_connect_bg_task = asyncio.create_task(
-        feedback_connect_task(feedback_dsn, maintenance_dsn, session_manager)
+        feedback_connect_task(feedback_dsn, maintenance_dsn, session_manager, read_dsn)
     )
     sys.stderr.write("All background tasks started\n")
     sys.stderr.flush()
@@ -584,13 +659,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         feedback_maintenance_repository_at_exit = getattr(
             app.state, "feedback_maintenance_repository", None
         )
+        feedback_read_repository_at_exit = getattr(app.state, "feedback_read_repository", None)
         app.state.feedback_repository = None
         app.state.feedback_maintenance_repository = None
+        app.state.feedback_read_repository = None
         app.state.feedback_service = None
+        app.state.feedback_read_service = None
         app.state.feedback_maintenance = None
         for pool_at_exit in (
             feedback_repository_at_exit,
             feedback_maintenance_repository_at_exit,
+            feedback_read_repository_at_exit,
         ):
             if pool_at_exit is not None:
                 await pool_at_exit.close()
