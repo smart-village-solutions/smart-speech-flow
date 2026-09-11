@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from services.api_gateway.session_manager import ClientType
 from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket_polling_routes import (
+    POLLING_QUEUE_SIZE,
     PollingMessage,
     TenantPollingStore,
     _poll,
@@ -80,6 +81,36 @@ async def test_polling_send_queues_and_broadcasts_only_inside_tenant(monkeypatch
         },
         include_polling=False,
     )
+
+
+@pytest.mark.asyncio
+async def test_polling_overflow_accepts_current_message_and_is_not_retryable(
+    monkeypatch,
+):
+    store = TenantPollingStore()
+    key = TenantSessionKey("tenant-a", "SESSION1")
+    sender = store.activate(key, ClientType.CUSTOMER)
+    receiver = store.activate(key, ClientType.ADMIN)
+    for index in range(POLLING_QUEUE_SIZE):
+        receiver.messages.append({"type": "old", "index": index})
+    manager = AsyncMock()
+    monkeypatch.setattr(
+        "services.api_gateway.websocket_polling_routes.polling_store", store
+    )
+
+    response = await _send(
+        sender,
+        PollingMessage(type="message", content={"text": "newest"}),
+        manager,
+    )
+
+    assert receiver.messages[-1]["content"] == {"text": "newest"}
+    assert len(receiver.messages) == POLLING_QUEUE_SIZE
+    assert response == {
+        "status": "partial",
+        "retryable": False,
+        "messages_dropped": 1,
+    }
 
 
 @pytest.mark.asyncio

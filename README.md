@@ -307,8 +307,8 @@ pytest
 
 # Run specific test categories
 pytest tests/integration/  # Integration tests
-pytest tests/test_admin_routes.py  # Admin API tests
-pytest tests/test_openapi_validation.py  # OpenAPI contract tests
+pytest tests/test_tenant_session_access.py  # Tenant-scoped admin API tests
+pytest tests/test_tenant_message_routes.py  # Tenant API contract tests
 
 # Run with coverage
 pytest --cov=services --cov-report=html

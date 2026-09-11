@@ -25,22 +25,18 @@ and intentionally has no data-restore path.
 
 1. Record the previous immutable gateway and frontend image tags for rollback.
 2. Validate the Studio directory and Keycloak claims for both test tenants.
-3. Stop only the public conversation workloads:
+3. From the repository root, load the production Compose helper and stop only
+   the public conversation workloads:
 
    ```bash
-   docker compose --project-name ssf-backend \
-     --env-file .env \
-     --file deploy/production/docker-compose.production.yml \
-     stop api_gateway frontend
+   source scripts/lib/production-common.sh
+   production_compose stop api_gateway frontend
    ```
 
 4. Confirm that neither workload is running:
 
    ```bash
-   docker compose --project-name ssf-backend \
-     --env-file .env \
-     --file deploy/production/docker-compose.production.yml \
-     ps --status running --services
+   production_compose ps --status running --services
    ```
 
    `api_gateway` and `frontend` must not appear. Redis remains running so the
@@ -60,10 +56,7 @@ and intentionally has no data-restore path.
 6. Start the reviewed v2 images:
 
    ```bash
-   docker compose --project-name ssf-backend \
-     --env-file .env \
-     --file deploy/production/docker-compose.production.yml \
-     up -d api_gateway frontend
+   production_compose up -d api_gateway frontend
    ```
 
 7. Run the production health check and the credential-safe two-tenant smoke

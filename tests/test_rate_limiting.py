@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+import asyncio
 from datetime import datetime
 
 import pytest
@@ -10,36 +11,38 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.rate_limiter import RateLimitConfig
+from services.api_gateway import rate_limiter
 from services.api_gateway.session_manager import (
     ClientType,
-    Session,
     SessionMessage,
     SessionStatus,
     session_manager,
 )
 from services.api_gateway.routes import session as session_routes
+from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 client = TestClient(app)
+REVISION = f"sha256:{'a' * 64}"
+SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture(autouse=True)
 def reset_session_manager() -> None:
     session_manager.reset(clear_persistence=True)
+    middleware = rate_limiter.LATEST_RATE_LIMIT_MIDDLEWARE
+    if middleware is not None:
+        asyncio.run(middleware.message_limiter.reset())
+        asyncio.run(middleware.global_limiter.reset())
     yield
     session_manager.reset(clear_persistence=True)
 
 
 def _register_active_session() -> str:
-    session_id = "RATE1234"
-    session = Session(
-        id=session_id,
-        customer_language="en",
-        admin_language="de",
-        status=SessionStatus.ACTIVE,
-    )
-    session_manager.sessions[session_id] = session
-    session_manager.active_admin_sessions.add(session_id)
-    return session_id
+    session = asyncio.run(session_manager.create_admin_session("tenant-test", SNAPSHOT))
+    session.customer_language = "en"
+    session.status = SessionStatus.ACTIVE
+    session_manager.store.save(session)
+    return session.id
 
 
 def _patch_pipeline(monkeypatch):
@@ -95,7 +98,7 @@ def test_session_message_rate_limit(monkeypatch):
         "client_type": "admin",
     }
 
-    url = f"/api/session/{session_id}/message"
+    url = f"/api/admin/session/{session_id}/message"
 
     for _ in range(config_limit):
         response = client.post(url, json=payload)

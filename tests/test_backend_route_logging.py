@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from services.api_gateway import app as app_module
 from services.api_gateway.routes import customer
 from services.api_gateway.session_manager import SessionStatus
+from services.api_gateway.tenant_session import TenantSessionKey
 
 
 class SensitiveRouteError(RuntimeError):
@@ -25,14 +26,16 @@ def test_customer_exception_log_keeps_traceback_without_sensitive_message(
         session_id=session_id,
         customer_language=language,
     )
+    key = TenantSessionKey("tenant-test", session_id)
 
     def fail_session_lookup(_session_id):
         raise SensitiveRouteError(exception_text)
 
+    monkeypatch.setattr(customer, "require_customer_session_key", lambda *_args: key)
     monkeypatch.setattr(customer.session_manager, "get_session", fail_session_lookup)
 
     with caplog.at_level(logging.ERROR, logger=customer.logger.name):
-        activation = customer.activate_session(request)
+        activation = customer.activate_session(request, None)
         with pytest.raises(HTTPException) as raised:
             asyncio.run(activation)
 
@@ -55,6 +58,8 @@ def test_unsupported_customer_language_warning_omits_tainted_value(
 ):
     language = "tainted-language-value"
     session = SimpleNamespace(status=SessionStatus.PENDING)
+    key = TenantSessionKey("tenant-test", "session-id")
+    monkeypatch.setattr(customer, "require_customer_session_key", lambda *_args: key)
     monkeypatch.setattr(customer.session_manager, "get_session", lambda _session_id: session)
 
     async def activate_session(_session_id, _language):
@@ -67,7 +72,7 @@ def test_unsupported_customer_language_warning_omits_tainted_value(
     )
 
     with caplog.at_level(logging.WARNING, logger=customer.logger.name):
-        response = asyncio.run(customer.activate_session(request))
+        response = asyncio.run(customer.activate_session(request, None))
 
     assert response.customer_language == language
     warning_messages = [

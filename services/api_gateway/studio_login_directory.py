@@ -11,8 +11,15 @@ from typing import Protocol
 
 from fastapi import HTTPException, status
 
-from .studio_login_directory_client import StudioLoginDirectory, StudioLoginDirectoryClient
-from .studio_runtime_token import StudioRuntimeTokenProvider, StudioTokenConfig, StudioTokenError
+from .studio_login_directory_client import (
+    StudioLoginDirectory,
+    StudioLoginDirectoryClient,
+)
+from .studio_runtime_token import (
+    StudioRuntimeTokenProvider,
+    StudioTokenConfig,
+    StudioTokenError,
+)
 
 
 class LoginDirectoryFetcher(Protocol):
@@ -85,7 +92,9 @@ def _build_studio_login_directory_service() -> StudioLoginDirectoryService:
     base_url = os.getenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", "").strip()
     try:
         cache_seconds = float(os.getenv("STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS", "60"))
-        timeout_seconds = float(os.getenv("STUDIO_LOGIN_DIRECTORY_TIMEOUT_SECONDS", "5"))
+        timeout_seconds = float(
+            os.getenv("STUDIO_LOGIN_DIRECTORY_TIMEOUT_SECONDS", "5")
+        )
         if not 1 <= cache_seconds <= 300 or not 0 < timeout_seconds <= 30:
             raise ValueError
         token_provider = StudioRuntimeTokenProvider(StudioTokenConfig.from_env())

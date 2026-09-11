@@ -36,4 +36,3 @@ operation that derives a signed Studio tenant context.
   validated token
 - **THEN** the gateway rejects the request
 - **AND THEN** it does not replace the signed tenant context
-

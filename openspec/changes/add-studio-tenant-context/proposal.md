@@ -20,4 +20,3 @@ selectors must never become an alternative trust boundary.
 - Affected specs: `studio-tenant-context`
 - Affected code: API-gateway authentication dependencies
 - Follow-up: #298 wires the context into tenant-bound runtime flows.
-

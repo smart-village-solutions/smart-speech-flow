@@ -800,7 +800,7 @@ class SessionManager:
 
     def admin_connected(self, key: TenantSessionKey) -> None:
         session = self.get_session(key)
-        if session is None:
+        if session is None or session.status == SessionStatus.TERMINATED:
             raise KeyError("session not found")
         session.admin_connection_count += 1
         session.admin_connected = True
@@ -822,7 +822,7 @@ class SessionManager:
 
     def customer_connected(self, key: TenantSessionKey) -> None:
         session = self.get_session(key)
-        if session is None:
+        if session is None or session.status == SessionStatus.TERMINATED:
             raise KeyError("session not found")
         session.customer_connection_count += 1
         session.customer_connected = True

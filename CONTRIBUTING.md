@@ -61,7 +61,7 @@ pytest --cov=services --cov-report=html
 
 # Run specific test categories
 pytest tests/integration/           # Integration tests
-pytest tests/test_admin_routes.py  # Admin API tests
+pytest tests/test_tenant_session_access.py  # Tenant-scoped admin API tests
 
 # View coverage report
 open htmlcov/index.html  # Linux/Mac

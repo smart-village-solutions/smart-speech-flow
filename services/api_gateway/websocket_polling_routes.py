@@ -255,6 +255,17 @@ def _client(
     return polling_store.require(polling_id, key, client_type)
 
 
+async def _active_client(
+    polling_id: str,
+    key: TenantSessionKey,
+    client_type: ClientType,
+    manager: WebSocketManager,
+) -> PollingClient:
+    """Release expired presence before accepting activity from a poller."""
+    await _release_stale_clients(manager)
+    return _client(polling_id, key, client_type)
+
+
 def require_customer_polling_key(
     session_id: str,
     polling_id: str,
@@ -293,7 +304,7 @@ async def _send(
     client: PollingClient,
     message: PollingMessage,
     manager: WebSocketManager,
-) -> dict[str, str]:
+) -> dict[str, object]:
     if client.terminated:
         raise HTTPException(status_code=404, detail="Polling client not found")
     envelope = {
@@ -306,7 +317,13 @@ async def _send(
         client.key, envelope, exclude_polling_id=client.polling_id
     )
     await manager.broadcast_to_session(client.key, envelope, include_polling=False)
-    return {"status": "partial" if dropped else "success"}
+    if dropped:
+        return {
+            "status": "partial",
+            "retryable": False,
+            "messages_dropped": dropped,
+        }
+    return {"status": "success"}
 
 
 def _status(client: PollingClient) -> dict[str, object]:
@@ -348,7 +365,7 @@ def _register_role_routes(
         timeout: Annotated[int, Query(ge=0, le=60)] = 0,
         manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, object]:
-        client = _client(polling_id, key, client_type)
+        client = await _active_client(polling_id, key, client_type, manager)
         response = await _poll(client, timeout)
         if client.terminated:
             await _disconnect(client, manager)
@@ -361,21 +378,24 @@ def _register_role_routes(
         key: TenantSessionKey = Depends(key_dependency),
         manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, str]:
-        return await _send(_client(polling_id, key, client_type), message, manager)
+        client = await _active_client(polling_id, key, client_type, manager)
+        return await _send(client, message, manager)
 
     async def polling_status(
         session_id: str,
         polling_id: str,
         key: TenantSessionKey = Depends(key_dependency),
+        manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, object]:
-        return _status(_client(polling_id, key, client_type))
+        return _status(await _active_client(polling_id, key, client_type, manager))
 
     async def recover(
         session_id: str,
         polling_id: str,
         key: TenantSessionKey = Depends(key_dependency),
+        manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, str]:
-        return _recover(_client(polling_id, key, client_type))
+        return _recover(await _active_client(polling_id, key, client_type, manager))
 
     async def disconnect(
         session_id: str,
@@ -383,7 +403,8 @@ def _register_role_routes(
         key: TenantSessionKey = Depends(key_dependency),
         manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, str]:
-        return await _disconnect(_client(polling_id, key, client_type), manager)
+        client = await _active_client(polling_id, key, client_type, manager)
+        return await _disconnect(client, manager)
 
     router.add_api_route(base, poll, methods=["GET"], name=f"{prefix}_poll")
     router.add_api_route(base + "/send", send, methods=["POST"], name=f"{prefix}_send")

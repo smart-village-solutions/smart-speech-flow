@@ -87,3 +87,36 @@ def test_existing_customer_poll_receives_termination_then_is_removed() -> None:
     assert response.status_code == 200
     assert response.json()["messages"][-1]["type"] == "session_terminated"
     assert polling_id not in polling_store.clients
+
+
+def test_stale_admin_poll_request_releases_presence_before_refresh(
+    monkeypatch,
+) -> None:
+    """An abandoned polling client cannot revive itself after the idle deadline."""
+    now = [0.0]
+    session_manager.reset(clear_persistence=True)
+    polling_store.clients.clear()
+    monkeypatch.setattr(polling_store, "clock", lambda: now[0])
+    client = TestClient(app)
+    session_id = client.post("/api/admin/session/create").json()["session_id"]
+    ticket = client.post(
+        f"/api/admin/session/{session_id}/realtime-ticket",
+        json={"transport": "polling"},
+    ).json()["ticket"]
+    activated = client.post(
+        f"/api/admin/session/{session_id}/polling/activate",
+        json={"ticket": ticket},
+    ).json()
+    polling_id = activated["polling_id"]
+    key = polling_store.clients[polling_id].key
+    assert session_manager.get_session(key).admin_connection_count == 1
+
+    now[0] = 121.0
+    response = client.get(
+        f"/api/admin/session/{session_id}/polling/{polling_id}/status"
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Polling client not found"}
+    assert polling_id not in polling_store.clients
+    assert session_manager.get_session(key).admin_connection_count == 0

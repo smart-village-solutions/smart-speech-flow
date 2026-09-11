@@ -9,7 +9,14 @@ from typing import Any, Mapping, Protocol
 from urllib.parse import urlsplit
 
 import aiohttp
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from services.api_gateway.studio_runtime_token import StudioRuntimeTokenProvider
 
@@ -28,7 +35,9 @@ EXPECTED_ERROR_CODES = {
 class StudioLoginTenant(BaseModel):
     """One publicly displayable Studio tenant and its provisioned realm."""
 
-    model_config = ConfigDict(extra="ignore", frozen=True, strict=True, populate_by_name=True)
+    model_config = ConfigDict(
+        extra="ignore", frozen=True, strict=True, populate_by_name=True
+    )
 
     id: str
     display_name: str = Field(alias="displayName", min_length=1, max_length=200)
@@ -52,7 +61,9 @@ class StudioLoginTenant(BaseModel):
 class StudioLoginDirectory(BaseModel):
     """The validated tenant-unbound Studio login directory."""
 
-    model_config = ConfigDict(extra="ignore", frozen=True, strict=True, populate_by_name=True)
+    model_config = ConfigDict(
+        extra="ignore", frozen=True, strict=True, populate_by_name=True
+    )
 
     contract_version: str = Field(alias="contractVersion", pattern=r"^1[.]0$")
     directory_revision: str = Field(alias="directoryRevision")
@@ -99,7 +110,9 @@ class DirectoryErrorEnvelope(BaseModel):
 class StudioLoginDirectoryClientError(RuntimeError):
     """Safe failure surfaced by the Studio login-directory client."""
 
-    def __init__(self, code: str, *, retryable: bool, status: int | None = None) -> None:
+    def __init__(
+        self, code: str, *, retryable: bool, status: int | None = None
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.retryable = retryable
@@ -188,7 +201,9 @@ class StudioLoginDirectoryClient:
             "X-Correlation-Id": correlation_id,
         }
         try:
-            response = await self._transport.get(self._url, headers, self._timeout_seconds)
+            response = await self._transport.get(
+                self._url, headers, self._timeout_seconds
+            )
         except StudioLoginDirectoryClientError:
             raise
         except (TimeoutError, asyncio.TimeoutError, aiohttp.ClientError):

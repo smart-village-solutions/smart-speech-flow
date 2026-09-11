@@ -334,7 +334,11 @@ async def get_current_session(
         if not active_session_data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Keine aktive Admin-Session gefunden",
+                detail=(
+                    "Session not found"
+                    if session_id is not None
+                    else "Keine aktive Admin-Session gefunden"
+                ),
             )
 
         session_id = active_session_data["id"]

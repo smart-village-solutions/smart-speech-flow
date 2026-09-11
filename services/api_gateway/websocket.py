@@ -179,6 +179,7 @@ class BroadcastResult:
     failed_sends: int
     session_has_connections: bool
     errors: List[str]
+    messages_dropped: int = 0
 
 
 @dataclass
@@ -443,6 +444,12 @@ class WebSocketManager:
         """
         await websocket.accept()
 
+        if isinstance(session_id, TenantSessionKey):
+            session = self.session_manager.get_session(session_id)
+            if session is None or session.status == SessionStatus.TERMINATED:
+                await websocket.close(code=4404, reason="Session not found")
+                raise RuntimeError("Session unavailable")
+
         # Connection-ID generieren
         connection_id = self._build_connection_id(session_id, client_type)
         public_session_id = (
@@ -482,17 +489,22 @@ class WebSocketManager:
         optimal_interval = self.adaptive_polling.get_optimal_interval(connection)
         connection.current_polling_interval = optimal_interval
 
-        # Zu Session-Pool hinzufügen
+        # Session-Manager integrieren
+        try:
+            await self.session_manager.add_websocket_connection(
+                session_id, client_type, websocket
+            )
+        except KeyError:
+            await websocket.close(code=4404, reason="Session not found")
+            raise RuntimeError("Session unavailable") from None
+
+        # Commit the registry only after tenant presence succeeds. A session
+        # termination that wins the preceding await cannot leave a live entry.
         if session_id not in self.session_connections:
             self.session_connections[session_id] = {}
 
         self.session_connections[session_id][connection_id] = connection
         self.all_connections[connection_id] = connection
-
-        # Session-Manager integrieren
-        await self.session_manager.add_websocket_connection(
-            session_id, client_type, websocket
-        )
 
         # 📊 Monitoring: Connection established
         origin = client_info.get("origin") if client_info else None
@@ -583,7 +595,9 @@ class WebSocketManager:
         if session_id not in self.session_connections:
             return
 
-        connections = list(self.session_connections[session_id].values())
+        connections = list(self.session_connections.pop(session_id).values())
+        for connection in connections:
+            connection.state = ConnectionState.DISCONNECTING
         public_session_id = (
             session_id.session_id
             if isinstance(session_id, TenantSessionKey)
@@ -616,10 +630,6 @@ class WebSocketManager:
 
         if disconnect_tasks:
             await asyncio.gather(*disconnect_tasks, return_exceptions=True)
-
-        # Session-Connection-Pool leeren
-        if session_id in self.session_connections:
-            del self.session_connections[session_id]
 
         logger.info(
             "websocket_session_terminated session_ref=%s",
@@ -730,6 +740,7 @@ class WebSocketManager:
         successful_sends = 0
         failed_sends = 0
         polling_delivered = 0
+        polling_dropped = 0
 
         if isinstance(session_id, TenantSessionKey):
             from .websocket_polling_routes import polling_store
@@ -740,8 +751,7 @@ class WebSocketManager:
                 original_message,
                 translated_message,
             )
-            successful_sends += polling_delivered - polling_dropped
-            failed_sends += polling_dropped
+            successful_sends += polling_delivered
             if polling_dropped:
                 errors.append("Polling recipient queue overflow")
 
@@ -764,6 +774,7 @@ class WebSocketManager:
                     failed_sends=failed_sends,
                     session_has_connections=True,
                     errors=errors,
+                    messages_dropped=polling_dropped,
                 )
             return self._build_no_connection_broadcast_result(
                 monitor, metric_session_id, sender_type
@@ -825,6 +836,7 @@ class WebSocketManager:
             failed_sends=failed_sends,
             session_has_connections=True,
             errors=errors,
+            messages_dropped=polling_dropped,
         )
 
     def _record_broadcast_attempt(
@@ -912,6 +924,14 @@ class WebSocketManager:
         connection = self.all_connections.get(connection_id)
         if not connection:
             return
+
+        if connection.state is not ConnectionState.CONNECTED:
+            return
+        if isinstance(connection.resource_key, TenantSessionKey):
+            session = self.session_manager.get_session(connection.resource_key)
+            if session is None or session.status == SessionStatus.TERMINATED:
+                connection.state = ConnectionState.DISCONNECTING
+                return
 
         message_type = message.get("type")
 
@@ -1305,7 +1325,8 @@ class WebSocketManager:
                     )
 
                 logger.info(
-                    f"🔄 Polling fallback activated for {connection.session_id}: {polling_id}"
+                    "polling_fallback_activated session_ref=%s",
+                    _safe_identifier(connection.session_id),
                 )
 
         except Exception:

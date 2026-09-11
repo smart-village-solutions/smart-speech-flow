@@ -60,6 +60,9 @@ except ImportError:  # pragma: no cover
     HAS_PYTEST_ASYNCIO = False
 
 
+HERMETIC_INTEGRATION_TESTS = {"test_tenant_isolation_matrix.py"}
+
+
 def pytest_addoption(parser):  # pragma: no cover - exercised via pytest hooks
     parser.addoption(
         "--run-integration",
@@ -144,7 +147,7 @@ def pytest_collection_modifyitems(config, items):  # pragma: no cover - exercise
 
         if "tests" in path_parts and "integration" in path_parts:
             item.add_marker(pytest.mark.integration)
-            if not run_integration:
+            if not run_integration and item_path.name not in HERMETIC_INTEGRATION_TESTS:
                 item.add_marker(skip_integration)
 
         if "tests" in path_parts and "load" in path_parts:

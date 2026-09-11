@@ -210,6 +210,21 @@ def test_http_admin_cannot_observe_another_tenant(
     assert response.json() == {"detail": "Session not found"}
 
 
+def test_current_session_cross_tenant_lookup_uses_the_neutral_error_contract(
+    http_client: TestClient,
+) -> None:
+    _authenticate_as("tenant-b")
+    session_id = http_client.post("/api/admin/session/create").json()["session_id"]
+    _authenticate_as("tenant-a")
+
+    response = http_client.get(
+        "/api/admin/session/current", params={"session_id": session_id}
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Session not found"}
+
+
 def test_http_customer_bearer_cannot_downgrade_to_anonymous_capability(
     http_client: TestClient,
 ) -> None:
