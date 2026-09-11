@@ -15,6 +15,7 @@ export interface WebSocketLike {
 
 export interface WebSocketTransportOptions {
   wsBaseUrl: string;
+  issueAdminTicket: (sessionId: string, transport: 'websocket') => Promise<string>;
   createSocket?: (url: string) => WebSocketLike;
   maxReconnectAttempts?: number;
   reconnectDelayMs?: number;
@@ -36,6 +37,7 @@ const HEARTBEAT_PING = 'heartbeat_ping';
 export function createWebSocketTransport(options: WebSocketTransportOptions): RealtimeTransport {
   const {
     wsBaseUrl,
+    issueAdminTicket,
     createSocket = (url) => new WebSocket(url) as unknown as WebSocketLike,
     maxReconnectAttempts = 5,
     reconnectDelayMs = 1000,
@@ -53,6 +55,7 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
   let intentionallyClosed = false;
   let heartbeatId: ReturnType<typeof setInterval> | null = null;
   let reconnectId: ReturnType<typeof setTimeout> | null = null;
+  let generation = 0;
 
   function setStatus(next: RealtimeStatus): void {
     status = next;
@@ -79,7 +82,7 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
     heartbeatId = setInterval(sendPong, heartbeatIntervalMs);
   }
 
-  function scheduleReconnect(): void {
+  function scheduleReconnect(expectedGeneration: number): void {
     if (intentionallyClosed || sessionId === null) {
       return;
     }
@@ -91,12 +94,49 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
 
     reconnectAttempts += 1;
     const delay = reconnectDelayMs * reconnectAttempts;
-    reconnectId = setTimeout(() => open(sessionId as string), delay);
+    reconnectId = setTimeout(() => {
+      reconnectId = null;
+      if (sessionId !== null && generation === expectedGeneration) {
+        void open(sessionId, role as ClientRole, expectedGeneration);
+      }
+    }, delay);
   }
 
-  function open(id: string): void {
+  async function open(
+    id: string,
+    connectionRole: ClientRole,
+    expectedGeneration: number
+  ): Promise<void> {
+    if (intentionallyClosed || generation !== expectedGeneration) {
+      return;
+    }
     setStatus('connecting');
-    const next = createSocket(buildWebSocketUrl(wsBaseUrl, id, role as ClientRole));
+    let ticket: string | undefined;
+    if (connectionRole === 'admin') {
+      try {
+        ticket = await issueAdminTicket(id, 'websocket');
+      } catch {
+        if (!intentionallyClosed && generation === expectedGeneration) {
+          setStatus('error');
+          scheduleReconnect(expectedGeneration);
+        }
+        return;
+      }
+    }
+
+    // Ticket issuance is asynchronous. A route change or StrictMode cleanup
+    // may have invalidated this connection while the HTTP request was in
+    // flight; in that case the single-use ticket is deliberately abandoned.
+    if (
+      intentionallyClosed ||
+      generation !== expectedGeneration ||
+      sessionId !== id ||
+      role !== connectionRole
+    ) {
+      return;
+    }
+
+    const next = createSocket(buildWebSocketUrl(wsBaseUrl, id, connectionRole, ticket));
 
     // Close events arrive after the fact, so a socket this transport has since
     // replaced can still call back. Every handler answers for its own socket
@@ -155,7 +195,7 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
       stopHeartbeat();
       if (!intentionallyClosed) {
         setStatus('disconnected');
-        scheduleReconnect();
+        scheduleReconnect(expectedGeneration);
       }
     };
 
@@ -163,21 +203,26 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
   }
 
   return {
-    connect(id, clientRole) {
+    async connect(id, clientRole) {
       // A socket still negotiating is a connection in progress, not an absent
       // one; opening a second would leak the first.
       if (socket !== null && (socket.readyState === OPEN || socket.readyState === CONNECTING)) {
+        return;
+      }
+      if (status === 'connecting') {
         return;
       }
       intentionallyClosed = false;
       reconnectAttempts = 0;
       sessionId = id;
       role = clientRole;
-      open(id);
+      generation += 1;
+      await open(id, clientRole, generation);
     },
 
     disconnect() {
       intentionallyClosed = true;
+      generation += 1;
       stopHeartbeat();
       if (reconnectId !== null) {
         clearTimeout(reconnectId);

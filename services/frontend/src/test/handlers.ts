@@ -91,7 +91,20 @@ export const handlers = [
     })
   ),
 
-  http.get('*/api/session/:id', ({ params }) =>
+  http.get('*/api/customer/session/:id', ({ params }) =>
+    HttpResponse.json({
+      id: params.id,
+      customer_language: null,
+      admin_language: 'de',
+      status: 'pending',
+      created_at: '2026-08-21T10:00:00+00:00',
+      message_count: 0,
+      admin_connected: true,
+      customer_connected: false,
+    })
+  ),
+
+  http.get('*/api/admin/session/:id/status', ({ params }) =>
     HttpResponse.json({
       id: params.id,
       customer_language: null,
@@ -134,11 +147,11 @@ export const handlers = [
     });
   }),
 
-  http.get('*/api/session/:id/messages', ({ params }) =>
+  http.get('*/api/:role/session/:id/messages', ({ params }) =>
     HttpResponse.json({ session_id: params.id, messages: [] })
   ),
 
-  http.post('*/api/session/:id/message', ({ params }) =>
+  http.post('*/api/:role/session/:id/message', ({ params }) =>
     HttpResponse.json({
       status: 'success',
       message_id: 'm1',
@@ -151,6 +164,4 @@ export const handlers = [
       pipeline_type: 'text',
     })
   ),
-
-  http.post('*/api/session/:id/activity', () => HttpResponse.json({ status: 'ok' })),
 ];

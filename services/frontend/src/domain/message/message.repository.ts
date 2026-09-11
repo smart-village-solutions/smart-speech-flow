@@ -59,23 +59,26 @@ export function createMessageRepository(
   options: { pipelineTimeoutMs: number; apiBaseUrl: string }
 ): MessageRepository {
   const resolveAudioUrl = (url: string) => resolveApiUrl(options.apiBaseUrl, url);
+  const pathForRole = (role: ClientRole, sessionId: string) =>
+    `/api/${role}/session/${sessionId}`;
 
   return {
     async getHistory(sessionId, role) {
       const safeId = requirePathIdentifier(sessionId, 'session');
-      const response = await http.get<MessageHistoryDto>(`/api/session/${safeId}/messages`);
+      const response = await http.get<MessageHistoryDto>(
+        `${pathForRole(role, safeId)}/messages`
+      );
       return historyToChatMessages(response.data, resolveAudioUrl, role);
     },
 
     async sendText(sessionId, input) {
       const safeId = requirePathIdentifier(sessionId, 'session');
       const response = await http.post<SendResponseDto>(
-        `/api/session/${safeId}/message`,
+        `${pathForRole(input.role, safeId)}/message`,
         {
           text: input.text,
           source_lang: input.sourceLanguage,
           target_lang: input.targetLanguage,
-          client_type: input.role,
         },
         { timeout: options.pipelineTimeoutMs }
       );
@@ -88,11 +91,12 @@ export function createMessageRepository(
       form.append('file', input.wav, 'recording.wav');
       form.append('source_lang', input.sourceLanguage);
       form.append('target_lang', input.targetLanguage);
-      form.append('client_type', input.role);
 
-      const response = await http.post<SendResponseDto>(`/api/session/${safeId}/message`, form, {
-        timeout: options.pipelineTimeoutMs,
-      });
+      const response = await http.post<SendResponseDto>(
+        `${pathForRole(input.role, safeId)}/message`,
+        form,
+        { timeout: options.pipelineTimeoutMs }
+      );
       return toSendResult(response.data);
     },
 

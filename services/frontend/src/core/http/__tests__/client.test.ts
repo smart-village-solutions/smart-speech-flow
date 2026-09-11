@@ -14,9 +14,9 @@ describe('createHttpClient', () => {
   beforeEach(() => vi.mocked(getAdminAccessToken).mockReset().mockResolvedValue(null));
 
   it.each([
-    ['tenant-token', 'Bearer tenant-token', null],
-    [null, null, 'ssf2025kassel'],
-  ])('selects only the permitted credential for token %s', async (token, bearer, legacy) => {
+    ['tenant-token', 'Bearer tenant-token'],
+    [null, null],
+  ])('attaches only an available bearer token for token %s', async (token, bearer) => {
     vi.mocked(getAdminAccessToken).mockResolvedValue(token);
     let seen: Headers | undefined;
     server.use(
@@ -27,7 +27,7 @@ describe('createHttpClient', () => {
     );
     await createHttpClient(config, () => 'en').get('/api/admin/history');
     expect(seen?.get('Authorization')).toBe(bearer);
-    expect(seen?.get('X-SSF-Legacy-Access')).toBe(legacy);
+    expect(seen?.get('X-SSF-Legacy-Access')).toBeNull();
   });
 
   it('keeps the directory anonymous even with an active Keycloak session', async () => {

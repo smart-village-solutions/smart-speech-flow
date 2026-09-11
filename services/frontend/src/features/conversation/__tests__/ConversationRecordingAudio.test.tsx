@@ -35,7 +35,7 @@ function fakeTransport() {
   const handlers: ((event: RealtimeEvent) => void)[] = [];
 
   const transport: RealtimeTransport = {
-    connect: vi.fn(),
+    connect: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn(),
     send: vi.fn(),
     onEvent: (handler) => {

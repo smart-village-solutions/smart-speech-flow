@@ -17,7 +17,7 @@ export function useJoinWatch(sessionId: string | null): boolean {
 
   const { data } = useQuery({
     queryKey: ['session', sessionId],
-    queryFn: () => session.getSession(sessionId ?? ''),
+    queryFn: () => session.getSession(sessionId ?? '', 'admin'),
     enabled: sessionId !== null,
     refetchInterval: POLL_MS,
   });

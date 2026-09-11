@@ -7,7 +7,7 @@ import { getAdminAccessToken } from '@/app/auth/keycloak';
 /**
  * No default Content-Type is set on purpose: axios infers application/json for
  * plain objects and generates the multipart boundary for FormData. Forcing a
- * default here would break audio uploads to POST /api/session/{id}/message.
+ * default here would break multipart audio uploads.
  */
 export function createHttpClient(config: AppConfig, getLocale: () => string): AxiosInstance {
   const client = axios.create({
@@ -22,8 +22,6 @@ export function createHttpClient(config: AppConfig, getLocale: () => string): Ax
       const token = await getAdminAccessToken();
       if (token !== null) {
         request.headers.set('Authorization', `Bearer ${token}`);
-      } else {
-        request.headers.set('X-SSF-Legacy-Access', config.adminPassword);
       }
     }
     return request;

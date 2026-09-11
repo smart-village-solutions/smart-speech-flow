@@ -19,8 +19,14 @@ describe('path identifier validation', () => {
   });
 
   it('allows only ws and wss base URLs and clears injected URL parts', () => {
-    expect(buildWebSocketUrl('wss://example.test/base?token=secret', 'AB12CD34', 'admin'))
-      .toBe('wss://example.test/base/ws/AB12CD34/admin');
+    expect(
+      buildWebSocketUrl(
+        'wss://example.test/base?token=secret',
+        'AB12CD34',
+        'admin',
+        'opaque value'
+      )
+    ).toBe('wss://example.test/base/ws/admin/AB12CD34?ticket=opaque+value');
     expect(() => buildWebSocketUrl('https://example.test', 'AB12CD34', 'admin'))
       .toThrow('WebSocket base URL must use ws or wss');
   });

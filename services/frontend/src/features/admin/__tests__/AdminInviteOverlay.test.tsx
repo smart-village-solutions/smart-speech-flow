@@ -16,7 +16,7 @@ const SESSION: CreatedSession = {
 
 const joined = (customerConnected: boolean) =>
   server.use(
-    http.get('*/api/session/:id', ({ params }) =>
+    http.get('*/api/admin/session/:id/status', ({ params }) =>
       HttpResponse.json({
         id: params.id,
         customer_language: customerConnected ? 'ar' : null,

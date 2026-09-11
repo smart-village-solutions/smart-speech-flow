@@ -13,10 +13,10 @@ const repository = createMessageRepository(client, {
 });
 
 describe('message repository', () => {
-  it('sends text as JSON with the client type', async () => {
+  it('uses the customer message route without sending a client type', async () => {
     let body: Record<string, unknown> = {};
     server.use(
-      http.post('http://api.test/api/session/A1B2C3D4/message', async ({ request }) => {
+      http.post('http://api.test/api/customer/session/A1B2C3D4/message', async ({ request }) => {
         body = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({
           status: 'success',
@@ -43,7 +43,6 @@ describe('message repository', () => {
       text: 'hello',
       source_lang: 'en',
       target_lang: 'de',
-      client_type: 'customer',
     });
     expect(result.messageId).toBe('m9');
     expect(result.audioUrl).toBe('/api/audio/m9.wav');
@@ -52,7 +51,7 @@ describe('message repository', () => {
   it('sends audio as multipart with a file field', async () => {
     let contentType = '';
     server.use(
-      http.post('http://api.test/api/session/A1B2C3D4/message', async ({ request }) => {
+      http.post('http://api.test/api/customer/session/A1B2C3D4/message', async ({ request }) => {
         contentType = request.headers.get('content-type') ?? '';
         return HttpResponse.json({
           status: 'success',
@@ -80,7 +79,7 @@ describe('message repository', () => {
 
   it('reads history through the mapper', async () => {
     server.use(
-      http.get('http://api.test/api/session/A1B2C3D4/messages', () =>
+      http.get('http://api.test/api/customer/session/A1B2C3D4/messages', () =>
         HttpResponse.json({
           session_id: 'A1B2C3D4',
           messages: [
@@ -109,10 +108,10 @@ describe('message repository', () => {
     expect(messages[0].audioUrl).toBe('http://api.test/api/audio/m1.wav');
   });
 
-  it('sends text as the admin when told to', async () => {
+  it('uses the admin message route without sending a client type', async () => {
     let body: Record<string, unknown> = {};
     server.use(
-      http.post('http://api.test/api/session/A1B2C3D4/message', async ({ request }) => {
+      http.post('http://api.test/api/admin/session/A1B2C3D4/message', async ({ request }) => {
         body = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({
           status: 'success',
@@ -135,7 +134,7 @@ describe('message repository', () => {
       role: 'admin',
     });
 
-    expect(body.client_type).toBe('admin');
+    expect(body).not.toHaveProperty('client_type');
     expect(body.source_lang).toBe('de');
   });
 

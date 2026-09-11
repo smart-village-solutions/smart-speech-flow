@@ -25,7 +25,9 @@ describe('RequireSession', () => {
   });
 
   it('sends an unknown session back to the access-code screen', async () => {
-    server.use(http.get('*/api/session/ZZZZZZZZ', () => new HttpResponse(null, { status: 404 })));
+    server.use(
+      http.get('*/api/customer/session/ZZZZZZZZ', () => new HttpResponse(null, { status: 404 }))
+    );
 
     renderWithProviders(tree(), { route: '/s/ZZZZZZZZ' });
 
@@ -34,7 +36,7 @@ describe('RequireSession', () => {
 
   it('sends a terminated session back to the access-code screen', async () => {
     server.use(
-      http.get('*/api/session/A1B2C3D4', () =>
+      http.get('*/api/customer/session/A1B2C3D4', () =>
         HttpResponse.json({
           id: 'A1B2C3D4',
           customer_language: 'en',

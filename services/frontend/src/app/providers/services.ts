@@ -39,6 +39,7 @@ export interface Services {
 /** The composition root. The only place implementations are chosen. */
 export function createServices(config: AppConfig, getLocale: () => string): Services {
   const http = createHttpClient(config, getLocale);
+  const admin = createAdminRepository(http);
 
   return {
     config,
@@ -51,10 +52,15 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     feedback: createStubFeedbackSink(),
     consent: createStubConsentSink(),
     health: createHealthRepository(http),
-    admin: createAdminRepository(http),
+    admin,
     loginTenant: createLoginTenantRepository(http),
     brand: createStaticBrandSource(config.brand),
-    createRealtime: () => createWebSocketTransport({ wsBaseUrl: config.wsBaseUrl }),
+    createRealtime: () =>
+      createWebSocketTransport({
+        wsBaseUrl: config.wsBaseUrl,
+        issueAdminTicket: (sessionId, transport) =>
+          admin.issueRealtimeTicket(sessionId, transport),
+      }),
   };
 }
 
