@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
 
 import pytest
+from starlette.websockets import WebSocketState
 
-from services.api_gateway.session_manager import ClientType, SessionManager, SessionStatus
+from services.api_gateway.session_manager import (
+    ClientType,
+    SessionManager,
+    SessionStatus,
+)
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
+from services.api_gateway.websocket import WebSocketManager
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
@@ -153,3 +160,94 @@ async def test_session_status_exposes_warning_and_timeout_deadlines(
     assert payload["warning_at"] == (session.created_at + timedelta(minutes=25)).isoformat()
     assert payload["timeout_at"] == (session.created_at + timedelta(minutes=30)).isoformat()
     assert "tenant_id" in payload
+
+
+@pytest.mark.asyncio
+async def test_multiple_admin_sockets_decrement_presence_independently(
+    manager: SessionManager,
+) -> None:
+    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+
+    await manager.add_websocket_connection(session.key, ClientType.ADMIN, object())
+    await manager.add_websocket_connection(session.key, ClientType.ADMIN, object())
+    await manager.remove_websocket_connection(session.key, ClientType.ADMIN)
+
+    assert session.admin_connection_count == 1
+    assert session.admin_connected is True
+
+    await manager.remove_websocket_connection(session.key, ClientType.ADMIN)
+
+    assert session.admin_connection_count == 0
+    assert session.admin_connected is False
+
+
+@pytest.mark.asyncio
+async def test_termination_persists_tombstone_before_socket_presence_cleanup(
+    manager: SessionManager,
+) -> None:
+    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    sockets = WebSocketManager(manager)
+    sockets.start_heartbeat_system = AsyncMock()
+    websocket = AsyncMock()
+    websocket.client_state = WebSocketState.CONNECTED
+    await sockets.connect_websocket(websocket, session.key, ClientType.ADMIN)
+
+    await manager.terminate_session(session.key)
+
+    stored = manager.get_session(session.key)
+    assert stored is not None
+    assert stored.status is SessionStatus.TERMINATED
+    assert stored.admin_connection_count == 0
+    assert session.key not in sockets.session_connections
+
+
+@pytest.mark.asyncio
+async def test_timeout_monitor_uses_tenant_deadlines_and_full_key(
+    manager: SessionManager, clock: Clock
+) -> None:
+    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    realtime = AsyncMock()
+    manager.websocket_manager = realtime
+
+    clock.advance(minutes=25)
+    await manager.check_session_timeouts()
+
+    realtime.broadcast_to_session.assert_awaited_once()
+    assert realtime.broadcast_to_session.await_args.args[0] == session.key
+    assert manager.get_session(session.key).status is SessionStatus.PENDING
+
+    clock.advance(minutes=5)
+    await manager.check_session_timeouts()
+
+    assert manager.get_session(session.key).status is SessionStatus.TERMINATED
+
+
+@pytest.mark.asyncio
+async def test_connected_admin_is_not_terminated_at_legacy_30_minute_deadline(
+    manager: SessionManager, clock: Clock
+) -> None:
+    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    manager.admin_connected(session.key)
+    clock.advance(minutes=30)
+
+    await manager.check_session_timeouts()
+
+    assert manager.get_session(session.key).status is SessionStatus.PENDING
+
+
+@pytest.mark.asyncio
+async def test_timeout_monitor_releases_idle_polling_presence(
+    manager: SessionManager,
+) -> None:
+    from services.api_gateway.websocket_polling_routes import polling_store
+
+    polling_store.clients.clear()
+    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    client = polling_store.activate(session.key, ClientType.ADMIN)
+    manager.admin_connected(session.key)
+    client.last_seen = 0
+
+    await manager.check_session_timeouts()
+
+    assert client.polling_id not in polling_store.clients
+    assert manager.get_session(session.key).admin_connection_count == 0

@@ -51,6 +51,19 @@ class RealtimeTicketStore:
     def _key(self, ticket: str) -> str:
         return f"{self.namespace}:v2:realtime-ticket:{_ticket_hash(ticket)}"
 
+    def _revoked_key(self, key: TenantSessionKey) -> str:
+        return (
+            f"{self.namespace}:v2:tenant:{key.redis_tenant_component}:"
+            f"session:{key.session_id}:realtime-revoked"
+        )
+
+    def revoke(self, key: TenantSessionKey) -> None:
+        """Invalidate every outstanding ticket for one terminal session."""
+        try:
+            self.redis.set(self._revoked_key(key), "1", ex=8 * 60 * 60, nx=False)
+        except Exception as error:
+            raise RealtimeTicketUnavailable() from error
+
     def issue(
         self,
         key: TenantSessionKey,
@@ -89,6 +102,22 @@ class RealtimeTicketStore:
         key: TenantSessionKey,
         transport: RealtimeTransportKind,
     ) -> bool:
+        resolved = self.consume_key(raw_ticket, key.session_id, transport)
+        return resolved is not None and all(
+            hmac.compare_digest(left, right)
+            for left, right in (
+                (resolved.tenant_id, key.tenant_id),
+                (resolved.session_id, key.session_id),
+            )
+        )
+
+    def consume_key(
+        self,
+        raw_ticket: str,
+        session_id: str,
+        transport: RealtimeTransportKind,
+    ) -> TenantSessionKey | None:
+        """Consume a ticket and recover its server-issued tenant scope."""
         try:
             raw_payload = self.redis.eval(
                 CONSUME_TICKET_LUA,
@@ -101,18 +130,32 @@ class RealtimeTicketStore:
         except Exception as error:
             raise RealtimeTicketUnavailable() from error
         if not isinstance(payload, dict):
-            return False
-        expected = {
-            "role": "admin",
-            "session_id": key.session_id,
-            "tenant_id": key.tenant_id,
-            "transport": transport,
-        }
-        return all(
-            isinstance(payload.get(field), str)
-            and hmac.compare_digest(payload[field], value)
-            for field, value in expected.items()
-        )
+            return None
+        tenant_id = payload.get("tenant_id")
+        payload_session_id = payload.get("session_id")
+        role = payload.get("role")
+        payload_transport = payload.get("transport")
+        if not all(
+            isinstance(value, str)
+            for value in (tenant_id, payload_session_id, role, payload_transport)
+        ):
+            return None
+        if not (
+            hmac.compare_digest(payload_session_id, session_id)
+            and hmac.compare_digest(role, "admin")
+            and hmac.compare_digest(payload_transport, transport)
+        ):
+            return None
+        try:
+            resolved = TenantSessionKey(tenant_id, payload_session_id)
+        except ValueError:
+            return None
+        try:
+            if self.redis.get(self._revoked_key(resolved)) is not None:
+                return None
+        except Exception as error:
+            raise RealtimeTicketUnavailable() from error
+        return resolved
 
 
 class MemoryRealtimeTicketBackend:
@@ -132,6 +175,11 @@ class MemoryRealtimeTicketBackend:
     def eval(self, script: str, number_of_keys: int, key: str) -> str | None:
         self._expire(key)
         stored = self.values.pop(key, None)
+        return stored[0] if stored else None
+
+    def get(self, key: str) -> str | None:
+        self._expire(key)
+        stored = self.values.get(key)
         return stored[0] if stored else None
 
     def _expire(self, key: str) -> None:

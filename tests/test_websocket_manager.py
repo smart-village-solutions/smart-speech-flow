@@ -4,17 +4,21 @@ Unit-Tests für WebSocket-Manager
 Testet Session-basierte Connection-Pools, Heartbeat-System, Graceful-Disconnect und Polling-Fallback
 """
 
-import pytest
 import asyncio
 from datetime import datetime, timedelta
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
+import services.api_gateway.websocket as websocket_module
+from services.api_gateway.session_manager import ClientType, SessionManager
 
 # WebSocket-Manager und Dependencies
 from services.api_gateway.websocket import (
-    WebSocketManager, ConnectionState, MessageType
+    ConnectionState,
+    MessageType,
+    WebSocketManager,
 )
-import services.api_gateway.websocket as websocket_module
-from services.api_gateway.session_manager import SessionManager, ClientType
 
 
 class MockWebSocket:
@@ -162,12 +166,17 @@ class TestWebSocketManager:
 
         # Connection wurde aus Pools entfernt
         assert connection_id not in websocket_manager.all_connections
-        assert session_id not in websocket_manager.session_connections or \
-               connection_id not in websocket_manager.session_connections[session_id]
+        assert (
+            session_id not in websocket_manager.session_connections
+            or connection_id not in websocket_manager.session_connections[session_id]
+        )
 
         # Disconnect-Message wurde gesendet
-        disconnect_messages = [msg for msg in mock_websocket.messages_sent
-                               if msg.get("type") == MessageType.CONNECTION_STATUS.value]
+        disconnect_messages = [
+            msg
+            for msg in mock_websocket.messages_sent
+            if msg.get("type") == MessageType.CONNECTION_STATUS.value
+        ]
         assert len(disconnect_messages) == 1
         assert disconnect_messages[0]["status"] == "disconnecting"
 
@@ -190,10 +199,16 @@ class TestWebSocketManager:
         assert mock_ws2.is_closed
 
         # Termination-Messages wurden gesendet
-        termination_msgs1 = [msg for msg in mock_ws1.messages_sent
-                             if msg.get("type") == MessageType.SESSION_TERMINATED.value]
-        termination_msgs2 = [msg for msg in mock_ws2.messages_sent
-                             if msg.get("type") == MessageType.SESSION_TERMINATED.value]
+        termination_msgs1 = [
+            msg
+            for msg in mock_ws1.messages_sent
+            if msg.get("type") == MessageType.SESSION_TERMINATED.value
+        ]
+        termination_msgs2 = [
+            msg
+            for msg in mock_ws2.messages_sent
+            if msg.get("type") == MessageType.SESSION_TERMINATED.value
+        ]
 
         assert len(termination_msgs1) == 1
         assert len(termination_msgs2) == 1
@@ -224,8 +239,11 @@ class TestWebSocketManager:
         await websocket_manager._send_heartbeat_pings()
 
         # Assertions: Ping wurde gesendet
-        ping_messages = [msg for msg in mock_websocket.messages_sent
-                         if msg.get("type") == MessageType.HEARTBEAT_PING.value]
+        ping_messages = [
+            msg
+            for msg in mock_websocket.messages_sent
+            if msg.get("type") == MessageType.HEARTBEAT_PING.value
+        ]
         assert len(ping_messages) == 1
 
         # Pong simulieren
@@ -241,9 +259,9 @@ class TestWebSocketManager:
 
     async def test_websocket_manager_singleton_behavior(self):
         """Test: WebSocketManager Singleton-Verhalten via Dependency Injection"""
+        from services.api_gateway.session_manager import SessionManager
         from services.api_gateway.websocket import get_websocket_manager
         from services.api_gateway.websocket_monitor import initialize_websocket_monitor
-        from services.api_gateway.session_manager import SessionManager
 
         # Monitor initialisieren (wird von connect_websocket benötigt)
         initialize_websocket_monitor()
@@ -262,9 +280,7 @@ class TestWebSocketManager:
         mock_ws = MockWebSocket()
         session_id = "SINGLETON_TEST"
 
-        conn_id = await manager1.connect_websocket(
-            mock_ws, session_id, ClientType.ADMIN
-        )
+        conn_id = await manager1.connect_websocket(mock_ws, session_id, ClientType.ADMIN)
 
         # Andere Referenz sieht dieselbe Connection
         assert conn_id in manager1.all_connections
@@ -320,18 +336,17 @@ class TestWebSocketManager:
         await websocket_manager.connect_websocket(mock_ws2, session_id, ClientType.CUSTOMER)
 
         # Test-Message broadcasten
-        test_message = {
-            "type": "test_broadcast",
-            "content": "Hello Session!"
-        }
+        test_message = {"type": "test_broadcast", "content": "Hello Session!"}
 
         await websocket_manager.broadcast_to_session(session_id, test_message)
 
         # Assertions: Beide Clients haben Message erhalten
-        broadcast_msgs1 = [msg for msg in mock_ws1.messages_sent
-                           if msg.get("type") == "test_broadcast"]
-        broadcast_msgs2 = [msg for msg in mock_ws2.messages_sent
-                           if msg.get("type") == "test_broadcast"]
+        broadcast_msgs1 = [
+            msg for msg in mock_ws1.messages_sent if msg.get("type") == "test_broadcast"
+        ]
+        broadcast_msgs2 = [
+            msg for msg in mock_ws2.messages_sent if msg.get("type") == "test_broadcast"
+        ]
 
         assert len(broadcast_msgs1) == 1
         assert len(broadcast_msgs2) == 1
@@ -350,9 +365,7 @@ class TestWebSocketManager:
         admin_id = await websocket_manager.connect_websocket(
             admin_socket, session_id, ClientType.ADMIN
         )
-        await websocket_manager.connect_websocket(
-            customer_socket, session_id, ClientType.CUSTOMER
-        )
+        await websocket_manager.connect_websocket(customer_socket, session_id, ClientType.CUSTOMER)
 
         await websocket_manager.broadcast_to_session(
             session_id,
@@ -385,17 +398,11 @@ class TestWebSocketManager:
         failing_id = await websocket_manager.connect_websocket(
             failing_socket, session_id, ClientType.ADMIN
         )
-        await websocket_manager.connect_websocket(
-            healthy_socket, session_id, ClientType.CUSTOMER
-        )
+        await websocket_manager.connect_websocket(healthy_socket, session_id, ClientType.CUSTOMER)
         failing_socket.send_json = AsyncMock(side_effect=RuntimeError("send failed"))
-        monkeypatch.setattr(
-            websocket_manager, "_evaluate_connection_error", AsyncMock()
-        )
+        monkeypatch.setattr(websocket_manager, "_evaluate_connection_error", AsyncMock())
 
-        await websocket_manager.broadcast_to_session(
-            session_id, {"type": "resilient_broadcast"}
-        )
+        await websocket_manager.broadcast_to_session(session_id, {"type": "resilient_broadcast"})
 
         assert websocket_manager.all_connections[failing_id].state == ConnectionState.ERROR
         assert [
@@ -428,7 +435,7 @@ class TestWebSocketManager:
             "sender": "admin",
             "original_text": "Hello",
             "source_lang": "en",
-            "target_lang": "de"
+            "target_lang": "de",
         }
 
         translated_message = {
@@ -439,7 +446,7 @@ class TestWebSocketManager:
             "translated_text": "Hallo",
             "original_text": "Hello",
             "source_lang": "en",
-            "target_lang": "de"
+            "target_lang": "de",
         }
 
         # Broadcast durchführen
@@ -447,16 +454,16 @@ class TestWebSocketManager:
             session_id=session_id,
             sender_type=ClientType.ADMIN,
             original_message=original_message,
-            translated_message=translated_message
+            translated_message=translated_message,
         )
 
         # Assertions: BroadcastResult prüfen
         assert result is not None
-        assert hasattr(result, 'success')
-        assert hasattr(result, 'total_connections')
-        assert hasattr(result, 'successful_sends')
-        assert hasattr(result, 'failed_sends')
-        assert hasattr(result, 'session_has_connections')
+        assert hasattr(result, "success")
+        assert hasattr(result, "total_connections")
+        assert hasattr(result, "successful_sends")
+        assert hasattr(result, "failed_sends")
+        assert hasattr(result, "session_has_connections")
 
         # Bei 2 Connections sollte Broadcast erfolgreich sein
         assert result.success is True
@@ -466,14 +473,20 @@ class TestWebSocketManager:
         assert result.session_has_connections is True
 
         # Verify messages were sent
-        translation_msgs_admin = [msg for msg in mock_ws_admin.messages_sent if msg.get("type") == "translation"]
-        translation_msgs_customer = [msg for msg in mock_ws_customer.messages_sent if msg.get("type") == "translation"]
+        translation_msgs_admin = [
+            msg for msg in mock_ws_admin.messages_sent if msg.get("type") == "translation"
+        ]
+        translation_msgs_customer = [
+            msg for msg in mock_ws_customer.messages_sent if msg.get("type") == "translation"
+        ]
 
         # Admin (sender) gets original message, customer gets translation
         assert len(translation_msgs_admin) == 1
         assert len(translation_msgs_customer) == 1
 
-    async def test_broadcast_to_session_without_connections_returns_failure(self, websocket_manager):
+    async def test_broadcast_to_session_without_connections_returns_failure(
+        self, websocket_manager
+    ):
         """Test: Broadcasting an Session ohne Connections gibt Fehler zurück"""
         from services.api_gateway.websocket_monitor import initialize_websocket_monitor
 
@@ -489,7 +502,7 @@ class TestWebSocketManager:
             "sender": "admin",
             "original_text": "Test",
             "source_lang": "en",
-            "target_lang": "en"
+            "target_lang": "en",
         }
 
         translated_message = {
@@ -500,7 +513,7 @@ class TestWebSocketManager:
             "translated_text": "Test",
             "original_text": "Test",
             "source_lang": "en",
-            "target_lang": "en"
+            "target_lang": "en",
         }
 
         # Broadcast an Session ohne Connections
@@ -508,7 +521,7 @@ class TestWebSocketManager:
             session_id=session_id,
             sender_type=ClientType.ADMIN,
             original_message=original_message,
-            translated_message=translated_message
+            translated_message=translated_message,
         )
 
         # Assertions: Broadcast sollte fehlschlagen
@@ -533,22 +546,21 @@ class TestWebSocketManager:
         translated_message = {"type": "message", "text": "Translated English Text"}
 
         await websocket_manager.broadcast_with_differentiated_content(
-            session_id,
-            ClientType.ADMIN,  # Admin ist Sender
-            original_message,
-            translated_message
+            session_id, ClientType.ADMIN, original_message, translated_message  # Admin ist Sender
         )
 
         # Assertions
         # Admin (Sender) erhält original_message
-        admin_messages = [msg for msg in mock_admin_ws.messages_sent
-                          if msg.get("type") == "message"]
+        admin_messages = [
+            msg for msg in mock_admin_ws.messages_sent if msg.get("type") == "message"
+        ]
         assert len(admin_messages) == 1
         assert admin_messages[0]["text"] == "Original German Text"
 
         # Customer (Empfänger) erhält translated_message
-        customer_messages = [msg for msg in mock_customer_ws.messages_sent
-                             if msg.get("type") == "message"]
+        customer_messages = [
+            msg for msg in mock_customer_ws.messages_sent if msg.get("type") == "message"
+        ]
         assert len(customer_messages) == 1
         assert customer_messages[0]["text"] == "Translated English Text"
 
@@ -603,16 +615,13 @@ class TestWebSocketManager:
         )
 
         failure_counter = monitor.broadcast_failure_total.labels(
-            session_id="TEST123",
             sender_type=ClientType.ADMIN.value,
             reason="partial_failure",
         )
         delivered_counter = monitor.broadcast_messages_delivered.labels(
-            session_id="TEST123",
             sender_type=ClientType.ADMIN.value,
         )
         failed_counter = monitor.broadcast_messages_failed.labels(
-            session_id="TEST123",
             sender_type=ClientType.ADMIN.value,
         )
 
@@ -633,7 +642,6 @@ class TestWebSocketManager:
         assert result.session_has_connections is False
         assert result.errors == ["Session has no active connections"]
         failure_counter = monitor.broadcast_failure_total.labels(
-            session_id="EMPTY_SESSION",
             sender_type=ClientType.CUSTOMER.value,
             reason="no_connections",
         )
@@ -740,9 +748,7 @@ class TestWebSocketManager:
 
         # Erste Verbindung (Admin)
         mock_admin_ws = MockWebSocket()
-        await websocket_manager.connect_websocket(
-            mock_admin_ws, session_id, ClientType.ADMIN
-        )
+        await websocket_manager.connect_websocket(mock_admin_ws, session_id, ClientType.ADMIN)
 
         # Zweite Verbindung (Customer) - sollte Join-Notification an Admin senden
         mock_customer_ws = MockWebSocket()
@@ -751,8 +757,11 @@ class TestWebSocketManager:
         )
 
         # Admin sollte Customer-Join-Notification erhalten haben
-        join_messages = [msg for msg in mock_admin_ws.messages_sent
-                         if msg.get("type") == MessageType.CLIENT_JOINED.value]
+        join_messages = [
+            msg
+            for msg in mock_admin_ws.messages_sent
+            if msg.get("type") == MessageType.CLIENT_JOINED.value
+        ]
         assert len(join_messages) == 1
         assert join_messages[0]["client_type"] == ClientType.CUSTOMER.value
 
@@ -760,8 +769,11 @@ class TestWebSocketManager:
         await websocket_manager.disconnect_websocket(customer_conn_id, "test_leave")
 
         # Admin sollte Customer-Leave-Notification erhalten haben
-        leave_messages = [msg for msg in mock_admin_ws.messages_sent
-                          if msg.get("type") == MessageType.CLIENT_LEFT.value]
+        leave_messages = [
+            msg
+            for msg in mock_admin_ws.messages_sent
+            if msg.get("type") == MessageType.CLIENT_LEFT.value
+        ]
         assert len(leave_messages) == 1
         assert leave_messages[0]["client_type"] == ClientType.CUSTOMER.value
         assert leave_messages[0]["reason"] == "test_leave"
@@ -777,9 +789,7 @@ class TestWebSocketIntegration:
         session_id = await websocket_manager.session_manager.create_admin_session()
 
         # WebSocket-Verbindung zur Session
-        await websocket_manager.connect_websocket(
-            mock_websocket, session_id, ClientType.ADMIN
-        )
+        await websocket_manager.connect_websocket(mock_websocket, session_id, ClientType.ADMIN)
 
         # Session sollte WebSocket-Connection haben
         session = websocket_manager.session_manager.get_session(session_id)
@@ -791,7 +801,9 @@ class TestWebSocketIntegration:
         )
         assert session_ws == mock_websocket
 
-    async def test_session_termination_via_session_manager(self, websocket_manager, session_manager):
+    async def test_session_termination_via_session_manager(
+        self, websocket_manager, session_manager
+    ):
         """Test: Session-Termination über SessionManager löst WebSocket-Cleanup aus"""
         # Session und WebSocket-Verbindung erstellen
         session_id = await session_manager.create_admin_session()
@@ -810,7 +822,9 @@ class TestWebSocketIntegration:
         # WebSocket-Connection sollte aus Pools entfernt worden sein
         assert connection_id not in websocket_manager.all_connections
 
-    async def test_parallel_sessions_keep_existing_connections(self, websocket_manager, session_manager):
+    async def test_parallel_sessions_keep_existing_connections(
+        self, websocket_manager, session_manager
+    ):
         """Test: Parallele Sessions lassen bestehende WebSocket-Verbindungen aktiv."""
         session_manager.allow_parallel_sessions = True
 
@@ -830,7 +844,8 @@ class TestWebSocketIntegration:
 
         # Keine Termination-Nachricht erwartet
         termination_msgs = [
-            msg for msg in mock_ws1.messages_sent
+            msg
+            for msg in mock_ws1.messages_sent
             if msg.get("type") == MessageType.SESSION_TERMINATED.value
         ]
         assert termination_msgs == []

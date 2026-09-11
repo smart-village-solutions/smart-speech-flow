@@ -422,6 +422,10 @@ from .websocket_fallback import fallback_manager
 
 fallback_manager.bind_metrics_registry(registry)
 
+from .websocket_polling_routes import polling_store
+
+polling_store.bind_metrics_registry(registry)
+
 
 # === CORS Middleware ===
 # Enhanced CORS Configuration for WebSocket Support

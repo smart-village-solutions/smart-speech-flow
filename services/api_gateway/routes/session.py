@@ -1227,7 +1227,7 @@ async def create_session_message(
         # Only attempt broadcasting if a WebSocketManager was provided
         if manager is not None:
             result = await broadcast_message_to_session(
-                session_id.session_id, message, client_type, manager
+                session_id, message, client_type, manager
             )
         else:
             # No manager available (e.g., unit tests running without DI)
@@ -1274,7 +1274,7 @@ async def create_session_message(
 
 
 async def broadcast_message_to_session(
-    session_id: str,
+    session_id: TenantSessionKey,
     message: SessionMessage,
     sender_type: ClientType,
     manager: Optional[WebSocketManager] = None,
@@ -1295,7 +1295,7 @@ async def broadcast_message_to_session(
     """
     _log_session_event(
         "📡 Broadcasting message",
-        session_id,
+        session_id.session_id,
         sender_type=sender_type.value,
     )
 
@@ -1303,7 +1303,7 @@ async def broadcast_message_to_session(
     sender_message = {
         "type": MessageType.MESSAGE.value,
         "message_id": message.id,
-        "session_id": session_id,
+        "session_id": session_id.session_id,
         "text": message.original_text,  # 👈 Sender sieht original Text
         "source_lang": message.source_lang,
         "target_lang": message.target_lang,
@@ -1322,7 +1322,7 @@ async def broadcast_message_to_session(
     receiver_message = {
         "type": MessageType.MESSAGE.value,
         "message_id": message.id,
-        "session_id": session_id,
+        "session_id": session_id.session_id,
         "text": message.translated_text,  # 👈 Empfänger sieht übersetzten Text
         "source_lang": message.source_lang,
         "target_lang": message.target_lang,
@@ -1339,7 +1339,7 @@ async def broadcast_message_to_session(
         receiver_message["original_audio_url"] = message.original_audio_url
 
     # 🎯 Differentiated Broadcasting ausführen
-    _log_session_event("📤 Broadcasting differentiated content", session_id)
+    _log_session_event("📤 Broadcasting differentiated content", session_id.session_id)
     if manager is None:
         # No WebSocketManager provided (e.g., unit tests without DI) -> noop
         class _NoopResult:
@@ -1360,7 +1360,7 @@ async def broadcast_message_to_session(
         )
     _log_session_event(
         "✅ Broadcast completed",
-        session_id,
+        session_id.session_id,
         successful_sends=result.successful_sends,
         total_connections=result.total_connections,
     )
@@ -1454,7 +1454,6 @@ async def get_supported_languages() -> Dict[str, Any]:
     }
 
 
-@router.post("/session/{session_id}/activity", responses=ACTIVITY_ROUTE_RESPONSES)
 async def update_client_activity(
     session_id: str,
     activity: ClientActivityUpdate,
@@ -1499,7 +1498,6 @@ async def update_client_activity(
     )
 
 
-@router.websocket("/ws/{session_id}/{client_type}")
 async def websocket_endpoint(
     websocket: WebSocket, session_id: str, client_type: str
 ) -> None:

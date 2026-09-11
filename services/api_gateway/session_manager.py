@@ -625,6 +625,8 @@ class SessionManager:
         session.termination_reason = reason
         session.admin_connected = False
         session.customer_connected = False
+        session.admin_connection_count = 0
+        session.customer_connection_count = 0
 
         # Emitted here rather than after the notifications below: this is the
         # last point at which the session's own state is the reason it ended.
@@ -642,7 +644,27 @@ class SessionManager:
                 self.active_admin_sessions.pop(session_id.tenant_id, None)
             if self.store is None:
                 raise RuntimeError("tenant session store is unavailable")
+            from .realtime_ticket import (
+                RealtimeTicketUnavailable,
+                realtime_ticket_store,
+            )
+
+            try:
+                realtime_ticket_store.revoke(session_id)
+            except RealtimeTicketUnavailable:
+                logger.error(
+                    "realtime_ticket_revocation_unavailable",
+                    extra={"tenant_ref": session_id.tenant_ref},
+                )
+            # Persist the inactive join tombstone before socket cleanup. The
+            # cleanup callbacks update presence through the store, which must
+            # already agree with the session's TERMINATED status.
             self.store.terminate(session)
+            from .websocket_polling_routes import polling_store
+
+            polling_store.terminate(session_id, reason)
+            await self._send_termination_notifications(session_id, reason)
+            await self._cleanup_websocket_connections(session_id)
             return
 
         if session_id in self.active_admin_sessions:
@@ -661,7 +683,7 @@ class SessionManager:
         print(f"🔚 Session {session_id} beendet. Grund: {reason}")
 
     async def _send_termination_notifications(
-        self, session_id: str, reason: str
+        self, session_id: Any, reason: str
     ) -> bool:
         """WebSocket-Benachrichtigungen bei Session-Beendigung"""
         if self.websocket_manager:
@@ -706,7 +728,7 @@ class SessionManager:
         }
         return messages.get(reason, "Die Session wurde beendet.")
 
-    async def _cleanup_websocket_connections(self, session_id: str):
+    async def _cleanup_websocket_connections(self, session_id: Any):
         """WebSocket-Connection-Pool cleanup"""
         await asyncio.sleep(0)
         if session_id in self.websocket_connections:
@@ -965,10 +987,21 @@ class SessionManager:
         )
 
     async def add_websocket_connection(
-        self, session_id: str, client_type: ClientType, websocket
+        self, session_id: Any, client_type: ClientType, websocket
     ):
         """WebSocket-Verbindung zur Session hinzufügen"""
         await asyncio.sleep(0)
+        if isinstance(session_id, TenantSessionKey):
+            if client_type == ClientType.ADMIN:
+                self.admin_connected(session_id)
+            else:
+                self.customer_connected(session_id)
+            logger.info(
+                "tenant_websocket_registered",
+                extra={"tenant_ref": session_id.tenant_ref},
+            )
+            return
+
         if session_id not in self.websocket_connections:
             self.websocket_connections[session_id] = {}
 
@@ -988,10 +1021,21 @@ class SessionManager:
         )
 
     async def remove_websocket_connection(
-        self, session_id: str, client_type: ClientType
+        self, session_id: Any, client_type: ClientType
     ):
         """WebSocket-Verbindung von Session entfernen"""
         await asyncio.sleep(0)
+        if isinstance(session_id, TenantSessionKey):
+            if client_type == ClientType.ADMIN:
+                self.admin_disconnected(session_id)
+            else:
+                self.customer_disconnected(session_id)
+            logger.info(
+                "tenant_websocket_unregistered",
+                extra={"tenant_ref": session_id.tenant_ref},
+            )
+            return
+
         if session_id in self.websocket_connections:
             self.websocket_connections[session_id].pop(client_type.value, None)
 
@@ -1027,25 +1071,48 @@ class SessionManager:
 
     async def check_session_timeouts(self):
         """Alle Sessions auf Timeouts prüfen und entsprechende Aktionen durchführen"""
+        from .websocket_polling_routes import polling_store
+
+        for client in polling_store.prune():
+            try:
+                if client.client_type is ClientType.ADMIN:
+                    self.admin_disconnected(client.key)
+                else:
+                    self.customer_disconnected(client.key)
+            except KeyError:
+                pass
+
         current_sessions = tuple(self.sessions.values())
 
         for session in current_sessions:
             if session.status == SessionStatus.TERMINATED:
                 continue
 
-            # Timeout-Warning prüfen
-            if session.is_timeout_warning_due():
+            warning_due = (
+                session.warning_due(self.clock())
+                if session.tenant_id
+                else session.is_timeout_warning_due()
+            )
+            timeout_due = (
+                session.timeout_due(self.clock())
+                if session.tenant_id
+                else session.is_timeout_due()
+            )
+            if warning_due:
                 await self._send_timeout_warning(session)
-
-            # Auto-Termination prüfen
-            if session.is_timeout_due():
-                await self.terminate_session(session.id, reason="session_timeout")
+            if timeout_due:
+                await self.terminate_session(
+                    session.key if session.tenant_id else session.id,
+                    reason="session_timeout",
+                )
 
     async def _send_timeout_warning(self, session: Session):
         """Timeout-Warning an alle WebSocket-Clients der Session senden"""
         if self.websocket_manager:
             remaining_minutes = (
-                session.session_timeout_minutes - session.warning_timeout_minutes
+                session.timeout_warning_minutes
+                if session.tenant_id
+                else session.session_timeout_minutes - session.warning_timeout_minutes
             )
 
             warning_message = {
@@ -1057,11 +1124,14 @@ class SessionManager:
             }
 
             await self.websocket_manager.broadcast_to_session(
-                session.id, warning_message
+                session.key if session.tenant_id else session.id,
+                warning_message,
             )
             session.timeout_warning_sent = True
-            self._persist_session(session)
-            print(f"⚠️ Timeout-Warning gesendet für Session {session.id}")
+            if session.tenant_id and self.store is not None:
+                self.store.save(session)
+            else:
+                self._persist_session(session)
 
     def get_sessions_requiring_timeout_check(self) -> List[Session]:
         """Sessions zurückgeben, die Timeout-Checks benötigen"""

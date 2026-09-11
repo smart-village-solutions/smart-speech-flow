@@ -102,6 +102,64 @@ class RealtimeTicketResponse(BaseModel):
     expires_at: str
 
 
+def _connection_payload(
+    manager: WebSocketManager, key: TenantSessionKey
+) -> list[dict[str, Any]]:
+    connections = manager.get_session_connections(key)
+    for connection in connections:
+        connection["transport"] = "websocket"
+    from ..websocket_polling_routes import polling_store
+
+    connections.extend(
+        {
+            "transport": "polling",
+            "polling_id": client.polling_id,
+            "session_id": client.key.session_id,
+            "client_type": client.client_type.value,
+            "queued_messages": len(client.messages),
+            "terminated": client.terminated,
+        }
+        for client in polling_store.clients.values()
+        if client.key == key
+    )
+    return connections
+
+
+@router.get("/realtime/connections")
+async def list_tenant_realtime_connections(
+    context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
+    manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
+) -> dict[str, object]:
+    from ..websocket_polling_routes import polling_store
+
+    connections: list[dict[str, Any]] = []
+    keys = {
+        key for key in manager.session_connections if isinstance(key, TenantSessionKey)
+    }
+    keys.update(client.key for client in polling_store.clients.values())
+    for key in keys:
+        if key.tenant_id == context.tenant_id:
+            connections.extend(_connection_payload(manager, key))
+    return {"connections": connections, "count": len(connections)}
+
+
+@router.get(
+    "/session/{session_id}/realtime/connections",
+    responses=ADMIN_ROUTE_RESPONSES,
+)
+async def list_session_realtime_connections(
+    session_id: str,
+    key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
+    manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
+) -> dict[str, object]:
+    connections = _connection_payload(manager, key)
+    return {
+        "session_id": session_id,
+        "connections": connections,
+        "count": len(connections),
+    }
+
+
 def get_realtime_ticket_store() -> RealtimeTicketStore:
     return realtime_ticket_store
 

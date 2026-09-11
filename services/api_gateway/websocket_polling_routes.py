@@ -1,479 +1,405 @@
-"""
-WebSocket Polling Fallback API Routes
-Provides REST endpoints for clients that cannot establish WebSocket connections
-due to CORS, network, or compatibility issues.
-"""
+"""Tenant- and role-bound HTTP polling fallback routes."""
+
+from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
-from datetime import datetime, timezone
-from typing import Annotated, Any, Dict, Optional
+import secrets
+import time
+from collections import deque
+from dataclasses import dataclass, field
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from prometheus_client import CollectorRegistry, Counter
+from pydantic import BaseModel, Field
 
-from .session_manager import ClientType, session_manager
-from .websocket_fallback import FallbackReason, fallback_manager
+from .auth import optional_ssf_user
+from .realtime_ticket import RealtimeTicketUnavailable, realtime_ticket_store
+from .session_access import require_admin_session_key, require_customer_session_key
+from .session_manager import ClientType
+from .tenant_session import TenantSessionKey
+from .websocket import WebSocketManager, get_websocket_manager
 
+router = APIRouter(tags=["realtime-polling"])
 logger = logging.getLogger(__name__)
-
-router = APIRouter(prefix="/api/websocket/polling", tags=["WebSocket Polling Fallback"])
-POLLING_ROUTE_RESPONSES = {
-    400: {"description": "Invalid polling request"},
-    404: {"description": "Polling client or session not found"},
-    500: {"description": "Polling fallback operation failed"},
-}
+MAX_POLLING_CLIENTS = 1000
+MAX_POLLING_CLIENTS_PER_ROLE = 10
+POLLING_IDLE_SECONDS = 120
+POLLING_QUEUE_SIZE = 100
 
 
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+def _dropped_counter(registry: CollectorRegistry) -> Counter:
+    return Counter(
+        "tenant_polling_messages_dropped_total",
+        "Polling messages discarded because a bounded recipient queue was full",
+        ["client_type"],
+        registry=registry,
+    )
 
 
-def utc_now_iso() -> str:
-    return utc_now().isoformat()
-
-
-async def _await_polled_messages(polling_id: str, timeout_seconds: int):
-    """Wait briefly for new messages without keeping a manual timeout counter."""
-
-    async def poll_loop():
-        while True:
-            messages = fallback_manager.poll_messages(polling_id)
-            if messages:
-                return messages
-            await asyncio.sleep(1)
-
-    try:
-        if hasattr(asyncio, "timeout"):
-            async with asyncio.timeout(timeout_seconds):
-                return await poll_loop()
-        return await asyncio.wait_for(poll_loop(), timeout_seconds)
-    except (TimeoutError, asyncio.TimeoutError):
-        return []
+class AdminPollingActivation(BaseModel):
+    ticket: str = Field(min_length=1, max_length=256)
 
 
 class PollingMessage(BaseModel):
-    """Message sent via polling"""
-
-    type: str
-    content: Dict[str, Any]
-    session_id: str
-    client_type: str
-    timestamp: Optional[str] = None
+    type: str = Field(min_length=1, max_length=64)
+    content: dict[str, Any]
 
 
-class FallbackActivationRequest(BaseModel):
-    """Request to activate polling fallback"""
+@dataclass
+class PollingClient:
+    polling_id: str
+    key: TenantSessionKey
+    client_type: ClientType
+    messages: deque[dict[str, Any]] = field(default_factory=deque)
+    event: asyncio.Event = field(default_factory=asyncio.Event)
+    last_seen: float = field(default_factory=time.monotonic)
+    terminated: bool = False
 
-    session_id: str
-    client_type: str
-    origin: Optional[str] = None
-    reason: str = "manual_fallback"
-    error_details: Optional[Dict[str, Any]] = None
 
+class TenantPollingStore:
+    def __init__(self, clock=time.monotonic, registry=None) -> None:
+        self.clients: dict[str, PollingClient] = {}
+        self.clock = clock
+        self.messages_dropped = _dropped_counter(registry or CollectorRegistry())
 
-@router.post("/activate", responses=POLLING_ROUTE_RESPONSES)
-async def activate_polling_fallback(
-    request: FallbackActivationRequest, client_request: Request
-):
-    """
-    Manually activate polling fallback for a client
-    This endpoint is called when WebSocket connection fails on the client side
-    """
-    try:
-        # Validate session exists
-        session_status = session_manager.get_session_status(request.session_id)
-        if not session_status or session_status.value not in [
-            "active",
-            "inactive",
-            "pending",
-        ]:
+    def bind_metrics_registry(self, registry: CollectorRegistry) -> None:
+        self.messages_dropped = _dropped_counter(registry)
+
+    def activate(self, key: TenantSessionKey, client_type: ClientType) -> PollingClient:
+        scoped_count = sum(
+            client.key == key and client.client_type is client_type
+            for client in self.clients.values()
+        )
+        if (
+            len(self.clients) >= MAX_POLLING_CLIENTS
+            or scoped_count >= MAX_POLLING_CLIENTS_PER_ROLE
+        ):
             raise HTTPException(
-                status_code=404,
-                detail=f"Session {request.session_id} not found or inactive",
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Polling connection limit reached",
             )
-
-        # Validate client type
-        try:
-            ClientType(request.client_type)
-        except ValueError:
-            raise HTTPException(
-                status_code=400, detail=f"Invalid client type: {request.client_type}"
-            )
-
-        # Map reason to FallbackReason enum
-        try:
-            fallback_reason = FallbackReason(request.reason)
-        except ValueError:
-            fallback_reason = FallbackReason.MANUAL_FALLBACK
-
-        # Get origin from request headers if not provided
-        origin = request.origin or client_request.headers.get("origin")
-
-        # Activate polling fallback
-        polling_id = await fallback_manager.activate_polling_fallback(
-            session_id=request.session_id,
-            client_type=request.client_type,
-            origin=origin,
-            reason=fallback_reason,
+        polling_id = secrets.token_urlsafe(24)
+        client = PollingClient(
+            polling_id,
+            key,
+            client_type,
+            last_seen=self.clock(),
         )
+        self.clients[polling_id] = client
+        return client
 
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "polling_id": polling_id,
-                "fallback_reason": fallback_reason.value,
-                "endpoints": {
-                    "poll": f"/api/websocket/polling/poll/{polling_id}",
-                    "send": f"/api/websocket/polling/send/{polling_id}",
-                    "status": f"/api/websocket/polling/status/{polling_id}",
-                    "recover": f"/api/websocket/polling/recover/{polling_id}",
-                },
-                "config": {
-                    "polling_interval": 5,
-                    "recovery_check_interval": 300,
-                    "max_message_queue_size": 100,
-                },
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to activate polling fallback: {str(e)}"
-        )
+    def require(
+        self,
+        polling_id: str,
+        key: TenantSessionKey,
+        client_type: ClientType,
+    ) -> PollingClient:
+        client = self.clients.get(polling_id)
+        if (
+            client is None
+            or client.client_type is not client_type
+            or not hmac.compare_digest(client.key.tenant_id, key.tenant_id)
+            or not hmac.compare_digest(client.key.session_id, key.session_id)
+        ):
+            raise HTTPException(status_code=404, detail="Polling client not found")
+        client.last_seen = self.clock()
+        return client
 
+    def remove(self, client: PollingClient) -> None:
+        self.clients.pop(client.polling_id, None)
 
-@router.get("/poll/{polling_id}", responses=POLLING_ROUTE_RESPONSES)
-async def poll_messages(
-    polling_id: str,
-    wait_seconds: Annotated[
-        int,
-        Query(
-            alias="timeout",
-            ge=1,
-            le=60,
-            description="Long polling timeout in seconds",
-        ),
-    ] = 30,
-):
-    """
-    Long polling endpoint to retrieve queued messages
-    """
-    try:
-        # Check if polling client exists
-        client_status = fallback_manager.get_polling_client_status(polling_id)
-        if not client_status:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Polling client {polling_id} not found or expired",
-            )
+    def prune(self) -> list[PollingClient]:
+        threshold = self.clock() - POLLING_IDLE_SECONDS
+        expired = [
+            client for client in self.clients.values() if client.last_seen < threshold
+        ]
+        for client in expired:
+            self.remove(client)
+        return expired
 
-        # Get immediate messages
-        messages = fallback_manager.poll_messages(polling_id)
-
-        # If no messages, wait for new ones (long polling)
-        if not messages and wait_seconds > 0:
-            messages = await _await_polled_messages(polling_id, wait_seconds)
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "polling_id": polling_id,
-                "messages": messages,
-                "message_count": len(messages),
-                "has_more": False,
-                "next_poll_interval": client_status["polling_interval"],
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to poll messages: {str(e)}"
-        )
-
-
-@router.post("/send/{polling_id}", responses=POLLING_ROUTE_RESPONSES)
-async def send_message_via_polling(polling_id: str, message: PollingMessage):
-    """
-    Send message from polling client to session
-    """
-    try:
-        # Validate polling client exists
-        client_status = fallback_manager.get_polling_client_status(polling_id)
-        if not client_status:
-            raise HTTPException(
-                status_code=404, detail=f"Polling client {polling_id} not found"
-            )
-
-        # Validate session matches
-        if message.session_id != client_status["session_id"]:
-            raise HTTPException(status_code=400, detail="Session ID mismatch")
-
-        # Prepare message for session broadcast
-        broadcast_message = {
-            "type": message.type,
-            "session_id": message.session_id,
-            "client_type": message.client_type,
-            "sender_id": polling_id,
-            "content": message.content,
-            "timestamp": message.timestamp or utc_now_iso(),
-            "via_polling": True,
-        }
-
-        # Broadcast to session via WebSocket manager
-        from .websocket import websocket_manager
-
-        await websocket_manager.broadcast_to_session(
-            session_id=message.session_id,
-            message=broadcast_message,
-            exclude_connection=None,  # Don't exclude polling client
-        )
-
-        # Also queue message for other polling clients in the session
-        session_fallback_status = fallback_manager.get_session_fallback_status(
-            message.session_id
-        )
-        recipients = 0
-        overflowed = 0
-        for client_info in session_fallback_status["polling_clients"]:
-            if client_info["polling_id"] != polling_id:  # Don't send to sender
-                recipients += 1
-                queued = fallback_manager.send_message_to_polling_client(
-                    polling_id=client_info["polling_id"], message=broadcast_message
-                )
-                if not queued:
-                    overflowed += 1
-
-        # A False from send_message_to_polling_client does not mean this
-        # message was rejected -- it was queued, and a different, older message
-        # was evicted from a full recipient queue. Retrying would duplicate
-        # this message and evict one more, so the caller is told not to.
-        if overflowed:
+    def _enqueue(self, client: PollingClient, message: dict[str, Any]) -> bool:
+        dropped = len(client.messages) >= POLLING_QUEUE_SIZE
+        if dropped:
+            client.messages.popleft()
+            self.messages_dropped.labels(client_type=client.client_type.value).inc()
             logger.warning(
-                "Polling send overflowed %d of %d recipient queue(s)",
-                overflowed,
-                recipients,
+                "tenant_polling_queue_overflow client_type=%s",
+                client.client_type.value,
             )
+        client.messages.append(message)
+        client.event.set()
+        return dropped
 
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "partial_overflow" if overflowed else "success",
-                "message": (
-                    "Message queued, but a full recipient queue evicted an older "
-                    "message"
-                    if overflowed
-                    else "Message sent successfully"
-                ),
-                "broadcast_count": 1,
-                "polling_recipients": recipients,
-                "polling_overflow_recipients": overflowed,
-                "retryable": False,
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to send message: {str(e)}")
+    def broadcast(
+        self,
+        key: TenantSessionKey,
+        message: dict[str, Any],
+        *,
+        exclude_polling_id: str | None = None,
+    ) -> tuple[int, int]:
+        delivered = 0
+        dropped = 0
+        for recipient in self.clients.values():
+            if recipient.polling_id == exclude_polling_id or recipient.key != key:
+                continue
+            dropped += self._enqueue(recipient, message)
+            delivered += 1
+        return delivered, dropped
 
-
-@router.get("/status/{polling_id}", responses=POLLING_ROUTE_RESPONSES)
-def get_polling_status(polling_id: str):
-    """
-    Get status and information about a polling client
-    """
-    try:
-        client_status = fallback_manager.get_polling_client_status(polling_id)
-        if not client_status:
-            raise HTTPException(
-                status_code=404, detail=f"Polling client {polling_id} not found"
+    def broadcast_differentiated(
+        self,
+        key: TenantSessionKey,
+        sender_type: ClientType,
+        original_message: dict[str, Any],
+        translated_message: dict[str, Any],
+    ) -> tuple[int, int]:
+        delivered = 0
+        dropped = 0
+        for recipient in self.clients.values():
+            if recipient.key != key:
+                continue
+            message = (
+                original_message
+                if recipient.client_type is sender_type
+                else translated_message
             )
+            dropped += self._enqueue(recipient, message)
+            delivered += 1
+        return delivered, dropped
 
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "data": client_status,
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get polling status: {str(e)}"
-        )
+    def terminate(self, key: TenantSessionKey, reason: str) -> None:
+        message = {
+            "type": "session_terminated",
+            "session_id": key.session_id,
+            "reason": reason,
+            "reconnect_allowed": False,
+        }
+        for client in self.clients.values():
+            if client.key == key:
+                client.terminated = True
+                self._enqueue(client, message)
 
 
-@router.post("/recover/{polling_id}", responses=POLLING_ROUTE_RESPONSES)
-def attempt_websocket_recovery(polling_id: str):
-    """
-    Attempt to recover WebSocket connection for polling client
-    """
+polling_store = TenantPollingStore()
+
+
+def _activation_response(client: PollingClient) -> dict[str, object]:
+    return {
+        "polling_id": client.polling_id,
+        "session_id": client.key.session_id,
+        "client_type": client.client_type.value,
+        "polling_interval": 5,
+    }
+
+
+@router.post("/api/admin/session/{session_id}/polling/activate")
+async def activate_admin_polling(
+    session_id: str,
+    request: AdminPollingActivation,
+    key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
+    manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
+) -> dict[str, object]:
     try:
-        recovery_result = fallback_manager.attempt_websocket_recovery(polling_id)
-
-        if not recovery_result["success"]:
-            raise HTTPException(
-                status_code=400,
-                detail=recovery_result.get("error", "Recovery attempt failed"),
-            )
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "message": "WebSocket recovery attempt initiated",
-                "recovery_info": recovery_result["recovery_info"],
-                "instructions": {
-                    "action": "retry_websocket_connection",
-                    "websocket_url": f"/ws/{recovery_result['recovery_info']['session_id']}/{recovery_result['recovery_info']['client_type']}",
-                    "fallback_on_failure": True,
-                    "retry_delay": 5,
-                },
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
+        accepted = realtime_ticket_store.consume(request.ticket, key, "polling")
+    except RealtimeTicketUnavailable:
         raise HTTPException(
-            status_code=500, detail=f"Failed to attempt recovery: {str(e)}"
-        )
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Realtime ticket service unavailable",
+        ) from None
+    if not accepted:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = manager.session_manager.get_session(key)
+    if session is None or session.status.value == "terminated":
+        raise HTTPException(status_code=404, detail="Session not found")
+    await _release_stale_clients(manager)
+    client = polling_store.activate(key, ClientType.ADMIN)
+    manager.session_manager.admin_connected(key)
+    return _activation_response(client)
 
 
-@router.post("/recover/{polling_id}/success", responses=POLLING_ROUTE_RESPONSES)
-def websocket_recovery_success(polling_id: str):
-    """
-    Notify that WebSocket recovery was successful
-    """
+@router.post("/api/customer/session/{session_id}/polling/activate")
+async def activate_customer_polling(
+    session_id: str,
+    key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
+    manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
+) -> dict[str, object]:
+    await _release_stale_clients(manager)
+    client = polling_store.activate(key, ClientType.CUSTOMER)
+    manager.session_manager.customer_connected(key)
+    return _activation_response(client)
+
+
+async def _release_stale_clients(manager: WebSocketManager) -> None:
+    for client in polling_store.prune():
+        await _release_presence(client, manager)
+
+
+async def _release_presence(client: PollingClient, manager: WebSocketManager) -> None:
     try:
-        fallback_manager.websocket_recovery_successful(polling_id)
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "message": "WebSocket recovery completed successfully",
-                "polling_client_deactivated": True,
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to complete recovery: {str(e)}"
-        )
+        if client.client_type is ClientType.ADMIN:
+            manager.session_manager.admin_disconnected(client.key)
+        else:
+            manager.session_manager.customer_disconnected(client.key)
+    except KeyError:
+        pass
 
 
-@router.post("/recover/{polling_id}/failed", responses=POLLING_ROUTE_RESPONSES)
-def websocket_recovery_failed(
+def _client(
     polling_id: str,
-    failure_reason: Annotated[str, Query()] = "websocket_connection_failed",
-):
-    """
-    Notify that WebSocket recovery attempt failed
-    """
-    try:
-        # Map failure reason
-        try:
-            fallback_reason = FallbackReason(failure_reason)
-        except ValueError:
-            fallback_reason = FallbackReason.WEBSOCKET_CONNECTION_FAILED
-
-        fallback_manager.websocket_recovery_failed(polling_id, fallback_reason)
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "message": "WebSocket recovery failure recorded",
-                "continues_polling": True,
-                "next_retry_scheduled": True,
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to record recovery failure: {str(e)}"
-        )
+    key: TenantSessionKey,
+    client_type: ClientType,
+) -> PollingClient:
+    return polling_store.require(polling_id, key, client_type)
 
 
-@router.delete("/deactivate/{polling_id}", responses=POLLING_ROUTE_RESPONSES)
-def deactivate_polling_fallback(polling_id: str):
-    """
-    Deactivate polling fallback for a client
-    """
-    try:
-        success = fallback_manager.deactivate_polling_fallback(polling_id)
-
-        if not success:
-            raise HTTPException(
-                status_code=404, detail=f"Polling client {polling_id} not found"
-            )
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "message": "Polling fallback deactivated successfully",
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to deactivate polling fallback: {str(e)}"
-        )
+def require_customer_polling_key(
+    session_id: str,
+    polling_id: str,
+    principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
+) -> TenantSessionKey:
+    client = polling_store.clients.get(polling_id)
+    if (
+        client is None
+        or client.client_type is not ClientType.CUSTOMER
+        or not hmac.compare_digest(client.key.session_id, session_id)
+    ):
+        raise HTTPException(status_code=404, detail="Polling client not found")
+    if principal is not None:
+        tenant_id = principal.get("studio_tenant_id")
+        if not isinstance(tenant_id, str) or not hmac.compare_digest(
+            tenant_id, client.key.tenant_id
+        ):
+            raise HTTPException(status_code=404, detail="Polling client not found")
+    return client.key
 
 
-@router.get("/session/{session_id}/fallback-status", responses=POLLING_ROUTE_RESPONSES)
-def get_session_fallback_status(session_id: str):
-    """
-    Get fallback status for all clients in a session
-    """
-    try:
-        fallback_status = fallback_manager.get_session_fallback_status(session_id)
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "data": fallback_status,
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get session fallback status: {str(e)}"
-        )
+async def _poll(client: PollingClient, timeout: int) -> dict[str, object]:
+    if not client.messages and timeout:
+        client.event.clear()
+        if not client.messages:
+            try:
+                await asyncio.wait_for(client.event.wait(), timeout)
+            except TimeoutError:
+                pass
+    messages = list(client.messages)
+    client.messages.clear()
+    return {"messages": messages, "message_count": len(messages)}
 
 
-@router.get("/statistics", responses=POLLING_ROUTE_RESPONSES)
-def get_fallback_statistics():
-    """
-    Get comprehensive fallback system statistics
-    """
-    try:
-        stats = fallback_manager.get_fallback_statistics()
+async def _send(
+    client: PollingClient,
+    message: PollingMessage,
+    manager: WebSocketManager,
+) -> dict[str, str]:
+    if client.terminated:
+        raise HTTPException(status_code=404, detail="Polling client not found")
+    envelope = {
+        "type": message.type,
+        "content": message.content,
+        "session_id": client.key.session_id,
+        "client_type": client.client_type.value,
+    }
+    _delivered, dropped = polling_store.broadcast(
+        client.key, envelope, exclude_polling_id=client.polling_id
+    )
+    await manager.broadcast_to_session(client.key, envelope, include_polling=False)
+    return {"status": "partial" if dropped else "success"}
 
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "data": stats,
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get fallback statistics: {str(e)}"
-        )
+
+def _status(client: PollingClient) -> dict[str, object]:
+    if client.terminated:
+        raise HTTPException(status_code=404, detail="Polling client not found")
+    return {
+        "polling_id": client.polling_id,
+        "session_id": client.key.session_id,
+        "client_type": client.client_type.value,
+        "queued_messages": len(client.messages),
+    }
+
+
+def _recover(client: PollingClient) -> dict[str, str]:
+    if client.terminated:
+        raise HTTPException(status_code=404, detail="Polling client not found")
+    return {"status": "recovery_requested"}
+
+
+async def _disconnect(
+    client: PollingClient, manager: WebSocketManager
+) -> dict[str, str]:
+    polling_store.remove(client)
+    await _release_presence(client, manager)
+    return {"status": "disconnected"}
+
+
+def _register_role_routes(
+    prefix: Literal["admin", "customer"],
+    client_type: ClientType,
+    key_dependency: Any,
+) -> None:
+    base = f"/api/{prefix}/session/{{session_id}}/polling/{{polling_id}}"
+
+    async def poll(
+        session_id: str,
+        polling_id: str,
+        key: TenantSessionKey = Depends(key_dependency),
+        timeout: Annotated[int, Query(ge=0, le=60)] = 0,
+        manager: WebSocketManager = Depends(get_websocket_manager),
+    ) -> dict[str, object]:
+        client = _client(polling_id, key, client_type)
+        response = await _poll(client, timeout)
+        if client.terminated:
+            await _disconnect(client, manager)
+        return response
+
+    async def send(
+        session_id: str,
+        polling_id: str,
+        message: PollingMessage,
+        key: TenantSessionKey = Depends(key_dependency),
+        manager: WebSocketManager = Depends(get_websocket_manager),
+    ) -> dict[str, str]:
+        return await _send(_client(polling_id, key, client_type), message, manager)
+
+    async def polling_status(
+        session_id: str,
+        polling_id: str,
+        key: TenantSessionKey = Depends(key_dependency),
+    ) -> dict[str, object]:
+        return _status(_client(polling_id, key, client_type))
+
+    async def recover(
+        session_id: str,
+        polling_id: str,
+        key: TenantSessionKey = Depends(key_dependency),
+    ) -> dict[str, str]:
+        return _recover(_client(polling_id, key, client_type))
+
+    async def disconnect(
+        session_id: str,
+        polling_id: str,
+        key: TenantSessionKey = Depends(key_dependency),
+        manager: WebSocketManager = Depends(get_websocket_manager),
+    ) -> dict[str, str]:
+        return await _disconnect(_client(polling_id, key, client_type), manager)
+
+    router.add_api_route(base, poll, methods=["GET"], name=f"{prefix}_poll")
+    router.add_api_route(base + "/send", send, methods=["POST"], name=f"{prefix}_send")
+    router.add_api_route(
+        base + "/status",
+        polling_status,
+        methods=["GET"],
+        name=f"{prefix}_polling_status",
+    )
+    router.add_api_route(
+        base + "/recover", recover, methods=["POST"], name=f"{prefix}_recover"
+    )
+    router.add_api_route(
+        base, disconnect, methods=["DELETE"], name=f"{prefix}_disconnect"
+    )
+
+
+_register_role_routes("admin", ClientType.ADMIN, require_admin_session_key)
+_register_role_routes("customer", ClientType.CUSTOMER, require_customer_polling_key)

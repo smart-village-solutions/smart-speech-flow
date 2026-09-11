@@ -22,6 +22,9 @@ class FakeRedis:
         self.values.pop(key, None)
         return value
 
+    def get(self, key):
+        return self.values.get(key)
+
 
 def test_ticket_is_hashed_scoped_and_single_use() -> None:
     redis = FakeRedis()
@@ -48,3 +51,16 @@ def test_ticket_rejects_transport_mismatch_and_replay() -> None:
     assert store.consume(wrong_transport.ticket, key, "polling") is False
     assert store.consume(valid.ticket, key, "websocket") is True
     assert store.consume(valid.ticket, key, "websocket") is False
+
+
+def test_session_revocation_invalidates_every_outstanding_ticket() -> None:
+    redis = FakeRedis()
+    store = RealtimeTicketStore(redis)
+    key = TenantSessionKey("tenant-a", "ABC12345")
+    first = store.issue(key, "websocket")
+    second = store.issue(key, "polling")
+
+    store.revoke(key)
+
+    assert store.consume(first.ticket, key, "websocket") is False
+    assert store.consume(second.ticket, key, "polling") is False

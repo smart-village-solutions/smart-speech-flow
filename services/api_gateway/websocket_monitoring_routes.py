@@ -76,7 +76,6 @@ def websocket_health_check():
         )
 
 
-@router.get("/stats", responses=MONITORING_ROUTE_RESPONSES)
 def websocket_connection_stats():
     """
     Comprehensive WebSocket connection statistics
@@ -98,7 +97,6 @@ def websocket_connection_stats():
         )
 
 
-@router.get("/connections", responses=MONITORING_ROUTE_RESPONSES)
 def list_active_connections(
     session_id: Annotated[
         Optional[str], Query(description="Filter by session ID")
@@ -163,7 +161,6 @@ def list_active_connections(
         )
 
 
-@router.get("/sessions/{session_id}/connections", responses=MONITORING_ROUTE_RESPONSES)
 def get_session_connections(session_id: str):
     """
     Get all WebSocket connections for a specific session
@@ -203,7 +200,6 @@ def get_session_connections(session_id: str):
         )
 
 
-@router.get("/metrics/summary", responses=MONITORING_ROUTE_RESPONSES)
 def websocket_metrics_summary(
     hours: Annotated[
         int, Query(ge=1, le=168, description="Number of hours to analyze (max 1 week)")
@@ -241,7 +237,6 @@ def websocket_metrics_summary(
         )
 
 
-@router.post("/connections/{connection_id}/close", responses=MONITORING_ROUTE_RESPONSES)
 def force_close_connection(
     connection_id: str,
     reason: Annotated[
@@ -284,7 +279,6 @@ def force_close_connection(
         )
 
 
-@router.get("/debug/prometheus-metrics", responses=MONITORING_ROUTE_RESPONSES)
 def get_prometheus_metrics():
     """
     Get current Prometheus metrics for WebSocket monitoring
