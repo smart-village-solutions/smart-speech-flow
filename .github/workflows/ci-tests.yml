@@ -123,6 +123,7 @@ jobs:
         run: |
           docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*001_feedback.sql'
           docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*002_feedback_roles.sql'
+          docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*003_feedback_reader.sql'
 
       - name: Run the feedback integration tests
         # The three passwords arrive from the previous step through GITHUB_ENV.
@@ -130,11 +131,13 @@ jobs:
           PYTHONPATH: .
           SSF_FEEDBACK_DATABASE_URL: postgresql://ssf_feedback_app@127.0.0.1:5432/ssf
           SSF_FEEDBACK_MAINTENANCE_DATABASE_URL: postgresql://ssf_feedback_maintenance@127.0.0.1:5432/ssf
+          SSF_FEEDBACK_READER_DATABASE_URL: postgresql://ssf_feedback_reader@127.0.0.1:5432/ssf
           SSF_FEEDBACK_OWNER_DATABASE_URL: postgresql://ssf@127.0.0.1:5432/ssf
         run: |
           pytest --run-integration -q \
             tests/integration/test_feedback_repository.py \
-            tests/integration/test_feedback_row_level_security.py
+            tests/integration/test_feedback_row_level_security.py \
+            tests/integration/test_feedback_read_access.py
 
       - name: Database logs on failure
         if: failure()
