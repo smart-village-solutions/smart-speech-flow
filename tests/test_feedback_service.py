@@ -78,6 +78,9 @@ class FakeSessionManager:
     def get_session(self, session_id):
         return SimpleNamespace(id=session_id) if self._known else None
 
+    def resolve_customer_session(self, session_id):
+        return None
+
 
 def _service(**overrides):
     parts = dict(
@@ -426,3 +429,70 @@ async def test_a_failure_after_the_commit_still_confirms_the_submission() -> Non
 
     assert feedback_id == parts["repository"].stored[0].feedback_id
     assert parts["repository"].stored[0].analytics_state is AnalyticsState.PENDING
+
+
+class TestTenantBoundSessions:
+    """Feedback from a session created through the tenant flow is accepted.
+
+    Since the tenant-isolation release, an admin session opened by a tenant is
+    stored under a TenantSessionKey, not under its bare id. A lookup by the id
+    the browser sends finds nothing in the legacy map, so without resolving
+    the join the service would answer 404 to every citizen of every tenant.
+    FakeSessionManager hid that: it answers for any id, which is why this uses
+    the real SessionManager.
+    """
+
+    async def test_a_tenant_bound_session_is_known(self) -> None:
+        from services.api_gateway.session_manager import SessionManager
+        from services.api_gateway.session_store import MemoryTenantSessionStore
+        from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
+
+        revision = f"sha256:{'a' * 64}"
+        manager = SessionManager(
+            store=MemoryTenantSessionStore(),
+            session_id_factory=lambda: "TENANT01",
+        )
+        session = await manager.create_admin_session(
+            "tenant-kassel", RuntimeConfigurationSnapshot(revision, revision, "{}")
+        )
+        service, _ = _service(session_manager=manager)
+
+        feedback_id = await service.submit(_request(session_id=session.id))
+
+        assert isinstance(feedback_id, UUID)
+
+    async def test_an_id_no_session_has_is_still_unknown(self) -> None:
+        """The fix must not pass by accepting every id."""
+        from services.api_gateway.session_manager import SessionManager
+        from services.api_gateway.session_store import MemoryTenantSessionStore
+
+        manager = SessionManager(store=MemoryTenantSessionStore())
+        service, _ = _service(session_manager=manager)
+
+        with pytest.raises(UnknownSession):
+            await service.submit(_request(session_id="NOSUCH99"))
+
+    async def test_the_submission_is_stored_under_the_sessions_tenant(self) -> None:
+        from services.api_gateway.feedback.tenant import SessionTenantResolver
+        from services.api_gateway.session_manager import SessionManager
+        from services.api_gateway.session_store import MemoryTenantSessionStore
+        from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
+
+        revision = f"sha256:{'a' * 64}"
+        manager = SessionManager(
+            store=MemoryTenantSessionStore(), session_id_factory=lambda: "KASSEL01"
+        )
+        session = await manager.create_admin_session(
+            "tenant-kassel", RuntimeConfigurationSnapshot(revision, revision, "{}")
+        )
+        service, parts = _service(
+            session_manager=manager,
+            tenant_resolver=SessionTenantResolver(
+                session_manager=manager,
+                fallback=ConfiguredTenantResolver(tenant_id="configured"),
+            ),
+        )
+
+        await service.submit(_request(session_id=session.id))
+
+        assert parts["repository"].stored[0].tenant_id == "tenant-kassel"

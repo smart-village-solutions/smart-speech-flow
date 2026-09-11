@@ -277,3 +277,15 @@ class TestTheReadPathOpensItsOwnRole:
         opened = RecordingReadRepository.opened[0]
         assert READER_PASSWORD not in opened["dsn"]
         assert opened["password"] == READER_PASSWORD
+
+
+class TestTheRequestPathTakesTheTenantFromTheSession:
+    async def test_the_service_resolves_tenants_through_the_session(self, wired) -> None:
+        """Wiring the configured resolver alone would store every tenant's
+        feedback under one tenant, and the read path would then show it to
+        one tenant's operators and hide it from all the others."""
+        from services.api_gateway.feedback.tenant import SessionTenantResolver
+
+        await gateway._connect_feedback_request_path(APP_URL, object())
+
+        assert isinstance(wired.feedback_service._tenant_resolver, SessionTenantResolver)

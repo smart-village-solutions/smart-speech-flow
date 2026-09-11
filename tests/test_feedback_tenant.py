@@ -1,9 +1,9 @@
-"""The seam that makes the SVA Studio integration an adapter swap.
+"""Where a feedback row's tenant comes from.
 
-Sessions carry no tenant today. The feedback table has the column from its
-first migration anyway, populated through this port, so when Studio lands the
-change is one constructor rather than a migration and a backfill over rows
-whose tenant nobody can reconstruct.
+The feedback table has carried a tenant column from its first migration,
+populated through this port. Since the tenant-isolation release a session
+knows its tenant, so SessionTenantResolver reads it from there, and the
+configured value survives only as the fallback for what carries none.
 """
 
 import pytest
@@ -21,8 +21,8 @@ async def test_it_resolves_the_configured_tenant() -> None:
     assert await resolver.resolve("ABC12345") == "tenant-a"
 
 
-async def test_every_session_resolves_to_the_same_tenant_for_now() -> None:
-    """Single-tenant until Studio; two sessions must not diverge."""
+async def test_the_fallback_gives_every_session_the_same_tenant() -> None:
+    """The fallback is one value by design; two sessions must not diverge."""
     resolver = ConfiguredTenantResolver(tenant_id="tenant-a")
 
     assert await resolver.resolve("ABC12345") == await resolver.resolve("XYZ99999")
@@ -69,3 +69,65 @@ async def test_a_blank_environment_value_does_not_become_an_empty_tenant(
 def test_the_configured_resolver_satisfies_the_port() -> None:
     """A future SessionTenantResolver must be substitutable for this one."""
     assert isinstance(ConfiguredTenantResolver(tenant_id="t"), TenantResolver)
+
+
+class TestTheTenantComesFromTheSession:
+    """Since the tenant-isolation release, a session knows its tenant.
+
+    A tenant-flow session resolves through the join index to a
+    TenantSessionKey, and that key is the only source for its tenant. The
+    configured value is a fallback for what has no tenant to give: a legacy
+    session, and a submission that names no session at all.
+    """
+
+    REVISION = f"sha256:{'a' * 64}"
+
+    def _manager(self, *identifiers: str):
+        from services.api_gateway.session_manager import SessionManager
+        from services.api_gateway.session_store import MemoryTenantSessionStore
+
+        ids = iter(identifiers)
+        return SessionManager(
+            store=MemoryTenantSessionStore(), session_id_factory=lambda: next(ids)
+        )
+
+    def _snapshot(self):
+        from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
+
+        return RuntimeConfigurationSnapshot(self.REVISION, self.REVISION, "{}")
+
+    def _resolver(self, manager):
+        from services.api_gateway.feedback.tenant import (
+            ConfiguredTenantResolver,
+            SessionTenantResolver,
+        )
+
+        return SessionTenantResolver(
+            session_manager=manager,
+            fallback=ConfiguredTenantResolver(tenant_id="configured"),
+        )
+
+    async def test_a_tenant_session_resolves_to_its_own_tenant(self) -> None:
+        manager = self._manager("KASSEL01")
+        session = await manager.create_admin_session("tenant-kassel", self._snapshot())
+
+        assert await self._resolver(manager).resolve(session.id) == "tenant-kassel"
+
+    async def test_two_tenants_sessions_stay_apart(self) -> None:
+        """The whole point: one deployment, several tenants, no commingling."""
+        manager = self._manager("KASSEL01", "GOTHA001")
+        kassel = await manager.create_admin_session("tenant-kassel", self._snapshot())
+        gotha = await manager.create_admin_session("tenant-gotha", self._snapshot())
+        resolver = self._resolver(manager)
+
+        assert await resolver.resolve(kassel.id) == "tenant-kassel"
+        assert await resolver.resolve(gotha.id) == "tenant-gotha"
+
+    async def test_a_legacy_session_falls_back_to_the_configured_tenant(self) -> None:
+        manager = self._manager()
+        legacy_id = manager.create_session("de")
+
+        assert await self._resolver(manager).resolve(legacy_id) == "configured"
+
+    async def test_no_session_falls_back_to_the_configured_tenant(self) -> None:
+        assert await self._resolver(self._manager()).resolve(None) == "configured"

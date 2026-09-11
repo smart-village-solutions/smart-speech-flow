@@ -192,7 +192,7 @@ async def _connect_feedback_request_path(dsn: str, sessions: Any) -> bool:
         from .feedback.crypto import FeedbackCipher, MissingEncryptionKey
         from .feedback.repository import PostgresFeedbackRepository
         from .feedback.service import FeedbackService
-        from .feedback.tenant import ConfiguredTenantResolver
+        from .feedback.tenant import ConfiguredTenantResolver, SessionTenantResolver
     except ImportError as error:
         sys.stderr.write(
             f"Feedback persistence disabled: {type(error).__name__}; "
@@ -228,7 +228,12 @@ async def _connect_feedback_request_path(dsn: str, sessions: Any) -> bool:
     app.state.feedback_service = FeedbackService(
         repository=repository,
         cipher=cipher,
-        tenant_resolver=ConfiguredTenantResolver.from_environment(),
+        # The session's own tenant; the configured one only for a legacy
+        # session or a submission that names no session.
+        tenant_resolver=SessionTenantResolver(
+            session_manager=sessions,
+            fallback=ConfiguredTenantResolver.from_environment(),
+        ),
         session_manager=sessions,
         telemetry=app.state.quality_telemetry,
     )

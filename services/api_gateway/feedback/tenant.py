@@ -1,17 +1,20 @@
 """Where a feedback row's tenant comes from.
 
-Sessions do not carry a tenant yet. When the SVA Studio integration lands, a
-SessionTenantResolver implements this same Protocol and the lifespan swaps one
-constructor -- the feedback table already has the column, so no migration and
-no backfill are needed. See docs/architecture/sva-studio-control-plane.md,
-which records that SSF remains authoritative for conversation content and owns
-its own runtime databases.
+Since the tenant-isolation release, a session opened through the tenant flow
+knows its tenant: it lives under a TenantSessionKey, reachable from the bare
+id the browser sends through the session store's join index.
+SessionTenantResolver reads it from there. ConfiguredTenantResolver remains as
+the fallback for what carries no tenant -- a legacy session, and a submission
+that names no session at all -- and supplies SSF_DEFAULT_TENANT_ID.
+
+SSF remains authoritative for conversation content and owns its own runtime
+databases; see docs/architecture/sva-studio-control-plane.md.
 """
 
 from __future__ import annotations
 
 import os
-from typing import Final, Protocol, runtime_checkable
+from typing import Any, Final, Protocol, runtime_checkable
 
 DEFAULT_TENANT_ENV: Final[str] = "SSF_DEFAULT_TENANT_ID"
 
@@ -27,7 +30,7 @@ class TenantResolver(Protocol):
 
 
 class ConfiguredTenantResolver:
-    """One tenant for the whole deployment, until Studio provides real ones."""
+    """One configured tenant: the fallback for anything that carries none."""
 
     def __init__(self, *, tenant_id: str) -> None:
         self._tenant_id = tenant_id
@@ -39,3 +42,24 @@ class ConfiguredTenantResolver:
 
     async def resolve(self, session_id: str | None) -> str:
         return self._tenant_id
+
+
+class SessionTenantResolver:
+    """The tenant of the session a submission names, when it has one.
+
+    Only a live tenant-flow session resolves. A terminated one does not: the
+    store revokes its join link on termination, so feedback given after a
+    conversation ends is refused upstream as an unknown session before this
+    runs (#324). Everything else falls back, rather than being guessed.
+    """
+
+    def __init__(self, *, session_manager: Any, fallback: TenantResolver) -> None:
+        self._session_manager = session_manager
+        self._fallback = fallback
+
+    async def resolve(self, session_id: str | None) -> str:
+        if session_id:
+            key = self._session_manager.resolve_customer_session(session_id)
+            if key is not None:
+                return key.tenant_id
+        return await self._fallback.resolve(session_id)

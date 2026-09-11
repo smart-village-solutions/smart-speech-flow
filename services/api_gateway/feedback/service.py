@@ -145,7 +145,13 @@ class FeedbackService:
     def _resolve_session(self, session_id: str | None) -> str:
         if session_id is None:
             return MISSING_REFERENCE
-        if self._session_manager.get_session(session_id) is None:
+        # Two places a session can live. A legacy session sits under its bare
+        # id. A session opened through the tenant flow sits under a
+        # TenantSessionKey, and the bare id the browser sends only reaches it
+        # through the join index -- so checking get_session alone answers 404
+        # to every tenant's citizens.
+        known = self._session_manager.get_session(session_id) is not None
+        if not known and self._session_manager.resolve_customer_session(session_id) is None:
             raise UnknownSession
         return session_ref(session_id)
 
