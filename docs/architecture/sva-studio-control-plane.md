@@ -245,11 +245,16 @@ come from a token; it has to come from the session. Sessions do not carry a
 tenant, so `ConfiguredTenantResolver` supplies one value for the whole
 deployment from `SSF_DEFAULT_TENANT_ID`.
 
-The consequence, stated plainly: while more than one tenant is live, every
-submission is stored under the single configured tenant, and the tenant-isolated
-read endpoints will serve all of it to any tenant's operator. The isolation on
-the read side is real, but it is isolating rows that were commingled when they
-were written.
+The consequence, stated plainly: every submission is stored under the single
+configured tenant, and the read side's isolation then works exactly as
+designed on rows that were commingled when they were written. The operator of
+the tenant whose `studio_tenant_id` equals `SSF_DEFAULT_TENANT_ID` sees every
+submission, including other tenants'; every other tenant's operator sees none,
+including their own. If the configured value matches no Studio tenant — the
+`default` fallback matches none — nobody sees anything, silently.
+
+So even with one live tenant, `SSF_DEFAULT_TENANT_ID` has to be set to that
+tenant's `tenant.id` exactly for the read endpoints to return anything.
 
 Closing this is issue #288 (tenant-bind sessions), which sits in Phase 4 of the
 delivery order on #266 and is gated behind #299. Nothing here needs a migration

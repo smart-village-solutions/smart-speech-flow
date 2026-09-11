@@ -91,8 +91,24 @@ done
 printf 'SSF_FEEDBACK_ENCRYPTION_KEY=%s\n' "$(openssl rand -base64 32)" >> .env
 
 # Identifiers, not secrets.
-printf 'SSF_POSTGRES_DB=ssf\nSSF_POSTGRES_USER=ssf\nSSF_DEFAULT_TENANT_ID=default\n' >> .env
+printf 'SSF_POSTGRES_DB=ssf\nSSF_POSTGRES_USER=ssf\n' >> .env
+
+# The tenant every submission is stored under. It must be the live Studio
+# tenant's id, byte for byte -- see the note below before choosing it.
+printf 'SSF_DEFAULT_TENANT_ID=%s\n' "<the live Studio tenant.id>" >> .env
 ```
+
+**`SSF_DEFAULT_TENANT_ID` must equal the live Studio tenant's `tenant.id`
+exactly.** Submissions are stored under this value, and the Studio read
+endpoints (Step 9) only ever return rows whose tenant matches the
+`studio_tenant_id` in the operator's token — PostgreSQL's policy enforces that,
+not the application. If the two differ, submissions are stored correctly and
+**no operator can ever see them**: every list is empty and every record answers
+`404`, with nothing in any log to say why. Leaving it unset gives the fallback
+`default`, which no Studio tenant is called, and produces exactly that.
+
+Take the id from the tenant's token or from Studio, not from the tenant's
+display name. Step 9 has a check that catches a mismatch.
 
 `deploy/production/production.env.example` documents all of them with the same
 names.
@@ -369,6 +385,24 @@ production_compose exec -T ssf-postgres sh -ec \
 A refused read writes nothing: nothing was disclosed, and an audit row for an
 id the caller cannot read would let anyone fill the table with ids they guessed.
 
+**Confirm the configured tenant is one an operator can actually read.** This
+is the check Step 1 refers to, and the failure it catches is silent: stored
+rows that no token can ever reach. Compare the tenant the rows were written
+under with the `studio_tenant_id` claim in a live operator's token:
+
+```bash
+production_compose exec -T ssf-postgres sh -ec \
+  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
+   "SELECT tenant_id, count(*) FROM feedback GROUP BY tenant_id"'
+```
+
+Expect exactly one row, whose `tenant_id` is byte-for-byte the operator's
+`studio_tenant_id`. A row reading `default`, or any value that differs from the
+claim, means `SSF_DEFAULT_TENANT_ID` is wrong: correct it in `.env`, restart
+`api_gateway`, and re-attribute the rows already written with an `UPDATE` on
+`tenant_id` as the owner — they were written by a single deployment-wide
+setting, so there is no ambiguity about whose they are.
+
 ## Backups
 
 `scripts/backup-production.sh` already includes `ssf-postgres.sql.gz` and runs
@@ -494,16 +528,25 @@ These are properties of the design, not defects to report:
   token. It would have to come from the session, and sessions do not carry a
   tenant yet: `SSF_DEFAULT_TENANT_ID` supplies one value for the whole
   deployment. **Every submission from every tenant is therefore stored under
-  that single configured tenant, and the read endpoints will show all of it to
-  any tenant's operator.**
+  that single configured tenant.**
+
+  What the read endpoints then show follows directly from the policy:
+
+  - The operator of the tenant whose id equals `SSF_DEFAULT_TENANT_ID` sees
+    **every** submission, including those made by other tenants' citizens.
+  - Every other tenant's operator sees **nothing** — an empty list and `404`
+    for every id — even for feedback their own citizens submitted.
+  - If `SSF_DEFAULT_TENANT_ID` matches no Studio tenant, nobody sees anything
+    (see Step 1).
 
   Tenant-binding sessions is issue #288, which is gated behind #299 in the
   delivery order recorded on #266. Until it lands:
 
-  - A deployment serving one live tenant is unaffected in practice.
+  - A deployment serving one live tenant is correct, provided
+    `SSF_DEFAULT_TENANT_ID` is that tenant's id.
   - A deployment serving more than one must not treat the read endpoints as a
-    tenant boundary for submitted feedback, because the rows behind them are
-    commingled at write time.
+    tenant boundary for submitted feedback: one tenant is shown everyone's,
+    and the rest are shown none of their own.
   - Feedback collected before #288 stays attributed to the configured tenant.
     Re-attributing it afterwards is an `UPDATE` on `tenant_id`, not a
     migration — the column and the policy are already in place — but it needs
