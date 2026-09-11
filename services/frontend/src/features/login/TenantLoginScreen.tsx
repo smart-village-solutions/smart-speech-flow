@@ -33,7 +33,7 @@ export function TenantLoginScreen() {
       <AppHeader
         onBack={() => void navigate('/')}
         onHome={() => void navigate('/')}
-        onFeedback={openFeedback}
+        onFeedback={() => openFeedback(null)}
         showNavigation={false}
       />
 
