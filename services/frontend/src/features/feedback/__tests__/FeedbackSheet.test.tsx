@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -50,6 +51,21 @@ async function completeAllRatings() {
 }
 
 const submitButton = () => screen.getByRole('button', { name: /Send feedback|Send again|Sending/ });
+
+/** The sheet with its own open state, so a close and a reopen are observable. */
+function Reopenable() {
+  const [open, setOpen] = useState(true);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        reopen
+      </button>
+      <FeedbackSheet open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
+const settled = () => new Promise((resolve) => setTimeout(resolve, 350));
 
 describe('FeedbackSheet', () => {
   it('renders all five sections', () => {
@@ -240,5 +256,30 @@ describe('FeedbackSheet', () => {
     await userEvent.click(screen.getByRole('button', { name: /Send again/ }));
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('limits the improvement text to the length the Gateway accepts', () => {
+    open();
+
+    expect(screen.getByPlaceholderText(PLACEHOLDER)).toHaveAttribute('maxlength', '4000');
+  });
+
+  it('does not let a submit that was closed mid-flight reappear on the next open', async () => {
+    const controlled = controllable();
+    renderWithProviders(<Reopenable />, {
+      services: { feedback: controlled.sink },
+    });
+
+    await completeAllRatings();
+    await userEvent.click(submitButton());
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await settled();
+    controlled.succeed();
+    await settled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'reopen' }));
+
+    expect(screen.queryByText('Thank you!')).not.toBeInTheDocument();
+    expect(submitButton()).toBeInTheDocument();
   });
 });

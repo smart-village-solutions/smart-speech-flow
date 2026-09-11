@@ -9,12 +9,15 @@ analytics event describing a row that does not exist.
 from __future__ import annotations
 
 import calendar
+import logging
 from datetime import datetime, timezone
 from typing import Any, Callable
 from uuid import UUID, uuid4
 
 from ..quality_telemetry import ProbeOutcome
 from ..session_pseudonym import MISSING_REFERENCE, feedback_ref, session_ref
+from .repository import FeedbackRepository
+from .tenant import TenantResolver
 from .models import (
     MAX_IMPROVEMENTS_LENGTH,
     RETENTION_POLICY_VERSION,
@@ -23,6 +26,8 @@ from .models import (
     FeedbackSubmissionRequest,
     FeedbackTextTooLong,
 )
+
+logger = logging.getLogger(__name__)
 
 _RETENTION_MONTHS = 12
 
@@ -35,9 +40,9 @@ class FeedbackService:
     def __init__(
         self,
         *,
-        repository: Any,
+        repository: FeedbackRepository,
         cipher: Any,
-        tenant_resolver: Any,
+        tenant_resolver: TenantResolver,
         session_manager: Any,
         telemetry: Any,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
@@ -99,14 +104,23 @@ class FeedbackService:
             form_version=request.form_version,
         )
 
-        if result.outcome is ProbeOutcome.EMITTED:
-            await self._repository.mark_analytics_delivered(feedback_id, tenant_id)
-        elif result.outcome is ProbeOutcome.DISABLED:
-            # Nothing will ever drain a backlog for an event type this
-            # deployment does not emit, so it is not a backlog.
-            await self._repository.mark_analytics_state(
-                feedback_id, AnalyticsState.NOT_APPLICABLE, tenant_id
-            )
+        # Best-effort for real: the row is committed, so nothing from here on
+        # may turn a stored submission into an error the caller can act on. A
+        # 500 would put Retry in front of someone whose feedback was saved, and
+        # the retry would store a second row that analytics counts again. A row
+        # left `pending` is what the reconciler exists to drain.
+        try:
+            if result.outcome is ProbeOutcome.EMITTED:
+                await self._repository.mark_analytics_delivered(feedback_id, tenant_id)
+            elif result.outcome is ProbeOutcome.DISABLED:
+                # Nothing will ever drain a backlog for an event type this
+                # deployment does not emit, so it is not a backlog.
+                await self._repository.mark_analytics_state(
+                    feedback_id, AnalyticsState.NOT_APPLICABLE, tenant_id
+                )
+        except Exception as error:  # noqa: BLE001 - reported, never raised
+            # Type name only: an asyncpg error carries the bound parameters.
+            logger.warning("Feedback analytics state not recorded: %s", type(error).__name__)
 
         return feedback_id
 

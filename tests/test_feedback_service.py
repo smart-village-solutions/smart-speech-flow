@@ -28,11 +28,12 @@ FIXED_NOW = datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc)
 
 
 class FakeRepository:
-    def __init__(self, *, fails: bool = False) -> None:
+    def __init__(self, *, fails: bool = False, marking_fails: bool = False) -> None:
         self.stored: list = []
         self.delivered: list = []
         self.marked_tenants: list = []
         self._fails = fails
+        self._marking_fails = marking_fails
 
     async def store(self, record) -> None:
         if self._fails:
@@ -43,6 +44,8 @@ class FakeRepository:
         # Positional, not defaulted: under row-level security an unbound update
         # matches nothing and reports success, so a fake that tolerates a
         # missing tenant would hide exactly the bug this argument prevents.
+        if self._marking_fails:
+            raise ConnectionResetError("the connection went away after the commit")
         self.delivered.append(feedback_id)
         self.marked_tenants.append(tenant_id)
         self.stored[-1] = replace(self.stored[-1], analytics_state=AnalyticsState.DELIVERED)
@@ -408,3 +411,18 @@ class TestTheRealTelemetrySeam:
         attributes = exported[0][1]
         assert attributes["ssf.quality.feedback_ref"] == feedback_ref(feedback_id)
         assert str(feedback_id) not in str(attributes)
+
+
+async def test_a_failure_after_the_commit_still_confirms_the_submission() -> None:
+    """The row is already committed, so the caller must not be told to retry.
+
+    A 500 here puts Retry in front of a user whose feedback was stored, and
+    retrying writes a second row with new ids that ClickHouse counts again.
+    The row stays `pending`, which is precisely what the reconciler drains.
+    """
+    service, parts = _service(repository=FakeRepository(marking_fails=True))
+
+    feedback_id = await service.submit(_request())
+
+    assert feedback_id == parts["repository"].stored[0].feedback_id
+    assert parts["repository"].stored[0].analytics_state is AnalyticsState.PENDING

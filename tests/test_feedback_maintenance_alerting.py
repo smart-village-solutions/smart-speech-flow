@@ -9,10 +9,14 @@ submission notice promises deletion after twelve months in ten languages, so
 a retention pass that stops working is a commitment quietly going unmet.
 """
 
+import re
 from pathlib import Path
 
 import pytest
 import yaml
+from prometheus_client import CollectorRegistry
+
+from services.api_gateway.feedback.maintenance import FeedbackMaintenanceMetrics
 
 ROOT = Path(__file__).resolve().parents[1]
 ALERTS = ROOT / "monitoring" / "alert_rules.yml"
@@ -57,30 +61,47 @@ class TestTheAlertsCoverEveryFailureMode:
             assert rule["labels"]["component"] == "feedback", name
 
 
+def _emitted_metric_names() -> set[str]:
+    """Ask the code what it registers.
+
+    A hand-kept list here is just a second place to forget, and forgetting
+    means a rule that quietly never fires.
+    """
+    registry = CollectorRegistry()
+    FeedbackMaintenanceMetrics(registry)
+
+    names: set[str] = set()
+    for metric in registry.collect():
+        names.add(metric.name)
+        if metric.type == "counter":
+            names.add(f"{metric.name}_total")
+    return names
+
+
 class TestTheExpressionsUseMetricsThatExist:
     """A rule referring to a series nothing emits is silently never true."""
 
-    EMITTED = {
-        "ssf_feedback_reconciliation_total",
-        "ssf_feedback_reconciliation_backlog",
-        "ssf_feedback_retention_deleted_total",
-        "ssf_feedback_maintenance_failures_total",
-    }
-
     def test_every_referenced_ssf_metric_is_one_the_code_emits(self):
-        import re
+        emitted = _emitted_metric_names()
 
         for name, rule in _rules().items():
             for referenced in re.findall(r"ssf_feedback_[a-z_]+", rule["expr"]):
-                assert referenced in self.EMITTED, f"{name} references {referenced}"
-
-    def test_the_metric_names_match_the_maintenance_module(self):
-        source = (ROOT / "services" / "api_gateway" / "feedback" / "maintenance.py").read_text()
-        for metric in self.EMITTED:
-            assert f'"{metric}"' in source
+                assert referenced in emitted, f"{name} references {referenced}"
 
     def test_retention_alerts_on_absence_rather_than_on_a_failure_count(self):
         """A retention pass that never runs emits no failure metric at all,
         so counting failures would stay silent exactly when it matters."""
         expr = _rules()["FeedbackRetentionNotRunning"]["expr"]
         assert "ssf_feedback_retention_deleted_total" in expr
+
+    def test_a_pass_that_deletes_nothing_has_an_alert_of_its_own(self):
+        """absent() cannot catch it: the counter is exported as 0 from birth.
+
+        Both arms are required. Overdue rows alone are normal while a backlog
+        drains in batches; zero deletions alone are normal on a deployment
+        younger than the retention period.
+        """
+        expr = _rules()["FeedbackRetentionDeletingNothing"]["expr"]
+
+        assert "ssf_feedback_retention_overdue > 0" in expr
+        assert "increase(ssf_feedback_retention_deleted_total[6h]) == 0" in expr

@@ -29,7 +29,6 @@ mkdir -p "$backup_root"
 staging_dir="$(mktemp -d "$backup_root/.staging-${timestamp}.XXXXXX")"
 required=(
   keycloak-postgres.sql.gz
-  ssf-postgres.sql.gz
   redis.rdb
   clickhouse-native-backup.zip
   configuration.tar.gz
@@ -54,10 +53,22 @@ production_compose exec -T keycloak-postgres sh -ec \
   | gzip -c > "$staging_dir/keycloak-postgres.sql.gz"
 
 # The authoritative feedback store. Without this, twelve months of retained
-# feedback has no recovery path.
-production_compose exec -T ssf-postgres sh -ec \
-  'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
-  | gzip -c > "$staging_dir/ssf-postgres.sql.gz"
+# feedback has no recovery path -- so a dump that fails while the service is
+# running still aborts the backup.
+#
+# A host that has not yet run the feedback deployment runbook has no such
+# service at all, and there the dump is skipped rather than fatal: aborting
+# would take the Keycloak, Redis and ClickHouse backups down with it, which
+# is a far worse outcome than not backing up a database that does not exist.
+if production_compose ps --services --status running 2>/dev/null \
+  | grep -qx ssf-postgres; then
+  production_compose exec -T ssf-postgres sh -ec \
+    'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+    | gzip -c > "$staging_dir/ssf-postgres.sql.gz"
+  required+=(ssf-postgres.sql.gz)
+else
+  printf 'WARNING: ssf-postgres is not running; the feedback database was not backed up\n' >&2
+fi
 
 production_compose exec -T redis redis-cli --rdb /tmp/ssf-backup.rdb >/dev/null
 production_compose exec -T redis cat /tmp/ssf-backup.rdb > "$staging_dir/redis.rdb"

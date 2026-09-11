@@ -9,6 +9,7 @@ API Gateway Hauptdatei
 
 import asyncio
 import os
+import sys
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -162,6 +163,134 @@ async def audio_cleanup_task() -> None:
 
 FEEDBACK_RECONCILIATION_INTERVAL_SECONDS = 300
 FEEDBACK_RETENTION_INTERVAL_SECONDS = 3600
+FEEDBACK_CONNECT_RETRY_SECONDS = 5
+FEEDBACK_CONNECT_RETRY_CEILING_SECONDS = 60
+
+
+def _feedback_password(variable: str) -> str | None:
+    """The password arrives beside the DSN, never inside it.
+
+    A generated password is not URL-safe: see
+    PostgresFeedbackRepository.create.
+    """
+    return os.environ.get(variable, "").strip() or None
+
+
+async def _connect_feedback_request_path(dsn: str, sessions: Any) -> bool:
+    """Wire POST /api/feedback. Returns False only when retrying could help."""
+    if app.state.feedback_service is not None:
+        return True
+
+    from .feedback.crypto import FeedbackCipher, MissingEncryptionKey
+    from .feedback.repository import PostgresFeedbackRepository
+    from .feedback.service import FeedbackService
+    from .feedback.tenant import ConfiguredTenantResolver
+
+    try:
+        cipher = FeedbackCipher.from_environment()
+    except MissingEncryptionKey:
+        # Terminal, not transient: no key appears later, and encrypting under
+        # a generated one would store rows nobody could ever read back.
+        sys.stderr.write(
+            "Feedback persistence disabled: SSF_FEEDBACK_ENCRYPTION_KEY is missing "
+            "or malformed; POST /api/feedback will answer 503\n"
+        )
+        return True
+
+    try:
+        repository = await PostgresFeedbackRepository.create(
+            dsn=dsn, password=_feedback_password("SSF_FEEDBACK_DATABASE_PASSWORD")
+        )
+    except Exception as error:  # noqa: BLE001 - reported, not raised
+        # Type name only: a connection error can carry the DSN, and the DSN
+        # carries the database password.
+        sys.stderr.write(
+            f"Feedback persistence unavailable ({type(error).__name__}); "
+            "POST /api/feedback will answer 503 until it connects\n"
+        )
+        return False
+
+    app.state.feedback_repository = repository
+    app.state.feedback_service = FeedbackService(
+        repository=repository,
+        cipher=cipher,
+        tenant_resolver=ConfiguredTenantResolver.from_environment(),
+        session_manager=sessions,
+        telemetry=app.state.quality_telemetry,
+    )
+    sys.stderr.write("Feedback persistence ready\n")
+    return True
+
+
+async def _connect_feedback_maintenance(dsn: str) -> bool:
+    """Wire the recovery and retention passes, reporting on their own.
+
+    Separate from the request path in both directions: collecting feedback
+    matters more than reconciling it, and a maintenance pool that never opens
+    must not be announced as an endpoint outage.
+    """
+    if app.state.feedback_maintenance is not None:
+        return True
+    if not dsn:
+        sys.stderr.write(
+            "Feedback maintenance disabled: SSF_FEEDBACK_MAINTENANCE_DATABASE_URL "
+            "is not set; analytics recovery and retention will not run\n"
+        )
+        return True
+
+    from .feedback.maintenance import FeedbackMaintenance, FeedbackMaintenanceMetrics
+    from .feedback.repository import PostgresFeedbackRepository
+
+    try:
+        repository = await PostgresFeedbackRepository.create(
+            dsn=dsn,
+            password=_feedback_password("SSF_FEEDBACK_MAINTENANCE_DATABASE_PASSWORD"),
+        )
+    except Exception as error:  # noqa: BLE001 - reported, not raised
+        sys.stderr.write(
+            f"Feedback maintenance unavailable ({type(error).__name__}); "
+            "analytics recovery and retention are not running. "
+            "POST /api/feedback is unaffected\n"
+        )
+        return False
+
+    app.state.feedback_maintenance_repository = repository
+    app.state.feedback_maintenance = FeedbackMaintenance(
+        repository=repository,
+        telemetry=app.state.quality_telemetry,
+        metrics=FeedbackMaintenanceMetrics(app.state.prometheus_registry),
+    )
+    sys.stderr.write("Feedback maintenance ready\n")
+    return True
+
+
+async def feedback_connect_task(request_dsn: str, maintenance_dsn: str, sessions: Any) -> None:
+    """Keep retrying whichever half did not connect at startup.
+
+    The gateway deliberately does not wait for a healthy feedback database --
+    a failed migration must not cost every customer their session -- so on a
+    first deploy the database is usually still running its init scripts when
+    this process starts. Nothing else retries, so without this that ordinary
+    race leaves POST /api/feedback answering 503 until someone restarts the
+    container.
+    """
+    if not request_dsn:
+        return
+
+    delay = FEEDBACK_CONNECT_RETRY_SECONDS
+    while True:
+        try:
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, FEEDBACK_CONNECT_RETRY_CEILING_SECONDS)
+
+            connected = await _connect_feedback_request_path(request_dsn, sessions)
+            maintained = await _connect_feedback_maintenance(maintenance_dsn)
+            if connected and maintained:
+                return
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 - the loop must outlive it
+            print(f"\u26a0\ufe0f Feedback connection attempt failed: {type(error).__name__}")
 
 
 async def feedback_maintenance_task() -> None:
@@ -236,7 +365,6 @@ async def _shutdown_quality_telemetry(exporter: Any, timeout_seconds: float) -> 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application Lifespan: Initialize singletons and start background tasks"""
-    import sys
 
     sys.stderr.write("=" * 80 + "\n")
     sys.stderr.flush()
@@ -337,9 +465,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Feedback persistence (#302). Deliberately non-fatal: the gateway serves
     # the whole conversation pipeline, and an unreachable feedback database
     # must cost submissions a retryable 503 rather than cost every customer
-    # their session. Compose already enforces the variables with :?required, so
-    # a container reaching this branch is misconfigured or the database is
-    # briefly down -- both of which the route reports as retryable.
+    # their session. That is also why Compose starts this service without
+    # waiting for the database to be healthy -- which makes losing the race a
+    # normal first-deploy event, so feedback_connect_task keeps retrying.
     app.state.feedback_repository = None
     app.state.feedback_maintenance_repository = None
     app.state.feedback_service = None
@@ -356,52 +484,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "POST /api/feedback will answer 503\n"
         )
     else:
-        from .feedback.crypto import FeedbackCipher
-        from .feedback.maintenance import (
-            FeedbackMaintenance,
-            FeedbackMaintenanceMetrics,
-        )
-        from .feedback.repository import PostgresFeedbackRepository
-        from .feedback.service import FeedbackService
-        from .feedback.tenant import ConfiguredTenantResolver
-
-        try:
-            feedback_repository = await PostgresFeedbackRepository.create(dsn=feedback_dsn)
-            app.state.feedback_repository = feedback_repository
-            app.state.feedback_service = FeedbackService(
-                repository=feedback_repository,
-                cipher=FeedbackCipher.from_environment(),
-                tenant_resolver=ConfiguredTenantResolver.from_environment(),
-                session_manager=session_manager,
-                telemetry=app.state.quality_telemetry,
-            )
-            if maintenance_dsn:
-                maintenance_repository = await PostgresFeedbackRepository.create(
-                    dsn=maintenance_dsn
-                )
-                app.state.feedback_maintenance_repository = maintenance_repository
-                app.state.feedback_maintenance = FeedbackMaintenance(
-                    repository=maintenance_repository,
-                    telemetry=app.state.quality_telemetry,
-                    metrics=FeedbackMaintenanceMetrics(app.state.prometheus_registry),
-                )
-            else:
-                # Collecting feedback matters more than reconciling it, so a
-                # missing maintenance role costs the passes, not the endpoint.
-                sys.stderr.write(
-                    "Feedback maintenance disabled: "
-                    "SSF_FEEDBACK_MAINTENANCE_DATABASE_URL is not set; "
-                    "analytics recovery and retention will not run\n"
-                )
-            sys.stderr.write("Feedback persistence ready\n")
-        except Exception as feedback_error:  # noqa: BLE001 - reported, not raised
-            # Type name only: a connection error can carry the DSN, and the DSN
-            # carries the database password.
-            sys.stderr.write(
-                "Feedback persistence unavailable "
-                f"({type(feedback_error).__name__}); "
-                "POST /api/feedback will answer 503\n"
-            )
+        await _connect_feedback_request_path(feedback_dsn, session_manager)
+        await _connect_feedback_maintenance(maintenance_dsn)
     sys.stderr.flush()
 
     # Start background tasks
@@ -411,6 +495,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     websocket_fallback_bg_task = asyncio.create_task(websocket_fallback_task())
     audio_cleanup_bg_task = asyncio.create_task(audio_cleanup_task())
     feedback_maintenance_bg_task = asyncio.create_task(feedback_maintenance_task())
+    feedback_connect_bg_task = asyncio.create_task(
+        feedback_connect_task(feedback_dsn, maintenance_dsn, session_manager)
+    )
     sys.stderr.write("All background tasks started\n")
     sys.stderr.flush()
     sys.stderr.write("=" * 80 + "\n")
@@ -427,6 +514,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         websocket_fallback_bg_task.cancel()
         audio_cleanup_bg_task.cancel()
         feedback_maintenance_bg_task.cancel()
+        feedback_connect_bg_task.cancel()
 
         try:
             await circuit_breaker_client.stop_health_monitoring()
@@ -440,6 +528,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             websocket_fallback_bg_task,
             audio_cleanup_bg_task,
             feedback_maintenance_bg_task,
+            feedback_connect_bg_task,
             return_exceptions=True,
         )
 

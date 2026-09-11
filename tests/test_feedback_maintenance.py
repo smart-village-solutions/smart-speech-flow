@@ -56,9 +56,13 @@ class FakeRepository:
         deleted: list[UUID] | None = None,
         claim_raises: Exception | None = None,
         delete_raises: Exception | None = None,
+        overdue: int = 0,
+        overdue_raises: Exception | None = None,
     ) -> None:
         self._pending = pending or []
         self._deleted = deleted or []
+        self._overdue = overdue
+        self._overdue_raises = overdue_raises
         self._claim_raises = claim_raises
         self._delete_raises = delete_raises
         self.states: dict[UUID, AnalyticsState] = {}
@@ -83,6 +87,11 @@ class FakeRepository:
         if self._delete_raises is not None:
             raise self._delete_raises
         return self._deleted
+
+    async def count_expired(self, now):
+        if self._overdue_raises is not None:
+            raise self._overdue_raises
+        return self._overdue
 
 
 class FakeTelemetry:
@@ -352,3 +361,52 @@ class TestTheMetricsMakeItObservable:
 
         FeedbackMaintenanceMetrics(registry)
         FeedbackMaintenanceMetrics(registry)
+
+
+class TestRetentionReportsWhatItDidNotDelete:
+    """A pass that deletes nothing is indistinguishable from one with nothing
+    to delete -- unless something counts what is still overdue.
+
+    That is not hypothetical: a maintenance role that loses BYPASSRLS sees no
+    rows, deletes none, and reports success on every pass. The deletion counter
+    stays at zero either way.
+    """
+
+    async def test_a_pass_that_deletes_nothing_reports_the_rows_it_left(self):
+        registry = CollectorRegistry()
+        repository = FakeRepository(deleted=[], overdue=7)
+
+        await _maintenance(repository, registry=registry).expire_once()
+
+        assert _value(registry, "ssf_feedback_retention_overdue") == 7
+
+    async def test_a_pass_that_clears_the_backlog_reports_nothing_overdue(self):
+        registry = CollectorRegistry()
+        repository = FakeRepository(deleted=[uuid4(), uuid4()], overdue=0)
+
+        await _maintenance(repository, registry=registry).expire_once()
+
+        assert _value(registry, "ssf_feedback_retention_overdue") == 0
+        assert _value(registry, "ssf_feedback_retention_deleted_total") == 2
+
+    async def test_a_skipped_replica_does_not_report_a_backlog_it_never_looked_at(self):
+        """N-1 replicas skip every pass by design; they know nothing."""
+        registry = CollectorRegistry()
+        repository = FakeRepository(delete_raises=RetentionLockUnavailable("held"), overdue=9)
+
+        result = await _maintenance(repository, registry=registry).expire_once()
+
+        assert result.skipped is True
+        assert _value(registry, "ssf_feedback_retention_overdue") == 0
+
+    async def test_a_count_that_fails_does_not_fail_the_pass(self):
+        """The deletion already happened; losing the gauge must not undo it."""
+        registry = CollectorRegistry()
+        repository = FakeRepository(
+            deleted=[uuid4()], overdue_raises=FeedbackStorageUnavailable("gone")
+        )
+
+        result = await _maintenance(repository, registry=registry).expire_once()
+
+        assert result.deleted == 1
+        assert result.failed is False

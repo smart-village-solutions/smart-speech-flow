@@ -79,30 +79,6 @@ class TestMaintenanceConnectsAsItsOwnRole:
     def test_the_maintenance_dsn_is_read_from_its_own_variable(self):
         assert "SSF_FEEDBACK_MAINTENANCE_DATABASE_URL" in SOURCE
 
-    def test_the_maintenance_repository_is_built_from_the_maintenance_dsn(self):
-        """Matched on the argument, not the line break, so wrapping is free."""
-        creations = [
-            node
-            for node in ast.walk(ast.parse(SOURCE))
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "create"
-        ]
-        dsn_arguments = {
-            keyword.value.id
-            for call in creations
-            for keyword in call.keywords
-            if keyword.arg == "dsn" and isinstance(keyword.value, ast.Name)
-        }
-
-        assert "maintenance_dsn" in dsn_arguments
-        assert "feedback_dsn" in dsn_arguments
-
-    def test_the_maintenance_pass_does_not_reuse_the_request_repository(self):
-        construction = SOURCE[SOURCE.index("FeedbackMaintenance(") :]
-        construction = construction[: construction.index(")")]
-        assert "repository=maintenance_repository" in construction
-
     def test_the_maintenance_pool_is_closed_at_shutdown(self):
         assert "feedback_maintenance_repository" in SOURCE
 

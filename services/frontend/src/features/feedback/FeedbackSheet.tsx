@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Lightbulb, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -34,7 +34,14 @@ export function FeedbackSheet({
   const [status, setStatus] = useState<FeedbackStatus>('idle');
   const [reasonKey, setReasonKey] = useState<string | null>(null);
 
+  // Closing during a submit must not let the in-flight result land on the next
+  // open. The reset is deferred 300ms for the exit animation, so a response
+  // arriving after that would otherwise reopen the sheet already thanking the
+  // user, or showing an error over an empty form.
+  const attempt = useRef(0);
+
   const close = () => {
+    attempt.current += 1;
     onOpenChange(false);
     window.setTimeout(() => {
       setValues(EMPTY_FORM);
@@ -44,6 +51,7 @@ export function FeedbackSheet({
   };
 
   const submit = async () => {
+    const current = attempt.current;
     setStatus('submitting');
     setReasonKey(null);
 
@@ -56,8 +64,10 @@ export function FeedbackSheet({
         improvements: values.improvements,
         sessionId,
       });
+      if (attempt.current !== current) return;
       setStatus('submitted');
     } catch (error) {
+      if (attempt.current !== current) return;
       // Nothing is reset: the entered values are the whole point of the retry.
       setReasonKey(error instanceof AppError ? error.userMessageKey : 'errors.unknown');
       setStatus('failed');

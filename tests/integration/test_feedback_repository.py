@@ -37,6 +37,12 @@ DSN = os.environ.get("SSF_FEEDBACK_MAINTENANCE_DATABASE_URL", "")
 APP_DSN = os.environ.get("SSF_FEEDBACK_DATABASE_URL", "")
 OWNER_DSN = os.environ.get("SSF_FEEDBACK_OWNER_DATABASE_URL", "")
 
+# Passed beside the DSN, exactly as the gateway passes it, so CI can use a
+# password that a URL cannot carry. See PostgresFeedbackRepository.create.
+PASSWORD = os.environ.get("SSF_FEEDBACK_MAINTENANCE_DATABASE_PASSWORD") or None
+APP_PASSWORD = os.environ.get("SSF_FEEDBACK_DATABASE_PASSWORD") or None
+OWNER_PASSWORD = os.environ.get("SSF_FEEDBACK_OWNER_DATABASE_PASSWORD") or None
+
 
 def _record(**overrides: object) -> FeedbackRecord:
     now = datetime.now(timezone.utc)
@@ -63,12 +69,12 @@ def _record(**overrides: object) -> FeedbackRecord:
 
 @pytest.fixture
 async def repository():
-    owner = await asyncpg.connect(dsn=OWNER_DSN)
+    owner = await asyncpg.connect(dsn=OWNER_DSN, password=OWNER_PASSWORD)
     try:
         await owner.execute("TRUNCATE feedback, feedback_deletion_audit")
     finally:
         await owner.close()
-    repo = await PostgresFeedbackRepository.create(dsn=DSN)
+    repo = await PostgresFeedbackRepository.create(dsn=DSN, password=PASSWORD)
     yield repo
     await repo.close()
 
@@ -81,7 +87,7 @@ async def _store(record: FeedbackRecord) -> None:
     app role instead makes these tests prove the handover they depend on: one
     role stores the submission, another claims and expires it.
     """
-    repo = await PostgresFeedbackRepository.create(dsn=APP_DSN)
+    repo = await PostgresFeedbackRepository.create(dsn=APP_DSN, password=APP_PASSWORD)
     try:
         await repo.store(record)
     finally:
@@ -95,7 +101,7 @@ async def _audit_rows(query: str, *args: object):
     is the privilege production wants -- the job records a deletion, it never
     reads the record back. So the assertion needs the owner.
     """
-    owner = await asyncpg.connect(dsn=OWNER_DSN)
+    owner = await asyncpg.connect(dsn=OWNER_DSN, password=OWNER_PASSWORD)
     try:
         return await owner.fetch(query, *args)
     finally:
@@ -164,6 +170,25 @@ async def test_expired_rows_are_deleted(repository) -> None:
     deleted = await repository.delete_expired(now=now, limit=100)
 
     assert record.feedback_id in deleted
+
+
+async def test_what_is_still_overdue_is_countable_after_a_pass(repository) -> None:
+    """The number the retention alert needs.
+
+    A deletion counter alone cannot tell a deployment with nothing to delete
+    from a maintenance role that can no longer see anything to delete. Both
+    report zero deletions and success forever.
+    """
+    now = datetime.now(timezone.utc)
+    for _ in range(3):
+        await _store(_record(expires_at=now - timedelta(seconds=1)))
+    await _store(_record(expires_at=now + timedelta(days=365)))
+
+    assert await repository.count_expired(now) == 3
+
+    await repository.delete_expired(now=now, limit=1)
+
+    assert await repository.count_expired(now) == 2
 
 
 async def test_deletion_writes_a_content_free_audit_row(repository) -> None:

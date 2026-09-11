@@ -29,6 +29,12 @@ APP_DSN = os.environ.get("SSF_FEEDBACK_DATABASE_URL", "")
 MAINTENANCE_DSN = os.environ.get("SSF_FEEDBACK_MAINTENANCE_DATABASE_URL", "")
 OWNER_DSN = os.environ.get("SSF_FEEDBACK_OWNER_DATABASE_URL", "")
 
+# Passed beside the DSN, exactly as the gateway passes it, so CI can use a
+# password that a URL cannot carry. See PostgresFeedbackRepository.create.
+APP_PASSWORD = os.environ.get("SSF_FEEDBACK_DATABASE_PASSWORD") or None
+MAINTENANCE_PASSWORD = os.environ.get("SSF_FEEDBACK_MAINTENANCE_DATABASE_PASSWORD") or None
+OWNER_PASSWORD = os.environ.get("SSF_FEEDBACK_OWNER_DATABASE_PASSWORD") or None
+
 TENANT_A = "tenant-a"
 TENANT_B = "tenant-b"
 
@@ -79,7 +85,7 @@ async def _seed(connection: asyncpg.Connection, tenant_id: str, *, expired: bool
 
 @pytest.fixture
 async def owner():
-    connection = await asyncpg.connect(dsn=OWNER_DSN)
+    connection = await asyncpg.connect(dsn=OWNER_DSN, password=OWNER_PASSWORD)
     await connection.execute("TRUNCATE feedback, feedback_deletion_audit")
     yield connection
     await connection.close()
@@ -87,14 +93,14 @@ async def owner():
 
 @pytest.fixture
 async def app_connection():
-    connection = await asyncpg.connect(dsn=APP_DSN)
+    connection = await asyncpg.connect(dsn=APP_DSN, password=APP_PASSWORD)
     yield connection
     await connection.close()
 
 
 @pytest.fixture
 async def maintenance_connection():
-    connection = await asyncpg.connect(dsn=MAINTENANCE_DSN)
+    connection = await asyncpg.connect(dsn=MAINTENANCE_DSN, password=MAINTENANCE_PASSWORD)
     yield connection
     await connection.close()
 
@@ -203,7 +209,7 @@ class TestTheTenantPathCanStillUpdateItsOwnRows:
     """
 
     async def test_marking_delivered_changes_the_stored_state(self, owner) -> None:
-        repository = await PostgresFeedbackRepository.create(dsn=APP_DSN)
+        repository = await PostgresFeedbackRepository.create(dsn=APP_DSN, password=APP_PASSWORD)
         record = _record()
         try:
             await repository.store(record)
@@ -219,7 +225,7 @@ class TestTheTenantPathCanStillUpdateItsOwnRows:
         assert state == "delivered"
 
     async def test_marking_a_state_changes_the_stored_state(self, owner) -> None:
-        repository = await PostgresFeedbackRepository.create(dsn=APP_DSN)
+        repository = await PostgresFeedbackRepository.create(dsn=APP_DSN, password=APP_PASSWORD)
         record = _record()
         try:
             await repository.store(record)
@@ -239,7 +245,7 @@ class TestTheTenantPathCanStillUpdateItsOwnRows:
     async def test_another_tenants_row_cannot_be_marked(self, owner) -> None:
         """The tenant is the caller's, not the row's: a wrong pair changes nothing."""
         foreign_id = await _seed(owner, TENANT_B)
-        repository = await PostgresFeedbackRepository.create(dsn=APP_DSN)
+        repository = await PostgresFeedbackRepository.create(dsn=APP_DSN, password=APP_PASSWORD)
         try:
             await repository.mark_analytics_delivered(foreign_id, TENANT_A)
         finally:
@@ -256,7 +262,7 @@ class TestTheRepositoryStillWorksUnderTheAppRole:
     """The policy is worthless if it also breaks the submission it protects."""
 
     async def test_a_submission_is_stored_and_readable_within_its_tenant(self, owner) -> None:
-        repository = await PostgresFeedbackRepository.create(dsn=APP_DSN)
+        repository = await PostgresFeedbackRepository.create(dsn=APP_DSN, password=APP_PASSWORD)
         record = _record()
         try:
             await repository.store(record)
@@ -278,7 +284,9 @@ class TestMaintenanceSeesEveryTenant:
     async def test_pending_rows_from_every_tenant_are_claimed(self, owner) -> None:
         first = await _seed(owner, TENANT_A)
         second = await _seed(owner, TENANT_B)
-        repository = await PostgresFeedbackRepository.create(dsn=MAINTENANCE_DSN)
+        repository = await PostgresFeedbackRepository.create(
+            dsn=MAINTENANCE_DSN, password=MAINTENANCE_PASSWORD
+        )
         try:
             pending = await repository.claim_pending_analytics(limit=100)
         finally:
@@ -290,7 +298,9 @@ class TestMaintenanceSeesEveryTenant:
     async def test_expired_rows_from_every_tenant_are_deleted(self, owner) -> None:
         await _seed(owner, TENANT_A, expired=True)
         await _seed(owner, TENANT_B, expired=True)
-        repository = await PostgresFeedbackRepository.create(dsn=MAINTENANCE_DSN)
+        repository = await PostgresFeedbackRepository.create(
+            dsn=MAINTENANCE_DSN, password=MAINTENANCE_PASSWORD
+        )
         try:
             deleted = await repository.delete_expired(datetime.now(timezone.utc), limit=100)
         finally:
@@ -301,7 +311,9 @@ class TestMaintenanceSeesEveryTenant:
     async def test_the_deletion_audit_records_both_tenants(self, owner) -> None:
         await _seed(owner, TENANT_A, expired=True)
         await _seed(owner, TENANT_B, expired=True)
-        repository = await PostgresFeedbackRepository.create(dsn=MAINTENANCE_DSN)
+        repository = await PostgresFeedbackRepository.create(
+            dsn=MAINTENANCE_DSN, password=MAINTENANCE_PASSWORD
+        )
         try:
             await repository.delete_expired(datetime.now(timezone.utc), limit=100)
         finally:

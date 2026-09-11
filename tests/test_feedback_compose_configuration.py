@@ -24,7 +24,7 @@ MIGRATION = ROOT / "deploy/postgres/migrations/001_feedback.sql"
 APPLY_SCRIPT = ROOT / "deploy/postgres/apply.sh"
 
 
-def _render_services() -> dict:
+def _render_services(**overrides: str) -> dict:
     """Render Compose with isolated credentials and return every service."""
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".env") as env_file:
         env_file.write("CLICKHOUSE_DB=ssf_analytics_test\n")
@@ -42,6 +42,8 @@ def _render_services() -> dict:
         env_file.write("SSF_FEEDBACK_APP_PASSWORD=test-only-app-password\n")
         env_file.write("SSF_FEEDBACK_MAINTENANCE_PASSWORD=test-only-maint-password\n")
         env_file.write(f"SSF_FEEDBACK_ENCRYPTION_KEY={TEST_ENCRYPTION_KEY}\n")
+        for name, value in overrides.items():
+            env_file.write(f"{name}={value}\n")
         rendered_env = env_file.name
 
     try:
@@ -69,11 +71,28 @@ def test_feedback_database_is_private_to_the_compose_network() -> None:
     assert database["healthcheck"]
 
 
-def test_gateway_waits_for_a_healthy_feedback_database() -> None:
-    """A gateway that starts first would serve 503s on every submission."""
+def test_the_gateway_is_not_held_hostage_by_the_feedback_database() -> None:
+    """`service_healthy` here would let a failed migration stop the gateway.
+
+    Feedback is one optional form; the gateway is the whole conversation
+    pipeline. Waiting on the database inverts that, so the gateway starts
+    regardless and feedback_connect_task closes the resulting race.
+    """
     gateway = _render_services()["api_gateway"]
 
-    assert gateway["depends_on"]["ssf-postgres"]["condition"] == "service_healthy"
+    assert gateway["depends_on"]["ssf-postgres"]["condition"] == "service_started"
+
+
+def test_the_database_reports_healthy_only_once_it_accepts_tcp() -> None:
+    """`pg_isready` with no host asks over the unix socket.
+
+    On a fresh volume the image runs a temporary server for the init scripts
+    that listens on the socket alone, so the socket answers while migration
+    002 has not yet created the roles and nothing is listening on 5432.
+    """
+    check = _render_services()["ssf-postgres"]["healthcheck"]["test"]
+
+    assert any("pg_isready -h 127.0.0.1" in str(part) for part in check), check
 
 
 def test_the_encryption_key_has_no_default() -> None:
@@ -139,7 +158,7 @@ def test_the_request_path_does_not_connect_as_the_database_owner() -> None:
 
     dsn = environment["SSF_FEEDBACK_DATABASE_URL"]
 
-    assert dsn.startswith("postgresql://ssf_feedback_app:"), dsn
+    assert dsn.startswith("postgresql://ssf_feedback_app@"), dsn
 
 
 def test_the_maintenance_passes_connect_as_their_own_role() -> None:
@@ -147,7 +166,7 @@ def test_the_maintenance_passes_connect_as_their_own_role() -> None:
 
     dsn = environment["SSF_FEEDBACK_MAINTENANCE_DATABASE_URL"]
 
-    assert dsn.startswith("postgresql://ssf_feedback_maintenance:"), dsn
+    assert dsn.startswith("postgresql://ssf_feedback_maintenance@"), dsn
 
 
 def test_the_two_roles_do_not_share_a_password() -> None:
@@ -155,9 +174,38 @@ def test_the_two_roles_do_not_share_a_password() -> None:
     environment = _render_services()["api_gateway"]["environment"]
 
     assert (
-        environment["SSF_FEEDBACK_DATABASE_URL"]
-        != environment["SSF_FEEDBACK_MAINTENANCE_DATABASE_URL"]
+        environment["SSF_FEEDBACK_DATABASE_PASSWORD"]
+        != environment["SSF_FEEDBACK_MAINTENANCE_DATABASE_PASSWORD"]
     )
+
+
+# The characters are the point, not the value. `/` is the one that matters most
+# -- asyncpg parses the DSN as a URL and reads whatever follows the last `:` as
+# a port -- but `@` is the more dangerous one, because it truncates the password
+# and corrupts the host without raising anything.
+#
+# Assembled from an obvious non-secret rather than written out as a
+# password-shaped literal. A secret scanner cannot tell a fake from a real one,
+# and it is right not to try.
+GENERATED_PASSWORD = "not-a-secret" + "/+=@"
+
+
+def test_a_generated_password_never_reaches_the_connection_string() -> None:
+    """`openssl rand -base64 32` yields `/` about half the time.
+
+    With two role passwords that broke roughly three deployments in four, and
+    it broke them at pool creation, where the only surviving evidence is a
+    logged exception type.
+    """
+    environment = _render_services(
+        SSF_FEEDBACK_APP_PASSWORD=GENERATED_PASSWORD,
+        SSF_FEEDBACK_MAINTENANCE_PASSWORD=GENERATED_PASSWORD,
+    )["api_gateway"]["environment"]
+
+    assert GENERATED_PASSWORD not in environment["SSF_FEEDBACK_DATABASE_URL"]
+    assert GENERATED_PASSWORD not in environment["SSF_FEEDBACK_MAINTENANCE_DATABASE_URL"]
+    assert environment["SSF_FEEDBACK_DATABASE_PASSWORD"] == GENERATED_PASSWORD
+    assert environment["SSF_FEEDBACK_MAINTENANCE_DATABASE_PASSWORD"] == GENERATED_PASSWORD
 
 
 def test_the_database_receives_both_role_passwords() -> None:

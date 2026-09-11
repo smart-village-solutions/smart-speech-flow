@@ -6,7 +6,7 @@ import { Button } from '@/ui/primitives/Button';
 import { NpsScale } from '@/ui/patterns/NpsScale';
 import { StarRating } from '@/ui/patterns/StarRating';
 import { FeedbackError } from './FeedbackError';
-import { isComplete } from './feedback.state';
+import { isComplete, MAX_IMPROVEMENTS_LENGTH } from './feedback.state';
 import type { FeedbackFormValues, FeedbackStatus } from './feedback.state';
 
 const RATING_SECTIONS = [
@@ -87,6 +87,7 @@ export function FeedbackForm({
         <p className="text-body text-fg-strong">{t('feedback.improvements.question')}</p>
         <textarea
           rows={3}
+          maxLength={MAX_IMPROVEMENTS_LENGTH}
           value={values.improvements}
           onChange={(event) => set({ improvements: event.target.value })}
           placeholder={t('feedback.improvements.placeholder')}

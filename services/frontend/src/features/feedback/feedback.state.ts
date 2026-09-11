@@ -1,3 +1,11 @@
+/**
+ * The Gateway rejects anything longer (MAX_IMPROVEMENTS_LENGTH in
+ * services/api_gateway/feedback/models.py). Without the same limit on the
+ * field, a longer note is accepted by the form and refused by the server, and
+ * the only way out offered is a Retry that can never succeed.
+ */
+export const MAX_IMPROVEMENTS_LENGTH = 4000;
+
 export interface FeedbackFormValues {
   quality: number;
   performance: number;

@@ -72,6 +72,8 @@ class FeedbackRepository(Protocol):
         self, now: datetime, limit: int, lock_key: int | None = None
     ) -> Sequence[UUID]: ...
 
+    async def count_expired(self, now: datetime) -> int: ...
+
 
 _INSERT = """
 INSERT INTO feedback (
@@ -104,6 +106,8 @@ WHERE feedback_id IN (
 RETURNING feedback_id, tenant_id, created_at, expires_at
 """
 
+_COUNT_EXPIRED = "SELECT count(*) FROM feedback WHERE expires_at <= $1"
+
 _TRY_LOCK = "SELECT pg_try_advisory_xact_lock($1)"
 
 _AUDIT_DELETION = """
@@ -118,8 +122,17 @@ class PostgresFeedbackRepository:
         self._pool = pool
 
     @classmethod
-    async def create(cls, *, dsn: str) -> "PostgresFeedbackRepository":
-        pool = await asyncpg.create_pool(dsn=dsn, min_size=1, max_size=10)
+    async def create(cls, *, dsn: str, password: str | None = None) -> "PostgresFeedbackRepository":
+        """Take the password beside the DSN rather than inside it.
+
+        asyncpg parses a DSN as a URL, so a password is only safe there if
+        every byte of it is URL-safe. Generated ones are not: `/` raises
+        before any I/O, and `@` truncates the password and folds the remainder
+        into the hostname without raising at all.
+        """
+        pool = await asyncpg.create_pool(
+            dsn=dsn, password=password or None, min_size=1, max_size=10
+        )
         return cls(pool)
 
     async def close(self) -> None:
@@ -213,6 +226,16 @@ class PostgresFeedbackRepository:
                         now,
                     )
         return [row["feedback_id"] for row in rows]
+
+    async def count_expired(self, now: datetime) -> int:
+        """Rows still past expiry after a pass.
+
+        A deletion counter alone cannot tell a deployment with nothing to
+        delete from a maintenance role that can no longer see anything to
+        delete. Both report zero deletions and success forever.
+        """
+        async with self._pool.acquire() as connection:
+            return await connection.fetchval(_COUNT_EXPIRED, now)
 
 
 async def _bind_tenant(connection: asyncpg.Connection, tenant_id: str) -> None:

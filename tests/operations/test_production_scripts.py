@@ -91,7 +91,13 @@ def test_clickhouse_backup_uses_the_configured_allowed_backup_path():
     assert "/tmp/ssf-clickhouse-backup.zip" not in script
 
 
-def test_backup_records_ollama_models_without_archiving_model_volume(tmp_path):
+def _prepare_backup_fixture(tmp_path):
+    """Build the fake docker and git binaries and a project root to back up.
+
+    FAKE_RUNNING_SERVICES drives `compose ps`, because which services are
+    running is now something the backup script asks about rather than
+    something it assumes.
+    """
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     docker_log = tmp_path / "docker.log"
@@ -101,7 +107,15 @@ def test_backup_records_ollama_models_without_archiving_model_volume(tmp_path):
 set -euo pipefail
 printf '%s\\n' "$*" >> "$FAKE_DOCKER_LOG"
 arguments="$*"
-if [[ "$arguments" == *"exec -T keycloak-postgres"* ]]; then
+if [[ "$arguments" == *"ps --services --status running"* ]]; then
+  printf '%s\\n' ${FAKE_RUNNING_SERVICES-keycloak-postgres ssf-postgres redis clickhouse ollama}
+elif [[ "$arguments" == *"exec -T ssf-postgres"* ]]; then
+  if [[ " ${FAKE_RUNNING_SERVICES-ssf-postgres} " != *" ssf-postgres "* ]]; then
+    printf 'service "ssf-postgres" is not running\\n' >&2
+    exit 1
+  fi
+  printf 'feedback dump\\n'
+elif [[ "$arguments" == *"exec -T keycloak-postgres"* ]]; then
   printf 'postgres dump\\n'
 elif [[ "$arguments" == *"exec -T redis cat /tmp/ssf-backup.rdb"* ]]; then
   printf 'redis dump\\n'
@@ -154,6 +168,20 @@ fi
         "SSF_CLICKHOUSE_DATABASE": "ssf",
         "SSF_PROJECT_ROOT": str(project_root),
     }
+
+    return (
+        environment,
+        backup_root,
+        docker_log,
+        grafana_database,
+        source_connection,
+    )
+
+
+def test_backup_records_ollama_models_without_archiving_model_volume(tmp_path):
+    environment, backup_root, docker_log, grafana_database, source_connection = (
+        _prepare_backup_fixture(tmp_path)
+    )
     try:
         result = run_script("scripts/backup-production.sh", environment=environment)
     finally:
@@ -280,3 +308,30 @@ def test_tenant_cutover_wrapper_exposes_a_non_destructive_preview(tmp_path):
         "--dry-run"
     ) in calls
     assert "--apply" not in calls
+
+
+def test_backup_survives_a_host_without_the_feedback_database(tmp_path):
+    """A host that has not run the feedback runbook still gets a backup.
+
+    Every other stateful service predates the feedback store, and all six of
+    its variables are required, so the first host to receive this compose file
+    has no `ssf-postgres` at all. Aborting there would silently stop backing up
+    Keycloak, Redis and ClickHouse -- the failure mode that matters, because
+    nothing would notice until a restore.
+    """
+    environment, backup_root, _, _, source_connection = _prepare_backup_fixture(tmp_path)
+    environment["FAKE_RUNNING_SERVICES"] = "keycloak-postgres redis clickhouse ollama"
+
+    try:
+        result = run_script("scripts/backup-production.sh", environment=environment)
+    finally:
+        source_connection.close()
+
+    assert result.returncode == 0, result.stderr
+    assert "ssf-postgres is not running" in result.stderr
+
+    backup = next(path for path in backup_root.iterdir() if path.is_dir())
+    manifest = json.loads((backup / "manifest.json").read_text())
+    assert "ssf-postgres.sql.gz" not in manifest["required"]
+    assert "keycloak-postgres.sql.gz" in manifest["required"]
+    assert "clickhouse-native-backup.zip" in manifest["required"]

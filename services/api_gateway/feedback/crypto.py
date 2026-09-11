@@ -2,9 +2,11 @@
 
 Unlike session_pseudonym.py there is deliberately no random per-process key
 fallback: a pseudonym that changes across restarts costs comparability, but an
-encryption key that changes across restarts costs the data itself. A gateway
-that cannot find its key must refuse to start rather than accept feedback it
-can never read back.
+encryption key that changes across restarts costs the data itself. So a
+gateway that cannot find its key refuses to accept feedback -- from_environment
+raises, the lifespan leaves the service unbuilt, and POST /api/feedback
+answers 503. It still starts and still serves conversations: a missing key
+must not cost every customer their session.
 """
 
 from __future__ import annotations
