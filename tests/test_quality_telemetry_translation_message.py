@@ -31,6 +31,7 @@ from services.api_gateway.quality_telemetry import (
 )
 
 REFERENCE = "a" * 32
+TENANT_REFERENCE = "b" * 12
 
 
 def _event(**overrides) -> TranslationMessageEvent:
@@ -40,6 +41,7 @@ def _event(**overrides) -> TranslationMessageEvent:
         emitted_at_utc=datetime.now(timezone.utc),
         event_type=QualityEventType.TRANSLATION_MESSAGE,
         session_ref=REFERENCE,
+        tenant_ref=TENANT_REFERENCE,
         direction=MessageDirection.CUSTOMER_TO_ADMIN,
         input_mode=InputMode.AUDIO,
         source_lang="de",
@@ -85,6 +87,7 @@ class TestTheEventCarriesNoContent:
                 AttributeKind.ENUM,
                 AttributeKind.LANGUAGE,
                 AttributeKind.OPAQUE_REF,
+                AttributeKind.TENANT_REF,
             }
 
     def test_it_has_no_label_field_at_all(self):
@@ -171,6 +174,7 @@ class TestTheSixPlacesAgree:
             "ssf.quality.translation_duration_ms",
             "ssf.quality.refinement_duration_ms",
             "ssf.quality.tts_duration_ms",
+            "ssf.quality.tenant_ref",
         ],
     )
     def test_the_event_emits_each_of_its_declared_fields(self, key):

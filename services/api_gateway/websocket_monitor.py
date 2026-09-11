@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from prometheus_client import Counter, Gauge, Histogram, Info
 
+from .session_pseudonym import session_ref
 from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,15 @@ logger = logging.getLogger(__name__)
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _resource_log_fields(resource: TenantSessionKey | str) -> dict[str, str]:
+    if isinstance(resource, TenantSessionKey):
+        return {
+            "tenant_ref": resource.tenant_ref,
+            "session_ref": session_ref(resource.session_id),
+        }
+    return {"tenant_ref": "legacy", "session_ref": session_ref(resource)}
 
 
 class ConnectionState(Enum):
@@ -305,9 +315,8 @@ class WebSocketMonitor:
         self.connections_active.labels(client_type=client_type).inc()
         self.sessions_with_connections.set(len(self._session_connections))
 
-        logger.info(
-            f"WebSocket connection established: {connection_id} for session {session_id}"
-        )
+        fields = _resource_log_fields(metrics.resource_key)
+        logger.info("websocket_connection_established", extra=fields)
         return metrics
 
     def connection_closed(
@@ -319,9 +328,7 @@ class WebSocketMonitor:
 
         metrics = self._active_connections.pop(connection_id, None)
         if not metrics:
-            logger.warning(
-                f"Attempted to close non-existent connection: {connection_id}"
-            )
+            logger.warning("websocket_connection_close_not_found")
             return None
 
         # Update connection metrics
@@ -352,8 +359,12 @@ class WebSocketMonitor:
         self._trim_history()
 
         logger.info(
-            f"WebSocket connection closed: {connection_id} "
-            f"(duration: {metrics.connection_duration:.2f}s, reason: {reason.value})"
+            "websocket_connection_closed",
+            extra={
+                **_resource_log_fields(metrics.resource_key),
+                "client_type": metrics.client_type,
+                "disconnect_reason": reason.value,
+            },
         )
         return metrics
 
@@ -426,7 +437,11 @@ class WebSocketMonitor:
         ).inc()
 
         logger.error(
-            f"WebSocket error on connection {connection_id}: {error_type} - {error_details}"
+            "websocket_connection_error",
+            extra={
+                **_resource_log_fields(metrics.resource_key),
+                "client_type": metrics.client_type,
+            },
         )
 
     def record_heartbeat(self, connection_id: str, latency_seconds: float):
@@ -442,7 +457,9 @@ class WebSocketMonitor:
             latency_seconds
         )
 
-    def session_closed(self, session_id: str, reason: str = "session_expired"):
+    def session_closed(
+        self, session_id: TenantSessionKey | str, reason: str = "session_expired"
+    ):
         """Handle session closure - disconnect all associated WebSocket connections"""
         connection_ids = list(self._session_connections.get(session_id, []))
 
@@ -457,7 +474,11 @@ class WebSocketMonitor:
             )
 
         logger.info(
-            f"Session {session_id} closed, disconnected {len(connection_ids)} WebSocket connections"
+            "websocket_session_closed",
+            extra={
+                **_resource_log_fields(session_id),
+                "disconnected_count": len(connection_ids),
+            },
         )
 
     def get_active_connections(self) -> Dict[str, ConnectionMetrics]:
@@ -587,13 +608,12 @@ class WebSocketMonitor:
                     self.connection_closed(
                         connection_id, DisconnectReason.HEARTBEAT_TIMEOUT
                     )
-                    logger.warning(
-                        f"Cleaned up stale WebSocket connection: {connection_id}"
-                    )
+                    logger.warning("websocket_stale_connection_cleaned")
 
                 if stale_connections:
                     logger.info(
-                        f"Cleaned up {len(stale_connections)} stale WebSocket connections"
+                        "websocket_stale_connections_cleaned",
+                        extra={"connection_count": len(stale_connections)},
                     )
 
             except Exception:

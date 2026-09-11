@@ -65,12 +65,12 @@ def websocket_health_check():
                 "timestamp": utc_now_iso(),
             },
         )
-    except Exception as e:
+    except Exception:
         return JSONResponse(
             status_code=500,
             content={
                 "status": "error",
-                "message": f"Health check failed: {str(e)}",
+                "message": "Health check failed",
                 "timestamp": utc_now_iso(),
             },
         )

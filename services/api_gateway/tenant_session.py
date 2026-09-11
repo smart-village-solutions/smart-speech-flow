@@ -6,8 +6,8 @@ import base64
 import json
 import re
 from dataclasses import dataclass
-from hashlib import sha256
 
+from .session_pseudonym import tenant_ref as pseudonymous_tenant_ref
 from .studio_runtime_client import RuntimeConfiguration
 
 SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
@@ -33,7 +33,7 @@ class TenantSessionKey:
 
     @property
     def tenant_ref(self) -> str:
-        return sha256(self.tenant_id.encode("utf-8")).hexdigest()[:12]
+        return pseudonymous_tenant_ref(self.tenant_id)
 
 
 @dataclass(frozen=True, slots=True)

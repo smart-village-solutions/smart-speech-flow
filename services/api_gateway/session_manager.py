@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 from .quality_telemetry import SessionLifecyclePhase, SessionTerminationReason
-from .session_pseudonym import session_ref
+from .session_pseudonym import MISSING_TENANT_REFERENCE, session_ref, tenant_ref
 from .session_store import MemoryTenantSessionStore, TenantSessionStore
 from .tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
@@ -378,6 +378,11 @@ class SessionManager:
         try:
             telemetry.emit_session_lifecycle(
                 session_ref=session_ref(session.id),
+                tenant_ref=(
+                    tenant_ref(session.tenant_id)
+                    if session.tenant_id
+                    else MISSING_TENANT_REFERENCE
+                ),
                 phase=phase,
                 termination_reason=reason,
                 session_duration_ms=_session_duration_ms(session),

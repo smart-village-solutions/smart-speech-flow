@@ -29,6 +29,7 @@ SESSION_KEY_ENV: Final[str] = "SSF_QUALITY_TELEMETRY_SESSION_KEY"
 # for a bare digest -- the preimage is protected by the key, not by length --
 # and 32 characters keeps the value inside the OPAQUE_REF attribute shape.
 _REFERENCE_LENGTH: Final[int] = 32
+_TENANT_REFERENCE_LENGTH: Final[int] = 12
 
 # A session id that never arrived is not a session whose id happens to be
 # blank. Hashing "" would give every such event a real-looking reference that
@@ -36,6 +37,20 @@ _REFERENCE_LENGTH: Final[int] = 32
 # same width and charset as a real reference, so it satisfies the OPAQUE_REF
 # attribute shape, and no HMAC will collide with it.
 MISSING_REFERENCE: Final[str] = "0" * _REFERENCE_LENGTH
+MISSING_TENANT_REFERENCE: Final[str] = "0" * _TENANT_REFERENCE_LENGTH
+
+
+def tenant_ref(tenant_id: Any) -> str:
+    """Return the bounded deployment-wide tenant correlation reference.
+
+    Tenant identifiers are not short public capabilities like session IDs, so
+    the design intentionally uses a stable SHA-256 prefix for operations and
+    lifecycle correlation without disclosing the configured identifier.
+    """
+    text = str(tenant_id or "").strip()
+    if not text:
+        return MISSING_TENANT_REFERENCE
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:_TENANT_REFERENCE_LENGTH]
 
 
 class SessionPseudonymizer:

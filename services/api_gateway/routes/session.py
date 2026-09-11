@@ -862,7 +862,7 @@ async def send_unified_message(
     start_time = time.perf_counter()
     # One row per processed message, assembled across every exit below and
     # emitted once from the `finally`. See message_telemetry.py.
-    recorder = MessageTelemetryRecorder(session_id=session_id, start_time=start_time)
+    recorder = MessageTelemetryRecorder(session_id=key, start_time=start_time)
     _log_session_event("🚀 Processing message", session_id)
 
     # Session-Validation
@@ -973,7 +973,7 @@ async def process_audio_input(
     # that drives this function without the route -- needs to pass nothing.
     session_id = key.session_id
     recorder = recorder or MessageTelemetryRecorder(
-        session_id=session_id, start_time=start_time
+        session_id=key, start_time=start_time
     )
     file, source_lang, target_lang = await _parse_audio_form(request)
     recorder.record_request(
@@ -1068,7 +1068,7 @@ async def process_text_input(
     """Text-Input verarbeiten (application/json)"""
     session_id = key.session_id
     recorder = recorder or MessageTelemetryRecorder(
-        session_id=session_id, start_time=start_time
+        session_id=key, start_time=start_time
     )
     text_request = await _parse_text_request(request)
     recorder.record_request(
