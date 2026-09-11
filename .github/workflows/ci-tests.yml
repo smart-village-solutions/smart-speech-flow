@@ -40,3 +40,103 @@ jobs:
             --ignore=tests/integration \
             --ignore=tests/load \
             --ignore=tests/integration_test_audio_validation.py
+
+  feedback-database:
+    name: Feedback integration (PostgreSQL)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -r services/api_gateway/requirements.txt
+
+      # Started the way Compose starts it, mounting deploy/postgres so the real
+      # apply.sh runs the real migrations. A `services:` container cannot do
+      # that -- it starts before the checkout exists -- and the roles created by
+      # migration 002 are the entire subject of these tests.
+      - name: Start the feedback database
+        run: |
+          # The passwords are generated here rather than written into this
+          # file. Two reasons, and both matter:
+          #
+          # They must contain the characters that break a connection URL --
+          # `/` raises before any I/O and `@` silently truncates the password
+          # and corrupts the host -- because that is the defect these tests
+          # exist to keep fixed, and it is what a real `openssl rand -base64`
+          # password looks like.
+          #
+          # And a literal of that shape beside a name ending in PASSWORD is
+          # indistinguishable from a real credential to a secret scanner. It
+          # cannot tell a fake from a real one, and it is right not to try.
+          app_password="$(openssl rand -hex 16)/+=@"
+          maintenance_password="$(openssl rand -hex 16)/+=@"
+          owner_password="$(openssl rand -hex 16)"
+          {
+            echo "SSF_FEEDBACK_DATABASE_PASSWORD=$app_password"
+            echo "SSF_FEEDBACK_MAINTENANCE_DATABASE_PASSWORD=$maintenance_password"
+            echo "SSF_FEEDBACK_OWNER_DATABASE_PASSWORD=$owner_password"
+          } >> "$GITHUB_ENV"
+
+          # Started the way Compose starts it, mounting deploy/postgres so the
+          # real apply.sh runs the real migrations. A `services:` container
+          # cannot do that -- it starts before the checkout exists -- and the
+          # roles created by migration 002 are the entire subject of these
+          # tests.
+          docker run -d --name ssf-postgres-ci \
+            -e POSTGRES_DB=ssf \
+            -e POSTGRES_USER=ssf \
+            -e POSTGRES_PASSWORD="$owner_password" \
+            -e SSF_FEEDBACK_APP_PASSWORD="$app_password" \
+            -e SSF_FEEDBACK_MAINTENANCE_PASSWORD="$maintenance_password" \
+            -p 5432:5432 \
+            -v "$PWD/deploy/postgres:/docker-entrypoint-initdb.d:ro" \
+            postgres:17.7-alpine
+
+          # TCP, not the socket: during the first start the image runs a
+          # temporary socket-only server while the migrations execute, so a
+          # socket probe reports ready before the roles exist.
+          for _ in $(seq 1 60); do
+            if docker exec ssf-postgres-ci pg_isready -h 127.0.0.1 -U ssf -d ssf; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "the database never accepted TCP connections" >&2
+          docker logs ssf-postgres-ci >&2
+          exit 1
+
+      - name: Confirm both migrations ran
+        run: |
+          docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*001_feedback.sql'
+          docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*002_feedback_roles.sql'
+
+      - name: Run the feedback integration tests
+        # The three passwords arrive from the previous step through GITHUB_ENV.
+        env:
+          PYTHONPATH: .
+          SSF_FEEDBACK_DATABASE_URL: postgresql://ssf_feedback_app@127.0.0.1:5432/ssf
+          SSF_FEEDBACK_MAINTENANCE_DATABASE_URL: postgresql://ssf_feedback_maintenance@127.0.0.1:5432/ssf
+          SSF_FEEDBACK_OWNER_DATABASE_URL: postgresql://ssf@127.0.0.1:5432/ssf
+        run: |
+          pytest --run-integration -q \
+            tests/integration/test_feedback_repository.py \
+            tests/integration/test_feedback_row_level_security.py
+
+      - name: Database logs on failure
+        if: failure()
+        run: docker logs ssf-postgres-ci
+
+      - name: Stop the database
+        if: always()
+        run: docker rm -f ssf-postgres-ci
