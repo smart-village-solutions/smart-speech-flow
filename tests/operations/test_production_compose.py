@@ -4,6 +4,8 @@ import yaml
 
 
 COMPOSE_PATH = Path("deploy/production/docker-compose.production.yml")
+ENV_EXAMPLE_PATH = Path("deploy/production/production.env.example")
+DEVELOPMENT_COMPOSE_PATH = Path("docker-compose.yml")
 
 
 def load_production_compose():
@@ -57,18 +59,103 @@ def test_production_compose_preserves_the_existing_prometheus_volume():
     assert compose["volumes"]["prometheus-data"]["external"] is True
 
 
-def test_keycloak_realm_mount_resolves_to_the_versioned_file():
-    keycloak = load_production_compose()["services"]["keycloak"]
-    realm_mount = next(
-        volume
-        for volume in keycloak["volumes"]
-        if volume.endswith(":/opt/keycloak/data/import/ssf-realm.json:ro")
-    )
-    source = (COMPOSE_PATH.parent / realm_mount.split(":", maxsplit=1)[0]).resolve()
-    expected_source = Path("deploy/production/keycloak/ssf-realm.json").resolve()
+def _environment_by_name(service):
+    return {
+        entry.split("=", maxsplit=1)[0]: entry.split("=", maxsplit=1)[1]
+        for entry in service["environment"]
+    }
 
-    assert source == expected_source
-    assert source.is_file()
+
+def _load_env_example():
+    return {
+        line.split("=", maxsplit=1)[0]: line.split("=", maxsplit=1)[1]
+        for line in ENV_EXAMPLE_PATH.read_text().splitlines()
+        if line and not line.startswith("#")
+    }
+
+
+def test_production_gateway_uses_studio_backed_multi_realm_configuration():
+    gateway = load_production_compose()["services"]["api_gateway"]
+    environment = _environment_by_name(gateway)
+
+    assert environment["KEYCLOAK_BASE_URL"] == (
+        "${KEYCLOAK_BASE_URL:-https://auth.dialog.kassel.de}"
+    )
+    assert environment["KEYCLOAK_AUDIENCE"] == "${KEYCLOAK_AUDIENCE:-ssf-frontend}"
+    assert environment["KEYCLOAK_REQUIRED_ROLE"] == "${KEYCLOAK_REQUIRED_ROLE:-ssf-user}"
+    assert environment["STUDIO_RUNTIME_CONFIGURATION_BASE_URL"] == (
+        "${STUDIO_RUNTIME_CONFIGURATION_BASE_URL:-https://studio.dialog.kassel.de}"
+    )
+    assert environment["STUDIO_RUNTIME_TOKEN_URL"] == "${STUDIO_RUNTIME_TOKEN_URL:?required}"
+    assert environment["STUDIO_RUNTIME_CLIENT_ID"] == "${STUDIO_RUNTIME_CLIENT_ID:-ssf-runtime}"
+    assert environment["STUDIO_RUNTIME_AUDIENCE"] == (
+        "${STUDIO_RUNTIME_AUDIENCE:-sva-studio-ssf-runtime}"
+    )
+    assert environment["STUDIO_RUNTIME_CLIENT_SECRET"] == (
+        "${STUDIO_RUNTIME_CLIENT_SECRET:?required}"
+    )
+    assert environment["STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS"] == (
+        "${STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS:-60}"
+    )
+    assert "KEYCLOAK_ISSUER" not in environment
+
+
+def test_production_routes_match_the_trusted_frontend_and_keycloak_origins():
+    services = load_production_compose()["services"]
+    gateway_environment = _environment_by_name(services["api_gateway"])
+    keycloak = services["keycloak"]
+
+    assert gateway_environment["CLIENT_BASE_URL"] == "https://dialog.kassel.de"
+    assert gateway_environment["KEYCLOAK_BASE_URL"] == (
+        "${KEYCLOAK_BASE_URL:-https://auth.dialog.kassel.de}"
+    )
+    assert keycloak["environment"]["KC_HOSTNAME"] == (
+        "https://auth.dialog.kassel.de"
+    )
+    assert (
+        "traefik.http.routers.keycloak.rule=Host(`auth.dialog.kassel.de`)"
+        in keycloak["labels"]
+    )
+    assert (
+        "traefik.http.routers.frontend.rule=Host(`dialog.kassel.de`)"
+        in services["frontend"]["labels"]
+    )
+
+
+def test_production_example_documents_tenant_login_configuration_without_secrets():
+    environment = _load_env_example()
+
+    assert environment["KEYCLOAK_BASE_URL"] == "https://auth.dialog.kassel.de"
+    assert environment["KEYCLOAK_AUDIENCE"] == "ssf-frontend"
+    assert environment["KEYCLOAK_REQUIRED_ROLE"] == "ssf-user"
+    assert environment["STUDIO_RUNTIME_CONFIGURATION_BASE_URL"] == (
+        "https://studio.dialog.kassel.de"
+    )
+    assert environment["STUDIO_RUNTIME_CLIENT_ID"] == "ssf-runtime"
+    assert environment["STUDIO_RUNTIME_AUDIENCE"] == "sva-studio-ssf-runtime"
+    assert environment["STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS"] == "60"
+    assert environment["STUDIO_RUNTIME_CLIENT_SECRET"] == ""
+    assert "STUDIO_RUNTIME_TOKEN_URL" in environment
+    assert "KEYCLOAK_ISSUER" not in environment
+
+
+def test_production_keycloak_does_not_import_the_development_realm():
+    keycloak = load_production_compose()["services"]["keycloak"]
+
+    assert "--import-realm" not in keycloak["command"]
+    assert all(
+        "/opt/keycloak/data/import" not in volume
+        for volume in keycloak.get("volumes", [])
+    )
+
+
+def test_frontend_build_receives_public_multi_realm_configuration():
+    compose = yaml.safe_load(DEVELOPMENT_COMPOSE_PATH.read_text())
+    build_args = compose["services"]["frontend"]["build"]["args"]
+
+    assert build_args["VITE_KEYCLOAK_URL"] == "https://auth.dialog.kassel.de"
+    assert build_args["VITE_KEYCLOAK_CLIENT_ID"] == "ssf-frontend"
+    assert "VITE_KEYCLOAK_REALM" not in build_args
 
 
 def test_recovery_unit_relies_on_docker_restart_policies_without_compose_reconciliation():

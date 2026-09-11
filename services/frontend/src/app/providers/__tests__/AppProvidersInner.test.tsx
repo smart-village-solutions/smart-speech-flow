@@ -43,6 +43,12 @@ function setup() {
 const click = (name: string) => userEvent.click(screen.getByRole('button', { name }));
 
 describe('AppProvidersInner', () => {
+  it('provides the login tenant directory repository to screens', () => {
+    const [services] = setup();
+
+    expect(services.loginTenant.list).toBeTypeOf('function');
+  });
+
   // The services own the socket factory and the repositories. Rebuilding them
   // tore down the live conversation socket and refetched history the moment the
   // session's language arrived, which is on every load of the conversation.

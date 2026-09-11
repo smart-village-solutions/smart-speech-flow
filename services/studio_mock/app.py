@@ -28,6 +28,13 @@ RuntimeErrorCode = Literal[
     "runtime_configuration_unavailable",
 ]
 
+DirectoryErrorCode = Literal[
+    "service_authentication_invalid",
+    "service_action_forbidden",
+    "tenant_not_found",
+    "admin_login_directory_unavailable",
+]
+
 
 class RuntimeError(BaseModel):
     """The nested error object defined by the Studio V1 contract."""
@@ -45,6 +52,26 @@ class RuntimeErrorEnvelope(BaseModel):
 
     contract_version: str = Field(alias="contractVersion")
     error: RuntimeError
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class DirectoryError(BaseModel):
+    """The nested error object for the login-directory V1 contract."""
+
+    code: DirectoryErrorCode
+    message: str
+    retryable: bool
+    correlation_id: str = Field(alias="correlationId")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class DirectoryErrorEnvelope(BaseModel):
+    """The V1 error envelope returned by the login-directory endpoint."""
+
+    contract_version: str = Field(alias="contractVersion")
+    error: DirectoryError
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -79,7 +106,9 @@ class LocaleResponse(BaseModel):
     """A localized V1 runtime configuration entry."""
 
     locale: str
-    authenticated_home_explanation_html: str = Field(alias="authenticatedHomeExplanationHtml")
+    authenticated_home_explanation_html: str = Field(
+        alias="authenticatedHomeExplanationHtml"
+    )
     guest_explanation_html: str = Field(alias="guestExplanationHtml")
     conversation_content_storage_question_html: str | None = Field(
         alias="conversationContentStorageQuestionHtml"
@@ -119,6 +148,26 @@ class RuntimeConfigurationResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class AdminLoginTenantResponse(BaseModel):
+    """A public administrative tenant entry in the V1 login directory."""
+
+    id: str
+    display_name: str = Field(alias="displayName")
+    realm: str
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AdminLoginDirectoryResponse(BaseModel):
+    """The successful tenant-unbound Studio login-directory V1 response."""
+
+    contract_version: str = Field(alias="contractVersion")
+    directory_revision: str = Field(alias="directoryRevision")
+    tenants: list[AdminLoginTenantResponse]
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 _ERROR_RESPONSES = {
     401: {
         "model": RuntimeErrorEnvelope,
@@ -139,6 +188,22 @@ _ERROR_RESPONSES = {
     503: {
         "model": RuntimeErrorEnvelope,
         "description": "Runtime configuration is unavailable.",
+    },
+}
+
+_DIRECTORY_ERROR_RESPONSES = {
+    401: {
+        "model": DirectoryErrorEnvelope,
+        "description": "Service authentication failed.",
+    },
+    403: {
+        "model": DirectoryErrorEnvelope,
+        "description": "Service permission is missing.",
+    },
+    404: {"model": DirectoryErrorEnvelope, "description": "The request is malformed."},
+    503: {
+        "model": DirectoryErrorEnvelope,
+        "description": "Login directory is unavailable.",
     },
 }
 
@@ -187,6 +252,19 @@ _TENANT_CONFIGURATION_TEMPLATES: dict[str, dict[str, Any]] = {
     },
 }
 
+_LOGIN_DIRECTORY_TENANTS = [
+    {
+        "id": "tenant-kassel",
+        "displayName": "Stadt Kassel",
+        "realm": "kassel-ssf-2025",
+    },
+    {
+        "id": "tenant-fulda",
+        "displayName": "Stadt Fulda",
+        "realm": "fulda-ssf-2025",
+    },
+]
+
 
 def _revision(payload: dict[str, Any]) -> str:
     """Return the V1 SHA-256 revision for a canonical JSON payload."""
@@ -208,6 +286,16 @@ def _configuration_for(tenant_id: str) -> dict[str, Any]:
     return configuration
 
 
+def _login_directory() -> dict[str, Any]:
+    """Return the deterministic V1 login directory for all ready tenants."""
+    directory = {
+        "contractVersion": _CONTRACT_VERSION,
+        "tenants": deepcopy(_LOGIN_DIRECTORY_TENANTS),
+    }
+    directory["directoryRevision"] = _revision(directory)
+    return directory
+
+
 def _error_response(
     status_code: int,
     code: RuntimeErrorCode,
@@ -216,6 +304,28 @@ def _error_response(
     message: str = _UNAVAILABLE_MESSAGE,
 ) -> JSONResponse:
     """Return the stable Studio V1 error envelope without tenant content."""
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "contractVersion": _CONTRACT_VERSION,
+            "error": {
+                "code": code,
+                "message": message,
+                "retryable": retryable,
+                "correlationId": correlation_id,
+            },
+        },
+    )
+
+
+def _directory_error_response(
+    status_code: int,
+    code: DirectoryErrorCode,
+    correlation_id: str,
+    retryable: bool,
+    message: str = _UNAVAILABLE_MESSAGE,
+) -> JSONResponse:
+    """Return a stable V1 error envelope for the tenant-unbound directory."""
     return JSONResponse(
         status_code=status_code,
         content={
@@ -247,7 +357,10 @@ def runtime_configuration(
     """Return deterministic V1 data for authorized Studio service callers."""
     if authorization not in {_AUTHORIZED_TOKEN, _UNAUTHORIZED_TOKEN}:
         return _error_response(
-            401, "service_authentication_invalid", x_correlation_id or "unavailable", False
+            401,
+            "service_authentication_invalid",
+            x_correlation_id or "unavailable",
+            False,
         )
     if authorization == _UNAUTHORIZED_TOKEN:
         return _error_response(
@@ -260,7 +373,9 @@ def runtime_configuration(
         or x_tenant_id is not None
         or request.url.query
     ):
-        return _error_response(404, "tenant_not_found", x_correlation_id or "unavailable", False)
+        return _error_response(
+            404, "tenant_not_found", x_correlation_id or "unavailable", False
+        )
     scenario_errors: dict[str, tuple[int, RuntimeErrorCode, bool]] = {
         "suspended": (409, "tenant_suspended", False),
         "plugin-inactive": (409, "ssf_plugin_inactive", False),
@@ -270,10 +385,55 @@ def runtime_configuration(
         status_code, code, retryable = scenario_errors[x_mock_scenario]
         return _error_response(status_code, code, x_correlation_id, retryable)
     if x_mock_scenario == "unavailable":
-        return _error_response(503, "runtime_configuration_unavailable", x_correlation_id, True)
+        return _error_response(
+            503, "runtime_configuration_unavailable", x_correlation_id, True
+        )
     if x_studio_tenant_id not in _TENANT_CONFIGURATION_TEMPLATES:
         return _error_response(404, "tenant_not_found", x_correlation_id, False)
     return _configuration_for(x_studio_tenant_id)
+
+
+@app.get(
+    "/internal/plugins/ssf/v1/admin-login-tenants",
+    response_model=AdminLoginDirectoryResponse,
+    responses=_DIRECTORY_ERROR_RESPONSES,
+)
+def admin_login_tenants(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    x_correlation_id: str | None = Header(default=None),
+    x_studio_tenant_id: str | None = Header(default=None, include_in_schema=False),
+    x_studio_instance_id: str | None = Header(default=None, include_in_schema=False),
+    x_tenant_id: str | None = Header(default=None, include_in_schema=False),
+    x_mock_scenario: str | None = Header(default=None),
+) -> dict[str, Any] | JSONResponse:
+    """Return ready tenants for authorized, tenant-unbound service callers."""
+    if authorization not in {_AUTHORIZED_TOKEN, _UNAUTHORIZED_TOKEN}:
+        return _directory_error_response(
+            401,
+            "service_authentication_invalid",
+            x_correlation_id or "unavailable",
+            False,
+        )
+    if authorization == _UNAUTHORIZED_TOKEN:
+        return _directory_error_response(
+            403, "service_action_forbidden", x_correlation_id or "unavailable", False
+        )
+    if (
+        not x_correlation_id
+        or x_studio_tenant_id is not None
+        or x_studio_instance_id is not None
+        or x_tenant_id is not None
+        or request.url.query
+    ):
+        return _directory_error_response(
+            404, "tenant_not_found", x_correlation_id or "unavailable", False
+        )
+    if x_mock_scenario == "unavailable":
+        return _directory_error_response(
+            503, "admin_login_directory_unavailable", x_correlation_id, True
+        )
+    return _login_directory()
 
 
 def _custom_openapi() -> dict[str, Any]:
@@ -281,17 +441,23 @@ def _custom_openapi() -> dict[str, Any]:
     if app.openapi_schema:
         return app.openapi_schema
     schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
-    parameters = schema["paths"]["/internal/plugins/ssf/v1/runtime-configuration"]["get"][
-        "parameters"
-    ]
-    for parameter in parameters:
-        if parameter["in"] == "header" and parameter["name"] in {
+    required_headers_by_path = {
+        "/internal/plugins/ssf/v1/runtime-configuration": {
             "authorization",
             "x-studio-tenant-id",
             "x-correlation-id",
-        }:
-            parameter["required"] = True
-            parameter["schema"] = {"type": "string"}
+        },
+        "/internal/plugins/ssf/v1/admin-login-tenants": {
+            "authorization",
+            "x-correlation-id",
+        },
+    }
+    for path, header_names in required_headers_by_path.items():
+        parameters = schema["paths"][path]["get"]["parameters"]
+        for parameter in parameters:
+            if parameter["in"] == "header" and parameter["name"] in header_names:
+                parameter["required"] = True
+                parameter["schema"] = {"type": "string"}
     app.openapi_schema = schema
     return app.openapi_schema
 

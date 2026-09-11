@@ -19,6 +19,8 @@ import { createHealthRepository } from '@/domain/health/health.repository';
 import type { HealthRepository } from '@/domain/health/health.repository';
 import { createStaticBrandSource } from '@/domain/brand/StaticBrandSource';
 import type { BrandSource } from '@/domain/brand/brand.port';
+import { createLoginTenantRepository } from '@/domain/login-tenant/loginTenant.repository';
+import type { LoginTenantRepository } from '@/domain/login-tenant/loginTenant.repository';
 
 export interface Services {
   config: AppConfig;
@@ -27,6 +29,7 @@ export interface Services {
   message: MessageRepository;
   health: HealthRepository;
   admin: AdminRepository;
+  loginTenant: LoginTenantRepository;
   feedback: FeedbackSink;
   consent: ConsentSink;
   brand: BrandSource;
@@ -49,6 +52,7 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     consent: createStubConsentSink(),
     health: createHealthRepository(http),
     admin: createAdminRepository(http),
+    loginTenant: createLoginTenantRepository(http),
     brand: createStaticBrandSource(config.brand),
     createRealtime: () => createWebSocketTransport({ wsBaseUrl: config.wsBaseUrl }),
   };

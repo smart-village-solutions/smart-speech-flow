@@ -1,16 +1,31 @@
 import json
 from pathlib import Path
 
+import yaml
 
-REALM_PATH = Path("deploy/production/keycloak/ssf-realm.json")
+
+DEVELOPMENT_REALM_PATH = Path("deploy/production/keycloak/ssf-realm.json")
+DEVELOPMENT_COMPOSE_PATH = Path("docker-compose.yml")
 
 
-def test_ssf_realm_provisions_a_public_pkce_client_for_the_frontend():
-    realm = json.loads(REALM_PATH.read_text())
+def test_development_compose_imports_only_the_local_realm_fixture():
+    keycloak = yaml.safe_load(DEVELOPMENT_COMPOSE_PATH.read_text())["services"][
+        "keycloak"
+    ]
+
+    assert "--import-realm" in keycloak["command"]
+    assert keycloak["volumes"] == [
+        "./deploy/production/keycloak/ssf-realm.json:/opt/keycloak/data/import/ssf-realm.json:ro"
+    ]
+
+
+def test_development_realm_provisions_a_secretless_public_pkce_client():
+    realm = json.loads(DEVELOPMENT_REALM_PATH.read_text())
 
     assert realm["realm"] == "ssf"
     client = next(client for client in realm["clients"] if client["clientId"] == "ssf-frontend")
     assert client["publicClient"] is True
+    assert "secret" not in client
     assert client["standardFlowEnabled"] is True
     assert client["implicitFlowEnabled"] is False
     assert client["directAccessGrantsEnabled"] is False

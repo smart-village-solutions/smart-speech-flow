@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { RequireSession } from './RequireSession';
 import { AccessCodeScreen } from '@/features/access-code/AccessCodeScreen';
@@ -12,9 +14,14 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import { useServices } from '@/app/providers/services';
 import { AdminDashboardScreen } from '@/features/admin/AdminDashboardScreen';
 import { AdminSessionScreen } from '@/features/admin/AdminSessionScreen';
-import { logoutFromKeycloak, requireKeycloakLogin } from '@/app/auth/keycloak';
+import {
+  logoutFromKeycloak,
+  requireKeycloakLogin,
+  subscribeToKeycloakExpiration,
+} from '@/app/auth/keycloak';
 import { AdminLoginScreen } from '@/features/admin/AdminLoginScreen';
 import { useAdminAuth } from '@/features/admin/useAdminAuth';
+import { TenantLoginScreen } from '@/features/login/TenantLoginScreen';
 
 /** QR deep link: /join/:sessionId lands straight on the language picker. */
 function JoinRedirect() {
@@ -22,31 +29,81 @@ function JoinRedirect() {
   return <Navigate to={`/s/${sessionId}/language`} replace />;
 }
 
-/** Keycloak-protected administrative entrypoint. */
-function LoginEntry() {
-  const { config } = useServices();
-  const [authenticated, setAuthenticated] = useState(false);
-  const [ready, setReady] = useState(false);
+function TenantLoginEntry() {
+  const { tenantId = '' } = useParams<{ tenantId: string }>();
+  return (
+    <AdminQueryBoundary key={tenantId}>
+      <TenantLoginSession tenantId={tenantId} />
+    </AdminQueryBoundary>
+  );
+}
+
+/** Each administrative entry owns its entire query cache, including session queries. */
+function AdminQueryBoundary({ children }: { children: ReactNode }) {
+  const parent = useQueryClient();
+  const [client] = useState(() => new QueryClient({ defaultOptions: parent.getDefaultOptions() }));
+  useEffect(
+    () => () => {
+      client.clear();
+    },
+    [client]
+  );
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+
+/** Resolve the route ID through the validated directory before using a realm. */
+function TenantLoginSession({ tenantId }: { tenantId: string }) {
+  const { config, loginTenant } = useServices();
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<'loading' | 'authenticated' | 'missing' | 'error'>(
+    'loading'
+  );
   const [sessionId, setSessionId] = useState<string | null>(null);
   const navigate = useNavigate();
 
+  useEffect(
+    () =>
+      subscribeToKeycloakExpiration(() => {
+        void navigate('/login', { replace: true });
+      }),
+    [navigate]
+  );
+
   useEffect(() => {
-    void requireKeycloakLogin(config).then((value) => {
-      setAuthenticated(value);
-      setReady(true);
-    });
-  }, [config]);
+    let cancelled = false;
+    void loginTenant
+      .list()
+      .then(async (tenants) => {
+        if (cancelled) return;
+        const tenant = tenants.find((entry) => entry.id === tenantId);
+        if (!tenant) {
+          setStatus('missing');
+          return;
+        }
+        const authenticated = await requireKeycloakLogin(config, tenant);
+        if (!cancelled && authenticated) setStatus('authenticated');
+      })
+      .catch(() => {
+        if (!cancelled) setStatus('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [config, loginTenant, tenantId]);
 
   const leave = () => setSessionId(null);
 
-  // Return to the public entry after Keycloak sign-out.
   const out = () => {
     setSessionId(null);
-    void logoutFromKeycloak();
-    void navigate('/');
+    void logoutFromKeycloak().catch(() => {
+      /* The local session is already cleared. */
+    });
+    void navigate('/login');
   };
 
-  if (!ready || !authenticated) return null;
+  if (status === 'missing') return <NotFoundPage />;
+  if (status === 'error') return <p role="alert">{t('admin.tenantLogin.unavailable')}</p>;
+  if (status !== 'authenticated') return null;
 
   if (sessionId === null) {
     return <AdminDashboardScreen onEnterSession={setSessionId} onSignOut={out} />;
@@ -69,7 +126,9 @@ function LegacyAdminEntry() {
   if (sessionId === null) {
     return <AdminDashboardScreen onEnterSession={setSessionId} onSignOut={out} />;
   }
-  return <AdminSessionScreen sessionId={sessionId} onLeave={() => setSessionId(null)} onSignOut={out} />;
+  return (
+    <AdminSessionScreen sessionId={sessionId} onLeave={() => setSessionId(null)} onSignOut={out} />
+  );
 }
 
 export function AppRoutes() {
@@ -84,8 +143,16 @@ export function AppRoutes() {
         <Route path="live" element={<ConversationScreen />} />
       </Route>
 
-      <Route path="/login" element={<LoginEntry />} />
-      <Route path="/admin" element={<LegacyAdminEntry />} />
+      <Route path="/login" element={<TenantLoginScreen />} />
+      <Route path="/login/:tenantId" element={<TenantLoginEntry />} />
+      <Route
+        path="/admin"
+        element={
+          <AdminQueryBoundary>
+            <LegacyAdminEntry />
+          </AdminQueryBoundary>
+        }
+      />
 
       <Route
         path="/customer"

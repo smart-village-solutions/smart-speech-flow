@@ -1,10 +1,17 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { installFakeClipboard } from '@/test/fakeClipboard';
 import { readConfig } from '@/app/config/env';
 import { AppRoutes } from '@/app/router/AppRoutes';
+
+vi.mock('@/app/auth/keycloak', () => ({
+  requireKeycloakLogin: vi.fn().mockResolvedValue(true),
+  getAdminAccessToken: vi.fn().mockResolvedValue('tenant-token'),
+  logoutFromKeycloak: vi.fn().mockResolvedValue(undefined),
+  subscribeToKeycloakExpiration: () => () => {},
+}));
 
 const services = { config: readConfig({}) };
 
@@ -14,22 +21,22 @@ const signIn = async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Anmelden' }));
 };
 
-const renderApp = async () => {
+const renderApp = async (route: string) => {
   renderWithProviders(<AppRoutes />, {
-    route: '/admin',
+    route,
     locale: 'de',
     services,
   });
 
-  await signIn();
+  if (route === '/admin') await signIn();
 };
 
-describe('the admin session flow', () => {
+describe.each(['/admin', '/login/tenant-kassel'])('the admin session flow at %s', (route) => {
   beforeEach(() => sessionStorage.clear());
 
   it('creates a session, hands out the invite, and enters the conversation', async () => {
     installFakeClipboard();
-    await renderApp();
+    await renderApp(route);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Neues Gespräch starten' }));
 
@@ -47,7 +54,7 @@ describe('the admin session flow', () => {
   });
 
   it('re-enters a session that is still open', async () => {
-    await renderApp();
+    await renderApp(route);
 
     await userEvent.click(
       await screen.findByRole('button', { name: 'Gespräch AR000001 fortsetzen' })
@@ -57,7 +64,7 @@ describe('the admin session flow', () => {
   });
 
   it('leaves a completed session alone', async () => {
-    await renderApp();
+    await renderApp(route);
 
     // Waiting on the rows, not the heading: the heading renders before the
     // query answers, and "no button for TR000001" is only meaningful once the
@@ -67,7 +74,7 @@ describe('the admin session flow', () => {
   });
 
   it('drops the open session when the admin signs out', async () => {
-    await renderApp();
+    await renderApp(route);
 
     await userEvent.click(
       await screen.findByRole('button', { name: 'Gespräch AR000001 fortsetzen' })
@@ -77,8 +84,11 @@ describe('the admin session flow', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
     await userEvent.click(screen.getByRole('button', { name: 'Abmelden' }));
 
-    // Signing out returns to the legacy admin login and drops the active session.
-    expect(await screen.findByRole('heading', { name: 'Code eingeben' })).toBeInTheDocument();
+    if (route === '/admin') {
+      expect(await screen.findByRole('heading', { name: 'Code eingeben' })).toBeInTheDocument();
+    } else {
+      expect(await screen.findByRole('link', { name: 'Stadt Kassel' })).toBeInTheDocument();
+    }
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

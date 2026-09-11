@@ -62,6 +62,7 @@ def _tenant_test_client() -> TestClient:
     }
 
     @app.api_route("/tenant-operation", methods=["GET", "POST"])
+    @app.get("/tenant-operation/{studio_tenant_id}")
     async def tenant_operation(
         context: StudioTenantContext = Depends(require_studio_tenant_context),
     ) -> dict[str, str]:
@@ -75,6 +76,12 @@ def test_dependency_uses_only_the_validated_claim() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"tenant_id": "tenant-kassel"}
+
+
+def test_dependency_rejects_path_tenant_selectors() -> None:
+    response = _tenant_test_client().get("/tenant-operation/tenant-berlin")
+
+    assert response.status_code == 400
 
 
 @pytest.mark.parametrize(
@@ -97,7 +104,9 @@ def test_dependency_rejects_browser_controlled_tenant_selectors(
     request_kwargs: dict[str, Any],
 ) -> None:
     client = _tenant_test_client()
-    method = client.post if {"json", "content"}.intersection(request_kwargs) else client.get
+    method = (
+        client.post if {"json", "content"}.intersection(request_kwargs) else client.get
+    )
 
     response = method("/tenant-operation", **request_kwargs)
 

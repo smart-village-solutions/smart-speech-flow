@@ -1,5 +1,54 @@
 # Frontend Deployment Guide
 
+## Tenant login production gate
+
+The tenant chooser and multi-realm login must not be enabled for production
+conversations until every item below is complete:
+
+1. The Studio login directory returns at least two ready tenant entries.
+2. Studio has provisioned every listed realm with the common public
+   `ssf-frontend` client, PKCE S256, the exact application origin and
+   `/login/*` redirects, the `ssf-frontend` audience, the `ssf-user` role, and
+   the signed `studio_tenant_id` and `ssf_authorization_revision` claims.
+3. `SSF_ENABLE_LEGACY_ADMIN_ACCESS=false` is active before multi-realm login is
+   enabled.
+4. The separate OpenSpec change `add-multi-tenant-operations` has implemented
+   and passed its tenant-isolation tests for session creation, history, lookup,
+   termination, messages, audio, and customer joins. The login-directory work
+   establishes identity context only; it does not prove conversation storage
+   isolation.
+5. Operators have manually verified login, reuse of an existing SSO session,
+   logout, an unknown tenant route, a Studio outage, and cross-tenant negative
+   access paths in the deployed environment.
+
+Build the frontend image with the trusted Keycloak origin and common public
+client ID. These values are public browser configuration, not credentials:
+
+```bash
+docker build \
+  --build-arg VITE_API_BASE_URL=https://ssf.smart-village.solutions \
+  --build-arg VITE_WS_BASE_URL=wss://ssf.smart-village.solutions \
+  --build-arg VITE_KEYCLOAK_URL=https://auth.dialog.kassel.de \
+  --build-arg VITE_KEYCLOAK_CLIENT_ID=ssf-frontend \
+  -f services/frontend/Dockerfile \
+  services/frontend
+```
+
+### Tenant login smoke procedure
+
+- Open `/login` and confirm at least two Studio-provided organisations appear.
+- Select each tenant with and without an existing SSO session; confirm the
+  callback remains under `/login/<tenant-id>` and opens only that tenant's
+  administration view.
+- Log out from each realm and confirm the browser returns to `/login`.
+- Open an unknown `/login/<tenant-id>` and confirm no Keycloak client is
+  initialized and only a neutral unavailable message is shown.
+- Make the Studio directory temporarily unavailable after the configured cache
+  expires and confirm new login selection and issuer admission fail closed.
+- Run cross-tenant negative checks from `add-multi-tenant-operations` and
+  confirm one tenant cannot create, read, update, terminate, or join another
+  tenant's conversations or access its messages and audio.
+
 ## ✅ Production-Ready Checklist
 
 Das Frontend ist vollständig implementiert und bereit für Deployment unter **translate.smart-village.solutions**
@@ -203,9 +252,10 @@ docker compose ps frontend
 docker compose logs frontend | head -20
 ```
 
-## 🎯 Ready for Production!
+## 🎯 Legacy single-tenant baseline
 
-Das Frontend ist vollständig implementiert und getestet. Alle Kernfunktionen sind vorhanden:
+The items below describe the existing single-tenant baseline. They do not
+override the multi-tenant production gate above.
 
 - ✅ Session Management
 - ✅ Messaging (Text + Audio)
