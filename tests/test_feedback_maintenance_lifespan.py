@@ -65,3 +65,47 @@ class TestItDegradesLikeTheRestOfFeedback:
         task = task[: task.index("\nasync def ", 10)] if "\nasync def " in task[10:] else task
         assert "is None" in task
 
+
+class TestMaintenanceConnectsAsItsOwnRole:
+    """The two passes need a role the tenant policy does not filter.
+
+    Reconciliation and retention are deployment-wide: there is no tenant to
+    bind them to, so under the request-path role they would see no rows and
+    report success. Migration 002 gives them `ssf_feedback_maintenance`; this
+    asserts the gateway actually opens a second pool with it, because sharing
+    the request pool would silently disable both passes.
+    """
+
+    def test_the_maintenance_dsn_is_read_from_its_own_variable(self):
+        assert "SSF_FEEDBACK_MAINTENANCE_DATABASE_URL" in SOURCE
+
+    def test_the_maintenance_repository_is_built_from_the_maintenance_dsn(self):
+        """Matched on the argument, not the line break, so wrapping is free."""
+        creations = [
+            node
+            for node in ast.walk(ast.parse(SOURCE))
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "create"
+        ]
+        dsn_arguments = {
+            keyword.value.id
+            for call in creations
+            for keyword in call.keywords
+            if keyword.arg == "dsn" and isinstance(keyword.value, ast.Name)
+        }
+
+        assert "maintenance_dsn" in dsn_arguments
+        assert "feedback_dsn" in dsn_arguments
+
+    def test_the_maintenance_pass_does_not_reuse_the_request_repository(self):
+        construction = SOURCE[SOURCE.index("FeedbackMaintenance(") :]
+        construction = construction[: construction.index(")")]
+        assert "repository=maintenance_repository" in construction
+
+    def test_the_maintenance_pool_is_closed_at_shutdown(self):
+        assert "feedback_maintenance_repository" in SOURCE
+
+    def test_a_missing_maintenance_dsn_leaves_submissions_working(self):
+        """Collecting feedback matters more than reconciling it."""
+        assert "app.state.feedback_maintenance = None" in SOURCE

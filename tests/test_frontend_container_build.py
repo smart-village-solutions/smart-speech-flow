@@ -45,6 +45,8 @@ def _compose_build(project_name: str) -> subprocess.CompletedProcess[str]:
     environment["SSF_POSTGRES_DB"] = "ssf_test"
     environment["SSF_POSTGRES_USER"] = "ssf_test_user"
     environment["SSF_POSTGRES_PASSWORD"] = "test-only-db-password"
+    environment["SSF_FEEDBACK_APP_PASSWORD"] = "test-only-app-password"
+    environment["SSF_FEEDBACK_MAINTENANCE_PASSWORD"] = "test-only-maint-password"
     environment["SSF_FEEDBACK_ENCRYPTION_KEY"] = TEST_ENCRYPTION_KEY
     return subprocess.run(
         [

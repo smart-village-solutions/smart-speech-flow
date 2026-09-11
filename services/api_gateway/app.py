@@ -341,9 +341,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # a container reaching this branch is misconfigured or the database is
     # briefly down -- both of which the route reports as retryable.
     app.state.feedback_repository = None
+    app.state.feedback_maintenance_repository = None
     app.state.feedback_service = None
     app.state.feedback_maintenance = None
     feedback_dsn = os.environ.get("SSF_FEEDBACK_DATABASE_URL", "").strip()
+    # Reconciliation and retention are deployment-wide, so they connect as a
+    # role the tenant policy does not filter -- see deploy/postgres/migrations/
+    # 002_feedback_roles.sql. Sharing the request pool would leave both passes
+    # seeing no rows and reporting success.
+    maintenance_dsn = os.environ.get("SSF_FEEDBACK_MAINTENANCE_DATABASE_URL", "").strip()
     if not feedback_dsn:
         sys.stderr.write(
             "Feedback persistence disabled: SSF_FEEDBACK_DATABASE_URL is not set; "
@@ -369,11 +375,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 session_manager=session_manager,
                 telemetry=app.state.quality_telemetry,
             )
-            app.state.feedback_maintenance = FeedbackMaintenance(
-                repository=feedback_repository,
-                telemetry=app.state.quality_telemetry,
-                metrics=FeedbackMaintenanceMetrics(app.state.prometheus_registry),
-            )
+            if maintenance_dsn:
+                maintenance_repository = await PostgresFeedbackRepository.create(
+                    dsn=maintenance_dsn
+                )
+                app.state.feedback_maintenance_repository = maintenance_repository
+                app.state.feedback_maintenance = FeedbackMaintenance(
+                    repository=maintenance_repository,
+                    telemetry=app.state.quality_telemetry,
+                    metrics=FeedbackMaintenanceMetrics(app.state.prometheus_registry),
+                )
+            else:
+                # Collecting feedback matters more than reconciling it, so a
+                # missing maintenance role costs the passes, not the endpoint.
+                sys.stderr.write(
+                    "Feedback maintenance disabled: "
+                    "SSF_FEEDBACK_MAINTENANCE_DATABASE_URL is not set; "
+                    "analytics recovery and retention will not run\n"
+                )
             sys.stderr.write("Feedback persistence ready\n")
         except Exception as feedback_error:  # noqa: BLE001 - reported, not raised
             # Type name only: a connection error can carry the DSN, and the DSN
@@ -445,11 +464,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
 
         feedback_repository_at_exit = getattr(app.state, "feedback_repository", None)
+        feedback_maintenance_repository_at_exit = getattr(
+            app.state, "feedback_maintenance_repository", None
+        )
         app.state.feedback_repository = None
+        app.state.feedback_maintenance_repository = None
         app.state.feedback_service = None
         app.state.feedback_maintenance = None
-        if feedback_repository_at_exit is not None:
-            await feedback_repository_at_exit.close()
+        for pool_at_exit in (
+            feedback_repository_at_exit,
+            feedback_maintenance_repository_at_exit,
+        ):
+            if pool_at_exit is not None:
+                await pool_at_exit.close()
 
         print("Shutdown complete", flush=True)
 

@@ -152,7 +152,10 @@ services:
       - SSF_QUALITY_TELEMETRY_SESSION_KEY=${SSF_QUALITY_TELEMETRY_SESSION_KEY:-}
       # Feedback persistence (#302). The encryption key has deliberately no
       # default: a random one would encrypt rows nobody could ever read back.
-      - SSF_FEEDBACK_DATABASE_URL=postgresql://${SSF_POSTGRES_USER}:${SSF_POSTGRES_PASSWORD}@ssf-postgres:5432/${SSF_POSTGRES_DB}
+      # Two roles, not one: the request path is filtered by the tenant policy,
+      # the background passes are deployment-wide. See migration 002.
+      - SSF_FEEDBACK_DATABASE_URL=postgresql://ssf_feedback_app:${SSF_FEEDBACK_APP_PASSWORD}@ssf-postgres:5432/${SSF_POSTGRES_DB}
+      - SSF_FEEDBACK_MAINTENANCE_DATABASE_URL=postgresql://ssf_feedback_maintenance:${SSF_FEEDBACK_MAINTENANCE_PASSWORD}@ssf-postgres:5432/${SSF_POSTGRES_DB}
       - SSF_FEEDBACK_ENCRYPTION_KEY=${SSF_FEEDBACK_ENCRYPTION_KEY:?required}
       - SSF_DEFAULT_TENANT_ID=${SSF_DEFAULT_TENANT_ID:-default}
       - SSF_OTLP_LOGS_ENDPOINT=${SSF_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
@@ -289,6 +292,11 @@ services:
       POSTGRES_DB: ${SSF_POSTGRES_DB:?required}
       POSTGRES_USER: ${SSF_POSTGRES_USER:?required}
       POSTGRES_PASSWORD: ${SSF_POSTGRES_PASSWORD:?required}
+      # apply.sh sets these on the two application roles in migration 002. The
+      # owner above runs migrations and backups only; nothing connects as it at
+      # runtime, because a superuser bypasses the tenant policy entirely.
+      SSF_FEEDBACK_APP_PASSWORD: ${SSF_FEEDBACK_APP_PASSWORD:?required}
+      SSF_FEEDBACK_MAINTENANCE_PASSWORD: ${SSF_FEEDBACK_MAINTENANCE_PASSWORD:?required}
     volumes:
       - ssf-postgres-data:/var/lib/postgresql/data
       # The entrypoint ignores subdirectories, so the migrations live in one
