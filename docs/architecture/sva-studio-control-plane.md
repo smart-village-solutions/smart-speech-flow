@@ -222,6 +222,47 @@ content. Studio will consume those data later through an internal SSF
 administration or reporting API rather than accessing SSF runtime databases
 directly.
 
+## Feedback Tenancy
+
+Feedback is the first SSF-owned data with a tenant column, and its two halves
+sit on opposite sides of the trust boundary above. The split is deliberate and
+temporary, and it is recorded here because the asymmetry is not visible from
+either endpoint alone.
+
+**Reading is tenant-isolated today.** `GET /api/feedback` and
+`GET /api/feedback/{feedback_id}` resolve the tenant through
+`require_studio_tenant_context`, which reads the signed `studio_tenant_id`
+claim and rejects any tenant selector supplied by the request. The gateway
+connects as `ssf_feedback_reader`, a `NOBYPASSRLS` role, so the row-level
+security policy in `001_feedback.sql` filters every read inside PostgreSQL
+rather than in application code. A record belonging to another tenant is
+invisible, not merely unselected.
+
+**Writing is not tenant-isolated yet.** `POST /api/feedback` is unauthenticated
+by design — the customer flow carries no Keycloak identity, and this document's
+trust boundary keeps customers outside Studio IAM. Its tenant therefore cannot
+come from a token; it has to come from the session. Sessions do not carry a
+tenant, so `ConfiguredTenantResolver` supplies one value for the whole
+deployment from `SSF_DEFAULT_TENANT_ID`.
+
+The consequence, stated plainly: while more than one tenant is live, every
+submission is stored under the single configured tenant, and the tenant-isolated
+read endpoints will serve all of it to any tenant's operator. The isolation on
+the read side is real, but it is isolating rows that were commingled when they
+were written.
+
+Closing this is issue #288 (tenant-bind sessions), which sits in Phase 4 of the
+delivery order on #266 and is gated behind #299. Nothing here needs a migration
+when it lands: the `tenant_id` column, its index and the policy already exist,
+and swapping `ConfiguredTenantResolver` for a session-derived resolver is one
+constructor in the lifespan. What does need a decision is the rows written
+before then, which are only attributable while a single tenant is live.
+
+The operational rule that follows: **#288 lands before a second tenant begins
+collecting feedback.** See
+`docs/operations/runbooks/feedback-database-deployment.md` for the deployment
+consequences.
+
 ## Security and Quality Boundaries
 
 - Authentication, tenant resolution, and authorisation are enforced server-side.

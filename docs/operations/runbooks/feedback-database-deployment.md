@@ -34,7 +34,7 @@ AES-GCM whose additional authenticated data binds each value to its own feedback
 id and tenant, so a row moved to another tenant or another id fails to decrypt
 rather than decrypting into the wrong context.
 
-Three database identities exist, and the separation is the security control, not
+Four database identities exist, and the separation is the security control, not
 a convention:
 
 | Role | Privileges | Used by |
@@ -42,12 +42,22 @@ a convention:
 | owner (`SSF_POSTGRES_USER`) | superuser | migrations and backups only |
 | `ssf_feedback_app` | `SELECT, INSERT, UPDATE` on `feedback`, one tenant at a time | `POST /api/feedback` |
 | `ssf_feedback_maintenance` | `SELECT, UPDATE, DELETE`, all tenants | reconciliation and retention |
+| `ssf_feedback_reader` | `SELECT` on `feedback` and `INSERT` on `feedback_access_audit`, one tenant at a time | the Studio read endpoints |
 
 The request path deliberately has no `DELETE`, so retention cannot be triggered
 from an HTTP request. The owner is a superuser and therefore bypasses row-level
 security entirely: **never point `SSF_FEEDBACK_DATABASE_URL` at it.** Doing so
 silently disables tenant isolation, which is exactly the defect migration 002
 exists to prevent.
+
+`ssf_feedback_reader` exists because neither of the other two can serve Studio's
+reads. Reusing `ssf_feedback_app` would give the unauthenticated submit path the
+ability to write audit rows; reusing `ssf_feedback_maintenance` would read with
+`BYPASSRLS`, leaving tenant isolation enforced only by a `WHERE` clause in
+Python. The read role is `NOBYPASSRLS` like the request path, so migration 001's
+policy filters every read: an operator signed in to one tenant cannot be served
+another tenant's feedback even if the query forgets to ask. It holds no `UPDATE`
+and no `DELETE` — withdrawal is not part of this path (see Known limits).
 
 ## Every command targets the production stack
 
@@ -65,15 +75,15 @@ full if you would rather not source the helper.
 
 ## Step 1 — Generate the secrets
 
-Six values are required. All are declared `:?required`, so the stack refuses to
-start without them rather than starting in a broken state.
+Seven values are required. All are declared `:?required`, so the stack refuses
+to start without them rather than starting in a broken state.
 
-Generate the three new ones on the production host and write them straight into
+Generate the four new ones on the production host and write them straight into
 the untracked production `.env`:
 
 ```bash
-# Two role passwords and the database owner's password.
-for name in SSF_POSTGRES_PASSWORD SSF_FEEDBACK_APP_PASSWORD SSF_FEEDBACK_MAINTENANCE_PASSWORD; do
+# Three role passwords and the database owner's password.
+for name in SSF_POSTGRES_PASSWORD SSF_FEEDBACK_APP_PASSWORD SSF_FEEDBACK_MAINTENANCE_PASSWORD SSF_FEEDBACK_READER_PASSWORD; do
   printf '%s=%s\n' "$name" "$(openssl rand -base64 32)" >> .env
 done
 
@@ -156,26 +166,35 @@ production_compose exec -T ssf-postgres sh -ec \
    "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname LIKE '"'"'ssf%'"'"' ORDER BY rolname"'
 ```
 
-Expect exactly three rows:
+Expect exactly four rows:
 
 ```
 ssf|t|t
 ssf_feedback_app|f|f
 ssf_feedback_maintenance|f|t
+ssf_feedback_reader|f|f
 ```
 
-`ssf_feedback_app` must show `f|f`. If it shows `t` in either column, the
-request path can read every tenant's feedback and the deployment must stop here.
+`ssf_feedback_app` and `ssf_feedback_reader` must both show `f|f`. If either
+shows `t` in either column, that path can read every tenant's feedback and the
+deployment must stop here. `ssf_feedback_reader` showing `f|t` is the specific
+failure that makes the Studio endpoints serve one tenant's feedback to another,
+and nothing else will report it.
 
-Confirm the request role cannot delete:
+Confirm the request role cannot delete, and that the read role can neither
+delete nor update:
 
 ```bash
 production_compose exec -T ssf-postgres sh -ec \
   'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
-   "SELECT has_table_privilege('"'"'ssf_feedback_app'"'"', '"'"'feedback'"'"', '"'"'DELETE'"'"')"'
+   "SELECT has_table_privilege('"'"'ssf_feedback_app'"'"', '"'"'feedback'"'"', '"'"'DELETE'"'"')
+    UNION ALL
+    SELECT has_table_privilege('"'"'ssf_feedback_reader'"'"', '"'"'feedback'"'"', '"'"'DELETE'"'"')
+    UNION ALL
+    SELECT has_table_privilege('"'"'ssf_feedback_reader'"'"', '"'"'feedback'"'"', '"'"'UPDATE'"'"')"'
 ```
 
-Expect `f`.
+Expect `f` three times.
 
 ## Step 4 — Restart the gateway
 
@@ -311,6 +330,45 @@ If the panels are empty after a real submission, check Step 5 first: without
 ClickHouse migration `005` the feedback columns do not exist, and the events
 land carrying only their envelope.
 
+## Step 9 — Verify the Studio read endpoints
+
+Two authenticated endpoints let Studio read what was submitted:
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /api/feedback` | one page of the caller's tenant: ratings, dates, form version, analytics state, and `has_improvements` — never the text itself |
+| `GET /api/feedback/{feedback_id}` | one record including its decrypted free text |
+
+Both take the tenant from the signed `studio_tenant_id` claim in the bearer
+token. A tenant supplied by the request — query string, header, cookie or body
+— is rejected with `400`, so an operator cannot widen their own scope. A record
+belonging to another tenant answers `404`, identical to one that does not
+exist, so the endpoint cannot be used to discover which ids are real elsewhere.
+
+Confirm the gateway wired the read role:
+
+```bash
+production_compose logs api_gateway | grep -i "feedback reading"
+```
+
+Expect `Feedback reading ready`. `Feedback reading disabled:
+SSF_FEEDBACK_READER_DATABASE_URL is not set` means the endpoints will answer
+`503` while submissions keep working — correct for a deployment that has not
+granted Studio read access, and a misconfiguration for one that has.
+
+Every read writes a row to `feedback_access_audit`, with `access_scope` of
+`list` or `detail`. Reading a record is an audited disclosure; confirm the audit
+is actually being written before relying on it:
+
+```bash
+production_compose exec -T ssf-postgres sh -ec \
+  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
+   "SELECT access_scope, count(*) FROM feedback_access_audit GROUP BY access_scope"'
+```
+
+A refused read writes nothing: nothing was disclosed, and an audit row for an
+id the caller cannot read would let anyone fill the table with ids they guessed.
+
 ## Backups
 
 `scripts/backup-production.sh` already includes `ssf-postgres.sql.gz` and runs
@@ -392,11 +450,11 @@ passes are not interchangeable.
 
 These are properties of the design, not defects to report:
 
-- **No one can read submitted feedback.** There is no admin page, no `GET`
-  endpoint and no dashboard panel — a feedback-review UI was explicitly out of
-  scope for #301. The `feedback_access_audit` table is created and deliberately
-  unused, waiting for that reader. The ratings are queryable in ClickHouse; the
-  free text is reachable only by decrypting it directly with the key.
+- **Reading is an API, not a UI.** `GET /api/feedback` and
+  `GET /api/feedback/{feedback_id}` serve Studio (Step 9), and every read is
+  audited. There is still no feedback-review page in SSF itself — a browsing
+  surface was explicitly out of scope for #301 — so an operator without Studio
+  reads these through an authenticated HTTP client or not at all.
 - **Rating averages are not retry-safe.** ClickHouse `avgState` has no
   distinct-by form, so a re-emitted submission contributes twice to the gold
   table's rating averages. Counts and rates stay exact. Read averages from
@@ -424,7 +482,33 @@ These are properties of the design, not defects to report:
   design as the rest of the customer flow, and is bounded only by the global
   per-client rate limit. Anyone who can reach the gateway can add rows that are
   kept for a year.
-- **All feedback lands under one tenant.** `SSF_DEFAULT_TENANT_ID` supplies it
-  until sessions carry a real tenant. The `tenant_id` column and the isolation
-  policy are already in place, so that change needs no migration — but feedback
-  collected before then stays attributed to the configured tenant.
+- **Submission is single-tenant; reading is not.** The two halves are at
+  different stages on purpose, and the difference matters operationally.
+
+  The read endpoints are genuinely multi-tenant today: the tenant comes from a
+  signed claim, `ssf_feedback_reader` is `NOBYPASSRLS`, and PostgreSQL's own
+  policy filters every read (Step 3 verifies this).
+
+  Submission is not. `POST /api/feedback` is unauthenticated by design — the
+  customer flow carries no Keycloak identity — so its tenant cannot come from a
+  token. It would have to come from the session, and sessions do not carry a
+  tenant yet: `SSF_DEFAULT_TENANT_ID` supplies one value for the whole
+  deployment. **Every submission from every tenant is therefore stored under
+  that single configured tenant, and the read endpoints will show all of it to
+  any tenant's operator.**
+
+  Tenant-binding sessions is issue #288, which is gated behind #299 in the
+  delivery order recorded on #266. Until it lands:
+
+  - A deployment serving one live tenant is unaffected in practice.
+  - A deployment serving more than one must not treat the read endpoints as a
+    tenant boundary for submitted feedback, because the rows behind them are
+    commingled at write time.
+  - Feedback collected before #288 stays attributed to the configured tenant.
+    Re-attributing it afterwards is an `UPDATE` on `tenant_id`, not a
+    migration — the column and the policy are already in place — but it needs
+    someone to decide which rows belonged to whom, which is only answerable
+    while one tenant is live.
+
+  The order to deploy in follows from that: land #288 before a second tenant
+  begins collecting feedback, not after.
