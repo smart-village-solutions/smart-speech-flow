@@ -432,7 +432,7 @@ class TestOnlyOneReplicaReconcilesPerPass:
     Retention already takes an advisory lock so exactly one replica deletes per
     pass. Reconciliation had no equivalent, so with N replicas every pending
     row was re-emitted N times. uniqExactState(event_id) absorbs that for
-    counts and rates, but avgState has no distinct-by form -- migration 005
+    counts and rates, but avgState has no distinct-by form -- migration 006
     says so -- and the rating and NPS averages skew by a factor that scales
     with replica count on any pass that finds a backlog.
     """

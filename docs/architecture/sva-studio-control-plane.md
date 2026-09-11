@@ -224,49 +224,41 @@ directly.
 
 ## Feedback Tenancy
 
-Feedback is the first SSF-owned data with a tenant column, and its two halves
-sit on opposite sides of the trust boundary above. The split is deliberate and
-temporary, and it is recorded here because the asymmetry is not visible from
-either endpoint alone.
+Feedback is the first SSF-owned data with a tenant column. Both of its halves
+are tenant-isolated, by different mechanisms, because they sit on opposite
+sides of the trust boundary above.
 
-**Reading is tenant-isolated today.** `GET /api/feedback` and
-`GET /api/feedback/{feedback_id}` resolve the tenant through
-`require_studio_tenant_context`, which reads the signed `studio_tenant_id`
-claim and rejects any tenant selector supplied by the request. The gateway
-connects as `ssf_feedback_reader`, a `NOBYPASSRLS` role, so the row-level
-security policy in `001_feedback.sql` filters every read inside PostgreSQL
-rather than in application code. A record belonging to another tenant is
-invisible, not merely unselected.
+**Reading.** `GET /api/feedback` and `GET /api/feedback/{feedback_id}` resolve
+the tenant through `require_studio_tenant_context`, which reads the signed
+`studio_tenant_id` claim and rejects any tenant selector supplied by the
+request. The gateway connects as `ssf_feedback_reader`, a `NOBYPASSRLS` role,
+so the row-level security policy in `001_feedback.sql` filters every read
+inside PostgreSQL rather than in application code. A record belonging to
+another tenant is invisible, not merely unselected.
 
-**Writing is not tenant-isolated yet.** `POST /api/feedback` is unauthenticated
-by design — the customer flow carries no Keycloak identity, and this document's
-trust boundary keeps customers outside Studio IAM. Its tenant therefore cannot
-come from a token; it has to come from the session. Sessions do not carry a
-tenant, so `ConfiguredTenantResolver` supplies one value for the whole
-deployment from `SSF_DEFAULT_TENANT_ID`.
+**Writing.** `POST /api/feedback` is unauthenticated by design — the customer
+flow carries no Keycloak identity, and this document's trust boundary keeps
+customers outside Studio IAM — so its tenant cannot come from a token. It comes
+from the session instead. Every admin session is created through the tenant
+flow and stored under a `TenantSessionKey`, and `SessionTenantResolver` reaches
+that key from the bare session id through the session store's join index. The
+tenant a row is stored under is therefore the tenant whose conversation it
+describes.
 
-The consequence, stated plainly: every submission is stored under the single
-configured tenant, and the read side's isolation then works exactly as
-designed on rows that were commingled when they were written. The operator of
-the tenant whose `studio_tenant_id` equals `SSF_DEFAULT_TENANT_ID` sees every
-submission, including other tenants'; every other tenant's operator sees none,
-including their own. If the configured value matches no Studio tenant — the
-`default` fallback matches none — nobody sees anything, silently.
+Two cases have no session to take a tenant from, and both are deliberate
+limits rather than gaps in the mechanism:
 
-So even with one live tenant, `SSF_DEFAULT_TENANT_ID` has to be set to that
-tenant's `tenant.id` exactly for the read endpoints to return anything.
+- **Feedback that names no session** — from the access-code screen, the tenant
+  login screen or the admin dashboard — falls back to `SSF_DEFAULT_TENANT_ID`.
+  That tenant's operators see all of it, from every tenant.
+- **Feedback for a terminated conversation** is refused as an unknown session,
+  because termination revokes the join link the lookup depends on. That is the
+  session store's capability design working as intended; accepting feedback for
+  a short grace window without weakening it is #324.
 
-Closing this is issue #288 (tenant-bind sessions), which sits in Phase 4 of the
-delivery order on #266 and is gated behind #299. Nothing here needs a migration
-when it lands: the `tenant_id` column, its index and the policy already exist,
-and swapping `ConfiguredTenantResolver` for a session-derived resolver is one
-constructor in the lifespan. What does need a decision is the rows written
-before then, which are only attributable while a single tenant is live.
-
-The operational rule that follows: **#288 lands before a second tenant begins
-collecting feedback.** See
-`docs/operations/runbooks/feedback-database-deployment.md` for the deployment
-consequences.
+See `docs/operations/runbooks/feedback-database-deployment.md` for the
+deployment consequences, including how to confirm no stored tenant is one that
+no operator can read.
 
 ## Security and Quality Boundaries
 

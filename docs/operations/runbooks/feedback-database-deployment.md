@@ -93,22 +93,26 @@ printf 'SSF_FEEDBACK_ENCRYPTION_KEY=%s\n' "$(openssl rand -base64 32)" >> .env
 # Identifiers, not secrets.
 printf 'SSF_POSTGRES_DB=ssf\nSSF_POSTGRES_USER=ssf\n' >> .env
 
-# The tenant every submission is stored under. It must be the live Studio
-# tenant's id, byte for byte -- see the note below before choosing it.
-printf 'SSF_DEFAULT_TENANT_ID=%s\n' "<the live Studio tenant.id>" >> .env
+# The fallback tenant for feedback that names no session -- see the note below.
+printf 'SSF_DEFAULT_TENANT_ID=%s\n' "<the Studio tenant.id to receive it>" >> .env
 ```
 
-**`SSF_DEFAULT_TENANT_ID` must equal the live Studio tenant's `tenant.id`
-exactly.** Submissions are stored under this value, and the Studio read
-endpoints (Step 9) only ever return rows whose tenant matches the
-`studio_tenant_id` in the operator's token — PostgreSQL's policy enforces that,
-not the application. If the two differ, submissions are stored correctly and
-**no operator can ever see them**: every list is empty and every record answers
-`404`, with nothing in any log to say why. Leaving it unset gives the fallback
-`default`, which no Studio tenant is called, and produces exactly that.
+**A submission is stored under the tenant of the session it names.** Every
+admin session is created through the tenant flow, so it carries its tenant, and
+the gateway reads it from there. Nothing needs configuring for that.
 
-Take the id from the tenant's token or from Studio, not from the tenant's
-display name. Step 9 has a check that catches a mismatch.
+`SSF_DEFAULT_TENANT_ID` covers only what has no session to take a tenant from:
+feedback given from the access-code screen, the tenant login screen or the
+admin dashboard, and any legacy session. Set it to the `tenant.id` of the
+Studio tenant that should receive that feedback, exactly as Studio issues it.
+
+The Studio read endpoints (Step 9) only return rows whose tenant matches the
+`studio_tenant_id` in the operator's token — PostgreSQL's policy enforces that,
+not the application. So a value no Studio tenant carries hides that feedback
+from every operator, with nothing in any log to say why. Leaving it unset gives
+the fallback `default`, which no Studio tenant is called, and does exactly
+that. Take the id from the tenant's token or from Studio, not from its display
+name. Step 9 has a check that catches a mismatch.
 
 `deploy/production/production.env.example` documents all of them with the same
 names.
@@ -259,7 +263,7 @@ Lines that mean something is actually wrong:
 
 ## Step 5 — Apply the ClickHouse migration
 
-The analytics half needs migration `005`, which adds the feedback columns and
+The analytics half needs migration `006`, which adds the feedback columns and
 the `feedback_daily` aggregate.
 
 **Apply it before setting `SSF_QUALITY_TELEMETRY_MODE=enabled`.** Feedback
@@ -268,7 +272,7 @@ populated, and those rows cannot be repaired afterwards — the attributes never
 reached ClickHouse.
 
 Follow the enablement procedure in
-[clickhouse-operations.md](clickhouse-operations.md); migration `005` applies the
+[clickhouse-operations.md](clickhouse-operations.md); migration `006` applies the
 same way as `002` through `004`.
 
 ## Step 6 — Confirm a real submission is stored
@@ -343,7 +347,7 @@ Two panels need reading carefully, and both say so in their own descriptions:
   stay exact in both tiers.
 
 If the panels are empty after a real submission, check Step 5 first: without
-ClickHouse migration `005` the feedback columns do not exist, and the events
+ClickHouse migration `006` the feedback columns do not exist, and the events
 land carrying only their envelope.
 
 ## Step 9 — Verify the Studio read endpoints
@@ -385,10 +389,10 @@ production_compose exec -T ssf-postgres sh -ec \
 A refused read writes nothing: nothing was disclosed, and an audit row for an
 id the caller cannot read would let anyone fill the table with ids they guessed.
 
-**Confirm the configured tenant is one an operator can actually read.** This
+**Confirm every stored tenant is one an operator can actually read.** This
 is the check Step 1 refers to, and the failure it catches is silent: stored
-rows that no token can ever reach. Compare the tenant the rows were written
-under with the `studio_tenant_id` claim in a live operator's token:
+rows that no token can ever reach. List the tenants the rows were written
+under:
 
 ```bash
 production_compose exec -T ssf-postgres sh -ec \
@@ -396,12 +400,14 @@ production_compose exec -T ssf-postgres sh -ec \
    "SELECT tenant_id, count(*) FROM feedback GROUP BY tenant_id"'
 ```
 
-Expect exactly one row, whose `tenant_id` is byte-for-byte the operator's
-`studio_tenant_id`. A row reading `default`, or any value that differs from the
-claim, means `SSF_DEFAULT_TENANT_ID` is wrong: correct it in `.env`, restart
-`api_gateway`, and re-attribute the rows already written with an `UPDATE` on
-`tenant_id` as the owner — they were written by a single deployment-wide
-setting, so there is no ambiguity about whose they are.
+Expect one row per tenant that has collected feedback, each `tenant_id`
+byte-for-byte a Studio `tenant.id`. Rows under a session's tenant are correct
+by construction. A row reading `default`, or any value no Studio tenant
+carries, is sessionless feedback stored under a wrong `SSF_DEFAULT_TENANT_ID`:
+correct it in `.env` and restart `api_gateway`. The rows already written can be
+re-attributed with an `UPDATE` on `tenant_id` as the owner, restricted to that
+exact wrong value — every one of them was written by the fallback setting, so
+there is no ambiguity about whose they are.
 
 ## Backups
 
@@ -516,42 +522,19 @@ These are properties of the design, not defects to report:
   design as the rest of the customer flow, and is bounded only by the global
   per-client rate limit. Anyone who can reach the gateway can add rows that are
   kept for a year.
-- **Submission is single-tenant; reading is not.** The two halves are at
-  different stages on purpose, and the difference matters operationally.
-
-  The read endpoints are genuinely multi-tenant today: the tenant comes from a
-  signed claim, `ssf_feedback_reader` is `NOBYPASSRLS`, and PostgreSQL's own
-  policy filters every read (Step 3 verifies this).
-
-  Submission is not. `POST /api/feedback` is unauthenticated by design — the
-  customer flow carries no Keycloak identity — so its tenant cannot come from a
-  token. It would have to come from the session, and sessions do not carry a
-  tenant yet: `SSF_DEFAULT_TENANT_ID` supplies one value for the whole
-  deployment. **Every submission from every tenant is therefore stored under
-  that single configured tenant.**
-
-  What the read endpoints then show follows directly from the policy:
-
-  - The operator of the tenant whose id equals `SSF_DEFAULT_TENANT_ID` sees
-    **every** submission, including those made by other tenants' citizens.
-  - Every other tenant's operator sees **nothing** — an empty list and `404`
-    for every id — even for feedback their own citizens submitted.
-  - If `SSF_DEFAULT_TENANT_ID` matches no Studio tenant, nobody sees anything
-    (see Step 1).
-
-  Tenant-binding sessions is issue #288, which is gated behind #299 in the
-  delivery order recorded on #266. Until it lands:
-
-  - A deployment serving one live tenant is correct, provided
-    `SSF_DEFAULT_TENANT_ID` is that tenant's id.
-  - A deployment serving more than one must not treat the read endpoints as a
-    tenant boundary for submitted feedback: one tenant is shown everyone's,
-    and the rest are shown none of their own.
-  - Feedback collected before #288 stays attributed to the configured tenant.
-    Re-attributing it afterwards is an `UPDATE` on `tenant_id`, not a
-    migration — the column and the policy are already in place — but it needs
-    someone to decide which rows belonged to whom, which is only answerable
-    while one tenant is live.
-
-  The order to deploy in follows from that: land #288 before a second tenant
-  begins collecting feedback, not after.
+- **Sessionless feedback has no tenant of its own.** A submission is stored
+  under its session's tenant, and the read endpoints show each tenant's
+  operators their own citizens' feedback and nobody else's. Feedback that names
+  no session — from the access-code screen, the tenant login screen or the
+  admin dashboard — has no session to take a tenant from. It is stored under
+  `SSF_DEFAULT_TENANT_ID`, so that one tenant's operators see all of it, from
+  every tenant. The submit endpoint is anonymous by design, so there is no
+  token to take a tenant from either.
+- **Feedback for a conversation that has ended is refused.** Once a
+  conversation terminates, the session store revokes its join link, and the
+  bare session id the feedback form sends no longer resolves. The form answers
+  `404 The session is not known`. The feedback button stays in the
+  ended-conversation screen's header, which is exactly where it is most likely
+  to be used, so this will be hit. Before the tenant-isolation release it was
+  accepted. Restoring it without weakening the revoked link is tracked in
+  #324.
