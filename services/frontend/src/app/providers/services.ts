@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { AppConfig } from '@/app/config/env';
 import { createHttpClient } from '@/core/http/client';
+import { createBrowserClipLoader, type ClipLoader } from '@/core/audio/clips';
 import { createWebSocketTransport } from '@/core/realtime/WebSocketTransport';
 import type { RealtimeTransport } from '@/core/realtime/realtime.port';
 import { createSessionRepository } from '@/domain/session/session.repository';
@@ -33,6 +34,7 @@ export interface Services {
   feedback: FeedbackSink;
   consent: ConsentSink;
   brand: BrandSource;
+  clips: ClipLoader;
   createRealtime: () => RealtimeTransport;
 }
 
@@ -55,6 +57,7 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     admin,
     loginTenant: createLoginTenantRepository(http),
     brand: createStaticBrandSource(config.brand),
+    clips: createBrowserClipLoader(http),
     createRealtime: () =>
       createWebSocketTransport({
         wsBaseUrl: config.wsBaseUrl,

@@ -18,7 +18,20 @@ export function createHttpClient(config: AppConfig, getLocale: () => string): Ax
   client.interceptors.request.use(async (request) => {
     request.headers.set('X-Correlation-Id', randomId());
     request.headers.set('Accept-Language', getLocale());
-    if (request.url?.startsWith('/api/admin/')) {
+    const requestUrl = request.url;
+    const isRelativeAdmin = requestUrl?.startsWith('/api/admin/') === true;
+    let isTrustedAbsoluteAdmin = false;
+    if (requestUrl && config.apiBaseUrl) {
+      try {
+        const apiOrigin = new URL(config.apiBaseUrl).origin;
+        const target = new URL(requestUrl, config.apiBaseUrl);
+        isTrustedAbsoluteAdmin =
+          target.origin === apiOrigin && target.pathname.startsWith('/api/admin/');
+      } catch {
+        isTrustedAbsoluteAdmin = false;
+      }
+    }
+    if (isRelativeAdmin || isTrustedAbsoluteAdmin) {
       const token = await getAdminAccessToken();
       if (token !== null) {
         request.headers.set('Authorization', `Bearer ${token}`);

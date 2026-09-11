@@ -17,8 +17,8 @@ import { readConfig } from '@/app/config/env';
 import type { BrandId } from '@/app/config/env';
 import type { AudioPlayerPort } from '@/core/audio/player.port';
 import type { ClipLoader } from '@/core/audio/clips';
+import { WAVE_HEIGHTS } from '@/core/audio/waveform';
 import { createFakeAudioPlayer } from './fakeAudioPlayer';
-import { createFakeClipLoader } from './fakeClipLoader';
 import { createFakeRealtimeTransport } from './fakeRealtimeTransport';
 
 interface Options {
@@ -37,7 +37,13 @@ interface Options {
 export function renderWithProviders(ui: ReactElement, options: Options = {}): RenderResult {
   const { route = '/', theme = 'dark', brand = 'ssf', locale = 'en' } = options;
   const player = options.player ?? createFakeAudioPlayer().port;
-  const clips = options.clips ?? createFakeClipLoader();
+  const clips =
+    options.clips ??
+    ({
+      load: async (url: string) => ({ objectUrl: url, peaks: WAVE_HEIGHTS }),
+      peek: () => null,
+      dispose: () => undefined,
+    } satisfies ClipLoader);
 
   const services: Services = {
     ...createServices(readConfig({}), () => locale),

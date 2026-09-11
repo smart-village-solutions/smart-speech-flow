@@ -71,7 +71,7 @@ const IDLE: Playing = { playingId: null, progress: 0, paused: false };
 export function createPlaybackQueue(
   player: AudioPlayerPort,
   /** Lets a clip already held in memory be played instead of refetched. */
-  resolveUrl: (url: string) => string = (url) => url
+  resolveUrl: (url: string) => string | Promise<string> = (url) => url
 ): PlaybackQueue {
   const listeners = new Set<() => void>();
   const queue: Clip[] = [];
@@ -123,7 +123,12 @@ export function createPlaybackQueue(
     audible = false;
     emit({ playingId: clip.id, progress: 0, paused: false });
 
-    player.play(resolveUrl(clip.url)).then(
+    Promise.resolve(resolveUrl(clip.url)).then((url) => {
+      if (era !== generation) {
+        return;
+      }
+      return player.play(url);
+    }).then(
       () => {
         if (era === generation) {
           audible = true;

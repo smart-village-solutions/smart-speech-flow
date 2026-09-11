@@ -159,7 +159,7 @@ export const handlers = [
       original_text: 'hello',
       translated_text: 'hallo',
       audio_available: true,
-      audio_url: '/api/audio/m1.wav',
+      audio_url: `/api/${String(params.role)}/session/${String(params.id)}/audio/m1/translated.wav`,
       processing_time_ms: 1200,
       pipeline_type: 'text',
     })

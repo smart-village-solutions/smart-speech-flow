@@ -9,8 +9,13 @@ from typing import TYPE_CHECKING
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
-from .audio_storage import AudioVariant, audio_path
-from .session_manager import ClientType, session_manager
+from .audio_storage import (
+    AudioVariant,
+    audio_path,
+    scope_pipeline_audio_urls,
+    scoped_audio_url,
+)
+from .session_manager import ClientType, SessionStatus, session_manager
 from .tenant_session import TenantSessionKey
 
 if TYPE_CHECKING:
@@ -58,11 +63,39 @@ class ConversationService:
             key, sender, request, time.perf_counter(), manager
         )
 
-    def messages(self, key: TenantSessionKey) -> list[dict[str, object]]:
+    def messages(
+        self, key: TenantSessionKey, role: ClientType
+    ) -> list[dict[str, object]]:
         session = session_manager.get_session(key)
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
-        return [message.to_dict() for message in session.messages]
+        result: list[dict[str, object]] = []
+        for message in session.messages:
+            item = message.to_dict()
+            if message.audio_base64:
+                item["audio_url"] = scoped_audio_url(
+                    key, role.value, message.id, AudioVariant.TRANSLATED
+                )
+            pipeline_input = (
+                message.pipeline_metadata.get("input")
+                if isinstance(message.pipeline_metadata, dict)
+                else None
+            )
+            has_original_audio = bool(message.original_audio_url) or (
+                isinstance(pipeline_input, dict)
+                and pipeline_input.get("type") == "audio"
+            )
+            if has_original_audio:
+                item["original_audio_url"] = scoped_audio_url(
+                    key, role.value, message.id, AudioVariant.ORIGINAL
+                )
+            scoped_metadata = scope_pipeline_audio_urls(
+                message.pipeline_metadata, key, role.value, message.id
+            )
+            if scoped_metadata is not None:
+                item["pipeline_metadata"] = scoped_metadata
+            result.append(item)
+        return result
 
     def audio(
         self,
@@ -71,7 +104,7 @@ class ConversationService:
         variant: AudioVariant,
     ) -> Response:
         session = session_manager.get_session(key)
-        if session is None:
+        if session is None or session.status is SessionStatus.TERMINATED:
             raise HTTPException(status_code=404, detail="Session not found")
         message = next(
             (candidate for candidate in session.messages if candidate.id == message_id),

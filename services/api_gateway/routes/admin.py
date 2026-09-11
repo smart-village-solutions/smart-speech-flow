@@ -210,7 +210,10 @@ async def get_admin_messages(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
 ) -> dict[str, object]:
-    return {"session_id": session_id, "messages": conversation_service.messages(key)}
+    return {
+        "session_id": session_id,
+        "messages": conversation_service.messages(key, ClientType.ADMIN),
+    }
 
 
 @router.get(

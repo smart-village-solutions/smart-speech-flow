@@ -122,35 +122,35 @@ def test_enhanced_audio_validation_preserves_valid_wav_metadata():
     assert result.details["format_details"]["original_format"] == "wav"
 
 
-def test_audio_storage_separates_files_and_cleans_only_expired_audio(monkeypatch, tmp_path):
+def test_audio_storage_separates_files_and_cleans_only_expired_audio(tmp_path):
     from services.api_gateway import audio_storage
+    from services.api_gateway.tenant_session import TenantSessionKey
 
-    original_dir = tmp_path / "original"
-    translated_dir = tmp_path / "translated"
-    monkeypatch.setattr(audio_storage, "AUDIO_BASE_DIR", tmp_path)
-    monkeypatch.setattr(audio_storage, "ORIGINAL_AUDIO_DIR", original_dir)
-    monkeypatch.setattr(audio_storage, "TRANSLATED_AUDIO_DIR", translated_dir)
-
-    payload = base64.b64encode(b"WAV-DATA").decode()
-    assert audio_storage.save_original_audio("message-1", payload) == "/api/audio/input_message-1.wav"
-    assert audio_storage.save_translated_audio("message-1", payload) == "/api/audio/message-1.wav"
-    assert audio_storage.get_audio_file_path("input_message-1.wav") == original_dir / "input_message-1.wav"
-    assert audio_storage.get_audio_file_path("message-1.wav") == translated_dir / "message-1.wav"
-
-    expired = original_dir / "input-expired.wav"
-    fresh = translated_dir / "fresh.wav"
-    expired.write_bytes(b"old")
-    fresh.write_bytes(b"new")
+    key = TenantSessionKey("tenant-a", "ABC12345")
+    expired = audio_storage.save_audio(
+        key,
+        "expired",
+        audio_storage.AudioVariant.ORIGINAL,
+        b"old",
+        base_dir=tmp_path,
+    )
+    fresh = audio_storage.save_audio(
+        key,
+        "fresh",
+        audio_storage.AudioVariant.TRANSLATED,
+        b"new",
+        base_dir=tmp_path,
+    )
     old_timestamp = time.time() - (audio_storage.RETENTION_HOURS + 1) * 3600
     os.utime(expired, (old_timestamp, old_timestamp))
 
-    stats = audio_storage.cleanup_old_audio_files()
+    stats = audio_storage.cleanup_old_audio_files(base_dir=tmp_path)
 
     assert stats["deleted_original"] == 1
     assert stats["deleted_translated"] == 0
     assert not expired.exists()
     assert fresh.exists()
-    assert audio_storage.get_disk_usage()["total_files"] == 3
+    assert audio_storage.get_disk_usage(base_dir=tmp_path)["total_files"] == 1
 
 
 @pytest.mark.asyncio

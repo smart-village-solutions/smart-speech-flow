@@ -64,7 +64,7 @@ const peerAudioEvent = {
   text: 'Guten Tag',
   source_lang: 'de',
   target_lang: 'en',
-  audio_url: '/api/audio/m9.wav',
+  audio_url: '/api/customer/session/A1B2C3D4/audio/m9/translated.wav',
   timestamp: '2026-08-24T10:00:00+00:00',
 };
 
@@ -211,7 +211,9 @@ describe('ConversationScreen', () => {
     await screen.findByRole('button', { name: 'Record' });
     await wire.receive(peerAudioEvent);
 
-    expect(player.played).toEqual(['/api/audio/m9.wav']);
+    expect(player.played).toEqual([
+      '/api/customer/session/A1B2C3D4/audio/m9/translated.wav',
+    ]);
   });
 
   it('stays silent when history loads, however much audio it holds', async () => {
@@ -227,7 +229,7 @@ describe('ConversationScreen', () => {
               id: 'old1',
               origin: 'peer',
               text: 'Guten Tag',
-              audioUrl: '/api/audio/old1.wav',
+              audioUrl: '/api/customer/session/A1B2C3D4/audio/old1/translated.wav',
               sourceLanguage: 'de',
               targetLanguage: 'en',
               timestamp: '2026-08-24T09:00:00+00:00',
@@ -290,13 +292,22 @@ describe('ConversationScreen', () => {
     await screen.findByRole('button', { name: 'Record' });
     await wire.receive(peerAudioEvent);
     await player.started();
-    await wire.receive({ ...peerAudioEvent, message_id: 'm10', audio_url: '/api/audio/m10.wav' });
+    await wire.receive({
+      ...peerAudioEvent,
+      message_id: 'm10',
+      audio_url: '/api/customer/session/A1B2C3D4/audio/m10/translated.wav',
+    });
 
-    expect(player.played).toEqual(['/api/audio/m9.wav']);
+    expect(player.played).toEqual([
+      '/api/customer/session/A1B2C3D4/audio/m9/translated.wav',
+    ]);
 
     await player.end();
 
-    expect(player.played).toEqual(['/api/audio/m9.wav', '/api/audio/m10.wav']);
+    expect(player.played).toEqual([
+      '/api/customer/session/A1B2C3D4/audio/m9/translated.wav',
+      '/api/customer/session/A1B2C3D4/audio/m10/translated.wav',
+    ]);
   });
 
   it('falls silent when the customer leaves the conversation', async () => {

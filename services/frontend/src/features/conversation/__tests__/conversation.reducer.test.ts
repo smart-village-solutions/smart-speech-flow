@@ -9,7 +9,7 @@ const peerMessage: ChatMessage = {
   id: 'm2',
   origin: 'peer',
   text: 'incoming',
-  audioUrl: '/api/audio/m2.wav',
+  audioUrl: '/clips/m2.wav',
   sourceLanguage: 'de',
   targetLanguage: 'en',
   timestamp: '2026-08-21T10:00:05+00:00',

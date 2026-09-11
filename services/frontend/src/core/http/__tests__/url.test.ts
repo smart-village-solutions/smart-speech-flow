@@ -6,24 +6,29 @@ describe('resolveApiUrl', () => {
   // the gateway from ssf.smart-village.solutions, so a gateway path left
   // relative is fetched from the SPA origin, where no audio exists.
   it('puts a gateway path on the api origin', () => {
-    expect(resolveApiUrl('https://ssf.example', '/api/audio/m1.wav')).toBe(
-      'https://ssf.example/api/audio/m1.wav'
+    expect(
+      resolveApiUrl(
+        'https://ssf.example',
+        '/api/admin/session/A1B2C3D4/audio/m1/translated.wav'
+      )
+    ).toBe(
+      'https://ssf.example/api/admin/session/A1B2C3D4/audio/m1/translated.wav'
     );
   });
 
   it('leaves the path alone in development, where the dev server proxies /api', () => {
-    expect(resolveApiUrl('', '/api/audio/m1.wav')).toBe('/api/audio/m1.wav');
+    expect(resolveApiUrl('', '/clips/m1.wav')).toBe('/clips/m1.wav');
   });
 
   it('does not double the separator', () => {
-    expect(resolveApiUrl('https://ssf.example/', '/api/audio/m1.wav')).toBe(
-      'https://ssf.example/api/audio/m1.wav'
+    expect(resolveApiUrl('https://ssf.example/', '/clips/m1.wav')).toBe(
+      'https://ssf.example/clips/m1.wav'
     );
   });
 
   it('adds the separator a relative path is missing', () => {
-    expect(resolveApiUrl('https://ssf.example', 'api/audio/m1.wav')).toBe(
-      'https://ssf.example/api/audio/m1.wav'
+    expect(resolveApiUrl('https://ssf.example', 'clips/m1.wav')).toBe(
+      'https://ssf.example/clips/m1.wav'
     );
   });
 

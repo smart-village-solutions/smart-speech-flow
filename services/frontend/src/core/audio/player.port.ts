@@ -34,6 +34,9 @@ export function createDomAudioPlayer(element: HTMLAudioElement): AudioPlayerPort
 
   return {
     play(url) {
+      if (/^(?:https?:\/\/[^/]+)?\/api\/(?:admin|customer)\//.test(url)) {
+        return Promise.reject(new Error('Protected audio must be buffered before playback'));
+      }
       if (loaded !== url) {
         element.src = url;
         loaded = url;

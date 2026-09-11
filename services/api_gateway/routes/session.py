@@ -28,6 +28,7 @@ from fastapi import (
 )
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from ..audio_storage import AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
 from ..log_safety import sanitize_log_value
 from ..message_telemetry import MessageTelemetryRecorder
 from ..pipeline_admission import PipelineBusyError, run_pipeline
@@ -226,6 +227,8 @@ def transform_pipeline_metadata(
     target_lang: str,
     original_audio_url: Optional[str] = None,
     message_id: Optional[str] = None,
+    *,
+    original_audio_available: Optional[bool] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Transform pipeline debug_info to spec-compliant pipeline_metadata format.
@@ -234,8 +237,9 @@ def transform_pipeline_metadata(
         debug_info: Raw debug information from pipeline_logic
         source_lang: Source language code
         target_lang: Target language code
-        original_audio_url: URL to original audio input (if audio pipeline)
-        message_id: Message ID for audio URL generation
+        original_audio_url: Legacy availability indicator; never copied to output
+        message_id: Message ID used when marking generated audio available
+        original_audio_available: Explicit original-audio availability
 
     Returns:
         Spec-compliant pipeline_metadata dict or None if no debug_info
@@ -248,9 +252,14 @@ def transform_pipeline_metadata(
         return None
 
     # Build pipeline metadata according to spec
+    has_original_audio = (
+        original_audio_available
+        if original_audio_available is not None
+        else original_audio_url is not None
+    )
     pipeline_metadata = {
         "input": {
-            "type": "audio" if original_audio_url else "text",
+            "type": "audio" if has_original_audio else "text",
             "source_lang": source_lang,
         },
         "steps": [],
@@ -258,10 +267,6 @@ def transform_pipeline_metadata(
         "pipeline_started_at": debug_info.get("pipeline_started_at", ""),
         "pipeline_completed_at": debug_info.get("pipeline_completed_at", ""),
     }
-
-    # Add audio URL if available
-    if original_audio_url:
-        pipeline_metadata["input"]["audio_url"] = original_audio_url
 
     for step in steps:
         transformed_step = _transform_pipeline_step(step, target_lang, message_id)
@@ -322,11 +327,8 @@ def _build_tts_step_output(
     if not (isinstance(output_value, str) and "audio" in output_value):
         return {}
 
-    audio_url = (
-        f"/api/audio/{message_id}.wav" if message_id else "/api/audio/unknown.wav"
-    )
     return {
-        "audio_url": audio_url,
+        "audio_available": True,
         "format": "wav",
         "model": step.get("model", "unknown"),
         "language": step.get("language", target_lang),
@@ -481,20 +483,17 @@ def _raise_if_upstream_busy(result: Dict[str, Any]) -> None:
 
 def _store_audio_artifacts(
     key: TenantSessionKey,
-    sender: ClientType,
+    _sender: ClientType,
     message_id: str,
     file_bytes: bytes,
     audio_bytes: Optional[bytes],
-) -> Optional[str]:
+) -> bool:
     from ..audio_storage import AudioVariant, save_audio
 
-    original_audio_url = None
+    original_audio_available = False
     try:
         save_audio(key, message_id, AudioVariant.ORIGINAL, file_bytes)
-        original_audio_url = (
-            f"/api/{sender.value}/session/{key.session_id}/audio/"
-            f"{message_id}/original.wav"
-        )
+        original_audio_available = True
     except Exception as e:
         logger.warning("⚠️ Failed to save original audio: %s", type(e).__name__)
 
@@ -504,7 +503,7 @@ def _store_audio_artifacts(
         except Exception as e:
             logger.warning("⚠️ Failed to save translated audio: %s", type(e).__name__)
 
-    return original_audio_url
+    return original_audio_available
 
 
 async def _create_session_message_with_fallback(
@@ -550,7 +549,7 @@ async def _create_session_message_with_fallback(
 def _build_message_response(
     *,
     message: SessionMessage,
-    session_id: str,
+    key: TenantSessionKey,
     source_lang: str,
     target_lang: str,
     pipeline_type: str,
@@ -562,13 +561,12 @@ def _build_message_response(
     return MessageResponse(
         status="success",
         message_id=message.id,
-        session_id=session_id,
+        session_id=key.session_id,
         original_text=message.original_text,
         translated_text=message.translated_text,
         audio_available=message.audio_base64 is not None,
         audio_url=(
-            f"/api/{sender.value}/session/{session_id}/audio/"
-            f"{message.id}/translated.wav"
+            scoped_audio_url(key, sender.value, message.id, AudioVariant.TRANSLATED)
             if message.audio_base64
             else None
         ),
@@ -577,7 +575,9 @@ def _build_message_response(
         source_lang=source_lang,
         target_lang=target_lang,
         timestamp=message.timestamp.isoformat(),
-        pipeline_metadata=pipeline_metadata,
+        pipeline_metadata=scope_pipeline_audio_urls(
+            pipeline_metadata, key, sender.value, message.id
+        ),
     )
 
 
@@ -714,7 +714,9 @@ class MessageResponse(BaseModel):
                 "original_text": "Hallo, wie kann ich helfen?",
                 "translated_text": "Hello, how can I help?",
                 "audio_available": True,
-                "audio_url": "/api/audio/msg_12345.wav",
+                "audio_url": (
+                    "/api/admin/session/ABC12345/audio/msg_12345/translated.wav"
+                ),
                 "processing_time_ms": 2500,
                 "pipeline_type": "audio",
                 "source_lang": "de",
@@ -971,7 +973,6 @@ async def process_audio_input(
     """Audio-Input verarbeiten (multipart/form-data)"""
     # A recorder nobody armed emits nothing, so a direct caller -- every test
     # that drives this function without the route -- needs to pass nothing.
-    session_id = key.session_id
     recorder = recorder or MessageTelemetryRecorder(
         session_id=key, start_time=start_time
     )
@@ -1023,12 +1024,16 @@ async def process_audio_input(
 
     message_id = str(uuid.uuid4())
     audio_bytes = result.get("audio_bytes")
-    original_audio_url = _store_audio_artifacts(
+    original_audio_available = _store_audio_artifacts(
         key, client_type, message_id, file_bytes, audio_bytes
     )
 
     pipeline_metadata = transform_pipeline_metadata(
-        result.get("debug"), source_lang, target_lang, original_audio_url, message_id
+        result.get("debug"),
+        source_lang,
+        target_lang,
+        message_id=message_id,
+        original_audio_available=original_audio_available,
     )
 
     message = await _create_session_message_with_fallback(
@@ -1041,13 +1046,15 @@ async def process_audio_input(
         target_lang=target_lang,
         manager=manager,
         pipeline_metadata=pipeline_metadata,
-        original_audio_url=original_audio_url,
+        # Internal availability marker only. Role-scoped URLs are built at
+        # HTTP/WebSocket response boundaries and are never persisted.
+        original_audio_url="available" if original_audio_available else None,
         message_id=message_id,
     )
     message.id = message_id
     return _build_message_response(
         message=message,
-        session_id=session_id,
+        key=key,
         source_lang=source_lang,
         target_lang=target_lang,
         pipeline_type="audio",
@@ -1173,7 +1180,7 @@ async def process_text_input(
 
     return _build_message_response(
         message=message,
-        session_id=session_id,
+        key=key,
         source_lang=text_request.source_lang,
         target_lang=text_request.target_lang,
         pipeline_type="text",
@@ -1299,6 +1306,19 @@ async def broadcast_message_to_session(
         sender_type=sender_type.value,
     )
 
+    receiver_type = (
+        ClientType.CUSTOMER if sender_type is ClientType.ADMIN else ClientType.ADMIN
+    )
+
+    pipeline_input = (
+        message.pipeline_metadata.get("input")
+        if isinstance(message.pipeline_metadata, dict)
+        else None
+    )
+    has_original_audio = bool(message.original_audio_url) or (
+        isinstance(pipeline_input, dict) and pipeline_input.get("type") == "audio"
+    )
+
     # Original Message für Sender (ASR-Bestätigung)
     sender_message = {
         "type": MessageType.MESSAGE.value,
@@ -1314,9 +1334,16 @@ async def broadcast_message_to_session(
     }
     # Add pipeline metadata if available
     if message.pipeline_metadata:
-        sender_message["pipeline_metadata"] = message.pipeline_metadata
-    if message.original_audio_url:
-        sender_message["original_audio_url"] = message.original_audio_url
+        sender_message["pipeline_metadata"] = scope_pipeline_audio_urls(
+            message.pipeline_metadata,
+            session_id,
+            sender_type.value,
+            message.id,
+        )
+    if has_original_audio:
+        sender_message["original_audio_url"] = scoped_audio_url(
+            session_id, sender_type.value, message.id, AudioVariant.ORIGINAL
+        )
 
     # Translated Message für Empfänger (mit Audio)
     receiver_message = {
@@ -1329,14 +1356,30 @@ async def broadcast_message_to_session(
         "sender": message.sender.value,
         "timestamp": message.timestamp.isoformat(),
         "audio_available": message.audio_base64 is not None,
-        "audio_url": f"/api/audio/{message.id}.wav" if message.audio_base64 else None,
+        "audio_url": (
+            scoped_audio_url(
+                session_id,
+                receiver_type.value,
+                message.id,
+                AudioVariant.TRANSLATED,
+            )
+            if message.audio_base64
+            else None
+        ),
         "role": "receiver_message",
     }
     # Add pipeline metadata if available
     if message.pipeline_metadata:
-        receiver_message["pipeline_metadata"] = message.pipeline_metadata
-    if message.original_audio_url:
-        receiver_message["original_audio_url"] = message.original_audio_url
+        receiver_message["pipeline_metadata"] = scope_pipeline_audio_urls(
+            message.pipeline_metadata,
+            session_id,
+            receiver_type.value,
+            message.id,
+        )
+    if has_original_audio:
+        receiver_message["original_audio_url"] = scoped_audio_url(
+            session_id, receiver_type.value, message.id, AudioVariant.ORIGINAL
+        )
 
     # 🎯 Differentiated Broadcasting ausführen
     _log_session_event("📤 Broadcasting differentiated content", session_id.session_id)

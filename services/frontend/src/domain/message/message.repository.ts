@@ -37,9 +37,8 @@ export interface MessageRepository {
   sendText(sessionId: string, input: SendTextInput): Promise<SendResult>;
   sendAudio(sessionId: string, input: SendAudioInput): Promise<SendResult>;
   /**
-   * Puts a gateway audio path on the gateway origin. Exposed because the
-   * socket delivers its own paths, which the screen has to resolve the same
-   * way the history does.
+   * Puts a gateway audio path on the gateway origin. The authenticated clip
+   * loader still uses the shared HTTP client after this resolution.
    */
   resolveAudioUrl(url: string): string;
 }

@@ -1,6 +1,17 @@
-import { describe, expect, it, vi } from 'vitest';
-import { createClipLoader, type ClipLoaderDeps } from '@/core/audio/clips';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  createBrowserClipLoader,
+  createClipLoader,
+  type ClipLoaderDeps,
+} from '@/core/audio/clips';
 import { MIN_BAR_HEIGHT } from '@/core/audio/levels';
+import { createHttpClient } from '@/core/http/client';
+import { readConfig } from '@/app/config/env';
+import { getAdminAccessToken } from '@/app/auth/keycloak';
+
+vi.mock('@/app/auth/keycloak', () => ({ getAdminAccessToken: vi.fn() }));
+
+afterEach(() => vi.unstubAllGlobals());
 
 function deps(overrides: Partial<ClipLoaderDeps> = {}) {
   let issued = 0;
@@ -25,7 +36,7 @@ describe('createClipLoader', () => {
   it('returns an object url to play and peaks to draw', async () => {
     const loader = createClipLoader(deps());
 
-    const clip = await loader.load('/api/audio/m1.wav');
+    const clip = await loader.load('/clips/m1.wav');
 
     expect(clip.objectUrl).toBe('blob:clip-1');
     expect(clip.peaks).toHaveLength(4);
@@ -35,8 +46,8 @@ describe('createClipLoader', () => {
     const d = deps();
     const loader = createClipLoader(d);
 
-    await loader.load('/api/audio/m1.wav');
-    await loader.load('/api/audio/m1.wav');
+    await loader.load('/clips/m1.wav');
+    await loader.load('/clips/m1.wav');
 
     expect(d.fetchBytes).toHaveBeenCalledTimes(1);
   });
@@ -45,7 +56,7 @@ describe('createClipLoader', () => {
     const d = deps();
     const loader = createClipLoader(d);
 
-    await Promise.all([loader.load('/api/audio/m1.wav'), loader.load('/api/audio/m1.wav')]);
+    await Promise.all([loader.load('/clips/m1.wav'), loader.load('/clips/m1.wav')]);
 
     expect(d.fetchBytes).toHaveBeenCalledTimes(1);
   });
@@ -54,8 +65,8 @@ describe('createClipLoader', () => {
     const d = deps();
     const loader = createClipLoader(d);
 
-    const first = await loader.load('/api/audio/m1.wav');
-    const second = await loader.load('/api/audio/m2.wav');
+    const first = await loader.load('/clips/m1.wav');
+    const second = await loader.load('/clips/m2.wav');
 
     expect(first.objectUrl).not.toBe(second.objectUrl);
     expect(d.fetchBytes).toHaveBeenCalledTimes(2);
@@ -64,11 +75,11 @@ describe('createClipLoader', () => {
   it('peeks nothing until the clip has arrived', async () => {
     const loader = createClipLoader(deps());
 
-    expect(loader.peek('/api/audio/m1.wav')).toBeNull();
+    expect(loader.peek('/clips/m1.wav')).toBeNull();
 
-    await loader.load('/api/audio/m1.wav');
+    await loader.load('/clips/m1.wav');
 
-    expect(loader.peek('/api/audio/m1.wav')?.objectUrl).toBe('blob:clip-1');
+    expect(loader.peek('/clips/m1.wav')?.objectUrl).toBe('blob:clip-1');
   });
 
   it('reports a failed download without caching the failure', async () => {
@@ -77,11 +88,11 @@ describe('createClipLoader', () => {
     });
     const loader = createClipLoader(d);
 
-    await expect(loader.load('/api/audio/m1.wav')).rejects.toThrow('offline');
-    expect(loader.peek('/api/audio/m1.wav')).toBeNull();
+    await expect(loader.load('/clips/m1.wav')).rejects.toThrow('offline');
+    expect(loader.peek('/clips/m1.wav')).toBeNull();
 
     // A later attempt is allowed to try again.
-    await expect(loader.load('/api/audio/m1.wav')).resolves.toMatchObject({
+    await expect(loader.load('/clips/m1.wav')).resolves.toMatchObject({
       objectUrl: 'blob:clip-1',
     });
   });
@@ -90,14 +101,14 @@ describe('createClipLoader', () => {
     const d = deps({ decode: vi.fn().mockRejectedValue(new Error('bad wav')) });
     const loader = createClipLoader(d);
 
-    await expect(loader.load('/api/audio/m1.wav')).rejects.toThrow('bad wav');
-    expect(loader.peek('/api/audio/m1.wav')).toBeNull();
+    await expect(loader.load('/clips/m1.wav')).rejects.toThrow('bad wav');
+    expect(loader.peek('/clips/m1.wav')).toBeNull();
   });
 
   it('draws silence as the floor', async () => {
     const loader = createClipLoader(deps({ decode: vi.fn().mockResolvedValue(new Float32Array(16)) }));
 
-    const clip = await loader.load('/api/audio/m1.wav');
+    const clip = await loader.load('/clips/m1.wav');
 
     expect(clip.peaks).toEqual(new Array(4).fill(MIN_BAR_HEIGHT));
   });
@@ -106,12 +117,51 @@ describe('createClipLoader', () => {
     const d = deps();
     const loader = createClipLoader(d);
 
-    await loader.load('/api/audio/m1.wav');
-    await loader.load('/api/audio/m2.wav');
+    await loader.load('/clips/m1.wav');
+    await loader.load('/clips/m2.wav');
     loader.dispose();
 
     expect(d.revokeObjectUrl).toHaveBeenCalledWith('blob:clip-1');
     expect(d.revokeObjectUrl).toHaveBeenCalledWith('blob:clip-2');
-    expect(loader.peek('/api/audio/m1.wav')).toBeNull();
+    expect(loader.peek('/clips/m1.wav')).toBeNull();
+  });
+});
+
+describe('createBrowserClipLoader', () => {
+  it('downloads admin audio through the bearer-token HTTP client', async () => {
+    vi.mocked(getAdminAccessToken).mockResolvedValue('tenant-token');
+    const config = readConfig({ VITE_API_BASE_URL: 'http://api.test' });
+    const http = createHttpClient(config, () => 'en');
+    let authorization: string | undefined;
+    http.defaults.adapter = async (request) => {
+      authorization = request.headers.get('Authorization')?.toString();
+      return {
+        data: new ArrayBuffer(8),
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: request,
+      };
+    };
+    vi.stubGlobal(
+      'AudioContext',
+      class {
+        async decodeAudioData() {
+          return { getChannelData: () => new Float32Array([0.5, -0.5]) };
+        }
+      }
+    );
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn().mockReturnValue('blob:authenticated-audio'),
+    });
+
+    const loader = createBrowserClipLoader(http);
+    const clip = await loader.load(
+      'http://api.test/api/admin/session/A1B2C3D4/audio/m1/translated.wav'
+    );
+
+    expect(authorization).toBe('Bearer tenant-token');
+    expect(clip.objectUrl).toBe('blob:authenticated-audio');
   });
 });
