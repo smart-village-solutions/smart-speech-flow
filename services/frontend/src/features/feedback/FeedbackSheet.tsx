@@ -33,11 +33,20 @@ export function FeedbackSheet({
   const [values, setValues] = useState(EMPTY_FORM);
   const [status, setStatus] = useState<FeedbackStatus>('idle');
   const [reasonKey, setReasonKey] = useState<string | null>(null);
+  const [retryable, setRetryable] = useState(true);
 
-  // Closing during a submit must not let the in-flight result land on the next
-  // open. The reset is deferred 300ms for the exit animation, so a response
-  // arriving after that would otherwise reopen the sheet already thanking the
-  // user, or showing an error over an empty form.
+  // A result belonging to a closed sheet is discarded, whichever way it went.
+  //
+  // Keeping a late success looks kinder -- the row is stored, so confirming it
+  // would stop the user resubmitting -- but it cannot be done reliably here.
+  // The reset below is deferred 300ms for the exit animation, so a response
+  // landing inside that window is wiped anyway and one landing after it is
+  // kept: the same action would produce two different screens depending on
+  // network timing. Worse, the kept state outlives its sheet, so the next
+  // open -- possibly from another screen entirely -- greets the user with a
+  // thank-you for feedback they gave minutes ago, with no form to fill in.
+  //
+  // Deterministic and slightly less kind beats kind and unpredictable.
   const attempt = useRef(0);
 
   const close = () => {
@@ -47,7 +56,21 @@ export function FeedbackSheet({
       setValues(EMPTY_FORM);
       setStatus('idle');
       setReasonKey(null);
+      setRetryable(true);
     }, 300);
+  };
+
+  // A refusal is a verdict on the payload that was sent, so it must not
+  // outlive an edit. Without this the sheet has a dead end: a submission
+  // refused as terminal leaves the button disabled for the life of the sheet,
+  // and the only way out is Close, which discards every rating entered.
+  const edit = (next: typeof values) => {
+    setValues(next);
+    if (status === 'failed') {
+      setStatus('idle');
+      setReasonKey(null);
+      setRetryable(true);
+    }
   };
 
   const submit = async () => {
@@ -70,6 +93,7 @@ export function FeedbackSheet({
       if (attempt.current !== current) return;
       // Nothing is reset: the entered values are the whole point of the retry.
       setReasonKey(error instanceof AppError ? error.userMessageKey : 'errors.unknown');
+      setRetryable(!(error instanceof AppError) || error.retryable);
       setStatus('failed');
     }
   };
@@ -109,10 +133,11 @@ export function FeedbackSheet({
           ) : (
             <FeedbackForm
               values={values}
-              onChange={setValues}
+              onChange={edit}
               onSubmit={() => void submit()}
               status={status}
               reasonKey={reasonKey}
+              retryable={retryable}
             />
           )}
         </Dialog.Content>

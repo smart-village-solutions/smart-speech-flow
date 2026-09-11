@@ -24,6 +24,8 @@ interface FeedbackFormProps {
   onSubmit: () => void;
   status: FeedbackStatus;
   reasonKey: string | null;
+  /** False when the server has judged this payload; a retry repeats it. */
+  retryable?: boolean;
 }
 
 export function FeedbackForm({
@@ -32,10 +34,12 @@ export function FeedbackForm({
   onSubmit,
   status,
   reasonKey,
+  retryable = true,
 }: Readonly<FeedbackFormProps>) {
   const { t } = useTranslation();
   const busy = status === 'submitting';
-  const ready = isComplete(values) && !busy;
+  const refused = status === 'failed' && !retryable;
+  const ready = isComplete(values) && !busy && !refused;
   const set = (patch: Partial<FeedbackFormValues>) => onChange({ ...values, ...patch });
 
   const submitKey = () => {

@@ -65,7 +65,7 @@ function Reopenable() {
   );
 }
 
-const settled = () => new Promise((resolve) => setTimeout(resolve, 350));
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('FeedbackSheet', () => {
   it('renders all five sections', () => {
@@ -264,7 +264,13 @@ describe('FeedbackSheet', () => {
     expect(screen.getByPlaceholderText(PLACEHOLDER)).toHaveAttribute('maxlength', '4000');
   });
 
-  it('does not let a submit that was closed mid-flight reappear on the next open', async () => {
+  // Closing mid-submit, at both timings that matter. The reset is deferred
+  // 300ms for the exit animation, so a result can land on either side of it
+  // and the outcome must not depend on which.
+  it.each([
+    ['before the deferred reset', 120],
+    ['after the deferred reset', 400],
+  ])('discards a success that lands %s', async (_name, delay) => {
     const controlled = controllable();
     renderWithProviders(<Reopenable />, {
       services: { feedback: controlled.sink },
@@ -273,13 +279,106 @@ describe('FeedbackSheet', () => {
     await completeAllRatings();
     await userEvent.click(submitButton());
     await userEvent.click(screen.getByRole('button', { name: 'Close' }));
-    await settled();
+    await wait(delay);
     controlled.succeed();
-    await settled();
+    await wait(400);
 
     await userEvent.click(screen.getByRole('button', { name: 'reopen' }));
 
     expect(screen.queryByText('Thank you!')).not.toBeInTheDocument();
     expect(submitButton()).toBeInTheDocument();
+  });
+
+  it.each([
+    ['before the deferred reset', 120],
+    ['after the deferred reset', 400],
+  ])('discards a failure that lands %s', async (_name, delay) => {
+    const controlled = controllable();
+    renderWithProviders(<Reopenable />, {
+      services: { feedback: controlled.sink },
+    });
+
+    await completeAllRatings();
+    await userEvent.click(submitButton());
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await wait(delay);
+    controlled.reject(new AppError('network'));
+    await wait(400);
+
+    await userEvent.click(screen.getByRole('button', { name: 'reopen' }));
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(submitButton()).toBeDisabled();
+  });
+
+  it('offers a retry when sending again could work', async () => {
+    const controlled = controllable();
+    renderWithProviders(<FeedbackSheet open onOpenChange={vi.fn()} />, {
+      services: { feedback: controlled.sink },
+    });
+
+    await completeAllRatings();
+    await userEvent.click(submitButton());
+    controlled.reject(new AppError('network'));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(submitButton()).toBeEnabled();
+  });
+
+  it('does not offer a retry the server has already refused', async () => {
+    // An unknown session is a defined rejection (#302), not a transient fault.
+    // The same payload would be refused identically every time, so a Retry
+    // here is a loop that cannot terminate.
+    const controlled = controllable();
+    renderWithProviders(<FeedbackSheet open onOpenChange={vi.fn()} />, {
+      services: { feedback: controlled.sink },
+    });
+
+    await completeAllRatings();
+    await userEvent.click(submitButton());
+    controlled.reject(new AppError('notFound', { status: 404 }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(screen.getByText('That was not found.')).toBeInTheDocument();
+    expect(submitButton()).toBeDisabled();
+  });
+
+  it('still offers a retry when the server only throttled the request', async () => {
+    // 429 carries Retry-After: the server is asking for exactly one more
+    // attempt later. Bucketing it with the terminal 4xx would disable the
+    // button for a throttle and show "could not be processed" for a wait.
+    const controlled = controllable();
+    renderWithProviders(<FeedbackSheet open onOpenChange={vi.fn()} />, {
+      services: { feedback: controlled.sink },
+    });
+
+    await completeAllRatings();
+    await userEvent.click(submitButton());
+    controlled.reject(new AppError('validation', { status: 429 }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(submitButton()).toBeEnabled();
+  });
+
+  it('lets the form be edited back into a submittable state after a refusal', async () => {
+    // A session that timed out answers 404, which is terminal for that
+    // payload. Leaving the button dead for the life of the sheet means the
+    // only way out is Close, which discards every rating the user entered.
+    const controlled = controllable();
+    renderWithProviders(<FeedbackSheet open onOpenChange={vi.fn()} />, {
+      services: { feedback: controlled.sink },
+    });
+
+    await completeAllRatings();
+    await userEvent.click(submitButton());
+    controlled.reject(new AppError('notFound', { status: 404 }));
+
+    await waitFor(() => expect(submitButton()).toBeDisabled());
+
+    const group = screen.getByRole('group', { name: 'Performance' });
+    await userEvent.click(within(group).getByRole('button', { name: '4 stars' }));
+
+    expect(submitButton()).toBeEnabled();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
