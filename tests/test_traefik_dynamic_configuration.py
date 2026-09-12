@@ -42,6 +42,7 @@ def test_dynamic_provider_preserves_existing_security_boundaries() -> None:
         assert "--providers.docker=true" in traefik["command"]
         assert "--providers.docker.exposedbydefault=false" in traefik["command"]
         assert "--certificatesresolvers.le.acme.tlschallenge=true" in traefik["command"]
+        assert "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json" in traefik["command"]
         assert "/var/run/docker.sock:/var/run/docker.sock:ro" in traefik["volumes"]
 
     assert "./letsencrypt:/letsencrypt" in development["volumes"]
