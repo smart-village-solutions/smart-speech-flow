@@ -35,10 +35,14 @@ def test_production_traefik_watches_the_dynamic_configuration_directory() -> Non
 
 
 def test_dynamic_provider_preserves_existing_security_boundaries() -> None:
-    traefik = _traefik()
+    development = _traefik()
+    production = _production_traefik()
 
-    assert "--providers.docker=true" in traefik["command"]
-    assert "--providers.docker.exposedbydefault=false" in traefik["command"]
-    assert "--certificatesresolvers.le.acme.tlschallenge=true" in traefik["command"]
-    assert "/var/run/docker.sock:/var/run/docker.sock:ro" in traefik["volumes"]
-    assert "./letsencrypt:/letsencrypt" in traefik["volumes"]
+    for traefik in (development, production):
+        assert "--providers.docker=true" in traefik["command"]
+        assert "--providers.docker.exposedbydefault=false" in traefik["command"]
+        assert "--certificatesresolvers.le.acme.tlschallenge=true" in traefik["command"]
+        assert "/var/run/docker.sock:/var/run/docker.sock:ro" in traefik["volumes"]
+
+    assert "./letsencrypt:/letsencrypt" in development["volumes"]
+    assert "../../letsencrypt:/letsencrypt" in production["volumes"]
