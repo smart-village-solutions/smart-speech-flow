@@ -120,7 +120,7 @@ tar -C "$SSF_PROJECT_ROOT" -czf "$staging_dir/configuration.tar.gz" \
   --exclude='monitoring/loki-data/*' \
   --exclude='monitoring/promtail-data' \
   --exclude='monitoring/promtail-data/*' \
-  deploy/production monitoring letsencrypt models
+  deploy/production monitoring letsencrypt models traefik/dynamic
 install -m 0600 "$SSF_PROJECT_ROOT/.env" "$staging_dir/environment.env"
 git -C "$SSF_PROJECT_ROOT" rev-parse HEAD > "$staging_dir/git-revision.txt"
 

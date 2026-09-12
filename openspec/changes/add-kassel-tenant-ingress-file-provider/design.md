@@ -9,7 +9,9 @@ and request certificates through the existing resolver.
 ## Decisions
 
 - Traefik watches `/etc/traefik/dynamic` via the file provider.
-- Compose bind-mounts `./traefik/dynamic` to that path read-only.
+- Root Compose bind-mounts `./traefik/dynamic`; canonical production Compose
+  resolves the same repository directory as `../../traefik/dynamic`. Both
+  mounts expose it read-only at `/etc/traefik/dynamic`.
 - The directory is empty by default, so enabling it does not alter existing
   routing.
 - The external Studio provisioner owns atomic publication into the host-side
@@ -36,4 +38,5 @@ TLS and login acceptance.
 Stop the Studio writer, restore the explicit Docker-label host where needed,
 verify it externally, and only then remove the corresponding dynamic file.
 Disabling the File Provider must not alter the Docker provider or ACME store.
-
+The production backup retains `traefik/dynamic`, so a host restore also
+recovers the explicit tenant router files.

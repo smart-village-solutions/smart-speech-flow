@@ -11,3 +11,4 @@
 - [x] 2.2 Run the focused Compose tests
 - [x] 2.3 Validate the rendered Compose configuration
 - [x] 2.4 Document empty-directory rollout and non-destructive rollback
+- [x] 2.5 Include dynamic tenant routes in the production backup contract

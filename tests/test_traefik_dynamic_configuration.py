@@ -6,6 +6,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 COMPOSE_PATH = ROOT / "docker-compose.yml"
 PRODUCTION_COMPOSE_PATH = ROOT / "deploy" / "production" / "docker-compose.production.yml"
+BACKUP_SCRIPT_PATH = ROOT / "scripts" / "backup-production.sh"
 
 
 def _traefik() -> dict[str, object]:
@@ -47,3 +48,9 @@ def test_dynamic_provider_preserves_existing_security_boundaries() -> None:
 
     assert "./letsencrypt:/letsencrypt" in development["volumes"]
     assert "../../letsencrypt:/letsencrypt" in production["volumes"]
+
+
+def test_production_backup_preserves_dynamic_tenant_routes() -> None:
+    backup_script = BACKUP_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert "deploy/production monitoring letsencrypt models traefik/dynamic" in backup_script
