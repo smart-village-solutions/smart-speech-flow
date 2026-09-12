@@ -7,6 +7,8 @@ services:
     - --log.level=DEBUG
     - --providers.docker=true
     - --providers.docker.exposedbydefault=false
+    - --providers.file.directory=/etc/traefik/dynamic
+    - --providers.file.watch=true
     - --entrypoints.web.address=:80
     - --entrypoints.websecure.address=:443
     - --certificatesresolvers.le.acme.tlschallenge=true
@@ -20,6 +22,7 @@ services:
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock:ro
     - ../../letsencrypt:/letsencrypt
+    - ../../traefik/dynamic:/etc/traefik/dynamic:ro
     restart: unless-stopped
     pull_policy: never
   asr:
