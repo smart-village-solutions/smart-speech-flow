@@ -53,4 +53,7 @@ def test_dynamic_provider_preserves_existing_security_boundaries() -> None:
 def test_production_backup_preserves_dynamic_tenant_routes() -> None:
     backup_script = BACKUP_SCRIPT_PATH.read_text(encoding="utf-8")
 
-    assert "deploy/production monitoring letsencrypt models traefik/dynamic" in backup_script
+    assert "configuration_paths=(deploy/production monitoring letsencrypt models)" in backup_script
+    assert '[[ -d "$SSF_PROJECT_ROOT/traefik/dynamic" ]]' in backup_script
+    assert "configuration_paths+=(traefik/dynamic)" in backup_script
+    assert '"${configuration_paths[@]}"' in backup_script
