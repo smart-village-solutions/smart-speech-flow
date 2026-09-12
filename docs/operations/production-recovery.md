@@ -49,6 +49,8 @@ consistent native snapshots are the recovery source. `ollama-models.txt`
 records the installed model identifiers; after recovery, pull those models
 again from the configured Ollama registry. This keeps recurring backups small
 while retaining the information needed to restore the service configuration.
+The configuration archive includes `traefik/dynamic`; restoring it recovers
+the explicit Studio tenant routers before Traefik is restarted.
 The Grafana SQLite database is captured separately using a consistent SQLite
 snapshot. Loki log chunks and Promtail read positions are intentionally not
 backed up: they change continuously and are not required to restore the
