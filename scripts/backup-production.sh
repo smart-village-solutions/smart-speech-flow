@@ -112,6 +112,10 @@ production_compose exec -T clickhouse cat "/var/lib/clickhouse/backups/${clickho
   > "$staging_dir/clickhouse-native-backup.zip"
 production_compose exec -T clickhouse rm -f "/var/lib/clickhouse/backups/${clickhouse_backup_filename}"
 
+configuration_paths=(deploy/production monitoring letsencrypt models)
+if [[ -d "$SSF_PROJECT_ROOT/traefik/dynamic" ]]; then
+  configuration_paths+=(traefik/dynamic)
+fi
 tar -C "$SSF_PROJECT_ROOT" -czf "$staging_dir/configuration.tar.gz" \
   --exclude='monitoring/grafana/grafana.db' \
   --exclude='monitoring/grafana/grafana.db-shm' \
@@ -120,7 +124,7 @@ tar -C "$SSF_PROJECT_ROOT" -czf "$staging_dir/configuration.tar.gz" \
   --exclude='monitoring/loki-data/*' \
   --exclude='monitoring/promtail-data' \
   --exclude='monitoring/promtail-data/*' \
-  deploy/production monitoring letsencrypt models traefik/dynamic
+  "${configuration_paths[@]}"
 install -m 0600 "$SSF_PROJECT_ROOT/.env" "$staging_dir/environment.env"
 git -C "$SSF_PROJECT_ROOT" rev-parse HEAD > "$staging_dir/git-revision.txt"
 

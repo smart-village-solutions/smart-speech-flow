@@ -151,6 +151,8 @@ fi
     project_root = tmp_path / "project"
     for directory in ("deploy/production", "monitoring", "letsencrypt", "models"):
         (project_root / directory).mkdir(parents=True, exist_ok=True)
+    (project_root / "traefik/dynamic").mkdir(parents=True)
+    (project_root / "traefik/dynamic/tenant.yml").write_text("http: {}\n")
     (project_root / "monitoring/loki-data").mkdir()
     (project_root / "monitoring/promtail-data").mkdir()
     (project_root / "monitoring/loki-data/live.log").write_text("live log data\n")
@@ -225,6 +227,7 @@ def test_backup_records_ollama_models_without_archiving_model_volume(tmp_path):
         check=True,
     ).stdout
     assert "monitoring/prometheus.yml" in configuration_listing
+    assert "traefik/dynamic/tenant.yml" in configuration_listing
     assert "monitoring/loki-data/live.log" not in configuration_listing
     assert "monitoring/promtail-data/positions.yaml" not in configuration_listing
     assert "monitoring/grafana/grafana.db" not in configuration_listing
