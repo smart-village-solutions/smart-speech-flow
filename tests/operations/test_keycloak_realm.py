@@ -105,6 +105,23 @@ def test_keycloak_image_provides_the_kasseldialog_login_branding():
         assert _theme_file(image, "resources/fonts/Inter-Variable.woff2") == (
             Path("services/frontend/public/fonts/Inter-Variable.woff2")
         ).read_bytes()
+        stylesheet = _theme_file(image, "resources/css/login.css")
+        assert b"html.login-pf,\nhtml.login-pf body" in stylesheet
+        assert b"background-image: none" in stylesheet
+        assert b"--footer-content-width: calc(100% - 40px);" in stylesheet
+        assert b"--footer-logo-gap: 16px;" in stylesheet
+        assert b"@media (min-width: 640px)" in stylesheet
+        assert b"--footer-content-width: min(calc(100% - 64px), 736px);" in stylesheet
+        assert b"--footer-logo-gap: 48px;" in stylesheet
+        assert b"@media (min-width: 1024px)" in stylesheet
+        assert b"--footer-content-width: min(calc(100% - 96px), 704px);" in stylesheet
+        assert b"--footer-logo-gap: 112px;" in stylesheet
+        assert b"calc(50% - var(--footer-logo-offset))" in stylesheet
+        assert b"calc(50% + var(--footer-logo-offset))" in stylesheet
+        assert (
+            b"calc((var(--footer-content-width) - var(--footer-logo-gap)) / 2)"
+            in stylesheet
+        )
     finally:
         subprocess.run(["docker", "image", "rm", "-f", image], check=False)
 
