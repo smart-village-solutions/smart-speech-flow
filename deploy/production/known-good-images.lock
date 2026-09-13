@@ -1,5 +1,6 @@
 # Updated from the running production containers on 2026-09-11 for
-# api_gateway and frontend; remaining entries were captured on 2026-09-01 or later.
+# api_gateway and frontend; the Keycloak theme image was built and verified on
+# 2026-09-13; remaining entries were captured on 2026-09-01 or later.
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
@@ -9,7 +10,7 @@ translation	sha256:fff7d0e3df40fcaf657524de767b41babba75bb160cc74eae6d87510b6ca2
 tts	sha256:12c7e0851b72cad7f2847b505c1dfd9d9538cfe9411f9a30d39c4df6d6f424cd	ssf-backend-tts:prod-345add9
 frontend	sha256:bdf467d6fedd79b2232f9ce6e5d7819310a2e2da38d96287e3b27db1da92f3e6	ssf-backend-frontend:prod-9515f00
 frontend-archive	sha256:5fe65474631a5f74c4ea81a5881ade417809f9c5905b593c6cc2d2699e50686d	ssf-backend-frontend-archive:prod-e409a06
-keycloak	sha256:d2b5957b314175678f3ff359122eabaad262d2db426cd9b5acf7799ab2067d65	ssf-keycloak:prod-e409a06
+keycloak	sha256:f2a47ea521515e693387eb73630389df2a004bff813914d1ac5be4f92903cdf2	ssf-keycloak:prod-bc3b268
 traefik	sha256:76de233753150da70cde36a5d845c231d408a041b6fcf5a36f924c1322bd98fd	traefik@sha256:ca0f90490fe3091f5f4e582a28638652edb3b26b4d7a1d9ee621ce88fb2bff86
 ollama	sha256:edd5fde06b3f61a0c2de426ea87ea0491101f3bfa3f27b2b997ef6f4624199b2	ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a
 redis	sha256:5f703438f575677037751d8350dc8ca2b8a1075655247757048c8a86f0fb4f02	redis@sha256:3b73847e72874be07e6657b129a94761662b79bc0f679273757d4218573b2a98

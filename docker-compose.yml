@@ -340,8 +340,8 @@ services:
   keycloak:
     image: ssf-keycloak:26.7.2
     build:
-      context: ./services/keycloak
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/keycloak/Dockerfile
     # The fixed realm is a local-development fixture only. Production realms
     # are provisioned by Studio and are never imported by production Compose.
     command: ["start", "--optimized", "--import-realm"]
