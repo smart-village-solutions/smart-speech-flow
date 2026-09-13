@@ -1,4 +1,7 @@
 import json
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -6,6 +9,29 @@ import yaml
 
 DEVELOPMENT_REALM_PATH = Path("deploy/production/keycloak/ssf-realm.json")
 DEVELOPMENT_COMPOSE_PATH = Path("docker-compose.yml")
+KEYCLOAK_DOCKERFILE = Path("services/keycloak/Dockerfile")
+FRONTEND_ASSETS = Path("services/frontend/public/assets")
+
+
+def _theme_file(image: str, relative_path: str) -> bytes:
+    container_id = subprocess.check_output(
+        ["docker", "create", image], text=True
+    ).strip()
+    destination = Path(tempfile.mkdtemp())
+    try:
+        subprocess.run(
+            [
+                "docker",
+                "cp",
+                f"{container_id}:/opt/keycloak/themes/kasseldialog/login/{relative_path}",
+                destination,
+            ],
+            check=True,
+        )
+        return (destination / Path(relative_path).name).read_bytes()
+    finally:
+        subprocess.run(["docker", "rm", "-f", container_id], check=True)
+        shutil.rmtree(destination)
 
 
 def test_development_compose_imports_only_the_local_realm_fixture():
@@ -13,6 +39,7 @@ def test_development_compose_imports_only_the_local_realm_fixture():
         "keycloak"
     ]
 
+    assert keycloak["build"] == {"context": ".", "dockerfile": "services/keycloak/Dockerfile"}
     assert "--import-realm" in keycloak["command"]
     assert keycloak["volumes"] == [
         "./deploy/production/keycloak/ssf-realm.json:/opt/keycloak/data/import/ssf-realm.json:ro"
@@ -42,3 +69,36 @@ def test_development_realm_provisions_a_secretless_public_pkce_client():
         for mapper in client["protocolMappers"]
     )
     assert {role["name"] for role in realm["roles"]["realm"]} >= {"ssf-user"}
+
+
+def test_keycloak_image_provides_the_kasseldialog_login_branding():
+    """The shipped Keycloak image must carry the frontend's approved branding."""
+    image = "ssf-keycloak-kasseldialog-theme-test"
+    subprocess.run(
+        ["docker", "build", "--file", str(KEYCLOAK_DOCKERFILE), "--tag", image, "."],
+        check=True,
+    )
+
+    try:
+        assert b"parent=keycloak" in _theme_file(image, "theme.properties")
+        assert _theme_file(image, "resources/img/header-logo.png") == (
+            FRONTEND_ASSETS / "Logo.png"
+        ).read_bytes()
+        assert _theme_file(image, "resources/img/footer-funding.png") == (
+            FRONTEND_ASSETS / "Foerdermittelgeber.png"
+        ).read_bytes()
+        assert _theme_file(image, "resources/img/footer-city.png") == (
+            FRONTEND_ASSETS / "Stadt.png"
+        ).read_bytes()
+        assert _theme_file(image, "resources/fonts/Inter-Variable.woff2") == (
+            Path("services/frontend/public/fonts/Inter-Variable.woff2")
+        ).read_bytes()
+    finally:
+        subprocess.run(["docker", "image", "rm", "-f", image], check=False)
+
+
+def test_development_realm_selects_the_kasseldialog_login_theme():
+    """The development login flow must render the bundled KasselDIALOG theme."""
+    realm = json.loads(DEVELOPMENT_REALM_PATH.read_text())
+
+    assert realm["loginTheme"] == "kasseldialog"

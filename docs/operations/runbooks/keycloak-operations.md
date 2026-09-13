@@ -27,6 +27,18 @@ docker compose up -d keycloak-postgres keycloak
 docker compose ps keycloak-postgres keycloak
 ```
 
+## KasselDIALOG login theme
+
+The Keycloak image ships the `kasseldialog` login theme. It reuses the approved
+KasselDIALOG header logo and the funding and Stadt Kassel footer logos from the
+frontend while retaining Keycloak's standard login, recovery, OTP, and error
+flows.
+
+The local `ssf` realm selects this theme during import. Production tenant realms
+are owned by Studio and are not imported by this Compose project. When creating
+or updating such a realm, select `kasseldialog` as its **Login theme** under
+**Realm settings → Themes** before making the realm available to users.
+
 ## Verification
 
 ```bash
