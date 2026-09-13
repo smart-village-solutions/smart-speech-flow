@@ -4,11 +4,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import pytest
 import yaml
 
 
 DEVELOPMENT_REALM_PATH = Path("deploy/production/keycloak/ssf-realm.json")
 DEVELOPMENT_COMPOSE_PATH = Path("docker-compose.yml")
+DOCKERIGNORE_PATH = Path(".dockerignore")
 KEYCLOAK_DOCKERFILE = Path("services/keycloak/Dockerfile")
 FRONTEND_ASSETS = Path("services/frontend/public/assets")
 
@@ -46,6 +48,13 @@ def test_development_compose_imports_only_the_local_realm_fixture():
     ]
 
 
+def test_keycloak_build_context_excludes_local_secret_files():
+    """The root build context must not upload ignored deployment credentials."""
+    ignored_paths = set(DOCKERIGNORE_PATH.read_text().splitlines())
+
+    assert {".env", ".env.*", "deploy/production/production.env"} <= ignored_paths
+
+
 def test_development_realm_provisions_a_secretless_public_pkce_client():
     realm = json.loads(DEVELOPMENT_REALM_PATH.read_text())
 
@@ -71,6 +80,7 @@ def test_development_realm_provisions_a_secretless_public_pkce_client():
     assert {role["name"] for role in realm["roles"]["realm"]} >= {"ssf-user"}
 
 
+@pytest.mark.integration
 def test_keycloak_image_provides_the_kasseldialog_login_branding():
     """The shipped Keycloak image must carry the frontend's approved branding."""
     image = "ssf-keycloak-kasseldialog-theme-test"
@@ -80,7 +90,9 @@ def test_keycloak_image_provides_the_kasseldialog_login_branding():
     )
 
     try:
-        assert b"parent=keycloak" in _theme_file(image, "theme.properties")
+        theme_properties = _theme_file(image, "theme.properties")
+        assert b"parent=keycloak" in theme_properties
+        assert b"styles=css/login.css" in theme_properties
         assert _theme_file(image, "resources/img/header-logo.png") == (
             FRONTEND_ASSETS / "Logo.png"
         ).read_bytes()

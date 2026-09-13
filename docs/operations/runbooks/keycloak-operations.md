@@ -39,6 +39,11 @@ are owned by Studio and are not imported by this Compose project. When creating
 or updating such a realm, select `kasseldialog` as its **Login theme** under
 **Realm settings → Themes** before making the realm available to users.
 
+Realm import does not update an existing local `ssf` realm. After rebuilding
+the Keycloak image, operators of an already initialized development stack must
+select `kasseldialog` under **Realm settings → Themes** once, or update the
+realm through `kcadm.sh` using their existing administrator session.
+
 ## Verification
 
 ```bash
