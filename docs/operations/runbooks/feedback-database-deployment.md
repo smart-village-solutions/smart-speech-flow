@@ -263,11 +263,13 @@ Lines that mean something is actually wrong:
 
 ## Step 5 — Apply the ClickHouse migration
 
-The analytics half needs ClickHouse migrations `005` and `006`, in that order.
-`006` adds the feedback columns and the `feedback_daily` aggregate; its view
-projection also reads `tenant_ref`, a column only `005` creates, so `006` cannot
-be applied on its own. `apply.sh` runs every migration in filename order, so
-following the procedure below applies both.
+The analytics half needs ClickHouse migrations `005`, `006` and `007`, in that
+order. `006` adds the feedback columns and the `feedback_daily` aggregate; its
+view projection also reads `tenant_ref`, a column only `005` creates, so `006`
+cannot be applied on its own. `007` gives `feedback_daily` its tenant
+dimension, so it needs the aggregate `006` creates. `apply.sh` runs every
+migration in filename order, so following the procedure below applies all
+three.
 
 **Apply it before setting `SSF_QUALITY_TELEMETRY_MODE=enabled`.** Feedback
 events emitted while the columns are missing land with only their envelope
@@ -275,9 +277,16 @@ populated, and those rows cannot be repaired afterwards — the attributes never
 reached ClickHouse.
 
 Follow the enablement procedure in
-[clickhouse-operations.md](clickhouse-operations.md); migrations `005` and `006` apply the
-same way as `002` through `004`. Afterwards `quality_events` has 37 columns, as
-that runbook's column check expects.
+[clickhouse-operations.md](clickhouse-operations.md); migrations `005`, `006` and `007`
+apply the same way as `002` through `004`. Afterwards `quality_events` has 37
+columns, as that runbook's column check expects — `007` adds none, so check it
+by its own effect, the `tenant_ref` at the end of `feedback_daily`'s sorting
+key.
+
+Feedback rows aggregated before `007` and before the emitter that populates the
+attribute carry an empty reference. They stay in the aggregate under an empty
+tenant, so every per-tenant reading of `feedback_daily` begins at this
+deploy.
 
 ## Step 6 — Confirm a real submission is stored
 

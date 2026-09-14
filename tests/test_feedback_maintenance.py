@@ -30,7 +30,7 @@ from services.api_gateway.feedback.repository import (
     RetentionLockUnavailable,
 )
 from services.api_gateway.quality_telemetry import ProbeOutcome, ProbeResult
-from services.api_gateway.session_pseudonym import feedback_ref
+from services.api_gateway.session_pseudonym import feedback_ref, tenant_ref
 
 NOW = datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc)
 
@@ -176,6 +176,21 @@ class TestReconciliationRecoversDelivery:
         assert telemetry.calls[0]["feedback_ref"] == feedback_ref(row.feedback_id)
         assert telemetry.calls[0]["session_ref"] == row.session_ref
 
+    async def test_it_emits_the_tenant_reference_derived_from_the_row(self):
+        """#325: a recovered row keeps the tenant its fresh sibling carried.
+
+        The reconciler is the second of the two call sites. Missing it would
+        not fail anything -- the emitter defaults to the sentinel -- so every
+        re-emitted submission would silently drop out of the tenant breakdown.
+        """
+        row = _pending()
+        telemetry = FakeTelemetry()
+
+        await _maintenance(FakeRepository([row]), telemetry).reconcile_once()
+
+        assert telemetry.calls[0]["tenant_ref"] == tenant_ref(row.tenant_id)
+        assert "tenant-a" not in str(telemetry.calls[0])
+
     async def test_a_row_that_fails_again_stays_pending_for_the_next_pass(self):
         row = _pending()
         repository = FakeRepository([row])
@@ -258,6 +273,7 @@ class TestReconciliationCarriesNoText:
             "usability",
             "net_promoter_score",
             "form_version",
+            "tenant_ref",
         }
 
 

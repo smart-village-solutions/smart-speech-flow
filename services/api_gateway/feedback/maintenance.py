@@ -36,7 +36,7 @@ from typing import Any, Callable
 from prometheus_client import CollectorRegistry, Counter, Gauge
 
 from ..quality_telemetry import ProbeOutcome
-from ..session_pseudonym import feedback_ref
+from ..session_pseudonym import feedback_ref, tenant_ref
 from .models import AnalyticsState
 from .repository import (
     FeedbackRepository,
@@ -255,6 +255,7 @@ class FeedbackMaintenance:
             result = self._telemetry.emit_feedback_submitted(
                 event_id=row.analytics_event_id,
                 session_ref=row.session_ref,
+                tenant_ref=tenant_ref(row.tenant_id),
                 feedback_ref=feedback_ref(row.feedback_id),
                 translation_quality=row.translation_quality,
                 performance=row.performance,

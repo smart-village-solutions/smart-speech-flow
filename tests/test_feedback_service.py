@@ -422,6 +422,34 @@ class TestTheRealTelemetrySeam:
         assert attributes["ssf.quality.feedback_ref"] == feedback_ref(feedback_id)
         assert str(feedback_id) not in str(attributes)
 
+    async def test_it_emits_the_tenant_reference_not_the_tenant_id(self) -> None:
+        """#325: the aggregate groups by tenant without storing the tenant id.
+
+        `submit` already resolves the tenant to file the row under it. The
+        analytics half gets the pseudonymised form of that same resolution, so
+        the two cannot name different tenants for one submission.
+        """
+        from prometheus_client import CollectorRegistry
+
+        from services.api_gateway.quality_telemetry import QualityTelemetry, TelemetryMode
+        from services.api_gateway.session_pseudonym import tenant_ref
+
+        exported: list = []
+        telemetry = QualityTelemetry(
+            mode=TelemetryMode.ENABLED,
+            exporter=lambda name, attributes, emitted_at_utc: exported.append(
+                (name, dict(attributes))
+            ),
+            registry=CollectorRegistry(),
+        )
+        service, _ = _service(telemetry=telemetry)
+
+        await service.submit(_request())
+
+        attributes = exported[0][1]
+        assert attributes["ssf.quality.tenant_ref"] == tenant_ref("tenant-a")
+        assert "tenant-a" not in str(attributes)
+
 
 async def test_a_failure_after_the_commit_still_confirms_the_submission() -> None:
     """The row is already committed, so the caller must not be told to retry.
