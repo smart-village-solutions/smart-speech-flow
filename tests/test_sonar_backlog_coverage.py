@@ -155,6 +155,7 @@ def test_pipeline_logic_helpers_cover_refinement_and_tts_paths(monkeypatch):
         tts_started_at=pipeline_logic.utc_now(),
         tts_completed_at=pipeline_logic.utc_now(),
         start_tts=0.0,
+        tts_resp=response,
     )
     assert debug_info["steps"][-1]["error"] == "tts failed"
 
@@ -249,7 +250,10 @@ def test_process_text_pipeline_covers_tts_error_and_success_paths(monkeypatch):
 
     success_response = SimpleNamespace(
         status_code=200,
-        headers={"content-type": pipeline_logic.AUDIO_WAV_MIME},
+        headers={
+            "content-type": pipeline_logic.AUDIO_WAV_MIME,
+            "X-TTS-Model": "tts_models/tr/common-voice/glow-tts",
+        },
         content=b"WAV",
     )
     monkeypatch.setattr(

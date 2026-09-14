@@ -639,7 +639,7 @@ def _append_tts_debug_step(
     tts_started_at: datetime,
     tts_completed_at: datetime,
     start_tts: float,
-    model: Optional[str] = None,
+    tts_resp: requests.Response,
 ) -> None:
     tts_step = {
         "step": "TTS",
@@ -652,9 +652,15 @@ def _append_tts_debug_step(
         "completed_at": tts_completed_at.isoformat() + "Z",
         "duration_ms": tts_duration_ms,
     }
+    # The service names the model that rendered the audio, which is not the
+    # configured voice when that one failed to import or load.
+    model = tts_resp.headers.get("X-TTS-Model")
     if model:
         tts_step["model"] = model
         tts_step["language"] = target_lang
+    fallback = tts_resp.headers.get("X-TTS-Fallback")
+    if fallback is not None:
+        tts_step["fallback"] = fallback.lower() == "true"
     debug_info["steps"].append(tts_step)
 
 
@@ -1356,6 +1362,7 @@ def process_text_pipeline(
                 tts_started_at=tts_started_at,
                 tts_completed_at=tts_completed_at,
                 start_tts=start_tts,
+                tts_resp=tts_resp,
             )
             return _pipeline_error_result(
                 debug_info=debug_info,
@@ -1370,19 +1377,6 @@ def process_text_pipeline(
             )
 
         audio_bytes = tts_resp.content
-
-        # Bestimme TTS-Modell basierend auf Sprache (da TTS-Service keine Header liefert)
-        tts_model_mapping = {
-            "de": "tts_models/de/thorsten/vits",
-            "en": "tts_models/en/ljspeech/vits",
-            "tr": "tts_models/tr/common-voice/glow-tts",
-            "fa": "tts_models/fa/custom/glow-tts",
-            "uk": "tts_models/uk/mai/vits",
-        }
-        tts_model_used = tts_model_mapping.get(
-            target_lang, f"facebook/mms-tts-{target_lang}"
-        )
-
         _append_tts_debug_step(
             debug_info=debug_info,
             target_lang=target_lang,
@@ -1392,7 +1386,7 @@ def process_text_pipeline(
             tts_started_at=tts_started_at,
             tts_completed_at=tts_completed_at,
             start_tts=start_tts,
-            model=tts_model_used,
+            tts_resp=tts_resp,
         )
         _finalize_pipeline_success(debug_info, start_total)
 
@@ -1626,18 +1620,16 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
                 error_msg = tts_json.get("error") or str(tts_json)
             except Exception:
                 error_msg = tts_resp.text
-            debug_info["steps"].append(
-                {
-                    "step": "TTS",
-                    "name": "tts",
-                    "input": {"lang": target_lang, "text": translation_text},
-                    "output": None,
-                    "error": error_msg,
-                    "duration": round(time.perf_counter() - start_tts, 3),
-                    "started_at": tts_started_at.isoformat() + "Z",
-                    "completed_at": tts_completed_at.isoformat() + "Z",
-                    "duration_ms": tts_duration_ms,
-                }
+            _append_tts_debug_step(
+                debug_info=debug_info,
+                target_lang=target_lang,
+                translation_text=translation_text,
+                error_msg=error_msg,
+                tts_duration_ms=tts_duration_ms,
+                tts_started_at=tts_started_at,
+                tts_completed_at=tts_completed_at,
+                start_tts=start_tts,
+                tts_resp=tts_resp,
             )
             return _pipeline_error_result(
                 debug_info=debug_info,
@@ -1651,18 +1643,16 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
                 upstream_response=tts_resp,
             )
         audio_bytes = tts_resp.content
-        debug_info["steps"].append(
-            {
-                "step": "TTS",
-                "name": "tts",
-                "input": {"lang": target_lang, "text": translation_text},
-                "output": AUDIO_WAV_MIME,
-                "error": None,
-                "duration": round(time.perf_counter() - start_tts, 3),
-                "started_at": tts_started_at.isoformat() + "Z",
-                "completed_at": tts_completed_at.isoformat() + "Z",
-                "duration_ms": tts_duration_ms,
-            }
+        _append_tts_debug_step(
+            debug_info=debug_info,
+            target_lang=target_lang,
+            translation_text=translation_text,
+            error_msg=None,
+            tts_duration_ms=tts_duration_ms,
+            tts_started_at=tts_started_at,
+            tts_completed_at=tts_completed_at,
+            start_tts=start_tts,
+            tts_resp=tts_resp,
         )
 
         _finalize_pipeline_success(debug_info, start_total)
