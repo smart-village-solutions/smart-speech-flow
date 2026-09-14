@@ -534,11 +534,12 @@ These are properties of the design, not defects to report:
   `SSF_DEFAULT_TENANT_ID`, so that one tenant's operators see all of it, from
   every tenant. The submit endpoint is anonymous by design, so there is no
   token to take a tenant from either.
-- **Feedback for a conversation that has ended is refused.** Once a
-  conversation terminates, the session store revokes its join link, and the
-  bare session id the feedback form sends no longer resolves. The form answers
-  `404 The session is not known`. The feedback button stays in the
-  ended-conversation screen's header, which is exactly where it is most likely
-  to be used, so this will be hit. Before the tenant-isolation release it was
-  accepted. Restoring it without weakening the revoked link is tracked in
-  #324.
+- **Feedback for a conversation that has ended is accepted for 30 minutes.**
+  The feedback button stays in the ended-conversation screen's header, which is
+  exactly where it is most likely to be used. Within the window the submission
+  is stored under that conversation's own tenant; past it the form answers
+  `404 The session is not known`, as it does for an id no session ever had.
+  `SSF_FEEDBACK_GRACE_MINUTES` changes the window and needs an `api_gateway`
+  restart; `0` turns it off, and an unusable value falls back to 30 rather
+  than stopping the gateway. Termination still revokes the join link either way, so an ended
+  conversation can be neither rejoined nor observed (#324).

@@ -245,16 +245,19 @@ that key from the bare session id through the session store's join index. The
 tenant a row is stored under is therefore the tenant whose conversation it
 describes.
 
-Two cases have no session to take a tenant from, and both are deliberate
-limits rather than gaps in the mechanism:
+Two cases do not resolve through a live session:
 
 - **Feedback that names no session** — from the access-code screen, the tenant
-  login screen or the admin dashboard — falls back to `SSF_DEFAULT_TENANT_ID`.
-  That tenant's operators see all of it, from every tenant.
-- **Feedback for a terminated conversation** is refused as an unknown session,
-  because termination revokes the join link the lookup depends on. That is the
-  session store's capability design working as intended; accepting feedback for
-  a short grace window without weakening it is #324.
+  login screen or the admin dashboard — has no tenant to take and falls back to
+  `SSF_DEFAULT_TENANT_ID`. That tenant's operators see all of it, from every
+  tenant. A deliberate limit rather than a gap in the mechanism.
+- **Feedback for a conversation that has just ended** is accepted for a grace
+  window after termination — `SSF_FEEDBACK_GRACE_MINUTES`, 30 by default — and
+  stored under that conversation's own tenant, not the fallback. Termination
+  still revokes the join link, so the ended conversation can be neither
+  rejoined nor observed: the feedback path reads the tombstone the revocation
+  leaves behind, which yields the session's key and nothing else. Past the
+  window the submission is refused as an unknown session (#324).
 
 See `docs/operations/runbooks/feedback-database-deployment.md` for the
 deployment consequences, including how to confirm no stored tenant is one that

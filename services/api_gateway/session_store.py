@@ -85,6 +85,9 @@ class TenantSessionStore(Protocol):
     def resolve_join(self, session_id: str) -> TenantSessionKey | None:
         raise NotImplementedError
 
+    def resolve_ended_join(self, session_id: str) -> TenantSessionKey | None:
+        raise NotImplementedError
+
     def list_for_tenant(self, tenant_id: str) -> list[Session]:
         raise NotImplementedError
 
@@ -189,6 +192,26 @@ class MemoryTenantSessionStore:
             return None
         key, active = join
         if not active or self.load(key) is None:
+            return None
+        return key
+
+    def resolve_ended_join(self, session_id: str) -> TenantSessionKey | None:
+        """The key behind a revoked join, for a session that has terminated.
+
+        The mirror of resolve_join, and deliberately disjoint from it: this
+        answers only once the join has been revoked, resolve_join only while it
+        is live, and neither reactivates anything. It returns the key alone, so
+        a caller learns that the session existed and which tenant owns it
+        without gaining any route to the conversation (#324).
+        """
+        join = self._joins.get(session_id)
+        if join is None:
+            return None
+        key, active = join
+        if active:
+            return None
+        session = self.load(key)
+        if session is None or session.status.value != "terminated":
             return None
         return key
 
@@ -299,6 +322,16 @@ class RedisTenantSessionStore:
             return None
         key = decoded[0]
         return key if self.load(key) is not None else None
+
+    def resolve_ended_join(self, session_id: str) -> TenantSessionKey | None:
+        decoded = _decode_join(self.redis.get(join_key(self.namespace, session_id)))
+        if decoded is None or decoded[1]:
+            return None
+        key = decoded[0]
+        session = self.load(key)
+        if session is None or session.status.value != "terminated":
+            return None
+        return key
 
     def list_for_tenant(self, tenant_id: str) -> list[Session]:
         sessions: list[Session] = []

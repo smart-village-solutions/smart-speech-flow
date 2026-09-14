@@ -257,3 +257,16 @@ def test_the_roles_migration_carries_no_literal_password() -> None:
     assert ":'app_password'" in sql
     assert ":'maintenance_password'" in sql
     assert "PASSWORD '" not in sql
+
+
+def test_both_stacks_carry_the_feedback_grace_window() -> None:
+    """#324: without it, feedback given in the ended screen is answered 404.
+
+    Defaulted rather than required, so an existing deployment keeps working
+    without touching its .env.
+    """
+    environment = _render_services()["api_gateway"]["environment"]
+    production = (ROOT / "deploy/production/docker-compose.production.yml").read_text()
+
+    assert environment["SSF_FEEDBACK_GRACE_MINUTES"] == "30"
+    assert "SSF_FEEDBACK_GRACE_MINUTES=${SSF_FEEDBACK_GRACE_MINUTES:-30}" in production

@@ -328,3 +328,86 @@ async def test_timeout_monitor_releases_idle_polling_presence(
 
     assert client.polling_id not in polling_store.clients
     assert manager.get_session(session.key).admin_connection_count == 0
+
+
+GRACE = timedelta(minutes=30)
+
+
+@pytest.mark.asyncio
+async def test_a_session_that_just_ended_resolves_for_its_grace_window(
+    manager: SessionManager, clock: Clock
+) -> None:
+    """#324: the feedback path's only route back to an ended conversation.
+
+    The window is the caller's, passed in rather than read here, so the store
+    and the manager hold no feedback policy between them.
+    """
+    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    await manager.terminate_session(session.key, "manual_admin_termination")
+
+    assert manager.resolve_ended_session(session.id, within=GRACE) == session.key
+
+    clock.advance(minutes=30)
+    assert manager.resolve_ended_session(session.id, within=GRACE) == session.key
+
+    clock.advance(seconds=1)
+    assert manager.resolve_ended_session(session.id, within=GRACE) is None
+
+
+@pytest.mark.asyncio
+async def test_resolving_an_ended_session_grants_no_route_back_into_it(
+    manager: SessionManager,
+) -> None:
+    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    await manager.terminate_session(session.key, "manual_admin_termination")
+
+    assert manager.resolve_ended_session(session.id, within=GRACE) == session.key
+    assert manager.resolve_customer_session(session.id) is None
+    assert manager.get_session(session.key).status is SessionStatus.TERMINATED
+
+
+@pytest.mark.asyncio
+async def test_a_live_session_is_not_an_ended_one(manager: SessionManager) -> None:
+    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+
+    assert manager.resolve_customer_session(session.id) == session.key
+    assert manager.resolve_ended_session(session.id, within=GRACE) is None
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_id_never_resolves_as_ended(manager: SessionManager) -> None:
+    await manager.create_admin_session("tenant-a", SNAPSHOT)
+
+    assert manager.resolve_ended_session("NOSUCH99", within=GRACE) is None
+
+
+@pytest.mark.asyncio
+async def test_an_ended_session_without_a_termination_time_fails_closed(
+    manager: SessionManager,
+) -> None:
+    """A record that cannot be dated cannot be shown to be inside the window."""
+    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    await manager.terminate_session(session.key, "manual_admin_termination")
+    manager.get_session(session.key).terminated_at = None
+
+    assert manager.resolve_ended_session(session.id, within=GRACE) is None
+
+
+@pytest.mark.asyncio
+async def test_the_window_survives_a_naive_clock() -> None:
+    """Every other clock comparison here tolerates a naive timestamp.
+
+    A legacy record restored from Redis can carry one, and an unwrapped
+    subtraction would raise TypeError out of the feedback path -- a 500 where
+    the endpoint owes a 201 or a 404.
+    """
+    naive = datetime(2026, 9, 11, 8, 0)
+    manager = SessionManager(
+        store=MemoryTenantSessionStore(),
+        clock=lambda: naive,
+        session_id_factory=lambda: "NAIVE001",
+    )
+    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    await manager.terminate_session(session.key, "manual_admin_termination")
+
+    assert manager.resolve_ended_session(session.id, within=GRACE) == session.key

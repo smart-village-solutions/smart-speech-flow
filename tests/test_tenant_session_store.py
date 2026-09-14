@@ -153,3 +153,141 @@ def test_redis_terminate_updates_tombstone_in_one_atomic_script() -> None:
     )
     assert json.loads(call[-2])["active"] is False
     assert call[-1] == "tenant-a"
+
+
+def apply_terminate_script(redis: RecordingRedis, call: tuple[object, ...]) -> None:
+    """Write what TERMINATE_SESSION_LUA's success branch writes.
+
+    RecordingRedis has no Lua interpreter, so the tombstone the store reads
+    back has to be seeded from the script's own arguments rather than a
+    hand-written copy that could drift from it: the session record under
+    KEYS[1], and the revoked join payload -- ARGV[4] -- under KEYS[3].
+    """
+    redis.set(str(call[2]), str(call[5]))
+    redis.set(str(call[4]), str(call[8]))
+
+
+def active_join_payload(tenant_id: str, session_id: str) -> str:
+    return json.dumps(
+        {"active": True, "session_id": session_id, "tenant_id": tenant_id},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def terminated_redis_store(tenant_id: str, session_id: str):
+    """A store whose one session has been terminated the way the script does it.
+
+    The live state is seeded first. TERMINATE_SESSION_LUA reads the join key
+    and returns 0 unless it holds the active payload, so terminating against an
+    empty keyspace is a state real Redis would refuse -- RecordingRedis accepts
+    it only because its eval is canned, which would leave the Redis half of
+    these tests resting on a termination that cannot happen.
+    """
+    redis = RecordingRedis()
+    store = RedisTenantSessionStore(redis, namespace="ssf")
+    session = make_session(tenant_id, session_id)
+    live_join = active_join_payload(tenant_id, session_id)
+    redis.set(session_key("ssf", session.key), store._session_payload(session))
+    redis.set(join_key("ssf", session_id), live_join)
+
+    session.status = SessionStatus.TERMINATED
+    store.terminate(session)
+
+    # ARGV[3] is the value the script compares the stored join against; if the
+    # seed above ever stops matching it, this fixture is fiction.
+    assert redis.eval_calls[0][7] == live_join
+    apply_terminate_script(redis, redis.eval_calls[0])
+    return store, redis, session
+
+
+class TestEndedJoinResolution:
+    """The narrow tombstone reader the feedback path uses (#324).
+
+    `resolve_ended_join` is the mirror of `resolve_join`: it answers only for a
+    join the store has already revoked, and only when the record behind it
+    loads as terminated. Neither answers for what the other does, so nothing
+    that resolves a live session can reach an ended one, and -- the point of
+    the pair -- nothing that reaches an ended one can rejoin or observe it.
+    """
+
+    def test_memory_store_does_not_resolve_a_live_join(self) -> None:
+        store = MemoryTenantSessionStore()
+        session = make_session("tenant-a", "ABC12345")
+        assert store.create(session) is True
+
+        assert store.resolve_join(session.id) == session.key
+        assert store.resolve_ended_join(session.id) is None
+
+    def test_memory_store_resolves_a_revoked_join_to_its_key(self) -> None:
+        store = MemoryTenantSessionStore()
+        session = make_session("tenant-a", "ABC12345")
+        store.create(session)
+        session.status = SessionStatus.TERMINATED
+        store.terminate(session)
+
+        assert store.resolve_ended_join(session.id) == session.key
+
+    def test_memory_store_does_not_resolve_an_unknown_id(self) -> None:
+        store = MemoryTenantSessionStore()
+
+        assert store.resolve_ended_join("NOSUCH99") is None
+
+    def test_memory_store_fails_closed_on_a_mismatched_record(self) -> None:
+        store = MemoryTenantSessionStore()
+        session = make_session("tenant-a", "ABC12345")
+        store.create(session)
+        session.status = SessionStatus.TERMINATED
+        store.terminate(session)
+
+        store._sessions[session.key] = replace(session, tenant_id="tenant-b")
+
+        assert store.resolve_ended_join(session.id) is None
+
+    def test_redis_store_does_not_resolve_a_live_join(self) -> None:
+        redis = RecordingRedis()
+        store = RedisTenantSessionStore(redis, namespace="ssf")
+        session = make_session("tenant-a", "ABC12345")
+        redis.set(session_key("ssf", session.key), store._session_payload(session))
+        redis.set(join_key("ssf", session.id), active_join_payload("tenant-a", session.id))
+
+        assert store.resolve_join(session.id) == session.key
+        assert store.resolve_ended_join(session.id) is None
+
+    def test_redis_store_resolves_a_revoked_join_to_its_key(self) -> None:
+        store, _redis, session = terminated_redis_store("tenant-a", "ABC12345")
+
+        assert store.resolve_ended_join(session.id) == session.key
+
+    def test_redis_store_does_not_resolve_an_unknown_id(self) -> None:
+        store = RedisTenantSessionStore(RecordingRedis(), namespace="ssf")
+
+        assert store.resolve_ended_join("NOSUCH99") is None
+
+    def test_redis_store_fails_closed_on_a_mismatched_record(self) -> None:
+        store, redis, session = terminated_redis_store("tenant-a", "ABC12345")
+        redis.set(
+            session_key("ssf", session.key),
+            store._session_payload(replace(session, tenant_id="tenant-b")),
+        )
+
+        assert store.resolve_ended_join(session.id) is None
+
+    def test_a_revoked_join_still_cannot_be_rejoined_in_either_store(self) -> None:
+        """Criterion 3 of #324, stated as a test rather than a claim.
+
+        Both stores must keep answering `None` from `resolve_join` for exactly
+        the id `resolve_ended_join` now answers for. This is the test that
+        fails if a later change tries to satisfy feedback by reactivating the
+        join instead of reading the tombstone.
+        """
+        memory = MemoryTenantSessionStore()
+        session = make_session("tenant-a", "ABC12345")
+        memory.create(session)
+        session.status = SessionStatus.TERMINATED
+        memory.terminate(session)
+        redis_store, _redis, redis_session = terminated_redis_store("tenant-a", "ABC12345")
+
+        for store, ended in ((memory, session), (redis_store, redis_session)):
+            assert store.resolve_ended_join(ended.id) == ended.key
+            assert store.resolve_join(ended.id) is None
