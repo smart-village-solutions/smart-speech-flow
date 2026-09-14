@@ -385,10 +385,16 @@ async def test_an_unknown_id_never_resolves_as_ended(manager: SessionManager) ->
 async def test_an_ended_session_without_a_termination_time_fails_closed(
     manager: SessionManager,
 ) -> None:
-    """A record that cannot be dated cannot be shown to be inside the window."""
+    """A record that cannot be dated cannot be shown to be inside the window.
+
+    The store's record, not the manager's cache: terminate_session mutates the
+    cached object in place while the store keeps the `replace()` copy it
+    committed, so the two are distinct objects afterwards, and the store's is
+    the one the window is judged against.
+    """
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     await manager.terminate_session(session.key, "manual_admin_termination")
-    manager.get_session(session.key).terminated_at = None
+    manager.store.load(session.key).terminated_at = None
 
     assert manager.resolve_ended_session(session.id, within=GRACE) is None
 

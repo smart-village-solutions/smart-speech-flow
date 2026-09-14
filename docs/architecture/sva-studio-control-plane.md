@@ -252,12 +252,13 @@ Two cases do not resolve through a live session:
   `SSF_DEFAULT_TENANT_ID`. That tenant's operators see all of it, from every
   tenant. A deliberate limit rather than a gap in the mechanism.
 - **Feedback for a conversation that has just ended** is accepted for a grace
-  window after termination — `SSF_FEEDBACK_GRACE_MINUTES`, 30 by default — and
-  stored under that conversation's own tenant, not the fallback. Termination
-  still revokes the join link, so the ended conversation can be neither
-  rejoined nor observed: the feedback path reads the tombstone the revocation
-  leaves behind, which yields the session's key and nothing else. Past the
-  window the submission is refused as an unknown session (#324).
+  window after termination and stored under that conversation's own tenant,
+  not the fallback. `SSF_FEEDBACK_GRACE_MINUTES` sets the window: 30 minutes by
+  default, `0` to decline this feedback outright. Termination still revokes the
+  join link, so the ended conversation can be neither rejoined nor observed:
+  the feedback path reads the tombstone the revocation leaves behind, which
+  yields the session's key and the time it ended, nothing more. Past the window
+  the submission is refused as an unknown session (#324).
 
 See `docs/operations/runbooks/feedback-database-deployment.md` for the
 deployment consequences, including how to confirm no stored tenant is one that

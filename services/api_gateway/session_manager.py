@@ -899,16 +899,14 @@ class SessionManager:
         """
         if self.store is None:
             return None
-        key = self.store.resolve_ended_join(session_id)
-        if key is None:
+        resolved = self.store.resolve_ended_join(session_id)
+        if resolved is None:
             return None
-        session = self.get_session(key)
-        if session is None or session.status != SessionStatus.TERMINATED:
-            return None
+        key, terminated_at = resolved
         # An undatable record cannot be shown to be inside the window.
-        if session.terminated_at is None:
+        if terminated_at is None:
             return None
-        if _ensure_utc(self.clock()) - _ensure_utc(session.terminated_at) > within:
+        if _ensure_utc(self.clock()) - _ensure_utc(terminated_at) > within:
             return None
         return key
 

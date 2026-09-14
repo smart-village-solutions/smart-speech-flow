@@ -20,7 +20,11 @@ from services.api_gateway.feedback.models import (
     FeedbackTextTooLong,
 )
 from services.api_gateway.feedback.repository import FeedbackStorageUnavailable
-from services.api_gateway.feedback.service import FeedbackService, UnknownSession
+from services.api_gateway.feedback.service import (
+    FEEDBACK_GRACE_ENV,
+    FeedbackService,
+    UnknownSession,
+)
 from services.api_gateway.feedback.tenant import ConfiguredTenantResolver
 from services.api_gateway.quality_telemetry import ProbeOutcome, ProbeResult
 
@@ -512,6 +516,18 @@ class TestFeedbackJustAfterTheConversationEnds:
 
     REVISION = f"sha256:{'a' * 64}"
 
+    @pytest.fixture(autouse=True)
+    def _ignore_the_ambient_window(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """These assert the shipped default, so the environment must not reach them.
+
+        This change is what puts SSF_FEEDBACK_GRACE_MINUTES into both compose
+        stacks, so the suite run inside the api_gateway container would
+        otherwise read the deployment's window and flip the results: `0` fails
+        the two tests that expect acceptance, `120` fails the one that expects
+        refusal. The tests that are about the variable set it themselves.
+        """
+        monkeypatch.delenv(FEEDBACK_GRACE_ENV, raising=False)
+
     class Clock:
         def __init__(self) -> None:
             self.current = datetime(2026, 9, 14, 9, 0, tzinfo=timezone.utc)
@@ -575,8 +591,6 @@ class TestFeedbackJustAfterTheConversationEnds:
         assert parts["repository"].stored == []
 
     async def test_the_window_is_configurable(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from services.api_gateway.feedback.service import FEEDBACK_GRACE_ENV
-
         monkeypatch.setenv(FEEDBACK_GRACE_ENV, "5")
         clock = self.Clock()
         manager, session = await self._ended_session(clock)
@@ -607,8 +621,6 @@ class TestFeedbackJustAfterTheConversationEnds:
         is a code change, and an operator whose privacy rules end with the
         conversation has to be able to say so in the environment.
         """
-        from services.api_gateway.feedback.service import FEEDBACK_GRACE_ENV
-
         monkeypatch.setenv(FEEDBACK_GRACE_ENV, "0")
         clock = self.Clock()
         manager, session = await self._ended_session(clock)
@@ -623,7 +635,6 @@ class TestFeedbackJustAfterTheConversationEnds:
         """A pasted epoch timestamp overflows timedelta; the default absorbs it."""
         from services.api_gateway.feedback.service import (
             DEFAULT_GRACE_MINUTES,
-            FEEDBACK_GRACE_ENV,
             _configured_grace_window,
         )
 
@@ -631,3 +642,31 @@ class TestFeedbackJustAfterTheConversationEnds:
         for value in ("1757808000000", "-5", "half an hour", "30.5"):
             monkeypatch.setenv(FEEDBACK_GRACE_ENV, value)
             assert _configured_grace_window() == default, value
+
+
+class TestAnIdNoSessionCouldCarry:
+    """The store validates an id's shape; nothing above the service caught it.
+
+    `join_key` builds a TenantSessionKey, which rejects anything outside
+    ^[A-Za-z0-9_-]{1,128}$. The request model constrains only the length, and
+    routes/feedback.py catches UnknownSession, FeedbackTextTooLong and
+    FeedbackStorageUnavailable -- so a malformed id answered 500 where it owes
+    a 404. Production runs the Redis store, which is the one that validates.
+    """
+
+    class EmptyRedis:
+        def get(self, key):
+            return None
+
+    def _service(self):
+        from services.api_gateway.session_manager import SessionManager
+        from services.api_gateway.session_store import RedisTenantSessionStore
+
+        manager = SessionManager(store=RedisTenantSessionStore(self.EmptyRedis()))
+        service, _parts = _service(session_manager=manager)
+        return service
+
+    @pytest.mark.parametrize("malformed", ["a b", "a.b", "../etc", "id\nwith-newline"])
+    async def test_it_is_an_unknown_session_not_a_server_error(self, malformed) -> None:
+        with pytest.raises(UnknownSession):
+            await self._service().submit(_request(session_id=malformed))

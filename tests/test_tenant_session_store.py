@@ -27,6 +27,7 @@ from services.api_gateway.session_store import (
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
+TERMINATED_AT = datetime(2026, 9, 14, 9, 30, tzinfo=timezone.utc)
 
 
 def make_session(tenant_id: str, session_id: str) -> Session:
@@ -192,6 +193,7 @@ def terminated_redis_store(tenant_id: str, session_id: str):
     redis.set(join_key("ssf", session_id), live_join)
 
     session.status = SessionStatus.TERMINATED
+    session.terminated_at = TERMINATED_AT
     store.terminate(session)
 
     # ARGV[3] is the value the script compares the stored join against; if the
@@ -224,9 +226,10 @@ class TestEndedJoinResolution:
         session = make_session("tenant-a", "ABC12345")
         store.create(session)
         session.status = SessionStatus.TERMINATED
+        session.terminated_at = TERMINATED_AT
         store.terminate(session)
 
-        assert store.resolve_ended_join(session.id) == session.key
+        assert store.resolve_ended_join(session.id) == (session.key, TERMINATED_AT)
 
     def test_memory_store_does_not_resolve_an_unknown_id(self) -> None:
         store = MemoryTenantSessionStore()
@@ -238,6 +241,7 @@ class TestEndedJoinResolution:
         session = make_session("tenant-a", "ABC12345")
         store.create(session)
         session.status = SessionStatus.TERMINATED
+        session.terminated_at = TERMINATED_AT
         store.terminate(session)
 
         store._sessions[session.key] = replace(session, tenant_id="tenant-b")
@@ -257,7 +261,7 @@ class TestEndedJoinResolution:
     def test_redis_store_resolves_a_revoked_join_to_its_key(self) -> None:
         store, _redis, session = terminated_redis_store("tenant-a", "ABC12345")
 
-        assert store.resolve_ended_join(session.id) == session.key
+        assert store.resolve_ended_join(session.id) == (session.key, TERMINATED_AT)
 
     def test_redis_store_does_not_resolve_an_unknown_id(self) -> None:
         store = RedisTenantSessionStore(RecordingRedis(), namespace="ssf")
@@ -285,9 +289,10 @@ class TestEndedJoinResolution:
         session = make_session("tenant-a", "ABC12345")
         memory.create(session)
         session.status = SessionStatus.TERMINATED
+        session.terminated_at = TERMINATED_AT
         memory.terminate(session)
         redis_store, _redis, redis_session = terminated_redis_store("tenant-a", "ABC12345")
 
         for store, ended in ((memory, session), (redis_store, redis_session)):
-            assert store.resolve_ended_join(ended.id) == ended.key
+            assert store.resolve_ended_join(ended.id) == (ended.key, TERMINATED_AT)
             assert store.resolve_join(ended.id) is None

@@ -199,9 +199,18 @@ class FeedbackService:
         """
         if session_id is None:
             return MISSING_REFERENCE, None
-        key = self._session_manager.resolve_customer_session(session_id)
-        if key is None and self._grace_window > timedelta(0):
-            key = self._session_manager.resolve_ended_session(session_id, within=self._grace_window)
+        try:
+            key = self._session_manager.resolve_customer_session(session_id)
+            if key is None and self._grace_window > timedelta(0):
+                key = self._session_manager.resolve_ended_session(
+                    session_id, within=self._grace_window
+                )
+        except ValueError:
+            # The store validates an id's shape before it looks anything up,
+            # and the route catches nothing that would turn that into an
+            # answer. An id no session could carry is an unknown session, not
+            # a 500. `from None` keeps the submitted id out of the traceback.
+            raise UnknownSession from None
         if key is None and self._session_manager.get_session(session_id) is None:
             raise UnknownSession
         return session_ref(session_id), key
