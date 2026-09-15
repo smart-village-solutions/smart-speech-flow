@@ -24,7 +24,7 @@ virtualenv>=21.7.9
 # Code Quality Extensions
 flake8-docstrings==1.7.0
 flake8-import-order==0.18.2
-flake8-bugbear==24.10.31
+flake8-bugbear==26.9.9
 pep8-naming==0.15.1
 
 # Type Stubs
