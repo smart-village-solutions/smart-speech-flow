@@ -1,9 +1,12 @@
 import base64
+import json
 import logging
+from typing import Dict, Optional
 
 from fastapi import File, Form, Request, Response, UploadFile
 
 from services.api_gateway.app import app
+from services.api_gateway.pipeline_admission import PipelineBusyError, run_pipeline
 from services.api_gateway.pipeline_logic import process_wav
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -28,9 +31,6 @@ async def pipeline(
         str(debug_query).lower() == "true"
     )
     file_bytes = await file.read()
-    result = process_wav(
-        file_bytes, source_lang, target_lang, debug=debug_active, validate_audio=True
-    )
 
     def get_origin(request: Request) -> str:
         o = request.headers.get("origin", "")
@@ -42,28 +42,57 @@ async def pipeline(
         return o if o in allowed else allowed[0]
 
     def pipeline_response(
-        request: Request, content: str, status_code: int = 200
+        request: Request,
+        content: str,
+        status_code: int = 200,
+        extra_headers: Optional[Dict[str, str]] = None,
     ) -> Response:
         origin = get_origin(request)
+        headers = {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+            "Access-Control-Allow-Credentials": "true",
+        }
+        if extra_headers:
+            headers.update(extra_headers)
         return Response(
             content=content,
             media_type="application/json",
             status_code=status_code,
-            headers={
-                "Access-Control-Allow-Origin": origin,
-                "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
-                "Access-Control-Allow-Credentials": "true",
-            },
+            headers=headers,
         )
 
     import logging
 
     logger = logging.getLogger("api_gateway")
 
-    def inner(request: Request) -> Response:
-        import json
+    try:
+        result = await run_pipeline(
+            request,
+            process_wav,
+            file_bytes,
+            source_lang,
+            target_lang,
+            debug=debug_active,
+            validate_audio=True,
+        )
+    except PipelineBusyError as busy:
+        logger.info("Frontend-Response: SYSTEM_BUSY, pipeline at capacity")
+        return pipeline_response(
+            request,
+            json.dumps(
+                {
+                    "success": False,
+                    "error_code": "SYSTEM_BUSY",
+                    "error": "The translation pipeline is at capacity. Please retry shortly.",
+                }
+            ),
+            status_code=503,
+            extra_headers={"Retry-After": busy.retry_after_header},
+        )
 
+    def inner(request: Request) -> Response:
         if result["error"]:
             logger.info(f"Frontend-Response: Fehler: {result['error_msg']}")
             response_obj = {

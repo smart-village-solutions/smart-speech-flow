@@ -4,14 +4,18 @@ import { toAdminSessions, toCreatedSession } from './admin.mapper';
 import type { SessionCreateDto, SessionHistoryDto } from './admin.mapper';
 import type { AdminSession, CreatedSession } from './admin.types';
 
-/**
- * `/api/admin/*` carries no authentication of any kind on the gateway, so there
- * is nothing to attach here.
- */
+export type RealtimeTransportKind = 'websocket' | 'polling';
+
+interface RealtimeTicketDto {
+  ticket: string;
+  expires_at: string;
+}
+
 export interface AdminRepository {
   createSession(): Promise<CreatedSession>;
   listSessions(limit: number): Promise<AdminSession[]>;
   terminateSession(sessionId: string): Promise<void>;
+  issueRealtimeTicket(sessionId: string, transport: RealtimeTransportKind): Promise<string>;
 }
 
 export function createAdminRepository(http: AxiosInstance): AdminRepository {
@@ -33,6 +37,15 @@ export function createAdminRepository(http: AxiosInstance): AdminRepository {
       // 200 with `already_terminated` is also success: the caller wanted the
       // session ended and it is.
       await http.delete(`/api/admin/session/${safeId}/terminate`);
+    },
+
+    async issueRealtimeTicket(sessionId, transport) {
+      const safeId = requirePathIdentifier(sessionId, 'session');
+      const response = await http.post<RealtimeTicketDto>(
+        `/api/admin/session/${safeId}/realtime-ticket`,
+        { transport }
+      );
+      return response.data.ticket;
     },
   };
 }

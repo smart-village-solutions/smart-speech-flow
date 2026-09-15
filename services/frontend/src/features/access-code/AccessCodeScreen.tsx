@@ -1,23 +1,23 @@
 import { useState } from 'react';
-import { ArrowRight, Moon, Sun } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useScreenLocale } from '@/app/providers/locale';
 import { useMutation } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
-import { useTheme } from '@/app/providers/theme';
+import { useFeedback } from '@/app/providers/feedback';
 import { isJoinable } from '@/domain/session/session.types';
 import { AppError } from '@/core/http/AppError';
 import { Button } from '@/ui/primitives/Button';
-import { IconButton } from '@/ui/primitives/IconButton';
-import { BrandLogo } from '@/ui/patterns/BrandLogo';
+import { AppHeader } from '@/ui/patterns/AppHeader';
 import { CODE_LENGTH, normalizeCode } from '@/lib/accessCode';
 import { CodeInput } from '@/ui/patterns/CodeInput';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
+import { StartPageFooter } from '@/ui/patterns/StartPageFooter';
 
 export function AccessCodeScreen() {
   const { t } = useTranslation();
-  const { theme, toggleTheme } = useTheme();
+  const { openFeedback } = useFeedback();
   const { session } = useServices();
   const navigate = useNavigate();
 
@@ -25,7 +25,7 @@ export function AccessCodeScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const submit = useMutation({
-    mutationFn: (candidate: string) => session.getSession(candidate),
+    mutationFn: (candidate: string) => session.getSession(candidate, 'customer'),
     onSuccess: (found) => {
       if (!isJoinable(found)) {
         setError(t('accessCode.notFound'));
@@ -49,22 +49,15 @@ export function AccessCodeScreen() {
   const isComplete = normalized.length === CODE_LENGTH;
 
   return (
-    <ScreenShell className="items-center">
-      <div className="absolute end-5 top-5">
-        <IconButton label={t('header.theme')} onClick={toggleTheme}>
-          {theme === 'dark' ? (
-            <Sun size={18} strokeWidth={2} />
-          ) : (
-            <Moon size={18} strokeWidth={2} />
-          )}
-        </IconButton>
-      </div>
+    <ScreenShell>
+      <AppHeader
+        onBack={() => void navigate('/')}
+        onHome={() => void navigate('/')}
+        onFeedback={() => openFeedback(null)}
+        showNavigation={false}
+      />
 
-      <div className="mt-36 flex justify-center text-fg-strong">
-        <BrandLogo />
-      </div>
-
-      <div className="-mt-12 flex w-full flex-1 flex-col items-center justify-center px-5">
+      <div className="flex w-full flex-1 flex-col items-center justify-center px-5 pt-content-top">
         <h1 className="mb-10 text-center text-title font-bold leading-tight tracking-title text-fg-strong">
           {t('accessCode.title')}
         </h1>
@@ -92,21 +85,17 @@ export function AccessCodeScreen() {
           </p>
         )}
 
-        <div className="mt-32 flex flex-col items-center gap-3">
+        <div className="mt-16 flex flex-col items-center gap-3">
           <Link
             to="/login"
             className="text-note font-normal tracking-link text-fg-link underline underline-offset-2 transition-colors duration-200 hover:text-fg-link-hover"
           >
-            Neuer Admin-Login
-          </Link>
-          <Link
-            to="/admin"
-            className="text-note font-normal tracking-link text-fg-link underline underline-offset-2 transition-colors duration-200 hover:text-fg-link-hover"
-          >
-            {t('accessCode.adminLogin')}
+            {t('admin.tenantLogin.title')}
           </Link>
         </div>
       </div>
+
+      <StartPageFooter />
     </ScreenShell>
   );
 }

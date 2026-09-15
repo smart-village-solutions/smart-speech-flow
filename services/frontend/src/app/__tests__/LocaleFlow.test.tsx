@@ -23,7 +23,6 @@ function sessionService(session: Session) {
   return {
     getSession: vi.fn().mockResolvedValue(session),
     activate: vi.fn().mockResolvedValue(session),
-    reportActivity: vi.fn().mockResolvedValue(undefined),
   };
 }
 

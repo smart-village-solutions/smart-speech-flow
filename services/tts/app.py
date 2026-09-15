@@ -215,9 +215,12 @@ def _audio_response(
     lang: str,
     debug_active: bool,
     debug_info: Dict[str, Any],
+    *,
+    fallback: bool,
 ) -> Response:
     headers = {
         "X-TTS-Model": model_name,
+        "X-TTS-Fallback": "true" if fallback else "false",
         "X-TTS-Language": lang,
     }
     if debug_active:
@@ -467,18 +470,22 @@ async def synthesize(request: Request):
     try:
         seed = _seed_for_request(session_id, text, debug_info)
         _apply_seed(seed)
-        audio_bytes, used_fallback = await _render_audio_bytes(tts_model, text)
+        audio_bytes, rendered_by_mms = await _render_audio_bytes(tts_model, text)
+        # A Coqui voice that failed to import or load is served by MMS instead,
+        # so name the model that produced the audio, not the configured one.
+        effective_model = (
+            _resolve_hf_model_name(normalized_lang) if rendered_by_mms else model_name
+        )
+        debug_info["model"] = effective_model
         debug_info["output"] = AUDIO_WAV_MIME
         _update_duration(debug_info, start)
-        response_model_name = (
-            f"{model_name} (MMS-TTS Fallback)" if used_fallback else model_name
-        )
         return _audio_response(
             audio_bytes,
-            response_model_name,
+            effective_model,
             normalized_lang,
             debug_active,
             debug_info,
+            fallback=effective_model != model_name,
         )
     except Exception as exc:
         debug_info["error"] = str(exc)

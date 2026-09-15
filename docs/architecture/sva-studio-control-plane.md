@@ -14,8 +14,8 @@ support access are explicitly outside this initial scope.
 ## Deployment and Tenant Model
 
 One Studio deployment runs with exactly one SSF installation in the same server
-or deployment boundary. One logical Studio instance represents exactly one SSF
-tenant.
+or deployment boundary. A Studio deployment operates multiple logical tenants;
+each Studio tenant maps to exactly one SSF tenant.
 
 ```text
 SSF server or deployment
@@ -23,6 +23,8 @@ SSF server or deployment
 ├── SSF Keycloak
 ├── SVA Studio
 └── PostgreSQL database of the SSF plugin
+    ├── Studio tenant / SSF tenant A
+    └── Studio tenant / SSF tenant B
 ```
 
 The shared deployment boundary does not remove system boundaries. Studio and
@@ -37,9 +39,9 @@ SSF business roles and Studio technical roles remain distinct:
 | SSF business role | Technical Studio mapping |
 | --- | --- |
 | `system_admin` | Root scope with `instance_registry_admin` |
-| `tenant_admin` | Tenant-local Studio `system_admin` in the realm of the Studio instance |
-| `admin` | Tenant-local user with selected `ssf.*` permissions |
-| `customer` | No regular Studio identity; access through a restricted SSF session |
+| `tenant_admin` | Tenant-local Studio `system_admin` in the realm of the Studio tenant |
+| `user` | Tenant-local user with selected `ssf.*` permissions |
+| `guest` | No regular Studio identity; access through a restricted SSF session |
 
 The root system administrator creates a tenant and its initial tenant
 administrator. The tenant administrator then manages users and roles in its
@@ -127,7 +129,8 @@ The SSF plugin owns one PostgreSQL database per SSF installation. It contains
 both installation-wide and tenant-specific configuration. The Studio Core
 knows no SSF tables or domain fields.
 
-Tenant records use the canonical Studio `instanceId` as their tenant key.
+Tenant records use the canonical Studio `tenant_id` as their tenant key;
+`studio_instance_id` identifies only the enclosing Studio deployment.
 Tenant access is bound server-side to this context and secured with row-level
 security. Root access follows a separate, explicitly authorised database path.
 Migrations, repositories, and schema ownership belong to the SSF plugin.
@@ -142,22 +145,26 @@ references to SSF.
 
 ## Internal API Between SSF and Studio
 
-SSF determines the tenant from a valid session token or Keycloak login. The SSF
-backend then calls the internal Studio API with its own service identity and a
-short-lived signed tenant assertion. A freely supplied `instanceId` is not a
-trust boundary.
+SSF determines the tenant from a valid session token, Keycloak login, or
+server-resolved guest-join credential. The SSF backend then calls the internal
+Studio API with its own Client-Credentials service identity and an
+`X-Studio-Tenant-Id` header. Studio returns that canonical value unchanged as
+`tenant.id`. Legacy tenant headers and query selectors are rejected without
+compatibility aliases. A freely supplied tenant or instance ID is not a trust
+boundary.
 
-The Studio host validates the technical identity, audience, validity,
-replay protection, and tenant binding before invoking the SSF plugin handler in
-the bound tenant context. Browsers receive neither database credentials nor
-direct access to this internal API.
+The Studio host validates the technical identity, configured audience, validity,
+and `ssf.runtime-configuration.read` permission before invoking the SSF plugin
+handler in the bound tenant context. V1 does not require a second signed tenant
+assertion or replay protection for this read-only internal request. Browsers
+receive neither database credentials nor direct access to this internal API.
 
 ## First Delivery Runtime Flows
 
 ### Create a tenant
 
 ```text
-Root system administrator creates a Studio instance
+Root system administrator creates a Studio tenant
     → Core provisions tenant realm and separate OIDC clients
     → Core creates the initial tenant administrator
     → Core activates the installed automatic SSF plugin
@@ -214,6 +221,48 @@ SSF remains authoritative for ClickHouse, session data, and conversation
 content. Studio will consume those data later through an internal SSF
 administration or reporting API rather than accessing SSF runtime databases
 directly.
+
+## Feedback Tenancy
+
+Feedback is the first SSF-owned data with a tenant column. Both of its halves
+are tenant-isolated, by different mechanisms, because they sit on opposite
+sides of the trust boundary above.
+
+**Reading.** `GET /api/feedback` and `GET /api/feedback/{feedback_id}` resolve
+the tenant through `require_studio_tenant_context`, which reads the signed
+`studio_tenant_id` claim and rejects any tenant selector supplied by the
+request. The gateway connects as `ssf_feedback_reader`, a `NOBYPASSRLS` role,
+so the row-level security policy in `001_feedback.sql` filters every read
+inside PostgreSQL rather than in application code. A record belonging to
+another tenant is invisible, not merely unselected.
+
+**Writing.** `POST /api/feedback` is unauthenticated by design — the customer
+flow carries no Keycloak identity, and this document's trust boundary keeps
+customers outside Studio IAM — so its tenant cannot come from a token. It comes
+from the session instead. Every admin session is created through the tenant
+flow and stored under a `TenantSessionKey`, and `SessionTenantResolver` reaches
+that key from the bare session id through the session store's join index. The
+tenant a row is stored under is therefore the tenant whose conversation it
+describes.
+
+Two cases do not resolve through a live session:
+
+- **Feedback that names no session** — from the access-code screen, the tenant
+  login screen or the admin dashboard — has no tenant to take and falls back to
+  `SSF_DEFAULT_TENANT_ID`. That tenant's operators see all of it, from every
+  tenant. A deliberate limit rather than a gap in the mechanism.
+- **Feedback for a conversation that has just ended** is accepted for a grace
+  window after termination and stored under that conversation's own tenant,
+  not the fallback. `SSF_FEEDBACK_GRACE_MINUTES` sets the window: 30 minutes by
+  default, `0` to decline this feedback outright. Termination still revokes the
+  join link, so the ended conversation can be neither rejoined nor observed:
+  the feedback path reads the tombstone the revocation leaves behind, which
+  yields the session's key and the time it ended, nothing more. Past the window
+  the submission is refused as an unknown session (#324).
+
+See `docs/operations/runbooks/feedback-database-deployment.md` for the
+deployment consequences, including how to confirm no stored tenant is one that
+no operator can read.
 
 ## Security and Quality Boundaries
 

@@ -57,10 +57,10 @@ export function ConsentScreen() {
       <AppHeader
         onBack={() => void navigate(`/s/${sessionId}/language`)}
         onHome={() => void navigate('/')}
-        onFeedback={openFeedback}
+        onFeedback={() => openFeedback(sessionId ?? null)}
       />
 
-      <div className="flex-1 overflow-y-auto px-5 pb-12 pt-24">
+      <div className="flex-1 overflow-y-auto px-5 pb-12 pt-content-top">
         <div className="mx-auto max-w-app">
           {language && (
             <div className="mb-8 mt-6 flex justify-center">

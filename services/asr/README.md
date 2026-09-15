@@ -8,7 +8,10 @@
 
 Beispiel:
 ```bash
-curl -F "file=@sample.wav" -F "lang=de" http://localhost:8001/transcribe
+# Der Dienst wird seit #221 nicht mehr auf dem Host veröffentlicht; im
+# Compose-Netz lauscht er auf asr:8000.
+docker compose exec api_gateway \
+  curl -F "file=@examples/audio/sample.wav" -F "lang=de" http://asr:8000/transcribe
 ```
 
 ### Output
@@ -56,7 +59,7 @@ Prometheus-kompatible Metriken für Monitoring.
 
 ## Architektur & Funktionsweise
 1. **Modellwahl:**
-   - Die Spracherkennung erfolgt über lokal geladene Modelle (z. B. Whisper, Wav2Vec, etc.), je nach Konfiguration in `app.py`.
+   - Der ASR-Service lädt Whisper `large-v3-turbo` dauerhaft lokal.
    - Die Verarbeitung erfolgt immer lokal, keine Daten werden an externe APIs gesendet.
 2. **Caching:**
    - Geladene Modelle werden im Speicher gehalten, um die Performance zu optimieren.

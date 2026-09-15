@@ -12,8 +12,6 @@ import {
   type ConversationState,
 } from './conversation.reducer';
 
-const HEARTBEAT_MS = 30_000;
-
 interface UseConversationOptions {
   /** Which end of the session this screen is. Never defaulted. */
   role: ClientRole;
@@ -39,7 +37,7 @@ export function useConversation(
   languages: { source: string; target: string },
   options: UseConversationOptions
 ): UseConversationResult {
-  const { message, session, createRealtime } = useServices();
+  const { message, createRealtime } = useServices();
   const { role } = options;
   const [state, dispatch] = useReducer(conversationReducer, initialConversationState);
   const transport = useMemo(() => createRealtime(), [createRealtime]);
@@ -108,7 +106,7 @@ export function useConversation(
       seenConnected = true;
     });
 
-    transport.connect(sessionId, role);
+    void transport.connect(sessionId, role);
 
     return () => {
       offEvent();
@@ -116,14 +114,6 @@ export function useConversation(
       transport.disconnect();
     };
   }, [message, role, sessionId, transport]);
-
-  useEffect(() => {
-    const beat = setInterval(
-      () => void session.reportActivity(sessionId, role).catch(() => undefined),
-      HEARTBEAT_MS
-    );
-    return () => clearInterval(beat);
-  }, [role, session, sessionId]);
 
   const send = useCallback(
     async (

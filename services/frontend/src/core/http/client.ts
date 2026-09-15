@@ -7,7 +7,7 @@ import { getAdminAccessToken } from '@/app/auth/keycloak';
 /**
  * No default Content-Type is set on purpose: axios infers application/json for
  * plain objects and generates the multipart boundary for FormData. Forcing a
- * default here would break audio uploads to POST /api/session/{id}/message.
+ * default here would break multipart audio uploads.
  */
 export function createHttpClient(config: AppConfig, getLocale: () => string): AxiosInstance {
   const client = axios.create({
@@ -18,12 +18,23 @@ export function createHttpClient(config: AppConfig, getLocale: () => string): Ax
   client.interceptors.request.use(async (request) => {
     request.headers.set('X-Correlation-Id', randomId());
     request.headers.set('Accept-Language', getLocale());
-    if (request.url?.startsWith('/api/admin/')) {
+    const requestUrl = request.url;
+    const isRelativeAdmin = requestUrl?.startsWith('/api/admin/') === true;
+    let isTrustedAbsoluteAdmin = false;
+    if (requestUrl && config.apiBaseUrl) {
+      try {
+        const apiOrigin = new URL(config.apiBaseUrl).origin;
+        const target = new URL(requestUrl, config.apiBaseUrl);
+        isTrustedAbsoluteAdmin =
+          target.origin === apiOrigin && target.pathname.startsWith('/api/admin/');
+      } catch {
+        isTrustedAbsoluteAdmin = false;
+      }
+    }
+    if (isRelativeAdmin || isTrustedAbsoluteAdmin) {
       const token = await getAdminAccessToken();
       if (token !== null) {
         request.headers.set('Authorization', `Bearer ${token}`);
-      } else {
-        request.headers.set('X-SSF-Legacy-Access', config.adminPassword);
       }
     }
     return request;

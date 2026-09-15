@@ -155,6 +155,7 @@ def test_pipeline_logic_helpers_cover_refinement_and_tts_paths(monkeypatch):
         tts_started_at=pipeline_logic.utc_now(),
         tts_completed_at=pipeline_logic.utc_now(),
         start_tts=0.0,
+        tts_resp=response,
     )
     assert debug_info["steps"][-1]["error"] == "tts failed"
 
@@ -249,7 +250,10 @@ def test_process_text_pipeline_covers_tts_error_and_success_paths(monkeypatch):
 
     success_response = SimpleNamespace(
         status_code=200,
-        headers={"content-type": pipeline_logic.AUDIO_WAV_MIME},
+        headers={
+            "content-type": pipeline_logic.AUDIO_WAV_MIME,
+            "X-TTS-Model": "tts_models/tr/common-voice/glow-tts",
+        },
         content=b"WAV",
     )
     monkeypatch.setattr(
@@ -323,83 +327,6 @@ async def test_routes_session_activity_helper_and_endpoint(monkeypatch):
     assert response.new_polling_interval == 12
     assert sorted(response.optimization_tips) == ["tip-a", "tip-b"]
     update_activity.assert_called_once_with("session-1")
-
-
-def test_legacy_session_routes_expose_documented_responses():
-    legacy_session = importlib.import_module("services.api_gateway.session")
-    route_map = {
-        route.path: route
-        for route in legacy_session.router.routes
-        if hasattr(route, "responses")
-    }
-
-    assert route_map["/session/create"].responses[400]["description"] == (
-        "Unsupported customer language"
-    )
-    assert route_map["/session/{session_id}"].responses[404]["description"] == (
-        legacy_session.SESSION_NOT_FOUND_DETAIL
-    )
-    assert route_map["/session/{session_id}/message"].responses[500]["description"] == (
-        "Message processing failed"
-    )
-    assert route_map["/session/{session_id}/messages"].responses[404]["description"] == (
-        legacy_session.SESSION_NOT_FOUND_DETAIL
-    )
-
-
-@pytest.mark.asyncio
-async def test_websocket_polling_routes_wait_and_poll(monkeypatch):
-    polling_routes = importlib.import_module("services.api_gateway.websocket_polling_routes")
-
-    messages = [{"type": "message"}]
-    poll = Mock(side_effect=[[], messages])
-    monkeypatch.setattr(polling_routes.fallback_manager, "poll_messages", poll)
-    monkeypatch.setattr(polling_routes.asyncio, "sleep", AsyncMock())
-    if not hasattr(polling_routes.asyncio, "timeout"):
-        async def passthrough(awaitable, timeout):  # noqa: ANN001
-            return await awaitable
-
-        monkeypatch.setattr(polling_routes.asyncio, "wait_for", passthrough)
-
-    waited = await polling_routes._await_polled_messages("poll-1", 1)
-    assert waited == messages
-
-    monkeypatch.setattr(
-        polling_routes.fallback_manager,
-        "get_polling_client_status",
-        lambda polling_id: {"polling_interval": 7},
-    )
-    poll = Mock(side_effect=[[], messages])
-    monkeypatch.setattr(polling_routes.fallback_manager, "poll_messages", poll)
-    response = await polling_routes.poll_messages("poll-1", wait_seconds=1)
-    payload = json.loads(response.body)
-    assert payload["messages"] == messages
-    assert payload["next_poll_interval"] == 7
-
-
-@pytest.mark.asyncio
-async def test_websocket_polling_routes_timeout_returns_empty_list(monkeypatch):
-    polling_routes = importlib.import_module("services.api_gateway.websocket_polling_routes")
-
-    if hasattr(polling_routes.asyncio, "timeout"):
-        class TimeoutContext:
-            async def __aenter__(self):
-                raise TimeoutError()
-
-            async def __aexit__(self, exc_type, exc, tb):
-                return False
-
-        monkeypatch.setattr(
-            polling_routes.asyncio, "timeout", lambda seconds: TimeoutContext()
-        )
-    else:
-        async def raise_timeout(awaitable, timeout):  # noqa: ANN001
-            awaitable.close()
-            raise polling_routes.asyncio.TimeoutError()
-
-        monkeypatch.setattr(polling_routes.asyncio, "wait_for", raise_timeout)
-
-    assert await polling_routes._await_polled_messages("poll-2", 1) == []
 
 
 def test_translation_refiner_default_endpoint_and_enabled_configuration():

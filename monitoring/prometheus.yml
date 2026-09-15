@@ -16,6 +16,13 @@ scrape_configs:
     static_configs:
       - targets: ['api_gateway:8000']
 
+  # The collector's own counters. These are the only place the gateway SDK's
+  # queue-overflow drops become measurable: the gateway counts what it queued,
+  # this counts what actually arrived.
+  - job_name: 'otel_collector'
+    static_configs:
+      - targets: ['otel-collector:8888']
+
   - job_name: 'dcgm_exporter'
     static_configs:
       - targets: ['dcgm_exporter:9400']

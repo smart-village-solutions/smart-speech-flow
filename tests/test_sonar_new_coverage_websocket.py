@@ -123,8 +123,10 @@ async def test_endpoint_returns_error_message_after_message_handler_failure(
 
     assert "WebSocket message processing failed" in caplog.messages
     websocket.send_json.assert_awaited_once()
+    # Not "client_disconnect": the loop was left because the socket could no
+    # longer be written to, which is an abnormal termination.
     manager.disconnect_websocket.assert_awaited_once_with(
-        "connection-1", "client_disconnect"
+        "connection-1", "connection_error"
     )
 
 
