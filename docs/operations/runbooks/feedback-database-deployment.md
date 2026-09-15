@@ -263,11 +263,13 @@ Lines that mean something is actually wrong:
 
 ## Step 5 — Apply the ClickHouse migration
 
-The analytics half needs ClickHouse migrations `005` and `006`, in that order.
-`006` adds the feedback columns and the `feedback_daily` aggregate; its view
-projection also reads `tenant_ref`, a column only `005` creates, so `006` cannot
-be applied on its own. `apply.sh` runs every migration in filename order, so
-following the procedure below applies both.
+The analytics half needs ClickHouse migrations `005`, `006` and `007`, in that
+order. `006` adds the feedback columns and the `feedback_daily` aggregate; its
+view projection also reads `tenant_ref`, a column only `005` creates, so `006`
+cannot be applied on its own. `007` gives `feedback_daily` its tenant
+dimension, so it needs the aggregate `006` creates. `apply.sh` runs every
+migration in filename order, so following the procedure below applies all
+three.
 
 **Apply it before setting `SSF_QUALITY_TELEMETRY_MODE=enabled`.** Feedback
 events emitted while the columns are missing land with only their envelope
@@ -275,9 +277,16 @@ populated, and those rows cannot be repaired afterwards — the attributes never
 reached ClickHouse.
 
 Follow the enablement procedure in
-[clickhouse-operations.md](clickhouse-operations.md); migrations `005` and `006` apply the
-same way as `002` through `004`. Afterwards `quality_events` has 37 columns, as
-that runbook's column check expects.
+[clickhouse-operations.md](clickhouse-operations.md); migrations `005`, `006` and `007`
+apply the same way as `002` through `004`. Afterwards `quality_events` has 37
+columns, as that runbook's column check expects — `007` adds none, so check it
+by its own effect, the `tenant_ref` at the end of `feedback_daily`'s sorting
+key.
+
+Feedback rows aggregated before `007` and before the emitter that populates the
+attribute carry an empty reference. They stay in the aggregate under an empty
+tenant, so every per-tenant reading of `feedback_daily` begins at this
+deploy.
 
 ## Step 6 — Confirm a real submission is stored
 
@@ -534,11 +543,12 @@ These are properties of the design, not defects to report:
   `SSF_DEFAULT_TENANT_ID`, so that one tenant's operators see all of it, from
   every tenant. The submit endpoint is anonymous by design, so there is no
   token to take a tenant from either.
-- **Feedback for a conversation that has ended is refused.** Once a
-  conversation terminates, the session store revokes its join link, and the
-  bare session id the feedback form sends no longer resolves. The form answers
-  `404 The session is not known`. The feedback button stays in the
-  ended-conversation screen's header, which is exactly where it is most likely
-  to be used, so this will be hit. Before the tenant-isolation release it was
-  accepted. Restoring it without weakening the revoked link is tracked in
-  #324.
+- **Feedback for a conversation that has ended is accepted for 30 minutes.**
+  The feedback button stays in the ended-conversation screen's header, which is
+  exactly where it is most likely to be used. Within the window the submission
+  is stored under that conversation's own tenant; past it the form answers
+  `404 The session is not known`, as it does for an id no session ever had.
+  `SSF_FEEDBACK_GRACE_MINUTES` changes the window and needs an `api_gateway`
+  restart; `0` turns it off, and an unusable value falls back to 30 rather
+  than stopping the gateway. Termination still revokes the join link either way, so an ended
+  conversation can be neither rejoined nor observed (#324).

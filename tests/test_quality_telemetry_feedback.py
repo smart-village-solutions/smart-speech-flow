@@ -31,10 +31,12 @@ from services.api_gateway.quality_telemetry import (
     discard_event,
     to_otlp_attributes,
 )
+from services.api_gateway.session_pseudonym import MISSING_TENANT_REFERENCE
 
 ROOT = Path(__file__).parents[1]
 SESSION_REFERENCE = "c" * 32
 FEEDBACK_REFERENCE = "d" * 32
+TENANT_REFERENCE = "e" * 12
 
 NEW_KEYS = {
     "ssf.quality.feedback_ref": AttributeKind.OPAQUE_REF,
@@ -103,6 +105,7 @@ class TestTheEventCarriesNoContent:
             AttributeKind.ENUM,
             AttributeKind.LABEL,
             AttributeKind.OPAQUE_REF,
+            AttributeKind.TENANT_REF,
         }
 
     def test_no_attribute_could_hold_a_sentence(self):
@@ -276,3 +279,129 @@ class TestTheMigrationGivesEveryKeyAColumn:
 
         assert "CREATE TABLE IF NOT EXISTS feedback_daily" in sql
         assert "uniqExactState(event_id)" in sql
+
+
+class TestTheTenantDimension:
+    """#325: the one quality event that could not be broken down by tenant.
+
+    `translation_message` and `session_lifecycle` have carried `tenant_ref`
+    since the tenant-isolation release; feedback was built before it. The
+    reference is a bounded, stable SHA-256 prefix, so the column groups by
+    tenant without the configured identifier being stored.
+
+    Bounded and stable, not irreversible: unlike `session_ref` and
+    `feedback_ref` this digest is unkeyed, and tenant ids are few and
+    guessable, so anyone with read access can invert the column by hashing a
+    candidate list. That is the deliberate pre-existing choice documented on
+    `session_pseudonym.tenant_ref`, not a property this change establishes.
+    """
+
+    def test_a_tenant_reference_of_the_wrong_shape_is_rejected(self):
+        with pytest.raises(ValueError):
+            _event(tenant_ref="ABC")
+
+    def test_the_reference_reaches_the_exporter(self):
+        recording = _Recording()
+
+        _emit(_telemetry(exporter=recording), tenant_ref=TENANT_REFERENCE)
+
+        assert recording.calls[0][1]["ssf.quality.tenant_ref"] == TENANT_REFERENCE
+
+    def test_a_submission_naming_no_tenant_carries_the_sentinel(self):
+        """Absent, not wrong: a row with no tenant must not group under one."""
+        recording = _Recording()
+
+        _emit(_telemetry(exporter=recording))
+
+        assert recording.calls[0][1]["ssf.quality.tenant_ref"] == MISSING_TENANT_REFERENCE
+
+    def test_a_raw_tenant_id_becomes_the_sentinel_rather_than_being_stored(self):
+        """Handing the id instead of the reference is a bug; storing it is the leak.
+
+        Coerced rather than dropped, matching the sibling emitters: the ratings
+        alongside it are valid data, and the tenant has a safe placeholder.
+        """
+        recording = _Recording()
+
+        result = _emit(_telemetry(exporter=recording), tenant_ref="acme-municipality")
+
+        assert result.outcome is ProbeOutcome.EMITTED
+        attributes = recording.calls[0][1]
+        assert attributes["ssf.quality.tenant_ref"] == MISSING_TENANT_REFERENCE
+        assert "acme-municipality" not in str(attributes)
+
+    def test_the_reference_reuses_the_key_its_siblings_write(self):
+        """One key, one meaning: a tenant's feedback and its sessions join on it."""
+        assert (
+            ALLOWED_ATTRIBUTES["ssf.quality.tenant_ref"].kind is AttributeKind.TENANT_REF
+        )
+        assert "ssf.quality.tenant_ref" in to_otlp_attributes(_event())
+
+
+class TestTheGoldTableIsDimensionedByTenant:
+    """#325: `feedback_daily` could not answer "what is this tenant's NPS".
+
+    006 created the aggregate after 005 had already added the silver column,
+    but left tenant out of the sorting key -- reasonably, since nothing emitted
+    a reference for a feedback row until now.
+    """
+
+    @staticmethod
+    def _sql() -> str:
+        return (
+            ROOT / "deploy/clickhouse/migrations/007_feedback_tenant_dimension.sql"
+        ).read_text()
+
+    @staticmethod
+    def _first_statement(sql: str, opening: str) -> str:
+        start = sql.index(opening)
+        return sql[start : sql.index(";", start)]
+
+    def test_the_aggregate_gains_a_tenant_column(self):
+        assert re.search(r"ADD COLUMN IF NOT EXISTS\s+tenant_ref\b", self._sql())
+
+    def test_the_column_joins_the_sorting_key(self):
+        """Without it in the key the column exists but never splits a row."""
+        statement = self._first_statement(self._sql(), "ALTER TABLE feedback_daily")
+
+        assert "MODIFY ORDER BY" in statement
+        assert re.search(r"MODIFY ORDER BY \([^)]*\btenant_ref\b[^)]*\)", statement)
+
+    def test_the_column_is_added_by_the_same_statement_that_extends_the_key(self):
+        """ClickHouse rejects any other arrangement.
+
+        MODIFY ORDER BY may only append a column the same ALTER added: an
+        existing column could already be out of order within a part. Split
+        into two statements this reads fine and fails at apply time.
+        """
+        extending = [s for s in self._sql().split(";") if "MODIFY ORDER BY" in s]
+
+        assert len(extending) == 1
+        assert re.search(r"ADD COLUMN IF NOT EXISTS\s+tenant_ref\b", extending[0])
+
+    def test_the_key_column_carries_no_default_expression(self):
+        """ClickHouse refuses a sorting-key column with one, at apply time only.
+
+        Every column 002-006 add has `DEFAULT ''`, so copying that habit is the
+        natural mistake -- and nothing but a live server rejects it. A String's
+        implicit default is already the empty string.
+        """
+        added = re.search(r"ADD COLUMN IF NOT EXISTS\s+tenant_ref\b[^,;]*", self._sql())
+
+        assert added, "007 does not add tenant_ref"
+        assert "DEFAULT" not in added.group(0).upper(), added.group(0)
+
+    def test_the_view_groups_by_tenant(self):
+        """A key the view never groups by collapses back to one row."""
+        statement = self._first_statement(self._sql(), "ALTER TABLE feedback_daily_mv")
+        grouping = statement.split("GROUP BY")[-1]
+
+        assert "tenant_ref" in grouping
+
+    def test_the_earlier_projection_is_left_alone(self):
+        """Gold only. Silver's tenant_ref has been projected since 005."""
+        statements = "\n".join(
+            line for line in self._sql().splitlines() if not line.lstrip().startswith("--")
+        )
+
+        assert "quality_events_mv" not in statements

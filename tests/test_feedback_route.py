@@ -189,3 +189,37 @@ def test_a_rating_error_response_does_not_echo_the_text(client_for) -> None:
 
     assert response.status_code == 422
     assert sentinel not in response.text
+
+
+def test_a_session_id_no_session_could_carry_answers_404(client_for) -> None:
+    """Not a 500, which is what it was.
+
+    A real FeedbackService rather than the stub, because the defect lived in
+    the seam between them: the store raises ValueError on an id outside
+    ^[A-Za-z0-9_-]{1,128}$, and this route catches UnknownSession,
+    FeedbackTextTooLong and FeedbackStorageUnavailable -- none of which that
+    is. The repository, cipher and telemetry are never reached, so the
+    submission is refused before anything would use them.
+    """
+    from services.api_gateway.feedback.service import FeedbackService
+    from services.api_gateway.feedback.tenant import ConfiguredTenantResolver
+    from services.api_gateway.session_manager import SessionManager
+    from services.api_gateway.session_store import RedisTenantSessionStore
+
+    class EmptyRedis:
+        def get(self, key):
+            return None
+
+    service = FeedbackService(
+        repository=None,
+        cipher=None,
+        tenant_resolver=ConfiguredTenantResolver(tenant_id="tenant-a"),
+        session_manager=SessionManager(store=RedisTenantSessionStore(EmptyRedis())),
+        telemetry=None,
+    )
+    client = client_for(service)
+
+    response = client.post("/api/feedback", json={**VALID, "session_id": "a b"})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "The session is not known"

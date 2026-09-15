@@ -168,6 +168,10 @@ services:
       - SSF_FEEDBACK_READER_DATABASE_PASSWORD=${SSF_FEEDBACK_READER_PASSWORD}
       - SSF_FEEDBACK_ENCRYPTION_KEY=${SSF_FEEDBACK_ENCRYPTION_KEY:?required}
       - SSF_DEFAULT_TENANT_ID=${SSF_DEFAULT_TENANT_ID:-default}
+      # How long after a conversation ends its feedback is still accepted. The
+      # feedback button sits in the ended-conversation screen's header, and the
+      # ended session's join link is already revoked by then.
+      - SSF_FEEDBACK_GRACE_MINUTES=${SSF_FEEDBACK_GRACE_MINUTES:-30}
       - SSF_OTLP_LOGS_ENDPOINT=${SSF_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
       - SSF_RELEASE_VERSION=${SSF_RELEASE_VERSION:-unknown}
       - SSF_DEPLOYMENT_ENV=${SSF_DEPLOYMENT_ENV:-unknown}
