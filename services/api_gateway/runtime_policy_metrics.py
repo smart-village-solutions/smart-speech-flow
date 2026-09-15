@@ -6,11 +6,14 @@ exists, so their absence is a decision rather than an omission.
 
 from __future__ import annotations
 
+import logging
 from typing import TypeVar
 
 from prometheus_client import CollectorRegistry, Counter, Histogram
 
 from .runtime_policy import PolicyDecision, PolicyReason
+
+logger = logging.getLogger(__name__)
 
 _Collector = TypeVar("_Collector", Counter, Histogram)
 
@@ -65,8 +68,9 @@ def _registered(
     """Register once per registry and reuse the series on a repeat lifespan.
 
     The gateway's registry outlives a single lifespan, and prometheus_client
-    raises on a second registration of one name. Same precedent, and the same
-    private lookup, as quality_telemetry._events_counter.
+    raises on a second registration of one name. Mirrors
+    quality_telemetry._events_counter, private lookup included: telemetry is
+    optional, so a name this cannot claim costs a scrape gap, never startup.
     """
     try:
         return collector_type(name, documentation, labels, registry=registry)
@@ -74,4 +78,9 @@ def _registered(
         existing = getattr(registry, "_names_to_collectors", {}).get(name)
         if isinstance(existing, collector_type):
             return existing
-        raise
+    logger.warning(
+        "%s is not available on the gateway registry; "
+        "runtime policy series will not be scraped",
+        name,
+    )
+    return collector_type(name, documentation, labels, registry=CollectorRegistry())

@@ -1,6 +1,8 @@
 """Policy metrics stay low-cardinality and carry no identifier."""
 
-from prometheus_client import CollectorRegistry
+import logging
+
+from prometheus_client import CollectorRegistry, Gauge
 
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.runtime_policy import (
@@ -92,3 +94,17 @@ def test_a_second_registration_on_one_registry_shares_the_series():
     RuntimePolicyMetrics(registry).record_discarded(PolicyReason.STUDIO_ERROR)
 
     assert _value(registry, DISCARDED, reason="studio_error") == 1.0
+
+
+def test_a_name_held_by_a_foreign_collector_degrades_to_an_unscraped_series(caplog):
+    registry = CollectorRegistry()
+    Gauge(DISCARDED, "held by something else", registry=registry)
+
+    with caplog.at_level(logging.WARNING):
+        metrics = RuntimePolicyMetrics(registry)
+    metrics.record_discarded(PolicyReason.STUDIO_ERROR)
+    metrics.record_decision(PolicyDecision(True, PolicyReason.GRANTED), 0.01)
+
+    assert _value(registry, DISCARDED, reason="studio_error") == 0.0
+    assert DISCARDED in caplog.text
+    assert _value(registry, DECISIONS, decision="authorized", reason="granted") == 1.0
