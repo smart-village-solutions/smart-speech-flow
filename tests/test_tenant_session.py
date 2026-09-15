@@ -58,6 +58,13 @@ def test_tenant_session_key_rejects_invalid_identifiers(tenant_id: str, session_
         TenantSessionKey(tenant_id, session_id)
 
 
+def _presentation_of(configuration) -> dict:
+    """The configuration as a session may keep it: everything but the policy."""
+    expected = configuration.model_dump(by_alias=True)
+    del expected["conversationContentStorage"]
+    return expected
+
+
 def test_runtime_configuration_snapshot_is_canonical_and_round_trips() -> None:
     configuration = runtime_configuration()
 
@@ -65,7 +72,8 @@ def test_runtime_configuration_snapshot_is_canonical_and_round_trips() -> None:
 
     assert snapshot.configuration_revision == REVISION
     assert snapshot.authorization_revision == REVISION
-    assert snapshot.to_configuration() == configuration
+    presented = snapshot.to_configuration()
+    assert presented.model_dump(by_alias=True) == _presentation_of(configuration)
     assert '": "' not in snapshot.canonical_json
     assert '", "' not in snapshot.canonical_json
 
@@ -83,7 +91,8 @@ def test_session_round_trip_preserves_tenant_and_runtime_configuration() -> None
 
     assert restored.key == TenantSessionKey("tenant-a", "ABC12345")
     assert restored.runtime_configuration == snapshot
-    assert restored.runtime_configuration.to_configuration() == configuration
+    presented = restored.runtime_configuration.to_configuration()
+    assert presented.model_dump(by_alias=True) == _presentation_of(configuration)
 
 
 def test_session_payload_without_tenant_scope_is_rejected() -> None:

@@ -21,6 +21,7 @@ from dataclasses import dataclass, field, fields, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 
+from .consent import ConsentStatus
 from .quality_telemetry import SessionLifecyclePhase, SessionTerminationReason
 from .session_pseudonym import MISSING_TENANT_REFERENCE, session_ref, tenant_ref
 from .session_store import MemoryTenantSessionStore, TenantSessionStore
@@ -165,6 +166,7 @@ class Session:
     # the hard-cut routes are migrated. Persistence rejects missing scope.
     tenant_id: Optional[str] = None
     runtime_configuration: Optional[RuntimeConfigurationSnapshot] = None
+    consent_status: ConsentStatus = ConsentStatus.PENDING
     customer_language: Optional[str] = None  # Wird erst bei Client-Join gesetzt
     admin_language: str = "de"
     status: SessionStatus = SessionStatus.PENDING
@@ -228,6 +230,7 @@ class Session:
                 if self.runtime_configuration is not None
                 else None
             ),
+            "consent_status": self.consent_status.value,
             "customer_language": self.customer_language,
             "admin_language": self.admin_language,
             "status": self.status.value,
@@ -314,6 +317,7 @@ class Session:
             runtime_configuration=RuntimeConfigurationSnapshot.from_dict(
                 data["runtime_configuration"]
             ),
+            consent_status=ConsentStatus.from_stored(data.get("consent_status")),
             customer_language=data.get("customer_language"),
             admin_language=data.get("admin_language", "de"),
             status=SessionStatus(data.get("status", SessionStatus.PENDING.value)),

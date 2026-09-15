@@ -1,0 +1,67 @@
+"""Prometheus series for conversation-content policy decisions.
+
+There are deliberately no cache metrics: the design records that no cache
+exists, so their absence is a decision rather than an omission.
+"""
+
+from __future__ import annotations
+
+from prometheus_client import CollectorRegistry, Counter, Histogram
+
+from .runtime_policy import PolicyDecision, PolicyReason
+
+DECISION_COUNTER_NAME = "ssf_runtime_policy_decision_total"
+READ_DURATION_NAME = "ssf_runtime_policy_read_duration_seconds"
+DISCARDED_COUNTER_NAME = "ssf_runtime_policy_content_discarded_total"
+
+
+class RuntimePolicyMetrics:
+    """Record one decision per write, with no identifier in any label."""
+
+    def __init__(self, registry: CollectorRegistry) -> None:
+        self._decisions = _registered(
+            registry,
+            Counter,
+            DECISION_COUNTER_NAME,
+            "Conversation-content persistence decisions",
+            ("decision", "reason"),
+        )
+        self._discarded = _registered(
+            registry,
+            Counter,
+            DISCARDED_COUNTER_NAME,
+            "Conversation-content writes refused and discarded",
+            ("reason",),
+        )
+        self._duration = _registered(
+            registry,
+            Histogram,
+            READ_DURATION_NAME,
+            "Duration of one live Studio policy read",
+        )
+
+    def record_decision(
+        self, decision: PolicyDecision, duration_seconds: float
+    ) -> None:
+        label = "authorized" if decision.authorized else "refused"
+        self._decisions.labels(decision=label, reason=decision.reason.value).inc()
+        self._duration.observe(duration_seconds)
+
+    def record_discarded(self, reason: PolicyReason) -> None:
+        self._discarded.labels(reason=reason.value).inc()
+
+
+def _registered(registry, collector_type, name, documentation, labels=()):
+    """Register once per registry and reuse the series on a repeat lifespan.
+
+    The gateway's registry outlives a single lifespan, and prometheus_client
+    raises on a second registration of one name. Same precedent, and the same
+    private lookup, as quality_telemetry._events_counter.
+    """
+    try:
+        return collector_type(name, documentation, labels, registry=registry)
+    except ValueError:
+        existing = getattr(registry, "_names_to_collectors", {}).get(name)
+        if isinstance(existing, collector_type):
+            return existing
+        raise
