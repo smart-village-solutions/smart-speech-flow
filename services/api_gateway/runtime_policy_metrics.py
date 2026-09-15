@@ -6,9 +6,13 @@ exists, so their absence is a decision rather than an omission.
 
 from __future__ import annotations
 
+from typing import TypeVar
+
 from prometheus_client import CollectorRegistry, Counter, Histogram
 
 from .runtime_policy import PolicyDecision, PolicyReason
+
+_Collector = TypeVar("_Collector", Counter, Histogram)
 
 DECISION_COUNTER_NAME = "ssf_runtime_policy_decision_total"
 READ_DURATION_NAME = "ssf_runtime_policy_read_duration_seconds"
@@ -51,7 +55,13 @@ class RuntimePolicyMetrics:
         self._discarded.labels(reason=reason.value).inc()
 
 
-def _registered(registry, collector_type, name, documentation, labels=()):
+def _registered(
+    registry: CollectorRegistry,
+    collector_type: type[_Collector],
+    name: str,
+    documentation: str,
+    labels: tuple[str, ...] = (),
+) -> _Collector:
     """Register once per registry and reuse the series on a repeat lifespan.
 
     The gateway's registry outlives a single lifespan, and prometheus_client
