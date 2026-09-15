@@ -114,3 +114,4 @@ docs/PRODUCT_VISION_INTERNAL.md
 docs/PRODUCT_VISION.md
 docs/PRODUCT_VISION.md
 .worktrees/
+traefik/dynamic/*

@@ -231,7 +231,6 @@ async def _connect_feedback_request_path(state: Any, dsn: str, sessions: Any) ->
         # The session's own tenant; the configured one only for a legacy
         # session or a submission that names no session.
         tenant_resolver=SessionTenantResolver(
-            session_manager=sessions,
             fallback=ConfiguredTenantResolver.from_environment(),
         ),
         session_manager=sessions,

@@ -756,10 +756,11 @@ def test_tts_helper_functions_cover_model_resolution_and_responses(tts_app, monk
     assert isinstance(text_seed, int)
 
     headers_response = tts_app._audio_response(
-        b"WAV", "model-x", "de", True, {"debug": True}
+        b"WAV", "model-x", "de", True, {"debug": True}, fallback=True
     )
     assert headers_response.media_type == "audio/wav"
     assert headers_response.headers["x-tts-model"] == "model-x"
+    assert headers_response.headers["x-tts-fallback"] == "true"
 
     error_response = tts_app._error_response(
         True, {"error": "kaputt"}, 500, fallback=False, error="kaputt"
@@ -891,13 +892,71 @@ async def test_tts_synthesize_handles_invalid_and_success_paths(tts_app, monkeyp
 
     assert response.status_code == 200
     assert response.headers["x-tts-language"] == "ar"
-    assert response.headers["x-tts-model"].endswith("(MMS-TTS Fallback)")
+    assert response.headers["x-tts-model"] == "facebook/mms-tts-ara"
 
     monkeypatch.setattr(tts_app, "get_tts_model", lambda lang: None)
     missing_response = await tts_app.synthesize(
         build_request(payload={"text": "Hallo", "lang": "de"}, query_params={})
     )
     assert missing_response.status_code == 503
+
+
+async def _synthesize(tts_app, lang):
+    return await tts_app.synthesize(
+        build_request(payload={"text": "Hallo", "lang": lang}, query_params={})
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("lang", "mms_model"),
+    [("de", "facebook/mms-tts-deu"), ("en", "facebook/mms-tts-eng")],
+)
+async def test_tts_names_the_mms_model_when_coqui_is_not_installed(
+    tts_app, monkeypatch, lang, mms_model
+):
+    # The production image of issue #323: `import TTS` fails.
+    monkeypatch.setattr(tts_app, "TTSApi", None)
+
+    response = await _synthesize(tts_app, lang)
+
+    assert response.status_code == 200
+    assert response.headers["x-tts-model"] == mms_model
+    assert response.headers["x-tts-fallback"] == "true"
+
+
+@pytest.mark.asyncio
+async def test_tts_names_the_mms_model_when_coqui_fails_to_load(tts_app, monkeypatch):
+    def broken_checkpoint(lang):
+        raise RuntimeError("checkpoint missing")
+
+    monkeypatch.setattr(tts_app, "_load_coqui_model", broken_checkpoint)
+
+    response = await _synthesize(tts_app, "de")
+
+    assert response.headers["x-tts-model"] == "facebook/mms-tts-deu"
+    assert response.headers["x-tts-fallback"] == "true"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("lang", "coqui_model"),
+    [("de", "tts_models/de/thorsten/vits"), ("en", "tts_models/en/ljspeech/vits")],
+)
+async def test_tts_names_the_coqui_voice_when_it_loads(tts_app, lang, coqui_model):
+    response = await _synthesize(tts_app, lang)
+
+    assert response.status_code == 200
+    assert response.headers["x-tts-model"] == coqui_model
+    assert response.headers["x-tts-fallback"] == "false"
+
+
+@pytest.mark.asyncio
+async def test_tts_does_not_call_a_configured_mms_voice_a_fallback(tts_app):
+    response = await _synthesize(tts_app, "ar")
+
+    assert response.headers["x-tts-model"] == "facebook/mms-tts-ara"
+    assert response.headers["x-tts-fallback"] == "false"
 
 
 def test_enhanced_audio_validator_convert_with_ffmpeg(tmp_path, monkeypatch):
