@@ -1,9 +1,9 @@
 # Code Quality Tools
-setuptools<84  # flake8-import-order still requires pkg_resources
+setuptools<85  # flake8-import-order still requires pkg_resources
 black==26.5.1
 isort==9.0.1
 flake8==7.3.0
-mypy==1.13.0
+mypy==2.3.1
 
 # Security Tools
 bandit==1.9.4
@@ -12,7 +12,7 @@ safety==3.6.2
 pip-audit==2.7.3
 
 # Testing Tools
-pytest==9.0.3
+pytest==9.1.1
 pytest-asyncio==1.3.0
 pytest-cov==7.1.0
 httpx==0.28.1
@@ -32,5 +32,5 @@ types-requests==2.33.0.20260402
 types-redis==4.6.0.20241004
 
 # Development Utilities
-pip-tools==7.5.3  # For dependency management
+pip-tools==7.6.1  # For dependency management
 psutil==7.2.2
