@@ -6,7 +6,7 @@ first, emit second. Reorder the two calls and one of them fails.
 """
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -20,7 +20,11 @@ from services.api_gateway.feedback.models import (
     FeedbackTextTooLong,
 )
 from services.api_gateway.feedback.repository import FeedbackStorageUnavailable
-from services.api_gateway.feedback.service import FeedbackService, UnknownSession
+from services.api_gateway.feedback.service import (
+    FEEDBACK_GRACE_ENV,
+    FeedbackService,
+    UnknownSession,
+)
 from services.api_gateway.feedback.tenant import ConfiguredTenantResolver
 from services.api_gateway.quality_telemetry import ProbeOutcome, ProbeResult
 
@@ -79,6 +83,9 @@ class FakeSessionManager:
         return SimpleNamespace(id=session_id) if self._known else None
 
     def resolve_customer_session(self, session_id):
+        return None
+
+    def resolve_ended_session(self, session_id, *, within):
         return None
 
 
@@ -488,7 +495,6 @@ class TestTenantBoundSessions:
         service, parts = _service(
             session_manager=manager,
             tenant_resolver=SessionTenantResolver(
-                session_manager=manager,
                 fallback=ConfiguredTenantResolver(tenant_id="configured"),
             ),
         )
@@ -496,3 +502,171 @@ class TestTenantBoundSessions:
         await service.submit(_request(session_id=session.id))
 
         assert parts["repository"].stored[0].tenant_id == "tenant-kassel"
+
+
+class TestFeedbackJustAfterTheConversationEnds:
+    """#324: the ended-conversation screen is where the button actually is.
+
+    Terminating a session revokes its join link, and from the tenant-isolation
+    release until this change that left no route from the bare session id the
+    browser holds back to the conversation's tenant -- so the feedback offered
+    in that screen's header was answered with 404. The grace window accepts it
+    again without handing the revoked link anything back.
+    """
+
+    REVISION = f"sha256:{'a' * 64}"
+
+    @pytest.fixture(autouse=True)
+    def _ignore_the_ambient_window(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """These assert the shipped default, so the environment must not reach them.
+
+        This change is what puts SSF_FEEDBACK_GRACE_MINUTES into both compose
+        stacks, so the suite run inside the api_gateway container would
+        otherwise read the deployment's window and flip the results: `0` fails
+        the two tests that expect acceptance, `120` fails the one that expects
+        refusal. The tests that are about the variable set it themselves.
+        """
+        monkeypatch.delenv(FEEDBACK_GRACE_ENV, raising=False)
+
+    class Clock:
+        def __init__(self) -> None:
+            self.current = datetime(2026, 9, 14, 9, 0, tzinfo=timezone.utc)
+
+        def __call__(self) -> datetime:
+            return self.current
+
+        def advance(self, **delta: int) -> None:
+            self.current += timedelta(**delta)
+
+    async def _ended_session(self, clock):
+        from services.api_gateway.session_manager import SessionManager
+        from services.api_gateway.session_store import MemoryTenantSessionStore
+        from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
+
+        manager = SessionManager(
+            store=MemoryTenantSessionStore(),
+            clock=clock,
+            session_id_factory=lambda: "KASSEL01",
+        )
+        session = await manager.create_admin_session(
+            "tenant-kassel",
+            RuntimeConfigurationSnapshot(self.REVISION, self.REVISION, "{}"),
+        )
+        await manager.terminate_session(session.key, "manual_admin_termination")
+        return manager, session
+
+    def _service_for(self, manager, **overrides):
+        from services.api_gateway.feedback.tenant import SessionTenantResolver
+
+        return _service(
+            session_manager=manager,
+            tenant_resolver=SessionTenantResolver(
+                fallback=ConfiguredTenantResolver(tenant_id="configured"),
+            ),
+            **overrides,
+        )
+
+    async def test_feedback_within_the_window_is_stored_under_its_own_tenant(
+        self,
+    ) -> None:
+        clock = self.Clock()
+        manager, session = await self._ended_session(clock)
+        service, parts = self._service_for(manager)
+
+        clock.advance(minutes=29)
+        feedback_id = await service.submit(_request(session_id=session.id))
+
+        assert isinstance(feedback_id, UUID)
+        assert parts["repository"].stored[0].tenant_id == "tenant-kassel"
+
+    async def test_feedback_after_the_window_is_still_refused(self) -> None:
+        clock = self.Clock()
+        manager, session = await self._ended_session(clock)
+        service, parts = self._service_for(manager)
+
+        clock.advance(minutes=30, seconds=1)
+
+        with pytest.raises(UnknownSession):
+            await service.submit(_request(session_id=session.id))
+        assert parts["repository"].stored == []
+
+    async def test_the_window_is_configurable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(FEEDBACK_GRACE_ENV, "5")
+        clock = self.Clock()
+        manager, session = await self._ended_session(clock)
+        service, _parts = self._service_for(manager)
+
+        clock.advance(minutes=6)
+
+        with pytest.raises(UnknownSession):
+            await service.submit(_request(session_id=session.id))
+
+    async def test_accepting_the_feedback_does_not_revive_the_session(self) -> None:
+        """Criterion 3: the submission must buy the caller nothing else."""
+        clock = self.Clock()
+        manager, session = await self._ended_session(clock)
+        service, _parts = self._service_for(manager)
+
+        await service.submit(_request(session_id=session.id))
+
+        assert manager.resolve_customer_session(session.id) is None
+        assert manager.store.resolve_join(session.id) is None
+
+    async def test_a_zero_window_refuses_it_the_moment_it_ends(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`0` has to mean off, not "a window of no length".
+
+        Without an explicit off switch the only way to decline this feedback
+        is a code change, and an operator whose privacy rules end with the
+        conversation has to be able to say so in the environment.
+        """
+        monkeypatch.setenv(FEEDBACK_GRACE_ENV, "0")
+        clock = self.Clock()
+        manager, session = await self._ended_session(clock)
+        service, _parts = self._service_for(manager)
+
+        with pytest.raises(UnknownSession):
+            await service.submit(_request(session_id=session.id))
+
+    async def test_an_unusable_window_costs_neither_the_endpoint_nor_the_boot(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A pasted epoch timestamp overflows timedelta; the default absorbs it."""
+        from services.api_gateway.feedback.service import (
+            DEFAULT_GRACE_MINUTES,
+            _configured_grace_window,
+        )
+
+        default = timedelta(minutes=DEFAULT_GRACE_MINUTES)
+        for value in ("1757808000000", "-5", "half an hour", "30.5"):
+            monkeypatch.setenv(FEEDBACK_GRACE_ENV, value)
+            assert _configured_grace_window() == default, value
+
+
+class TestAnIdNoSessionCouldCarry:
+    """The store validates an id's shape; nothing above the service caught it.
+
+    `join_key` builds a TenantSessionKey, which rejects anything outside
+    ^[A-Za-z0-9_-]{1,128}$. The request model constrains only the length, and
+    routes/feedback.py catches UnknownSession, FeedbackTextTooLong and
+    FeedbackStorageUnavailable -- so a malformed id answered 500 where it owes
+    a 404. Production runs the Redis store, which is the one that validates.
+    """
+
+    class EmptyRedis:
+        def get(self, key):
+            return None
+
+    def _service(self):
+        from services.api_gateway.session_manager import SessionManager
+        from services.api_gateway.session_store import RedisTenantSessionStore
+
+        manager = SessionManager(store=RedisTenantSessionStore(self.EmptyRedis()))
+        service, _parts = _service(session_manager=manager)
+        return service
+
+    @pytest.mark.parametrize("malformed", ["a b", "a.b", "../etc", "id\nwith-newline"])
+    async def test_it_is_an_unknown_session_not_a_server_error(self, malformed) -> None:
+        with pytest.raises(UnknownSession):
+            await self._service().submit(_request(session_id=malformed))

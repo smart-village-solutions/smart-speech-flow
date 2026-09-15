@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import calendar
 import logging
-from datetime import datetime, timezone
-from typing import Any, Callable
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Final
 from uuid import UUID, uuid4
 
 from ..quality_telemetry import ProbeOutcome
 from ..session_pseudonym import MISSING_REFERENCE, feedback_ref, session_ref
+from ..tenant_session import TenantSessionKey
 from .repository import FeedbackRepository
 from .tenant import TenantResolver
 from .models import (
@@ -30,6 +32,39 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 _RETENTION_MONTHS = 12
+
+FEEDBACK_GRACE_ENV: Final[str] = "SSF_FEEDBACK_GRACE_MINUTES"
+DEFAULT_GRACE_MINUTES: Final[int] = 30
+
+
+def _configured_grace_window() -> timedelta:
+    """How long after a conversation ends its feedback is still accepted.
+
+    `0` turns the window off, restoring the refusal that shipped before it
+    existed -- a deployment whose privacy rules end with the conversation
+    needs a way to say so.
+
+    Anything unusable falls back to the default rather than raising. This runs
+    while the gateway wires itself up, and `_wire_feedback` is not guarded, so
+    a typo in one optional variable must not cost the deployment its feedback
+    endpoint -- and an OverflowError from a pasted epoch timestamp must not
+    cost it the boot.
+    """
+    raw = (os.environ.get(FEEDBACK_GRACE_ENV) or "").strip()
+    if not raw:
+        return timedelta(minutes=DEFAULT_GRACE_MINUTES)
+    try:
+        window = timedelta(minutes=int(raw))
+    except (ValueError, OverflowError):
+        window = None
+    if window is None or window < timedelta(0):
+        logger.warning(
+            "%s must be a whole number of minutes, 0 or more; using %d",
+            FEEDBACK_GRACE_ENV,
+            DEFAULT_GRACE_MINUTES,
+        )
+        return timedelta(minutes=DEFAULT_GRACE_MINUTES)
+    return window
 
 
 class UnknownSession(LookupError):
@@ -46,6 +81,7 @@ class FeedbackService:
         session_manager: Any,
         telemetry: Any,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        grace_window: timedelta | None = None,
     ) -> None:
         self._repository = repository
         self._cipher = cipher
@@ -53,11 +89,14 @@ class FeedbackService:
         self._session_manager = session_manager
         self._telemetry = telemetry
         self._clock = clock
+        self._grace_window = (
+            grace_window if grace_window is not None else _configured_grace_window()
+        )
 
     async def submit(self, request: FeedbackSubmissionRequest) -> UUID:
         text = self._validated_text(request.improvements)
-        reference = self._resolve_session(request.session_id)
-        tenant_id = await self._tenant_resolver.resolve(request.session_id)
+        reference, session_key = self._resolve_session(request.session_id)
+        tenant_id = await self._tenant_resolver.resolve(request.session_id, session_key)
 
         feedback_id = uuid4()
         analytics_event_id = uuid4()
@@ -142,18 +181,39 @@ class FeedbackService:
         # that decrypts to nothing an authorised reader can act on.
         return improvements if improvements.strip() else None
 
-    def _resolve_session(self, session_id: str | None) -> str:
+    def _resolve_session(self, session_id: str | None) -> tuple[str, TenantSessionKey | None]:
+        """The submission's pseudonymous reference, and its key when it has one.
+
+        Resolved once and handed to the tenant resolver, rather than resolved
+        again there: two independent resolutions can land on opposite sides of
+        the grace window and file a tenant's feedback under the configured
+        fallback instead.
+
+        Three places a session can be. A legacy session sits under its bare id.
+        A session opened through the tenant flow sits under a TenantSessionKey,
+        and the bare id the browser sends reaches it through the join index --
+        so checking get_session alone answers 404 to every tenant's citizens.
+        Once the conversation ends the store revokes that link, and the only
+        remaining route is the tombstone behind resolve_ended_session, which a
+        zero-length window skips rather than consults (#324).
+        """
         if session_id is None:
-            return MISSING_REFERENCE
-        # Two places a session can live. A legacy session sits under its bare
-        # id. A session opened through the tenant flow sits under a
-        # TenantSessionKey, and the bare id the browser sends only reaches it
-        # through the join index -- so checking get_session alone answers 404
-        # to every tenant's citizens.
-        known = self._session_manager.get_session(session_id) is not None
-        if not known and self._session_manager.resolve_customer_session(session_id) is None:
+            return MISSING_REFERENCE, None
+        try:
+            key = self._session_manager.resolve_customer_session(session_id)
+            if key is None and self._grace_window > timedelta(0):
+                key = self._session_manager.resolve_ended_session(
+                    session_id, within=self._grace_window
+                )
+        except ValueError:
+            # The store validates an id's shape before it looks anything up,
+            # and the route catches nothing that would turn that into an
+            # answer. An id no session could carry is an unknown session, not
+            # a 500. `from None` keeps the submitted id out of the traceback.
+            raise UnknownSession from None
+        if key is None and self._session_manager.get_session(session_id) is None:
             raise UnknownSession
-        return session_ref(session_id)
+        return session_ref(session_id), key
 
 
 def _add_months(moment: datetime, months: int) -> datetime:
