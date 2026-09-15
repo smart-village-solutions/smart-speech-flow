@@ -68,10 +68,18 @@ class RecordingTelemetry:
 
 
 class KnownSessions:
+    """A legacy session: known by its bare id, with no tenant key behind it."""
+
     def get_session(self, session_id):
         from types import SimpleNamespace
 
         return SimpleNamespace(id=session_id)
+
+    def resolve_customer_session(self, session_id):
+        return None
+
+    def resolve_ended_session(self, session_id, *, within):
+        return None
 
 
 def _assemble(repository=None):

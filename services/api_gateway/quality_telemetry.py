@@ -547,6 +547,7 @@ class FeedbackSubmittedEvent:
     usability: int
     net_promoter_score: int
     feedback_form_version: str
+    tenant_ref: str = MISSING_TENANT_REFERENCE
 
     def __post_init__(self) -> None:
         _validate_envelope(self.emitted_at_utc, self.event_type, self.schema_version)
@@ -562,12 +563,15 @@ class FeedbackSubmittedEvent:
             raise ValueError("session_ref is not an opaque reference")
         if not _OPAQUE_REF_PATTERN.match(self.feedback_ref):
             raise ValueError("feedback_ref is not an opaque reference")
+        if not _TENANT_REF_PATTERN.match(self.tenant_ref):
+            raise ValueError("tenant_ref is not a bounded tenant reference")
         if not _LABEL_PATTERN.match(self.feedback_form_version):
             raise ValueError("feedback_form_version is not a label")
 
     def _attributes(self) -> dict[str, str]:
         return {
             "ssf.quality.session_ref": self.session_ref,
+            "ssf.quality.tenant_ref": self.tenant_ref,
             "ssf.quality.feedback_ref": self.feedback_ref,
             "ssf.quality.translation_quality": str(self.translation_quality),
             "ssf.quality.performance": str(self.performance),
@@ -973,6 +977,7 @@ class QualityTelemetry:
         usability: int,
         net_promoter_score: int,
         form_version: str,
+        tenant_ref: str = MISSING_TENANT_REFERENCE,
     ) -> ProbeResult:
         """One voluntary feedback submission, structured half only.
 
@@ -994,6 +999,11 @@ class QualityTelemetry:
                 emitted_at_utc=datetime.now(timezone.utc),
                 event_type=QualityEventType.FEEDBACK_SUBMITTED,
                 session_ref=_as_opaque_ref(session_ref),
+                tenant_ref=(
+                    tenant_ref
+                    if _TENANT_REF_PATTERN.match(str(tenant_ref))
+                    else MISSING_TENANT_REFERENCE
+                ),
                 feedback_ref=_as_opaque_ref(feedback_ref),
                 translation_quality=int(translation_quality),
                 performance=int(performance),

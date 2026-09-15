@@ -1,9 +1,10 @@
 """Where a feedback row's tenant comes from.
 
 The feedback table has carried a tenant column from its first migration,
-populated through this port. Since the tenant-isolation release a session
-knows its tenant, so SessionTenantResolver reads it from there, and the
-configured value survives only as the fallback for what carries none.
+populated through this port. Since the tenant-isolation release a session knows
+its tenant, and FeedbackService resolves the key holding it; SessionTenantResolver
+maps that key, and the configured value survives only as the fallback for what
+carries none.
 """
 
 import pytest
@@ -18,21 +19,21 @@ from services.api_gateway.feedback.tenant import (
 async def test_it_resolves_the_configured_tenant() -> None:
     resolver = ConfiguredTenantResolver(tenant_id="tenant-a")
 
-    assert await resolver.resolve("ABC12345") == "tenant-a"
+    assert await resolver.resolve("ABC12345", None) == "tenant-a"
 
 
 async def test_the_fallback_gives_every_session_the_same_tenant() -> None:
     """The fallback is one value by design; two sessions must not diverge."""
     resolver = ConfiguredTenantResolver(tenant_id="tenant-a")
 
-    assert await resolver.resolve("ABC12345") == await resolver.resolve("XYZ99999")
+    assert await resolver.resolve("ABC12345", None) == await resolver.resolve("XYZ99999", None)
 
 
 async def test_a_sessionless_submission_still_gets_a_tenant() -> None:
     """tenant_id is NOT NULL; the admin dashboard submits without a session."""
     resolver = ConfiguredTenantResolver(tenant_id="tenant-a")
 
-    assert await resolver.resolve(None) == "tenant-a"
+    assert await resolver.resolve(None, None) == "tenant-a"
 
 
 async def test_from_environment_reads_the_configured_value(
@@ -42,7 +43,7 @@ async def test_from_environment_reads_the_configured_value(
 
     resolver = ConfiguredTenantResolver.from_environment()
 
-    assert await resolver.resolve(None) == "kassel"
+    assert await resolver.resolve(None, None) == "kassel"
 
 
 async def test_from_environment_falls_back_to_a_named_default(
@@ -53,7 +54,7 @@ async def test_from_environment_falls_back_to_a_named_default(
 
     resolver = ConfiguredTenantResolver.from_environment()
 
-    assert await resolver.resolve(None) == "default"
+    assert await resolver.resolve(None, None) == "default"
 
 
 async def test_a_blank_environment_value_does_not_become_an_empty_tenant(
@@ -63,7 +64,7 @@ async def test_a_blank_environment_value_does_not_become_an_empty_tenant(
 
     resolver = ConfiguredTenantResolver.from_environment()
 
-    assert await resolver.resolve(None) == "default"
+    assert await resolver.resolve(None, None) == "default"
 
 
 def test_the_configured_resolver_satisfies_the_port() -> None:
@@ -74,60 +75,49 @@ def test_the_configured_resolver_satisfies_the_port() -> None:
 class TestTheTenantComesFromTheSession:
     """Since the tenant-isolation release, a session knows its tenant.
 
-    A tenant-flow session resolves through the join index to a
-    TenantSessionKey, and that key is the only source for its tenant. The
-    configured value is a fallback for what has no tenant to give: a legacy
-    session, and a submission that names no session at all.
+    The key arrives already resolved, from FeedbackService. Resolving the
+    session a second time here is what would let the two disagree at the edge
+    of the feedback grace window (#324) and file a tenant's feedback under the
+    configured fallback instead, so this port maps the key it is handed and
+    looks nothing up. The configured value covers what has no key to give: a
+    legacy session, and a submission that names no session at all.
     """
 
-    REVISION = f"sha256:{'a' * 64}"
-
-    def _manager(self, *identifiers: str):
-        from services.api_gateway.session_manager import SessionManager
-        from services.api_gateway.session_store import MemoryTenantSessionStore
-
-        ids = iter(identifiers)
-        return SessionManager(
-            store=MemoryTenantSessionStore(), session_id_factory=lambda: next(ids)
-        )
-
-    def _snapshot(self):
-        from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
-
-        return RuntimeConfigurationSnapshot(self.REVISION, self.REVISION, "{}")
-
-    def _resolver(self, manager):
+    def _resolver(self):
         from services.api_gateway.feedback.tenant import (
             ConfiguredTenantResolver,
             SessionTenantResolver,
         )
 
         return SessionTenantResolver(
-            session_manager=manager,
             fallback=ConfiguredTenantResolver(tenant_id="configured"),
         )
 
-    async def test_a_tenant_session_resolves_to_its_own_tenant(self) -> None:
-        manager = self._manager("KASSEL01")
-        session = await manager.create_admin_session("tenant-kassel", self._snapshot())
+    def _key(self, tenant_id: str, session_id: str):
+        from services.api_gateway.tenant_session import TenantSessionKey
 
-        assert await self._resolver(manager).resolve(session.id) == "tenant-kassel"
+        return TenantSessionKey(tenant_id, session_id)
+
+    async def test_a_session_key_resolves_to_its_own_tenant(self) -> None:
+        key = self._key("tenant-kassel", "KASSEL01")
+
+        assert await self._resolver().resolve(key.session_id, key) == "tenant-kassel"
 
     async def test_two_tenants_sessions_stay_apart(self) -> None:
         """The whole point: one deployment, several tenants, no commingling."""
-        manager = self._manager("KASSEL01", "GOTHA001")
-        kassel = await manager.create_admin_session("tenant-kassel", self._snapshot())
-        gotha = await manager.create_admin_session("tenant-gotha", self._snapshot())
-        resolver = self._resolver(manager)
+        kassel = self._key("tenant-kassel", "KASSEL01")
+        gotha = self._key("tenant-gotha", "GOTHA001")
+        resolver = self._resolver()
 
-        assert await resolver.resolve(kassel.id) == "tenant-kassel"
-        assert await resolver.resolve(gotha.id) == "tenant-gotha"
+        assert await resolver.resolve(kassel.session_id, kassel) == "tenant-kassel"
+        assert await resolver.resolve(gotha.session_id, gotha) == "tenant-gotha"
 
-    async def test_a_legacy_session_falls_back_to_the_configured_tenant(self) -> None:
-        manager = self._manager()
-        legacy_id = manager.create_session("de")
-
-        assert await self._resolver(manager).resolve(legacy_id) == "configured"
+    async def test_a_session_with_no_key_falls_back(self) -> None:
+        """A legacy session is known to the manager but has no tenant to give."""
+        assert await self._resolver().resolve("LEGACY01", None) == "configured"
 
     async def test_no_session_falls_back_to_the_configured_tenant(self) -> None:
-        assert await self._resolver(self._manager()).resolve(None) == "configured"
+        assert await self._resolver().resolve(None, None) == "configured"
+
+    def test_the_session_resolver_satisfies_the_port(self) -> None:
+        assert isinstance(self._resolver(), TenantResolver)

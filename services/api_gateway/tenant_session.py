@@ -7,6 +7,7 @@ import json
 import re
 from dataclasses import dataclass
 
+from .presentation_configuration import PresentationConfiguration
 from .session_pseudonym import tenant_ref as pseudonymous_tenant_ref
 from .studio_runtime_client import RuntimeConfiguration
 
@@ -49,6 +50,7 @@ class RuntimeConfigurationSnapshot:
         cls, value: RuntimeConfiguration
     ) -> RuntimeConfigurationSnapshot:
         payload = value.model_dump(mode="json", by_alias=True)
+        payload.pop("conversationContentStorage", None)
         return cls(
             configuration_revision=value.configuration_revision,
             authorization_revision=value.authorization_revision,
@@ -75,5 +77,5 @@ class RuntimeConfigurationSnapshot:
             "canonical_json": self.canonical_json,
         }
 
-    def to_configuration(self) -> RuntimeConfiguration:
-        return RuntimeConfiguration.model_validate_json(self.canonical_json)
+    def to_configuration(self) -> PresentationConfiguration:
+        return PresentationConfiguration.model_validate_json(self.canonical_json)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
 from .tenant_session import TenantSessionKey
@@ -83,6 +84,11 @@ class TenantSessionStore(Protocol):
         raise NotImplementedError
 
     def resolve_join(self, session_id: str) -> TenantSessionKey | None:
+        raise NotImplementedError
+
+    def resolve_ended_join(
+        self, session_id: str
+    ) -> tuple[TenantSessionKey, datetime | None] | None:
         raise NotImplementedError
 
     def list_for_tenant(self, tenant_id: str) -> list[Session]:
@@ -192,6 +198,33 @@ class MemoryTenantSessionStore:
             return None
         return key
 
+    def resolve_ended_join(
+        self, session_id: str
+    ) -> tuple[TenantSessionKey, datetime | None] | None:
+        """The key behind a revoked join, and when that session ended.
+
+        The mirror of resolve_join, and deliberately disjoint from it: this
+        answers only once the join has been revoked, resolve_join only while it
+        is live, and neither reactivates anything.
+
+        The key and the termination time, never the session. A caller learns
+        that the conversation existed, which tenant owns it and when it ended
+        -- enough to decide whether feedback about it is still in time -- and
+        gains no route to what was said in it. The time comes from the record
+        loaded here so the caller does not have to load it a second time
+        (#324).
+        """
+        join = self._joins.get(session_id)
+        if join is None:
+            return None
+        key, active = join
+        if active:
+            return None
+        session = self.load(key)
+        if session is None or session.status.value != "terminated":
+            return None
+        return key, session.terminated_at
+
     def list_for_tenant(self, tenant_id: str) -> list[Session]:
         return [
             session
@@ -299,6 +332,18 @@ class RedisTenantSessionStore:
             return None
         key = decoded[0]
         return key if self.load(key) is not None else None
+
+    def resolve_ended_join(
+        self, session_id: str
+    ) -> tuple[TenantSessionKey, datetime | None] | None:
+        decoded = _decode_join(self.redis.get(join_key(self.namespace, session_id)))
+        if decoded is None or decoded[1]:
+            return None
+        key = decoded[0]
+        session = self.load(key)
+        if session is None or session.status.value != "terminated":
+            return None
+        return key, session.terminated_at
 
     def list_for_tenant(self, tenant_id: str) -> list[Session]:
         sessions: list[Session] = []
