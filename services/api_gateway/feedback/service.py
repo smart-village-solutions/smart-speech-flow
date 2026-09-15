@@ -16,7 +16,7 @@ from typing import Any, Callable, Final
 from uuid import UUID, uuid4
 
 from ..quality_telemetry import ProbeOutcome
-from ..session_pseudonym import MISSING_REFERENCE, feedback_ref, session_ref
+from ..session_pseudonym import MISSING_REFERENCE, feedback_ref, session_ref, tenant_ref
 from ..tenant_session import TenantSessionKey
 from .repository import FeedbackRepository
 from .tenant import TenantResolver
@@ -135,6 +135,7 @@ class FeedbackService:
         result = self._telemetry.emit_feedback_submitted(
             event_id=analytics_event_id,
             session_ref=reference,
+            tenant_ref=tenant_ref(tenant_id),
             feedback_ref=feedback_ref(feedback_id),
             translation_quality=request.translation_quality,
             performance=request.performance,

@@ -31,6 +31,7 @@ MESSAGE = MIGRATIONS / "003_translation_message_fields.sql"
 LIFECYCLE = MIGRATIONS / "004_session_lifecycle_fields.sql"
 TENANT = MIGRATIONS / "005_tenant_reference.sql"
 FEEDBACK = MIGRATIONS / "006_feedback_submitted_fields.sql"
+TENANT_DIMENSION = MIGRATIONS / "007_feedback_tenant_dimension.sql"
 
 # The envelope keys 001 already projects; everything else must arrive in a later
 # migration. Which one does not matter -- only that some migration gives the key
@@ -56,6 +57,48 @@ def _projected_attribute_keys(sql: str) -> set[str]:
     return set(re.findall(r"LogAttributes\['([^']+)'\]", sql))
 
 
+# Whatever gives `quality_events_mv` its current projection: the CREATE in 001,
+# or the newest MODIFY QUERY that has replaced it since.
+#
+# Database qualification, backticks and OR REPLACE are all legal here -- a
+# qualified ALTER is accepted by the server -- and a regex that misses one of
+# them fails *open*: the newest redefinition goes unrecognised, the guard falls
+# back to an older file, passes, and the dropped field ships as a silently
+# defaulted column. That is the exact failure this guard exists to catch, so
+# the match is deliberately loose and cross-checked below.
+_SILVER_VIEW_DEFINITION = re.compile(
+    r"(?:ALTER\s+TABLE|CREATE(?:\s+OR\s+REPLACE)?\s+MATERIALIZED\s+VIEW"
+    r"(?:\s+IF\s+NOT\s+EXISTS)?)\s+`?(?:\w+\.)?`?quality_events_mv`?",
+    re.IGNORECASE,
+)
+_SQL_COMMENT = re.compile(r"^\s*--.*$", re.MULTILINE)
+
+
+def _statements(path: Path) -> str:
+    """The file's SQL with comment lines removed.
+
+    Prose is not a definition. Without this, a migration whose comment happens
+    to spell `ALTER TABLE quality_events_mv` hijacks the guard and fails a
+    change that never touched the view.
+    """
+    return _SQL_COMMENT.sub("", path.read_text())
+
+
+def _latest_silver_view_migration() -> Path:
+    migrations = sorted(MIGRATIONS.glob("*.sql"))
+    defining = [path for path in migrations if _SILVER_VIEW_DEFINITION.search(_statements(path))]
+    assert defining, "no migration defines quality_events_mv"
+
+    # The fail-open check. Any migration whose SQL names the view but which the
+    # pattern did not recognise is a redefinition this guard would skip.
+    mentioning = [path for path in migrations if "quality_events_mv" in _statements(path)]
+    assert defining[-1] == mentioning[-1], (
+        f"{mentioning[-1].name} names quality_events_mv in SQL but was not recognised "
+        f"as defining it; the guard would check {defining[-1].name} instead"
+    )
+    return defining[-1]
+
+
 class TestEveryAllowlistedKeyReachesAColumn:
     def test_no_allowlisted_key_is_dropped_between_collector_and_table(self):
         missing = set(ALLOWED_ATTRIBUTE_KEYS) - _projected_attribute_keys(_sql())
@@ -75,8 +118,14 @@ class TestEveryAllowlistedKeyReachesAColumn:
         A migration that adds columns but re-states an older SELECT would drop
         the fields an earlier migration opened, with no error anywhere: the
         columns stay, and silently fill with their defaults.
+
+        The newest migration that *redefines the view*, not the newest file: a
+        migration touching only a gold table cannot drop a silver field, and
+        reading the newest file would force every such migration to restate a
+        projection it does not own -- a third copy, free to drift from the two
+        that matter.
         """
-        latest = sorted(MIGRATIONS.glob("*.sql"))[-1].read_text()
+        latest = _latest_silver_view_migration().read_text()
         missing = set(ALLOWED_ATTRIBUTE_KEYS) - _projected_attribute_keys(latest)
         assert not missing, f"dropped by the newest MODIFY QUERY: {missing}"
 
@@ -149,6 +198,7 @@ def test_every_migration_after_the_first_is_covered_by_these_guards() -> None:
         LIFECYCLE.name,
         TENANT.name,
         FEEDBACK.name,
+        TENANT_DIMENSION.name,
     }
 
 

@@ -437,3 +437,64 @@ def test_gitignore_does_not_blanket_ignore_the_grafana_bind_mount() -> None:
     )
 
     assert result.returncode == 0, result.stdout
+
+
+class TestTheFeedbackPanelsCanBeFilteredByTenant:
+    """#325: gold gained a tenant dimension; a dimension nothing reads is invisible.
+
+    Both tiers, not just gold. Silver's `tenant_ref` has existed since 005 and
+    this change is what finally populates it for a feedback row, so a silver
+    feedback panel that ignores the picker shows every tenant's numbers while
+    the picker on screen names one -- and panel 47 sends the reader to panel 44
+    by name. The non-feedback panels read `quality_events_daily`, which has no
+    tenant dimension; they are out of scope here and say so in the variable.
+    """
+
+    @staticmethod
+    def _variable() -> dict:
+        dashboard = json.loads(DASHBOARD.read_text())
+        named = [
+            variable
+            for variable in dashboard.get("templating", {}).get("list", [])
+            if variable["name"] == "tenant"
+        ]
+        assert named, "no tenant variable on the dashboard"
+        return named[0]
+
+    def test_the_variable_offers_every_tenant_the_aggregate_holds(self):
+        assert "feedback_daily" in self._variable()["query"]
+        assert "tenant_ref" in self._variable()["query"]
+
+    def test_it_includes_an_all_option_and_starts_there(self):
+        """Defaulting to one tenant would silently hide every other."""
+        variable = self._variable()
+
+        assert variable["includeAll"] is True
+        assert "$__all" in variable["current"]["value"]
+
+    def test_every_feedback_panel_filters_on_it(self):
+        """Gold *and* silver. Selecting on `feedback_daily` alone would leave
+        the six silver feedback panels unfiltered and still pass."""
+        feedback = [
+            sql
+            for sql in _clickhouse_queries()
+            if "feedback_daily" in sql or "feedback_submitted" in sql
+        ]
+        assert len(feedback) >= 8, f"expected every feedback panel, got {len(feedback)}"
+
+        for sql in feedback:
+            assert "${tenant" in sql, sql
+
+    def test_the_panels_say_when_the_breakdown_starts(self):
+        """Rows written before the emitter shipped carry no reference, and go
+        on contributing to the aggregate under an empty tenant forever."""
+        dashboard = json.loads(DASHBOARD.read_text())
+        panels = [
+            panel
+            for panel in dashboard["panels"]
+            for target in panel.get("targets", []) or []
+            if "feedback_daily" in (target.get("rawSql") or "")
+        ]
+
+        for panel in panels:
+            assert "tenant" in panel.get("description", "").lower(), panel["title"]
