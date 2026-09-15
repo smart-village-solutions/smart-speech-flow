@@ -9,7 +9,7 @@ export function RequireSession() {
 
   const query = useQuery({
     queryKey: ['session', sessionId],
-    queryFn: () => session.getSession(sessionId as string),
+    queryFn: () => session.getSession(sessionId as string, 'customer'),
     enabled: Boolean(sessionId),
   });
 

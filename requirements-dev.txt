@@ -45,8 +45,9 @@ click==8.4.2
     #   safety
 coverage[toml]==7.15.2
     # via pytest-cov
-cryptography==49.0.0
+cryptography==50.0.1
     # via
+    #   -r requirements-dev.in
     #   authlib
     #   joserfc
     #   types-pyopenssl
@@ -166,7 +167,7 @@ pluggy==1.6.0
     # via
     #   pytest
     #   pytest-cov
-pre-commit==4.3.0
+pre-commit==4.6.2
     # via -r requirements-dev.in
 psutil==7.2.2
     # via

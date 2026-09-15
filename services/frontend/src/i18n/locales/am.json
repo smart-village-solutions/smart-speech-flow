@@ -69,8 +69,16 @@
       "question": "Smart Speech Flow ን የበለጠ የሚያሻሽለው ምንድን ነው?",
       "placeholder": "ሐሳቦችዎ፣ ጥያቄዎችዎ ወይም ያስቸገረዎት ማንኛውም ነገር…"
     },
+    "notice": {
+      "purpose": "መልሶችዎ Smart Speech Flow ን ለማሻሻል ብቻ ይውላሉ።",
+      "retention": "አስተያየቱን ለአሥራ ሁለት ወራት እናስቀምጣለን፤ ከዚያ በኋላ በራስ-ሰር ይሰረዛል።",
+      "withdrawal": "አስተያየትዎን በማንኛውም ጊዜ ማስወገድ ይችላሉ — በቦታው ያሉትን ሠራተኞች ያነጋግሩ።"
+    },
     "stars": "{{count}} ኮከቦች",
     "submit": "አስተያየት ላክ",
+    "submitting": "እየተላከ ነው…",
+    "retry": "እንደገና ላክ",
+    "failed": "አስተያየትዎ ሊላክ አልቻለም። መልሶችዎ ተጠብቀዋል።",
     "thanksTitle": "እናመሰግናለን!",
     "thanksBody": "አስተያየትዎ Smart Speech Flow ን ለሁሉም እንድናሻሽል ይረዳናል።"
   },

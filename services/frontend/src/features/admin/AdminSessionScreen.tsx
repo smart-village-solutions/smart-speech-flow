@@ -51,12 +51,12 @@ export function AdminSessionScreen({
   return (
     <ConversationSurface
       screen={screen}
-      contentTop="var(--spacing-admin-content)"
+      contentTop="var(--spacing-content-top)"
       header={
         <AdminHeader
           onBack={onLeave}
           onHome={() => void navigate('/')}
-          onFeedback={openFeedback}
+          onFeedback={() => openFeedback(sessionId)}
           onSignOut={onSignOut}
         />
       }

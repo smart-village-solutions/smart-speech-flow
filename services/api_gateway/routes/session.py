@@ -28,11 +28,21 @@ from fastapi import (
 )
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from ..audio_storage import AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
 from ..log_safety import sanitize_log_value
+from ..message_telemetry import MessageTelemetryRecorder
+from ..pipeline_admission import PipelineBusyError, run_pipeline
 
 # Import der bestehenden Pipeline-Logik
-from ..pipeline_logic import process_text_pipeline, process_wav
+from ..pipeline_logic import (
+    DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS,
+    UPSTREAM_BUSY_ERROR_CODE,
+    process_text_pipeline,
+    process_wav,
+)
+from ..quality_telemetry import InputMode
 from ..session_manager import ClientType, SessionMessage, SessionStatus, session_manager
+from ..tenant_session import TenantSessionKey
 from ..websocket import MessageType, WebSocketManager, get_websocket_manager
 
 router = APIRouter()
@@ -58,6 +68,18 @@ def utc_now() -> datetime:
 
 def iso_utc_now() -> str:
     return utc_now().isoformat()
+
+
+def _quality_telemetry(request: Request) -> Any:
+    """The gateway's emitter, or None when there is no app behind the request.
+
+    Never raises: the route's `finally` calls this, so an exception here would
+    replace whatever the request was actually about to return.
+    """
+    try:
+        return request.app.state.quality_telemetry
+    except Exception:
+        return None
 
 
 def _safe_identifier(value: Optional[str]) -> str:
@@ -205,6 +227,8 @@ def transform_pipeline_metadata(
     target_lang: str,
     original_audio_url: Optional[str] = None,
     message_id: Optional[str] = None,
+    *,
+    original_audio_available: Optional[bool] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Transform pipeline debug_info to spec-compliant pipeline_metadata format.
@@ -213,8 +237,9 @@ def transform_pipeline_metadata(
         debug_info: Raw debug information from pipeline_logic
         source_lang: Source language code
         target_lang: Target language code
-        original_audio_url: URL to original audio input (if audio pipeline)
-        message_id: Message ID for audio URL generation
+        original_audio_url: Legacy availability indicator; never copied to output
+        message_id: Message ID used when marking generated audio available
+        original_audio_available: Explicit original-audio availability
 
     Returns:
         Spec-compliant pipeline_metadata dict or None if no debug_info
@@ -227,9 +252,14 @@ def transform_pipeline_metadata(
         return None
 
     # Build pipeline metadata according to spec
+    has_original_audio = (
+        original_audio_available
+        if original_audio_available is not None
+        else original_audio_url is not None
+    )
     pipeline_metadata = {
         "input": {
-            "type": "audio" if original_audio_url else "text",
+            "type": "audio" if has_original_audio else "text",
             "source_lang": source_lang,
         },
         "steps": [],
@@ -237,10 +267,6 @@ def transform_pipeline_metadata(
         "pipeline_started_at": debug_info.get("pipeline_started_at", ""),
         "pipeline_completed_at": debug_info.get("pipeline_completed_at", ""),
     }
-
-    # Add audio URL if available
-    if original_audio_url:
-        pipeline_metadata["input"]["audio_url"] = original_audio_url
 
     for step in steps:
         transformed_step = _transform_pipeline_step(step, target_lang, message_id)
@@ -301,11 +327,8 @@ def _build_tts_step_output(
     if not (isinstance(output_value, str) and "audio" in output_value):
         return {}
 
-    audio_url = (
-        f"/api/audio/{message_id}.wav" if message_id else "/api/audio/unknown.wav"
-    )
     return {
-        "audio_url": audio_url,
+        "audio_available": True,
         "format": "wav",
         "model": step.get("model", "unknown"),
         "language": step.get("language", target_lang),
@@ -326,9 +349,9 @@ def _validate_supported_languages(source_lang: str, target_lang: str) -> None:
     )
 
 
-async def _parse_audio_form(request: Request) -> tuple[Any, str, str, ClientType]:
+async def _parse_audio_form(request: Request) -> tuple[Any, str, str]:
     form = await request.form()
-    required_fields = ["file", "source_lang", "target_lang", "client_type"]
+    required_fields = ["file", "source_lang", "target_lang"]
     missing_fields = [field for field in required_fields if field not in form]
     if missing_fields:
         raise HTTPException(
@@ -344,7 +367,6 @@ async def _parse_audio_form(request: Request) -> tuple[Any, str, str, ClientType
         form["file"],
         form["source_lang"],
         form["target_lang"],
-        ClientType(form["client_type"]),
     )
 
 
@@ -405,31 +427,81 @@ def _supports_extended_session_message_args() -> bool:
     )
 
 
-def _store_audio_artifacts(
-    message_id: str, file_bytes: bytes, audio_bytes: Optional[bytes]
-) -> Optional[str]:
-    from ..audio_storage import save_original_audio, save_translated_audio
+def _system_busy_error(busy: PipelineBusyError) -> HTTPException:
+    """503 for a saturated pipeline (#191).
 
-    original_audio_url = None
+    Uses the same envelope as every other failure on this endpoint, so the
+    frontend needs no new parsing; it maps any 5xx to its generic server error.
+    """
+    return HTTPException(
+        status_code=503,
+        detail=create_error_response(
+            "SYSTEM_BUSY",
+            "The translation pipeline is at capacity. Please retry shortly.",
+            {
+                "max_concurrent_pipelines": busy.max_concurrent,
+                # Deliberately the same value as the Retry-After header, so a
+                # client reading the body cannot retry sooner than advised.
+                "retry_after_seconds": busy.retry_after_seconds,
+                "queue_wait_seconds": busy.queue_wait_seconds,
+                "waited_seconds": round(busy.waited_seconds, 3),
+            },
+        ),
+        headers={"Retry-After": busy.retry_after_header},
+    )
+
+
+def _raise_if_upstream_busy(result: Dict[str, Any]) -> None:
+    """Re-raises an upstream capacity rejection as a retryable 503 (#190).
+
+    A GPU service that shed load answered 503 with a Retry-After, which clears
+    on its own. The pipeline flattens it into ``result["error"]`` like any other
+    failure, and without this the audio path would report 500 PIPELINE_ERROR and
+    the text path 400 TEXT_PIPELINE_ERROR — the latter blaming the client for a
+    condition it did not cause. Same envelope as _system_busy_error, so the
+    frontend needs no new parsing whichever layer ran out of capacity.
+    """
+    if result.get("error_code") != UPSTREAM_BUSY_ERROR_CODE:
+        return
+
+    retry_after = int(
+        result.get("retry_after_seconds", DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS)
+    )
+    raise HTTPException(
+        status_code=503,
+        detail=create_error_response(
+            "SYSTEM_BUSY",
+            "The translation pipeline is at capacity. Please retry shortly.",
+            {
+                "retry_after_seconds": retry_after,
+                "upstream_error": result.get("error_msg"),
+            },
+        ),
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
+def _store_audio_artifacts(
+    key: TenantSessionKey,
+    _sender: ClientType,
+    message_id: str,
+    file_bytes: bytes,
+) -> bool:
+    from ..audio_storage import AudioVariant, save_audio
+
+    original_audio_available = False
     try:
-        original_audio_b64 = base64.b64encode(file_bytes).decode()
-        original_audio_url = save_original_audio(message_id, original_audio_b64)
+        save_audio(key, message_id, AudioVariant.ORIGINAL, file_bytes)
+        original_audio_available = True
     except Exception as e:
         logger.warning("⚠️ Failed to save original audio: %s", type(e).__name__)
 
-    if audio_bytes:
-        try:
-            translated_audio_b64 = base64.b64encode(audio_bytes).decode()
-            save_translated_audio(message_id, translated_audio_b64)
-        except Exception as e:
-            logger.warning("⚠️ Failed to save translated audio: %s", type(e).__name__)
-
-    return original_audio_url
+    return original_audio_available
 
 
 async def _create_session_message_with_fallback(
     *,
-    session_id: str,
+    session_id: TenantSessionKey,
     client_type: ClientType,
     original_text: str,
     translated_text: str,
@@ -470,28 +542,35 @@ async def _create_session_message_with_fallback(
 def _build_message_response(
     *,
     message: SessionMessage,
-    session_id: str,
+    key: TenantSessionKey,
     source_lang: str,
     target_lang: str,
     pipeline_type: str,
     pipeline_metadata: Optional[Dict[str, Any]],
     start_time: float,
+    sender: ClientType,
 ) -> MessageResponse:
     processing_time_ms = max(1, int((time.perf_counter() - start_time) * 1000))
     return MessageResponse(
         status="success",
         message_id=message.id,
-        session_id=session_id,
+        session_id=key.session_id,
         original_text=message.original_text,
         translated_text=message.translated_text,
-        audio_available=message.audio_base64 is not None,
-        audio_url=f"/api/audio/{message.id}.wav" if message.audio_base64 else None,
+        audio_available=message.translated_audio_available,
+        audio_url=(
+            scoped_audio_url(key, sender.value, message.id, AudioVariant.TRANSLATED)
+            if message.translated_audio_available
+            else None
+        ),
         processing_time_ms=processing_time_ms,
         pipeline_type=pipeline_type,
         source_lang=source_lang,
         target_lang=target_lang,
         timestamp=message.timestamp.isoformat(),
-        pipeline_metadata=pipeline_metadata,
+        pipeline_metadata=scope_pipeline_audio_urls(
+            pipeline_metadata, key, sender.value, message.id
+        ),
     )
 
 
@@ -516,7 +595,7 @@ async def _parse_text_request(request: Request) -> TextMessageRequest:
         )
         raise HTTPException(
             status_code=400,
-            detail=create_error_response("INVALID_JSON", f"Invalid JSON: {str(e)}", {}),
+            detail=create_error_response("INVALID_JSON", "Invalid JSON", {}),
         )
 
     try:
@@ -577,7 +656,6 @@ class TextMessageRequest(BaseModel):
     )
     source_lang: str = Field(..., description="Source language code")
     target_lang: str = Field(..., description="Target language code")
-    client_type: ClientType = Field(..., description="Client type (admin or customer)")
 
     @field_validator("text")
     @classmethod
@@ -629,7 +707,9 @@ class MessageResponse(BaseModel):
                 "original_text": "Hallo, wie kann ich helfen?",
                 "translated_text": "Hello, how can I help?",
                 "audio_available": True,
-                "audio_url": "/api/audio/msg_12345.wav",
+                "audio_url": (
+                    "/api/admin/session/ABC12345/audio/msg_12345/translated.wav"
+                ),
                 "processing_time_ms": 2500,
                 "pipeline_type": "audio",
                 "source_lang": "de",
@@ -669,9 +749,27 @@ NOT_FOUND_RESPONSE = {404: {"model": ErrorResponse, "description": "Not found"}}
 SERVER_ERROR_RESPONSE = {
     500: {"model": ErrorResponse, "description": "Internal server error"}
 }
+# Pipeline capacity is bounded (#191): one GPU hosts ASR, translation and TTS.
+# Carries error_code SYSTEM_BUSY and a Retry-After header; retrying works.
+SERVICE_BUSY_RESPONSE = {
+    503: {
+        "model": ErrorResponse,
+        "description": (
+            "Pipeline at capacity. Returns error_code SYSTEM_BUSY and a "
+            "Retry-After header in whole seconds; the request may be retried."
+        ),
+        "headers": {
+            "Retry-After": {
+                "description": "Whole seconds to wait before retrying; never below 1.",
+                "schema": {"type": "integer", "minimum": 1},
+            }
+        },
+    }
+}
 MESSAGE_ROUTE_RESPONSES = {
     **BAD_REQUEST_RESPONSE,
     **NOT_FOUND_RESPONSE,
+    **SERVICE_BUSY_RESPONSE,
     **SERVER_ERROR_RESPONSE,
 }
 ACTIVITY_ROUTE_RESPONSES = {
@@ -736,51 +834,9 @@ SUPPORTED_LANGUAGES: Dict[str, Dict[str, str]] = {
 }
 
 
-@router.post("/session/create", responses=BAD_REQUEST_RESPONSE)
-async def create_session(customer_language: str) -> Dict[str, Any]:
-    """Neue Session für Admin-Kunde Gespräch erstellen"""
-    if customer_language not in SUPPORTED_LANGUAGES:
-        raise HTTPException(400, f"Sprache '{customer_language}' nicht unterstützt")
-
-    session_id = session_manager.create_session(customer_language)
-
-    return {
-        "session_id": session_id,
-        "customer_language": customer_language,
-        "admin_url": f"/admin?session={session_id}",
-        "customer_url": f"/customer?session={session_id}",
-        "status": "created",
-    }
-
-
-@router.get("/session/{session_id}", responses=NOT_FOUND_RESPONSE)
-async def get_session_info(session_id: str) -> Dict[str, Any]:
-    """Session-Informationen abrufen"""
-    session = session_manager.get_session(session_id)
-    if not session:
-        raise HTTPException(404, SESSION_NOT_FOUND_MESSAGE)
-
-    return {
-        "id": session.id,
-        "customer_language": session.customer_language,
-        "admin_language": session.admin_language,
-        "status": session.status,
-        "created_at": session.created_at.isoformat(),
-        "message_count": len(session.messages),
-        "admin_connected": session.admin_connected,
-        "customer_connected": session.customer_connected,
-    }
-
-
-@router.get("/sessions/active")
-async def get_active_sessions() -> Dict[str, Any]:
-    """Aktive Sessions für Admin-Übersicht"""
-    return {"sessions": session_manager.get_active_sessions()}
-
-
-@router.post("/session/{session_id}/message", responses=MESSAGE_ROUTE_RESPONSES)
 async def send_unified_message(
-    session_id: str,
+    key: TenantSessionKey,
+    sender: ClientType,
     request: Request,
     manager: OptionalManagerDependency = None,
 ) -> MessageResponse:
@@ -797,12 +853,16 @@ async def send_unified_message(
 
     logger = logging.getLogger(__name__)
 
+    session_id = key.session_id
     start_time = time.perf_counter()
+    # One row per processed message, assembled across every exit below and
+    # emitted once from the `finally`. See message_telemetry.py.
+    recorder = MessageTelemetryRecorder(session_id=key, start_time=start_time)
     _log_session_event("🚀 Processing message", session_id)
 
     # Session-Validation
     logger.debug("🔍 Validating session")
-    session = session_manager.get_session(session_id)
+    session = session_manager.get_session(key)
     if not session:
         _log_session_event("❌ Session nicht gefunden", session_id)
         raise HTTPException(
@@ -839,14 +899,20 @@ async def send_unified_message(
     try:
         if content_type.startswith("multipart/form-data"):
             # Audio-Pipeline
+            recorder.arm(InputMode.AUDIO)
             _log_session_event("🎵 Starte Audio-Pipeline", session_id)
-            result = await process_audio_input(session_id, request, start_time, manager)
+            result = await process_audio_input(
+                key, sender, request, start_time, manager, recorder=recorder
+            )
             _log_session_event("✅ Audio-Pipeline erfolgreich", session_id)
             return result
         elif content_type.startswith("application/json"):
             # Text-Pipeline
+            recorder.arm(InputMode.TEXT)
             _log_session_event("📝 Starte Text-Pipeline", session_id)
-            result = await process_text_input(session_id, request, start_time, manager)
+            result = await process_text_input(
+                key, sender, request, start_time, manager, recorder=recorder
+            )
             _log_session_event("✅ Text-Pipeline erfolgreich", session_id)
             return result
         else:
@@ -863,7 +929,8 @@ async def send_unified_message(
                 ),
             )
 
-    except HTTPException:
+    except HTTPException as exc:
+        recorder.record_http_failure(exc.status_code)
         _log_session_event("⚠️ HTTPException in send_unified_message", session_id)
         raise
     except Exception as e:
@@ -872,30 +939,44 @@ async def send_unified_message(
             session_id,
             error_type=type(e).__name__,
         )
-        import traceback
-
-        traceback.print_exc()
+        logger.exception(
+            "Unexpected message processing failure",
+            exc_info=_redacted_exception_info(e),
+        )
+        recorder.record_http_failure(500)
         raise HTTPException(
             status_code=500,
             detail=create_error_response(
                 "PROCESSING_ERROR",
-                f"Error processing message: {str(e)}",
-                {"session_id": session_id, "error_details": str(e)},
+                "Message processing failed",
+                {},
             ),
         )
+    finally:
+        recorder.emit(_quality_telemetry(request))
 
 
 async def process_audio_input(
-    session_id: str,
+    key: TenantSessionKey,
+    client_type: ClientType,
     request: Request,
     start_time: float,
     manager: Optional[WebSocketManager] = None,
+    recorder: Optional[MessageTelemetryRecorder] = None,
 ) -> MessageResponse:
     """Audio-Input verarbeiten (multipart/form-data)"""
-    file, source_lang, target_lang, client_type = await _parse_audio_form(request)
+    # A recorder nobody armed emits nothing, so a direct caller -- every test
+    # that drives this function without the route -- needs to pass nothing.
+    recorder = recorder or MessageTelemetryRecorder(
+        session_id=key, start_time=start_time
+    )
+    file, source_lang, target_lang = await _parse_audio_form(request)
+    recorder.record_request(
+        client_type=client_type, source_lang=source_lang, target_lang=target_lang
+    )
 
     # Validate languages match session configuration
-    session = session_manager.get_session(session_id)
+    session = session_manager.get_session(key)
     if session:
         validate_session_languages(session, source_lang, target_lang, client_type)
 
@@ -904,12 +985,28 @@ async def process_audio_input(
     processed_file_bytes = _validate_audio_payload(file, file_bytes)
     _validate_supported_languages(source_lang, target_lang)
 
-    # Audio-Pipeline ausführen (Validation bereits durchgeführt)
-    result = process_wav(
-        processed_file_bytes, source_lang, target_lang, validate_audio=False
-    )
+    # Audio-Pipeline ausführen (Validation bereits durchgeführt).
+    # process_wav is synchronous and spends its time in blocking HTTP calls to
+    # ASR/translation/TTS, so it runs on a worker thread to keep the gateway
+    # event loop free for other sessions, health checks and WS heartbeats.
+    # run_pipeline also bounds how many reach the GPU at once, and covers only
+    # the GPU call: form parsing and audio storage need no capacity.
+    try:
+        result = await run_pipeline(
+            request,
+            process_wav,
+            processed_file_bytes,
+            source_lang,
+            target_lang,
+            validate_audio=False,
+        )
+    except PipelineBusyError as busy:
+        raise _system_busy_error(busy) from busy
+
+    recorder.record_pipeline_result(result)
 
     if result.get("error", False):
+        _raise_if_upstream_busy(result)
         raise HTTPException(
             status_code=500,
             detail=create_error_response(
@@ -921,14 +1018,20 @@ async def process_audio_input(
 
     message_id = str(uuid.uuid4())
     audio_bytes = result.get("audio_bytes")
-    original_audio_url = _store_audio_artifacts(message_id, file_bytes, audio_bytes)
+    original_audio_available = _store_audio_artifacts(
+        key, client_type, message_id, file_bytes
+    )
 
     pipeline_metadata = transform_pipeline_metadata(
-        result.get("debug"), source_lang, target_lang, original_audio_url, message_id
+        result.get("debug"),
+        source_lang,
+        target_lang,
+        message_id=message_id,
+        original_audio_available=original_audio_available,
     )
 
     message = await _create_session_message_with_fallback(
-        session_id=session_id,
+        session_id=key,
         client_type=client_type,
         original_text=result.get("asr_text", ""),
         translated_text=result.get("translation_text", ""),
@@ -937,29 +1040,43 @@ async def process_audio_input(
         target_lang=target_lang,
         manager=manager,
         pipeline_metadata=pipeline_metadata,
-        original_audio_url=original_audio_url,
+        # Internal availability marker only. Role-scoped URLs are built at
+        # HTTP/WebSocket response boundaries and are never persisted.
+        original_audio_url="available" if original_audio_available else None,
         message_id=message_id,
     )
     message.id = message_id
     return _build_message_response(
         message=message,
-        session_id=session_id,
+        key=key,
         source_lang=source_lang,
         target_lang=target_lang,
         pipeline_type="audio",
         pipeline_metadata=pipeline_metadata,
         start_time=start_time,
+        sender=client_type,
     )
 
 
 async def process_text_input(
-    session_id: str,
+    key: TenantSessionKey,
+    client_type: ClientType,
     request: Request,
     start_time: float,
     manager: Optional[WebSocketManager] = None,
+    recorder: Optional[MessageTelemetryRecorder] = None,
 ) -> MessageResponse:
     """Text-Input verarbeiten (application/json)"""
+    session_id = key.session_id
+    recorder = recorder or MessageTelemetryRecorder(
+        session_id=key, start_time=start_time
+    )
     text_request = await _parse_text_request(request)
+    recorder.record_request(
+        client_type=client_type,
+        source_lang=text_request.source_lang,
+        target_lang=text_request.target_lang,
+    )
 
     # Language validation
     logger.info(
@@ -968,14 +1085,14 @@ async def process_text_input(
             {
                 "source_lang": text_request.source_lang,
                 "target_lang": text_request.target_lang,
-                "client_type": text_request.client_type.value,
+                "client_type": client_type.value,
             }
         ),
     )
     _validate_supported_languages(text_request.source_lang, text_request.target_lang)
 
     # Validate languages match session configuration
-    session = session_manager.get_session(session_id)
+    session = session_manager.get_session(key)
     logger.info(
         "🔎 Session lookup for text input | %s",
         sanitize_log_value(
@@ -990,7 +1107,7 @@ async def process_text_input(
             session,
             text_request.source_lang,
             text_request.target_lang,
-            text_request.client_type,
+            client_type,
         )
     else:
         logger.warning(
@@ -998,16 +1115,25 @@ async def process_text_input(
             sanitize_log_value({"session_ref": _safe_identifier(session_id)}),
         )
 
-    # Text-Pipeline ausführen (ASR überspringen)
-    pipeline_result = process_text_pipeline(
-        text_request.text,
-        text_request.source_lang,
-        text_request.target_lang,
-        session_id=session_id,
-    )
+    # Text-Pipeline ausführen (ASR überspringen). Offloaded for the same reason
+    # as the audio pipeline: blocking translation/TTS calls must not hold the loop.
+    try:
+        pipeline_result = await run_pipeline(
+            request,
+            process_text_pipeline,
+            text_request.text,
+            text_request.source_lang,
+            text_request.target_lang,
+            session_id=session_id,
+        )
+    except PipelineBusyError as busy:
+        raise _system_busy_error(busy) from busy
+
+    recorder.record_pipeline_result(pipeline_result)
 
     # Fehlerbehandlung
     if pipeline_result.get("error"):
+        _raise_if_upstream_busy(pipeline_result)
         raise HTTPException(
             status_code=400,
             detail=create_error_response(
@@ -1033,8 +1159,8 @@ async def process_text_input(
     )
 
     message = await _create_session_message_with_fallback(
-        session_id=session_id,
-        client_type=text_request.client_type,
+        session_id=key,
+        client_type=client_type,
         original_text=pipeline_result.get("asr_text", text_request.text),
         translated_text=translated_text,
         audio_bytes=audio_bytes,
@@ -1048,17 +1174,18 @@ async def process_text_input(
 
     return _build_message_response(
         message=message,
-        session_id=session_id,
+        key=key,
         source_lang=text_request.source_lang,
         target_lang=text_request.target_lang,
         pipeline_type="text",
         pipeline_metadata=pipeline_metadata,
         start_time=start_time,
+        sender=client_type,
     )
 
 
 async def create_session_message(
-    session_id: str,
+    session_id: TenantSessionKey,
     client_type: ClientType,
     original_text: str,
     translated_text: str,
@@ -1073,17 +1200,36 @@ async def create_session_message(
     """Session-Message erstellen und zur Session hinzufügen"""
     import logging
 
+    from ..audio_storage import AudioVariant, save_audio
+
     logger = logging.getLogger(__name__)
 
+    resolved_message_id = message_id or str(uuid.uuid4())
+    translated_audio_available = False
+    if audio_bytes:
+        try:
+            save_audio(
+                session_id,
+                resolved_message_id,
+                AudioVariant.TRANSLATED,
+                audio_bytes,
+            )
+            translated_audio_available = True
+        except Exception as error:
+            logger.warning(
+                "⚠️ Failed to save translated audio: %s", type(error).__name__
+            )
+
     message = SessionMessage(
-        id=message_id or str(uuid.uuid4()),  # Use provided ID or generate new one
+        id=resolved_message_id,
         sender=client_type,
         original_text=original_text,
         translated_text=translated_text,
-        audio_base64=base64.b64encode(audio_bytes).decode() if audio_bytes else None,
+        audio_base64=None,
         source_lang=source_lang,
         target_lang=target_lang,
         timestamp=utc_now(),
+        translated_audio_available=translated_audio_available,
         pipeline_metadata=pipeline_metadata,
         original_audio_url=original_audio_url,
     )
@@ -1094,7 +1240,7 @@ async def create_session_message(
     # ✨ WebSocket Broadcasting mit differentiated content
     _log_session_event(
         "🔄 Starte WebSocket-Broadcasting",
-        session_id,
+        session_id.session_id,
         sender=client_type.value,
     )
     try:
@@ -1120,7 +1266,7 @@ async def create_session_message(
         if result.success:
             _log_session_event(
                 "✅ WebSocket-Broadcasting erfolgreich",
-                session_id,
+                session_id.session_id,
                 successful_sends=result.successful_sends,
                 total_connections=result.total_connections,
             )
@@ -1148,7 +1294,7 @@ async def create_session_message(
 
 
 async def broadcast_message_to_session(
-    session_id: str,
+    session_id: TenantSessionKey,
     message: SessionMessage,
     sender_type: ClientType,
     manager: Optional[WebSocketManager] = None,
@@ -1169,15 +1315,28 @@ async def broadcast_message_to_session(
     """
     _log_session_event(
         "📡 Broadcasting message",
-        session_id,
+        session_id.session_id,
         sender_type=sender_type.value,
+    )
+
+    receiver_type = (
+        ClientType.CUSTOMER if sender_type is ClientType.ADMIN else ClientType.ADMIN
+    )
+
+    pipeline_input = (
+        message.pipeline_metadata.get("input")
+        if isinstance(message.pipeline_metadata, dict)
+        else None
+    )
+    has_original_audio = bool(message.original_audio_url) or (
+        isinstance(pipeline_input, dict) and pipeline_input.get("type") == "audio"
     )
 
     # Original Message für Sender (ASR-Bestätigung)
     sender_message = {
         "type": MessageType.MESSAGE.value,
         "message_id": message.id,
-        "session_id": session_id,
+        "session_id": session_id.session_id,
         "text": message.original_text,  # 👈 Sender sieht original Text
         "source_lang": message.source_lang,
         "target_lang": message.target_lang,
@@ -1188,32 +1347,55 @@ async def broadcast_message_to_session(
     }
     # Add pipeline metadata if available
     if message.pipeline_metadata:
-        sender_message["pipeline_metadata"] = message.pipeline_metadata
-    if message.original_audio_url:
-        sender_message["original_audio_url"] = message.original_audio_url
+        sender_message["pipeline_metadata"] = scope_pipeline_audio_urls(
+            message.pipeline_metadata,
+            session_id,
+            sender_type.value,
+            message.id,
+        )
+    if has_original_audio:
+        sender_message["original_audio_url"] = scoped_audio_url(
+            session_id, sender_type.value, message.id, AudioVariant.ORIGINAL
+        )
 
     # Translated Message für Empfänger (mit Audio)
     receiver_message = {
         "type": MessageType.MESSAGE.value,
         "message_id": message.id,
-        "session_id": session_id,
+        "session_id": session_id.session_id,
         "text": message.translated_text,  # 👈 Empfänger sieht übersetzten Text
         "source_lang": message.source_lang,
         "target_lang": message.target_lang,
         "sender": message.sender.value,
         "timestamp": message.timestamp.isoformat(),
-        "audio_available": message.audio_base64 is not None,
-        "audio_url": f"/api/audio/{message.id}.wav" if message.audio_base64 else None,
+        "audio_available": message.translated_audio_available,
+        "audio_url": (
+            scoped_audio_url(
+                session_id,
+                receiver_type.value,
+                message.id,
+                AudioVariant.TRANSLATED,
+            )
+            if message.translated_audio_available
+            else None
+        ),
         "role": "receiver_message",
     }
     # Add pipeline metadata if available
     if message.pipeline_metadata:
-        receiver_message["pipeline_metadata"] = message.pipeline_metadata
-    if message.original_audio_url:
-        receiver_message["original_audio_url"] = message.original_audio_url
+        receiver_message["pipeline_metadata"] = scope_pipeline_audio_urls(
+            message.pipeline_metadata,
+            session_id,
+            receiver_type.value,
+            message.id,
+        )
+    if has_original_audio:
+        receiver_message["original_audio_url"] = scoped_audio_url(
+            session_id, receiver_type.value, message.id, AudioVariant.ORIGINAL
+        )
 
     # 🎯 Differentiated Broadcasting ausführen
-    _log_session_event("📤 Broadcasting differentiated content", session_id)
+    _log_session_event("📤 Broadcasting differentiated content", session_id.session_id)
     if manager is None:
         # No WebSocketManager provided (e.g., unit tests without DI) -> noop
         class _NoopResult:
@@ -1234,7 +1416,7 @@ async def broadcast_message_to_session(
         )
     _log_session_event(
         "✅ Broadcast completed",
-        session_id,
+        session_id.session_id,
         successful_sends=result.successful_sends,
         total_connections=result.total_connections,
     )
@@ -1253,7 +1435,6 @@ def create_error_response(
     ).model_dump()
 
 
-@router.get("/session/{session_id}/messages", responses=NOT_FOUND_RESPONSE)
 async def get_session_messages(session_id: str) -> Dict[str, Any]:
     """Nachrichten einer Session abrufen"""
     session = session_manager.get_session(session_id)
@@ -1266,7 +1447,6 @@ async def get_session_messages(session_id: str) -> Dict[str, Any]:
     }
 
 
-@router.get("/audio/{message_id}.wav", responses=NOT_FOUND_RESPONSE)
 async def get_message_audio(message_id: str):
     """Audio-Datei einer Nachricht abrufen (übersetztes Audio)"""
     from fastapi.responses import Response
@@ -1287,7 +1467,6 @@ async def get_message_audio(message_id: str):
     raise HTTPException(404, "Audio file not found")
 
 
-@router.get("/audio/input_{message_id}.wav", responses=NOT_FOUND_RESPONSE)
 async def get_original_audio(message_id: str):
     """
     Original-Audio einer Nachricht abrufen (Sprecher-Aufnahme)
@@ -1331,7 +1510,6 @@ async def get_supported_languages() -> Dict[str, Any]:
     }
 
 
-@router.post("/session/{session_id}/activity", responses=ACTIVITY_ROUTE_RESPONSES)
 async def update_client_activity(
     session_id: str,
     activity: ClientActivityUpdate,
@@ -1376,7 +1554,6 @@ async def update_client_activity(
     )
 
 
-@router.websocket("/ws/{session_id}/{client_type}")
 async def websocket_endpoint(
     websocket: WebSocket, session_id: str, client_type: str
 ) -> None:

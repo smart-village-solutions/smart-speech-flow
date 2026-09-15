@@ -13,9 +13,9 @@ const report = () => ({
 });
 
 describe('applyProjectSnapshot', () => {
-  it('derives work-package status and health from matching issue and draft Project items', () => {
+  it('derives work-package status and health from primary Project work-package items', () => {
     const result = applyProjectSnapshot(report(), [
-      { issueNumber: 189, status: 'Implementation', health: 'At risk' },
+      { workPackageId: 'WP-001', status: 'Implementation', health: 'At risk' },
       { workPackageId: 'WP-002', status: 'Done', health: 'On track' },
     ], '2026-08-31');
 
@@ -26,10 +26,21 @@ describe('applyProjectSnapshot', () => {
     expect(result.meta.updatedAt).toBe('2026-08-31');
   });
 
-  it('does not regress a package to done until every matching item is done', () => {
+  it('does not use an issue-linked Project item without a primary work package as status evidence', () => {
     const result = applyProjectSnapshot(report(), [
       { issueNumber: 189, status: 'Done', health: 'On track' },
-      { issueNumber: 189, status: 'Planned', health: 'Needs attention' },
+    ], '2026-08-31');
+
+    expect(result.milestones[0].workPackages[0]).toMatchObject({
+      status: 'planned',
+      health: 'on_track',
+    });
+  });
+
+  it('does not regress a package to done until every matching item is done', () => {
+    const result = applyProjectSnapshot(report(), [
+      { workPackageId: 'WP-001', status: 'Done', health: 'On track' },
+      { workPackageId: 'WP-001', status: 'Planned', health: 'Needs attention' },
     ], '2026-08-31');
 
     expect(result.milestones[0].workPackages[0]).toMatchObject({ status: 'planned', health: 'needs_attention' });
@@ -40,7 +51,7 @@ describe('applyProjectSnapshot', () => {
     recovered.milestones[0].workPackages[0].health = 'blocked';
 
     const result = applyProjectSnapshot(recovered, [
-      { issueNumber: 189, status: 'Implementation', health: 'On track' },
+      { workPackageId: 'WP-001', status: 'Implementation', health: 'On track' },
     ], '2026-08-31');
 
     expect(result.milestones[0].workPackages[0]).toMatchObject({ health: 'on_track' });
@@ -48,8 +59,8 @@ describe('applyProjectSnapshot', () => {
 
   it('preserves the current status when a matching Project item has no recognized status', () => {
     const result = applyProjectSnapshot(report(), [
-      { issueNumber: 189, status: 'Done', health: 'On track' },
-      { issueNumber: 189, status: undefined, health: 'On track' },
+      { workPackageId: 'WP-001', status: 'Done', health: 'On track' },
+      { workPackageId: 'WP-001', status: undefined, health: 'On track' },
     ], '2026-08-31');
 
     expect(result.milestones[0].workPackages[0]).toMatchObject({ status: 'planned' });
@@ -63,14 +74,14 @@ describe('applyProjectSnapshot', () => {
     expect(result.milestones[0].workPackages[1]).toMatchObject({ status: 'prototype', health: 'on_track' });
   });
 
-  it('updates every work package named in a multi-package Project link', () => {
+  it('does not use a multi-package roadmap link as package-status evidence', () => {
     const result = applyProjectSnapshot(report(), [
       { workPackageIds: ['WP-001', 'WP-002'], status: 'Testing', health: 'On track' },
     ], '2026-08-31');
 
     expect(result.milestones[0].workPackages).toMatchObject([
-      { id: 'WP-001', status: 'testing' },
-      { id: 'WP-002', status: 'testing' },
+      { id: 'WP-001', status: 'planned' },
+      { id: 'WP-002', status: 'planned' },
     ]);
   });
 });

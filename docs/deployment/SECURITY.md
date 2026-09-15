@@ -34,6 +34,7 @@ The following services are now **only accessible within Docker network** (not ex
 | cAdvisor | 8080 (public) | `expose: 8080` (internal) | Via Prometheus |
 | Ollama | 11434 (public) | `expose: 11434` (internal) | Via API Gateway |
 | ClickHouse | 8123 (public) | `expose: 8123` (internal) | Via authenticated Compose exec only |
+| Keycloak PostgreSQL | N/A | No host port or Traefik route | Via Keycloak on the Compose network only |
 
 **Benefits:**
 - ✅ No direct public access to metrics
@@ -56,6 +57,8 @@ The following services are now **only accessible within Docker network** (not ex
 - [ ] Verify `GRAFANA_ADMIN_USER` (default: `admin`)
 - [ ] Generate a ClickHouse password: `openssl rand -base64 32`
 - [ ] Set `CLICKHOUSE_DB`, `CLICKHOUSE_USER`, and `CLICKHOUSE_PASSWORD` in `.env`
+- [ ] Generate Keycloak database and bootstrap-admin passwords: `openssl rand -base64 32`
+- [ ] Set the six required `KEYCLOAK_*` variables in `.env`, including the non-secret `KEYCLOAK_HOSTNAME`
 - [ ] Review all other environment variables in `.env`
 
 ### Security Verification
@@ -120,6 +123,10 @@ curl -u "admin:YOUR_PASSWORD" http://localhost:3000/api/health
 For start-up, verification, backup, restore, upgrade, rollback, and incident
 procedures, see the [ClickHouse Operations Runbook](../operations/runbooks/clickhouse-operations.md).
 
+Keycloak is public only through Traefik at the deployment-specific `KEYCLOAK_HOSTNAME`;
+its PostgreSQL database and management endpoint have no public route. See the
+[Keycloak Operations Runbook](../operations/runbooks/keycloak-operations.md).
+
 ## Default Passwords
 
 ### ⚠️ Frontend Demo Access Code
@@ -130,6 +137,9 @@ The frontend uses a client-visible demo access code for the landing page:
 - **Docker:** `FRONTEND_DEMO_PASSWORD` is mapped to the intentionally public `VITE_DEMO_ACCESS_CODE` build argument and then embedded in the browser bundle
 - **Security:** Client-side only, with no backend validation; never treat it as authentication or authorization
 - **Production:** Customize it if desired, but enforce access restrictions through server-side authentication
+
+The Keycloak infrastructure does not yet replace this demo gate. SSF login and
+authorization integration require a separate approved change.
 
 ### ✅ Grafana Admin Password
 

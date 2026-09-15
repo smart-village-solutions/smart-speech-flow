@@ -9,7 +9,7 @@ export interface RealtimeEvent {
 }
 
 export interface RealtimeTransport {
-  connect(sessionId: string, role: ClientRole): void;
+  connect(sessionId: string, role: ClientRole): Promise<void>;
   disconnect(): void;
   send(payload: Record<string, unknown>): void;
   /** Returns an unsubscribe function. */

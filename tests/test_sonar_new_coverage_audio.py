@@ -70,20 +70,26 @@ def test_audio_storage_reports_write_failures_without_target_path(
 
 def test_audio_storage_counts_cleanup_errors_for_both_directories(monkeypatch, tmp_path, caplog):
     from services.api_gateway import audio_storage
+    from services.api_gateway.tenant_session import TenantSessionKey
 
-    original_dir = tmp_path / "original"
-    translated_dir = tmp_path / "translated"
-    original_dir.mkdir()
-    translated_dir.mkdir()
-    original_file = original_dir / "input_old.wav"
-    translated_file = translated_dir / "old.wav"
-    original_file.write_bytes(b"old")
-    translated_file.write_bytes(b"old")
+    key = TenantSessionKey("tenant-a", "ABC12345")
+    original_file = audio_storage.save_audio(
+        key,
+        "original-old",
+        audio_storage.AudioVariant.ORIGINAL,
+        b"old",
+        base_dir=tmp_path,
+    )
+    translated_file = audio_storage.save_audio(
+        key,
+        "translated-old",
+        audio_storage.AudioVariant.TRANSLATED,
+        b"old",
+        base_dir=tmp_path,
+    )
     old_timestamp = time.time() - (audio_storage.RETENTION_HOURS + 1) * 3600
     os.utime(original_file, (old_timestamp, old_timestamp))
     os.utime(translated_file, (old_timestamp, old_timestamp))
-    monkeypatch.setattr(audio_storage, "ORIGINAL_AUDIO_DIR", original_dir)
-    monkeypatch.setattr(audio_storage, "TRANSLATED_AUDIO_DIR", translated_dir)
     monkeypatch.setattr(
         audio_storage.Path,
         "unlink",
@@ -91,33 +97,35 @@ def test_audio_storage_counts_cleanup_errors_for_both_directories(monkeypatch, t
     )
 
     with caplog.at_level(logging.ERROR):
-        stats = audio_storage.cleanup_old_audio_files()
+        stats = audio_storage.cleanup_old_audio_files(base_dir=tmp_path)
 
     assert stats["errors"] == 2
     assert stats["total_deleted"] == 0
-    assert "Failed to delete old original audio" in caplog.text
-    assert "Failed to delete old translated audio" in caplog.text
+    assert caplog.text.count("Failed to delete expired v2 audio") == 2
 
 
-def test_audio_storage_ignores_stat_failures_when_calculating_usage(monkeypatch, caplog):
+def test_audio_storage_ignores_stat_failures_when_calculating_usage(monkeypatch, caplog, tmp_path):
     from services.api_gateway import audio_storage
 
-    class Directory:
-        def mkdir(self, **_kwargs):
-            pass
-
-        def glob(self, _pattern):
-            return [SimpleNamespace(stat=lambda: (_ for _ in ()).throw(OSError("denied")))]
-
-    monkeypatch.setattr(audio_storage, "ORIGINAL_AUDIO_DIR", Directory())
-    monkeypatch.setattr(audio_storage, "TRANSLATED_AUDIO_DIR", Directory())
+    denied = SimpleNamespace(
+        stat=lambda: (_ for _ in ()).throw(OSError("denied"))
+    )
+    monkeypatch.setattr(
+        audio_storage,
+        "_managed_v2_audio_files",
+        lambda _base_dir: iter(
+            [
+                (audio_storage.AudioVariant.ORIGINAL, denied),
+                (audio_storage.AudioVariant.TRANSLATED, denied),
+            ]
+        ),
+    )
 
     with caplog.at_level(logging.ERROR):
-        usage = audio_storage.get_disk_usage()
+        usage = audio_storage.get_disk_usage(base_dir=tmp_path)
 
     assert usage["total_files"] == 0
-    assert "Failed to stat original audio" in caplog.text
-    assert "Failed to stat translated audio" in caplog.text
+    assert caplog.text.count("Failed to stat v2 audio") == 2
 
 
 def test_enhanced_validator_reports_ffmpeg_conversion_and_output_errors(caplog):

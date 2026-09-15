@@ -26,7 +26,7 @@ function SessionLanguage({ observed }: Readonly<{ observed: (string | null)[] }>
   const { session } = useServices();
   const query = useQuery({
     queryKey: ['session', 'A1B2C3D4'],
-    queryFn: () => session.getSession('A1B2C3D4'),
+    queryFn: () => session.getSession('A1B2C3D4', 'customer'),
   });
 
   observed.push(query.data?.customerLanguage ?? null);
@@ -37,6 +37,15 @@ function SessionLanguage({ observed }: Readonly<{ observed: (string | null)[] }>
 const route = '/s/A1B2C3D4/info/en';
 
 describe('ConsentScreen', () => {
+  it('positions content below the header with the shared content offset', () => {
+    renderWithProviders(tree(), { route });
+
+    expect(
+      screen.getByText(/Smart Speech Flow is an automatic real-time/).parentElement?.parentElement
+        ?.parentElement
+    ).toHaveClass('pt-content-top');
+  });
+
   it('shows the chosen language flag', async () => {
     renderWithProviders(tree(), { route });
 
@@ -93,7 +102,6 @@ describe('ConsentScreen', () => {
         session: {
           getSession: vi.fn(),
           activate,
-          reportActivity: vi.fn(),
         },
       },
     });
@@ -129,7 +137,6 @@ describe('ConsentScreen', () => {
           // gateway reports it. The stale one is the entry already cached.
           getSession: vi.fn().mockResolvedValue(activated),
           activate: vi.fn().mockResolvedValue(activated),
-          reportActivity: vi.fn(),
         },
       },
     });

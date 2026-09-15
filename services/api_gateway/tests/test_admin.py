@@ -11,6 +11,7 @@ if str(ROOT_DIR) not in sys.path:
 from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.session_manager import session_manager
+from services.api_gateway.tenant_session import TenantSessionKey
 
 client = TestClient(app)
 
@@ -43,8 +44,12 @@ class TestAdminRoutes:
 
         assert second_session_id != first_session_id
 
-        first_session = session_manager.get_session(first_session_id)
-        second_session = session_manager.get_session(second_session_id)
+        first_session = session_manager.get_session(
+            TenantSessionKey("tenant-test", first_session_id)
+        )
+        second_session = session_manager.get_session(
+            TenantSessionKey("tenant-test", second_session_id)
+        )
 
         assert first_session is not None
         assert second_session is not None

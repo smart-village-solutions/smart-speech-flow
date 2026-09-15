@@ -1,0 +1,1429 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Quality telemetry: refinement attempts from ClickHouse, writer health from Prometheus. Empty panels in production are expected until SSF_QUALITY_TELEMETRY_MODE is set to `enabled`. Feedback KPIs (#304) read the silver tier for exact averages and the gold tier for history; the gold averages are approximate under re-emission and say so.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "Sessions Created",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT count() AS sessions FROM quality_events FINAL WHERE event_type = 'session_lifecycle' AND $__timeFilter(emitted_at_utc) AND lifecycle_phase = 'created'"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "Sessions Activated",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT count() AS sessions FROM quality_events FINAL WHERE event_type = 'session_lifecycle' AND $__timeFilter(emitted_at_utc) AND lifecycle_phase = 'activated'"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "Median Session Duration",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT quantile(0.5)(session_duration_ms) AS p50 FROM quality_events FINAL WHERE event_type = 'session_lifecycle' AND $__timeFilter(emitted_at_utc) AND lifecycle_phase = 'terminated'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "Messages per Session",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT avg(message_count) AS messages FROM quality_events FINAL WHERE event_type = 'session_lifecycle' AND $__timeFilter(emitted_at_utc) AND lifecycle_phase = 'terminated'"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "Session Funnel",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 1 HOUR) AS time, lifecycle_phase, count() AS sessions FROM quality_events FINAL WHERE event_type = 'session_lifecycle' AND $__timeFilter(emitted_at_utc) GROUP BY time, lifecycle_phase ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "type": "table",
+      "title": "Why Sessions End",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT termination_reason, count() AS sessions, round(avg(message_count), 1) AS avg_messages FROM quality_events FINAL WHERE event_type = 'session_lifecycle' AND $__timeFilter(emitted_at_utc) AND lifecycle_phase = 'terminated' GROUP BY termination_reason ORDER BY sessions DESC"
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "type": "stat",
+      "title": "Sessions That Carried No Message",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 12
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT countIf(message_count = 0) AS empty_sessions FROM quality_events FINAL WHERE event_type = 'session_lifecycle' AND $__timeFilter(emitted_at_utc) AND lifecycle_phase = 'terminated'"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Messages",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT count() AS messages FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc)"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Success Rate",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT 100 * countIf(terminal_outcome = 'success') / count() AS success_rate FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Message Latency p95",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT quantile(0.95)(total_duration_ms) AS p95 FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Failed Messages",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 16
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT countIf(terminal_outcome = 'failure') AS failures FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc)"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Message Latency Percentiles",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 5 MINUTE) AS time, quantile(0.5)(total_duration_ms) AS p50, quantile(0.95)(total_duration_ms) AS p95, quantile(0.99)(total_duration_ms) AS p99 FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "Stage Latency p95",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 5 MINUTE) AS time, quantile(0.95)(nullIf(asr_duration_ms, 0)) AS asr, quantile(0.95)(nullIf(translation_duration_ms, 0)) AS translation, quantile(0.95)(nullIf(refinement_duration_ms, 0)) AS refinement, quantile(0.95)(nullIf(tts_duration_ms, 0)) AS tts FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 26,
+      "type": "table",
+      "title": "Message Failures by Stage",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT failed_stage, error_code, count() AS messages FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc) AND terminal_outcome = 'failure' GROUP BY failed_stage, error_code ORDER BY messages DESC"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Messages by Direction and Input",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 5 MINUTE) AS time, concat(direction, ' / ', input_mode) AS flow, count() AS messages FROM quality_events FINAL WHERE event_type = 'translation_message' AND $__timeFilter(emitted_at_utc) GROUP BY time, flow ORDER BY time"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 36
+      },
+      "id": 1,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "rawSql": "SELECT count() AS attempts FROM quality_events FINAL WHERE event_type = 'refinement_attempt' AND $__timeFilter(emitted_at_utc)",
+          "refId": "A"
+        }
+      ],
+      "title": "Refinement Attempts",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNonNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "description": "Shadow candidate runs recorded in the selected range. Empty means the gateway is not in `enabled` mode, or the collector is not delivering."
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 36
+      },
+      "id": 2,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "rawSql": "SELECT quantile(0.95)(refinement_latency_ms) AS p95_ms FROM quality_events FINAL WHERE event_type = 'refinement_attempt' AND $__timeFilter(emitted_at_utc)",
+          "refId": "A"
+        }
+      ],
+      "title": "Candidate Latency p95",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNonNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "description": "The number the refinement benchmarking work needs and has never had: candidate latency was measured and thrown away into a log line."
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 36
+      },
+      "id": 3,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "rawSql": "SELECT round(100 * countIf(refinement_changed = 1) / greatest(count(), 1), 1) AS changed_pct FROM quality_events FINAL WHERE event_type = 'refinement_attempt' AND $__timeFilter(emitted_at_utc)",
+          "refId": "A"
+        }
+      ],
+      "title": "Text Changed",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNonNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "description": "Share of attempts where the candidate model actually altered the translation. A rate near zero means the model is earning nothing."
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 36
+      },
+      "id": 4,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "rawSql": "SELECT countIf(error_code NOT IN ('none', '')) AS failures FROM quality_events FINAL WHERE event_type = 'refinement_attempt' AND $__timeFilter(emitted_at_utc)",
+          "refId": "A"
+        }
+      ],
+      "title": "Failed Attempts",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNonNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "description": "Attempts that ended in a classified failure. The classification is a closed enum; the original message never leaves the gateway."
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "id": 5,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 5 MINUTE) AS time, quantile(0.5)(refinement_latency_ms) AS p50, quantile(0.95)(refinement_latency_ms) AS p95, quantile(0.99)(refinement_latency_ms) AS p99 FROM quality_events FINAL WHERE event_type = 'refinement_attempt' AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time",
+          "refId": "A"
+        }
+      ],
+      "title": "Candidate Latency Percentiles",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "id": 6,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 5 MINUTE) AS time, model_ref, quantile(0.95)(refinement_latency_ms) AS p95_ms FROM quality_events FINAL WHERE event_type = 'refinement_attempt' AND $__timeFilter(emitted_at_utc) AND model_ref != '' GROUP BY time, model_ref ORDER BY time",
+          "refId": "A"
+        }
+      ],
+      "title": "Latency p95 by Model",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Model comparison. This is the question `add-phi-refinement-benchmarking` asks; a shadow deployment of a second model populates both series."
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      },
+      "id": 7,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 5 MINUTE) AS time, refinement_outcome, count() AS attempts FROM quality_events FINAL WHERE event_type = 'refinement_attempt' AND $__timeFilter(emitted_at_utc) AND refinement_outcome != '' GROUP BY time, refinement_outcome ORDER BY time",
+          "refId": "A"
+        }
+      ],
+      "title": "Outcome Mix",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 48
+      },
+      "id": 8,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT error_code, count() AS attempts FROM quality_events FINAL WHERE event_type = 'refinement_attempt' AND $__timeFilter(emitted_at_utc) AND error_code NOT IN ('none', '') GROUP BY error_code ORDER BY attempts DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Failures by Error Code",
+      "type": "table",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "description": "The stable error taxonomy. New values here mean the classifier gained a case, not that an upstream changed its wording."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 56
+      },
+      "id": 9,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "expr": "sum by (outcome) (increase(ssf_quality_telemetry_events_total[5m]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Writer Health by Outcome",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "`dropped_disallowed` here is a code defect: the six places that must agree about a field have diverged and data is being lost silently."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 56
+      },
+      "id": 10,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "expr": "sum(increase(ssf_quality_telemetry_events_total{outcome=\"emitted\"}[30m])) - sum(increase(otelcol_receiver_accepted_log_records{receiver=\"otlp\"}[30m]))",
+          "legendFormat": "sdk queue drops",
+          "refId": "A"
+        }
+      ],
+      "title": "Events Lost Before The Collector",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "The gateway counted these as queued into the SDK; the collector never received them. The OTel SDK's BatchLogRecordProcessor reports its overflow drops nowhere else, so this gap is the only measurement of them - and the evidence that decides whether task 2.1 is real work."
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 64
+      },
+      "id": 11,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT 'quality_events (30 day TTL)' AS tier, toString(min(emitted_at_utc)) AS oldest_row, dateDiff('day', min(emitted_at_utc), now()) AS age_days FROM quality_events FINAL UNION ALL SELECT 'quality_events_daily (13 month TTL)' AS tier, toString(min(event_date)) AS oldest_row, dateDiff('day', toDateTime(min(event_date)), now()) AS age_days FROM quality_events_daily",
+          "refId": "A"
+        }
+      ],
+      "title": "Retention Verification",
+      "type": "table",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "description": "age_days above the tier's TTL means expiry is not running. ClickHouse fixes TTL at table creation, so a tier created without one can never be given one - check SHOW CREATE TABLE, not this panel alone."
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 64
+      },
+      "id": 12,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "rawSql": "SELECT event_date AS time, model_ref, uniqExactMerge(events) AS attempts FROM quality_events_daily WHERE event_type = 'refinement_attempt' AND model_ref != '' AND $__dateFilter(event_date) GROUP BY event_date, model_ref ORDER BY event_date",
+          "refId": "A"
+        }
+      ],
+      "title": "Daily Attempts (Gold Tier)",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Read from the 13-month aggregate tier, not the 30-day raw tier. Counts are uniqExact over event_id so a retried delivery is not double-counted."
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 64
+      },
+      "id": 13,
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "rawSql": "SELECT countIf(event_type = 'refinement_attempt' AND model_ref = '') + countIf(event_type = 'translation_message' AND session_ref = '') + countIf(event_type = 'session_lifecycle' AND lifecycle_phase = '') AS untyped FROM quality_events FINAL WHERE $__timeFilter(emitted_at_utc)",
+          "refId": "A"
+        }
+      ],
+      "title": "Rows Missing Typed Fields",
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNonNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "description": "Should be zero. Anything else means refinement events were written while migration 002 was not yet applied, so the view projected only the envelope. Apply the migrations before switching the mode to `enabled`."
+    },
+    {
+      "id": 40,
+      "type": "stat",
+      "title": "Feedback Submissions",
+      "description": "Distinct submissions. uniqExact over event_id rather than count(), because #305 re-emits a failed delivery under the same id and the ReplacingMergeTree only collapses that duplicate at merge time.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 70
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT uniqExact(event_id) AS submissions FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "type": "stat",
+      "title": "Feedback Response Rate",
+      "description": "Sessions that submitted feedback, over sessions that were activated. Submissions carrying no session reference are excluded from the numerator: the access-code and admin-dashboard screens submit without one, and every such row shares the same placeholder reference, so counting them would both collapse them into one session and let the rate exceed 100%.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 70
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT round(100 * uniqExactIf(session_ref, event_type = 'feedback_submitted' AND session_ref != '00000000000000000000000000000000') / nullIf(uniqExactIf(session_ref, event_type = 'session_lifecycle' AND lifecycle_phase = 'activated'), 0), 1) AS response_rate FROM quality_events FINAL WHERE match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "type": "stat",
+      "title": "Net Promoter Score",
+      "description": "Promoters (9-10) minus detractors (0-6) as a percentage of submissions. Built on uniqExact, so it stays exact under re-emission -- unlike the gold tier's rating averages.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 70
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": -100,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT round(100 * (uniqExactIf(event_id, net_promoter_score >= 9) - uniqExactIf(event_id, net_promoter_score <= 6)) / nullIf(uniqExact(event_id), 0)) AS nps FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
+        }
+      ]
+    },
+    {
+      "id": 43,
+      "type": "stat",
+      "title": "Submissions Awaiting Analytics",
+      "description": "Rows stored in PostgreSQL whose analytics event has not been delivered, as seen by the last reconciliation pass. The feedback itself is safe; only the ClickHouse half is behind, so the numbers on this row understate until it drains. Capped at the batch limit of 200.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 70
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "editorType": "code",
+          "expr": "max(ssf_feedback_reconciliation_backlog)",
+          "legendFormat": "awaiting delivery",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 44,
+      "type": "timeseries",
+      "title": "Rating Averages",
+      "description": "Exact: averaged over the deduplicated silver rows. Silver keeps 30 days, so a longer time range silently truncates here -- use the gold panel below for history, and read its caveat first.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 74
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 1,
+          "max": 5
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 1 DAY) AS time, avg(translation_quality) AS translation_quality, avg(performance) AS performance, avg(usability) AS usability FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 45,
+      "type": "timeseries",
+      "title": "Promoters, Passives and Detractors",
+      "description": "The split behind the score, so a moving NPS can be read as gaining promoters or losing detractors rather than as one number.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 74
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 1 DAY) AS time, uniqExactIf(event_id, net_promoter_score >= 9) AS promoters, uniqExactIf(event_id, net_promoter_score >= 7 AND net_promoter_score <= 8) AS passives, uniqExactIf(event_id, net_promoter_score <= 6) AS detractors FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 46,
+      "type": "timeseries",
+      "title": "Daily Submissions (Gold Tier)",
+      "description": "Thirteen months of history, split by form version so a revised question set is visible rather than pooled. Exact: gold counts with uniqExact over event_id, so a re-emission does not inflate them. Filter by tenant with the Tenant picker. The breakdown starts when #325 shipped: rows aggregated before it carry no reference and sit under an empty tenant, which All includes and no single tenant does.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 82
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT event_date AS time, feedback_form_version, uniqExactMerge(submissions) AS submissions FROM feedback_daily WHERE $__dateFilter(event_date) AND match(tenant_ref, '${tenant:regex}') GROUP BY event_date, feedback_form_version ORDER BY event_date"
+        }
+      ]
+    },
+    {
+      "id": 47,
+      "type": "timeseries",
+      "title": "Rating Averages (Gold Tier, approximate)",
+      "description": "APPROXIMATE BY CONSTRUCTION. avgState has no distinct-by form, so a submission re-emitted by the #305 reconciler contributes its ratings twice -- and #305 re-emits by design, not only after a fault. Verified against ClickHouse 26.3.17: two submissions of 9 and 3 read as an average of 7 after one retry, where the true value is 6. Counts and NPS on this dashboard are exact; these four averages are not. Inside 30 days, read 'Rating Averages'. Filter by tenant with the Tenant picker. The breakdown starts when #325 shipped: rows aggregated before it carry no reference and sit under an empty tenant, which All includes and no single tenant does.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 82
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 1,
+          "max": 5
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT event_date AS time, avgMerge(translation_quality_avg) AS translation_quality, avgMerge(performance_avg) AS performance, avgMerge(usability_avg) AS usability FROM feedback_daily WHERE $__dateFilter(event_date) AND match(tenant_ref, '${tenant:regex}') GROUP BY event_date ORDER BY event_date"
+        }
+      ]
+    },
+    {
+      "id": 48,
+      "type": "table",
+      "title": "Ratings by Form Version",
+      "description": "The denominator beside the averages, which #304 asks for explicitly: an average of four submissions and an average of four hundred look identical without it.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 82
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT feedback_form_version AS form_version, uniqExact(event_id) AS submissions, round(avg(translation_quality), 2) AS translation_quality, round(avg(performance), 2) AS performance, round(avg(usability), 2) AS usability, round(avg(net_promoter_score), 2) AS nps_mean FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY form_version ORDER BY submissions DESC"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "ssf",
+    "telemetry",
+    "clickhouse"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "tenant",
+        "label": "Tenant",
+        "description": "Pseudonymous tenant reference, twelve hex characters. Every feedback panel honours it, in both tiers. The refinement, translation and session panels do not: they read quality_events_daily, which has no tenant dimension. References are fixed width, so the unanchored match() cannot select one tenant's rows into another's. Feedback aggregated before #325 carries no reference and appears only under All.",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "clickhouse-ssf"
+        },
+        "query": "SELECT DISTINCT tenant_ref FROM feedback_daily WHERE tenant_ref NOT IN ('', '000000000000') ORDER BY tenant_ref",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 1,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": []
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "SSF Telemetry",
+  "uid": "ssf-telemetry",
+  "version": 3,
+  "weekStart": ""
+}

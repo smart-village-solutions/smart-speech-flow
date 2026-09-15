@@ -81,6 +81,7 @@ except ImportError:  # pragma: no cover - optional dependency
     pynvml = None
 
 _nvml_initialized = False
+ASR_MODEL_NAME = "large-v3-turbo"
 TRANSCRIBE_ERROR_RESPONSES = {
     400: {"description": "Invalid transcription request"},
     503: {"description": "ASR model unavailable"},
@@ -112,7 +113,7 @@ def _build_debug_info(lang: str) -> Dict[str, Any]:
         "output": None,
         "error": None,
         "duration": None,
-        "model": "whisper-base",
+        "model": f"whisper-{ASR_MODEL_NAME}",
         "system": _get_system_stats(),
     }
 
@@ -129,17 +130,21 @@ app = FastAPI(title="ASR Service")
 SUPPORTED_LANGS = ["de", "en", "ar", "tr", "am", "fa", "ru", "uk", "ku", "ti"]
 requests_total = Counter("asr_requests_total", "Total ASR requests")
 health_status = Gauge("asr_health_status", "Health status of ASR service")
-model = None
-model_loaded = False
-if whisper:
+
+
+def _load_asr_model():
+    if not whisper:
+        return None
     try:
-        model = whisper.load_model(
-            "base", device="cuda" if torch.cuda.is_available() else "cpu"
+        return whisper.load_model(
+            ASR_MODEL_NAME, device="cuda" if torch.cuda.is_available() else "cpu"
         )
-        model_loaded = True
     except Exception:
-        model = None
-        model_loaded = False
+        return None
+
+
+model = _load_asr_model()
+model_loaded = model is not None
 
 
 @app.get("/health")

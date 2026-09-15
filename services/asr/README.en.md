@@ -12,7 +12,10 @@ This standalone FastAPI microservice provides automatic speech recognition (ASR)
 - `lang`: optional language code, for example `de`, `en`, or `ar`
 
 ```bash
-curl -F "file=@sample.wav" -F "lang=de" http://localhost:8001/transcribe
+# Since #221 the service is not published on the host; inside the compose
+# network it listens on asr:8000.
+docker compose exec api_gateway \
+  curl -F "file=@examples/audio/sample.wav" -F "lang=de" http://asr:8000/transcribe
 ```
 
 ### Output
@@ -45,7 +48,7 @@ Validation errors use FastAPI's error payload format, for example:
 
 ## Implementation notes
 
-- Models such as Whisper or Wav2Vec are loaded locally; audio is not sent to an external API.
+- The service permanently loads Whisper `large-v3-turbo` locally; audio is not sent to an external API.
 - Loaded models remain in memory to improve performance.
 - If the ASR model is not loaded, the endpoint returns the configured fallback response instead of failing the request.
 

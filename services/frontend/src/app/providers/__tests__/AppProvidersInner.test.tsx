@@ -24,7 +24,10 @@ function setup() {
         <button type="button" onClick={() => setLocale('ar')}>
           switch
         </button>
-        <button type="button" onClick={() => void services.session.getSession('A1B2C3D4')}>
+        <button
+          type="button"
+          onClick={() => void services.session.getSession('A1B2C3D4', 'customer')}
+        >
           fetch
         </button>
       </div>
@@ -43,6 +46,12 @@ function setup() {
 const click = (name: string) => userEvent.click(screen.getByRole('button', { name }));
 
 describe('AppProvidersInner', () => {
+  it('provides the login tenant directory repository to screens', () => {
+    const [services] = setup();
+
+    expect(services.loginTenant.list).toBeTypeOf('function');
+  });
+
   // The services own the socket factory and the repositories. Rebuilding them
   // tore down the live conversation socket and refetched history the moment the
   // session's language arrived, which is on every load of the conversation.
@@ -59,7 +68,7 @@ describe('AppProvidersInner', () => {
   it('still sends the locale in force at the time of the request', async () => {
     const locales: string[] = [];
     server.use(
-      http.get('http://api.test/api/session/A1B2C3D4', ({ request }) => {
+      http.get('http://api.test/api/customer/session/A1B2C3D4', ({ request }) => {
         locales.push(request.headers.get('Accept-Language') ?? '');
         return HttpResponse.json({
           id: 'A1B2C3D4',

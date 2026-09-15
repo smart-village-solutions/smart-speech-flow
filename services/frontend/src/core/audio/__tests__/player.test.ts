@@ -39,14 +39,26 @@ function fakeElement() {
 }
 
 describe('createDomAudioPlayer', () => {
+  it('refuses a protected gateway url instead of issuing a bare media request', async () => {
+    const element = fakeElement();
+    const player = createDomAudioPlayer(element as unknown as HTMLAudioElement);
+
+    await expect(
+      player.play('/api/admin/session/A1B2C3D4/audio/m1/translated.wav')
+    ).rejects.toThrow('buffered');
+
+    expect(element.src).toBe('');
+    expect(element.play).not.toHaveBeenCalled();
+  });
+
   it('plays a url from the beginning', async () => {
     const element = fakeElement();
     const player = createDomAudioPlayer(element as unknown as HTMLAudioElement);
 
     element.currentTime = 4;
-    await player.play('/api/audio/m1.wav');
+    await player.play('/clips/m1.wav');
 
-    expect(element.src).toBe('/api/audio/m1.wav');
+    expect(element.src).toBe('/clips/m1.wav');
     expect(element.currentTime).toBe(0);
     expect(element.play).toHaveBeenCalledTimes(1);
   });
@@ -55,9 +67,9 @@ describe('createDomAudioPlayer', () => {
     const element = fakeElement();
     const player = createDomAudioPlayer(element as unknown as HTMLAudioElement);
 
-    await player.play('/api/audio/m1.wav');
+    await player.play('/clips/m1.wav');
     element.currentTime = 7;
-    await player.play('/api/audio/m1.wav');
+    await player.play('/clips/m1.wav');
 
     expect(element.currentTime).toBe(0);
     expect(element.play).toHaveBeenCalledTimes(2);
@@ -69,9 +81,9 @@ describe('createDomAudioPlayer', () => {
     const element = fakeElement();
     const player = createDomAudioPlayer(element as unknown as HTMLAudioElement);
 
-    await player.play('/api/audio/m1.wav');
+    await player.play('/clips/m1.wav');
     element.emit('error');
-    await player.play('/api/audio/m1.wav');
+    await player.play('/clips/m1.wav');
 
     expect(element.srcAssignments).toBe(2);
   });
@@ -81,7 +93,7 @@ describe('createDomAudioPlayer', () => {
     element.play.mockRejectedValueOnce(new Error('NotAllowedError'));
     const player = createDomAudioPlayer(element as unknown as HTMLAudioElement);
 
-    await expect(player.play('/api/audio/m1.wav')).rejects.toThrow('NotAllowedError');
+    await expect(player.play('/clips/m1.wav')).rejects.toThrow('NotAllowedError');
   });
 
   it('reports progress as a fraction of the duration', async () => {
@@ -140,7 +152,7 @@ describe('createDomAudioPlayer', () => {
     const element = fakeElement();
     const player = createDomAudioPlayer(element as unknown as HTMLAudioElement);
 
-    await player.play('/api/audio/m1.wav');
+    await player.play('/clips/m1.wav');
     element.currentTime = 3;
     player.stop();
 

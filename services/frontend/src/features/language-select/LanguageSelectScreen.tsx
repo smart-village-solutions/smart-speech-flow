@@ -25,10 +25,10 @@ export function LanguageSelectScreen() {
       <AppHeader
         onBack={() => void navigate('/')}
         onHome={() => void navigate('/')}
-        onFeedback={openFeedback}
+        onFeedback={() => openFeedback(sessionId ?? null)}
       />
 
-      <div className="flex-1 overflow-y-auto px-5 pb-8 pt-24">
+      <div className="flex-1 overflow-y-auto px-5 pb-8 pt-content-top">
         <div className="mx-auto max-w-app">
           <h1 className="mb-10 text-center text-title font-bold leading-tight tracking-title text-fg-strong">
             {t('language.title')}

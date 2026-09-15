@@ -13,7 +13,7 @@ const repository = createSessionRepository(client);
 describe('session repository', () => {
   it('maps the gateway id field onto the domain id', async () => {
     server.use(
-      http.get('http://api.test/api/session/A1B2C3D4', () =>
+      http.get('http://api.test/api/admin/session/A1B2C3D4/status', () =>
         HttpResponse.json({
           id: 'A1B2C3D4',
           customer_language: null,
@@ -27,7 +27,7 @@ describe('session repository', () => {
       )
     );
 
-    const session = await repository.getSession('A1B2C3D4');
+    const session = await repository.getSession('A1B2C3D4', 'admin');
 
     expect(session).toEqual({
       id: 'A1B2C3D4',
@@ -42,7 +42,9 @@ describe('session repository', () => {
   });
 
   it('rejects a malformed session id before it reaches the network', async () => {
-    await expect(repository.getSession('nope')).rejects.toThrow('Invalid session identifier');
+    await expect(repository.getSession('nope', 'customer')).rejects.toThrow(
+      'Invalid session identifier'
+    );
   });
 
   it('activates a session and returns the updated domain model', async () => {
@@ -66,18 +68,26 @@ describe('session repository', () => {
     expect(session.customerLanguage).toBe('ar');
   });
 
-  it('reports activity as the role it is given', async () => {
-    let body: Record<string, unknown> = {};
+  it('reads a customer session from the customer capability route', async () => {
     server.use(
-      http.post('http://api.test/api/session/A1B2C3D4/activity', async ({ request }) => {
-        body = (await request.json()) as Record<string, unknown>;
-        return HttpResponse.json({ status: 'ok' });
-      })
+      http.get('http://api.test/api/customer/session/A1B2C3D4', () =>
+        HttpResponse.json({
+          id: 'A1B2C3D4',
+          customer_language: 'en',
+          admin_language: 'de',
+          status: 'active',
+          created_at: '2026-08-21T10:00:00+00:00',
+          message_count: 0,
+          admin_connected: true,
+          customer_connected: true,
+        })
+      )
     );
 
-    await repository.reportActivity('A1B2C3D4', 'admin');
-
-    expect(body.client_type).toBe('admin');
+    await expect(repository.getSession('A1B2C3D4', 'customer')).resolves.toMatchObject({
+      id: 'A1B2C3D4',
+      status: 'active',
+    });
   });
 });
 

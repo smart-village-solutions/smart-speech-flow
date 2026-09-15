@@ -10,6 +10,7 @@ export interface MessageDto {
   source_lang: string;
   target_lang: string;
   timestamp: string;
+  audio_url?: string | null;
 }
 
 export interface MessageHistoryDto {
@@ -27,11 +28,6 @@ export interface RealtimePayload {
   timestamp?: string;
   audio_available?: boolean;
   audio_url?: string | null;
-}
-
-/** The gateway path a message's synthesised audio is served from. */
-function audioUrlFor(messageId: string): string {
-  return `/api/audio/${encodeURIComponent(messageId)}.wav`;
 }
 
 /**
@@ -58,7 +54,10 @@ export function historyToChatMessages(
       id: message.id,
       origin: isOwn ? 'self' : 'peer',
       text: isOwn ? message.original_text : message.translated_text,
-      audioUrl: !isOwn && message.audio_base64 ? resolveAudioUrl(audioUrlFor(message.id)) : null,
+      audioUrl:
+        !isOwn && message.audio_base64 && message.audio_url
+          ? resolveAudioUrl(message.audio_url)
+          : null,
       sourceLanguage: message.source_lang,
       targetLanguage: message.target_lang,
       timestamp: message.timestamp,

@@ -6,14 +6,88 @@ failure detection, CORS error handling, and seamless user experience.
 
 import asyncio
 import logging
-import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
+from uuid import uuid4
+
+from prometheus_client import CollectorRegistry, Counter
+
+from .log_safety import sanitize_log_value
+from .session_manager import ClientType
 
 logger = logging.getLogger(__name__)
+
+# The bound stays: an unbounded per-client queue is a memory risk. What changes
+# is that crossing it is counted and reported rather than silently discarded.
+POLLING_QUEUE_MAX_MESSAGES = 100
+
+# /api/websocket/polling/activate has no authentication -- it validates only
+# that the session exists. Unique polling ids removed the accidental bound that
+# id collisions used to provide, so an unauthenticated caller could mint one
+# PollingClient (and its queue) per request until periodic_cleanup reaped them
+# 30 minutes later. A client legitimately re-activates during a reconnect race,
+# so the cap is not 1; beyond it the oldest entry for the same session and
+# client type is reclaimed.
+POLLING_MAX_CLIENTS_PER_SESSION_CLIENT_TYPE = 3
+
+_DROPPED_COUNTER_NAME = "websocket_polling_messages_dropped_total"
+
+
+def _dropped_counter(registry: CollectorRegistry) -> Counter:
+    """Register the drop counter once per registry, reusing it on repeat calls.
+
+    The counter must live on the gateway's own registry: routes/metrics.py
+    serves app.state.prometheus_registry, so a series left on
+    prometheus_client's global default is counted in-process and never
+    scraped. prometheus_client raises on a second registration of the same
+    name and the test suite reloads services.api_gateway.app, so registration
+    is attempted through the public API first and every fallback ends in a
+    counter rather than an exception.
+    """
+    try:
+        return Counter(
+            _DROPPED_COUNTER_NAME,
+            "Messages discarded because a polling client's queue was full",
+            ["client_type"],
+            registry=registry,
+        )
+    except ValueError:
+        pass  # already registered on this registry, or the name is taken
+
+    # _names_to_collectors is private and may be renamed by a library bump, so
+    # reuse is best-effort and never the only path out of here.
+    existing = getattr(registry, "_names_to_collectors", {}).get(_DROPPED_COUNTER_NAME)
+    if isinstance(existing, Counter):
+        return existing
+
+    logger.warning(
+        "%s is not available on the gateway registry; polling drops will not "
+        "be scraped",
+        _DROPPED_COUNTER_NAME,
+    )
+    return Counter(
+        _DROPPED_COUNTER_NAME,
+        "Messages discarded because a polling client's queue was full",
+        ["client_type"],
+        registry=CollectorRegistry(),
+    )
+
+
+def _known_client_type(value: Any) -> str:
+    """Clamp a client type to the enum before it becomes a Prometheus label.
+
+    `client_type` reaches this module straight from the body of
+    POST /api/websocket/polling/activate, which declares it as a bare `str`.
+    An unbounded label value is a cardinality attack, so anything outside
+    ClientType is folded into "unknown".
+    """
+    try:
+        return ClientType(value).value
+    except ValueError:
+        return "unknown"
 
 
 def utc_now() -> datetime:
@@ -83,6 +157,10 @@ class PollingClient:
     fallback_reason: FallbackReason = FallbackReason.MANUAL_FALLBACK
     retry_count: int = 0
     websocket_retry_after: Optional[datetime] = None
+    # Drops since this client last polled. A wedged client saturates its queue
+    # and then drops every subsequent message, so this bounds the log to one
+    # line per saturation episode instead of one per lost message.
+    dropped_since_last_poll: int = 0
 
 
 @dataclass
@@ -127,7 +205,21 @@ class WebSocketFallbackManager:
         # Notification callbacks
         self.notification_callbacks: List[Callable] = []
 
+        # Defaults to a registry of its own so that importing this module never
+        # touches prometheus_client's global default, which /metrics does not
+        # serve. app.py rebinds it to the gateway registry.
+        self.messages_dropped = _dropped_counter(CollectorRegistry())
+
         logger.info("🔄 WebSocket Fallback Manager initialized")
+
+    def bind_metrics_registry(self, registry: CollectorRegistry) -> None:
+        """Move the drop counter onto the registry /metrics actually serves.
+
+        This module is imported before app.py has built that registry and
+        cannot import app.py back, so the wiring is a call from app.py rather
+        than a constructor argument.
+        """
+        self.messages_dropped = _dropped_counter(registry)
 
     def evaluate_websocket_failure(
         self,
@@ -252,8 +344,11 @@ class WebSocketFallbackManager:
     ) -> str:
         """Activate polling fallback for a client"""
 
-        # Generate unique polling ID
-        polling_id = f"poll_{session_id}_{client_type}_{int(time.time())}"
+        # A polling id must be unique, not merely descriptive: it keys
+        # self.polling_clients, so two activations for one session and client
+        # type inside the same second used to overwrite each other and discard
+        # the loser's entire message queue.
+        polling_id = f"poll_{session_id}_{client_type}_{uuid4().hex[:12]}"
 
         # Create polling client
         polling_client = PollingClient(
@@ -269,6 +364,8 @@ class WebSocketFallbackManager:
         # Store polling client
         self.polling_clients[polling_id] = polling_client
         self.session_polling_clients[session_id].add(polling_id)
+
+        self._enforce_polling_client_cap(session_id, client_type)
 
         # Update statistics
         self.fallback_stats["total_fallbacks"] += 1
@@ -300,7 +397,16 @@ class WebSocketFallbackManager:
     def send_message_to_polling_client(
         self, polling_id: str, message: Dict[str, Any]
     ) -> bool:
-        """Send message to polling client's queue"""
+        """Queue a message for a polling client.
+
+        Returns True when nothing was lost. False does **not** mean the message
+        passed in was rejected: it was appended, and a *different, older*
+        message was evicted to keep the queue within
+        POLLING_QUEUE_MAX_MESSAGES. Retrying on False therefore duplicates the
+        newest message and evicts one more. False is a signal to report or
+        alert on, not to resend. (An unknown polling id also returns False,
+        and there the message was not queued at all.)
+        """
         client = self.polling_clients.get(polling_id)
         if not client:
             return False
@@ -316,9 +422,31 @@ class WebSocketFallbackManager:
 
         client.message_queue.append(message_with_meta)
 
-        # Limit queue size to prevent memory issues
-        if len(client.message_queue) > 100:
-            client.message_queue.popleft()
+        if len(client.message_queue) > POLLING_QUEUE_MAX_MESSAGES:
+            dropped = client.message_queue.popleft()
+            self.messages_dropped.labels(
+                client_type=_known_client_type(client.client_type)
+            ).inc()
+            client.dropped_since_last_poll += 1
+            dropped_type = sanitize_log_value(dropped.get("type", "unknown"))
+            if client.dropped_since_last_poll == 1:
+                logger.warning(
+                    "Polling queue full (%d); dropped the oldest queued message "
+                    "of type %s. The recipient will never see it. Further drops "
+                    "for this client log at debug until it polls again; "
+                    "%s carries the true count.",
+                    POLLING_QUEUE_MAX_MESSAGES,
+                    dropped_type,
+                    _DROPPED_COUNTER_NAME,
+                )
+            else:
+                logger.debug(
+                    "Polling queue still full; dropped message of type %s "
+                    "(%d since last poll)",
+                    dropped_type,
+                    client.dropped_since_last_poll,
+                )
+            return False
 
         return True
 
@@ -330,6 +458,14 @@ class WebSocketFallbackManager:
 
         # Update last poll time
         client.last_poll = utc_now()
+
+        if client.dropped_since_last_poll:
+            logger.warning(
+                "Polling client drained after overflow: %d message(s) lost while "
+                "its queue was full",
+                client.dropped_since_last_poll,
+            )
+            client.dropped_since_last_poll = 0
 
         # Get all queued messages
         messages = list(client.message_queue)
@@ -592,6 +728,40 @@ class WebSocketFallbackManager:
             reason,
             "Connection using compatibility mode. All features remain available.",
         )
+
+    def _enforce_polling_client_cap(self, session_id: str, client_type: str) -> int:
+        """Reclaim the oldest entries past the per-session-and-type cap.
+
+        Returns how many were reclaimed. Oldest-first, so the activation that
+        just happened is the one kept: a client repairing its connection gets
+        the live queue, and a caller minting entries in a loop reclaims its own
+        rather than growing the map.
+        """
+        candidates = (
+            self.polling_clients.get(polling_id)
+            for polling_id in self.session_polling_clients.get(session_id, set())
+        )
+        peers = sorted(
+            (
+                client
+                for client in candidates
+                if client is not None and client.client_type == client_type
+            ),
+            key=lambda client: client.created_at,
+        )
+
+        reclaimed = 0
+        for client in peers[:-POLLING_MAX_CLIENTS_PER_SESSION_CLIENT_TYPE]:
+            queued = len(client.message_queue)
+            if self._cleanup_polling_client(client.polling_id):
+                reclaimed += 1
+                logger.warning(
+                    "♻️ Polling client reclaimed at cap: session=%s type=%s queued=%d",
+                    sanitize_log_value(session_id),
+                    sanitize_log_value(_known_client_type(client_type)),
+                    queued,
+                )
+        return reclaimed
 
     def _cleanup_polling_client(self, polling_id: str) -> bool:
         """Remove polling client and cleanup resources"""
