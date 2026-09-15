@@ -21,6 +21,11 @@ SCRATCH_DB = "ssf_schema_apply_test"
 
 # Every object the repository's migrations own, in ORDER BY name order.
 EXPECTED_TABLES = [
+    # feedback_daily and its view come from 006: the feedback ratings get their
+    # own gold aggregate rather than sharing quality_events_daily, because they
+    # are averaged per day while everything else there is counted.
+    "feedback_daily",
+    "feedback_daily_mv",
     "otel_logs",
     "quality_events",
     "quality_events_daily",
@@ -623,6 +628,77 @@ def test_a_fresh_volume_gets_both_tiers_in_the_configured_database() -> None:
         )
 
     assert tables == EXPECTED_TABLES, tables
+
+
+def _insert_feedback(db: str, event_id: str, tenant_ref: str, nps: str) -> None:
+    _client(
+        f"INSERT INTO otel_logs ({', '.join(_EXPORTER_COLUMNS)}) VALUES "
+        f"(now64(9), '', '', 0, '', 0, 'api_gateway', '', '', "
+        f"{{'service.version': 'itest', 'deployment.environment.name': 'itest'}}, "
+        f"'', 'ssf.quality', '', {{}}, "
+        f"{{'ssf.quality.event_id': '{event_id}', "
+        f"'ssf.quality.schema_version': '1', "
+        f"'ssf.quality.session_ref': '{'a' * 32}', "
+        f"'ssf.quality.feedback_ref': '{'b' * 32}', "
+        f"'ssf.quality.tenant_ref': '{tenant_ref}', "
+        f"'ssf.quality.translation_quality': '4', "
+        f"'ssf.quality.performance': '4', "
+        f"'ssf.quality.usability': '4', "
+        f"'ssf.quality.net_promoter_score': '{nps}', "
+        f"'ssf.quality.feedback_form_version': 'v1'}}, 'feedback_submitted')",
+        database=db,
+    )
+
+
+def test_the_feedback_aggregate_is_keyed_by_tenant(scratch_db: str) -> None:
+    """007 applies, and the column it adds actually reaches the sorting key.
+
+    `MODIFY ORDER BY` may only append a column the same `ALTER` added, so the
+    statement's shape is load-bearing. A split one parses and fails here.
+    """
+    key = _client(
+        "SELECT sorting_key FROM system.tables "
+        "WHERE database = currentDatabase() AND name = 'feedback_daily'",
+        database=scratch_db,
+    )
+
+    assert key.split(",")[-1].strip() == "tenant_ref", key
+
+
+def test_feedback_rows_aggregate_separately_per_tenant(scratch_db: str) -> None:
+    """The acceptance criterion #325 is written against.
+
+    Two submissions from different tenants must not merge into one aggregate
+    row; a key the view never groups by would collapse them silently.
+    """
+    first, second = str(uuid.uuid4()), str(uuid.uuid4())
+    _insert_feedback(scratch_db, first, "a" * 12, "10")
+    _insert_feedback(scratch_db, second, "f" * 12, "2")
+
+    rows = _client(
+        "SELECT tenant_ref, uniqExactMerge(submissions), avgMerge(net_promoter_score_avg) "
+        "FROM feedback_daily WHERE tenant_ref IN ('aaaaaaaaaaaa', 'ffffffffffff') "
+        "GROUP BY tenant_ref ORDER BY tenant_ref",
+        database=scratch_db,
+    ).splitlines()
+
+    assert [row.split("\t")[:2] for row in rows] == [
+        ["aaaaaaaaaaaa", "1"],
+        ["ffffffffffff", "1"],
+    ], rows
+
+
+def test_a_feedback_row_carries_its_tenant_into_silver(scratch_db: str) -> None:
+    """006 has projected the column all along; nothing ever populated it."""
+    event_id = str(uuid.uuid4())
+    _insert_feedback(scratch_db, event_id, "c" * 12, "9")
+
+    stored = _client(
+        f"SELECT tenant_ref FROM quality_events FINAL WHERE event_id = '{event_id}'",
+        database=scratch_db,
+    )
+
+    assert stored == "c" * 12
 
 
 def _clickhouse_image() -> str:

@@ -10,7 +10,7 @@ import { createLanguageRepository } from '@/domain/language/language.repository'
 import type { LanguageRepository } from '@/domain/language/language.repository';
 import { createMessageRepository } from '@/domain/message/message.repository';
 import type { MessageRepository } from '@/domain/message/message.repository';
-import { createStubFeedbackSink } from '@/domain/feedback/StubFeedbackSink';
+import { createFeedbackRepository } from '@/domain/feedback/feedback.repository';
 import type { FeedbackSink } from '@/domain/feedback/feedback.port';
 import { createStubConsentSink } from '@/domain/consent/StubConsentSink';
 import type { ConsentSink } from '@/domain/consent/consent.port';
@@ -51,7 +51,7 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
       pipelineTimeoutMs: config.pipelineTimeoutMs,
       apiBaseUrl: config.apiBaseUrl,
     }),
-    feedback: createStubFeedbackSink(),
+    feedback: createFeedbackRepository(http),
     consent: createStubConsentSink(),
     health: createHealthRepository(http),
     admin,

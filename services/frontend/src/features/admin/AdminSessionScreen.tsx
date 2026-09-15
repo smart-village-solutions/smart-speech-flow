@@ -56,7 +56,7 @@ export function AdminSessionScreen({
         <AdminHeader
           onBack={onLeave}
           onHome={() => void navigate('/')}
-          onFeedback={openFeedback}
+          onFeedback={() => openFeedback(sessionId)}
           onSignOut={onSignOut}
         />
       }

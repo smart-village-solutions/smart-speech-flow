@@ -25,7 +25,7 @@ export function LanguageSelectScreen() {
       <AppHeader
         onBack={() => void navigate('/')}
         onHome={() => void navigate('/')}
-        onFeedback={openFeedback}
+        onFeedback={() => openFeedback(sessionId ?? null)}
       />
 
       <div className="flex-1 overflow-y-auto px-5 pb-8 pt-content-top">

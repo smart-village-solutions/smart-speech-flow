@@ -49,4 +49,28 @@ describe('toAppError', () => {
     const original = new AppError('server');
     expect(toAppError(original)).toBe(original);
   });
+
+  it('treats a throttle as retryable even though it maps to validation', () => {
+    // The gateway's rate limiter answers 429 with Retry-After: the server is
+    // asking for one more attempt, not rejecting the payload. Every 4xx that
+    // is not 404 lands in `validation`, so the kind alone cannot tell them
+    // apart.
+    const throttled = toAppError(axiosErrorWithStatus(429));
+
+    expect(throttled.kind).toBe('validation');
+    expect(throttled.retryable).toBe(true);
+  });
+
+  it.each([400, 404, 409, 422])('treats %i as the server\'s verdict on the payload', (status) => {
+    expect(toAppError(axiosErrorWithStatus(status)).retryable).toBe(false);
+  });
+
+  it.each([500, 502, 503])('treats %i as worth another attempt', (status) => {
+    expect(toAppError(axiosErrorWithStatus(status)).retryable).toBe(true);
+  });
+
+  it('has no status to judge a transport failure by, so it allows a retry', () => {
+    expect(new AppError('network').retryable).toBe(true);
+    expect(new AppError('timeout').retryable).toBe(true);
+  });
 });

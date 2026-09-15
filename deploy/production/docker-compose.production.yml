@@ -7,6 +7,8 @@ services:
     - --log.level=DEBUG
     - --providers.docker=true
     - --providers.docker.exposedbydefault=false
+    - --providers.file.directory=/etc/traefik/dynamic
+    - --providers.file.watch=true
     - --entrypoints.web.address=:80
     - --entrypoints.websecure.address=:443
     - --certificatesresolvers.le.acme.tlschallenge=true
@@ -20,6 +22,7 @@ services:
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock:ro
     - ../../letsencrypt:/letsencrypt
+    - ../../traefik/dynamic:/etc/traefik/dynamic:ro
     restart: unless-stopped
     pull_policy: never
   asr:
@@ -130,6 +133,23 @@ services:
     - SSF_LEGACY_ADMIN_ACCESS_CODE=${SSF_LEGACY_ADMIN_ACCESS_CODE:-}
     - SSF_QUALITY_TELEMETRY_MODE=${SSF_QUALITY_TELEMETRY_MODE:-disabled}
     - SSF_QUALITY_TELEMETRY_SESSION_KEY=${SSF_QUALITY_TELEMETRY_SESSION_KEY:-}
+    # Two roles, not one: the request path is filtered by the tenant policy,
+    # the background passes are deployment-wide. See migration 002.
+    # The passwords are passed beside these URLs, not inside them: a
+    # generated password is not URL-safe, and asyncpg parses a DSN as a
+    # URL. See PostgresFeedbackRepository.create.
+    - SSF_FEEDBACK_DATABASE_URL=postgresql://ssf_feedback_app@ssf-postgres:5432/${SSF_POSTGRES_DB}
+    - SSF_FEEDBACK_DATABASE_PASSWORD=${SSF_FEEDBACK_APP_PASSWORD}
+    - SSF_FEEDBACK_MAINTENANCE_DATABASE_URL=postgresql://ssf_feedback_maintenance@ssf-postgres:5432/${SSF_POSTGRES_DB}
+    - SSF_FEEDBACK_MAINTENANCE_DATABASE_PASSWORD=${SSF_FEEDBACK_MAINTENANCE_PASSWORD}
+    - SSF_FEEDBACK_READER_DATABASE_URL=postgresql://ssf_feedback_reader@ssf-postgres:5432/${SSF_POSTGRES_DB}
+    - SSF_FEEDBACK_READER_DATABASE_PASSWORD=${SSF_FEEDBACK_READER_PASSWORD}
+    - SSF_FEEDBACK_ENCRYPTION_KEY=${SSF_FEEDBACK_ENCRYPTION_KEY:?required}
+    - SSF_DEFAULT_TENANT_ID=${SSF_DEFAULT_TENANT_ID:-default}
+    # How long after a conversation ends its feedback is still accepted. The
+    # feedback button sits in the ended-conversation screen's header, and the
+    # ended session's join link is already revoked by then.
+    - SSF_FEEDBACK_GRACE_MINUTES=${SSF_FEEDBACK_GRACE_MINUTES:-30}
     - SSF_OTLP_LOGS_ENDPOINT=${SSF_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
     - SSF_RELEASE_VERSION=${SSF_RELEASE_VERSION:-unknown}
     - SSF_DEPLOYMENT_ENV=${SSF_DEPLOYMENT_ENV:-production}
@@ -149,8 +169,12 @@ services:
         max-size: 100m
         max-file: '5'
     depends_on:
-    - redis
-    - ollama
+      redis:
+        condition: service_started
+      ollama:
+        condition: service_started
+      ssf-postgres:
+        condition: service_started
     labels:
     - traefik.enable=true
     - traefik.http.routers.api_gateway.rule=Host(`ssf.smart-village.solutions`)
@@ -160,7 +184,7 @@ services:
     - traefik.http.services.api_gateway.loadbalancer.passhostheader=true
     - traefik.http.middlewares.websocket-headers.headers.customrequestheaders.X-Forwarded-Proto=https
     restart: unless-stopped
-    image: ssf-backend-api_gateway:prod-57455c0
+    image: ssf-backend-api_gateway:prod-9515f00
     pull_policy: never
   ollama:
     image: ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a
@@ -238,6 +262,31 @@ services:
       clickhouse:
         condition: service_healthy
     pull_policy: never
+  ssf-postgres:
+    image: postgres@sha256:bb377b7239d2774ac8cc76f481596ce96c5a6b5e9d141f6d0a0ee371a6e7c0f2
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${SSF_POSTGRES_DB:?required}
+      POSTGRES_USER: ${SSF_POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${SSF_POSTGRES_PASSWORD:?required}
+      # apply.sh sets these on the two application roles in migration 002. The
+      # owner above runs migrations and backups only; nothing connects as it at
+      # runtime, because a superuser bypasses the tenant policy entirely.
+      SSF_FEEDBACK_APP_PASSWORD: ${SSF_FEEDBACK_APP_PASSWORD:?required}
+      SSF_FEEDBACK_MAINTENANCE_PASSWORD: ${SSF_FEEDBACK_MAINTENANCE_PASSWORD:?required}
+      SSF_FEEDBACK_READER_PASSWORD: ${SSF_FEEDBACK_READER_PASSWORD:?required}
+    volumes:
+    - ssf-postgres-data:/var/lib/postgresql/data
+    - ../../deploy/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    pull_policy: never
   keycloak-postgres:
     image: postgres@sha256:bb377b7239d2774ac8cc76f481596ce96c5a6b5e9d141f6d0a0ee371a6e7c0f2
     restart: unless-stopped
@@ -257,7 +306,7 @@ services:
       start_period: 20s
     pull_policy: never
   keycloak:
-    image: ssf-keycloak:prod-e409a06
+    image: ssf-keycloak:prod-74e4fdd
     command:
     - start
     - --optimized
@@ -317,7 +366,7 @@ services:
     - traefik.http.services.frontend.loadbalancer.server.port=8080
     - traefik.docker.network=ssf-backend_default
     restart: unless-stopped
-    image: ssf-backend-frontend:prod-57455c0
+    image: ssf-backend-frontend:prod-9515f00
     pull_policy: never
   prometheus:
     image: prom/prometheus@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
@@ -456,6 +505,7 @@ volumes:
   audio-data: null
   clickhouse-data: null
   keycloak-postgres-data: null
+  ssf-postgres-data: null
   prometheus-data:
     external: true
     name: 1980baddd3a6bd8bcade314d6f81d3716e73ae9bba6655b90d4179ff7b1990a7

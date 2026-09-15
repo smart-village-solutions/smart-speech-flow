@@ -52,6 +52,16 @@ def tenant_ref(tenant_id: Any) -> str:
         return MISSING_TENANT_REFERENCE
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:_TENANT_REFERENCE_LENGTH]
 
+# A domain tag mixed into the HMAC input, so a session id and a feedback id
+# that happened to be equal do not produce the same reference in both stores.
+#
+# The session domain is deliberately empty: prefixing it too would change every
+# session_ref this deployment has already written, orphaning up to 30 days of
+# silver rows from the sessions they belong to. Separating one of the two
+# spaces is sufficient, and it is the one with no history.
+_SESSION_DOMAIN: Final[str] = ""
+_FEEDBACK_DOMAIN: Final[str] = "feedback"
+
 
 class SessionPseudonymizer:
     """Maps a session id to a reference that cannot be mapped back."""
@@ -86,10 +96,24 @@ class SessionPseudonymizer:
 
     def reference(self, session_id: Any) -> str:
         """Never raises: telemetry must not be able to fail a request."""
-        text = str(session_id or "").strip()
+        return self._domain_reference(_SESSION_DOMAIN, session_id)
+
+    def feedback_reference(self, feedback_id: Any) -> str:
+        """The reference ClickHouse holds instead of a feedback record id.
+
+        Same key, different domain. Sharing the key keeps deployment simple;
+        separating the domain means an analyst holding one reference cannot
+        test it against the other store, because the same input never maps to
+        the same output in both spaces.
+        """
+        return self._domain_reference(_FEEDBACK_DOMAIN, feedback_id)
+
+    def _domain_reference(self, domain: str, value: Any) -> str:
+        text = str(value or "").strip()
         if not text:
             return MISSING_REFERENCE
-        digest = hmac.new(self._key, text.encode("utf-8"), hashlib.sha256)
+        message = (f"{domain}:{text}" if domain else text).encode("utf-8")
+        digest = hmac.new(self._key, message, hashlib.sha256)
         return digest.hexdigest()[:_REFERENCE_LENGTH]
 
 
@@ -106,3 +130,11 @@ def session_ref(session_id: Any) -> str:
     if _process_pseudonymizer is None:
         _process_pseudonymizer = SessionPseudonymizer.from_environment()
     return _process_pseudonymizer.reference(session_id)
+
+
+def feedback_ref(feedback_id: Any) -> str:
+    """The process-wide reference for a feedback record id."""
+    global _process_pseudonymizer
+    if _process_pseudonymizer is None:
+        _process_pseudonymizer = SessionPseudonymizer.from_environment()
+    return _process_pseudonymizer.feedback_reference(feedback_id)

@@ -21,6 +21,7 @@ from dataclasses import dataclass, field, fields, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 
+from .consent import ConsentStatus
 from .quality_telemetry import SessionLifecyclePhase, SessionTerminationReason
 from .session_pseudonym import MISSING_TENANT_REFERENCE, session_ref, tenant_ref
 from .session_store import MemoryTenantSessionStore, TenantSessionStore
@@ -165,6 +166,7 @@ class Session:
     # the hard-cut routes are migrated. Persistence rejects missing scope.
     tenant_id: Optional[str] = None
     runtime_configuration: Optional[RuntimeConfigurationSnapshot] = None
+    consent_status: ConsentStatus = ConsentStatus.PENDING
     customer_language: Optional[str] = None  # Wird erst bei Client-Join gesetzt
     admin_language: str = "de"
     status: SessionStatus = SessionStatus.PENDING
@@ -228,6 +230,7 @@ class Session:
                 if self.runtime_configuration is not None
                 else None
             ),
+            "consent_status": self.consent_status.value,
             "customer_language": self.customer_language,
             "admin_language": self.admin_language,
             "status": self.status.value,
@@ -314,6 +317,7 @@ class Session:
             runtime_configuration=RuntimeConfigurationSnapshot.from_dict(
                 data["runtime_configuration"]
             ),
+            consent_status=ConsentStatus.from_stored(data.get("consent_status")),
             customer_language=data.get("customer_language"),
             admin_language=data.get("admin_language", "de"),
             status=SessionStatus(data.get("status", SessionStatus.PENDING.value)),
@@ -682,7 +686,7 @@ class SessionManager:
                 terminal_session = replace(
                     session,
                     status=SessionStatus.TERMINATED,
-                    terminated_at=utc_now(),
+                    terminated_at=self.clock(),
                     termination_reason=reason,
                     admin_connected=False,
                     customer_connected=False,
@@ -743,7 +747,7 @@ class SessionManager:
         # Legacy session mutation remains process-local and follows its
         # established persistence path.
         session.status = SessionStatus.TERMINATED
-        session.terminated_at = utc_now()
+        session.terminated_at = self.clock()
         session.termination_reason = reason
         session.admin_connected = False
         session.customer_connected = False
@@ -879,6 +883,34 @@ class SessionManager:
             return None
         session = self.get_session(key)
         if session is None or session.status == SessionStatus.TERMINATED:
+            return None
+        return key
+
+    def resolve_ended_session(
+        self, session_id: str, *, within: timedelta
+    ) -> Optional[TenantSessionKey]:
+        """The key of a session that terminated no longer than ``within`` ago.
+
+        Terminating a session revokes its join link, which is what stops an
+        ended conversation being rejoined or observed. It also removed the only
+        route from the bare session id a browser holds back to the tenant that
+        owns the conversation, so feedback offered in the ended-conversation
+        screen was refused as unknown (#324). This reads the tombstone the
+        revocation leaves behind. It returns the key alone -- enough to
+        attribute a feedback row to its tenant, and no way back into the
+        conversation -- and takes the window from the caller rather than
+        holding a policy of its own.
+        """
+        if self.store is None:
+            return None
+        resolved = self.store.resolve_ended_join(session_id)
+        if resolved is None:
+            return None
+        key, terminated_at = resolved
+        # An undatable record cannot be shown to be inside the window.
+        if terminated_at is None:
+            return None
+        if _ensure_utc(self.clock()) - _ensure_utc(terminated_at) > within:
             return None
         return key
 
