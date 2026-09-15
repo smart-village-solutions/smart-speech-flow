@@ -148,7 +148,9 @@ references to SSF.
 SSF determines the tenant from a valid session token, Keycloak login, or
 server-resolved guest-join credential. The SSF backend then calls the internal
 Studio API with its own Client-Credentials service identity and an
-`X-Tenant-Id` header. A freely supplied tenant or instance ID is not a trust
+`X-Studio-Tenant-Id` header. Studio returns that canonical value unchanged as
+`tenant.id`. Legacy tenant headers and query selectors are rejected without
+compatibility aliases. A freely supplied tenant or instance ID is not a trust
 boundary.
 
 The Studio host validates the technical identity, configured audience, validity,
@@ -219,6 +221,48 @@ SSF remains authoritative for ClickHouse, session data, and conversation
 content. Studio will consume those data later through an internal SSF
 administration or reporting API rather than accessing SSF runtime databases
 directly.
+
+## Feedback Tenancy
+
+Feedback is the first SSF-owned data with a tenant column. Both of its halves
+are tenant-isolated, by different mechanisms, because they sit on opposite
+sides of the trust boundary above.
+
+**Reading.** `GET /api/feedback` and `GET /api/feedback/{feedback_id}` resolve
+the tenant through `require_studio_tenant_context`, which reads the signed
+`studio_tenant_id` claim and rejects any tenant selector supplied by the
+request. The gateway connects as `ssf_feedback_reader`, a `NOBYPASSRLS` role,
+so the row-level security policy in `001_feedback.sql` filters every read
+inside PostgreSQL rather than in application code. A record belonging to
+another tenant is invisible, not merely unselected.
+
+**Writing.** `POST /api/feedback` is unauthenticated by design — the customer
+flow carries no Keycloak identity, and this document's trust boundary keeps
+customers outside Studio IAM — so its tenant cannot come from a token. It comes
+from the session instead. Every admin session is created through the tenant
+flow and stored under a `TenantSessionKey`, and `SessionTenantResolver` reaches
+that key from the bare session id through the session store's join index. The
+tenant a row is stored under is therefore the tenant whose conversation it
+describes.
+
+Two cases do not resolve through a live session:
+
+- **Feedback that names no session** — from the access-code screen, the tenant
+  login screen or the admin dashboard — has no tenant to take and falls back to
+  `SSF_DEFAULT_TENANT_ID`. That tenant's operators see all of it, from every
+  tenant. A deliberate limit rather than a gap in the mechanism.
+- **Feedback for a conversation that has just ended** is accepted for a grace
+  window after termination and stored under that conversation's own tenant,
+  not the fallback. `SSF_FEEDBACK_GRACE_MINUTES` sets the window: 30 minutes by
+  default, `0` to decline this feedback outright. Termination still revokes the
+  join link, so the ended conversation can be neither rejoined nor observed:
+  the feedback path reads the tombstone the revocation leaves behind, which
+  yields the session's key and the time it ended, nothing more. Past the window
+  the submission is refused as an unknown session (#324).
+
+See `docs/operations/runbooks/feedback-database-deployment.md` for the
+deployment consequences, including how to confirm no stored tenant is one that
+no operator can read.
 
 ## Security and Quality Boundaries
 

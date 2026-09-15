@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { createDomAudioPlayer, type AudioPlayerPort } from '@/core/audio/player.port';
-import { createBrowserClipLoader, type ClipLoader } from '@/core/audio/clips';
+import type { ClipLoader } from '@/core/audio/clips';
 import { createPlaybackQueue } from '@/core/audio/playback-queue';
 import { PlaybackContext } from './playback';
 
@@ -9,20 +9,20 @@ interface PlaybackProviderProps {
   children: ReactNode;
   /** Injected by tests; the default drives a real media element. */
   player?: AudioPlayerPort;
-  /** Injected by tests; the default fetches and decodes through Web Audio. */
-  clips?: ClipLoader;
+  /** Authenticated clip loader from the application composition root. */
+  clips: ClipLoader;
 }
 
 /** Owns the conversation's single audio player; see `createPlaybackQueue`. */
 export function PlaybackProvider({ children, player, clips }: Readonly<PlaybackProviderProps>) {
-  const loader = useMemo(() => clips ?? createBrowserClipLoader(), [clips]);
+  const loader = clips;
 
   const queue = useMemo(
     () =>
-      createPlaybackQueue(player ?? createDomAudioPlayer(new Audio()), (url) => {
-        // Play from memory when the clip is already here; never wait for it.
-        return loader.peek(url)?.objectUrl ?? url;
-      }),
+      createPlaybackQueue(
+        player ?? createDomAudioPlayer(new Audio()),
+        async (url) => (await loader.load(url)).objectUrl
+      ),
     [loader, player]
   );
 

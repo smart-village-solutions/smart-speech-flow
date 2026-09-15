@@ -1,5 +1,59 @@
 # API Gateway Service
 
+## Studio-backed login directory
+
+`GET /api/login/tenants` is an anonymous, read-only facade over Studio's
+validated login directory. Studio is the source of truth for ready tenant
+realms. The gateway uses one trusted `KEYCLOAK_BASE_URL`, admits only issuers
+derived from current directory entries, and binds a validated token to its
+signed `studio_tenant_id` and `ssf_authorization_revision` claims.
+
+The tenant-login production rollout requires these settings:
+
+```text
+KEYCLOAK_BASE_URL=https://auth.dialog.kassel.de
+KEYCLOAK_AUDIENCE=ssf-frontend
+KEYCLOAK_REQUIRED_ROLE=ssf-user
+STUDIO_RUNTIME_CONFIGURATION_BASE_URL=https://studio.dialog.kassel.de
+STUDIO_RUNTIME_TOKEN_URL=<OAuth2 token endpoint>
+STUDIO_RUNTIME_CLIENT_ID=ssf-runtime
+STUDIO_RUNTIME_AUDIENCE=sva-studio-ssf-runtime
+STUDIO_RUNTIME_CLIENT_SECRET=<deployment secret>
+STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS=60
+```
+
+The client secret must come from the deployment environment or secret store;
+it must never be embedded in an image, browser bundle, or checked-in file.
+Studio owns production realm provisioning once the tenant-login rollout is
+activated. Until compatible gateway and frontend images are built, verified,
+and pinned atomically, the canonical production Compose file remains on the
+legacy single-realm contract. Do not combine its legacy application image pins
+with the settings above.
+
+## Multi-tenant rollout gate
+
+Directory-based login establishes a trusted tenant identity, but it does not
+make conversation persistence tenant-isolated. Before exposing real
+conversations through multi-realm login, operators must complete all of the
+following:
+
+1. Confirm the Studio directory returns at least two ready tenant entries.
+2. Confirm every listed realm has the common public client, PKCE S256, the
+   exact application origin and `/login/*` redirects, the configured audience
+   and role, and signed tenant-ID and authorization-revision claims.
+3. Set `SSF_ENABLE_LEGACY_ADMIN_ACCESS=false` before multi-realm production
+   enablement.
+4. Complete the separate OpenSpec change `add-multi-tenant-operations` and pass
+   its isolation tests for session creation, history, lookup, termination,
+   messages, audio, and customer joins. This is an independent release gate,
+   not part of the tenant-login-directory implementation.
+5. Manually verify login, existing SSO, logout, unknown-tenant handling, a
+   Studio outage after cache expiry, and cross-tenant negative paths in the
+   deployed environment.
+
+If any gate is incomplete, keep real multi-tenant conversations disabled. A
+healthy directory or successful login alone is not production approval.
+
 ## Beschreibung
 
 Das API Gateway ist der zentrale Einstiegspunkt fuer Smart Speech Flow. Es verbindet die Fachservices fuer ASR, Translation und TTS mit der sessionbasierten Admin/Customer-Kommunikation im Frontend.

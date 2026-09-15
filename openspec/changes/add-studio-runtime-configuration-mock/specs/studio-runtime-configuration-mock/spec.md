@@ -9,8 +9,15 @@ Configuration Contract V1 development and tests.
 #### Scenario: Tenant configuration is returned
 
 - **WHEN** a request presents an authorized bearer service token,
-  `X-Studio-Instance-Id`, and `X-Correlation-Id`
-- **THEN** the service returns a Contract V1 configuration for that tenant
+  `X-Studio-Tenant-Id`, and `X-Correlation-Id`
+- **THEN** the service returns a Contract V1 configuration whose `tenant.id`
+  exactly matches `X-Studio-Tenant-Id`
+
+#### Scenario: Competing tenant selector is rejected
+
+- **WHEN** a request presents `X-Studio-Instance-Id`, `X-Tenant-Id`, or any
+  query selector, with or without the canonical tenant header
+- **THEN** the service returns the stable `404 tenant_not_found` envelope
 
 #### Scenario: Service token lacks permission
 
@@ -23,10 +30,16 @@ Configuration Contract V1 development and tests.
 The mock SHALL provide two tenant configurations with `ask` and `disabled`
 conversation-content storage policies and the documented error envelopes.
 
-#### Scenario: Authorization projection is pending
+#### Scenario: Tenant or plugin is not ready
 
-- **WHEN** a request selects the mock authorization-pending scenario
-- **THEN** the service returns a `409` error envelope without tenant content
+- **WHEN** a request selects suspended, plugin-inactive, or tenant-not-ready
+- **THEN** the service returns the exact documented `409` envelope and
+  retryability for that scenario without tenant content
+
+#### Scenario: Runtime configuration is unavailable
+
+- **WHEN** a request selects the unavailable scenario
+- **THEN** the service returns the stable retryable `503` envelope
 
 ### Requirement: Protected internal mock exposure
 

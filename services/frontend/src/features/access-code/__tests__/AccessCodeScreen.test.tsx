@@ -17,6 +17,22 @@ function tree() {
 }
 
 describe('AccessCodeScreen', () => {
+  it('uses the shared fixed header above the start-page content', () => {
+    renderWithProviders(tree());
+
+    const header = screen.getByRole('banner');
+    expect(header).toHaveClass('bg-white');
+    expect(screen.getByRole('img', { name: 'Smart Speech Flow' })).toHaveAttribute(
+      'src',
+      '/assets/Logo.png'
+    );
+    expect(screen.getByRole('heading', { name: 'Code eingeben' }).parentElement).toHaveClass(
+      'pt-content-top'
+    );
+    expect(screen.queryByRole('button', { name: 'Zurück' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start' })).not.toBeInTheDocument();
+  });
+
   it('keeps continue disabled until every character is entered', async () => {
     renderWithProviders(tree());
 
@@ -40,7 +56,9 @@ describe('AccessCodeScreen', () => {
   });
 
   it('shows an inline error and keeps the code when the session is unknown', async () => {
-    server.use(http.get('*/api/session/ZZZZZZZZ', () => new HttpResponse(null, { status: 404 })));
+    server.use(
+      http.get('*/api/customer/session/ZZZZZZZZ', () => new HttpResponse(null, { status: 404 }))
+    );
 
     renderWithProviders(tree());
 
@@ -54,8 +72,25 @@ describe('AccessCodeScreen', () => {
     expect(screen.getAllByRole('textbox')[0]).toHaveValue('Z');
   });
 
-  it('offers the admin login link', () => {
+  it('offers the tenant login chooser link', () => {
     renderWithProviders(tree());
-    expect(screen.getByRole('link', { name: 'Admin-Login' })).toHaveAttribute('href', '/admin');
+    expect(screen.getByRole('link', { name: 'Login' })).toHaveAttribute('href', '/login');
+  });
+
+  it('keeps both funding logos side by side in the start-page footer', () => {
+    renderWithProviders(tree());
+
+    const funding = screen.getByRole('img', { name: 'Fördermittelgeber' });
+    const city = screen.getByRole('img', { name: 'Stadt Kassel' });
+
+    expect(funding).toHaveAttribute('src', '/assets/Foerdermittelgeber.png');
+    expect(city).toHaveAttribute('src', '/assets/Stadt.png');
+    expect(funding.parentElement).toBe(city.parentElement);
+    expect(funding.parentElement).toHaveClass('grid-cols-2');
+    expect(funding.parentElement).toHaveClass('max-w-app');
+
+    const footer = funding.closest('footer');
+    expect(footer).toHaveClass('w-screen', 'bg-white', 'shadow-[0_-2px_6px_rgba(0,0,0,0.08)]');
+    expect(document.querySelector('[data-screen-shell]')).toHaveClass('overflow-x-clip');
   });
 });

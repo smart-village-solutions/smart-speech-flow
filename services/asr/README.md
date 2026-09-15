@@ -8,7 +8,10 @@
 
 Beispiel:
 ```bash
-curl -F "file=@sample.wav" -F "lang=de" http://localhost:8001/transcribe
+# Der Dienst wird seit #221 nicht mehr auf dem Host veröffentlicht; im
+# Compose-Netz lauscht er auf asr:8000.
+docker compose exec api_gateway \
+  curl -F "file=@examples/audio/sample.wav" -F "lang=de" http://asr:8000/transcribe
 ```
 
 ### Output

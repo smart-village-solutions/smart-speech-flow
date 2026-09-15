@@ -69,8 +69,16 @@
       "question": "Smart Speech Flow ዝያዳ ዘመሓይሽ እንታይ እዩ?",
       "placeholder": "ሓሳባትኩም፣ ጠለባትኩም ወይ ዘሸገረኩም ዝኾነ ነገር…"
     },
+    "notice": {
+      "purpose": "መልስታትኩም Smart Speech Flow ንምምሕያሽ ጥራይ እዮም ዝውዕሉ።",
+      "retention": "ንርእይቶ ንዓሰርተው ክልተ ኣዋርሕ ነቐምጦ፣ ድሕሪኡ ብኣውቶማቲክ ይድምሰስ።",
+      "withdrawal": "ርእይቶኹም ኣብ ዝኾነ እዋን ከተልዕልዎ ትኽእሉ — ነቶም ኣብቲ ቦታ ዘለዉ ሰራሕተኛታት ሕተቱ።"
+    },
     "stars": "{{count}} ከዋኽብቲ",
     "submit": "ርእይቶ ስደድ",
+    "submitting": "ይስደድ ኣሎ…",
+    "retry": "እንደገና ስደድ",
+    "failed": "ርእይቶኹም ክስደድ ኣይከኣለን። መልስታትኩም ተዓቂቦም ኣለዉ።",
     "thanksTitle": "የቐንየልና!",
     "thanksBody": "ርእይቶኹም Smart Speech Flow ንኹሉ ሰብ ከነመሓይሾ ይሕግዘና።"
   },

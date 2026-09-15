@@ -6,6 +6,8 @@ services:
       - --log.level=DEBUG
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
       - --certificatesresolvers.le.acme.tlschallenge=true
@@ -19,14 +21,18 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./letsencrypt:/letsencrypt
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
     restart: always
 
   asr:
     build:
       context: .
       dockerfile: services/asr/Dockerfile
-    ports:
-      - "8001:8000"
+    # #221: no host port. The gateway reaches this as http://asr:8000 over the
+    # compose network; publishing 8001 handed unauthenticated GPU capacity to
+    # anyone who could route to the host.
+    expose:
+      - "8000"
     volumes:
       - ./models:/models
     deploy:
@@ -41,8 +47,8 @@ services:
     build:
       context: .
       dockerfile: services/translation/Dockerfile
-    ports:
-      - "8002:8000"
+    expose:
+      - "8000"
     environment:
       # Inference Admission Control — inference runs off the event loop, so
       # /health and /metrics stay responsive; these bound how many beam searches
@@ -63,8 +69,8 @@ services:
     build:
       context: .
       dockerfile: services/tts/Dockerfile
-    ports:
-      - "8003:8000"
+    expose:
+      - "8000"
     volumes:
       - ./models:/models
     deploy:
@@ -147,6 +153,25 @@ services:
       # deploy/production/docker-compose.production.yml.
       - SSF_QUALITY_TELEMETRY_MODE=${SSF_QUALITY_TELEMETRY_MODE:-probe}
       - SSF_QUALITY_TELEMETRY_SESSION_KEY=${SSF_QUALITY_TELEMETRY_SESSION_KEY:-}
+      # Feedback persistence (#302). The encryption key has deliberately no
+      # default: a random one would encrypt rows nobody could ever read back.
+      # Two roles, not one: the request path is filtered by the tenant policy,
+      # the background passes are deployment-wide. See migration 002.
+      # The passwords are passed beside these URLs, not inside them: a
+      # generated password is not URL-safe, and asyncpg parses a DSN as a
+      # URL. See PostgresFeedbackRepository.create.
+      - SSF_FEEDBACK_DATABASE_URL=postgresql://ssf_feedback_app@ssf-postgres:5432/${SSF_POSTGRES_DB}
+      - SSF_FEEDBACK_DATABASE_PASSWORD=${SSF_FEEDBACK_APP_PASSWORD}
+      - SSF_FEEDBACK_MAINTENANCE_DATABASE_URL=postgresql://ssf_feedback_maintenance@ssf-postgres:5432/${SSF_POSTGRES_DB}
+      - SSF_FEEDBACK_MAINTENANCE_DATABASE_PASSWORD=${SSF_FEEDBACK_MAINTENANCE_PASSWORD}
+      - SSF_FEEDBACK_READER_DATABASE_URL=postgresql://ssf_feedback_reader@ssf-postgres:5432/${SSF_POSTGRES_DB}
+      - SSF_FEEDBACK_READER_DATABASE_PASSWORD=${SSF_FEEDBACK_READER_PASSWORD}
+      - SSF_FEEDBACK_ENCRYPTION_KEY=${SSF_FEEDBACK_ENCRYPTION_KEY:?required}
+      - SSF_DEFAULT_TENANT_ID=${SSF_DEFAULT_TENANT_ID:-default}
+      # How long after a conversation ends its feedback is still accepted. The
+      # feedback button sits in the ended-conversation screen's header, and the
+      # ended session's join link is already revoked by then.
+      - SSF_FEEDBACK_GRACE_MINUTES=${SSF_FEEDBACK_GRACE_MINUTES:-30}
       - SSF_OTLP_LOGS_ENDPOINT=${SSF_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
       - SSF_RELEASE_VERSION=${SSF_RELEASE_VERSION:-unknown}
       - SSF_DEPLOYMENT_ENV=${SSF_DEPLOYMENT_ENV:-unknown}
@@ -166,9 +191,15 @@ services:
         max-size: "100m"
         max-file: "5"
 
+    # Map form rather than a list: Compose does not allow the two forms to be
+    # mixed, and redis and ollama already use conditions here.
     depends_on:
-      - redis
-      - ollama
+      redis:
+        condition: service_started
+      ollama:
+        condition: service_started
+      ssf-postgres:
+        condition: service_started
     labels:
       - "traefik.enable=true"
       # Main HTTP router with WebSocket support
@@ -265,6 +296,35 @@ services:
       clickhouse:
         condition: service_healthy
 
+  # The authoritative store for feedback free text (#302). Deliberately not the
+  # Keycloak database: that one is administered as Keycloak's, and a Keycloak
+  # restore would silently roll back twelve months of feedback with it.
+  ssf-postgres:
+    image: postgres:17.7-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${SSF_POSTGRES_DB:?required}
+      POSTGRES_USER: ${SSF_POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${SSF_POSTGRES_PASSWORD:?required}
+      # apply.sh sets these on the two application roles in migration 002. The
+      # owner above runs migrations and backups only; nothing connects as it at
+      # runtime, because a superuser bypasses the tenant policy entirely.
+      SSF_FEEDBACK_APP_PASSWORD: ${SSF_FEEDBACK_APP_PASSWORD:?required}
+      SSF_FEEDBACK_MAINTENANCE_PASSWORD: ${SSF_FEEDBACK_MAINTENANCE_PASSWORD:?required}
+      SSF_FEEDBACK_READER_PASSWORD: ${SSF_FEEDBACK_READER_PASSWORD:?required}
+    volumes:
+      - ssf-postgres-data:/var/lib/postgresql/data
+      # The entrypoint ignores subdirectories, so the migrations live in one
+      # and apply.sh runs them with the database set. Same shape as
+      # deploy/clickhouse.
+      - ./deploy/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
   keycloak-postgres:
     image: postgres:17.7-alpine
     restart: always
@@ -284,9 +344,11 @@ services:
   keycloak:
     image: ssf-keycloak:26.7.2
     build:
-      context: ./services/keycloak
-      dockerfile: Dockerfile
-    command: ["start", "--optimized"]
+      context: .
+      dockerfile: services/keycloak/Dockerfile
+    # The fixed realm is a local-development fixture only. Production realms
+    # are provisioned by Studio and are never imported by production Compose.
+    command: ["start", "--optimized", "--import-realm"]
     restart: always
     expose:
       - "8080"
@@ -302,6 +364,8 @@ services:
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./deploy/production/keycloak/ssf-realm.json:/opt/keycloak/data/import/ssf-realm.json:ro
     depends_on:
       keycloak-postgres:
         condition: service_healthy
@@ -342,12 +406,14 @@ services:
       args:
         VITE_API_BASE_URL: https://ssf.smart-village.solutions
         VITE_WS_BASE_URL: wss://ssf.smart-village.solutions
+        VITE_KEYCLOAK_URL: https://auth.dialog.kassel.de
+        VITE_KEYCLOAK_CLIENT_ID: ssf-frontend
         VITE_DEMO_ACCESS_CODE: ${FRONTEND_DEMO_PASSWORD:-ssf2025kassel}
     networks:
       - default
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`translate.smart-village.solutions`)"
+      - "traefik.http.routers.frontend.rule=Host(`dialog.kassel.de`) || Host(`translate.smart-village.solutions`)"
       - "traefik.http.routers.frontend.entrypoints=websecure"
       - "traefik.http.routers.frontend.tls.certresolver=le"
       - "traefik.http.services.frontend.loadbalancer.server.port=8080"
@@ -489,3 +555,4 @@ volumes:
   audio-data:
   clickhouse-data:
   keycloak-postgres-data:
+  ssf-postgres-data:

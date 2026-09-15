@@ -26,3 +26,5 @@ def test_runbook_documents_protected_swappable_mock_endpoint() -> None:
     assert "http://studio-mock:8000" in runbook
     assert "studio-mock-authorized-token" in runbook
     assert "STUDIO_RUNTIME_CONFIGURATION_BASE_URL" in runbook
+    assert "X-Studio-Tenant-Id" in runbook
+    assert "tenant-not-ready" in runbook

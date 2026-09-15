@@ -1,11 +1,12 @@
 import { StrictMode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { PlaybackProvider } from '@/app/providers/PlaybackProvider';
 import { usePlayback } from '@/app/providers/playback';
 import { createFakeAudioPlayer } from '@/test/fakeAudioPlayer';
+import type { ClipLoader } from '@/core/audio/clips';
 
 function Probe() {
   const { playingId, progress, paused, enqueue, playNow, pause, resume, hold, release } =
@@ -44,9 +45,21 @@ function Probe() {
   );
 }
 
-function setup(children: ReactNode = <Probe />) {
+function passthroughClips(): ClipLoader {
+  return {
+    load: vi.fn(async (url: string) => ({ objectUrl: url, peaks: [] })),
+    peek: vi.fn().mockReturnValue(null),
+    dispose: vi.fn(),
+  };
+}
+
+function setup(children: ReactNode = <Probe />, clips?: ClipLoader) {
   const player = createFakeAudioPlayer();
-  render(<PlaybackProvider player={player.port}>{children}</PlaybackProvider>);
+  render(
+    <PlaybackProvider player={player.port} clips={clips ?? passthroughClips()}>
+      {children}
+    </PlaybackProvider>
+  );
   return player;
 }
 
@@ -55,6 +68,35 @@ const playing = () => screen.getByTestId('playing').textContent;
 const paused = () => screen.getByTestId('paused').textContent;
 
 describe('PlaybackProvider', () => {
+  it('authenticates and buffers a protected clip before giving it to the player', async () => {
+    const clips: ClipLoader = {
+      load: vi.fn().mockResolvedValue({ objectUrl: 'blob:authenticated', peaks: [] }),
+      peek: vi.fn().mockReturnValue(null),
+      dispose: vi.fn(),
+    };
+    const player = setup(<Probe />, clips);
+
+    await click('enqueue a');
+    await vi.waitFor(() => expect(clips.load).toHaveBeenCalledWith('/a.wav'));
+    await vi.waitFor(() => expect(player.played).toEqual(['blob:authenticated']));
+
+    expect(player.played).not.toContain('/a.wav');
+  });
+
+  it('does not fall back to an unauthenticated media-element request', async () => {
+    const clips: ClipLoader = {
+      load: vi.fn().mockRejectedValue(new Error('unauthorized')),
+      peek: vi.fn().mockReturnValue(null),
+      dispose: vi.fn(),
+    };
+    const player = setup(<Probe />, clips);
+
+    await click('enqueue a');
+    await vi.waitFor(() => expect(clips.load).toHaveBeenCalledWith('/a.wav'));
+
+    expect(player.played).toEqual([]);
+  });
+
   it('plays an enqueued clip straight away when idle', async () => {
     const player = setup();
 
@@ -210,7 +252,7 @@ describe('PlaybackProvider', () => {
     const player = createFakeAudioPlayer();
     render(
       <StrictMode>
-        <PlaybackProvider player={player.port}>
+        <PlaybackProvider player={player.port} clips={passthroughClips()}>
           <Probe />
         </PlaybackProvider>
       </StrictMode>
@@ -310,7 +352,7 @@ describe('PlaybackProvider', () => {
   it('stops playback when the provider unmounts', async () => {
     const player = createFakeAudioPlayer();
     const view = render(
-      <PlaybackProvider player={player.port}>
+      <PlaybackProvider player={player.port} clips={passthroughClips()}>
         <Probe />
       </PlaybackProvider>
     );
@@ -378,6 +420,37 @@ describe('usePlayback', () => {
 
     expect(playing()).toBe('a');
     expect(paused()).toBe('yes');
+  });
+
+  it('plays the authenticated clip after pausing while its download is pending', async () => {
+    let finishDownload!: (clip: { objectUrl: string; peaks: number[] }) => void;
+    const clips: ClipLoader = {
+      load: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            finishDownload = resolve;
+          })
+      ),
+      peek: vi.fn().mockReturnValue(null),
+      dispose: vi.fn(),
+    };
+    const player = setup(<Probe />, clips);
+
+    await click('enqueue a');
+    await vi.waitFor(() => expect(clips.load).toHaveBeenCalledWith('/a.wav'));
+    await click('pause');
+
+    await act(async () => {
+      finishDownload({ objectUrl: 'blob:authenticated-a', peaks: [] });
+    });
+    expect(player.played).toEqual([]);
+
+    await click('resume');
+    await vi.waitFor(() => expect(player.played).toEqual(['blob:authenticated-a']));
+
+    expect(player.resumed).not.toHaveBeenCalled();
+    expect(playing()).toBe('a');
+    expect(paused()).toBe('no');
   });
 
   // A pause must not stall the conversation. The clip someone stopped half way

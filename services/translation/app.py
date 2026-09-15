@@ -143,7 +143,9 @@ def _env_int(name: str, default: int) -> int:
     try:
         return int(raw)
     except ValueError:
-        logger.warning("Ignoring unparseable %s=%r; using default %s", name, raw, default)
+        logger.warning(
+            "Ignoring unparseable %s=%r; using default %s", name, raw, default
+        )
         return default
 
 
@@ -154,7 +156,9 @@ def _env_float(name: str, default: float) -> float:
     try:
         return float(raw)
     except ValueError:
-        logger.warning("Ignoring unparseable %s=%r; using default %s", name, raw, default)
+        logger.warning(
+            "Ignoring unparseable %s=%r; using default %s", name, raw, default
+        )
         return default
 
 
@@ -167,7 +171,19 @@ TRANSLATION_QUEUE_WAIT_SECONDS = _env_float(
 
 # Spread across the plausible wait range: most requests should be seated
 # immediately, and anything near the timeout is a capacity signal.
-QUEUE_WAIT_BUCKETS = (0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 25.0, float("inf"))
+QUEUE_WAIT_BUCKETS = (
+    0.01,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.0,
+    5.0,
+    10.0,
+    25.0,
+    float("inf"),
+)
 
 
 class _SlotClaim:
@@ -256,8 +272,14 @@ class TranslationAdmission:
         *,
         metrics: Optional[Any] = None,
     ) -> None:
-        limit = MAX_CONCURRENT_TRANSLATIONS if max_concurrent is None else max_concurrent
-        wait = TRANSLATION_QUEUE_WAIT_SECONDS if queue_wait_seconds is None else queue_wait_seconds
+        limit = (
+            MAX_CONCURRENT_TRANSLATIONS if max_concurrent is None else max_concurrent
+        )
+        wait = (
+            TRANSLATION_QUEUE_WAIT_SECONDS
+            if queue_wait_seconds is None
+            else queue_wait_seconds
+        )
 
         # A negative limit is a typo, not a request to run unbounded, and
         # silently removing the bound is the dangerous reading of it. Only an
@@ -298,7 +320,9 @@ class TranslationAdmission:
     def in_flight(self) -> int:
         return self._in_flight
 
-    async def run(self, func: Callable[..., List[str]], /, *args: Any, **kwargs: Any) -> List[str]:
+    async def run(
+        self, func: Callable[..., List[str]], /, *args: Any, **kwargs: Any
+    ) -> List[str]:
         """Runs a synchronous inference function on a worker thread under the bound.
 
         Raises ``TranslationBusyError`` if no slot comes free within the
@@ -363,7 +387,9 @@ class TranslationAdmission:
             try:
                 # Python 3.11+ returns the permit if the waiter is cancelled, so
                 # a timeout here cannot leak capacity.
-                await asyncio.wait_for(self._semaphore.acquire(), timeout=self.queue_wait_seconds)
+                await asyncio.wait_for(
+                    self._semaphore.acquire(), timeout=self.queue_wait_seconds
+                )
             except TimeoutError:
                 self._reject(time.perf_counter() - started)
 
@@ -589,7 +615,9 @@ async def _run_inference_off_loop(
             _translate_texts, texts, source_lang, target_lang, gen_overrides
         )
 
-    return await admission.run(_translate_texts, texts, source_lang, target_lang, gen_overrides)
+    return await admission.run(
+        _translate_texts, texts, source_lang, target_lang, gen_overrides
+    )
 
 
 def _busy_response(

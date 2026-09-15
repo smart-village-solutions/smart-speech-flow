@@ -45,7 +45,19 @@ DEFAULT_QUEUE_WAIT_SECONDS = 10.0
 
 # Spread across the plausible wait range: most requests should be seated
 # immediately, and anything near the timeout is a capacity signal.
-QUEUE_WAIT_BUCKETS = (0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, float("inf"))
+QUEUE_WAIT_BUCKETS = (
+    0.01,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.0,
+    5.0,
+    10.0,
+    30.0,
+    float("inf"),
+)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -56,7 +68,9 @@ def _env_int(name: str, default: int) -> int:
     try:
         return int(raw)
     except ValueError:
-        logger.warning("Ignoring unparseable %s=%r; using default %s", name, raw, default)
+        logger.warning(
+            "Ignoring unparseable %s=%r; using default %s", name, raw, default
+        )
         return default
 
 
@@ -67,7 +81,9 @@ def _env_float(name: str, default: float) -> float:
     try:
         return float(raw)
     except ValueError:
-        logger.warning("Ignoring unparseable %s=%r; using default %s", name, raw, default)
+        logger.warning(
+            "Ignoring unparseable %s=%r; using default %s", name, raw, default
+        )
         return default
 
 
@@ -362,7 +378,9 @@ def get_pipeline_admission(request: Any) -> Optional[PipelineAdmission]:
     return candidate if isinstance(candidate, PipelineAdmission) else None
 
 
-async def run_pipeline(request: Any, func: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
+async def run_pipeline(
+    request: Any, func: Callable[..., T], /, *args: Any, **kwargs: Any
+) -> T:
     """Runs a pipeline function under the app's bound, unbounded if there is none."""
     admission = get_pipeline_admission(request)
     if admission is None:

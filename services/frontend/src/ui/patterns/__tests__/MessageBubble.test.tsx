@@ -24,7 +24,7 @@ const incoming: ChatMessage = {
   id: 'm2',
   origin: 'peer',
   text: 'Do you have your old passport?',
-  audioUrl: '/api/audio/m2.wav',
+  audioUrl: '/clips/m2.wav',
 };
 
 describe('MessageBubble', () => {
@@ -131,7 +131,7 @@ describe('MessageBubble', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Play' }));
     expect(player.resumed).toHaveBeenCalledTimes(1);
     // A resume is not a fresh play: the clip was never loaded a second time.
-    expect(player.played).toEqual(['/api/audio/m2.wav']);
+    expect(player.played).toEqual(['/clips/m2.wav']);
   });
 
   it('keeps the waveform where it was paused', async () => {
@@ -153,7 +153,7 @@ describe('MessageBubble', () => {
     renderWithProviders(
       <>
         <MessageBubble message={incoming} />
-        <MessageBubble message={{ ...incoming, id: 'm3', audioUrl: '/api/audio/m3.wav' }} />
+        <MessageBubble message={{ ...incoming, id: 'm3', audioUrl: '/clips/m3.wav' }} />
       </>,
       { player: player.port }
     );
@@ -163,7 +163,7 @@ describe('MessageBubble', () => {
     await player.started();
     await userEvent.click(second as HTMLElement);
 
-    expect(player.played).toEqual(['/api/audio/m2.wav', '/api/audio/m3.wav']);
+    expect(player.played).toEqual(['/clips/m2.wav', '/clips/m3.wav']);
   });
 
   it('fills the waveform in step with playback progress', async () => {
@@ -204,7 +204,7 @@ describe('MessageBubble', () => {
     const { container } = renderWithProviders(
       <>
         <MessageBubble message={incoming} />
-        <MessageBubble message={{ ...incoming, id: 'm3', audioUrl: '/api/audio/m3.wav' }} />
+        <MessageBubble message={{ ...incoming, id: 'm3', audioUrl: '/clips/m3.wav' }} />
       </>,
       { player: player.port }
     );
@@ -226,7 +226,7 @@ describe('MessageBubble', () => {
     const { container } = renderWithProviders(
       <>
         <MessageBubble message={incoming} />
-        <MessageBubble message={{ ...incoming, id: 'm3', audioUrl: '/api/audio/m3.wav' }} />
+        <MessageBubble message={{ ...incoming, id: 'm3', audioUrl: '/clips/m3.wav' }} />
       </>,
       { player: player.port }
     );
@@ -244,7 +244,7 @@ describe('MessageBubble', () => {
 
   it('draws the real shape of the clip once it has been decoded', async () => {
     const clips = createFakeClipLoader();
-    clips.provide('/api/audio/m2.wav', stripedPeaks());
+    clips.provide('/clips/m2.wav', stripedPeaks());
 
     const { container } = renderWithProviders(<MessageBubble message={incoming} />, { clips });
 
@@ -254,7 +254,7 @@ describe('MessageBubble', () => {
       expect(bars[1].style.height).toBe('10%');
     });
 
-    expect(clips.loaded).toEqual(['/api/audio/m2.wav']);
+    expect(clips.loaded).toEqual(['/clips/m2.wav']);
   });
 
   it('keeps the decorative shape when the clip cannot be decoded', async () => {
@@ -262,7 +262,7 @@ describe('MessageBubble', () => {
 
     const { container } = renderWithProviders(<MessageBubble message={incoming} />, { clips });
 
-    await waitFor(() => expect(clips.loaded).toEqual(['/api/audio/m2.wav']));
+    await waitFor(() => expect(clips.loaded).toEqual(['/clips/m2.wav']));
 
     const bars = [...container.querySelectorAll<HTMLElement>('[aria-hidden="true"] > div')];
     expect(bars[0].style.height).toBe('4px');

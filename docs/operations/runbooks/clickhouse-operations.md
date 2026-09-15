@@ -408,24 +408,34 @@ the result — it should now list `otel-collector`.
 
 **11. Turn real pipeline events on (optional, and separate).** Steps 1-10 leave
 the gateway on `probe`, which emits no pipeline events. Before switching to
-`enabled`, confirm migrations `002`, `003` and `004` have been applied — they
-are what give `quality_events` its typed columns, and `initdb` does **not**
+`enabled`, confirm migrations `002`, `003`, `004`, `005`, `006` and `007` have been applied — they
+are what give `quality_events` its typed columns and the feedback aggregate its
+tenant dimension, and `initdb` does **not**
 re-run on a volume that already has data:
 
     $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT name FROM system.tables WHERE database = currentDatabase() ORDER BY name"'
 
-Expect `otel_logs`, `quality_events`, `quality_events_daily`,
-`quality_events_daily_mv`, `quality_events_mv`. If the gold tier is missing,
+Expect `feedback_daily`, `feedback_daily_mv`, `otel_logs`, `quality_events`,
+`quality_events_daily`, `quality_events_daily_mv`, `quality_events_mv`. If the
+gold tier or the feedback aggregate is missing,
 re-run `apply.sh` (step 5) — it is idempotent.
 
-The table list does not distinguish `002` from `003` and `004`, because those
-two only add columns. Check them directly:
+The table list does not distinguish `002` from `003`, `004`, `005`, `006` and `007`,
+because those only add columns. Check them directly:
 
     $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = '"'"'quality_events'"'"'"'
 
-Expect `30`. Fewer means a migration has not been applied; re-run `apply.sh`.
+Expect `37`. Fewer means a migration has not been applied; re-run `apply.sh`.
 
-**Order matters.** Emitting events while any of `002`-`004` is unapplied writes rows
+`007` adds no column to `quality_events`, so the count above does not cover it.
+It dimensions the feedback aggregate by tenant, which is visible in that
+table's sorting key:
+
+    $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT sorting_key FROM system.tables WHERE database = currentDatabase() AND name = '"'"'feedback_daily'"'"'"'
+
+Expect `tenant_ref` at the end of the key. Absent means `007` is unapplied.
+
+**Order matters.** Emitting events while any of `002`-`007` is unapplied writes rows
 whose typed columns are all defaults, and those rows cannot be repaired: the
 attributes were dropped at projection time and bronze expires after 7 days. The
 dashboard's `Rows Missing Typed Fields` panel exists to catch exactly this and
@@ -652,6 +662,13 @@ Grafana startup, so the container must be recreated.
 The dashboard JSON is the exception: the provider re-reads
 `/var/lib/grafana/dashboards` every 30s (`updateIntervalSeconds: 30`), so
 `ssf-telemetry.json` appears within half a minute of `git pull` on its own.
+
+That makes the pull, not the migration, the moment a panel changes. A panel
+that reads a column a migration adds fails with a missing-column error from
+the pull until `apply.sh` (step 5 of "Enabling in production") has run, so run
+it straight after pulling. Nothing is lost in the gap, but the panel reads as
+broken. Currently this is `007`: the two gold-tier feedback panels and the
+`Tenant` picker read `feedback_daily.tenant_ref`.
 
 Using the same `PC` invocation as "Enabling in production" above:
 

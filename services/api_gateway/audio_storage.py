@@ -9,13 +9,17 @@ Manages persistent storage of audio files with automatic cleanup.
 """
 
 import base64
+import copy
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
+from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Any, Iterator, Optional
 
 from .log_safety import sanitize_log_value
+from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
 WAV_GLOB_PATTERN = "*.wav"
@@ -59,6 +63,134 @@ TRANSLATED_AUDIO_DIR = AUDIO_BASE_DIR / "translated"
 
 # Retention policy
 RETENTION_HOURS = 24
+_STORAGE_IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_TENANT_REF = re.compile(r"^[0-9a-f]{12}$")
+
+
+class AudioVariant(str, Enum):
+    ORIGINAL = "original"
+    TRANSLATED = "translated"
+
+
+def _storage_identifier(value: str) -> str:
+    if not _STORAGE_IDENTIFIER.fullmatch(value):
+        raise ValueError("invalid storage identifier")
+    return value
+
+
+def audio_path(
+    key: TenantSessionKey,
+    message_id: str,
+    variant: AudioVariant,
+    *,
+    base_dir: Path = AUDIO_BASE_DIR,
+) -> Path:
+    """Return a v2 path without exposing the raw tenant identifier."""
+    safe_message_id = _storage_identifier(message_id)
+    return (
+        base_dir
+        / "v2"
+        / key.tenant_ref
+        / key.session_id
+        / variant.value
+        / f"{safe_message_id}.wav"
+    )
+
+
+def save_audio(
+    key: TenantSessionKey,
+    message_id: str,
+    variant: AudioVariant,
+    data: bytes,
+    *,
+    base_dir: Path = AUDIO_BASE_DIR,
+) -> Path:
+    """Persist one audio artifact below its tenant and session scope."""
+    if not data:
+        raise ValueError("audio data cannot be empty")
+    path = audio_path(key, message_id, variant, base_dir=base_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    logger.info(
+        "tenant_audio_saved",
+        extra={"tenant_ref": key.tenant_ref, "variant": variant.value},
+    )
+    return path
+
+
+def scoped_audio_url(
+    key: TenantSessionKey,
+    role: str,
+    message_id: str,
+    variant: AudioVariant,
+) -> str:
+    """Build an audio URL for the role authorized at the response boundary."""
+    if role not in {"admin", "customer"}:
+        raise ValueError("invalid audio role")
+    safe_message_id = _storage_identifier(message_id)
+    return (
+        f"/api/{role}/session/{key.session_id}/audio/"
+        f"{safe_message_id}/{variant.value}.wav"
+    )
+
+
+def scope_pipeline_audio_urls(
+    metadata: Optional[dict[str, Any]],
+    key: TenantSessionKey,
+    role: str,
+    message_id: str,
+) -> Optional[dict[str, Any]]:
+    """Copy pipeline metadata and replace reusable paths with role-scoped URLs."""
+    if metadata is None:
+        return None
+    scoped = copy.deepcopy(metadata)
+    pipeline_input = scoped.get("input")
+    if isinstance(pipeline_input, dict) and pipeline_input.get("type") == "audio":
+        pipeline_input["audio_url"] = scoped_audio_url(
+            key, role, message_id, AudioVariant.ORIGINAL
+        )
+    steps = scoped.get("steps")
+    if isinstance(steps, list):
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            output = step.get("output")
+            if isinstance(output, dict) and (
+                "audio_url" in output or output.get("audio_available") is True
+            ):
+                output["audio_url"] = scoped_audio_url(
+                    key, role, message_id, AudioVariant.TRANSLATED
+                )
+    return scoped
+
+
+def _managed_v2_audio_files(
+    base_dir: Path,
+) -> Iterator[tuple[AudioVariant, Path]]:
+    """Yield only regular WAV files in the fixed v2 tenant/session layout."""
+    v2_root = base_dir / "v2"
+    if not v2_root.is_dir() or v2_root.is_symlink():
+        return
+    resolved_root = v2_root.resolve()
+    for filepath in v2_root.rglob(WAV_GLOB_PATTERN):
+        try:
+            relative = filepath.relative_to(v2_root)
+            if len(relative.parts) != 4:
+                continue
+            _tenant_ref, session_id, variant_name, filename = relative.parts
+            if (
+                variant_name not in {variant.value for variant in AudioVariant}
+                or not _TENANT_REF.fullmatch(_tenant_ref)
+                or not _STORAGE_IDENTIFIER.fullmatch(session_id)
+                or not _STORAGE_IDENTIFIER.fullmatch(filename.removesuffix(".wav"))
+                or filepath.is_symlink()
+                or not filepath.is_file()
+                or not filepath.resolve().is_relative_to(resolved_root)
+            ):
+                continue
+            yield AudioVariant(variant_name), filepath
+        except (OSError, ValueError):
+            logger.warning("Skipped unsafe audio storage entry")
 
 
 def ensure_directories():
@@ -190,7 +322,7 @@ def get_audio_file_path(filename: str) -> Optional[Path]:
     return None
 
 
-def cleanup_old_audio_files() -> dict:
+def cleanup_old_audio_files(*, base_dir: Path = AUDIO_BASE_DIR) -> dict:
     """
     Delete audio files older than RETENTION_HOURS.
 
@@ -203,8 +335,6 @@ def cleanup_old_audio_files() -> dict:
             "errors": int
         }
     """
-    ensure_directories()
-
     stats = {
         "deleted_original": 0,
         "deleted_translated": 0,
@@ -219,34 +349,18 @@ def cleanup_old_audio_files() -> dict:
         sanitize_log_value(cutoff_time.isoformat()),
     )
 
-    # Cleanup original audio
-    for filepath in ORIGINAL_AUDIO_DIR.glob(WAV_GLOB_PATTERN):
+    for variant, filepath in _managed_v2_audio_files(base_dir):
         try:
             file_mtime = datetime.fromtimestamp(filepath.stat().st_mtime, timezone.utc)
             if file_mtime < cutoff_time:
                 filepath.unlink()
-                stats["deleted_original"] += 1
+                stats[f"deleted_{variant.value}"] += 1
                 logger.debug(
-                    "Deleted old original audio: %s",
-                    sanitize_log_value(filepath),
+                    "Deleted expired v2 audio",
+                    extra={"variant": variant.value},
                 )
         except Exception:
-            logger.exception("Failed to delete old original audio")
-            stats["errors"] += 1
-
-    # Cleanup translated audio
-    for filepath in TRANSLATED_AUDIO_DIR.glob(WAV_GLOB_PATTERN):
-        try:
-            file_mtime = datetime.fromtimestamp(filepath.stat().st_mtime, timezone.utc)
-            if file_mtime < cutoff_time:
-                filepath.unlink()
-                stats["deleted_translated"] += 1
-                logger.debug(
-                    "Deleted old translated audio: %s",
-                    sanitize_log_value(filepath),
-                )
-        except Exception:
-            logger.exception("Failed to delete old translated audio")
+            logger.exception("Failed to delete expired v2 audio")
             stats["errors"] += 1
 
     stats["total_deleted"] = stats["deleted_original"] + stats["deleted_translated"]
@@ -264,7 +378,7 @@ def cleanup_old_audio_files() -> dict:
     return stats
 
 
-def get_disk_usage() -> dict:
+def get_disk_usage(*, base_dir: Path = AUDIO_BASE_DIR) -> dict:
     """
     Get disk usage statistics for audio storage.
 
@@ -278,8 +392,6 @@ def get_disk_usage() -> dict:
             "total_files": int
         }
     """
-    ensure_directories()
-
     stats = {
         "original_bytes": 0,
         "translated_bytes": 0,
@@ -287,21 +399,12 @@ def get_disk_usage() -> dict:
         "translated_files": 0,
     }
 
-    # Count original files
-    for filepath in ORIGINAL_AUDIO_DIR.glob(WAV_GLOB_PATTERN):
+    for variant, filepath in _managed_v2_audio_files(base_dir):
         try:
-            stats["original_bytes"] += filepath.stat().st_size
-            stats["original_files"] += 1
+            stats[f"{variant.value}_bytes"] += filepath.stat().st_size
+            stats[f"{variant.value}_files"] += 1
         except Exception:
-            logger.exception("Failed to stat original audio")
-
-    # Count translated files
-    for filepath in TRANSLATED_AUDIO_DIR.glob(WAV_GLOB_PATTERN):
-        try:
-            stats["translated_bytes"] += filepath.stat().st_size
-            stats["translated_files"] += 1
-        except Exception:
-            logger.exception("Failed to stat translated audio")
+            logger.exception("Failed to stat v2 audio")
 
     stats["total_bytes"] = stats["original_bytes"] + stats["translated_bytes"]
     stats["total_files"] = stats["original_files"] + stats["translated_files"]

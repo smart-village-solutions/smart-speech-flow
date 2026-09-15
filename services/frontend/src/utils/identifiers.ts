@@ -21,15 +21,26 @@ export function sessionPath(sessionId: string): string {
   return `/api/session/${requirePathIdentifier(sessionId, 'session')}`;
 }
 
-export function buildWebSocketUrl(baseUrl: string, sessionId: string, clientType: 'admin' | 'customer'): string {
+export function buildWebSocketUrl(
+  baseUrl: string,
+  sessionId: string,
+  clientType: 'admin' | 'customer',
+  ticket?: string
+): string {
   const base = new URL(baseUrl);
   if (base.protocol !== 'ws:' && base.protocol !== 'wss:') {
     throw new Error('WebSocket base URL must use ws or wss');
   }
 
   const basePath = base.pathname.replace(/\/$/, '');
-  base.pathname = `${basePath}/ws/${requirePathIdentifier(sessionId, 'session')}/${clientType}`;
+  base.pathname = `${basePath}/ws/${clientType}/${requirePathIdentifier(sessionId, 'session')}`;
   base.search = '';
+  if (clientType === 'admin') {
+    if (ticket === undefined || ticket === '') {
+      throw new Error('Admin WebSocket ticket is required');
+    }
+    base.searchParams.set('ticket', ticket);
+  }
   base.hash = '';
   return base.toString();
 }

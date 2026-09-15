@@ -5,27 +5,40 @@ import json
 import re
 
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from services.studio_mock.app import app
 
 CLIENT = TestClient(app)
 PATH = "/internal/plugins/ssf/v1/runtime-configuration"
+DIRECTORY_PATH = "/internal/plugins/ssf/v1/admin-login-tenants"
 AUTHORIZED_TOKEN = "Bearer studio-mock-authorized-token"
 UNAUTHORIZED_TOKEN = "Bearer studio-mock-unauthorized-token"
 
 
-def _headers(
-    studio_instance_id: str = "tenant-kassel", **additional: str
-) -> dict[str, str]:
+def _headers(tenant_id: str = "tenant-kassel", **additional: str) -> dict[str, str]:
     return {
         "Authorization": AUTHORIZED_TOKEN,
-        "X-Studio-Instance-Id": studio_instance_id,
+        "X-Studio-Tenant-Id": tenant_id,
         "X-Correlation-Id": "test-correlation-id",
         **additional,
     }
 
 
-def test_returns_v1_configuration_for_authorized_studio_instance() -> None:
+def _assert_error(response: Response, status: int, code: str, retryable: bool) -> None:
+    assert response.status_code == status
+    assert response.json() == {
+        "contractVersion": "1.0",
+        "error": {
+            "code": code,
+            "message": "Runtime configuration is unavailable.",
+            "retryable": retryable,
+            "correlationId": "test-correlation-id",
+        },
+    }
+
+
+def test_returns_v1_configuration_for_authorized_tenant() -> None:
     response = CLIENT.get(PATH, headers=_headers())
 
     assert response.status_code == 200
@@ -63,7 +76,7 @@ def test_returns_v1_configuration_for_authorized_studio_instance() -> None:
     assert configuration_revision == f"sha256:{expected_configuration_revision}"
 
 
-def test_returns_disabled_policy_for_second_studio_instance() -> None:
+def test_returns_disabled_policy_for_second_tenant() -> None:
     response = CLIENT.get(PATH, headers=_headers("tenant-fulda"))
 
     assert response.status_code == 200
@@ -78,74 +91,100 @@ def test_rejects_missing_or_unknown_service_token() -> None:
     unknown_token = CLIENT.get(PATH, headers=_headers(Authorization="Bearer unknown"))
 
     for response in (missing_token, unknown_token):
-        assert response.status_code == 401
-        assert response.json()["error"]["code"] == "SERVICE_UNAUTHENTICATED"
+        _assert_error(response, 401, "service_authentication_invalid", False)
 
 
 def test_rejects_service_token_without_runtime_configuration_permission() -> None:
     response = CLIENT.get(PATH, headers=_headers(Authorization=UNAUTHORIZED_TOKEN))
 
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "SERVICE_FORBIDDEN"
+    _assert_error(response, 403, "service_action_forbidden", False)
 
 
-def test_requires_studio_instance_and_correlation_headers() -> None:
-    missing_instance = CLIENT.get(
+def test_rejects_missing_tenant_and_correlation_headers() -> None:
+    missing_tenant = CLIENT.get(
         PATH,
-        headers={"Authorization": AUTHORIZED_TOKEN, "X-Correlation-Id": "test-correlation-id"},
+        headers={
+            "Authorization": AUTHORIZED_TOKEN,
+            "X-Correlation-Id": "test-correlation-id",
+        },
     )
     missing_correlation = CLIENT.get(
         PATH,
-        headers={"Authorization": AUTHORIZED_TOKEN, "X-Studio-Instance-Id": "tenant-kassel"},
+        headers={
+            "Authorization": AUTHORIZED_TOKEN,
+            "X-Studio-Tenant-Id": "tenant-kassel",
+        },
     )
 
-    assert missing_instance.status_code == 400
-    assert missing_instance.json()["error"]["code"] == "STUDIO_INSTANCE_ID_REQUIRED"
-    assert missing_correlation.status_code == 400
-    assert missing_correlation.json()["error"]["code"] == "CORRELATION_ID_REQUIRED"
+    assert missing_tenant.status_code == 404
+    assert missing_tenant.json()["error"]["code"] == "tenant_not_found"
+    assert missing_correlation.status_code == 404
+    assert missing_correlation.json() == {
+        "contractVersion": "1.0",
+        "error": {
+            "code": "tenant_not_found",
+            "message": "Runtime configuration is unavailable.",
+            "retryable": False,
+            "correlationId": "unavailable",
+        },
+    }
 
 
-def test_does_not_use_browser_tenant_query_parameter_for_identity() -> None:
-    response = CLIENT.get(PATH, params={"tenantId": "tenant-kassel"})
+def test_rejects_competing_tenant_selectors() -> None:
+    responses = [
+        CLIENT.get(
+            PATH,
+            headers={
+                "Authorization": AUTHORIZED_TOKEN,
+                "X-Studio-Instance-Id": "tenant-kassel",
+                "X-Correlation-Id": "test-correlation-id",
+            },
+        ),
+        CLIENT.get(PATH, headers=_headers(**{"X-Studio-Instance-Id": "tenant-kassel"})),
+        CLIENT.get(PATH, headers=_headers(**{"X-Tenant-Id": "tenant-kassel"})),
+        CLIENT.get(PATH, params={"tenantId": "tenant-kassel"}, headers=_headers()),
+    ]
 
-    assert response.status_code == 401
-    assert response.json()["error"]["code"] == "SERVICE_UNAUTHENTICATED"
+    for response in responses:
+        _assert_error(response, 404, "tenant_not_found", False)
 
 
-def test_returns_not_found_for_unknown_studio_instance() -> None:
+def test_returns_not_found_for_unknown_tenant() -> None:
     response = CLIENT.get(PATH, headers=_headers("tenant-unknown"))
 
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "TENANT_NOT_FOUND"
+    _assert_error(response, 404, "tenant_not_found", False)
 
 
 def test_returns_documented_mock_failure_envelopes() -> None:
     for scenario, status_code, code, retryable in [
-        ("authorization-pending", 409, "AUTHORIZATION_PROJECTION_PENDING", True),
-        ("unavailable", 503, "RUNTIME_CONFIGURATION_UNAVAILABLE", True),
+        ("suspended", 409, "tenant_suspended", False),
+        ("plugin-inactive", 409, "ssf_plugin_inactive", False),
+        ("tenant-not-ready", 409, "ssf_tenant_not_ready", True),
+        ("unavailable", 503, "runtime_configuration_unavailable", True),
     ]:
         response = CLIENT.get(PATH, headers=_headers(**{"X-Mock-Scenario": scenario}))
 
-        assert response.status_code == status_code
-        assert response.json() == {
-            "contractVersion": "1.0",
-            "error": {
-                "code": code,
-                "message": "The requested tenant is unavailable.",
-                "retryable": retryable,
-                "correlationId": "test-correlation-id",
-            },
-        }
+        _assert_error(response, status_code, code, retryable)
 
 
 def test_openapi_documents_every_runtime_configuration_error() -> None:
-    responses = CLIENT.get("/openapi.json").json()["paths"][PATH]["get"]["responses"]
+    schema = CLIENT.get("/openapi.json").json()
+    responses = schema["paths"][PATH]["get"]["responses"]
 
-    for status_code in ("400", "401", "403", "404", "409", "503"):
+    for status_code in ("401", "403", "404", "409", "503"):
         assert responses[status_code]["description"]
         assert responses[status_code]["content"]["application/json"]["schema"]["$ref"].endswith(
             "RuntimeErrorEnvelope"
         )
+    assert set(schema["components"]["schemas"]["RuntimeError"]["properties"]["code"]["enum"]) == {
+        "service_authentication_invalid",
+        "service_action_forbidden",
+        "tenant_not_found",
+        "tenant_suspended",
+        "ssf_plugin_inactive",
+        "ssf_tenant_not_ready",
+        "runtime_configuration_unavailable",
+    }
 
 
 def test_openapi_documents_required_v1_headers_and_success_contract() -> None:
@@ -159,15 +198,13 @@ def test_openapi_documents_required_v1_headers_and_success_contract() -> None:
 
     for header_name in (
         "authorization",
-        "x-studio-instance-id",
+        "x-studio-tenant-id",
         "x-correlation-id",
     ):
         assert headers[header_name]["required"] is True
         assert headers[header_name]["schema"] == {"type": "string"}
 
-    success_schema = operation["responses"]["200"]["content"]["application/json"][
-        "schema"
-    ]
+    success_schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
     assert success_schema["$ref"].endswith("RuntimeConfigurationResponse")
     response_definition = schema["components"]["schemas"]["RuntimeConfigurationResponse"]
     assert {"configurationRevision", "authorizationRevision", "localization"} <= set(
@@ -175,10 +212,111 @@ def test_openapi_documents_required_v1_headers_and_success_contract() -> None:
     )
     branding_definition = schema["components"]["schemas"]["BrandingResponse"]
     logo_schema = branding_definition["properties"]["logo"]
-    assert {
-        item["$ref"]
-        for item in logo_schema["anyOf"]
-        if "$ref" in item
-    } == {"#/components/schemas/BrandingAssetResponse"}
+    assert {item["$ref"] for item in logo_schema["anyOf"] if "$ref" in item} == {
+        "#/components/schemas/BrandingAssetResponse"
+    }
     asset_definition = schema["components"]["schemas"]["BrandingAssetResponse"]
     assert {"url", "alternativeText"} <= set(asset_definition["properties"])
+
+
+def _directory_headers(**additional: str) -> dict[str, str]:
+    return {
+        "Authorization": AUTHORIZED_TOKEN,
+        "X-Correlation-Id": "test-correlation-id",
+        **additional,
+    }
+
+
+def test_returns_deterministic_v1_login_directory_for_authorized_service() -> None:
+    first = CLIENT.get(DIRECTORY_PATH, headers=_directory_headers())
+    second = CLIENT.get(DIRECTORY_PATH, headers=_directory_headers())
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json() == second.json()
+    payload = first.json()
+    assert payload == {
+        "contractVersion": "1.0",
+        "directoryRevision": payload["directoryRevision"],
+        "tenants": [
+            {
+                "id": "tenant-kassel",
+                "displayName": "Stadt Kassel",
+                "realm": "kassel-ssf-2025",
+            },
+            {
+                "id": "tenant-fulda",
+                "displayName": "Stadt Fulda",
+                "realm": "fulda-ssf-2025",
+            },
+        ],
+    }
+    revision = payload.pop("directoryRevision")
+    expected_revision = hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+    ).hexdigest()
+    assert revision == f"sha256:{expected_revision}"
+
+
+def test_login_directory_requires_authorization_and_correlation_id() -> None:
+    missing_token = CLIENT.get(DIRECTORY_PATH, headers={"X-Correlation-Id": "test-correlation-id"})
+    missing_correlation = CLIENT.get(DIRECTORY_PATH, headers={"Authorization": AUTHORIZED_TOKEN})
+
+    assert missing_token.status_code == 401
+    assert missing_token.json()["error"]["code"] == "service_authentication_invalid"
+    assert missing_correlation.status_code != 200
+
+
+def test_login_directory_rejects_tenant_selectors_and_supports_service_scenarios() -> None:
+    selector_responses = [
+        CLIENT.get(
+            DIRECTORY_PATH,
+            headers=_directory_headers(**{"X-Studio-Tenant-Id": "tenant-kassel"}),
+        ),
+        CLIENT.get(
+            DIRECTORY_PATH,
+            headers=_directory_headers(**{"X-Studio-Instance-Id": "tenant-kassel"}),
+        ),
+        CLIENT.get(
+            DIRECTORY_PATH,
+            headers=_directory_headers(**{"X-Tenant-Id": "tenant-kassel"}),
+        ),
+        CLIENT.get(
+            DIRECTORY_PATH,
+            params={"tenantId": "tenant-kassel"},
+            headers=_directory_headers(),
+        ),
+    ]
+    forbidden = CLIENT.get(
+        DIRECTORY_PATH, headers=_directory_headers(Authorization=UNAUTHORIZED_TOKEN)
+    )
+    unavailable = CLIENT.get(
+        DIRECTORY_PATH, headers=_directory_headers(**{"X-Mock-Scenario": "unavailable"})
+    )
+
+    assert all(response.status_code != 200 for response in selector_responses)
+    assert forbidden.status_code == 403
+    assert forbidden.json()["error"]["code"] == "service_action_forbidden"
+    assert unavailable.status_code == 503
+    assert unavailable.json()["error"]["code"] == "admin_login_directory_unavailable"
+
+
+def test_openapi_documents_login_directory_contract_and_required_headers() -> None:
+    schema = CLIENT.get("/openapi.json").json()
+    operation = schema["paths"][DIRECTORY_PATH]["get"]
+    headers = {
+        parameter["name"]: parameter
+        for parameter in operation["parameters"]
+        if parameter["in"] == "header"
+    }
+
+    for header_name in ("authorization", "x-correlation-id"):
+        assert headers[header_name]["required"] is True
+        assert headers[header_name]["schema"] == {"type": "string"}
+    assert "x-studio-tenant-id" not in headers
+    success_schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
+    assert success_schema["$ref"].endswith("AdminLoginDirectoryResponse")
+    response_definition = schema["components"]["schemas"]["AdminLoginDirectoryResponse"]
+    assert {"contractVersion", "directoryRevision", "tenants"} <= set(
+        response_definition["properties"]
+    )

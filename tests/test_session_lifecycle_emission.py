@@ -7,6 +7,8 @@ in this pipeline: one row per transition, nothing content-bearing on it, and a
 dead ClickHouse changing no session outcome.
 """
 
+from hashlib import sha256
+
 import pytest
 from prometheus_client import CollectorRegistry
 
@@ -18,6 +20,8 @@ from services.api_gateway.quality_telemetry import (
     discard_event,
 )
 from services.api_gateway.session_manager import SessionManager, SessionStatus
+from services.api_gateway.session_store import MemoryTenantSessionStore
+from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 
 class _Spy:
@@ -52,6 +56,29 @@ def spy(manager):
 
 
 class TestTheThreeTransitions:
+    @pytest.mark.asyncio
+    async def test_tenant_lifecycle_carries_only_a_pseudonymous_tenant_reference(
+        self,
+    ):
+        manager = SessionManager(
+            store=MemoryTenantSessionStore(), session_id_factory=lambda: "ABC12345"
+        )
+        spy = _Spy()
+        manager.attach_quality_telemetry(spy)
+        runtime_configuration = RuntimeConfigurationSnapshot(
+            configuration_revision="revision-a",
+            authorization_revision="authorization-a",
+            canonical_json="{}",
+        )
+        session = await manager.create_admin_session(
+            "secret-tenant", runtime_configuration
+        )
+
+        (call,) = spy.calls
+        assert call["tenant_ref"] == sha256(b"secret-tenant").hexdigest()[:12]
+        assert "secret-tenant" not in repr(call)
+        assert session.id not in repr(call)
+
     @pytest.mark.asyncio
     async def test_creating_a_session_emits_created(self, manager, spy):
         await manager.create_admin_session()
@@ -139,10 +166,10 @@ class TestTheLegacyCreationPath:
     inconsistent for exactly the population this event exists to measure.
     """
 
-    def test_the_legacy_route_still_reaches_this_method(self):
+    def test_the_legacy_route_is_no_longer_exposed(self):
         from services.api_gateway.app import app
 
-        assert "/api/session/create" in app.openapi()["paths"]
+        assert "/api/session/create" not in app.openapi()["paths"]
 
     def test_creating_a_legacy_session_emits_created(self, manager, spy):
         manager.create_session("en")

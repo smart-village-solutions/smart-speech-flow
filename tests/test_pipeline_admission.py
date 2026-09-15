@@ -21,7 +21,8 @@ from services.api_gateway.quality_telemetry import (
     PipelineStage,
     QualityErrorCode,
 )
-from services.api_gateway.session_manager import SessionManager
+from services.api_gateway.session_manager import ClientType, SessionManager
+from services.api_gateway.session_store import MemoryTenantSessionStore
 from tests.pipeline_helpers import (
     PIPELINE_SUCCESS,
     SAFETY_TIMEOUT,
@@ -128,7 +129,7 @@ class _Saturated:
 
 @pytest.fixture
 def session_manager():
-    return SessionManager()
+    return SessionManager(store=MemoryTenantSessionStore())
 
 
 class TestConfiguration:
@@ -624,7 +625,7 @@ class TestSystemBusyResponse:
             async with _Saturated(admission):
                 with pytest.raises(HTTPException) as excinfo:
                     await session_routes.process_audio_input(
-                        session_id, audio_request(admission), 0.0
+                        session_id, ClientType.ADMIN, audio_request(admission), 0.0
                     )
 
         error = excinfo.value
@@ -652,7 +653,7 @@ class TestSystemBusyResponse:
             async with _Saturated(admission):
                 with pytest.raises(HTTPException) as excinfo:
                     await session_routes.process_text_input(
-                        session_id, text_request(admission), 0.0
+                        session_id, ClientType.ADMIN, text_request(admission), 0.0
                     )
 
         error = excinfo.value
@@ -681,7 +682,7 @@ class TestSystemBusyResponse:
             async with _Saturated(admission):
                 with pytest.raises(HTTPException) as excinfo:
                     await session_routes.process_text_input(
-                        session_id, text_request(admission), 0.0
+                        session_id, ClientType.ADMIN, text_request(admission), 0.0
                     )
 
         error = excinfo.value
@@ -713,7 +714,7 @@ class TestSystemBusyResponse:
             async with _Saturated(admission):
                 with pytest.raises(HTTPException) as excinfo:
                     await session_routes.send_unified_message(
-                        session_id, text_request(admission)
+                        session_id, ClientType.ADMIN, text_request(admission)
                     )
 
         assert excinfo.value.status_code == 503
@@ -735,10 +736,10 @@ class TestSystemBusyResponse:
             ),
         ):
             first = await session_routes.process_text_input(
-                session_id, text_request(admission), 0.0
+                session_id, ClientType.ADMIN, text_request(admission), 0.0
             )
             second = await session_routes.process_text_input(
-                session_id, text_request(admission), 0.0
+                session_id, ClientType.ADMIN, text_request(admission), 0.0
             )
 
         assert first.status == "success"
@@ -777,7 +778,7 @@ class TestEndToEndOverTheWire:
             assert app.state.pipeline_admission.config.max_concurrent == 1
 
             session_id = await make_active_session(live_manager)
-            url = f"/api/session/{session_id}/message"
+            url = f"/api/admin/session/{session_id.session_id}/message"
 
             with patch.object(
                 session_routes, "process_text_pipeline", new=blocking_text
@@ -898,7 +899,7 @@ class TestUpstreamSaturationStaysRetryable:
         ):
             with pytest.raises(HTTPException) as excinfo:
                 await session_routes.process_audio_input(
-                    session_id, audio_request(), 0.0
+                    session_id, ClientType.ADMIN, audio_request(), 0.0
                 )
 
         error = excinfo.value
@@ -928,7 +929,9 @@ class TestUpstreamSaturationStaysRetryable:
             ),
         ):
             with pytest.raises(HTTPException) as excinfo:
-                await session_routes.process_text_input(session_id, text_request(), 0.0)
+                await session_routes.process_text_input(
+                    session_id, ClientType.ADMIN, text_request(), 0.0
+                )
 
         error = excinfo.value
         assert error.status_code == 503
@@ -953,7 +956,7 @@ class TestUpstreamSaturationStaysRetryable:
         ):
             with pytest.raises(HTTPException) as excinfo:
                 await session_routes.process_audio_input(
-                    session_id, audio_request(), 0.0
+                    session_id, ClientType.ADMIN, audio_request(), 0.0
                 )
 
         assert excinfo.value.status_code == 500
@@ -1004,25 +1007,6 @@ class TestLegacyRoutesAreGated:
 
 class TestNonPipelineTrafficIsUnaffected:
     """Health and session-management traffic bypass the bound."""
-
-    @pytest.mark.asyncio
-    async def test_session_management_responds_while_saturated(self, session_manager):
-        from services.api_gateway.routes import session as session_routes
-
-        session_id = await make_active_session(session_manager)
-        admission = _admission(1)
-
-        async with _Saturated(admission):
-            with patch.object(session_routes, "session_manager", session_manager):
-                info = await asyncio.wait_for(
-                    session_routes.get_session_info(session_id), timeout=1.0
-                )
-                active = await asyncio.wait_for(
-                    session_routes.get_active_sessions(), timeout=1.0
-                )
-
-        assert info["id"] == session_id
-        assert "sessions" in active
 
     @pytest.mark.asyncio
     async def test_health_route_never_touches_the_bound(self):

@@ -19,7 +19,7 @@ export function ScreenShell({ children, className }: Readonly<ScreenShellProps>)
   return (
     <div
       data-screen-shell=""
-      className="min-h-dvh w-full bg-surface-page font-sans text-fg-strong transition-colors duration-300"
+      className="min-h-dvh w-full overflow-x-clip bg-surface-page font-sans text-fg-strong transition-colors duration-300"
     >
       <div
         className={cn('relative mx-auto flex min-h-dvh w-full max-w-app flex-col', className)}

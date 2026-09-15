@@ -190,7 +190,7 @@ class TestAudioPipelineIntegration:
 
         # Verify input
         assert metadata["input"]["type"] == "audio"
-        assert metadata["input"]["audio_url"] == "/api/audio/input_test-123.wav"
+        assert "audio_url" not in metadata["input"]
         assert metadata["input"]["source_lang"] == "de"
 
         # Verify steps

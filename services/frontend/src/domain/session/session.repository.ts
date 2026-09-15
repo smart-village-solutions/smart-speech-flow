@@ -6,16 +6,20 @@ import type { ActivateSessionDto, SessionInfoDto } from './session.mapper';
 import type { Session } from './session.types';
 
 export interface SessionRepository {
-  getSession(id: string): Promise<Session>;
+  getSession(id: string, role: ClientRole): Promise<Session>;
   activate(id: string, languageCode: string): Promise<Session>;
-  reportActivity(id: string, role: ClientRole): Promise<void>;
 }
+
+const sessionPathForRole = (role: ClientRole, sessionId: string): string =>
+  role === 'admin'
+    ? `/api/admin/session/${sessionId}/status`
+    : `/api/customer/session/${sessionId}`;
 
 export function createSessionRepository(http: AxiosInstance): SessionRepository {
   return {
-    async getSession(id) {
+    async getSession(id, role) {
       const safeId = requirePathIdentifier(id, 'session');
-      const response = await http.get<SessionInfoDto>(`/api/session/${safeId}`);
+      const response = await http.get<SessionInfoDto>(sessionPathForRole(role, safeId));
       return toSession(response.data);
     },
 
@@ -26,11 +30,6 @@ export function createSessionRepository(http: AxiosInstance): SessionRepository 
         customer_language: languageCode,
       });
       return activationToSession(response.data);
-    },
-
-    async reportActivity(id, role) {
-      const safeId = requirePathIdentifier(id, 'session');
-      await http.post(`/api/session/${safeId}/activity`, { client_type: role });
     },
   };
 }

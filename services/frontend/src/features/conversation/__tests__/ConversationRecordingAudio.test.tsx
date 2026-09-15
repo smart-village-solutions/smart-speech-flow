@@ -35,7 +35,7 @@ function fakeTransport() {
   const handlers: ((event: RealtimeEvent) => void)[] = [];
 
   const transport: RealtimeTransport = {
-    connect: vi.fn(),
+    connect: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn(),
     send: vi.fn(),
     onEvent: (handler) => {
@@ -62,7 +62,7 @@ const peerAudioEvent = {
   text: 'Guten Tag',
   source_lang: 'de',
   target_lang: 'en',
-  audio_url: '/api/audio/m9.wav',
+  audio_url: '/api/customer/session/A1B2C3D4/audio/m9/translated.wav',
   timestamp: '2026-08-24T10:00:00+00:00',
 };
 
@@ -121,7 +121,9 @@ describe('ConversationScreen audio while recording', () => {
     await wire.receive(peerAudioEvent);
     await finishRecording();
 
-    expect(player.played).toEqual(['/api/audio/m9.wav']);
+    expect(player.played).toEqual([
+      '/api/customer/session/A1B2C3D4/audio/m9/translated.wav',
+    ]);
   });
 
   it('silences a clip already playing when recording starts, and replays it after', async () => {
@@ -138,7 +140,10 @@ describe('ConversationScreen audio while recording', () => {
 
     await finishRecording();
 
-    expect(player.played).toEqual(['/api/audio/m9.wav', '/api/audio/m9.wav']);
+    expect(player.played).toEqual([
+      '/api/customer/session/A1B2C3D4/audio/m9/translated.wav',
+      '/api/customer/session/A1B2C3D4/audio/m9/translated.wav',
+    ]);
   });
 
   it('resumes playback when the microphone is refused', async () => {
@@ -151,6 +156,8 @@ describe('ConversationScreen audio while recording', () => {
       mocks.capturedConfig?.onError(new Error('denied'));
     });
 
-    expect(player.played).toEqual(['/api/audio/m9.wav']);
+    expect(player.played).toEqual([
+      '/api/customer/session/A1B2C3D4/audio/m9/translated.wav',
+    ]);
   });
 });

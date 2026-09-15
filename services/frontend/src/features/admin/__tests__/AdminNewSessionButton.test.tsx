@@ -90,7 +90,7 @@ describe('AdminNewSessionButton', () => {
   it('hands the new session id upward when the overlay resolves', async () => {
     installFakeClipboard();
     server.use(
-      http.get('*/api/session/:id', ({ params }) =>
+      http.get('*/api/admin/session/:id/status', ({ params }) =>
         HttpResponse.json({
           id: params.id,
           customer_language: 'ar',
