@@ -138,7 +138,7 @@ describe('rankWorkPackages', () => {
       issues: [{ number: 42, state: 'CLOSED' }],
     }, { limit: 3, today: '2026-08-30' });
 
-    expect(result.priorities[0]).toMatchObject({
+    expect(result.priorities.find((item) => item.workPackageId === 'WP-001')).toMatchObject({
       workPackageId: 'WP-001',
       status: 'planned',
       source: 'project-status.json',
@@ -181,7 +181,7 @@ describe('rankWorkPackages', () => {
     expect(result.conflicts).toEqual([]);
   });
 
-  it('reports conflicting GitHub Project status instead of silently ranking it', () => {
+  it('uses the least advanced primary GitHub Project status for a work package', () => {
     const result = rankEvidence({
       projectStatus: report(),
       projectItems: { items: [
@@ -190,15 +190,58 @@ describe('rankWorkPackages', () => {
       ] },
     }, { limit: 3, today: '2026-08-30' });
 
-    expect(result.conflicts).toEqual([{
+    expect(result.conflicts).toEqual([]);
+    expect(result.priorities[0]).toMatchObject({
       workPackageId: 'WP-001',
+      status: 'planned',
       source: 'GitHub Project',
-      field: 'status',
-      values: ['Done', 'Planned'],
-    }]);
-    expect(result.priorities.map((item) => item.workPackageId)).not.toContain('WP-001');
-    expect(renderPriorityMarkdown(result)).toContain('## Conflicts');
-    expect(renderPriorityMarkdown(result)).toContain('WP-001: GitHub Project status conflicts (Done, Planned). No plan update.');
+    });
+  });
+
+  it('does not use a roadmap link as status evidence for another work package', () => {
+    const result = rankEvidence({
+      projectStatus: report(),
+      projectItems: { items: [
+        {
+          status: 'Done',
+          health: 'On track',
+          'work Package': 'WP-002',
+          'roadmap links': 'WP-001, WP-002',
+        },
+        {
+          status: 'Planned',
+          health: 'On track',
+          'work Package': 'WP-001',
+        },
+      ] },
+    }, { limit: 3, today: '2026-08-30' });
+
+    expect(result.conflicts).toEqual([]);
+    expect(result.priorities[0]).toMatchObject({
+      workPackageId: 'WP-001',
+      status: 'planned',
+      source: 'GitHub Project',
+    });
+  });
+
+  it('does not use an issue-linked Project item without a primary work package as status evidence', () => {
+    const projectStatus = report();
+    projectStatus.milestones[0].workPackages[0].tracking = { githubIssues: [42] };
+
+    const result = rankEvidence({
+      projectStatus,
+      projectItems: { items: [{
+        status: 'Done',
+        health: 'On track',
+        content: { number: 42 },
+      }] },
+    }, { limit: 3, today: '2026-08-30' });
+
+    expect(result.priorities[0]).toMatchObject({
+      workPackageId: 'WP-001',
+      status: 'planned',
+      source: 'project-status.json',
+    });
   });
 
   it('reports conflicting GitHub source evidence rather than selecting a status', () => {

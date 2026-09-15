@@ -13,12 +13,12 @@ export function ConversationScreen() {
   return (
     <ConversationSurface
       screen={screen}
-      contentTop="var(--spacing-header)"
+      contentTop="var(--spacing-content-top)"
       header={
         <AppHeader
           onBack={() => void navigate(`/s/${sessionId}/language`)}
           onHome={() => void navigate('/')}
-          onFeedback={openFeedback}
+          onFeedback={() => openFeedback(sessionId ?? null)}
         />
       }
     />

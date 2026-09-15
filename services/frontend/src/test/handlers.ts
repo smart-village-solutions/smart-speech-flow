@@ -3,6 +3,15 @@ import { http, HttpResponse } from 'msw';
 export const SESSION_ID = 'A1B2C3D4';
 
 export const handlers = [
+  http.get('*/api/login/tenants', () =>
+    HttpResponse.json({
+      tenants: [
+        { id: 'tenant-fulda', displayName: 'Amt Fulda', realm: 'fulda-ssf-2025' },
+        { id: 'tenant-kassel', displayName: 'Stadt Kassel', realm: 'kassel-ssf-2025' },
+      ],
+    })
+  ),
+
   http.get('*/api/health/summary', () =>
     HttpResponse.json({
       status: 'success',
@@ -82,7 +91,20 @@ export const handlers = [
     })
   ),
 
-  http.get('*/api/session/:id', ({ params }) =>
+  http.get('*/api/customer/session/:id', ({ params }) =>
+    HttpResponse.json({
+      id: params.id,
+      customer_language: null,
+      admin_language: 'de',
+      status: 'pending',
+      created_at: '2026-08-21T10:00:00+00:00',
+      message_count: 0,
+      admin_connected: true,
+      customer_connected: false,
+    })
+  ),
+
+  http.get('*/api/admin/session/:id/status', ({ params }) =>
     HttpResponse.json({
       id: params.id,
       customer_language: null,
@@ -125,11 +147,11 @@ export const handlers = [
     });
   }),
 
-  http.get('*/api/session/:id/messages', ({ params }) =>
+  http.get('*/api/:role/session/:id/messages', ({ params }) =>
     HttpResponse.json({ session_id: params.id, messages: [] })
   ),
 
-  http.post('*/api/session/:id/message', ({ params }) =>
+  http.post('*/api/:role/session/:id/message', ({ params }) =>
     HttpResponse.json({
       status: 'success',
       message_id: 'm1',
@@ -137,11 +159,9 @@ export const handlers = [
       original_text: 'hello',
       translated_text: 'hallo',
       audio_available: true,
-      audio_url: '/api/audio/m1.wav',
+      audio_url: `/api/${String(params.role)}/session/${String(params.id)}/audio/m1/translated.wav`,
       processing_time_ms: 1200,
       pipeline_type: 'text',
     })
   ),
-
-  http.post('*/api/session/:id/activity', () => HttpResponse.json({ status: 'ok' })),
 ];

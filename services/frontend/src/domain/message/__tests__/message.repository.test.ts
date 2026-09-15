@@ -13,10 +13,10 @@ const repository = createMessageRepository(client, {
 });
 
 describe('message repository', () => {
-  it('sends text as JSON with the client type', async () => {
+  it('uses the customer message route without sending a client type', async () => {
     let body: Record<string, unknown> = {};
     server.use(
-      http.post('http://api.test/api/session/A1B2C3D4/message', async ({ request }) => {
+      http.post('http://api.test/api/customer/session/A1B2C3D4/message', async ({ request }) => {
         body = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({
           status: 'success',
@@ -25,7 +25,7 @@ describe('message repository', () => {
           original_text: 'hello',
           translated_text: 'hallo',
           audio_available: true,
-          audio_url: '/api/audio/m9.wav',
+          audio_url: '/api/customer/session/A1B2C3D4/audio/m9/translated.wav',
           processing_time_ms: 900,
           pipeline_type: 'text',
         });
@@ -43,16 +43,17 @@ describe('message repository', () => {
       text: 'hello',
       source_lang: 'en',
       target_lang: 'de',
-      client_type: 'customer',
     });
     expect(result.messageId).toBe('m9');
-    expect(result.audioUrl).toBe('/api/audio/m9.wav');
+    expect(result.audioUrl).toBe(
+      '/api/customer/session/A1B2C3D4/audio/m9/translated.wav'
+    );
   });
 
   it('sends audio as multipart with a file field', async () => {
     let contentType = '';
     server.use(
-      http.post('http://api.test/api/session/A1B2C3D4/message', async ({ request }) => {
+      http.post('http://api.test/api/customer/session/A1B2C3D4/message', async ({ request }) => {
         contentType = request.headers.get('content-type') ?? '';
         return HttpResponse.json({
           status: 'success',
@@ -61,7 +62,7 @@ describe('message repository', () => {
           original_text: 'spoken',
           translated_text: 'gesprochen',
           audio_available: true,
-          audio_url: '/api/audio/m10.wav',
+          audio_url: '/api/customer/session/A1B2C3D4/audio/m10/translated.wav',
           processing_time_ms: 4200,
           pipeline_type: 'audio',
         });
@@ -80,7 +81,7 @@ describe('message repository', () => {
 
   it('reads history through the mapper', async () => {
     server.use(
-      http.get('http://api.test/api/session/A1B2C3D4/messages', () =>
+      http.get('http://api.test/api/customer/session/A1B2C3D4/messages', () =>
         HttpResponse.json({
           session_id: 'A1B2C3D4',
           messages: [
@@ -93,6 +94,8 @@ describe('message repository', () => {
               source_lang: 'de',
               target_lang: 'en',
               timestamp: '2026-08-21T10:00:00+00:00',
+              audio_url:
+                '/api/customer/session/A1B2C3D4/audio/m1/translated.wav',
             },
           ],
         })
@@ -104,15 +107,17 @@ describe('message repository', () => {
     expect(messages).toHaveLength(1);
     expect(messages[0].origin).toBe('peer');
     expect(messages[0].text).toBe('en text');
-    // The browser fetches this one itself, without axios and its baseURL, so
-    // a relative path would be requested from the SPA origin.
-    expect(messages[0].audioUrl).toBe('http://api.test/api/audio/m1.wav');
+    // The clip loader uses axios, but message URLs remain absolute so cache
+    // keys are stable across live and history payloads.
+    expect(messages[0].audioUrl).toBe(
+      'http://api.test/api/customer/session/A1B2C3D4/audio/m1/translated.wav'
+    );
   });
 
-  it('sends text as the admin when told to', async () => {
+  it('uses the admin message route without sending a client type', async () => {
     let body: Record<string, unknown> = {};
     server.use(
-      http.post('http://api.test/api/session/A1B2C3D4/message', async ({ request }) => {
+      http.post('http://api.test/api/admin/session/A1B2C3D4/message', async ({ request }) => {
         body = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({
           status: 'success',
@@ -135,13 +140,17 @@ describe('message repository', () => {
       role: 'admin',
     });
 
-    expect(body.client_type).toBe('admin');
+    expect(body).not.toHaveProperty('client_type');
     expect(body.source_lang).toBe('de');
   });
 
   it('resolves a gateway audio path onto the gateway origin', () => {
-    expect(repository.resolveAudioUrl('/api/audio/m9.wav')).toBe(
-      'http://api.test/api/audio/m9.wav'
+    expect(
+      repository.resolveAudioUrl(
+        '/api/customer/session/A1B2C3D4/audio/m9/translated.wav'
+      )
+    ).toBe(
+      'http://api.test/api/customer/session/A1B2C3D4/audio/m9/translated.wav'
     );
   });
 });

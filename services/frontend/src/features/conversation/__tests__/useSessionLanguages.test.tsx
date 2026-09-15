@@ -8,7 +8,19 @@ import type { ClientRole } from '@/core/roles';
 
 const arabicSession = () =>
   server.use(
-    http.get('*/api/session/:id', ({ params }) =>
+    http.get('*/api/customer/session/:id', ({ params }) =>
+      HttpResponse.json({
+        id: params.id,
+        customer_language: 'ar',
+        admin_language: 'de',
+        status: 'active',
+        created_at: '2026-08-26T10:00:00+00:00',
+        message_count: 0,
+        admin_connected: true,
+        customer_connected: true,
+      })
+    ),
+    http.get('*/api/admin/session/:id/status', ({ params }) =>
       HttpResponse.json({
         id: params.id,
         customer_language: 'ar',

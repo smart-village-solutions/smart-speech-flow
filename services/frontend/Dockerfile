@@ -26,6 +26,8 @@ COPY vite.config.ts ./
 # environment variables in the Nginx container cannot change the bundle.
 ARG VITE_API_BASE_URL
 ARG VITE_WS_BASE_URL
+ARG VITE_KEYCLOAK_URL
+ARG VITE_KEYCLOAK_CLIENT_ID
 # This value is intentionally public because Vite embeds it in browser code.
 # It is a demo UI gate, not an authentication secret.
 ARG VITE_DEMO_ACCESS_CODE
@@ -47,6 +49,8 @@ RUN if [ -z "${VITE_API_BASE_URL}" ] || [ -z "${VITE_WS_BASE_URL}" ]; then \
 # Build the application
 RUN VITE_API_BASE_URL="${VITE_API_BASE_URL}" \
     VITE_WS_BASE_URL="${VITE_WS_BASE_URL}" \
+    VITE_KEYCLOAK_URL="${VITE_KEYCLOAK_URL}" \
+    VITE_KEYCLOAK_CLIENT_ID="${VITE_KEYCLOAK_CLIENT_ID}" \
     VITE_APP_PASSWORD="${VITE_DEMO_ACCESS_CODE}" \
     npm run build
 

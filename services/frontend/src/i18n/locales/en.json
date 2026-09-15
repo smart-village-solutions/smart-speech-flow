@@ -69,8 +69,16 @@
       "question": "What would make Smart Speech Flow even better?",
       "placeholder": "Your ideas, feature requests, or anything that bothered you…"
     },
+    "notice": {
+      "purpose": "Your answers are used only to improve Smart Speech Flow.",
+      "retention": "We keep feedback for twelve months and delete it automatically after that.",
+      "withdrawal": "You can have your feedback withdrawn at any time — just ask a member of staff."
+    },
     "stars": "{{count}} stars",
     "submit": "Send feedback",
+    "submitting": "Sending…",
+    "retry": "Send again",
+    "failed": "Your feedback could not be sent. Your answers have been kept.",
     "thanksTitle": "Thank you!",
     "thanksBody": "Your feedback helps us improve Smart Speech Flow for everyone."
   },
@@ -95,6 +103,14 @@
       "back": "Back to Smart Speech Flow",
       "invalidEmail": "Please enter a valid email address.",
       "invalidCredentials": "Invalid credentials."
+    },
+    "tenantLogin": {
+      "title": "Login",
+      "instruction": "Please select your department or organisation from the list.",
+      "empty": "There are currently no organisations available.",
+      "unavailable": "The list of organisations is currently unavailable.",
+      "retry": "Try again",
+      "loading": "Loading organisations"
     },
     "menu": {
       "open": "User account",

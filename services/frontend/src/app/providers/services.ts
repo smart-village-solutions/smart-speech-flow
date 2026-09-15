@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { AppConfig } from '@/app/config/env';
 import { createHttpClient } from '@/core/http/client';
+import { createBrowserClipLoader, type ClipLoader } from '@/core/audio/clips';
 import { createWebSocketTransport } from '@/core/realtime/WebSocketTransport';
 import type { RealtimeTransport } from '@/core/realtime/realtime.port';
 import { createSessionRepository } from '@/domain/session/session.repository';
@@ -9,7 +10,7 @@ import { createLanguageRepository } from '@/domain/language/language.repository'
 import type { LanguageRepository } from '@/domain/language/language.repository';
 import { createMessageRepository } from '@/domain/message/message.repository';
 import type { MessageRepository } from '@/domain/message/message.repository';
-import { createStubFeedbackSink } from '@/domain/feedback/StubFeedbackSink';
+import { createFeedbackRepository } from '@/domain/feedback/feedback.repository';
 import type { FeedbackSink } from '@/domain/feedback/feedback.port';
 import { createStubConsentSink } from '@/domain/consent/StubConsentSink';
 import type { ConsentSink } from '@/domain/consent/consent.port';
@@ -19,6 +20,8 @@ import { createHealthRepository } from '@/domain/health/health.repository';
 import type { HealthRepository } from '@/domain/health/health.repository';
 import { createStaticBrandSource } from '@/domain/brand/StaticBrandSource';
 import type { BrandSource } from '@/domain/brand/brand.port';
+import { createLoginTenantRepository } from '@/domain/login-tenant/loginTenant.repository';
+import type { LoginTenantRepository } from '@/domain/login-tenant/loginTenant.repository';
 
 export interface Services {
   config: AppConfig;
@@ -27,15 +30,18 @@ export interface Services {
   message: MessageRepository;
   health: HealthRepository;
   admin: AdminRepository;
+  loginTenant: LoginTenantRepository;
   feedback: FeedbackSink;
   consent: ConsentSink;
   brand: BrandSource;
+  clips: ClipLoader;
   createRealtime: () => RealtimeTransport;
 }
 
 /** The composition root. The only place implementations are chosen. */
 export function createServices(config: AppConfig, getLocale: () => string): Services {
   const http = createHttpClient(config, getLocale);
+  const admin = createAdminRepository(http);
 
   return {
     config,
@@ -45,12 +51,19 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
       pipelineTimeoutMs: config.pipelineTimeoutMs,
       apiBaseUrl: config.apiBaseUrl,
     }),
-    feedback: createStubFeedbackSink(),
+    feedback: createFeedbackRepository(http),
     consent: createStubConsentSink(),
     health: createHealthRepository(http),
-    admin: createAdminRepository(http),
+    admin,
+    loginTenant: createLoginTenantRepository(http),
     brand: createStaticBrandSource(config.brand),
-    createRealtime: () => createWebSocketTransport({ wsBaseUrl: config.wsBaseUrl }),
+    clips: createBrowserClipLoader(http),
+    createRealtime: () =>
+      createWebSocketTransport({
+        wsBaseUrl: config.wsBaseUrl,
+        issueAdminTicket: (sessionId, transport) =>
+          admin.issueRealtimeTicket(sessionId, transport),
+      }),
   };
 }
 

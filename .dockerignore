@@ -1,4 +1,7 @@
 .git
+.env
+.env.*
+deploy/production/production.env
 __pycache__/
 *.pyc
 *.pkl

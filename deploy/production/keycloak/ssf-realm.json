@@ -2,6 +2,7 @@
   "realm": "ssf",
   "enabled": true,
   "displayName": "Smart Speech Flow",
+  "loginTheme": "kasseldialog",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,

@@ -14,11 +14,11 @@ import hashlib
 import logging
 import os
 import re
-import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Annotated, Any, Dict, List, Optional, Set
+from uuid import uuid4
 
 from fastapi import (
     APIRouter,
@@ -29,8 +29,12 @@ from fastapi import (
     WebSocketDisconnect,
 )
 
+from .client_origin import configured_client_origin
 from .log_safety import sanitize_log_value
+from .realtime_ticket import RealtimeTicketUnavailable, realtime_ticket_store
+from .session_access import require_customer_session_key
 from .session_manager import ClientType, SessionManager, SessionStatus
+from .tenant_session import TenantSessionKey
 from .websocket_fallback import FallbackReason, fallback_manager
 from .websocket_monitor import DisconnectReason, get_websocket_monitor
 
@@ -89,9 +93,46 @@ async def validate_websocket_origin(origin: Optional[str]) -> bool:
     if not origin:
         return False  # Reject connections without Origin header in production
 
+    if origin == configured_client_origin():
+        return True
+
     # ✅ FIX: Korrektes Regex-Pattern (* → .*)
     production_pattern = r"https://.*\.figma\.site|https://.*\.smart-village\.solutions"
-    return bool(re.match(production_pattern, origin))
+    return bool(re.fullmatch(production_pattern, origin))
+
+
+# RFC 6455 close codes, mapped onto the wire reasons DisconnectReason.from_wire
+# understands. A WebSocketDisconnect carries the code, and treating them all as
+# a clean client exit is what hid network and server failures from the
+# unexpected-disconnect KPI and WebSocketConnectionFailures.
+_CLOSE_CODE_REASONS = {
+    1000: "client_disconnect",  # normal closure
+    1001: "client_disconnect",  # going away: tab closed, navigation
+    1005: "client_disconnect",  # close frame carried no code
+    1002: "protocol_error",
+    1003: "protocol_error",  # unsupported data
+    1007: "protocol_error",  # invalid payload
+    1008: "protocol_error",  # policy violation
+    1009: "protocol_error",  # message too big
+    1010: "protocol_error",  # mandatory extension missing
+    1006: "connection_error",  # abnormal closure: no close frame at all
+    1011: "connection_error",  # internal server error
+    1012: "connection_error",  # service restart
+    1013: "connection_error",  # try again later
+    1014: "connection_error",  # bad gateway
+    1015: "connection_error",  # TLS handshake failure
+}
+
+
+def disconnect_reason_for_close_code(code: Optional[int]) -> str:
+    """Classify a WebSocket close code into a disconnect reason.
+
+    An unrecognised code is a connection error, not a clean exit -- the same
+    rule DisconnectReason.from_wire applies to unrecognised wire reasons.
+    """
+    if code is None:
+        return "connection_error"
+    return _CLOSE_CODE_REASONS.get(code, "connection_error")
 
 
 class ConnectionState(str, Enum):
@@ -139,6 +180,7 @@ class BroadcastResult:
     failed_sends: int
     session_has_connections: bool
     errors: List[str]
+    messages_dropped: int = 0
 
 
 @dataclass
@@ -153,6 +195,7 @@ class WebSocketConnection:
     state: ConnectionState = ConnectionState.CONNECTING
     reconnect_count: int = 0
     client_info: Optional[Dict[str, Any]] = None
+    key: Optional[TenantSessionKey] = None
 
     # 📱 Mobile-Optimization Fields
     is_mobile: bool = False
@@ -160,6 +203,10 @@ class WebSocketConnection:
     battery_level: float = 1.0
     network_quality: str = "good"  # "good", "slow", "offline"
     current_polling_interval: int = 5  # Sekunden
+
+    @property
+    def resource_key(self) -> Any:
+        return self.key or self.session_id
 
     def is_alive(self) -> bool:
         """Prüft ob die Verbindung noch aktiv ist"""
@@ -292,7 +339,7 @@ class WebSocketManager:
         self.session_manager.register_websocket_manager(self)
 
         # Session-basierte Connection-Pools
-        self.session_connections: Dict[str, Dict[str, WebSocketConnection]] = {}
+        self.session_connections: Dict[Any, Dict[str, WebSocketConnection]] = {}
 
         # Global Connection Tracking für Monitoring
         self.all_connections: Dict[str, WebSocketConnection] = {}
@@ -351,10 +398,44 @@ class WebSocketManager:
             self.heartbeat_task = None
         logger.info("💓 Heartbeat-System gestoppt")
 
+    @staticmethod
+    def _build_connection_id(session_id: Any, client_type: ClientType) -> str:
+        """A connection id must be unique, not merely descriptive.
+
+        The previous form ended in `int(time.time())`, so two sockets opened for
+        one session inside the same second collided — and the monitor keys its
+        active-connection map by this value, so the loser's metrics silently
+        became the winner's. Reconnect storms are when that happens and when the
+        connection KPIs matter most.
+        """
+        if isinstance(session_id, TenantSessionKey):
+            scope = f"{session_id.tenant_ref}_{_safe_identifier(session_id.session_id)}"
+        else:
+            scope = str(session_id)
+        return f"{scope}_{client_type.value}_{uuid4().hex[:12]}"
+
+    def _registered_connection_id(
+        self, connection: "WebSocketConnection"
+    ) -> Optional[str]:
+        """The id this connection is registered under, or None if it is not.
+
+        Callers that hold a connection object and need its id must ask the map
+        that broadcast_to_session iterates. Rebuilding the id from the
+        connection's own fields worked only while it ended in a timestamp the
+        caller could recompute, and silently stopped matching anything once ids
+        became unique -- which included the sender in its own broadcast.
+        """
+        for connection_id, candidate in self.session_connections.get(
+            connection.key or connection.session_id, {}
+        ).items():
+            if candidate is connection:
+                return connection_id
+        return None
+
     async def connect_websocket(
         self,
         websocket: WebSocket,
-        session_id: str,
+        session_id: Any,
         client_type: ClientType,
         client_info: Optional[Dict[str, Any]] = None,
     ) -> str:
@@ -364,8 +445,19 @@ class WebSocketManager:
         """
         await websocket.accept()
 
+        if isinstance(session_id, TenantSessionKey):
+            session = self.session_manager.get_session(session_id)
+            if session is None or session.status == SessionStatus.TERMINATED:
+                await websocket.close(code=4404, reason="Session not found")
+                raise RuntimeError("Session unavailable")
+
         # Connection-ID generieren
-        connection_id = f"{session_id}_{client_type.value}_{int(time.time())}"
+        connection_id = self._build_connection_id(session_id, client_type)
+        public_session_id = (
+            session_id.session_id
+            if isinstance(session_id, TenantSessionKey)
+            else session_id
+        )
 
         # 📱 Mobile-Detection aus client_info
         is_mobile = False
@@ -381,11 +473,12 @@ class WebSocketManager:
         connection = WebSocketConnection(
             websocket=websocket,
             client_type=client_type,
-            session_id=session_id,
+            session_id=public_session_id,
             connected_at=utc_now(),
             last_heartbeat=utc_now(),
             state=ConnectionState.CONNECTED,
             client_info=client_info,
+            key=session_id if isinstance(session_id, TenantSessionKey) else None,
             # 📱 Mobile-Optimization
             is_mobile=is_mobile,
             tab_active=True,  # Initial aktiv
@@ -397,25 +490,33 @@ class WebSocketManager:
         optimal_interval = self.adaptive_polling.get_optimal_interval(connection)
         connection.current_polling_interval = optimal_interval
 
-        # Zu Session-Pool hinzufügen
+        # Session-Manager integrieren
+        try:
+            await self.session_manager.add_websocket_connection(
+                session_id, client_type, websocket
+            )
+        except KeyError:
+            await websocket.close(code=4404, reason="Session not found")
+            raise RuntimeError("Session unavailable") from None
+
+        # Commit the registry only after tenant presence succeeds. A session
+        # termination that wins the preceding await cannot leave a live entry.
         if session_id not in self.session_connections:
             self.session_connections[session_id] = {}
 
         self.session_connections[session_id][connection_id] = connection
         self.all_connections[connection_id] = connection
 
-        # Session-Manager integrieren
-        await self.session_manager.add_websocket_connection(
-            session_id, client_type, websocket
-        )
-
         # 📊 Monitoring: Connection established
         origin = client_info.get("origin") if client_info else None
         get_websocket_monitor().connection_established(
             connection_id=connection_id,
-            session_id=session_id,
+            session_id=_safe_identifier(public_session_id),
             client_type=client_type.value,
             origin=origin,
+            resource_key=(
+                session_id if isinstance(session_id, TenantSessionKey) else None
+            ),
         )
 
         # Stats aktualisieren
@@ -429,7 +530,14 @@ class WebSocketManager:
         await self.start_heartbeat_system()
 
         logger.info(
-            f"🔗 WebSocket verbunden: {connection_id} (Session: {session_id}, Type: {client_type.value})"
+            "websocket_connected tenant_ref=%s session_ref=%s client_type=%s",
+            (
+                session_id.tenant_ref
+                if isinstance(session_id, TenantSessionKey)
+                else "legacy"
+            ),
+            _safe_identifier(public_session_id),
+            client_type.value,
         )
 
         # Anderen Clients in der Session mitteilen
@@ -467,15 +575,20 @@ class WebSocketManager:
 
         finally:
             # Connection-Cleanup
-            await self._cleanup_connection(connection_id)
+            await self._cleanup_connection(
+                connection_id, DisconnectReason.from_wire(reason)
+            )
 
             # Anderen Clients mitteilen
             await self._broadcast_client_left(
-                connection.session_id, connection.client_type, connection_id, reason
+                connection.resource_key,
+                connection.client_type,
+                connection_id,
+                reason,
             )
 
     async def handle_session_termination(
-        self, session_id: str, reason: str = "session_ended"
+        self, session_id: Any, reason: str = "session_ended"
     ):
         """
         Alle WebSocket-Verbindungen einer Session graceful beenden
@@ -483,15 +596,24 @@ class WebSocketManager:
         if session_id not in self.session_connections:
             return
 
-        connections = list(self.session_connections[session_id].values())
+        connections = list(self.session_connections.pop(session_id).values())
+        for connection in connections:
+            connection.state = ConnectionState.DISCONNECTING
+        public_session_id = (
+            session_id.session_id
+            if isinstance(session_id, TenantSessionKey)
+            else session_id
+        )
         logger.info(
-            f"🔚 Beende {len(connections)} WebSocket-Verbindungen für Session {session_id}"
+            "websocket_session_terminating session_ref=%s connections=%d",
+            _safe_identifier(public_session_id),
+            len(connections),
         )
 
         # Termination-Nachricht an alle Clients senden
         termination_message = {
             "type": MessageType.SESSION_TERMINATED.value,
-            "session_id": session_id,
+            "session_id": public_session_id,
             "reason": reason,
             "message": self._get_termination_message(reason),
             "timestamp": utc_now().isoformat(),
@@ -510,24 +632,30 @@ class WebSocketManager:
         if disconnect_tasks:
             await asyncio.gather(*disconnect_tasks, return_exceptions=True)
 
-        # Session-Connection-Pool leeren
-        if session_id in self.session_connections:
-            del self.session_connections[session_id]
-
-        logger.info(f"✅ Session {session_id} WebSocket-Verbindungen beendet")
+        logger.info(
+            "websocket_session_terminated session_ref=%s",
+            _safe_identifier(public_session_id),
+        )
 
     async def broadcast_to_session(
         self,
-        session_id: str,
+        session_id: Any,
         message: Dict[str, Any],
         exclude_connection: Optional[str] = None,
         target_client_type: Optional[ClientType] = None,
+        include_polling: bool = True,
     ):
         """
         Nachricht an alle Clients einer Session broadcasten
         """
+        if include_polling and isinstance(session_id, TenantSessionKey):
+            # Import lazily to avoid the polling router importing this manager
+            # during application startup.
+            from .websocket_polling_routes import polling_store
+
+            polling_store.broadcast(session_id, message)
+
         if session_id not in self.session_connections:
-            logger.warning(f"⚠️ Keine WebSocket-Verbindungen für Session {session_id}")
             return
 
         connections = self.session_connections[session_id]
@@ -576,12 +704,19 @@ class WebSocketManager:
                 connection.state = ConnectionState.ERROR
 
         logger.debug(
-            f"📢 Broadcast zu Session {session_id}: {successful_sends} erfolgreich, {failed_sends} fehlgeschlagen"
+            "websocket_broadcast session_ref=%s successful=%d failed=%d",
+            _safe_identifier(
+                session_id.session_id
+                if isinstance(session_id, TenantSessionKey)
+                else session_id
+            ),
+            successful_sends,
+            failed_sends,
         )
 
     async def broadcast_with_differentiated_content(
         self,
-        session_id: str,
+        session_id: Any,
         sender_type: ClientType,
         original_message: Dict[str, Any],
         translated_message: Dict[str, Any],
@@ -595,23 +730,65 @@ class WebSocketManager:
             BroadcastResult with success status and detailed metrics
         """
         monitor = get_websocket_monitor()
-        self._record_broadcast_attempt(monitor, session_id, sender_type)
+        metric_session_id = (
+            _safe_identifier(session_id.session_id)
+            if isinstance(session_id, TenantSessionKey)
+            else session_id
+        )
+        self._record_broadcast_attempt(monitor, metric_session_id, sender_type)
 
         errors = []
         successful_sends = 0
         failed_sends = 0
+        polling_delivered = 0
+        polling_dropped = 0
+
+        if isinstance(session_id, TenantSessionKey):
+            from .websocket_polling_routes import polling_store
+
+            polling_delivered, polling_dropped = polling_store.broadcast_differentiated(
+                session_id,
+                sender_type,
+                original_message,
+                translated_message,
+            )
+            successful_sends += polling_delivered
+            if polling_dropped:
+                errors.append("Polling recipient queue overflow")
 
         if session_id not in self.session_connections:
+            if polling_delivered:
+                success = failed_sends == 0
+                self._record_broadcast_summary(
+                    monitor=monitor,
+                    session_id=metric_session_id,
+                    sender_type=sender_type,
+                    total_connections=polling_delivered,
+                    successful_sends=successful_sends,
+                    failed_sends=failed_sends,
+                    success=success,
+                )
+                return BroadcastResult(
+                    success=success,
+                    total_connections=polling_delivered,
+                    successful_sends=successful_sends,
+                    failed_sends=failed_sends,
+                    session_has_connections=True,
+                    errors=errors,
+                    messages_dropped=polling_dropped,
+                )
             return self._build_no_connection_broadcast_result(
-                monitor, session_id, sender_type
+                monitor, metric_session_id, sender_type
             )
 
         connections = self.session_connections[session_id]
-        total_connections = len(connections)
+        total_connections = len(connections) + polling_delivered
 
         # Task 4.3: Log connection count before broadcast
         logger.info(
-            f"📡 Broadcasting to session {session_id}: {total_connections} connection(s)"
+            "websocket_differentiated_broadcast session_ref=%s connections=%d",
+            metric_session_id,
+            total_connections,
         )
 
         # Task 4.4: Check if manager has any connections at all
@@ -645,7 +822,7 @@ class WebSocketManager:
 
         self._record_broadcast_summary(
             monitor=monitor,
-            session_id=session_id,
+            session_id=metric_session_id,
             sender_type=sender_type,
             total_connections=total_connections,
             successful_sends=successful_sends,
@@ -660,21 +837,19 @@ class WebSocketManager:
             failed_sends=failed_sends,
             session_has_connections=True,
             errors=errors,
+            messages_dropped=polling_dropped,
         )
 
     def _record_broadcast_attempt(
         self, monitor: Any, session_id: str, sender_type: ClientType
     ) -> None:
-        monitor.broadcast_total.labels(
-            session_id=session_id, sender_type=sender_type.value
-        ).inc()
+        monitor.broadcast_total.labels(sender_type=sender_type.value).inc()
 
     def _build_no_connection_broadcast_result(
         self, monitor: Any, session_id: str, sender_type: ClientType
     ) -> BroadcastResult:
         logger.warning("Broadcast attempted without active connections")
         monitor.broadcast_failure_total.labels(
-            session_id=session_id,
             sender_type=sender_type.value,
             reason="no_connections",
         ).inc()
@@ -719,16 +894,13 @@ class WebSocketManager:
             logger.info(
                 f"✅ Broadcast successful: {successful_sends}/{total_connections} delivered"
             )
-            monitor.broadcast_success_total.labels(
-                session_id=session_id, sender_type=sender_type.value
-            ).inc()
+            monitor.broadcast_success_total.labels(sender_type=sender_type.value).inc()
         else:
             logger.warning(
                 f"⚠️ Broadcast partial/failed: {successful_sends} succeeded, "
                 f"{failed_sends} failed out of {total_connections}"
             )
             monitor.broadcast_failure_total.labels(
-                session_id=session_id,
                 sender_type=sender_type.value,
                 reason=(
                     "partial_failure" if successful_sends > 0 else "complete_failure"
@@ -737,12 +909,12 @@ class WebSocketManager:
 
         if successful_sends > 0:
             monitor.broadcast_messages_delivered.labels(
-                session_id=session_id, sender_type=sender_type.value
+                sender_type=sender_type.value
             ).inc(successful_sends)
         if failed_sends > 0:
-            monitor.broadcast_messages_failed.labels(
-                session_id=session_id, sender_type=sender_type.value
-            ).inc(failed_sends)
+            monitor.broadcast_messages_failed.labels(sender_type=sender_type.value).inc(
+                failed_sends
+            )
 
     async def handle_websocket_message(
         self, connection_id: str, message: Dict[str, Any]
@@ -753,6 +925,14 @@ class WebSocketManager:
         connection = self.all_connections.get(connection_id)
         if not connection:
             return
+
+        if connection.state is not ConnectionState.CONNECTED:
+            return
+        if isinstance(connection.resource_key, TenantSessionKey):
+            session = self.session_manager.get_session(connection.resource_key)
+            if session is None or session.status == SessionStatus.TERMINATED:
+                connection.state = ConnectionState.DISCONNECTING
+                return
 
         message_type = message.get("type")
 
@@ -787,7 +967,7 @@ class WebSocketManager:
         """
         Polling-Fallback für Client aktivieren
         """
-        polling_id = f"poll_{session_id}_{client_type.value}_{int(time.time())}"
+        polling_id = f"poll_{session_id}_{client_type.value}_{uuid4().hex[:12]}"
         self.polling_clients.add(polling_id)
         self.connection_stats["polling_fallbacks"] += 1
 
@@ -842,7 +1022,7 @@ class WebSocketManager:
             and not self.heartbeat_task.done(),
         }
 
-    def get_session_connections(self, session_id: str) -> List[Dict[str, Any]]:
+    def get_session_connections(self, session_id: Any) -> List[Dict[str, Any]]:
         """
         Verbindungen einer Session für Debugging/Monitoring
         """
@@ -897,7 +1077,9 @@ class WebSocketManager:
 
         # Tote Verbindungen cleanup
         for connection_id in dead_connections:
-            await self._cleanup_connection(connection_id)
+            await self._cleanup_connection(
+                connection_id, DisconnectReason.CONNECTION_ERROR
+            )
 
     async def _check_heartbeat_timeouts(self):
         """
@@ -939,9 +1121,9 @@ class WebSocketManager:
         }
 
         await self.broadcast_to_session(
-            connection.session_id,
+            connection.resource_key,
             forward_message,
-            exclude_connection=f"{connection.session_id}_{connection.client_type.value}_{int(connection.connected_at.timestamp())}",
+            exclude_connection=self._registered_connection_id(connection),
         )
 
     async def _handle_typing_indicator(
@@ -959,9 +1141,9 @@ class WebSocketManager:
         }
 
         await self.broadcast_to_session(
-            connection.session_id,
+            connection.resource_key,
             typing_message,
-            exclude_connection=f"{connection.session_id}_{connection.client_type.value}_{int(connection.connected_at.timestamp())}",
+            exclude_connection=self._registered_connection_id(connection),
         )
 
     async def _send_connection_ack(self, connection: WebSocketConnection):
@@ -1030,9 +1212,22 @@ class WebSocketManager:
                     break
 
             if connection_id:
-                await self._cleanup_connection(connection_id)
+                # The termination message already carries the real cause
+                # (session_timeout, new_session_created). Recording every one
+                # of them as CONNECTION_ERROR would feed routine session ends
+                # into a critical alert.
+                await self._cleanup_connection(
+                    connection_id,
+                    DisconnectReason.from_wire(
+                        termination_message.get("reason", "session_ended")
+                    ),
+                )
 
-    async def _cleanup_connection(self, connection_id: str):
+    async def _cleanup_connection(
+        self,
+        connection_id: str,
+        reason: DisconnectReason = DisconnectReason.CLIENT_DISCONNECT,
+    ):
         """
         Connection-Cleanup nach Disconnect
         """
@@ -1043,25 +1238,26 @@ class WebSocketManager:
         connection.state = ConnectionState.DISCONNECTED
 
         # Aus Session-Pool entfernen
-        if connection.session_id in self.session_connections:
-            self.session_connections[connection.session_id].pop(connection_id, None)
+        resource_key = connection.resource_key
+        if resource_key in self.session_connections:
+            self.session_connections[resource_key].pop(connection_id, None)
 
             # Wenn Session keine Verbindungen mehr hat, Pool löschen
-            if not self.session_connections[connection.session_id]:
-                del self.session_connections[connection.session_id]
+            if not self.session_connections[resource_key]:
+                del self.session_connections[resource_key]
 
         # Aus globalem Pool entfernen
         self.all_connections.pop(connection_id, None)
 
         # Session-Manager informieren
         await self.session_manager.remove_websocket_connection(
-            connection.session_id, connection.client_type
+            resource_key, connection.client_type
         )
 
         # 📊 Monitoring: Connection closed
         get_websocket_monitor().connection_closed(
             connection_id=connection_id,
-            reason=DisconnectReason.CLIENT_DISCONNECT,  # Default reason
+            reason=reason,
         )
 
         self._update_active_connections_count()
@@ -1073,13 +1269,21 @@ class WebSocketManager:
         """
         Evaluate WebSocket connection error and potentially trigger fallback
         """
+        if connection.key is not None:
+            # Tenant polling is activated only through its role-bound HTTP
+            # endpoint. A failing socket must never mint an unscoped legacy
+            # polling identifier.
+            return
+
         try:
             # Prepare error details for evaluation
+            # No connection_id: the only one available here was rebuilt from
+            # the old timestamp format, so it named no real connection, and
+            # nothing downstream of evaluate_websocket_failure reads it.
             error_details = {
                 "message": str(error),
                 "type": type(error).__name__,
                 "context": error_context,
-                "connection_id": f"{connection.session_id}_{connection.client_type.value}_{int(time.time())}",
             }
 
             # Extract additional error information
@@ -1122,7 +1326,8 @@ class WebSocketManager:
                     )
 
                 logger.info(
-                    f"🔄 Polling fallback activated for {connection.session_id}: {polling_id}"
+                    "polling_fallback_activated session_ref=%s",
+                    _safe_identifier(connection.session_id),
                 )
 
         except Exception:
@@ -1182,14 +1387,18 @@ class WebSocketManager:
             logger.warning(f"Failed to send fallback activation message: {e}")
 
     async def _broadcast_client_joined(
-        self, session_id: str, client_type: ClientType, connection_id: str
+        self, session_id: Any, client_type: ClientType, connection_id: str
     ):
         """
         Client-Join-Event an andere Session-Teilnehmer senden
         """
         join_message = {
             "type": MessageType.CLIENT_JOINED.value,
-            "session_id": session_id,
+            "session_id": (
+                session_id.session_id
+                if isinstance(session_id, TenantSessionKey)
+                else session_id
+            ),
             "client_type": client_type.value,
             "connection_id": connection_id,
             "timestamp": utc_now().isoformat(),
@@ -1206,14 +1415,18 @@ class WebSocketManager:
         )
 
     async def _broadcast_client_left(
-        self, session_id: str, client_type: ClientType, connection_id: str, reason: str
+        self, session_id: Any, client_type: ClientType, connection_id: str, reason: str
     ):
         """
         Client-Leave-Event an andere Session-Teilnehmer senden
         """
         leave_message = {
             "type": MessageType.CLIENT_LEFT.value,
-            "session_id": session_id,
+            "session_id": (
+                session_id.session_id
+                if isinstance(session_id, TenantSessionKey)
+                else session_id
+            ),
             "client_type": client_type.value,
             "connection_id": connection_id,
             "reason": reason,
@@ -1278,8 +1491,8 @@ class WebSocketManager:
             )
 
         logger.info(
-            f"📱 Tab-Visibility für {connection.session_id}: {'visible' if is_visible else 'hidden'} "
-            f"(Polling: {old_interval}s → {new_interval}s)"
+            "websocket_tab_visibility_changed session_ref=%s",
+            _safe_identifier(connection.session_id),
         )
 
     async def _handle_battery_status_update(
@@ -1308,8 +1521,8 @@ class WebSocketManager:
             )
 
         logger.info(
-            f"🔋 Battery-Update für {connection.session_id}: {battery_level:.0%} "
-            f"{'(charging)' if is_charging else ''} (Polling: {old_interval}s → {new_interval}s)"
+            "websocket_battery_status_changed session_ref=%s",
+            _safe_identifier(connection.session_id),
         )
 
     async def _handle_network_status_change(
@@ -1321,9 +1534,6 @@ class WebSocketManager:
         network_quality = message.get(
             "network_quality", "good"
         )  # "good", "slow", "offline"
-        connection_type = message.get(
-            "connection_type", "wifi"
-        )  # "wifi", "cellular", "offline"
         old_interval = connection.current_polling_interval
 
         # Status aktualisieren
@@ -1339,8 +1549,8 @@ class WebSocketManager:
             )
 
         logger.info(
-            f"📶 Network-Update für {connection.session_id}: {network_quality} ({connection_type}) "
-            f"(Polling: {old_interval}s → {new_interval}s)"
+            "websocket_network_status_changed session_ref=%s",
+            _safe_identifier(connection.session_id),
         )
 
     async def _send_polling_interval_update(
@@ -1424,11 +1634,40 @@ WebSocketManagerDependency = Annotated[
 ]
 
 
-@router.websocket("/ws/{session_id}/{client_type}")
-async def websocket_endpoint(
+@router.websocket("/ws/admin/{session_id}")
+async def admin_websocket_endpoint(
     websocket: WebSocket,
     session_id: str,
-    client_type: str,
+    ticket: str,
+    manager: WebSocketManagerDependency,
+    origin: Annotated[Optional[str], Header()] = None,
+):
+    try:
+        key = realtime_ticket_store.consume_key(ticket, session_id, "websocket")
+    except RealtimeTicketUnavailable:
+        await websocket.close(code=1013, reason="Realtime service unavailable")
+        return
+    if key is None or manager.session_manager.get_session(key) is None:
+        await websocket.close(code=4404, reason="Session not found")
+        return
+    await websocket_endpoint(websocket, key, ClientType.ADMIN, manager, origin)
+
+
+@router.websocket("/ws/customer/{session_id}")
+async def customer_websocket_endpoint(
+    websocket: WebSocket,
+    session_id: str,
+    key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
+    manager: WebSocketManagerDependency,
+    origin: Annotated[Optional[str], Header()] = None,
+):
+    await websocket_endpoint(websocket, key, ClientType.CUSTOMER, manager, origin)
+
+
+async def websocket_endpoint(
+    websocket: WebSocket,
+    key: TenantSessionKey,
+    client_type: ClientType,
     manager: WebSocketManagerDependency,
     origin: Annotated[Optional[str], Header()] = None,  # Explicit Origin handling
 ):
@@ -1437,6 +1676,9 @@ async def websocket_endpoint(
     """
     # 1. CORS Origin Validation (before WebSocket accept)
     if not await validate_websocket_origin(origin):
+        get_websocket_monitor().record_rejected_connection(
+            DisconnectReason.ORIGIN_NOT_ALLOWED
+        )
         await websocket.close(code=1008, reason="Origin not allowed")
         logger.warning(
             "❌ WebSocket connection rejected - invalid origin: %s",
@@ -1444,15 +1686,8 @@ async def websocket_endpoint(
         )
         return
 
-    # 2. Client-Type validieren
-    try:
-        client_type_enum = ClientType(client_type.lower())
-    except ValueError:
-        await websocket.close(code=1003, reason="Invalid client type")
-        return
-
-    # 3. Session validieren
-    session = manager.session_manager.get_session(session_id)
+    # 2. Session validieren
+    session = manager.session_manager.get_session(key)
     if not session:
         await websocket.close(code=1003, reason="Session not found")
         return
@@ -1462,6 +1697,11 @@ async def websocket_endpoint(
         return
 
     connection_id = None
+    # A close frame replaces this with the reason its code classifies to, and
+    # every non-close exit path sets connection_error. Reporting an abnormal
+    # termination as a clean client exit is what kept the unexpected-disconnect
+    # rate reading near zero.
+    exit_reason = "client_disconnect"
 
     try:
         # 4. WebSocket-Verbindung herstellen mit origin logging
@@ -1470,7 +1710,7 @@ async def websocket_endpoint(
             sanitize_log_value(origin),
         )
         connection_id = await manager.connect_websocket(
-            websocket, session_id, client_type_enum, client_info={"origin": origin}
+            websocket, key, client_type, client_info={"origin": origin}
         )
 
         # Message-Handler-Loop
@@ -1480,8 +1720,14 @@ async def websocket_endpoint(
                 data = await websocket.receive_json()
                 await manager.handle_websocket_message(connection_id, data)
 
-            except WebSocketDisconnect:
-                logger.info(f"🔌 WebSocket-Disconnect: {connection_id}")
+            except WebSocketDisconnect as disconnect:
+                exit_reason = disconnect_reason_for_close_code(disconnect.code)
+                logger.info(
+                    "🔌 WebSocket-Disconnect: %s (code %s, reason %s)",
+                    sanitize_log_value(str(connection_id)),
+                    disconnect.code,
+                    exit_reason,
+                )
                 break
 
             except Exception:
@@ -1495,18 +1741,19 @@ async def websocket_endpoint(
                 try:
                     await websocket.send_json(error_message)
                 except Exception:
+                    exit_reason = "connection_error"
                     break
 
     except Exception:
+        exit_reason = "connection_error"
         logger.exception("WebSocket connection failed")
 
     finally:
         # Cleanup bei Disconnect
         if connection_id:
-            await manager.disconnect_websocket(connection_id, "client_disconnect")
+            await manager.disconnect_websocket(connection_id, exit_reason)
 
 
-@router.get("/api/websocket/stats")
 async def get_websocket_stats(
     manager: WebSocketManagerDependency,
 ):
@@ -1516,7 +1763,6 @@ async def get_websocket_stats(
     return manager.get_connection_stats()
 
 
-@router.get("/api/websocket/sessions/{session_id}/connections")
 async def get_session_connections(session_id: str, manager: WebSocketManagerDependency):
     """
     WebSocket-Verbindungen einer Session anzeigen
@@ -1529,7 +1775,6 @@ async def get_session_connections(session_id: str, manager: WebSocketManagerDepe
     }
 
 
-@router.get("/api/websocket/debug/connection-test")
 async def websocket_connection_test(
     origin: Annotated[Optional[str], Header()] = None,
     user_agent: Annotated[Optional[str], Header()] = None,
@@ -1590,10 +1835,6 @@ async def websocket_connection_test(
     }
 
 
-@router.post(
-    "/api/websocket/sessions/{session_id}/polling/enable",
-    responses=WEBSOCKET_ROUTE_RESPONSES,
-)
 async def enable_polling_fallback(
     session_id: str,
     client_type: str,
@@ -1617,10 +1858,6 @@ async def enable_polling_fallback(
     }
 
 
-@router.get(
-    "/api/websocket/polling/{polling_id}/messages",
-    responses=WEBSOCKET_ROUTE_RESPONSES,
-)
 async def get_polling_messages(polling_id: str, manager: WebSocketManagerDependency):
     """
     Nachrichten für Polling-Client abrufen

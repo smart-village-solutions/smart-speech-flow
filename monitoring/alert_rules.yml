@@ -83,6 +83,63 @@ groups:
 
   - name: ssf-service-health
     rules:
+      # #220: the *ServiceDown rules below match a metric scraped from the
+      # service itself, so a stopped container makes the series vanish rather
+      # than go to zero and the expression matches nothing. These fire on the
+      # scrape failing, which is the signal that survives the target's death.
+      - alert: ASRScrapeDown
+        expr: up{job="asr"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: asr
+        annotations:
+          summary: "ASR service is not answering Prometheus"
+          description: >-
+            Prometheus has failed to scrape asr:8000 for 2 minutes. Speech
+            recognition is unavailable; every audio message will fail at the ASR
+            stage.
+          runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/service-down-alerts.md"
+
+      - alert: TranslationScrapeDown
+        expr: up{job="translation"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: translation
+        annotations:
+          summary: "Translation service is not answering Prometheus"
+          description: >-
+            Prometheus has failed to scrape translation:8000 for 2 minutes. No
+            message in either direction can be translated.
+          runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/service-down-alerts.md"
+
+      - alert: TTSScrapeDown
+        expr: up{job="tts"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: tts
+        annotations:
+          summary: "TTS service is not answering Prometheus"
+          description: >-
+            Prometheus has failed to scrape tts:8000 for 2 minutes. Text
+            translation may still succeed; spoken output will not.
+          runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/service-down-alerts.md"
+
+      - alert: APIGatewayScrapeDown
+        expr: up{job="api_gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: api_gateway
+        annotations:
+          summary: "API gateway is not answering Prometheus"
+          description: >-
+            Prometheus has failed to scrape api_gateway:8000 for 1 minute. The
+            whole product is down, including the WebSocket transport.
+          runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/service-down-alerts.md"
+
       - alert: ASRServiceDown
         expr: asr_health_status == 0
         for: 2m
@@ -155,15 +212,28 @@ groups:
           summary: High number of active WebSocket connections
           description: "Currently {{ $value }} active WebSocket connections. Monitor system resources and connection patterns."
 
+      # server_disconnect is excluded alongside client_disconnect: a session
+      # ending on purpose (new_session_created, manual_termination,
+      # manual_admin_termination) is routine traffic, not a failure, and
+      # terminate_all_active_sessions runs on every new session.
+      # session_expired is excluded too: a session ageing out on its own is
+      # normal lifecycle, not a connection failure. Abnormal causes --
+      # connection_error, heartbeat_timeout, rate_limit_exceeded,
+      # authentication_failed, protocol_error, origin_not_allowed -- still
+      # match.
       - alert: WebSocketConnectionFailures
-        expr: rate(websocket_disconnects_total{disconnect_reason!="client_disconnect"}[5m]) > 0.1
+        # origin_not_allowed is excluded because WebSocketOriginBlocked below
+        # owns it at 0.01/s -- ten times more sensitive than this rule, so the
+        # warning always fires first. Counting it here as well pages critical
+        # for a CORS misconfiguration and says less than the rule built for it.
+        expr: rate(websocket_disconnects_total{disconnect_reason!~"client_disconnect|server_disconnect|session_expired|origin_not_allowed"}[5m]) > 0.1
         for: 1m
         labels:
           severity: critical
           component: websocket
         annotations:
           summary: High WebSocket connection failure rate
-          description: "WebSocket disconnect rate of {{ $value }}/sec for non-client disconnects. Check network connectivity and server health."
+          description: "WebSocket disconnect rate of {{ $value }}/sec for disconnects that were neither a clean client exit, a deliberate server-side termination, an ordinary session expiry, nor a blocked origin (see WebSocketOriginBlocked). Check network connectivity and server health."
 
       - alert: WebSocketHeartbeatLatencyHigh
         expr: histogram_quantile(0.95, sum(rate(websocket_heartbeat_latency_seconds_bucket[5m])) by (le)) > 1.0
@@ -215,7 +285,7 @@ groups:
         annotations:
           summary: High WebSocket broadcast failure rate (>1%)
           description: "Broadcast failure rate is {{ $value | humanizePercentage }}. Check WebSocketManager health and connection state."
-          runbook_url: "https://docs.smart-village.solutions/runbooks/websocket-broadcast-failures"
+          runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/websocket-broadcast-failures.md"
 
       - alert: WebSocketBroadcastMessagesNotDelivered
         expr: rate(websocket_broadcast_messages_failed_total[5m]) > 0.05
@@ -290,3 +360,155 @@ groups:
         annotations:
           summary: High number of audio files stored
           description: "{{ $value }} audio files currently stored. This may indicate high traffic or cleanup issues."
+
+  # Quality telemetry is optional and must never page: a dead collector or a
+  # dead ClickHouse cannot affect translation, sessions or WebSocket delivery.
+  # Everything here is a warning by design. Metric names were read from a
+  # running collector's :8888 endpoint, not from documentation.
+  - name: ssf-quality-telemetry
+    rules:
+      - alert: QualityTelemetryExportFailing
+        expr: increase(ssf_quality_telemetry_events_total{outcome="export_failed"}[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: quality-telemetry
+        annotations:
+          summary: Quality telemetry emit calls are raising.
+          description: The emitter caught an exception on export. Note this fires only when the emit call itself raises; a collector or ClickHouse outage shows up as an SDK export warning in the gateway log instead. See the ClickHouse operations runbook.
+
+      - alert: QualityTelemetryAttributeRejected
+        expr: increase(ssf_quality_telemetry_events_total{outcome="dropped_disallowed"}[10m]) > 0
+        labels:
+          severity: warning
+          component: quality-telemetry
+        annotations:
+          summary: A quality telemetry attribute was rejected by the allowlist.
+          description: An event carried a key or value the manifest does not permit, so it was dropped before the wire. This is a code defect - the six places that must agree about a field have diverged - and it loses data silently. No delay before firing.
+
+      - alert: QualityTelemetryEventsLostBeforeCollector
+        expr: |
+          (
+            sum(increase(ssf_quality_telemetry_events_total{outcome="emitted"}[30m]))
+            - sum(increase(otelcol_receiver_accepted_log_records{receiver="otlp"}[30m]))
+          )
+          / clamp_min(sum(increase(ssf_quality_telemetry_events_total{outcome="emitted"}[30m])), 1)
+          > 0.01
+        for: 15m
+        labels:
+          severity: warning
+          component: quality-telemetry
+        annotations:
+          summary: More than 1% of queued quality events never reached the collector.
+          description: The gateway counted these as emitted, meaning accepted into the OTel SDK's in-process queue, but the collector never received them. That gap is the SDK's BatchLogRecordProcessor dropping on overflow, which it does not report anywhere else. This is the measurement that decides whether a bounded acknowledged writer is real work or theoretical - record the observed rate before acting on it.
+
+      - alert: QualityTelemetryClickHouseWritesFailing
+        expr: increase(otelcol_exporter_send_failed_log_records{exporter="clickhouse"}[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: quality-telemetry
+        annotations:
+          summary: The collector cannot write quality events to ClickHouse.
+          description: Exports are failing. The exporter retries with backoff for 300s and then drops the batch. Check that the migrations have been applied - an unapplied schema surfaces as UNKNOWN_TABLE - and that ClickHouse is reachable on the compose network.
+
+      - alert: QualityTelemetryExporterQueueFilling
+        expr: otelcol_exporter_queue_size{exporter="clickhouse"} / clamp_min(otelcol_exporter_queue_capacity{exporter="clickhouse"}, 1) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          component: quality-telemetry
+        annotations:
+          summary: The collector's ClickHouse send queue is over 80% full.
+          description: Events are arriving faster than they can be written. Once the queue is full the collector drops them. Check ClickHouse write latency and part counts before raising the queue size.
+
+      - alert: QualityTelemetryCollectorRefusingRecords
+        expr: increase(otelcol_receiver_refused_log_records[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: quality-telemetry
+        annotations:
+          summary: The collector is refusing quality telemetry records.
+          description: The memory_limiter is pushing back, so the receiver is rejecting records at the door. The collector is capped at 256 MiB; check for a volume increase or a stalled exporter holding batches in memory.
+
+      - alert: QualityTelemetryCollectorDown
+        expr: up{job="otel_collector"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: quality-telemetry
+        annotations:
+          summary: The quality telemetry collector is unreachable.
+          description: Prometheus cannot scrape otel-collector:8888. Quality events are being queued in the gateway and dropped once its queue fills. Translation, sessions and WebSocket delivery are unaffected by design.
+
+
+  # Feedback maintenance (#305). Warnings only, like ssf-quality-telemetry:
+  # feedback is voluntary and its analytics are optional, so none of this may
+  # page. FeedbackRetentionNotRunning is the one to act on promptly -- the
+  # submission notice promises deletion after twelve months in ten languages.
+  - name: ssf-feedback-maintenance
+    rules:
+      # max() across replicas, not the bare series: only one replica performs
+      # each pass and the others publish zero, so the aggregate is the real
+      # depth and no single replica's series can fire on its own.
+      - alert: FeedbackReconciliationBacklogGrowing
+        expr: max(ssf_feedback_reconciliation_backlog) > 100
+        for: 30m
+        labels:
+          severity: warning
+          component: feedback
+        annotations:
+          summary: Feedback submissions are not reaching analytics.
+          description: "{{ $value }} stored submissions still await analytics delivery after a full pass. The feedback itself is safe in PostgreSQL; only the ClickHouse half is behind. Check the collector before the gateway."
+
+      - alert: FeedbackReconciliationFailing
+        expr: increase(ssf_feedback_reconciliation_total{outcome="failed"}[30m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: feedback
+        annotations:
+          summary: Feedback analytics re-emission keeps failing.
+          description: Re-emission attempts are being rejected or are raising. Rows stay pending and will be retried, so nothing is lost yet, but the backlog will grow until this clears.
+
+      # Absence, not failure: a pass that never runs emits no failure metric,
+      # which is exactly the case this has to catch. A counter with no labels
+      # is exported as 0 the moment it is created, so this fires only when the
+      # maintenance pool was never built at all.
+      - alert: FeedbackRetentionNotRunning
+        expr: absent(ssf_feedback_retention_deleted_total)
+        for: 6h
+        labels:
+          severity: warning
+          component: feedback
+        annotations:
+          summary: The feedback retention pass is not reporting.
+          description: No retention metric has been scraped for six hours, so the twelve-month deletion promised in the submission notice may not be running. Check that the gateway's feedback maintenance task is alive and that one replica can take the advisory lock.
+
+      # The pass that runs and deletes nothing. A deletion counter alone cannot
+      # tell a deployment with nothing to delete from a maintenance role that
+      # can no longer see anything to delete -- a role that lost BYPASSRLS
+      # matches no rows, deletes none and reports success on every pass. Both
+      # arms are needed: overdue rows alone are normal while a backlog drains
+      # in batches of 500, and zero deletions alone are normal on a young
+      # deployment.
+      - alert: FeedbackRetentionDeletingNothing
+        expr: max(ssf_feedback_retention_overdue) > 0 and sum(increase(ssf_feedback_retention_deleted_total[6h])) == 0
+        for: 1h
+        labels:
+          severity: warning
+          component: feedback
+        annotations:
+          summary: Feedback past its retention expiry is not being deleted.
+          description: "{{ $value }} rows are past their twelve-month expiry and no deletion has been recorded for six hours, so the pass is running and removing nothing. Check that the maintenance role still has BYPASSRLS and DELETE on feedback."
+
+      - alert: FeedbackMaintenanceJobFailing
+        expr: increase(ssf_feedback_maintenance_failures_total[1h]) > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: feedback
+        annotations:
+          summary: A feedback maintenance pass could not complete.
+          description: "The {{ $labels.job }} pass failed to reach the database. Losing the advisory lock is not counted here, so this is a real outage of the feedback store rather than normal multi-replica contention."

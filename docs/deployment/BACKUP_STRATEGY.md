@@ -38,12 +38,18 @@
 - Archive metadata: image version, table, UTC timestamp, checksum, and restore result
 - Never include credentials, audio, transcripts, translations, or other content data
 
-### 4. System Configuration (Weekly)
+### 4. Keycloak Identity Data (Before Every Upgrade)
+- Compressed logical PostgreSQL dump of the Keycloak database
+- SHA-256 checksum and UTC timestamp for each archive
+- Restore verification into a temporary PostgreSQL database before an upgrade
+- Encrypted storage; never include bootstrap credentials or access tokens
+
+### 5. System Configuration (Weekly)
 - Docker volumes
 - Traefik certificates
 - Alert rules & monitoring configs
 
-### 5. Models (One-time + updates)
+### 6. Models (One-time + updates)
 - ASR models
 - Translation models
 - TTS models
@@ -128,6 +134,9 @@ ClickHouse exports are table-specific and begin only after the future telemetry
 schema is approved. Use the [ClickHouse Operations Runbook](../operations/runbooks/clickhouse-operations.md)
 for the export and temporary-restore procedure; include the resulting encrypted
 archive in the existing retention rotation.
+
+Keycloak backups use PostgreSQL logical dumps and require a temporary restore
+verification before upgrades. Follow the [Keycloak Operations Runbook](../operations/runbooks/keycloak-operations.md).
 
 ### 1. Daily Backup Script
 ```bash

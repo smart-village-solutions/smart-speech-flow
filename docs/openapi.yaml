@@ -264,6 +264,82 @@ paths:
           description: Invalid input (missing fields, invalid format, etc.)
         '404':
           description: Session not found
+        '503':
+          description: |
+            Translation pipeline at capacity. One GPU hosts ASR, translation and
+            TTS, so the number of concurrent pipelines is bounded. The request
+            was not processed and may be retried.
+
+            `detail.error_code` is the stable value `SYSTEM_BUSY`.
+
+            Two layers can produce this response, and clients handle both the
+            same way. The gateway's own bound rejects before any work starts and
+            reports the full `details` below. A GPU service that shed the request
+            mid-pipeline is relayed instead, reporting `retry_after_seconds` and
+            `upstream_error` only — its `Retry-After` is the one that service
+            asked for. Treat every field in `details` as optional.
+
+            **Client handling.** Wait `Retry-After` seconds and resend the same
+            request; nothing was consumed. `details.retry_after_seconds` always
+            equals the header, so either may be used. Do not retry sooner, and
+            do not treat this as a permanent failure — unlike other 5xx
+            responses, retrying is expected to succeed.
+
+            The current SPA maps every 5xx to one generic error message without
+            reading this body, which is safe but tells the user less than it
+            could. Surfacing "busy, retrying shortly" is a possible improvement.
+          headers:
+            Retry-After:
+              description: Whole seconds to wait before retrying; never below 1.
+              schema:
+                type: integer
+                minimum: 1
+                example: 10
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: object
+                    properties:
+                      error_code:
+                        type: string
+                        enum: [SYSTEM_BUSY]
+                      error_message:
+                        type: string
+                        example: "The translation pipeline is at capacity. Please retry shortly."
+                      details:
+                        type: object
+                        properties:
+                          max_concurrent_pipelines:
+                            type: integer
+                            description: Configured concurrent pipeline limit.
+                            example: 2
+                          retry_after_seconds:
+                            type: integer
+                            description: >-
+                              Advised delay in whole seconds. Always identical to
+                              the Retry-After header.
+                            minimum: 1
+                            example: 10
+                          queue_wait_seconds:
+                            type: number
+                            description: >-
+                              Configured queue window, for diagnostics. Not an
+                              advised delay — use retry_after_seconds.
+                            example: 10.0
+                          waited_seconds:
+                            type: number
+                            description: How long this request actually queued.
+                            example: 10.001
+                          upstream_error:
+                            type: string
+                            description: >-
+                              Present only when a GPU service shed the request
+                              mid-pipeline rather than the gateway rejecting it
+                              up front. Diagnostic; not for display.
+                            example: "Translation-Fehler: at capacity"
         '500':
           description: Processing error
 

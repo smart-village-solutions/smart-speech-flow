@@ -107,6 +107,35 @@ async def test_asr_transcription_returns_text_and_removes_temporary_audio(
     assert not os.path.exists(normalized_file.name)
 
 
+def test_asr_model_loader_uses_the_fixed_turbo_model(asr_service, monkeypatch):
+    loaded_model = object()
+    calls = []
+
+    def load_model(model_name, *, device):
+        calls.append((model_name, device))
+        return loaded_model
+
+    monkeypatch.setattr(
+        asr_service, "whisper", SimpleNamespace(load_model=load_model)
+    )
+
+    assert asr_service._load_asr_model() is loaded_model
+    assert calls == [("large-v3-turbo", "cpu")]
+
+
+def test_asr_model_loader_returns_none_when_model_loading_fails(
+    asr_service, monkeypatch
+):
+    def load_model(*_args, **_kwargs):
+        raise RuntimeError("model unavailable")
+
+    monkeypatch.setattr(
+        asr_service, "whisper", SimpleNamespace(load_model=load_model)
+    )
+
+    assert asr_service._load_asr_model() is None
+
+
 @pytest.mark.asyncio
 async def test_translation_returns_scalar_and_list_results_with_request_metadata(
     translation_service, monkeypatch

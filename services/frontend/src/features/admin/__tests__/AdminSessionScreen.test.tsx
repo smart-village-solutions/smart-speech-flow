@@ -10,7 +10,7 @@ afterEach(() => server.events.removeAllListeners());
 
 const arabicSession = () =>
   server.use(
-    http.get('*/api/session/:id', ({ params }) =>
+    http.get('*/api/admin/session/:id/status', ({ params }) =>
       HttpResponse.json({
         id: params.id,
         customer_language: 'ar',
@@ -26,7 +26,7 @@ const arabicSession = () =>
 
 const history = () =>
   server.use(
-    http.get('*/api/session/:id/messages', ({ params }) =>
+    http.get('*/api/admin/session/:id/messages', ({ params }) =>
       HttpResponse.json({
         session_id: params.id,
         messages: [
@@ -54,6 +54,16 @@ const renderScreen = (onLeave = vi.fn()) => {
 };
 
 describe('AdminSessionScreen', () => {
+  it('starts the chat stack below the shared header', async () => {
+    arabicSession();
+    renderScreen();
+
+    expect(await screen.findByText('A1B2C3D4'));
+    expect(document.querySelector('[data-chat-stack=""]')).toHaveStyle({
+      top: 'var(--spacing-content-top)',
+    });
+  });
+
   it('carries the admin header and the account menu', async () => {
     arabicSession();
     renderScreen();
@@ -105,7 +115,7 @@ describe('AdminSessionScreen', () => {
 
   it('offers a way back instead of a terminate once the session has ended', async () => {
     server.use(
-      http.get('*/api/session/:id', ({ params }) =>
+      http.get('*/api/admin/session/:id/status', ({ params }) =>
         HttpResponse.json({
           id: params.id,
           customer_language: 'ar',
