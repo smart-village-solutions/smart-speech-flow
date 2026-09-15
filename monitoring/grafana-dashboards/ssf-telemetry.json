@@ -1121,7 +1121,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT uniqExact(event_id) AS submissions FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND $__timeFilter(emitted_at_utc)"
+          "rawSql": "SELECT uniqExact(event_id) AS submissions FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
         }
       ]
     },
@@ -1157,7 +1157,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT round(100 * uniqExactIf(session_ref, event_type = 'feedback_submitted' AND session_ref != '00000000000000000000000000000000') / nullIf(uniqExactIf(session_ref, event_type = 'session_lifecycle' AND lifecycle_phase = 'activated'), 0), 1) AS response_rate FROM quality_events FINAL WHERE $__timeFilter(emitted_at_utc)"
+          "rawSql": "SELECT round(100 * uniqExactIf(session_ref, event_type = 'feedback_submitted' AND session_ref != '00000000000000000000000000000000') / nullIf(uniqExactIf(session_ref, event_type = 'session_lifecycle' AND lifecycle_phase = 'activated'), 0), 1) AS response_rate FROM quality_events FINAL WHERE match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
         }
       ]
     },
@@ -1192,7 +1192,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT round(100 * (uniqExactIf(event_id, net_promoter_score >= 9) - uniqExactIf(event_id, net_promoter_score <= 6)) / nullIf(uniqExact(event_id), 0)) AS nps FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND $__timeFilter(emitted_at_utc)"
+          "rawSql": "SELECT round(100 * (uniqExactIf(event_id, net_promoter_score >= 9) - uniqExactIf(event_id, net_promoter_score <= 6)) / nullIf(uniqExact(event_id), 0)) AS nps FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
         }
       ]
     },
@@ -1255,7 +1255,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 1 DAY) AS time, avg(translation_quality) AS translation_quality, avg(performance) AS performance, avg(usability) AS usability FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 1 DAY) AS time, avg(translation_quality) AS translation_quality, avg(performance) AS performance, avg(usability) AS usability FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
         }
       ]
     },
@@ -1283,7 +1283,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 1 DAY) AS time, uniqExactIf(event_id, net_promoter_score >= 9) AS promoters, uniqExactIf(event_id, net_promoter_score >= 7 AND net_promoter_score <= 8) AS passives, uniqExactIf(event_id, net_promoter_score <= 6) AS detractors FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 1 DAY) AS time, uniqExactIf(event_id, net_promoter_score >= 9) AS promoters, uniqExactIf(event_id, net_promoter_score >= 7 AND net_promoter_score <= 8) AS passives, uniqExactIf(event_id, net_promoter_score <= 6) AS detractors FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
         }
       ]
     },
@@ -1291,7 +1291,7 @@
       "id": 46,
       "type": "timeseries",
       "title": "Daily Submissions (Gold Tier)",
-      "description": "Thirteen months of history, split by form version so a revised question set is visible rather than pooled. Exact: gold counts with uniqExact over event_id, so a re-emission does not inflate them.",
+      "description": "Thirteen months of history, split by form version so a revised question set is visible rather than pooled. Exact: gold counts with uniqExact over event_id, so a re-emission does not inflate them. Filter by tenant with the Tenant picker. The breakdown starts when #325 shipped: rows aggregated before it carry no reference and sit under an empty tenant, which All includes and no single tenant does.",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -1311,7 +1311,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT event_date AS time, feedback_form_version, uniqExactMerge(submissions) AS submissions FROM feedback_daily WHERE $__dateFilter(event_date) GROUP BY event_date, feedback_form_version ORDER BY event_date"
+          "rawSql": "SELECT event_date AS time, feedback_form_version, uniqExactMerge(submissions) AS submissions FROM feedback_daily WHERE $__dateFilter(event_date) AND match(tenant_ref, '${tenant:regex}') GROUP BY event_date, feedback_form_version ORDER BY event_date"
         }
       ]
     },
@@ -1319,7 +1319,7 @@
       "id": 47,
       "type": "timeseries",
       "title": "Rating Averages (Gold Tier, approximate)",
-      "description": "APPROXIMATE BY CONSTRUCTION. avgState has no distinct-by form, so a submission re-emitted by the #305 reconciler contributes its ratings twice -- and #305 re-emits by design, not only after a fault. Verified against ClickHouse 26.3.17: two submissions of 9 and 3 read as an average of 7 after one retry, where the true value is 6. Counts and NPS on this dashboard are exact; these four averages are not. Inside 30 days, read 'Rating Averages'.",
+      "description": "APPROXIMATE BY CONSTRUCTION. avgState has no distinct-by form, so a submission re-emitted by the #305 reconciler contributes its ratings twice -- and #305 re-emits by design, not only after a fault. Verified against ClickHouse 26.3.17: two submissions of 9 and 3 read as an average of 7 after one retry, where the true value is 6. Counts and NPS on this dashboard are exact; these four averages are not. Inside 30 days, read 'Rating Averages'. Filter by tenant with the Tenant picker. The breakdown starts when #325 shipped: rows aggregated before it carry no reference and sit under an empty tenant, which All includes and no single tenant does.",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -1346,7 +1346,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT event_date AS time, avgMerge(translation_quality_avg) AS translation_quality, avgMerge(performance_avg) AS performance, avgMerge(usability_avg) AS usability FROM feedback_daily WHERE $__dateFilter(event_date) GROUP BY event_date ORDER BY event_date"
+          "rawSql": "SELECT event_date AS time, avgMerge(translation_quality_avg) AS translation_quality, avgMerge(performance_avg) AS performance, avgMerge(usability_avg) AS usability FROM feedback_daily WHERE $__dateFilter(event_date) AND match(tenant_ref, '${tenant:regex}') GROUP BY event_date ORDER BY event_date"
         }
       ]
     },
@@ -1374,7 +1374,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT feedback_form_version AS form_version, uniqExact(event_id) AS submissions, round(avg(translation_quality), 2) AS translation_quality, round(avg(performance), 2) AS performance, round(avg(usability), 2) AS usability, round(avg(net_promoter_score), 2) AS nps_mean FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND $__timeFilter(emitted_at_utc) GROUP BY form_version ORDER BY submissions DESC"
+          "rawSql": "SELECT feedback_form_version AS form_version, uniqExact(event_id) AS submissions, round(avg(translation_quality), 2) AS translation_quality, round(avg(performance), 2) AS performance, round(avg(usability), 2) AS usability, round(avg(net_promoter_score), 2) AS nps_mean FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY form_version ORDER BY submissions DESC"
         }
       ]
     }
@@ -1387,7 +1387,34 @@
     "clickhouse"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "tenant",
+        "label": "Tenant",
+        "description": "Pseudonymous tenant reference, twelve hex characters. Every feedback panel honours it, in both tiers. The refinement, translation and session panels do not: they read quality_events_daily, which has no tenant dimension. References are fixed width, so the unanchored match() cannot select one tenant's rows into another's. Feedback aggregated before #325 carries no reference and appears only under All.",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "clickhouse-ssf"
+        },
+        "query": "SELECT DISTINCT tenant_ref FROM feedback_daily WHERE tenant_ref NOT IN ('', '000000000000') ORDER BY tenant_ref",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 1,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": []
+      }
+    ]
   },
   "time": {
     "from": "now-24h",
