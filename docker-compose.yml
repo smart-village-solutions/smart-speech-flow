@@ -541,6 +541,8 @@ services:
     image: grafana/promtail:2.9.15
     restart: always
     command: -config.file=/etc/promtail/config.yaml -log.level=debug
+    expose:
+      - "9080"
     depends_on:
       - loki
     volumes:
