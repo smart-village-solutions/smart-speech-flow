@@ -187,9 +187,13 @@ def test_frontend_build_receives_public_multi_realm_configuration():
     assert "VITE_KEYCLOAK_REALM" not in build_args
 
 
-def test_recovery_unit_relies_on_docker_restart_policies_without_compose_reconciliation():
+def test_recovery_unit_reconciles_with_the_guarded_production_deploy_script():
     unit = Path("deploy/systemd/ssf-production.service").read_text()
-    assert "ExecStart=/usr/bin/true" in unit
+    assert (
+        "ExecStart=/root/projects/ssf-backend/scripts/deploy-production.sh --apply"
+        in unit
+    )
+    assert "ExecStart=/usr/bin/true" not in unit
     assert "docker compose" not in unit
     assert "ExecStop=" not in unit
     assert "ExecStartPost=/root/projects/ssf-backend/scripts/production-health-check.sh --timeout-seconds 300" in unit

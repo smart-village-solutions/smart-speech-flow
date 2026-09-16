@@ -8,6 +8,39 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_production_deploy_entrypoint_is_executable_and_uses_canonical_compose():
+    script = ROOT / "scripts/deploy-production.sh"
+
+    assert script.is_file()
+    assert script.stat().st_mode & 0o111
+    content = script.read_text()
+    assert "production_compose config" in content
+    assert "auth.dialog.kassel.de" in content
+    assert "STUDIO_RUNTIME_TOKEN_URL" in content
+    assert "STUDIO_RUNTIME_CLIENT_SECRET" in content
+    assert "production_compose up -d" in content
+
+
+def test_health_script_checks_public_keycloak_and_login_directory_routes():
+    script = (ROOT / "scripts/production-health-check.sh").read_text()
+
+    assert "public_auth_is_healthy()" in script
+    assert "SSF_AUTH_SMOKE_URL" in script
+    assert "https://auth.dialog.kassel.de/" in script
+    assert "login_directory_is_healthy()" in script
+    assert "SSF_LOGIN_DIRECTORY_SMOKE_URL" in script
+    assert "https://ssf.smart-village.solutions/api/login/tenants" in script
+    assert "Keycloak public route check failed" in script
+    assert "Login directory check failed" in script
+
+
+def test_health_script_checks_grafana_inside_its_unpublished_container():
+    script = (ROOT / "scripts/production-health-check.sh").read_text()
+
+    assert "production_compose exec -T grafana wget -qO- http://127.0.0.1:3000/api/health" in script
+    assert "curl --fail --silent --show-error http://127.0.0.1:3000/api/health" not in script
+
+
 def run_script(*arguments, environment=None):
     env = os.environ.copy()
     if environment:
