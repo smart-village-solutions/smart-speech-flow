@@ -306,7 +306,7 @@ services:
       start_period: 20s
     pull_policy: never
   keycloak:
-    image: ssf-keycloak:prod-74e4fdd
+    image: ssf-keycloak:prod-461ae87
     command:
     - start
     - --optimized
