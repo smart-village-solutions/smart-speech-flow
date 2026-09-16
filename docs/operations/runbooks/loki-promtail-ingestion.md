@@ -2,10 +2,10 @@
 
 ## Strategy
 
-Promtail excludes the `loki` and `promtail` Docker container streams before
-they enter its pipeline. Loki query execution messages and Promtail retry
-messages therefore cannot be pushed back to Loki. Application and platform
-container logs remain collected normally.
+Promtail labels Docker streams, then drops the `loki` and `promtail` streams
+in its pipeline. Loki query execution messages and Promtail retry messages
+therefore cannot be pushed back to Loki. Application and platform container
+logs remain collected normally.
 
 ## Alerts
 
