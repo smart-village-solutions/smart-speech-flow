@@ -13,10 +13,6 @@ scrape_configs:
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
     relabel_configs:
-      # Loki query logs and Promtail retry logs must never be sent back to Loki.
-      - source_labels: ['__meta_docker_container_name']
-        regex: '/(.+-)?(loki|promtail)(-[0-9]+)?'
-        action: drop
       - source_labels: ['__meta_docker_container_name']
         regex: '/(.*)'
         target_label: container
@@ -24,6 +20,11 @@ scrape_configs:
         target_label: __path__
         replacement: '/var/lib/docker/containers/$1/$1-json.log'
     pipeline_stages:
+      # Docker target relabeling cannot drop targets in Promtail 2.9.15.
+      # Drop after the container label has been created instead.
+      - match:
+          selector: '{container=~"(^|.*-)(loki|promtail)(-[0-9]+)?"}'
+          action: drop
       - match:
           selector: '{service="api_gateway"}'
           stages:

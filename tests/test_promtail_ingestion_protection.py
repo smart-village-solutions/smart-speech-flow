@@ -14,13 +14,14 @@ ALERTS = ROOT / "monitoring" / "alert_rules.yml"
 def test_monitoring_log_feedback_is_prevented_and_observable() -> None:
     """Loki queries and collector retries must neither recurse nor go unseen."""
     promtail = yaml.safe_load(PROMTAIL.read_text())
-    relabel_rules = promtail["scrape_configs"][0]["relabel_configs"]
+    pipeline_stages = promtail["scrape_configs"][0]["pipeline_stages"]
 
     assert {
-        "source_labels": ["__meta_docker_container_name"],
-        "regex": r"/(.+-)?(loki|promtail)(-[0-9]+)?",
-        "action": "drop",
-    } in relabel_rules
+        "match": {
+            "selector": r'{container=~"(^|.*-)(loki|promtail)(-[0-9]+)?"}',
+            "action": "drop",
+        }
+    } in pipeline_stages
 
     loki = yaml.safe_load(LOKI.read_text())
     assert loki["limits_config"]["query_timeout"] == "5m"
