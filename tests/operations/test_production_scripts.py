@@ -55,6 +55,91 @@ def run_script(*arguments, environment=None):
     )
 
 
+def fake_deploy_environment(tmp_path, rendered_compose, unresolvable_hostname=None):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    docker_log = tmp_path / "docker.log"
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+if [[ " $* " == *" config " ]]; then
+  printf '%s\\n' "$FAKE_RENDERED_COMPOSE"
+elif [[ " $* " == *" up -d " ]]; then
+  printf 'up\\n' >> "$FAKE_DOCKER_LOG"
+fi
+"""
+    )
+    fake_docker.chmod(0o755)
+    fake_getent = fake_bin / "getent"
+    fake_getent.write_text(
+        """#!/usr/bin/env bash
+if [[ "${2:-}" == "${FAKE_UNRESOLVABLE_HOST:-}" ]]; then
+  exit 2
+fi
+"""
+    )
+    fake_getent.chmod(0o755)
+    return {
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "FAKE_DOCKER_LOG": str(docker_log),
+        "FAKE_UNRESOLVABLE_HOST": unresolvable_hostname or "",
+        "FAKE_RENDERED_COMPOSE": rendered_compose,
+    }
+
+
+def rendered_acme_compose(hostname):
+    return f"""services:
+  keycloak:
+    environment:
+      KC_HOSTNAME: https://auth.dialog.kassel.de
+      STUDIO_RUNTIME_TOKEN_URL: https://studio.dialog.kassel.de/token
+      STUDIO_RUNTIME_CLIENT_SECRET: test-secret
+    labels:
+    - traefik.http.routers.keycloak.rule=Host(`auth.dialog.kassel.de`)
+    - traefik.http.routers.keycloak.tls.certresolver=le
+    - traefik.http.routers.candidate.rule=Host(`{hostname}`)
+    - traefik.http.routers.candidate.tls.certresolver=le
+"""
+
+
+def test_deploy_check_rejects_a_local_acme_router_before_compose_up(tmp_path):
+    environment = fake_deploy_environment(
+        tmp_path, rendered_acme_compose("auth.localhost")
+    )
+
+    result = run_script("scripts/deploy-production.sh", "--apply", environment=environment)
+
+    assert result.returncode == 1
+    assert "auth.localhost" in result.stderr
+    assert not (tmp_path / "docker.log").exists()
+
+
+def test_deploy_check_rejects_an_unresolvable_acme_router_before_compose_up(tmp_path):
+    environment = fake_deploy_environment(
+        tmp_path,
+        rendered_acme_compose("missing.example.invalid"),
+        unresolvable_hostname="missing.example.invalid",
+    )
+
+    result = run_script("scripts/deploy-production.sh", "--apply", environment=environment)
+
+    assert result.returncode == 1
+    assert "missing.example.invalid" in result.stderr
+    assert not (tmp_path / "docker.log").exists()
+
+
+def test_deploy_check_allows_a_resolvable_acme_router(tmp_path):
+    environment = fake_deploy_environment(
+        tmp_path, rendered_acme_compose("auth.dialog.kassel.de")
+    )
+
+    result = run_script("scripts/deploy-production.sh", "--apply", environment=environment)
+
+    assert result.returncode == 0
+    assert (tmp_path / "docker.log").read_text() == "up\n"
+
+
 def test_health_script_rejects_invalid_timeout():
     result = run_script(
         "scripts/production-health-check.sh", "--timeout-seconds", "zero"
