@@ -76,6 +76,12 @@ def pytest_addoption(parser):  # pragma: no cover - exercised via pytest hooks
         default=False,
         help="Run load tests that can put significant pressure on local services.",
     )
+    parser.addoption(
+        "--run-real-system",
+        action="store_true",
+        default=False,
+        help="Run tests that require live ASR, Translation, and TTS services.",
+    )
 
     if not HAS_PYTEST_ASYNCIO:
         parser.addini(
@@ -97,6 +103,10 @@ def pytest_configure(config):  # pragma: no cover - exercised via pytest hooks
     config.addinivalue_line(
         "markers",
         "load: mark test as generating significant load against local services",
+    )
+    config.addinivalue_line(
+        "markers",
+        "real_system: mark test as requiring live ASR, Translation, and TTS services",
     )
 
 
@@ -133,6 +143,7 @@ def bypass_admin_auth_for_legacy_route_tests(request):
 def pytest_collection_modifyitems(config, items):  # pragma: no cover - exercised via pytest hooks
     run_integration = config.getoption("--run-integration")
     run_load = config.getoption("--run-load")
+    run_real_system = config.getoption("--run-real-system")
 
     skip_integration = pytest.mark.skip(
         reason="integration tests are skipped by default; use --run-integration to include them",
@@ -140,14 +151,28 @@ def pytest_collection_modifyitems(config, items):  # pragma: no cover - exercise
     skip_load = pytest.mark.skip(
         reason="load tests are skipped by default; use --run-load to include them",
     )
+    skip_real_system = pytest.mark.skip(
+        reason=(
+            "real-system tests are skipped by default; use --run-real-system "
+            "with live ASR, Translation, and TTS services"
+        ),
+    )
 
     for item in items:
         item_path = Path(str(item.fspath))
         path_parts = item_path.parts
+        is_real_system = item.get_closest_marker("real_system") is not None
+
+        if is_real_system and not run_real_system:
+            item.add_marker(skip_real_system)
 
         if "tests" in path_parts and "integration" in path_parts:
             item.add_marker(pytest.mark.integration)
-            if not run_integration and item_path.name not in HERMETIC_INTEGRATION_TESTS:
+            if (
+                not run_integration
+                and not (is_real_system and run_real_system)
+                and item_path.name not in HERMETIC_INTEGRATION_TESTS
+            ):
                 item.add_marker(skip_integration)
 
         if "tests" in path_parts and "load" in path_parts:

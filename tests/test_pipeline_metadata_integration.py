@@ -66,6 +66,7 @@ class TestAudioPipelineIntegration:
     """Test complete audio pipeline with metadata"""
 
     @pytest.mark.asyncio
+    @pytest.mark.real_system
     async def test_audio_pipeline_generates_metadata(self, sample_audio_base64, monkeypatch):
         """Test that audio pipeline generates complete metadata with real services"""
         import base64
@@ -210,6 +211,7 @@ class TestTextPipelineIntegration:
     """Test complete text pipeline with metadata"""
 
     @pytest.mark.asyncio
+    @pytest.mark.real_system
     async def test_text_pipeline_generates_metadata(self, monkeypatch):
         """Test that text pipeline generates complete metadata with real services"""
         # Patch service URLs to use localhost ports (outside Docker network)

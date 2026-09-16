@@ -40,7 +40,14 @@ pytest tests/test_tenant_message_routes.py -v
 
 # WebSocket tests
 pytest tests/integration/test_websocket_integration.py -v
+
+# Real-system pipeline tests (require live ASR, Translation, and TTS services)
+pytest --run-real-system tests/test_pipeline_metadata_integration.py -v
 ```
+
+Real-system tests are skipped by default so the ordinary suite does not depend
+on ambient local services. Once `--run-real-system` is supplied, unavailable
+upstreams are a test failure rather than a skip.
 
 ### With Coverage
 ```bash
