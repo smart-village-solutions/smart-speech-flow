@@ -72,9 +72,23 @@ assert_body ';color:var(--color-text)'
 assert_body 'font-family:var(--font-legacy)'
 assert '--font-legacy: system-ui'
 
-# The new UI paints itself, so nothing of its theme reaches body.
-assert '[data-screen-shell]{color-scheme:light}'
-assert '.dark [data-screen-shell]{color-scheme:dark}'
+# The new UI paints itself, so nothing of its theme reaches body. Lightning CSS
+# may inject its own declarations into these rules, so check each selector's
+# colour scheme rather than relying on the emitted declaration order.
+screen_shell_rule=$(grep -oE '(^|})\[data-screen-shell\]\{[^}]*\}' dist/assets/*.css | head -1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+[[ -n "$screen_shell_rule" ]] || fail "no screen-shell light rule found in built CSS"
+case "$screen_shell_rule" in
+  *'color-scheme:light'*) ;;
+  *) fail "screen shell must declare color-scheme:light, but is: $screen_shell_rule" ;;
+esac
+
+screen_shell_dark_rule=$(grep -oE '(^|})\.dark[[:space:]]+\[data-screen-shell\]\{[^}]*\}' dist/assets/*.css | head -1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+[[ -n "$screen_shell_dark_rule" ]] || fail "no screen-shell dark rule found in built CSS"
+case "$screen_shell_dark_rule" in
+  *'color-scheme:dark'*) ;;
+  *) fail "dark screen shell must declare color-scheme:dark, but is: $screen_shell_dark_rule" ;;
+esac
+
 assert 'html:has([data-screen-shell]){background:var(--surface-page)}'
 
 # New design tokens, light and dark.
