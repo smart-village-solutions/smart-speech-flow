@@ -39,20 +39,33 @@ body {
 #kc-header-wrapper {
   display: block;
   box-sizing: border-box;
-  width: min(100%, 800px);
+  width: min(100% - 40px, 800px);
   height: 180px;
   margin: 0 auto;
-  background: url('../img/header-logo.png') center / contain no-repeat;
+  background-image: url('../img/header-logo.png');
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-size: contain;
   color: transparent;
   font-size: 0;
 }
 
-#kc-content,
-.login-pf-page,
-.pf-v5-c-login {
+.login-pf-page {
+  width: 100%;
+  margin: 0;
+  padding-top: 0;
+}
+
+.login-pf-page > .card-pf,
+.pf-v5-c-login__main {
   box-sizing: border-box;
   width: min(100% - 40px, 384px);
   margin: 48px auto;
+}
+
+#kc-content {
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .card-pf,
@@ -106,9 +119,8 @@ body::after {
     min-height: 108px;
   }
 
-  #kc-content,
-  .login-pf-page,
-  .pf-v5-c-login {
+  .login-pf-page > .card-pf,
+  .pf-v5-c-login__main {
     width: min(100% - 32px, 384px);
     margin: 32px auto;
   }

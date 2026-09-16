@@ -108,6 +108,12 @@ def test_keycloak_image_provides_the_kasseldialog_login_branding():
         stylesheet = _theme_file(image, "resources/css/login.css")
         assert b"html.login-pf,\nhtml.login-pf body" in stylesheet
         assert b"background-image: none" in stylesheet
+        assert (
+            b".login-pf-page {\n  width: 100%;\n  margin: 0;\n  padding-top: 0;\n}"
+            in stylesheet
+        )
+        assert b"background-position: center top;" in stylesheet
+        assert b".login-pf-page > .card-pf" in stylesheet
         assert b"--footer-content-width: calc(100% - 40px);" in stylesheet
         assert b"--footer-logo-gap: 16px;" in stylesheet
         assert b"@media (min-width: 640px)" in stylesheet
