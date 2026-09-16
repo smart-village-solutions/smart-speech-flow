@@ -47,6 +47,20 @@ curl http://localhost:8000/health
 
 **Das war's!** Die API ist unter `http://localhost:8000` verfuegbar.
 
+### Production deployment
+
+Production deployments use a separate, pinned Compose definition. From the
+repository root on the production host:
+
+```bash
+scripts/deploy-production.sh --check
+scripts/deploy-production.sh --apply
+scripts/production-health-check.sh --timeout-seconds 300
+```
+
+Resolve a failed check before changing containers. Do not use a bare
+`docker compose up` command for production deployment.
+
 > **🔐 Security Notes:**
 > - **Frontend Demo Password:** Set in `.env` → `FRONTEND_DEMO_PASSWORD` (default: `ssf2025kassel`)
 > - **Grafana Admin:** Set `GRAFANA_ADMIN_PASSWORD` in `.env` (see [Security Guide](docs/deployment/SECURITY.md))

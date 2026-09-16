@@ -489,6 +489,8 @@ services:
     image: grafana/promtail@sha256:b338a29de45ef8ffa96f882f3a36306b1e61262b2a560ff523e0e2633cccbbc4
     restart: unless-stopped
     command: -config.file=/etc/promtail/config.yaml -log.level=debug
+    expose:
+    - '9080'
     depends_on:
     - loki
     volumes:

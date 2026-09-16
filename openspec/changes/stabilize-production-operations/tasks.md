@@ -27,3 +27,6 @@
 - [ ] 4.2 Install or verify the NVIDIA generic kernel-module metapackage.
 - [ ] 4.3 Remove orphaned never-started containers after successful canonical
   recovery verification.
+- [x] 4.4 Prevent Loki/Promtail self-ingestion loops, expose rejected and
+  dropped log-entry signals to Prometheus, and document the deployment baseline
+  (#352).
