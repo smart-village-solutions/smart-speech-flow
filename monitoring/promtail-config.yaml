@@ -13,6 +13,10 @@ scrape_configs:
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
     relabel_configs:
+      # Loki query logs and Promtail retry logs must never be sent back to Loki.
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.+-)?(loki|promtail)(-[0-9]+)?'
+        action: drop
       - source_labels: ['__meta_docker_container_name']
         regex: '/(.*)'
         target_label: container

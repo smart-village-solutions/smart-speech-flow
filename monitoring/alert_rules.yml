@@ -512,3 +512,25 @@ groups:
         annotations:
           summary: A feedback maintenance pass could not complete.
           description: "The {{ $labels.job }} pass failed to reach the database. Losing the advisory lock is not counted here, so this is a real outage of the feedback store rather than normal multi-replica contention."
+
+  - name: ssf-monitoring-ingestion
+    rules:
+      - alert: PromtailPushRateLimited
+        expr: sum(rate(promtail_request_duration_seconds_count{status_code="429"}[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: Promtail pushes are being rate-limited by Loki.
+          description: Loki has returned HTTP 429 to Promtail continuously for five minutes. Entries can be lost; inspect Loki ingestion volume and the Promtail container filters.
+
+      - alert: PromtailDroppedEntries
+        expr: increase(promtail_dropped_entries_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: Promtail is dropping log entries.
+          description: Promtail has reported dropped entries in the last five minutes. Investigate the drop reason and ensure operational logs are not being discarded.
