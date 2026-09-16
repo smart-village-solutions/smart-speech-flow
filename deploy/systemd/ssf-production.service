@@ -15,7 +15,7 @@ ExecStartPre=/usr/bin/docker info
 ExecStartPre=/usr/bin/nvidia-smi -L
 ExecStart=/root/projects/ssf-backend/scripts/deploy-production.sh --apply
 ExecStartPost=/root/projects/ssf-backend/scripts/production-health-check.sh --timeout-seconds 300
-TimeoutStartSec=330
+TimeoutStartSec=360
 Restart=on-failure
 RestartSec=10s
 

@@ -195,6 +195,7 @@ def test_recovery_unit_reconciles_with_the_guarded_production_deploy_script():
     )
     assert "ExecStart=/usr/bin/true" not in unit
     assert "docker compose" not in unit
+    assert "TimeoutStartSec=360" in unit
     assert "ExecStop=" not in unit
     assert "ExecStartPost=/root/projects/ssf-backend/scripts/production-health-check.sh --timeout-seconds 300" in unit
     assert "Restart=on-failure" in unit
