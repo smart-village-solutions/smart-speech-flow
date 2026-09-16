@@ -61,6 +61,20 @@ The following services are now **only accessible within Docker network** (not ex
 - [ ] Set the six required `KEYCLOAK_*` variables in `.env`, including the non-secret `KEYCLOAK_HOSTNAME`
 - [ ] Review all other environment variables in `.env`
 
+### Guarded Production Deployment
+
+Use the repository deployment entrypoint from the production host. It renders
+and validates the canonical production Compose configuration before it can
+change containers.
+
+```bash
+scripts/deploy-production.sh --check
+scripts/deploy-production.sh --apply
+scripts/production-health-check.sh --timeout-seconds 300
+```
+
+Do not use a bare `docker compose up` command for production deployment.
+
 ### Security Verification
 
 ```bash

@@ -89,3 +89,10 @@ def test_the_service_down_runbook_uses_production_compose():
 
     assert "production_compose" in text
     assert not BARE_COMPOSE.search(text)
+
+
+def test_production_documents_require_the_guarded_deploy_commands():
+    for path in (Path("README.md"), Path("docs/deployment/SECURITY.md")):
+        text = path.read_text(encoding="utf-8")
+        assert "scripts/deploy-production.sh --check" in text
+        assert "scripts/deploy-production.sh --apply" in text
