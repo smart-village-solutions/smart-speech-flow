@@ -144,7 +144,7 @@ class WebSocketIntegrationTester:
 
             async with websockets.connect(
                 uri,
-                extra_headers={"Origin": "http://localhost:3000"},
+                origin="http://localhost:3000",
                 ping_timeout=timeout,
                 close_timeout=timeout
             ) as websocket:
@@ -184,12 +184,12 @@ class WebSocketIntegrationTester:
 
             admin_ws = await websockets.connect(
                 admin_uri,
-                extra_headers={"Origin": "http://localhost:3000"}
+                origin="http://localhost:3000"
             )
 
             customer_ws = await websockets.connect(
                 customer_uri,
-                extra_headers={"Origin": "http://localhost:3000"}
+                origin="http://localhost:3000"
             )
 
             # Admin sends message to customer
