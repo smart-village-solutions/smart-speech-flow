@@ -344,17 +344,6 @@ services:
     - traefik.http.routers.keycloak.tls.certresolver=le
     - traefik.http.services.keycloak.loadbalancer.server.port=8080
     pull_policy: never
-  frontend-archive:
-    ports:
-    - 5173:5173
-    labels:
-    - traefik.enable=true
-    - traefik.http.routers.frontend-archive.rule=Host(`translate-archive.smart-village.solutions`)
-    - traefik.http.routers.frontend-archive.entrypoints=websecure
-    - traefik.http.routers.frontend-archive.tls.certresolver=le
-    restart: unless-stopped
-    image: ssf-backend-frontend-archive:prod-e409a06
-    pull_policy: never
   frontend:
     networks:
     - default

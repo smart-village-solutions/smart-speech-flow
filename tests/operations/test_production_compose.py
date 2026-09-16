@@ -33,7 +33,6 @@ def test_production_compose_contains_the_running_workload():
         "cadvisor",
         "node_exporter",
         "frontend",
-        "frontend-archive",
     }
     assert required.issubset(services)
 
