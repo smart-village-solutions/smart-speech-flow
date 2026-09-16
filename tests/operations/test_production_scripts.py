@@ -41,6 +41,54 @@ def test_health_script_checks_grafana_inside_its_unpublished_container():
     assert "curl --fail --silent --show-error http://127.0.0.1:3000/api/health" not in script
 
 
+def test_health_check_accepts_the_current_production_service_set_without_archive(tmp_path):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    services = "\n".join(
+        (
+            "traefik asr translation tts api_gateway ollama redis clickhouse "
+            "keycloak-postgres ssf-postgres keycloak frontend prometheus grafana "
+            "dcgm_exporter cadvisor node_exporter loki promtail"
+        ).split()
+    )
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(
+        f"""#!/usr/bin/env bash
+if [[ "${{1:-}}" == "ps" ]]; then
+  printf '%s\\n' '{services}'
+elif [[ " $* " == *" exec -T prometheus "* ]]; then
+  printf 'Prometheus Server is Healthy\\n'
+elif [[ " $* " == *" exec -T redis "* ]]; then
+  printf 'PONG\\n'
+elif [[ " $* " == *" exec -T clickhouse "* ]]; then
+  printf '1\\n'
+elif [[ " $* " == *" exec -T keycloak "* ]]; then
+  printf 'HTTP/1.1 200 OK\\n'
+else
+  printf 'ok\\n'
+fi
+"""
+    )
+    fake_docker.chmod(0o755)
+    for name in ("nvidia-smi", "jq"):
+        binary = fake_bin / name
+        binary.write_text("#!/usr/bin/env bash\ncat >/dev/null\nexit 0\n")
+        binary.chmod(0o755)
+    fake_curl = fake_bin / "curl"
+    fake_curl.write_text("#!/usr/bin/env bash\nprintf '302'\n")
+    fake_curl.chmod(0o755)
+
+    result = run_script(
+        "scripts/production-health-check.sh",
+        "--timeout-seconds",
+        "1",
+        environment={"PATH": f"{fake_bin}:{os.environ['PATH']}"},
+    )
+
+    assert result.returncode == 0
+    assert "Production health check passed." in result.stdout
+
+
 def run_script(*arguments, environment=None):
     env = os.environ.copy()
     if environment:
