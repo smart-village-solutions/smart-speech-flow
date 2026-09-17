@@ -53,12 +53,18 @@ that a later policy change cannot alter a decision already taken.
 
 SSF SHALL deliver the live translation, including synthesized audio and
 in-session message history, identically regardless of the consent status or the
-policy decision. No policy read SHALL be awaited on the path that produces the
-participant-visible result.
+policy decision. No policy read SHALL be awaited before the participant-visible
+result is produced and broadcast.
 
 Conversation content SHALL therefore be written before the participant-visible
 result is produced, and its authorization determined afterwards. Refusing a
 write SHALL NOT mean declining to write it.
+
+The sending participant's own HTTP acknowledgement completes after that
+message's policy reads, so a slow Studio delays the acknowledgement of a message
+that has already been delivered. Nothing another participant receives depends on
+those reads, and a Studio outage degrades to refusing persistence, never to
+failing the conversation.
 
 #### Scenario: Declined session receives the live conversation
 
@@ -68,11 +74,12 @@ write SHALL NOT mean declining to write it.
 - **AND THEN** in-session history, audio replay and reconnection work unchanged
   for the duration of the conversation
 
-#### Scenario: Policy read never delays the participant
+#### Scenario: Policy read never delays delivery
 
-- **WHEN** an utterance is processed
-- **THEN** the participant-visible result is produced without awaiting any
-  runtime policy read
+- **WHEN** an utterance is processed and its runtime policy read is slow
+- **THEN** the translated result is broadcast to the receiving participant
+  before any policy read completes
+- **AND THEN** only the sender's own acknowledgement waits for those reads
 
 #### Scenario: Audio availability is independent of the decision
 

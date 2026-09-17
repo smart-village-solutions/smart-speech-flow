@@ -1,4 +1,9 @@
-"""No policy read may be awaited before the participant sees their result."""
+"""No policy read may be awaited before the result is delivered.
+
+Scope, precisely: the broadcast to the receiving participant precedes every
+read. The sender's own HTTP acknowledgement does complete after its message's
+reads -- deliberate, and recorded in the tracked spec.
+"""
 
 import asyncio
 from pathlib import Path
