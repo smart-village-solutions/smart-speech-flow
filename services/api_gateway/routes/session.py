@@ -29,8 +29,10 @@ from fastapi import (
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from ..audio_storage import AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
+from ..consent import ConsentStatus
 from ..log_safety import sanitize_log_value
 from ..message_telemetry import MessageTelemetryRecorder
+from ..persistence_authorization import authorize_message_artifacts
 from ..pipeline_admission import PipelineBusyError, run_pipeline
 
 # Import der bestehenden Pipeline-Logik
@@ -41,6 +43,7 @@ from ..pipeline_logic import (
     process_wav,
 )
 from ..quality_telemetry import InputMode
+from ..runtime_policy import current_runtime_policy
 from ..session_manager import ClientType, SessionMessage, SessionStatus, session_manager
 from ..tenant_session import TenantSessionKey
 from ..websocket import MessageType, WebSocketManager, get_websocket_manager
@@ -481,6 +484,19 @@ def _raise_if_upstream_busy(result: Dict[str, Any]) -> None:
     )
 
 
+def _session_consent_status(key: TenantSessionKey) -> ConsentStatus:
+    """The session's resolved consent, or `pending` when it cannot be read."""
+    session = session_manager.get_session(key)
+    if session is None:
+        return ConsentStatus.PENDING
+    return session.consent_status
+
+
+def _correlation_id_for(request: Request) -> str:
+    """The caller's correlation ID, or a fresh one for this write."""
+    return request.headers.get("X-Correlation-Id") or str(uuid.uuid4())
+
+
 def _store_audio_artifacts(
     key: TenantSessionKey,
     _sender: ClientType,
@@ -512,6 +528,7 @@ async def _create_session_message_with_fallback(
     pipeline_metadata: Optional[Dict[str, Any]],
     original_audio_url: Optional[str],
     message_id: str,
+    correlation_id: Optional[str] = None,
 ) -> SessionMessage:
     if _supports_extended_session_message_args():
         return await create_session_message(
@@ -526,6 +543,7 @@ async def _create_session_message_with_fallback(
             pipeline_metadata=pipeline_metadata,
             original_audio_url=original_audio_url,
             message_id=message_id,
+            correlation_id=correlation_id,
         )
 
     return await create_session_message(
@@ -1044,6 +1062,7 @@ async def process_audio_input(
         # HTTP/WebSocket response boundaries and are never persisted.
         original_audio_url="available" if original_audio_available else None,
         message_id=message_id,
+        correlation_id=_correlation_id_for(request),
     )
     message.id = message_id
     return _build_message_response(
@@ -1170,6 +1189,7 @@ async def process_text_input(
         pipeline_metadata=pipeline_metadata,
         original_audio_url=None,
         message_id=message_id,
+        correlation_id=_correlation_id_for(request),
     )
 
     return _build_message_response(
@@ -1196,6 +1216,7 @@ async def create_session_message(
     pipeline_metadata: Optional[Dict[str, Any]] = None,
     original_audio_url: Optional[str] = None,
     message_id: Optional[str] = None,  # Allow pre-generated message_id
+    correlation_id: Optional[str] = None,
 ) -> SessionMessage:
     """Session-Message erstellen und zur Session hinzufügen"""
     import logging
@@ -1289,6 +1310,28 @@ async def create_session_message(
             exc_info=_redacted_exception_info(e),
         )
         # WebSocket-Fehler sollen den HTTP-Request nicht zum Absturz bringen
+
+    # Only now, with every participant served, does persistence get its say.
+    # Each artefact carries its own live read; the outcome decides what
+    # survives termination, never what the conversation delivered.
+    authorization = await authorize_message_artifacts(
+        gate=current_runtime_policy(),
+        tenant_id=session_id.tenant_id,
+        consent_status=_session_consent_status(session_id),
+        correlation_id=correlation_id or str(uuid.uuid4()),
+        has_original_audio=original_audio_url is not None,
+        has_translated_audio=translated_audio_available,
+    )
+    message.record_authorized = authorization.record
+    message.original_audio_authorized = authorization.original_audio
+    message.translated_audio_authorized = authorization.translated_audio
+    session_manager.record_message_authorization(
+        session_id,
+        resolved_message_id,
+        record=authorization.record,
+        original_audio=authorization.original_audio,
+        translated_audio=authorization.translated_audio,
+    )
 
     return message
 
