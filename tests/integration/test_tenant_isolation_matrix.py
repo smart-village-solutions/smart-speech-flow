@@ -304,6 +304,41 @@ def test_tenant_a_cannot_access_tenant_b(two_tenant_system, operation):
     assert response.public_error == "Session not found"
 
 
+async def test_a_policy_read_for_one_tenant_never_authorises_another(
+    two_tenant_system,
+):
+    """A gate answering for one tenant must not authorise another's write."""
+    from services.api_gateway.consent import ConsentStatus
+    from services.api_gateway.persistence_authorization import (
+        authorize_message_artifacts,
+    )
+    from services.api_gateway.runtime_policy import RuntimePolicyGate
+    from tests.runtime_policy_helpers import RecordingClient, configuration
+
+    # Studio answers for tenant-a whoever asks, which is the shape of both a
+    # misrouted response and a confused-deputy read.
+    gate = RuntimePolicyGate(
+        RecordingClient(configuration(tenant_id="tenant-a", mode="ask"))
+    )
+
+    authorised = {}
+    for tenant_id in ("tenant-a", "tenant-b"):
+        key = TenantSessionKey(
+            tenant_id, two_tenant_system.resources[tenant_id].session_id
+        )
+        result = await authorize_message_artifacts(
+            gate=gate,
+            tenant_id=key.tenant_id,
+            consent_status=ConsentStatus.GRANTED,
+            correlation_id="isolation-check",
+            has_original_audio=False,
+            has_translated_audio=False,
+        )
+        authorised[tenant_id] = result.record
+
+    assert authorised == {"tenant-a": True, "tenant-b": False}
+
+
 def test_positive_flows_remain_independent(two_tenant_system):
     a = two_tenant_system.complete_conversation("tenant-a")
     b = two_tenant_system.complete_conversation("tenant-b")
