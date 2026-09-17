@@ -12,7 +12,10 @@ from services.api_gateway.session_manager import (
     SessionManager,
     SessionMessage,
 )
-from services.api_gateway.session_store import MemoryTenantSessionStore
+from services.api_gateway.session_store import (
+    MemoryTenantSessionStore,
+    SessionStoreConsistencyError,
+)
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 REVISION = f"sha256:{'a' * 64}"
@@ -155,3 +158,68 @@ async def test_termination_is_idempotent(declined_session_with_content):
     await manager.terminate_session(key, reason="test")
     await manager.terminate_session(key, reason="test")
     assert manager.get_session(key).messages == []
+
+
+async def test_a_retained_message_stops_advertising_removed_original_audio(
+    manager, audio_dir, monkeypatch
+):
+    """The original variant needs the same treatment as the translated one.
+
+    `conversation_service.messages` derives `original_audio_url` from stored
+    markers with no existence check, so a retained message whose original audio
+    was refused would hand a listener a URL whose file is gone.
+    """
+    from services.api_gateway.conversation_service import conversation_service
+
+    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    message = _message("m1", record=True, original=False, translated=True)
+    message.original_audio_url = "available"
+    message.pipeline_metadata = {"input": {"type": "audio"}}
+    manager.add_message(session.key, message)
+    for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
+        save_audio(session.key, "m1", variant, b"wav", base_dir=audio_dir)
+
+    await manager.terminate_session(session.key, reason="test")
+
+    retained = manager.get_session(session.key).messages[0]
+    assert retained.original_audio_url is None
+
+    monkeypatch.setattr(
+        "services.api_gateway.conversation_service.session_manager", manager
+    )
+    monkeypatch.setattr(
+        "services.api_gateway.conversation_service.audio_path",
+        lambda key, mid, variant: audio_path(key, mid, variant, base_dir=audio_dir),
+    )
+    items = conversation_service.messages(session.key, ClientType.ADMIN)
+    assert "original_audio_url" not in items[0]
+
+
+async def test_a_failed_termination_leaves_the_audio_in_place(
+    manager, audio_dir, monkeypatch
+):
+    """Deleting before the commit destroys content a retry still needs.
+
+    Termination treats a store failure as transient: the session stays active
+    and the caller retries. Files removed ahead of that commit are gone for a
+    conversation that is still running.
+    """
+    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    manager.add_message(
+        session.key, _message("m1", record=False, original=False, translated=False)
+    )
+    for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
+        save_audio(session.key, "m1", variant, b"wav", base_dir=audio_dir)
+
+    def _refuse(_session):
+        raise SessionStoreConsistencyError("transient store failure")
+
+    monkeypatch.setattr(manager.store, "terminate", _refuse)
+
+    with pytest.raises(SessionStoreConsistencyError):
+        await manager.terminate_session(session.key, reason="test")
+
+    for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
+        assert audio_path(session.key, "m1", variant, base_dir=audio_dir).exists()
+    # The live session still has the message it is still able to deliver.
+    assert len(manager.get_session(session.key).messages) == 1

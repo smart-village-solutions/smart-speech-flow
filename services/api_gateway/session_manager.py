@@ -712,13 +712,16 @@ class SessionManager:
                     admin_connection_count=0,
                     customer_connection_count=0,
                 )
-                # Removal and the terminal record land in one write. After the
-                # commit nothing revisits this session, so refused content left
-                # behind by a failure between the two would never be settled.
-                self._remove_refused_content(terminal_session)
+                # The pruned message list is part of the record being
+                # committed. The files it drops are deleted only once that
+                # commit has succeeded: a store failure here is transient and
+                # the caller retries, so anything deleted first would be lost
+                # for a session that is still live.
+                _, doomed_audio = self._settle_refused_content(terminal_session)
                 committed_terminal = self.store.terminate(terminal_session)
                 if committed_terminal is None:
                     committed_terminal = terminal_session
+                self._delete_settled_audio(session_id, doomed_audio)
 
                 # Preserve references held by handlers while replacing every
                 # cached field with Redis' canonical terminal snapshot. This
@@ -1044,44 +1047,79 @@ class SessionManager:
             return None
         return session.key
 
-    def _remove_refused_content(self, session: "Session") -> None:
-        """Drop refused messages and delete refused audio. Never raises.
+    def _settle_refused_content(
+        self, session: "Session"
+    ) -> tuple[bool, list[tuple[str, Any]]]:
+        """Prune refused messages and report the audio files they leave behind.
+
+        The record is mutated here but no file is touched. Deletion is the
+        caller's to perform once the record write has committed: termination
+        treats a store failure as transient and retryable, and files removed
+        ahead of that commit are gone for a conversation still running.
 
         Args:
             session: The session whose content is being settled. Its message
                 list is replaced in place with the messages that may be kept.
+
+        Returns:
+            Whether the record changed, and the artefacts to delete afterwards.
+            An artefact removal that keeps the message leaves the count
+            identical, so the count alone is the wrong predicate for "this
+            needs writing back".
         """
-        from .audio_storage import AudioVariant, delete_message_audio
+        from .audio_storage import AudioVariant
 
         key = self._tenant_key_for(session)
         if key is None:
-            return
+            return False, []
 
+        changed = False
+        doomed: list[tuple[str, Any]] = []
         retained = []
         for message in session.messages:
             if not message.record_authorized:
-                delete_message_audio(key, message.id, AudioVariant.ORIGINAL)
-                delete_message_audio(key, message.id, AudioVariant.TRANSLATED)
+                doomed.append((message.id, AudioVariant.ORIGINAL))
+                doomed.append((message.id, AudioVariant.TRANSLATED))
+                changed = True
                 continue
             if not message.original_audio_authorized:
-                delete_message_audio(key, message.id, AudioVariant.ORIGINAL)
+                doomed.append((message.id, AudioVariant.ORIGINAL))
+                # Both markers, or `conversation_service` still derives an
+                # original-audio URL for a file that is gone.
+                message.original_audio_url = None
+                pipeline_input = (
+                    message.pipeline_metadata.get("input")
+                    if isinstance(message.pipeline_metadata, dict)
+                    else None
+                )
+                if isinstance(pipeline_input, dict):
+                    pipeline_input.pop("type", None)
+                changed = True
             if not message.translated_audio_authorized:
-                delete_message_audio(key, message.id, AudioVariant.TRANSLATED)
+                doomed.append((message.id, AudioVariant.TRANSLATED))
                 # A retained message must not advertise audio it no longer has.
                 message.translated_audio_available = False
+                changed = True
             retained.append(message)
         session.messages = retained
+        return changed, doomed
 
-    def _persist_if_changed(
-        self, session: "Session", previous_message_count: int
+    def _delete_settled_audio(
+        self, key: TenantSessionKey, doomed: list[tuple[str, Any]]
     ) -> None:
-        """Write only when the sweep actually removed something.
+        """Delete the artefacts a settled record no longer accounts for."""
+        from .audio_storage import delete_message_audio
 
-        A sweep that rewrote every session on every pass would turn an hourly
-        maintenance task into continuous write amplification against Redis.
+        for message_id, variant in doomed:
+            delete_message_audio(key, message_id, variant)
+
+    def _persist_swept_session(self, session: "Session") -> None:
+        """Write back a session the sweep changed.
+
+        Called only when something actually changed: a sweep that rewrote every
+        session on every pass would turn an hourly maintenance task into
+        continuous write amplification against Redis.
         """
-        if len(session.messages) == previous_message_count:
-            return
         key = self._tenant_key_for(session)
         if key is None:
             self._persist_session(session)
@@ -1111,17 +1149,36 @@ class SessionManager:
         expired_removed = 0
 
         for session in list(self.sessions.values()):
-            before = len(session.messages)
-            max_age = timedelta(hours=session.maximum_lifetime_hours)
-            if now - session.created_at >= max_age:
-                self._remove_refused_content(session)
-                refused_removed += before - len(session.messages)
-            if keep_for:
-                cutoff = now - timedelta(hours=keep_for)
-                retained = [m for m in session.messages if m.timestamp > cutoff]
-                expired_removed += len(session.messages) - len(retained)
-                session.messages = retained
-            self._persist_if_changed(session, before)
+            # A terminated record is immutable in the store -- SAVE_SESSION_LUA
+            # refuses every change to one -- and its content was already
+            # settled at termination. Pruning it in memory alone would drift
+            # from Redis and resurrect on the next load.
+            if session.status is SessionStatus.TERMINATED:
+                continue
+            try:
+                changed = False
+                doomed_audio: list[tuple[str, Any]] = []
+                max_age = timedelta(hours=session.maximum_lifetime_hours)
+                if now - session.created_at >= max_age:
+                    before = len(session.messages)
+                    changed, doomed_audio = self._settle_refused_content(session)
+                    refused_removed += before - len(session.messages)
+                if keep_for:
+                    cutoff = now - timedelta(hours=keep_for)
+                    retained = [m for m in session.messages if m.timestamp > cutoff]
+                    if len(retained) != len(session.messages):
+                        changed = True
+                    expired_removed += len(session.messages) - len(retained)
+                    session.messages = retained
+                if changed:
+                    self._persist_swept_session(session)
+                    self._delete_settled_audio(session.key, doomed_audio)
+            except Exception:  # noqa: BLE001 - one session must not stop the pass
+                logger.warning(
+                    "content_sweep_failed",
+                    extra={"session_ref": session_ref(session.id)},
+                )
+                continue
 
         return {
             "refused_removed": refused_removed,

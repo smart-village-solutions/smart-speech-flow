@@ -12,7 +12,11 @@ from services.api_gateway.session_manager import (
     SessionManager,
     SessionMessage,
 )
-from services.api_gateway.session_store import MemoryTenantSessionStore
+from services.api_gateway.session_manager import SessionStatus
+from services.api_gateway.session_store import (
+    MemoryTenantSessionStore,
+    SessionStoreConsistencyError,
+)
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 REVISION = f"sha256:{'a' * 64}"
@@ -124,3 +128,102 @@ async def test_refused_content_survives_inside_the_session_lifetime(
     key = await _session_aged(manager, age=timedelta(hours=2), authorized=False)
     manager.sweep_expired_content(NOW)
     assert len(manager.get_session(key).messages) == 1
+
+
+class _LifecycleEnforcingStore(MemoryTenantSessionStore):
+    """Models the one Redis rule the plain memory store does not.
+
+    `SAVE_SESSION_LUA` refuses every change to a terminated record, so a sweep
+    that mutates one raises `SessionStoreConsistencyError` in production and
+    passes silently against `MemoryTenantSessionStore`. Without this double the
+    suite cannot see the failure at all.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.saves: list = []
+
+    def save(self, session):
+        existing = self._sessions.get(session.key)
+        if existing is not None and existing.status is SessionStatus.TERMINATED:
+            raise SessionStoreConsistencyError(
+                "session lifecycle does not permit save"
+            )
+        self.saves.append(session.key)
+        super().save(session)
+
+
+@pytest.fixture
+def strict_manager() -> SessionManager:
+    return SessionManager(store=_LifecycleEnforcingStore())
+
+
+async def test_one_terminated_session_does_not_abort_the_whole_sweep(
+    strict_manager, audio_dir, monkeypatch
+):
+    monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
+    terminated = await _session_aged(
+        strict_manager, age=timedelta(hours=25), authorized=True
+    )
+    await strict_manager.terminate_session(terminated, reason="test")
+    live = await _session_aged(
+        strict_manager, age=timedelta(hours=25), authorized=True
+    )
+
+    strict_manager.sweep_expired_content(NOW)
+
+    # The live session is swept even though a terminated one came first.
+    assert strict_manager.get_session(live).messages == []
+
+
+async def test_the_sweep_leaves_terminated_records_untouched(
+    strict_manager, audio_dir, monkeypatch
+):
+    # A terminated record is immutable in the store. Pruning it in memory only
+    # would drift from Redis and resurrect on the next load.
+    monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
+    key = await _session_aged(
+        strict_manager, age=timedelta(hours=25), authorized=True
+    )
+    await strict_manager.terminate_session(key, reason="test")
+
+    strict_manager.sweep_expired_content(NOW)
+
+    assert len(strict_manager.store.load(key).messages) == 1
+
+
+async def test_an_audio_only_removal_is_persisted(
+    strict_manager, audio_dir, monkeypatch
+):
+    # The message count is unchanged, so a count-based dirty check would keep
+    # `translated_audio_available: true` in the store for a file that is gone.
+    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
+    session = await strict_manager.create_admin_session("tenant-test", SNAPSHOT)
+    session.created_at = NOW - timedelta(hours=9)
+    strict_manager.add_message(
+        session.key,
+        SessionMessage(
+            id="m1",
+            sender=ClientType.CUSTOMER,
+            original_text="hallo",
+            translated_text="hello",
+            audio_base64=None,
+            source_lang="de",
+            target_lang="en",
+            timestamp=NOW - timedelta(hours=9),
+            translated_audio_available=True,
+            record_authorized=True,
+            original_audio_authorized=True,
+            translated_audio_authorized=False,
+        ),
+    )
+
+    strict_manager.store.saves.clear()
+    strict_manager.sweep_expired_content(NOW)
+
+    # `MemoryTenantSessionStore.load` returns the very object the sweep
+    # mutated, so only a recorded write proves this survives a restart.
+    assert session.key in strict_manager.store.saves
+    stored = strict_manager.store.load(session.key)
+    assert len(stored.messages) == 1
+    assert stored.messages[0].translated_audio_available is False

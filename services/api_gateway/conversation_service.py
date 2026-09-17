@@ -84,7 +84,10 @@ class ConversationService:
                 isinstance(pipeline_input, dict)
                 and pipeline_input.get("type") == "audio"
             )
-            if has_original_audio:
+            if (
+                has_original_audio
+                and audio_path(key, message.id, AudioVariant.ORIGINAL).is_file()
+            ):
                 item["original_audio_url"] = scoped_audio_url(
                     key, role.value, message.id, AudioVariant.ORIGINAL
                 )
