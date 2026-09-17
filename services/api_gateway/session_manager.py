@@ -119,8 +119,14 @@ class SessionMessage:
     # NEW: Pipeline Metadata
     pipeline_metadata: Optional[Dict[str, Any]] = None
     original_audio_url: Optional[str] = None  # URL to original input audio
+    # Whether each artefact's own live policy read authorised keeping it.
+    # Defaults are refused, so a record written before consent existed, or a
+    # process with no gate bound, retains nothing.
+    record_authorized: bool = False
+    original_audio_authorized: bool = False
+    translated_audio_authorized: bool = False
 
-    def to_dict(self):
+    def to_dict(self, *, include_authorization: bool = False):
         data = {
             "id": self.id,
             "sender": self.sender.value,
@@ -136,6 +142,10 @@ class SessionMessage:
             data["pipeline_metadata"] = self.pipeline_metadata
         if self.original_audio_url:
             data["original_audio_url"] = self.original_audio_url
+        if include_authorization:
+            data["record_authorized"] = self.record_authorized
+            data["original_audio_authorized"] = self.original_audio_authorized
+            data["translated_audio_authorized"] = self.translated_audio_authorized
         return data
 
     @classmethod
@@ -156,6 +166,13 @@ class SessionMessage:
             ),
             pipeline_metadata=data.get("pipeline_metadata"),
             original_audio_url=data.get("original_audio_url"),
+            record_authorized=bool(data.get("record_authorized", False)),
+            original_audio_authorized=bool(
+                data.get("original_audio_authorized", False)
+            ),
+            translated_audio_authorized=bool(
+                data.get("translated_audio_authorized", False)
+            ),
         )
 
 
@@ -264,7 +281,9 @@ class Session:
         }
 
         if include_messages:
-            data["messages"] = [message.to_dict() for message in self.messages]
+            data["messages"] = [
+                message.to_dict(include_authorization=True) for message in self.messages
+            ]
 
         return data
 
@@ -693,6 +712,10 @@ class SessionManager:
                     admin_connection_count=0,
                     customer_connection_count=0,
                 )
+                # Removal and the terminal record land in one write. After the
+                # commit nothing revisits this session, so refused content left
+                # behind by a failure between the two would never be settled.
+                self._remove_refused_content(terminal_session)
                 committed_terminal = self.store.terminate(terminal_session)
                 if committed_terminal is None:
                     committed_terminal = terminal_session
@@ -977,6 +1000,133 @@ class SessionManager:
                 self.store.save(session)
             else:
                 self._persist_session(session)
+
+    def record_message_authorization(
+        self,
+        session_id: Any,
+        message_id: str,
+        *,
+        record: bool,
+        original_audio: bool,
+        translated_audio: bool,
+    ) -> None:
+        """Store the outcome of one message's three policy reads.
+
+        Args:
+            session_id: The session key or legacy identifier.
+            message_id: The message whose outcome this is.
+            record: Whether the message record itself may be retained.
+            original_audio: Whether the guest's input audio may be retained.
+            translated_audio: Whether the synthesised audio may be retained.
+        """
+        session = self.get_session(session_id)
+        if session is None:
+            return
+        for message in session.messages:
+            if message.id != message_id:
+                continue
+            message.record_authorized = record
+            message.original_audio_authorized = original_audio
+            message.translated_audio_authorized = translated_audio
+            break
+        else:
+            return
+        if isinstance(session_id, TenantSessionKey):
+            if self.store is None:
+                raise RuntimeError("tenant session store is unavailable")
+            self.store.save(session)
+        else:
+            self._persist_session(session)
+
+    def _tenant_key_for(self, session: "Session") -> Optional[TenantSessionKey]:
+        """The key a session is stored under, or `None` for a legacy session."""
+        if session.tenant_id is None:
+            return None
+        return session.key
+
+    def _remove_refused_content(self, session: "Session") -> None:
+        """Drop refused messages and delete refused audio. Never raises.
+
+        Args:
+            session: The session whose content is being settled. Its message
+                list is replaced in place with the messages that may be kept.
+        """
+        from .audio_storage import AudioVariant, delete_message_audio
+
+        key = self._tenant_key_for(session)
+        if key is None:
+            return
+
+        retained = []
+        for message in session.messages:
+            if not message.record_authorized:
+                delete_message_audio(key, message.id, AudioVariant.ORIGINAL)
+                delete_message_audio(key, message.id, AudioVariant.TRANSLATED)
+                continue
+            if not message.original_audio_authorized:
+                delete_message_audio(key, message.id, AudioVariant.ORIGINAL)
+            if not message.translated_audio_authorized:
+                delete_message_audio(key, message.id, AudioVariant.TRANSLATED)
+                # A retained message must not advertise audio it no longer has.
+                message.translated_audio_available = False
+            retained.append(message)
+        session.messages = retained
+
+    def _persist_if_changed(
+        self, session: "Session", previous_message_count: int
+    ) -> None:
+        """Write only when the sweep actually removed something.
+
+        A sweep that rewrote every session on every pass would turn an hourly
+        maintenance task into continuous write amplification against Redis.
+        """
+        if len(session.messages) == previous_message_count:
+            return
+        key = self._tenant_key_for(session)
+        if key is None:
+            self._persist_session(session)
+            return
+        if self.store is None:
+            raise RuntimeError("tenant session store is unavailable")
+        self.store.save(session)
+
+    def sweep_expired_content(self, now: datetime) -> Dict[str, int]:
+        """Remove refused content past session lifetime, and expired text.
+
+        The two removals are deliberately different. Refused content goes at
+        the maximum session lifetime and no operator setting can retain it.
+        Authorised content goes at `SSF_CONTENT_RETENTION_HOURS`, which `0`
+        disables for the tester environment.
+
+        Args:
+            now: The moment to measure both ages against.
+
+        Returns:
+            Counts of the messages removed by each rule.
+        """
+        from .audio_storage import retention_hours
+
+        keep_for = retention_hours()
+        refused_removed = 0
+        expired_removed = 0
+
+        for session in list(self.sessions.values()):
+            before = len(session.messages)
+            max_age = timedelta(hours=session.maximum_lifetime_hours)
+            if now - session.created_at >= max_age:
+                self._remove_refused_content(session)
+                refused_removed += before - len(session.messages)
+            if keep_for:
+                cutoff = now - timedelta(hours=keep_for)
+                retained = [m for m in session.messages if m.timestamp > cutoff]
+                expired_removed += len(session.messages) - len(retained)
+                session.messages = retained
+            self._persist_if_changed(session, before)
+
+        return {
+            "refused_removed": refused_removed,
+            "expired_removed": expired_removed,
+        }
 
     def get_active_session(
         self,
