@@ -55,6 +55,11 @@ class StudioRuntimeFlow:
     def __init__(self, client: RuntimeConfigurationFetcher) -> None:
         self._client = client
 
+    @property
+    def client(self) -> RuntimeConfigurationFetcher:
+        """The underlying fetcher, for callers that carry no tenant context."""
+        return self._client
+
     async def resolve(
         self,
         context: StudioTenantContext,
@@ -87,13 +92,25 @@ class StudioRuntimeFlow:
         )
 
 
+def _configuration_timeout_seconds() -> float:
+    """Read the runtime-configuration timeout, mirroring the token provider's knob."""
+    raw = os.getenv("STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS", "").strip()
+    if not raw:
+        return 5.0
+    return float(raw)
+
+
 @lru_cache(maxsize=1)
 def runtime_flow_from_environment() -> StudioRuntimeFlow:
     """Build the process-local runtime flow from explicit environment settings."""
     base_url = os.getenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", "").strip()
     try:
         token_provider = StudioRuntimeTokenProvider(StudioTokenConfig.from_env())
-        client = StudioRuntimeClient(base_url, token_provider.get_token)
+        client = StudioRuntimeClient(
+            base_url,
+            token_provider.get_token,
+            timeout_seconds=_configuration_timeout_seconds(),
+        )
     except (StudioTokenError, ValueError):
         raise StudioRuntimeFlowError(
             "studio_runtime_configuration_invalid", retryable=False

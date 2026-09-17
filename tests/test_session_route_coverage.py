@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from fastapi import Request
 
 from services.api_gateway.app import app
 from services.api_gateway.routes import customer
@@ -21,6 +22,11 @@ from services.api_gateway.tenant_session import (
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
+
+
+def _http_request() -> Request:
+    """A minimal ASGI request; the route reads only its correlation header."""
+    return Request({"type": "http", "headers": []})
 
 
 @pytest.fixture
@@ -99,7 +105,7 @@ async def test_customer_activation_uses_the_resolved_capability_key(
         customer_language="ar",
     )
 
-    activation = await customer.activate_session(request, None)
+    activation = await customer.activate_session(request, _http_request(), None)
     status = await customer.get_customer_session_status(session.id, session.key)
 
     assert activation.status == "active"

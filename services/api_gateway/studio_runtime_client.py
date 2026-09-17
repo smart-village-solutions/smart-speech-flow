@@ -229,6 +229,11 @@ class StudioRuntimeClient:
         self._transport = transport or AiohttpRuntimeTransport()
         self._timeout_seconds = timeout_seconds
 
+    @property
+    def timeout_seconds(self) -> float:
+        """The per-read timeout this client was built with."""
+        return self._timeout_seconds
+
     async def fetch(self, tenant_id: str, correlation_id: str) -> RuntimeConfiguration:
         _validate_request_context(tenant_id, correlation_id)
 
