@@ -92,12 +92,30 @@ class StudioRuntimeFlow:
         )
 
 
+_DEFAULT_CONFIGURATION_TIMEOUT_SECONDS = 5.0
+
+
 def _configuration_timeout_seconds() -> float:
-    """Read the runtime-configuration timeout, mirroring the token provider's knob."""
+    """Read the runtime-configuration timeout, mirroring the token provider's knob.
+
+    An unusable value falls back to the default rather than propagating. This
+    flow also backs `require_validated_runtime_configuration`, so letting the
+    client's range check raise here would turn a mistyped timeout into a 502 on
+    every tenant-login request, not merely an unbound persistence gate.
+
+    Returns:
+        A timeout inside the client's accepted range of 0 to 30 seconds.
+    """
     raw = os.getenv("STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS", "").strip()
     if not raw:
-        return 5.0
-    return float(raw)
+        return _DEFAULT_CONFIGURATION_TIMEOUT_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        return _DEFAULT_CONFIGURATION_TIMEOUT_SECONDS
+    if not 0 < value <= 30:
+        return _DEFAULT_CONFIGURATION_TIMEOUT_SECONDS
+    return value
 
 
 @lru_cache(maxsize=1)
@@ -123,7 +141,7 @@ async def require_validated_runtime_configuration(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
 ) -> ValidatedRuntimeConfiguration:
     """Resolve a tenant-bound runtime configuration for a later route dependency."""
-    correlation_id = _correlation_id(request)
+    correlation_id = correlation_id_from_request(request)
     try:
         runtime_flow = runtime_flow_from_environment()
         return await runtime_flow.resolve(context, correlation_id)
@@ -138,8 +156,25 @@ async def require_validated_runtime_configuration(
         ) from None
 
 
-def _correlation_id(request: Request) -> str:
-    """Return a safe caller correlation ID or a gateway-generated UUID."""
+def correlation_id_from_request(request: Request) -> str:
+    """Return a safe caller correlation ID or a gateway-generated UUID.
+
+    Every route that forwards this header to Studio must go through here.
+    `StudioRuntimeClient` rejects a malformed value with a bare `ValueError`,
+    which no caller classifies: on a read path it escapes as a 500, and on a
+    write path the policy gate's blanket except turns it into a silent refusal
+    to persist.
+
+    Args:
+        request: The inbound request whose `X-Correlation-Id` is read.
+
+    Returns:
+        The caller's correlation ID, or a fresh UUID when none was supplied.
+
+    Raises:
+        HTTPException: 400 when a supplied value is not printable ASCII of at
+            most 128 characters.
+    """
     correlation_id = request.headers.get("X-Correlation-Id")
     if correlation_id is None:
         return str(uuid4())

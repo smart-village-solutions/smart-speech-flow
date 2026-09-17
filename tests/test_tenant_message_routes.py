@@ -437,6 +437,9 @@ async def test_text_processing_ignores_a_spoofed_client_role(
         ),
     )
     request = AsyncMock()
+    # A real mapping: an AsyncMock would hand the route a coroutine where the
+    # correlation header should be.
+    request.headers = {}
     request.json.return_value = {
         "text": "Hallo",
         "source_lang": "de",

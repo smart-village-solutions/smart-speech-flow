@@ -116,3 +116,44 @@ async def test_declined_session_still_gets_playable_audio(audio_dir):
     # The outcome is recorded as refused, for removal at termination.
     assert message.record_authorized is False
     assert message.translated_audio_authorized is False
+
+
+async def test_a_terminated_session_does_not_fail_a_delivered_message(
+    audio_dir, monkeypatch
+):
+    """Recording the outcome must not fail a request already served.
+
+    The policy reads open a window in which the admin can terminate. Redis then
+    refuses the write-back, and raising here would 500 a message the other
+    party already received over the WebSocket -- a retry would duplicate it.
+    """
+    from services.api_gateway.session_store import SessionStoreConsistencyError
+
+    class _Granting:
+        async def authorize(self, tenant_id, consent_status, correlation_id):
+            return PolicyDecision(True, PolicyReason.GRANTED)
+
+    bind_runtime_policy(_Granting())
+    key = await _session_with_consent(ConsentStatus.GRANTED)
+
+    # Only the write-back that follows the policy reads, not the delivery
+    # write that precedes them: the pre-existing `add_message` exposure is a
+    # window of microseconds and is not what this covers.
+    def _refuse(*_args, **_kwargs):
+        raise SessionStoreConsistencyError("session lifecycle does not permit save")
+
+    monkeypatch.setattr(
+        session_manager, "record_message_authorization", _refuse
+    )
+
+    message = await session_routes.create_session_message(
+        key,
+        ClientType.CUSTOMER,
+        "hallo",
+        "hello",
+        b"audio-bytes",
+        "de",
+        "en",
+    )
+
+    assert message.translated_audio_available is True

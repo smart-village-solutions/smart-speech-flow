@@ -82,3 +82,25 @@ def test_timeout_defaults_to_the_client_default(monkeypatch):
     runtime_flow_from_environment.cache_clear()
     flow = runtime_flow_from_environment()
     assert flow.client.timeout_seconds == pytest.approx(5.0)
+
+
+@pytest.mark.parametrize("raw", ["60", "0", "-1", "not-a-number", "31"])
+def test_an_out_of_range_timeout_falls_back_instead_of_breaking_the_flow(
+    monkeypatch, raw
+):
+    """A bad timeout must not take tenant login down with it.
+
+    `runtime_flow_from_environment` also backs
+    `require_validated_runtime_configuration`, so letting the client's range
+    check raise here turns every tenant-login runtime-configuration request
+    into a 502 -- far beyond unbinding the persistence gate.
+    """
+    from services.api_gateway.studio_runtime_flow import (
+        runtime_flow_from_environment,
+    )
+
+    _configure_studio(monkeypatch)
+    monkeypatch.setenv("STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS", raw)
+    runtime_flow_from_environment.cache_clear()
+    flow = runtime_flow_from_environment()
+    assert flow.client.timeout_seconds == pytest.approx(5.0)

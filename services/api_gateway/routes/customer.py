@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from types import TracebackType
 from typing import Annotated, Any, Optional
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -22,7 +21,11 @@ from ..log_safety import safe_language_code, sanitize_log_value
 from ..session_access import require_customer_session_key
 from ..session_manager import ClientType, SessionStatus, session_manager
 from ..studio_runtime_client import RuntimeConfiguration, StudioRuntimeClientError
-from ..studio_runtime_flow import StudioRuntimeFlowError, runtime_flow_from_environment
+from ..studio_runtime_flow import (
+    StudioRuntimeFlowError,
+    correlation_id_from_request,
+    runtime_flow_from_environment,
+)
 from ..studio_runtime_token import StudioTokenError
 from ..tenant_session import TenantSessionKey
 from ..websocket import WebSocketManager, get_websocket_manager
@@ -162,7 +165,7 @@ async def _read_activation_configuration(
     Raises:
         HTTPException: 409 when the tenant may not start a session.
     """
-    correlation_id = http_request.headers.get("X-Correlation-Id") or str(uuid4())
+    correlation_id = correlation_id_from_request(http_request)
     try:
         flow = runtime_flow_from_environment()
         return await flow.client.fetch(tenant_id, correlation_id)
