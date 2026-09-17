@@ -20,7 +20,16 @@ STUDIO_RUNTIME_CLIENT_ID=ssf-runtime
 STUDIO_RUNTIME_AUDIENCE=sva-studio-ssf-runtime
 STUDIO_RUNTIME_CLIENT_SECRET=<deployment secret>
 STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS=60
+STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS=5.0
+SSF_CONTENT_RETENTION_HOURS=24
 ```
+
+`STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS` bounds one live policy read and
+must be greater than 0 and at most 30. `SSF_CONTENT_RETENTION_HOURS` is how
+long consented conversation content is kept; `0` disables automatic deletion so
+an operator removes it by hand. Neither ever retains content a guest declined
+or a tenant policy disabled: that is removed when the conversation ends, and at
+the latest when the session passes `SSF_SESSION_MAX_HOURS`.
 
 The client secret must come from the deployment environment or secret store;
 it must never be embedded in an image, browser bundle, or checked-in file.
