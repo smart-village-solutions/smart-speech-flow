@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { ConsentScreen } from '@/features/consent/ConsentScreen';
-import { createStubConsentSink } from '@/domain/consent/StubConsentSink';
 import { useServices } from '@/app/providers/services';
 
 function tree(live: React.ReactNode = <p>conversation screen</p>) {
@@ -34,6 +33,17 @@ function SessionLanguage({ observed }: Readonly<{ observed: (string | null)[] }>
   return <span data-testid="source-language">{query.data?.customerLanguage ?? 'none'}</span>;
 }
 
+const sessionFixture = {
+  id: 'A1B2C3D4',
+  status: 'active' as const,
+  customerLanguage: 'en',
+  adminLanguage: 'de',
+  createdAt: '2026-08-21T10:00:00+00:00',
+  messageCount: 0,
+  adminConnected: true,
+  customerConnected: true,
+};
+
 const route = '/s/A1B2C3D4/info/en';
 
 describe('ConsentScreen', () => {
@@ -53,62 +63,43 @@ describe('ConsentScreen', () => {
   });
 
   it('allows continuing without consent', async () => {
-    const recorded = vi.fn();
-    renderWithProviders(tree(), {
-      route,
-      services: { consent: createStubConsentSink(recorded) },
-    });
+    renderWithProviders(tree(), { route });
 
     await userEvent.click(await screen.findByRole('button', { name: 'Get started' }));
 
     expect(await screen.findByText('conversation screen')).toBeInTheDocument();
-    await waitFor(() =>
-      expect(recorded).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: 'A1B2C3D4', dataRetentionConsent: false })
-      )
-    );
   });
 
-  it('records consent when the box is ticked', async () => {
-    const recorded = vi.fn();
+  // One request, not two. A second, consent-less POST to the same endpoint
+  // would re-activate the session and resolve its consent to declined,
+  // overwriting the answer the guest just gave.
+  it('activates exactly once, carrying the checkbox state', async () => {
+    const activate = vi.fn().mockResolvedValue(sessionFixture);
+
     renderWithProviders(tree(), {
       route,
-      services: { consent: createStubConsentSink(recorded) },
+      services: { session: { getSession: vi.fn(), activate } },
     });
 
     await userEvent.click(await screen.findByRole('checkbox'));
     await userEvent.click(screen.getByRole('button', { name: 'Get started' }));
 
-    await waitFor(() =>
-      expect(recorded).toHaveBeenCalledWith(expect.objectContaining({ dataRetentionConsent: true }))
-    );
+    await waitFor(() => expect(activate).toHaveBeenCalledTimes(1));
+    expect(activate).toHaveBeenCalledWith('A1B2C3D4', 'en', true);
   });
 
-  it('activates the session with the chosen language before continuing', async () => {
-    const activate = vi.fn().mockResolvedValue({
-      id: 'A1B2C3D4',
-      status: 'active',
-      customerLanguage: 'en',
-      adminLanguage: 'de',
-      createdAt: '2026-08-21T10:00:00+00:00',
-      messageCount: 0,
-      adminConnected: true,
-      customerConnected: true,
-    });
+  it('activates once with false when the checkbox is untouched', async () => {
+    const activate = vi.fn().mockResolvedValue(sessionFixture);
 
     renderWithProviders(tree(), {
       route,
-      services: {
-        session: {
-          getSession: vi.fn(),
-          activate,
-        },
-      },
+      services: { session: { getSession: vi.fn(), activate } },
     });
 
     await userEvent.click(await screen.findByRole('button', { name: 'Get started' }));
 
-    expect(activate).toHaveBeenCalledWith('A1B2C3D4', 'en');
+    await waitFor(() => expect(activate).toHaveBeenCalledTimes(1));
+    expect(activate).toHaveBeenCalledWith('A1B2C3D4', 'en', false);
   });
 
   // The route guard has already cached the session as it was before activation,

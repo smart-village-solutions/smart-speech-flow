@@ -7,7 +7,11 @@ import type { Session } from './session.types';
 
 export interface SessionRepository {
   getSession(id: string, role: ClientRole): Promise<Session>;
-  activate(id: string, languageCode: string): Promise<Session>;
+  activate(
+    id: string,
+    languageCode: string,
+    dataRetentionConsent: boolean
+  ): Promise<Session>;
 }
 
 const sessionPathForRole = (role: ClientRole, sessionId: string): string =>
@@ -23,11 +27,12 @@ export function createSessionRepository(http: AxiosInstance): SessionRepository 
       return toSession(response.data);
     },
 
-    async activate(id, languageCode) {
+    async activate(id, languageCode, dataRetentionConsent) {
       const safeId = requirePathIdentifier(id, 'session');
       const response = await http.post<ActivateSessionDto>('/api/customer/session/activate', {
         session_id: safeId,
         customer_language: languageCode,
+        data_retention_consent: dataRetentionConsent,
       });
       return activationToSession(response.data);
     },
