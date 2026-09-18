@@ -64,8 +64,7 @@ def _dropped_counter(registry: CollectorRegistry) -> Counter:
         return existing
 
     logger.warning(
-        "%s is not available on the gateway registry; polling drops will not "
-        "be scraped",
+        "%s is not available on the gateway registry; polling drops will not " "be scraped",
         _DROPPED_COUNTER_NAME,
     )
     return Counter(
@@ -127,9 +126,7 @@ class FallbackConfig:
     """Configuration for fallback behavior"""
 
     max_websocket_retries: int = 3
-    retry_intervals: List[int] = field(
-        default_factory=lambda: [1, 2, 4, 8, 16]
-    )  # seconds
+    retry_intervals: List[int] = field(default_factory=lambda: [1, 2, 4, 8, 16])  # seconds
     polling_interval: int = 5  # seconds
     fallback_timeout: int = 30  # seconds before giving up
     enable_jitter: bool = True
@@ -319,17 +316,13 @@ class WebSocketFallbackManager:
 
         # Pattern analysis - consecutive same failures
         recent_failures = history.failure_reasons[-3:]  # Last 3 failures
-        if len(recent_failures) >= 2 and all(
-            f == current_reason for f in recent_failures
-        ):
+        if len(recent_failures) >= 2 and all(f == current_reason for f in recent_failures):
             return True
 
         # High frequency of different types of failures
         if history.last_failure:
             time_since_last = (utc_now() - history.last_failure).total_seconds()
-            if (
-                time_since_last < 30 and history.failure_count >= 2
-            ):  # 2 failures in 30 seconds
+            if time_since_last < 30 and history.failure_count >= 2:  # 2 failures in 30 seconds
                 return True
 
         return False
@@ -375,13 +368,9 @@ class WebSocketFallbackManager:
         # Schedule WebSocket retry if appropriate
         if self._should_schedule_websocket_retry(reason):
             retry_delay = self._calculate_retry_delay(reason)
-            polling_client.websocket_retry_after = utc_now() + timedelta(
-                seconds=retry_delay
-            )
+            polling_client.websocket_retry_after = utc_now() + timedelta(seconds=retry_delay)
 
-            logger.info(
-                f"📅 WebSocket retry scheduled in {retry_delay}s for {polling_id}"
-            )
+            logger.info(f"📅 WebSocket retry scheduled in {retry_delay}s for {polling_id}")
 
         # Send user notification
         if self.config.enable_user_notifications:
@@ -394,9 +383,7 @@ class WebSocketFallbackManager:
 
         return polling_id
 
-    def send_message_to_polling_client(
-        self, polling_id: str, message: Dict[str, Any]
-    ) -> bool:
+    def send_message_to_polling_client(self, polling_id: str, message: Dict[str, Any]) -> bool:
         """Queue a message for a polling client.
 
         Returns True when nothing was lost. False does **not** mean the message
@@ -424,9 +411,7 @@ class WebSocketFallbackManager:
 
         if len(client.message_queue) > POLLING_QUEUE_MAX_MESSAGES:
             dropped = client.message_queue.popleft()
-            self.messages_dropped.labels(
-                client_type=_known_client_type(client.client_type)
-            ).inc()
+            self.messages_dropped.labels(client_type=_known_client_type(client.client_type)).inc()
             client.dropped_since_last_poll += 1
             dropped_type = sanitize_log_value(dropped.get("type", "unknown"))
             if client.dropped_since_last_poll == 1:
@@ -441,8 +426,7 @@ class WebSocketFallbackManager:
                 )
             else:
                 logger.debug(
-                    "Polling queue still full; dropped message of type %s "
-                    "(%d since last poll)",
+                    "Polling queue still full; dropped message of type %s " "(%d since last poll)",
                     dropped_type,
                     client.dropped_since_last_poll,
                 )
@@ -525,18 +509,14 @@ class WebSocketFallbackManager:
         # Send remaining messages via WebSocket notification
         remaining_messages = list(client.message_queue)
         if remaining_messages:
-            logger.info(
-                f"📤 {len(remaining_messages)} queued messages will be sent via WebSocket"
-            )
+            logger.info(f"📤 {len(remaining_messages)} queued messages will be sent via WebSocket")
 
         # Cleanup polling client
         self._cleanup_polling_client(polling_id)
 
         logger.info(f"✅ WebSocket recovery successful for {polling_id}")
 
-    def websocket_recovery_failed(
-        self, polling_id: str, failure_reason: FallbackReason
-    ):
+    def websocket_recovery_failed(self, polling_id: str, failure_reason: FallbackReason):
         """Handle failed WebSocket recovery attempt"""
         client = self.polling_clients.get(polling_id)
         if not client:
@@ -544,14 +524,10 @@ class WebSocketFallbackManager:
 
         # Schedule next retry if within limits
         if client.retry_count < self.config.max_websocket_retries:
-            retry_delay = self._calculate_retry_delay(
-                failure_reason, client.retry_count
-            )
+            retry_delay = self._calculate_retry_delay(failure_reason, client.retry_count)
             client.websocket_retry_after = utc_now() + timedelta(seconds=retry_delay)
 
-            logger.info(
-                f"⏰ Next WebSocket retry for {polling_id} scheduled in {retry_delay}s"
-            )
+            logger.info(f"⏰ Next WebSocket retry for {polling_id} scheduled in {retry_delay}s")
         else:
             logger.warning(
                 f"🚫 Max WebSocket retries exceeded for {polling_id}, staying in polling mode"
@@ -578,9 +554,7 @@ class WebSocketFallbackManager:
             "fallback_reason": client.fallback_reason.value,
             "retry_count": client.retry_count,
             "websocket_retry_after": (
-                client.websocket_retry_after.isoformat()
-                if client.websocket_retry_after
-                else None
+                client.websocket_retry_after.isoformat() if client.websocket_retry_after else None
             ),
             "queued_messages": len(client.message_queue),
             "uptime_seconds": (utc_now() - client.created_at).total_seconds(),
@@ -640,9 +614,7 @@ class WebSocketFallbackManager:
 
         return self.config.enable_automatic_recovery
 
-    def _calculate_retry_delay(
-        self, reason: FallbackReason, retry_count: int = 0
-    ) -> int:
+    def _calculate_retry_delay(self, reason: FallbackReason, retry_count: int = 0) -> int:
         """Calculate delay before next retry attempt"""
         base_delays = {
             FallbackReason.CORS_PREFLIGHT_FAILED: self.config.cors_retry_delay,
@@ -662,9 +634,7 @@ class WebSocketFallbackManager:
         if self.config.enable_jitter:
             import random
 
-            jitter = random.uniform(
-                -self.config.jitter_max_percent, self.config.jitter_max_percent
-            )
+            jitter = random.uniform(-self.config.jitter_max_percent, self.config.jitter_max_percent)
             base_delay = int(base_delay * (1 + jitter))
 
         return max(1, base_delay)
@@ -691,9 +661,7 @@ class WebSocketFallbackManager:
             "message": self._get_user_friendly_message(client.fallback_reason),
             "polling_interval": client.polling_interval,
             "recovery_info": {
-                "automatic_retry": self._should_schedule_websocket_retry(
-                    client.fallback_reason
-                ),
+                "automatic_retry": self._should_schedule_websocket_retry(client.fallback_reason),
                 "retry_after": (
                     client.websocket_retry_after.isoformat()
                     if client.websocket_retry_after
@@ -805,9 +773,7 @@ class WebSocketFallbackManager:
                     self._cleanup_polling_client(polling_id)
 
                 if stale_clients:
-                    logger.info(
-                        f"🧹 Cleaned up {len(stale_clients)} stale polling clients"
-                    )
+                    logger.info(f"🧹 Cleaned up {len(stale_clients)} stale polling clients")
 
             except Exception:
                 logger.exception("Polling cleanup task failed")

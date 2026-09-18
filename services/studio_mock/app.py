@@ -106,9 +106,7 @@ class LocaleResponse(BaseModel):
     """A localized V1 runtime configuration entry."""
 
     locale: str
-    authenticated_home_explanation_html: str = Field(
-        alias="authenticatedHomeExplanationHtml"
-    )
+    authenticated_home_explanation_html: str = Field(alias="authenticatedHomeExplanationHtml")
     guest_explanation_html: str = Field(alias="guestExplanationHtml")
     conversation_content_storage_question_html: str | None = Field(
         alias="conversationContentStorageQuestionHtml"
@@ -373,9 +371,7 @@ def runtime_configuration(
         or x_tenant_id is not None
         or request.url.query
     ):
-        return _error_response(
-            404, "tenant_not_found", x_correlation_id or "unavailable", False
-        )
+        return _error_response(404, "tenant_not_found", x_correlation_id or "unavailable", False)
     scenario_errors: dict[str, tuple[int, RuntimeErrorCode, bool]] = {
         "suspended": (409, "tenant_suspended", False),
         "plugin-inactive": (409, "ssf_plugin_inactive", False),
@@ -385,9 +381,7 @@ def runtime_configuration(
         status_code, code, retryable = scenario_errors[x_mock_scenario]
         return _error_response(status_code, code, x_correlation_id, retryable)
     if x_mock_scenario == "unavailable":
-        return _error_response(
-            503, "runtime_configuration_unavailable", x_correlation_id, True
-        )
+        return _error_response(503, "runtime_configuration_unavailable", x_correlation_id, True)
     if x_studio_tenant_id not in _TENANT_CONFIGURATION_TEMPLATES:
         return _error_response(404, "tenant_not_found", x_correlation_id, False)
     return _configuration_for(x_studio_tenant_id)

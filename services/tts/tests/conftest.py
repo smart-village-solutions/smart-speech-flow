@@ -72,9 +72,7 @@ def _install_fake_transformers() -> None:
     fake_transformers.M2M100ForConditionalGeneration = getattr(
         fake_transformers, "M2M100ForConditionalGeneration", None
     )
-    fake_transformers.M2M100Tokenizer = getattr(
-        fake_transformers, "M2M100Tokenizer", None
-    )
+    fake_transformers.M2M100Tokenizer = getattr(fake_transformers, "M2M100Tokenizer", None)
 
 
 _install_fake_torch()

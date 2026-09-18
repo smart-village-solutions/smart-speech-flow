@@ -26,8 +26,7 @@ def sanitize_log_value(value: Any, *, max_length: int = 200) -> Any:
 
     if isinstance(value, dict):
         return {
-            str(key): sanitize_log_value(item, max_length=max_length)
-            for key, item in value.items()
+            str(key): sanitize_log_value(item, max_length=max_length) for key, item in value.items()
         }
 
     if isinstance(value, (list, tuple, set)):
@@ -51,8 +50,6 @@ def safe_language_code(value: Any) -> str:
     return normalized[:32]
 
 
-def safe_closed_value(
-    value: Any, allowed: frozenset[str], *, fallback: str = "invalid"
-) -> str:
+def safe_closed_value(value: Any, allowed: frozenset[str], *, fallback: str = "invalid") -> str:
     """Keep an operational field fixed-cardinality and free of caller text."""
     return value if isinstance(value, str) and value in allowed else fallback

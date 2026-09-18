@@ -33,9 +33,7 @@ class TestAdminRoutes:
         first_session_id = first_response.json()["session_id"]
 
         activate_payload = {"session_id": first_session_id, "customer_language": "en"}
-        activate_response = client.post(
-            "/api/customer/session/activate", json=activate_payload
-        )
+        activate_response = client.post("/api/customer/session/activate", json=activate_payload)
         assert activate_response.status_code == 200
 
         second_response = client.post("/api/admin/session/create")
@@ -70,7 +68,7 @@ class TestAdminRoutes:
 
         current_response = client.get("/api/admin/session/current")
         assert current_response.status_code == 409
-        assert "explizite session_id erforderlich" in current_response.json()["detail"]
+        assert "explicit session_id" in current_response.json()["detail"]
 
         second_session_id = second_response.json()["session_id"]
         specific_response = client.get(

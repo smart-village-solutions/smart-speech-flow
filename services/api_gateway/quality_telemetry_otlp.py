@@ -84,7 +84,5 @@ def build_otlp_exporter(
             }
         )
     )
-    provider.add_log_record_processor(
-        BatchLogRecordProcessor(OTLPLogExporter(endpoint=endpoint))
-    )
+    provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter(endpoint=endpoint)))
     return OtlpQualityExporter(provider)

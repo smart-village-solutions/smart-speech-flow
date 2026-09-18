@@ -238,12 +238,8 @@ ALLOWED_ATTRIBUTES: Final[Mapping[str, AttributeSpec]] = {
     "ssf.quality.usability": AttributeSpec(AttributeKind.NUMBER),
     "ssf.quality.net_promoter_score": AttributeSpec(AttributeKind.NUMBER),
     "ssf.quality.feedback_form_version": AttributeSpec(AttributeKind.LABEL),
-    "ssf.quality.direction": AttributeSpec(
-        AttributeKind.ENUM, _enum_values(MessageDirection)
-    ),
-    "ssf.quality.input_mode": AttributeSpec(
-        AttributeKind.ENUM, _enum_values(InputMode)
-    ),
+    "ssf.quality.direction": AttributeSpec(AttributeKind.ENUM, _enum_values(MessageDirection)),
+    "ssf.quality.input_mode": AttributeSpec(AttributeKind.ENUM, _enum_values(InputMode)),
     "ssf.quality.terminal_outcome": AttributeSpec(
         AttributeKind.ENUM, _enum_values(TerminalOutcome)
     ),

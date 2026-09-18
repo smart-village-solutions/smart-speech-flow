@@ -46,19 +46,17 @@ jobs:
     - name: Check code formatting with Black
       run: |
         source .venv/bin/activate
-        black --check --diff services/ || echo "::warning::Black formatting issues found"
-      continue-on-error: true
+        black --check --diff services/
 
     - name: Check import sorting with isort
       run: |
         source .venv/bin/activate
-        isort --check-only --diff services/ || echo "::warning::Import sorting issues found"
-      continue-on-error: true
+        isort --check-only --diff services/
 
     - name: Lint code with flake8
       run: |
         source .venv/bin/activate
-        flake8 services/ --format=github --statistics --tee --output-file=flake8-report.txt --exit-zero
+        flake8 services/ --format=github --statistics --tee --output-file=flake8-report.txt
 
     - name: Upload flake8 report
       if: always()
@@ -144,12 +142,11 @@ jobs:
           pip-audit-report.*
         retention-days: 30
 
-  # Job 3: Type Checking (optional, da graduelle Einführung)
+  # Job 3: Type Checking (blocking; pyproject.toml holds the per-module ratchet)
   type-checking:
     name: Type Checking
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true  # Nicht blockierend während der Einführung
 
     steps:
     - name: Checkout Code
@@ -172,13 +169,19 @@ jobs:
       run: |
         source .venv/bin/activate
         pip install --upgrade pip
-        pip install mypy types-requests types-redis
+        # requirements-dev.txt pins mypy; installing it unpinned first only
+        # hides which version actually runs.
         pip install -r requirements-dev.txt
+        # Without the gateway's own dependencies, --ignore-missing-imports
+        # resolves fastapi, aiohttp and redis to Any and the gate cannot see a
+        # mistyped call into any of them.
+        pip install -r services/api_gateway/requirements.txt
+        pip install types-requests types-redis
 
     - name: Run MyPy type checking
       run: |
         source .venv/bin/activate
-        mypy services/api_gateway/ --ignore-missing-imports --show-error-codes --pretty || true
+        mypy services/api_gateway/ --ignore-missing-imports --show-error-codes --pretty
 
     - name: Generate type coverage report
       run: |
@@ -446,7 +449,7 @@ jobs:
   quality-gate:
     name: Quality Gate
     runs-on: ubuntu-latest
-    needs: [code-quality, security-analysis, sonar-analysis, fallow-analysis, frontend-checks]
+    needs: [code-quality, security-analysis, type-checking, sonar-analysis, fallow-analysis, frontend-checks]
     if: always()
 
     steps:
@@ -456,6 +459,7 @@ jobs:
         SECURITY_RESULT="${{ needs.security-analysis.result }}"
         SONAR_RESULT="${{ needs.sonar-analysis.result }}"
         SONAR_ENABLED="${{ needs.sonar-analysis.outputs.enabled }}"
+        TYPE_RESULT="${{ needs.type-checking.result }}"
         FALLOW_RESULT="${{ needs.fallow-analysis.result }}"
         FRONTEND_RESULT="${{ needs.frontend-checks.result }}"
 
@@ -483,10 +487,25 @@ jobs:
           exit 1
         fi
 
-        if [ "$CODE_QUALITY_RESULT" != "success" ] || [ "$SECURITY_RESULT" != "success" ]; then
-          echo "::warning::Quality gate checks found issues in non-Sonar jobs"
-          echo "Code quality and security should be reviewed."
-        elif [ "$SONAR_ENABLED" != "true" ]; then
+        # Linting is blocking: a flake8 finding must not reach main.
+        if [ "$CODE_QUALITY_RESULT" != "success" ]; then
+          echo "❌ Code quality checks failed"
+          exit 1
+        fi
+
+        if [ "$SECURITY_RESULT" != "success" ]; then
+          echo "❌ Security checks failed"
+          exit 1
+        fi
+
+        # Type checking is blocking: the ratchet in pyproject.toml lists what is
+        # still exempt, so anything outside it must stay clean.
+        if [ "$TYPE_RESULT" != "success" ]; then
+          echo "❌ Type checking failed"
+          exit 1
+        fi
+
+        if [ "$SONAR_ENABLED" != "true" ]; then
           echo "::warning::Sonar analysis skipped - configure SONAR_TOKEN (and optional Sonar variables if defaults do not match)"
         else
           echo "✅ Quality gate passed!"

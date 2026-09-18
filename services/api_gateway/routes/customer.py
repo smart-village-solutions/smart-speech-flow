@@ -69,9 +69,7 @@ class ActivateSessionRequest(BaseModel):
     )
 
     class Config:
-        json_schema_extra = {
-            "example": {"session_id": "ABC12345", "customer_language": "en"}
-        }
+        json_schema_extra = {"example": {"session_id": "ABC12345", "customer_language": "en"}}
 
 
 class ActivateSessionResponse(BaseModel):
@@ -100,9 +98,7 @@ async def send_customer_message(
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
     manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
 ):
-    return await conversation_service.process(
-        key, ClientType.CUSTOMER, request, manager
-    )
+    return await conversation_service.process(key, ClientType.CUSTOMER, request, manager)
 
 
 @router.get("/session/{session_id}/messages", responses=CUSTOMER_ROUTE_RESPONSES)
@@ -225,9 +221,7 @@ async def activate_session(
         if session.status == SessionStatus.TERMINATED:
             logger.warning(
                 "❌ Session bereits beendet | %s",
-                sanitize_log_value(
-                    {"session_ref": _safe_session_ref(request.session_id)}
-                ),
+                sanitize_log_value({"session_ref": _safe_session_ref(request.session_id)}),
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -253,9 +247,7 @@ async def activate_session(
             else:
                 logger.info(
                     "ℹ️ Session bereits aktiv - idempotente Antwort | %s",
-                    sanitize_log_value(
-                        {"session_ref": _safe_session_ref(request.session_id)}
-                    ),
+                    sanitize_log_value({"session_ref": _safe_session_ref(request.session_id)}),
                 )
 
             return ActivateSessionResponse(
@@ -286,12 +278,8 @@ async def activate_session(
         # Consent is resolved on this transition alone. `activate_session` is
         # re-entered on every customer language change, and re-resolving there
         # would let a consent-less call overwrite a granted answer.
-        live_configuration = await _read_activation_configuration(
-            http_request, key.tenant_id
-        )
-        session.consent_status = resolve_consent(
-            live_configuration, request.data_retention_consent
-        )
+        live_configuration = await _read_activation_configuration(http_request, key.tenant_id)
+        session.consent_status = resolve_consent(live_configuration, request.data_retention_consent)
 
         # Session aktivieren
         await session_manager.activate_session(key, request.customer_language)
