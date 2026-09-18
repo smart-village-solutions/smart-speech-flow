@@ -58,7 +58,7 @@ jobs:
     - name: Lint code with flake8
       run: |
         source .venv/bin/activate
-        flake8 services/ --format=github --statistics --tee --output-file=flake8-report.txt --exit-zero
+        flake8 services/ --format=github --statistics --tee --output-file=flake8-report.txt
 
     - name: Upload flake8 report
       if: always()
@@ -483,10 +483,18 @@ jobs:
           exit 1
         fi
 
-        if [ "$CODE_QUALITY_RESULT" != "success" ] || [ "$SECURITY_RESULT" != "success" ]; then
-          echo "::warning::Quality gate checks found issues in non-Sonar jobs"
-          echo "Code quality and security should be reviewed."
-        elif [ "$SONAR_ENABLED" != "true" ]; then
+        # Linting is blocking: a flake8 finding must not reach main.
+        if [ "$CODE_QUALITY_RESULT" != "success" ]; then
+          echo "❌ Code quality checks failed"
+          exit 1
+        fi
+
+        if [ "$SECURITY_RESULT" != "success" ]; then
+          echo "❌ Security checks failed"
+          exit 1
+        fi
+
+        if [ "$SONAR_ENABLED" != "true" ]; then
           echo "::warning::Sonar analysis skipped - configure SONAR_TOKEN (and optional Sonar variables if defaults do not match)"
         else
           echo "✅ Quality gate passed!"

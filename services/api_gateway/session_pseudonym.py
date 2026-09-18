@@ -52,6 +52,7 @@ def tenant_ref(tenant_id: Any) -> str:
         return MISSING_TENANT_REFERENCE
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:_TENANT_REFERENCE_LENGTH]
 
+
 # A domain tag mixed into the HMAC input, so a session id and a feedback id
 # that happened to be equal do not produce the same reference in both stores.
 #
