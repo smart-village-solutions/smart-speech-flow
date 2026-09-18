@@ -80,6 +80,66 @@ module = "tests.*"
 ignore_errors = false
 disallow_untyped_defs = false
 
+# Type-checking ratchet. These modules predate the blocking mypy gate and
+# still carry findings. Every other module under services.api_gateway.* is
+# enforced. The list is the union of what mypy 1.13 and the pinned 2.3.1
+# report, so it holds whichever of the two a developer has installed.
+# It may only ever shrink: removing a module means its errors are fixed.
+# Never add to it to make a new change pass.
+[[tool.mypy.overrides]]
+module = [
+    "services.api_gateway.app",
+    "services.api_gateway.audio_storage",
+    "services.api_gateway.auth",
+    "services.api_gateway.circuit_breaker",
+    "services.api_gateway.circuit_breaker_client",
+    "services.api_gateway.enhanced_audio_validation",
+    "services.api_gateway.feedback.maintenance",
+    "services.api_gateway.feedback.read",
+    "services.api_gateway.feedback.repository",
+    "services.api_gateway.graceful_degradation",
+    "services.api_gateway.message_telemetry",
+    "services.api_gateway.pipeline_logic",
+    "services.api_gateway.quality_telemetry",
+    "services.api_gateway.quality_telemetry_otlp",
+    "services.api_gateway.rate_limiter",
+    "services.api_gateway.realtime_ticket",
+    "services.api_gateway.routes.admin",
+    "services.api_gateway.routes.circuit_breaker",
+    "services.api_gateway.routes.customer",
+    "services.api_gateway.routes.feedback",
+    "services.api_gateway.routes.health",
+    "services.api_gateway.routes.index",
+    "services.api_gateway.routes.login",
+    "services.api_gateway.routes.metrics",
+    "services.api_gateway.routes.session",
+    "services.api_gateway.routes.upload",
+    "services.api_gateway.service_health",
+    "services.api_gateway.session",
+    "services.api_gateway.session_manager",
+    "services.api_gateway.session_store",
+    "services.api_gateway.studio_login_directory_client",
+    "services.api_gateway.studio_runtime_client",
+    "services.api_gateway.studio_runtime_flow",
+    "services.api_gateway.tenant_persistence",
+    "services.api_gateway.tenant_session",
+    "services.api_gateway.tests.conftest",
+    "services.api_gateway.tests.test_admin",
+    "services.api_gateway.tests.test_customer",
+    "services.api_gateway.tests.test_endpoints",
+    "services.api_gateway.tests.test_health",
+    "services.api_gateway.tests.test_metrics",
+    "services.api_gateway.tests.test_pipeline",
+    "services.api_gateway.translation_refiner",
+    "services.api_gateway.utils.health_utils",
+    "services.api_gateway.websocket",
+    "services.api_gateway.websocket_fallback",
+    "services.api_gateway.websocket_monitor",
+    "services.api_gateway.websocket_monitoring_routes",
+    "services.api_gateway.websocket_polling_routes",
+]
+ignore_errors = true
+
 # Ignore third-party packages without stubs
 [[tool.mypy.overrides]]
 module = [
