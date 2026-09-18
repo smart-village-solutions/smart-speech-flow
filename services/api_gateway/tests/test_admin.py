@@ -70,7 +70,7 @@ class TestAdminRoutes:
 
         current_response = client.get("/api/admin/session/current")
         assert current_response.status_code == 409
-        assert "explizite session_id erforderlich" in current_response.json()["detail"]
+        assert "explicit session_id" in current_response.json()["detail"]
 
         second_session_id = second_response.json()["session_id"]
         specific_response = client.get(

@@ -34,8 +34,13 @@ jobs:
           PYTHONPATH: .
           SSF_AUDIO_BASE_DIR: ${{ runner.temp }}/audio
         run: |
-          echo "Running hermetic pytest subset on tests/ (integration, load and real-system suites are skipped in CI)"
-          pytest tests/ -q \
+          echo "Running hermetic pytest subset on tests/ and the per-service suites (integration, load and real-system suites are skipped in CI)"
+          pytest tests/ \
+            services/api_gateway/tests \
+            services/asr/tests \
+            services/translation/tests \
+            services/tts/tests \
+            -q \
             -m "not integration and not real_system" \
             --ignore=tests/integration \
             --ignore=tests/load \
