@@ -18,8 +18,6 @@ from uuid import UUID, uuid4
 from ..quality_telemetry import ProbeOutcome
 from ..session_pseudonym import MISSING_REFERENCE, feedback_ref, session_ref, tenant_ref
 from ..tenant_session import TenantSessionKey
-from .repository import FeedbackRepository
-from .tenant import TenantResolver
 from .models import (
     MAX_IMPROVEMENTS_LENGTH,
     RETENTION_POLICY_VERSION,
@@ -28,6 +26,8 @@ from .models import (
     FeedbackSubmissionRequest,
     FeedbackTextTooLong,
 )
+from .repository import FeedbackRepository
+from .tenant import TenantResolver
 
 logger = logging.getLogger(__name__)
 

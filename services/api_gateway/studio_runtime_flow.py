@@ -16,11 +16,7 @@ from .studio_runtime_client import (
     StudioRuntimeClient,
     StudioRuntimeClientError,
 )
-from .studio_runtime_token import (
-    StudioRuntimeTokenProvider,
-    StudioTokenConfig,
-    StudioTokenError,
-)
+from .studio_runtime_token import StudioRuntimeTokenProvider, StudioTokenConfig, StudioTokenError
 from .tenant_context import StudioTenantContext, require_studio_tenant_context
 
 

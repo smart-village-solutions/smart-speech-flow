@@ -26,12 +26,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
+from ..auth import require_ssf_user
 from ..feedback.models import (
     FeedbackAcceptedResponse,
     FeedbackSubmissionRequest,
     FeedbackTextTooLong,
 )
-from ..auth import require_ssf_user
 from ..feedback.read import (
     FeedbackDetail,
     FeedbackNotFound,

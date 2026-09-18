@@ -21,11 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CollectorRegistry, Counter
 
 from .client_origin import configured_client_origin
-from .pipeline_admission import (
-    PipelineAdmission,
-    PipelineAdmissionConfig,
-    PipelineAdmissionMetrics,
-)
+from .pipeline_admission import PipelineAdmission, PipelineAdmissionConfig, PipelineAdmissionMetrics
 from .rate_limiter import RateLimitMiddleware
 
 # === Service-URLs für die Orchestrierung ===
@@ -505,10 +501,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # development and CI.
     from .runtime_policy import RuntimePolicyGate, bind_runtime_policy
     from .runtime_policy_metrics import RuntimePolicyMetrics
-    from .studio_runtime_flow import (
-        StudioRuntimeFlowError,
-        runtime_flow_from_environment,
-    )
+    from .studio_runtime_flow import StudioRuntimeFlowError, runtime_flow_from_environment
 
     try:
         runtime_flow = runtime_flow_from_environment()

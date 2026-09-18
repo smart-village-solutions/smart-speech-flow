@@ -18,11 +18,7 @@ from ..auth import require_ssf_user
 from ..conversation_service import conversation_service
 from ..log_safety import sanitize_log_value
 from ..quality_telemetry import QualityTelemetry, get_quality_telemetry
-from ..realtime_ticket import (
-    RealtimeTicketStore,
-    RealtimeTicketUnavailable,
-    realtime_ticket_store,
-)
+from ..realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable, realtime_ticket_store
 from ..session_access import require_admin_session_key
 from ..session_manager import ClientType, SessionStatus, session_manager
 from ..studio_runtime_flow import (

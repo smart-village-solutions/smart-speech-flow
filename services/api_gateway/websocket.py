@@ -20,14 +20,7 @@ from enum import Enum
 from typing import Annotated, Any, Dict, List, Optional, Set
 from uuid import uuid4
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    Header,
-    HTTPException,
-    WebSocket,
-    WebSocketDisconnect,
-)
+from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect
 
 from .client_origin import configured_client_origin
 from .log_safety import sanitize_log_value
