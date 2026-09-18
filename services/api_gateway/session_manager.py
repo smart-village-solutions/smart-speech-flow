@@ -1202,9 +1202,9 @@ class SessionManager:
 
         for session in list(self.sessions.values()):
             # A terminated record is immutable in the store -- SAVE_SESSION_LUA
-            # refuses every change to one -- and its content was already
-            # settled at termination. Pruning it in memory alone would drift
-            # from Redis and resurrect on the next load.
+            # refuses every change to one -- so its retention is the expiry set
+            # on it at termination, not this sweep. Pruning it here would drift
+            # from the store and resurrect on the next load.
             if session.status is SessionStatus.TERMINATED:
                 continue
             try:

@@ -39,6 +39,7 @@ class PersistentFakeRedis:
         self.values: dict[str, str] = {}
         self.sets: dict[str, set[str]] = {}
         self.pings = 0
+        self.expiries: dict[str, int] = {}
         self.fail_after_next_termination = False
 
     def ping(self) -> bool:
@@ -121,7 +122,14 @@ class PersistentFakeRedis:
             return 1
 
         session_key_value, active_index, join_key_value = keys
-        session_payload, session_id, expected_join, terminal_join, tenant_id = argv
+        (
+            session_payload,
+            session_id,
+            expected_join,
+            terminal_join,
+            tenant_id,
+            retention_seconds,
+        ) = argv
         current_join = self.values.get(join_key_value)
         if current_join == terminal_join:
             persisted = json.loads(self.values[session_key_value])
@@ -136,6 +144,9 @@ class PersistentFakeRedis:
         if current_join != expected_join:
             return 0
         self.values[session_key_value] = session_payload
+        # Mirrors the script's EXPIRE on the record alone; the tombstone stays.
+        if retention_seconds and int(retention_seconds) > 0:
+            self.expiries[session_key_value] = int(retention_seconds)
         self.sets.setdefault(active_index, set()).discard(session_id)
         self.values[join_key_value] = terminal_join
         if self.fail_after_next_termination:

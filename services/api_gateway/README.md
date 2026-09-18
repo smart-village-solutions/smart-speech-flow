@@ -31,6 +31,13 @@ an operator removes it by hand. Neither ever retains content a guest declined
 or a tenant policy disabled: that is removed when the conversation ends, and at
 the latest when the session passes `SSF_SESSION_MAX_HOURS`.
 
+Retention is applied two ways, because the two stores differ. Audio files are
+swept hourly by age. A session record is immutable once terminated, so its
+expiry is set on the record at the moment it terminates; changing the setting
+later does not retime records that already terminated. The join tombstone
+deliberately outlives the record -- it holds no conversation content and is
+what stops a session identifier being reused.
+
 The client secret must come from the deployment environment or secret store;
 it must never be embedded in an image, browser bundle, or checked-in file.
 Studio owns production realm provisioning once the tenant-login rollout is

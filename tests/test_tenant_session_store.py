@@ -152,8 +152,9 @@ def test_redis_terminate_updates_tombstone_in_one_atomic_script() -> None:
         tenant_active_sessions_key("ssf", "tenant-a"),
         join_key("ssf", "ABC12345"),
     )
-    assert json.loads(call[-2])["active"] is False
-    assert call[-1] == "tenant-a"
+    # ARGV: payload, session_id, join_active, join_inactive, tenant_id, ttl
+    assert json.loads(call[8])["active"] is False
+    assert call[9] == "tenant-a"
 
 
 def apply_terminate_script(redis: RecordingRedis, call: tuple[object, ...]) -> None:
@@ -296,3 +297,63 @@ class TestEndedJoinResolution:
         for store, ended in ((memory, session), (redis_store, redis_session)):
             assert store.resolve_ended_join(ended.id) == (ended.key, TERMINATED_AT)
             assert store.resolve_join(ended.id) is None
+
+
+def test_terminating_expires_the_record_after_the_retention_period(monkeypatch) -> None:
+    """The terminal record is immutable, so retention is an expiry, not a prune.
+
+    Nothing else can remove it: the save script refuses every change to a
+    terminated record, and there is no purge job.
+    """
+    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "24")
+    redis = RecordingRedis()
+    store = RedisTenantSessionStore(redis, namespace="ssf")
+    session = make_session("tenant-a", "ABC12345")
+    session.status = SessionStatus.TERMINATED
+
+    store.terminate(session)
+
+    call = redis.eval_calls[-1]
+    assert call[0].count("EXPIRE") == 1
+    assert call[10] == 24 * 3600
+
+
+def test_zero_retention_never_expires_the_record(monkeypatch) -> None:
+    # Zero disables automatic deletion; it must not mean "expire immediately".
+    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
+    redis = RecordingRedis()
+    store = RedisTenantSessionStore(redis, namespace="ssf")
+    session = make_session("tenant-a", "ABC12345")
+    session.status = SessionStatus.TERMINATED
+
+    store.terminate(session)
+
+    assert redis.eval_calls[-1][10] == 0
+
+
+def test_an_expired_terminal_record_is_gone(monkeypatch) -> None:
+    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "24")
+    store = MemoryTenantSessionStore()
+    session = make_session("tenant-a", "ABC12345")
+    assert store.create(session) is True
+    session.status = SessionStatus.TERMINATED
+    store.terminate(session)
+
+    assert store.load(session.key) is not None
+    store.expire_now(session.key)
+    assert store.load(session.key) is None
+
+
+def test_the_join_tombstone_outlives_the_expired_record(monkeypatch) -> None:
+    # The tombstone carries no conversation content and is what stops a
+    # session identifier being reused, so it must not expire with the record.
+    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "24")
+    store = MemoryTenantSessionStore()
+    session = make_session("tenant-a", "ABC12345")
+    assert store.create(session) is True
+    session.status = SessionStatus.TERMINATED
+    store.terminate(session)
+    store.expire_now(session.key)
+
+    assert store.load(session.key) is None
+    assert store.create(make_session("tenant-a", "ABC12345")) is False

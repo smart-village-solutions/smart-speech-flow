@@ -128,11 +128,26 @@ authorized content is removed by an operator instead.
 
 Disabling automatic deletion SHALL NOT retain refused content.
 
+The period is measured from different points for the two stores, because a
+terminated session record is immutable and cannot be pruned in place: audio is
+removed by age since it was written, and a session record expires relative to
+the moment its conversation ended. A record that has already terminated SHALL
+NOT be retimed by a later change to the setting.
+
 #### Scenario: Default retention
 
 - **WHEN** no retention value is configured
-- **THEN** authorized audio and authorized message text are deleted 24 hours
-  after they were written
+- **THEN** authorized audio is deleted 24 hours after it was written
+- **AND THEN** the session record carrying authorized message text expires 24
+  hours after the conversation ended
+
+#### Scenario: A terminated record does not outlive its retention
+
+- **WHEN** a conversation with granted consent ends
+- **THEN** the terminal record is stored with an expiry of the configured
+  retention period
+- **AND THEN** the identifier of that session still cannot be reused after the
+  record has expired
 
 #### Scenario: Automatic deletion disabled
 
