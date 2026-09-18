@@ -330,9 +330,7 @@ class GracefulDegradationManager:
 
         return None
 
-    def _queue_request(
-        self, service_name: str, _request_data: Dict
-    ) -> Dict[str, Any] | None:
+    def _queue_request(self, service_name: str, _request_data: Dict) -> Dict[str, Any] | None:
         """Reiht Request für späteren Retry ein"""
         if not self.fallback_config.enable_queuing:
             return None
@@ -364,9 +362,7 @@ class GracefulDegradationManager:
         self, service_name: str, original_error: Exception
     ) -> Dict[str, Any]:
         """Generiert benutzerfreundliche Fehlermeldung"""
-        error_info = self.error_messages.get(
-            service_name, self.error_messages["general"]
-        )
+        error_info = self.error_messages.get(service_name, self.error_messages["general"])
 
         return {
             "success": False,
@@ -408,9 +404,7 @@ class GracefulDegradationManager:
             self._evict_oldest_cache_entries()
 
         self.response_cache[cache_key] = cache_entry
-        logger.debug(
-            f"💾 Response gecached: {service_name} -> {cache_key} (TTL: {cache_ttl}s)"
-        )
+        logger.debug(f"💾 Response gecached: {service_name} -> {cache_key} (TTL: {cache_ttl}s)")
 
     def _generate_cache_key(self, service_name: str, request_data: Dict) -> str:
         """Generiert Cache Key für Request"""
@@ -448,9 +442,7 @@ class GracefulDegradationManager:
             return
 
         # Sortiere nach Timestamp (älteste zuerst)
-        sorted_entries = sorted(
-            self.response_cache.items(), key=lambda x: x[1].timestamp
-        )
+        sorted_entries = sorted(self.response_cache.items(), key=lambda x: x[1].timestamp)
 
         # Entferne älteste 10% der Entries
         evict_count = max(1, len(sorted_entries) // 10)
@@ -537,9 +529,7 @@ class GracefulDegradationManager:
     async def cleanup_expired_cache(self):
         """Entfernt abgelaufene Cache Entries"""
         await asyncio.sleep(0)
-        expired_keys = [
-            key for key, entry in self.response_cache.items() if not entry.is_valid
-        ]
+        expired_keys = [key for key, entry in self.response_cache.items() if not entry.is_valid]
 
         for key in expired_keys:
             del self.response_cache[key]

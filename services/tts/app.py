@@ -146,9 +146,7 @@ def _load_coqui_model(normalized_lang: str):
         print(f"Modell-Device: {next(model.parameters()).device}")
     except Exception as exc:
         print(f"Device-Check nicht möglich: {exc}")
-    print(
-        f"TTS-Modell für Sprache {normalized_lang} erfolgreich geladen auf {tts_device}."
-    )
+    print(f"TTS-Modell für Sprache {normalized_lang} erfolgreich geladen auf {tts_device}.")
     return model
 
 
@@ -157,9 +155,7 @@ def _load_hf_tts_model(normalized_lang: str):
     if hf_model_id is None:
         return None
 
-    print(
-        f"Versuche HuggingFace MMS-TTS für Sprache: {normalized_lang} ({hf_model_id})"
-    )
+    print(f"Versuche HuggingFace MMS-TTS für Sprache: {normalized_lang} ({hf_model_id})")
     tts_pipe = pipeline("text-to-speech", model=hf_model_id)
     print(f"HuggingFace MMS-TTS für Sprache {normalized_lang} erfolgreich geladen.")
     return tts_pipe
@@ -185,16 +181,12 @@ def get_tts_model(lang: str):
         tts_model_cache[normalized_lang] = tts_pipe
         return tts_pipe
     except Exception as exc:
-        print(
-            f"Fehler beim Laden von HuggingFace MMS-TTS für Sprache {normalized_lang}: {exc}"
-        )
+        print(f"Fehler beim Laden von HuggingFace MMS-TTS für Sprache {normalized_lang}: {exc}")
         print(traceback.format_exc())
         return None
 
 
-def _seed_for_request(
-    session_id: str | None, text: str, debug_info: Dict[str, Any]
-) -> int:
+def _seed_for_request(session_id: str | None, text: str, debug_info: Dict[str, Any]) -> int:
     if session_id:
         debug_info["seed_source"] = "session_id"
         return hash(session_id) % (2**32)
@@ -279,9 +271,7 @@ def _collect_resource_metrics() -> Dict[str, Any]:
     return collect_resource_metrics(psutil, _collect_gpu_metrics)
 
 
-def _append_gpu_signal(
-    reasons: List[str], gpu_device: Dict[str, Any], threshold_gpu: int
-) -> None:
+def _append_gpu_signal(reasons: List[str], gpu_device: Dict[str, Any], threshold_gpu: int) -> None:
     """Compatibility wrapper for the service-local health helper."""
     append_gpu_signal(reasons, gpu_device, threshold_gpu)
 
@@ -357,9 +347,7 @@ def _synthesize_hf_audio(tts_model: Any, text: str) -> bytes:
 
 async def _render_audio_bytes(tts_model: Any, text: str) -> tuple[bytes, bool]:
     if hasattr(tts_model, "tts_to_file"):
-        audio_bytes = await asyncio.to_thread(
-            _coqui_tts_to_audio_bytes, tts_model, text
-        )
+        audio_bytes = await asyncio.to_thread(_coqui_tts_to_audio_bytes, tts_model, text)
         return audio_bytes, False
     if hasattr(tts_model, "__call__"):
         audio_bytes = await asyncio.to_thread(_synthesize_hf_audio, tts_model, text)
@@ -376,16 +364,12 @@ def health():
     gpu_info = resources.get("gpu", {})
     gpu_available = gpu_info.get("available", False)
     gpu_used, model_gpu_errors = _inspect_loaded_model_gpu_usage()
-    gpu_errors: List[str] = (
-        list(gpu_info.get("errors", [])) if gpu_info.get("errors") else []
-    )
+    gpu_errors: List[str] = list(gpu_info.get("errors", [])) if gpu_info.get("errors") else []
     gpu_errors.extend(model_gpu_errors)
 
     loaded_models = {}
     for lang in configured_langs:
-        loaded_models[lang] = (
-            lang in tts_model_cache and tts_model_cache[lang] is not None
-        )
+        loaded_models[lang] = lang in tts_model_cache and tts_model_cache[lang] is not None
 
     if not gpu_available and not gpu_errors:
         gpu_errors.append("torch.cuda.is_available()==False")
@@ -473,9 +457,7 @@ async def synthesize(request: Request):
         audio_bytes, rendered_by_mms = await _render_audio_bytes(tts_model, text)
         # A Coqui voice that failed to import or load is served by MMS instead,
         # so name the model that produced the audio, not the configured one.
-        effective_model = (
-            _resolve_hf_model_name(normalized_lang) if rendered_by_mms else model_name
-        )
+        effective_model = _resolve_hf_model_name(normalized_lang) if rendered_by_mms else model_name
         debug_info["model"] = effective_model
         debug_info["output"] = AUDIO_WAV_MIME
         _update_duration(debug_info, start)

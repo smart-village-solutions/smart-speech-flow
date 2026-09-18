@@ -506,9 +506,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         runtime_flow = runtime_flow_from_environment()
     except StudioRuntimeFlowError as error:
-        sys.stderr.write(
-            f"Runtime policy gate unbound ({error.code}); persistence refused\n"
-        )
+        sys.stderr.write(f"Runtime policy gate unbound ({error.code}); persistence refused\n")
         bind_runtime_policy(None)
     else:
         bind_runtime_policy(

@@ -108,9 +108,7 @@ async def get_service_health(service_name: str) -> Dict[str, Any]:
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(
-            "❌ Service Health Error", exc_info=_redacted_exception_info(e)
-        )
+        logger.exception("❌ Service Health Error", exc_info=_redacted_exception_info(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Service health check failed: {str(e)}",
@@ -141,9 +139,7 @@ async def get_circuit_breakers_status() -> Dict[str, Any]:
             "circuits": circuit_status,
         }
     except Exception as e:
-        logger.exception(
-            "❌ Circuit Breaker Status Error", exc_info=_redacted_exception_info(e)
-        )
+        logger.exception("❌ Circuit Breaker Status Error", exc_info=_redacted_exception_info(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Circuit breaker status check failed: {str(e)}",
@@ -166,9 +162,7 @@ async def get_degradation_status() -> Dict[str, Any]:
 
         return {"status": "success", "data": degradation_status}
     except Exception as e:
-        logger.exception(
-            "❌ Degradation Status Error", exc_info=_redacted_exception_info(e)
-        )
+        logger.exception("❌ Degradation Status Error", exc_info=_redacted_exception_info(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Degradation status check failed: {str(e)}",
@@ -224,9 +218,7 @@ async def reset_circuit_breaker(service_name: str) -> Dict[str, Any]:
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(
-            "❌ Circuit Breaker Reset Error", exc_info=_redacted_exception_info(e)
-        )
+        logger.exception("❌ Circuit Breaker Reset Error", exc_info=_redacted_exception_info(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Circuit breaker reset failed: {str(e)}",
@@ -363,9 +355,7 @@ async def get_health_summary() -> Dict[str, Any]:
 
         # Circuit Breaker States
         circuits = CircuitBreakerFactory.get_all_circuits()
-        circuit_states = {
-            name: circuit.state.value for name, circuit in circuits.items()
-        }
+        circuit_states = {name: circuit.state.value for name, circuit in circuits.items()}
 
         # Degradation Info
         degradation_status = await circuit_breaker_client.get_degradation_status()
@@ -397,9 +387,7 @@ async def get_health_summary() -> Dict[str, Any]:
         }
 
     except Exception as e:
-        logger.exception(
-            "❌ Health Summary Error", exc_info=_redacted_exception_info(e)
-        )
+        logger.exception("❌ Health Summary Error", exc_info=_redacted_exception_info(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Health summary generation failed: {str(e)}",

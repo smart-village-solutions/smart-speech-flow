@@ -148,11 +148,7 @@ async def require_ssf_user(
         ) from None
 
     matched_tenant = next(
-        (
-            tenant
-            for tenant in directory.tenants
-            if settings.issuer_for(tenant.realm) == issuer
-        ),
+        (tenant for tenant in directory.tenants if settings.issuer_for(tenant.realm) == issuer),
         None,
     )
     if matched_tenant is None:

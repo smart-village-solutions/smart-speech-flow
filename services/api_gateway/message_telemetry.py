@@ -87,12 +87,8 @@ class MessageTelemetryRecorder:
         self._armed = True
         self._input_mode = input_mode
 
-    def record_request(
-        self, *, client_type: Any, source_lang: str, target_lang: str
-    ) -> None:
-        self._direction = _DIRECTION_BY_SENDER.get(
-            client_type, MessageDirection.UNKNOWN
-        )
+    def record_request(self, *, client_type: Any, source_lang: str, target_lang: str) -> None:
+        self._direction = _DIRECTION_BY_SENDER.get(client_type, MessageDirection.UNKNOWN)
         self._source_lang = source_lang
         self._target_lang = target_lang
 
@@ -124,9 +120,7 @@ class MessageTelemetryRecorder:
         self._failed_stage = _member(
             PipelineStage, debug.get("failed_stage"), PipelineStage.UNKNOWN
         )
-        code = _member(
-            QualityErrorCode, debug.get("error_code"), QualityErrorCode.UNKNOWN
-        )
+        code = _member(QualityErrorCode, debug.get("error_code"), QualityErrorCode.UNKNOWN)
         # `none` on a row flagged as an error is not a classification. It has
         # been reachable before -- a TTS reply of 200 with a JSON error body
         # classified off its status code alone -- and the event's invariant

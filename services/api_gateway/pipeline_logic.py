@@ -34,25 +34,17 @@ def _build_service_url(host: str, port: int, path: str, *, scheme: str) -> str:
 
 
 if DOCKER_ENV:
-    ASR_URL = _build_service_url(
-        "asr", 8000, "/transcribe", scheme=DEFAULT_INTERNAL_SCHEME
-    )
+    ASR_URL = _build_service_url("asr", 8000, "/transcribe", scheme=DEFAULT_INTERNAL_SCHEME)
     TRANSLATION_URL = _build_service_url(
         "translation", 8000, "/translate", scheme=DEFAULT_INTERNAL_SCHEME
     )
-    TTS_URL = _build_service_url(
-        "tts", 8000, "/synthesize", scheme=DEFAULT_INTERNAL_SCHEME
-    )
+    TTS_URL = _build_service_url("tts", 8000, "/synthesize", scheme=DEFAULT_INTERNAL_SCHEME)
 else:
-    ASR_URL = _build_service_url(
-        "localhost", 8001, "/transcribe", scheme=DEFAULT_LOCAL_SCHEME
-    )
+    ASR_URL = _build_service_url("localhost", 8001, "/transcribe", scheme=DEFAULT_LOCAL_SCHEME)
     TRANSLATION_URL = _build_service_url(
         "localhost", 8002, "/translate", scheme=DEFAULT_LOCAL_SCHEME
     )
-    TTS_URL = _build_service_url(
-        "localhost", 8003, "/synthesize", scheme=DEFAULT_LOCAL_SCHEME
-    )
+    TTS_URL = _build_service_url("localhost", 8003, "/synthesize", scheme=DEFAULT_LOCAL_SCHEME)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -296,9 +288,7 @@ def _collect_audio_validation_errors(
             f"Bit depth {bit_depth}-bit, required: {specs.REQUIRED_BIT_DEPTH}-bit"
         )
     if channels != specs.REQUIRED_CHANNELS:
-        validation_errors.append(
-            f"Channels {channels}, required: {specs.REQUIRED_CHANNELS} (Mono)"
-        )
+        validation_errors.append(f"Channels {channels}, required: {specs.REQUIRED_CHANNELS} (Mono)")
     if duration_seconds < specs.MIN_DURATION_SECONDS:
         validation_errors.append(
             f"Duration {duration_seconds:.2f}s too short, minimum: {specs.MIN_DURATION_SECONDS}s"
@@ -325,9 +315,7 @@ def _normalize_audio_if_requested(
         return audio_bytes, False
 
     try:
-        normalized_bytes = normalize_audio(
-            audio_bytes, sample_rate, bit_depth, channels
-        )
+        normalized_bytes = normalize_audio(audio_bytes, sample_rate, bit_depth, channels)
         if normalized_bytes != audio_bytes:
             return normalized_bytes, True
     except Exception as exc:
@@ -473,9 +461,7 @@ def _append_text_validation_step(
             "step": "Text_Validation",
             "input": {"text_length": text_length, "enable_filtering": True},
             "output": validation_result.is_valid,
-            "error": (
-                None if validation_result.is_valid else validation_result.error_message
-            ),
+            "error": (None if validation_result.is_valid else validation_result.error_message),
             "duration": round(time.perf_counter() - start_validation, 3),
         }
     )
@@ -529,9 +515,7 @@ def _run_text_translation_step(
         "debug": str(debug).lower(),
     }
 
-    translation_resp = requests.post(
-        TRANSLATION_URL, json=translation_payload, timeout=30
-    )
+    translation_resp = requests.post(TRANSLATION_URL, json=translation_payload, timeout=30)
     translation_completed_at = utc_now()
     translation_json = translation_resp.json()
     translation_text = translation_json.get("translations", "")
@@ -633,9 +617,7 @@ def _run_text_tts_step(
     return tts_resp, tts_duration_ms, tts_started_at, tts_completed_at, start_tts
 
 
-def _run_wav_tts_step(
-    *, translation_text: str, target_lang: str, debug: bool
-) -> TTSCall:
+def _run_wav_tts_step(*, translation_text: str, target_lang: str, debug: bool) -> TTSCall:
     start_tts = time.perf_counter()
     tts_started_at = utc_now()
     tts_resp = requests.post(
@@ -672,8 +654,7 @@ def _finish_tts_stage(
     """Record the TTS step; return the pipeline error result if synthesis failed."""
     tts_resp, tts_duration_ms, tts_started_at, tts_completed_at, start_tts = tts_call
     failed = (
-        tts_resp.status_code != 200
-        or tts_resp.headers.get("content-type", "") != AUDIO_WAV_MIME
+        tts_resp.status_code != 200 or tts_resp.headers.get("content-type", "") != AUDIO_WAV_MIME
     )
     error_msg = _tts_error_message(tts_resp) if failed else None
     _append_tts_debug_step(
@@ -749,9 +730,7 @@ def _append_audio_validation_step(
         "step": "Audio_Validation",
         "input": {"file_size": original_file_size},
         "output": validation_result.is_valid,
-        "error": (
-            None if validation_result.is_valid else validation_result.error_message
-        ),
+        "error": (None if validation_result.is_valid else validation_result.error_message),
         "duration": round(time.perf_counter() - start_validation, 3),
         "details": {
             "validation_time_ms": validation_result.validation_time_ms,
@@ -829,9 +808,7 @@ def _finalize_pipeline_success(debug_info: Dict[str, Any], start_total: float) -
 # === Audio Validation Functions ===
 
 
-def validate_audio_input(
-    audio_bytes: bytes, normalize: bool = True
-) -> AudioValidationResult:
+def validate_audio_input(audio_bytes: bytes, normalize: bool = True) -> AudioValidationResult:
     """
     Comprehensive audio validation and normalization
 
@@ -952,9 +929,7 @@ def validate_audio_input(
         )
 
 
-def normalize_audio(
-    audio_bytes: bytes, sample_rate: int, bit_depth: int, channels: int
-) -> bytes:
+def normalize_audio(audio_bytes: bytes, sample_rate: int, bit_depth: int, channels: int) -> bytes:
     """
     Normalize audio for optimal ASR processing
 
@@ -1006,9 +981,7 @@ def normalize_audio(
             target_level = 0.9
             if current_max < target_level:
                 # Boost quiet audio
-                normalization_factor = min(
-                    target_level / current_max, 3.0
-                )  # Max 3x boost
+                normalization_factor = min(target_level / current_max, 3.0)  # Max 3x boost
                 audio_float *= normalization_factor
             elif current_max > target_level:
                 # Reduce loud audio
@@ -1070,17 +1043,13 @@ def convert_audio_to_required_specs(
 
     # Convert bit depth first if required
     if working_sample_width != target_sample_width:
-        working_frames = audioop.lin2lin(
-            working_frames, working_sample_width, target_sample_width
-        )
+        working_frames = audioop.lin2lin(working_frames, working_sample_width, target_sample_width)
         working_sample_width = target_sample_width
 
     # Convert to mono if needed
     if working_channels != target_channels:
         if working_channels == 2:
-            working_frames = audioop.tomono(
-                working_frames, working_sample_width, 0.5, 0.5
-            )
+            working_frames = audioop.tomono(working_frames, working_sample_width, 0.5, 0.5)
             working_channels = 1
         else:
             raise ValueError(f"Cannot convert {working_channels} channels to mono")
@@ -1119,9 +1088,7 @@ def convert_audio_to_required_specs(
 # === Text Validation and Processing ===
 
 
-def validate_text_input(
-    text: str, enable_content_filtering: bool = True
-) -> TextValidationResult:
+def validate_text_input(text: str, enable_content_filtering: bool = True) -> TextValidationResult:
     """
     Comprehensive text validation and content filtering
 
@@ -1370,14 +1337,12 @@ def process_text_pipeline(
             processed_text = text
 
         # Step 2: Translation (skip ASR entirely)
-        translation_resp, translation_json, translation_text, tts_text = (
-            _run_text_translation_step(
-                processed_text=processed_text,
-                source_lang=source_lang,
-                target_lang=target_lang,
-                debug=debug,
-                debug_info=debug_info,
-            )
+        translation_resp, translation_json, translation_text, tts_text = _run_text_translation_step(
+            processed_text=processed_text,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            debug=debug,
+            debug_info=debug_info,
         )
 
         # Translation error handling
@@ -1565,9 +1530,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
             "model": "m2m100_1.2B",
             "debug": str(debug).lower(),
         }
-        translation_resp = requests.post(
-            TRANSLATION_URL, json=translation_payload, timeout=30
-        )
+        translation_resp = requests.post(TRANSLATION_URL, json=translation_payload, timeout=30)
         translation_completed_at = utc_now()
         translation_json = translation_resp.json()
         translation_text = translation_json.get("translations", "")

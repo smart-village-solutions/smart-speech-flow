@@ -42,9 +42,7 @@ def test_admin_can_observe_only_its_session_realtime_connection() -> None:
                 acknowledgement = websocket.receive_json()
                 assert acknowledgement["type"] == "connection_ack"
 
-                connections = client.get(
-                    f"/api/admin/session/{session_id}/realtime/connections"
-                )
+                connections = client.get(f"/api/admin/session/{session_id}/realtime/connections")
                 assert connections.status_code == 200
                 body = connections.json()
                 assert body["session_id"] == session_id

@@ -46,8 +46,7 @@ jobs:
     - name: Check code formatting with Black
       run: |
         source .venv/bin/activate
-        black --check --diff services/ || echo "::warning::Black formatting issues found"
-      continue-on-error: true
+        black --check --diff services/
 
     - name: Check import sorting with isort
       run: |

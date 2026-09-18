@@ -33,9 +33,7 @@ class TestAdminRoutes:
         first_session_id = first_response.json()["session_id"]
 
         activate_payload = {"session_id": first_session_id, "customer_language": "en"}
-        activate_response = client.post(
-            "/api/customer/session/activate", json=activate_payload
-        )
+        activate_response = client.post("/api/customer/session/activate", json=activate_payload)
         assert activate_response.status_code == 200
 
         second_response = client.post("/api/admin/session/create")

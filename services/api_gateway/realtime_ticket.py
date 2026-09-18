@@ -71,9 +71,7 @@ class RealtimeTicketStore:
         ttl_seconds: int = 60,
     ) -> IssuedRealtimeTicket:
         if not 1 <= ttl_seconds <= 60:
-            raise ValueError(
-                "realtime ticket lifetime must be between 1 and 60 seconds"
-            )
+            raise ValueError("realtime ticket lifetime must be between 1 and 60 seconds")
         payload = json.dumps(
             {
                 "role": "admin",

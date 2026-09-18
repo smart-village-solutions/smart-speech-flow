@@ -73,10 +73,7 @@ class TenantPollingStore:
             client.key == key and client.client_type is client_type
             for client in self.clients.values()
         )
-        if (
-            len(self.clients) >= MAX_POLLING_CLIENTS
-            or scoped_count >= MAX_POLLING_CLIENTS_PER_ROLE
-        ):
+        if len(self.clients) >= MAX_POLLING_CLIENTS or scoped_count >= MAX_POLLING_CLIENTS_PER_ROLE:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Polling connection limit reached",
@@ -113,9 +110,7 @@ class TenantPollingStore:
 
     def prune(self) -> list[PollingClient]:
         threshold = self.clock() - POLLING_IDLE_SECONDS
-        expired = [
-            client for client in self.clients.values() if client.last_seen < threshold
-        ]
+        expired = [client for client in self.clients.values() if client.last_seen < threshold]
         for client in expired:
             self.remove(client)
         return expired
@@ -162,9 +157,7 @@ class TenantPollingStore:
             if recipient.key != key:
                 continue
             message = (
-                original_message
-                if recipient.client_type is sender_type
-                else translated_message
+                original_message if recipient.client_type is sender_type else translated_message
             )
             dropped += self._enqueue(recipient, message)
             delivered += 1
@@ -343,9 +336,7 @@ def _recover(client: PollingClient) -> dict[str, str]:
     return {"status": "recovery_requested"}
 
 
-async def _disconnect(
-    client: PollingClient, manager: WebSocketManager
-) -> dict[str, str]:
+async def _disconnect(client: PollingClient, manager: WebSocketManager) -> dict[str, str]:
     polling_store.remove(client)
     await _release_presence(client, manager)
     return {"status": "disconnected"}
@@ -414,12 +405,8 @@ def _register_role_routes(
         methods=["GET"],
         name=f"{prefix}_polling_status",
     )
-    router.add_api_route(
-        base + "/recover", recover, methods=["POST"], name=f"{prefix}_recover"
-    )
-    router.add_api_route(
-        base, disconnect, methods=["DELETE"], name=f"{prefix}_disconnect"
-    )
+    router.add_api_route(base + "/recover", recover, methods=["POST"], name=f"{prefix}_recover")
+    router.add_api_route(base, disconnect, methods=["DELETE"], name=f"{prefix}_disconnect")
 
 
 _register_role_routes("admin", ClientType.ADMIN, require_admin_session_key)

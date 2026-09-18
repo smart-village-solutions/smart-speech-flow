@@ -57,9 +57,9 @@ class EnhancedAudioValidator:
         b"\x00\x00\x00\x20ftypmp4": "mp4",
         b"\x00\x00\x00\x1cftypmp4": "mp4",
         b"ID3": "mp3",
-        b"\xFF\xFB": "mp3",
-        b"\xFF\xF3": "mp3",
-        b"\xFF\xF2": "mp3",
+        b"\xff\xfb": "mp3",
+        b"\xff\xf3": "mp3",
+        b"\xff\xf2": "mp3",
         b"OggS": "ogg",
         b"fLaC": "flac",
     }
@@ -108,16 +108,11 @@ class EnhancedAudioValidator:
 
         # Browser-generierte Formate prüfen
         for signature, format_name in self.BROWSER_FORMATS.items():
-            if (
-                audio_bytes[: len(signature)] == signature
-                or signature in audio_bytes[:100]
-            ):
+            if audio_bytes[: len(signature)] == signature or signature in audio_bytes[:100]:
                 format_info = self.SUPPORTED_FORMATS.get(format_name, {})
                 return AudioFormatDetection(
                     format_name=format_name,
-                    mime_type=format_info.get(
-                        "mime_types", [self.DEFAULT_BINARY_MIME_TYPE]
-                    )[0],
+                    mime_type=format_info.get("mime_types", [self.DEFAULT_BINARY_MIME_TYPE])[0],
                     is_wav=False,
                     is_supported_by_browser=True,
                     needs_conversion=True,
@@ -144,9 +139,7 @@ class EnhancedAudioValidator:
             confidence=0.1,
         )
 
-    def validate_and_convert_audio(
-        self, audio_bytes: bytes
-    ) -> Tuple[bool, bytes, str, dict]:
+    def validate_and_convert_audio(self, audio_bytes: bytes) -> Tuple[bool, bytes, str, dict]:
         """
         Validiere Audio und konvertiere zu WAV wenn nötig
 
@@ -185,9 +178,7 @@ class EnhancedAudioValidator:
                         "channels": channels,
                         "sample_rate": sample_rate,
                         "frames": frames,
-                        "duration_seconds": (
-                            frames / sample_rate if sample_rate > 0 else 0
-                        ),
+                        "duration_seconds": (frames / sample_rate if sample_rate > 0 else 0),
                     }
                 )
 
@@ -246,15 +237,11 @@ class EnhancedAudioValidator:
         error_message = self._generate_error_message(format_detection, details)
         return False, audio_bytes, error_message, details
 
-    def _convert_with_ffmpeg(
-        self, audio_bytes: bytes, source_format: str
-    ) -> Optional[bytes]:
+    def _convert_with_ffmpeg(self, audio_bytes: bytes, source_format: str) -> Optional[bytes]:
         """Konvertiere Audio zu 16kHz, 16-bit, Mono WAV mit FFmpeg"""
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
-                safe_suffix = (
-                    "".join(ch for ch in source_format.lower() if ch.isalnum()) or "bin"
-                )
+                safe_suffix = "".join(ch for ch in source_format.lower() if ch.isalnum()) or "bin"
                 input_fd, temp_input = tempfile.mkstemp(
                     dir=temp_dir,
                     prefix="audio_input_",
@@ -314,9 +301,7 @@ class EnhancedAudioValidator:
             logger.exception("FFmpeg conversion failed")
             return None
 
-    def _generate_error_message(
-        self, format_detection: AudioFormatDetection, details: dict
-    ) -> str:
+    def _generate_error_message(self, format_detection: AudioFormatDetection, details: dict) -> str:
         """Generiere benutzerfreundliche Fehlermeldung"""
 
         if format_detection.format_name == "unknown":
@@ -370,8 +355,8 @@ def enhanced_validate_audio_input(
 
     # 2. Enhanced Format Detection & Conversion
     validator = EnhancedAudioValidator()
-    success, converted_audio, error_message, format_details = (
-        validator.validate_and_convert_audio(audio_bytes)
+    success, converted_audio, error_message, format_details = validator.validate_and_convert_audio(
+        audio_bytes
     )
 
     if not success:

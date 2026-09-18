@@ -103,9 +103,7 @@ class RefinementOutcome:
     candidate_status: Optional[str] = None
 
 
-_CANDIDATE_EXECUTOR = ThreadPoolExecutor(
-    max_workers=1, thread_name_prefix="refinement-shadow"
-)
+_CANDIDATE_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="refinement-shadow")
 
 
 class BaseTranslationRefiner:
@@ -163,9 +161,7 @@ class BaseTranslationRefiner:
         self._emit_attempt(
             role=role,
             model_ref=model_ref,
-            outcome=(
-                RefinementOutcomeCode.ERROR if failed else RefinementOutcomeCode.SUCCESS
-            ),
+            outcome=(RefinementOutcomeCode.ERROR if failed else RefinementOutcomeCode.SUCCESS),
             latency_ms=int(outcome.latency_ms or 0),
             changed=bool(outcome.changed),
             source_lang=source_lang,
@@ -296,9 +292,9 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
                 text=text, changed=False, latency_ms=0.0, error=None, model=self.model
             )
 
-        if _is_phi4_mini_model(
-            self.model
-        ) and not _language_code_is_supported_by_phi4_mini(target_lang):
+        if _is_phi4_mini_model(self.model) and not _language_code_is_supported_by_phi4_mini(
+            target_lang
+        ):
             logger.info(
                 "Skipping Phi-4-mini refinement for unsupported target language '%s'",
                 target_lang,
@@ -373,9 +369,7 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
 class ShadowComparisonRefiner(OllamaTranslationRefiner):
     """Executes the primary model in-path and a bounded candidate job in background."""
 
-    def __init__(
-        self, *args: Any, candidate_model: str, queue_limit: int, **kwargs: Any
-    ) -> None:
+    def __init__(self, *args: Any, candidate_model: str, queue_limit: int, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.candidate_model = candidate_model
         self.queue_limit = max(1, queue_limit)
@@ -453,9 +447,7 @@ class ShadowComparisonRefiner(OllamaTranslationRefiner):
         with self.lock:
             if self.pending >= self.queue_limit:
                 outcome.candidate_status = "skipped_overload"
-                self._emit_candidate_not_run(
-                    RefinementOutcomeCode.SKIPPED_OVERLOAD, args, kwargs
-                )
+                self._emit_candidate_not_run(RefinementOutcomeCode.SKIPPED_OVERLOAD, args, kwargs)
                 return outcome
             self.pending += 1
         outcome.candidate_status = "scheduled"
@@ -466,9 +458,7 @@ class ShadowComparisonRefiner(OllamaTranslationRefiner):
                 self.pending -= 1
             outcome.candidate_status = "submission_failed"
             logger.warning("Unable to schedule shadow candidate refinement")
-            self._emit_candidate_not_run(
-                RefinementOutcomeCode.SUBMISSION_FAILED, args, kwargs
-            )
+            self._emit_candidate_not_run(RefinementOutcomeCode.SUBMISSION_FAILED, args, kwargs)
         return outcome
 
 
@@ -495,9 +485,7 @@ def get_translation_refiner() -> BaseTranslationRefiner:
     max_retries = int(os.getenv("LLM_REFINEMENT_MAX_RETRIES", "1"))
     think = _strtobool(os.getenv("LLM_REFINEMENT_THINK", "false"))
 
-    logger.info(
-        "LLM translation refinement enabled with model '%s' at %s", model, endpoint
-    )
+    logger.info("LLM translation refinement enabled with model '%s' at %s", model, endpoint)
     args = {
         "endpoint": endpoint,
         "model": model,

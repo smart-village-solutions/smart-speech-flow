@@ -120,9 +120,7 @@ async def _apply_activity_update_to_session_connections(
         )
 
         new_intervals.append(new_interval)
-        optimization_tips.extend(
-            manager.adaptive_polling.get_battery_optimization_tips(connection)
-        )
+        optimization_tips.extend(manager.adaptive_polling.get_battery_optimization_tips(connection))
 
         if new_interval != old_interval:
             await manager._send_polling_interval_update(
@@ -317,9 +315,7 @@ def _transform_pipeline_step(
         if step.get("refinement_comparison"):
             transformed_step["refinement_comparison"] = step["refinement_comparison"]
     elif step_name == "tts":
-        transformed_step["output"] = _build_tts_step_output(
-            step, target_lang, message_id
-        )
+        transformed_step["output"] = _build_tts_step_output(step, target_lang, message_id)
 
     return transformed_step
 
@@ -468,9 +464,7 @@ def _raise_if_upstream_busy(result: Dict[str, Any]) -> None:
     if result.get("error_code") != UPSTREAM_BUSY_ERROR_CODE:
         return
 
-    retry_after = int(
-        result.get("retry_after_seconds", DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS)
-    )
+    retry_after = int(result.get("retry_after_seconds", DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS))
     raise HTTPException(
         status_code=503,
         detail=create_error_response(
@@ -607,16 +601,12 @@ async def _parse_text_request(request: Request) -> TextMessageRequest:
             sanitize_log_value(
                 {
                     "keys": sorted(body.keys()) if isinstance(body, dict) else [],
-                    "has_text": (
-                        bool(body.get("text")) if isinstance(body, dict) else False
-                    ),
+                    "has_text": (bool(body.get("text")) if isinstance(body, dict) else False),
                 }
             ),
         )
     except Exception as e:
-        logger.exception(
-            "❌ Failed to parse JSON", exc_info=_redacted_exception_info(e)
-        )
+        logger.exception("❌ Failed to parse JSON", exc_info=_redacted_exception_info(e))
         raise HTTPException(
             status_code=400,
             detail=create_error_response("INVALID_JSON", "Invalid JSON", {}),
@@ -637,9 +627,7 @@ def _build_text_validation_error(
 
     if error_type == "string_too_long":
         max_length = error_details.get("ctx", {}).get("max_length", 500)
-        actual_length = (
-            len(body.get(field_name, "")) if body and field_name in body else "unknown"
-        )
+        actual_length = len(body.get(field_name, "")) if body and field_name in body else "unknown"
         user_message = (
             f"Der Text ist zu lang. Maximum: {max_length} Zeichen, "
             f"Ihre Eingabe: {actual_length} Zeichen."
@@ -675,9 +663,7 @@ def _build_text_validation_error(
 class TextMessageRequest(BaseModel):
     """Request-Model für Text-Input"""
 
-    text: str = Field(
-        ..., min_length=1, max_length=500, description="Text content to translate"
-    )
+    text: str = Field(..., min_length=1, max_length=500, description="Text content to translate")
     source_lang: str = Field(..., description="Source language code")
     target_lang: str = Field(..., description="Target language code")
 
@@ -705,9 +691,7 @@ class MessageResponse(BaseModel):
     audio_url: Optional[str] = Field(None, description="URL to audio file if available")
 
     # Processing Information
-    processing_time_ms: int = Field(
-        ..., description="Total processing time in milliseconds"
-    )
+    processing_time_ms: int = Field(..., description="Total processing time in milliseconds")
     pipeline_type: str = Field(..., description="Pipeline used (audio or text)")
 
     # Language Information
@@ -731,9 +715,7 @@ class MessageResponse(BaseModel):
                 "original_text": "Hallo, wie kann ich helfen?",
                 "translated_text": "Hello, how can I help?",
                 "audio_available": True,
-                "audio_url": (
-                    "/api/admin/session/ABC12345/audio/msg_12345/translated.wav"
-                ),
+                "audio_url": ("/api/admin/session/ABC12345/audio/msg_12345/translated.wav"),
                 "processing_time_ms": 2500,
                 "pipeline_type": "audio",
                 "source_lang": "de",
@@ -750,9 +732,7 @@ class ErrorResponse(BaseModel):
     status: str = Field(default="error", description="Error status")
     error_code: str = Field(..., description="Error code")
     error_message: str = Field(..., description="Human-readable error message")
-    details: Optional[Dict[str, Any]] = Field(
-        None, description="Additional error details"
-    )
+    details: Optional[Dict[str, Any]] = Field(None, description="Additional error details")
     timestamp: str = Field(..., description="Error timestamp")
 
     model_config = ConfigDict(
@@ -770,9 +750,7 @@ class ErrorResponse(BaseModel):
 
 BAD_REQUEST_RESPONSE = {400: {"model": ErrorResponse, "description": "Bad request"}}
 NOT_FOUND_RESPONSE = {404: {"model": ErrorResponse, "description": "Not found"}}
-SERVER_ERROR_RESPONSE = {
-    500: {"model": ErrorResponse, "description": "Internal server error"}
-}
+SERVER_ERROR_RESPONSE = {500: {"model": ErrorResponse, "description": "Internal server error"}}
 # Pipeline capacity is bounded (#191): one GPU hosts ASR, translation and TTS.
 # Carries error_code SYSTEM_BUSY and a Retry-After header; retrying works.
 SERVICE_BUSY_RESPONSE = {
@@ -808,19 +786,13 @@ ACTIVITY_ROUTE_RESPONSES = {
 class ClientActivityUpdate(BaseModel):
     """Client-Activity-Status-Update für Mobile-Optimization"""
 
-    is_mobile: Optional[bool] = Field(
-        None, description="Whether client is mobile device"
-    )
-    tab_active: Optional[bool] = Field(
-        None, description="Whether tab is currently active/visible"
-    )
+    is_mobile: Optional[bool] = Field(None, description="Whether client is mobile device")
+    tab_active: Optional[bool] = Field(None, description="Whether tab is currently active/visible")
     battery_level: Optional[float] = Field(
         None, ge=0.0, le=1.0, description="Battery level (0.0-1.0)"
     )
     is_charging: Optional[bool] = Field(None, description="Whether device is charging")
-    network_quality: Optional[str] = Field(
-        None, description="Network quality: good, slow, offline"
-    )
+    network_quality: Optional[str] = Field(None, description="Network quality: good, slow, offline")
     connection_type: Optional[str] = Field(
         None, description="Connection type: wifi, cellular, offline"
     )
@@ -833,12 +805,8 @@ class ActivityUpdateResponse(BaseModel):
     """Response für Activity-Update"""
 
     status: str = Field(..., description="Update status")
-    new_polling_interval: int = Field(
-        ..., description="New polling interval in seconds"
-    )
-    optimization_tips: List[str] = Field(
-        ..., description="Battery/Performance optimization tips"
-    )
+    new_polling_interval: int = Field(..., description="New polling interval in seconds")
+    optimization_tips: List[str] = Field(..., description="Battery/Performance optimization tips")
     session_id: str = Field(..., description="Session ID")
     timestamp: str = Field(..., description="Update timestamp")
 
@@ -991,9 +959,7 @@ async def process_audio_input(
     """Audio-Input verarbeiten (multipart/form-data)"""
     # A recorder nobody armed emits nothing, so a direct caller -- every test
     # that drives this function without the route -- needs to pass nothing.
-    recorder = recorder or MessageTelemetryRecorder(
-        session_id=key, start_time=start_time
-    )
+    recorder = recorder or MessageTelemetryRecorder(session_id=key, start_time=start_time)
     # Before the pipeline: a malformed header is the caller's mistake and must
     # not cost a pipeline run.
     correlation_id = _correlation_id_for(request)
@@ -1045,9 +1011,7 @@ async def process_audio_input(
 
     message_id = str(uuid.uuid4())
     audio_bytes = result.get("audio_bytes")
-    original_audio_available = _store_audio_artifacts(
-        key, client_type, message_id, file_bytes
-    )
+    original_audio_available = _store_audio_artifacts(key, client_type, message_id, file_bytes)
 
     pipeline_metadata = transform_pipeline_metadata(
         result.get("debug"),
@@ -1096,9 +1060,7 @@ async def process_text_input(
 ) -> MessageResponse:
     """Text-Input verarbeiten (application/json)"""
     session_id = key.session_id
-    recorder = recorder or MessageTelemetryRecorder(
-        session_id=key, start_time=start_time
-    )
+    recorder = recorder or MessageTelemetryRecorder(session_id=key, start_time=start_time)
     correlation_id = _correlation_id_for(request)
     text_request = await _parse_text_request(request)
     recorder.record_request(
@@ -1247,9 +1209,7 @@ async def create_session_message(
             )
             translated_audio_available = True
         except Exception as error:
-            logger.warning(
-                "⚠️ Failed to save translated audio: %s", type(error).__name__
-            )
+            logger.warning("⚠️ Failed to save translated audio: %s", type(error).__name__)
 
     message = SessionMessage(
         id=resolved_message_id,
@@ -1277,9 +1237,7 @@ async def create_session_message(
     try:
         # Only attempt broadcasting if a WebSocketManager was provided
         if manager is not None:
-            result = await broadcast_message_to_session(
-                session_id, message, client_type, manager
-            )
+            result = await broadcast_message_to_session(session_id, message, client_type, manager)
         else:
             # No manager available (e.g., unit tests running without DI)
             # Return a noop-like result object to keep behaviour consistent
@@ -1351,9 +1309,7 @@ async def create_session_message(
         # content this loses is content nothing will retain.
         logger.warning(
             "persistence_authorization_not_recorded | %s",
-            sanitize_log_value(
-                {"session_ref": _safe_identifier(session_id.session_id)}
-            ),
+            sanitize_log_value({"session_ref": _safe_identifier(session_id.session_id)}),
         )
 
     return message
@@ -1385,9 +1341,7 @@ async def broadcast_message_to_session(
         sender_type=sender_type.value,
     )
 
-    receiver_type = (
-        ClientType.CUSTOMER if sender_type is ClientType.ADMIN else ClientType.ADMIN
-    )
+    receiver_type = ClientType.CUSTOMER if sender_type is ClientType.ADMIN else ClientType.ADMIN
 
     pipeline_input = (
         message.pipeline_metadata.get("input")
@@ -1525,9 +1479,7 @@ async def get_message_audio(message_id: str):
                 return Response(
                     content=audio_bytes,
                     media_type="audio/wav",
-                    headers={
-                        "Content-Disposition": f"inline; filename=message_{message_id}.wav"
-                    },
+                    headers={"Content-Disposition": f"inline; filename=message_{message_id}.wav"},
                 )
 
     raise HTTPException(404, "Audio file not found")
@@ -1594,14 +1546,10 @@ async def update_client_activity(
         raise HTTPException(400, "Session ist nicht aktiv")
 
     if not manager.get_session_connections(session_id):
-        raise HTTPException(
-            400, "Keine aktiven WebSocket-Verbindungen für diese Session"
-        )
+        raise HTTPException(400, "Keine aktiven WebSocket-Verbindungen für diese Session")
 
-    new_intervals, optimization_tips = (
-        await _apply_activity_update_to_session_connections(
-            manager, session_id, activity
-        )
+    new_intervals, optimization_tips = await _apply_activity_update_to_session_connections(
+        manager, session_id, activity
     )
 
     # Session-Aktivität aktualisieren (für Timeout-Management)
@@ -1620,9 +1568,7 @@ async def update_client_activity(
     )
 
 
-async def websocket_endpoint(
-    websocket: WebSocket, session_id: str, client_type: str
-) -> None:
+async def websocket_endpoint(websocket: WebSocket, session_id: str, client_type: str) -> None:
     """WebSocket für Echtzeit-Updates (optional für später)"""
     await websocket.accept()
 

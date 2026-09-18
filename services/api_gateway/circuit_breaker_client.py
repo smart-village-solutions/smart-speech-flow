@@ -97,15 +97,11 @@ class CircuitBreakerServiceClient:
 
         except CircuitBreakerOpenError as e:
             logger.warning(f"🔴 ASR Circuit Breaker OPEN: {e}")
-            return await graceful_degradation_manager.handle_service_failure(
-                "asr", request_data, e
-            )
+            return await graceful_degradation_manager.handle_service_failure("asr", request_data, e)
 
         except Exception as e:
             logger.exception("ASR service request failed")
-            return await graceful_degradation_manager.handle_service_failure(
-                "asr", request_data, e
-            )
+            return await graceful_degradation_manager.handle_service_failure("asr", request_data, e)
 
     async def _perform_asr_request(
         self, audio_data: bytes, source_lang: str, debug: bool
@@ -115,9 +111,7 @@ class CircuitBreakerServiceClient:
 
         # Multipart Form Data für Audio Upload
         form_data = aiohttp.FormData()
-        form_data.add_field(
-            "file", audio_data, filename="input.wav", content_type="audio/wav"
-        )
+        form_data.add_field("file", audio_data, filename="input.wav", content_type="audio/wav")
         form_data.add_field("lang", source_lang)
         form_data.add_field("debug", str(debug).lower())
 
@@ -272,15 +266,11 @@ class CircuitBreakerServiceClient:
 
         except CircuitBreakerOpenError as e:
             logger.warning(f"🔴 TTS Circuit Breaker OPEN: {e}")
-            return await graceful_degradation_manager.handle_service_failure(
-                "tts", request_data, e
-            )
+            return await graceful_degradation_manager.handle_service_failure("tts", request_data, e)
 
         except Exception as e:
             logger.exception("TTS service request failed")
-            return await graceful_degradation_manager.handle_service_failure(
-                "tts", request_data, e
-            )
+            return await graceful_degradation_manager.handle_service_failure("tts", request_data, e)
 
     async def _perform_tts_request(
         self, text: str, target_lang: str, voice_id: str, debug: bool

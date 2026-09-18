@@ -19,9 +19,7 @@ def test_health():
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="GPU nicht verfügbar")
 def test_gpu_used():
     # Lade ein Modell durch Synthese-Request
-    synth_response = client.post(
-        "/synthesize", json={"text": "Hallo Welt", "lang": "de"}
-    )
+    synth_response = client.post("/synthesize", json={"text": "Hallo Welt", "lang": "de"})
     assert synth_response.status_code == 200
     # Prüfe Health-Status
     response = client.get("/health")

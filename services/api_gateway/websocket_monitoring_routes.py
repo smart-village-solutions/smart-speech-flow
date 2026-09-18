@@ -33,9 +33,7 @@ def _serialize_connection(metrics, connection_id: str | None = None) -> dict:
         "client_type": metrics.client_type,
         "origin": metrics.origin,
         "connect_time": metrics.connect_time.isoformat(),
-        "last_heartbeat": (
-            metrics.last_heartbeat.isoformat() if metrics.last_heartbeat else None
-        ),
+        "last_heartbeat": (metrics.last_heartbeat.isoformat() if metrics.last_heartbeat else None),
         "messages_sent": metrics.messages_sent,
         "messages_received": metrics.messages_received,
         "bytes_sent": metrics.bytes_sent,
@@ -98,9 +96,7 @@ def websocket_connection_stats():
 
 
 def list_active_connections(
-    session_id: Annotated[
-        Optional[str], Query(description="Filter by session ID")
-    ] = None,
+    session_id: Annotated[Optional[str], Query(description="Filter by session ID")] = None,
     client_type: Annotated[
         Optional[str], Query(description="Filter by client type (admin/customer)")
     ] = None,
@@ -166,9 +162,7 @@ def get_session_connections(session_id: str):
     Get all WebSocket connections for a specific session
     """
     try:
-        session_connections = get_websocket_monitor().get_session_connections(
-            session_id
-        )
+        session_connections = get_websocket_monitor().get_session_connections(session_id)
 
         if not session_connections:
             raise HTTPException(
@@ -176,9 +170,7 @@ def get_session_connections(session_id: str):
                 detail=f"No active WebSocket connections found for session {session_id}",
             )
 
-        serialized_connections = [
-            _serialize_connection(metrics) for metrics in session_connections
-        ]
+        serialized_connections = [_serialize_connection(metrics) for metrics in session_connections]
 
         return JSONResponse(
             status_code=200,
@@ -232,9 +224,7 @@ def websocket_metrics_summary(
             },
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to generate metrics summary: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to generate metrics summary: {str(e)}")
 
 
 def force_close_connection(
@@ -274,9 +264,7 @@ def force_close_connection(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to force close connection: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to force close connection: {str(e)}")
 
 
 def get_prometheus_metrics():

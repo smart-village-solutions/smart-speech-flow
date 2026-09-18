@@ -6,9 +6,10 @@ repos:
   - repo: https://github.com/psf/black
     rev: 24.10.0
     hooks:
+      # No line-length arg: Black reads [tool.black] in pyproject.toml, so
+      # pre-commit and CI cannot disagree the way they did at 88 vs 100.
       - id: black
         language_version: python3.12
-        args: [--line-length=88]
         files: ^services/.*\.py$
 
   # Import Sorting

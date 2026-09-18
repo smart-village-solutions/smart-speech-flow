@@ -145,9 +145,7 @@ class CircuitBreaker:
                 slack = max(0.2, timeout * 0.1)
                 effective_timeout = timeout + slack
 
-            result = await asyncio.wait_for(
-                func(*args, **kwargs), timeout=effective_timeout
-            )
+            result = await asyncio.wait_for(func(*args, **kwargs), timeout=effective_timeout)
 
             # Success Handling
             execution_time = time.time() - start_time
@@ -157,9 +155,7 @@ class CircuitBreaker:
         except asyncio.TimeoutError:
             execution_time = time.time() - start_time
             await self._on_failure(f"Timeout nach {execution_time:.2f}s")
-            raise TimeoutError(
-                f"Service '{self.name}' Timeout nach {execution_time:.2f}s"
-            )
+            raise TimeoutError(f"Service '{self.name}' Timeout nach {execution_time:.2f}s")
 
         except Exception as e:
             execution_time = time.time() - start_time
@@ -177,9 +173,7 @@ class CircuitBreaker:
         if len(self.response_times) > 100:  # Sliding window
             self.response_times.pop(0)
 
-        self.health.average_response_time = sum(self.response_times) / len(
-            self.response_times
-        )
+        self.health.average_response_time = sum(self.response_times) / len(self.response_times)
 
         # State Management
         if self.state == CircuitState.HALF_OPEN:
@@ -208,9 +202,7 @@ class CircuitBreaker:
             # Zurück zu OPEN bei Fehler im Test
             await self._open_circuit()
 
-        logger.warning(
-            f"❌ '{self.name}' Failure: {error} (Count: {self.failure_count})"
-        )
+        logger.warning(f"❌ '{self.name}' Failure: {error} (Count: {self.failure_count})")
 
     async def _open_circuit(self):
         """Öffnet Circuit Breaker - Service wird blockiert"""
@@ -243,9 +235,7 @@ class CircuitBreaker:
         self.health.current_state = self.state
 
         await self._notify_state_change(old_state, self.state)
-        logger.info(
-            f"🟢 Circuit Breaker '{self.name}' CLOSED - Service wieder verfügbar"
-        )
+        logger.info(f"🟢 Circuit Breaker '{self.name}' CLOSED - Service wieder verfügbar")
 
     async def _attempt_reset(self):
         """Versucht Circuit zu schließen (HALF_OPEN State)"""
@@ -255,9 +245,7 @@ class CircuitBreaker:
         self.health.current_state = self.state
 
         await self._notify_state_change(old_state, self.state)
-        logger.info(
-            f"🟡 Circuit Breaker '{self.name}' HALF_OPEN - Teste Service Verfügbarkeit"
-        )
+        logger.info(f"🟡 Circuit Breaker '{self.name}' HALF_OPEN - Teste Service Verfügbarkeit")
 
     def _should_attempt_reset(self) -> bool:
         """Prüft ob Reset-Versuch erlaubt ist"""
@@ -271,9 +259,7 @@ class CircuitBreaker:
             return 0.0
         return max(0.0, self.next_attempt_time - time.time())
 
-    async def _notify_state_change(
-        self, old_state: CircuitState, new_state: CircuitState
-    ):
+    async def _notify_state_change(self, old_state: CircuitState, new_state: CircuitState):
         """Benachrichtigt über State Changes"""
         if self.on_state_change:
             try:
@@ -302,14 +288,10 @@ class CircuitBreaker:
             },
             "last_events": {
                 "last_failure": (
-                    self.health.last_failure.isoformat()
-                    if self.health.last_failure
-                    else None
+                    self.health.last_failure.isoformat() if self.health.last_failure else None
                 ),
                 "last_success": (
-                    self.health.last_success.isoformat()
-                    if self.health.last_success
-                    else None
+                    self.health.last_success.isoformat() if self.health.last_success else None
                 ),
             },
         }
