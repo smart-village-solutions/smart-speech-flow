@@ -1,4 +1,4 @@
-name: CI — Pytest (tests/ only)
+name: CI — Pytest (tests/ and the per-service suites)
 
 on:
   push:

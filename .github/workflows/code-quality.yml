@@ -172,6 +172,10 @@ jobs:
         # requirements-dev.txt pins mypy; installing it unpinned first only
         # hides which version actually runs.
         pip install -r requirements-dev.txt
+        # Without the gateway's own dependencies, --ignore-missing-imports
+        # resolves fastapi, aiohttp and redis to Any and the gate cannot see a
+        # mistyped call into any of them.
+        pip install -r services/api_gateway/requirements.txt
         pip install types-requests types-redis
 
     - name: Run MyPy type checking
