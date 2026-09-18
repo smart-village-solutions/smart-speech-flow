@@ -158,9 +158,14 @@ def permissive_runtime_policy():
         async def authorize(self, tenant_id, consent_status, correlation_id):
             return PolicyDecision(True, PolicyReason.GRANTED)
 
+    from services.api_gateway.runtime_policy import current_runtime_policy
+
+    previous = current_runtime_policy()
     bind_runtime_policy(_AlwaysAuthorized())
     yield
-    bind_runtime_policy(None)
+    # Restore rather than unbind: an unconditional None would clobber a
+    # binding established by any wider-scoped fixture.
+    bind_runtime_policy(previous)
 
 
 def pytest_collection_modifyitems(config, items):  # pragma: no cover - exercised via pytest hooks

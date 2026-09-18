@@ -162,3 +162,30 @@ async def test_a_terminated_session_does_not_fail_a_delivered_message(
     )
 
     assert message.translated_audio_available is True
+
+
+async def test_the_production_default_refuses_when_no_gate_is_bound(audio_dir):
+    """conftest binds a permissive gate for every suite; this asserts the real
+    default it hides.
+
+    An unbound gate is what a process with no Studio configuration runs with,
+    and it must retain nothing.
+    """
+    bind_runtime_policy(None)
+    key = await _session_with_consent(ConsentStatus.GRANTED)
+
+    message = await session_routes.create_session_message(
+        key,
+        ClientType.CUSTOMER,
+        "hallo",
+        "hello",
+        b"audio-bytes",
+        "de",
+        "en",
+    )
+
+    assert message.record_authorized is False
+    assert message.original_audio_authorized is False
+    assert message.translated_audio_authorized is False
+    # And the conversation itself is untouched.
+    assert message.translated_audio_available is True
