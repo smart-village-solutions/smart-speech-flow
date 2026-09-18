@@ -7,6 +7,7 @@ Speichert Sessions in-memory (für Entwicklung) oder Redis (für Produktion)
 from __future__ import annotations
 
 import asyncio
+import copy
 import hmac
 import json
 import logging
@@ -365,6 +366,30 @@ class Session:
         return session
 
 
+def _mark_translated_audio_gone(metadata: Optional[Dict[str, Any]]) -> None:
+    """Record that a step's translated audio is no longer available.
+
+    `scope_pipeline_audio_urls` rebuilds a translated URL from a step output
+    that carries `audio_url` or `audio_available: True`, so both have to stop
+    saying the audio is there. The key is set to False rather than removed:
+    a step that produced no audio still reports that it produced none.
+    """
+    if not isinstance(metadata, dict):
+        return
+    steps = metadata.get("steps")
+    if not isinstance(steps, list):
+        return
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        output = step.get("output")
+        if not isinstance(output, dict):
+            continue
+        if "audio_url" in output or output.get("audio_available") is True:
+            output.pop("audio_url", None)
+            output["audio_available"] = False
+
+
 class SessionManager:
     quality_telemetry: Optional[Any] = None
 
@@ -712,6 +737,14 @@ class SessionManager:
                     admin_connection_count=0,
                     customer_connection_count=0,
                 )
+                # `replace` copies the message list by reference, so settling
+                # it would reach back into the running conversation and strip
+                # audio references from messages whose files are still on disk.
+                # The terminal record gets its own messages; the live session
+                # is untouched until the commit succeeds.
+                terminal_session.messages = [
+                    copy.deepcopy(message) for message in session.messages
+                ]
                 # The pruned message list is part of the record being
                 # committed. The files it drops are deleted only once that
                 # commit has succeeded: a store failure here is transient and
@@ -719,9 +752,16 @@ class SessionManager:
                 # for a session that is still live.
                 _, doomed_audio = self._settle_refused_content(terminal_session)
                 committed_terminal = self.store.terminate(terminal_session)
+                # A store may accept the termination while keeping a terminal
+                # record it already held, discarding the payload settled here.
+                # Only delete artefacts when this payload is the committed one.
+                # `None` means the store reported success without echoing a
+                # record, which the fakes do; that is this payload.
+                payload_committed = committed_terminal in (None, terminal_session)
                 if committed_terminal is None:
                     committed_terminal = terminal_session
-                self._delete_settled_audio(session_id, doomed_audio)
+                if payload_committed and doomed_audio:
+                    self._delete_settled_audio(session_id, doomed_audio)
 
                 # Preserve references held by handlers while replacing every
                 # cached field with Redis' canonical terminal snapshot. This
@@ -1082,23 +1122,35 @@ class SessionManager:
                 doomed.append((message.id, AudioVariant.TRANSLATED))
                 changed = True
                 continue
-            if not message.original_audio_authorized:
+            # An artefact that was never produced reports as unauthorised too,
+            # because no read was taken for it. Only clear markers that
+            # actually describe audio this message had.
+            pipeline_input = (
+                message.pipeline_metadata.get("input")
+                if isinstance(message.pipeline_metadata, dict)
+                else None
+            )
+            had_original = bool(message.original_audio_url) or (
+                isinstance(pipeline_input, dict)
+                and pipeline_input.get("type") == "audio"
+            )
+            if had_original and not message.original_audio_authorized:
                 doomed.append((message.id, AudioVariant.ORIGINAL))
                 # Both markers, or `conversation_service` still derives an
                 # original-audio URL for a file that is gone.
                 message.original_audio_url = None
-                pipeline_input = (
-                    message.pipeline_metadata.get("input")
-                    if isinstance(message.pipeline_metadata, dict)
-                    else None
-                )
                 if isinstance(pipeline_input, dict):
                     pipeline_input.pop("type", None)
                 changed = True
-            if not message.translated_audio_authorized:
+            if message.translated_audio_available and (
+                not message.translated_audio_authorized
+            ):
                 doomed.append((message.id, AudioVariant.TRANSLATED))
-                # A retained message must not advertise audio it no longer has.
+                # A retained message must not advertise audio it no longer has,
+                # on either marker: `scope_pipeline_audio_urls` rebuilds a
+                # translated URL from the step outputs alone.
                 message.translated_audio_available = False
+                _mark_translated_audio_gone(message.pipeline_metadata)
                 changed = True
             retained.append(message)
         session.messages = retained
@@ -1156,23 +1208,48 @@ class SessionManager:
             if session.status is SessionStatus.TERMINATED:
                 continue
             try:
+                # Settled on a copy, exactly as termination does. A failed
+                # write must leave the live session and its files untouched,
+                # or the next pass sees an already-pruned list, computes an
+                # empty deletion set, and the refused files are stranded.
+                working = replace(session)
+                working.messages = [
+                    copy.deepcopy(message) for message in session.messages
+                ]
                 changed = False
                 doomed_audio: list[tuple[str, Any]] = []
+                refused_delta = 0
+                expired_delta = 0
                 max_age = timedelta(hours=session.maximum_lifetime_hours)
                 if now - session.created_at >= max_age:
-                    before = len(session.messages)
-                    changed, doomed_audio = self._settle_refused_content(session)
-                    refused_removed += before - len(session.messages)
+                    before = len(working.messages)
+                    changed, doomed_audio = self._settle_refused_content(working)
+                    refused_delta = before - len(working.messages)
                 if keep_for:
                     cutoff = now - timedelta(hours=keep_for)
-                    retained = [m for m in session.messages if m.timestamp > cutoff]
-                    if len(retained) != len(session.messages):
+                    retained = [m for m in working.messages if m.timestamp > cutoff]
+                    if len(retained) != len(working.messages):
                         changed = True
-                    expired_removed += len(session.messages) - len(retained)
-                    session.messages = retained
-                if changed:
+                    expired_delta = len(working.messages) - len(retained)
+                    working.messages = retained
+                if not changed:
+                    continue
+
+                previous = session.messages
+                session.messages = working.messages
+                try:
                     self._persist_swept_session(session)
-                    self._delete_settled_audio(session.key, doomed_audio)
+                except Exception:
+                    session.messages = previous
+                    raise
+
+                # `Session.key` raises without a tenant, and a legacy
+                # session never yields artefacts to delete anyway.
+                key = self._tenant_key_for(session)
+                if key is not None and doomed_audio:
+                    self._delete_settled_audio(key, doomed_audio)
+                refused_removed += refused_delta
+                expired_removed += expired_delta
             except Exception:  # noqa: BLE001 - one session must not stop the pass
                 logger.warning(
                     "content_sweep_failed",

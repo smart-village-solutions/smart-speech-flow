@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 
 from services.api_gateway import audio_storage
-from services.api_gateway.audio_storage import retention_hours
+from services.api_gateway.audio_storage import (
+    AudioVariant,
+    audio_path,
+    retention_hours,
+    save_audio,
+)
 from services.api_gateway.session_manager import (
     ClientType,
     SessionManager,
@@ -227,3 +232,95 @@ async def test_an_audio_only_removal_is_persisted(
     stored = strict_manager.store.load(session.key)
     assert len(stored.messages) == 1
     assert stored.messages[0].translated_audio_available is False
+
+
+async def test_a_legacy_session_sweeps_without_logging_a_failure(
+    manager, audio_dir, monkeypatch, caplog
+):
+    """`Session.key` raises without a tenant, and the sweep read it blindly.
+
+    The prune commits first, so the ValueError is pure noise -- but it is
+    logged as a sweep failure on every hourly pass and makes the legacy branch
+    of the persist helper unreachable.
+    """
+    import logging
+
+    from services.api_gateway.session_manager import Session
+
+    monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
+    legacy = Session(id="LEGACY01")
+    legacy.created_at = NOW - timedelta(hours=25)
+    legacy.messages = [
+        SessionMessage(
+            id="m1",
+            sender=ClientType.CUSTOMER,
+            original_text="hallo",
+            translated_text="hello",
+            audio_base64=None,
+            source_lang="de",
+            target_lang="en",
+            timestamp=NOW - timedelta(hours=25),
+            record_authorized=True,
+        )
+    ]
+    manager.sessions[legacy.id] = legacy
+
+    with caplog.at_level(logging.WARNING):
+        manager.sweep_expired_content(NOW)
+
+    assert legacy.messages == []
+    assert "content_sweep_failed" not in caplog.text
+
+
+async def test_a_failed_sweep_write_retries_on_the_next_pass(
+    strict_manager, audio_dir, monkeypatch
+):
+    """A sweep that prunes before committing strands the files it meant to drop.
+
+    `terminate_session` settles a copy and deletes only after the commit. The
+    sweep must do the same: pruning the live list first means the next pass
+    sees nothing refused, returns an empty deletion list, and the files are
+    never removed while Redis still holds the unpruned record.
+    """
+    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
+    session = await strict_manager.create_admin_session("tenant-test", SNAPSHOT)
+    session.created_at = NOW - timedelta(hours=9)
+    strict_manager.add_message(
+        session.key,
+        SessionMessage(
+            id="m1",
+            sender=ClientType.CUSTOMER,
+            original_text="hallo",
+            translated_text="hello",
+            audio_base64=None,
+            source_lang="de",
+            target_lang="en",
+            timestamp=NOW - timedelta(hours=9),
+            record_authorized=False,
+        ),
+    )
+    save_audio(session.key, "m1", AudioVariant.TRANSLATED, b"wav", base_dir=audio_dir)
+
+    failed = {"count": 0}
+    real_save = strict_manager.store.save
+
+    def _flaky(sess):
+        if failed["count"] == 0:
+            failed["count"] += 1
+            raise SessionStoreConsistencyError("transient")
+        return real_save(sess)
+
+    monkeypatch.setattr(strict_manager.store, "save", _flaky)
+
+    strict_manager.sweep_expired_content(NOW)
+    # The write failed, so nothing may have been removed yet.
+    assert len(strict_manager.store.load(session.key).messages) == 1
+    assert audio_path(
+        session.key, "m1", AudioVariant.TRANSLATED, base_dir=audio_dir
+    ).exists()
+
+    strict_manager.sweep_expired_content(NOW)
+    assert strict_manager.store.load(session.key).messages == []
+    assert not audio_path(
+        session.key, "m1", AudioVariant.TRANSLATED, base_dir=audio_dir
+    ).exists()

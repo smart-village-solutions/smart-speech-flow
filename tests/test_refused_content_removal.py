@@ -205,9 +205,12 @@ async def test_a_failed_termination_leaves_the_audio_in_place(
     conversation that is still running.
     """
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
-    manager.add_message(
-        session.key, _message("m1", record=False, original=False, translated=False)
-    )
+    # Retained record, refused artefacts: the branch that mutates the message
+    # in place rather than dropping it.
+    doomed = _message("m1", record=True, original=False, translated=False)
+    doomed.original_audio_url = "available"
+    doomed.pipeline_metadata = {"input": {"type": "audio"}}
+    manager.add_message(session.key, doomed)
     for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
         save_audio(session.key, "m1", variant, b"wav", base_dir=audio_dir)
 
@@ -221,5 +224,93 @@ async def test_a_failed_termination_leaves_the_audio_in_place(
 
     for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
         assert audio_path(session.key, "m1", variant, base_dir=audio_dir).exists()
-    # The live session still has the message it is still able to deliver.
-    assert len(manager.get_session(session.key).messages) == 1
+    # The live session still has the message it is still able to deliver, with
+    # its audio references intact. `replace()` is a shallow copy, so settling
+    # the terminal record must not reach back into the running conversation.
+    live = manager.get_session(session.key).messages
+    assert len(live) == 1
+    assert live[0].translated_audio_available is True
+    assert live[0].original_audio_url == "available"
+    assert live[0].pipeline_metadata["input"]["type"] == "audio"
+
+
+async def test_refused_translated_audio_leaves_no_url_in_pipeline_metadata(
+    manager, audio_dir, monkeypatch
+):
+    """The translated side needs the same clearing as the original side.
+
+    `scope_pipeline_audio_urls` regenerates a scoped translated URL from
+    `steps[*].output`, so clearing `translated_audio_available` alone still
+    emits a URL for a file `_delete_settled_audio` just unlinked.
+    """
+    from services.api_gateway.conversation_service import conversation_service
+
+    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    message = _message("m1", record=True, original=True, translated=False)
+    message.pipeline_metadata = {
+        "steps": [
+            {"step": "TTS", "output": {"audio_available": True, "audio_url": "x.wav"}}
+        ]
+    }
+    manager.add_message(session.key, message)
+    for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
+        save_audio(session.key, "m1", variant, b"wav", base_dir=audio_dir)
+
+    await manager.terminate_session(session.key, reason="test")
+
+    monkeypatch.setattr(
+        "services.api_gateway.conversation_service.session_manager", manager
+    )
+    monkeypatch.setattr(
+        "services.api_gateway.conversation_service.audio_path",
+        lambda key, mid, variant: audio_path(key, mid, variant, base_dir=audio_dir),
+    )
+    item = conversation_service.messages(session.key, ClientType.ADMIN)[0]
+    emitted = repr(item.get("pipeline_metadata"))
+    assert "audio_url" not in emitted
+    assert "translated.wav" not in emitted
+
+
+async def test_a_consented_text_message_keeps_its_metadata(manager, audio_dir):
+    """"Not authorised" and "never existed" are different things.
+
+    `authorize_message_artifacts` reports False for an artefact that was never
+    produced, so a text message arrives here with `original_audio_authorized`
+    false. Treating that as a refusal stripped `input.type` from a record the
+    guest consented to, and the frontend renders that field.
+    """
+    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    message = _message("m1", record=True, original=False, translated=True)
+    message.pipeline_metadata = {
+        "input": {"type": "text", "source_lang": "de"},
+        "steps": [{"step": "TTS", "output": {"audio_available": True}}],
+    }
+    manager.add_message(session.key, message)
+    save_audio(session.key, "m1", AudioVariant.TRANSLATED, b"wav", base_dir=audio_dir)
+
+    await manager.terminate_session(session.key, reason="test")
+
+    retained = manager.get_session(session.key).messages[0]
+    assert retained.pipeline_metadata["input"]["type"] == "text"
+    assert retained.pipeline_metadata["steps"][0]["output"]["audio_available"] is True
+
+
+async def test_a_message_without_tts_audio_keeps_its_negative_marker(
+    manager, audio_dir
+):
+    """A step that produced no audio must keep saying so, not lose the key."""
+    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    message = _message("m1", record=True, original=True, translated=False)
+    message.translated_audio_available = False
+    message.pipeline_metadata = {
+        "input": {"type": "audio"},
+        "steps": [{"step": "TTS", "output": {"audio_available": False}}],
+    }
+    manager.add_message(session.key, message)
+    save_audio(session.key, "m1", AudioVariant.ORIGINAL, b"wav", base_dir=audio_dir)
+
+    await manager.terminate_session(session.key, reason="test")
+
+    output = manager.get_session(session.key).messages[0].pipeline_metadata["steps"][0]
+    assert output["output"]["audio_available"] is False
+    assert "audio_url" not in output["output"]
