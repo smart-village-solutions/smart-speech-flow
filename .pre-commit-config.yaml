@@ -32,6 +32,18 @@ repos:
           - flake8-docstrings
           - pep8-naming
 
+  # Static Type Checking
+  # pass_filenames is off and the path is explicit so this runs exactly what CI
+  # runs. A per-file mypy invocation resolves imports differently and reports a
+  # different set of errors, which is how pre-commit and CI drift apart.
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.3.1
+    hooks:
+      - id: mypy
+        pass_filenames: false
+        args: [services/api_gateway/, --ignore-missing-imports]
+        additional_dependencies: [types-requests, types-redis]
+
   # Security Analysis
   - repo: https://github.com/PyCQA/bandit
     rev: 1.7.10
