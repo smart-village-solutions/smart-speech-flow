@@ -3,39 +3,44 @@
 
 repos:
   # Python Code Formatting
+  # Every rev in this file matches the pin in requirements-dev.txt, which is
+  # what CI installs. A shared config is not enough on its own: two Black
+  # releases disagree about this codebase, so a different rev here rewrites
+  # files that CI then rejects.
   - repo: https://github.com/psf/black
-    rev: 24.10.0
+    rev: 26.5.1
     hooks:
-      # No line-length arg: Black reads [tool.black] in pyproject.toml, so
-      # pre-commit and CI cannot disagree the way they did at 88 vs 100.
+      # No line-length arg: Black reads [tool.black] in pyproject.toml.
       - id: black
         language_version: python3.12
         files: ^services/.*\.py$
 
   # Import Sorting
   - repo: https://github.com/PyCQA/isort
-    rev: 5.13.2
+    rev: 9.0.1
     hooks:
-      # No args: isort reads [tool.isort] in pyproject.toml, so pre-commit and
-      # CI cannot disagree on line length the way they did at 88 vs 100.
+      # No args: isort reads [tool.isort] in pyproject.toml.
       - id: isort
         files: ^services/.*\.py$
 
   # Python Linting
   - repo: https://github.com/PyCQA/flake8
-    rev: 7.1.1
+    rev: 7.3.0
     hooks:
       - id: flake8
         files: ^services/.*\.py$
+        # Pinned: an unpinned plugin floats to a release with new rules and
+        # fails pre-commit on code CI accepts, or the reverse.
         additional_dependencies:
-          - flake8-bugbear
-          - flake8-docstrings
-          - pep8-naming
+          - flake8-bugbear==26.9.9
+          - flake8-docstrings==1.7.0
+          - pep8-naming==0.15.1
 
   # Static Type Checking
-  # pass_filenames is off and the path is explicit so this runs exactly what CI
-  # runs. A per-file mypy invocation resolves imports differently and reports a
-  # different set of errors, which is how pre-commit and CI drift apart.
+  # pass_filenames is off and the path is explicit so this checks the same
+  # scope CI checks: a per-file mypy invocation resolves imports differently
+  # and reports a different set of errors. The hook's venv holds only mypy and
+  # these stubs, so it is not byte-for-byte the CI environment.
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v2.3.1
     hooks:
@@ -46,7 +51,7 @@ repos:
 
   # Security Analysis
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.10
+    rev: 1.9.4
     hooks:
       - id: bandit
         args: [-r, --severity-level, high]
