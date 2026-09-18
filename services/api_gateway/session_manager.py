@@ -731,10 +731,7 @@ class SessionManager:
             # Cleanup is deliberately idempotent and also runs for a terminal
             # session. If notification/socket cleanup was interrupted after the
             # Redis commit, a retry can still revoke capabilities and finish it.
-            from .realtime_ticket import (
-                RealtimeTicketUnavailable,
-                realtime_ticket_store,
-            )
+            from .realtime_ticket import RealtimeTicketUnavailable, realtime_ticket_store
 
             try:
                 realtime_ticket_store.revoke(session_id)

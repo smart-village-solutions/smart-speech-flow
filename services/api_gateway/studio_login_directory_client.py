@@ -9,14 +9,7 @@ from typing import Any, Mapping, Protocol
 from urllib.parse import urlsplit
 
 import aiohttp
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    ValidationError,
-    field_validator,
-    model_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from services.api_gateway.studio_runtime_token import StudioRuntimeTokenProvider
 

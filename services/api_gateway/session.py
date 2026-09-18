@@ -10,23 +10,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import (
-    APIRouter,
-    File,
-    Form,
-    HTTPException,
-    UploadFile,
-    WebSocket,
-    WebSocketDisconnect,
-)
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 
 # Import der bestehenden Pipeline-Logik
 from services.api_gateway.pipeline_logic import process_wav
-from services.api_gateway.session_manager import (
-    ClientType,
-    SessionMessage,
-    session_manager,
-)
+from services.api_gateway.session_manager import ClientType, SessionMessage, session_manager
 
 router = APIRouter()
 SESSION_NOT_FOUND_DETAIL = "Session nicht gefunden"

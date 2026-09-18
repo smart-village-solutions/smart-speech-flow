@@ -38,11 +38,7 @@ from prometheus_client import CollectorRegistry, Counter, Gauge
 from ..quality_telemetry import ProbeOutcome
 from ..session_pseudonym import feedback_ref, tenant_ref
 from .models import AnalyticsState
-from .repository import (
-    FeedbackRepository,
-    ReconciliationLockUnavailable,
-    RetentionLockUnavailable,
-)
+from .repository import FeedbackRepository, ReconciliationLockUnavailable, RetentionLockUnavailable
 
 logger = logging.getLogger(__name__)
 

@@ -8,10 +8,7 @@ from services.api_gateway.studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
     require_validated_runtime_configuration,
 )
-from services.api_gateway.tenant_context import (
-    StudioTenantContext,
-    require_studio_tenant_context,
-)
+from services.api_gateway.tenant_context import StudioTenantContext, require_studio_tenant_context
 
 REVISION = f"sha256:{'a' * 64}"
 

@@ -11,15 +11,8 @@ from typing import Protocol
 
 from fastapi import HTTPException, status
 
-from .studio_login_directory_client import (
-    StudioLoginDirectory,
-    StudioLoginDirectoryClient,
-)
-from .studio_runtime_token import (
-    StudioRuntimeTokenProvider,
-    StudioTokenConfig,
-    StudioTokenError,
-)
+from .studio_login_directory_client import StudioLoginDirectory, StudioLoginDirectoryClient
+from .studio_runtime_token import StudioRuntimeTokenProvider, StudioTokenConfig, StudioTokenError
 
 
 class LoginDirectoryFetcher(Protocol):

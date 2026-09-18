@@ -52,8 +52,7 @@ jobs:
     - name: Check import sorting with isort
       run: |
         source .venv/bin/activate
-        isort --check-only --diff services/ || echo "::warning::Import sorting issues found"
-      continue-on-error: true
+        isort --check-only --diff services/
 
     - name: Lint code with flake8
       run: |

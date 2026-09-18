@@ -8,12 +8,7 @@ from typing import TYPE_CHECKING
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
-from .audio_storage import (
-    AudioVariant,
-    audio_path,
-    scope_pipeline_audio_urls,
-    scoped_audio_url,
-)
+from .audio_storage import AudioVariant, audio_path, scope_pipeline_audio_urls, scoped_audio_url
 from .session_manager import ClientType, SessionStatus, session_manager
 from .tenant_session import TenantSessionKey
 
