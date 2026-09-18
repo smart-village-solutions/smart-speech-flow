@@ -21,7 +21,7 @@ export function ConsentScreen() {
   const { openFeedback } = useFeedback();
   const { sessionId, languageCode } = useParams<{ sessionId: string; languageCode: string }>();
   const navigate = useNavigate();
-  const { session, consent } = useServices();
+  const { session } = useServices();
   const languages = useLanguages();
   const queryClient = useQueryClient();
 
@@ -32,14 +32,11 @@ export function ConsentScreen() {
   const language = (languages.data ?? []).find((candidate) => candidate.code === languageCode);
 
   const start = useMutation({
-    mutationFn: async () => {
-      await consent.record({
-        sessionId: sessionId as string,
-        dataRetentionConsent: agreed,
-        recordedAt: new Date().toISOString(),
-      });
-      return session.activate(sessionId as string, languageCode as string);
-    },
+    // The answer travels on the activation request itself. A separate call to
+    // the same endpoint would activate the session twice, and the second,
+    // consent-less one would resolve to declined.
+    mutationFn: async () =>
+      session.activate(sessionId as string, languageCode as string, agreed),
     // The route guard cached this session before activation, when the customer
     // had no language yet. Publishing the activated one keeps the conversation
     // screen from opening on the stale entry and sending its first message

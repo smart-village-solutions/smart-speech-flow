@@ -15,10 +15,18 @@ from pydantic import BaseModel, Field
 
 from ..audio_storage import AudioVariant
 from ..auth import optional_ssf_user
+from ..consent_resolution import resolve_consent
 from ..conversation_service import conversation_service
 from ..log_safety import safe_language_code, sanitize_log_value
 from ..session_access import require_customer_session_key
 from ..session_manager import ClientType, SessionStatus, session_manager
+from ..studio_runtime_client import RuntimeConfiguration, StudioRuntimeClientError
+from ..studio_runtime_flow import (
+    StudioRuntimeFlowError,
+    correlation_id_from_request,
+    runtime_flow_from_environment,
+)
+from ..studio_runtime_token import StudioTokenError
 from ..tenant_session import TenantSessionKey
 from ..websocket import WebSocketManager, get_websocket_manager
 
@@ -51,6 +59,13 @@ class ActivateSessionRequest(BaseModel):
     session_id: str = Field(..., description="Session ID to activate")
     customer_language: str = Field(
         ..., description="Customer's preferred language code (e.g. 'en', 'de', 'ar')"
+    )
+    data_retention_consent: Optional[bool] = Field(
+        None,
+        description=(
+            "The guest's answer to the conversation-content storage question. "
+            "Absent is not an answer and does not grant consent."
+        ),
     )
 
     class Config:
@@ -124,6 +139,44 @@ def _safe_session_ref(session_id: Optional[str]) -> str:
     return sha256(session_id.encode("utf-8")).hexdigest()[:12]
 
 
+# The Contract V1 codes that mean the tenant may not start a session at all.
+_TENANT_CONFLICT_CODES = frozenset(
+    {"tenant_suspended", "ssf_plugin_inactive", "ssf_tenant_not_ready"}
+)
+
+
+async def _read_activation_configuration(
+    http_request: Request, tenant_id: str
+) -> Optional[RuntimeConfiguration]:
+    """Read the live storage policy for one activation.
+
+    Returns `None` for every failure except a tenant conflict, which is raised
+    as `409` because no session may start. Deliberately not routed through
+    `RuntimePolicyGate`: that records discarded conversation content, and
+    activation writes none.
+
+    Args:
+        http_request: The activation request, read only for its correlation ID.
+        tenant_id: The tenant the session belongs to.
+
+    Returns:
+        The live runtime configuration, or `None` when the read failed.
+
+    Raises:
+        HTTPException: 409 when the tenant may not start a session.
+    """
+    correlation_id = correlation_id_from_request(http_request)
+    try:
+        flow = runtime_flow_from_environment()
+        return await flow.client.fetch(tenant_id, correlation_id)
+    except (StudioRuntimeClientError, StudioTokenError) as error:
+        if getattr(error, "code", None) in _TENANT_CONFLICT_CODES:
+            raise HTTPException(status_code=409, detail=error.code) from None
+        return None
+    except StudioRuntimeFlowError:
+        return None
+
+
 @router.post(
     "/session/activate",
     status_code=status.HTTP_200_OK,
@@ -133,6 +186,7 @@ def _safe_session_ref(session_id: Optional[str]) -> str:
 )
 async def activate_session(
     request: ActivateSessionRequest,
+    http_request: Request,
     principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
 ) -> ActivateSessionResponse:
     """
@@ -228,6 +282,16 @@ async def activate_session(
         if request.customer_language not in supported_languages:
             logger.warning("⚠️ Nicht unterstützte Kundensprache angefordert")
             # Warnung, aber nicht blockieren - der TTS-Service entscheidet final
+
+        # Consent is resolved on this transition alone. `activate_session` is
+        # re-entered on every customer language change, and re-resolving there
+        # would let a consent-less call overwrite a granted answer.
+        live_configuration = await _read_activation_configuration(
+            http_request, key.tenant_id
+        )
+        session.consent_status = resolve_consent(
+            live_configuration, request.data_retention_consent
+        )
 
         # Session aktivieren
         await session_manager.activate_session(key, request.customer_language)

@@ -61,8 +61,31 @@ AUDIO_BASE_DIR = Path(os.environ.get("SSF_AUDIO_BASE_DIR", "/data/audio"))
 ORIGINAL_AUDIO_DIR = AUDIO_BASE_DIR / "original"
 TRANSLATED_AUDIO_DIR = AUDIO_BASE_DIR / "translated"
 
-# Retention policy
-RETENTION_HOURS = 24
+# Retention policy. Zero disables automatic deletion so an operator removes
+# content by hand, which is what the tester environment asks for. It never
+# applies to refused content.
+_DEFAULT_RETENTION_HOURS = 24
+# Kept for the suites that compute a file age from it.
+RETENTION_HOURS = _DEFAULT_RETENTION_HOURS
+
+
+def retention_hours() -> int:
+    """Hours to keep authorised content. Zero disables automatic deletion.
+
+    Returns:
+        The configured retention, falling back to the default for any value
+        that is absent, unparseable or negative.
+    """
+    raw = os.environ.get("SSF_CONTENT_RETENTION_HOURS", "").strip()
+    if not raw:
+        return _DEFAULT_RETENTION_HOURS
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_RETENTION_HOURS
+    return value if value >= 0 else _DEFAULT_RETENTION_HOURS
+
+
 _STORAGE_IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _TENANT_REF = re.compile(r"^[0-9a-f]{12}$")
 
@@ -95,6 +118,36 @@ def audio_path(
         / variant.value
         / f"{safe_message_id}.wav"
     )
+
+
+def delete_message_audio(
+    key: TenantSessionKey,
+    message_id: str,
+    variant: AudioVariant,
+    *,
+    base_dir: Path = AUDIO_BASE_DIR,
+) -> bool:
+    """Delete one message's audio file, reporting whether it existed.
+
+    Args:
+        key: The tenant-scoped session the message belongs to.
+        message_id: The message whose artefact is being removed.
+        variant: Which of the two artefacts to remove.
+        base_dir: The storage root, overridden in tests.
+
+    Returns:
+        True when a file was removed, False when there was nothing to remove
+        or the removal failed.
+    """
+    path = audio_path(key, message_id, variant, base_dir=base_dir)
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        logger.warning("Failed to delete refused audio")
+        return False
+    return True
 
 
 def save_audio(
@@ -324,7 +377,7 @@ def get_audio_file_path(filename: str) -> Optional[Path]:
 
 def cleanup_old_audio_files(*, base_dir: Path = AUDIO_BASE_DIR) -> dict:
     """
-    Delete audio files older than RETENTION_HOURS.
+    Delete audio files older than the configured retention.
 
     Returns:
         Statistics about deleted files:
@@ -342,10 +395,15 @@ def cleanup_old_audio_files(*, base_dir: Path = AUDIO_BASE_DIR) -> dict:
         "errors": 0,
     }
 
-    cutoff_time = utc_now() - timedelta(hours=RETENTION_HOURS)
+    keep_for = retention_hours()
+    if keep_for == 0:
+        logger.info("Audio cleanup disabled (SSF_CONTENT_RETENTION_HOURS=0)")
+        return stats
+
+    cutoff_time = utc_now() - timedelta(hours=keep_for)
     logger.info(
         "Starting audio cleanup (retention: %sh, cutoff: %s)",
-        RETENTION_HOURS,
+        keep_for,
         sanitize_log_value(cutoff_time.isoformat()),
     )
 

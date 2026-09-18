@@ -134,8 +134,9 @@ async def circuit_breaker_monitor() -> None:
 
 
 async def audio_cleanup_task() -> None:
-    """Background Task für automatisches Löschen alter Audio-Dateien (24h Retention)"""
+    """Background Task für automatisches Löschen alter Inhalte (Retention)"""
     from .audio_storage import cleanup_old_audio_files, get_disk_usage
+    from .session_manager import session_manager, utc_now
 
     try:
         print("🧹 Audio-Cleanup-Service gestartet (läuft stündlich)")
@@ -148,6 +149,15 @@ async def audio_cleanup_task() -> None:
                 # Cleanup durchführen
                 stats = cleanup_old_audio_files()
                 print(f"🧹 Audio-Cleanup abgeschlossen: {stats['total_deleted']} Dateien gelöscht")
+
+                # Transcripts expire on the same pass. Audio alone would keep
+                # the weaker half of the promise.
+                content = session_manager.sweep_expired_content(utc_now())
+                print(
+                    "🧹 Content-Sweep abgeschlossen: "
+                    f"{content['refused_removed']} abgelehnt, "
+                    f"{content['expired_removed']} abgelaufen"
+                )
 
                 # Disk Usage loggen
                 disk_stats = get_disk_usage()
@@ -490,6 +500,33 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     tenant_persistence = configure_tenant_persistence()
 
+    # An unbound gate refuses every write, so a failure to build one is a safe
+    # state, not a startup error. Studio credentials are absent in local
+    # development and CI.
+    from .runtime_policy import RuntimePolicyGate, bind_runtime_policy
+    from .runtime_policy_metrics import RuntimePolicyMetrics
+    from .studio_runtime_flow import (
+        StudioRuntimeFlowError,
+        runtime_flow_from_environment,
+    )
+
+    try:
+        runtime_flow = runtime_flow_from_environment()
+    except StudioRuntimeFlowError as error:
+        sys.stderr.write(
+            f"Runtime policy gate unbound ({error.code}); persistence refused\n"
+        )
+        bind_runtime_policy(None)
+    else:
+        bind_runtime_policy(
+            RuntimePolicyGate(
+                runtime_flow.client,
+                metrics=RuntimePolicyMetrics(app.state.prometheus_registry),
+            )
+        )
+        sys.stderr.write("Runtime policy gate ready\n")
+    sys.stderr.flush()
+
     # Initialize WebSocketManager singleton
     from .websocket import get_websocket_manager
 
@@ -651,6 +688,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         session_manager.attach_quality_telemetry(None)
         if tenant_persistence is not None:
             tenant_persistence.close()
+        bind_runtime_policy(None)
         telemetry_exporter_at_exit = app.state.quality_telemetry_exporter
         app.state.quality_telemetry_exporter = None
         if telemetry_exporter_at_exit is not None:

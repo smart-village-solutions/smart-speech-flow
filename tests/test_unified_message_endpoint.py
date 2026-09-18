@@ -135,6 +135,9 @@ async def test_unified_message_redacts_unexpected_exception_from_response_and_ou
 async def test_audio_pipeline_requires_only_file_and_languages(active_session) -> None:
     _manager, session = active_session
     request = AsyncMock()
+    # A real mapping: an AsyncMock would hand the route a coroutine where the
+    # correlation header should be.
+    request.headers = {}
     request.form.return_value = {"source_lang": "de", "target_lang": "en"}
 
     with pytest.raises(HTTPException) as caught:

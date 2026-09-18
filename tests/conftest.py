@@ -140,6 +140,34 @@ def bypass_admin_auth_for_legacy_route_tests(request):
     app.dependency_overrides.pop(require_validated_runtime_configuration, None)
 
 
+@pytest.fixture(autouse=True)
+def permissive_runtime_policy():
+    """Authorise persistence by default so suites unrelated to consent pass.
+
+    An unbound gate refuses every write, which is the right production
+    default and the wrong default for suites that assert a message survives.
+    The consent and gate suites override this with their own binding.
+    """
+    from services.api_gateway.runtime_policy import (
+        PolicyDecision,
+        PolicyReason,
+        bind_runtime_policy,
+    )
+
+    class _AlwaysAuthorized:
+        async def authorize(self, tenant_id, consent_status, correlation_id):
+            return PolicyDecision(True, PolicyReason.GRANTED)
+
+    from services.api_gateway.runtime_policy import current_runtime_policy
+
+    previous = current_runtime_policy()
+    bind_runtime_policy(_AlwaysAuthorized())
+    yield
+    # Restore rather than unbind: an unconditional None would clobber a
+    # binding established by any wider-scoped fixture.
+    bind_runtime_policy(previous)
+
+
 def pytest_collection_modifyitems(config, items):  # pragma: no cover - exercised via pytest hooks
     run_integration = config.getoption("--run-integration")
     run_load = config.getoption("--run-load")

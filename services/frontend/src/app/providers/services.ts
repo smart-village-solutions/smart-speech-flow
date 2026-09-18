@@ -12,8 +12,6 @@ import { createMessageRepository } from '@/domain/message/message.repository';
 import type { MessageRepository } from '@/domain/message/message.repository';
 import { createFeedbackRepository } from '@/domain/feedback/feedback.repository';
 import type { FeedbackSink } from '@/domain/feedback/feedback.port';
-import { createStubConsentSink } from '@/domain/consent/StubConsentSink';
-import type { ConsentSink } from '@/domain/consent/consent.port';
 import { createAdminRepository } from '@/domain/admin/admin.repository';
 import type { AdminRepository } from '@/domain/admin/admin.repository';
 import { createHealthRepository } from '@/domain/health/health.repository';
@@ -32,7 +30,6 @@ export interface Services {
   admin: AdminRepository;
   loginTenant: LoginTenantRepository;
   feedback: FeedbackSink;
-  consent: ConsentSink;
   brand: BrandSource;
   clips: ClipLoader;
   createRealtime: () => RealtimeTransport;
@@ -52,7 +49,6 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
       apiBaseUrl: config.apiBaseUrl,
     }),
     feedback: createFeedbackRepository(http),
-    consent: createStubConsentSink(),
     health: createHealthRepository(http),
     admin,
     loginTenant: createLoginTenantRepository(http),

@@ -111,3 +111,21 @@ class RuntimePolicyGate:
             reason = _CONSENT_REFUSALS.get(consent_status, PolicyReason.CONSENT_PENDING)
             return PolicyDecision(False, reason)
         return PolicyDecision(True, PolicyReason.GRANTED)
+
+
+_GATE: RuntimePolicyGate | None = None
+
+
+def bind_runtime_policy(gate: RuntimePolicyGate | None) -> None:
+    """Bind the process-wide gate, or unbind it with `None`.
+
+    Args:
+        gate: The gate every write consults, or `None` to refuse every write.
+    """
+    global _GATE
+    _GATE = gate
+
+
+def current_runtime_policy() -> RuntimePolicyGate | None:
+    """Return the bound gate. `None` means every write is refused."""
+    return _GATE

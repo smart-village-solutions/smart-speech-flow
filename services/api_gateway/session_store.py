@@ -5,7 +5,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Protocol
 
 from .tenant_session import TenantSessionKey
@@ -48,10 +48,19 @@ redis.call('SET', KEYS[1], ARGV[1])
 return 1
 """
 
+# The terminal record is immutable -- SAVE_SESSION_LUA refuses every change to
+# one -- so retention for its conversation content is an expiry set here, at
+# the moment it becomes terminal. The join tombstone deliberately does not
+# expire: it carries no content and is what stops a session identifier being
+# reused. ARGV[6] is the retention in seconds; 0 means never expire.
 TERMINATE_SESSION_LUA = """
 local current_join = redis.call('GET', KEYS[3])
 if current_join == ARGV[3] then
   redis.call('SET', KEYS[1], ARGV[1])
+  local ttl = tonumber(ARGV[6])
+  if ttl and ttl > 0 then
+    redis.call('EXPIRE', KEYS[1], ttl)
+  end
   redis.call('SREM', KEYS[2], ARGV[2])
   redis.call('SET', KEYS[3], ARGV[4])
   return 1
@@ -123,6 +132,17 @@ def join_key(namespace: str, session_id: str) -> str:
     return f"{namespace}:v2:join:{session_id}"
 
 
+def _content_retention_seconds() -> int:
+    """Seconds a terminated record may keep its conversation content.
+
+    Zero disables automatic deletion, which must mean "never expire" rather
+    than "expire now".
+    """
+    from .audio_storage import retention_hours
+
+    return retention_hours() * 3600
+
+
 def _join_payload(key: TenantSessionKey, *, active: bool) -> str:
     return json.dumps(
         {
@@ -161,10 +181,12 @@ class MemoryTenantSessionStore:
     def __init__(self) -> None:
         self._sessions: dict[TenantSessionKey, Session] = {}
         self._joins: dict[str, tuple[TenantSessionKey, bool]] = {}
+        self._expiries: dict[TenantSessionKey, datetime] = {}
 
     def clear(self) -> None:
         self._sessions.clear()
         self._joins.clear()
+        self._expiries.clear()
 
     def create(self, session: Session) -> bool:
         if session.id in self._joins:
@@ -178,7 +200,18 @@ class MemoryTenantSessionStore:
             raise SessionStoreConsistencyError("session does not exist")
         self._sessions[session.key] = session
 
+    def expire_now(self, key: TenantSessionKey) -> None:
+        """Bring a pending expiry forward, for tests that cannot wait it out."""
+        if key in self._expiries:
+            self._expiries[key] = datetime.min.replace(tzinfo=timezone.utc)
+
+    def _is_expired(self, key: TenantSessionKey) -> bool:
+        expires_at = self._expiries.get(key)
+        return expires_at is not None and datetime.now(timezone.utc) >= expires_at
+
     def load(self, key: TenantSessionKey) -> Session | None:
+        if self._is_expired(key):
+            return None
         session = self._sessions.get(key)
         join = self._joins.get(key.session_id)
         if session is None or join is None or not _same_key(session.key, key):
@@ -254,6 +287,12 @@ class MemoryTenantSessionStore:
             return persisted
         self._sessions[session.key] = session
         self._joins[session.id] = (session.key, False)
+        # Mirrors the Redis EXPIRE: the record goes, the tombstone stays.
+        retention = _content_retention_seconds()
+        if retention > 0:
+            self._expiries[session.key] = datetime.now(timezone.utc) + timedelta(
+                seconds=retention
+            )
         return session
 
 
@@ -419,6 +458,7 @@ class RedisTenantSessionStore:
             _join_payload(key, active=True),
             _join_payload(key, active=False),
             key.tenant_id,
+            _content_retention_seconds(),
         )
         if result == 1:
             return session

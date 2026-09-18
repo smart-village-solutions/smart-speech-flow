@@ -50,8 +50,12 @@ describe('session repository', () => {
   it('activates a session and returns the updated domain model', async () => {
     server.use(
       http.post('http://api.test/api/customer/session/activate', async ({ request }) => {
-        const body = (await request.json()) as Record<string, string>;
-        expect(body).toEqual({ session_id: 'A1B2C3D4', customer_language: 'ar' });
+        const body = (await request.json()) as Record<string, unknown>;
+        expect(body).toEqual({
+          session_id: 'A1B2C3D4',
+          customer_language: 'ar',
+          data_retention_consent: true,
+        });
         return HttpResponse.json({
           session_id: 'A1B2C3D4',
           status: 'active',
@@ -62,7 +66,7 @@ describe('session repository', () => {
       })
     );
 
-    const session = await repository.activate('A1B2C3D4', 'ar');
+    const session = await repository.activate('A1B2C3D4', 'ar', true);
 
     expect(session.status).toBe('active');
     expect(session.customerLanguage).toBe('ar');
