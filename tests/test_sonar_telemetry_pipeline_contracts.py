@@ -47,15 +47,10 @@ async def test_abandoned_worker_is_catchable_without_running_work(monkeypatch, s
         await task
     assert admission.in_flight == 0
 
-    try:
+    with pytest.raises(Exception) as exc_info:
         queued[0]()
-    except Exception as error:
-        assert type(error) is module._WorkAbandoned
-        assert str(error) == ""
-    except BaseException:
-        pytest.fail("abandoned application work bypasses except Exception")
-    else:
-        pytest.fail("abandoned worker did not signal cancellation")
+    assert type(exc_info.value) is module._WorkAbandoned
+    assert str(exc_info.value) == ""
     await asyncio.sleep(0)
     assert executed == []
     assert admission.in_flight == 0
