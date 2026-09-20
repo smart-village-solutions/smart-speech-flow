@@ -204,7 +204,7 @@ def _activation_response(client: PollingClient) -> dict[str, object]:
         503: {"description": "Realtime ticket service unavailable"},
     },
 )
-async def activate_admin_polling(
+def activate_admin_polling(
     session_id: str,
     request: AdminPollingActivation,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
@@ -222,39 +222,36 @@ async def activate_admin_polling(
     session = manager.session_manager.get_session(key)
     if session is None or session.status.value == "terminated":
         raise HTTPException(status_code=404, detail="Session not found")
-    await _release_stale_clients(manager)
+    _release_stale_clients(manager)
     client = polling_store.activate(key, ClientType.ADMIN)
     manager.session_manager.admin_connected(key)
     return _activation_response(client)
 
 
 @router.post("/api/customer/session/{session_id}/polling/activate")
-async def activate_customer_polling(
+def activate_customer_polling(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
     manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
 ) -> dict[str, object]:
-    await _release_stale_clients(manager)
+    _release_stale_clients(manager)
     client = polling_store.activate(key, ClientType.CUSTOMER)
     manager.session_manager.customer_connected(key)
     return _activation_response(client)
 
 
-async def _release_stale_clients(manager: WebSocketManager) -> None:
+def _release_stale_clients(manager: WebSocketManager) -> None:
+    """Release the entire pruned batch without a cancellation point."""
     for client in polling_store.prune():
-        await _release_presence(client, manager)
+        _release_presence(client, manager)
 
 
-async def _release_presence(client: PollingClient, manager: WebSocketManager) -> None:
+def _release_presence(client: PollingClient, manager: WebSocketManager) -> None:
     try:
         if client.client_type is ClientType.ADMIN:
-            await asyncio.to_thread(
-                manager.session_manager.admin_disconnected, client.key
-            )
+            manager.session_manager.admin_disconnected(client.key)
         else:
-            await asyncio.to_thread(
-                manager.session_manager.customer_disconnected, client.key
-            )
+            manager.session_manager.customer_disconnected(client.key)
     except KeyError:
         pass
 
@@ -267,14 +264,14 @@ def _client(
     return polling_store.require(polling_id, key, client_type)
 
 
-async def _active_client(
+def _active_client(
     polling_id: str,
     key: TenantSessionKey,
     client_type: ClientType,
     manager: WebSocketManager,
 ) -> PollingClient:
     """Release expired presence before accepting activity from a poller."""
-    await _release_stale_clients(manager)
+    _release_stale_clients(manager)
     return _client(polling_id, key, client_type)
 
 
@@ -363,11 +360,9 @@ def _recover(client: PollingClient) -> dict[str, str]:
     return {"status": "recovery_requested"}
 
 
-async def _disconnect(
-    client: PollingClient, manager: WebSocketManager
-) -> dict[str, str]:
+def _disconnect(client: PollingClient, manager: WebSocketManager) -> dict[str, str]:
     polling_store.remove(client)
-    await _release_presence(client, manager)
+    _release_presence(client, manager)
     return {"status": "disconnected"}
 
 
@@ -385,10 +380,10 @@ def _register_role_routes(
         wait_seconds: Annotated[int, Query(alias="timeout", ge=0, le=60)] = 0,
         manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, object]:
-        client = await _active_client(polling_id, key, client_type, manager)
+        client = _active_client(polling_id, key, client_type, manager)
         response = await _poll(client, wait_seconds)
         if client.terminated:
-            await _disconnect(client, manager)
+            _disconnect(client, manager)
         return response
 
     async def send(
@@ -398,33 +393,33 @@ def _register_role_routes(
         key: TenantSessionKey = Depends(key_dependency),
         manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, str]:
-        client = await _active_client(polling_id, key, client_type, manager)
+        client = _active_client(polling_id, key, client_type, manager)
         return await _send(client, message, manager)
 
-    async def polling_status(
+    def polling_status(
         session_id: str,
         polling_id: str,
         key: TenantSessionKey = Depends(key_dependency),
         manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, object]:
-        return _status(await _active_client(polling_id, key, client_type, manager))
+        return _status(_active_client(polling_id, key, client_type, manager))
 
-    async def recover(
+    def recover(
         session_id: str,
         polling_id: str,
         key: TenantSessionKey = Depends(key_dependency),
         manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, str]:
-        return _recover(await _active_client(polling_id, key, client_type, manager))
+        return _recover(_active_client(polling_id, key, client_type, manager))
 
-    async def disconnect(
+    def disconnect(
         session_id: str,
         polling_id: str,
         key: TenantSessionKey = Depends(key_dependency),
         manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, str]:
-        client = await _active_client(polling_id, key, client_type, manager)
-        return await _disconnect(client, manager)
+        client = _active_client(polling_id, key, client_type, manager)
+        return _disconnect(client, manager)
 
     router.add_api_route(base, poll, methods=["GET"], name=f"{prefix}_poll")
     router.add_api_route(base + "/send", send, methods=["POST"], name=f"{prefix}_send")

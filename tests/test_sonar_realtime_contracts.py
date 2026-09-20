@@ -3,13 +3,12 @@
 import asyncio
 import inspect
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from prometheus_client import CollectorRegistry
-from starlette.websockets import WebSocketDisconnect
+from starlette.websockets import WebSocket
 
 from services.api_gateway import websocket
 from services.api_gateway import websocket_polling_routes as polling
@@ -65,6 +64,28 @@ def test_polling_timeout_openapi_and_request_contract(polling_client, role):
         response = polling_client.get(path, params={"timeout": invalid})
         assert response.status_code == 422
         assert response.json()["detail"][0]["loc"] == ["query", "timeout"]
+    response = polling_client.get(path + "/status")
+    assert response.status_code == 200
+    assert response.json() == {
+        "polling_id": polling_id,
+        "session_id": session_id,
+        "client_type": role,
+        "queued_messages": 0,
+    }
+    response = polling_client.post(path + "/recover")
+    assert response.status_code == 200
+    assert response.json() == {"status": "recovery_requested"}
+    response = polling_client.post(
+        path + "/send", json={"type": "heartbeat", "content": {}}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"status": "success"}
+    response = polling_client.delete(path)
+    assert response.status_code == 200
+    assert response.json() == {"status": "disconnected"}
+    assert polling_client.get(path + "/status").status_code == 404
+    session = session_routes.session_manager.get_session(stored.key)
+    assert (session.admin_connection_count, session.customer_connection_count) == (0, 0)
 
 
 def test_admin_activation_documents_its_actual_not_found_response(polling_client):
@@ -114,14 +135,68 @@ async def test_poll_factory_preserves_timeout_keyword_and_cancellation():
 
 
 async def test_legacy_echo_endpoint_keeps_callback_arguments():
-    socket = SimpleNamespace(
-        accept=AsyncMock(),
-        receive_text=AsyncMock(side_effect=["heartbeat", WebSocketDisconnect()]),
-        send_text=AsyncMock(),
-    )
+    incoming = asyncio.Queue()
+    outgoing = asyncio.Queue()
+    incoming.put_nowait({"type": "websocket.connect"})
+    incoming.put_nowait({"type": "websocket.receive", "text": "heartbeat"})
+    incoming.put_nowait({"type": "websocket.disconnect", "code": 1000})
+    socket = WebSocket({"type": "websocket"}, receive=incoming.get, send=outgoing.put)
     await session_routes.websocket_endpoint(socket, "SESSION1", "admin")
-    socket.accept.assert_awaited_once_with()
-    socket.send_text.assert_awaited_once_with("pong: heartbeat")
+    assert outgoing.get_nowait()["type"] == "websocket.accept"
+    assert outgoing.get_nowait() == {
+        "type": "websocket.send",
+        "text": "pong: heartbeat",
+    }
+    assert outgoing.empty()
+
+
+async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch):
+    now = [0.0]
+    store = polling.TenantPollingStore(clock=lambda: now[0])
+    sessions = SessionManager()
+    expired_key = polling.TenantSessionKey("tenant-a", "EXPIRED1")
+    live_key = polling.TenantSessionKey("tenant-a", "CURRENT1")
+    for key in (expired_key, live_key):
+        sessions.sessions[key] = Session(id=key.session_id, tenant_id=key.tenant_id)
+    store.activate(expired_key, ClientType.ADMIN)
+    store.activate(expired_key, ClientType.CUSTOMER)
+    sessions.admin_connected(expired_key)
+    sessions.customer_connected(expired_key)
+    now[0] = 121.0
+    live_client = store.activate(live_key, ClientType.ADMIN)
+    monkeypatch.setattr(polling, "polling_store", store)
+    manager = websocket.WebSocketManager(sessions)
+    loop = asyncio.get_running_loop()
+    release_admin = sessions.admin_disconnected
+
+    def release_and_cancel(key):
+        release_admin(key)
+        loop.call_soon_threadsafe(request_task.cancel)
+
+    monkeypatch.setattr(sessions, "admin_disconnected", release_and_cancel)
+    endpoint = next(
+        route.endpoint for route in polling.router.routes if route.name == "admin_poll"
+    )
+    request_task = asyncio.create_task(
+        endpoint(
+            session_id=live_key.session_id,
+            polling_id=live_client.polling_id,
+            key=live_key,
+            wait_seconds=60,
+            manager=manager,
+        )
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await request_task
+
+    expired_session = sessions.get_session(expired_key)
+    assert list(store.clients) == [live_client.polling_id]
+    assert [
+        expired_session.admin_connection_count,
+        expired_session.customer_connection_count,
+    ] == [0, 0]
+    assert not expired_session.admin_connected
+    assert not expired_session.customer_connected
 
 
 async def test_terminated_polling_client_cannot_send_recover_or_read_status():
@@ -165,7 +240,9 @@ def test_customer_polling_principal_cannot_cross_tenants(monkeypatch):
 
 async def test_websocket_missing_session_keeps_close_code_and_reason():
     manager = websocket.WebSocketManager(SessionManager())
-    socket = SimpleNamespace(close=AsyncMock())
+    incoming = asyncio.Queue()
+    outgoing = asyncio.Queue()
+    socket = WebSocket({"type": "websocket"}, receive=incoming.get, send=outgoing.put)
     await websocket.websocket_endpoint(
         socket,
         polling.TenantSessionKey("tenant-a", "MISSING1"),
@@ -173,7 +250,12 @@ async def test_websocket_missing_session_keeps_close_code_and_reason():
         manager,
         "https://translate.smart-village.solutions",
     )
-    socket.close.assert_awaited_once_with(code=1003, reason="Session not found")
+    assert outgoing.get_nowait() == {
+        "type": "websocket.close",
+        "code": 1003,
+        "reason": "Session not found",
+    }
+    assert outgoing.empty()
 
 
 async def test_websocket_registration_race_keeps_close_code_and_reason(monkeypatch):
@@ -181,13 +263,28 @@ async def test_websocket_registration_race_keeps_close_code_and_reason(monkeypat
     key = polling.TenantSessionKey("tenant-a", "SESSION1")
     sessions.sessions[key] = Session(id="SESSION1", tenant_id="tenant-a")
     manager = websocket.WebSocketManager(sessions)
+    register = sessions.add_websocket_connection
+
+    async def expire_before_registration(*args):
+        sessions.sessions.pop(key)
+        await register(*args)
+
     monkeypatch.setattr(
-        sessions, "add_websocket_connection", AsyncMock(side_effect=KeyError("expired"))
+        sessions, "add_websocket_connection", expire_before_registration
     )
-    socket = SimpleNamespace(accept=AsyncMock(), close=AsyncMock())
+    incoming = asyncio.Queue()
+    outgoing = asyncio.Queue()
+    incoming.put_nowait({"type": "websocket.connect"})
+    socket = WebSocket({"type": "websocket"}, receive=incoming.get, send=outgoing.put)
     with pytest.raises(RuntimeError, match="Session unavailable"):
         await manager.connect_websocket(socket, key, ClientType.ADMIN)
-    socket.close.assert_awaited_once_with(code=4404, reason="Session not found")
+    assert outgoing.get_nowait()["type"] == "websocket.accept"
+    assert outgoing.get_nowait() == {
+        "type": "websocket.close",
+        "code": 4404,
+        "reason": "Session not found",
+    }
+    assert outgoing.empty()
     assert not manager.all_connections
 
 
