@@ -5,7 +5,13 @@ import asyncio
 import pytest
 
 import services.api_gateway.app as gateway
+from services.api_gateway.realtime_ticket import (
+    CONSUME_TICKET_LUA,
+    MemoryRealtimeTicketBackend,
+    RealtimeTicketStore,
+)
 from services.api_gateway.studio_login_directory_client import DirectoryTransport
+from services.api_gateway.tenant_session import TenantSessionKey
 
 
 async def _wait_until_cancelled(*_args: object) -> None:
@@ -20,13 +26,16 @@ async def test_lifespan_reports_a_background_task_failure_during_shutdown(
 ) -> None:
     """A completed task failure remains visible while shutdown continues."""
 
-    async def fail_before_shutdown() -> None:
-        raise RuntimeError("background task failed")
+    async def first_failure() -> None:
+        raise RuntimeError("first background task failed")
+
+    async def second_failure() -> None:
+        raise RuntimeError("second background task failed")
 
     monkeypatch.setenv("SSF_AUDIO_BASE_DIR", str(tmp_path))
-    monkeypatch.setattr(gateway, "session_timeout_monitor", fail_before_shutdown)
+    monkeypatch.setattr(gateway, "session_timeout_monitor", first_failure)
+    monkeypatch.setattr(gateway, "circuit_breaker_monitor", second_failure)
     for task_name in (
-        "circuit_breaker_monitor",
         "websocket_monitor_task",
         "websocket_fallback_task",
         "audio_cleanup_task",
@@ -38,7 +47,39 @@ async def test_lifespan_reports_a_background_task_failure_during_shutdown(
     async with gateway.lifespan(gateway.app):
         await asyncio.sleep(0)
 
-    assert "Background task shutdown error: background task failed" in capsys.readouterr().out
+    diagnostics = [
+        line
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("Background task shutdown error:")
+    ]
+    assert diagnostics == [
+        "Background task shutdown error: first background task failed",
+        "Background task shutdown error: second background task failed",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("script", "number_of_keys"),
+    [
+        pytest.param("return nil", 1, id="unexpected-script"),
+        pytest.param(CONSUME_TICKET_LUA, 2, id="unexpected-key-count"),
+    ],
+)
+def test_memory_ticket_backend_rejects_invalid_eval_without_consuming_ticket(
+    script: str, number_of_keys: int
+) -> None:
+    """A rejected Redis contract must leave the single-use ticket available."""
+    backend = MemoryRealtimeTicketBackend()
+    store = RealtimeTicketStore(backend)
+    session_key = TenantSessionKey("tenant-test", "ABC12345")
+    issued = store.issue(session_key, "websocket")
+    stored_ticket_key = next(iter(backend.values))
+
+    with pytest.raises(ValueError, match="unsupported realtime ticket script"):
+        backend.eval(script, number_of_keys, stored_ticket_key)
+
+    assert store.consume(issued.ticket, session_key, "websocket") is True
+    assert store.consume(issued.ticket, session_key, "websocket") is False
 
 
 @pytest.mark.asyncio
