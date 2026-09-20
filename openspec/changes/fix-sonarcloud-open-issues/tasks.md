@@ -8,16 +8,16 @@
 - [x] 0.4 Install CI-equivalent development and gateway dependencies.
 - [x] 0.5 Run the hermetic backend baseline: 1,853 passed, 25 skipped, 16 deselected.
 - [x] 0.6 Validate this re-baselined OpenSpec change with strict validation.
-- [ ] 0.7 Commit the reviewed re-baseline before implementation starts.
+- [x] 0.7 Commit the reviewed re-baseline before implementation starts (`f6455da`).
 
 ## 1. PR-1 — Container Supply Chain (5 Findings)
 
-- [ ] 1.1 Export the five issue keys and confirm their current lines.
-- [ ] 1.2 Write or update Dockerfile contract tests for controlled binary-only runtime installation.
-- [ ] 1.3 Implement exact wheel acquisition/build and binary-only runtime installation for all five images.
-- [ ] 1.4 Run Dockerfile tests, dependency audits, image builds, import checks, and available health checks.
-- [ ] 1.5 Review, resolve findings, push, and open the focused PR.
-- [ ] 1.6 Record SonarCloud PR analysis and PR URL.
+- [x] 1.1 Export the five issue keys and confirm their current lines.
+- [x] 1.2 Use the existing SonarCloud findings as analyzer RED evidence and verify behavior through real image builds and smokes.
+- [x] 1.3 Implement exact wheel acquisition/build and binary-only runtime installation for all five images.
+- [x] 1.4 Run Dockerfile tests, dependency analysis, five image builds, five import/health smokes, and CUDA checks.
+- [x] 1.5 Complete independent review, push, and open the focused PR.
+- [x] 1.6 Record SonarCloud PR analysis: [PR #367](https://github.com/smart-village-solutions/smart-speech-flow/pull/367) reports zero open PR issues, an `OK` Quality Gate, A/A/A new-code ratings, and 0.0% new duplication.
 
 ## 2. PR-2 — Frontend and Token Checks (14 Findings)
 
