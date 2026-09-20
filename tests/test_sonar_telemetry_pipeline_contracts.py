@@ -47,7 +47,8 @@ async def test_abandoned_worker_is_catchable_without_running_work(monkeypatch, s
         await task
     assert admission.in_flight == 0
 
-    with pytest.raises(Exception) as exc_info:
+    assert issubclass(module._WorkAbandoned, Exception)
+    with pytest.raises(module._WorkAbandoned, match=r"^$") as exc_info:
         queued[0]()
     assert type(exc_info.value) is module._WorkAbandoned
     assert str(exc_info.value) == ""
