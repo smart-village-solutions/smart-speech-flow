@@ -1,126 +1,137 @@
 ## Context
 
-The live backlog is large in count but narrow in root causes. Five disjoint implementation streams account for all 101 findings. Parallel work is safe only when every agent owns a fixed production and test file set. Container dependency remediation is the critical path because CUDA and Python wheel compatibility require real image builds.
+The live SonarCloud backlog is broad in count but can be divided by file
+ownership. A single repository-wide PR would mix container supply-chain risk,
+behavior-preserving Python refactors, frontend semantics, and mechanical test
+corrections. Independent PRs based on `origin/main` keep review and rollback
+focused.
 
-Several active OpenSpec changes overlap with code quality. This change remains the single source of truth for SonarCloud remediation. Broader policy consolidation and archival of obsolete changes are handled separately and MUST NOT be mixed into remediation PRs.
+The existing `fix-sonarcloud-open-issues` change remains the source of truth.
+Its former 101-issue ledger is retained in Git history; this design supersedes
+that ledger with the 163-issue analysis identified in `proposal.md`.
 
 ## Goals / Non-Goals
 
 ### Goals
 
-- Close every finding in the fixed baseline without changing documented product behavior.
-- Remove the security findings that make the current Quality Gate fail.
-- Let agents implement independent work packages without write conflicts.
-- Preserve public HTTP, WebSocket, and OpenAPI contracts.
-- Improve tests before relying on them as the regression gate.
-- Establish reproducible runtime dependency installation for all Python images.
+- Close every finding in the immutable baseline without changing documented
+  product behavior.
+- Prioritize the five container vulnerabilities while preserving compatible
+  Python and GPU dependency installation.
+- Make every implementation PR file-disjoint and independently reviewable.
+- Use existing behavioral tests as characterization coverage and add focused
+  regression tests where a control-flow refactor exposes an uncovered branch.
+- Verify each package locally and with SonarCloud PR analysis.
 
 ### Non-Goals
 
-- Product feature development
-- API or protocol redesign
-- General cleanup outside the baseline
-- Scanner suppression as a substitute for remediation
-- Changing production GPU requirements without explicit review
+- Product feature work or public contract redesign
+- Opportunistic refactoring outside files with current findings
+- Scanner suppression, exclusions, or rule changes
+- Automatic merging of remediation PRs
 
-## Issue Ledger
+## Package Ledger
 
-| Work package | Owner | Findings | Rules | Owned production files |
-|---|---|---:|---|---|
-| WP-A Backend routes | Agent A | 20 | `python:S8572`, `pythonsecurity:S5145`, `python:S1192` | `services/api_gateway/routes/{admin,circuit_breaker,customer,session}.py`, `services/api_gateway/app.py` |
-| WP-B Backend core | Agent B | 25 | `python:S8572`, `pythonsecurity:S5145`, `python:S7483` | API gateway WebSocket, storage, validation, monitoring, fallback, health, and circuit-breaker core files listed in `tasks.md` |
-| WP-C Frontend | Agent C | 32 | `tssecurity:S5145`, `tssecurity:S7044`, `tssecurity:S8476`, `tssecurity:S8480`, `typescript:S7754`, `typescript:S9011` | `services/frontend` |
-| WP-D Containers | Agent D | 16 | `docker:S8541`, `docker:S8544` | four service Dockerfiles and Python dependency lock files |
-| WP-E Tests | Agent E | 8 | `python:S2187`, `python:S5778`, `python:S5779`, `python:S5958`, `python:S8714` | four test files listed in `tasks.md` |
+| Package | Findings | Scope |
+| --- | ---: | --- |
+| PR-1 Containers | 5 | Five affected service Dockerfiles and dependency artifacts required for binary-only installation |
+| PR-2 Frontend and token checks | 14 | `services/frontend`, including its tests and `scripts/check-tokens.sh` |
+| PR-3 Gateway routes and authentication | 19 | Gateway application root, realtime ticket, admin/customer/feedback/login routes, and Studio login directory client |
+| PR-4 Telemetry, feedback, and pipeline | 27 | Feedback internals, quality/message telemetry, pipeline admission, runtime policy/metrics, and translation application |
+| PR-5 Session state | 13 | `session_manager.py` and `session_store.py` |
+| PR-6 Realtime transport | 22 | Session routes, WebSocket manager/monitor, and polling routes |
+| PR-7 Feedback tests | 28 | Feedback tests under `tests`, including integration tests |
+| PR-8 Remaining tests | 35 | Remaining affected tests under `tests` and `services/api_gateway/tests` |
 
-Expected issue counts after the recommended merge order are `101 -> 93 -> 61 -> 41 -> 16 -> 0`. A deviation means the coordinator MUST refresh the ledger before the next merge.
+The package counts sum to 163. A file belongs to exactly one package. If a fix
+requires a file owned by another package, it is recorded as a dependency and
+implemented in the owning package instead of crossing the boundary.
 
-## Agent Contract
+## Delivery Strategy
 
-- Each agent SHALL claim exactly one work package and edit only its owned files.
-- Shared files such as workflow configuration, `pyproject.toml`, and `sonar-project.properties` belong to the coordinator unless explicitly assigned. Frontend package manifests and their lock file belong to WP-C.
-- If a fix requires an unowned file, the agent SHALL stop that part, report the dependency, and continue with non-blocked owned work.
-- Agents SHALL report changed files, tests executed, results, remaining risks, and the expected Sonar issue reduction.
-- Agents SHALL not change Quality Profiles, exclusions, issue status, or gate thresholds.
-- Agents SHALL not use `NOSONAR`. A suspected false positive requires coordinator review and documented evidence.
-- Every PR SHALL be rebased on the latest `main` and receive its own SonarCloud PR analysis.
+Each package uses a dedicated branch from the latest `origin/main`, is
+implemented in the isolated `.worktrees/fix-sonarcloud-backlog` workspace, and
+targets `main`. Packages are opened sequentially. A later package does not
+depend on an unmerged earlier package unless its PR explicitly documents that
+dependency.
+
+Subagents may implement or review one package at a time. The coordinator owns
+branch transitions, verifies the diff and tests independently, resolves review
+findings, pushes the branch, and opens the PR. No agent may edit files outside
+the active package.
 
 ## Decisions
 
-### Decision: Validate at trust boundaries
+### Decision: Correct behavior rather than suppress findings
 
-Frontend session identifiers and connection inputs will be validated before URL or WebSocket construction. Allowed WebSocket protocols are `ws` and `wss`; URL path segments are encoded only after validation. Logs will contain safe state, counts, or generated correlation identifiers instead of raw user-controlled values.
+`NOSONAR`, broad exclusions, disabled rules, and issue-status manipulation are
+not remediation. Suspected false positives require documented evidence and
+maintainer review.
 
-### Decision: Use exception logging only in active exception handlers
+### Decision: Preserve external contracts
 
-The 41 `python:S8572` findings will be fixed with `logger.exception()` inside the corresponding `except` blocks. Messages will not interpolate exception text or user input. Where traceback text may itself contain sensitive input, the code will log a safe message and structured non-sensitive metadata.
+Function extraction, constants, annotations, and dependency-injection syntax
+may change internals. HTTP paths, query names, response models, WebSocket
+messages, authentication semantics, persistence keys, and emitted telemetry
+remain stable unless an existing test proves the analyzer is identifying a
+real defect in that contract.
 
-### Decision: Preserve the polling API contract
+### Decision: Treat complexity refactors as behavior-sensitive
 
-The Python parameter that conflicts with timeout-context semantics may be renamed internally, but the HTTP query parameter remains `timeout` through an explicit FastAPI alias. OpenAPI and request behavior must remain unchanged.
+The seven cognitive-complexity findings require characterization tests for
+affected branches before extraction. Helpers remain private and are split by
+one responsibility. Refactors stop if existing behavior is ambiguous rather
+than choosing new behavior implicitly.
 
-### Decision: Build wheels before runtime installation
+### Decision: Make test fixes semantically strict
 
-Runtime images will install exact, reviewed dependencies from a controlled wheel set. The preferred sequence is:
+`pytest.raises` blocks contain only the invocation expected to fail;
+temporary global changes use `monkeypatch`; composite assertions are split
+without dropping checks; async markers and fixtures are retained where the
+test contract requires them.
 
-1. Resolve exact versions into service-specific lock files.
-2. Download available wheels and build unavoidable source distributions in a builder stage.
-3. Install into the runtime image with `--no-index` and `--only-binary=:all:` from the controlled wheel directory.
-4. Pin direct installations such as pip, torch, torchvision, and torchaudio and align their CUDA wheel index with the base image.
+### Decision: Build controlled wheels for runtime images
 
-If a required package has no compatible Python 3.12 wheel, the builder stage may create it. Source build execution in the runtime stage is not acceptable.
+Runtime stages install only from an exact, controlled wheel set with
+`--no-index` and `--only-binary=:all:`. If a dependency lacks a compatible
+wheel, a builder stage may build it; runtime execution of package setup scripts
+is not accepted. Image build and import/health smoke tests gate the container
+PR.
 
-### Decision: Fix the load-test classification explicitly
+## Verification
 
-`tests/load/test_production_load.py` must either expose a collectable `@pytest.mark.load` test with assertions or move to a script location. Broad Sonar exclusions are not acceptable. The selected treatment must keep documented load-test commands accurate.
+Every PR runs the narrowest meaningful tests plus formatting or linting for
+its language. Python production refactors also run related route/service tests;
+test-only changes run every modified module; frontend changes run clean install,
+tests, lint, and build; container changes run builds and service-specific smoke
+checks.
 
-### Decision: Raise coverage after code stabilization
-
-Coverage work starts only after all five remediation packages are merged. It targets approximately 351 additional covered lines, prioritizing circuit-breaker routes, enhanced audio validation, WebSocket polling, and WebSocket management. Coverage tests must assert behavior and may not execute lines solely to increase the metric.
-
-## Merge Strategy
-
-Implementation may run in parallel. Merge order is:
-
-1. WP-E Tests
-2. WP-C Frontend
-3. WP-A Backend routes
-4. WP-B Backend core
-5. WP-D Containers after all image checks pass
-6. Coverage wave
-7. Coordinator validation and CI enforcement
-
-The container package may begin immediately but merges last because failed GPU imports or health checks are release blockers.
+Before final completion, the coordinator runs the hermetic backend suite,
+frontend verification, OpenSpec strict validation, and a fresh SonarCloud
+analysis on the integrated `main` revision. Integration, load, GPU, or
+real-system checks that cannot run locally are recorded explicitly and remain
+required CI or controlled-environment evidence.
 
 ## Risks / Trade-offs
 
-- `logger.exception()` can increase log volume and expose exception text.
-  - Mitigation: use safe static messages, avoid interpolating exception values, and add log-capture tests for sensitive fields.
-- URL validation can accidentally reject existing valid identifiers.
-  - Mitigation: derive validation from backend contracts and test valid, boundary, and injection cases.
-- CUDA and PyTorch wheel versions may be incompatible with the current CUDA 13 base images.
-  - Mitigation: document and test the supported matrix before merge; do not silently downgrade GPU behavior.
-- Existing circuit-breaker tests use real threads, fixed ports, and timing windows.
-  - Mitigation: use dynamic ports, guaranteed cleanup, and repeat the targeted suite three times.
-- A Sonar analyzer update may add findings during the work.
-  - Mitigation: preserve the immutable baseline for accountability, add new findings to the ledger, and require zero open issues at completion.
-- Parallel agents may edit shared tests or configuration.
-  - Mitigation: enforce the ownership table and reserve shared configuration for the coordinator.
+- Binary-only container installation can expose packages without compatible
+  wheels. A builder stage and per-image smoke tests contain this risk.
+- Complexity refactors can alter exception ordering or cleanup. Focused
+  characterization tests and small commits make regressions reviewable.
+- Independent PRs can conflict with unrelated feature delivery. Each branch is
+  refreshed from `origin/main` immediately before final verification; no
+  force-push is used without explicit authorization.
+- SonarCloud may add findings during the work. New findings are tracked
+  separately while the immutable baseline remains auditable.
 
 ## Rollback Plan
 
-- Each work package is delivered as an independent PR and commit series.
-- Revert only the failing package if a regression appears.
-- Do not revert or weaken the Quality Gate to unblock a merge.
-- Container changes require retention of the last known-good image tags until production smoke checks pass.
+Each package is a separate PR and commit series. A failing package can be
+reverted without reverting unrelated remediation. The Quality Gate is never
+weakened to unblock a package.
 
 ## Completion Evidence
 
-The coordinator records the following in `tasks.md` before marking the change complete:
-
-- final Sonar analysis ID, commit, and timestamp
-- final issue totals and ratings
-- backend test and coverage summary
-- frontend lint, build, test, audit, and Fallow summary
-- four container build and health-smoke results
-- any false-positive decisions with evidence and owner approval
+The change is complete only when `tasks.md` records all PR URLs, local and CI
+test evidence, the final SonarCloud analysis ID and revision, zero open issues,
+an `OK` Quality Gate, and the required ratings and coverage thresholds.
