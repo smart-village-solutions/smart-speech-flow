@@ -175,27 +175,32 @@ class TestTheTenantPathCannotWriteOutsideItsTenant:
     async def test_an_insert_for_another_tenant_is_rejected(self, owner, app_connection) -> None:
         """With no WITH CHECK clause, Postgres reuses USING for inserts."""
         now = datetime.now(timezone.utc)
+        feedback_id = uuid4()
+        analytics_event_id = uuid4()
+        expires_at = now + timedelta(days=365)
 
-        with pytest.raises(asyncpg.InsufficientPrivilegeError):
-            async with app_connection.transaction():
-                await app_connection.execute(_BIND, TENANT_A)
+        async with app_connection.transaction():
+            await app_connection.execute(_BIND, TENANT_A)
+            with pytest.raises(asyncpg.InsufficientPrivilegeError, match="row-level security"):
                 await app_connection.execute(
                     _INSERT,
-                    uuid4(),
+                    feedback_id,
                     TENANT_B,
                     "b" * 32,
-                    uuid4(),
+                    analytics_event_id,
                     now,
-                    now + timedelta(days=365),
+                    expires_at,
                 )
 
     async def test_the_app_role_cannot_delete_feedback(self, owner, app_connection) -> None:
         """Retention must not be reachable from a request path."""
         await _seed(owner, TENANT_A)
 
-        with pytest.raises(asyncpg.InsufficientPrivilegeError):
-            async with app_connection.transaction():
-                await app_connection.execute(_BIND, TENANT_A)
+        async with app_connection.transaction():
+            await app_connection.execute(_BIND, TENANT_A)
+            with pytest.raises(
+                asyncpg.InsufficientPrivilegeError, match="permission denied for table feedback"
+            ):
                 await app_connection.execute("DELETE FROM feedback")
 
 

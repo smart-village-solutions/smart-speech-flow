@@ -6,8 +6,8 @@ two role passwords that made roughly three deployments in four fail at pool
 creation. `@` is worse: it does not raise at all, it truncates the password and
 folds the rest into the hostname.
 
-These tests use only asyncpg's public entry point, so they keep holding if its
-DSN parser is rewritten.
+These tests use the production repository's pool creation boundary, so a
+regression in how it passes credentials to asyncpg is observable too.
 """
 
 import asyncio
@@ -15,6 +15,8 @@ import socket
 
 import asyncpg
 import pytest
+
+from services.api_gateway.feedback.repository import PostgresFeedbackRepository
 
 # Refused immediately rather than routed anywhere: a DSN that parses gets a
 # connection error, a DSN that does not parse never reaches the socket. That
@@ -24,15 +26,26 @@ UNREACHABLE = "127.0.0.1:1"
 CONNECT_REACHED = (OSError, asyncio.TimeoutError, asyncpg.PostgresError)
 
 
-async def _connect(dsn: str, password: str | None = None) -> Exception:
-    with pytest.raises(Exception) as caught:  # noqa: PT011 - the type is the result
-        await asyncpg.connect(dsn=dsn, password=password, timeout=1)
+async def _connect(
+    dsn: str,
+    password: str | None = None,
+    *,
+    error_type: type[Exception] = ConnectionRefusedError,
+    match: str = "Connect call failed",
+) -> Exception:
+    async with asyncio.timeout(2):
+        with pytest.raises(error_type, match=match) as caught:
+            await PostgresFeedbackRepository.create(dsn=dsn, password=password)
     return caught.value
 
 
 async def test_a_password_with_a_slash_is_fatal_inside_the_connection_string() -> None:
     """The defect, at the boundary that has it."""
-    error = await _connect(f"postgresql://ssf_feedback_app:a/b@{UNREACHABLE}/ssf")
+    error = await _connect(
+        f"postgresql://ssf_feedback_app:a/b@{UNREACHABLE}/ssf",
+        error_type=ValueError,
+        match="invalid literal for int",
+    )
 
     assert isinstance(error, ValueError)
     assert not isinstance(error, CONNECT_REACHED)
@@ -45,7 +58,11 @@ async def test_a_password_with_an_at_sign_silently_corrupts_the_host() -> None:
     ECONNREFUSED. This one cannot resolve `b@127.0.0.1` at all, and the
     difference between those two failures is the whole defect.
     """
-    error = await _connect(f"postgresql://ssf_feedback_app:a@b@{UNREACHABLE}/ssf")
+    error = await _connect(
+        f"postgresql://ssf_feedback_app:a@b@{UNREACHABLE}/ssf",
+        error_type=socket.gaierror,
+        match="Name or service not known|nodename nor servname|Name does not resolve",
+    )
 
     assert isinstance(error, socket.gaierror), error
     intact = await _connect(f"postgresql://ssf_feedback_app@{UNREACHABLE}/ssf", "a@b")
@@ -100,9 +117,10 @@ class TestEveryDriverFailureIsRetryable:
                 raise error
 
         repository = PostgresFeedbackRepository(FailingPool())
+        record = object()
 
-        with pytest.raises(FeedbackStorageUnavailable):
-            await repository.store(object())
+        with pytest.raises(FeedbackStorageUnavailable, match="could not be committed"):
+            await repository.store(record)
 
 
 class TestTheReadPathFailsTheSameWay:
@@ -133,8 +151,9 @@ class TestTheReadPathFailsTheSameWay:
     async def test_listing_is_reported_as_unavailable(self, error) -> None:
         from services.api_gateway.feedback.repository import FeedbackStorageUnavailable
 
-        with pytest.raises(FeedbackStorageUnavailable):
-            await self._repository(error).list_records(tenant_id="t", limit=1, offset=0)
+        repository = self._repository(error)
+        with pytest.raises(FeedbackStorageUnavailable, match="could not be read"):
+            await repository.list_records(tenant_id="t", limit=1, offset=0)
 
     @pytest.mark.parametrize("error", ERRORS)
     async def test_fetching_is_reported_as_unavailable(self, error) -> None:
@@ -142,8 +161,10 @@ class TestTheReadPathFailsTheSameWay:
 
         from services.api_gateway.feedback.repository import FeedbackStorageUnavailable
 
-        with pytest.raises(FeedbackStorageUnavailable):
-            await self._repository(error).fetch_record(feedback_id=uuid4(), tenant_id="t")
+        repository = self._repository(error)
+        feedback_id = uuid4()
+        with pytest.raises(FeedbackStorageUnavailable, match="could not be read"):
+            await repository.fetch_record(feedback_id=feedback_id, tenant_id="t")
 
     @pytest.mark.parametrize("error", ERRORS)
     async def test_auditing_is_reported_as_unavailable(self, error) -> None:
@@ -152,7 +173,9 @@ class TestTheReadPathFailsTheSameWay:
 
         from services.api_gateway.feedback.repository import FeedbackStorageUnavailable
 
-        with pytest.raises(FeedbackStorageUnavailable):
-            await self._repository(error).record_access(
-                feedback_id=uuid4(), tenant_id="t", accessed_by="op", access_scope="detail"
+        repository = self._repository(error)
+        feedback_id = uuid4()
+        with pytest.raises(FeedbackStorageUnavailable, match="could not be read"):
+            await repository.record_access(
+                feedback_id=feedback_id, tenant_id="t", accessed_by="op", access_scope="detail"
             )

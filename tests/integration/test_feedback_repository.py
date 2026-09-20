@@ -244,12 +244,11 @@ async def test_a_constraint_violation_does_not_leak_the_row(repository) -> None:
 
 
 async def test_an_unreachable_database_is_reported_as_unavailable() -> None:
-    """The caller needs a retryable signal, not an asyncpg internal."""
-    with pytest.raises((FeedbackStorageUnavailable, OSError)):
-        repo = await PostgresFeedbackRepository.create(
+    """Pool creation propagates refusal for the gateway's retry loop."""
+    with pytest.raises(ConnectionRefusedError, match="Connect call failed"):
+        await PostgresFeedbackRepository.create(
             dsn="postgresql://nobody:nobody@127.0.0.1:1/nothing"
         )
-        await repo.store(_record())
 
 
 # --- #305: the advisory lock ------------------------------------------------
@@ -337,12 +336,21 @@ async def test_the_pass_lock_is_released_when_the_pass_raises(repository) -> Non
     """A pass that dies mid-flight must not lock reconciliation out forever."""
     from services.api_gateway.feedback.maintenance import RECONCILIATION_LOCK_KEY
 
-    with pytest.raises(RuntimeError):
-        async with repository.pass_lock(RECONCILIATION_LOCK_KEY):
-            raise RuntimeError("the pass blew up")
+    failure = RuntimeError("the pass blew up")
 
-    async with repository.pass_lock(RECONCILIATION_LOCK_KEY):
-        pass
+    async def failing_pass():
+        async with repository.pass_lock(RECONCILIATION_LOCK_KEY):
+            raise failure
+
+    with pytest.raises(RuntimeError, match="^the pass blew up$"):
+        await failing_pass()
+
+    rival = await PostgresFeedbackRepository.create(dsn=DSN, password=PASSWORD)
+    try:
+        async with rival.pass_lock(RECONCILIATION_LOCK_KEY):
+            pass
+    finally:
+        await rival.close()
 
 
 async def test_the_two_passes_do_not_exclude_each_other(repository) -> None:
@@ -373,7 +381,7 @@ async def test_the_deletion_audit_survives_the_row_it_describes(repository) -> N
     record = _record(expires_at=now - timedelta(days=1))
     await _store(record)
 
-    await repository.delete_expired(now, 100, RETENTION_LOCK_KEY := 0x55F_FEED)
+    await repository.delete_expired(now, 100, 0x55F_FEED)
 
     rows = await _audit_rows("SELECT * FROM feedback_deletion_audit")
     remaining = (await _audit_rows("SELECT count(*) AS n FROM feedback"))[0]["n"]

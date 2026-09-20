@@ -40,8 +40,9 @@ def test_a_valid_submission_is_accepted() -> None:
 @pytest.mark.parametrize("field", ["translation_quality", "performance", "usability"])
 @pytest.mark.parametrize("value", [0, 6, -1])
 def test_ratings_outside_one_to_five_are_rejected(field: str, value: int) -> None:
+    payload = _valid(**{field: value})
     with pytest.raises(ValidationError):
-        FeedbackSubmissionRequest(**_valid(**{field: value}))
+        FeedbackSubmissionRequest(**payload)
 
 
 @pytest.mark.parametrize("field", ["translation_quality", "performance", "usability"])
@@ -52,8 +53,9 @@ def test_rating_boundaries_are_accepted(field: str, value: int) -> None:
 
 @pytest.mark.parametrize("value", [-1, 11])
 def test_nps_outside_zero_to_ten_is_rejected(value: int) -> None:
+    payload = _valid(net_promoter_score=value)
     with pytest.raises(ValidationError):
-        FeedbackSubmissionRequest(**_valid(net_promoter_score=value))
+        FeedbackSubmissionRequest(**payload)
 
 
 @pytest.mark.parametrize("value", [0, 10])
@@ -110,14 +112,16 @@ def test_form_version_defaults_to_the_current_one() -> None:
 
 def test_unknown_fields_are_rejected() -> None:
     """A client must not be able to smuggle in a tenant or a feedback id."""
+    payload = _valid(tenant_id="attacker-chosen")
     with pytest.raises(ValidationError):
-        FeedbackSubmissionRequest(**_valid(tenant_id="attacker-chosen"))
+        FeedbackSubmissionRequest(**payload)
 
 
 def test_a_client_supplied_session_ref_is_rejected() -> None:
     """Analytical identifiers are server-owned; see tenant_context.py."""
+    payload = _valid(session_ref="f" * 32)
     with pytest.raises(ValidationError):
-        FeedbackSubmissionRequest(**_valid(session_ref="f" * 32))
+        FeedbackSubmissionRequest(**payload)
 
 
 @pytest.mark.parametrize(
