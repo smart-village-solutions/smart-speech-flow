@@ -36,9 +36,10 @@ logger = logging.getLogger(__name__)
 # Router setup
 router = APIRouter(prefix="/api/customer", tags=["customer"])
 
+_SESSION_NOT_FOUND = "Session not found"
 CUSTOMER_ROUTE_RESPONSES = {
     400: {"description": "Invalid customer session request"},
-    404: {"description": "Session not found"},
+    404: {"description": _SESSION_NOT_FOUND},
     500: {"description": "Customer session operation failed"},
 }
 _REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
@@ -219,7 +220,7 @@ async def activate_session(
         key = require_customer_session_key(request.session_id, principal)
         session = session_manager.get_session(key)
         if session is None:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
 
         # Status prüfen
         if session.status == SessionStatus.TERMINATED:
@@ -346,7 +347,7 @@ async def get_customer_session_status(
     try:
         session = session_manager.get_session(key)
         if session is None:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
 
         return {
             "session_id": session_id,
