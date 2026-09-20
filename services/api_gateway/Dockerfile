@@ -11,6 +11,7 @@ RUN printf '%s%s\n' \
     && python -m pip install \
         --disable-pip-version-check \
         --no-cache-dir \
+        --only-binary=:all: \
         --require-hashes \
         -r /tmp/pip-bootstrap.txt \
     && python -m pip download \
