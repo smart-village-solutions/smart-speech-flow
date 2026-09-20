@@ -18,8 +18,6 @@ from uuid import UUID, uuid4
 from ..quality_telemetry import ProbeOutcome
 from ..session_pseudonym import MISSING_REFERENCE, feedback_ref, session_ref, tenant_ref
 from ..tenant_session import TenantSessionKey
-from .repository import FeedbackRepository
-from .tenant import TenantResolver
 from .models import (
     MAX_IMPROVEMENTS_LENGTH,
     RETENTION_POLICY_VERSION,
@@ -28,6 +26,8 @@ from .models import (
     FeedbackSubmissionRequest,
     FeedbackTextTooLong,
 )
+from .repository import FeedbackRepository
+from .tenant import TenantResolver
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,9 @@ class FeedbackService:
 
         ciphertext = None
         if text is not None:
-            ciphertext = self._cipher.encrypt(text, feedback_id=feedback_id, tenant_id=tenant_id)
+            ciphertext = self._cipher.encrypt(
+                text, feedback_id=feedback_id, tenant_id=tenant_id
+            )
 
         record = FeedbackRecord(
             feedback_id=feedback_id,
@@ -158,9 +160,11 @@ class FeedbackService:
                 await self._repository.mark_analytics_state(
                     feedback_id, AnalyticsState.NOT_APPLICABLE, tenant_id
                 )
-        except Exception as error:  # noqa: BLE001 - reported, never raised
+        except Exception as error:  # Reported, never raised.
             # Type name only: an asyncpg error carries the bound parameters.
-            logger.warning("Feedback analytics state not recorded: %s", type(error).__name__)
+            logger.warning(
+                "Feedback analytics state not recorded: %s", type(error).__name__
+            )
 
         return feedback_id
 
@@ -182,7 +186,9 @@ class FeedbackService:
         # that decrypts to nothing an authorised reader can act on.
         return improvements if improvements.strip() else None
 
-    def _resolve_session(self, session_id: str | None) -> tuple[str, TenantSessionKey | None]:
+    def _resolve_session(
+        self, session_id: str | None
+    ) -> tuple[str, TenantSessionKey | None]:
         """The submission's pseudonymous reference, and its key when it has one.
 
         Resolved once and handed to the tenant resolver, rather than resolved
