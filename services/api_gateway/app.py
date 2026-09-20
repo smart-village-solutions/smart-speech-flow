@@ -521,6 +521,11 @@ def _report_background_task_shutdown_errors(task_results: list[Any]) -> None:
             print(f"Background task shutdown error: {result}")
 
 
+def _start_feedback_maintenance_task(app: FastAPI) -> asyncio.Task[None]:
+    """Start feedback maintenance with the application lifespan state."""
+    return asyncio.create_task(feedback_maintenance_task(app.state))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application Lifespan: Initialize singletons and start background tasks"""
@@ -682,9 +687,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     websocket_monitor_bg_task = asyncio.create_task(websocket_monitor_task())
     websocket_fallback_bg_task = asyncio.create_task(websocket_fallback_task())
     audio_cleanup_bg_task = asyncio.create_task(audio_cleanup_task())
-    feedback_maintenance_bg_task = asyncio.create_task(
-        feedback_maintenance_task(app.state)
-    )
+    feedback_maintenance_bg_task = _start_feedback_maintenance_task(app)
     feedback_connect_bg_task = asyncio.create_task(
         feedback_connect_task(
             app.state, feedback_dsn, maintenance_dsn, session_manager, read_dsn
