@@ -52,7 +52,7 @@ A/A/A new-code ratings, 0.0% new duplication, and 100% hotspots reviewed.
 
 | Task / PR | Reviewed head | Final local evidence | Sonar new coverage |
 | --- | --- | --- | ---: |
-| 1 / [#367](https://github.com/smart-village-solutions/smart-speech-flow/pull/367) | `bc6b030` | 16 tests; five builds and import/health smokes; three CUDA checks | Not reported |
+| 1 / [#367](https://github.com/smart-village-solutions/smart-speech-flow/pull/367) | `bc6b030` (verified implementation/image-build head) | 16 tests; five builds and import/health smokes; three CUDA checks | Not reported |
 | 2 / [#368](https://github.com/smart-village-solutions/smart-speech-flow/pull/368) | `3406c13` | 617 frontend tests; clean install, lint, build, token and Bash checks | Not reported |
 | 3 / [#369](https://github.com/smart-village-solutions/smart-speech-flow/pull/369) | `a1af930` | 84 focused; 1,864 hermetic; 88.45% overall local coverage | 94.6% |
 | 4 / [#370](https://github.com/smart-village-solutions/smart-speech-flow/pull/370) | `5cebce5` | 210 initial/140 post-review focused; 1,886 hermetic; 88.21% overall local coverage | 95.7% |
@@ -80,8 +80,11 @@ verified CUDA and imports/health without production weights or model-ready
 health. Task 8's live pipeline tests used validation fallback because
 inference services were unavailable; controlled successful route serialization
 does not establish live inference. Task 2 retains pre-existing dependency and
-bundle warnings. The pending documentation push for PR #367 must rerun checks;
-the table records its previously analyzed head.
+bundle warnings. PR #367 also contains a documentation-only reconciliation
+follow-up. Its latest head must have green required checks and zero SonarCloud
+PR issues at handoff; read the exact current head from the PR. This condition
+was verified after the first documentation push on 2026-09-20. The table retains
+`bc6b030` as the verified implementation/image-build head.
 
 ---
 

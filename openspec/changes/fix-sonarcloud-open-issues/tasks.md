@@ -92,7 +92,7 @@ not zero. These are PR results, not evidence of baseline closure on main.
 
 | Package | PR | Verified remote head | Sonar new coverage |
 | --- | --- | --- | ---: |
-| PR-1 | [#367](https://github.com/smart-village-solutions/smart-speech-flow/pull/367) | `bc6b030` | — |
+| PR-1 | [#367](https://github.com/smart-village-solutions/smart-speech-flow/pull/367) | `bc6b030` (verified implementation/image-build head) | — |
 | PR-2 | [#368](https://github.com/smart-village-solutions/smart-speech-flow/pull/368) | `3406c13` | — |
 | PR-3 | [#369](https://github.com/smart-village-solutions/smart-speech-flow/pull/369) | `a1af930` | 94.6% |
 | PR-4 | [#370](https://github.com/smart-village-solutions/smart-speech-flow/pull/370) | `5cebce5` | 95.7% |
@@ -101,8 +101,11 @@ not zero. These are PR results, not evidence of baseline closure on main.
 | PR-7 | [#373](https://github.com/smart-village-solutions/smart-speech-flow/pull/373) | `4bda684` | — |
 | PR-8 | [#374](https://github.com/smart-village-solutions/smart-speech-flow/pull/374) | `04fea34` | — |
 
-The documentation follow-up on PR #367 requires fresh checks after its new
-head is pushed. Its results above apply to `bc6b030`, not an unpushed commit.
+PR #367 also contains a documentation-only reconciliation follow-up. Its latest
+head must have green required checks and zero SonarCloud PR issues at handoff;
+read the exact current head from the PR. This condition was verified after the
+first documentation push on 2026-09-20. The implementation and image-build
+evidence remains anchored to `bc6b030`.
 All implementation packages passed independent review; review corrections
 were rechecked before the remote heads above were recorded.
 
