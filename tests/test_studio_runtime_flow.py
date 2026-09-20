@@ -92,8 +92,9 @@ async def test_returns_configuration_only_when_tenant_and_revision_match() -> No
 async def test_rejects_configuration_with_a_different_tenant() -> None:
     flow = StudioRuntimeFlow(StubRuntimeClient(_configuration("tenant-fulda", REVISION)))
 
+    context = _context()
     with pytest.raises(StudioRuntimeFlowError) as caught:
-        await flow.resolve(_context(), "correlation-1")
+        await flow.resolve(context, "correlation-1")
 
     assert caught.value.code == "studio_runtime_tenant_mismatch"
     assert caught.value.retryable is False
@@ -103,8 +104,9 @@ async def test_rejects_configuration_with_a_different_tenant() -> None:
 async def test_rejects_configuration_with_a_different_authorization_revision() -> None:
     flow = StudioRuntimeFlow(StubRuntimeClient(_configuration("tenant-kassel", OTHER_REVISION)))
 
+    context = _context()
     with pytest.raises(StudioRuntimeFlowError) as caught:
-        await flow.resolve(_context(), "correlation-1")
+        await flow.resolve(context, "correlation-1")
 
     assert caught.value.code == "studio_runtime_authorization_mismatch"
     assert caught.value.retryable is False
@@ -118,8 +120,9 @@ async def test_preserves_safe_upstream_failure_without_a_configuration() -> None
         )
     )
 
+    context = _context()
     with pytest.raises(StudioRuntimeFlowError) as caught:
-        await flow.resolve(_context(), "correlation-1")
+        await flow.resolve(context, "correlation-1")
 
     assert caught.value.code == "runtime_configuration_unavailable"
     assert caught.value.retryable is True
@@ -131,8 +134,9 @@ async def test_preserves_safe_service_token_failure_without_a_configuration() ->
         StubRuntimeClient(StudioTokenError("studio_token_network_error", retryable=True))
     )
 
+    context = _context()
     with pytest.raises(StudioRuntimeFlowError) as caught:
-        await flow.resolve(_context(), "correlation-1")
+        await flow.resolve(context, "correlation-1")
 
     assert caught.value.code == "studio_token_network_error"
     assert caught.value.retryable is True
@@ -201,9 +205,10 @@ async def test_mock_backed_flow_rejects_a_token_revision_that_does_not_match() -
         )
     )
 
+    context = StudioTenantContext("tenant-kassel", OTHER_REVISION)
     with pytest.raises(StudioRuntimeFlowError) as caught:
         await flow.resolve(
-            StudioTenantContext("tenant-kassel", OTHER_REVISION),
+            context,
             "mock-flow-correlation",
         )
 

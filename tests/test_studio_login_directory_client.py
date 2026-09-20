@@ -282,7 +282,8 @@ async def test_classifies_transport_timeout_as_retryable_network_error() -> None
 
 
 def test_rejects_base_urls_that_could_change_the_fixed_directory_path() -> None:
-    with pytest.raises(ValueError):
-        StudioLoginDirectoryClient("https://studio.test/prefix", StubTokenProvider())
-    with pytest.raises(ValueError):
-        StudioLoginDirectoryClient("https://user:secret@studio.test", StubTokenProvider())
+    token_provider = StubTokenProvider()
+    with pytest.raises(ValueError, match="base_url must be an HTTP origin"):
+        StudioLoginDirectoryClient("https://studio.test/prefix", token_provider)
+    with pytest.raises(ValueError, match="base_url must be an HTTP origin"):
+        StudioLoginDirectoryClient("https://user:secret@studio.test", token_provider)

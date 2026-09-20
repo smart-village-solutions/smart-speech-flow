@@ -13,6 +13,7 @@ would never run.
 import asyncio
 import contextlib
 import importlib.util
+import json
 import sys
 import threading
 import time
@@ -56,9 +57,9 @@ def load_translation(monkeypatch, **env):
 
     unique = f"translation_app_{uuid.uuid4().hex}"
     spec = importlib.util.spec_from_file_location(unique, ROOT / "services/translation/app.py")
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    sys.modules[unique] = module
     monkeypatch.setitem(sys.modules, unique, module)
     spec.loader.exec_module(module)
     return module
@@ -330,8 +331,9 @@ class TestSaturationResponse:
 
         await asyncio.to_thread(occupied.wait, SAFETY_TIMEOUT)
 
+        request = request_with(admission)
         with pytest.raises(translation.HTTPException) as caught:
-            await translation.translate(request_with(admission))
+            await translation.translate(request)
 
         assert caught.value.status_code == 503
         assert caught.value.headers["Retry-After"] == "1"
@@ -348,8 +350,9 @@ class TestSaturationResponse:
 
         await asyncio.to_thread(occupied.wait, SAFETY_TIMEOUT)
 
+        request = request_with(admission)
         with pytest.raises(translation.HTTPException) as caught:
-            await translation.translate(request_with(admission))
+            await translation.translate(request)
 
         assert caught.value.status_code != 500
         assert "Translation failed" not in str(caught.value.detail)
@@ -405,8 +408,9 @@ class TestSaturationResponse:
         await asyncio.to_thread(occupied.wait, SAFETY_TIMEOUT)
         admitted_waits = len(metrics.waits)
 
+        request = request_with(admission)
         with pytest.raises(translation.HTTPException):
-            await translation.translate(request_with(admission))
+            await translation.translate(request)
 
         assert metrics.rejections == 1
         assert len(metrics.waits) == admitted_waits + 1, "rejection was not observed"
@@ -713,7 +717,9 @@ class TestAdmissionWiring:
         response = await translation.translate(BareRequest())
 
         assert response.status_code == 200
-        assert recorder.thread_ids and recorder.thread_ids[0] != threading.get_ident()
+        assert json.loads(response.body)["translations"] == "translated"
+        assert recorder.thread_ids
+        assert recorder.thread_ids[0] != threading.get_ident()
 
 
 class TestWireContract:

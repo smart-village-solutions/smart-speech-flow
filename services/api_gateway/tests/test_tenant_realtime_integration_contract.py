@@ -10,16 +10,20 @@ from services.api_gateway.session_manager import session_manager
 REVISION = f"sha256:{'a' * 64}"
 
 
-def test_admin_can_observe_only_its_session_realtime_connection() -> None:
+def test_admin_can_observe_only_its_session_realtime_connection(monkeypatch) -> None:
     """The supported admin API exposes connections only inside its tenant session."""
-    original_manager = websocket_module.websocket_manager
     session_manager.reset(clear_persistence=True)
-    websocket_module.websocket_manager = None
-    app.dependency_overrides[require_ssf_user] = lambda: {
-        "sub": "operator-tenant-test",
-        "studio_tenant_id": "tenant-test",
-        "ssf_authorization_revision": REVISION,
-    }
+    monkeypatch.setattr(websocket_module, "websocket_manager", None)
+    monkeypatch.setattr(session_manager, "websocket_manager", None)
+    monkeypatch.setitem(
+        app.dependency_overrides,
+        require_ssf_user,
+        lambda: {
+            "sub": "operator-tenant-test",
+            "studio_tenant_id": "tenant-test",
+            "ssf_authorization_revision": REVISION,
+        },
+    )
 
     try:
         client = TestClient(app)
@@ -43,7 +47,7 @@ def test_admin_can_observe_only_its_session_realtime_connection() -> None:
                 assert acknowledgement["type"] == "connection_ack"
 
                 connections = client.get(
-                    f"/api/admin/session/{session_id}/realtime/connections"
+                    f"/api/admin/session/{session_id}/realtime/connections",
                 )
                 assert connections.status_code == 200
                 body = connections.json()
@@ -53,8 +57,4 @@ def test_admin_can_observe_only_its_session_realtime_connection() -> None:
         finally:
             client.close()
     finally:
-        app.dependency_overrides.pop(require_ssf_user, None)
-        websocket_module.websocket_manager = original_manager
         session_manager.reset(clear_persistence=True)
-        if original_manager is not None:
-            session_manager.register_websocket_manager(original_manager)

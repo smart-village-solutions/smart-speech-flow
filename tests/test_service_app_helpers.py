@@ -15,7 +15,6 @@ from types import SimpleNamespace
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -39,7 +38,7 @@ class DummyMetric:
         return None
 
 
-class StubHTTPException(Exception):
+class StubHTTPError(Exception):
     # Mirrors fastapi.HTTPException, headers included: the translation service
     # returns Retry-After on a saturation 503.
     def __init__(self, status_code: int, detail: str, headers: dict | None = None):
@@ -207,7 +206,7 @@ def build_fastapi_stub() -> tuple[types.ModuleType, types.ModuleType]:
     fastapi_stub.FastAPI = FastAPI
     fastapi_stub.File = _marker
     fastapi_stub.Form = _marker
-    fastapi_stub.HTTPException = StubHTTPException
+    fastapi_stub.HTTPException = StubHTTPError
     fastapi_stub.Request = object
     fastapi_stub.UploadFile = object
     responses_stub.JSONResponse = JSONResponse
@@ -257,9 +256,10 @@ def load_module(monkeypatch, module_name: str, relative_path: str, stubs: dict[s
     module_path = ROOT / relative_path
     unique_name = f"{module_name}_{uuid.uuid4().hex}"
     spec = importlib.util.spec_from_file_location(unique_name, module_path)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    sys.modules[unique_name] = module
+    monkeypatch.setitem(sys.modules, unique_name, module)
     spec.loader.exec_module(module)
     return module
 
@@ -435,9 +435,7 @@ def test_gpu_metrics_collects_torch_and_nvml_data():
         nvmlDeviceGetTemperature=lambda handle, sensor: 61,
     )
 
-    gpu_info, nvml_initialized = gpu_metrics.collect_gpu_metrics(
-        fake_torch, fake_nvml, False
-    )
+    gpu_info, nvml_initialized = gpu_metrics.collect_gpu_metrics(fake_torch, fake_nvml, False)
 
     assert nvml_initialized is True
     assert gpu_info["available"] is True
@@ -465,9 +463,7 @@ def test_gpu_metrics_handles_missing_gpu_and_nvml_failure():
     no_gpu_torch = SimpleNamespace(
         cuda=SimpleNamespace(is_available=lambda: False, device_count=lambda: 3)
     )
-    gpu_info, nvml_initialized = gpu_metrics.collect_gpu_metrics(
-        no_gpu_torch, None, False
-    )
+    gpu_info, nvml_initialized = gpu_metrics.collect_gpu_metrics(no_gpu_torch, None, False)
     assert gpu_info == {
         "available": False,
         "device_count": 0,
@@ -518,9 +514,7 @@ def test_service_apps_collect_gpu_metrics_and_metrics_route_fallbacks(
     payload = {"available": True, "devices": [{"index": 0}]}
 
     monkeypatch.setattr(asr_app, "collect_gpu_metrics", lambda *args: (payload, True))
-    monkeypatch.setattr(
-        translation_app, "collect_gpu_metrics", lambda *args: (payload, True)
-    )
+    monkeypatch.setattr(translation_app, "collect_gpu_metrics", lambda *args: (payload, True))
     monkeypatch.setattr(tts_app, "collect_gpu_metrics", lambda *args: (payload, True))
 
     assert asr_app._collect_gpu_metrics() == payload
@@ -528,13 +522,9 @@ def test_service_apps_collect_gpu_metrics_and_metrics_route_fallbacks(
     assert tts_app._collect_gpu_metrics() == payload
 
     app_module = types.ModuleType("services.api_gateway.app")
-    app_module.app = SimpleNamespace(
-        state=SimpleNamespace(prometheus_registry="main-registry")
-    )
+    app_module.app = SimpleNamespace(state=SimpleNamespace(prometheus_registry="main-registry"))
     websocket_monitor = types.ModuleType("services.api_gateway.websocket_monitor")
-    websocket_monitor.get_websocket_monitor = lambda: SimpleNamespace(
-        _registry="ws-registry"
-    )
+    websocket_monitor.get_websocket_monitor = lambda: SimpleNamespace(_registry="ws-registry")
 
     metrics_route = load_module(
         monkeypatch,
@@ -548,9 +538,7 @@ def test_service_apps_collect_gpu_metrics_and_metrics_route_fallbacks(
     monkeypatch.setattr(
         metrics_route,
         "generate_latest",
-        lambda registry: (
-            b"main_metric 1\n" if registry == "main-registry" else b"ws_metric 2\n"
-        ),
+        lambda registry: (b"main_metric 1\n" if registry == "main-registry" else b"ws_metric 2\n"),
     )
 
     combined_response = metrics_route.metrics()
@@ -558,7 +546,9 @@ def test_service_apps_collect_gpu_metrics_and_metrics_route_fallbacks(
     assert combined_response.body == b"main_metric 1\nws_metric 2\n"
 
     monkeypatch.setattr(
-        metrics_route, "generate_latest", lambda registry: (_ for _ in ()).throw(RuntimeError("broken"))
+        metrics_route,
+        "generate_latest",
+        lambda registry: (_ for _ in ()).throw(RuntimeError("broken")),
     )
     fallback_response = metrics_route.metrics()
     assert fallback_response.body == b"# Fehler beim Generieren der Metriken\n"
@@ -600,7 +590,10 @@ async def test_asr_transcribe_fallback_and_success_paths(asr_app, monkeypatch):
         debug=None,
     )
 
-    assert success_response == {"text": f"en:{os.path.basename(tmp_output.name)}", "fallback": False}
+    assert success_response == {
+        "text": f"en:{os.path.basename(tmp_output.name)}",
+        "fallback": False,
+    }
     assert not os.path.exists(tmp_input.name)
     assert not os.path.exists(tmp_output.name)
 
@@ -609,7 +602,7 @@ async def test_asr_transcribe_fallback_and_success_paths(asr_app, monkeypatch):
 async def test_asr_transcribe_invalid_language_and_runtime_error(asr_app, monkeypatch):
     invalid_upload = FakeUploadFile(b"audio-bytes")
     invalid_request = build_request(query_params={})
-    with pytest.raises(StubHTTPException) as invalid_error:
+    with pytest.raises(StubHTTPError) as invalid_error:
         await asr_app.transcribe(
             file=invalid_upload,
             request=invalid_request,
@@ -654,9 +647,7 @@ def test_translation_helper_functions_cover_debug_and_chunking(translation_app, 
         virtual_memory=lambda: SimpleNamespace(percent=22.0),
     )
 
-    debug_response = translation_app._build_debug_response(
-        True, {"error": "boom"}, 400
-    )
+    debug_response = translation_app._build_debug_response(True, {"error": "boom"}, 400)
     assert debug_response is not None
     assert debug_response.status_code == 400
 
@@ -675,9 +666,7 @@ def test_translation_helper_functions_cover_debug_and_chunking(translation_app, 
         "_generate_single",
         lambda text, source_lang, target_lang, gen_overrides: f"{source_lang}->{target_lang}:{text}",
     )
-    outputs = translation_app._translate_texts(
-        ["kurz", "eins. zwei. drei."], "de", "en", {}
-    )
+    outputs = translation_app._translate_texts(["kurz", "eins. zwei. drei."], "de", "en", {})
     assert outputs[0] == "de->en:kurz"
     assert outputs[1].startswith("de->en:")
     assert translation_app._maybe_uromanize(["Hallo"], False) is None
@@ -710,7 +699,7 @@ def test_translation_validation_and_response_helpers(translation_app):
 @pytest.mark.asyncio
 async def test_translation_translate_handles_invalid_json_and_success(translation_app, monkeypatch):
     invalid_request = build_request(fail_json=True)
-    with pytest.raises(StubHTTPException) as invalid_error:
+    with pytest.raises(StubHTTPError) as invalid_error:
         await translation_app.translate(invalid_request)
     assert invalid_error.value.status_code == 400
     assert invalid_error.value.detail == "Invalid JSON payload"
@@ -721,7 +710,9 @@ async def test_translation_translate_handles_invalid_json_and_success(translatio
     translation_app.supported_langs = ["de", "en"]
     monkeypatch.setattr(translation_app, "_validate_lang", lambda lang: None)
     monkeypatch.setattr(
-        translation_app, "_translate_texts", lambda texts, source_lang, target_lang, gen_overrides: ["Hello"]
+        translation_app,
+        "_translate_texts",
+        lambda texts, source_lang, target_lang, gen_overrides: ["Hello"],
     )
 
     response = await translation_app.translate(
@@ -773,7 +764,9 @@ def test_tts_helper_functions_cover_model_resolution_and_responses(tts_app, monk
     )
     assert reasons == ["gpu1_util>=85", "gpu1_mem>=85"]
 
-    monkeypatch.setattr(tts_app, "_load_coqui_model", lambda lang: (_ for _ in ()).throw(RuntimeError("nope")))
+    monkeypatch.setattr(
+        tts_app, "_load_coqui_model", lambda lang: (_ for _ in ()).throw(RuntimeError("nope"))
+    )
     monkeypatch.setattr(tts_app, "_load_hf_tts_model", lambda lang: {"hf": lang})
     tts_app.tts_model_cache.clear()
     assert tts_app.get_tts_model("ar") == {"hf": "ar"}
@@ -850,6 +843,7 @@ def test_tts_hf_audio_synthesis_and_error_resolution(tts_app, monkeypatch):
     monkeypatch.setitem(sys.modules, "numpy", numpy_stub)
 
     captured = {}
+
     def fake_wav_writer(audio, sampling_rate):
         captured["result"] = (audio, sampling_rate)
         return b"WAV"
@@ -970,14 +964,18 @@ def test_enhanced_audio_validator_convert_with_ffmpeg(tmp_path, monkeypatch):
             file_obj.write(b"converted")
         return SimpleNamespace(returncode=0, stderr=b"")
 
-    monkeypatch.setattr("services.api_gateway.enhanced_audio_validation.subprocess.run", successful_run)
+    monkeypatch.setattr(
+        "services.api_gateway.enhanced_audio_validation.subprocess.run", successful_run
+    )
     converted = validator._convert_with_ffmpeg(b"source", "webm")
     assert converted == b"converted"
 
     def failing_run(cmd, capture_output=True, timeout=30):
         return SimpleNamespace(returncode=1, stderr=b"broken")
 
-    monkeypatch.setattr("services.api_gateway.enhanced_audio_validation.subprocess.run", failing_run)
+    monkeypatch.setattr(
+        "services.api_gateway.enhanced_audio_validation.subprocess.run", failing_run
+    )
     assert validator._convert_with_ffmpeg(b"source", "webm") is None
 
 
@@ -986,7 +984,9 @@ def test_websocket_monitor_utc_and_stale_detection():
     from prometheus_client import CollectorRegistry
 
     monitor = websocket_monitor.WebSocketMonitor(registry=CollectorRegistry())
-    metrics = monitor.connection_established("conn-1", "session-1", "admin", "https://example.com:443")
+    metrics = monitor.connection_established(
+        "conn-1", "session-1", "admin", "https://example.com:443"
+    )
     monitor.connection_established("conn-2", "session-1", "customer")
 
     now = websocket_monitor.utc_now()
@@ -1094,7 +1094,9 @@ async def test_legacy_session_route_uses_new_process_wav_contract(monkeypatch):
     fake_session = SimpleNamespace(id="SESSION1", messages=[])
     captured = {}
 
-    monkeypatch.setattr(legacy_session.session_manager, "get_session", lambda session_id: fake_session)
+    monkeypatch.setattr(
+        legacy_session.session_manager, "get_session", lambda session_id: fake_session
+    )
     monkeypatch.setattr(
         legacy_session.session_manager,
         "add_message",
@@ -1187,9 +1189,7 @@ async def test_websocket_fallback_lifecycle_and_cleanup(monkeypatch):
     recovery = manager.attempt_websocket_recovery(polling_id)
     assert recovery["success"] is True
 
-    manager.websocket_recovery_failed(
-        polling_id, websocket_fallback.FallbackReason.TIMEOUT_ERROR
-    )
+    manager.websocket_recovery_failed(polling_id, websocket_fallback.FallbackReason.TIMEOUT_ERROR)
     assert manager.polling_clients[polling_id].websocket_retry_after is not None
 
     manager.polling_clients[polling_id].created_at = websocket_fallback.utc_now() - timedelta(
@@ -1223,18 +1223,24 @@ def test_websocket_fallback_classifies_failures_and_limits_queue():
         manager._classify_failure_reason({"message": "CORS preflight blocked"})
         == websocket_fallback.FallbackReason.CORS_PREFLIGHT_FAILED
     )
-    assert manager.evaluate_websocket_failure(
-        "session-1",
-        "admin",
-        "https://example.com",
-        {"message": "network down", "code": 0},
-    ) is False
-    assert manager.evaluate_websocket_failure(
-        "session-1",
-        "admin",
-        "https://example.com",
-        {"message": "network down", "code": 0},
-    ) is True
+    assert (
+        manager.evaluate_websocket_failure(
+            "session-1",
+            "admin",
+            "https://example.com",
+            {"message": "network down", "code": 0},
+        )
+        is False
+    )
+    assert (
+        manager.evaluate_websocket_failure(
+            "session-1",
+            "admin",
+            "https://example.com",
+            {"message": "network down", "code": 0},
+        )
+        is True
+    )
 
     polling_id = "poll-session-1-admin"
     client = websocket_fallback.PollingClient(
@@ -1250,9 +1256,7 @@ def test_websocket_fallback_classifies_failures_and_limits_queue():
     # Overflow now returns False instead of silently dropping the oldest
     # queued message, so sends past the 100-message bound must fail.
     for index in range(105):
-        sent = manager.send_message_to_polling_client(
-            polling_id, {"type": "msg", "index": index}
-        )
+        sent = manager.send_message_to_polling_client(polling_id, {"type": "msg", "index": index})
         assert sent is (index < 100)
 
     assert len(manager.polling_clients[polling_id].message_queue) == 100
@@ -1336,9 +1340,7 @@ async def test_circuit_breaker_client_unit_paths(monkeypatch):
     )
 
     assert (await client.call_asr_service(b"audio", "de", True))["success"] is True
-    assert (
-        await client.call_translation_service("Hallo", "de", "en", False)
-    )["success"] is True
+    assert (await client.call_translation_service("Hallo", "de", "en", False))["success"] is True
     assert (await client.call_tts_service("Hallo", "en"))["success"] is True
     assert await client.get_health_status() == {"status": "ok"}
     assert await client.get_service_status("asr") == {"service": "asr"}
@@ -1363,12 +1365,8 @@ async def test_circuit_breaker_client_unit_paths(monkeypatch):
     async def close():
         return None
 
-    monkeypatch.setattr(
-        client_module.service_health_manager, "start_monitoring", start_monitoring
-    )
-    monkeypatch.setattr(
-        client_module.service_health_manager, "stop_monitoring", stop_monitoring
-    )
+    monkeypatch.setattr(client_module.service_health_manager, "start_monitoring", start_monitoring)
+    monkeypatch.setattr(client_module.service_health_manager, "stop_monitoring", stop_monitoring)
     monkeypatch.setattr(client, "close", close)
 
     await client.start_health_monitoring()
@@ -1439,9 +1437,7 @@ async def test_circuit_breaker_client_performs_requests(monkeypatch):
     client.session = FakeSession()
 
     asr_result = await client._perform_asr_request(b"audio", "de", True)
-    translation_result = await client._perform_translation_request(
-        "Hallo", "de", "en", False
-    )
+    translation_result = await client._perform_translation_request("Hallo", "de", "en", False)
     tts_audio_result = await client._perform_tts_request("Hallo", "de", "default", False)
     tts_json_result = await client._perform_tts_request("Hallo", "de", "default", False)
 

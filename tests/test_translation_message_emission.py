@@ -145,9 +145,7 @@ class TestOneRowPerMessage:
             ("application/json", InputMode.TEXT),
         ],
     )
-    async def test_a_successful_message_emits_exactly_one_row(
-        self, manager, content_type, mode
-    ):
+    async def test_a_successful_message_emits_exactly_one_row(self, manager, content_type, mode):
         exporter = _CapturingExporter()
 
         response = await _send(
@@ -160,15 +158,10 @@ class TestOneRowPerMessage:
         assert response.status == "success"
         assert len(exporter.messages) == 1
         assert exporter.messages[0]["ssf.quality.input_mode"] == mode.value
-        assert (
-            exporter.messages[0]["ssf.quality.terminal_outcome"]
-            == TerminalOutcome.SUCCESS.value
-        )
+        assert exporter.messages[0]["ssf.quality.terminal_outcome"] == TerminalOutcome.SUCCESS.value
 
     @pytest.mark.asyncio
-    async def test_the_row_carries_the_stage_durations_the_pipeline_measured(
-        self, manager
-    ):
+    async def test_the_row_carries_the_stage_durations_the_pipeline_measured(self, manager):
         exporter = _CapturingExporter()
 
         await _send(
@@ -204,34 +197,34 @@ class TestOneRowPerMessage:
     async def test_a_failed_message_emits_a_failure_row(self, manager):
         exporter = _CapturingExporter()
 
+        telemetry = _telemetry(exporter)
+        failure = _failure()
         with pytest.raises(HTTPException):
             await _send(
                 manager,
-                _telemetry(exporter),
+                telemetry,
                 content_type="multipart/form-data; boundary=b",
-                pipeline_result=_failure(),
+                pipeline_result=failure,
             )
 
+        assert len(exporter.messages) == 1
         attributes = exporter.messages[0]
-        assert (
-            attributes["ssf.quality.terminal_outcome"] == TerminalOutcome.FAILURE.value
-        )
+        assert attributes["ssf.quality.terminal_outcome"] == TerminalOutcome.FAILURE.value
         assert attributes["ssf.quality.failed_stage"] == PipelineStage.ASR.value
-        assert (
-            attributes["ssf.quality.error_code"]
-            == QualityErrorCode.UPSTREAM_UNREACHABLE.value
-        )
+        assert attributes["ssf.quality.error_code"] == QualityErrorCode.UPSTREAM_UNREACHABLE.value
 
     @pytest.mark.asyncio
     async def test_a_request_that_never_became_a_message_emits_nothing(self, manager):
         exporter = _CapturingExporter()
 
+        session_key = TenantSessionKey("tenant-test", "UNKNOWN1")
+        request = _request("application/json", _telemetry(exporter))
         with patch.object(session_routes, "session_manager", manager):
             with pytest.raises(HTTPException) as excinfo:
                 await session_routes.send_unified_message(
-                    TenantSessionKey("tenant-test", "UNKNOWN1"),
+                    session_key,
                     ClientType.ADMIN,
-                    _request("application/json", _telemetry(exporter)),
+                    request,
                 )
 
         assert excinfo.value.status_code == 404
@@ -242,12 +235,13 @@ class TestOneRowPerMessage:
         exporter = _CapturingExporter()
         session_id = await make_active_session(manager)
 
+        request = _request("text/plain", _telemetry(exporter))
         with patch.object(session_routes, "session_manager", manager):
             with pytest.raises(HTTPException):
                 await session_routes.send_unified_message(
                     session_id,
                     ClientType.ADMIN,
-                    _request("text/plain", _telemetry(exporter)),
+                    request,
                 )
 
         assert exporter.messages == []
@@ -255,17 +249,17 @@ class TestOneRowPerMessage:
 
 class TestNoContentLeavesTheGateway:
     @pytest.mark.asyncio
-    async def test_no_transcript_translation_or_upstream_detail_is_emitted(
-        self, manager
-    ):
+    async def test_no_transcript_translation_or_upstream_detail_is_emitted(self, manager):
         exporter = _CapturingExporter()
 
+        telemetry = _telemetry(exporter)
+        failure = _failure()
         with pytest.raises(HTTPException):
             await _send(
                 manager,
-                _telemetry(exporter),
+                telemetry,
                 content_type="multipart/form-data; boundary=b",
-                pipeline_result=_failure(),
+                pipeline_result=failure,
             )
 
         emitted = " ".join(exporter.messages[0].values())
@@ -283,9 +277,7 @@ class TestNoContentLeavesTheGateway:
 
         with (
             patch.object(session_routes, "session_manager", manager),
-            patch.object(
-                session_routes, "process_text_pipeline", return_value=_success()
-            ),
+            patch.object(session_routes, "process_text_pipeline", return_value=_success()),
         ):
             await session_routes.send_unified_message(
                 session_id,
@@ -313,30 +305,33 @@ class TestTelemetryNeverChangesTheOutcome:
 
     @pytest.mark.asyncio
     async def test_a_dead_clickhouse_reports_a_failure_the_same_way(self, manager):
+        telemetry = _telemetry(_dead_exporter)
+        failure = _failure()
         with pytest.raises(HTTPException) as with_dead_exporter:
             await _send(
                 manager,
-                _telemetry(_dead_exporter),
+                telemetry,
                 content_type="multipart/form-data; boundary=b",
-                pipeline_result=_failure(),
+                pipeline_result=failure,
             )
 
+        disabled_telemetry = _telemetry(discard_event, mode=TelemetryMode.DISABLED)
         with pytest.raises(HTTPException) as with_telemetry_off:
             await _send(
                 manager,
-                _telemetry(discard_event, mode=TelemetryMode.DISABLED),
+                disabled_telemetry,
                 content_type="multipart/form-data; boundary=b",
-                pipeline_result=_failure(),
+                pipeline_result=failure,
             )
 
-        assert (
-            with_dead_exporter.value.status_code == with_telemetry_off.value.status_code
-        )
+        assert with_dead_exporter.value.status_code == 500
+        assert with_dead_exporter.value.detail["error_code"] == "PIPELINE_ERROR"
+        assert with_dead_exporter.value.status_code == with_telemetry_off.value.status_code
         # Everything but the envelope's own wall-clock timestamp, which differs
         # between any two responses.
-        assert _without_timestamp(
-            with_dead_exporter.value.detail
-        ) == _without_timestamp(with_telemetry_off.value.detail)
+        assert _without_timestamp(with_dead_exporter.value.detail) == _without_timestamp(
+            with_telemetry_off.value.detail
+        )
 
     @pytest.mark.asyncio
     async def test_a_gateway_with_no_telemetry_wired_up_still_serves(self, manager):
@@ -345,9 +340,7 @@ class TestTelemetryNeverChangesTheOutcome:
         session_id = await make_active_session(manager)
         with (
             patch.object(session_routes, "session_manager", manager),
-            patch.object(
-                session_routes, "process_text_pipeline", return_value=_success()
-            ),
+            patch.object(session_routes, "process_text_pipeline", return_value=_success()),
         ):
             response = await session_routes.send_unified_message(
                 session_id, ClientType.ADMIN, request
@@ -356,9 +349,7 @@ class TestTelemetryNeverChangesTheOutcome:
         assert response.status == "success"
 
     @pytest.mark.asyncio
-    async def test_an_emitter_that_raises_outright_does_not_reach_the_caller(
-        self, manager
-    ):
+    async def test_an_emitter_that_raises_outright_does_not_reach_the_caller(self, manager):
         exploding = Mock()
         exploding.emit_translation_message.side_effect = RuntimeError("boom")
 

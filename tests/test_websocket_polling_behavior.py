@@ -41,10 +41,11 @@ def test_polling_store_rejects_unknown_or_cross_tenant_client():
 
     with pytest.raises(HTTPException) as missing:
         store.require("missing", key, ClientType.ADMIN)
+    other_tenant_key = TenantSessionKey("tenant-b", "SESSION1")
     with pytest.raises(HTTPException) as cross_tenant:
         store.require(
             client.polling_id,
-            TenantSessionKey("tenant-b", "SESSION1"),
+            other_tenant_key,
             ClientType.ADMIN,
         )
 
@@ -94,9 +95,7 @@ async def test_polling_overflow_accepts_current_message_and_is_not_retryable(
     for index in range(POLLING_QUEUE_SIZE):
         receiver.messages.append({"type": "old", "index": index})
     manager = AsyncMock()
-    monkeypatch.setattr(
-        "services.api_gateway.websocket_polling_routes.polling_store", store
-    )
+    monkeypatch.setattr("services.api_gateway.websocket_polling_routes.polling_store", store)
 
     response = await _send(
         sender,
