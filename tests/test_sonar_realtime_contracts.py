@@ -2,11 +2,13 @@
 
 import asyncio
 import inspect
+import threading
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from prometheus_client import CollectorRegistry
 from starlette.websockets import WebSocket
 
@@ -197,6 +199,133 @@ async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch
     ] == [0, 0]
     assert not expired_session.admin_connected
     assert not expired_session.customer_connected
+
+
+@pytest.fixture
+def polling_http_state(monkeypatch):
+    store = polling.TenantPollingStore()
+    sessions = SessionManager()
+    key = polling.TenantSessionKey("tenant-a", "SESSION1")
+    sessions.sessions[key] = Session(id=key.session_id, tenant_id=key.tenant_id)
+    manager = websocket.WebSocketManager(sessions)
+    monkeypatch.setattr(polling, "polling_store", store)
+    endpoint_app = FastAPI()
+    endpoint_app.include_router(polling.router)
+    endpoint_app.dependency_overrides[polling.require_admin_session_key] = lambda: key
+    endpoint_app.dependency_overrides[polling.require_customer_session_key] = (
+        lambda: key
+    )
+    endpoint_app.dependency_overrides[polling.get_websocket_manager] = lambda: manager
+    return SimpleNamespace(store=store, sessions=sessions, key=key, app=endpoint_app)
+
+
+async def test_concurrent_http_deletes_release_a_pollers_presence_once(
+    monkeypatch, polling_http_state
+):
+    store, sessions, key = (
+        polling_http_state.store,
+        polling_http_state.sessions,
+        polling_http_state.key,
+    )
+    removed = store.activate(key, ClientType.ADMIN)
+    surviving = store.activate(key, ClientType.ADMIN)
+    sessions.admin_connected(key)
+    sessions.admin_connected(key)
+
+    # If a handler moves to worker threads, expose both ownership claims before
+    # either thread can delete. Event-loop handlers need no scheduling aid.
+    event_loop_thread = threading.get_ident()
+    claimed = threading.Barrier(2)
+    require = store.require
+
+    def require_with_concurrent_claim(*args):
+        client = require(*args)
+        if threading.get_ident() != event_loop_thread:
+            claimed.wait(timeout=5)
+        return client
+
+    monkeypatch.setattr(store, "require", require_with_concurrent_claim)
+    path = f"/api/admin/session/{key.session_id}/polling/{removed.polling_id}"
+    async with AsyncClient(
+        transport=ASGITransport(app=polling_http_state.app),
+        base_url="http://gateway.test",
+    ) as client:
+        responses = await asyncio.gather(client.delete(path), client.delete(path))
+
+    assert sorted(response.status_code for response in responses) == [200, 404]
+    assert list(store.clients) == [surviving.polling_id]
+    assert sessions.get_session(key).admin_connection_count == 1
+    assert sessions.get_session(key).admin_connected
+
+
+async def test_concurrent_http_activation_keeps_role_limit_and_presence(
+    monkeypatch, polling_http_state
+):
+    monkeypatch.setattr(polling, "MAX_POLLING_CLIENTS_PER_ROLE", 1)
+    path = f"/api/customer/session/{polling_http_state.key.session_id}/polling/activate"
+    async with AsyncClient(
+        transport=ASGITransport(app=polling_http_state.app),
+        base_url="http://gateway.test",
+    ) as client:
+        responses = await asyncio.gather(client.post(path), client.post(path))
+    assert sorted(response.status_code for response in responses) == [200, 429]
+    assert len(polling_http_state.store.clients) == 1
+    session = polling_http_state.sessions.get_session(polling_http_state.key)
+    assert session.customer_connection_count == 1
+    assert session.customer_connected
+
+
+async def test_terminated_long_poll_does_not_release_a_deleted_client_twice(
+    polling_http_state,
+):
+    store, sessions, key = (
+        polling_http_state.store,
+        polling_http_state.sessions,
+        polling_http_state.key,
+    )
+    removed = store.activate(key, ClientType.ADMIN)
+    surviving = store.activate(key, ClientType.ADMIN)
+    sessions.admin_connected(key)
+    sessions.admin_connected(key)
+    waiting = asyncio.Event()
+    resume_poll = asyncio.Event()
+
+    class PausedEvent(asyncio.Event):
+        async def wait(self):
+            waiting.set()
+            result = await super().wait()
+            await resume_poll.wait()
+            return result
+
+    removed.event = PausedEvent()
+    path = f"/api/admin/session/{key.session_id}/polling/{removed.polling_id}"
+    async with AsyncClient(
+        transport=ASGITransport(app=polling_http_state.app),
+        base_url="http://gateway.test",
+    ) as client:
+        pending = asyncio.create_task(client.get(path, params={"timeout": 60}))
+        await asyncio.wait_for(waiting.wait(), 2)
+        store.terminate(key, "manual_termination")
+        try:
+            deleted = await asyncio.wait_for(client.delete(path), 2)
+        finally:
+            resume_poll.set()
+        response = await asyncio.wait_for(pending, 2)
+    assert deleted.status_code == 200
+    assert response.status_code == 200
+    assert response.json() == {
+        "messages": [
+            {
+                "type": "session_terminated",
+                "session_id": "SESSION1",
+                "reason": "manual_termination",
+                "reconnect_allowed": False,
+            }
+        ],
+        "message_count": 1,
+    }
+    assert list(store.clients) == [surviving.polling_id]
+    assert sessions.get_session(key).admin_connection_count == 1
 
 
 async def test_terminated_polling_client_cannot_send_recover_or_read_status():

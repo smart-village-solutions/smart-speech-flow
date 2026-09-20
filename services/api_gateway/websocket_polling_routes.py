@@ -64,6 +64,7 @@ class PollingClient:
 class TenantPollingStore:
     def __init__(self, clock=time.monotonic, registry=None) -> None:
         self.clients: dict[str, PollingClient] = {}
+        self.mutation_lock = asyncio.Lock()
         self.clock = clock
         self.messages_dropped = _dropped_counter(registry or CollectorRegistry())
 
@@ -204,40 +205,42 @@ def _activation_response(client: PollingClient) -> dict[str, object]:
         503: {"description": "Realtime ticket service unavailable"},
     },
 )
-def activate_admin_polling(
+async def activate_admin_polling(
     session_id: str,
     request: AdminPollingActivation,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
     manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
 ) -> dict[str, object]:
-    try:
-        accepted = realtime_ticket_store.consume(request.ticket, key, "polling")
-    except RealtimeTicketUnavailable:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Realtime ticket service unavailable",
-        ) from None
-    if not accepted:
-        raise HTTPException(status_code=404, detail="Session not found")
-    session = manager.session_manager.get_session(key)
-    if session is None or session.status.value == "terminated":
-        raise HTTPException(status_code=404, detail="Session not found")
-    _release_stale_clients(manager)
-    client = polling_store.activate(key, ClientType.ADMIN)
-    manager.session_manager.admin_connected(key)
-    return _activation_response(client)
+    async with polling_store.mutation_lock:
+        try:
+            accepted = realtime_ticket_store.consume(request.ticket, key, "polling")
+        except RealtimeTicketUnavailable:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Realtime ticket service unavailable",
+            ) from None
+        if not accepted:
+            raise HTTPException(status_code=404, detail="Session not found")
+        session = manager.session_manager.get_session(key)
+        if session is None or session.status.value == "terminated":
+            raise HTTPException(status_code=404, detail="Session not found")
+        _release_stale_clients(manager)
+        client = polling_store.activate(key, ClientType.ADMIN)
+        manager.session_manager.admin_connected(key)
+        return _activation_response(client)
 
 
 @router.post("/api/customer/session/{session_id}/polling/activate")
-def activate_customer_polling(
+async def activate_customer_polling(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
     manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
 ) -> dict[str, object]:
-    _release_stale_clients(manager)
-    client = polling_store.activate(key, ClientType.CUSTOMER)
-    manager.session_manager.customer_connected(key)
-    return _activation_response(client)
+    async with polling_store.mutation_lock:
+        _release_stale_clients(manager)
+        client = polling_store.activate(key, ClientType.CUSTOMER)
+        manager.session_manager.customer_connected(key)
+        return _activation_response(client)
 
 
 def _release_stale_clients(manager: WebSocketManager) -> None:
@@ -380,10 +383,13 @@ def _register_role_routes(
         wait_seconds: Annotated[int, Query(alias="timeout", ge=0, le=60)] = 0,
         manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, object]:
-        client = _active_client(polling_id, key, client_type, manager)
+        async with polling_store.mutation_lock:
+            client = _active_client(polling_id, key, client_type, manager)
         response = await _poll(client, wait_seconds)
         if client.terminated:
-            _disconnect(client, manager)
+            async with polling_store.mutation_lock:
+                if polling_store.clients.get(polling_id) is client:
+                    _disconnect(client, manager)
         return response
 
     async def send(
@@ -393,33 +399,37 @@ def _register_role_routes(
         key: TenantSessionKey = Depends(key_dependency),
         manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, str]:
-        client = _active_client(polling_id, key, client_type, manager)
+        async with polling_store.mutation_lock:
+            client = _active_client(polling_id, key, client_type, manager)
         return await _send(client, message, manager)
 
-    def polling_status(
+    async def polling_status(
         session_id: str,
         polling_id: str,
         key: TenantSessionKey = Depends(key_dependency),
         manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, object]:
-        return _status(_active_client(polling_id, key, client_type, manager))
+        async with polling_store.mutation_lock:
+            return _status(_active_client(polling_id, key, client_type, manager))
 
-    def recover(
+    async def recover(
         session_id: str,
         polling_id: str,
         key: TenantSessionKey = Depends(key_dependency),
         manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, str]:
-        return _recover(_active_client(polling_id, key, client_type, manager))
+        async with polling_store.mutation_lock:
+            return _recover(_active_client(polling_id, key, client_type, manager))
 
-    def disconnect(
+    async def disconnect(
         session_id: str,
         polling_id: str,
         key: TenantSessionKey = Depends(key_dependency),
         manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, str]:
-        client = _active_client(polling_id, key, client_type, manager)
-        return _disconnect(client, manager)
+        async with polling_store.mutation_lock:
+            client = _active_client(polling_id, key, client_type, manager)
+            return _disconnect(client, manager)
 
     router.add_api_route(base, poll, methods=["GET"], name=f"{prefix}_poll")
     router.add_api_route(base + "/send", send, methods=["POST"], name=f"{prefix}_send")
