@@ -8,6 +8,7 @@ import logging
 import secrets
 import time
 from collections import deque
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal
 
@@ -28,6 +29,7 @@ MAX_POLLING_CLIENTS = 1000
 MAX_POLLING_CLIENTS_PER_ROLE = 10
 POLLING_IDLE_SECONDS = 120
 POLLING_QUEUE_SIZE = 100
+_POLLING_CLIENT_NOT_FOUND = "Polling client not found"
 
 
 def _dropped_counter(registry: CollectorRegistry) -> Counter:
@@ -104,7 +106,7 @@ class TenantPollingStore:
             or not hmac.compare_digest(client.key.tenant_id, key.tenant_id)
             or not hmac.compare_digest(client.key.session_id, key.session_id)
         ):
-            raise HTTPException(status_code=404, detail="Polling client not found")
+            raise HTTPException(status_code=404, detail=_POLLING_CLIENT_NOT_FOUND)
         client.last_seen = self.clock()
         return client
 
@@ -195,7 +197,13 @@ def _activation_response(client: PollingClient) -> dict[str, object]:
     }
 
 
-@router.post("/api/admin/session/{session_id}/polling/activate")
+@router.post(
+    "/api/admin/session/{session_id}/polling/activate",
+    responses={
+        404: {"description": "Session not found or realtime ticket rejected"},
+        503: {"description": "Realtime ticket service unavailable"},
+    },
+)
 async def activate_admin_polling(
     session_id: str,
     request: AdminPollingActivation,
@@ -240,9 +248,13 @@ async def _release_stale_clients(manager: WebSocketManager) -> None:
 async def _release_presence(client: PollingClient, manager: WebSocketManager) -> None:
     try:
         if client.client_type is ClientType.ADMIN:
-            manager.session_manager.admin_disconnected(client.key)
+            await asyncio.to_thread(
+                manager.session_manager.admin_disconnected, client.key
+            )
         else:
-            manager.session_manager.customer_disconnected(client.key)
+            await asyncio.to_thread(
+                manager.session_manager.customer_disconnected, client.key
+            )
     except KeyError:
         pass
 
@@ -277,22 +289,30 @@ def require_customer_polling_key(
         or client.client_type is not ClientType.CUSTOMER
         or not hmac.compare_digest(client.key.session_id, session_id)
     ):
-        raise HTTPException(status_code=404, detail="Polling client not found")
+        raise HTTPException(status_code=404, detail=_POLLING_CLIENT_NOT_FOUND)
     if principal is not None:
         tenant_id = principal.get("studio_tenant_id")
         if not isinstance(tenant_id, str) or not hmac.compare_digest(
             tenant_id, client.key.tenant_id
         ):
-            raise HTTPException(status_code=404, detail="Polling client not found")
+            raise HTTPException(status_code=404, detail=_POLLING_CLIENT_NOT_FOUND)
     return client.key
 
 
-async def _poll(client: PollingClient, timeout: int) -> dict[str, object]:
-    if not client.messages and timeout:
+def _poll(
+    client: PollingClient, timeout: int
+) -> Coroutine[Any, Any, dict[str, object]]:
+    """Keep the existing timeout keyword while returning an awaitable poll."""
+    return _poll_messages(client, timeout)
+
+
+async def _poll_messages(client: PollingClient, wait_seconds: int) -> dict[str, object]:
+    if not client.messages and wait_seconds:
         client.event.clear()
         if not client.messages:
             try:
-                await asyncio.wait_for(client.event.wait(), timeout)
+                async with asyncio.timeout(wait_seconds):
+                    await client.event.wait()
             except TimeoutError:
                 pass
     messages = list(client.messages)
@@ -306,7 +326,7 @@ async def _send(
     manager: WebSocketManager,
 ) -> dict[str, object]:
     if client.terminated:
-        raise HTTPException(status_code=404, detail="Polling client not found")
+        raise HTTPException(status_code=404, detail=_POLLING_CLIENT_NOT_FOUND)
     envelope = {
         "type": message.type,
         "content": message.content,
@@ -328,7 +348,7 @@ async def _send(
 
 def _status(client: PollingClient) -> dict[str, object]:
     if client.terminated:
-        raise HTTPException(status_code=404, detail="Polling client not found")
+        raise HTTPException(status_code=404, detail=_POLLING_CLIENT_NOT_FOUND)
     return {
         "polling_id": client.polling_id,
         "session_id": client.key.session_id,
@@ -339,7 +359,7 @@ def _status(client: PollingClient) -> dict[str, object]:
 
 def _recover(client: PollingClient) -> dict[str, str]:
     if client.terminated:
-        raise HTTPException(status_code=404, detail="Polling client not found")
+        raise HTTPException(status_code=404, detail=_POLLING_CLIENT_NOT_FOUND)
     return {"status": "recovery_requested"}
 
 
@@ -362,11 +382,11 @@ def _register_role_routes(
         session_id: str,
         polling_id: str,
         key: TenantSessionKey = Depends(key_dependency),
-        timeout: Annotated[int, Query(ge=0, le=60)] = 0,
+        wait_seconds: Annotated[int, Query(alias="timeout", ge=0, le=60)] = 0,
         manager: WebSocketManager = Depends(get_websocket_manager),
     ) -> dict[str, object]:
         client = await _active_client(polling_id, key, client_type, manager)
-        response = await _poll(client, timeout)
+        response = await _poll(client, wait_seconds)
         if client.terminated:
             await _disconnect(client, manager)
         return response
