@@ -56,6 +56,7 @@ async def test_abandoned_worker_is_catchable_without_running_work(monkeypatch, s
         pytest.fail("abandoned application work bypasses except Exception")
     else:
         pytest.fail("abandoned worker did not signal cancellation")
+    await asyncio.sleep(0)
     assert executed == []
     assert admission.in_flight == 0
 
@@ -172,8 +173,9 @@ def test_translation_duration_keywords_are_checked_even_when_disabled(
         del arguments["total_duration_ms"]
     else:
         arguments["unrecognized_duration_ms"] = 1
+    telemetry = _telemetry([], mode=mode)
     with pytest.raises(TypeError):
-        _telemetry([], mode=mode).emit_translation_message(**arguments)
+        telemetry.emit_translation_message(**arguments)
 
 
 @pytest.mark.asyncio
