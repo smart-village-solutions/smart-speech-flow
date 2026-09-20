@@ -16,12 +16,12 @@
       (() => {
         try {
           const savedTheme = localStorage.getItem('ssf-theme');
-          const theme =
-            savedTheme === 'dark' || savedTheme === 'light'
-              ? savedTheme
-              : window.matchMedia('(prefers-color-scheme: dark)').matches
-                ? 'dark'
-                : 'light';
+          let theme = 'light';
+          if (savedTheme === 'dark' || savedTheme === 'light') {
+            theme = savedTheme;
+          } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            theme = 'dark';
+          }
           document.documentElement.classList.toggle('dark', theme === 'dark');
         } catch {
           // Keep the light default if browser preferences or storage are unavailable.
