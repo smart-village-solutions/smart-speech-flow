@@ -1,71 +1,85 @@
-# Change: Eliminate the SonarCloud Backlog
+# Change: Eliminate the Current SonarCloud Backlog
 
 ## Why
 
-The SonarCloud analysis of `main` at commit `3ea99a9` on 2026-07-20 reports a failed Quality Gate and 101 open issues. The backlog contains 33 vulnerabilities, 2 bugs, and 66 code smells. The failed gate is caused by the new-code security rating of C.
+The SonarCloud analysis of `main` at commit `114574a` on 2026-09-18 reports a
+failed Quality Gate and 163 open issues. The previous 101-issue remediation
+baseline has been overtaken by subsequent feature delivery and analyzer
+updates, so its completed work packages no longer describe the current
+backlog.
 
-The existing task list was based on an obsolete 332-issue snapshot and marks work as complete that is contradicted by the current analysis. This change re-baselines the work and provides disjoint work packages that can be implemented safely by parallel agents.
+The live backlog now contains 5 vulnerabilities and 158 code smells across
+container builds, frontend code, API gateway production code, and tests. The
+five vulnerabilities keep the security rating below A and require an explicit
+binary-only dependency-installation decision for every Python runtime image.
 
 ## What Changes
 
-- Eliminate all 101 SonarCloud issues from the 2026-07-20 baseline.
-- Validate user-controlled values before they reach frontend URLs, WebSocket connections, or logs.
-- Replace incorrect Python exception logging without exposing exception or user data.
-- Make Python container dependency installation pinned, reproducible, and binary-only at runtime.
-- Correct test constructs that can hide failures or are classified incorrectly by SonarCloud.
-- Raise overall backend line coverage from 73.4% to at least 80% after remediation.
-- Make the SonarCloud Quality Gate and coverage threshold enforceable in CI.
-- Organize implementation into disjoint agent-owned work packages with measurable issue-count reductions.
+- Re-baseline remediation against all 163 open issues from the 2026-09-18
+  `main` analysis.
+- Resolve every finding through eight file-disjoint implementation packages.
+- Preserve public HTTP, WebSocket, OpenAPI, authentication, and persistence
+  behavior while simplifying implementation details.
+- Correct test constructs without weakening their assertions or excluding
+  code from analysis.
+- Require focused tests and SonarCloud PR analysis for every package.
+- Record final evidence only after all packages have landed on `main` and a
+  fresh branch analysis reports the result.
 
 ## Success Criteria
 
 - SonarCloud reports zero open issues on `main` after a fresh analysis.
 - The Quality Gate reports `OK`.
 - Security, reliability, and maintainability ratings are A.
-- New-code coverage remains at or above 84.8%.
-- Overall backend line coverage is at least 80%.
+- Overall coverage remains at or above 80%.
+- New-code coverage remains at or above the configured Quality Gate threshold.
 - New-code duplication remains at or below 3%.
-- All security hotspots are reviewed.
-- Backend tests, frontend lint/build/tests, and all four container smoke checks pass.
-- No issue is hidden with `NOSONAR`, a broad exclusion, or a weakened Quality Profile.
+- Backend tests, frontend tests/lint/build, shell checks, and container smoke
+  checks pass for their affected packages.
+- No issue is hidden with `NOSONAR`, broad exclusions, disabled rules, or a
+  weakened Quality Profile.
 
 ## Impact
 
 - Affected specs: `code-quality`
 - Affected code:
-  - `services/api_gateway`
+  - five Python service Dockerfiles
   - `services/frontend`
-  - `services/api_gateway/Dockerfile`
-  - `services/asr/Dockerfile`
-  - `services/translation/Dockerfile`
-  - `services/tts/Dockerfile`
-  - service dependency lock files
-  - targeted files under `tests`
-  - SonarCloud and coverage CI configuration
+  - `services/api_gateway`
+  - `services/translation/app.py`
+  - targeted Python tests under `tests` and `services/api_gateway/tests`
 - Operational impact:
-  - container builds become stricter and may require a controlled wheel-builder stage
-  - logs contain less user-controlled data
-  - CI rejects regressions instead of reporting advisory warnings
+  - runtime dependency installation becomes binary-only or uses a controlled
+    builder stage
+  - internal functions and tests are simplified without contract changes
+  - eight focused PRs replace one repository-wide remediation PR
 
 ## Non-Goals
 
-- Redesigning product APIs, session behavior, or deployment topology
-- Refactoring code that is unrelated to a current finding or the coverage target
-- Weakening SonarCloud rules, the Quality Gate, or scanner scope to reduce the count
-- Archiving unrelated OpenSpec changes as part of remediation PRs
-- Solving general formatting, typing, or complexity debt not represented by this baseline
+- Redesigning product APIs, session behavior, authentication, or deployment
+  topology
+- Addressing unrelated lint, type, dependency, or architecture debt
+- Changing Quality Profiles, scanner scope, or Quality Gate thresholds
+- Merging or closing unrelated active changes or pull requests
 
-## Baseline
-
-The implementation SHALL use this immutable planning baseline and refresh live state before each merge:
+## Immutable Baseline
 
 - Project: `smart-village-solutions_smart-speech-flow`
-- Branch and commit: `main` at `3ea99a9`
-- Analysis: 2026-07-20 18:50 UTC
-- Open issues: 101
-- Vulnerabilities: 33
-- Bugs: 2
-- Code smells: 66
-- Overall coverage: 73.4% (`1,415` uncovered of `5,321` lines to cover)
-- New-code coverage: 84.8%
-- New-code duplication: 0.0%
+- Branch and revision: `main` at
+  `114574a9789256b8bbc06640af962b769285ca70`
+- Analysis ID: `e648dbdd-4091-461b-99e9-684d785faf62`
+- Analysis timestamp: 2026-09-18 08:16:39 UTC
+- Open issues: 163
+- Vulnerabilities: 5
+- Bugs: 0
+- Code smells: 158
+- Severity: 25 critical, 104 major, 34 minor
+- Overall coverage: 88.1%
+- New-code coverage: 91.40%
+- Overall duplication: 0.9%
+- New-code duplication: 0.58%
+- Quality Gate: `ERROR`
+
+This baseline is immutable for accountability. New findings discovered by PR
+or branch analyses are added to the package that introduced or owns the
+affected file, but they do not rewrite the baseline count.
