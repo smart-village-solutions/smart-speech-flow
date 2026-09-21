@@ -173,6 +173,8 @@ class MemoryRealtimeTicketBackend:
         return True
 
     def eval(self, script: str, number_of_keys: int, key: str) -> str | None:
+        if script != CONSUME_TICKET_LUA or number_of_keys != 1:
+            raise ValueError("unsupported realtime ticket script")
         self._expire(key)
         stored = self.values.pop(key, None)
         return stored[0] if stored else None
