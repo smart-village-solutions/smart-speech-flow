@@ -40,7 +40,7 @@ export async function requireKeycloakLogin(
   config: AppConfig,
   tenant: LoginTenant
 ): Promise<boolean> {
-  if (active === null || active.tenantId !== tenant.id || active.realm !== tenant.realm) {
+  if (active?.tenantId !== tenant.id || active?.realm !== tenant.realm) {
     if (active !== null) clearSession(active);
     active = {
       tenantId: tenant.id,

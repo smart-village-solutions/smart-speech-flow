@@ -380,7 +380,7 @@ class WebSocketMonitor:
         ).inc()
 
     def message_sent(
-        self, connection_id: str, message_data: str, message_type: str = "unknown"
+        self, connection_id: str, message_data: str, _message_type: str = "unknown"
     ):
         """Record outbound message"""
         metrics = self._active_connections.get(connection_id)
@@ -401,7 +401,7 @@ class WebSocketMonitor:
         ).observe(message_size)
 
     def message_received(
-        self, connection_id: str, message_data: str, message_type: str = "unknown"
+        self, connection_id: str, message_data: str, _message_type: str = "unknown"
     ):
         """Record inbound message"""
         metrics = self._active_connections.get(connection_id)
@@ -422,7 +422,7 @@ class WebSocketMonitor:
         ).observe(message_size)
 
     def record_error(
-        self, connection_id: str, error_type: str, error_details: Optional[str] = None
+        self, connection_id: str, _error_type: str, _error_details: Optional[str] = None
     ):
         """Record WebSocket error"""
         metrics = self._active_connections.get(connection_id)
@@ -646,7 +646,6 @@ def initialize_websocket_monitor(registry=None):
 
 def get_websocket_monitor():
     """Get the websocket monitor instance, should already be initialized by app startup"""
-    global websocket_monitor
     if websocket_monitor is None:
         # Lazily initialize a default monitor for tests and simple setups
         # to avoid hard dependency on app startup ordering.

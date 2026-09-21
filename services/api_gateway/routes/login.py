@@ -49,7 +49,7 @@ def _correlation_id(request: Request) -> str:
     return correlation_id
 
 
-@router.get("/tenants", response_model=LoginTenantDirectoryResponse)
+@router.get("/tenants")
 async def list_login_tenants(
     request: Request,
     directory: Annotated[

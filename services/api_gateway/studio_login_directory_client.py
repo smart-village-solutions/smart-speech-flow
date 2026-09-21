@@ -131,7 +131,7 @@ class DirectoryTransport(Protocol):
     async def get(
         self, url: str, headers: Mapping[str, str], timeout_seconds: float
     ) -> DirectoryHttpResponse:
-        pass
+        raise NotImplementedError
 
 
 class AiohttpDirectoryTransport:

@@ -10,6 +10,8 @@ a retention pass that stops working is a commitment quietly going unmet.
 """
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -95,17 +97,80 @@ class TestTheExpressionsUseMetricsThatExist:
         assert "ssf_feedback_retention_deleted_total" in expr
 
     def test_a_pass_that_deletes_nothing_has_an_alert_of_its_own(self):
+        """Both conditions must hold for an hour before warning about retention."""
+        rule = _rules()["FeedbackRetentionDeletingNothing"]
+        overdue, conjunction, deletions = rule["expr"].partition(" and ")
+
+        assert overdue == "max(ssf_feedback_retention_overdue) > 0"
+        assert conjunction == " and "
+        assert deletions == "sum(increase(ssf_feedback_retention_deleted_total[6h])) == 0"
+        assert rule["for"] == "1h"
+        assert rule["labels"]["severity"] == "warning"
+        assert rule["labels"]["component"] == "feedback"
+        assert rule["annotations"]["summary"]
+        assert rule["annotations"]["description"]
+
+    @pytest.mark.parametrize(
+        "overdue,deleted,expected",
+        [
+            (1, "0+0x36", 1),
+            (0, "0+0x36", None),
+            (1, "0+1x36", None),
+            (1, "0+1x18 18+0x17", None),
+        ],
+        ids=[
+            "overdue-with-no-deletions",
+            "nothing-overdue",
+            "deletions-making-progress",
+            "deletions-earlier-in-the-six-hour-window",
+        ],
+    )
+    def test_retention_alert_evaluates_both_conditions(self, tmp_path, overdue, deleted, expected):
         """absent() cannot catch it: the counter is exported as 0 from birth.
 
         Both arms are required. Overdue rows alone are normal while a backlog
         drains in batches; zero deletions alone are normal on a deployment
         younger than the retention period.
         """
+        promtool = shutil.which("promtool")
+        if promtool is None:
+            pytest.skip("Prometheus promtool is required to evaluate retention alert behavior")
         expr = _rules()["FeedbackRetentionDeletingNothing"]["expr"]
+        cases = {
+            "evaluation_interval": "10m",
+            "tests": [
+                {
+                    "interval": "10m",
+                    "input_series": [
+                        {
+                            "series": "ssf_feedback_retention_overdue",
+                            "values": f"{overdue}+0x36",
+                        },
+                        {"series": "ssf_feedback_retention_deleted_total", "values": deleted},
+                    ],
+                    "promql_expr_test": [
+                        {
+                            "expr": expr,
+                            "eval_time": "6h",
+                            "exp_samples": (
+                                [] if expected is None else [{"labels": "{}", "value": expected}]
+                            ),
+                        }
+                    ],
+                }
+            ],
+        }
+        case_file = tmp_path / "retention-alert.yml"
+        case_file.write_text(yaml.safe_dump(cases))
+        result = subprocess.run(
+            [promtool, "test", "rules", str(case_file)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
 
-        assert "ssf_feedback_retention_overdue" in expr
-        assert "increase(ssf_feedback_retention_deleted_total[6h])" in expr
-        assert "> 0" in expr and "== 0" in expr
+        assert result.returncode == 0, result.stdout + result.stderr
 
 
 class TestNoAlertFiresOnOneReplicasStaleSeries:

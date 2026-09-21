@@ -126,9 +126,10 @@ async def test_a_valid_submission_is_stored_and_returns_its_id() -> None:
 
 async def test_an_unknown_session_is_rejected_before_any_write() -> None:
     service, parts = _service(session_manager=FakeSessionManager(known=False))
+    request = _request()
 
     with pytest.raises(UnknownSession):
-        await service.submit(_request())
+        await service.submit(request)
 
     assert parts["repository"].stored == []
 
@@ -152,9 +153,10 @@ async def test_a_missing_session_is_not_an_unknown_session() -> None:
 async def test_text_over_the_limit_is_rejected_before_any_write() -> None:
     """Enforced here, not in Pydantic: a ValidationError echoes the input."""
     service, parts = _service()
+    request = _request(improvements="x" * (MAX_IMPROVEMENTS_LENGTH + 1))
 
     with pytest.raises(FeedbackTextTooLong):
-        await service.submit(_request(improvements="x" * (MAX_IMPROVEMENTS_LENGTH + 1)))
+        await service.submit(request)
 
     assert parts["repository"].stored == []
 
@@ -172,9 +174,10 @@ async def test_the_too_long_error_carries_no_copy_of_the_text() -> None:
     service, _ = _service()
     secret = "SENTINEL-PURPLE-RHINOCEROS"
     text = secret + "x" * MAX_IMPROVEMENTS_LENGTH
+    request = _request(improvements=text)
 
     with pytest.raises(FeedbackTextTooLong) as caught:
-        await service.submit(_request(improvements=text))
+        await service.submit(request)
 
     assert secret not in str(caught.value)
     assert secret not in repr(caught.value)
@@ -305,9 +308,10 @@ async def test_telemetry_never_receives_the_raw_session_id() -> None:
 async def test_a_storage_failure_emits_nothing() -> None:
     """Half the ordering contract: no event may describe an absent row."""
     service, parts = _service(repository=FakeRepository(fails=True))
+    request = _request()
 
     with pytest.raises(FeedbackStorageUnavailable):
-        await service.submit(_request())
+        await service.submit(request)
 
     assert parts["telemetry"].calls == []
 
@@ -503,9 +507,10 @@ class TestTenantBoundSessions:
 
         manager = SessionManager(store=MemoryTenantSessionStore())
         service, _ = _service(session_manager=manager)
+        request = _request(session_id="NOSUCH99")
 
         with pytest.raises(UnknownSession):
-            await service.submit(_request(session_id="NOSUCH99"))
+            await service.submit(request)
 
     async def test_the_submission_is_stored_under_the_sessions_tenant(self) -> None:
         from services.api_gateway.feedback.tenant import SessionTenantResolver
@@ -613,9 +618,10 @@ class TestFeedbackJustAfterTheConversationEnds:
         service, parts = self._service_for(manager)
 
         clock.advance(minutes=30, seconds=1)
+        request = _request(session_id=session.id)
 
         with pytest.raises(UnknownSession):
-            await service.submit(_request(session_id=session.id))
+            await service.submit(request)
         assert parts["repository"].stored == []
 
     async def test_the_window_is_configurable(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -625,9 +631,10 @@ class TestFeedbackJustAfterTheConversationEnds:
         service, _parts = self._service_for(manager)
 
         clock.advance(minutes=6)
+        request = _request(session_id=session.id)
 
         with pytest.raises(UnknownSession):
-            await service.submit(_request(session_id=session.id))
+            await service.submit(request)
 
     async def test_accepting_the_feedback_does_not_revive_the_session(self) -> None:
         """Criterion 3: the submission must buy the caller nothing else."""
@@ -653,9 +660,10 @@ class TestFeedbackJustAfterTheConversationEnds:
         clock = self.Clock()
         manager, session = await self._ended_session(clock)
         service, _parts = self._service_for(manager)
+        request = _request(session_id=session.id)
 
         with pytest.raises(UnknownSession):
-            await service.submit(_request(session_id=session.id))
+            await service.submit(request)
 
     async def test_an_unusable_window_costs_neither_the_endpoint_nor_the_boot(
         self, monkeypatch: pytest.MonkeyPatch
@@ -696,5 +704,7 @@ class TestAnIdNoSessionCouldCarry:
 
     @pytest.mark.parametrize("malformed", ["a b", "a.b", "../etc", "id\nwith-newline"])
     async def test_it_is_an_unknown_session_not_a_server_error(self, malformed) -> None:
+        service = self._service()
+        request = _request(session_id=malformed)
         with pytest.raises(UnknownSession):
-            await self._service().submit(_request(session_id=malformed))
+            await service.submit(request)

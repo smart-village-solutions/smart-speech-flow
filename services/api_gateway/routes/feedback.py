@@ -26,20 +26,21 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
+from ..auth import require_ssf_user
 from ..feedback.models import (
     FeedbackAcceptedResponse,
     FeedbackSubmissionRequest,
     FeedbackTextTooLong,
 )
-from ..auth import require_ssf_user
 from ..feedback.read import (
     FeedbackDetail,
     FeedbackNotFound,
+    FeedbackReadService,
     FeedbackSummary,
     FeedbackTextUnreadable,
 )
 from ..feedback.repository import FeedbackStorageUnavailable
-from ..feedback.service import UnknownSession
+from ..feedback.service import FeedbackService, UnknownSession
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
 
 logger = logging.getLogger(__name__)
@@ -69,13 +70,12 @@ def get_feedback_service(request: Request):
 
 @router.post(
     "/feedback",
-    response_model=FeedbackAcceptedResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Submit voluntary feedback for a session",
 )
 async def submit_feedback(
     submission: FeedbackSubmissionRequest,
-    service=Depends(get_feedback_service),
+    service: Annotated[FeedbackService, Depends(get_feedback_service)],
 ) -> FeedbackAcceptedResponse:
     try:
         feedback_id = await service.submit(submission)
@@ -153,15 +153,14 @@ def get_feedback_read_service(request: Request):
 
 @router.get(
     "/feedback",
-    response_model=FeedbackListResponse,
     summary="List this tenant's feedback submissions",
 )
 async def list_feedback(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
     claims: Annotated[dict, Depends(require_ssf_user)],
-    service=Depends(get_feedback_read_service),
-    limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
-    offset: int = Query(default=0, ge=0),
+    service: Annotated[FeedbackReadService, Depends(get_feedback_read_service)],
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> FeedbackListResponse:
     try:
         summaries = await service.list_for_tenant(
@@ -195,14 +194,13 @@ class FeedbackDetailResponse(FeedbackSummaryResponse):
 
 @router.get(
     "/feedback/{feedback_id}",
-    response_model=FeedbackDetailResponse,
     summary="Read one feedback submission, including its free text",
 )
 async def read_feedback(
     feedback_id: UUID,
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
     claims: Annotated[dict, Depends(require_ssf_user)],
-    service=Depends(get_feedback_read_service),
+    service: Annotated[FeedbackReadService, Depends(get_feedback_read_service)],
 ) -> FeedbackDetailResponse:
     try:
         detail = await service.read_for_tenant(

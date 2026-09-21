@@ -52,20 +52,28 @@ def _localhost_origin(port: int, *, secure: bool = False) -> str:
 if DOCKER_ENV:
     # Docker-Service-URLs für Microservices
     SERVICE_URLS = {
-        "ASR": _build_service_url("asr", 8000, HEALTH_PATH, scheme=DEFAULT_INTERNAL_SCHEME),
+        "ASR": _build_service_url(
+            "asr", 8000, HEALTH_PATH, scheme=DEFAULT_INTERNAL_SCHEME
+        ),
         "Translation": _build_service_url(
             "translation", 8000, HEALTH_PATH, scheme=DEFAULT_INTERNAL_SCHEME
         ),
-        "TTS": _build_service_url("tts", 8000, HEALTH_PATH, scheme=DEFAULT_INTERNAL_SCHEME),
+        "TTS": _build_service_url(
+            "tts", 8000, HEALTH_PATH, scheme=DEFAULT_INTERNAL_SCHEME
+        ),
     }
 else:
     # Lokale Service-URLs für Entwicklung ohne Docker
     SERVICE_URLS = {
-        "ASR": _build_service_url("localhost", 8001, HEALTH_PATH, scheme=DEFAULT_LOCAL_SCHEME),
+        "ASR": _build_service_url(
+            "localhost", 8001, HEALTH_PATH, scheme=DEFAULT_LOCAL_SCHEME
+        ),
         "Translation": _build_service_url(
             "localhost", 8002, HEALTH_PATH, scheme=DEFAULT_LOCAL_SCHEME
         ),
-        "TTS": _build_service_url("localhost", 8003, HEALTH_PATH, scheme=DEFAULT_LOCAL_SCHEME),
+        "TTS": _build_service_url(
+            "localhost", 8003, HEALTH_PATH, scheme=DEFAULT_LOCAL_SCHEME
+        ),
     }
 
 
@@ -148,7 +156,9 @@ async def audio_cleanup_task() -> None:
 
                 # Cleanup durchführen
                 stats = cleanup_old_audio_files()
-                print(f"🧹 Audio-Cleanup abgeschlossen: {stats['total_deleted']} Dateien gelöscht")
+                print(
+                    f"🧹 Audio-Cleanup abgeschlossen: {stats['total_deleted']} Dateien gelöscht"
+                )
 
                 # Transcripts expire on the same pass. Audio alone would keep
                 # the weaker half of the promise.
@@ -162,7 +172,9 @@ async def audio_cleanup_task() -> None:
                 # Disk Usage loggen
                 disk_stats = get_disk_usage()
                 total_mb = disk_stats["total_bytes"] / (1024 * 1024)
-                print(f"💾 Audio Storage: {disk_stats['total_files']} Dateien, {total_mb:.2f} MB")
+                print(
+                    f"💾 Audio Storage: {disk_stats['total_files']} Dateien, {total_mb:.2f} MB"
+                )
 
             except Exception as e:
                 print(f"⚠️ Fehler im Audio-Cleanup-Task: {e}")
@@ -225,7 +237,7 @@ async def _connect_feedback_request_path(state: Any, dsn: str, sessions: Any) ->
         repository = await PostgresFeedbackRepository.create(
             dsn=dsn, password=_feedback_password("SSF_FEEDBACK_DATABASE_PASSWORD")
         )
-    except Exception as error:  # noqa: BLE001 - reported, not raised
+    except Exception as error:
         # Type name only: a connection error can carry the DSN, and the DSN
         # carries the database password.
         sys.stderr.write(
@@ -297,9 +309,10 @@ async def _connect_feedback_read_path(state: Any, dsn: str) -> bool:
 
     try:
         repository = await PostgresFeedbackReadRepository.create(
-            dsn=dsn, password=_feedback_password("SSF_FEEDBACK_READER_DATABASE_PASSWORD")
+            dsn=dsn,
+            password=_feedback_password("SSF_FEEDBACK_READER_DATABASE_PASSWORD"),
         )
-    except Exception as error:  # noqa: BLE001 - reported, not raised
+    except Exception as error:
         # Type name only: a connection error can carry the DSN, and the DSN
         # carries the database password.
         sys.stderr.write(
@@ -309,7 +322,9 @@ async def _connect_feedback_read_path(state: Any, dsn: str) -> bool:
         return False
 
     state.feedback_read_repository = repository
-    state.feedback_read_service = FeedbackReadService(repository=repository, cipher=cipher)
+    state.feedback_read_service = FeedbackReadService(
+        repository=repository, cipher=cipher
+    )
     sys.stderr.write("Feedback reading ready\n")
     return True
 
@@ -338,7 +353,7 @@ async def _connect_feedback_maintenance(state: Any, dsn: str) -> bool:
             dsn=dsn,
             password=_feedback_password("SSF_FEEDBACK_MAINTENANCE_DATABASE_PASSWORD"),
         )
-    except Exception as error:  # noqa: BLE001 - reported, not raised
+    except Exception as error:
         sys.stderr.write(
             f"Feedback maintenance unavailable ({type(error).__name__}); "
             "analytics recovery and retention are not running. "
@@ -357,7 +372,11 @@ async def _connect_feedback_maintenance(state: Any, dsn: str) -> bool:
 
 
 async def _wire_feedback(
-    state: Any, request_dsn: str, maintenance_dsn: str, sessions: Any, read_dsn: str = ""
+    state: Any,
+    request_dsn: str,
+    maintenance_dsn: str,
+    sessions: Any,
+    read_dsn: str = "",
 ) -> bool:
     """Wire both halves. Returns False only when retrying could help.
 
@@ -384,7 +403,11 @@ async def _wire_feedback(
 
 
 async def feedback_connect_task(
-    state: Any, request_dsn: str, maintenance_dsn: str, sessions: Any, read_dsn: str = ""
+    state: Any,
+    request_dsn: str,
+    maintenance_dsn: str,
+    sessions: Any,
+    read_dsn: str = "",
 ) -> None:
     """Keep retrying whichever half did not connect at startup.
 
@@ -404,12 +427,16 @@ async def feedback_connect_task(
             await asyncio.sleep(delay)
             delay = min(delay * 2, FEEDBACK_CONNECT_RETRY_CEILING_SECONDS)
 
-            if await _wire_feedback(state, request_dsn, maintenance_dsn, sessions, read_dsn):
+            if await _wire_feedback(
+                state, request_dsn, maintenance_dsn, sessions, read_dsn
+            ):
                 return
         except asyncio.CancelledError:
             raise
-        except Exception as error:  # noqa: BLE001 - the loop must outlive it
-            print(f"\u26a0\ufe0f Feedback connection attempt failed: {type(error).__name__}")
+        except Exception as error:
+            print(
+                f"\u26a0\ufe0f Feedback connection attempt failed: {type(error).__name__}"
+            )
 
 
 async def feedback_maintenance_task(state: Any) -> None:
@@ -441,8 +468,10 @@ async def feedback_maintenance_task(state: Any) -> None:
                 await maintenance.expire_once()
         except asyncio.CancelledError:
             raise
-        except Exception as error:  # noqa: BLE001 - the loop must outlive it
-            print(f"\u26a0\ufe0f Feedback maintenance pass failed: {type(error).__name__}")
+        except Exception as error:
+            print(
+                f"\u26a0\ufe0f Feedback maintenance pass failed: {type(error).__name__}"
+            )
 
 
 # Well inside Docker's 10s stop grace: telemetry is the least important thing
@@ -468,7 +497,9 @@ async def _shutdown_quality_telemetry(exporter: Any, timeout_seconds: float) -> 
         except Exception as e:  # reported at teardown, never raised to the loop
             failures.append(e)
 
-    thread = threading.Thread(target=run, name="quality-telemetry-shutdown", daemon=True)
+    thread = threading.Thread(
+        target=run, name="quality-telemetry-shutdown", daemon=True
+    )
     thread.start()
 
     deadline = time.monotonic() + timeout_seconds
@@ -479,6 +510,20 @@ async def _shutdown_quality_telemetry(exporter: Any, timeout_seconds: float) -> 
         print("Quality telemetry shutdown timed out; export thread abandoned")
     elif failures:
         print(f"Error stopping quality telemetry: {failures[0]}")
+
+
+def _report_background_task_shutdown_errors(task_results: list[Any]) -> None:
+    """Report task failures without treating expected cancellation as an error."""
+    for result in task_results:
+        if isinstance(result, Exception) and not isinstance(
+            result, asyncio.CancelledError
+        ):
+            print(f"Background task shutdown error: {result}")
+
+
+def _start_feedback_maintenance_task(app: FastAPI) -> asyncio.Task[None]:
+    """Start feedback maintenance with the application lifespan state."""
+    return asyncio.create_task(feedback_maintenance_task(app.state))
 
 
 @asynccontextmanager
@@ -625,12 +670,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # role the tenant policy does not filter -- see deploy/postgres/migrations/
     # 002_feedback_roles.sql. Sharing the request pool would leave both passes
     # seeing no rows and reporting success.
-    maintenance_dsn = os.environ.get("SSF_FEEDBACK_MAINTENANCE_DATABASE_URL", "").strip()
+    maintenance_dsn = os.environ.get(
+        "SSF_FEEDBACK_MAINTENANCE_DATABASE_URL", ""
+    ).strip()
     # A third role again, for the opposite reason: the Studio read endpoints
     # must stay inside the tenant policy while gaining the audit privileges the
     # submit path deliberately lacks. See 003_feedback_reader.sql.
     read_dsn = os.environ.get("SSF_FEEDBACK_READER_DATABASE_URL", "").strip()
-    await _wire_feedback(app.state, feedback_dsn, maintenance_dsn, session_manager, read_dsn)
+    await _wire_feedback(
+        app.state, feedback_dsn, maintenance_dsn, session_manager, read_dsn
+    )
 
     # Start background tasks
     timeout_task = asyncio.create_task(session_timeout_monitor())
@@ -638,9 +687,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     websocket_monitor_bg_task = asyncio.create_task(websocket_monitor_task())
     websocket_fallback_bg_task = asyncio.create_task(websocket_fallback_task())
     audio_cleanup_bg_task = asyncio.create_task(audio_cleanup_task())
-    feedback_maintenance_bg_task = asyncio.create_task(feedback_maintenance_task(app.state))
+    feedback_maintenance_bg_task = _start_feedback_maintenance_task(app)
     feedback_connect_bg_task = asyncio.create_task(
-        feedback_connect_task(app.state, feedback_dsn, maintenance_dsn, session_manager, read_dsn)
+        feedback_connect_task(
+            app.state, feedback_dsn, maintenance_dsn, session_manager, read_dsn
+        )
     )
     sys.stderr.write("All background tasks started\n")
     sys.stderr.flush()
@@ -676,9 +727,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             return_exceptions=True,
         )
 
-        for result in task_results:
-            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
-                print(f"Background task shutdown error: {result}")
+        _report_background_task_shutdown_errors(task_results)
 
         app.state.pipeline_admission = None
 
@@ -701,7 +750,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         feedback_maintenance_repository_at_exit = getattr(
             app.state, "feedback_maintenance_repository", None
         )
-        feedback_read_repository_at_exit = getattr(app.state, "feedback_read_repository", None)
+        feedback_read_repository_at_exit = getattr(
+            app.state, "feedback_read_repository", None
+        )
         app.state.feedback_repository = None
         app.state.feedback_maintenance_repository = None
         app.state.feedback_read_repository = None
@@ -754,7 +805,9 @@ app = FastAPI(
 # === Monitoring Setup (BEFORE any module imports) ===
 # Eigene Registry erstellen um doppelte Registrierung zu vermeiden
 registry = CollectorRegistry()
-requests_total = Counter("gateway_requests_total", "Total API Gateway requests", registry=registry)
+requests_total = Counter(
+    "gateway_requests_total", "Total API Gateway requests", registry=registry
+)
 requests_total.inc(0)
 
 # Registered here rather than in the lifespan because a Prometheus series may be
@@ -792,9 +845,13 @@ def setup_cors_for_websockets():
     """Configure CORS for both REST API and WebSocket connections"""
     # Development vs Production CORS
     development_origins = os.environ.get("DEVELOPMENT_CORS_ORIGINS", "").split(",")
-    development_origins = [origin.strip() for origin in development_origins if origin.strip()]
+    development_origins = [
+        origin.strip() for origin in development_origins if origin.strip()
+    ]
 
-    production_pattern = r"https://.*\.figma\.site|https://translate\.smart-village\.solutions"
+    production_pattern = (
+        r"https://.*\.figma\.site|https://translate\.smart-village\.solutions"
+    )
     environment = os.environ.get("ENVIRONMENT", "production")
 
     if environment == "development":

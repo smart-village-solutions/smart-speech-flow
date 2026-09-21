@@ -224,13 +224,17 @@ class FeedbackMaintenance:
             # the real depth every pass, so max() across replicas is right.
             self._metrics.observed_backlog(0)
             return ReconciliationPass(skipped=True)
-        except Exception as error:  # noqa: BLE001 - reported, never raised
-            logger.warning("Feedback reconciliation could not read: %s", type(error).__name__)
+        except Exception as error:  # Reported, never raised.
+            logger.warning(
+                "Feedback reconciliation could not read: %s", type(error).__name__
+            )
             self._metrics.job_failed("reconciliation")
             return ReconciliationPass(unavailable=True)
 
     async def _reconcile_under_lock(self) -> ReconciliationPass:
-        pending = await self._repository.claim_pending_analytics(self._reconciliation_limit)
+        pending = await self._repository.claim_pending_analytics(
+            self._reconciliation_limit
+        )
 
         self._metrics.observed_backlog(len(pending))
 
@@ -263,18 +267,20 @@ class FeedbackMaintenance:
                 net_promoter_score=row.net_promoter_score,
                 form_version=row.form_version,
             )
-        except Exception as error:  # noqa: BLE001 - one bad row must not end the batch
+        except Exception as error:  # One bad row must not end the batch.
             logger.warning("Feedback re-emission raised: %s", type(error).__name__)
             return ProbeOutcome.EXPORT_FAILED
 
         try:
             if result.outcome is ProbeOutcome.EMITTED:
-                await self._repository.mark_analytics_delivered(row.feedback_id, row.tenant_id)
+                await self._repository.mark_analytics_delivered(
+                    row.feedback_id, row.tenant_id
+                )
             elif result.outcome is ProbeOutcome.DISABLED:
                 await self._repository.mark_analytics_state(
                     row.feedback_id, AnalyticsState.NOT_APPLICABLE, row.tenant_id
                 )
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:
             # The event went out but the row still says pending. The next pass
             # re-emits the same id, which gold deduplicates, so this is safe.
             logger.warning("Feedback state update failed: %s", type(error).__name__)
@@ -293,7 +299,7 @@ class FeedbackMaintenance:
             # Zero rather than nothing, for the reason reconcile_once gives.
             self._metrics.observed_overdue(0)
             return RetentionPass(skipped=True)
-        except Exception as error:  # noqa: BLE001 - reported, never raised
+        except Exception as error:  # Reported, never raised.
             logger.warning("Feedback retention pass failed: %s", type(error).__name__)
             self._metrics.job_failed("retention")
             return RetentionPass(failed=True)
@@ -302,7 +308,9 @@ class FeedbackMaintenance:
 
         try:
             self._metrics.observed_overdue(await self._repository.count_expired(now))
-        except Exception as error:  # noqa: BLE001 - the deletion already happened
-            logger.warning("Feedback retention backlog not counted: %s", type(error).__name__)
+        except Exception as error:  # The deletion already happened.
+            logger.warning(
+                "Feedback retention backlog not counted: %s", type(error).__name__
+            )
 
         return RetentionPass(deleted=len(deleted))
