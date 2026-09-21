@@ -481,10 +481,16 @@ def _circuit_open_result(
     """Turns a refused call into the pipeline's ordinary retryable failure.
 
     An open breaker is transient by construction -- it closes again on its own
-    -- so it reaches the client through the same 503 and ``Retry-After`` that
-    #190's load shedding already uses, and no route or frontend needs to learn
-    a new shape. The telemetry code stays distinct, because a breaker we opened
-    and a service politely shedding load are different operational events.
+    -- so it carries the same ``error_code`` and ``retry_after_seconds`` that
+    #190's load shedding already uses, and the session routes turn both into a
+    503 with a ``Retry-After`` through ``_raise_if_upstream_busy``. The
+    telemetry code stays distinct, because a breaker we opened and a service
+    politely shedding load are different operational events.
+
+    ``POST /pipeline`` does not do that translation -- it maps every
+    ``result["error"]`` to a 400 and reads neither field, so a transient
+    refusal looks permanent there. That behaviour predates this change and is
+    tracked separately; the fields are on the result either way.
 
     The work already done is preserved: a transcript that cost six seconds of
     GPU time should not vanish because the next stage was unreachable.
