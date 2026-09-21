@@ -31,6 +31,7 @@ from .circuit_breaker import (
     CircuitBreakerOpenError,
     CircuitState,
 )
+from .graceful_degradation import graceful_degradation_manager
 
 logger = logging.getLogger(__name__)
 DEFAULT_HEALTH_PATH = "/health"
@@ -383,6 +384,16 @@ class ServiceHealthManager:
             self._handle_service_failure(service_name)
         elif new_state == CircuitState.CLOSED:
             self._handle_service_recovery(service_name)
+
+        # Every transition, not just this service's: the reported mode depends
+        # on how many services are down, so a second one opening has to move it
+        # even though this service did not change.
+        graceful_degradation_manager.apply_service_states(
+            {
+                name: circuit.state is not CircuitState.OPEN
+                for name, circuit in self.circuit_breakers.items()
+            }
+        )
 
     def _handle_service_failure(self, service_name: str):
         """Behandelt Service Ausfall"""

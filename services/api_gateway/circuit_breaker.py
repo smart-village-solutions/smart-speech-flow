@@ -407,15 +407,26 @@ class CircuitBreaker:
         }
 
     def reset(self):
-        """Manueller Circuit Reset - nur für Admin/Testing"""
+        """Manueller Circuit Reset - nur für Admin/Testing.
+
+        Announces the transition like any other. An operator closing a breaker
+        from /api/admin/circuit-breakers/{name}/reset otherwise leaves anything
+        derived from breaker state -- the degradation mode among them -- still
+        reporting the outage they have just cleared.
+        """
         logger.warning(f"⚠️ Manueller Reset von Circuit Breaker '{self.name}'")
-        self.state = CircuitState.CLOSED
-        self.failure_count = 0
-        self.success_count = 0
-        self.last_failure_time = None
-        self.next_attempt_time = None
-        self.current_recovery_timeout = self.config.recovery_timeout
-        self.health.current_state = self.state
+        with self._lock:
+            old_state = self.state
+            self.state = CircuitState.CLOSED
+            self.failure_count = 0
+            self.success_count = 0
+            self.last_failure_time = None
+            self.next_attempt_time = None
+            self.current_recovery_timeout = self.config.recovery_timeout
+            self.health.current_state = self.state
+            transition = None if old_state == self.state else (old_state, self.state)
+
+        self._dispatch(transition)
 
 
 class CircuitBreakerOpenError(Exception):

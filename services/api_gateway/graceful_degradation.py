@@ -462,6 +462,52 @@ class GracefulDegradationManager:
 
         logger.debug(f"🗑️ {evict_count} Cache Entries entfernt")
 
+    def apply_service_states(self, usable: Dict[str, bool]) -> None:
+        """Recomputes the reported mode from which services are callable.
+
+        Derived rather than accumulated. ``_update_service_mode`` only ever
+        made the mode worse -- its recovery branch was a literal ``pass`` -- so
+        a single failure pinned the endpoint to DEGRADED for the life of the
+        process. Recomputing means recovery needs no separate path and cannot
+        be forgotten.
+
+        ``usable`` maps each service to whether its breaker will currently
+        admit a request; HALF_OPEN counts as usable, because it will.
+        """
+        if not usable:
+            return
+
+        unusable = sorted(name for name, ok in usable.items() if not ok)
+        if not unusable:
+            new_mode = ServiceMode.FULL
+        elif len(unusable) >= len(usable):
+            new_mode = ServiceMode.OFFLINE
+        elif len(unusable) == 1:
+            new_mode = ServiceMode.DEGRADED
+        else:
+            new_mode = ServiceMode.MINIMAL
+
+        self._record_mode(new_mode, trigger=", ".join(unusable) or "recovery")
+
+    def _record_mode(self, new_mode: "ServiceMode", *, trigger: str) -> None:
+        old_mode = self.current_mode
+        if old_mode == new_mode:
+            return
+
+        self.current_mode = new_mode
+        self.mode_history.append(
+            {
+                "timestamp": utc_now().isoformat(),
+                "old_mode": old_mode.value,
+                "new_mode": new_mode.value,
+                "trigger_service": trigger,
+                "is_failure": new_mode is not ServiceMode.FULL,
+            }
+        )
+        logger.warning(
+            f"🔄 Service Mode: {old_mode.value} → {new_mode.value} (Trigger: {trigger})"
+        )
+
     async def _update_service_mode(self, service_name: str, is_failure: bool):
         """Updated Service Betriebsmodus"""
         await asyncio.sleep(0)
