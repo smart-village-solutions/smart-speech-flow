@@ -10,7 +10,11 @@ interface AdminLoginScreenProps {
 }
 
 /** Deliberately permissive: the gateway, not this form, owns what an account is. */
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL = /^[^\s@]+@(?:[^\s@.]+\.)+[^\s@.]+$/;
+
+function isValidAdminEmail(email: string): boolean {
+  return EMAIL.test(email.trim());
+}
 
 /**
  * Imitates the Keycloak page that replaces it, so an admin recognises the screen
@@ -39,7 +43,7 @@ export function AdminLoginScreen({ onSignIn, onBack }: Readonly<AdminLoginScreen
   };
 
   const submit = () => {
-    if (!EMAIL.test(email.trim())) {
+    if (!isValidAdminEmail(email)) {
       setError('email');
       return;
     }

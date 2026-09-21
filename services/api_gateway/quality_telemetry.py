@@ -15,7 +15,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Final
+from typing import Final, TypedDict, Unpack
 from uuid import UUID, uuid4
 
 from fastapi import Request
@@ -26,6 +26,15 @@ from .session_pseudonym import MISSING_TENANT_REFERENCE
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION: Final[int] = 1
+
+_SOURCE_LANG_ATTRIBUTE: Final = "ssf.quality.source_lang"
+_TARGET_LANG_ATTRIBUTE: Final = "ssf.quality.target_lang"
+_ERROR_CODE_ATTRIBUTE: Final = "ssf.quality.error_code"
+_SESSION_REF_ATTRIBUTE: Final = "ssf.quality.session_ref"
+_TENANT_REF_ATTRIBUTE: Final = "ssf.quality.tenant_ref"
+_INVALID_SESSION_REF: Final = "session_ref is not an opaque reference"
+_INVALID_TENANT_REF: Final = "tenant_ref is not a bounded tenant reference"
+_EVENT_REJECTED: Final = "Quality telemetry event rejected before export"
 
 
 class QualityEventType(str, Enum):
@@ -182,12 +191,14 @@ class AttributeKind(str, Enum):
 # A label is operator-set configuration (a model name, a release token), not
 # user content: no whitespace, no punctuation that would let a sentence through.
 # \Z, not $: `$` also matches immediately before a trailing newline, so a
-# "no whitespace" guard was accepting "gpt-oss:20b\n". [0-9] and re.ASCII, not
-# \d: \d accepts Unicode decimal digits, and "١٢٣" is not a number ClickHouse
+# "no whitespace" guard was accepting "gpt-oss:20b\n". re.ASCII keeps \d from
+# accepting Unicode decimal digits: "١٢٣" is not a number ClickHouse
 # will parse into a UInt32 -- toUInt32OrZero turns it into a silent 0.
 _LABEL_PATTERN: Final = re.compile(r"\A[A-Za-z0-9._:+/-]{1,64}\Z", re.ASCII)
-_NUMBER_PATTERN: Final = re.compile(r"\A-?[0-9]{1,19}\Z", re.ASCII)
-_LANGUAGE_PATTERN: Final = re.compile(r"\A[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?\Z", re.ASCII)
+_NUMBER_PATTERN: Final = re.compile(r"\A-?\d{1,19}\Z", re.ASCII)
+_LANGUAGE_PATTERN: Final = re.compile(
+    r"\A[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?\Z", re.ASCII
+)
 _OPAQUE_REF_PATTERN: Final = re.compile(r"\A[0-9a-f]{16,64}\Z", re.ASCII)
 _TENANT_REF_PATTERN: Final = re.compile(r"\A[0-9a-f]{12}\Z", re.ASCII)
 
@@ -203,7 +214,7 @@ class AttributeSpec:
 
 
 def _enum_values(enum_class: type[Enum]) -> frozenset[str]:
-    return frozenset(str(member.value) for member in enum_class)
+    return frozenset(str(member.value) for member in enum_class.__members__.values())
 
 
 # The single manifest. Every key names its value shape, so widening the
@@ -215,7 +226,9 @@ def _enum_values(enum_class: type[Enum]) -> frozenset[str]:
 ALLOWED_ATTRIBUTES: Final[Mapping[str, AttributeSpec]] = {
     "ssf.quality.event_id": AttributeSpec(AttributeKind.UUID),
     "ssf.quality.schema_version": AttributeSpec(AttributeKind.NUMBER),
-    "ssf.quality.refiner_role": AttributeSpec(AttributeKind.ENUM, _enum_values(RefinerRole)),
+    "ssf.quality.refiner_role": AttributeSpec(
+        AttributeKind.ENUM, _enum_values(RefinerRole)
+    ),
     "ssf.quality.model_ref": AttributeSpec(AttributeKind.LABEL),
     "ssf.quality.refinement_outcome": AttributeSpec(
         AttributeKind.ENUM, _enum_values(RefinementOutcomeCode)
@@ -224,11 +237,13 @@ ALLOWED_ATTRIBUTES: Final[Mapping[str, AttributeSpec]] = {
     "ssf.quality.refinement_changed": AttributeSpec(
         AttributeKind.ENUM, frozenset({"true", "false"})
     ),
-    "ssf.quality.source_lang": AttributeSpec(AttributeKind.LANGUAGE),
-    "ssf.quality.target_lang": AttributeSpec(AttributeKind.LANGUAGE),
-    "ssf.quality.error_code": AttributeSpec(AttributeKind.ENUM, _enum_values(QualityErrorCode)),
-    "ssf.quality.session_ref": AttributeSpec(AttributeKind.OPAQUE_REF),
-    "ssf.quality.tenant_ref": AttributeSpec(AttributeKind.TENANT_REF),
+    _SOURCE_LANG_ATTRIBUTE: AttributeSpec(AttributeKind.LANGUAGE),
+    _TARGET_LANG_ATTRIBUTE: AttributeSpec(AttributeKind.LANGUAGE),
+    _ERROR_CODE_ATTRIBUTE: AttributeSpec(
+        AttributeKind.ENUM, _enum_values(QualityErrorCode)
+    ),
+    _SESSION_REF_ATTRIBUTE: AttributeSpec(AttributeKind.OPAQUE_REF),
+    _TENANT_REF_ATTRIBUTE: AttributeSpec(AttributeKind.TENANT_REF),
     # feedback_submitted (#304). The free text these ratings came with is in
     # the transactional store; there is deliberately no key for it here, and
     # AttributeKind has no member that could carry one.
@@ -247,7 +262,9 @@ ALLOWED_ATTRIBUTES: Final[Mapping[str, AttributeSpec]] = {
     "ssf.quality.terminal_outcome": AttributeSpec(
         AttributeKind.ENUM, _enum_values(TerminalOutcome)
     ),
-    "ssf.quality.failed_stage": AttributeSpec(AttributeKind.ENUM, _enum_values(PipelineStage)),
+    "ssf.quality.failed_stage": AttributeSpec(
+        AttributeKind.ENUM, _enum_values(PipelineStage)
+    ),
     "ssf.quality.total_duration_ms": AttributeSpec(AttributeKind.NUMBER),
     "ssf.quality.asr_duration_ms": AttributeSpec(AttributeKind.NUMBER),
     "ssf.quality.translation_duration_ms": AttributeSpec(AttributeKind.NUMBER),
@@ -340,7 +357,9 @@ class QualityProbeEvent:
             raise ValueError("schema_version must be positive")
 
 
-def _validate_envelope(emitted_at_utc: datetime, event_type: str, schema_version: int) -> None:
+def _validate_envelope(
+    emitted_at_utc: datetime, event_type: str, schema_version: int
+) -> None:
     if emitted_at_utc.tzinfo is None:
         raise ValueError("emitted_at_utc must be timezone-aware UTC")
     if not event_type:
@@ -389,9 +408,9 @@ class RefinementAttemptEvent:
             "ssf.quality.refinement_outcome": self.outcome.value,
             "ssf.quality.refinement_latency_ms": str(self.latency_ms),
             "ssf.quality.refinement_changed": "true" if self.changed else "false",
-            "ssf.quality.source_lang": self.source_lang,
-            "ssf.quality.target_lang": self.target_lang,
-            "ssf.quality.error_code": self.error_code.value,
+            _SOURCE_LANG_ATTRIBUTE: self.source_lang,
+            _TARGET_LANG_ATTRIBUTE: self.target_lang,
+            _ERROR_CODE_ATTRIBUTE: self.error_code.value,
         }
 
 
@@ -434,9 +453,9 @@ class TranslationMessageEvent:
             if getattr(self, name) < 0:
                 raise ValueError(f"{name} must not be negative")
         if not _OPAQUE_REF_PATTERN.match(self.session_ref):
-            raise ValueError("session_ref is not an opaque reference")
+            raise ValueError(_INVALID_SESSION_REF)
         if not _TENANT_REF_PATTERN.match(self.tenant_ref):
-            raise ValueError("tenant_ref is not a bounded tenant reference")
+            raise ValueError(_INVALID_TENANT_REF)
         for code in (self.source_lang, self.target_lang):
             if not _LANGUAGE_PATTERN.match(code):
                 raise ValueError(f"not a language code: {code!r}")
@@ -453,15 +472,15 @@ class TranslationMessageEvent:
 
     def _attributes(self) -> dict[str, str]:
         return {
-            "ssf.quality.session_ref": self.session_ref,
-            "ssf.quality.tenant_ref": self.tenant_ref,
+            _SESSION_REF_ATTRIBUTE: self.session_ref,
+            _TENANT_REF_ATTRIBUTE: self.tenant_ref,
             "ssf.quality.direction": self.direction.value,
             "ssf.quality.input_mode": self.input_mode.value,
-            "ssf.quality.source_lang": self.source_lang,
-            "ssf.quality.target_lang": self.target_lang,
+            _SOURCE_LANG_ATTRIBUTE: self.source_lang,
+            _TARGET_LANG_ATTRIBUTE: self.target_lang,
             "ssf.quality.terminal_outcome": self.terminal_outcome.value,
             "ssf.quality.failed_stage": self.failed_stage.value,
-            "ssf.quality.error_code": self.error_code.value,
+            _ERROR_CODE_ATTRIBUTE: self.error_code.value,
             "ssf.quality.total_duration_ms": str(self.total_duration_ms),
             "ssf.quality.asr_duration_ms": str(self.asr_duration_ms),
             "ssf.quality.translation_duration_ms": str(self.translation_duration_ms),
@@ -507,9 +526,9 @@ class SessionLifecycleEvent:
         if self.message_count < 0:
             raise ValueError("message_count must not be negative")
         if not _OPAQUE_REF_PATTERN.match(self.session_ref):
-            raise ValueError("session_ref is not an opaque reference")
+            raise ValueError(_INVALID_SESSION_REF)
         if not _TENANT_REF_PATTERN.match(self.tenant_ref):
-            raise ValueError("tenant_ref is not a bounded tenant reference")
+            raise ValueError(_INVALID_TENANT_REF)
         ended = self.phase is SessionLifecyclePhase.TERMINATED
         named = self.termination_reason is not SessionTerminationReason.NONE
         if ended != named:
@@ -517,8 +536,8 @@ class SessionLifecycleEvent:
 
     def _attributes(self) -> dict[str, str]:
         return {
-            "ssf.quality.session_ref": self.session_ref,
-            "ssf.quality.tenant_ref": self.tenant_ref,
+            _SESSION_REF_ATTRIBUTE: self.session_ref,
+            _TENANT_REF_ATTRIBUTE: self.tenant_ref,
             "ssf.quality.lifecycle_phase": self.phase.value,
             "ssf.quality.termination_reason": self.termination_reason.value,
             "ssf.quality.session_duration_ms": str(self.session_duration_ms),
@@ -560,18 +579,18 @@ class FeedbackSubmittedEvent:
         if not 0 <= self.net_promoter_score <= 10:
             raise ValueError("net_promoter_score must be between 0 and 10")
         if not _OPAQUE_REF_PATTERN.match(self.session_ref):
-            raise ValueError("session_ref is not an opaque reference")
+            raise ValueError(_INVALID_SESSION_REF)
         if not _OPAQUE_REF_PATTERN.match(self.feedback_ref):
             raise ValueError("feedback_ref is not an opaque reference")
         if not _TENANT_REF_PATTERN.match(self.tenant_ref):
-            raise ValueError("tenant_ref is not a bounded tenant reference")
+            raise ValueError(_INVALID_TENANT_REF)
         if not _LABEL_PATTERN.match(self.feedback_form_version):
             raise ValueError("feedback_form_version is not a label")
 
     def _attributes(self) -> dict[str, str]:
         return {
-            "ssf.quality.session_ref": self.session_ref,
-            "ssf.quality.tenant_ref": self.tenant_ref,
+            _SESSION_REF_ATTRIBUTE: self.session_ref,
+            _TENANT_REF_ATTRIBUTE: self.tenant_ref,
             "ssf.quality.feedback_ref": self.feedback_ref,
             "ssf.quality.translation_quality": str(self.translation_quality),
             "ssf.quality.performance": str(self.performance),
@@ -761,7 +780,7 @@ def _events_counter(registry: CollectorRegistry) -> Counter:
     # unregistered collector rather than raising: the series will not be
     # scraped, which is a reporting gap, not an outage.
     logger.warning(
-        "%s is not available on the gateway registry; telemetry counters " "will not be scraped",
+        "%s is not available on the gateway registry; telemetry counters will not be scraped",
         _EVENTS_COUNTER_NAME,
     )
     return Counter(
@@ -772,13 +791,32 @@ def _events_counter(registry: CollectorRegistry) -> Counter:
     )
 
 
-def discard_event(event_name: str, attributes: Mapping[str, str], emitted_at_utc: datetime) -> None:
+def discard_event(
+    event_name: str, attributes: Mapping[str, str], emitted_at_utc: datetime
+) -> None:
     """The exporter used in disabled mode.
 
     `emit_probe` returns before reaching it, so it exists only to keep the
     exporter argument non-optional: a nullable exporter would put the
     "is telemetry on?" test in two places.
     """
+
+
+class _TranslationDurationArguments(TypedDict):
+    total_duration_ms: int
+    asr_duration_ms: int
+    translation_duration_ms: int
+    refinement_duration_ms: int
+    tts_duration_ms: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _TranslationDurations:
+    total_duration_ms: int
+    asr_duration_ms: int
+    translation_duration_ms: int
+    refinement_duration_ms: int
+    tts_duration_ms: int
 
 
 class QualityTelemetry:
@@ -860,7 +898,7 @@ class QualityTelemetry:
                 error_code=error_code,
             )
         except (ValueError, TypeError):
-            logger.warning("Quality telemetry event rejected before export")
+            logger.warning(_EVENT_REJECTED)
             return self._record(ProbeOutcome.DROPPED_DISALLOWED, None)
 
         return self._export(event)
@@ -876,12 +914,8 @@ class QualityTelemetry:
         terminal_outcome: TerminalOutcome,
         failed_stage: PipelineStage,
         error_code: QualityErrorCode,
-        total_duration_ms: int,
-        asr_duration_ms: int,
-        translation_duration_ms: int,
-        refinement_duration_ms: int,
-        tts_duration_ms: int,
         tenant_ref: str = MISSING_TENANT_REFERENCE,
+        **durations: Unpack[_TranslationDurationArguments],
     ) -> ProbeResult:
         """One processed message, successful or not.
 
@@ -890,6 +924,8 @@ class QualityTelemetry:
         trusted, because this is the row every ratio divides by and a dropped
         row makes each of those ratios wrong for as long as it is retained.
         """
+        # Preserve required keyword validation even while telemetry is disabled.
+        timing = _TranslationDurations(**durations)
         if not self._mode.emits_pipeline_events:
             return self._record(ProbeOutcome.DISABLED, None)
 
@@ -912,14 +948,16 @@ class QualityTelemetry:
                 terminal_outcome=terminal_outcome,
                 failed_stage=failed_stage,
                 error_code=error_code,
-                total_duration_ms=max(0, int(total_duration_ms or 0)),
-                asr_duration_ms=max(0, int(asr_duration_ms or 0)),
-                translation_duration_ms=max(0, int(translation_duration_ms or 0)),
-                refinement_duration_ms=max(0, int(refinement_duration_ms or 0)),
-                tts_duration_ms=max(0, int(tts_duration_ms or 0)),
+                total_duration_ms=max(0, int(timing.total_duration_ms or 0)),
+                asr_duration_ms=max(0, int(timing.asr_duration_ms or 0)),
+                translation_duration_ms=max(
+                    0, int(timing.translation_duration_ms or 0)
+                ),
+                refinement_duration_ms=max(0, int(timing.refinement_duration_ms or 0)),
+                tts_duration_ms=max(0, int(timing.tts_duration_ms or 0)),
             )
         except (ValueError, TypeError):
-            logger.warning("Quality telemetry event rejected before export")
+            logger.warning(_EVENT_REJECTED)
             return self._record(ProbeOutcome.DROPPED_DISALLOWED, None)
 
         return self._export(event)
@@ -961,7 +999,7 @@ class QualityTelemetry:
                 message_count=max(0, int(message_count or 0)),
             )
         except (ValueError, TypeError):
-            logger.warning("Quality telemetry event rejected before export")
+            logger.warning(_EVENT_REJECTED)
             return self._record(ProbeOutcome.DROPPED_DISALLOWED, None)
 
         return self._export(event)
@@ -1012,7 +1050,7 @@ class QualityTelemetry:
                 feedback_form_version=_as_label(form_version),
             )
         except (ValueError, TypeError):
-            logger.warning("Quality telemetry event rejected before export")
+            logger.warning(_EVENT_REJECTED)
             return self._record(ProbeOutcome.DROPPED_DISALLOWED, event_id)
 
         return self._export(event)
