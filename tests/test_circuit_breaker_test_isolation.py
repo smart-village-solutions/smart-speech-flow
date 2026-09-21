@@ -19,6 +19,10 @@ from services.api_gateway.circuit_breaker import (
     CircuitBreakerFactory,
     CircuitState,
 )
+from services.api_gateway.graceful_degradation import (
+    ServiceMode,
+    graceful_degradation_manager,
+)
 
 SHARED_NAME = "isolation-probe"
 
@@ -48,3 +52,21 @@ def test_the_next_test_gets_a_closed_breaker():
     )
     assert breaker.failure_count == 0
     assert breaker.health.total_requests == 0
+
+
+def test_a_first_test_can_leave_the_degradation_mode_dirty():
+    """Breaker transitions now move this singleton too, via #219's callback."""
+    graceful_degradation_manager.apply_service_states(
+        {"asr": True, "translation": True, "tts": False}
+    )
+
+    assert graceful_degradation_manager.current_mode is ServiceMode.DEGRADED
+    assert graceful_degradation_manager.mode_history
+
+
+def test_the_next_test_gets_a_clean_degradation_mode():
+    assert graceful_degradation_manager.current_mode is ServiceMode.FULL, (
+        "a previous test's outage leaked into this one; the autouse "
+        "reset_circuit_breakers fixture is not resetting the degradation manager"
+    )
+    assert graceful_degradation_manager.mode_history == []

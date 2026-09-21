@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from services.api_gateway.circuit_breaker import CircuitBreakerFactory, CircuitState, ServiceHealth
+from services.api_gateway.graceful_degradation import ServiceMode, graceful_degradation_manager
 
 
 @pytest.fixture(autouse=True)
@@ -27,6 +28,10 @@ def reset_circuit_breakers():
     ``CircuitBreaker.reset()`` is the admin reset and deliberately keeps the
     lifetime counters, which is right for an operator and wrong here, so the
     health record is replaced as well.
+
+    The degradation manager is reset with them: since #219 a breaker
+    transition also moves its mode, so it is part of the same shared state and
+    leaks the same way.
     """
     yield
 
@@ -43,3 +48,6 @@ def reset_circuit_breakers():
         circuit.reset()
         circuit.health = ServiceHealth(service_name=circuit.name)
         circuit.response_times.clear()
+
+    graceful_degradation_manager.current_mode = ServiceMode.FULL
+    graceful_degradation_manager.mode_history.clear()
