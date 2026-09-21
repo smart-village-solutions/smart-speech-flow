@@ -83,10 +83,12 @@
 ## Recorded Package Evidence — 2026-09-20
 
 The [immutable issue ledger](issue-ledger.md) accounts for all 163 baseline keys.
-The table records the analyzed remote heads: **all 15 GitHub checks passed for
-each PR**, and each SonarCloud PR analysis reports **0 unresolved PR issues,
-Quality Gate OK, A/A/A new-code security/reliability/maintainability ratings,
-0.0% new duplication, and 100% new security hotspots reviewed**.
+The table records the analyzed remote heads: **all 15 project and required
+checks passed for each PR**, while a separate non-blocking
+`copilot-pull-request-reviewer` check reported failure. Each SonarCloud PR
+analysis reports **0 unresolved PR issues, Quality Gate OK, A/A/A new-code
+security/reliability/maintainability ratings, 0.0% new duplication, and 100%
+new security hotspots reviewed**.
 Coverage below is Sonar's new-code metric; an em dash means it is not reported,
 not zero. These are PR results, not evidence of baseline closure on main.
 
@@ -165,11 +167,11 @@ or main-branch issue-status manipulation was used.
 
 ## 9. Final Integration Evidence
 
-- [x] 9.1 Record the packages still awaiting merge: PR-1–PR-8, [#367](https://github.com/smart-village-solutions/smart-speech-flow/pull/367), [#368](https://github.com/smart-village-solutions/smart-speech-flow/pull/368), [#369](https://github.com/smart-village-solutions/smart-speech-flow/pull/369), [#370](https://github.com/smart-village-solutions/smart-speech-flow/pull/370), [#371](https://github.com/smart-village-solutions/smart-speech-flow/pull/371), [#372](https://github.com/smart-village-solutions/smart-speech-flow/pull/372), [#373](https://github.com/smart-village-solutions/smart-speech-flow/pull/373), and [#374](https://github.com/smart-village-solutions/smart-speech-flow/pull/374), are all OPEN as of 2026-09-20. This completes only the awaiting-merge alternative; none is merged.
-- [ ] 9.2 Run the hermetic backend suite with coverage at or above 80%.
-- [ ] 9.3 Run frontend clean install, tests, lint, build, and token checks.
-- [x] 9.4 Validate the reconciled documentation with `openspec validate fix-sonarcloud-open-issues --strict` (passed 2026-09-20); this does not complete integrated verification.
-- [ ] 9.5 Run a fresh SonarCloud analysis on the integrated revision.
-- [ ] 9.6 Confirm zero open issues, an `OK` Quality Gate, A ratings, and required coverage/duplication thresholds.
-- [ ] 9.7 Record final analysis ID, revision, timestamp, test evidence, and any controlled-environment skips.
-- [ ] 9.8 Mark every task complete only after its evidence exists.
+- [x] 9.1 Merge PR-1–PR-8 in order: [#367](https://github.com/smart-village-solutions/smart-speech-flow/pull/367), [#368](https://github.com/smart-village-solutions/smart-speech-flow/pull/368), [#369](https://github.com/smart-village-solutions/smart-speech-flow/pull/369), [#370](https://github.com/smart-village-solutions/smart-speech-flow/pull/370), [#371](https://github.com/smart-village-solutions/smart-speech-flow/pull/371), [#372](https://github.com/smart-village-solutions/smart-speech-flow/pull/372), [#373](https://github.com/smart-village-solutions/smart-speech-flow/pull/373), and [#374](https://github.com/smart-village-solutions/smart-speech-flow/pull/374). Each branch was updated from the preceding integrated revision and all 15 project and required checks passed before its 2026-09-21 merge. A separate non-blocking `copilot-pull-request-reviewer` check reported failure on the final PR heads and did not gate merge.
+- [x] 9.2 Run the integrated hermetic backend suite: GitHub Actions run `35583030649` reports 1,931 passed, 29 skipped, and 16 deselected; the integrated SonarCloud analysis reports 89.4% overall coverage.
+- [x] 9.3 Run frontend clean install, lint, tests, build, and token checks: GitHub Actions run `35583030606` reports 86 test files and 617 tests passed, a successful production build, and `PASS: tokens present in built CSS`.
+- [x] 9.4 Validate the completed change documentation with `openspec validate fix-sonarcloud-open-issues --strict` (passed 2026-09-21).
+- [x] 9.5 Run a fresh SonarCloud analysis on integrated revision `cb24ed83a58e1b8e53a59a52632e1cb0db169f9f`: analysis `1a7b237f-d85f-45e1-a941-e44bb543b680` completed on 2026-09-21.
+- [x] 9.6 Confirm zero open issues, an `OK` Quality Gate, A security/reliability/maintainability ratings, 92.7% new-code coverage, 0.6% new-code duplication, and 100% reviewed new-code security hotspots. Overall coverage is 89.4% and overall duplication is 0.9%.
+- [x] 9.7 Record final evidence: analysis timestamp `2026-09-21T09:25:26Z`; final revision `cb24ed83a58e1b8e53a59a52632e1cb0db169f9f`; successful code-quality workflow `35583030606`; successful backend workflow `35583030649`; 1,931 hermetic tests passed with 29 controlled skips and 16 integration/real-system deselections. The Fallow audit is PR-only and therefore skipped on the final `push` workflow; the blocking frontend lint, test, build, token, SonarCloud, security, type, dependency, code-quality, and Quality Gate jobs passed.
+- [x] 9.8 Mark every task complete only after the integrated evidence above exists.
