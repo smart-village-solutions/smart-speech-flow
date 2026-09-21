@@ -18,22 +18,20 @@ const { construct, clients } = vi.hoisted(() => ({
 
 vi.mock('keycloak-js', () => ({
   default: class {
+    authenticated = true;
+    token: string | undefined = 'access-token';
+    loginRequired = true;
+    init = vi.fn().mockResolvedValue(true);
+    updateToken = vi.fn().mockResolvedValue(true);
+    clearToken = vi.fn(() => {
+      this.authenticated = false;
+      this.token = '';
+    });
+    logout = vi.fn().mockResolvedValue(undefined);
+
     constructor(options: unknown) {
       construct(options);
-      const client = {
-        authenticated: true,
-        token: 'access-token',
-        loginRequired: true,
-        init: vi.fn().mockResolvedValue(true),
-        updateToken: vi.fn().mockResolvedValue(true),
-        clearToken: vi.fn(() => {
-          client.authenticated = false;
-          client.token = '';
-        }),
-        logout: vi.fn().mockResolvedValue(undefined),
-      };
-      clients.push(client);
-      return client;
+      clients.push(this);
     }
   },
 }));
@@ -60,7 +58,7 @@ describe('tenant Keycloak session', () => {
     expect(clients[0].init).toHaveBeenCalledWith({
       onLoad: 'login-required',
       pkceMethod: 'S256',
-      redirectUri: `${window.location.origin}/login/tenant-kassel`,
+      redirectUri: `${globalThis.location.origin}/login/tenant-kassel`,
     });
   });
 
@@ -104,7 +102,7 @@ describe('tenant Keycloak session', () => {
     await auth.requireKeycloakLogin(config, { ...kassel, id: 'tenant:kassel' });
     expect(clients[0].init).toHaveBeenCalledWith(
       expect.objectContaining({
-        redirectUri: `${window.location.origin}/login/tenant%3Akassel`,
+        redirectUri: `${globalThis.location.origin}/login/tenant%3Akassel`,
       })
     );
     await auth.getAdminAccessToken();
@@ -172,7 +170,7 @@ describe('tenant Keycloak session', () => {
     await auth.requireKeycloakLogin(config, kassel);
     await auth.logoutFromKeycloak();
     expect(clients[0].logout).toHaveBeenCalledWith({
-      redirectUri: `${window.location.origin}/login`,
+      redirectUri: `${globalThis.location.origin}/login`,
     });
     expect(await auth.getAdminAccessToken()).toBeNull();
   });

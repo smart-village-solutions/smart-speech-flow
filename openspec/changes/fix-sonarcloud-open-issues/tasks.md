@@ -1,159 +1,175 @@
-# Implementation Tasks - Eliminate the SonarCloud Backlog
+# Implementation Tasks — Eliminate the Current SonarCloud Backlog
 
 ## 0. Coordination and Baseline
 
-- [x] 0.1 Obtain approval for this proposal before implementation starts.
-- [x] 0.2 Export the live open-issue list for `main` and confirm the baseline is still 101 issues.
-- [x] 0.3 Record every issue key, rule, component, assignee, work package, and target PR in the coordinator ledger.
-- [x] 0.4 Create one branch or fork per work package from the same approved baseline.
-- [x] 0.5 Confirm file ownership with all agents and reserve shared configuration files for the coordinator.
+- [x] 0.1 Confirm implementation approval and focused-PR strategy.
+- [x] 0.2 Refresh the live `main` analysis and record its immutable baseline.
+- [x] 0.3 Create an isolated worktree from `origin/main`.
+- [x] 0.4 Install CI-equivalent development and gateway dependencies.
+- [x] 0.5 Run the hermetic backend baseline: 1,853 passed, 25 skipped, 16 deselected.
+- [x] 0.6 Validate this re-baselined OpenSpec change with strict validation.
+- [x] 0.7 Commit the reviewed re-baseline before implementation starts (`f6455da`).
 
-## 1. WP-E - Test Correctness (Agent E, 8 Findings)
+## 1. PR-1 — Container Supply Chain (5 Findings)
 
-Owned files:
+- [x] 1.1 Export the five issue keys and confirm their current lines.
+- [x] 1.2 Use the existing SonarCloud findings as analyzer RED evidence and verify behavior through real image builds and smokes.
+- [x] 1.3 Implement exact wheel acquisition/build and binary-only runtime installation for all five images.
+- [x] 1.4 Run Dockerfile tests, dependency analysis, five image builds, five import/health smokes, and CUDA checks.
+- [x] 1.5 Complete independent review, push, and open the focused PR.
+- [x] 1.6 Record SonarCloud PR analysis: [PR #367](https://github.com/smart-village-solutions/smart-speech-flow/pull/367) reports zero open PR issues, an `OK` Quality Gate, A/A/A new-code ratings, and 0.0% new duplication.
 
-- `tests/test_circuit_breaker_integration.py`
-- `tests/test_service_app_helpers.py`
-- `tests/test_end_to_end_conversation.py`
-- `tests/load/test_production_load.py`
+## 2. PR-2 — Frontend and Token Checks (14 Findings)
 
-Tasks:
+- [x] 2.1 Export the fourteen issue keys and confirm their current lines.
+- [x] 2.2 Add focused tests where regex, semantics, or accessibility behavior changes.
+- [x] 2.3 Fix all frontend TypeScript, JavaScript, HTML, and shell findings without changing user flows.
+- [x] 2.4 Run clean install, tests, lint, build, and token checks.
+- [x] 2.5 Review, resolve findings, push, and open the focused PR.
+- [x] 2.6 Record SonarCloud PR analysis and PR URL.
 
-- [x] 1.1 Move assertions outside `try` blocks that catch `AssertionError` in the circuit-breaker integration tests (`python:S5779`, 2 findings).
-- [x] 1.2 Replace the broad expected exception with the narrow network exception and guarantee client/server cleanup in `finally` (`python:S5958`, 1 finding).
-- [x] 1.3 Restrict each `pytest.raises` block to the single invocation expected to throw (`python:S5778`, 2 findings).
-- [x] 1.4 Remove unnecessary exception-catching wrappers so end-to-end parsing failures fail naturally (`python:S8714`, 2 findings).
-- [x] 1.5 Convert the load harness into a collectable `@pytest.mark.load` test with meaningful assertions, or move it to `scripts/load` and update documented commands (`python:S2187`, 1 finding).
-- [x] 1.6 Replace fixed test ports with dynamically assigned ports where touched and guarantee thread cleanup.
-- [x] 1.7 Run the circuit-breaker suite three consecutive times and run all four affected test modules.
-- [ ] 1.8 Open a focused PR and confirm the expected Sonar count changes from 101 to 93 after merge.
+## 3. PR-3 — Gateway Routes and Authentication (19 Findings)
 
-## 2. WP-C - Frontend Security and Semantics (Agent C, 32 Findings)
+- [x] 3.1 Export the nineteen issue keys and confirm their current lines.
+- [x] 3.2 Add characterization tests for behavior-sensitive route or application changes.
+- [x] 3.3 Fix the application, realtime-ticket, route, and Studio login directory findings.
+- [x] 3.4 Run targeted application, route, authentication, and OpenAPI tests plus Python quality checks.
+- [x] 3.5 Review, resolve findings, push, and open the focused PR.
+- [x] 3.6 Record SonarCloud PR analysis and PR URL.
 
-Owned scope: `services/frontend`, including package manifests and the dependency lock file, but excluding shared CI workflow files.
+## 4. PR-4 — Telemetry, Feedback, and Pipeline (27 Findings)
 
-Tasks:
+- [x] 4.1 Export the twenty-seven issue keys and confirm their current lines.
+- [x] 4.2 Add characterization tests for exception hierarchy, telemetry taxonomy, and type-sensitive paths.
+- [x] 4.3 Fix feedback, telemetry, pipeline-admission, runtime-policy, and translation findings.
+- [x] 4.4 Run targeted feedback, telemetry, pipeline, runtime-policy, and translation tests plus Python quality checks.
+- [x] 4.5 Review, resolve findings, push, and open the focused PR.
+- [x] 4.6 Record SonarCloud PR analysis and PR URL.
 
-- [x] 2.1 Add one central validator for session and polling identifiers used in request paths.
-- [x] 2.2 Construct REST URLs with validated and encoded path segments in `SessionService.ts` and `MessageService.ts` (`tssecurity:S7044` and `tssecurity:S8476`, 6 findings).
-- [x] 2.3 Validate the WebSocket base URL and allow only `ws` or `wss` before constructing a connection (`tssecurity:S8480`, 1 finding).
-- [x] 2.4 Remove or redact user-controlled values from eight logs across services, context, and components (`tssecurity:S5145`, 8 findings).
-- [x] 2.5 Replace four existence checks using `.find()` with `.some()` in `SessionContext.tsx` (`typescript:S7754`, 4 findings).
-- [x] 2.6 Add an explicit `type` to all 13 reported buttons (`typescript:S9011`, 13 findings).
-- [x] 2.7 Add a minimal frontend test harness if none exists, then add tests for valid identifiers, path injection, invalid WebSocket schemes, submit behavior, and message reconciliation.
-- [x] 2.8 Run `npm ci`, frontend tests, `npm run lint`, `npm run build`, `npm audit`, and `npm run fallow:audit`.
-- [ ] 2.9 Open a focused PR and confirm the expected Sonar count changes from 93 to 61 after merge.
+## 5. PR-5 — Session State (13 Findings)
 
-## 3. WP-A - Backend Routes (Agent A, 20 Findings)
+- [x] 5.1 Export the thirteen issue keys and confirm their current lines.
+- [x] 5.2 Add characterization tests for every affected session-manager and session-store branch.
+- [x] 5.3 Refactor cognitive complexity and resolve duplication or redundant-expression findings.
+- [x] 5.4 Run session manager, store, persistence, lifecycle, and tenant-isolation tests plus Python quality checks.
+- [x] 5.5 Review, resolve findings, push, and open the focused PR.
+- [x] 5.6 Record SonarCloud PR analysis and PR URL.
 
-Owned files:
+## 6. PR-6 — Realtime Transport (22 Findings)
 
-- `services/api_gateway/routes/admin.py`
-- `services/api_gateway/routes/circuit_breaker.py`
-- `services/api_gateway/routes/customer.py`
-- `services/api_gateway/routes/session.py`
-- `services/api_gateway/app.py`
-- route-specific tests that are not owned by WP-E
+- [x] 6.1 Export the twenty-two issue keys and confirm their current lines.
+- [x] 6.2 Add characterization tests for public query parameters, async boundaries, and WebSocket behavior.
+- [x] 6.3 Fix session-route, WebSocket, monitor, and polling findings while preserving protocol contracts.
+- [x] 6.4 Run route, WebSocket, polling, monitoring, OpenAPI, and tenant-isolation tests plus Python quality checks.
+- [x] 6.5 Review, resolve findings, push, and open the focused PR.
+- [x] 6.6 Record SonarCloud PR analysis and PR URL.
 
-Tasks:
+## 7. PR-7 — Feedback Test Quality (28 Findings)
 
-- [x] 3.1 Replace the 18 reported exception-logging calls with safe `logger.exception()` calls inside active exception handlers (`python:S8572`).
-- [x] 3.2 Remove user-controlled values from the reported customer-route log (`pythonsecurity:S5145`, 1 finding).
-- [x] 3.3 Define and reuse one health-path constant without changing route behavior (`python:S1192`, 1 finding).
-- [x] 3.4 Add log-capture tests proving that tracebacks remain available while session identifiers, language values, and raw exception text are absent.
-- [x] 3.5 Run route, admin, customer, session, and application-startup tests plus formatting and linting checks.
-- [ ] 3.6 Open a focused PR and confirm the expected Sonar count changes from 61 to 41 after merge.
+- [x] 7.1 Export the twenty-eight issue keys and confirm their current lines.
+- [x] 7.2 Restrict exception assertions, use pytest state-management fixtures, and split assertions without weakening checks.
+- [x] 7.3 Run every modified feedback test module and the related production suite.
+- [x] 7.4 Review, resolve findings, push, and open the focused PR.
+- [x] 7.5 Record SonarCloud PR analysis and PR URL.
 
-## 4. WP-B - Backend Core (Agent B, 25 Findings)
+## 8. PR-8 — Remaining Test Quality (35 Findings)
 
-Owned files:
+- [x] 8.1 Export the thirty-five issue keys and confirm their current lines.
+- [x] 8.2 Correct exception assertions, temporary state, and composite assertions without reducing coverage.
+- [x] 8.3 Run every modified test module and related production suites.
+- [x] 8.4 Review, resolve findings, push, and open the focused PR.
+- [x] 8.5 Record SonarCloud PR analysis and PR URL.
 
-- `services/api_gateway/audio_storage.py`
-- `services/api_gateway/circuit_breaker.py`
-- `services/api_gateway/circuit_breaker_client.py`
-- `services/api_gateway/enhanced_audio_validation.py`
-- `services/api_gateway/service_health.py`
-- `services/api_gateway/websocket.py`
-- `services/api_gateway/websocket_fallback.py`
-- `services/api_gateway/websocket_monitor.py`
-- `services/api_gateway/websocket_polling_routes.py`
-- core-specific tests that are not owned by WP-E
+## Recorded Package Evidence — 2026-09-20
 
-Tasks:
+The [immutable issue ledger](issue-ledger.md) accounts for all 163 baseline keys.
+The table records the analyzed remote heads: **all 15 GitHub checks passed for
+each PR**, and each SonarCloud PR analysis reports **0 unresolved PR issues,
+Quality Gate OK, A/A/A new-code security/reliability/maintainability ratings,
+0.0% new duplication, and 100% new security hotspots reviewed**.
+Coverage below is Sonar's new-code metric; an em dash means it is not reported,
+not zero. These are PR results, not evidence of baseline closure on main.
 
-- [x] 4.1 Replace the 23 reported exception-logging calls with safe `logger.exception()` calls inside active exception handlers (`python:S8572`).
-- [x] 4.2 Remove the user-controlled session value from the reported WebSocket log (`pythonsecurity:S5145`, 1 finding).
-- [x] 4.3 Rename the internal long-polling timeout parameter and preserve the public `timeout` query parameter with an explicit alias (`python:S7483`, 1 finding).
-- [x] 4.4 Add log-capture tests for sensitive values and regression tests for `?timeout=` and generated OpenAPI metadata.
-- [x] 4.5 Run WebSocket, polling, storage, validation, health, monitoring, fallback, and circuit-breaker tests plus formatting and linting checks.
-- [ ] 4.6 Open a focused PR and confirm the expected Sonar count changes from 41 to 16 after merge.
+| Package | PR | Verified remote head | Sonar new coverage |
+| --- | --- | --- | ---: |
+| PR-1 | [#367](https://github.com/smart-village-solutions/smart-speech-flow/pull/367) | `bc6b030` (verified implementation/image-build head) | — |
+| PR-2 | [#368](https://github.com/smart-village-solutions/smart-speech-flow/pull/368) | `3406c13` | — |
+| PR-3 | [#369](https://github.com/smart-village-solutions/smart-speech-flow/pull/369) | `a1af930` | 94.6% |
+| PR-4 | [#370](https://github.com/smart-village-solutions/smart-speech-flow/pull/370) | `5cebce5` | 95.7% |
+| PR-5 | [#371](https://github.com/smart-village-solutions/smart-speech-flow/pull/371) | `96e856b` | 89.7% |
+| PR-6 | [#372](https://github.com/smart-village-solutions/smart-speech-flow/pull/372) | `f94d934` | 100.0% |
+| PR-7 | [#373](https://github.com/smart-village-solutions/smart-speech-flow/pull/373) | `4bda684` | — |
+| PR-8 | [#374](https://github.com/smart-village-solutions/smart-speech-flow/pull/374) | `04fea34` | — |
 
-## 5. WP-D - Reproducible Containers (Agent D, 16 Findings)
+PR #367 also contains a documentation-only reconciliation follow-up. Its latest
+head must have green required checks and zero SonarCloud PR issues at handoff;
+read the exact current head from the PR. This condition was verified after the
+first documentation push on 2026-09-20. The implementation and image-build
+evidence remains anchored to `bc6b030`.
+All implementation packages passed independent review; review corrections
+were rechecked before the remote heads above were recorded.
 
-Owned files:
+- **PR-1:** 16 focused tests; five image builds and five import/health smokes;
+  CUDA visible in ASR, translation, and TTS. Model weights were absent, so
+  production inference and model-ready health were not exercised; degraded
+  model health was expected.
+- **PR-2:** clean `npm ci`; 617 tests in 86 files; lint, build, token checks,
+  and Bash syntax passed. Three new regressions passed after the intended RED
+  cases. Existing moderate dependency vulnerability and bundle-size warning
+  remain outside this package.
+- **PR-3:** final 84 focused tests; 1,864 hermetic passed, 25 skipped,
+  16 deselected; 88.45% local overall coverage. Review strengthened ticket
+  rejection and shutdown ordering, preserved formatter-stable maintenance
+  wiring, and cleared a new S5778 test issue plus low PR coverage. The
+  pre-existing admin-language assertion was corrected by its owner in PR-8.
+  The 88-column hook/100-column direct formatter conflict remains baseline debt.
+- **PR-4:** 210 initial focused tests and 140 after review; 1,886 hermetic
+  passed, 25 skipped, 16 deselected; 88.21% overall local coverage. Review
+  tightened exception scope and deferred-release detection; subsequent S8714
+  and S5958 findings were fixed with concrete exception assertions. Strict
+  MyPy retains the same 24 baseline errors; six clean modules pass. A raw
+  discovery order reproduces baseline singleton pollution; sorted discovery
+  and standard CI pass. Invalid duration keywords still raise TypeError,
+  though generated error wording and signature introspection differ.
+- **PR-5:** 136 focused tests; 1,870 hermetic passed, 25 skipped,
+  16 deselected; 92.31% local changed-line coverage. The baseline contains six,
+  not seven, session complexity findings. Strict MyPy retains the same 40
+  diagnostics, and baseline reload-order failures remain. Review approved
+  with a non-blocking observation: the terminal-filter test reaches memory
+  store validation before directly isolating the manager predicate.
+- **PR-6:** 463 focused passed, 15 skipped; 1,870 hermetic passed, 25 skipped,
+  16 deselected. Review reproduced and fixed stranded presence after
+  cancellation, then concurrent double deletion after thread dispatch.
+  Final async handlers serialize short ownership transitions with a per-store
+  lock, never held across long polls or broadcasts. Strict MyPy retains the
+  same 347 baseline diagnostics. S8415 documents existing 404 responses;
+  S7483 concerns async timeout parameters. The public `timeout` query and
+  the `_poll(..., timeout=...)` coroutine-returning compatibility API remain.
+- **PR-7:** 202 PostgreSQL/promtool tests passed with zero skips; 24 production,
+  alert, and SQL-policy mutation probes detected. Without optional promtool,
+  the controller recorded 150 owned-module passes/40 controlled skips and
+  1,853 hermetic passes/29 skips/16 deselections. Four executable alert cases
+  skip without promtool; the structured YAML contract always runs.
+- **PR-8:** 228 targeted and 150 related tests; 1,853 hermetic passed,
+  25 skipped, 16 deselected; 30 behavioral mutation probes detected. Review
+  fixed restoration of distinct populated WebSocket manager references and
+  verified both successful and failing cleanup. The 11 pipeline cases used
+  their allowed validation fallback because ASR/translation/TTS were
+  unreachable. Controlled successful route serialization is not live
+  inference evidence.
 
-- `services/api_gateway/Dockerfile`
-- `services/asr/Dockerfile`
-- `services/translation/Dockerfile`
-- `services/tts/Dockerfile`
-- service-specific Python requirement and lock files
-- dedicated dependency-lock generation scripts or documentation
+Detailed commands, baseline diagnostics, mutation results, and local artifacts
+are recorded in the execution reports; the linked PRs preserve the final
+review and validation handoff. No suppression, scanner exclusion, rule change,
+or main-branch issue-status manipulation was used.
 
-Tasks:
+## 9. Final Integration Evidence
 
-- [x] 5.1 Inventory every runtime dependency source, direct Dockerfile installation, package index, Python version, and CUDA requirement.
-- [x] 5.2 Pin pip, torch, torchvision, torchaudio, and every other direct Dockerfile installation to reviewed exact versions.
-- [x] 5.3 Generate service-specific exact lock files with hashes or equivalent verifiable artifacts.
-- [x] 5.4 Add builder stages that download or build all required wheels in a controlled environment.
-- [x] 5.5 Install runtime dependencies with `--no-index` and `--only-binary=:all:` from the controlled wheel directory (`docker:S8541`, 8 findings).
-- [x] 5.6 Ensure Dockerfile install commands cannot resolve unlocked dependency versions (`docker:S8544`, 8 findings).
-- [x] 5.7 Align CUDA base images, PyTorch wheel indexes, and pinned GPU packages; document the supported matrix.
-- [x] 5.8 Run dependency audits against every service lock file.
-- [x] 5.9 Build all four images and run Python import, CUDA availability, model dependency, and `/health` smoke checks.
-- [ ] 5.10 Open a focused PR and confirm Sonar reports zero open issues after merge.
-
-## 6. Coverage Wave (Starts After Tasks 1-5 Merge)
-
-- [x] 6.1 Refresh coverage and calculate the exact uncovered-line reduction required for 80% after remediation. Current hermetic suite coverage is 76% (4,047/5,336 lines); at least 222 additional currently uncovered lines are required if the denominator remains stable.
-- [x] 6.2 Assign one coverage agent to WebSocket, polling, and circuit-breaker behavior.
-- [x] 6.3 Assign a second coverage agent to enhanced audio validation, storage, ASR, translation, and TTS behavior.
-- [x] 6.4 Cover the required additional lines for the post-remediation denominator using behavioral assertions. Coverage increased from 4,047 to 4,277 covered lines (+230), exceeding the 4,269 lines required for 80%.
-- [ ] 6.5 Confirm overall backend line coverage is at least 80% and new-code coverage has not fallen below 84.8%.
-- [ ] 6.6 Set the enforced CI coverage floor to 80% only after the suite reaches it.
-
-## 7. Coordinator Integration and Quality Gates
-
-- [ ] 7.1 Rebase each PR on the latest `main` immediately before final validation.
-- [ ] 7.2 Verify that each PR closes its assigned issue keys and introduces no new findings.
-- [x] 7.3 Run the hermetic backend suite with coverage:
-
-  ```bash
-  pytest tests/ -q \
-    -m "not integration and not real_system" \
-    --ignore=tests/integration \
-    --ignore=tests/load \
-    --ignore=tests/integration_test_audio_validation.py \
-    --cov=services \
-    --cov-report=term-missing \
-    --cov-report=xml:coverage.xml \
-    --cov-fail-under=80
-  ```
-
-- [x] 7.4 Run frontend installation, tests, lint, build, audit, and Fallow audit from a clean dependency install.
-- [x] 7.5 Build and smoke-test all four production images.
-- [ ] 7.6 Run optional integration, real-system, and load suites in their controlled environments and document skips.
-- [ ] 7.7 Run a fresh SonarCloud analysis on the final commit and wait for Quality Gate completion.
-- [ ] 7.8 Confirm zero open bugs, vulnerabilities, code smells, and unreviewed security hotspots.
-- [ ] 7.9 Confirm ratings A/A/A, new coverage at least 84.8%, overall coverage at least 80%, and new duplication at most 3%.
-- [ ] 7.10 Record final analysis evidence in this change and mark all tasks complete only after the evidence exists.
-
-## 8. Final Evidence
-
-- [ ] 8.1 Final commit: `TBD`
-- [ ] 8.2 Sonar analysis ID and timestamp: `TBD`
-- [ ] 8.3 Final issue totals: `TBD`
-- [ ] 8.4 Final ratings and Quality Gate: `TBD`
-- [ ] 8.5 Backend tests and coverage: `TBD`
-- [ ] 8.6 Frontend checks: `TBD`
-- [ ] 8.7 Container build and smoke checks: `TBD`
-- [ ] 8.8 Approved false-positive decisions, if any: `None expected`
+- [x] 9.1 Record the packages still awaiting merge: PR-1–PR-8, [#367](https://github.com/smart-village-solutions/smart-speech-flow/pull/367), [#368](https://github.com/smart-village-solutions/smart-speech-flow/pull/368), [#369](https://github.com/smart-village-solutions/smart-speech-flow/pull/369), [#370](https://github.com/smart-village-solutions/smart-speech-flow/pull/370), [#371](https://github.com/smart-village-solutions/smart-speech-flow/pull/371), [#372](https://github.com/smart-village-solutions/smart-speech-flow/pull/372), [#373](https://github.com/smart-village-solutions/smart-speech-flow/pull/373), and [#374](https://github.com/smart-village-solutions/smart-speech-flow/pull/374), are all OPEN as of 2026-09-20. This completes only the awaiting-merge alternative; none is merged.
+- [ ] 9.2 Run the hermetic backend suite with coverage at or above 80%.
+- [ ] 9.3 Run frontend clean install, tests, lint, build, and token checks.
+- [x] 9.4 Validate the reconciled documentation with `openspec validate fix-sonarcloud-open-issues --strict` (passed 2026-09-20); this does not complete integrated verification.
+- [ ] 9.5 Run a fresh SonarCloud analysis on the integrated revision.
+- [ ] 9.6 Confirm zero open issues, an `OK` Quality Gate, A ratings, and required coverage/duplication thresholds.
+- [ ] 9.7 Record final analysis ID, revision, timestamp, test evidence, and any controlled-environment skips.
+- [ ] 9.8 Mark every task complete only after its evidence exists.

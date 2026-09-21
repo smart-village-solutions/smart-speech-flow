@@ -48,8 +48,7 @@ export function TenantLoginScreen() {
 
           {tenants.isPending && (
             <div className="flex justify-center">
-              <span
-                role="status"
+              <output
                 aria-label={t('admin.tenantLogin.loading')}
                 className="size-8 animate-spin rounded-full border-4 border-accent-15 border-t-accent"
               />
