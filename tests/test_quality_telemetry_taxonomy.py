@@ -21,17 +21,16 @@ from services.api_gateway.quality_telemetry import (
     ALLOWED_ATTRIBUTES,
     SCHEMA_VERSION,
     AttributeKind,
-    DisallowedTelemetryAttribute,
     DisallowedTelemetryValue,
     PipelineStage,
     QualityErrorCode,
     QualityEventType,
     RefinementAttemptEvent,
-    RefinerRole,
     RefinementOutcomeCode,
+    RefinerRole,
     TelemetryMode,
-    classify_upstream_status,
     classify_exception,
+    classify_upstream_status,
     enforce_value_shapes,
     to_otlp_attributes,
 )
@@ -177,10 +176,10 @@ class TestErrorTaxonomyIsStable:
         assert "guten Tag" not in code.value
 
     def test_classification_never_raises_on_an_unexpected_exception(self):
-        class Weird(Exception):
+        class UnexpectedError(Exception):
             pass
 
-        assert classify_exception(Weird()) is QualityErrorCode.INTERNAL_ERROR
+        assert classify_exception(UnexpectedError()) is QualityErrorCode.INTERNAL_ERROR
 
     def test_every_error_code_is_a_lowercase_token(self):
         for member in QualityErrorCode:
@@ -231,8 +230,9 @@ class TestTheAdapterIsActuallyTheLastCheckpoint:
             "ssf.quality.error_code": "ASR said: guten Tag, wie geht es Ihnen",
         }
 
+        emitted_at = datetime.now(timezone.utc)
         with pytest.raises(DisallowedTelemetryValue):
-            adapter("refinement_attempt", smuggled, datetime.now(timezone.utc))
+            adapter("refinement_attempt", smuggled, emitted_at)
 
         sink.emit.assert_not_called()
 

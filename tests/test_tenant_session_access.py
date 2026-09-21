@@ -15,14 +15,8 @@ from services.api_gateway.studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
     require_validated_runtime_configuration,
 )
-from services.api_gateway.tenant_context import (
-    StudioTenantContext,
-    require_studio_tenant_context,
-)
-from services.api_gateway.tenant_session import (
-    RuntimeConfigurationSnapshot,
-    TenantSessionKey,
-)
+from services.api_gateway.tenant_context import StudioTenantContext, require_studio_tenant_context
+from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
 REVISION = f"sha256:{'a' * 64}"
 
@@ -75,10 +69,11 @@ async def test_admin_access_uses_only_the_authenticated_tenant(
         RuntimeConfigurationSnapshot.from_configuration(_configuration("tenant-b")),
     )
 
+    context = StudioTenantContext("tenant-a", REVISION)
     with pytest.raises(HTTPException) as caught:
         require_admin_session_key(
             session.id,
-            StudioTenantContext("tenant-a", REVISION),
+            context,
         )
 
     assert caught.value.status_code == 404
@@ -217,9 +212,7 @@ def test_current_session_cross_tenant_lookup_uses_the_neutral_error_contract(
     session_id = http_client.post("/api/admin/session/create").json()["session_id"]
     _authenticate_as("tenant-a")
 
-    response = http_client.get(
-        "/api/admin/session/current", params={"session_id": session_id}
-    )
+    response = http_client.get("/api/admin/session/current", params={"session_id": session_id})
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Session not found"}

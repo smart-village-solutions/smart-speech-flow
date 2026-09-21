@@ -31,9 +31,7 @@ def test_smoke_proves_both_positive_and_cross_tenant_paths_without_leaking_token
             session_id = "AAAA0001" if authorization == "Bearer secret-token-a" else "BBBB0001"
             return httpx.Response(201, json={"session_id": session_id})
         if request.method == "GET" and request.url.path.startswith("/api/admin/session/"):
-            own = (
-                authorization == "Bearer secret-token-a" and "AAAA0001" in request.url.path
-            ) or (
+            own = (authorization == "Bearer secret-token-a" and "AAAA0001" in request.url.path) or (
                 authorization == "Bearer secret-token-b" and "BBBB0001" in request.url.path
             )
             return httpx.Response(
@@ -90,8 +88,9 @@ def test_smoke_cleans_up_a_partial_run_without_leaking_credentials(capsys):
             return httpx.Response(200, json={"status": "terminated"})
         return httpx.Response(500)
 
+    transport = httpx.MockTransport(handler)
     with pytest.raises(smoke.SmokeFailure, match="Session creation failed"):
-        smoke.run_smoke(settings, transport=httpx.MockTransport(handler))
+        smoke.run_smoke(settings, transport=transport)
 
     assert ("DELETE", "/api/admin/session/AAAA0001/terminate", "Bearer secret-token-a") in requests
     captured = capsys.readouterr()

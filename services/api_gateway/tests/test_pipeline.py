@@ -61,9 +61,8 @@ def test_pipeline_example(file_path, source_lang, target_lang):
     if response.status_code == 200:
         data = response.json()
         assert "translatedText" in data, f"Kein 'translatedText' im Ergebnis: {data}"
-        assert (
-            isinstance(data["translatedText"], str) and len(data["translatedText"]) > 0
-        )
+        assert isinstance(data["translatedText"], str)
+        assert len(data["translatedText"]) > 0
         assert "originalText" in data, f"Kein 'originalText' im Ergebnis: {data}"
         assert isinstance(data["originalText"], str)
         assert "audioBase64" in data, f"Kein 'audioBase64' im Ergebnis: {data}"

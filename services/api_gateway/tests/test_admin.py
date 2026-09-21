@@ -1,7 +1,7 @@
-import os
 import sys
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
@@ -17,15 +17,17 @@ client = TestClient(app)
 
 
 class TestAdminRoutes:
-    def setup_method(self):
+    @pytest.fixture(autouse=True)
+    def reset_sessions(self, monkeypatch):
         """Reset session manager before each test."""
-        app.dependency_overrides[require_ssf_user] = lambda: {"sub": "test-admin"}
-        os.environ.pop("SSF_ALLOW_PARALLEL_SESSIONS", None)
-        session_manager.allow_parallel_sessions = False
+        monkeypatch.setitem(
+            app.dependency_overrides, require_ssf_user, lambda: {"sub": "test-admin"}
+        )
+        monkeypatch.delenv("SSF_ALLOW_PARALLEL_SESSIONS", raising=False)
+        monkeypatch.setattr(session_manager, "allow_parallel_sessions", False)
         session_manager.reset(clear_persistence=True)
-
-    def teardown_method(self):
-        app.dependency_overrides.clear()
+        yield
+        session_manager.reset(clear_persistence=True)
 
     def test_create_admin_session_terminates_previous_active_session_by_default(self):
         first_response = client.post("/api/admin/session/create")
@@ -34,7 +36,8 @@ class TestAdminRoutes:
 
         activate_payload = {"session_id": first_session_id, "customer_language": "en"}
         activate_response = client.post(
-            "/api/customer/session/activate", json=activate_payload
+            "/api/customer/session/activate",
+            json=activate_payload,
         )
         assert activate_response.status_code == 200
 
@@ -59,8 +62,9 @@ class TestAdminRoutes:
 
     def test_get_current_session_requires_explicit_id_when_parallel_sessions_enabled(
         self,
+        monkeypatch,
     ):
-        session_manager.allow_parallel_sessions = True
+        monkeypatch.setattr(session_manager, "allow_parallel_sessions", True)
 
         first_response = client.post("/api/admin/session/create")
         second_response = client.post("/api/admin/session/create")
@@ -70,7 +74,9 @@ class TestAdminRoutes:
 
         current_response = client.get("/api/admin/session/current")
         assert current_response.status_code == 409
-        assert "explizite session_id erforderlich" in current_response.json()["detail"]
+        assert current_response.json()["detail"] == (
+            "Multiple active sessions require an explicit session_id"
+        )
 
         second_session_id = second_response.json()["session_id"]
         specific_response = client.get(

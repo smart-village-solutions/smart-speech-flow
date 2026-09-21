@@ -216,10 +216,11 @@ async def test_cached_directory_cannot_be_mutated_by_a_consumer() -> None:
 
     first = await service.get("correlation-1")
 
-    with pytest.raises(AttributeError):
-        getattr(first.tenants, "clear")()
-    with pytest.raises(ValidationError):
-        first.tenants[0].display_name = "Poisoned tenant"
+    with pytest.raises(AttributeError, match="has no attribute 'clear'"):
+        getattr(first.tenants, "clear")
+    tenant = first.tenants[0]
+    with pytest.raises(ValidationError, match="Instance is frozen"):
+        tenant.display_name = "Poisoned tenant"
 
     second = await service.get("correlation-2")
     assert second.tenants[0].display_name == "Stadt Kassel"
