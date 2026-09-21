@@ -29,7 +29,7 @@
     "react-dom": "^19.2.7",
     "react-i18next": "^17.0.12",
     "react-router-dom": "^7.18.3",
-    "tailwind-merge": "^3.6.0",
+    "tailwind-merge": "^3.7.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
