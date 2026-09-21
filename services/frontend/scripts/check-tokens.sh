@@ -10,6 +10,10 @@
 # Whitespace is normalised on both sides because the bundle is minified.
 set -euo pipefail
 
+readonly SPACE_CLASS='[:space:]'
+readonly UPPER_CLASS='[:upper:]'
+readonly LOWER_CLASS='[:lower:]'
+
 cd "$(dirname "$0")/.."
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -27,12 +31,12 @@ trap 'rm -f "$build_log"' EXIT
   fail "vite build did not succeed"
 }
 
-css=$(cat dist/assets/*.css | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+css=$(cat dist/assets/*.css | tr -d "$SPACE_CLASS" | tr "$UPPER_CLASS" "$LOWER_CLASS")
 
 assert() {
   local expected="$1"
   local needle
-  needle=$(printf '%s' "$expected" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+  needle=$(printf '%s' "$expected" | tr -d "$SPACE_CLASS" | tr "$UPPER_CLASS" "$LOWER_CLASS")
   case "$css" in
     *"$needle"*) ;;
     *) fail "missing from built CSS: $expected" ;;
@@ -56,7 +60,7 @@ assert '--text-base: 18px'
 # passed. The body rule is isolated first, because a bare needle like
 # "color:var(--color-text)" also matches the .text-text utility and so passes
 # whatever body actually says.
-body_rule=$(grep -ohE '(^|\})body\{[^}]*\}' dist/assets/*.css | head -1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+body_rule=$(grep -ohE '(^|\})body\{[^}]*\}' dist/assets/*.css | head -1 | tr -d "$SPACE_CLASS" | tr "$UPPER_CLASS" "$LOWER_CLASS")
 [[ -n "$body_rule" ]] || fail "no body rule found in built CSS"
 
 assert_body() {
@@ -75,14 +79,14 @@ assert '--font-legacy: system-ui'
 # The new UI paints itself, so nothing of its theme reaches body. Lightning CSS
 # may inject its own declarations into these rules, so check each selector's
 # colour scheme rather than relying on the emitted declaration order.
-screen_shell_rule=$(grep -oE '(^|})\[data-screen-shell\]\{[^}]*\}' dist/assets/*.css | head -1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+screen_shell_rule=$(grep -oE '(^|})\[data-screen-shell\]\{[^}]*\}' dist/assets/*.css | head -1 | tr -d "$SPACE_CLASS" | tr "$UPPER_CLASS" "$LOWER_CLASS")
 [[ -n "$screen_shell_rule" ]] || fail "no screen-shell light rule found in built CSS"
 case "$screen_shell_rule" in
   *'color-scheme:light'*) ;;
   *) fail "screen shell must declare color-scheme:light, but is: $screen_shell_rule" ;;
 esac
 
-screen_shell_dark_rule=$(grep -oE '(^|})\.dark[[:space:]]+\[data-screen-shell\]\{[^}]*\}' dist/assets/*.css | head -1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+screen_shell_dark_rule=$(grep -oE "(^|})\\.dark[${SPACE_CLASS}]+\\[data-screen-shell\\]\\{[^}]*}" dist/assets/*.css | head -1 | tr -d "$SPACE_CLASS" | tr "$UPPER_CLASS" "$LOWER_CLASS")
 [[ -n "$screen_shell_dark_rule" ]] || fail "no screen-shell dark rule found in built CSS"
 case "$screen_shell_dark_rule" in
   *'color-scheme:dark'*) ;;
