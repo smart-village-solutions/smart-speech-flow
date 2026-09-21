@@ -7,6 +7,7 @@ are not the same: a service can answer correctly and still be refusing work.
 
 from __future__ import annotations
 
+import time
 from unittest.mock import patch
 
 import pytest
@@ -94,14 +95,20 @@ class TestOutcomeRecording:
 class TestDeliberateShedding:
     """#190 sheds load with 503 + Retry-After. Breaking on that makes it worse."""
 
-    def test_a_503_with_retry_after_is_not_a_fault(self):
+    def test_a_503_with_retry_after_records_no_outcome(self):
+        """Not a fault -- and not a success either, because nothing was served.
+
+        Recording a shed as a success is the tempting shortcut and it is wrong
+        in both directions; the next two tests are the directions.
+        """
         breaker = _breaker("translation")
 
         returned, _ = _post(503, {"Retry-After": "5"}, service="translation")
 
         assert returned.status_code == 503
         assert breaker.health.failed_requests == 0
-        assert breaker.health.successful_requests == 1
+        assert breaker.health.successful_requests == 0
+        assert breaker.health.total_requests == 0
 
     def test_repeated_shedding_never_opens_the_circuit(self):
         breaker = _breaker("translation")
@@ -110,6 +117,48 @@ class TestDeliberateShedding:
             _post(503, {"Retry-After": "5"}, service="translation")
 
         assert breaker.state is CircuitState.CLOSED
+
+    def test_shedding_does_not_clear_accumulated_failures(self):
+        """A service alternating real faults with shed load must still open.
+
+        A success resets ``failure_count`` while the circuit is CLOSED, so if a
+        shed counted as one, a half-broken service that sheds between its 500s
+        would never reach the threshold and the breaker would never open.
+        """
+        breaker = _breaker("translation")
+
+        for _ in range(breaker.config.failure_threshold - 1):
+            _post(500, service="translation")
+            _post(503, {"Retry-After": "5"}, service="translation")
+
+        assert breaker.state is CircuitState.CLOSED, "opened before the threshold"
+
+        _post(500, service="translation")
+
+        assert breaker.state is CircuitState.OPEN
+
+    def test_shedding_does_not_close_a_half_open_circuit(self):
+        """Nothing was served, so nothing shows the service has recovered."""
+        breaker = _breaker("translation")
+        for _ in range(breaker.config.failure_threshold):
+            breaker.record_failure("forced open by test")
+        breaker.next_attempt_time = time.time() - 1
+
+        for _ in range(breaker.config.success_threshold + 1):
+            _post(503, {"Retry-After": "5"}, service="translation")
+
+        assert breaker.state is CircuitState.HALF_OPEN
+
+    def test_shedding_does_not_enter_the_latency_average(self):
+        """A refusal costs microseconds and would flatter /api/health/services."""
+        breaker = _breaker("translation")
+        _post(200, service="translation")
+        served = breaker.health.average_response_time
+
+        for _ in range(5):
+            _post(503, {"Retry-After": "5"}, service="translation")
+
+        assert breaker.health.average_response_time == served
 
     def test_a_503_without_retry_after_is_an_ordinary_fault(self):
         breaker = _breaker("translation")

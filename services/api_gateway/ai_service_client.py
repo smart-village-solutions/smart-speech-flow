@@ -48,6 +48,13 @@ def _sheds_load(response: Any) -> bool:
     breaker failure would turn a queue into an outage at exactly the moment the
     system is busiest -- the breaker would open and start refusing the requests
     that the service was merely asking to defer.
+
+    It is not a success either, and that half is easy to get wrong: a shed
+    request was never served, so it says nothing about whether the service can
+    serve one. Recording it as a success would reset ``failure_count`` in
+    CLOSED -- letting a service that sheds between its 500s stay below the
+    threshold forever -- and would count toward ``success_threshold`` in
+    HALF_OPEN, closing the circuit on two replies that carried no work.
     """
     if getattr(response, "status_code", None) != 503:
         return False
@@ -79,7 +86,8 @@ def call_ai_service(service: str, url: str, **kwargs: Any) -> requests.Response:
     Returns the response untouched, including error responses: classifying an
     upstream reply into a pipeline result is the caller's job and it already
     does it well. This function's only additions are refusing to send when the
-    circuit is open, and telling the breaker what happened.
+    circuit is open, and telling the breaker what happened -- which for a
+    deliberate load shed means telling it nothing at all.
 
     Raises:
         CircuitBreakerOpenError: the circuit is open; no request was sent.
@@ -97,6 +105,10 @@ def call_ai_service(service: str, url: str, **kwargs: Any) -> requests.Response:
             raise
 
     elapsed = time.perf_counter() - started
+    if _sheds_load(response):
+        # Deliberate refusal: no outcome to record in either direction, and
+        # the microseconds it took must not enter the latency average.
+        return response
     if _is_service_fault(response):
         breaker.record_failure(f"HTTP {response.status_code}")
     else:
