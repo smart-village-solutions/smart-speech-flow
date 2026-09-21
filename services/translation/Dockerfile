@@ -16,6 +16,7 @@ RUN printf '%s%s\n' \
         --break-system-packages \
         --ignore-installed \
         --no-cache-dir \
+        --only-binary=:all: \
         --require-hashes \
         -r /tmp/pip-bootstrap.txt \
     && python3 -m pip download \

@@ -40,6 +40,7 @@ from .websocket_monitor import DisconnectReason, get_websocket_monitor
 
 # === Logging Setup ===
 logger = logging.getLogger(__name__)
+_SESSION_NOT_FOUND = "Session not found"
 
 
 def utc_now() -> datetime:
@@ -448,7 +449,7 @@ class WebSocketManager:
         if isinstance(session_id, TenantSessionKey):
             session = self.session_manager.get_session(session_id)
             if session is None or session.status == SessionStatus.TERMINATED:
-                await websocket.close(code=4404, reason="Session not found")
+                await websocket.close(code=4404, reason=_SESSION_NOT_FOUND)
                 raise RuntimeError("Session unavailable")
 
         # Connection-ID generieren
@@ -496,7 +497,7 @@ class WebSocketManager:
                 session_id, client_type, websocket
             )
         except KeyError:
-            await websocket.close(code=4404, reason="Session not found")
+            await websocket.close(code=4404, reason=_SESSION_NOT_FOUND)
             raise RuntimeError("Session unavailable") from None
 
         # Commit the registry only after tenant presence succeeds. A session
@@ -683,7 +684,7 @@ class WebSocketManager:
                 get_websocket_monitor().message_sent(
                     connection_id=connection_id,
                     message_data=str(message),
-                    message_type=message_type,
+                    _message_type=message_type,
                 )
 
             except Exception as e:
@@ -693,8 +694,8 @@ class WebSocketManager:
                 # 📊 Monitoring: Error occurred
                 get_websocket_monitor().record_error(
                     connection_id=connection_id,
-                    error_type="broadcast_error",
-                    error_details=str(e),
+                    _error_type="broadcast_error",
+                    _error_details=str(e),
                 )
 
                 # 🔄 Evaluate if fallback should be triggered
@@ -843,12 +844,19 @@ class WebSocketManager:
     def _record_broadcast_attempt(
         self, monitor: Any, session_id: str, sender_type: ClientType
     ) -> None:
+        logger.debug(
+            "WebSocket broadcast attempted",
+            extra={"session_ref": _safe_identifier(session_id)},
+        )
         monitor.broadcast_total.labels(sender_type=sender_type.value).inc()
 
     def _build_no_connection_broadcast_result(
         self, monitor: Any, session_id: str, sender_type: ClientType
     ) -> BroadcastResult:
-        logger.warning("Broadcast attempted without active connections")
+        logger.warning(
+            "Broadcast attempted without active connections",
+            extra={"session_ref": _safe_identifier(session_id)},
+        )
         monitor.broadcast_failure_total.labels(
             sender_type=sender_type.value,
             reason="no_connections",
@@ -892,13 +900,15 @@ class WebSocketManager:
     ) -> None:
         if success:
             logger.info(
-                f"✅ Broadcast successful: {successful_sends}/{total_connections} delivered"
+                f"✅ Broadcast successful: {successful_sends}/{total_connections} delivered",
+                extra={"session_ref": _safe_identifier(session_id)},
             )
             monitor.broadcast_success_total.labels(sender_type=sender_type.value).inc()
         else:
             logger.warning(
                 f"⚠️ Broadcast partial/failed: {successful_sends} succeeded, "
-                f"{failed_sends} failed out of {total_connections}"
+                f"{failed_sends} failed out of {total_connections}",
+                extra={"session_ref": _safe_identifier(session_id)},
             )
             monitor.broadcast_failure_total.labels(
                 sender_type=sender_type.value,
@@ -1648,7 +1658,7 @@ async def admin_websocket_endpoint(
         await websocket.close(code=1013, reason="Realtime service unavailable")
         return
     if key is None or manager.session_manager.get_session(key) is None:
-        await websocket.close(code=4404, reason="Session not found")
+        await websocket.close(code=4404, reason=_SESSION_NOT_FOUND)
         return
     await websocket_endpoint(websocket, key, ClientType.ADMIN, manager, origin)
 
@@ -1689,7 +1699,7 @@ async def websocket_endpoint(
     # 2. Session validieren
     session = manager.session_manager.get_session(key)
     if not session:
-        await websocket.close(code=1003, reason="Session not found")
+        await websocket.close(code=1003, reason=_SESSION_NOT_FOUND)
         return
 
     if session.status == SessionStatus.TERMINATED:
@@ -1760,14 +1770,14 @@ async def get_websocket_stats(
     """
     WebSocket-Statistiken für Monitoring
     """
-    return manager.get_connection_stats()
+    return await asyncio.to_thread(manager.get_connection_stats)
 
 
 async def get_session_connections(session_id: str, manager: WebSocketManagerDependency):
     """
     WebSocket-Verbindungen einer Session anzeigen
     """
-    connections = manager.get_session_connections(session_id)
+    connections = await asyncio.to_thread(manager.get_session_connections, session_id)
     return {
         "session_id": session_id,
         "connections": connections,

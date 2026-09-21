@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_ACTIVE_SESSION_MISMATCH = "active session index does not match session"
+
 
 CREATE_SESSION_LUA = """
 if redis.call('EXISTS', KEYS[3]) == 1 then return 0 end
@@ -164,7 +166,7 @@ def _decode_join(raw: str | None) -> tuple[TenantSessionKey, bool] | None:
         if not isinstance(payload, dict) or not isinstance(payload["active"], bool):
             return None
         key = TenantSessionKey(payload["tenant_id"], payload["session_id"])
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+    except (KeyError, TypeError, ValueError):
         return None
     return key, payload["active"]
 
@@ -344,7 +346,7 @@ class RedisTenantSessionStore:
             from .session_manager import Session
 
             session = Session.from_dict(json.loads(raw_session))
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        except (KeyError, TypeError, ValueError):
             logger.warning(
                 "tenant_session_record_quarantined",
                 extra={"tenant_ref": key.tenant_ref},
@@ -416,34 +418,29 @@ class RedisTenantSessionStore:
                     if isinstance(raw_session_id, bytes)
                     else raw_session_id
                 )
-                record_key = active_key.removesuffix(":active-admin")
-                raw_session = self.redis.get(f"{record_key}:session:{session_id}")
-                try:
-                    from .session_manager import Session
-
-                    session = Session.from_dict(json.loads(raw_session))
-                    key = session.key
-                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-                    raise SessionStoreConsistencyError(
-                        "active session index does not match session"
-                    ) from None
-                if (
-                    session.id != session_id
-                    or tenant_active_sessions_key(self.namespace, key.tenant_id)
-                    != active_key
-                    or session_key(self.namespace, key)
-                    != f"{record_key}:session:{session_id}"
-                ):
-                    raise SessionStoreConsistencyError(
-                        "active session index does not match session"
-                    )
-                loaded = self.load(key)
-                if loaded is None or loaded.status.value == "terminated":
-                    raise SessionStoreConsistencyError(
-                        "active session index does not match session"
-                    )
-                sessions.append(loaded)
+                sessions.append(self._load_active_session(active_key, session_id))
         return sessions
+
+    def _load_active_session(self, active_key: str, session_id: str) -> Session:
+        record_key = active_key.removesuffix(":active-admin")
+        raw_session = self.redis.get(f"{record_key}:session:{session_id}")
+        try:
+            from .session_manager import Session
+
+            session = Session.from_dict(json.loads(raw_session))
+            key = session.key
+        except (KeyError, TypeError, ValueError):
+            raise SessionStoreConsistencyError(_ACTIVE_SESSION_MISMATCH) from None
+        if (
+            session.id != session_id
+            or tenant_active_sessions_key(self.namespace, key.tenant_id) != active_key
+            or session_key(self.namespace, key) != f"{record_key}:session:{session_id}"
+        ):
+            raise SessionStoreConsistencyError(_ACTIVE_SESSION_MISMATCH)
+        loaded = self.load(key)
+        if loaded is None or loaded.status.value == "terminated":
+            raise SessionStoreConsistencyError(_ACTIVE_SESSION_MISMATCH)
+        return loaded
 
     def terminate(self, session: Session) -> Session:
         key = session.key

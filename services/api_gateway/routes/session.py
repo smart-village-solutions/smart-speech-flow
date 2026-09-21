@@ -7,6 +7,7 @@ Erweitert das bestehende API Gateway um Session-Funktionalität
 Enhanced with Unified Message Endpoint for Audio/Text Input
 """
 
+import asyncio
 import base64
 import hashlib
 import inspect
@@ -44,8 +45,8 @@ from ..pipeline_logic import (
 )
 from ..quality_telemetry import InputMode
 from ..runtime_policy import current_runtime_policy
-from ..studio_runtime_flow import correlation_id_from_request
 from ..session_manager import ClientType, SessionMessage, SessionStatus, session_manager
+from ..studio_runtime_flow import correlation_id_from_request
 from ..tenant_session import TenantSessionKey
 from ..websocket import MessageType, WebSocketManager, get_websocket_manager
 
@@ -325,7 +326,7 @@ def _transform_pipeline_step(
 
 
 def _build_tts_step_output(
-    step: Dict[str, Any], target_lang: str, message_id: Optional[str]
+    step: Dict[str, Any], target_lang: str, _message_id: Optional[str]
 ) -> Dict[str, Any]:
     output_value = step.get("output", "")
     if not (isinstance(output_value, str) and "audio" in output_value):
@@ -1503,7 +1504,7 @@ def create_error_response(
 
 async def get_session_messages(session_id: str) -> Dict[str, Any]:
     """Nachrichten einer Session abrufen"""
-    session = session_manager.get_session(session_id)
+    session = await asyncio.to_thread(session_manager.get_session, session_id)
     if not session:
         raise HTTPException(404, SESSION_NOT_FOUND_MESSAGE)
 
@@ -1521,7 +1522,9 @@ async def get_message_audio(message_id: str):
     for session in session_manager.sessions.values():
         for message in session.messages:
             if message.id == message_id and message.audio_base64:
-                audio_bytes = base64.b64decode(message.audio_base64)
+                audio_bytes = await asyncio.to_thread(
+                    base64.b64decode, message.audio_base64
+                )
                 return Response(
                     content=audio_bytes,
                     media_type="audio/wav",
@@ -1545,9 +1548,9 @@ async def get_original_audio(message_id: str):
 
     # Suche Original-Audio-Datei
     filename = f"input_{message_id}.wav"
-    filepath = get_audio_file_path(filename)
+    filepath = await asyncio.to_thread(get_audio_file_path, filename)
 
-    if filepath is None or not filepath.exists():
+    if filepath is None or not await asyncio.to_thread(filepath.exists):
         raise HTTPException(
             404,
             detail={
@@ -1621,7 +1624,7 @@ async def update_client_activity(
 
 
 async def websocket_endpoint(
-    websocket: WebSocket, session_id: str, client_type: str
+    websocket: WebSocket, _session_id: str, _client_type: str
 ) -> None:
     """WebSocket für Echtzeit-Updates (optional für später)"""
     await websocket.accept()
