@@ -181,6 +181,13 @@ class ServiceHealthManager:
 
         self.is_monitoring = True
 
+        # Name the loop before anything can transition on it. Pipeline worker
+        # threads reach the breakers through ai_service_client, and without a
+        # bound loop their state-change callbacks are dropped with a log line.
+        loop = asyncio.get_running_loop()
+        for circuit in self.circuit_breakers.values():
+            circuit.bind_loop(loop)
+
         # HTTP Session erstellen
         timeout = aiohttp.ClientTimeout(total=30)
         self.session = aiohttp.ClientSession(timeout=timeout)

@@ -129,9 +129,10 @@ class CircuitBreaker:
     def bind_loop(self, loop: Optional[asyncio.AbstractEventLoop] = None) -> None:
         """Names the loop that state-change callbacks run on.
 
-        Called when health monitoring starts. Without it a transition made on a
-        worker thread has nowhere to dispatch its callback and is logged
-        instead -- which costs a log line, never the transition itself.
+        Called by ``ServiceHealthManager.start_monitoring``. Without it a
+        transition made on a worker thread has nowhere to dispatch its callback
+        and is logged instead -- which costs a log line, never the transition
+        itself.
         """
         self._notify_loop = loop or asyncio.get_running_loop()
 

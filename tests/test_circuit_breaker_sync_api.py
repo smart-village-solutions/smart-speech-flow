@@ -323,3 +323,35 @@ class TestNotificationWithoutALoop:
             breaker.record_failure("boom")
 
         assert breaker.state is CircuitState.OPEN
+
+
+class TestTheGatewayBindsItsLoop:
+    """Worker-thread transitions only reach the callback if a loop was named.
+
+    ``call()`` binds the loop as a side effect, so until #219 this happened to
+    work whenever the 30-second health poll had run at least once. That made
+    the entire resilience path depend on an unrelated background task having
+    started -- and ``app.py`` swallows a monitoring startup failure with a
+    ``print``, so the dependency would fail silently.
+    """
+
+    async def test_starting_health_monitoring_binds_every_breaker(self):
+        from unittest.mock import AsyncMock, patch
+
+        from services.api_gateway.service_health import service_health_manager
+
+        manager = service_health_manager
+        for circuit in manager.circuit_breakers.values():
+            circuit._notify_loop = None
+
+        with (
+            patch.object(manager, "_check_all_services", new=AsyncMock()),
+            patch.object(manager, "_health_check_loop", new=AsyncMock()),
+        ):
+            await manager.start_monitoring()
+            try:
+                running = asyncio.get_running_loop()
+                for name, circuit in manager.circuit_breakers.items():
+                    assert circuit._notify_loop is running, f"{name} has no loop bound"
+            finally:
+                await manager.stop_monitoring()
