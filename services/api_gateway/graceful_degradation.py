@@ -17,7 +17,7 @@ import asyncio
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -43,8 +43,6 @@ class FallbackStrategy(Enum):
 
     CACHED_RESPONSE = "cached_response"  # Gecachte Antworten verwenden
     ERROR_MESSAGE = "error_message"  # Benutzerfreundliche Fehlermeldung
-    ALTERNATIVE_SERVICE = "alternative"  # Alternativen Service nutzen
-    DEGRADED_QUALITY = "degraded_quality"  # Reduzierte Qualität
     QUEUE_REQUEST = "queue_request"  # Request für später vormerken
 
 
@@ -79,12 +77,6 @@ class FallbackConfig:
     enable_queuing: bool = False  # Request Queuing bei Ausfällen
     queue_timeout: int = 300  # Max Queue Zeit
 
-    # Service-spezifische Fallbacks
-    alternative_services: Dict[str, List[str]] = field(default_factory=dict)
-
-    # Quality Degradation Settings
-    degraded_quality_factor: float = 0.7  # 70% Qualität bei Degradation
-
 
 class GracefulDegradationManager:
     """
@@ -113,24 +105,10 @@ class GracefulDegradationManager:
         # Request Queue für Recovery
         self.pending_requests: List[Dict] = []
 
-        # Alternative Service Mappings
-        self._setup_service_alternatives()
-
         # Predefined Error Messages
         self._setup_error_messages()
 
         logger.info("🛡️ Graceful Degradation Manager initialisiert")
-
-    def _setup_service_alternatives(self):
-        """Setup Alternative Service Mappings"""
-        # Beispiel: Falls ASR ausfällt, könnte ein einfacherer Service verwendet werden
-        self.fallback_config.alternative_services = {
-            "asr": ["asr-backup", "asr-simple"],  # Backup ASR Services
-            "translation": ["translation-basic"],  # Basis-Übersetzung
-            "tts": ["tts-simple"],  # Einfache TTS
-        }
-
-        logger.debug("🔀 Service Alternativen konfiguriert")
 
     def _setup_error_messages(self):
         """Setup benutzerfreundliche Fehlermeldungen"""
@@ -181,10 +159,11 @@ class GracefulDegradationManager:
         await self._update_service_mode(service_name, is_failure=True)
 
         # Versuche verschiedene Fallback-Strategien
+        # A cached response is a real response this service once produced.
+        # Everything else now reports the failure: nothing here may invent a
+        # transcript, a translation or audio and present it as a result.
         fallback_strategies = [
             FallbackStrategy.CACHED_RESPONSE,
-            FallbackStrategy.ALTERNATIVE_SERVICE,
-            FallbackStrategy.DEGRADED_QUALITY,
             FallbackStrategy.ERROR_MESSAGE,
         ]
 
@@ -213,12 +192,6 @@ class GracefulDegradationManager:
 
         if strategy == FallbackStrategy.CACHED_RESPONSE:
             return self._try_cached_response(service_name, request_data)
-
-        if strategy == FallbackStrategy.ALTERNATIVE_SERVICE:
-            return self._try_alternative_service(service_name, request_data)
-
-        if strategy == FallbackStrategy.DEGRADED_QUALITY:
-            return self._try_degraded_quality(service_name, request_data)
 
         if strategy == FallbackStrategy.QUEUE_REQUEST:
             return self._queue_request(service_name, request_data)
@@ -258,81 +231,7 @@ class GracefulDegradationManager:
         self.cache_stats["misses"] += 1
         return None
 
-    def _try_alternative_service(
-        self, service_name: str, _request_data: Dict
-    ) -> Optional[Dict[str, Any]]:
-        """Versucht alternativen Service zu verwenden"""
-        alternatives = self.fallback_config.alternative_services.get(service_name, [])
-
-        if not alternatives:
-            return None
-
-        for alt_service in alternatives:
-            try:
-                # Hier würde normalerweise der alternative Service aufgerufen
-                logger.info(f"🔄 Versuche alternativen Service: {alt_service}")
-
-                # Placeholder für Alternative Service Call
-                # result = await self._call_alternative_service(alt_service, request_data)
-
-                # Simulierte Alternative Response
-                return {
-                    "success": True,
-                    "message": f"Processed by alternative service: {alt_service}",
-                    "quality": "reduced",
-                    "fallback_service": alt_service,
-                    "original_service": service_name,
-                }
-
-            except Exception as e:
-                logger.warning(f"⚠️ Alternative Service {alt_service} failed: {e}")
-                continue
-
-        return None
-
-    def _try_degraded_quality(
-        self, service_name: str, request_data: Dict
-    ) -> Optional[Dict[str, Any]]:
-        """Versucht Service mit reduzierter Qualität"""
-
-        # Service-spezifische Degradation
-        if service_name == "asr":
-            # Einfachere ASR mit weniger Genauigkeit
-            return {
-                "success": True,
-                "text": "Vereinfachte Spracherkennung aktiv",
-                "confidence": 0.6,  # Reduzierte Confidence
-                "quality": "degraded",
-                "fallback_reason": "service_degradation",
-            }
-
-        if service_name == "translation":
-            # Basis-Übersetzung ohne Kontext
-            source_text = request_data.get("text", "")
-            return {
-                "success": True,
-                "translated_text": f"[Basis-Übersetzung]: {source_text}",
-                "quality": "basic",
-                "confidence": 0.5,
-                "fallback_reason": "service_degradation",
-            }
-
-        if service_name == "tts":
-            # Text-only Output statt Audio
-            text = request_data.get("text", "")
-            return {
-                "success": True,
-                "audio_data": None,  # Kein Audio verfügbar
-                "text_output": text,
-                "fallback_mode": "text_only",
-                "fallback_reason": "tts_unavailable",
-            }
-
-        return None
-
-    def _queue_request(
-        self, service_name: str, _request_data: Dict
-    ) -> Dict[str, Any] | None:
+    def _queue_request(self, service_name: str, _request_data: Dict) -> Dict[str, Any] | None:
         """Reiht Request für späteren Retry ein"""
         if not self.fallback_config.enable_queuing:
             return None
@@ -364,9 +263,7 @@ class GracefulDegradationManager:
         self, service_name: str, original_error: Exception
     ) -> Dict[str, Any]:
         """Generiert benutzerfreundliche Fehlermeldung"""
-        error_info = self.error_messages.get(
-            service_name, self.error_messages["general"]
-        )
+        error_info = self.error_messages.get(service_name, self.error_messages["general"])
 
         return {
             "success": False,
@@ -408,9 +305,7 @@ class GracefulDegradationManager:
             self._evict_oldest_cache_entries()
 
         self.response_cache[cache_key] = cache_entry
-        logger.debug(
-            f"💾 Response gecached: {service_name} -> {cache_key} (TTL: {cache_ttl}s)"
-        )
+        logger.debug(f"💾 Response gecached: {service_name} -> {cache_key} (TTL: {cache_ttl}s)")
 
     def _generate_cache_key(self, service_name: str, request_data: Dict) -> str:
         """Generiert Cache Key für Request"""
@@ -448,9 +343,7 @@ class GracefulDegradationManager:
             return
 
         # Sortiere nach Timestamp (älteste zuerst)
-        sorted_entries = sorted(
-            self.response_cache.items(), key=lambda x: x[1].timestamp
-        )
+        sorted_entries = sorted(self.response_cache.items(), key=lambda x: x[1].timestamp)
 
         # Entferne älteste 10% der Entries
         evict_count = max(1, len(sorted_entries) // 10)
@@ -504,9 +397,7 @@ class GracefulDegradationManager:
                 "is_failure": new_mode is not ServiceMode.FULL,
             }
         )
-        logger.warning(
-            f"🔄 Service Mode: {old_mode.value} → {new_mode.value} (Trigger: {trigger})"
-        )
+        logger.warning(f"🔄 Service Mode: {old_mode.value} → {new_mode.value} (Trigger: {trigger})")
 
     async def _update_service_mode(self, service_name: str, is_failure: bool):
         """Updated Service Betriebsmodus"""
@@ -583,9 +474,7 @@ class GracefulDegradationManager:
     async def cleanup_expired_cache(self):
         """Entfernt abgelaufene Cache Entries"""
         await asyncio.sleep(0)
-        expired_keys = [
-            key for key, entry in self.response_cache.items() if not entry.is_valid
-        ]
+        expired_keys = [key for key, entry in self.response_cache.items() if not entry.is_valid]
 
         for key in expired_keys:
             del self.response_cache[key]
