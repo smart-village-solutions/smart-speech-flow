@@ -41,13 +41,12 @@ class StubService:
 
 
 @pytest.fixture
-def client_for():
+def client_for(monkeypatch):
     def build(service) -> TestClient:
-        app.dependency_overrides[get_feedback_service] = lambda: service
+        monkeypatch.setitem(app.dependency_overrides, get_feedback_service, lambda: service)
         return TestClient(app)
 
-    yield build
-    app.dependency_overrides.pop(get_feedback_service, None)
+    return build
 
 
 def test_a_valid_submission_is_created(client_for) -> None:
@@ -139,20 +138,16 @@ def test_the_endpoint_requires_no_authentication(client_for) -> None:
     assert response.status_code != 403
 
 
-def test_an_unconfigured_feedback_store_reports_unavailable() -> None:
+def test_an_unconfigured_feedback_store_reports_unavailable(monkeypatch) -> None:
     """Feedback must degrade, never take the gateway down with it.
 
     The gateway serves the whole conversation pipeline; an unreachable or
     unconfigured feedback database must cost submissions a retryable 503, not
     cost every customer their session.
     """
-    app.dependency_overrides.pop(get_feedback_service, None)
-    previous = getattr(app.state, "feedback_service", None)
-    app.state.feedback_service = None
-    try:
-        response = TestClient(app).post("/api/feedback", json=VALID)
-    finally:
-        app.state.feedback_service = previous
+    monkeypatch.delitem(app.dependency_overrides, get_feedback_service, raising=False)
+    monkeypatch.setattr(app.state, "feedback_service", None, raising=False)
+    response = TestClient(app).post("/api/feedback", json=VALID)
 
     assert response.status_code == 503
     assert "Retry-After" in response.headers

@@ -48,8 +48,8 @@ class RecordingRepository:
 @pytest.fixture
 def wired(monkeypatch):
     """A gateway app.state with nothing feedback-related wired yet."""
-    RecordingRepository.opened = []
-    RecordingRepository.fail_for = set()
+    monkeypatch.setattr(RecordingRepository, "opened", [])
+    monkeypatch.setattr(RecordingRepository, "fail_for", set())
     monkeypatch.setattr(repository_module, "PostgresFeedbackRepository", RecordingRepository)
 
     monkeypatch.setenv("SSF_FEEDBACK_DATABASE_PASSWORD", APP_PASSWORD)
@@ -60,28 +60,17 @@ def wired(monkeypatch):
     )
 
     state = gateway.app.state
-    previous = {
-        name: getattr(state, name, None)
-        for name in (
-            "feedback_repository",
-            "feedback_maintenance_repository",
-            "feedback_service",
-            "feedback_maintenance",
-            "quality_telemetry",
-            "prometheus_registry",
-        )
-    }
-    state.feedback_repository = None
-    state.feedback_maintenance_repository = None
-    state.feedback_service = None
-    state.feedback_maintenance = None
-    state.quality_telemetry = object()
-    state.prometheus_registry = CollectorRegistry()
+    for name in (
+        "feedback_repository",
+        "feedback_maintenance_repository",
+        "feedback_service",
+        "feedback_maintenance",
+    ):
+        monkeypatch.setattr(state, name, None, raising=False)
+    monkeypatch.setattr(state, "quality_telemetry", object(), raising=False)
+    monkeypatch.setattr(state, "prometheus_registry", CollectorRegistry(), raising=False)
 
-    yield state
-
-    for name, value in previous.items():
-        setattr(state, name, value)
+    return state
 
 
 class TestEachHalfOpensItsOwnPool:
@@ -116,9 +105,11 @@ class TestEachHalfOpensItsOwnPool:
 
 
 class TestTheHalvesFailIndependently:
-    async def test_an_unreachable_maintenance_role_leaves_submissions_working(self, wired) -> None:
+    async def test_an_unreachable_maintenance_role_leaves_submissions_working(
+        self, wired, monkeypatch
+    ) -> None:
         """Collecting feedback matters more than reconciling it."""
-        RecordingRepository.fail_for = {MAINTENANCE_URL}
+        monkeypatch.setattr(RecordingRepository, "fail_for", {MAINTENANCE_URL})
 
         assert (
             await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
@@ -131,8 +122,10 @@ class TestTheHalvesFailIndependently:
         assert wired.feedback_service is not None
         assert wired.feedback_maintenance is None
 
-    async def test_an_unreachable_request_role_is_reported_as_retryable(self, wired) -> None:
-        RecordingRepository.fail_for = {APP_URL}
+    async def test_an_unreachable_request_role_is_reported_as_retryable(
+        self, wired, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(RecordingRepository, "fail_for", {APP_URL})
 
         assert (
             await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
@@ -183,10 +176,12 @@ class TestTheHalvesAreIndependentlyReachable:
         assert wired.feedback_service is None
         assert wired.feedback_maintenance is not None
 
-    async def test_the_retry_loop_keeps_trying_the_maintenance_half_alone(self, wired) -> None:
+    async def test_the_retry_loop_keeps_trying_the_maintenance_half_alone(
+        self, wired, monkeypatch
+    ) -> None:
         """Otherwise a database that is briefly down disables retention until
         someone restarts the gateway."""
-        RecordingRepository.fail_for = {MAINTENANCE_URL}
+        monkeypatch.setattr(RecordingRepository, "fail_for", {MAINTENANCE_URL})
 
         assert (
             await gateway._wire_feedback(gateway.app.state, "", MAINTENANCE_URL, object()) is False
@@ -240,17 +235,15 @@ class RecordingReadRepository(RecordingRepository):
 
 @pytest.fixture
 def wired_reader(wired, monkeypatch):
-    RecordingReadRepository.opened = []
-    RecordingReadRepository.fail_for = set()
+    monkeypatch.setattr(RecordingReadRepository, "opened", [])
+    monkeypatch.setattr(RecordingReadRepository, "fail_for", set())
     monkeypatch.setattr(
         repository_module, "PostgresFeedbackReadRepository", RecordingReadRepository
     )
     monkeypatch.setenv("SSF_FEEDBACK_READER_DATABASE_PASSWORD", READER_PASSWORD)
-    previous = getattr(wired, "feedback_read_service", None)
-    wired.feedback_read_service = None
-    wired.feedback_read_repository = None
-    yield wired
-    wired.feedback_read_service = previous
+    monkeypatch.setattr(wired, "feedback_read_service", None, raising=False)
+    monkeypatch.setattr(wired, "feedback_read_repository", None, raising=False)
+    return wired
 
 
 class TestTheReadPathOpensItsOwnRole:
@@ -276,9 +269,9 @@ class TestTheReadPathOpensItsOwnRole:
         assert wired_reader.feedback_service is not None
 
     async def test_an_unreachable_read_role_does_not_disable_submissions(
-        self, wired_reader
+        self, wired_reader, monkeypatch
     ) -> None:
-        RecordingReadRepository.fail_for = {READER_URL}
+        monkeypatch.setattr(RecordingReadRepository, "fail_for", {READER_URL})
 
         await gateway._connect_feedback_request_path(gateway.app.state, APP_URL, object())
         connected = await gateway._connect_feedback_read_path(gateway.app.state, READER_URL)
@@ -338,7 +331,7 @@ class TestTheLifespanWiresTheAppItWasGiven:
             assert original.state.feedback_maintenance is None
             assert original.state.feedback_read_service is None
 
-    async def test_each_path_wires_the_state_it_was_given(self, wired_reader) -> None:
+    async def test_each_path_wires_the_state_it_was_given(self, wired_reader, monkeypatch) -> None:
         """With no DSN set, the helpers return before touching any state.
 
         The assertions above therefore pass whatever the helpers read, which
@@ -352,24 +345,20 @@ class TestTheLifespanWiresTheAppItWasGiven:
         stale.state.feedback_service = object()
         stale.state.feedback_read_service = object()
         stale.state.feedback_maintenance = object()
-        monkeypatch = pytest.MonkeyPatch()
         monkeypatch.setattr(gateway, "app", stale)
-        try:
-            live = FastAPI()
-            live.state.feedback_repository = None
-            live.state.feedback_read_repository = None
-            live.state.feedback_maintenance_repository = None
-            live.state.feedback_service = None
-            live.state.feedback_read_service = None
-            live.state.feedback_maintenance = None
-            live.state.quality_telemetry = object()
-            live.state.prometheus_registry = CollectorRegistry()
+        live = FastAPI()
+        live.state.feedback_repository = None
+        live.state.feedback_read_repository = None
+        live.state.feedback_maintenance_repository = None
+        live.state.feedback_service = None
+        live.state.feedback_read_service = None
+        live.state.feedback_maintenance = None
+        live.state.quality_telemetry = object()
+        live.state.prometheus_registry = CollectorRegistry()
 
-            await gateway._connect_feedback_request_path(live.state, APP_URL, object())
-            await gateway._connect_feedback_read_path(live.state, READER_URL)
-            await gateway._connect_feedback_maintenance(live.state, MAINTENANCE_URL)
-        finally:
-            monkeypatch.undo()
+        await gateway._connect_feedback_request_path(live.state, APP_URL, object())
+        await gateway._connect_feedback_read_path(live.state, READER_URL)
+        await gateway._connect_feedback_maintenance(live.state, MAINTENANCE_URL)
 
         assert live.state.feedback_service is not None, "request path wired the wrong app"
         assert live.state.feedback_read_service is not None, "read path wired the wrong app"
