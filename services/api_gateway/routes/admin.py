@@ -41,8 +41,9 @@ router = APIRouter(
     prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_ssf_user)]
 )
 
+_SESSION_NOT_FOUND = "Session not found"
 ADMIN_ROUTE_RESPONSES = {
-    404: {"description": "Session not found"},
+    404: {"description": _SESSION_NOT_FOUND},
     500: {"description": "Admin session operation failed"},
 }
 _REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
@@ -166,9 +167,8 @@ def get_realtime_ticket_store() -> RealtimeTicketStore:
 
 @router.post(
     "/session/{session_id}/realtime-ticket",
-    response_model=RealtimeTicketResponse,
     responses={
-        404: {"description": "Session not found"},
+        404: {"description": _SESSION_NOT_FOUND},
         503: {"description": "Ticket store unavailable"},
     },
 )
@@ -338,7 +338,7 @@ async def get_current_session(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=(
-                    "Session not found"
+                    _SESSION_NOT_FOUND
                     if session_id is not None
                     else "Keine aktive Admin-Session gefunden"
                 ),
@@ -351,7 +351,7 @@ async def get_current_session(
         if session is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Session not found",
+                detail=_SESSION_NOT_FOUND,
             )
 
         return SessionStatusResponse(
@@ -411,7 +411,7 @@ async def terminate_session(
     try:
         session = session_manager.get_session(key)
         if session is None:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
 
         if session.status == SessionStatus.TERMINATED:
             return JSONResponse(
@@ -519,7 +519,7 @@ async def get_session_status(
     try:
         session = session_manager.get_session(key)
         if session is None:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
 
         return SessionStatusResponse(
             session_id=session_id,

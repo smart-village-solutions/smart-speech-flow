@@ -100,7 +100,7 @@ class RuntimePolicyGate:
         except (StudioRuntimeClientError, StudioTokenError) as error:
             reason = _REASON_BY_CODE.get(error.code, PolicyReason.STUDIO_ERROR)
             return PolicyDecision(False, reason)
-        except Exception:  # noqa: BLE001 - any failure must refuse, never raise
+        except Exception:  # Any failure must refuse, never raise.
             return PolicyDecision(False, PolicyReason.STUDIO_ERROR)
 
         if configuration.tenant.id != tenant_id:

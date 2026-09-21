@@ -35,9 +35,9 @@ interface SessionStatusOverlayProps {
 }
 
 /**
- * Floats between the header and the chat. `role="status"`, unlike the dev
- * banner: this text changes while the admin is reading the screen, which is
- * exactly what a live region is for.
+ * Floats between the header and the chat. The output is a live status region,
+ * unlike the dev banner: this text changes while the admin is reading the
+ * screen, which is exactly what a live region is for.
  */
 export function SessionStatusOverlay({
   sessionId,
@@ -52,8 +52,7 @@ export function SessionStatusOverlay({
       className="pointer-events-none fixed inset-x-0 z-10 flex justify-center px-5"
       style={{ top: 'var(--spacing-status-top)' }}
     >
-      <div
-        role="status"
+      <output
         className={cn(
           'pointer-events-auto flex items-center gap-3 rounded-pill border px-4 py-2',
           'border-border-status bg-surface-status/90 shadow-lg backdrop-blur-sm'
@@ -89,7 +88,7 @@ export function SessionStatusOverlay({
             </span>
           </>
         )}
-      </div>
+      </output>
     </div>
   );
 }

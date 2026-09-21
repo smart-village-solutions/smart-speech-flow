@@ -74,7 +74,7 @@ class MessageTelemetryRecorder:
         self._outcome = TerminalOutcome.SUCCESS
         self._failed_stage = PipelineStage.NONE
         self._error_code = QualityErrorCode.NONE
-        self._durations = {name: 0 for name in _STEP_DURATION_FIELDS.values()}
+        self._durations = dict.fromkeys(_STEP_DURATION_FIELDS.values(), 0)
 
     def arm(self, input_mode: InputMode) -> None:
         """Mark the request as a message, from the content-type dispatch on.

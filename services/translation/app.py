@@ -211,12 +211,11 @@ class _SlotClaim:
             return True
 
 
-class _WorkAbandoned(BaseException):
+class _WorkAbandoned(Exception):
     """The awaiting task gave up before this thread started; do not run inference.
 
-    Derived from BaseException so an ``except Exception`` inside the inference
-    path cannot swallow it. Never reaches a caller: by the time it is raised the
-    awaiting future is already cancelled, so the result is discarded.
+    Raised before entering inference, so its handlers cannot swallow it.
+    The awaiting future is already cancelled and discards the result.
     """
 
 

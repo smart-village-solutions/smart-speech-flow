@@ -27,7 +27,7 @@ function read(path: string): string {
 
 /** The z-index on the element opening `tag`, read from its class list. */
 function layerOf(path: string, tag: string): number {
-  const opening = new RegExp(`<${tag}\\b[^>]*className="([^"]*)"`).exec(read(path));
+  const opening = new RegExp(String.raw`<${tag}\b[^>]*className="([^"]*)"`).exec(read(path));
   if (opening === null) {
     throw new Error(`no <${tag}> with a literal className in ${path}`);
   }

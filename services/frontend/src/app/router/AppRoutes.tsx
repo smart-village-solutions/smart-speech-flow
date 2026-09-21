@@ -39,7 +39,7 @@ function TenantLoginEntry() {
 }
 
 /** Each administrative entry owns its entire query cache, including session queries. */
-function AdminQueryBoundary({ children }: { children: ReactNode }) {
+function AdminQueryBoundary({ children }: Readonly<{ children: ReactNode }>) {
   const parent = useQueryClient();
   const [client] = useState(() => new QueryClient({ defaultOptions: parent.getDefaultOptions() }));
   useEffect(
@@ -52,7 +52,7 @@ function AdminQueryBoundary({ children }: { children: ReactNode }) {
 }
 
 /** Resolve the route ID through the validated directory before using a realm. */
-function TenantLoginSession({ tenantId }: { tenantId: string }) {
+function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
   const { config, loginTenant } = useServices();
   const { t } = useTranslation();
   const [status, setStatus] = useState<'loading' | 'authenticated' | 'missing' | 'error'>(
