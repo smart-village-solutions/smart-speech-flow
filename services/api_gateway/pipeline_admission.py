@@ -32,13 +32,11 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, NoReturn, Optional, TypeVar
+from typing import Any, Callable, NoReturn, Optional
 
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 DEFAULT_MAX_CONCURRENT_PIPELINES = 2
 DEFAULT_QUEUE_WAIT_SECONDS = 10.0
@@ -167,12 +165,11 @@ class _SlotClaim:
             return True
 
 
-class _WorkAbandoned(BaseException):
+class _WorkAbandoned(Exception):
     """The awaiting task gave up before this thread started; do not run the call.
 
-    Derived from BaseException so an ``except Exception`` inside a pipeline
-    function cannot swallow it. Never reaches a caller: by the time it is raised
-    the awaiting future is already cancelled, so the result is discarded.
+    Raised before entering the pipeline function, so its handlers cannot
+    swallow it. The awaiting future is already cancelled and discards the result.
     """
 
 
@@ -257,7 +254,7 @@ class PipelineAdmission:
     def in_flight(self) -> int:
         return self._in_flight
 
-    async def run(self, func: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
+    async def run[T](self, func: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
         """Runs a synchronous pipeline function on a worker thread under the bound.
 
         Raises ``PipelineBusyError`` if no slot comes free within the configured
@@ -378,9 +375,9 @@ def get_pipeline_admission(request: Any) -> Optional[PipelineAdmission]:
     return candidate if isinstance(candidate, PipelineAdmission) else None
 
 
-async def run_pipeline(
-    request: Any, func: Callable[..., T], /, *args: Any, **kwargs: Any
-) -> T:
+async def run_pipeline[
+    T
+](request: Any, func: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
     """Runs a pipeline function under the app's bound, unbounded if there is none."""
     admission = get_pipeline_admission(request)
     if admission is None:

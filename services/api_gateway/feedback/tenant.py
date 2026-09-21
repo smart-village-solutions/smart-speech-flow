@@ -16,7 +16,7 @@ databases; see docs/architecture/sva-studio-control-plane.md.
 from __future__ import annotations
 
 import os
-from typing import Final, Protocol, runtime_checkable
+from typing import Final, Protocol, override, runtime_checkable
 
 from ..tenant_session import TenantSessionKey
 
@@ -32,10 +32,12 @@ _FALLBACK_TENANT: Final[str] = "default"
 class TenantResolver(Protocol):
     async def resolve(
         self, session_id: str | None, session_key: TenantSessionKey | None
-    ) -> str: ...
+    ) -> str:
+        """Resolve the storage tenant for a submission's already-resolved session."""
+        ...
 
 
-class ConfiguredTenantResolver:
+class ConfiguredTenantResolver(TenantResolver):
     """One configured tenant: the fallback for anything that carries none."""
 
     def __init__(self, *, tenant_id: str) -> None:
@@ -46,7 +48,10 @@ class ConfiguredTenantResolver:
         configured = (os.environ.get(DEFAULT_TENANT_ENV) or "").strip()
         return cls(tenant_id=configured or _FALLBACK_TENANT)
 
-    async def resolve(self, session_id: str | None, session_key: TenantSessionKey | None) -> str:
+    @override
+    async def resolve(
+        self, session_id: str | None, session_key: TenantSessionKey | None
+    ) -> str:
         return self._tenant_id
 
 
@@ -60,7 +65,9 @@ class SessionTenantResolver:
     def __init__(self, *, fallback: TenantResolver) -> None:
         self._fallback = fallback
 
-    async def resolve(self, session_id: str | None, session_key: TenantSessionKey | None) -> str:
+    async def resolve(
+        self, session_id: str | None, session_key: TenantSessionKey | None
+    ) -> str:
         if session_key is not None:
             return session_key.tenant_id
         return await self._fallback.resolve(session_id, session_key)
