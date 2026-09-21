@@ -1291,38 +1291,16 @@ def test_websocket_fallback_uses_origin_in_failure_history_key():
 
 
 @pytest.mark.asyncio
-async def test_circuit_breaker_client_unit_paths(monkeypatch):
+async def test_circuit_breaker_client_status_and_monitoring(monkeypatch):
+    """What the client still does after #219: report status and run monitoring.
+
+    Its three call_*_service methods and their _perform_* helpers were removed
+    with #219; production calls go through ai_service_client. Only the
+    read-only status methods and the lifespan's monitoring control remain.
+    """
     client_module = importlib.import_module("services.api_gateway.circuit_breaker_client")
     client = client_module.CircuitBreakerServiceClient()
 
-    async def fake_ensure_session():
-        return None
-
-    async def fake_cache_response(service, request_data, result, ttl):
-        return None
-
-    async def fake_handle_service_failure(service, request_data, error):
-        return {"service": service, "fallback": True, "error": str(error)}
-
-    async def fake_call_service(service, func, *args):
-        return {"service": service, "success": True}
-
-    monkeypatch.setattr(client, "_ensure_session", fake_ensure_session)
-    monkeypatch.setattr(
-        client_module.graceful_degradation_manager,
-        "cache_response",
-        fake_cache_response,
-    )
-    monkeypatch.setattr(
-        client_module.graceful_degradation_manager,
-        "handle_service_failure",
-        fake_handle_service_failure,
-    )
-    monkeypatch.setattr(
-        client_module.service_health_manager,
-        "call_service",
-        fake_call_service,
-    )
     monkeypatch.setattr(
         client_module.service_health_manager,
         "get_overall_health",
@@ -1339,112 +1317,25 @@ async def test_circuit_breaker_client_unit_paths(monkeypatch):
         lambda: {"fallbacks": 0},
     )
 
-    assert (await client.call_asr_service(b"audio", "de", True))["success"] is True
-    assert (await client.call_translation_service("Hallo", "de", "en", False))["success"] is True
-    assert (await client.call_tts_service("Hallo", "en"))["success"] is True
     assert await client.get_health_status() == {"status": "ok"}
     assert await client.get_service_status("asr") == {"service": "asr"}
     assert await client.get_degradation_status() == {"fallbacks": 0}
 
-    async def raising_call_service(service, func, *args):
-        raise client_module.CircuitBreakerOpenError("open")
-
-    monkeypatch.setattr(
-        client_module.service_health_manager,
-        "call_service",
-        raising_call_service,
-    )
-    assert (await client.call_asr_service(b"audio"))["fallback"] is True
+    started = False
+    stopped = False
 
     async def start_monitoring():
-        return None
+        nonlocal started
+        started = True
 
     async def stop_monitoring():
-        return None
-
-    async def close():
-        return None
+        nonlocal stopped
+        stopped = True
 
     monkeypatch.setattr(client_module.service_health_manager, "start_monitoring", start_monitoring)
     monkeypatch.setattr(client_module.service_health_manager, "stop_monitoring", stop_monitoring)
-    monkeypatch.setattr(client, "close", close)
 
     await client.start_health_monitoring()
     await client.stop_health_monitoring()
 
-
-@pytest.mark.asyncio
-async def test_circuit_breaker_client_performs_requests(monkeypatch):
-    client_module = importlib.import_module("services.api_gateway.circuit_breaker_client")
-    client = client_module.CircuitBreakerServiceClient()
-
-    class FakeResponseContext:
-        def __init__(self, response):
-            self._response = response
-
-        async def __aenter__(self):
-            return self._response
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-    class FakeResponse:
-        def __init__(self, status, *, payload=None, text="", body=b"", headers=None):
-            self.status = status
-            self._payload = payload or {}
-            self._text = text
-            self._body = body
-            self.headers = headers or {}
-            self.request_info = SimpleNamespace()
-            self.history = ()
-
-        async def json(self):
-            return self._payload
-
-        async def text(self):
-            return self._text
-
-        async def read(self):
-            return self._body
-
-    responses = iter(
-        [
-            FakeResponse(200, payload={"text": "Hallo", "confidence": 0.9, "processing_time": 0.1}),
-            FakeResponse(
-                200,
-                payload={"translated_text": "Hello", "confidence": 0.8, "processing_time": 0.2},
-            ),
-            FakeResponse(
-                200,
-                body=b"WAV",
-                headers={"content-type": "audio/wav"},
-            ),
-            FakeResponse(
-                200,
-                payload={"audio_url": "/audio.wav", "processing_time": 0.3},
-                headers={"content-type": "application/json"},
-            ),
-            FakeResponse(500, text="kaputt"),
-        ]
-    )
-
-    class FakeSession:
-        closed = False
-
-        def post(self, url, **kwargs):
-            return FakeResponseContext(next(responses))
-
-    client.session = FakeSession()
-
-    asr_result = await client._perform_asr_request(b"audio", "de", True)
-    translation_result = await client._perform_translation_request("Hallo", "de", "en", False)
-    tts_audio_result = await client._perform_tts_request("Hallo", "de", "default", False)
-    tts_json_result = await client._perform_tts_request("Hallo", "de", "default", False)
-
-    assert asr_result["text"] == "Hallo"
-    assert translation_result["translated_text"] == "Hello"
-    assert tts_audio_result["audio_data"] == b"WAV"
-    assert tts_json_result["audio_url"] == "/audio.wav"
-
-    with pytest.raises(client_module.aiohttp.ClientResponseError):
-        await client._perform_tts_request("Hallo", "de", "default", False)
+    assert started and stopped

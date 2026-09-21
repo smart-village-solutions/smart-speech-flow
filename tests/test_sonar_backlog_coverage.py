@@ -51,9 +51,10 @@ def test_app_module_builds_service_urls_for_docker_and_local():
         },
     )
     assert app_module.SERVICE_URLS["TTS"] == "https://localhost:8003/health"
-    assert app_module._build_service_url(
-        "localhost", 8003, "/synthesize", scheme="https"
-    ) == "https://localhost:8003/synthesize"
+    assert (
+        app_module._build_service_url("localhost", 8003, "/synthesize", scheme="https")
+        == "https://localhost:8003/synthesize"
+    )
 
 
 def test_app_cors_setup_uses_localhost_helpers_in_development(monkeypatch):
@@ -73,9 +74,7 @@ def test_app_cors_setup_uses_localhost_helpers_in_development(monkeypatch):
 
     monkeypatch.setattr(app_module.app, "add_middleware", fake_add_middleware)
     monkeypatch.setenv("ENVIRONMENT", "development")
-    monkeypatch.setenv(
-        "DEVELOPMENT_CORS_ORIGINS", "https://example.test,http://devbox:3000"
-    )
+    monkeypatch.setenv("DEVELOPMENT_CORS_ORIGINS", "https://example.test,http://devbox:3000")
 
     app_module.setup_cors_for_websockets()
 
@@ -183,14 +182,12 @@ def test_pipeline_logic_translation_helper_records_debug_step(monkeypatch):
 
     monkeypatch.setattr(pipeline_logic.requests, "post", fake_post)
 
-    response, payload, translation_text, tts_text = (
-        pipeline_logic._run_text_translation_step(
-            processed_text="Hello",
-            source_lang="en",
-            target_lang="de",
-            debug=True,
-            debug_info=debug_info,
-        )
+    response, payload, translation_text, tts_text = pipeline_logic._run_text_translation_step(
+        processed_text="Hello",
+        source_lang="en",
+        target_lang="de",
+        debug=True,
+        debug_info=debug_info,
     )
 
     assert response.status_code == 200
@@ -358,7 +355,7 @@ def test_translation_refiner_default_endpoint_and_enabled_configuration():
     reload_module("services.api_gateway.translation_refiner", {"LLM_REFINEMENT_ENABLED": "0"})
 
 
-def test_service_health_and_circuit_breaker_helpers_use_configured_scheme():
+def test_service_health_helpers_use_configured_scheme():
     service_health = reload_module(
         "services.api_gateway.service_health",
         {"SERVICE_SCHEME": "https"},
@@ -368,16 +365,6 @@ def test_service_health_and_circuit_breaker_helpers_use_configured_scheme():
     assert manager.services["asr"].base_url == "https://asr:8000"
     assert manager.services["translation"].base_url == "https://translation:8000"
     assert manager.services["tts"].base_url == "https://tts:8000"
-
-    client_module = reload_module(
-        "services.api_gateway.circuit_breaker_client",
-        {"SERVICE_SCHEME": "https"},
-    )
-    assert client_module._service_url("asr", "/transcribe") == "https://asr:8000/transcribe"
-    assert client_module._service_url("translation", "/translate") == (
-        "https://translation:8000/translate"
-    )
-    assert client_module._service_url("tts", "/synthesize") == "https://tts:8000/synthesize"
 
 
 @pytest.mark.asyncio
