@@ -4,7 +4,13 @@ prometheus_client
 torch
 soundfile
 numpy>=2.5.3
-transformers>=5.17.0,<6.0.0
+# Ceiling, not a preference. transformers 5.17.0 added an unconditional
+# `output.to(dtype=self.model.dtype)` to the text-to-audio pipeline
+# (pipelines/text_to_audio.py:197). For a tokenizer-backed model such as
+# VITS that `output` is a BatchEncoding, whose `.to()` takes no dtype, so
+# every synthesis raises TypeError. 5.16.1 is the last release without the
+# line. Raise the ceiling only once a release fixes it upstream.
+transformers>=5.16.1,<5.17.0
 httpx==0.28.1
 pytest==9.0.3
 psutil==7.2.2
