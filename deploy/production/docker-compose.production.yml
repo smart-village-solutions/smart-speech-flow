@@ -38,7 +38,7 @@ services:
             count: all
             capabilities:
             - gpu
-    image: ssf-backend-asr:prod-345add9
+    image: ssf-backend-asr:prod-1fd9e98
     restart: unless-stopped
     pull_policy: never
   translation:
@@ -54,7 +54,7 @@ services:
             count: all
             capabilities:
             - gpu
-    image: ssf-backend-translation:prod-345add9
+    image: ssf-backend-translation:prod-1fd9e98
     restart: unless-stopped
     pull_policy: never
   tts:
@@ -70,7 +70,7 @@ services:
             count: all
             capabilities:
             - gpu
-    image: ssf-backend-tts:prod-345add9
+    image: ssf-backend-tts:prod-1fd9e98
     restart: unless-stopped
     pull_policy: never
   api_gateway:
@@ -184,7 +184,7 @@ services:
     - traefik.http.services.api_gateway.loadbalancer.passhostheader=true
     - traefik.http.middlewares.websocket-headers.headers.customrequestheaders.X-Forwarded-Proto=https
     restart: unless-stopped
-    image: ssf-backend-api_gateway:prod-9515f00
+    image: ssf-backend-api_gateway:prod-1fd9e98
     pull_policy: never
   ollama:
     image: ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a
@@ -355,7 +355,7 @@ services:
     - traefik.http.services.frontend.loadbalancer.server.port=8080
     - traefik.docker.network=ssf-backend_default
     restart: unless-stopped
-    image: ssf-backend-frontend:prod-9515f00
+    image: ssf-backend-frontend:prod-1fd9e98
     pull_policy: never
   prometheus:
     image: prom/prometheus@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
