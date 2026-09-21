@@ -575,58 +575,42 @@ class TestGracefulDegradationRealSystem:
     """Graceful Degradation Tests mit echtem System"""
 
     @pytest.mark.asyncio
-    async def test_real_cache_fallback_mechanism(self, reset_server):
-        """Test: Echte Cache Fallback Funktionalität"""
-        degradation_manager = GracefulDegradationManager()
-
-        # 1. Erfolgreiche Response cachen
-        service_name = "test-service"
-        request_data = {"text": "test message", "language": "de"}
-        success_response = {
-            "success": True,
-            "result": "Cached test result",
-            "timestamp": time.time(),
-        }
-
-        await degradation_manager.cache_response(
-            service_name, request_data, success_response, ttl=60
-        )
-
-        # 2. Service Failure simulieren
-        test_server.set_healthy(False)
-        original_error = Exception("Real service failure")
-
-        # 3. Fallback sollte gecachte Response zurückgeben
-        fallback_result = await degradation_manager.handle_service_failure(
-            service_name, request_data, original_error
-        )
-
-        # Prüfe dass Cache verwendet wurde
-        assert fallback_result.get("cached") is True
-        assert fallback_result["result"] == "Cached test result"
-        assert fallback_result.get("fallback_reason") == "service_unavailable"
-
-    @pytest.mark.asyncio
     async def test_real_service_mode_transitions(self, reset_server):
-        """Test: Echte Service Mode Transitions"""
+        """Test: Echte Service Mode Transitions
+
+        Driven by which breakers are open, which is how the live system drives
+        it since #219. The cache-fallback test that stood beside this one went
+        with the cache: nothing wrote to it once the async service-call client
+        was retired, and the strategies it fed either invented a result or
+        reported the failure.
+        """
         degradation_manager = GracefulDegradationManager()
 
-        # Initial sollte FULL Mode sein
         status = degradation_manager.get_degradation_status()
         assert status["current_mode"] == "full"
 
-        # Service Failures simulieren
-        await degradation_manager._update_service_mode("asr", is_failure=True)
-        status = degradation_manager.get_degradation_status()
-        assert status["current_mode"] == "degraded"
+        degradation_manager.apply_service_states(
+            {"asr": False, "translation": True, "tts": True}
+        )
+        assert degradation_manager.get_degradation_status()["current_mode"] == "degraded"
 
-        # Weitere Failure
-        await degradation_manager._update_service_mode("translation", is_failure=True)
-        status = degradation_manager.get_degradation_status()
-        assert status["current_mode"] == "minimal"
+        degradation_manager.apply_service_states(
+            {"asr": False, "translation": False, "tts": True}
+        )
+        assert degradation_manager.get_degradation_status()["current_mode"] == "minimal"
 
-        # Mode History sollte getracked werden
-        assert len(status["mode_history"]) >= 2
+        degradation_manager.apply_service_states(
+            {"asr": False, "translation": False, "tts": False}
+        )
+        assert degradation_manager.get_degradation_status()["current_mode"] == "offline"
+
+        # And back, which the ratchet this replaced could never do.
+        degradation_manager.apply_service_states(
+            {"asr": True, "translation": True, "tts": True}
+        )
+        status = degradation_manager.get_degradation_status()
+        assert status["current_mode"] == "full"
+        assert len(status["mode_history"]) >= 4
 
 
 class TestCircuitBreakerServiceClientRealSystem:

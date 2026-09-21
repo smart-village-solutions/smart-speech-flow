@@ -114,6 +114,17 @@ and unsafe to reach.
 surface as pipeline errors with `upstream_circuit_open` or the existing upstream
 error codes.
 
+### Requirement: The fallback response cache and request queue
+**Reason**: Both were reachable only from `handle_service_failure`, whose last
+caller went with the asynchronous service-call client. Nothing wrote to the
+cache, so `/api/health/cache` reported zeroes indefinitely, and
+`DELETE /api/admin/cache/clear` cleared a structure that was always empty.
+Request queuing was never enabled.
+
+**Migration**: None. No dashboard, frontend or deployment configuration read
+either endpoint. `GET /api/health/degradation` keeps reporting the service
+mode and its history, now driven by live breaker state.
+
 ### Requirement: Asynchronous AI-service call methods on CircuitBreakerServiceClient
 **Reason**: `call_asr_service`, `call_translation_service`, `call_tts_service`
 and their `_perform_*` helpers had no callers outside their own tests, and could

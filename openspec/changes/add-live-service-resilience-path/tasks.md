@@ -38,12 +38,10 @@
 ## 6. Retire the fabricating fallbacks
 
 - [x] 6.1 Delete `_try_alternative_service`, `_try_degraded_quality`, `_setup_service_alternatives` and `alternative_services`
-- [ ] 6.2 Delete the response cache and `_generate_cache_key`, now that nothing writes to it
-      — **not done, deliberately.** A cached reply is a real reply, so the cache is not
-      a fabricator and was out of the scope approved for this change. It is now inert:
-      `handle_service_failure` and `cache_response` lost their last callers with 7.1.
-      Removing them means removing `/api/health/cache` too, which is a wider API
-      decision than this change should make on its own.
+- [x] 6.2 Delete the response cache, the request queue and the fallback dispatch, all
+      unreachable once 7.1 removed their last caller. `/api/health/cache` and
+      `DELETE /api/admin/cache/clear` go with them: both reported on a cache nothing
+      writes to, and no dashboard, frontend or deployment config referenced either.
 - [x] 6.3 Remove the `FallbackStrategy` members that no longer have an implementation
 - [x] 6.4 Update or delete the tests that asserted the fabricated shapes
 - [x] 6.5 Confirm `/circuit-breaker/degradation-status` and the cache-stats route still answer

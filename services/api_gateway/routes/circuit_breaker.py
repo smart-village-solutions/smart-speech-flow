@@ -21,7 +21,6 @@ from fastapi import APIRouter, HTTPException, status
 
 from ..circuit_breaker import CircuitBreakerFactory
 from ..circuit_breaker_client import circuit_breaker_client
-from ..graceful_degradation import graceful_degradation_manager
 
 logger = logging.getLogger(__name__)
 
@@ -274,77 +273,6 @@ async def reset_all_circuit_breakers() -> Dict[str, Any]:
 
 
 @router.get(
-    "/health/cache",
-    responses={500: {"description": "Cache status lookup failed"}},
-)
-async def get_cache_status() -> Dict[str, Any]:
-    """
-    Fallback Cache Status
-
-    Returns:
-        Cache Statistics und Performance Metrics
-    """
-    try:
-        degradation_status = graceful_degradation_manager.get_degradation_status()
-        cache_info = {
-            "cache_size": degradation_status["cache_size"],
-            "cache_stats": degradation_status["cache_stats"],
-            "pending_requests": degradation_status["pending_requests"],
-            "current_mode": degradation_status["current_mode"],
-        }
-
-        return {"status": "success", "data": cache_info}
-
-    except Exception as e:
-        logger.exception("❌ Cache Status Error", exc_info=_redacted_exception_info(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Cache status check failed: {str(e)}",
-        )
-
-
-@router.delete(
-    "/admin/cache/clear",
-    responses={500: {"description": "Cache clear failed"}},
-)
-async def clear_fallback_cache() -> Dict[str, Any]:
-    """
-    Leert Fallback Cache (Admin Only)
-
-    Returns:
-        Clear Status
-    """
-    try:
-        # Cache Statistics vor dem Leeren
-        old_stats = graceful_degradation_manager.get_degradation_status()
-        old_cache_size = old_stats["cache_size"]
-
-        # Cache leeren
-        graceful_degradation_manager.response_cache.clear()
-        graceful_degradation_manager.cache_stats = {
-            "hits": 0,
-            "misses": 0,
-            "evictions": 0,
-        }
-
-        logger.warning(f"⚠️ Fallback Cache cleared: {old_cache_size} entries removed")
-
-        return {
-            "status": "success",
-            "message": "Fallback cache cleared successfully",
-            "entries_removed": old_cache_size,
-            "cache_stats_reset": True,
-        }
-
-    except Exception as e:
-        logger.exception("❌ Cache Clear Error", exc_info=_redacted_exception_info(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Cache clear failed: {str(e)}",
-        )
-
-
-@router.get(
     "/health/summary",
     responses={500: {"description": "Health summary generation failed"}},
 )
@@ -386,8 +314,6 @@ async def get_health_summary() -> Dict[str, Any]:
                 "services": summary,
                 "circuit_states": circuit_states,
                 "service_mode": degradation_status.get("current_mode", "unknown"),
-                "cache_entries": degradation_status.get("cache_size", 0),
-                "pending_requests": degradation_status.get("pending_requests", 0),
                 "gpu": gpu_overview,
             },
             "gpu_summary": gpu_summary,
@@ -453,17 +379,6 @@ def _generate_health_alerts(
                 "level": "warning",
                 "type": "degraded_mode",
                 "message": f"System läuft im {current_mode.upper()} Modus",
-            }
-        )
-
-    # Cache Alerts
-    cache_size = degradation_status.get("cache_size", 0)
-    if cache_size > 800:  # Near max cache size
-        alerts.append(
-            {
-                "level": "info",
-                "type": "cache_full",
-                "message": f"Fallback Cache fast voll ({cache_size} Einträge)",
             }
         )
 
