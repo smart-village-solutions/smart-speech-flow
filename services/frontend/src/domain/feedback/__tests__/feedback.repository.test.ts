@@ -122,7 +122,7 @@ describe('feedback repository', () => {
   it('surfaces a lost connection as an AppError, not a raw axios failure', async () => {
     server.use(http.post('http://api.test/api/feedback', () => HttpResponse.error()));
 
-    const error = await repository.submit(SUBMISSION).catch((caught: unknown) => caught);
+    const error = await repository.submit(SUBMISSION).catch((error_: unknown) => error_);
 
     expect(error).toBeInstanceOf(AppError);
   });
