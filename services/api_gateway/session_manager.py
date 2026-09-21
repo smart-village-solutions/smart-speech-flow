@@ -30,6 +30,9 @@ from .tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
 logger = logging.getLogger(__name__)
 
+_TENANT_STORE_UNAVAILABLE = "tenant session store is unavailable"
+_SESSION_NOT_FOUND = "session not found"
+
 try:  # Optional dependency for persistence
     from redis import Redis
     from redis.exceptions import RedisError
@@ -483,7 +486,7 @@ class SessionManager:
         """
 
         if self.store is None:
-            raise RuntimeError("tenant session store is unavailable")
+            raise RuntimeError(_TENANT_STORE_UNAVAILABLE)
         restored = self.store.list_active()
         restarted_at = self.clock()
         for session in restored:
@@ -720,70 +723,10 @@ class SessionManager:
 
         if isinstance(session_id, TenantSessionKey):
             if self.store is None:
-                raise RuntimeError("tenant session store is unavailable")
+                raise RuntimeError(_TENANT_STORE_UNAVAILABLE)
 
             if session.status != SessionStatus.TERMINATED:
-                # Redis termination is the security-sensitive commit point. Keep
-                # the cached object and runtime indexes untouched until the atomic
-                # record/index/tombstone mutation succeeds, so a transient store
-                # failure remains both internally consistent and retryable.
-                terminal_session = replace(
-                    session,
-                    status=SessionStatus.TERMINATED,
-                    terminated_at=self.clock(),
-                    termination_reason=reason,
-                    admin_connected=False,
-                    customer_connected=False,
-                    admin_connection_count=0,
-                    customer_connection_count=0,
-                )
-                # `replace` copies the message list by reference, so settling
-                # it would reach back into the running conversation and strip
-                # audio references from messages whose files are still on disk.
-                # The terminal record gets its own messages; the live session
-                # is untouched until the commit succeeds.
-                terminal_session.messages = [
-                    copy.deepcopy(message) for message in session.messages
-                ]
-                # The pruned message list is part of the record being
-                # committed. The files it drops are deleted only once that
-                # commit has succeeded: a store failure here is transient and
-                # the caller retries, so anything deleted first would be lost
-                # for a session that is still live.
-                _, doomed_audio = self._settle_refused_content(terminal_session)
-                committed_terminal = self.store.terminate(terminal_session)
-                # A store may accept the termination while keeping a terminal
-                # record it already held, discarding the payload settled here.
-                # Only delete artefacts when this payload is the committed one.
-                # `None` means the store reported success without echoing a
-                # record, which the fakes do; that is this payload.
-                payload_committed = committed_terminal in (None, terminal_session)
-                if committed_terminal is None:
-                    committed_terminal = terminal_session
-                if payload_committed and doomed_audio:
-                    self._delete_settled_audio(session_id, doomed_audio)
-
-                # Preserve references held by handlers while replacing every
-                # cached field with Redis' canonical terminal snapshot. This
-                # discards any stale mutations made after a committed
-                # termination whose response was lost.
-                for session_field in fields(Session):
-                    setattr(
-                        session,
-                        session_field.name,
-                        getattr(committed_terminal, session_field.name),
-                    )
-                tenant_active = self.active_admin_sessions.get(
-                    session_id.tenant_id, set()
-                )
-                tenant_active.discard(session_id.session_id)
-                if not tenant_active:
-                    self.active_admin_sessions.pop(session_id.tenant_id, None)
-                self._emit_lifecycle(
-                    session,
-                    SessionLifecyclePhase.TERMINATED,
-                    SessionTerminationReason.classify(reason),
-                )
+                self._commit_tenant_termination(session_id, session, reason, self.store)
 
             # Cleanup is deliberately idempotent and also runs for a terminal
             # session. If notification/socket cleanup was interrupted after the
@@ -840,6 +783,73 @@ class SessionManager:
         self._persist_active_sessions()
 
         print(f"🔚 Session {session_id} beendet. Grund: {reason}")
+
+    def _commit_tenant_termination(
+        self,
+        session_id: TenantSessionKey,
+        session: Session,
+        reason: str,
+        store: TenantSessionStore,
+    ) -> None:
+        # Redis termination is the security-sensitive commit point. Keep
+        # the cached object and runtime indexes untouched until the atomic
+        # record/index/tombstone mutation succeeds, so a transient store
+        # failure remains both internally consistent and retryable.
+        terminal_session = replace(
+            session,
+            status=SessionStatus.TERMINATED,
+            terminated_at=self.clock(),
+            termination_reason=reason,
+            admin_connected=False,
+            customer_connected=False,
+            admin_connection_count=0,
+            customer_connection_count=0,
+        )
+        # `replace` copies the message list by reference, so settling
+        # it would reach back into the running conversation and strip
+        # audio references from messages whose files are still on disk.
+        # The terminal record gets its own messages; the live session
+        # is untouched until the commit succeeds.
+        terminal_session.messages = [
+            copy.deepcopy(message) for message in session.messages
+        ]
+        # The pruned message list is part of the record being
+        # committed. The files it drops are deleted only once that
+        # commit has succeeded: a store failure here is transient and
+        # the caller retries, so anything deleted first would be lost
+        # for a session that is still live.
+        _, doomed_audio = self._settle_refused_content(terminal_session)
+        committed_terminal = store.terminate(terminal_session)
+        # A store may accept the termination while keeping a terminal
+        # record it already held, discarding the payload settled here.
+        # Only delete artefacts when this payload is the committed one.
+        # `None` means the store reported success without echoing a
+        # record, which the fakes do; that is this payload.
+        payload_committed = committed_terminal in (None, terminal_session)
+        if committed_terminal is None:
+            committed_terminal = terminal_session
+        if payload_committed and doomed_audio:
+            self._delete_settled_audio(session_id, doomed_audio)
+
+        # Preserve references held by handlers while replacing every
+        # cached field with Redis' canonical terminal snapshot. This
+        # discards any stale mutations made after a committed
+        # termination whose response was lost.
+        for session_field in fields(Session):
+            setattr(
+                session,
+                session_field.name,
+                getattr(committed_terminal, session_field.name),
+            )
+        tenant_active = self.active_admin_sessions.get(session_id.tenant_id, set())
+        tenant_active.discard(session_id.session_id)
+        if not tenant_active:
+            self.active_admin_sessions.pop(session_id.tenant_id, None)
+        self._emit_lifecycle(
+            session,
+            SessionLifecyclePhase.TERMINATED,
+            SessionTerminationReason.classify(reason),
+        )
 
     async def _send_termination_notifications(
         self, session_id: Any, reason: str
@@ -983,7 +993,7 @@ class SessionManager:
     def admin_connected(self, key: TenantSessionKey) -> None:
         session = self.get_session(key)
         if session is None or session.status == SessionStatus.TERMINATED:
-            raise KeyError("session not found")
+            raise KeyError(_SESSION_NOT_FOUND)
         session.admin_connection_count += 1
         session.admin_connected = True
         session.admin_disconnected_at = None
@@ -994,7 +1004,7 @@ class SessionManager:
     def admin_disconnected(self, key: TenantSessionKey) -> None:
         session = self.get_session(key)
         if session is None:
-            raise KeyError("session not found")
+            raise KeyError(_SESSION_NOT_FOUND)
         if session.status == SessionStatus.TERMINATED:
             return
         session.admin_connection_count = max(0, session.admin_connection_count - 1)
@@ -1007,7 +1017,7 @@ class SessionManager:
     def customer_connected(self, key: TenantSessionKey) -> None:
         session = self.get_session(key)
         if session is None or session.status == SessionStatus.TERMINATED:
-            raise KeyError("session not found")
+            raise KeyError(_SESSION_NOT_FOUND)
         session.customer_connection_count += 1
         session.customer_connected = True
         if self.store is not None:
@@ -1016,7 +1026,7 @@ class SessionManager:
     def customer_disconnected(self, key: TenantSessionKey) -> None:
         session = self.get_session(key)
         if session is None:
-            raise KeyError("session not found")
+            raise KeyError(_SESSION_NOT_FOUND)
         if session.status == SessionStatus.TERMINATED:
             return
         session.customer_connection_count = max(
@@ -1039,7 +1049,7 @@ class SessionManager:
             session.update_activity()
             if isinstance(session_id, TenantSessionKey):
                 if self.store is None:
-                    raise RuntimeError("tenant session store is unavailable")
+                    raise RuntimeError(_TENANT_STORE_UNAVAILABLE)
                 self.store.save(session)
             else:
                 self._persist_session(session)
@@ -1076,7 +1086,7 @@ class SessionManager:
             return
         if isinstance(session_id, TenantSessionKey):
             if self.store is None:
-                raise RuntimeError("tenant session store is unavailable")
+                raise RuntimeError(_TENANT_STORE_UNAVAILABLE)
             self.store.save(session)
         else:
             self._persist_session(session)
@@ -1122,25 +1132,7 @@ class SessionManager:
                 doomed.append((message.id, AudioVariant.TRANSLATED))
                 changed = True
                 continue
-            # An artefact that was never produced reports as unauthorised too,
-            # because no read was taken for it. Only clear markers that
-            # actually describe audio this message had.
-            pipeline_input = (
-                message.pipeline_metadata.get("input")
-                if isinstance(message.pipeline_metadata, dict)
-                else None
-            )
-            had_original = bool(message.original_audio_url) or (
-                isinstance(pipeline_input, dict)
-                and pipeline_input.get("type") == "audio"
-            )
-            if had_original and not message.original_audio_authorized:
-                doomed.append((message.id, AudioVariant.ORIGINAL))
-                # Both markers, or `conversation_service` still derives an
-                # original-audio URL for a file that is gone.
-                message.original_audio_url = None
-                if isinstance(pipeline_input, dict):
-                    pipeline_input.pop("type", None)
+            if self._remove_refused_original_audio(message, doomed):
                 changed = True
             if message.translated_audio_available and (
                 not message.translated_audio_authorized
@@ -1155,6 +1147,33 @@ class SessionManager:
             retained.append(message)
         session.messages = retained
         return changed, doomed
+
+    @staticmethod
+    def _remove_refused_original_audio(
+        message: SessionMessage, doomed: list[tuple[str, Any]]
+    ) -> bool:
+        from .audio_storage import AudioVariant
+
+        # An artefact that was never produced reports as unauthorised too,
+        # because no read was taken for it. Only clear markers that
+        # actually describe audio this message had.
+        pipeline_input = (
+            message.pipeline_metadata.get("input")
+            if isinstance(message.pipeline_metadata, dict)
+            else None
+        )
+        had_original = bool(message.original_audio_url) or (
+            isinstance(pipeline_input, dict) and pipeline_input.get("type") == "audio"
+        )
+        if had_original and not message.original_audio_authorized:
+            doomed.append((message.id, AudioVariant.ORIGINAL))
+            # Both markers, or `conversation_service` still derives an
+            # original-audio URL for a file that is gone.
+            message.original_audio_url = None
+            if isinstance(pipeline_input, dict):
+                pipeline_input.pop("type", None)
+            return True
+        return False
 
     def _delete_settled_audio(
         self, key: TenantSessionKey, doomed: list[tuple[str, Any]]
@@ -1177,7 +1196,7 @@ class SessionManager:
             self._persist_session(session)
             return
         if self.store is None:
-            raise RuntimeError("tenant session store is unavailable")
+            raise RuntimeError(_TENANT_STORE_UNAVAILABLE)
         self.store.save(session)
 
     def sweep_expired_content(self, now: datetime) -> Dict[str, int]:
@@ -1200,7 +1219,8 @@ class SessionManager:
         refused_removed = 0
         expired_removed = 0
 
-        for session in list(self.sessions.values()):
+        # Persistence callbacks may change the cache while this pass runs.
+        for session in self.sessions.copy().values():
             # A terminated record is immutable in the store -- SAVE_SESSION_LUA
             # refuses every change to one -- so its retention is the expiry set
             # on it at termination, not this sweep. Pruning it here would drift
@@ -1208,46 +1228,9 @@ class SessionManager:
             if session.status is SessionStatus.TERMINATED:
                 continue
             try:
-                # Settled on a copy, exactly as termination does. A failed
-                # write must leave the live session and its files untouched,
-                # or the next pass sees an already-pruned list, computes an
-                # empty deletion set, and the refused files are stranded.
-                working = replace(session)
-                working.messages = [
-                    copy.deepcopy(message) for message in session.messages
-                ]
-                changed = False
-                doomed_audio: list[tuple[str, Any]] = []
-                refused_delta = 0
-                expired_delta = 0
-                max_age = timedelta(hours=session.maximum_lifetime_hours)
-                if now - session.created_at >= max_age:
-                    before = len(working.messages)
-                    changed, doomed_audio = self._settle_refused_content(working)
-                    refused_delta = before - len(working.messages)
-                if keep_for:
-                    cutoff = now - timedelta(hours=keep_for)
-                    retained = [m for m in working.messages if m.timestamp > cutoff]
-                    if len(retained) != len(working.messages):
-                        changed = True
-                    expired_delta = len(working.messages) - len(retained)
-                    working.messages = retained
-                if not changed:
-                    continue
-
-                previous = session.messages
-                session.messages = working.messages
-                try:
-                    self._persist_swept_session(session)
-                except Exception:
-                    session.messages = previous
-                    raise
-
-                # `Session.key` raises without a tenant, and a legacy
-                # session never yields artefacts to delete anyway.
-                key = self._tenant_key_for(session)
-                if key is not None and doomed_audio:
-                    self._delete_settled_audio(key, doomed_audio)
+                refused_delta, expired_delta = self._sweep_session_content(
+                    session, now, keep_for
+                )
                 refused_removed += refused_delta
                 expired_removed += expired_delta
             except Exception:  # noqa: BLE001 - one session must not stop the pass
@@ -1261,6 +1244,49 @@ class SessionManager:
             "refused_removed": refused_removed,
             "expired_removed": expired_removed,
         }
+
+    def _sweep_session_content(
+        self, session: Session, now: datetime, keep_for: int
+    ) -> tuple[int, int]:
+        # Settled on a copy, exactly as termination does. A failed
+        # write must leave the live session and its files untouched,
+        # or the next pass sees an already-pruned list, computes an
+        # empty deletion set, and the refused files are stranded.
+        working = replace(session)
+        working.messages = [copy.deepcopy(message) for message in session.messages]
+        changed = False
+        doomed_audio: list[tuple[str, Any]] = []
+        refused_delta = 0
+        expired_delta = 0
+        max_age = timedelta(hours=session.maximum_lifetime_hours)
+        if now - session.created_at >= max_age:
+            before = len(working.messages)
+            changed, doomed_audio = self._settle_refused_content(working)
+            refused_delta = before - len(working.messages)
+        if keep_for:
+            cutoff = now - timedelta(hours=keep_for)
+            retained = [m for m in working.messages if m.timestamp > cutoff]
+            if len(retained) != len(working.messages):
+                changed = True
+            expired_delta = len(working.messages) - len(retained)
+            working.messages = retained
+        if not changed:
+            return 0, 0
+
+        previous = session.messages
+        session.messages = working.messages
+        try:
+            self._persist_swept_session(session)
+        except Exception:
+            session.messages = previous
+            raise
+
+        # `Session.key` raises without a tenant, and a legacy
+        # session never yields artefacts to delete anyway.
+        key = self._tenant_key_for(session)
+        if key is not None and doomed_audio:
+            self._delete_settled_audio(key, doomed_audio)
+        return refused_delta, expired_delta
 
     def get_active_session(
         self,
@@ -1276,22 +1302,7 @@ class SessionManager:
         """
 
         if tenant_id is not None:
-            if self.store is None:
-                return None
-            candidates = [
-                session
-                for session in self.store.list_for_tenant(tenant_id)
-                if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
-                and (session_id is None or session.id == session_id)
-            ]
-            if not candidates:
-                return None
-            if len(candidates) > 1 and session_id is None:
-                raise ValueError(
-                    "Mehrere aktive Sessions vorhanden; explizite session_id erforderlich"
-                )
-            candidates.sort(key=lambda item: item.created_at, reverse=True)
-            return candidates[0].to_public_dict()
+            return self._get_tenant_active_session(tenant_id, session_id)
 
         if session_id:
             session = self.get_session(session_id)
@@ -1315,6 +1326,26 @@ class SessionManager:
 
         active_sessions.sort(key=lambda s: s.created_at, reverse=True)
         return active_sessions[0].to_public_dict()
+
+    def _get_tenant_active_session(
+        self, tenant_id: str, session_id: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        if self.store is None:
+            return None
+        candidates = [
+            session
+            for session in self.store.list_for_tenant(tenant_id)
+            if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
+            and (session_id is None or session.id == session_id)
+        ]
+        if not candidates:
+            return None
+        if len(candidates) > 1 and session_id is None:
+            raise ValueError(
+                "Mehrere aktive Sessions vorhanden; explizite session_id erforderlich"
+            )
+        candidates.sort(key=lambda item: item.created_at, reverse=True)
+        return candidates[0].to_public_dict()
 
     def get_active_sessions(self, *, tenant_id: Optional[str] = None) -> List[Dict]:
         """Alle aktiven oder ausstehende Sessions zurückgeben."""
@@ -1383,7 +1414,7 @@ class SessionManager:
         session.customer_connected = True
         if isinstance(session_id, TenantSessionKey):
             if self.store is None:
-                raise RuntimeError("tenant session store is unavailable")
+                raise RuntimeError(_TENANT_STORE_UNAVAILABLE)
             self.store.save(session)
         else:
             self._persist_session(session)
@@ -1488,16 +1519,7 @@ class SessionManager:
 
     async def check_session_timeouts(self):
         """Alle Sessions auf Timeouts prüfen und entsprechende Aktionen durchführen"""
-        from .websocket_polling_routes import polling_store
-
-        for client in polling_store.prune():
-            try:
-                if client.client_type is ClientType.ADMIN:
-                    self.admin_disconnected(client.key)
-                else:
-                    self.customer_disconnected(client.key)
-            except KeyError:
-                pass
+        self._prune_polling_presence()
 
         current_sessions = tuple(self.sessions.values())
 
@@ -1522,6 +1544,18 @@ class SessionManager:
                     session.key if session.tenant_id else session.id,
                     reason="session_timeout",
                 )
+
+    def _prune_polling_presence(self) -> None:
+        from .websocket_polling_routes import polling_store
+
+        for client in polling_store.prune():
+            try:
+                if client.client_type is ClientType.ADMIN:
+                    self.admin_disconnected(client.key)
+                else:
+                    self.customer_disconnected(client.key)
+            except KeyError:
+                pass
 
     async def _send_timeout_warning(self, session: Session):
         """Timeout-Warning an alle WebSocket-Clients der Session senden"""
