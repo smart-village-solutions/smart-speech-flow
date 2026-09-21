@@ -8,11 +8,12 @@ under analysis ID `e648dbdd-4091-461b-99e9-684d785faf62` for project
 158 code smells, and 0 bugs**.
 
 The keys were derived from the eight execution task reports and reconciled
-against the live `main` issues API on 2026-09-20. The latest main analysis still
-matches the immutable revision and analysis ID. Verification found 163 unique
-keys, zero duplicates, zero missing keys, and zero extra keys. Each file has
-exactly one owning task/package. New PR findings are tracked in the execution
-evidence in [tasks.md](tasks.md), without changing this baseline.
+against the live `main` issues API on 2026-09-20. At that handoff, the latest
+main analysis still matched the immutable revision and analysis ID.
+Verification found 163 unique keys, zero duplicates, zero missing keys, and
+zero extra keys. Each file has exactly one owning task/package. New PR findings
+are tracked in the execution evidence in [tasks.md](tasks.md), without changing
+this baseline.
 
 ## Package and PR ownership
 
@@ -28,9 +29,13 @@ evidence in [tasks.md](tasks.md), without changing this baseline.
 | Task 8 / PR-8 | Remaining tests | 35 | [#374](https://github.com/smart-village-solutions/smart-speech-flow/pull/374) |
 | Total | | 163 | |
 
-All eight PRs remain OPEN and await merge as of 2026-09-20. Their clean PR
-analyses do not establish closure of these baseline keys on `main`; integrated
-verification remains pending in [tasks.md](tasks.md#9-final-integration-evidence).
+Historical handoff state: all eight PRs were open and awaiting merge on
+2026-09-20, so their clean PR analyses did not yet establish closure on
+`main`. They merged in order on 2026-09-21. Final SonarCloud analysis
+`1a7b237f-d85f-45e1-a941-e44bb543b680` matches integrated revision
+`cb24ed83a58e1b8e53a59a52632e1cb0db169f9f` and reports zero open issues and
+an `OK` Quality Gate. Full closure evidence is recorded in
+[tasks.md](tasks.md#9-final-integration-evidence).
 
 ## Immutable issue inventory
 

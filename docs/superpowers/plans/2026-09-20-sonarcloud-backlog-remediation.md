@@ -1,6 +1,6 @@
 # SonarCloud Backlog Remediation Implementation Plan
 
-> **Execution record, 2026-09-20:** Tasks 1–8 are implemented, independently reviewed, and verified in eight OPEN PRs awaiting merge. Checked steps include the coordinator rulings and documented verification limitations below. Post-merge integration remains pending.
+> **Execution record, 2026-09-21:** Tasks 1–8 were implemented, independently reviewed, and merged in order through PRs #367–#374. Every branch was updated from the preceding integrated revision and passed all 15 project and required checks before merge; a separate non-blocking `copilot-pull-request-reviewer` check reported failure on the final PR heads and did not gate merge. Final `main` revision `cb24ed83a58e1b8e53a59a52632e1cb0db169f9f` passed the integrated backend, frontend, quality, security, dependency, and SonarCloud workflows.
 
 **Goal:** Remove all 163 findings in the immutable 2026-09-18 SonarCloud baseline through eight focused, independently reviewable pull requests.
 
@@ -46,9 +46,11 @@ owns their edits. The extra focused modules preserve independent PR ownership.
 The [OpenSpec task record](../../../openspec/changes/fix-sonarcloud-open-issues/tasks.md#recorded-package-evidence--2026-09-20)
 and [immutable ledger](../../../openspec/changes/fix-sonarcloud-open-issues/issue-ledger.md)
 preserve package validation, limitations, remote heads, and all 163 issue keys.
-As checked on 2026-09-20, all 15 GitHub checks passed for each listed remote
-head. All eight PR analyses report 0 unresolved PR issues, Quality Gate OK,
-A/A/A new-code ratings, 0.0% new duplication, and 100% hotspots reviewed.
+As checked on 2026-09-20, all 15 project and required checks passed for each
+listed remote head; a separate non-blocking `copilot-pull-request-reviewer`
+check reported failure. All eight PR analyses report 0 unresolved PR issues,
+Quality Gate OK, A/A/A new-code ratings, 0.0% new duplication, and 100%
+hotspots reviewed.
 
 | Task / PR | Reviewed head | Final local evidence | Sonar new coverage |
 | --- | --- | --- | ---: |
@@ -620,8 +622,17 @@ After every task review is clean:
 - [x] Push its dedicated branch and open an English PR against `main` using the repository template.
 - [x] Wait for GitHub checks and SonarCloud PR analysis; fix new findings through the task's review loop.
 - [x] Record the PR URL and checks in `openspec/changes/fix-sonarcloud-open-issues/tasks.md`.
-- [ ] After all eight PRs merge, run the full final verification from the OpenSpec design and record the final SonarCloud analysis evidence.
+- [x] After all eight PRs merge, run the full final verification from the OpenSpec design and record the final SonarCloud analysis evidence.
 
-All eight PRs are currently OPEN. Final integrated backend/frontend checks,
-main-branch Sonar analysis, baseline closure, and final completion remain
-pending. OpenSpec documentation validation alone does not complete integration.
+All eight PRs merged in order on 2026-09-21. Final GitHub Actions runs
+`35583030649` and `35583030606` passed on `main`: 1,931 hermetic backend tests
+passed with 29 controlled skips and 16 integration/real-system deselections;
+frontend lint, 86 test files and 617 tests, build, and token verification all
+passed. SonarCloud analysis
+`1a7b237f-d85f-45e1-a941-e44bb543b680` matches final revision
+`cb24ed83a58e1b8e53a59a52632e1cb0db169f9f` and reports zero open issues,
+Quality Gate `OK`, A security/reliability/maintainability ratings, 89.4%
+overall coverage, 92.7% new-code coverage, 0.9% overall duplication, 0.6%
+new-code duplication, and 100% reviewed new-code security hotspots. The
+Fallow audit is PR-only and therefore skipped on the final `push` workflow;
+all blocking integrated jobs passed.
