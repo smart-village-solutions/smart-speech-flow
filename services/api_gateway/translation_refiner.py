@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -69,8 +70,66 @@ def _default_refinement_endpoint() -> str:
     return f"{scheme}://{host}:{port}"
 
 
-def _strtobool(value: str) -> bool:
-    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+_FALSE_VALUES = frozenset({"0", "false", "no", "off"})
+REFINEMENT_MODES = ("disabled", "primary_only", "candidate_only", "shadow_compare")
+
+
+def _env_flag(name: str) -> Optional[bool]:
+    """Unset or empty is None; anything unrecognised fails startup.
+
+    A typo in a kill switch must never be read as a value -- that is how
+    `LLM_REFINEMENT_ENABLED=flase` would silently keep refinement on.
+    """
+    raw = os.getenv(name, "")
+    value = raw.strip().lower()
+    if not value:
+        return None
+    if value in _TRUE_VALUES:
+        return True
+    if value in _FALSE_VALUES:
+        return False
+    raise ValueError(f"{name}={raw!r} is not a boolean; use true/false, 1/0, yes/no or on/off")
+
+
+def _env_number(
+    name: str,
+    default: str,
+    parse: Any,
+    minimum: float,
+    maximum: Optional[float] = None,
+) -> Any:
+    raw = os.getenv(name, default)
+    bounds = f"between {minimum} and {maximum}" if maximum is not None else f"at least {minimum}"
+    try:
+        value = parse(raw.strip())
+    except ValueError:
+        raise ValueError(f"{name}={raw!r} is not a number; it must be {bounds}") from None
+    if not math.isfinite(value) or value < minimum or (maximum is not None and value > maximum):
+        raise ValueError(f"{name}={raw!r} is out of range; it must be {bounds}")
+    return value
+
+
+def _resolve_refinement_mode() -> str:
+    """ENABLED=false wins over any mode; otherwise an explicit mode wins."""
+    enabled = _env_flag("LLM_REFINEMENT_ENABLED")
+    raw_mode = os.getenv("LLM_REFINEMENT_MODE", "")
+    mode = raw_mode.strip().lower()
+    if enabled is False:
+        if mode and mode != "disabled":
+            logger.warning(
+                "LLM_REFINEMENT_ENABLED=false overrides LLM_REFINEMENT_MODE=%s; "
+                "refinement is disabled",
+                mode,
+            )
+        return "disabled"
+    mode = mode or ("primary_only" if enabled else "disabled")
+    if mode not in REFINEMENT_MODES:
+        raise ValueError(
+            f"LLM_REFINEMENT_MODE={raw_mode!r} is not supported; "
+            f"use one of {', '.join(REFINEMENT_MODES)}"
+        )
+    return mode
 
 
 def _classify_refinement_failure(exc: BaseException) -> QualityErrorCode:
@@ -463,11 +522,7 @@ class ShadowComparisonRefiner(OllamaTranslationRefiner):
 
 
 def get_translation_refiner() -> BaseTranslationRefiner:
-    mode = os.getenv("LLM_REFINEMENT_MODE", "").strip().lower()
-    enabled = _strtobool(os.getenv("LLM_REFINEMENT_ENABLED", "false"))
-    mode = mode or ("primary_only" if enabled else "disabled")
-    if mode not in {"disabled", "primary_only", "candidate_only", "shadow_compare"}:
-        raise ValueError("Invalid LLM_REFINEMENT_MODE")
+    mode = _resolve_refinement_mode()
     if mode == "disabled":
         logger.info("LLM translation refinement disabled")
         return NoOpTranslationRefiner()
@@ -478,12 +533,10 @@ def get_translation_refiner() -> BaseTranslationRefiner:
     )
     candidate_model = os.getenv("LLM_REFINEMENT_CANDIDATE_MODEL", "phi4-mini")
     model = candidate_model if mode == "candidate_only" else primary_model
-    timeout_seconds = float(os.getenv("LLM_REFINEMENT_TIMEOUT", "4.0"))
-    if not 3.0 <= timeout_seconds <= 5.0:
-        raise ValueError("LLM_REFINEMENT_TIMEOUT must be between 3.0 and 5.0")
-    temperature = float(os.getenv("LLM_REFINEMENT_TEMPERATURE", "0.7"))
-    max_retries = int(os.getenv("LLM_REFINEMENT_MAX_RETRIES", "1"))
-    think = _strtobool(os.getenv("LLM_REFINEMENT_THINK", "false"))
+    timeout_seconds = _env_number("LLM_REFINEMENT_TIMEOUT", "4.0", float, 3.0, 5.0)
+    temperature = _env_number("LLM_REFINEMENT_TEMPERATURE", "0.7", float, 0.0)
+    max_retries = _env_number("LLM_REFINEMENT_MAX_RETRIES", "1", int, 1)
+    think = _env_flag("LLM_REFINEMENT_THINK") is True
 
     logger.info("LLM translation refinement enabled with model '%s' at %s", model, endpoint)
     args = {
@@ -498,7 +551,7 @@ def get_translation_refiner() -> BaseTranslationRefiner:
         return ShadowComparisonRefiner(
             **args,
             candidate_model=candidate_model,
-            queue_limit=int(os.getenv("LLM_REFINEMENT_SHADOW_QUEUE_LIMIT", "4")),
+            queue_limit=_env_number("LLM_REFINEMENT_SHADOW_QUEUE_LIMIT", "4", int, 1),
         )
     return OllamaTranslationRefiner(**args)
 

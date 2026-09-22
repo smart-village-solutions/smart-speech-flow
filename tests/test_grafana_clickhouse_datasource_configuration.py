@@ -498,3 +498,125 @@ class TestTheFeedbackPanelsCanBeFilteredByTenant:
 
         for panel in panels:
             assert "tenant" in panel.get("description", "").lower(), panel["title"]
+
+
+def _panel(title: str) -> dict:
+    dashboard = json.loads(DASHBOARD.read_text())
+    named = [panel for panel in dashboard["panels"] if panel["title"] == title]
+    assert named, f"no panel titled {title!r}"
+    return named[0]
+
+
+def _queries(title: str) -> list[str]:
+    return [
+        " ".join((target.get("rawSql") or target.get("expr") or "").split())
+        for target in _panel(title).get("targets", [])
+    ]
+
+
+def test_panel_ids_are_unique() -> None:
+    dashboard = json.loads(DASHBOARD.read_text())
+    ids = [panel["id"] for panel in dashboard["panels"]]
+    assert len(ids) == len(set(ids)), ids
+
+
+class TestTheGoLiveKpiPanels:
+    """The P1 KPIs of the conversation-quality catalogue that existing data can
+    answer. Q4, Q7, R1, R3, R8, R10, C5 and SQ4 are absent on purpose: they need
+    an SLO decision or instrumentation that does not exist yet. R2 and R4 wait on
+    the WebSocket monitor fix; see test_no_panel_charts_the_monitors_disconnects."""
+
+    TITLES = (
+        "Conversation Completion Rate",
+        "Delivery Success Rate",
+        "Stage Success Rate",
+        "Message Latency by Input Mode",
+        "Ratings of 4 or 5",
+        "Pipeline Queue Wait p95",
+        "Pipeline In-Flight and Rejections",
+    )
+
+    def test_every_panel_is_present(self):
+        for title in self.TITLES:
+            _panel(title)
+
+    def test_they_sit_above_every_older_panel(self):
+        """A go-live view that has to be scrolled to is not one."""
+        dashboard = json.loads(DASHBOARD.read_text())
+        ours = [p["gridPos"] for p in dashboard["panels"] if p["title"] in self.TITLES]
+        older = [p["gridPos"] for p in dashboard["panels"] if p["title"] not in self.TITLES]
+        assert max(g["y"] + g["h"] for g in ours) <= min(g["y"] for g in older)
+
+    def test_every_panel_names_the_kpi_it_answers(self):
+        """The descriptions are where a reader learns which figures are proxies."""
+        for title in self.TITLES:
+            assert "KPI" in _panel(title).get("description", ""), title
+
+    def test_the_clickhouse_panels_honour_the_tenant_picker(self):
+        for title in self.TITLES:
+            for sql in _queries(title):
+                if "quality_events" in sql:
+                    assert "match(tenant_ref, '${tenant:regex}')" in sql, (title, sql)
+
+    def test_a_stage_counts_as_reached_when_it_failed_before_recording_a_duration(self):
+        """A TTS failure can store tts_duration_ms = 0. Keying reach on the
+        duration alone drops that failure from both sides of the ratio and
+        reports the stage as healthier than it is; keying it on input mode
+        instead counts every text message as an ASR success."""
+        (sql,) = _queries("Stage Success Rate")
+        assert "duration > 0 OR failed_stage = stage" in sql, sql
+        assert "input_mode" not in sql, sql
+
+    def test_completion_needs_a_success_in_both_directions(self):
+        (sql,) = _queries("Conversation Completion Rate")
+        assert "direction = 'admin_to_customer'" in sql, sql
+        assert "direction = 'customer_to_admin'" in sql, sql
+        assert "terminal_outcome = 'success'" in sql, sql
+        assert "lifecycle_phase = 'activated'" in sql, sql
+        assert "to_customer > 0 AND to_admin > 0" in sql, sql
+
+    def test_input_mode_latency_reads_delivered_messages_only(self):
+        """A validation failure returns in milliseconds and would pull every
+        percentile down."""
+        (sql,) = _queries("Message Latency by Input Mode")
+        assert "terminal_outcome = 'success'" in sql, sql
+
+    def test_delivery_is_measured_per_broadcast_not_per_socket_send(self):
+        """The per-send counters never see a broadcast that found nobody
+        registered, so they cannot report one as undelivered."""
+        (expr,) = _queries("Delivery Success Rate")
+        assert re.search(
+            r"websocket_broadcast_success_total.*\) / \(?sum\(increase\(websocket_broadcast_total",
+            expr,
+        ), expr
+        assert "messages_delivered" not in expr, expr
+
+    def test_the_delivery_ratio_reads_zero_not_no_data(self):
+        """A labelled counter has no series until its first increment, so a
+        healthy system's numerator is an empty vector and the stat would show
+        No data -- indistinguishable from a broken scrape. An idle range must
+        not divide by zero either."""
+        (expr,) = _queries("Delivery Success Rate")
+        assert "or vector(0)" in expr, expr
+        assert expr.rstrip().endswith("> 0)"), expr
+
+    def test_the_queue_panels_follow_the_zoom_level(self):
+        for title in ("Pipeline Queue Wait p95", "Pipeline In-Flight and Rejections"):
+            for expr in _queries(title):
+                if "rate(" in expr:
+                    assert "[$__rate_interval]" in expr, (title, expr)
+                    assert "[5m]" not in expr, (title, expr)
+
+    def test_no_panel_charts_the_monitors_disconnects(self):
+        """WebSocketMonitor never receives a heartbeat, so its five-minute
+        cleanup closes every connection older than 300 s as heartbeat_timeout
+        while the socket stays open, and the real close is then dropped. Until
+        that is fixed, any panel over websocket_disconnects_total or
+        websocket_connection_duration_seconds reports timeouts that did not
+        happen. Delete this test together with the fix."""
+        dashboard = json.loads(DASHBOARD.read_text())
+        for panel in dashboard["panels"]:
+            for target in panel.get("targets", []):
+                expr = target.get("expr") or ""
+                assert "websocket_disconnects_total" not in expr, panel["title"]
+                assert "websocket_connection_duration_seconds" not in expr, panel["title"]
