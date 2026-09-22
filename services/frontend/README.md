@@ -44,7 +44,6 @@ Die wichtigsten Umgebungsvariablen sind:
 ```env
 VITE_API_BASE_URL=https://ssf.smart-village.solutions
 VITE_WS_BASE_URL=wss://ssf.smart-village.solutions
-VITE_APP_PASSWORD=<demo-password>
 ```
 
 Im Docker-Betrieb werden diese Werte ueber `docker-compose.yml` gesetzt.

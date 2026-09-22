@@ -28,9 +28,6 @@ ARG VITE_API_BASE_URL
 ARG VITE_WS_BASE_URL
 ARG VITE_KEYCLOAK_URL
 ARG VITE_KEYCLOAK_CLIENT_ID
-# This value is intentionally public because Vite embeds it in browser code.
-# It is a demo UI gate, not an authentication secret.
-ARG VITE_DEMO_ACCESS_CODE
 
 # Never produce a deployable image that sends browser traffic to localhost.
 RUN if [ -z "${VITE_API_BASE_URL}" ] || [ -z "${VITE_WS_BASE_URL}" ]; then \
@@ -51,7 +48,6 @@ RUN VITE_API_BASE_URL="${VITE_API_BASE_URL}" \
     VITE_WS_BASE_URL="${VITE_WS_BASE_URL}" \
     VITE_KEYCLOAK_URL="${VITE_KEYCLOAK_URL}" \
     VITE_KEYCLOAK_CLIENT_ID="${VITE_KEYCLOAK_CLIENT_ID}" \
-    VITE_APP_PASSWORD="${VITE_DEMO_ACCESS_CODE}" \
     npm run build
 
 # Stage 2: Serve with non-root Nginx

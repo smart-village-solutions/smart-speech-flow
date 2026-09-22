@@ -10,14 +10,12 @@ conversations until every item below is complete:
    `ssf-frontend` client, PKCE S256, the exact application origin and
    `/login/*` redirects, the `ssf-frontend` audience, the `ssf-user` role, and
    the signed `studio_tenant_id` and `ssf_authorization_revision` claims.
-3. `SSF_ENABLE_LEGACY_ADMIN_ACCESS=false` is active before multi-realm login is
-   enabled.
-4. The separate OpenSpec change `add-multi-tenant-operations` has implemented
+3. The separate OpenSpec change `add-multi-tenant-operations` has implemented
    and passed its tenant-isolation tests for session creation, history, lookup,
    termination, messages, audio, and customer joins. The login-directory work
    establishes identity context only; it does not prove conversation storage
    isolation.
-5. Operators have manually verified login, reuse of an existing SSO session,
+4. Operators have manually verified login, reuse of an existing SSO session,
    logout, an unknown tenant route, a Studio outage, and cross-tenant negative
    access paths in the deployed environment.
 
@@ -61,7 +59,6 @@ Das Frontend ist vollständig implementiert und bereit für Deployment unter **t
 
 ### Implementierte Features
 
-- ✅ Passwortgeschützte Landing Page (ssf2025kassel)
 - ✅ Admin Session Management (Erstellen, Beenden, Status)
 - ✅ Customer Session Join (ID-Eingabe, Sprach-Auswahl, Validierung)
 - ✅ WebSocket Echtzeit-Kommunikation mit Auto-Reconnect
@@ -135,7 +132,6 @@ docker compose ps api_gateway
 
 ### Test 1: Landing Page
 - [ ] Öffne https://translate.smart-village.solutions
-- [ ] Passwort `ssf2025kassel` eingeben
 - [ ] "Intern (Verwaltung)" und "Kunde" Buttons sichtbar
 
 ### Test 2: Admin Session Flow

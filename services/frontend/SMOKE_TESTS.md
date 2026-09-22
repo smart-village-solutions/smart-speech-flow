@@ -29,14 +29,12 @@ docker compose logs -f frontend | grep -E "GET|POST|ERROR"
 
 ## 🧪 Manuelle Smoke Tests
 
-### Test 1: Landing Page & Passwort
+### Test 1: Landing Page
 1. ✅ Öffne: https://translate.smart-village.solutions
 2. ✅ Seite lädt korrekt (kein CORS-Fehler in Console)
-3. ✅ Passwort eingeben: `ssf2025kassel`
-4. ✅ Buttons sichtbar: "Intern (Verwaltung)" und "Kunde"
-5. ✅ Falsches Passwort zeigt Fehler
+3. ✅ Buttons sichtbar: "Intern (Verwaltung)" und "Kunde"
 
-**Erwartung**: Passwort-Schutz funktioniert, Navigation möglich
+**Erwartung**: Navigation möglich
 
 ---
 
@@ -62,12 +60,11 @@ docker compose logs api_gateway | grep "Session erstellt"
 
 1. ✅ Neuer Browser-Tab (oder Inkognito-Modus)
 2. ✅ https://translate.smart-village.solutions öffnen
-3. ✅ Passwort: `ssf2025kassel`
-4. ✅ Klick auf "Kunde"
-5. ✅ Session-ID eingeben (aus Test 2, z.B. `EEF1B592`)
-6. ✅ Sprache auswählen (z.B. "Arabisch")
-7. ✅ Button "Session beitreten" klicken
-8. ⏳ Customer-Interface lädt
+3. ✅ Klick auf "Kunde"
+4. ✅ Session-ID eingeben (aus Test 2, z.B. `EEF1B592`)
+5. ✅ Sprache auswählen (z.B. "Arabisch")
+6. ✅ Button "Session beitreten" klicken
+7. ⏳ Customer-Interface lädt
 9. ⏳ WebSocket-Verbindung grün
 
 **Im Admin-Tab prüfen**:
