@@ -62,6 +62,11 @@ class QualityErrorCode(str, Enum):
     UPSTREAM_REJECTED = "upstream_rejected"
     UPSTREAM_ERROR = "upstream_error"
     UPSTREAM_MALFORMED_RESPONSE = "upstream_malformed_response"
+    # The breaker refused before a request was sent, so there is no
+    # upstream reply to classify. Distinct from UPSTREAM_BUSY: that one is
+    # a working service shedding load, this one is a service we have
+    # stopped calling.
+    UPSTREAM_CIRCUIT_OPEN = "upstream_circuit_open"
     AUDIO_VALIDATION_FAILED = "audio_validation_failed"
     TEXT_VALIDATION_FAILED = "text_validation_failed"
     CONTENT_REJECTED = "content_rejected"
@@ -196,9 +201,7 @@ class AttributeKind(str, Enum):
 # will parse into a UInt32 -- toUInt32OrZero turns it into a silent 0.
 _LABEL_PATTERN: Final = re.compile(r"\A[A-Za-z0-9._:+/-]{1,64}\Z", re.ASCII)
 _NUMBER_PATTERN: Final = re.compile(r"\A-?\d{1,19}\Z", re.ASCII)
-_LANGUAGE_PATTERN: Final = re.compile(
-    r"\A[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?\Z", re.ASCII
-)
+_LANGUAGE_PATTERN: Final = re.compile(r"\A[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?\Z", re.ASCII)
 _OPAQUE_REF_PATTERN: Final = re.compile(r"\A[0-9a-f]{16,64}\Z", re.ASCII)
 _TENANT_REF_PATTERN: Final = re.compile(r"\A[0-9a-f]{12}\Z", re.ASCII)
 
@@ -226,9 +229,7 @@ def _enum_values(enum_class: type[Enum]) -> frozenset[str]:
 ALLOWED_ATTRIBUTES: Final[Mapping[str, AttributeSpec]] = {
     "ssf.quality.event_id": AttributeSpec(AttributeKind.UUID),
     "ssf.quality.schema_version": AttributeSpec(AttributeKind.NUMBER),
-    "ssf.quality.refiner_role": AttributeSpec(
-        AttributeKind.ENUM, _enum_values(RefinerRole)
-    ),
+    "ssf.quality.refiner_role": AttributeSpec(AttributeKind.ENUM, _enum_values(RefinerRole)),
     "ssf.quality.model_ref": AttributeSpec(AttributeKind.LABEL),
     "ssf.quality.refinement_outcome": AttributeSpec(
         AttributeKind.ENUM, _enum_values(RefinementOutcomeCode)
@@ -239,9 +240,7 @@ ALLOWED_ATTRIBUTES: Final[Mapping[str, AttributeSpec]] = {
     ),
     _SOURCE_LANG_ATTRIBUTE: AttributeSpec(AttributeKind.LANGUAGE),
     _TARGET_LANG_ATTRIBUTE: AttributeSpec(AttributeKind.LANGUAGE),
-    _ERROR_CODE_ATTRIBUTE: AttributeSpec(
-        AttributeKind.ENUM, _enum_values(QualityErrorCode)
-    ),
+    _ERROR_CODE_ATTRIBUTE: AttributeSpec(AttributeKind.ENUM, _enum_values(QualityErrorCode)),
     _SESSION_REF_ATTRIBUTE: AttributeSpec(AttributeKind.OPAQUE_REF),
     _TENANT_REF_ATTRIBUTE: AttributeSpec(AttributeKind.TENANT_REF),
     # feedback_submitted (#304). The free text these ratings came with is in
@@ -253,18 +252,12 @@ ALLOWED_ATTRIBUTES: Final[Mapping[str, AttributeSpec]] = {
     "ssf.quality.usability": AttributeSpec(AttributeKind.NUMBER),
     "ssf.quality.net_promoter_score": AttributeSpec(AttributeKind.NUMBER),
     "ssf.quality.feedback_form_version": AttributeSpec(AttributeKind.LABEL),
-    "ssf.quality.direction": AttributeSpec(
-        AttributeKind.ENUM, _enum_values(MessageDirection)
-    ),
-    "ssf.quality.input_mode": AttributeSpec(
-        AttributeKind.ENUM, _enum_values(InputMode)
-    ),
+    "ssf.quality.direction": AttributeSpec(AttributeKind.ENUM, _enum_values(MessageDirection)),
+    "ssf.quality.input_mode": AttributeSpec(AttributeKind.ENUM, _enum_values(InputMode)),
     "ssf.quality.terminal_outcome": AttributeSpec(
         AttributeKind.ENUM, _enum_values(TerminalOutcome)
     ),
-    "ssf.quality.failed_stage": AttributeSpec(
-        AttributeKind.ENUM, _enum_values(PipelineStage)
-    ),
+    "ssf.quality.failed_stage": AttributeSpec(AttributeKind.ENUM, _enum_values(PipelineStage)),
     "ssf.quality.total_duration_ms": AttributeSpec(AttributeKind.NUMBER),
     "ssf.quality.asr_duration_ms": AttributeSpec(AttributeKind.NUMBER),
     "ssf.quality.translation_duration_ms": AttributeSpec(AttributeKind.NUMBER),
@@ -357,9 +350,7 @@ class QualityProbeEvent:
             raise ValueError("schema_version must be positive")
 
 
-def _validate_envelope(
-    emitted_at_utc: datetime, event_type: str, schema_version: int
-) -> None:
+def _validate_envelope(emitted_at_utc: datetime, event_type: str, schema_version: int) -> None:
     if emitted_at_utc.tzinfo is None:
         raise ValueError("emitted_at_utc must be timezone-aware UTC")
     if not event_type:
@@ -791,9 +782,7 @@ def _events_counter(registry: CollectorRegistry) -> Counter:
     )
 
 
-def discard_event(
-    event_name: str, attributes: Mapping[str, str], emitted_at_utc: datetime
-) -> None:
+def discard_event(event_name: str, attributes: Mapping[str, str], emitted_at_utc: datetime) -> None:
     """The exporter used in disabled mode.
 
     `emit_probe` returns before reaching it, so it exists only to keep the
@@ -950,9 +939,7 @@ class QualityTelemetry:
                 error_code=error_code,
                 total_duration_ms=max(0, int(timing.total_duration_ms or 0)),
                 asr_duration_ms=max(0, int(timing.asr_duration_ms or 0)),
-                translation_duration_ms=max(
-                    0, int(timing.translation_duration_ms or 0)
-                ),
+                translation_duration_ms=max(0, int(timing.translation_duration_ms or 0)),
                 refinement_duration_ms=max(0, int(timing.refinement_duration_ms or 0)),
                 tts_duration_ms=max(0, int(timing.tts_duration_ms or 0)),
             )
