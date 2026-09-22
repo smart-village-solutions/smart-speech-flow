@@ -10,7 +10,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
 from prometheus_client import Counter, Gauge, Histogram, Info
 
@@ -18,6 +18,10 @@ from .session_pseudonym import session_ref
 from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
+
+# The manager pings every 30 s and closes a socket after 60 s without a pong,
+# so a heartbeat is only overdue once it is older than that timeout.
+HEARTBEAT_STALE_AFTER_SECONDS = 60
 
 
 def utc_now() -> datetime:
@@ -324,7 +328,7 @@ class WebSocketMonitor:
     ) -> Optional[ConnectionMetrics]:
         """Record WebSocket connection closure"""
 
-        metrics = self._active_connections.pop(connection_id, None)
+        metrics = self._forget(connection_id)
         if not metrics:
             logger.warning("websocket_connection_close_not_found")
             return None
@@ -336,21 +340,12 @@ class WebSocketMonitor:
             metrics.disconnect_time - metrics.connect_time
         ).total_seconds()
 
-        # Remove from session tracking
-        self._session_connections[metrics.resource_key].discard(connection_id)
-        if not self._session_connections[metrics.resource_key]:
-            del self._session_connections[metrics.resource_key]
-
-        # Update Prometheus metrics
-        self.connections_active.labels(client_type=metrics.client_type).dec()
         self.connections_duration.labels(
             client_type=metrics.client_type, disconnect_reason=reason.value
         ).observe(metrics.connection_duration)
         self.disconnects_total.labels(
             client_type=metrics.client_type, disconnect_reason=reason.value
         ).inc()
-
-        self.sessions_with_connections.set(len(self._session_connections))
 
         # Add to history
         self._connection_history.append(metrics)
@@ -364,6 +359,20 @@ class WebSocketMonitor:
                 "disconnect_reason": reason.value,
             },
         )
+        return metrics
+
+    def _forget(self, connection_id: str) -> Optional[ConnectionMetrics]:
+        """Drop a record from the live gauges without counting a disconnect."""
+        metrics = self._active_connections.pop(connection_id, None)
+        if not metrics:
+            return None
+
+        self._session_connections[metrics.resource_key].discard(connection_id)
+        if not self._session_connections[metrics.resource_key]:
+            del self._session_connections[metrics.resource_key]
+
+        self.connections_active.labels(client_type=metrics.client_type).dec()
+        self.sessions_with_connections.set(len(self._session_connections))
         return metrics
 
     def record_rejected_connection(self, reason: DisconnectReason) -> None:
@@ -438,16 +447,16 @@ class WebSocketMonitor:
             },
         )
 
-    def record_heartbeat(self, connection_id: str, latency_seconds: float):
-        """Record heartbeat response time"""
+    def record_heartbeat(self, connection_id: str, latency_seconds: Optional[float] = None):
+        """Record a pong; latency is None when it answered no outstanding ping."""
         metrics = self._active_connections.get(connection_id)
         if not metrics:
             return
 
         metrics.last_heartbeat = utc_now()
 
-        # Update Prometheus metrics
-        self.heartbeat_latency.labels(client_type=metrics.client_type).observe(latency_seconds)
+        if latency_seconds is not None:
+            self.heartbeat_latency.labels(client_type=metrics.client_type).observe(latency_seconds)
 
     def session_closed(self, session_id: TenantSessionKey | str, reason: str = "session_expired"):
         """Handle session closure - disconnect all associated WebSocket connections"""
@@ -532,7 +541,7 @@ class WebSocketMonitor:
         for metrics in self._active_connections.values():
             if metrics.last_heartbeat:
                 time_since_heartbeat = (now - metrics.last_heartbeat).total_seconds()
-                if time_since_heartbeat < 30:  # Healthy if heartbeat within 30s
+                if time_since_heartbeat <= HEARTBEAT_STALE_AFTER_SECONDS:
                     healthy_connections += 1
                 else:
                     stale_connections += 1
@@ -570,38 +579,31 @@ class WebSocketMonitor:
             excess = len(self._connection_history) - self._max_history_size
             self._connection_history = self._connection_history[excess:]
 
-    def _find_stale_connections(self, now: datetime) -> List[str]:
-        stale_connections: List[str] = []
-        for connection_id, metrics in self._active_connections.items():
-            if metrics.last_heartbeat:
-                time_since_heartbeat = (now - metrics.last_heartbeat).total_seconds()
-                if time_since_heartbeat > 300:
-                    stale_connections.append(connection_id)
-                continue
+    def _purge_orphaned_records(self, live_connection_ids: Iterable[str]) -> List[str]:
+        live = set(live_connection_ids)
+        orphaned = [cid for cid in self._active_connections if cid not in live]
+        for connection_id in orphaned:
+            self._forget(connection_id)
+        return orphaned
 
-            connection_age = (now - metrics.connect_time).total_seconds()
-            if connection_age > 300:
-                stale_connections.append(connection_id)
-        return stale_connections
+    async def periodic_cleanup(self, live_connection_ids: Callable[[], Iterable[str]]):
+        """Purge records for sockets the WebSocketManager no longer holds.
 
-    async def periodic_cleanup(self):
-        """Periodic cleanup task for stale connections"""
+        It never closes or times out a connection. The manager owns the
+        heartbeat and records every real close through `connection_closed`;
+        this cleanup used to record heartbeat_timeout for any socket older
+        than 300 s while it was still open, and the real close was then lost.
+        A purged record counts no disconnect, because its cause is unknown.
+        """
         while True:
             try:
                 await asyncio.sleep(300)  # Run every 5 minutes
 
-                now = utc_now()
-                stale_connections = self._find_stale_connections(now)
-
-                # Clean up stale connections
-                for connection_id in stale_connections:
-                    self.connection_closed(connection_id, DisconnectReason.HEARTBEAT_TIMEOUT)
-                    logger.warning("websocket_stale_connection_cleaned")
-
-                if stale_connections:
-                    logger.info(
-                        "websocket_stale_connections_cleaned",
-                        extra={"connection_count": len(stale_connections)},
+                orphaned = self._purge_orphaned_records(live_connection_ids())
+                if orphaned:
+                    logger.warning(
+                        "websocket_orphaned_records_purged",
+                        extra={"connection_count": len(orphaned)},
                     )
 
             except Exception:

@@ -500,6 +500,9 @@ class TestTheFeedbackPanelsCanBeFilteredByTenant:
             assert "tenant" in panel.get("description", "").lower(), panel["title"]
 
 
+ALERT_RULES = ROOT / "monitoring" / "alert_rules.yml"
+
+
 def _panel(title: str) -> dict:
     dashboard = json.loads(DASHBOARD.read_text())
     named = [panel for panel in dashboard["panels"] if panel["title"] == title]
@@ -523,12 +526,13 @@ def test_panel_ids_are_unique() -> None:
 class TestTheGoLiveKpiPanels:
     """The P1 KPIs of the conversation-quality catalogue that existing data can
     answer. Q4, Q7, R1, R3, R8, R10, C5 and SQ4 are absent on purpose: they need
-    an SLO decision or instrumentation that does not exist yet. R2 and R4 wait on
-    the WebSocket monitor fix; see test_no_panel_charts_the_monitors_disconnects."""
+    an SLO decision or instrumentation that does not exist yet."""
 
     TITLES = (
         "Conversation Completion Rate",
         "Delivery Success Rate",
+        "Unexpected Disconnect Rate",
+        "Heartbeat Timeouts per 1,000 Connection-Minutes",
         "Stage Success Rate",
         "Message Latency by Input Mode",
         "Ratings of 4 or 5",
@@ -591,14 +595,53 @@ class TestTheGoLiveKpiPanels:
         ), expr
         assert "messages_delivered" not in expr, expr
 
-    def test_the_delivery_ratio_reads_zero_not_no_data(self):
+    def test_rare_event_ratios_read_zero_not_no_data(self):
         """A labelled counter has no series until its first increment, so a
         healthy system's numerator is an empty vector and the stat would show
         No data -- indistinguishable from a broken scrape. An idle range must
         not divide by zero either."""
-        (expr,) = _queries("Delivery Success Rate")
-        assert "or vector(0)" in expr, expr
-        assert expr.rstrip().endswith("> 0)"), expr
+        for title in (
+            "Delivery Success Rate",
+            "Unexpected Disconnect Rate",
+            "Heartbeat Timeouts per 1,000 Connection-Minutes",
+        ):
+            (expr,) = _queries(title)
+            assert "or vector(0)" in expr, (title, expr)
+            assert expr.rstrip().endswith("> 0)"), (title, expr)
+
+    def test_disconnects_treat_the_same_reasons_as_normal_as_the_alert(self):
+        """Two definitions of 'unexpected' would let the panel and the pager
+        disagree about the same incident."""
+        rules = yaml.safe_load(ALERT_RULES.read_text())
+        (alert,) = [
+            rule
+            for group in rules["groups"]
+            for rule in group["rules"]
+            if rule.get("alert") == "WebSocketConnectionFailures"
+        ]
+        normal = re.search(r'disconnect_reason!~"([^"]+)"', alert["expr"]).group(1)
+        (expr,) = _queries("Unexpected Disconnect Rate")
+        assert f'disconnect_reason!~"{normal}"' in expr, expr
+        assert "websocket_connections_total[$__range]" in expr, expr
+
+    def test_heartbeat_timeouts_are_normalised_by_connection_minutes(self):
+        (expr,) = _queries("Heartbeat Timeouts per 1,000 Connection-Minutes")
+        assert 'disconnect_reason="heartbeat_timeout"' in expr, expr
+        assert "websocket_connection_duration_seconds_sum[$__range]" in expr, expr
+        assert "/ 60) > 0)" in expr, expr
+
+    def test_the_disconnect_panels_state_their_known_biases(self):
+        """Each reason's series is created by its first increment, which
+        increase() then cannot see; pre-initialising the labels is the fix."""
+        for title in (
+            "Unexpected Disconnect Rate",
+            "Heartbeat Timeouts per 1,000 Connection-Minutes",
+        ):
+            description = _panel(title)["description"]
+            assert "restart" in description, title
+            assert "_setup_prometheus_metrics" in description, title
+        description = _panel("Heartbeat Timeouts per 1,000 Connection-Minutes")["description"]
+        assert "recorded when a connection closes" in description
 
     def test_the_queue_panels_follow_the_zoom_level(self):
         for title in ("Pipeline Queue Wait p95", "Pipeline In-Flight and Rejections"):
@@ -606,17 +649,3 @@ class TestTheGoLiveKpiPanels:
                 if "rate(" in expr:
                     assert "[$__rate_interval]" in expr, (title, expr)
                     assert "[5m]" not in expr, (title, expr)
-
-    def test_no_panel_charts_the_monitors_disconnects(self):
-        """WebSocketMonitor never receives a heartbeat, so its five-minute
-        cleanup closes every connection older than 300 s as heartbeat_timeout
-        while the socket stays open, and the real close is then dropped. Until
-        that is fixed, any panel over websocket_disconnects_total or
-        websocket_connection_duration_seconds reports timeouts that did not
-        happen. Delete this test together with the fix."""
-        dashboard = json.loads(DASHBOARD.read_text())
-        for panel in dashboard["panels"]:
-            for target in panel.get("targets", []):
-                expr = target.get("expr") or ""
-                assert "websocket_disconnects_total" not in expr, panel["title"]
-                assert "websocket_connection_duration_seconds" not in expr, panel["title"]

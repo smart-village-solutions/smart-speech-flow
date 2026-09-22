@@ -979,7 +979,7 @@ def test_enhanced_audio_validator_convert_with_ffmpeg(tmp_path, monkeypatch):
     assert validator._convert_with_ffmpeg(b"source", "webm") is None
 
 
-def test_websocket_monitor_utc_and_stale_detection():
+def test_websocket_monitor_utc_and_overdue_heartbeat_health():
     websocket_monitor = importlib.import_module("services.api_gateway.websocket_monitor")
     from prometheus_client import CollectorRegistry
 
@@ -992,45 +992,15 @@ def test_websocket_monitor_utc_and_stale_detection():
     now = websocket_monitor.utc_now()
     assert now.tzinfo is not None
 
-    metrics.last_heartbeat = now - timedelta(seconds=301)
-    monitor._active_connections["conn-2"].connect_time = now - timedelta(seconds=301)
-    stale_connections = monitor._find_stale_connections(now)
-    assert stale_connections == ["conn-1", "conn-2"]
+    metrics.last_heartbeat = now - timedelta(
+        seconds=websocket_monitor.HEARTBEAT_STALE_AFTER_SECONDS + 1
+    )
 
     health = monitor.get_health_status()
     assert health["status"] == "degraded"
     assert health["active_connections"] == 2
     assert health["stale_connections"] >= 1
     assert monitor._extract_domain("https://example.com:443") == "example.com"
-
-
-@pytest.mark.asyncio
-async def test_websocket_monitor_periodic_cleanup_handles_stale_connections(monkeypatch):
-    websocket_monitor = importlib.import_module("services.api_gateway.websocket_monitor")
-    from prometheus_client import CollectorRegistry
-
-    monitor = websocket_monitor.WebSocketMonitor(registry=CollectorRegistry())
-    monitor.connection_established("conn-1", "session-1", "admin")
-    monkeypatch.setattr(monitor, "_find_stale_connections", lambda now: ["conn-1"])
-    closed = []
-    monkeypatch.setattr(
-        monitor,
-        "connection_closed",
-        lambda connection_id, reason: closed.append((connection_id, reason)),
-    )
-
-    sleep_calls = {"count": 0}
-
-    async def fake_sleep(seconds):
-        sleep_calls["count"] += 1
-        if sleep_calls["count"] == 1:
-            return None
-        raise asyncio.CancelledError()
-
-    monkeypatch.setattr(websocket_monitor.asyncio, "sleep", fake_sleep)
-    with pytest.raises(asyncio.CancelledError):
-        await monitor.periodic_cleanup()
-    assert closed == [("conn-1", websocket_monitor.DisconnectReason.HEARTBEAT_TIMEOUT)]
 
 
 @pytest.mark.asyncio
