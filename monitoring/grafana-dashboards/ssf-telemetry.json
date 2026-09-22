@@ -24,6 +24,365 @@
   "liveNow": false,
   "panels": [
     {
+      "id": 60,
+      "type": "stat",
+      "title": "Conversation Completion Rate",
+      "description": "KPI U2. Sessions activated in the time range that carried at least one successful message in each direction, divided by all sessions activated in the range. 'Successful' is the gateway pipeline outcome, not a recipient acknowledgement, and the event does not record whether both parties were connected. Sessions activated shortly before the end of the range may still be talking and read as incomplete, so a range ending now reads low. Follows the tenant picker.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT round(100 * countIf(to_customer > 0 AND to_admin > 0) / nullIf(count(), 0), 1) AS completion_rate FROM (SELECT session_ref, countIf(event_type = 'session_lifecycle' AND lifecycle_phase = 'activated') AS activated, countIf(event_type = 'translation_message' AND terminal_outcome = 'success' AND direction = 'admin_to_customer') AS to_customer, countIf(event_type = 'translation_message' AND terminal_outcome = 'success' AND direction = 'customer_to_admin') AS to_admin FROM quality_events FINAL WHERE event_type IN ('session_lifecycle', 'translation_message') AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY session_ref) WHERE activated > 0"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 61,
+      "type": "stat",
+      "title": "Delivery Success Rate",
+      "description": "KPI Q3, upper-bound proxy. Share of broadcasts that every registered socket and polling queue of the session accepted -- the ratio the WebSocketBroadcastFailureRateHigh alert watches. The sender's own socket counts, so a message sent while the recipient is offline still reads as delivered. A broadcast is undelivered only when nobody at all was registered or a send failed. There is no recipient acknowledgement and no expired state.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-ssf"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "expr": "100 * (sum(increase(websocket_broadcast_success_total[$__range])) or vector(0)) / (sum(increase(websocket_broadcast_total[$__range])) > 0)",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 64,
+      "type": "table",
+      "title": "Stage Success Rate",
+      "description": "KPIs A1, T1, S1, R6. A message reached a stage if the stage recorded a duration or the message failed there. Durations are whole milliseconds, so a stage that finishes in under 1 ms stores 0 and is not counted as reached. Failures with failed_stage unknown belong to no stage and are not counted; see Message Failures by Stage. Follows the tenant picker.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT stage, countIf(duration > 0 OR failed_stage = stage) AS reached, countIf(failed_stage = stage) AS failed, round(100 * (reached - failed) / nullIf(reached, 0), 1) AS success_rate FROM quality_events FINAL ARRAY JOIN ['asr', 'translation', 'tts'] AS stage, [asr_duration_ms, translation_duration_ms, tts_duration_ms] AS duration WHERE event_type = 'translation_message' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY stage ORDER BY indexOf(['asr', 'translation', 'tts'], stage)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "success_rate"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": []
+      }
+    },
+    {
+      "id": 65,
+      "type": "timeseries",
+      "title": "Message Latency by Input Mode",
+      "description": "KPI Q1, proxy. Time from the gateway accepting a successful message until it has stored it and sent it to the session's sockets and polling queues, split into text and audio. It does not wait for the recipient to acknowledge delivery, which no event records yet. Follows the tenant picker.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 5 MINUTE) AS time, input_mode, quantile(0.5)(total_duration_ms) AS p50, quantile(0.95)(total_duration_ms) AS p95, max(total_duration_ms) AS max FROM quality_events FINAL WHERE event_type = 'translation_message' AND terminal_outcome = 'success' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY time, input_mode ORDER BY time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 66,
+      "type": "stat",
+      "title": "Ratings of 4 or 5",
+      "description": "KPIs F2/SQ1, F7/SQ2, F3/SQ3. Share of submissions rating 4 or 5 on each 1-5 question, filtered by tenant. The form asks about translation quality, performance and usability -- close to, not worded as, the catalogue's SQ1-SQ3. Silver keeps 30 days.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 12
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT round(100 * countIf(translation_quality >= 4) / nullIf(count(), 0), 1) AS translation_quality, round(100 * countIf(performance >= 4) / nullIf(count(), 0), 1) AS performance, round(100 * countIf(usability >= 4) / nullIf(count(), 0), 1) AS usability FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 67,
+      "type": "timeseries",
+      "title": "Pipeline Queue Wait p95",
+      "description": "KPI R9. Time a request waited for an admission slot, admitted or rejected.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 12
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(gateway_pipeline_queue_wait_seconds_bucket[$__rate_interval])))",
+          "refId": "A",
+          "legendFormat": "gateway"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(translation_queue_wait_seconds_bucket[$__rate_interval])))",
+          "refId": "B",
+          "legendFormat": "translation"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 68,
+      "type": "timeseries",
+      "title": "Pipeline In-Flight and Rejections",
+      "description": "KPI R9. Any sustained rejection rate means users are seeing SYSTEM_BUSY.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 12
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "expr": "sum(gateway_pipeline_in_flight)",
+          "refId": "A",
+          "legendFormat": "gateway in flight"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "expr": "sum(translation_in_flight)",
+          "refId": "B",
+          "legendFormat": "translation in flight"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "expr": "sum(rate(gateway_pipeline_rejected_total[$__rate_interval]))",
+          "refId": "C",
+          "legendFormat": "gateway rejected/s"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "expr": "sum(rate(translation_rejected_total[$__rate_interval]))",
+          "refId": "D",
+          "legendFormat": "translation rejected/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*rejected/s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "reqps"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 30,
       "type": "stat",
       "title": "Sessions Created",
@@ -35,7 +394,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 0
+        "y": 20
       },
       "targets": [
         {
@@ -62,7 +421,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 0
+        "y": 20
       },
       "targets": [
         {
@@ -89,7 +448,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 0
+        "y": 20
       },
       "targets": [
         {
@@ -122,7 +481,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 0
+        "y": 20
       },
       "targets": [
         {
@@ -155,7 +514,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 24
       },
       "targets": [
         {
@@ -182,7 +541,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 4
+        "y": 24
       },
       "targets": [
         {
@@ -209,7 +568,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 12
+        "y": 32
       },
       "targets": [
         {
@@ -236,7 +595,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 16
+        "y": 36
       },
       "targets": [
         {
@@ -263,7 +622,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 16
+        "y": 36
       },
       "targets": [
         {
@@ -297,7 +656,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 16
+        "y": 36
       },
       "targets": [
         {
@@ -330,7 +689,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 16
+        "y": 36
       },
       "targets": [
         {
@@ -357,7 +716,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 20
+        "y": 40
       },
       "targets": [
         {
@@ -390,7 +749,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 20
+        "y": 40
       },
       "targets": [
         {
@@ -423,7 +782,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 28
+        "y": 48
       },
       "targets": [
         {
@@ -450,7 +809,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 48
       },
       "targets": [
         {
@@ -474,7 +833,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 36
+        "y": 56
       },
       "id": 1,
       "targets": [
@@ -525,7 +884,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 36
+        "y": 56
       },
       "id": 2,
       "targets": [
@@ -576,7 +935,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 36
+        "y": 56
       },
       "id": 3,
       "targets": [
@@ -627,7 +986,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 36
+        "y": 56
       },
       "id": 4,
       "targets": [
@@ -678,7 +1037,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 40
+        "y": 60
       },
       "id": 5,
       "targets": [
@@ -726,7 +1085,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 60
       },
       "id": 6,
       "targets": [
@@ -775,7 +1134,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 48
+        "y": 68
       },
       "id": 7,
       "targets": [
@@ -830,7 +1189,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 48
+        "y": 68
       },
       "id": 8,
       "targets": [
@@ -870,7 +1229,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 56
+        "y": 76
       },
       "id": 9,
       "targets": [
@@ -918,7 +1277,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 56
+        "y": 76
       },
       "id": 10,
       "targets": [
@@ -966,7 +1325,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 64
+        "y": 84
       },
       "id": 11,
       "targets": [
@@ -1006,7 +1365,7 @@
         "h": 6,
         "w": 6,
         "x": 12,
-        "y": 64
+        "y": 84
       },
       "id": 12,
       "targets": [
@@ -1055,7 +1414,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 64
+        "y": 84
       },
       "id": 13,
       "targets": [
@@ -1110,7 +1469,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 70
+        "y": 90
       },
       "targets": [
         {
@@ -1138,7 +1497,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 70
+        "y": 90
       },
       "fieldConfig": {
         "defaults": {
@@ -1174,7 +1533,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 70
+        "y": 90
       },
       "fieldConfig": {
         "defaults": {
@@ -1209,7 +1568,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 70
+        "y": 90
       },
       "targets": [
         {
@@ -1237,7 +1596,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 74
+        "y": 94
       },
       "fieldConfig": {
         "defaults": {
@@ -1272,7 +1631,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 74
+        "y": 94
       },
       "targets": [
         {
@@ -1300,7 +1659,7 @@
         "h": 6,
         "w": 8,
         "x": 0,
-        "y": 82
+        "y": 102
       },
       "targets": [
         {
@@ -1328,7 +1687,7 @@
         "h": 6,
         "w": 8,
         "x": 8,
-        "y": 82
+        "y": 102
       },
       "fieldConfig": {
         "defaults": {
@@ -1363,7 +1722,7 @@
         "h": 6,
         "w": 8,
         "x": 16,
-        "y": 82
+        "y": 102
       },
       "targets": [
         {
@@ -1391,7 +1750,7 @@
       {
         "name": "tenant",
         "label": "Tenant",
-        "description": "Pseudonymous tenant reference, twelve hex characters. Every feedback panel honours it, in both tiers. The refinement, translation and session panels do not: they read quality_events_daily, which has no tenant dimension. References are fixed width, so the unanchored match() cannot select one tenant's rows into another's. Feedback aggregated before #325 carries no reference and appears only under All.",
+        "description": "Pseudonymous tenant reference, twelve hex characters. Every feedback panel honours it, in both tiers. So do the Go-live KPI panels that read ClickHouse. The older refinement, translation and session panels do not: they read quality_events_daily, which has no tenant dimension. References are fixed width, so the unanchored match() cannot select one tenant's rows into another's. Feedback aggregated before #325 carries no reference and appears only under All.",
         "type": "query",
         "datasource": {
           "type": "grafana-clickhouse-datasource",
