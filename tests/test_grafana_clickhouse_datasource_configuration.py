@@ -500,9 +500,6 @@ class TestTheFeedbackPanelsCanBeFilteredByTenant:
             assert "tenant" in panel.get("description", "").lower(), panel["title"]
 
 
-ALERT_RULES = ROOT / "monitoring" / "alert_rules.yml"
-
-
 def _panel(title: str) -> dict:
     dashboard = json.loads(DASHBOARD.read_text())
     named = [panel for panel in dashboard["panels"] if panel["title"] == title]
@@ -526,13 +523,12 @@ def test_panel_ids_are_unique() -> None:
 class TestTheGoLiveKpiPanels:
     """The P1 KPIs of the conversation-quality catalogue that existing data can
     answer. Q4, Q7, R1, R3, R8, R10, C5 and SQ4 are absent on purpose: they need
-    an SLO decision or instrumentation that does not exist yet."""
+    an SLO decision or instrumentation that does not exist yet. R2 and R4 wait on
+    the WebSocket monitor fix; see test_no_panel_charts_the_monitors_disconnects."""
 
     TITLES = (
         "Conversation Completion Rate",
         "Delivery Success Rate",
-        "Unexpected Disconnect Rate",
-        "Heartbeat Timeouts per 1,000 Connection-Minutes",
         "Stage Success Rate",
         "Message Latency by Input Mode",
         "Ratings of 4 or 5",
@@ -595,30 +591,32 @@ class TestTheGoLiveKpiPanels:
         ), expr
         assert "messages_delivered" not in expr, expr
 
-    def test_rare_event_ratios_read_zero_not_no_data(self):
+    def test_the_delivery_ratio_reads_zero_not_no_data(self):
         """A labelled counter has no series until its first increment, so a
         healthy system's numerator is an empty vector and the stat would show
         No data -- indistinguishable from a broken scrape. An idle range must
         not divide by zero either."""
-        for title in (
-            "Delivery Success Rate",
-            "Unexpected Disconnect Rate",
-            "Heartbeat Timeouts per 1,000 Connection-Minutes",
-        ):
-            (expr,) = _queries(title)
-            assert "or vector(0)" in expr, (title, expr)
-            assert expr.rstrip().endswith("> 0)"), (title, expr)
+        (expr,) = _queries("Delivery Success Rate")
+        assert "or vector(0)" in expr, expr
+        assert expr.rstrip().endswith("> 0)"), expr
 
-    def test_disconnects_treat_the_same_reasons_as_normal_as_the_alert(self):
-        """Two definitions of 'unexpected' would let the panel and the pager
-        disagree about the same incident."""
-        rules = yaml.safe_load(ALERT_RULES.read_text())
-        (alert,) = [
-            rule
-            for group in rules["groups"]
-            for rule in group["rules"]
-            if rule.get("alert") == "WebSocketConnectionFailures"
-        ]
-        normal = re.search(r'disconnect_reason!~"([^"]+)"', alert["expr"]).group(1)
-        (expr,) = _queries("Unexpected Disconnect Rate")
-        assert f'disconnect_reason!~"{normal}"' in expr, expr
+    def test_the_queue_panels_follow_the_zoom_level(self):
+        for title in ("Pipeline Queue Wait p95", "Pipeline In-Flight and Rejections"):
+            for expr in _queries(title):
+                if "rate(" in expr:
+                    assert "[$__rate_interval]" in expr, (title, expr)
+                    assert "[5m]" not in expr, (title, expr)
+
+    def test_no_panel_charts_the_monitors_disconnects(self):
+        """WebSocketMonitor never receives a heartbeat, so its five-minute
+        cleanup closes every connection older than 300 s as heartbeat_timeout
+        while the socket stays open, and the real close is then dropped. Until
+        that is fixed, any panel over websocket_disconnects_total or
+        websocket_connection_duration_seconds reports timeouts that did not
+        happen. Delete this test together with the fix."""
+        dashboard = json.loads(DASHBOARD.read_text())
+        for panel in dashboard["panels"]:
+            for target in panel.get("targets", []):
+                expr = target.get("expr") or ""
+                assert "websocket_disconnects_total" not in expr, panel["title"]
+                assert "websocket_connection_duration_seconds" not in expr, panel["title"]
