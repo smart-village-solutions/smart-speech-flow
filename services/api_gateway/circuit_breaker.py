@@ -104,8 +104,8 @@ class CircuitBreaker:
         self.success_count = 0
 
         # Timing Management
-        self.last_failure_time = None
-        self.next_attempt_time = None
+        self.last_failure_time: Optional[float] = None
+        self.next_attempt_time: Optional[float] = None
         self.current_recovery_timeout = self.config.recovery_timeout
 
         # Health Metrics
@@ -214,18 +214,32 @@ class CircuitBreaker:
     # is no longer holding the lock.
 
     def _admit(self) -> Optional[Transition]:
+        """Lets one call through, or refuses it.
+
+        A half-open breaker is gated as tightly as an open one. It used to
+        return early for any non-OPEN state, so the thread that flipped the
+        breaker to HALF_OPEN was followed through by every other queued
+        pipeline thread -- handing a service that had just been down its whole
+        in-flight backlog at once.
+        """
         with self._lock:
-            if self.state != CircuitState.OPEN:
+            if self.state is CircuitState.CLOSED:
                 return None
             if not self._should_attempt_reset():
                 waiting = self._time_until_next_attempt()
                 raise CircuitBreakerOpenError(
-                    f"Circuit Breaker '{self.name}' ist OPEN. "
+                    f"Circuit Breaker '{self.name}' ist {self.state.value.upper()}. "
                     f"Nächster Versuch in {waiting:.1f}s",
                     service_name=self.name,
                     retry_after_seconds=math.ceil(waiting),
                 )
-            return self._half_open()
+            transition = self._half_open() if self.state is CircuitState.OPEN else None
+            # Reserve the slot for this probe. _apply_success and
+            # _apply_failure release it as soon as the probe reports; the
+            # timeout is the backstop for a probe that reports nothing, which
+            # a deliberate load shed does.
+            self.next_attempt_time = time.time() + self.current_recovery_timeout
+            return transition
 
     def _apply_success(self, response_time: float) -> Optional[Transition]:
         with self._lock:
@@ -245,6 +259,10 @@ class CircuitBreaker:
                 self.success_count += 1
                 if self.success_count >= self.config.success_threshold:
                     transition = self._close_circuit()
+                else:
+                    # This probe reported; the next one need not wait out the
+                    # recovery timeout. Serialised, not throttled.
+                    self.next_attempt_time = time.time()
             elif self.state == CircuitState.CLOSED:
                 self.failure_count = 0  # Reset failure count
 

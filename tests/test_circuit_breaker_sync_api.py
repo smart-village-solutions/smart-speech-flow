@@ -355,3 +355,71 @@ class TestTheGatewayBindsItsLoop:
                     assert circuit._notify_loop is running, f"{name} has no loop bound"
             finally:
                 await manager.stop_monitoring()
+
+
+class TestHalfOpenAdmitsOneProbe:
+    """A half-open breaker is testing the water, not reopening the tap.
+
+    _admit() returned None for any non-OPEN state, so the thread that flipped
+    the breaker to HALF_OPEN was followed straight through by every other
+    queued pipeline thread. A service that had been down 45 seconds took the
+    whole in-flight backlog at once -- the surge the breaker exists to prevent.
+    """
+
+    @staticmethod
+    def _opened(**overrides) -> CircuitBreaker:
+        breaker = _breaker(**overrides)
+        for _ in range(breaker.config.failure_threshold):
+            breaker.record_failure("forced open by test")
+        assert breaker.state is CircuitState.OPEN
+        breaker.next_attempt_time = time.time() - 1
+        return breaker
+
+    def test_the_second_concurrent_probe_is_refused(self):
+        breaker = self._opened()
+
+        with breaker.guard():
+            pass  # probe one is in flight and has not reported yet
+
+        assert breaker.state is CircuitState.HALF_OPEN
+        with pytest.raises(CircuitBreakerOpenError):
+            with breaker.guard():
+                pass
+
+    def test_a_reported_probe_releases_the_next_one(self):
+        """Serialised, not throttled: the next probe goes as soon as one lands."""
+        breaker = self._opened()
+
+        with breaker.guard():
+            pass
+        breaker.record_success(0.01)
+
+        with breaker.guard():
+            pass  # must not raise
+
+    def test_a_failed_probe_reopens_and_holds_the_line(self):
+        breaker = self._opened()
+
+        with breaker.guard():
+            pass
+        breaker.record_failure("still broken")
+
+        assert breaker.state is CircuitState.OPEN
+        with pytest.raises(CircuitBreakerOpenError):
+            with breaker.guard():
+                pass
+
+    def test_a_probe_that_never_reports_does_not_wedge_the_breaker(self):
+        """A shed 503 records no outcome, so the timeout is the only release."""
+        breaker = self._opened(recovery_timeout=0.2)
+
+        with breaker.guard():
+            pass  # no record_* call at all
+
+        with pytest.raises(CircuitBreakerOpenError):
+            with breaker.guard():
+                pass
+
+        time.sleep(0.25)
+        with breaker.guard():
+            pass  # the window reopened on its own

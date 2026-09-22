@@ -144,10 +144,27 @@ class TestDeliberateShedding:
             breaker.record_failure("forced open by test")
         breaker.next_attempt_time = time.time() - 1
 
-        for _ in range(breaker.config.success_threshold + 1):
-            _post(503, {"Retry-After": "5"}, service="translation")
+        _post(503, {"Retry-After": "5"}, service="translation")
 
         assert breaker.state is CircuitState.HALF_OPEN
+        assert breaker.health.successful_requests == 0
+
+    def test_a_shed_probe_does_not_turn_the_breaker_into_a_no_op(self):
+        """Recording nothing must not also mean gating nothing.
+
+        The probe reported no outcome, so the slot stays reserved and the next
+        caller waits out the window instead of streaming through a service
+        that has told us it cannot cope.
+        """
+        breaker = _breaker("translation")
+        for _ in range(breaker.config.failure_threshold):
+            breaker.record_failure("forced open by test")
+        breaker.next_attempt_time = time.time() - 1
+
+        _post(503, {"Retry-After": "5"}, service="translation")
+
+        with pytest.raises(CircuitBreakerOpenError):
+            _post(503, {"Retry-After": "5"}, service="translation")
 
     def test_shedding_does_not_enter_the_latency_average(self):
         """A refusal costs microseconds and would flatter /api/health/services."""
