@@ -10,27 +10,27 @@ Datum: November 2025
 Version: 1.0
 """
 
-import pytest
 import asyncio
-import aiohttp
-import time
-import logging
 import json
+import logging
 import threading
+import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
 
+import aiohttp
+import pytest
 
 from services.api_gateway.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
+    CircuitBreakerOpenError,
     CircuitState,
-    CircuitBreakerOpenError
 )
-from services.api_gateway.service_health import ServiceHealthManager, ServiceEndpoint
-from services.api_gateway.graceful_degradation import GracefulDegradationManager
 from services.api_gateway.circuit_breaker_client import CircuitBreakerServiceClient
+from services.api_gateway.graceful_degradation import GracefulDegradationManager
+from services.api_gateway.service_health import ServiceEndpoint, ServiceHealthManager
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class LocalHTTPHandler(BaseHTTPRequestHandler):
         """Handle GET Requests"""
         LocalHTTPHandler.call_count += 1
 
-        if self.path == '/health':
+        if self.path == "/health":
             self._handle_health()
         else:
             self.send_error(404)
@@ -60,11 +60,11 @@ class LocalHTTPHandler(BaseHTTPRequestHandler):
         """Handle POST Requests"""
         LocalHTTPHandler.call_count += 1
 
-        if self.path == '/transcribe':
+        if self.path == "/transcribe":
             self._handle_transcribe()
-        elif self.path == '/translate':
+        elif self.path == "/translate":
             self._handle_translate()
-        elif self.path == '/synthesize':
+        elif self.path == "/synthesize":
             self._handle_synthesize()
         else:
             self.send_error(404)
@@ -77,10 +77,14 @@ class LocalHTTPHandler(BaseHTTPRequestHandler):
         if not LocalHTTPHandler.is_healthy:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(b'Service Unavailable')
+            self.wfile.write(b"Service Unavailable")
             return
 
-        response_data = {"status": "healthy", "service": "test", "call_count": LocalHTTPHandler.call_count}
+        response_data = {
+            "status": "healthy",
+            "service": "test",
+            "call_count": LocalHTTPHandler.call_count,
+        }
         self._send_json_response(response_data)
 
     def _handle_transcribe(self):
@@ -91,14 +95,10 @@ class LocalHTTPHandler(BaseHTTPRequestHandler):
         if not LocalHTTPHandler.is_healthy:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(b'ASR Service Down')
+            self.wfile.write(b"ASR Service Down")
             return
 
-        response_data = {
-            "success": True,
-            "text": "Test transcription",
-            "confidence": 0.95
-        }
+        response_data = {"success": True, "text": "Test transcription", "confidence": 0.95}
         self._send_json_response(response_data)
 
     def _handle_translate(self):
@@ -109,14 +109,10 @@ class LocalHTTPHandler(BaseHTTPRequestHandler):
         if not LocalHTTPHandler.is_healthy:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(b'Translation Service Down')
+            self.wfile.write(b"Translation Service Down")
             return
 
-        response_data = {
-            "success": True,
-            "translated_text": "Test translation",
-            "confidence": 0.9
-        }
+        response_data = {"success": True, "translated_text": "Test translation", "confidence": 0.9}
         self._send_json_response(response_data)
 
     def _handle_synthesize(self):
@@ -127,21 +123,21 @@ class LocalHTTPHandler(BaseHTTPRequestHandler):
         if not LocalHTTPHandler.is_healthy:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(b'TTS Service Down')
+            self.wfile.write(b"TTS Service Down")
             return
 
         response_data = {
             "success": True,
-            "audio_url": f"http://localhost:{self.server.server_port}/audio/test.wav"
+            "audio_url": f"http://localhost:{self.server.server_port}/audio/test.wav",
         }
         self._send_json_response(response_data)
 
     def _send_json_response(self, data):
         """Sendet JSON Response"""
-        response = json.dumps(data).encode('utf-8')
+        response = json.dumps(data).encode("utf-8")
         self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', str(len(response)))
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(response)))
         self.end_headers()
         self.wfile.write(response)
 
@@ -156,7 +152,7 @@ class LocalHTTPServer:
 
     def start(self):
         """Startet Test Server in eigenem Thread"""
-        self.server = HTTPServer(('localhost', self.port), LocalHTTPHandler)
+        self.server = HTTPServer(("localhost", self.port), LocalHTTPHandler)
         self.port = self.server.server_port
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -210,10 +206,7 @@ def running_test_server():
 def circuit_breaker():
     """Test Circuit Breaker mit echtem HTTP Service"""
     config = CircuitBreakerConfig(
-        failure_threshold=3,
-        recovery_timeout=2,
-        success_threshold=2,
-        timeout=1.0
+        failure_threshold=3, recovery_timeout=2, success_threshold=2, timeout=1.0
     )
 
     circuit = CircuitBreaker("integration-test", config)
@@ -316,15 +309,13 @@ class TestCircuitBreakerRealSystem:
 
         # Call sollte mit Timeout fehlschlagen
         start_time = time.time()
-        with pytest.raises(
-            (TimeoutError, asyncio.TimeoutError, aiohttp.ServerTimeoutError)
-        ):
+        with pytest.raises((TimeoutError, asyncio.TimeoutError, aiohttp.ServerTimeoutError)):
             await circuit_breaker.call(slow_http_call)
 
         # Prüfe dass Timeout eingetreten ist
         elapsed_time = time.time() - start_time
         assert elapsed_time >= 1.0  # Mindestens Timeout-Zeit
-        assert elapsed_time < 1.5   # Aber nicht viel länger
+        assert elapsed_time < 1.5  # Aber nicht viel länger
 
         # Failure sollte gezählt werden
         assert circuit_breaker.failure_count == 1
@@ -340,9 +331,7 @@ class TestServiceHealthManagerRealSystem:
 
         # Echten Test Service registrieren
         endpoint = ServiceEndpoint(
-            name="real-test-service",
-            base_url=f"http://localhost:{test_server.port}",
-            timeout=1.0
+            name="real-test-service", base_url=f"http://localhost:{test_server.port}", timeout=1.0
         )
         manager.register_service(endpoint)
 
@@ -369,9 +358,7 @@ class TestServiceHealthManagerRealSystem:
         manager = ServiceHealthManager()
 
         endpoint = ServiceEndpoint(
-            name="failing-service",
-            base_url=f"http://localhost:{test_server.port}",
-            timeout=1.0
+            name="failing-service", base_url=f"http://localhost:{test_server.port}", timeout=1.0
         )
         manager.register_service(endpoint)
 
@@ -396,9 +383,7 @@ class TestServiceHealthManagerRealSystem:
 
         # Service registrieren
         endpoint = ServiceEndpoint(
-            name="test-service",
-            base_url=f"http://localhost:{test_server.port}",
-            timeout=1.0
+            name="test-service", base_url=f"http://localhost:{test_server.port}", timeout=1.0
         )
         manager.register_service(endpoint)
 
@@ -435,15 +420,12 @@ class TestServiceHealthManagerRealSystem:
                             "name": "Mock GPU",
                             "utilization_percent": 92.5,
                             "memory_utilization": 88.1,
-                            "temperature_c": 70
+                            "temperature_c": 70,
                         }
-                    ]
+                    ],
                 }
             }
-            status.autoscaling = {
-                "recommended_action": "scale_up",
-                "reasons": ["gpu_pressure"]
-            }
+            status.autoscaling = {"recommended_action": "scale_up", "reasons": ["gpu_pressure"]}
 
             gpu_summary = manager.get_gpu_summary()
             assert gpu_summary["devices_reporting"] == 1
@@ -581,13 +563,9 @@ class TestServiceHealthManagerRealSystem:
             assert memory_device["total_memory"] == "16GB"
 
             assert any(
-                alert["message"] == "GPU0 utilization 78.0%"
-                for alert in gpu_summary["alerts"]
+                alert["message"] == "GPU0 utilization 78.0%" for alert in gpu_summary["alerts"]
             )
-            assert any(
-                alert["message"] == "GPU1 memory 96.0%"
-                for alert in gpu_summary["alerts"]
-            )
+            assert any(alert["message"] == "GPU1 memory 96.0%" for alert in gpu_summary["alerts"])
             assert all(alert["device"] != 2 for alert in gpu_summary["alerts"])
         finally:
             await manager.stop_monitoring()
@@ -597,81 +575,61 @@ class TestGracefulDegradationRealSystem:
     """Graceful Degradation Tests mit echtem System"""
 
     @pytest.mark.asyncio
-    async def test_real_cache_fallback_mechanism(self, reset_server):
-        """Test: Echte Cache Fallback Funktionalität"""
-        degradation_manager = GracefulDegradationManager()
-
-        # 1. Erfolgreiche Response cachen
-        service_name = "test-service"
-        request_data = {"text": "test message", "language": "de"}
-        success_response = {
-            "success": True,
-            "result": "Cached test result",
-            "timestamp": time.time()
-        }
-
-        await degradation_manager.cache_response(
-            service_name, request_data, success_response, ttl=60
-        )
-
-        # 2. Service Failure simulieren
-        test_server.set_healthy(False)
-        original_error = Exception("Real service failure")
-
-        # 3. Fallback sollte gecachte Response zurückgeben
-        fallback_result = await degradation_manager.handle_service_failure(
-            service_name, request_data, original_error
-        )
-
-        # Prüfe dass Cache verwendet wurde
-        assert fallback_result.get("cached") is True
-        assert fallback_result["result"] == "Cached test result"
-        assert fallback_result.get("fallback_reason") == "service_unavailable"
-
-    @pytest.mark.asyncio
     async def test_real_service_mode_transitions(self, reset_server):
-        """Test: Echte Service Mode Transitions"""
+        """Test: Echte Service Mode Transitions
+
+        Driven by which breakers are open, which is how the live system drives
+        it since #219. The cache-fallback test that stood beside this one went
+        with the cache: nothing wrote to it once the async service-call client
+        was retired, and the strategies it fed either invented a result or
+        reported the failure.
+        """
         degradation_manager = GracefulDegradationManager()
 
-        # Initial sollte FULL Mode sein
         status = degradation_manager.get_degradation_status()
         assert status["current_mode"] == "full"
 
-        # Service Failures simulieren
-        await degradation_manager._update_service_mode("asr", is_failure=True)
-        status = degradation_manager.get_degradation_status()
-        assert status["current_mode"] == "degraded"
+        degradation_manager.apply_service_states(
+            {"asr": False, "translation": True, "tts": True}
+        )
+        assert degradation_manager.get_degradation_status()["current_mode"] == "degraded"
 
-        # Weitere Failure
-        await degradation_manager._update_service_mode("translation", is_failure=True)
-        status = degradation_manager.get_degradation_status()
-        assert status["current_mode"] == "minimal"
+        degradation_manager.apply_service_states(
+            {"asr": False, "translation": False, "tts": True}
+        )
+        assert degradation_manager.get_degradation_status()["current_mode"] == "minimal"
 
-        # Mode History sollte getracked werden
-        assert len(status["mode_history"]) >= 2
+        degradation_manager.apply_service_states(
+            {"asr": False, "translation": False, "tts": False}
+        )
+        assert degradation_manager.get_degradation_status()["current_mode"] == "offline"
+
+        # And back, which the ratchet this replaced could never do.
+        degradation_manager.apply_service_states(
+            {"asr": True, "translation": True, "tts": True}
+        )
+        status = degradation_manager.get_degradation_status()
+        assert status["current_mode"] == "full"
+        assert len(status["mode_history"]) >= 4
 
 
 class TestCircuitBreakerServiceClientRealSystem:
     """Circuit Breaker Service Client Tests mit echtem System"""
 
     @pytest.mark.asyncio
-    async def test_real_service_client_initialization(self, reset_server):
-        """Test: Echte Service Client Initialisierung"""
+    async def test_real_service_client_reports_health(self, reset_server):
+        """The client holds no HTTP session since #219 removed its call paths.
+
+        Health checks have their own session in service_health; this object is
+        now only a reader over the managers.
+        """
         client = CircuitBreakerServiceClient()
 
-        try:
-            # Session sollte bei Bedarf erstellt werden
-            await client._ensure_session()
-            session_was_open = client.session is not None and not client.session.closed
+        health_status = await client.get_health_status()
 
-            # Der Health-Status wird lokal aus dem Manager erzeugt.
-            health_status = await client.get_health_status()
-        finally:
-            await client.close()
-
-        assert session_was_open
         assert isinstance(health_status, dict)
         assert "overall_healthy" in health_status
+        assert not hasattr(client, "session")
 
     @pytest.mark.asyncio
     async def test_real_http_call_with_circuit_breaker(self, reset_server):
@@ -714,10 +672,7 @@ class TestEndToEndRealSystem:
                     return data
 
         # 5 gleichzeitige Calls (stabil für Integrationstests)
-        tasks = [
-            circuit.call(concurrent_service_call, i)
-            for i in range(5)
-        ]
+        tasks = [circuit.call(concurrent_service_call, i) for i in range(5)]
 
         results = await asyncio.gather(*tasks)
 
@@ -736,9 +691,7 @@ class TestCircuitBreakerStateTransitions:
 
     @pytest.mark.asyncio
     async def test_half_open_successes_close_circuit_and_reset_backoff(self):
-        config = CircuitBreakerConfig(
-            failure_threshold=1, recovery_timeout=2, success_threshold=2
-        )
+        config = CircuitBreakerConfig(failure_threshold=1, recovery_timeout=2, success_threshold=2)
         circuit = CircuitBreaker("half-open-success", config)
 
         async def fail():

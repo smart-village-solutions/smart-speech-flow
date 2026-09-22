@@ -14,6 +14,8 @@ import numpy as np
 import psutil
 import requests
 
+from .ai_service_client import call_ai_service
+from .circuit_breaker import CircuitBreakerOpenError
 from .quality_telemetry import (
     PipelineStage,
     QualityErrorCode,
@@ -34,29 +36,32 @@ def _build_service_url(host: str, port: int, path: str, *, scheme: str) -> str:
 
 
 if DOCKER_ENV:
-    ASR_URL = _build_service_url(
-        "asr", 8000, "/transcribe", scheme=DEFAULT_INTERNAL_SCHEME
-    )
+    ASR_URL = _build_service_url("asr", 8000, "/transcribe", scheme=DEFAULT_INTERNAL_SCHEME)
     TRANSLATION_URL = _build_service_url(
         "translation", 8000, "/translate", scheme=DEFAULT_INTERNAL_SCHEME
     )
-    TTS_URL = _build_service_url(
-        "tts", 8000, "/synthesize", scheme=DEFAULT_INTERNAL_SCHEME
-    )
+    TTS_URL = _build_service_url("tts", 8000, "/synthesize", scheme=DEFAULT_INTERNAL_SCHEME)
 else:
-    ASR_URL = _build_service_url(
-        "localhost", 8001, "/transcribe", scheme=DEFAULT_LOCAL_SCHEME
-    )
+    ASR_URL = _build_service_url("localhost", 8001, "/transcribe", scheme=DEFAULT_LOCAL_SCHEME)
     TRANSLATION_URL = _build_service_url(
         "localhost", 8002, "/translate", scheme=DEFAULT_LOCAL_SCHEME
     )
-    TTS_URL = _build_service_url(
-        "localhost", 8003, "/synthesize", scheme=DEFAULT_LOCAL_SCHEME
-    )
+    TTS_URL = _build_service_url("localhost", 8003, "/synthesize", scheme=DEFAULT_LOCAL_SCHEME)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 AUDIO_WAV_MIME = "audio/wav"
+
+
+def _tts_served_audio(response: Any) -> bool:
+    """Whether a TTS reply actually carried audio.
+
+    TTS answers 200 with a JSON error body when synthesis fails, which
+    _finish_tts_stage has always treated as a failure. The breaker needs the
+    same view, or it stays CLOSED while every synthesis fails.
+    """
+    return bool(response.headers.get("content-type", "") == AUDIO_WAV_MIME)
+
 
 # Marks a pipeline failure the client may usefully retry, so the routes can
 # answer 503 with a Retry-After instead of a permanent-looking error.
@@ -296,9 +301,7 @@ def _collect_audio_validation_errors(
             f"Bit depth {bit_depth}-bit, required: {specs.REQUIRED_BIT_DEPTH}-bit"
         )
     if channels != specs.REQUIRED_CHANNELS:
-        validation_errors.append(
-            f"Channels {channels}, required: {specs.REQUIRED_CHANNELS} (Mono)"
-        )
+        validation_errors.append(f"Channels {channels}, required: {specs.REQUIRED_CHANNELS} (Mono)")
     if duration_seconds < specs.MIN_DURATION_SECONDS:
         validation_errors.append(
             f"Duration {duration_seconds:.2f}s too short, minimum: {specs.MIN_DURATION_SECONDS}s"
@@ -325,9 +328,7 @@ def _normalize_audio_if_requested(
         return audio_bytes, False
 
     try:
-        normalized_bytes = normalize_audio(
-            audio_bytes, sample_rate, bit_depth, channels
-        )
+        normalized_bytes = normalize_audio(audio_bytes, sample_rate, bit_depth, channels)
         if normalized_bytes != audio_bytes:
             return normalized_bytes, True
     except Exception as exc:
@@ -427,6 +428,7 @@ def _pipeline_error_result(
     audio_bytes: Optional[bytes],
     validation_result: Optional[Any] = None,
     upstream_response: Optional[Any] = None,
+    retry_after_seconds: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Flattens an upstream failure into the pipeline's result shape.
 
@@ -435,6 +437,11 @@ def _pipeline_error_result(
     every failure here otherwise arrives at the routes as one undifferentiated
     ``error`` — reported as 500 on the audio path and 400 on the text path, both
     of which a client reads as permanent.
+
+    ``retry_after_seconds`` marks a failure retryable when there is no upstream
+    response to read it from -- an open circuit refuses before a request is
+    sent, so there is no reply and no header, but the caller should still be
+    told to come back.
 
     ``failed_stage`` and ``error_code`` are required rather than inferred. The
     only other places that record what went wrong are ``debug["steps"]``, whose
@@ -455,10 +462,74 @@ def _pipeline_error_result(
     }
     if validation_result is not None:
         result["validation_result"] = validation_result
-    if getattr(upstream_response, "status_code", None) == 503:
+    if retry_after_seconds is not None:
+        result["error_code"] = UPSTREAM_BUSY_ERROR_CODE
+        result["retry_after_seconds"] = retry_after_seconds
+    elif getattr(upstream_response, "status_code", None) == 503:
         result["error_code"] = UPSTREAM_BUSY_ERROR_CODE
         result["retry_after_seconds"] = _upstream_retry_after(upstream_response)
     return result
+
+
+# Which pipeline stage a breaker belongs to. The breaker names come from
+# ServiceHealthManager._setup_default_services and are the same strings the
+# /api/health/services route reports.
+_STAGE_BY_SERVICE = {
+    "asr": PipelineStage.ASR,
+    "translation": PipelineStage.TRANSLATION,
+    "tts": PipelineStage.TTS,
+}
+
+
+def _circuit_open_result(
+    error: CircuitBreakerOpenError,
+    *,
+    debug_info: Dict[str, Any],
+    start_total: float,
+    asr_text: Optional[str],
+    translation_text: Optional[str],
+) -> Dict[str, Any]:
+    """Turns a refused call into the pipeline's ordinary retryable failure.
+
+    An open breaker is transient by construction -- it closes again on its own
+    -- so it carries the same ``error_code`` and ``retry_after_seconds`` that
+    #190's load shedding already uses, and the session routes turn both into a
+    503 with a ``Retry-After`` through ``_raise_if_upstream_busy``. The
+    telemetry code stays distinct, because a breaker we opened and a service
+    politely shedding load are different operational events.
+
+    ``POST /pipeline`` does not do that translation -- it maps every
+    ``result["error"]`` to a 400 and reads neither field, so a transient
+    refusal looks permanent there. That behaviour predates this change and is
+    tracked separately; the fields are on the result either way.
+
+    The work already done is preserved: a transcript that cost six seconds of
+    GPU time should not vanish because the next stage was unreachable.
+    """
+    stage = _STAGE_BY_SERVICE.get(error.service_name, PipelineStage.UNKNOWN)
+    debug_info["steps"].append(
+        {
+            "step": stage.value.upper(),
+            "name": error.service_name or stage.value,
+            "input": None,
+            "output": None,
+            "error": str(error),
+            "skipped": True,
+            "duration": 0.0,
+            "duration_ms": 0,
+        }
+    )
+    return _pipeline_error_result(
+        debug_info=debug_info,
+        start_total=start_total,
+        error_message=f"Service '{error.service_name}' unavailable: circuit breaker open",
+        failed_stage=stage,
+        error_code=QualityErrorCode.UPSTREAM_CIRCUIT_OPEN,
+        asr_text=asr_text,
+        translation_text=translation_text,
+        audio_bytes=None,
+        retry_after_seconds=error.retry_after_seconds,
+    )
 
 
 def _append_text_validation_step(
@@ -473,9 +544,7 @@ def _append_text_validation_step(
             "step": "Text_Validation",
             "input": {"text_length": text_length, "enable_filtering": True},
             "output": validation_result.is_valid,
-            "error": (
-                None if validation_result.is_valid else validation_result.error_message
-            ),
+            "error": (None if validation_result.is_valid else validation_result.error_message),
             "duration": round(time.perf_counter() - start_validation, 3),
         }
     )
@@ -529,8 +598,8 @@ def _run_text_translation_step(
         "debug": str(debug).lower(),
     }
 
-    translation_resp = requests.post(
-        TRANSLATION_URL, json=translation_payload, timeout=30
+    translation_resp = call_ai_service(
+        "translation", TRANSLATION_URL, json=translation_payload, timeout=30
     )
     translation_completed_at = utc_now()
     translation_json = translation_resp.json()
@@ -627,19 +696,21 @@ def _run_text_tts_step(
     if refined_tts_text:
         tts_payload["tts_text"] = refined_tts_text
 
-    tts_resp = requests.post(TTS_URL, json=tts_payload, timeout=30)
+    tts_resp = call_ai_service(
+        "tts", TTS_URL, served=_tts_served_audio, json=tts_payload, timeout=30
+    )
     tts_completed_at = utc_now()
     tts_duration_ms = int((time.perf_counter() - start_tts) * 1000)
     return tts_resp, tts_duration_ms, tts_started_at, tts_completed_at, start_tts
 
 
-def _run_wav_tts_step(
-    *, translation_text: str, target_lang: str, debug: bool
-) -> TTSCall:
+def _run_wav_tts_step(*, translation_text: str, target_lang: str, debug: bool) -> TTSCall:
     start_tts = time.perf_counter()
     tts_started_at = utc_now()
-    tts_resp = requests.post(
+    tts_resp = call_ai_service(
+        "tts",
         TTS_URL,
+        served=_tts_served_audio,
         json={
             "text": translation_text,
             "lang": target_lang,
@@ -672,8 +743,7 @@ def _finish_tts_stage(
     """Record the TTS step; return the pipeline error result if synthesis failed."""
     tts_resp, tts_duration_ms, tts_started_at, tts_completed_at, start_tts = tts_call
     failed = (
-        tts_resp.status_code != 200
-        or tts_resp.headers.get("content-type", "") != AUDIO_WAV_MIME
+        tts_resp.status_code != 200 or tts_resp.headers.get("content-type", "") != AUDIO_WAV_MIME
     )
     error_msg = _tts_error_message(tts_resp) if failed else None
     _append_tts_debug_step(
@@ -749,9 +819,7 @@ def _append_audio_validation_step(
         "step": "Audio_Validation",
         "input": {"file_size": original_file_size},
         "output": validation_result.is_valid,
-        "error": (
-            None if validation_result.is_valid else validation_result.error_message
-        ),
+        "error": (None if validation_result.is_valid else validation_result.error_message),
         "duration": round(time.perf_counter() - start_validation, 3),
         "details": {
             "validation_time_ms": validation_result.validation_time_ms,
@@ -829,9 +897,7 @@ def _finalize_pipeline_success(debug_info: Dict[str, Any], start_total: float) -
 # === Audio Validation Functions ===
 
 
-def validate_audio_input(
-    audio_bytes: bytes, normalize: bool = True
-) -> AudioValidationResult:
+def validate_audio_input(audio_bytes: bytes, normalize: bool = True) -> AudioValidationResult:
     """
     Comprehensive audio validation and normalization
 
@@ -952,9 +1018,7 @@ def validate_audio_input(
         )
 
 
-def normalize_audio(
-    audio_bytes: bytes, sample_rate: int, bit_depth: int, channels: int
-) -> bytes:
+def normalize_audio(audio_bytes: bytes, sample_rate: int, bit_depth: int, channels: int) -> bytes:
     """
     Normalize audio for optimal ASR processing
 
@@ -1006,9 +1070,7 @@ def normalize_audio(
             target_level = 0.9
             if current_max < target_level:
                 # Boost quiet audio
-                normalization_factor = min(
-                    target_level / current_max, 3.0
-                )  # Max 3x boost
+                normalization_factor = min(target_level / current_max, 3.0)  # Max 3x boost
                 audio_float *= normalization_factor
             elif current_max > target_level:
                 # Reduce loud audio
@@ -1070,17 +1132,13 @@ def convert_audio_to_required_specs(
 
     # Convert bit depth first if required
     if working_sample_width != target_sample_width:
-        working_frames = audioop.lin2lin(
-            working_frames, working_sample_width, target_sample_width
-        )
+        working_frames = audioop.lin2lin(working_frames, working_sample_width, target_sample_width)
         working_sample_width = target_sample_width
 
     # Convert to mono if needed
     if working_channels != target_channels:
         if working_channels == 2:
-            working_frames = audioop.tomono(
-                working_frames, working_sample_width, 0.5, 0.5
-            )
+            working_frames = audioop.tomono(working_frames, working_sample_width, 0.5, 0.5)
             working_channels = 1
         else:
             raise ValueError(f"Cannot convert {working_channels} channels to mono")
@@ -1119,9 +1177,7 @@ def convert_audio_to_required_specs(
 # === Text Validation and Processing ===
 
 
-def validate_text_input(
-    text: str, enable_content_filtering: bool = True
-) -> TextValidationResult:
+def validate_text_input(text: str, enable_content_filtering: bool = True) -> TextValidationResult:
     """
     Comprehensive text validation and content filtering
 
@@ -1370,14 +1426,12 @@ def process_text_pipeline(
             processed_text = text
 
         # Step 2: Translation (skip ASR entirely)
-        translation_resp, translation_json, translation_text, tts_text = (
-            _run_text_translation_step(
-                processed_text=processed_text,
-                source_lang=source_lang,
-                target_lang=target_lang,
-                debug=debug,
-                debug_info=debug_info,
-            )
+        translation_resp, translation_json, translation_text, tts_text = _run_text_translation_step(
+            processed_text=processed_text,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            debug=debug,
+            debug_info=debug_info,
         )
 
         # Translation error handling
@@ -1434,6 +1488,17 @@ def process_text_pipeline(
             "audio_bytes": audio_bytes,
             "debug": debug_info,
         }
+
+    except CircuitBreakerOpenError as e:
+        # Ahead of the generic handler on purpose: this is a known, transient
+        # condition with a known stage, not an unclassifiable pipeline error.
+        return _circuit_open_result(
+            e,
+            debug_info=debug_info,
+            start_total=start_total,
+            asr_text=processed_text,
+            translation_text=translation_text,
+        )
 
     except Exception as e:
         # routes/pipeline.py serialises error_msg and debug straight to the
@@ -1498,7 +1563,8 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
         # ASR
         start_asr = time.perf_counter()
         asr_started_at = utc_now()
-        asr_resp = requests.post(
+        asr_resp = call_ai_service(
+            "asr",
             ASR_URL,
             files={"file": ("input.wav", file_bytes, AUDIO_WAV_MIME)},
             data={"lang": source_lang, "debug": str(debug).lower()},
@@ -1565,8 +1631,8 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
             "model": "m2m100_1.2B",
             "debug": str(debug).lower(),
         }
-        translation_resp = requests.post(
-            TRANSLATION_URL, json=translation_payload, timeout=30
+        translation_resp = call_ai_service(
+            "translation", TRANSLATION_URL, json=translation_payload, timeout=30
         )
         translation_completed_at = utc_now()
         translation_json = translation_resp.json()
@@ -1657,6 +1723,17 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
             "audio_bytes": audio_bytes,
             "debug": debug_info,
         }
+
+    except CircuitBreakerOpenError as e:
+        # Ahead of the generic handler on purpose: this is a known, transient
+        # condition with a known stage, not an unclassifiable pipeline error.
+        return _circuit_open_result(
+            e,
+            debug_info=debug_info,
+            start_total=start_total,
+            asr_text=asr_text,
+            translation_text=translation_text,
+        )
 
     except Exception as e:
         # routes/pipeline.py serialises error_msg and debug straight to the
