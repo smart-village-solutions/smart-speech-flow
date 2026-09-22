@@ -160,11 +160,11 @@ def test_invalid_mode_error_lists_the_accepted_modes(env):
         assert accepted in str(excinfo.value)
 
 
-@pytest.mark.parametrize("timeout", ["3.0", "5.0", "4"])
-def test_timeout_bounds_are_inclusive(env, timeout):
+@pytest.mark.parametrize(("timeout", "expected"), [("3.0", 3.0), ("5.0", 5.0), ("4", 4.0)])
+def test_timeout_bounds_are_inclusive(env, timeout, expected):
     env(MODE="primary_only", TIMEOUT=timeout)
 
-    assert refiner_module.get_translation_refiner().timeout_seconds == float(timeout)
+    assert refiner_module.get_translation_refiner().timeout_seconds == pytest.approx(expected)
 
 
 def test_valid_tuning_values_reach_the_refiner(env):
@@ -179,8 +179,8 @@ def test_valid_tuning_values_reach_the_refiner(env):
 
     refiner = refiner_module.get_translation_refiner()
 
-    assert refiner.timeout_seconds == 3.5
-    assert refiner.temperature == 0.0
+    assert refiner.timeout_seconds == pytest.approx(3.5)
+    assert refiner.temperature == pytest.approx(0.0)
     assert refiner.max_retries == 3
     assert refiner.think is True
     assert refiner.queue_limit == 2
