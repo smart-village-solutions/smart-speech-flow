@@ -28,9 +28,9 @@ from .circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
     CircuitBreakerFactory,
-    CircuitBreakerOpenError,
     CircuitState,
 )
+from .graceful_degradation import graceful_degradation_manager
 
 logger = logging.getLogger(__name__)
 DEFAULT_HEALTH_PATH = "/health"
@@ -180,6 +180,13 @@ class ServiceHealthManager:
 
         self.is_monitoring = True
 
+        # Name the loop before anything can transition on it. Pipeline worker
+        # threads reach the breakers through ai_service_client, and without a
+        # bound loop their state-change callbacks are dropped with a log line.
+        loop = asyncio.get_running_loop()
+        for circuit in self.circuit_breakers.values():
+            circuit.bind_loop(loop)
+
         # HTTP Session erstellen
         timeout = aiohttp.ClientTimeout(total=30)
         self.session = aiohttp.ClientSession(timeout=timeout)
@@ -264,8 +271,16 @@ class ServiceHealthManager:
         circuit = self.circuit_breakers[service_name]
 
         try:
-            # Health Check über Circuit Breaker
-            health_info = await circuit.call(self._perform_health_request, endpoint)
+            # Deliberately not through circuit.call(). The poll reports
+            # failures to the breaker but never successes: a service can
+            # answer /health perfectly while failing every inference request,
+            # and letting a ping count toward success_threshold reclosed a
+            # breaker the pipeline had opened -- roughly every 75s, for ever,
+            # with no request having been served. A ping proves reachability
+            # and nothing more, so it is recorded as reachability and nothing
+            # more. The probe runs even while the circuit is open, which is
+            # how status.is_healthy recovers on its own.
+            health_info = await self._perform_health_request(endpoint)
 
             # Status Update
             status.is_healthy = True
@@ -286,17 +301,12 @@ class ServiceHealthManager:
             status.resources = health_info.get("resources")
             status.autoscaling = health_info.get("autoscaling")
 
-        except CircuitBreakerOpenError as e:
-            # Circuit ist OPEN - Service als nicht verfügbar markieren
-            status.is_healthy = False
-            status.last_check = utc_now()
-            status.error_message = str(e)
-            status.status_code = None
-            status.resources = None
-            status.autoscaling = None
-
         except Exception as e:
-            # Unerwarteter Fehler
+            # A ping that fails is real evidence: a service that cannot answer
+            # /health cannot serve inference either, so this half does drive
+            # the breaker, and opens it without waiting for three users to
+            # hit the failure first.
+            circuit.record_failure(f"health check failed: {e}")
             status.is_healthy = False
             status.last_check = utc_now()
             status.error_message = str(e)
@@ -383,6 +393,20 @@ class ServiceHealthManager:
             self._handle_service_failure(service_name)
         elif new_state == CircuitState.CLOSED:
             self._handle_service_recovery(service_name)
+
+        # Every transition, not just this service's: the reported mode depends
+        # on how many services are down, so a second one opening has to move it
+        # even though this service did not change.
+        graceful_degradation_manager.apply_service_states(
+            {
+                # CLOSED, not "not OPEN": a half-open breaker is still
+                # probing. Counting it as usable made the reported mode flap
+                # back to full for part of every recovery cycle of a genuine
+                # outage.
+                name: circuit.state is CircuitState.CLOSED
+                for name, circuit in self.circuit_breakers.items()
+            }
+        )
 
     def _handle_service_failure(self, service_name: str):
         """Behandelt Service Ausfall"""

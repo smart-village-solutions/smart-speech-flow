@@ -119,24 +119,18 @@ async def websocket_fallback_task() -> None:
 
 
 async def circuit_breaker_monitor() -> None:
-    """Background Task für Circuit Breaker Health Monitoring"""
+    """Starts the service health polling for the lifespan.
+
+    The cleanup loop that used to live here swept an expired-response cache
+    and a request queue, both of which went with the fallback machinery in
+    #219. ServiceHealthManager owns its own polling task, so there is nothing
+    left for this one to do after starting it.
+    """
     from .circuit_breaker_client import circuit_breaker_client
-    from .graceful_degradation import graceful_degradation_manager
 
     try:
-        # Health Monitoring starten
         await circuit_breaker_client.start_health_monitoring()
         print("🚀 Circuit Breaker Health Monitoring gestartet")
-
-        # Cleanup Loop für expired cache entries
-        while True:
-            try:
-                await graceful_degradation_manager.cleanup_expired_cache()
-                await graceful_degradation_manager.process_pending_requests()
-                await asyncio.sleep(300)  # Alle 5 Minuten
-            except Exception as e:
-                print(f"⚠️ Fehler im Circuit Breaker Monitor: {e}")
-                await asyncio.sleep(300)
     except Exception as e:
         print(f"❌ Circuit Breaker Monitor Startup Fehler: {e}")
 

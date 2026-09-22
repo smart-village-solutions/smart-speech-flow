@@ -193,27 +193,6 @@ def test_reset_all_circuits_and_wraps_reset_failure(client, monkeypatch):
     assert error_response.json()["detail"] == "Circuit breakers reset failed: reset failed"
 
 
-def test_cache_routes_return_status_and_clear_cache(client, monkeypatch):
-    manager = MagicMock()
-    manager.get_degradation_status.return_value = {
-        "cache_size": 4,
-        "cache_stats": {"hits": 3},
-        "pending_requests": 2,
-        "current_mode": "full",
-    }
-    monkeypatch.setattr(circuit_breaker, "graceful_degradation_manager", manager)
-
-    status_response = client.get("/api/health/cache")
-    clear_response = client.delete("/api/admin/cache/clear")
-
-    assert status_response.status_code == 200
-    assert status_response.json()["data"]["cache_size"] == 4
-    assert clear_response.status_code == 200
-    assert clear_response.json()["entries_removed"] == 4
-    manager.response_cache.clear.assert_called_once_with()
-    assert manager.cache_stats == {"hits": 0, "misses": 0, "evictions": 0}
-
-
 def test_health_summary_aggregates_alerts_and_wraps_failures(client, monkeypatch):
     health_status = {
         "overall_healthy": False,
@@ -232,7 +211,7 @@ def test_health_summary_aggregates_alerts_and_wraps_failures(client, monkeypatch
     monkeypatch.setattr(
         circuit_breaker.circuit_breaker_client,
         "get_degradation_status",
-        AsyncMock(return_value={"current_mode": "fallback", "cache_size": 801}),
+        AsyncMock(return_value={"current_mode": "fallback"}),
     )
     monkeypatch.setattr(
         circuit_breaker.CircuitBreakerFactory,
@@ -249,7 +228,6 @@ def test_health_summary_aggregates_alerts_and_wraps_failures(client, monkeypatch
         "circuit_open",
         "circuit_testing",
         "degraded_mode",
-        "cache_full",
         "gpu_pressure",
         "gpu_unavailable",
     }
