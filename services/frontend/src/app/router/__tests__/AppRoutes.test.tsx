@@ -72,7 +72,7 @@ describe('tenant login routes', () => {
 
     await screen.findByRole('button', { name: 'Neues Gespräch starten' });
     await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
-    expect(screen.getByRole('link', { name: 'Studio öffnen' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Organisation verwalten' })).toHaveAttribute(
       'href',
       'https://smartcity.dialog.kassel.de/'
     );

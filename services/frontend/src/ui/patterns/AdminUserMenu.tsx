@@ -37,10 +37,7 @@ function MenuRow({ label, onClick, className, expanded, children }: Readonly<Men
       type="button"
       onClick={onClick}
       aria-expanded={expanded}
-      className={cn(
-        'flex h-menu-row w-full items-center justify-between border-t border-border-divider px-4 text-start text-note transition-colors duration-150',
-        className
-      )}
+      className={`flex h-menu-row w-full items-center justify-between border-t border-border-divider px-4 text-start text-note transition-colors duration-150 ${className ?? ''}`}
     >
       <span>{label}</span>
       {children}
