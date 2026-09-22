@@ -76,7 +76,7 @@ def test_monitor_tracks_connection_lifecycle_and_health():
     monitor.message_sent("connection-1", "hello", "chat")
     monitor.message_received("connection-1", "world", "chat")
     monitor.record_error("connection-1", "decode_error")
-    metrics.last_heartbeat = monitor_utc_now() - timedelta(seconds=31)
+    metrics.last_heartbeat = monitor_utc_now() - timedelta(seconds=61)
 
     health = monitor.get_health_status()
     closed = monitor.connection_closed("connection-1", DisconnectReason.SERVER_DISCONNECT)
