@@ -1,14 +1,15 @@
-# Updated from the running production containers on 2026-09-11 for
-# api_gateway and frontend; the Keycloak theme image was built and verified on
-# 2026-09-13; remaining entries were captured on 2026-09-01 or later.
+# Updated from the running production containers on 2026-09-22 for
+# api_gateway, asr, translation, tts, and frontend; the Keycloak theme image
+# was built and verified on 2026-09-13; remaining entries were captured on
+# 2026-09-01 or later.
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
-api_gateway	sha256:849c8d82a569f3692426bc1c5f643fdf0e87d36587beb97b4cb137858912111f	ssf-backend-api_gateway:prod-9515f00
-asr	sha256:9f591a04df65f9b4048063080e1fa71763cdfca0dda2a7741cad2fa18624b790	ssf-backend-asr:prod-345add9
-translation	sha256:fff7d0e3df40fcaf657524de767b41babba75bb160cc74eae6d87510b6ca2ba0	ssf-backend-translation:prod-345add9
-tts	sha256:12c7e0851b72cad7f2847b505c1dfd9d9538cfe9411f9a30d39c4df6d6f424cd	ssf-backend-tts:prod-345add9
-frontend	sha256:bdf467d6fedd79b2232f9ce6e5d7819310a2e2da38d96287e3b27db1da92f3e6	ssf-backend-frontend:prod-9515f00
+api_gateway	sha256:77696fa90d3b6d7e2bbc0c568a46be93fddc56b752d71b36f0a8de50b41d8484	ssf-backend-api_gateway:prod-1fd9e98
+asr	sha256:43ae69e9da3dc8103dab416206ecd891eb2cd1dbf309447f9395ee796433a86f	ssf-backend-asr:prod-1fd9e98
+translation	sha256:0aaac78802d2f5015c3b253a78d8b284ac4c2a0f43747b3cb9ff1bd3cb6d4614	ssf-backend-translation:prod-1fd9e98
+tts	sha256:3b4b66e13ad7ee0010ad21d7606940d686089a40dec5f33fe5cf6b85219c8c27	ssf-backend-tts:prod-1fd9e98
+frontend	sha256:e2d427dd3427c5bd52216d4da86b3bae5322611066d0d2a76173acca77c1e75e	ssf-backend-frontend:prod-d7b9eee
 frontend-archive	sha256:5fe65474631a5f74c4ea81a5881ade417809f9c5905b593c6cc2d2699e50686d	ssf-backend-frontend-archive:prod-e409a06
 keycloak	sha256:b9222cecb936372df1fa7154f30306f48277c4ee3acec47d5f487ca225160b20	ssf-keycloak:prod-59c954c
 traefik	sha256:76de233753150da70cde36a5d845c231d408a041b6fcf5a36f924c1322bd98fd	traefik@sha256:ca0f90490fe3091f5f4e582a28638652edb3b26b4d7a1d9ee621ce88fb2bff86
