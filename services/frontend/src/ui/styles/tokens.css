@@ -2,7 +2,6 @@
 @import './fonts.css';
 @import './theme.css';
 @import './brand.css';
-@import './keycloak.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -79,7 +78,6 @@
     100% - var(--spacing-bubble-gutter) - var(--spacing-bubble-inset)
   );
   --container-menu: 288px;
-  --container-kc-card: 384px;
   --spacing-menu-row: 44px;
 
   /* Admin sessions, Phase 2. */

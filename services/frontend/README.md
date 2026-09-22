@@ -6,9 +6,9 @@ Das Frontend ist eine React-, TypeScript- und Vite-Anwendung fuer die sessionbas
 
 Es stellt drei zentrale Nutzungspfade bereit:
 
-- passwortgeschuetzte Landingpage
-- Admin-Oberflaeche fuer Session-Erstellung und Gespraechsfuehrung
-- Customer-Oberflaeche fuer Deeplinks, Sprachwahl und Nachrichtenversand
+- a start page where customers enter their session code
+- a staff interface behind the tenant Keycloak login for creating and running conversations
+- a customer interface for QR links, language choice and messaging
 
 ## Kernfunktionen
 
@@ -21,10 +21,11 @@ Es stellt drei zentrale Nutzungspfade bereit:
 
 ## Routen
 
-- `/` - Landingpage
-- `/admin` - Admin-Bereich
-- `/customer` - Customer-Bereich
-- `/join/:sessionId` - Deeplink fuer Customer-Session-Beitritt
+- `/` - session code entry for customers
+- `/join/:sessionId` - QR and link entry, straight to the language choice
+- `/s/:sessionId/language`, `/s/:sessionId/info/:languageCode`, `/s/:sessionId/live` - customer language choice, information and conversation
+- `/login` - organisation chooser for staff
+- `/login/:tenantId` - Keycloak login and staff dashboard for one organisation
 
 ## API-Bezug
 

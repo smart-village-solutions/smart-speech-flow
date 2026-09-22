@@ -130,41 +130,8 @@ docker compose ps api_gateway
 
 ## 📋 Post-Deployment Tests
 
-### Test 1: Landing Page
-- [ ] Öffne https://translate.smart-village.solutions
-- [ ] "Intern (Verwaltung)" und "Kunde" Buttons sichtbar
-
-### Test 2: Admin Session Flow
-- [ ] Klick auf "Intern (Verwaltung)"
-- [ ] "Neue Session erstellen" Button klicken
-- [ ] Session-ID wird angezeigt (8 Zeichen)
-- [ ] Status: "Warte auf Kunde" (gelb)
-- [ ] WebSocket Status: Grüner Punkt (verbunden)
-
-### Test 3: Customer Join Flow
-- [ ] In neuem Tab: https://translate.smart-village.solutions
-- [ ] Klick auf "Kunde"
-- [ ] Session-ID vom Admin eingeben
-- [ ] Sprache auswählen (z.B. English)
-- [ ] "Session beitreten" klicken
-- [ ] Status: "Erfolgreich verbunden"
-
-### Test 4: Messaging
-**Admin-Seite:**
-- [ ] Text-Nachricht senden → erscheint als blauer Bubble
-- [ ] Audio aufnehmen → Mikrofon-Icon wird rot, Timer läuft
-- [ ] Audio senden → erscheint als blauer Bubble mit Audio-Player
-
-**Customer-Seite:**
-- [ ] Übersetzte Nachricht erscheint als grauer Bubble
-- [ ] Audio wird automatisch abgespielt (nach User-Interaktion)
-- [ ] Metadata ist einsehbar (Klick auf Details)
-
-### Test 5: WebSocket Reconnect
-- [ ] Backend kurz stoppen: `docker compose stop api_gateway`
-- [ ] WebSocket Status: Roter/Gelber Punkt
-- [ ] Backend starten: `docker compose start api_gateway`
-- [ ] WebSocket Status: Grüner Punkt (Auto-Reconnect nach ~2-5 Sekunden)
+Run the automated and manual checks in [SMOKE_TESTS.md](SMOKE_TESTS.md) after
+every deployment.
 
 ## 🐛 Troubleshooting
 
