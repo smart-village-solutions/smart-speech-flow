@@ -5,6 +5,7 @@ import type { LoginTenant } from '@/domain/login-tenant/loginTenant.types';
 interface ActiveKeycloakSession {
   tenantId: string;
   realm: string;
+  studioUrl?: string;
   client: Keycloak;
   initialized: boolean;
   initialization: Promise<boolean> | null;
@@ -45,6 +46,7 @@ export async function requireKeycloakLogin(
     active = {
       tenantId: tenant.id,
       realm: tenant.realm,
+      studioUrl: tenant.studioUrl,
       client: new Keycloak({
         url: config.keycloakUrl,
         realm: tenant.realm,
@@ -53,6 +55,8 @@ export async function requireKeycloakLogin(
       initialized: false,
       initialization: null,
     };
+  } else {
+    active.studioUrl = tenant.studioUrl;
   }
   const session = active;
   if (session.initialized) return session.client.authenticated === true;
@@ -75,6 +79,16 @@ export async function requireKeycloakLogin(
     if (active === session) active = null;
     throw error;
   }
+}
+
+/** Returns the selected tenant's public Studio URL only to system administrators. */
+export function getStudioUrlForSystemAdmin(): string | null {
+  if (active === null || !active.initialized || active.client.authenticated !== true) {
+    return null;
+  }
+  return active.client.realmAccess?.roles?.includes('system_admin') === true
+    ? (active.studioUrl ?? null)
+    : null;
 }
 
 export async function getAdminAccessToken(): Promise<string | null> {

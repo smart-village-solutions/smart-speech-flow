@@ -8,6 +8,7 @@ const { construct, clients } = vi.hoisted(() => ({
   clients: [] as Array<{
     authenticated: boolean;
     token?: string;
+    realmAccess?: { roles?: string[] };
     loginRequired: boolean;
     init: ReturnType<typeof vi.fn>;
     updateToken: ReturnType<typeof vi.fn>;
@@ -60,6 +61,18 @@ describe('tenant Keycloak session', () => {
       pkceMethod: 'S256',
       redirectUri: `${globalThis.location.origin}/login/tenant-kassel`,
     });
+  });
+
+  it('returns the Studio URL only when the signed-in user is a system administrator', async () => {
+    const auth = await import('../keycloak');
+    await auth.requireKeycloakLogin(config, {
+      ...kassel,
+      studioUrl: 'https://smartcity.dialog.kassel.de/',
+    });
+
+    expect(auth.getStudioUrlForSystemAdmin()).toBeNull();
+    clients[0].realmAccess = { roles: ['ssf-user', 'system_admin'] };
+    expect(auth.getStudioUrlForSystemAdmin()).toBe('https://smartcity.dialog.kassel.de/');
   });
 
   it('shares initialization for repeated concurrent calls', async () => {

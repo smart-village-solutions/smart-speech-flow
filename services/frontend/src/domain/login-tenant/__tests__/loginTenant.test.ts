@@ -8,16 +8,16 @@ import { server } from '@/test/setup';
 
 const validDirectory = {
   tenants: [
-    { id: 'tenant-fulda', displayName: 'Amt Fulda', realm: 'fulda-ssf-2025' },
-    { id: 'tenant-kassel', displayName: 'Stadt Kassel', realm: 'kassel-ssf-2025' },
+    { id: 'tenant-fulda', displayName: 'Amt Fulda', realm: 'fulda-ssf-2025', studioUrl: 'https://fulda.dialog.kassel.de/' },
+    { id: 'tenant-kassel', displayName: 'Stadt Kassel', realm: 'kassel-ssf-2025', studioUrl: 'https://smartcity.dialog.kassel.de/' },
   ],
 };
 
 describe('toLoginTenants', () => {
   it('maps valid entries without changing the Studio directory order', () => {
     expect(toLoginTenants(validDirectory)).toEqual([
-      { id: 'tenant-fulda', displayName: 'Amt Fulda', realm: 'fulda-ssf-2025' },
-      { id: 'tenant-kassel', displayName: 'Stadt Kassel', realm: 'kassel-ssf-2025' },
+      { id: 'tenant-fulda', displayName: 'Amt Fulda', realm: 'fulda-ssf-2025', studioUrl: 'https://fulda.dialog.kassel.de/' },
+      { id: 'tenant-kassel', displayName: 'Stadt Kassel', realm: 'kassel-ssf-2025', studioUrl: 'https://smartcity.dialog.kassel.de/' },
     ]);
   });
 
@@ -29,11 +29,12 @@ describe('toLoginTenants', () => {
             id: 'tenant-fulda',
             displayName: 'Amt Fulda',
             realm: 'fulda-ssf-2025',
+            studioUrl: 'https://fulda.dialog.kassel.de/',
             futureStudioField: 'ignored',
           },
         ],
       })
-    ).toEqual([{ id: 'tenant-fulda', displayName: 'Amt Fulda', realm: 'fulda-ssf-2025' }]);
+    ).toEqual([{ id: 'tenant-fulda', displayName: 'Amt Fulda', realm: 'fulda-ssf-2025', studioUrl: 'https://fulda.dialog.kassel.de/' }]);
   });
 
   it.each([
@@ -67,6 +68,7 @@ describe('toLoginTenants', () => {
     ],
     ['a non-array tenants field', { tenants: {} }],
     ['a non-object tenant entry', { tenants: ['tenant-fulda'] }],
+    ['an insecure Studio URL', { tenants: [{ id: 'tenant-fulda', displayName: 'Amt Fulda', realm: 'fulda-ssf-2025', studioUrl: 'http://studio.test/' }] }],
   ])('rejects %s', (_description, directory) => {
     expect(() => toLoginTenants(directory)).toThrow('Invalid login tenant directory response');
   });
