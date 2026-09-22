@@ -30,9 +30,7 @@ _FALLBACK_TENANT: Final[str] = "default"
 
 @runtime_checkable
 class TenantResolver(Protocol):
-    async def resolve(
-        self, session_id: str | None, session_key: TenantSessionKey | None
-    ) -> str:
+    async def resolve(self, session_id: str | None, session_key: TenantSessionKey | None) -> str:
         """Resolve the storage tenant for a submission's already-resolved session."""
         ...
 
@@ -49,9 +47,7 @@ class ConfiguredTenantResolver(TenantResolver):
         return cls(tenant_id=configured or _FALLBACK_TENANT)
 
     @override
-    async def resolve(
-        self, session_id: str | None, session_key: TenantSessionKey | None
-    ) -> str:
+    async def resolve(self, session_id: str | None, session_key: TenantSessionKey | None) -> str:
         return self._tenant_id
 
 
@@ -65,9 +61,7 @@ class SessionTenantResolver:
     def __init__(self, *, fallback: TenantResolver) -> None:
         self._fallback = fallback
 
-    async def resolve(
-        self, session_id: str | None, session_key: TenantSessionKey | None
-    ) -> str:
+    async def resolve(self, session_id: str | None, session_key: TenantSessionKey | None) -> str:
         if session_key is not None:
             return session_key.tenant_id
         return await self._fallback.resolve(session_id, session_key)

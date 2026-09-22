@@ -50,9 +50,7 @@ def derive_auto_scaling_signal(metrics: Dict[str, Any]) -> Dict[str, Any]:
     threshold = 85
     reasons: List[str] = []
 
-    if (
-        cpu_percent := metrics.get("cpu_percent")
-    ) is not None and cpu_percent >= threshold:
+    if (cpu_percent := metrics.get("cpu_percent")) is not None and cpu_percent >= threshold:
         reasons.append(f"cpu>={threshold}")
     if (
         memory_percent := metrics.get("memory_percent")
@@ -68,13 +66,9 @@ def derive_auto_scaling_signal(metrics: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def append_gpu_signal(
-    reasons: List[str], gpu_device: Dict[str, Any], threshold: int
-) -> None:
+def append_gpu_signal(reasons: List[str], gpu_device: Dict[str, Any], threshold: int) -> None:
     """Append scale-up reasons for a GPU that crosses the threshold."""
-    if (
-        gpu_util := gpu_device.get("utilization_percent")
-    ) is not None and gpu_util >= threshold:
+    if (gpu_util := gpu_device.get("utilization_percent")) is not None and gpu_util >= threshold:
         reasons.append(f"gpu{gpu_device.get('index')}_util>={threshold}")
     if (
         memory_util := gpu_device.get("memory_utilization")

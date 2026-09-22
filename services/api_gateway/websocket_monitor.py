@@ -129,9 +129,7 @@ class WebSocketMonitor:
     def __init__(self, registry=None):
         self._active_connections: Dict[str, ConnectionMetrics] = {}
         self._connection_history: List[ConnectionMetrics] = []
-        self._session_connections: Dict[TenantSessionKey | str, Set[str]] = defaultdict(
-            set
-        )
+        self._session_connections: Dict[TenantSessionKey | str, Set[str]] = defaultdict(set)
 
         # Store registry for Prometheus metrics
         # Falls keine Registry übergeben wird, verwende die Standard-Registry
@@ -375,13 +373,9 @@ class WebSocketMonitor:
         pop, so it logs "non-existent connection" and returns None. The
         WebSocketOriginBlocked alert needs the counter incremented anyway.
         """
-        self.disconnects_total.labels(
-            client_type="unknown", disconnect_reason=reason.value
-        ).inc()
+        self.disconnects_total.labels(client_type="unknown", disconnect_reason=reason.value).inc()
 
-    def message_sent(
-        self, connection_id: str, message_data: str, _message_type: str = "unknown"
-    ):
+    def message_sent(self, connection_id: str, message_data: str, _message_type: str = "unknown"):
         """Record outbound message"""
         metrics = self._active_connections.get(connection_id)
         if not metrics:
@@ -453,13 +447,9 @@ class WebSocketMonitor:
         metrics.last_heartbeat = utc_now()
 
         # Update Prometheus metrics
-        self.heartbeat_latency.labels(client_type=metrics.client_type).observe(
-            latency_seconds
-        )
+        self.heartbeat_latency.labels(client_type=metrics.client_type).observe(latency_seconds)
 
-    def session_closed(
-        self, session_id: TenantSessionKey | str, reason: str = "session_expired"
-    ):
+    def session_closed(self, session_id: TenantSessionKey | str, reason: str = "session_expired"):
         """Handle session closure - disconnect all associated WebSocket connections"""
         connection_ids = list(self._session_connections.get(session_id, []))
 
@@ -605,9 +595,7 @@ class WebSocketMonitor:
 
                 # Clean up stale connections
                 for connection_id in stale_connections:
-                    self.connection_closed(
-                        connection_id, DisconnectReason.HEARTBEAT_TIMEOUT
-                    )
+                    self.connection_closed(connection_id, DisconnectReason.HEARTBEAT_TIMEOUT)
                     logger.warning("websocket_stale_connection_cleaned")
 
                 if stale_connections:

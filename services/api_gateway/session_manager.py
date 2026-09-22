@@ -165,18 +165,12 @@ class SessionMessage:
             source_lang=data.get("source_lang", ""),
             target_lang=data.get("target_lang", ""),
             timestamp=_ensure_utc(datetime.fromisoformat(data["timestamp"])),
-            translated_audio_available=bool(
-                data.get("translated_audio_available", False)
-            ),
+            translated_audio_available=bool(data.get("translated_audio_available", False)),
             pipeline_metadata=data.get("pipeline_metadata"),
             original_audio_url=data.get("original_audio_url"),
             record_authorized=bool(data.get("record_authorized", False)),
-            original_audio_authorized=bool(
-                data.get("original_audio_authorized", False)
-            ),
-            translated_audio_authorized=bool(
-                data.get("translated_audio_authorized", False)
-            ),
+            original_audio_authorized=bool(data.get("original_audio_authorized", False)),
+            translated_audio_authorized=bool(data.get("translated_audio_authorized", False)),
         )
 
 
@@ -217,15 +211,11 @@ class Session:
         return TenantSessionKey(self.tenant_id, self.id)
 
     def next_timeout_at(self) -> datetime:
-        absolute_deadline = self.created_at + timedelta(
-            hours=self.maximum_lifetime_hours
-        )
+        absolute_deadline = self.created_at + timedelta(hours=self.maximum_lifetime_hours)
         if self.admin_connection_count > 0:
             return absolute_deadline
         grace_anchor = self.admin_disconnected_at or self.created_at
-        reconnect_deadline = grace_anchor + timedelta(
-            minutes=self.reconnect_grace_minutes
-        )
+        reconnect_deadline = grace_anchor + timedelta(minutes=self.reconnect_grace_minutes)
         return min(absolute_deadline, reconnect_deadline)
 
     def warning_at(self) -> datetime:
@@ -256,9 +246,7 @@ class Session:
             "admin_language": self.admin_language,
             "status": self.status.value,
             "created_at": self.created_at.isoformat(),
-            "terminated_at": (
-                self.terminated_at.isoformat() if self.terminated_at else None
-            ),
+            "terminated_at": (self.terminated_at.isoformat() if self.terminated_at else None),
             "message_count": len(self.messages),
             "admin_connected": self.admin_connected,
             "customer_connected": self.customer_connected,
@@ -279,9 +267,7 @@ class Session:
             "timeout_warning_minutes": self.timeout_warning_minutes,
             "maximum_lifetime_hours": self.maximum_lifetime_hours,
             "warning_at": self.warning_at().isoformat() if self.tenant_id else None,
-            "timeout_at": (
-                self.next_timeout_at().isoformat() if self.tenant_id else None
-            ),
+            "timeout_at": (self.next_timeout_at().isoformat() if self.tenant_id else None),
         }
 
         if include_messages:
@@ -327,9 +313,7 @@ class Session:
         created_at = _ensure_utc(datetime.fromisoformat(data["created_at"]))
         terminated_at_raw = data.get("terminated_at")
         terminated_at = (
-            _ensure_utc(datetime.fromisoformat(terminated_at_raw))
-            if terminated_at_raw
-            else None
+            _ensure_utc(datetime.fromisoformat(terminated_at_raw)) if terminated_at_raw else None
         )
         last_activity_raw = data.get("last_activity", data["created_at"])
         admin_disconnected_raw = data.get("admin_disconnected_at")
@@ -406,14 +390,10 @@ class SessionManager:
         self.redis_client: Optional[Redis] = None
         self.redis_namespace: str = os.getenv("REDIS_NAMESPACE", "ssf")
         self.redis_enabled: bool = False
-        self.allow_parallel_sessions: bool = _env_flag(
-            "SSF_ALLOW_PARALLEL_SESSIONS", False
-        )
+        self.allow_parallel_sessions: bool = _env_flag("SSF_ALLOW_PARALLEL_SESSIONS", False)
         self.store = store
         self.clock = clock
-        self.session_id_factory = session_id_factory or (
-            lambda: str(uuid.uuid4())[:8].upper()
-        )
+        self.session_id_factory = session_id_factory or (lambda: str(uuid.uuid4())[:8].upper())
         self.tenant_mode = store is not None
 
         self.reset()
@@ -443,9 +423,7 @@ class SessionManager:
             telemetry.emit_session_lifecycle(
                 session_ref=session_ref(session.id),
                 tenant_ref=(
-                    tenant_ref(session.tenant_id)
-                    if session.tenant_id
-                    else MISSING_TENANT_REFERENCE
+                    tenant_ref(session.tenant_id) if session.tenant_id else MISSING_TENANT_REFERENCE
                 ),
                 phase=phase,
                 termination_reason=reason,
@@ -490,9 +468,7 @@ class SessionManager:
         restored = self.store.list_active()
         restarted_at = self.clock()
         for session in restored:
-            stale_admin_presence = (
-                session.admin_connected or session.admin_connection_count > 0
-            )
+            stale_admin_presence = session.admin_connected or session.admin_connection_count > 0
             session.admin_connected = False
             session.customer_connected = False
             session.admin_connection_count = 0
@@ -504,9 +480,7 @@ class SessionManager:
                 session.admin_disconnected_at = session.created_at
             self.store.save(session)
             self.sessions[session.key] = session
-            self.active_admin_sessions.setdefault(session.tenant_id, set()).add(
-                session.id
-            )
+            self.active_admin_sessions.setdefault(session.tenant_id, set()).add(session.id)
 
     # === Persistence Helpers ===
 
@@ -619,16 +593,12 @@ class SessionManager:
         """
         await asyncio.sleep(0)
         if tenant_id is not None and runtime_configuration is not None:
-            return await self._create_tenant_admin_session(
-                tenant_id, runtime_configuration
-            )
+            return await self._create_tenant_admin_session(tenant_id, runtime_configuration)
         if not self.allow_parallel_sessions:
             await self.terminate_all_active_sessions(reason="new_session_created")
 
         session_id = str(uuid.uuid4())[:8].upper()
-        session = Session(
-            id=session_id, status=SessionStatus.PENDING
-        )  # Wartet auf Customer-Join
+        session = Session(id=session_id, status=SessionStatus.PENDING)  # Wartet auf Customer-Join
         self.sessions[session_id] = session
         self.active_admin_sessions.add(session_id)
 
@@ -664,9 +634,7 @@ class SessionManager:
                 reconnect_grace_minutes=_positive_env_int(
                     "SSF_SESSION_RECONNECT_GRACE_MINUTES", 30
                 ),
-                timeout_warning_minutes=_positive_env_int(
-                    "SSF_SESSION_TIMEOUT_WARNING_MINUTES", 5
-                ),
+                timeout_warning_minutes=_positive_env_int("SSF_SESSION_TIMEOUT_WARNING_MINUTES", 5),
                 maximum_lifetime_hours=_positive_env_int("SSF_SESSION_MAX_HOURS", 8),
             )
             if self.store.create(session):
@@ -713,9 +681,7 @@ class SessionManager:
         self.active_admin_sessions.clear()
         self._persist_active_sessions()
 
-    async def terminate_session(
-        self, session_id: Any, reason: str = "manual_termination"
-    ):
+    async def terminate_session(self, session_id: Any, reason: str = "manual_termination"):
         """Einzelne Session beenden mit WebSocket-Notifications"""
         session = self.get_session(session_id)
         if not session:
@@ -807,9 +773,7 @@ class SessionManager:
         # audio references from messages whose files are still on disk.
         # The terminal record gets its own messages; the live session
         # is untouched until the commit succeeds.
-        terminal_session.messages = [
-            copy.deepcopy(message) for message in session.messages
-        ]
+        terminal_session.messages = [copy.deepcopy(message) for message in session.messages]
         # The pruned message list is part of the record being
         # committed. The files it drops are deleted only once that
         # commit has succeeded: a store failure here is transient and
@@ -848,9 +812,7 @@ class SessionManager:
             SessionTerminationReason.classify(reason),
         )
 
-    async def _send_termination_notifications(
-        self, session_id: Any, reason: str
-    ) -> bool:
+    async def _send_termination_notifications(self, session_id: Any, reason: str) -> bool:
         """WebSocket-Benachrichtigungen bei Session-Beendigung"""
         if self.websocket_manager:
             await self.websocket_manager.handle_session_termination(session_id, reason)
@@ -874,9 +836,7 @@ class SessionManager:
                 if websocket:
                     await websocket.send_json(termination_message)
                     if hasattr(websocket, "close"):
-                        await websocket.close(
-                            code=1000, reason=f"Session terminated: {reason}"
-                        )
+                        await websocket.close(code=1000, reason=f"Session terminated: {reason}")
             except Exception as e:
                 print(f"⚠️ WebSocket-Notification-Fehler ({client_type}): {e}")
 
@@ -903,9 +863,7 @@ class SessionManager:
 
     def create_session(self, customer_language: str) -> str:
         """Legacy-Methode - deprecated zugunsten von create_admin_session()"""
-        print(
-            "⚠️ Warning: create_session() ist deprecated. Verwende create_admin_session()"
-        )
+        print("⚠️ Warning: create_session() ist deprecated. Verwende create_admin_session()")
         session_id = str(uuid.uuid4())[:8].upper()
         session = Session(
             id=session_id,
@@ -943,9 +901,7 @@ class SessionManager:
                     session = Session.from_dict(data)
                     self.sessions[session_id] = session
             except RedisError as exc:
-                print(
-                    f"⚠️ Lesen der Session {session_id} aus Redis fehlgeschlagen: {exc}"
-                )
+                print(f"⚠️ Lesen der Session {session_id} aus Redis fehlgeschlagen: {exc}")
         return session
 
     def resolve_customer_session(self, session_id: str) -> Optional[TenantSessionKey]:
@@ -1026,9 +982,7 @@ class SessionManager:
             raise KeyError(_SESSION_NOT_FOUND)
         if session.status == SessionStatus.TERMINATED:
             return
-        session.customer_connection_count = max(
-            0, session.customer_connection_count - 1
-        )
+        session.customer_connection_count = max(0, session.customer_connection_count - 1)
         session.customer_connected = session.customer_connection_count > 0
         if self.store is not None:
             self.store.save(session)
@@ -1094,9 +1048,7 @@ class SessionManager:
             return None
         return session.key
 
-    def _settle_refused_content(
-        self, session: "Session"
-    ) -> tuple[bool, list[tuple[str, Any]]]:
+    def _settle_refused_content(self, session: "Session") -> tuple[bool, list[tuple[str, Any]]]:
         """Prune refused messages and report the audio files they leave behind.
 
         The record is mutated here but no file is touched. Deletion is the
@@ -1131,9 +1083,7 @@ class SessionManager:
                 continue
             if self._remove_refused_original_audio(message, doomed):
                 changed = True
-            if message.translated_audio_available and (
-                not message.translated_audio_authorized
-            ):
+            if message.translated_audio_available and (not message.translated_audio_authorized):
                 doomed.append((message.id, AudioVariant.TRANSLATED))
                 # A retained message must not advertise audio it no longer has,
                 # on either marker: `scope_pipeline_audio_urls` rebuilds a
@@ -1172,9 +1122,7 @@ class SessionManager:
             return True
         return False
 
-    def _delete_settled_audio(
-        self, key: TenantSessionKey, doomed: list[tuple[str, Any]]
-    ) -> None:
+    def _delete_settled_audio(self, key: TenantSessionKey, doomed: list[tuple[str, Any]]) -> None:
         """Delete the artefacts a settled record no longer accounts for."""
         from .audio_storage import delete_message_audio
 
@@ -1225,9 +1173,7 @@ class SessionManager:
             if session.status is SessionStatus.TERMINATED:
                 continue
             try:
-                refused_delta, expired_delta = self._sweep_session_content(
-                    session, now, keep_for
-                )
+                refused_delta, expired_delta = self._sweep_session_content(session, now, keep_for)
                 refused_removed += refused_delta
                 expired_removed += expired_delta
             except Exception:  # noqa: BLE001 - one session must not stop the pass
@@ -1317,9 +1263,7 @@ class SessionManager:
             return None
 
         if len(active_sessions) > 1:
-            raise ValueError(
-                "Mehrere aktive Sessions vorhanden; explizite session_id erforderlich"
-            )
+            raise ValueError("Mehrere aktive Sessions vorhanden; explizite session_id erforderlich")
 
         active_sessions.sort(key=lambda s: s.created_at, reverse=True)
         return active_sessions[0].to_public_dict()
@@ -1338,9 +1282,7 @@ class SessionManager:
         if not candidates:
             return None
         if len(candidates) > 1 and session_id is None:
-            raise ValueError(
-                "Mehrere aktive Sessions vorhanden; explizite session_id erforderlich"
-            )
+            raise ValueError("Mehrere aktive Sessions vorhanden; explizite session_id erforderlich")
         candidates.sort(key=lambda item: item.created_at, reverse=True)
         return candidates[0].to_public_dict()
 
@@ -1372,9 +1314,7 @@ class SessionManager:
                 for session in self.store.list_for_tenant(tenant_id)
                 if session.status == SessionStatus.TERMINATED
             ]
-            terminated_sessions.sort(
-                key=lambda item: item.get("terminated_at", ""), reverse=True
-            )
+            terminated_sessions.sort(key=lambda item: item.get("terminated_at", ""), reverse=True)
             return terminated_sessions[:limit]
         terminated_sessions = [
             session.to_public_dict()
@@ -1431,9 +1371,7 @@ class SessionManager:
                 f"{customer_language}"
             )
 
-    async def add_websocket_connection(
-        self, session_id: Any, client_type: ClientType, websocket
-    ):
+    async def add_websocket_connection(self, session_id: Any, client_type: ClientType, websocket):
         """WebSocket-Verbindung zur Session hinzufügen"""
         await asyncio.sleep(0)
         if isinstance(session_id, TenantSessionKey):
@@ -1461,13 +1399,9 @@ class SessionManager:
                 session.customer_connected = True
             self._persist_session(session)
 
-        print(
-            f"🔗 WebSocket-Verbindung hinzugefügt: {session_id} ({client_type.value})"
-        )
+        print(f"🔗 WebSocket-Verbindung hinzugefügt: {session_id} ({client_type.value})")
 
-    async def remove_websocket_connection(
-        self, session_id: Any, client_type: ClientType
-    ):
+    async def remove_websocket_connection(self, session_id: Any, client_type: ClientType):
         """WebSocket-Verbindung von Session entfernen"""
         await asyncio.sleep(0)
         if isinstance(session_id, TenantSessionKey):
@@ -1493,9 +1427,7 @@ class SessionManager:
                     session.customer_connected = False
                 self._persist_session(session)
 
-            print(
-                f"🔌 WebSocket-Verbindung entfernt: {session_id} ({client_type.value})"
-            )
+            print(f"🔌 WebSocket-Verbindung entfernt: {session_id} ({client_type.value})")
 
     def register_websocket_manager(self, manager: "WebSocketManager") -> None:
         """WebSocketManager-Referenz für bidirektionale Cleanup-Prozesse registrieren."""
@@ -1530,9 +1462,7 @@ class SessionManager:
                 else session.is_timeout_warning_due()
             )
             timeout_due = (
-                session.timeout_due(self.clock())
-                if session.tenant_id
-                else session.is_timeout_due()
+                session.timeout_due(self.clock()) if session.tenant_id else session.is_timeout_due()
             )
             if warning_due:
                 await self._send_timeout_warning(session)
@@ -1606,9 +1536,7 @@ class SessionManager:
                 "client_type": client_type.value,
                 "timestamp": utc_now().isoformat(),
             }
-            await self.websocket_manager.send_to_client(
-                session_id, client_type, response
-            )
+            await self.websocket_manager.send_to_client(session_id, client_type, response)
 
 
 # Globale Instanz

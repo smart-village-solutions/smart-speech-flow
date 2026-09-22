@@ -74,9 +74,7 @@ def require_customer_session_key(
         raise _not_found()
     if principal is not None:
         tenant_id = principal.get("studio_tenant_id")
-        if not isinstance(tenant_id, str) or not hmac.compare_digest(
-            tenant_id, key.tenant_id
-        ):
+        if not isinstance(tenant_id, str) or not hmac.compare_digest(tenant_id, key.tenant_id):
             log_tenant_access_denied(key, outcome="principal_scope_mismatch")
             raise _not_found()
     return key

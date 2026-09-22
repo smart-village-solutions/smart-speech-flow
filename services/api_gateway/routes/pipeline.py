@@ -27,9 +27,7 @@ async def pipeline(
     if requests_total:
         requests_total.inc()
     debug_query = request.query_params.get("debug", None)
-    debug_active = (str(debug).lower() == "true") or (
-        str(debug_query).lower() == "true"
-    )
+    debug_active = (str(debug).lower() == "true") or (str(debug_query).lower() == "true")
     file_bytes = await file.read()
 
     def get_origin(request: Request) -> str:
@@ -102,9 +100,7 @@ async def pipeline(
             }
             return pipeline_response(request, json.dumps(response_obj), status_code=400)
         audio_b64 = (
-            base64.b64encode(result["audio_bytes"]).decode()
-            if result["audio_bytes"]
-            else None
+            base64.b64encode(result["audio_bytes"]).decode() if result["audio_bytes"] else None
         )
         logger.info(
             f"Frontend-Response: success, originalText={result['asr_text']}, translatedText={result['translation_text']}, audioBytes={len(result['audio_bytes']) if result['audio_bytes'] else 0}"

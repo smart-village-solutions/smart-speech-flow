@@ -43,9 +43,7 @@ async def upload(
         )
     file_bytes = await file.read()
     try:
-        result = await run_pipeline(
-            request, process_wav, file_bytes, source_lang, target_lang
-        )
+        result = await run_pipeline(request, process_wav, file_bytes, source_lang, target_lang)
     except PipelineBusyError as busy:
         logger.info("Upload rejected: pipeline at capacity")
         return HTMLResponse(
@@ -85,8 +83,7 @@ async def upload(
         bool(result.get("translation_text")),
         len(result["audio_bytes"]) if result["audio_bytes"] else 0,
     )
-    return HTMLResponse(
-        content=f"""
+    return HTMLResponse(content=f"""
         <html>
         <head><title>Ergebnis Download</title></head>
         <body>
@@ -99,5 +96,4 @@ async def upload(
             <audio controls src='data:audio/wav;base64,{escaped_audio_b64}'></audio>
         </body>
         </html>
-    """
-    )
+    """)

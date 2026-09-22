@@ -14,9 +14,7 @@ def test_translate_success():
     assert response.status_code == 200
     data = response.json()
     assert "translations" in data
-    assert isinstance(data["translations"], str) or isinstance(
-        data["translations"], list
-    )
+    assert isinstance(data["translations"], str) or isinstance(data["translations"], list)
     if isinstance(data["translations"], str):
         assert len(data["translations"]) > 0
     else:

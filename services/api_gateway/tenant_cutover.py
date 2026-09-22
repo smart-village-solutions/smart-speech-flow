@@ -87,9 +87,7 @@ def cutover(
 
     redis_keys = _legacy_redis_keys(redis_client, namespace)
     audio_targets = _audio_targets(Path(audio_root))
-    existing_audio_targets = tuple(
-        target for target in audio_targets if target.is_dir()
-    )
+    existing_audio_targets = tuple(target for target in audio_targets if target.is_dir())
 
     redis_deleted = 0
     audio_deleted = 0

@@ -33,8 +33,7 @@ class PresentationConfiguration(ContractModel):
         keys because Contract V1 requires tolerance of optional additions.
         """
         if isinstance(value, dict) and (
-            "conversationContentStorage" in value
-            or "conversation_content_storage" in value
+            "conversationContentStorage" in value or "conversation_content_storage" in value
         ):
             raise ValueError("a presentation snapshot carries no storage policy")
         return value

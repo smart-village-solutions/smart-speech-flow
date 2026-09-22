@@ -40,9 +40,7 @@ try:
         ["directory"],
     )
 
-    audio_files_total = Gauge(
-        "audio_files_total", "Total number of audio files", ["directory"]
-    )
+    audio_files_total = Gauge("audio_files_total", "Total number of audio files", ["directory"])
 
     audio_cleanup_deleted_files_total = Counter(
         "audio_cleanup_deleted_files_total",
@@ -111,12 +109,7 @@ def audio_path(
     """Return a v2 path without exposing the raw tenant identifier."""
     safe_message_id = _storage_identifier(message_id)
     return (
-        base_dir
-        / "v2"
-        / key.tenant_ref
-        / key.session_id
-        / variant.value
-        / f"{safe_message_id}.wav"
+        base_dir / "v2" / key.tenant_ref / key.session_id / variant.value / f"{safe_message_id}.wav"
     )
 
 
@@ -181,10 +174,7 @@ def scoped_audio_url(
     if role not in {"admin", "customer"}:
         raise ValueError("invalid audio role")
     safe_message_id = _storage_identifier(message_id)
-    return (
-        f"/api/{role}/session/{key.session_id}/audio/"
-        f"{safe_message_id}/{variant.value}.wav"
-    )
+    return f"/api/{role}/session/{key.session_id}/audio/" f"{safe_message_id}/{variant.value}.wav"
 
 
 def scope_pipeline_audio_urls(
@@ -199,9 +189,7 @@ def scope_pipeline_audio_urls(
     scoped = copy.deepcopy(metadata)
     pipeline_input = scoped.get("input")
     if isinstance(pipeline_input, dict) and pipeline_input.get("type") == "audio":
-        pipeline_input["audio_url"] = scoped_audio_url(
-            key, role, message_id, AudioVariant.ORIGINAL
-        )
+        pipeline_input["audio_url"] = scoped_audio_url(key, role, message_id, AudioVariant.ORIGINAL)
     steps = scoped.get("steps")
     if isinstance(steps, list):
         for step in steps:
@@ -469,12 +457,8 @@ def get_disk_usage(*, base_dir: Path = AUDIO_BASE_DIR) -> dict:
 
     # Update Prometheus metrics
     if PROMETHEUS_AVAILABLE:
-        audio_storage_disk_usage_bytes.labels(directory="original").set(
-            stats["original_bytes"]
-        )
-        audio_storage_disk_usage_bytes.labels(directory="translated").set(
-            stats["translated_bytes"]
-        )
+        audio_storage_disk_usage_bytes.labels(directory="original").set(stats["original_bytes"])
+        audio_storage_disk_usage_bytes.labels(directory="translated").set(stats["translated_bytes"])
         audio_files_total.labels(directory="original").set(stats["original_files"])
         audio_files_total.labels(directory="translated").set(stats["translated_files"])
 

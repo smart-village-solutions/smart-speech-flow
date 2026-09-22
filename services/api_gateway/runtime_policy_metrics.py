@@ -44,9 +44,7 @@ class RuntimePolicyMetrics:
             "Duration of one live Studio policy read",
         )
 
-    def record_decision(
-        self, decision: PolicyDecision, duration_seconds: float
-    ) -> None:
+    def record_decision(self, decision: PolicyDecision, duration_seconds: float) -> None:
         label = "authorized" if decision.authorized else "refused"
         self._decisions.labels(decision=label, reason=decision.reason.value).inc()
         self._duration.observe(duration_seconds)
@@ -55,9 +53,7 @@ class RuntimePolicyMetrics:
         self._discarded.labels(reason=reason.value).inc()
 
 
-def _registered[
-    _Collector: (Counter, Histogram)
-](
+def _registered[_Collector: (Counter, Histogram)](
     registry: CollectorRegistry,
     collector_type: type[_Collector],
     name: str,
@@ -78,8 +74,7 @@ def _registered[
         if isinstance(existing, collector_type):
             return existing
     logger.warning(
-        "%s is not available on the gateway registry; "
-        "runtime policy series will not be scraped",
+        "%s is not available on the gateway registry; " "runtime policy series will not be scraped",
         name,
     )
     return collector_type(name, documentation, labels, registry=CollectorRegistry())

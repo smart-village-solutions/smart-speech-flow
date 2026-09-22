@@ -77,9 +77,7 @@ def collect_gpu_metrics(
     if not gpu_info["available"]:
         return gpu_info, nvml_initialized
 
-    nvml_ready, nvml_initialized = _initialize_nvml(
-        pynvml_module, nvml_initialized, gpu_info
-    )
+    nvml_ready, nvml_initialized = _initialize_nvml(pynvml_module, nvml_initialized, gpu_info)
 
     for device_idx in range(gpu_info["device_count"]):
         device_data, device_errors = _collect_device_metrics(

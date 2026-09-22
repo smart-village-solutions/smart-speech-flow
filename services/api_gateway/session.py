@@ -103,14 +103,10 @@ async def send_session_message(
     try:
         # Nutze bestehende Pipeline-Logik
         file_bytes = await file.read()
-        result = await asyncio.to_thread(
-            process_wav, file_bytes, source_lang, target_lang
-        )
+        result = await asyncio.to_thread(process_wav, file_bytes, source_lang, target_lang)
 
         if result.get("error"):
-            raise HTTPException(
-                500, f"Pipeline-Fehler: {result.get('error_msg', 'Unbekannt')}"
-            )
+            raise HTTPException(500, f"Pipeline-Fehler: {result.get('error_msg', 'Unbekannt')}")
 
         # Session-Nachricht erstellen
         message = SessionMessage(
@@ -119,9 +115,7 @@ async def send_session_message(
             original_text=result["asr_text"],
             translated_text=result["translation_text"],
             audio_base64=(
-                base64.b64encode(result["audio_bytes"]).decode()
-                if result["audio_bytes"]
-                else None
+                base64.b64encode(result["audio_bytes"]).decode() if result["audio_bytes"] else None
             ),
             source_lang=source_lang,
             target_lang=target_lang,

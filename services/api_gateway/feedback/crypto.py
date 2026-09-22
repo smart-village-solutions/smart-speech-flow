@@ -39,9 +39,7 @@ class FeedbackCipher:
 
     def __init__(self, *, key: bytes) -> None:
         if len(key) != _KEY_LENGTH:
-            raise MissingEncryptionKey(
-                f"{FEEDBACK_KEY_ENV} must decode to {_KEY_LENGTH} bytes"
-            )
+            raise MissingEncryptionKey(f"{FEEDBACK_KEY_ENV} must decode to {_KEY_LENGTH} bytes")
         self._aesgcm = AESGCM(key)
 
     @classmethod
@@ -49,15 +47,12 @@ class FeedbackCipher:
         configured = (os.environ.get(FEEDBACK_KEY_ENV) or "").strip()
         if not configured:
             raise MissingEncryptionKey(
-                f"{FEEDBACK_KEY_ENV} is required; feedback cannot be stored "
-                "without it"
+                f"{FEEDBACK_KEY_ENV} is required; feedback cannot be stored " "without it"
             )
         try:
             key = base64.b64decode(configured, validate=True)
         except ValueError as error:
-            raise MissingEncryptionKey(
-                f"{FEEDBACK_KEY_ENV} must be base64-encoded"
-            ) from error
+            raise MissingEncryptionKey(f"{FEEDBACK_KEY_ENV} must be base64-encoded") from error
         return cls(key=key)
 
     def encrypt(self, plaintext: str, *, feedback_id: UUID, tenant_id: str) -> bytes:
