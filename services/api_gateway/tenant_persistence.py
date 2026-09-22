@@ -71,9 +71,7 @@ def configure_tenant_persistence() -> TenantPersistenceBinding | None:
     redis_url = os.environ.get("REDIS_URL", "").strip()
     if not redis_url:
         if deployment == "production":
-            raise TenantPersistenceUnavailable(
-                "tenant persistence configuration unavailable"
-            )
+            raise TenantPersistenceUnavailable("tenant persistence configuration unavailable")
         return None
     if Redis is None:
         raise TenantPersistenceUnavailable("tenant persistence client unavailable")
@@ -88,9 +86,7 @@ def configure_tenant_persistence() -> TenantPersistenceBinding | None:
         )
         redis.ping()
     except Exception:
-        raise TenantPersistenceUnavailable(
-            "tenant persistence connection unavailable"
-        ) from None
+        raise TenantPersistenceUnavailable("tenant persistence connection unavailable") from None
 
     binding = TenantPersistenceBinding(
         redis=redis,

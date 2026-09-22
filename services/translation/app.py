@@ -55,9 +55,7 @@ def _build_debug_response(
 ) -> JSONResponse | None:
     if not debug_active:
         return None
-    return JSONResponse(
-        {"translations": None, "debug": debug_info}, status_code=status_code
-    )
+    return JSONResponse({"translations": None, "debug": debug_info}, status_code=status_code)
 
 
 class _DebugResponse(Exception):
@@ -99,9 +97,7 @@ except ImportError:
 # ----------------------------
 # Config
 # ----------------------------
-MODEL_NAME = os.getenv(
-    "MODEL_NAME", "facebook/m2m100_1.2B"
-)  # oder "facebook/m2m100_418M"
+MODEL_NAME = os.getenv("MODEL_NAME", "facebook/m2m100_1.2B")  # oder "facebook/m2m100_418M"
 PREFER_FP16 = os.getenv("PREFER_FP16", "1") == "1"  # FP16 nur auf GPU
 DEVICE_STR = os.getenv("DEVICE", "cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -143,9 +139,7 @@ def _env_int(name: str, default: int) -> int:
     try:
         return int(raw)
     except ValueError:
-        logger.warning(
-            "Ignoring unparseable %s=%r; using default %s", name, raw, default
-        )
+        logger.warning("Ignoring unparseable %s=%r; using default %s", name, raw, default)
         return default
 
 
@@ -156,9 +150,7 @@ def _env_float(name: str, default: float) -> float:
     try:
         return float(raw)
     except ValueError:
-        logger.warning(
-            "Ignoring unparseable %s=%r; using default %s", name, raw, default
-        )
+        logger.warning("Ignoring unparseable %s=%r; using default %s", name, raw, default)
         return default
 
 
@@ -271,14 +263,8 @@ class TranslationAdmission:
         *,
         metrics: Optional[Any] = None,
     ) -> None:
-        limit = (
-            MAX_CONCURRENT_TRANSLATIONS if max_concurrent is None else max_concurrent
-        )
-        wait = (
-            TRANSLATION_QUEUE_WAIT_SECONDS
-            if queue_wait_seconds is None
-            else queue_wait_seconds
-        )
+        limit = MAX_CONCURRENT_TRANSLATIONS if max_concurrent is None else max_concurrent
+        wait = TRANSLATION_QUEUE_WAIT_SECONDS if queue_wait_seconds is None else queue_wait_seconds
 
         # A negative limit is a typo, not a request to run unbounded, and
         # silently removing the bound is the dangerous reading of it. Only an
@@ -319,9 +305,7 @@ class TranslationAdmission:
     def in_flight(self) -> int:
         return self._in_flight
 
-    async def run(
-        self, func: Callable[..., List[str]], /, *args: Any, **kwargs: Any
-    ) -> List[str]:
+    async def run(self, func: Callable[..., List[str]], /, *args: Any, **kwargs: Any) -> List[str]:
         """Runs a synchronous inference function on a worker thread under the bound.
 
         Raises ``TranslationBusyError`` if no slot comes free within the
@@ -386,9 +370,7 @@ class TranslationAdmission:
             try:
                 # Python 3.11+ returns the permit if the waiter is cancelled, so
                 # a timeout here cannot leak capacity.
-                await asyncio.wait_for(
-                    self._semaphore.acquire(), timeout=self.queue_wait_seconds
-                )
+                await asyncio.wait_for(self._semaphore.acquire(), timeout=self.queue_wait_seconds)
             except TimeoutError:
                 self._reject(time.perf_counter() - started)
 
@@ -438,9 +420,7 @@ def _resolve_admission(request: Any) -> Optional[TranslationAdmission]:
 # ----------------------------
 requests_total = Counter("translation_requests_total", "Total translation requests")
 errors_total = Counter("translation_errors_total", "Total translation errors")
-tokens_generated_total = Counter(
-    "translation_tokens_generated_total", "Total tokens generated"
-)
+tokens_generated_total = Counter("translation_tokens_generated_total", "Total tokens generated")
 health_status = Gauge(
     "translation_health_status", "Health status of Translation service"
 )  # 1 ok, 0 degraded
@@ -511,9 +491,7 @@ if M2M100ForConditionalGeneration and M2M100Tokenizer:
     try:
         print(f"Loading model: {MODEL_NAME} on {device} (dtype={dtype})")
         m2m_tokenizer = M2M100Tokenizer.from_pretrained(MODEL_NAME)
-        m2m_model = M2M100ForConditionalGeneration.from_pretrained(
-            MODEL_NAME, torch_dtype=dtype
-        )
+        m2m_model = M2M100ForConditionalGeneration.from_pretrained(MODEL_NAME, torch_dtype=dtype)
         m2m_model.to(device)
         m2m_model.eval()
         model_loaded = True
@@ -585,14 +563,11 @@ def _translate_texts(
         if len(text) > MAX_INPUT_CHARS:
             chunks = _chunk_text_if_needed(text)
             partials = [
-                _generate_single(chunk, source_lang, target_lang, gen_overrides)
-                for chunk in chunks
+                _generate_single(chunk, source_lang, target_lang, gen_overrides) for chunk in chunks
             ]
             outputs.append(" ".join(partials))
         else:
-            outputs.append(
-                _generate_single(text, source_lang, target_lang, gen_overrides)
-            )
+            outputs.append(_generate_single(text, source_lang, target_lang, gen_overrides))
     return outputs
 
 
@@ -614,9 +589,7 @@ async def _run_inference_off_loop(
             _translate_texts, texts, source_lang, target_lang, gen_overrides
         )
 
-    return await admission.run(
-        _translate_texts, texts, source_lang, target_lang, gen_overrides
-    )
+    return await admission.run(_translate_texts, texts, source_lang, target_lang, gen_overrides)
 
 
 def _busy_response(
@@ -730,9 +703,7 @@ def languages():
 
 @app.get("/metrics")
 def metrics():
-    return Response(
-        generate_latest(), media_type="text/plain; version=0.0.4; charset=utf-8"
-    )
+    return Response(generate_latest(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
 
 def _parse_translation_payload(
@@ -756,9 +727,7 @@ def _validate_translation_input(
     if not model_loaded or m2m_model is None or m2m_tokenizer is None:
         _raise_http_error(debug_active, debug_info, 503, "Model unavailable")
 
-    if text_in is None or (
-        DENY_EMPTY and isinstance(text_in, str) and not text_in.strip()
-    ):
+    if text_in is None or (DENY_EMPTY and isinstance(text_in, str) and not text_in.strip()):
         errors_total.inc()
         _raise_http_error(
             debug_active,
@@ -883,9 +852,7 @@ async def translate(request: Request):
         return _busy_response(busy, debug_active=debug_active, debug_info=debug_info)
     except HTTPException as exc:
         try:
-            _raise_http_error(
-                debug_active, debug_info, exc.status_code, str(exc.detail)
-            )
+            _raise_http_error(debug_active, debug_info, exc.status_code, str(exc.detail))
         except _DebugResponse as debug_response:
             return debug_response.response
         raise

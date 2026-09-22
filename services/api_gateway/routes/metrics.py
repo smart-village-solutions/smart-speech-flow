@@ -30,11 +30,7 @@ def metrics():
 
                 ws_metrics = generate_latest(monitor._registry)
                 # Kombiniere beide Metriken-Ausgaben
-                combined = (
-                    main_metrics.decode("utf-8").rstrip()
-                    + "\n"
-                    + ws_metrics.decode("utf-8")
-                )
+                combined = main_metrics.decode("utf-8").rstrip() + "\n" + ws_metrics.decode("utf-8")
                 return Response(combined, media_type=TEXT_PLAIN_MEDIA_TYPE)
         except Exception:
             pass  # Fallback zu nur Gateway-Metriken
@@ -43,6 +39,4 @@ def metrics():
 
     except Exception:
         # Absoluter Fallback
-        return Response(
-            "# Fehler beim Generieren der Metriken\n", media_type=TEXT_PLAIN_MEDIA_TYPE
-        )
+        return Response("# Fehler beim Generieren der Metriken\n", media_type=TEXT_PLAIN_MEDIA_TYPE)

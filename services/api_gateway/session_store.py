@@ -113,10 +113,7 @@ class TenantSessionStore(Protocol):
 
 
 def session_key(namespace: str, key: TenantSessionKey) -> str:
-    return (
-        f"{namespace}:v2:tenant:{key.redis_tenant_component}:"
-        f"session:{key.session_id}"
-    )
+    return f"{namespace}:v2:tenant:{key.redis_tenant_component}:" f"session:{key.session_id}"
 
 
 def tenant_sessions_key(namespace: str, tenant_id: str) -> str:
@@ -272,8 +269,7 @@ class MemoryTenantSessionStore:
         return [
             session
             for key in tuple(self._sessions)
-            if (session := self.load(key)) is not None
-            and session.status.value != "terminated"
+            if (session := self.load(key)) is not None and session.status.value != "terminated"
         ]
 
     def terminate(self, session: Session) -> Session:
@@ -283,18 +279,14 @@ class MemoryTenantSessionStore:
         if not join[1]:
             persisted = self._sessions.get(session.key)
             if persisted is None or persisted.status.value != "terminated":
-                raise SessionStoreConsistencyError(
-                    "terminal join index does not match session"
-                )
+                raise SessionStoreConsistencyError("terminal join index does not match session")
             return persisted
         self._sessions[session.key] = session
         self._joins[session.id] = (session.key, False)
         # Mirrors the Redis EXPIRE: the record goes, the tombstone stays.
         retention = _content_retention_seconds()
         if retention > 0:
-            self._expiries[session.key] = datetime.now(timezone.utc) + timedelta(
-                seconds=retention
-            )
+            self._expiries[session.key] = datetime.now(timezone.utc) + timedelta(seconds=retention)
         return session
 
 
@@ -388,9 +380,7 @@ class RedisTenantSessionStore:
 
     def list_for_tenant(self, tenant_id: str) -> list[Session]:
         sessions: list[Session] = []
-        for session_id in self.redis.smembers(
-            tenant_sessions_key(self.namespace, tenant_id)
-        ):
+        for session_id in self.redis.smembers(tenant_sessions_key(self.namespace, tenant_id)):
             key = TenantSessionKey(tenant_id, session_id)
             if session := self.load(key):
                 sessions.append(session)

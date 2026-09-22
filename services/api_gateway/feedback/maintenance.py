@@ -38,11 +38,7 @@ from prometheus_client import CollectorRegistry, Counter, Gauge
 from ..quality_telemetry import ProbeOutcome
 from ..session_pseudonym import feedback_ref, tenant_ref
 from .models import AnalyticsState
-from .repository import (
-    FeedbackRepository,
-    ReconciliationLockUnavailable,
-    RetentionLockUnavailable,
-)
+from .repository import FeedbackRepository, ReconciliationLockUnavailable, RetentionLockUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -225,16 +221,12 @@ class FeedbackMaintenance:
             self._metrics.observed_backlog(0)
             return ReconciliationPass(skipped=True)
         except Exception as error:  # Reported, never raised.
-            logger.warning(
-                "Feedback reconciliation could not read: %s", type(error).__name__
-            )
+            logger.warning("Feedback reconciliation could not read: %s", type(error).__name__)
             self._metrics.job_failed("reconciliation")
             return ReconciliationPass(unavailable=True)
 
     async def _reconcile_under_lock(self) -> ReconciliationPass:
-        pending = await self._repository.claim_pending_analytics(
-            self._reconciliation_limit
-        )
+        pending = await self._repository.claim_pending_analytics(self._reconciliation_limit)
 
         self._metrics.observed_backlog(len(pending))
 
@@ -273,9 +265,7 @@ class FeedbackMaintenance:
 
         try:
             if result.outcome is ProbeOutcome.EMITTED:
-                await self._repository.mark_analytics_delivered(
-                    row.feedback_id, row.tenant_id
-                )
+                await self._repository.mark_analytics_delivered(row.feedback_id, row.tenant_id)
             elif result.outcome is ProbeOutcome.DISABLED:
                 await self._repository.mark_analytics_state(
                     row.feedback_id, AnalyticsState.NOT_APPLICABLE, row.tenant_id
@@ -309,8 +299,6 @@ class FeedbackMaintenance:
         try:
             self._metrics.observed_overdue(await self._repository.count_expired(now))
         except Exception as error:  # The deletion already happened.
-            logger.warning(
-                "Feedback retention backlog not counted: %s", type(error).__name__
-            )
+            logger.warning("Feedback retention backlog not counted: %s", type(error).__name__)
 
         return RetentionPass(deleted=len(deleted))

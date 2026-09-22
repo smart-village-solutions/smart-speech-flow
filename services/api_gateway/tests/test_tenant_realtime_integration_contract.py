@@ -1,5 +1,6 @@
 """Contract coverage for the authenticated tenant realtime workflow."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway import websocket as websocket_module
@@ -10,7 +11,9 @@ from services.api_gateway.session_manager import session_manager
 REVISION = f"sha256:{'a' * 64}"
 
 
-def test_admin_can_observe_only_its_session_realtime_connection(monkeypatch) -> None:
+def test_admin_can_observe_only_its_session_realtime_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The supported admin API exposes connections only inside its tenant session."""
     original_module_manager = websocket_module.websocket_manager
     original_session_manager = session_manager.websocket_manager

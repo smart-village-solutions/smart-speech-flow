@@ -8,12 +8,7 @@ from typing import TYPE_CHECKING
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
-from .audio_storage import (
-    AudioVariant,
-    audio_path,
-    scope_pipeline_audio_urls,
-    scoped_audio_url,
-)
+from .audio_storage import AudioVariant, audio_path, scope_pipeline_audio_urls, scoped_audio_url
 from .session_manager import ClientType, SessionStatus, session_manager
 from .tenant_session import TenantSessionKey
 
@@ -45,9 +40,7 @@ class ConversationService:
     ) -> MessageResponse:
         from .routes.session import process_text_input
 
-        return await process_text_input(
-            key, sender, request, time.perf_counter(), manager
-        )
+        return await process_text_input(key, sender, request, time.perf_counter(), manager)
 
     async def process_audio(
         self,
@@ -58,13 +51,9 @@ class ConversationService:
     ) -> MessageResponse:
         from .routes.session import process_audio_input
 
-        return await process_audio_input(
-            key, sender, request, time.perf_counter(), manager
-        )
+        return await process_audio_input(key, sender, request, time.perf_counter(), manager)
 
-    def messages(
-        self, key: TenantSessionKey, role: ClientType
-    ) -> list[dict[str, object]]:
+    def messages(self, key: TenantSessionKey, role: ClientType) -> list[dict[str, object]]:
         session = session_manager.get_session(key)
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
@@ -81,13 +70,9 @@ class ConversationService:
                 else None
             )
             has_original_audio = bool(message.original_audio_url) or (
-                isinstance(pipeline_input, dict)
-                and pipeline_input.get("type") == "audio"
+                isinstance(pipeline_input, dict) and pipeline_input.get("type") == "audio"
             )
-            if (
-                has_original_audio
-                and audio_path(key, message.id, AudioVariant.ORIGINAL).is_file()
-            ):
+            if has_original_audio and audio_path(key, message.id, AudioVariant.ORIGINAL).is_file():
                 item["original_audio_url"] = scoped_audio_url(
                     key, role.value, message.id, AudioVariant.ORIGINAL
                 )

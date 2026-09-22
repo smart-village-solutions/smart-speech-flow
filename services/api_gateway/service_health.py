@@ -164,9 +164,7 @@ class ServiceHealthManager:
             max_recovery_time=300,
         )
 
-        circuit_breaker = CircuitBreakerFactory.get_circuit_breaker(
-            endpoint.name, circuit_config
-        )
+        circuit_breaker = CircuitBreakerFactory.get_circuit_breaker(endpoint.name, circuit_config)
         circuit_breaker.on_state_change = self._on_circuit_state_change
         self.circuit_breakers[endpoint.name] = circuit_breaker
 
@@ -197,9 +195,7 @@ class ServiceHealthManager:
         # Initiale Health Checks
         await self._check_all_services()
 
-        logger.info(
-            f"🚀 Service Health Monitoring gestartet (Intervall: {self.check_interval}s)"
-        )
+        logger.info(f"🚀 Service Health Monitoring gestartet (Intervall: {self.check_interval}s)")
 
     async def stop_monitoring(self):
         """Stoppt Health Monitoring"""
@@ -207,12 +203,8 @@ class ServiceHealthManager:
 
         if self.health_check_task:
             self.health_check_task.cancel()
-            result = (
-                await asyncio.gather(self.health_check_task, return_exceptions=True)
-            )[0]
-            if isinstance(result, BaseException) and not isinstance(
-                result, asyncio.CancelledError
-            ):
+            result = (await asyncio.gather(self.health_check_task, return_exceptions=True))[0]
+            if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
                 logger.error("Health monitoring shutdown error: %s", result)
             self.health_check_task = None
 
@@ -241,25 +233,20 @@ class ServiceHealthManager:
 
         # Parallele Health Checks für bessere Performance
         tasks = [
-            self._check_service_health(name, endpoint)
-            for name, endpoint in self.services.items()
+            self._check_service_health(name, endpoint) for name, endpoint in self.services.items()
         ]
 
         await asyncio.gather(*tasks, return_exceptions=True)
 
         # Log Results
-        healthy_count = sum(
-            1 for status in self.service_status.values() if status.is_healthy
-        )
+        healthy_count = sum(1 for status in self.service_status.values() if status.is_healthy)
         total_count = len(self.services)
 
         if healthy_count == total_count:
             logger.debug(f"💚 Alle {total_count} Services sind gesund")
         else:
             unhealthy = [
-                name
-                for name, status in self.service_status.items()
-                if not status.is_healthy
+                name for name, status in self.service_status.items() if not status.is_healthy
             ]
             logger.warning(
                 f"⚠️ {total_count - healthy_count}/{total_count} Services nicht verfügbar: {unhealthy}"
@@ -314,9 +301,7 @@ class ServiceHealthManager:
             status.resources = None
             status.autoscaling = None
 
-    async def _perform_health_request(
-        self, endpoint: ServiceEndpoint
-    ) -> Dict[str, Any]:
+    async def _perform_health_request(self, endpoint: ServiceEndpoint) -> Dict[str, Any]:
         """Führt tatsächlichen Health Check Request aus"""
         start_time = time.time()
 
@@ -471,14 +456,10 @@ class ServiceHealthManager:
         }
 
         pending_services = [
-            name
-            for name, status in self.service_status.items()
-            if status.last_check is None
+            name for name, status in self.service_status.items() if status.last_check is None
         ]
 
-        healthy_services = [
-            name for name, status in checked_statuses.items() if status.is_healthy
-        ]
+        healthy_services = [name for name, status in checked_statuses.items() if status.is_healthy]
         unhealthy_services = [
             name for name, status in checked_statuses.items() if not status.is_healthy
         ]
@@ -529,17 +510,11 @@ class ServiceHealthManager:
 
     def get_healthy_services(self) -> List[str]:
         """Liste aller gesunden Services"""
-        return [
-            name for name, status in self.service_status.items() if status.is_healthy
-        ]
+        return [name for name, status in self.service_status.items() if status.is_healthy]
 
     def get_unhealthy_services(self) -> List[str]:
         """Liste aller ungesunden Services"""
-        return [
-            name
-            for name, status in self.service_status.items()
-            if not status.is_healthy
-        ]
+        return [name for name, status in self.service_status.items() if not status.is_healthy]
 
     def _collect_autoscaling_signals(self, summary: Dict[str, Any]) -> None:
         for service_name, status in self.service_status.items():
@@ -575,9 +550,7 @@ class ServiceHealthManager:
 
         severity, triggers = self._classify_gpu_pressure(util, mem_util)
         summary["devices"].append(
-            self._build_gpu_device_snapshot(
-                service_name, device, util, mem_util, severity
-            )
+            self._build_gpu_device_snapshot(service_name, device, util, mem_util, severity)
         )
         self._update_gpu_summary_counters(summary, severity)
         self._append_gpu_alert(
@@ -643,9 +616,7 @@ class ServiceHealthManager:
             device_snapshot["total_memory"] = device.get("total_memory")
         return device_snapshot
 
-    def _update_gpu_summary_counters(
-        self, summary: Dict[str, Any], severity: str
-    ) -> None:
+    def _update_gpu_summary_counters(self, summary: Dict[str, Any], severity: str) -> None:
         if severity == "warning":
             summary["warning_devices"] += 1
         elif severity == "critical":
@@ -695,9 +666,7 @@ class ServiceHealthManager:
                 continue
 
             for device in devices:
-                self._record_gpu_device(
-                    summary, service_name, device, util_values, mem_values
-                )
+                self._record_gpu_device(summary, service_name, device, util_values, mem_values)
 
     def get_gpu_summary(self) -> Dict[str, Any]:
         """Aggregierte GPU-Metriken und Alerts across Services"""
@@ -734,9 +703,7 @@ class ServiceHealthManager:
             summary["max_utilization"] = None
 
         if mem_values:
-            summary["avg_memory_utilization"] = round(
-                sum(mem_values) / len(mem_values), 2
-            )
+            summary["avg_memory_utilization"] = round(sum(mem_values) / len(mem_values), 2)
             summary["max_memory_utilization"] = max(mem_values)
         else:
             summary["avg_memory_utilization"] = None

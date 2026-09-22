@@ -124,9 +124,7 @@ class TestCustomerRoutes:
         session_id = response.json()["session_id"]
 
         activate_payload = {"session_id": session_id, "customer_language": "ru"}
-        activate_response = client.post(
-            "/api/customer/session/activate", json=activate_payload
-        )
+        activate_response = client.post("/api/customer/session/activate", json=activate_payload)
         assert activate_response.status_code == 200
 
         terminate_response = client.delete(f"/api/admin/session/{session_id}/terminate")

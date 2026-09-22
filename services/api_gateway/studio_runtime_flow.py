@@ -16,11 +16,7 @@ from .studio_runtime_client import (
     StudioRuntimeClient,
     StudioRuntimeClientError,
 )
-from .studio_runtime_token import (
-    StudioRuntimeTokenProvider,
-    StudioTokenConfig,
-    StudioTokenError,
-)
+from .studio_runtime_token import StudioRuntimeTokenProvider, StudioTokenConfig, StudioTokenError
 from .tenant_context import StudioTenantContext, require_studio_tenant_context
 
 
@@ -69,21 +65,15 @@ class StudioRuntimeFlow:
         try:
             configuration = await self._client.fetch(context.tenant_id, correlation_id)
         except (StudioRuntimeClientError, StudioTokenError) as error:
-            raise StudioRuntimeFlowError(
-                error.code, retryable=error.retryable
-            ) from None
+            raise StudioRuntimeFlowError(error.code, retryable=error.retryable) from None
 
         if configuration.tenant.id != context.tenant_id:
-            raise StudioRuntimeFlowError(
-                "studio_runtime_tenant_mismatch", retryable=False
-            )
+            raise StudioRuntimeFlowError("studio_runtime_tenant_mismatch", retryable=False)
         if not hmac.compare_digest(
             configuration.authorization_revision,
             context.authorization_revision,
         ):
-            raise StudioRuntimeFlowError(
-                "studio_runtime_authorization_mismatch", retryable=False
-            )
+            raise StudioRuntimeFlowError("studio_runtime_authorization_mismatch", retryable=False)
 
         return ValidatedRuntimeConfiguration(
             context=context,
@@ -181,9 +171,7 @@ def correlation_id_from_request(request: Request) -> str:
     if (
         not correlation_id
         or len(correlation_id) > 128
-        or any(
-            ord(character) < 32 or ord(character) > 126 for character in correlation_id
-        )
+        or any(ord(character) < 32 or ord(character) > 126 for character in correlation_id)
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

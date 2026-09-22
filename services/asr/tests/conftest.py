@@ -34,9 +34,7 @@ def _install_fake_torch() -> None:
     fake_torch.device = getattr(fake_torch, "device", lambda name: name)
     fake_torch.float16 = getattr(fake_torch, "float16", "float16")
     fake_torch.float32 = getattr(fake_torch, "float32", "float32")
-    fake_torch.inference_mode = getattr(
-        fake_torch, "inference_mode", contextlib.nullcontext
-    )
+    fake_torch.inference_mode = getattr(fake_torch, "inference_mode", contextlib.nullcontext)
     fake_torch.manual_seed = getattr(fake_torch, "manual_seed", lambda _seed: None)
 
 

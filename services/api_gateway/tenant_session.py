@@ -46,9 +46,7 @@ class RuntimeConfigurationSnapshot:
     canonical_json: str
 
     @classmethod
-    def from_configuration(
-        cls, value: RuntimeConfiguration
-    ) -> RuntimeConfigurationSnapshot:
+    def from_configuration(cls, value: RuntimeConfiguration) -> RuntimeConfigurationSnapshot:
         payload = value.model_dump(mode="json", by_alias=True)
         payload.pop("conversationContentStorage", None)
         return cls(

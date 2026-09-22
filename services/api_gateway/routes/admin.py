@@ -18,11 +18,7 @@ from ..auth import require_ssf_user
 from ..conversation_service import conversation_service
 from ..log_safety import sanitize_log_value
 from ..quality_telemetry import QualityTelemetry, get_quality_telemetry
-from ..realtime_ticket import (
-    RealtimeTicketStore,
-    RealtimeTicketUnavailable,
-    realtime_ticket_store,
-)
+from ..realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable, realtime_ticket_store
 from ..session_access import require_admin_session_key
 from ..session_manager import ClientType, SessionStatus, session_manager
 from ..studio_runtime_flow import (
@@ -37,9 +33,7 @@ from ..websocket import WebSocketManager, get_websocket_manager
 logger = logging.getLogger(__name__)
 
 # Router setup
-router = APIRouter(
-    prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_ssf_user)]
-)
+router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_ssf_user)])
 
 _SESSION_NOT_FOUND = "Session not found"
 ADMIN_ROUTE_RESPONSES = {
@@ -103,9 +97,7 @@ class RealtimeTicketResponse(BaseModel):
     expires_at: str
 
 
-def _connection_payload(
-    manager: WebSocketManager, key: TenantSessionKey
-) -> list[dict[str, Any]]:
+def _connection_payload(manager: WebSocketManager, key: TenantSessionKey) -> list[dict[str, Any]]:
     connections = manager.get_session_connections(key)
     for connection in connections:
         connection["transport"] = "websocket"
@@ -134,9 +126,7 @@ async def list_tenant_realtime_connections(
     from ..websocket_polling_routes import polling_store
 
     connections: list[dict[str, Any]] = []
-    keys = {
-        key for key in manager.session_connections if isinstance(key, TenantSessionKey)
-    }
+    keys = {key for key in manager.session_connections if isinstance(key, TenantSessionKey)}
     keys.update(client.key for client in polling_store.clients.values())
     for key in keys:
         if key.tenant_id == context.tenant_id:
@@ -244,9 +234,7 @@ def get_client_base_url() -> str:
     import os
 
     # Verwende Environment-Variable oder Fallback auf Production-URL
-    return os.environ.get(
-        "CLIENT_BASE_URL", "https://translate.smart-village.solutions"
-    )
+    return os.environ.get("CLIENT_BASE_URL", "https://translate.smart-village.solutions")
 
 
 @router.post(
@@ -345,9 +333,7 @@ async def get_current_session(
             )
 
         session_id = active_session_data["id"]
-        session = session_manager.get_session(
-            TenantSessionKey(context.tenant_id, session_id)
-        )
+        session = session_manager.get_session(TenantSessionKey(context.tenant_id, session_id))
         if session is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -362,9 +348,7 @@ async def get_current_session(
             customer_connected=session.customer_connected,
             message_count=len(session.messages),
             created_at=session.created_at.isoformat(),
-            terminated_at=(
-                session.terminated_at.isoformat() if session.terminated_at else None
-            ),
+            terminated_at=(session.terminated_at.isoformat() if session.terminated_at else None),
             termination_reason=session.termination_reason,
             warning_at=session.warning_at().isoformat(),
             timeout_at=session.next_timeout_at().isoformat(),
@@ -473,14 +457,10 @@ async def get_session_history(
     """
     try:
         # Vergangene Sessions
-        history = session_manager.get_session_history(
-            limit=limit, tenant_id=context.tenant_id
-        )
+        history = session_manager.get_session_history(limit=limit, tenant_id=context.tenant_id)
 
         # Aktuelle Session
-        active_sessions = session_manager.get_active_sessions(
-            tenant_id=context.tenant_id
-        )
+        active_sessions = session_manager.get_active_sessions(tenant_id=context.tenant_id)
 
         return SessionHistoryResponse(
             sessions=history, total_count=len(history), active_sessions=active_sessions
@@ -529,9 +509,7 @@ async def get_session_status(
             customer_connected=session.customer_connected,
             message_count=len(session.messages),
             created_at=session.created_at.isoformat(),
-            terminated_at=(
-                session.terminated_at.isoformat() if session.terminated_at else None
-            ),
+            terminated_at=(session.terminated_at.isoformat() if session.terminated_at else None),
             termination_reason=session.termination_reason,
             warning_at=session.warning_at().isoformat(),
             timeout_at=session.next_timeout_at().isoformat(),

@@ -125,9 +125,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _client_key(request: Request) -> str:
-        forwarded = request.headers.get("x-forwarded-for") or request.headers.get(
-            "x-real-ip"
-        )
+        forwarded = request.headers.get("x-forwarded-for") or request.headers.get("x-real-ip")
         if forwarded:
             return forwarded.split(",")[0].strip()
         if request.client:

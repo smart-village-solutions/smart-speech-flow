@@ -23,9 +23,7 @@ _SELECTOR_NAMES = frozenset(
         "instanceid",
     }
 )
-_SELECTOR_HEADER_NAMES = frozenset(
-    {"x-studio-instance-id", "x-studio-tenant-id", "x-tenant-id"}
-)
+_SELECTOR_HEADER_NAMES = frozenset({"x-studio-instance-id", "x-studio-tenant-id", "x-tenant-id"})
 
 
 @dataclass(frozen=True)
@@ -48,9 +46,9 @@ def studio_tenant_context_from_claims(
         raise _invalid_tenant_claim()
 
     authorization_revision = claims.get("ssf_authorization_revision")
-    if not isinstance(
-        authorization_revision, str
-    ) or not _AUTHORIZATION_REVISION_PATTERN.fullmatch(authorization_revision):
+    if not isinstance(authorization_revision, str) or not _AUTHORIZATION_REVISION_PATTERN.fullmatch(
+        authorization_revision
+    ):
         raise _invalid_tenant_claim()
 
     return StudioTenantContext(
@@ -79,9 +77,7 @@ def _request_has_tenant_selector(request: Request, body: object) -> bool:
         return True
     if _has_selector_name(request.cookies.keys()):
         return True
-    if _SELECTOR_HEADER_NAMES.intersection(
-        name.lower() for name in request.headers.keys()
-    ):
+    if _SELECTOR_HEADER_NAMES.intersection(name.lower() for name in request.headers.keys()):
         return True
     return _contains_tenant_selector(body)
 
@@ -100,15 +96,11 @@ def _contains_tenant_selector(value: object) -> bool:
 
 
 def _has_selector_name(names: Iterable[object]) -> bool:
-    return any(
-        isinstance(name, str) and name.lower() in _SELECTOR_NAMES for name in names
-    )
+    return any(isinstance(name, str) and name.lower() in _SELECTOR_NAMES for name in names)
 
 
 async def _json_body(request: Request) -> object:
-    media_type = (
-        request.headers.get("content-type", "").partition(";")[0].strip().lower()
-    )
+    media_type = request.headers.get("content-type", "").partition(";")[0].strip().lower()
     if media_type != "application/json" and not media_type.endswith("+json"):
         return None
     try:

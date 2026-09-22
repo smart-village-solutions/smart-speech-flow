@@ -11,9 +11,7 @@ def normalize_to_wav16k(in_path):
     if enable_loudnorm:
         filters.append("loudnorm")
     if enable_vad:
-        filters.append(
-            "silenceremove=start_periods=1:start_silence=0.1:start_threshold=-50dB"
-        )
+        filters.append("silenceremove=start_periods=1:start_silence=0.1:start_threshold=-50dB")
     afilter = ",".join(filters) if filters else None
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as out_tmp:
         out_path = out_tmp.name
@@ -184,17 +182,13 @@ async def transcribe(
     start = time.perf_counter()
     # Debug-Parameter aus Query und Form lesen
     debug_query = request.query_params.get("debug") if request else None
-    debug_active = (str(debug).lower() == "true") or (
-        str(debug_query).lower() == "true"
-    )
+    debug_active = (str(debug).lower() == "true") or (str(debug_query).lower() == "true")
     requests_total.inc()
     debug_info = _build_debug_info(lang)
     if lang not in SUPPORTED_LANGS:
         debug_info["error"] = f"Unsupported language code: {lang}"
         debug_info["duration"] = round(time.perf_counter() - start, 3)
-        raise HTTPException(
-            status_code=400, detail=f"Unsupported language code: {lang}"
-        )
+        raise HTTPException(status_code=400, detail=f"Unsupported language code: {lang}")
     if not model_loaded:
         debug_info["error"] = "ASR-Modell nicht geladen"
         debug_info["duration"] = round(time.perf_counter() - start, 3)

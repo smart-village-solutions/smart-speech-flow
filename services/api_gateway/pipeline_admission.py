@@ -66,9 +66,7 @@ def _env_int(name: str, default: int) -> int:
     try:
         return int(raw)
     except ValueError:
-        logger.warning(
-            "Ignoring unparseable %s=%r; using default %s", name, raw, default
-        )
+        logger.warning("Ignoring unparseable %s=%r; using default %s", name, raw, default)
         return default
 
 
@@ -79,9 +77,7 @@ def _env_float(name: str, default: float) -> float:
     try:
         return float(raw)
     except ValueError:
-        logger.warning(
-            "Ignoring unparseable %s=%r; using default %s", name, raw, default
-        )
+        logger.warning("Ignoring unparseable %s=%r; using default %s", name, raw, default)
         return default
 
 
@@ -375,9 +371,7 @@ def get_pipeline_admission(request: Any) -> Optional[PipelineAdmission]:
     return candidate if isinstance(candidate, PipelineAdmission) else None
 
 
-async def run_pipeline[
-    T
-](request: Any, func: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
+async def run_pipeline[T](request: Any, func: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
     """Runs a pipeline function under the app's bound, unbounded if there is none."""
     admission = get_pipeline_admission(request)
     if admission is None:

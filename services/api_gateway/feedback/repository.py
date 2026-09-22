@@ -14,10 +14,9 @@ from __future__ import annotations
 
 import json
 import logging
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from contextlib import AbstractAsyncContextManager
 from typing import AsyncIterator, Protocol, Sequence
 from uuid import UUID
 
