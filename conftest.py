@@ -36,6 +36,11 @@ def reset_circuit_breakers():
     yield
 
     for circuit in CircuitBreakerFactory.get_all_circuits().values():
+        # Unconditional: a test can bind a loop and close it without moving
+        # any counter, and _dispatch then drops every later transition onto
+        # the dead loop with only a log line to show for it.
+        circuit._notify_loop = None
+
         pristine = (
             circuit.state is CircuitState.CLOSED
             and circuit.health.total_requests == 0

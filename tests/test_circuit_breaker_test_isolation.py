@@ -70,3 +70,25 @@ def test_the_next_test_gets_a_clean_degradation_mode():
         "reset_circuit_breakers fixture is not resetting the degradation manager"
     )
     assert graceful_degradation_manager.mode_history == []
+
+
+def test_a_first_test_can_leave_a_closed_loop_bound():
+    """Binding a loop and closing it is what the mode-follows-breakers tests do."""
+    import asyncio
+
+    breaker = _shared_breaker()
+    loop = asyncio.new_event_loop()
+    breaker.bind_loop(loop)
+    loop.close()
+
+    assert breaker._notify_loop is loop
+
+
+def test_the_next_test_gets_no_bound_loop():
+    """_dispatch drops every transition onto a dead loop, silently."""
+    breaker = _shared_breaker()
+
+    assert breaker._notify_loop is None, (
+        "a previous test's closed loop is still bound; transitions after this "
+        "point are dropped with a log line and assertions pass by collection order"
+    )
