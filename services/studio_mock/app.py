@@ -154,6 +154,7 @@ class AdminLoginTenantResponse(BaseModel):
     id: str
     display_name: str = Field(alias="displayName")
     realm: str
+    studio_url: str | None = Field(default=None, alias="studioUrl")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -257,11 +258,13 @@ _LOGIN_DIRECTORY_TENANTS = [
         "id": "tenant-kassel",
         "displayName": "Stadt Kassel",
         "realm": "kassel-ssf-2025",
+        "studioUrl": "https://smartcity.dialog.kassel.de/",
     },
     {
         "id": "tenant-fulda",
         "displayName": "Stadt Fulda",
         "realm": "fulda-ssf-2025",
+        "studioUrl": "https://fulda.dialog.kassel.de/",
     },
 ]
 

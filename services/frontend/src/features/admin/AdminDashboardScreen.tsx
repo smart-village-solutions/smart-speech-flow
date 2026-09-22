@@ -14,11 +14,13 @@ import { useAdminSessions } from './useAdminSessions';
 interface AdminDashboardScreenProps {
   onEnterSession: (sessionId: string) => void;
   onSignOut: () => void;
+  studioUrl?: string;
 }
 
 export function AdminDashboardScreen({
   onEnterSession,
   onSignOut,
+  studioUrl,
 }: Readonly<AdminDashboardScreenProps>) {
   const { t } = useTranslation();
   const { brand } = useBrand();
@@ -38,6 +40,7 @@ export function AdminDashboardScreen({
         onHome={() => void navigate('/')}
         onFeedback={() => openFeedback(null)}
         onSignOut={onSignOut}
+        studioUrl={studioUrl}
       />
 
       <div className="flex flex-col gap-6 px-5 pb-16 pt-content-top">

@@ -243,11 +243,13 @@ def test_returns_deterministic_v1_login_directory_for_authorized_service() -> No
                 "id": "tenant-kassel",
                 "displayName": "Stadt Kassel",
                 "realm": "kassel-ssf-2025",
+                "studioUrl": "https://smartcity.dialog.kassel.de/",
             },
             {
                 "id": "tenant-fulda",
                 "displayName": "Stadt Fulda",
                 "realm": "fulda-ssf-2025",
+                "studioUrl": "https://fulda.dialog.kassel.de/",
             },
         ],
     }

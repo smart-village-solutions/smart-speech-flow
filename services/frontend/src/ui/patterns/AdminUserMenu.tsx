@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { ReactNode } from 'react';
-import { User } from 'lucide-react';
+import { ChevronDown, ExternalLink, LogOut, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { IconButton } from '@/ui/primitives/IconButton';
 import { TextField } from '@/ui/primitives/TextField';
@@ -22,6 +22,29 @@ interface MenuSectionProps {
   children: ReactNode;
 }
 
+interface MenuRowProps {
+  label: string;
+  onClick: () => void;
+  className?: string;
+  expanded?: boolean;
+  children: ReactNode;
+}
+
+/** Shared layout for every account-menu action, including sign-out. */
+function MenuRow({ label, onClick, className, expanded, children }: Readonly<MenuRowProps>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={expanded}
+      className={`flex h-menu-row w-full items-center justify-between border-t border-border-divider px-4 text-start text-note transition-colors duration-150 ${className ?? ''}`}
+    >
+      <span>{label}</span>
+      {children}
+    </button>
+  );
+}
+
 /** A disclosure row plus its form body. Every section ends in the same inert
  *  save button, so it lives here rather than in each caller. */
 function MenuSection({
@@ -35,23 +58,22 @@ function MenuSection({
 
   return (
     <>
-      <button
-        type="button"
+      <MenuRow
+        label={label}
         onClick={onToggle}
-        aria-expanded={expanded}
         className={cn(
-          'flex h-menu-row w-full items-center justify-between px-4 text-note text-fg-body hover:bg-surface-row-hover',
-          !first && 'border-t border-border-divider'
+          'text-fg-body hover:bg-surface-row-hover',
+          first && 'border-t-0'
         )}
+        expanded={expanded}
       >
-        <span>{label}</span>
-        <span
+        <ChevronDown
           aria-hidden
-          className={cn('text-item opacity-40 transition-transform', expanded && 'rotate-45')}
-        >
-          +
-        </span>
-      </button>
+          size={16}
+          strokeWidth={2}
+          className={cn('text-fg-muted transition-transform duration-150', expanded && 'rotate-180')}
+        />
+      </MenuRow>
 
       {expanded && (
         <div className="flex flex-col gap-2 border-t border-border-divider px-4 pb-4 pt-3">
@@ -70,10 +92,11 @@ function MenuSection({
 
 interface AdminUserMenuProps {
   onSignOut: () => void;
+  studioUrl?: string;
 }
 
 /** Both forms are UI only: issue #202 defers account management to Keycloak. */
-export function AdminUserMenu({ onSignOut }: Readonly<AdminUserMenuProps>) {
+export function AdminUserMenu({ onSignOut, studioUrl }: Readonly<AdminUserMenuProps>) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<Section>('none');
@@ -119,13 +142,25 @@ export function AdminUserMenu({ onSignOut }: Readonly<AdminUserMenuProps>) {
             <MenuField label={t('admin.menu.newEmail')} type="email" />
           </MenuSection>
 
-          <button
-            type="button"
+          {studioUrl && (
+            <a
+              href={studioUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex h-menu-row w-full items-center justify-between border-t border-border-divider px-4 text-note text-fg-body transition-colors duration-150 hover:bg-surface-row-hover"
+            >
+              <span>{t('admin.menu.openStudio')}</span>
+              <ExternalLink aria-hidden size={16} strokeWidth={2} />
+            </a>
+          )}
+
+          <MenuRow
+            label={t('admin.menu.signOut')}
             onClick={onSignOut}
-            className="h-menu-row w-full border-t border-border-divider px-4 text-start text-note text-fg-danger hover:bg-surface-danger-hover"
+            className="text-fg-danger hover:bg-surface-danger-hover"
           >
-            {t('admin.menu.signOut')}
-          </button>
+            <LogOut aria-hidden size={16} strokeWidth={2} />
+          </MenuRow>
         </div>
       )}
     </div>
