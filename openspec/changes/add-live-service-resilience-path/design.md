@@ -91,26 +91,67 @@ route or client changes.
 
 - **Shared breaker state across tests.** The breakers are process-wide
   singletons from `CircuitBreakerFactory`. A test that drives three failures
-  would leave a breaker OPEN for the next test. Mitigated by an autouse
-  `reset_all()` fixture in both conftests, added before the call sites move.
+  would leave a breaker OPEN for the next test. Mitigated by a single autouse
+  fixture in a **root** `conftest.py`, added before the call sites move. The
+  root is the point: `tests/conftest.py` cannot reach `services/*/tests/`, and
+  both trees touch the same singletons. It resets each circuit individually
+  rather than calling `reset_all()`, because `reset()` deliberately keeps the
+  lifetime counters an operator wants, so the `ServiceHealth` record is
+  replaced too -- along with the bound notification loop, which a closed loop
+  would otherwise leave silently swallowing transitions.
 - **`requests` stays the transport**, so the issue's literal "asynchronous
   service-client path" is not met. What is met is one path, used by everything,
   with live breaking. Recorded here rather than hidden.
-- **The health poll and real traffic now share a breaker.** A service failing
-  inference while answering `/health` will trip the breaker that gates its
-  health checks. That is the intended coupling — the breaker should reflect
-  whether the service can do its job — but it is new behaviour.
+- **The health poll reports failures to the breaker but never successes.**
+  Sharing a breaker between the poll and real traffic is only safe in one
+  direction. A failed ping is evidence: a service that cannot answer
+  `/health` cannot serve inference, so it opens the breaker without waiting
+  for three users to hit the failure. A *successful* ping is not evidence of
+  anything the pipeline cares about, and letting it count toward
+  `success_threshold` reclosed a breaker the pipeline had opened — measured at
+  roughly every 75s, indefinitely, with no inference request ever succeeding.
+  The exponential backoff could not accumulate either, because
+  `_open_circuit` multiplies the timeout only on a HALF_OPEN → OPEN
+  transition while `_close_circuit` resets it. Only a served request closes a
+  breaker now.
+
+  The cost is accepted deliberately: after an outage on an idle system the
+  breaker stays OPEN and `/api/health/degradation` reports `degraded` until
+  real traffic verifies recovery. `/api/health/services` still shows the
+  service reachable, because the ping still runs while the circuit is open.
+  Two separate facts, both reported.
+- **A half-open breaker is not full service.** The degradation mode is
+  derived from breakers being CLOSED, not merely not-OPEN. A half-open
+  breaker will admit a probe but has not been shown to work, and counting it
+  as usable made the mode flap to `full` during every recovery cycle of a
+  genuine outage.
+- **A half-open breaker admits one request at a time.** `_admit` gates
+  HALF_OPEN as tightly as OPEN, reserving the slot until the probe reports.
+  Otherwise the thread that flipped the breaker was followed straight through
+  by the whole queued backlog, handing a service that had just been down
+  everything at once. A probe that reports no outcome — a deliberate load
+  shed does exactly that — releases the next one only when the recovery
+  timeout elapses again, so recording nothing cannot also mean gating
+  nothing.
+- **What counts as a served reply is per-service.** TTS answers `200` with a
+  JSON error body when synthesis fails, which the pipeline has always treated
+  as a failure; classifying on the status code alone left the breaker CLOSED
+  while every synthesis failed. `call_ai_service` takes an optional `served`
+  predicate, consulted only for 2xx so malformed client input still cannot
+  open a breaker.
 - **Retiring the response cache** removes the only consumer of
   `_generate_cache_key` and the `cache_stats` counters reported by
-  `/circuit-breaker/cache-stats`. The endpoint keeps working and reports zeroes;
-  the alternative is deleting an ops endpoint, which is a wider change.
+  `GET /api/health/cache` and `DELETE /api/admin/cache/clear`. Both routes are
+  deleted rather than left reporting zeroes forever: nothing wrote to the
+  cache, so the numbers were a standing lie, and no monitoring, frontend or
+  deployment config referenced either. A test asserts the 404.
 
 ## Migration Plan
 
 Commits are ordered so nothing is ever half-wired:
 
 1. Breaker sync API + tests (no caller yet).
-2. Test-isolation fixture (`reset_all()`), before any call site can trip state.
+2. Test-isolation fixture in a root `conftest.py`, before any call site can trip state.
 3. `ai_service_client` + failure-policy tests (no caller yet).
 4. Move the five pipeline call sites; add `UPSTREAM_CIRCUIT_OPEN` handling.
 5. Wire live breaker transitions into the degradation mode.

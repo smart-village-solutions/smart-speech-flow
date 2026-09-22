@@ -10,7 +10,7 @@
 
 ## 2. Test isolation, before anything can trip a breaker
 
-- [x] 2.1 Add an autouse `CircuitBreakerFactory.reset_all()` fixture to `tests/conftest.py` and `services/api_gateway/tests/conftest.py`
+- [x] 2.1 Add an autouse reset fixture to a **root** `conftest.py`, so it also reaches `services/*/tests/`
 - [x] 2.2 Prove it: leave a breaker OPEN in one test, confirm the next test is unaffected
 
 ## 3. The single AI-service call path
@@ -44,7 +44,7 @@
       writes to, and no dashboard, frontend or deployment config referenced either.
 - [x] 6.3 Remove the `FallbackStrategy` members that no longer have an implementation
 - [x] 6.4 Update or delete the tests that asserted the fabricated shapes
-- [x] 6.5 Confirm `/circuit-breaker/degradation-status` and the cache-stats route still answer
+- [x] 6.5 Confirm `/api/health/degradation` still answers, and that the deleted cache routes now 404
 
 ## 7. Retire the unreachable async client
 

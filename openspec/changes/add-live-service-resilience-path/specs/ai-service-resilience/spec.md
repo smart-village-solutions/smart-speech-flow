@@ -39,15 +39,20 @@ blocked.
 #### Scenario: A half-open breaker lets one request through
 - **WHEN** an open breaker's recovery timeout has elapsed and a pipeline run reaches that stage
 - **THEN** the breaker moves to `HALF_OPEN` and the request is sent
+- **AND** a concurrent pipeline thread reaching the same stage is refused until that probe reports
+- **AND** a probe that reports no outcome releases the next one only when the recovery timeout elapses again
 
 ### Requirement: Deliberate load shedding does not open a breaker
-A `503` response carrying a parseable `Retry-After` header SHALL be recorded as
-a success for breaker purposes, because it is a working service shedding load
-under the admission control added in #190.
+A `503` response carrying a parseable `Retry-After` header SHALL record no
+outcome at all -- neither a success nor a failure -- because it is a working
+service shedding load under the admission control added in #190, and no
+request was served. Recording it as a success would reset the failure count of
+a closed breaker and count toward the success threshold of a half-open one.
 
 #### Scenario: Shedding is passed through, not broken on
 - **WHEN** the translation service answers `503` with `Retry-After: 5`
-- **THEN** the translation breaker does not record a failure
+- **THEN** the translation breaker records neither a failure nor a success
+- **AND** the reply's latency does not enter the reported average
 - **AND** the pipeline result keeps `error_code: "SYSTEM_BUSY"` and `retry_after_seconds: 5`
 
 #### Scenario: A 503 without Retry-After is a fault
@@ -135,3 +140,40 @@ and are bounded by the health-check timeout rather than the inference timeout.
 **Migration**: Callers use `ai_service_client.call_ai_service`. The client's
 health, status and monitoring methods are unchanged and still back the
 `/circuit-breaker/*` routes.
+
+
+### Requirement: Only served traffic closes a breaker
+The health poll SHALL record a failed probe as a breaker failure and SHALL NOT
+record a successful probe at all, because a service can answer `/health` while
+failing every inference request. A breaker SHALL return to `CLOSED` only on
+successful requests that were actually served.
+
+#### Scenario: A reachable service that cannot do its job stays broken
+- **WHEN** a service answers `/health` normally but every inference request fails
+- **THEN** the breaker opens and stays open however many health probes succeed
+- **AND** `/api/health/services` still reports the service reachable
+
+#### Scenario: A service that cannot be reached at all opens its breaker
+- **WHEN** the health probe raises for `failure_threshold` consecutive polls
+- **THEN** the breaker opens without waiting for a pipeline request to fail
+
+### Requirement: The reported mode counts only verified services
+The degradation mode SHALL treat a service as usable only while its breaker is
+`CLOSED`. A `HALF_OPEN` breaker SHALL count as unusable, because a probe that
+has not reported is not evidence that the service works.
+
+#### Scenario: A recovery probe does not report full service
+- **WHEN** an open breaker's timeout elapses and a probe moves it to `HALF_OPEN`
+- **THEN** `/api/health/degradation` still reports `degraded`
+- **AND** it reports `full` only once a served request has closed the breaker
+
+### Requirement: A 2xx that did not carry the work is a failure
+Where a service can answer `2xx` without having done the work, the call path
+SHALL judge the reply by its payload and record a breaker failure when the work
+is absent. A non-2xx reply SHALL NOT be judged this way, so that malformed
+client input cannot open a breaker.
+
+#### Scenario: TTS answers 200 with a JSON error body
+- **WHEN** the TTS service answers `200` with `content-type: application/json`
+- **THEN** the pipeline fails the TTS stage, as it already did
+- **AND** the TTS breaker records a failure rather than a success

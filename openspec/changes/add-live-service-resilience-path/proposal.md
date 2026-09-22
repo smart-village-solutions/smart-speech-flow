@@ -78,11 +78,16 @@ transcript in place of an error.
   `pipeline_logic.py` (five call sites and two failure handlers),
   `quality_telemetry.py` (one new enum member), `graceful_degradation.py`,
   `circuit_breaker_client.py`, `service_health.py`
-- Affected API: `POST /pipeline`, `POST /upload` and
-  `POST /api/session/{id}/message` gain one new failure mode — a `503` with
-  `Retry-After` and `error_code: "upstream_circuit_open"`. Clients that already
-  handle the `SYSTEM_BUSY` 503 from #191 need no change; `AppError.ts` maps by
-  status code and already renders it as `errors.server`.
+- Affected API: `POST /upload` and `POST /api/session/{id}/message` gain one
+  new failure mode — a `503` with `Retry-After` and the existing
+  `error_code: "SYSTEM_BUSY"` envelope, because `_pipeline_error_result`
+  reuses #190's shape. `upstream_circuit_open` appears only in the debug and
+  telemetry payloads, where it stays distinct from ordinary load shedding.
+  Clients that already handle the `SYSTEM_BUSY` 503 from #191 need no change;
+  `AppError.ts` maps by status code and already renders it as `errors.server`.
+  `POST /pipeline` is the exception: it maps every pipeline error to a `400`
+  and reads neither field, so a refusal looks permanent there. That predates
+  this change and is not fixed here.
 - Affected telemetry: `upstream_circuit_open` is a new value in the ClickHouse
   `error_code` column. Values are additive; no existing row changes meaning.
 - Not affected: `PipelineAdmission`. `process_wav` and `process_text_pipeline`
