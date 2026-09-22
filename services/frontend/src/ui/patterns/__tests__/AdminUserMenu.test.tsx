@@ -51,6 +51,44 @@ describe('AdminUserMenu', () => {
     expect(onSignOut).toHaveBeenCalledOnce();
   });
 
+  it('shows the Studio link before sign-out when supplied', async () => {
+    renderWithProviders(
+      <AdminUserMenu
+        onSignOut={vi.fn()}
+        studioUrl="https://smartcity.dialog.kassel.de/"
+      />,
+      { locale: 'de' }
+    );
+
+    await open();
+
+    const studio = screen.getByRole('link', { name: 'Organisation verwalten' });
+    expect(studio).toHaveAttribute('href', 'https://smartcity.dialog.kassel.de/');
+    expect(studio).toHaveAttribute('target', '_blank');
+    expect(studio.compareDocumentPosition(screen.getByRole('button', { name: 'Abmelden' }))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+  });
+
+  it('does not show the Studio link when it is not supplied', async () => {
+    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
+    await open();
+    expect(screen.queryByRole('link', { name: 'Organisation verwalten' })).not.toBeInTheDocument();
+  });
+
+  it('uses compact text for all menu actions', async () => {
+    renderWithProviders(
+      <AdminUserMenu onSignOut={vi.fn()} studioUrl="https://smartcity.dialog.kassel.de/" />,
+      { locale: 'de' }
+    );
+    await open();
+
+    expect(screen.getByRole('button', { name: 'Passwort ändern' })).toHaveClass('text-note');
+    expect(screen.getByRole('button', { name: 'E-Mail-Adresse ändern' })).toHaveClass('text-note');
+    expect(screen.getByRole('link', { name: 'Organisation verwalten' })).toHaveClass('text-note');
+    expect(screen.getByRole('button', { name: 'Abmelden' })).toHaveClass('text-note');
+  });
+
   it('closes on a tap outside the menu', async () => {
     renderWithProviders(
       <div>

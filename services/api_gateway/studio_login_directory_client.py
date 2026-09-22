@@ -42,6 +42,7 @@ class StudioLoginTenant(BaseModel):
     id: str
     display_name: str = Field(alias="displayName", min_length=1, max_length=200)
     realm: str
+    studio_url: str | None = Field(default=None, alias="studioUrl", max_length=2_048)
 
     @field_validator("id")
     @classmethod
@@ -55,6 +56,23 @@ class StudioLoginTenant(BaseModel):
     def validate_realm(cls, value: str) -> str:
         if not REALM_PATTERN.fullmatch(value):
             raise ValueError("realm must be a safe Keycloak realm identifier")
+        return value
+
+    @field_validator("studio_url")
+    @classmethod
+    def validate_studio_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or any(character.isspace() for character in value)
+        ):
+            raise ValueError("studioUrl must be a safe HTTPS URL")
+        _ = parsed.port
         return value
 
 

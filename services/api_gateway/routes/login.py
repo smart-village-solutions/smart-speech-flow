@@ -27,6 +27,7 @@ class LoginTenantResponse(BaseModel):
     id: str
     display_name: str = Field(alias="displayName")
     realm: str
+    studio_url: str | None = Field(default=None, alias="studioUrl")
 
 
 class LoginTenantDirectoryResponse(BaseModel):
@@ -49,7 +50,7 @@ def _correlation_id(request: Request) -> str:
     return correlation_id
 
 
-@router.get("/tenants")
+@router.get("/tenants", response_model_exclude_none=True)
 async def list_login_tenants(
     request: Request,
     directory: Annotated[
@@ -76,6 +77,7 @@ async def list_login_tenants(
                 id=tenant.id,
                 displayName=tenant.display_name,
                 realm=tenant.realm,
+                studioUrl=tenant.studio_url,
             )
             for tenant in result.tenants
         ]
