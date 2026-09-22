@@ -18,7 +18,11 @@ import time
 import pytest
 
 from services.api_gateway.circuit_breaker import CircuitState
-from services.api_gateway.graceful_degradation import ServiceMode, graceful_degradation_manager
+from services.api_gateway.graceful_degradation import (
+    MODE_HISTORY_LIMIT,
+    ServiceMode,
+    graceful_degradation_manager,
+)
 from services.api_gateway.service_health import service_health_manager
 
 ALL_SERVICES = ("asr", "translation", "tts")
@@ -158,3 +162,26 @@ class TestItFollowsRealBreakers:
 
         assert breaker.state is CircuitState.CLOSED
         self._wait_for(lambda: graceful_degradation_manager.current_mode is ServiceMode.FULL)
+
+
+class TestTheHistoryIsBounded:
+    """It was bounded by accident: a one-way ratchet could only move three times.
+
+    Now that the mode is derived it moves on every recovery, so an unbounded
+    list on a process-wide singleton is a slow leak in a gateway that stays up
+    for weeks.
+    """
+
+    def test_a_long_outage_does_not_grow_the_history_without_bound(self):
+        for i in range(500):
+            graceful_degradation_manager.apply_service_states(_states(tts=bool(i % 2)))
+
+        assert len(graceful_degradation_manager.mode_history) <= MODE_HISTORY_LIMIT
+
+    def test_the_most_recent_changes_are_the_ones_kept(self):
+        """Trimming from the front, so the newest entry is always the live one."""
+        for i in range(500):
+            graceful_degradation_manager.apply_service_states(_states(tts=bool(i % 2)))
+
+        last = graceful_degradation_manager.mode_history[-1]
+        assert last["new_mode"] == graceful_degradation_manager.current_mode.value

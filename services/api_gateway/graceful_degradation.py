@@ -23,6 +23,11 @@ from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
+# The endpoint shows the last ten. The rest is kept for context and capped,
+# because a derived mode moves on every recovery -- two entries per flap, on
+# a singleton in a process that stays up for weeks.
+MODE_HISTORY_LIMIT = 50
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -91,6 +96,8 @@ class GracefulDegradationManager:
                 "is_failure": new_mode is not ServiceMode.FULL,
             }
         )
+        if len(self.mode_history) > MODE_HISTORY_LIMIT:
+            del self.mode_history[:-MODE_HISTORY_LIMIT]
         logger.warning(f"🔄 Service Mode: {old_mode.value} → {new_mode.value} (Trigger: {trigger})")
 
     def get_degradation_status(self) -> Dict[str, Any]:
