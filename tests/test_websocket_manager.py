@@ -251,7 +251,7 @@ class TestWebSocketManager:
         old_heartbeat = connection.last_heartbeat
 
         await asyncio.sleep(0.01)  # Kleine Verzögerung für Timestamp-Unterschied
-        await websocket_manager._handle_heartbeat_pong(connection)
+        await websocket_manager._handle_heartbeat_pong(connection_id, connection)
 
         # Assertions: Heartbeat wurde aktualisiert
         assert connection.last_heartbeat > old_heartbeat
