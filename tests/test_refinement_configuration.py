@@ -10,12 +10,6 @@ import logging
 import pytest
 
 from services.api_gateway import translation_refiner as refiner_module
-from services.api_gateway.translation_refiner import (
-    NoOpTranslationRefiner,
-    OllamaTranslationRefiner,
-    ShadowComparisonRefiner,
-    get_translation_refiner,
-)
 
 REFINEMENT_VARS = (
     "LLM_REFINEMENT_ENABLED",
@@ -49,35 +43,37 @@ def env(monkeypatch):
 def test_enabled_false_disables_refinement_whatever_the_mode(env, mode, enabled):
     env(ENABLED=enabled, MODE=mode)
 
-    assert isinstance(get_translation_refiner(), NoOpTranslationRefiner)
+    assert isinstance(
+        refiner_module.get_translation_refiner(), refiner_module.NoOpTranslationRefiner
+    )
 
 
 @pytest.mark.parametrize(
-    ("values", "expected_type", "expected_model"),
+    ("values", "expected_type_name", "expected_model"),
     [
-        ({}, NoOpTranslationRefiner, None),
-        ({"ENABLED": ""}, NoOpTranslationRefiner, None),
-        ({"ENABLED": "true"}, OllamaTranslationRefiner, "gpt-oss:20b"),
-        ({"MODE": "primary_only"}, OllamaTranslationRefiner, "gpt-oss:20b"),
-        ({"ENABLED": "true", "MODE": "disabled"}, NoOpTranslationRefiner, None),
+        ({}, "NoOpTranslationRefiner", None),
+        ({"ENABLED": ""}, "NoOpTranslationRefiner", None),
+        ({"ENABLED": "true"}, "OllamaTranslationRefiner", "gpt-oss:20b"),
+        ({"MODE": "primary_only"}, "OllamaTranslationRefiner", "gpt-oss:20b"),
+        ({"ENABLED": "true", "MODE": "disabled"}, "NoOpTranslationRefiner", None),
         (
             {"ENABLED": "true", "MODE": "candidate_only"},
-            OllamaTranslationRefiner,
+            "OllamaTranslationRefiner",
             "phi4-mini",
         ),
         (
             {"ENABLED": "yes", "MODE": " Shadow_Compare "},
-            ShadowComparisonRefiner,
+            "ShadowComparisonRefiner",
             "gpt-oss:20b",
         ),
     ],
 )
-def test_precedence_between_enabled_and_mode(env, values, expected_type, expected_model):
+def test_precedence_between_enabled_and_mode(env, values, expected_type_name, expected_model):
     env(**values)
 
-    refiner = get_translation_refiner()
+    refiner = refiner_module.get_translation_refiner()
 
-    assert type(refiner) is expected_type
+    assert type(refiner) is getattr(refiner_module, expected_type_name)
     if expected_model is not None:
         assert refiner.model == expected_model
 
@@ -86,7 +82,7 @@ def test_kill_switch_overriding_an_active_mode_is_logged(env, caplog):
     env(ENABLED="false", MODE="primary_only")
 
     with caplog.at_level(logging.WARNING, logger=refiner_module.logger.name):
-        get_translation_refiner()
+        refiner_module.get_translation_refiner()
 
     warning = " ".join(r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
     assert "LLM_REFINEMENT_ENABLED" in warning
@@ -96,7 +92,9 @@ def test_kill_switch_overriding_an_active_mode_is_logged(env, caplog):
 def test_kill_switch_works_even_when_other_values_are_invalid(env):
     env(ENABLED="false", MODE="primary_only", TIMEOUT="abc", MAX_RETRIES="-3")
 
-    assert isinstance(get_translation_refiner(), NoOpTranslationRefiner)
+    assert isinstance(
+        refiner_module.get_translation_refiner(), refiner_module.NoOpTranslationRefiner
+    )
 
 
 @pytest.mark.parametrize(
@@ -145,7 +143,7 @@ def test_invalid_values_fail_startup_naming_the_variable(env, values, variable, 
     env(**values)
 
     with pytest.raises(ValueError) as excinfo:
-        get_translation_refiner()
+        refiner_module.get_translation_refiner()
 
     message = str(excinfo.value)
     assert variable in message
@@ -156,7 +154,7 @@ def test_invalid_mode_error_lists_the_accepted_modes(env):
     env(MODE="primary")
 
     with pytest.raises(ValueError) as excinfo:
-        get_translation_refiner()
+        refiner_module.get_translation_refiner()
 
     for accepted in ("disabled", "primary_only", "candidate_only", "shadow_compare"):
         assert accepted in str(excinfo.value)
@@ -166,7 +164,7 @@ def test_invalid_mode_error_lists_the_accepted_modes(env):
 def test_timeout_bounds_are_inclusive(env, timeout):
     env(MODE="primary_only", TIMEOUT=timeout)
 
-    assert get_translation_refiner().timeout_seconds == float(timeout)
+    assert refiner_module.get_translation_refiner().timeout_seconds == float(timeout)
 
 
 def test_valid_tuning_values_reach_the_refiner(env):
@@ -179,7 +177,7 @@ def test_valid_tuning_values_reach_the_refiner(env):
         SHADOW_QUEUE_LIMIT="2",
     )
 
-    refiner = get_translation_refiner()
+    refiner = refiner_module.get_translation_refiner()
 
     assert refiner.timeout_seconds == 3.5
     assert refiner.temperature == 0.0
