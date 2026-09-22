@@ -55,8 +55,11 @@ class GracefulDegradationManager:
         process. Recomputing means recovery needs no separate path and cannot
         be forgotten.
 
-        ``usable`` maps each service to whether its breaker will currently
-        admit a request; HALF_OPEN counts as usable, because it will.
+        ``usable`` maps each service to whether its breaker has a *verified*
+        path to the service, which means CLOSED. A half-open breaker will
+        admit a probe but has not been shown to work yet, and reporting full
+        service on the strength of an unverified probe made the mode flap to
+        ``full`` during every recovery cycle of a real outage.
         """
         if not usable:
             return
