@@ -257,7 +257,7 @@ Use `.env.example` as the documented reference for Compose configuration. Keep e
 
 Variable groups currently interpolated by Compose include:
 
-- `LLM_REFINEMENT_*` for optional Ollama refinement.
+- `LLM_REFINEMENT_*` for optional Ollama refinement. `LLM_REFINEMENT_ENABLED=false` is a kill switch and disables refinement whatever `LLM_REFINEMENT_MODE` says; otherwise an explicit mode wins, `ENABLED=true` without a mode means `primary_only`, and nothing set means `disabled`. The gateway refuses to start on an unrecognised boolean or mode, a timeout outside 3.0–5.0 seconds, a negative temperature, or a retry count or shadow queue limit below 1. A disabled configuration skips the tuning checks, so the kill switch always works.
 - `GLOBAL_RATE_*` and `MESSAGE_RATE_*` for gateway throttling.
 - `ENVIRONMENT` and `DEVELOPMENT_CORS_ORIGINS` for environment-specific CORS behaviour.
 - `GRAFANA_ADMIN_*` and `FRONTEND_DEMO_PASSWORD` for local monitoring and demo access.
