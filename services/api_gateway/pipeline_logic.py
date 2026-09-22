@@ -52,6 +52,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 AUDIO_WAV_MIME = "audio/wav"
 
+
+def _tts_served_audio(response: Any) -> bool:
+    """Whether a TTS reply actually carried audio.
+
+    TTS answers 200 with a JSON error body when synthesis fails, which
+    _finish_tts_stage has always treated as a failure. The breaker needs the
+    same view, or it stays CLOSED while every synthesis fails.
+    """
+    return bool(response.headers.get("content-type", "") == AUDIO_WAV_MIME)
+
+
 # Marks a pipeline failure the client may usefully retry, so the routes can
 # answer 503 with a Retry-After instead of a permanent-looking error.
 UPSTREAM_BUSY_ERROR_CODE = "SYSTEM_BUSY"
@@ -685,7 +696,9 @@ def _run_text_tts_step(
     if refined_tts_text:
         tts_payload["tts_text"] = refined_tts_text
 
-    tts_resp = call_ai_service("tts", TTS_URL, json=tts_payload, timeout=30)
+    tts_resp = call_ai_service(
+        "tts", TTS_URL, served=_tts_served_audio, json=tts_payload, timeout=30
+    )
     tts_completed_at = utc_now()
     tts_duration_ms = int((time.perf_counter() - start_tts) * 1000)
     return tts_resp, tts_duration_ms, tts_started_at, tts_completed_at, start_tts
@@ -697,6 +710,7 @@ def _run_wav_tts_step(*, translation_text: str, target_lang: str, debug: bool) -
     tts_resp = call_ai_service(
         "tts",
         TTS_URL,
+        served=_tts_served_audio,
         json={
             "text": translation_text,
             "lang": target_lang,

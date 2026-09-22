@@ -259,3 +259,55 @@ class TestItDoesNotImposeTheHealthCheckTimeout:
             )
 
         assert post.call_args.kwargs["timeout"] == 60
+
+
+class TestAServedReplyIsMoreThanAStatusCode:
+    """A 200 can still carry a failure, and TTS has done exactly that.
+
+    _finish_tts_stage fails a 200 whose content-type is not audio/wav, and
+    message_telemetry records that shape as historically reachable. Classifying
+    on the status code alone left the breaker CLOSED forever while every
+    synthesis failed -- the blind spot #219 exists to close.
+    """
+
+    @staticmethod
+    def _audio(response) -> bool:
+        return getattr(response, "headers", {}).get("content-type") == "audio/wav"
+
+    def _call(self, status_code, headers, *, served=None):
+        response = FakeResponse(status_code, headers)
+        with patch.object(ai_service_client.requests, "post", return_value=response):
+            return ai_service_client.call_ai_service(
+                "tts", "http://tts:8000/synthesize", served=served, timeout=30
+            )
+
+    def test_a_200_without_the_expected_payload_is_a_failure(self):
+        breaker = _breaker("tts")
+
+        self._call(200, {"content-type": "application/json"}, served=self._audio)
+
+        assert breaker.health.failed_requests == 1
+        assert breaker.health.successful_requests == 0
+
+    def test_a_200_carrying_the_payload_is_a_success(self):
+        breaker = _breaker("tts")
+
+        self._call(200, {"content-type": "audio/wav"}, served=self._audio)
+
+        assert breaker.health.successful_requests == 1
+        assert breaker.health.failed_requests == 0
+
+    def test_a_4xx_is_still_not_a_service_fault(self):
+        """Bad client input must not open a breaker, predicate or not."""
+        breaker = _breaker("tts")
+
+        self._call(422, {"content-type": "application/json"}, served=self._audio)
+
+        assert breaker.health.failed_requests == 0
+
+    def test_without_a_predicate_the_status_code_still_decides(self):
+        breaker = _breaker("tts")
+
+        self._call(200, {"content-type": "application/json"})
+
+        assert breaker.health.successful_requests == 1

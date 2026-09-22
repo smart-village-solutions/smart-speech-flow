@@ -19,7 +19,7 @@ happened, which :meth:`~.circuit_breaker.CircuitBreaker.guard` and the
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Callable, Optional
 
 import requests
 
@@ -80,7 +80,13 @@ def _is_service_fault(response: Any) -> bool:
     return not _sheds_load(response)
 
 
-def call_ai_service(service: str, url: str, **kwargs: Any) -> requests.Response:
+def call_ai_service(
+    service: str,
+    url: str,
+    *,
+    served: Optional[Callable[[Any], bool]] = None,
+    **kwargs: Any,
+) -> requests.Response:
     """POSTs to an AI service through its circuit breaker.
 
     Returns the response untouched, including error responses: classifying an
@@ -89,8 +95,16 @@ def call_ai_service(service: str, url: str, **kwargs: Any) -> requests.Response:
     circuit is open, and telling the breaker what happened -- which for a
     deliberate load shed means telling it nothing at all.
 
+    ``served`` decides whether a 2xx actually carried the work. A status code
+    is not always enough: TTS answers ``200`` with a JSON error body when
+    synthesis fails, and ``_finish_tts_stage`` has always treated that as a
+    failure. Without the predicate the breaker recorded it as a success and
+    stayed CLOSED while every synthesis failed. It is consulted only for 2xx,
+    so malformed client input still cannot open a breaker.
+
     Raises:
-        CircuitBreakerOpenError: the circuit is open; no request was sent.
+        CircuitBreakerOpenError: the circuit is open, or half-open with a
+            probe already in flight; no request was sent.
         requests.RequestException: whatever the transport raised, after it has
             been recorded as a failure.
     """
@@ -109,8 +123,11 @@ def call_ai_service(service: str, url: str, **kwargs: Any) -> requests.Response:
         # Deliberate refusal: no outcome to record in either direction, and
         # the microseconds it took must not enter the latency average.
         return response
+    status = getattr(response, "status_code", 0)
     if _is_service_fault(response):
-        breaker.record_failure(f"HTTP {response.status_code}")
+        breaker.record_failure(f"HTTP {status}")
+    elif 200 <= status < 300 and served is not None and not served(response):
+        breaker.record_failure(f"HTTP {status} without the expected payload")
     else:
         breaker.record_success(elapsed)
     return response

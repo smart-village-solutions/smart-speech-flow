@@ -184,3 +184,43 @@ class TestTheHappyPathIsUnchanged:
         assert result["debug"]["failed_stage"] == PipelineStage.ASR.value
         assert result["debug"]["error_code"] != QualityErrorCode.UPSTREAM_CIRCUIT_OPEN.value
         assert breaker_for("asr").health.failed_requests == 1
+
+
+class TestTheBreakerAgreesWithThePipeline:
+    """Whatever the pipeline calls a failure, the breaker has to call one too.
+
+    Any disagreement is a blind spot, and this one was real: TTS answers 200
+    with a JSON error body when synthesis fails, _finish_tts_stage has always
+    failed that reply, and the breaker recorded it as a success -- so a TTS
+    service stuck in that state kept a CLOSED breaker while every synthesis
+    failed.
+    """
+
+    def test_a_tts_200_with_a_json_body_is_recorded_as_a_failure(self):
+        replies = [
+            _ok_asr(),
+            _ok_translation(),
+            Reply(
+                {"error": "no voice for de"},
+                status_code=200,
+                headers={"content-type": "application/json"},
+            ),
+        ]
+
+        with patch.object(pipeline_logic.requests, "post", side_effect=replies):
+            result = pipeline_logic.process_wav(WAV_HEADER, "de", "en", validate_audio=False)
+
+        assert result["error"] is True
+        assert result["debug"]["failed_stage"] == PipelineStage.TTS.value
+        assert breaker_for("tts").health.failed_requests == 1, "the breaker called it a success"
+        assert breaker_for("tts").health.successful_requests == 0
+
+    def test_a_real_audio_reply_is_still_a_success(self):
+        replies = [_ok_asr(), _ok_translation(), _ok_tts()]
+
+        with patch.object(pipeline_logic.requests, "post", side_effect=replies):
+            result = pipeline_logic.process_wav(WAV_HEADER, "de", "en", validate_audio=False)
+
+        assert result["error"] is False
+        assert breaker_for("tts").health.successful_requests == 1
+        assert breaker_for("tts").health.failed_requests == 0
