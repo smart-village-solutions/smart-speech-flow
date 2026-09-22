@@ -15,6 +15,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isStudioUrl(value: unknown): value is string | undefined {
+  if (value === undefined) return true;
+  if (!isNonBlankString(value)) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.username === '' && url.password === '';
+  } catch {
+    return false;
+  }
+}
+
 function isLoginTenantDirectoryDto(value: unknown): value is LoginTenantDirectoryDto {
   return isRecord(value);
 }
@@ -24,12 +35,13 @@ function isLoginTenant(value: unknown): value is LoginTenant {
     return false;
   }
 
-  const { id, displayName, realm } = value;
+  const { id, displayName, realm, studioUrl } = value;
   return (
     isNonBlankString(id) &&
     isNonBlankString(displayName) &&
     isNonBlankString(realm) &&
-    REALM_PATTERN.test(realm)
+    REALM_PATTERN.test(realm) &&
+    isStudioUrl(studioUrl)
   );
 }
 
@@ -53,5 +65,10 @@ export function toLoginTenants(dto: unknown): LoginTenant[] {
     realms.add(tenant.realm);
   }
 
-  return tenants.map(({ id, displayName, realm }) => ({ id, displayName, realm }));
+  return tenants.map(({ id, displayName, realm, studioUrl }) => ({
+    id,
+    displayName,
+    realm,
+    ...(studioUrl === undefined ? {} : { studioUrl }),
+  }));
 }

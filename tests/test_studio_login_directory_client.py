@@ -24,6 +24,7 @@ def valid_directory() -> dict[str, object]:
                 "id": "tenant-kassel",
                 "displayName": "Stadt Kassel",
                 "realm": "kassel-ssf-2025",
+                "studioUrl": "https://smartcity.dialog.kassel.de/",
             }
         ],
     }
@@ -72,6 +73,7 @@ async def test_accepts_valid_directory_and_sends_tenant_unbound_request() -> Non
         "id": "tenant-kassel",
         "displayName": "Stadt Kassel",
         "realm": "kassel-ssf-2025",
+        "studioUrl": "https://smartcity.dialog.kassel.de/",
     }
     assert transport.calls == [
         (
@@ -134,6 +136,7 @@ async def test_accepts_unknown_optional_v1_fields() -> None:
             ]
         ),
         lambda payload: payload["tenants"][0].update(displayName=""),
+        lambda payload: payload["tenants"][0].update(studioUrl="http://studio.test/"),
     ],
 )
 async def test_rejects_invalid_known_directory_fields(mutate: Any) -> None:

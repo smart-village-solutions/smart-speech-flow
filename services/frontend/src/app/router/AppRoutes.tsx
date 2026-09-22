@@ -16,6 +16,7 @@ import { AdminDashboardScreen } from '@/features/admin/AdminDashboardScreen';
 import { AdminSessionScreen } from '@/features/admin/AdminSessionScreen';
 import {
   logoutFromKeycloak,
+  getStudioUrlForSystemAdmin,
   requireKeycloakLogin,
   subscribeToKeycloakExpiration,
 } from '@/app/auth/keycloak';
@@ -105,11 +106,26 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
   if (status === 'error') return <p role="alert">{t('admin.tenantLogin.unavailable')}</p>;
   if (status !== 'authenticated') return null;
 
+  const studioUrl = getStudioUrlForSystemAdmin();
+
   if (sessionId === null) {
-    return <AdminDashboardScreen onEnterSession={setSessionId} onSignOut={out} />;
+    return (
+      <AdminDashboardScreen
+        onEnterSession={setSessionId}
+        onSignOut={out}
+        studioUrl={studioUrl ?? undefined}
+      />
+    );
   }
 
-  return <AdminSessionScreen sessionId={sessionId} onLeave={leave} onSignOut={out} />;
+  return (
+    <AdminSessionScreen
+      sessionId={sessionId}
+      onLeave={leave}
+      onSignOut={out}
+      studioUrl={studioUrl ?? undefined}
+    />
+  );
 }
 
 function LegacyAdminEntry() {

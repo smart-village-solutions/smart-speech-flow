@@ -34,6 +34,7 @@ def directory(*, empty: bool = False) -> StudioLoginDirectory:
                         "id": "tenant-kassel",
                         "displayName": "Stadt Kassel",
                         "realm": "kassel-ssf-2025",
+                        "studioUrl": "https://smartcity.dialog.kassel.de/",
                         "privateStudioField": "must-not-leak",
                     }
                 ]
@@ -77,6 +78,7 @@ def test_returns_only_browser_safe_tenant_fields_without_authorization() -> None
                 "id": "tenant-kassel",
                 "displayName": "Stadt Kassel",
                 "realm": "kassel-ssf-2025",
+                "studioUrl": "https://smartcity.dialog.kassel.de/",
             }
         ]
     }
@@ -92,6 +94,37 @@ def test_generates_a_correlation_id_when_the_header_is_absent() -> None:
     assert response.json() == {"tenants": []}
     assert len(service.correlation_ids) == 1
     assert str(UUID(service.correlation_ids[0])) == service.correlation_ids[0]
+
+
+def test_omits_an_absent_optional_studio_url() -> None:
+    service = StubDirectoryService(
+        StudioLoginDirectory.model_validate(
+            {
+                "contractVersion": "1.0",
+                "directoryRevision": REVISION,
+                "tenants": [
+                    {
+                        "id": "tenant-fulda",
+                        "displayName": "Stadt Fulda",
+                        "realm": "fulda-ssf-2025",
+                    }
+                ],
+            }
+        )
+    )
+
+    response = route_client(service).get("/api/login/tenants")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "tenants": [
+            {
+                "id": "tenant-fulda",
+                "displayName": "Stadt Fulda",
+                "realm": "fulda-ssf-2025",
+            }
+        ]
+    }
 
 
 @pytest.mark.parametrize("correlation_id", ["x" * 129, "correlation-\x7f"])

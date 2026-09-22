@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ChevronDown, LogOut, User } from 'lucide-react';
+import { ChevronDown, ExternalLink, LogOut, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { IconButton } from '@/ui/primitives/IconButton';
 import { TextField } from '@/ui/primitives/TextField';
@@ -95,10 +95,11 @@ function MenuSection({
 
 interface AdminUserMenuProps {
   onSignOut: () => void;
+  studioUrl?: string;
 }
 
 /** Both forms are UI only: issue #202 defers account management to Keycloak. */
-export function AdminUserMenu({ onSignOut }: Readonly<AdminUserMenuProps>) {
+export function AdminUserMenu({ onSignOut, studioUrl }: Readonly<AdminUserMenuProps>) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<Section>('none');
@@ -143,6 +144,18 @@ export function AdminUserMenu({ onSignOut }: Readonly<AdminUserMenuProps>) {
           >
             <MenuField label={t('admin.menu.newEmail')} type="email" />
           </MenuSection>
+
+          {studioUrl && (
+            <a
+              href={studioUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex h-menu-row w-full items-center justify-between border-t border-border-divider px-4 text-note text-fg-body transition-colors duration-150 hover:bg-surface-row-hover"
+            >
+              <span>{t('admin.menu.openStudio')}</span>
+              <ExternalLink aria-hidden size={16} strokeWidth={2} />
+            </a>
+          )}
 
           <MenuRow
             label={t('admin.menu.signOut')}

@@ -6,8 +6,8 @@ export const handlers = [
   http.get('*/api/login/tenants', () =>
     HttpResponse.json({
       tenants: [
-        { id: 'tenant-fulda', displayName: 'Amt Fulda', realm: 'fulda-ssf-2025' },
-        { id: 'tenant-kassel', displayName: 'Stadt Kassel', realm: 'kassel-ssf-2025' },
+        { id: 'tenant-fulda', displayName: 'Amt Fulda', realm: 'fulda-ssf-2025', studioUrl: 'https://fulda.dialog.kassel.de/' },
+        { id: 'tenant-kassel', displayName: 'Stadt Kassel', realm: 'kassel-ssf-2025', studioUrl: 'https://smartcity.dialog.kassel.de/' },
       ],
     })
   ),

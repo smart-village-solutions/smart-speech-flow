@@ -4,7 +4,11 @@ import { Link, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { AppRoutes } from '@/app/router/AppRoutes';
-import { requireKeycloakLogin, logoutFromKeycloak } from '@/app/auth/keycloak';
+import {
+  getStudioUrlForSystemAdmin,
+  requireKeycloakLogin,
+  logoutFromKeycloak,
+} from '@/app/auth/keycloak';
 import type { AdminSession } from '@/domain/admin/admin.types';
 
 const { expirationListeners } = vi.hoisted(() => ({ expirationListeners: new Set<() => void>() }));
@@ -12,6 +16,7 @@ const { expirationListeners } = vi.hoisted(() => ({ expirationListeners: new Set
 vi.mock('@/app/auth/keycloak', () => ({
   requireKeycloakLogin: vi.fn(),
   logoutFromKeycloak: vi.fn(),
+  getStudioUrlForSystemAdmin: vi.fn(),
   getAdminAccessToken: vi.fn().mockResolvedValue('tenant-token'),
   subscribeToKeycloakExpiration: (listener: () => void) => {
     expirationListeners.add(listener);
@@ -19,7 +24,12 @@ vi.mock('@/app/auth/keycloak', () => ({
   },
 }));
 
-const kassel = { id: 'tenant-kassel', displayName: 'Stadt Kassel', realm: 'kassel-ssf-2025' };
+const kassel = {
+  id: 'tenant-kassel',
+  displayName: 'Stadt Kassel',
+  realm: 'kassel-ssf-2025',
+  studioUrl: 'https://smartcity.dialog.kassel.de/',
+};
 function Location() {
   return <output aria-label="Location">{useLocation().pathname}</output>;
 }
@@ -28,6 +38,7 @@ describe('tenant login routes', () => {
   beforeEach(() => {
     vi.mocked(requireKeycloakLogin).mockReset().mockResolvedValue(true);
     vi.mocked(logoutFromKeycloak).mockReset().mockResolvedValue(undefined);
+    vi.mocked(getStudioUrlForSystemAdmin).mockReset().mockReturnValue(null);
     sessionStorage.clear();
   });
 
@@ -53,6 +64,18 @@ describe('tenant login routes', () => {
     ).toBeInTheDocument();
     expect(requireKeycloakLogin).toHaveBeenCalledWith(expect.any(Object), kassel);
     expect(screen.getByLabelText('Location')).toHaveTextContent('/login/tenant-kassel');
+  });
+
+  it('shows the selected tenant Studio link only for a system administrator', async () => {
+    vi.mocked(getStudioUrlForSystemAdmin).mockReturnValue('https://smartcity.dialog.kassel.de/');
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+
+    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
+    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
+    expect(screen.getByRole('link', { name: 'Studio öffnen' })).toHaveAttribute(
+      'href',
+      'https://smartcity.dialog.kassel.de/'
+    );
   });
 
   it('does not render the dashboard while Keycloak redirects', async () => {
@@ -171,6 +194,7 @@ describe('tenant login routes', () => {
         id: 'tenant-fulda',
         displayName: 'Amt Fulda',
         realm: 'fulda-ssf-2025',
+        studioUrl: 'https://fulda.dialog.kassel.de/',
       })
     );
     if (state === 'pending') await act(async () => finishA([row('TENANTA1')]));
