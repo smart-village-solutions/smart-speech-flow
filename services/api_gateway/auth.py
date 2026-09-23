@@ -35,7 +35,7 @@ from .auth_rejections import (
 from .studio_login_directory import (
     StudioLoginDirectoryConfigurationError,
     StudioLoginDirectoryService,
-    get_studio_login_directory_service,
+    studio_login_directory_service,
 )
 from .studio_login_directory_client import StudioLoginDirectoryClientError, StudioLoginTenant
 from .studio_runtime_client import REVISION_PATTERN
@@ -149,8 +149,12 @@ class _Rejected(Exception):
 
 
 def get_auth_login_directory_provider() -> Callable[[], StudioLoginDirectoryService]:
-    """Defer directory configuration so a request without a bearer token stays a 401."""
-    return get_studio_login_directory_service
+    """Defer directory configuration so a request without a bearer token stays a 401.
+
+    The provider raises the domain error, not an HTTP 503, so that
+    `_directory_tenant` records a misconfigured directory like any other rejection.
+    """
+    return studio_login_directory_service
 
 
 def _bearer_token(request: HTTPConnection) -> str:

@@ -5,6 +5,7 @@ server log and the counter, so a tenant whose tokens cannot pass is diagnosable
 without decoding a token by hand (#363).
 """
 
+import json
 import logging
 from enum import StrEnum
 from uuid import uuid4
@@ -107,14 +108,16 @@ def record_auth_rejection(
         "tenant_ref": tenant_ref(tenant_id) if tenant_id else "-",
         "correlation_id": correlation_id,
     }
-    # The caller chooses the correlation ID, so it goes last: it cannot
-    # masquerade as one of the fields before it.
-    logger.warning(
+    # The caller chooses the correlation ID, which may contain spaces and "=":
+    # it is JSON-quoted so it cannot forge a key=value field.
+    logger.log(
+        # No bearer at all is ordinary anonymous traffic, not a failed token.
+        logging.INFO if reason is AuthRejectionReason.MISSING_BEARER else logging.WARNING,
         "ssf_auth_rejected reason=%s status=%s tenant_ref=%s correlation_id=%s",
         fields["reason"],
         fields["status"],
         fields["tenant_ref"],
-        fields["correlation_id"],
+        json.dumps(correlation_id),
         extra=fields,
     )
     metrics = getattr(connection.app.state, "auth_rejection_metrics", None)

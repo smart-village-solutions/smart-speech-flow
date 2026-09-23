@@ -44,18 +44,20 @@ source scripts/lib/production-common.sh
 
 ### 1. Audit every published tenant
 
-`scripts/tenant-auth-audit.py` is read-only: it sends GET requests only and
-prints no usernames, emails, tokens or claim values. It needs a Keycloak admin
-access token. Obtain one without printing it, and run the audit immediately:
+`scripts/tenant-auth-audit.py` is read-only: it sends GET requests only, follows
+no redirect, refuses plain `http://` to any host but this machine, and prints no
+usernames, emails, tokens or claim values. It needs a Keycloak admin access
+token. Obtain one without printing it or passing the password as a command
+argument (arguments are visible in `ps`), and run the audit immediately:
 master-realm tokens expire after about a minute.
 
 ```bash
 source scripts/lib/production-common.sh
 admin_user="$(production_compose exec -T keycloak printenv KC_BOOTSTRAP_ADMIN_USERNAME)"
 admin_password="$(production_compose exec -T keycloak printenv KC_BOOTSTRAP_ADMIN_PASSWORD)"
-KEYCLOAK_AUDIT_ADMIN_TOKEN="$(curl -fsS \
+KEYCLOAK_AUDIT_ADMIN_TOKEN="$(printf '%s' "$admin_password" | curl -fsS \
   --data-urlencode grant_type=password --data-urlencode client_id=admin-cli \
-  --data-urlencode "username=$admin_user" --data-urlencode "password=$admin_password" \
+  --data-urlencode "username=$admin_user" --data-urlencode "password@-" \
   "https://auth.dialog.kassel.de/realms/master/protocol/openid-connect/token" \
   | python3 -c 'import json, sys; print(json.load(sys.stdin)["access_token"])')"
 unset admin_user admin_password
@@ -66,9 +68,20 @@ KEYCLOAK_AUDIT_ADMIN_TOKEN="$KEYCLOAK_AUDIT_ADMIN_TOKEN" \
 unset KEYCLOAK_AUDIT_ADMIN_TOKEN
 ```
 
-A ready tenant prints `realm contract missing: none` and `would_pass=yes` for
-every user, and the script exits `0`. Users appear only as `user_ref`, a hash
-of their Keycloak ID; `tenant_ref` is the same value the gateway logs.
+Each tenant ends with `ready: yes` or `ready: no (<reason>)`, and the script
+exits `0` only when every published tenant is ready. A tenant is ready when its
+`ssf-frontend` client can complete the login (`login client problems: none`),
+at least one user holds `ssf-user`, and every holder's token would pass the
+gateway (`would_pass=yes`). Users without the role are counted as
+`other users (not judged)`: a realm may hold accounts that are not SSF
+administrators. `ready: no (no user holds ssf-user)` is the #363 state. Users
+appear only as `user_ref`, a hash of their Keycloak ID; `tenant_ref` is the
+same value the gateway logs.
+
+The audit judges claims from the tokens themselves, so claims Studio supplies
+through client scopes count. The required role and the audience default to
+`ssf-user` and `ssf-frontend`; set `KEYCLOAK_REQUIRED_ROLE` and
+`KEYCLOAK_AUDIENCE` exactly as the gateway has them if they differ.
 
 The audit decodes a Keycloak *example* token for each user, so it reports what
 a fresh login would receive. It cannot check that the revision is *current*
@@ -76,6 +89,9 @@ against Studio's runtime configuration; step 2 covers that.
 
 `GET failed: HTTP 401` means the admin token expired: obtain a new one and
 rerun. `GET failed: HTTP 403` means the token lacks realm-admin rights.
+`refusing redirect` or `refusing non-https URL` means a base URL is wrong:
+the audit never lets the admin token follow a redirect or leave over plain
+http.
 
 ### 2. Prove it end to end with fresh tokens
 
@@ -113,9 +129,12 @@ production_compose exec -T prometheus wget -qO- \
 ```
 
 A line reads `ssf_auth_rejected reason=<code> status=<status> tenant_ref=<ref>
-correlation_id=<id>`. The `correlation_id` is the request's `X-Correlation-Id`
-when the caller sent a valid one, so a browser request can be matched to its
-log line. No token content is ever logged.
+correlation_id="<id>"`. The `correlation_id` is the request's
+`X-Correlation-Id` when the caller sent a valid one, so a browser request can
+be matched to its log line; it is JSON-quoted because the caller chooses it.
+`missing_bearer` is logged at INFO, every other reason at WARNING: a request
+with no token at all is ordinary anonymous traffic. No token content is ever
+logged.
 
 | `reason` | Status | Meaning | Owner |
 | --- | --- | --- | --- |

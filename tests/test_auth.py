@@ -20,7 +20,10 @@ from services.api_gateway.auth import (
     require_ssf_user,
 )
 from services.api_gateway.session_pseudonym import tenant_ref
-from services.api_gateway.studio_login_directory import StudioLoginDirectoryService
+from services.api_gateway.studio_login_directory import (
+    StudioLoginDirectoryService,
+    _build_studio_login_directory_service,
+)
 from services.api_gateway.studio_login_directory_client import (
     StudioLoginDirectory,
     StudioLoginDirectoryClientError,
@@ -413,7 +416,8 @@ def _expired(key):
 def test_each_rejection_logs_its_reason_once(
     monkeypatch, signing_key, caplog, token_factory, keycloak, reason
 ):
-    caplog.set_level(logging.WARNING, logger=AUTH_LOGGER)
+    # INFO, not WARNING: a request with no bearer at all logs at INFO.
+    caplog.set_level(logging.INFO, logger=AUTH_LOGGER)
     mock_keycloak(monkeypatch, signing_key, **keycloak)
     token = token_factory(signing_key)
     headers = {"Authorization": f"Bearer {token}"} if token else {}
@@ -443,6 +447,31 @@ def test_unavailable_directory_is_classified(monkeypatch, signing_key, caplog):
     mock_keycloak(monkeypatch, signing_key)
     assert request_with_token(access_token(signing_key)).status_code == 503
     assert _reasons(caplog) == ["directory_unavailable"]
+
+
+def test_an_unconfigured_directory_is_classified_and_counted(monkeypatch, signing_key, caplog):
+    """The real provider, not an override: a missing Studio base URL in production."""
+    caplog.set_level(logging.WARNING, logger=AUTH_LOGGER)
+    app.dependency_overrides.pop(get_auth_login_directory_provider)
+    monkeypatch.delenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", raising=False)
+    _build_studio_login_directory_service.cache_clear()
+    mock_keycloak(monkeypatch, signing_key)
+
+    def unconfigured_count():
+        return app.state.prometheus_registry.get_sample_value(
+            "gateway_auth_rejections_total", {"reason": "directory_unavailable"}
+        )
+
+    before = unconfigured_count()
+    try:
+        response = request_with_token(access_token(signing_key))
+    finally:
+        _build_studio_login_directory_service.cache_clear()
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "The login directory is temporarily unavailable"}
+    assert _reasons(caplog) == ["directory_unavailable"]
+    assert unconfigured_count() == before + 1
 
 
 def test_misconfigured_keycloak_base_url_is_classified(monkeypatch, signing_key, caplog):

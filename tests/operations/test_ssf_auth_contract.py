@@ -87,6 +87,55 @@ def test_tenant_claim_agrees(claims, expected):
     assert load_contract().tenant_claim_agrees(claims, "tenant-kassel") is expected
 
 
+@pytest.mark.parametrize(
+    ("uri", "expected"),
+    [
+        ("https://dialog.kassel.de/login/*", True),
+        ("https://dialog.kassel.de/*", True),
+        ("https://dialog.kassel.de/login/tenant-kassel", True),
+        ("http://localhost:5173/*", True),
+        ("http://auth.localhost:8080/login/*", True),
+        ("https://dialog.kassel.de/login/tenant-fulda", False),
+        ("https://dialog.kassel.de/admin/*", False),
+        ("https://dialog.kassel.de/login", False),
+        ("http://dialog.kassel.de/login/*", False),
+        ("not a uri", False),
+    ],
+)
+def test_a_redirect_admits_the_tenants_login_callback(uri, expected):
+    assert load_contract().admits_login_callback(uri, "tenant-kassel") is expected
+
+
+LOGIN_READY_CLIENT = {
+    "clientId": "ssf-frontend",
+    "publicClient": True,
+    "standardFlowEnabled": True,
+    "directAccessGrantsEnabled": True,
+    "attributes": {"pkce.code.challenge.method": "S256"},
+    "redirectUris": ["https://dialog.kassel.de/login/*", "https://dialog.kassel.de/"],
+}
+
+
+@pytest.mark.parametrize(
+    ("change", "problems"),
+    [
+        ({}, []),
+        ({"publicClient": False}, ["not-public-pkce"]),
+        ({"standardFlowEnabled": False}, ["not-public-pkce"]),
+        ({"attributes": {}}, ["not-public-pkce"]),
+        ({"redirectUris": ["https://dialog.kassel.de/admin/*"]}, ["no-login-redirect"]),
+        ({"redirectUris": []}, ["no-login-redirect"]),
+    ],
+)
+def test_login_client_problems_only_name_what_breaks_login(change, problems):
+    client = {**LOGIN_READY_CLIENT, **change}
+    assert load_contract().login_client_problems(client, "tenant-kassel") == problems
+
+
+def test_a_missing_client_is_one_problem():
+    assert load_contract().login_client_problems(None, "tenant-kassel") == ["client-missing"]
+
+
 def test_token_flags_compose_the_predicates():
     contract = load_contract()
     flags = contract.token_flags(

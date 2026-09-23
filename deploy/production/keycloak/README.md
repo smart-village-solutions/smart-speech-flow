@@ -12,15 +12,22 @@ for the SSF gateway to accept its tokens. It is also the realm the development
   has the shape Studio provisions; what the gateway needs is the claim, not
   that particular mapper.
 - The realm role `ssf-user`.
+- `ssf_authorization_revision` declared in the realm's user profile with
+  admin-only view and edit. Keycloak 26 silently drops an undeclared attribute
+  (an admin can set it, but it is not stored), and a user-editable revision
+  would let a user authorize themselves through the account console.
 
 It deliberately has **no** `studio_tenant_id` mapper. The gateway identifies the
 tenant by the realm that issued the token, matched against the Studio login
 directory, and rejects a token whose `studio_tenant_id` disagrees with that
 tenant (#363). It has no users.
 
-`scripts/lib/ssf_auth_contract.py` encodes the same list.
-`tests/operations/test_keycloak_realm.py` fails when this file stops meeting it,
-and `scripts/tenant-auth-audit.py` checks live realms against it.
+`scripts/lib/ssf_auth_contract.py` encodes the same list, and
+`tests/operations/test_keycloak_realm.py` fails when this file stops meeting it.
+Live realms are judged less strictly, on what would actually break SSF:
+`scripts/tenant-auth-audit.py` checks that the client can complete the login
+and that each `ssf-user` holder's token would pass the gateway, so Studio may
+supply the claims through client scopes or register extra redirect URIs.
 
 ## Production
 

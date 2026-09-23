@@ -2,7 +2,9 @@
 
 import base64
 import hashlib
+import http.server
 import json
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -79,7 +81,7 @@ def _claims(**overrides):
     return {key: value for key, value in claims.items() if value is not None}
 
 
-def _run(tokens, **kwargs):
+def _run(tokens, *, role="ssf-user", **kwargs):
     audit = _load()
     fake = FakeKeycloak(tokens, **kwargs)
     reports = audit.audit(
@@ -87,62 +89,121 @@ def _run(tokens, **kwargs):
         ssf_base_url="https://ssf.example/",
         keycloak_base_url="https://auth.example/",
         admin_token="admin-secret",
+        role=role,
     )
     return audit, fake, reports
 
 
-def test_the_363_production_shape_is_reported_as_failing():
+def _administrators(report):
+    return [user for user in report.users if user.administrator]
+
+
+def test_the_363_production_shape_is_reported_as_not_ready():
+    """smartcity today: nobody holds ssf-user and no token carries a revision."""
     audit, _, reports = _run(
-        {"u1": _claims(ssf_authorization_revision=None, realm_access={"roles": ["system_admin"]})}
+        {
+            "u1": _claims(
+                ssf_authorization_revision=None, realm_access={"roles": ["system_admin"]}
+            ),
+            "u2": _claims(
+                ssf_authorization_revision=None, realm_access={"roles": ["manage-account"]}
+            ),
+        }
     )
     [tenant] = reports
-    assert (tenant.realm, tenant.realm_missing, tenant.error) == ("smartcity", [], None)
-    [user] = tenant.users
+    assert (tenant.realm, tenant.login_problems, tenant.error) == ("smartcity", [], None)
+    assert _administrators(tenant) == []
+    assert audit.not_ready_reason(tenant) == "no user holds ssf-user"
+    assert audit.exit_code(reports) == 1
+
+
+def test_an_administrator_without_the_revision_is_named():
+    audit, _, reports = _run({"u1": _claims(ssf_authorization_revision=None)})
+    [user] = _administrators(reports[0])
     assert user.flags == {
         "audience": True,
         "revision_present": False,
         "revision_well_formed": False,
-        "ssf_user_role": False,
+        "ssf_user_role": True,
         "tenant_claim_ok": True,
         "would_pass": False,
     }
+    assert audit.not_ready_reason(reports[0]) == "1 of 1 ssf-user holders would be rejected"
     assert audit.exit_code(reports) == 1
 
 
 def test_a_token_without_a_tenant_claim_passes_after_the_fix():
     audit, _, reports = _run({"u1": _claims()})
-    assert reports[0].users[0].flags["would_pass"] is True
+    assert _administrators(reports[0])[0].flags["would_pass"] is True
+    assert audit.not_ready_reason(reports[0]) is None
+    assert audit.exit_code(reports) == 0
+
+
+def test_an_agreeing_tenant_claim_passes_like_the_gateway_accepts_it():
+    audit, _, reports = _run({"u1": _claims(studio_tenant_id="tenant-kassel")})
     assert audit.exit_code(reports) == 0
 
 
 def test_a_disagreeing_tenant_claim_fails():
     audit, _, reports = _run({"u1": _claims(studio_tenant_id="tenant-fulda")})
-    assert reports[0].users[0].flags["tenant_claim_ok"] is False
+    assert _administrators(reports[0])[0].flags["tenant_claim_ok"] is False
     assert audit.exit_code(reports) == 1
 
 
-def test_one_failing_user_fails_the_tenant():
-    audit, _, reports = _run({"u1": _claims(), "u2": _claims(realm_access={"roles": []})})
-    assert [user.flags["would_pass"] for user in reports[0].users] == [True, False]
+def test_users_without_the_role_are_listed_but_not_judged():
+    """A realm has users who are not SSF administrators; they must not fail it."""
+    audit, _, reports = _run(
+        {
+            "u1": _claims(),
+            "u2": _claims(realm_access={"roles": []}, ssf_authorization_revision=None),
+        }
+    )
+    tenant = reports[0]
+    assert [user.administrator for user in tenant.users] == [True, False]
+    assert audit.exit_code(reports) == 0
+
+
+def test_one_failing_administrator_fails_the_tenant():
+    audit, _, reports = _run({"u1": _claims(), "u2": _claims(ssf_authorization_revision="bad")})
+    assert [user.flags["would_pass"] for user in _administrators(reports[0])] == [True, False]
     assert audit.exit_code(reports) == 1
 
 
-def test_realm_contract_gaps_are_reported():
-    client = {
-        **REALM_CLIENT,
-        "id": "client-uuid",
-        "protocolMappers": REALM_CLIENT["protocolMappers"][:1],
-    }
+def test_claims_from_client_scopes_count_because_tokens_are_the_evidence():
+    """The client has no revision mapper of its own; a client scope supplies the claim."""
+    client = {**REALM_CLIENT, "id": "client-uuid", "protocolMappers": []}
     audit, _, reports = _run({"u1": _claims()}, client=client)
-    assert reports[0].realm_missing == ["revision-mapper"]
+    assert reports[0].login_problems == []
+    assert audit.exit_code(reports) == 0
+
+
+@pytest.mark.parametrize(
+    ("change", "problem"),
+    [
+        ({"publicClient": False}, "not-public-pkce"),
+        ({"redirectUris": ["https://dialog.kassel.de/admin/*"]}, "no-login-redirect"),
+    ],
+)
+def test_login_breaking_client_problems_fail_the_tenant(change, problem):
+    client = {**REALM_CLIENT, "id": "client-uuid", **change}
+    audit, _, reports = _run({"u1": _claims()}, client=client)
+    assert reports[0].login_problems == [problem]
     assert audit.exit_code(reports) == 1
 
 
 def test_a_realm_without_the_client_is_reported_without_reading_users():
     audit, fake, reports = _run({"u1": _claims()}, client={})
-    assert reports[0].realm_missing == ["client"]
+    assert reports[0].login_problems == ["client-missing"]
     assert not any("/users" in url for _, url in fake.requests)
     assert audit.exit_code(reports) == 1
+
+
+def test_the_required_role_is_configurable():
+    tokens = {"u1": _claims(realm_access={"roles": ["ssf-admin"]})}
+    audit, _, reports = _run(tokens, role="ssf-admin")
+    assert audit.exit_code(reports) == 0
+    audit, _, reports = _run(tokens)
+    assert audit.not_ready_reason(reports[0]) == "no user holds ssf-user"
 
 
 def test_users_are_read_page_by_page():
@@ -173,6 +234,100 @@ def test_every_request_is_a_get_and_nothing_else_is_possible():
         with pytest.raises(audit.AuditError, match="^refusing non-GET request$"):
             http._open(request)
     assert len(fake.requests) == before
+
+
+class _Recorder(http.server.BaseHTTPRequestHandler):
+    """Answers every GET with the class's status and headers; records who asked."""
+
+    status = 200
+    headers_to_send: dict = {}
+    seen: list = []
+
+    def do_GET(self):  # noqa: N802 - http.server's hook name
+        type(self).seen.append((self.path, self.headers.get("Authorization")))
+        self.send_response(type(self).status)
+        for name, value in type(self).headers_to_send.items():
+            self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(b"[]")
+
+    def log_message(self, *args):
+        pass
+
+
+def _serve(handler):
+    server = http.server.HTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_a_redirect_is_refused_and_the_admin_token_never_follows():
+    target = type("Target", (_Recorder,), {"seen": []})
+    target_server = _serve(target)
+    redirector = type(
+        "Redirector",
+        (_Recorder,),
+        {
+            "status": 302,
+            "seen": [],
+            "headers_to_send": {"Location": f"http://127.0.0.1:{target_server.server_port}/x"},
+        },
+    )
+    redirect_server = _serve(redirector)
+    audit = _load()
+    try:
+        url = f"http://127.0.0.1:{redirect_server.server_port}/admin/realms/r/roles"
+        headers = {"Authorization": "Bearer admin-secret"}
+        http = audit.ReadOnlyHttp()
+        with pytest.raises(audit.AuditError, match="^refusing redirect"):
+            http.get_json(url, headers)
+    finally:
+        redirect_server.shutdown()
+        target_server.shutdown()
+    assert redirector.seen == [("/admin/realms/r/roles", "Bearer admin-secret")]
+    assert target.seen == []
+
+
+def test_the_real_transport_reads_json_from_a_loopback_server():
+    ok = type("Ok", (_Recorder,), {"seen": []})
+    server = _serve(ok)
+    try:
+        body = _load().ReadOnlyHttp().get_json(f"http://127.0.0.1:{server.server_port}/x", {})
+    finally:
+        server.shutdown()
+    assert body == []
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["http://auth.example/admin", "ftp://auth.example/x", "http://localhost.evil.test/x"],
+)
+def test_plain_http_to_a_remote_host_is_refused_before_any_request(url):
+    audit = _load()
+    fake = FakeKeycloak({})
+    http = audit.ReadOnlyHttp(fake)
+    headers = {"Authorization": "Bearer admin-secret"}
+    with pytest.raises(audit.AuditError, match="^refusing non-https URL$"):
+        http.get_json(url, headers)
+    assert fake.requests == []
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://auth.example/x",
+        "http://localhost:8080/x",
+        "http://auth.localhost:8080/x",
+        "http://127.0.0.1/x",
+    ],
+)
+def test_https_and_loopback_http_are_allowed(url):
+    audit = _load()
+    fake = FakeKeycloak({})
+    http = audit.ReadOnlyHttp(fake)
+    with pytest.raises(AssertionError):  # the fake knows no such path, so it was reached
+        http.get_json(url, {})
+    assert len(fake.requests) == 1
 
 
 def test_the_admin_token_goes_only_to_keycloak():
@@ -240,6 +395,29 @@ def test_a_keycloak_error_is_reported_per_tenant_without_the_url():
     )
     assert reports[0].error == "GET failed: HTTP 403"
     assert audit.exit_code(reports) == 1
+
+
+def test_main_reads_role_and_audience_like_the_gateway(monkeypatch, capsys):
+    audit = _load()
+    seen = {}
+
+    def fake_audit(http, **kwargs):
+        seen.update(kwargs)
+        return []
+
+    monkeypatch.setattr(audit, "audit", fake_audit)
+    monkeypatch.setenv("SSF_AUDIT_BASE_URL", "https://ssf.example")
+    monkeypatch.setenv("KEYCLOAK_AUDIT_BASE_URL", "https://auth.example")
+    monkeypatch.setenv("KEYCLOAK_AUDIT_ADMIN_TOKEN", "admin-secret")
+    monkeypatch.setenv("KEYCLOAK_REQUIRED_ROLE", "ssf-admin")
+    monkeypatch.setenv("KEYCLOAK_AUDIENCE", "ssf-web")
+    assert audit.main() == 1
+    assert (seen["role"], seen["audience"]) == ("ssf-admin", "ssf-web")
+    monkeypatch.delenv("KEYCLOAK_REQUIRED_ROLE")
+    monkeypatch.delenv("KEYCLOAK_AUDIENCE")
+    audit.main()
+    assert (seen["role"], seen["audience"]) == ("ssf-user", "ssf-frontend")
+    assert "admin-secret" not in capsys.readouterr().out
 
 
 def test_main_requires_its_configuration(monkeypatch, capsys):

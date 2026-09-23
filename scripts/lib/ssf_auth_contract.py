@@ -15,6 +15,7 @@ import json
 import re
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import quote, urlsplit
 
 REQUIRED_ELEMENTS = (
     "public-pkce-client",
@@ -23,10 +24,13 @@ REQUIRED_ELEMENTS = (
     "revision-mapper",
     "ssf-user-role",
     "no-tenant-id-mapper",
+    "revision-attribute-admin-only",
 )
 REVISION_CLAIM = "ssf_authorization_revision"
 TENANT_CLAIM = "studio_tenant_id"
 REVISION_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_USER_PROFILE_PROVIDER = "org.keycloak.userprofile.UserProfileProvider"
 
 
 def unverified_claims(token: str) -> dict[str, Any] | None:
@@ -85,6 +89,51 @@ def token_flags(
     return flags
 
 
+def is_secure_url(url: str) -> bool:
+    """https anywhere; plain http only to this machine, which the local stack uses."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.scheme == "https":
+        return True
+    return parts.scheme == "http" and (host in _LOOPBACK_HOSTS or host.endswith(".localhost"))
+
+
+def admits_login_callback(uri: str, tenant_id: str) -> bool:
+    """Whether a redirect URI admits the frontend's `<origin>/login/<tenant>` callback.
+
+    Keycloak treats a trailing `*` as a prefix wildcard; anything else must
+    match exactly.
+    """
+    if not isinstance(uri, str) or not is_secure_url(uri):
+        return False
+    path = urlsplit(uri).path
+    callback = f"/login/{quote(tenant_id, safe='')}"
+    if path.endswith("*"):
+        return callback.startswith(path[:-1])
+    return path == callback
+
+
+def login_client_problems(client: Mapping[str, Any] | None, tenant_id: str) -> list[str]:
+    """What stops a live `ssf-frontend` client from completing the SPA login.
+
+    Deliberately narrower than `missing_realm_elements`, which states the full
+    reviewed contract for the repository artifact: a live realm is judged only
+    on what would actually break login for this tenant.
+    """
+    if not client:
+        return ["client-missing"]
+    problems = []
+    if not (
+        client.get("publicClient") is True
+        and client.get("standardFlowEnabled") is True
+        and client.get("attributes", {}).get("pkce.code.challenge.method") == "S256"
+    ):
+        problems.append("not-public-pkce")
+    if not any(admits_login_callback(uri, tenant_id) for uri in client.get("redirectUris") or []):
+        problems.append("no-login-redirect")
+    return problems
+
+
 def _in_access_token(mapper: Mapping[str, Any]) -> bool:
     return str(mapper.get("config", {}).get("access.token.claim", "")).lower() == "true"
 
@@ -124,6 +173,24 @@ def _has_login_redirects(client: Mapping[str, Any]) -> bool:
     )
 
 
+def _revision_attribute_admin_only(realm: Mapping[str, Any]) -> bool:
+    """Keycloak 26 silently drops an attribute its user profile does not declare,
+    and a user-editable revision would let users authorize themselves."""
+    try:
+        component = realm["components"][_USER_PROFILE_PROVIDER][0]
+        profile = json.loads(component["config"]["kc.user.profile.config"][0])
+    except (KeyError, IndexError, TypeError, ValueError):
+        return False
+    attribute = next(
+        (entry for entry in profile.get("attributes", []) if entry.get("name") == REVISION_CLAIM),
+        None,
+    )
+    permissions = (attribute or {}).get("permissions") or {}
+    return set(permissions.get("edit") or []) == {"admin"} and set(
+        permissions.get("view") or []
+    ) <= {"admin"}
+
+
 def missing_realm_elements(
     realm: Mapping[str, Any],
     *,
@@ -133,8 +200,10 @@ def missing_realm_elements(
 ) -> list[str]:
     """Return the REQUIRED_ELEMENTS the realm does not satisfy, in order.
 
-    Accepts a realm export or the audit's `{"clients": [...], "roles":
-    {"realm": [...]}}` assembled from the Admin REST API.
+    This is the full reviewed contract for the repository's realm artifact. A
+    live realm is judged by `login_client_problems` and by its tokens instead,
+    because Studio may meet the contract differently (client scopes, extra
+    redirect URIs) without breaking anything the gateway needs.
     """
     client = next(
         (client for client in realm.get("clients", []) if client.get("clientId") == client_id),
@@ -149,5 +218,6 @@ def missing_realm_elements(
         "revision-mapper": _emits_claim(mappers, REVISION_CLAIM),
         "ssf-user-role": role in roles,
         "no-tenant-id-mapper": not _emits_claim(mappers, TENANT_CLAIM),
+        "revision-attribute-admin-only": _revision_attribute_admin_only(realm),
     }
     return [element for element in REQUIRED_ELEMENTS if not satisfied[element]]

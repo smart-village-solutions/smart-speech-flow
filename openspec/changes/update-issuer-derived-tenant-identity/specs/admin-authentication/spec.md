@@ -86,12 +86,22 @@ response.
 The repository SHALL contain a reviewed realm artifact stating what a tenant
 realm must provide for the gateway: a public PKCE `ssf-frontend` client with
 `/login/*` redirects, the `ssf-frontend` audience, an access-token
-`ssf_authorization_revision` claim and the `ssf-user` realm role. A test SHALL
-fail when any of these is missing. Production realms are provisioned by Studio
-and verified against this contract by a read-only audit.
+`ssf_authorization_revision` claim, the `ssf-user` realm role, and a
+user-profile declaration of `ssf_authorization_revision` that only
+administrators may view or edit. A test SHALL fail when any of these is
+missing. Production realms are provisioned by Studio and verified by a
+read-only audit that judges only what would break SSF: the login client and the
+tokens of users holding the required role.
 
 #### Scenario: A required element is removed
 
-- **WHEN** the audience mapper, the revision mapper, the `ssf-user` role, or
-  the `/login/*` redirect is removed from the artifact
+- **WHEN** the audience mapper, the revision mapper, the `ssf-user` role, the
+  `/login/*` redirect, or the admin-only revision attribute is removed from the
+  artifact
 - **THEN** the guard test fails naming that element
+
+#### Scenario: A user tries to set their own revision
+
+- **WHEN** a realm built from the artifact receives an account-console update of
+  `ssf_authorization_revision` from the user
+- **THEN** Keycloak rejects it and the administrator-set value is unchanged

@@ -8,7 +8,12 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request, status
 
 from .auth import AuthenticatedPrincipal, require_ssf_user
-from .auth_rejections import AuthRejectionReason, auth_correlation_id, record_auth_rejection
+from .auth_rejections import (
+    AuthRejectionReason,
+    auth_correlation_id,
+    record_auth_rejection,
+    rejection_response,
+)
 
 _SELECTOR_NAMES = frozenset(
     {
@@ -40,7 +45,7 @@ def studio_tenant_context_from_principal(
     its tenant ID and revision were validated before the principal was built.
     """
     if principal.carries_legacy_tenant_claim:
-        raise _invalid_tenant_claim()
+        raise rejection_response(AuthRejectionReason.LEGACY_TENANT_CLAIM)
     return StudioTenantContext(
         tenant_id=principal.tenant_id,
         authorization_revision=principal.authorization_revision,
@@ -57,14 +62,16 @@ async def require_studio_tenant_context(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Tenant selectors are not accepted outside the bearer token",
         )
-    if principal.carries_legacy_tenant_claim:
+    try:
+        return studio_tenant_context_from_principal(principal)
+    except HTTPException:
         record_auth_rejection(
             request,
             AuthRejectionReason.LEGACY_TENANT_CLAIM,
             correlation_id=auth_correlation_id(request),
             tenant_id=principal.tenant_id,
         )
-    return studio_tenant_context_from_principal(principal)
+        raise
 
 
 def _request_has_tenant_selector(request: Request, body: object) -> bool:
@@ -107,11 +114,3 @@ async def _json_body(request: Request) -> object:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The JSON request body must be valid",
         ) from None
-
-
-def _invalid_tenant_claim() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="A single valid studio_tenant_id claim is required",
-        headers={"WWW-Authenticate": "Bearer"},
-    )

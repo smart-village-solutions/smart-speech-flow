@@ -104,6 +104,48 @@ def test_realm_artifact_satisfies_the_gateway_contract():
     assert _client(realm)["webOrigins"] == ["https://dialog.kassel.de"]
 
 
+def _profile(realm):
+    component = realm["components"]["org.keycloak.userprofile.UserProfileProvider"][0]
+    return json.loads(component["config"]["kc.user.profile.config"][0])
+
+
+def _set_profile(realm, profile):
+    component = realm["components"]["org.keycloak.userprofile.UserProfileProvider"][0]
+    component["config"]["kc.user.profile.config"] = [json.dumps(profile)]
+
+
+def _revision_permissions(realm, permissions):
+    profile = _profile(realm)
+    for attribute in profile["attributes"]:
+        if attribute["name"] == "ssf_authorization_revision":
+            attribute["permissions"] = permissions
+    _set_profile(realm, profile)
+
+
+def _drop_revision_attribute(realm):
+    profile = _profile(realm)
+    profile["attributes"] = [
+        a for a in profile["attributes"] if a["name"] != "ssf_authorization_revision"
+    ]
+    _set_profile(realm, profile)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda realm: realm.pop("components"),
+        _drop_revision_attribute,
+        lambda realm: _revision_permissions(realm, {"view": ["admin"], "edit": ["admin", "user"]}),
+        lambda realm: _revision_permissions(realm, {"view": ["admin", "user"], "edit": ["admin"]}),
+    ],
+)
+def test_the_revision_attribute_must_be_declared_and_admin_only(mutate):
+    """Keycloak 26 drops an undeclared attribute; a user-editable one lets users self-authorize."""
+    realm = _realm()
+    mutate(realm)
+    assert load_contract().missing_realm_elements(realm) == ["revision-attribute-admin-only"]
+
+
 @pytest.mark.parametrize(
     ("element", "mutate"),
     [

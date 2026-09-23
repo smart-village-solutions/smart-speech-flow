@@ -1,5 +1,6 @@
 """Token-safe classification of rejected administrative bearer tokens."""
 
+import json
 import logging
 import re
 
@@ -87,7 +88,7 @@ def test_rejection_logs_one_line_with_only_safe_fields(caplog):
     [record] = caplog.records
     assert record.getMessage() == (
         "ssf_auth_rejected reason=revision_missing status=401 "
-        f"tenant_ref={tenant_ref('tenant-kassel')} correlation_id=corr-1"
+        f'tenant_ref={tenant_ref("tenant-kassel")} correlation_id="corr-1"'
     )
     assert "tenant-kassel" not in record.getMessage()
     assert (record.reason, record.status, record.correlation_id) == (
@@ -97,8 +98,45 @@ def test_rejection_logs_one_line_with_only_safe_fields(caplog):
     )
 
 
-def test_rejection_without_a_tenant_logs_a_placeholder_ref(caplog):
+@pytest.mark.parametrize(
+    ("correlation_id", "rendered"),
+    [
+        ("x reason=role_missing status=403", '"x reason=role_missing status=403"'),
+        ('say "hi"', '"say \\"hi\\""'),
+    ],
+)
+def test_a_caller_chosen_correlation_id_cannot_forge_fields(caplog, correlation_id, rendered):
     caplog.set_level(logging.WARNING, logger=AUTH_LOGGER)
+    record_auth_rejection(
+        _request(), AuthRejectionReason.REVISION_MISSING, correlation_id=correlation_id
+    )
+    message = caplog.records[0].getMessage()
+    assert message.startswith("ssf_auth_rejected reason=revision_missing status=401 ")
+    assert message.endswith(f"correlation_id={rendered}")
+    # Everything after correlation_id= is one quoted value, not further fields.
+    assert json.loads(message.split("correlation_id=", 1)[1]) == correlation_id
+
+
+def test_a_request_without_any_bearer_is_logged_at_info_and_still_counted(caplog):
+    """Anonymous traffic is not a token failure; callers must not steer WARNING volume."""
+    registry = CollectorRegistry()
+    app = FastAPI()
+    app.state.auth_rejection_metrics = AuthRejectionMetrics(registry)
+    caplog.set_level(logging.INFO, logger=AUTH_LOGGER)
+    record_auth_rejection(_request(app=app), AuthRejectionReason.MISSING_BEARER, correlation_id="c")
+    record_auth_rejection(_request(app=app), AuthRejectionReason.TOKEN_EXPIRED, correlation_id="c")
+    assert [(record.reason, record.levelno) for record in caplog.records] == [
+        ("missing_bearer", logging.INFO),
+        ("token_expired", logging.WARNING),
+    ]
+    assert (
+        registry.get_sample_value("gateway_auth_rejections_total", {"reason": "missing_bearer"})
+        == 1
+    )
+
+
+def test_rejection_without_a_tenant_logs_a_placeholder_ref(caplog):
+    caplog.set_level(logging.INFO, logger=AUTH_LOGGER)
     record_auth_rejection(_request(), AuthRejectionReason.MISSING_BEARER, correlation_id="c")
     assert "tenant_ref=- " in caplog.records[0].getMessage()
 

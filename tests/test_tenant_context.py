@@ -63,6 +63,8 @@ def test_dependency_rejects_and_logs_a_legacy_tenant_claim(caplog) -> None:
     )
 
     assert response.status_code == 401
+    assert response.json() == {"detail": "A valid bearer token is required"}
+    assert response.headers["WWW-Authenticate"] == "Bearer"
     assert [
         (record.reason, record.correlation_id)
         for record in caplog.records
