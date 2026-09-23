@@ -173,23 +173,37 @@ class BaseTranslationRefiner:
         target_lang: str,
         error_code: "QualityErrorCode",
     ) -> None:
-        """Record one attempt. Never allowed to affect the caller."""
+        """Record one attempt. Never allowed to affect the caller.
+
+        This is the single choke point every emitted attempt passes through
+        -- including `_emit_candidate_not_run`'s SKIPPED_OVERLOAD and
+        SUBMISSION_FAILED codes, which never go through `_emit_outcome`.
+        Recording the counter here, rather than in `_emit_outcome`, is what
+        keeps telemetry and the counter from disagreeing about which
+        outcomes were counted.
+        """
         telemetry = self.quality_telemetry
-        if telemetry is None:
-            return
-        try:
-            telemetry.emit_refinement_attempt(
-                refiner_role=role,
-                model_ref=model_ref,
-                outcome=outcome,
-                latency_ms=latency_ms,
-                changed=changed,
-                source_lang=source_lang,
-                target_lang=target_lang,
-                error_code=error_code,
-            )
-        except Exception:  # telemetry must never change an outcome
-            logger.warning("Quality telemetry emit failed for a refinement attempt")
+        if telemetry is not None:
+            try:
+                telemetry.emit_refinement_attempt(
+                    refiner_role=role,
+                    model_ref=model_ref,
+                    outcome=outcome,
+                    latency_ms=latency_ms,
+                    changed=changed,
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                    error_code=error_code,
+                )
+            except Exception:  # telemetry must never change an outcome
+                logger.warning("Quality telemetry emit failed for a refinement attempt")
+
+        metrics = self.refinement_metrics
+        if metrics is not None:
+            try:
+                metrics.record(outcome.value, model_ref)
+            except Exception:  # metrics must never change an outcome
+                logger.warning("Refinement metrics update failed")
 
     def _emit_outcome(
         self,
@@ -216,12 +230,6 @@ class BaseTranslationRefiner:
             target_lang=target_lang,
             error_code=outcome.error_code,
         )
-        metrics = self.refinement_metrics
-        if metrics is not None:
-            try:
-                metrics.record(code.value, model_ref)
-            except Exception:  # metrics must never change an outcome
-                logger.warning("Refinement metrics update failed")
 
     def refine(
         self,

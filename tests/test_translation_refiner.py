@@ -220,16 +220,18 @@ def test_a_skipped_refinement_is_emitted_as_skipped(monkeypatch):
 def test_emit_outcome_records_the_same_code_sent_to_telemetry(monkeypatch):
     """The counter and the telemetry event must never disagree.
 
-    Both are driven from the one `code` computed inside `_emit_outcome`, so
-    this asserts the metrics call receives exactly the same
-    `RefinementOutcomeCode` value that `_emit_attempt` was given.
+    Both are driven from the one call to `_emit_attempt` -- the single choke
+    point every emitted attempt passes through -- so this asserts the
+    telemetry emit and the metrics record receive exactly the same
+    `RefinementOutcomeCode` value, and that each fires exactly once (a
+    metrics call inside `_emit_outcome` as well as inside `_emit_attempt`
+    would double-count every attempt).
     """
     mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
     refiner = mod.NoOpTranslationRefiner()
-    attempted = []
-    recorded = []
-    monkeypatch.setattr(refiner, "_emit_attempt", lambda **kwargs: attempted.append(kwargs))
-    refiner.refinement_metrics = Mock(record=lambda outcome, model_ref: recorded.append((outcome, model_ref)))
+    telemetry = Mock()
+    refiner.quality_telemetry = telemetry
+    refiner.refinement_metrics = Mock()
 
     refiner._emit_outcome(
         mod.RefinementOutcome(text="x", changed=False, error="boom"),
@@ -239,15 +241,17 @@ def test_emit_outcome_records_the_same_code_sent_to_telemetry(monkeypatch):
         target_lang="en",
     )
 
-    assert attempted[0]["outcome"] is mod.RefinementOutcomeCode.ERROR
-    assert recorded == [("error", "gemma-4-e4b-qat")]
+    telemetry.emit_refinement_attempt.assert_called_once()
+    telemetry_outcome = telemetry.emit_refinement_attempt.call_args.kwargs["outcome"]
+    assert telemetry_outcome is mod.RefinementOutcomeCode.ERROR
+
+    refiner.refinement_metrics.record.assert_called_once_with("error", "gemma-4-e4b-qat")
 
 
-def test_refinement_metrics_failure_never_changes_the_outcome(monkeypatch, caplog):
+def test_refinement_metrics_failure_never_changes_the_outcome(caplog):
     """Metrics recording is best-effort, exactly like the telemetry emit."""
     mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
     refiner = mod.NoOpTranslationRefiner()
-    monkeypatch.setattr(refiner, "_emit_attempt", lambda **kwargs: None)
 
     def boom(outcome, model_ref):
         raise RuntimeError("registry is down")
@@ -264,6 +268,48 @@ def test_refinement_metrics_failure_never_changes_the_outcome(monkeypatch, caplo
         )
 
     assert "Refinement metrics update failed" in caplog.text
+
+
+def test_a_shadow_candidate_that_never_ran_is_still_counted(monkeypatch):
+    """SKIPPED_OVERLOAD and SUBMISSION_FAILED bypass `_emit_outcome` entirely.
+
+    `_emit_candidate_not_run` calls `_emit_attempt` directly, so this is the
+    regression check for the gap the review found: those two outcome codes
+    reached telemetry but never reached the counter while the recording lived
+    in `_emit_outcome` instead of `_emit_attempt`.
+    """
+    from prometheus_client import CollectorRegistry
+
+    from services.api_gateway.refinement_metrics import RefinementMetrics
+
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = mod.ShadowComparisonRefiner(
+        endpoint="http://ollama:11434",
+        model="primary",
+        candidate_model="candidate",
+        queue_limit=1,
+        timeout_seconds=1.0,
+        temperature=0.2,
+        max_retries=1,
+    )
+    registry = CollectorRegistry()
+    refiner.refinement_metrics = RefinementMetrics(registry)
+    refiner.pending = refiner.queue_limit  # force the overload path
+
+    monkeypatch.setattr(
+        mod.OllamaTranslationRefiner,
+        "refine",
+        Mock(return_value=mod.RefinementOutcome(text="refined", changed=True)),
+    )
+
+    outcome = refiner.refine("Hallo", "de", "en")
+
+    assert outcome.candidate_status == "skipped_overload"
+    value = registry.get_sample_value(
+        "refinement_attempts_total",
+        {"outcome": "skipped_overload", "model_ref": "candidate"},
+    )
+    assert value == 1.0
 
 
 def test_shadow_comparison_refiner_schedules_candidate(monkeypatch):
