@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CollectorRegistry, Counter
 
+from .auth_rejections import AuthRejectionMetrics
 from .client_origin import configured_client_origin
 from .pipeline_admission import PipelineAdmission, PipelineAdmissionConfig, PipelineAdmissionMetrics
 from .rate_limiter import RateLimitMiddleware
@@ -770,6 +771,7 @@ pipeline_admission_metrics = PipelineAdmissionMetrics(registry)
 
 # Attach to app state
 app.state.prometheus_registry = registry
+app.state.auth_rejection_metrics = AuthRejectionMetrics(registry)
 app.state.gateway_requests_total = requests_total
 setattr(app, "requests_total", requests_total)
 

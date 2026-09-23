@@ -6,6 +6,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..correlation_id import is_valid_correlation_id
 from ..studio_login_directory import (
     StudioLoginDirectoryConfigurationError,
     StudioLoginDirectoryService,
@@ -40,9 +41,7 @@ def _correlation_id(request: Request) -> str:
     correlation_id = request.headers.get("X-Correlation-Id")
     if not correlation_id:
         return str(uuid4())
-    if len(correlation_id) > 128 or any(
-        ord(character) < 32 or ord(character) > 126 for character in correlation_id
-    ):
+    if not is_valid_correlation_id(correlation_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A valid X-Correlation-Id is required when supplied",

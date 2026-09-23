@@ -26,11 +26,10 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "redirectUris": [
-        "https://translate.smart-village.solutions/",
-        "https://translate.smart-village.solutions/login"
+        "https://dialog.kassel.de/login/*"
       ],
       "webOrigins": [
-        "https://translate.smart-village.solutions"
+        "https://dialog.kassel.de"
       ],
       "protocolMappers": [
         {
@@ -43,6 +42,21 @@
             "access.token.claim": "true",
             "id.token.claim": "false",
             "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "studio-ssf-authorization-revision",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "ssf_authorization_revision",
+            "claim.name": "ssf_authorization_revision",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true",
+            "userinfo.token.claim": "false"
           }
         }
       ],

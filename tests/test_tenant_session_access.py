@@ -17,8 +17,7 @@ from services.api_gateway.studio_runtime_flow import (
 )
 from services.api_gateway.tenant_context import StudioTenantContext, require_studio_tenant_context
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
-
-REVISION = f"sha256:{'a' * 64}"
+from tests.auth_helpers import REVISION, principal
 
 
 def _configuration(tenant_id: str) -> RuntimeConfiguration:
@@ -95,24 +94,37 @@ async def test_customer_capability_allows_an_anonymous_request(
 
 
 @pytest.mark.asyncio
-async def test_customer_bearer_must_match_capability_tenant(
-    manager: SessionManager,
+@pytest.mark.parametrize("tenant_id", ["tenant-a", "tenant-b"])
+async def test_customer_bearer_of_the_capability_tenant_is_accepted(
+    manager: SessionManager, tenant_id: str
 ) -> None:
     from services.api_gateway.session_access import require_customer_session_key
 
     session = await manager.create_admin_session(
-        "tenant-b",
-        RuntimeConfigurationSnapshot.from_configuration(_configuration("tenant-b")),
+        tenant_id,
+        RuntimeConfigurationSnapshot.from_configuration(_configuration(tenant_id)),
+    )
+
+    assert require_customer_session_key(session.id, principal(tenant_id)) == session.key
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("session_tenant", "principal_tenant"),
+    [("tenant-b", "tenant-a"), ("tenant-a", "tenant-b")],
+)
+async def test_customer_bearer_must_match_capability_tenant(
+    manager: SessionManager, session_tenant: str, principal_tenant: str
+) -> None:
+    from services.api_gateway.session_access import require_customer_session_key
+
+    session = await manager.create_admin_session(
+        session_tenant,
+        RuntimeConfigurationSnapshot.from_configuration(_configuration(session_tenant)),
     )
 
     with pytest.raises(HTTPException) as caught:
-        require_customer_session_key(
-            session.id,
-            {
-                "studio_tenant_id": "tenant-a",
-                "ssf_authorization_revision": REVISION,
-            },
-        )
+        require_customer_session_key(session.id, principal(principal_tenant))
 
     assert caught.value.status_code == 404
     assert caught.value.detail == "Session not found"
@@ -146,11 +158,7 @@ def http_client():
 def _authenticate_as(tenant_id: str) -> None:
     context = StudioTenantContext(tenant_id, REVISION)
     configuration = _configuration(tenant_id)
-    app.dependency_overrides[require_ssf_user] = lambda: {
-        "sub": "operator",
-        "studio_tenant_id": tenant_id,
-        "ssf_authorization_revision": REVISION,
-    }
+    app.dependency_overrides[require_ssf_user] = lambda: principal(tenant_id, "operator")
     app.dependency_overrides[require_studio_tenant_context] = lambda: context
     app.dependency_overrides[require_validated_runtime_configuration] = lambda: (
         ValidatedRuntimeConfiguration(context, configuration, "test-correlation")
@@ -223,10 +231,7 @@ def test_http_customer_bearer_cannot_downgrade_to_anonymous_capability(
 ) -> None:
     _authenticate_as("tenant-b")
     session_id = http_client.post("/api/admin/session/create").json()["session_id"]
-    app.dependency_overrides[optional_ssf_user] = lambda: {
-        "studio_tenant_id": "tenant-a",
-        "ssf_authorization_revision": REVISION,
-    }
+    app.dependency_overrides[optional_ssf_user] = lambda: principal("tenant-a")
 
     response = http_client.get(f"/api/customer/session/{session_id}")
 

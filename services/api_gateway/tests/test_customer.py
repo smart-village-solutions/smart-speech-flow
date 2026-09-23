@@ -10,6 +10,7 @@ if str(ROOT_DIR) not in sys.path:
 from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.session_manager import session_manager
+from tests.auth_helpers import principal
 
 client = TestClient(app)
 
@@ -17,7 +18,7 @@ client = TestClient(app)
 class TestCustomerRoutes:
     def setup_method(self):
         """Reset session manager before each test"""
-        app.dependency_overrides[require_ssf_user] = lambda: {"sub": "test-admin"}
+        app.dependency_overrides[require_ssf_user] = lambda: principal()
         session_manager.reset(clear_persistence=True)
 
     def teardown_method(self):

@@ -7,8 +7,7 @@ from services.api_gateway import websocket as websocket_module
 from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.session_manager import session_manager
-
-REVISION = f"sha256:{'a' * 64}"
+from tests.auth_helpers import principal
 
 
 def test_admin_can_observe_only_its_session_realtime_connection(
@@ -24,11 +23,7 @@ def test_admin_can_observe_only_its_session_realtime_connection(
         patcher.setitem(
             app.dependency_overrides,
             require_ssf_user,
-            lambda: {
-                "sub": "operator-tenant-test",
-                "studio_tenant_id": "tenant-test",
-                "ssf_authorization_revision": REVISION,
-            },
+            lambda: principal("tenant-test", "operator-tenant-test"),
         )
 
         try:

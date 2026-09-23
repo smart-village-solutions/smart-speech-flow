@@ -19,7 +19,7 @@ from starlette.websockets import WebSocketDisconnect
 
 import services.api_gateway.websocket as websocket_module
 from services.api_gateway.app import app
-from services.api_gateway.auth import optional_ssf_user, require_ssf_user
+from services.api_gateway.auth import AuthenticatedPrincipal, optional_ssf_user, require_ssf_user
 from services.api_gateway.realtime_ticket import (
     MemoryRealtimeTicketBackend,
     RealtimeTicketStore,
@@ -51,8 +51,7 @@ from services.api_gateway.websocket_polling_routes import (
     TenantPollingStore,
     polling_store,
 )
-
-REVISION = f"sha256:{'a' * 64}"
+from tests.auth_helpers import REVISION, principal
 _CLIENT_ADDRESSES = itertools.count(1)
 PROTECTED_OPERATIONS = (
     "current", "history", "status", "terminate", "messages_read",
@@ -117,12 +116,8 @@ class TwoTenantSystem:
         self.resources: dict[str, TenantResource] = {}
         self.polling_ids: dict[str, str] = {}
 
-    def claims(self) -> dict[str, str]:
-        return {
-            "sub": f"operator-{self.actor}",
-            "studio_tenant_id": self.actor,
-            "ssf_authorization_revision": REVISION,
-        }
+    def authenticated_principal(self) -> AuthenticatedPrincipal:
+        return principal(self.actor, f"operator-{self.actor}")
 
     def context(self) -> StudioTenantContext:
         return StudioTenantContext(self.actor, REVISION)
@@ -278,7 +273,7 @@ def two_tenant_system():
         headers={"x-forwarded-for": f"192.0.2.{address}"},
     ) as client:
         system = TwoTenantSystem(client)
-        app.dependency_overrides[require_ssf_user] = system.claims
+        app.dependency_overrides[require_ssf_user] = system.authenticated_principal
         app.dependency_overrides[require_studio_tenant_context] = system.context
         app.dependency_overrides[require_validated_runtime_configuration] = system.runtime
         app.dependency_overrides[optional_ssf_user] = lambda: None

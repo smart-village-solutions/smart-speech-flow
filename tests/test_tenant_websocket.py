@@ -38,8 +38,7 @@ from services.api_gateway.websocket_polling_routes import (
     POLLING_QUEUE_SIZE,
     TenantPollingStore,
 )
-
-REVISION = f"sha256:{'a' * 64}"
+from tests.auth_helpers import REVISION, principal
 ALLOWED_ORIGIN = "https://translate.smart-village.solutions"
 
 
@@ -123,10 +122,7 @@ def test_customer_websocket_rejects_a_cross_tenant_supplied_bearer_before_accept
     customer_websocket_client,
 ) -> None:
     client, session_id = customer_websocket_client
-    app.dependency_overrides[optional_ssf_user] = lambda: {
-        "studio_tenant_id": "another-tenant",
-        "ssf_authorization_revision": REVISION,
-    }
+    app.dependency_overrides[optional_ssf_user] = lambda: principal("another-tenant")
 
     with pytest.raises(WebSocketDenialResponse) as denied:
         with client.websocket_connect(
@@ -159,6 +155,23 @@ def test_customer_websocket_rejects_a_malformed_supplied_bearer_before_accept(
 
     assert denied.value.status_code == 401
     assert denied.value.json() == {"detail": "A valid bearer token is required"}
+
+
+def test_customer_websocket_accepts_a_bearer_of_the_sessions_tenant(
+    customer_websocket_client,
+) -> None:
+    """tests/conftest.py creates the session as tenant-test."""
+    client, session_id = customer_websocket_client
+    app.dependency_overrides[optional_ssf_user] = lambda: principal("tenant-test")
+
+    with client.websocket_connect(
+        f"/ws/customer/{session_id}",
+        headers={"Authorization": "Bearer valid-for-tenant-test", "Origin": ALLOWED_ORIGIN},
+    ) as websocket:
+        acknowledgement = websocket.receive_json()
+
+    assert acknowledgement["type"] == "connection_ack"
+    assert acknowledgement["session_id"] == session_id
 
 
 def test_customer_websocket_still_accepts_an_anonymous_capability(

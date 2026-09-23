@@ -25,6 +25,7 @@ from services.api_gateway.studio_runtime_flow import (
 )
 from services.api_gateway.studio_runtime_token import StudioTokenError
 from services.api_gateway.tenant_context import StudioTenantContext
+from tests.auth_helpers import principal
 from services.studio_mock.app import app as studio_mock_app
 
 REVISION = f"sha256:{'a' * 64}"
@@ -240,11 +241,7 @@ def _dependency_client(
     runtime_flow: StubRuntimeFlow,
 ) -> TestClient:
     app = FastAPI()
-    app.dependency_overrides[require_ssf_user] = lambda: {
-        "sub": "user-1",
-        "studio_tenant_id": "tenant-kassel",
-        "ssf_authorization_revision": REVISION,
-    }
+    app.dependency_overrides[require_ssf_user] = lambda: principal("tenant-kassel", "user-1")
     monkeypatch.setattr(runtime_flow_module, "runtime_flow_from_environment", lambda: runtime_flow)
 
     @app.get("/runtime-operation")

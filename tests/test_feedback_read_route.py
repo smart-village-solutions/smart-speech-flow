@@ -1,7 +1,7 @@
 """The HTTP contract for the Studio-facing feedback read endpoints.
 
 Authenticated, unlike POST /api/feedback: these serve Studio staff, so the
-tenant comes from the signed studio_tenant_id claim and never from the request.
+tenant comes from the authenticated principal and never from the request.
 """
 
 from datetime import datetime, timezone
@@ -14,8 +14,8 @@ from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.routes.feedback import get_feedback_read_service
 from services.api_gateway.tenant_context import require_studio_tenant_context
+from tests.auth_helpers import principal
 
-REVISION = "sha256:" + "a" * 64
 TENANT = "tenant-kassel"
 RECORD_ID = UUID("11111111-2222-3333-4444-555555555555")
 CREATED = datetime(2026, 9, 11, 10, 30, tzinfo=timezone.utc)
@@ -54,18 +54,14 @@ class StubReadService:
 
 @pytest.fixture
 def client_for():
-    def build(service) -> TestClient:
+    def build(service, subject: str | None = "operator-1") -> TestClient:
         # tests/conftest.py pins every test to tenant-test by overriding
         # require_studio_tenant_context itself. Removed here so the real
-        # dependency runs and the tenant has to come from the claims below --
+        # dependency runs and the tenant has to come from the principal below --
         # which is the behaviour these tests exist to prove.
         app.dependency_overrides.pop(require_studio_tenant_context, None)
         app.dependency_overrides[get_feedback_read_service] = lambda: service
-        app.dependency_overrides[require_ssf_user] = lambda: {
-            "sub": "operator-1",
-            "studio_tenant_id": TENANT,
-            "ssf_authorization_revision": REVISION,
-        }
+        app.dependency_overrides[require_ssf_user] = lambda: principal(TENANT, subject)
         return TestClient(app)
 
     yield build
@@ -73,7 +69,7 @@ def client_for():
     app.dependency_overrides.pop(require_ssf_user, None)
 
 
-def test_the_list_is_scoped_to_the_tenant_in_the_signed_claim(client_for) -> None:
+def test_the_list_is_scoped_to_the_tenant_of_the_authenticated_principal(client_for) -> None:
     service = StubReadService()
 
     response = client_for(service).get("/api/feedback")
@@ -81,6 +77,15 @@ def test_the_list_is_scoped_to_the_tenant_in_the_signed_claim(client_for) -> Non
     assert response.status_code == 200
     assert service.listed == [(TENANT, "operator-1", 50, 0)]
     assert response.json()["items"][0]["feedback_id"] == str(RECORD_ID)
+
+
+def test_a_principal_without_a_subject_is_audited_as_unknown(client_for) -> None:
+    service = StubReadService()
+
+    response = client_for(service, subject=None).get("/api/feedback")
+
+    assert response.status_code == 200
+    assert service.listed == [(TENANT, "unknown", 50, 0)]
 
 
 class StubDetailService(StubReadService):
@@ -165,11 +170,7 @@ def test_reading_is_refused_without_authentication(unauthenticated_client) -> No
 
 def test_reading_answers_503_when_the_read_role_is_unconfigured() -> None:
     """A deployment that never granted Studio read access still serves POST."""
-    app.dependency_overrides[require_ssf_user] = lambda: {
-        "sub": "operator-1",
-        "studio_tenant_id": TENANT,
-        "ssf_authorization_revision": REVISION,
-    }
+    app.dependency_overrides[require_ssf_user] = lambda: principal(TENANT, "operator-1")
     try:
         response = TestClient(app).get("/api/feedback")
     finally:

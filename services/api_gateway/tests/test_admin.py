@@ -12,6 +12,7 @@ from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.session_manager import session_manager
 from services.api_gateway.tenant_session import TenantSessionKey
+from tests.auth_helpers import principal
 
 client = TestClient(app)
 
@@ -20,9 +21,7 @@ class TestAdminRoutes:
     @pytest.fixture(autouse=True)
     def reset_sessions(self, monkeypatch):
         """Reset session manager before each test."""
-        monkeypatch.setitem(
-            app.dependency_overrides, require_ssf_user, lambda: {"sub": "test-admin"}
-        )
+        monkeypatch.setitem(app.dependency_overrides, require_ssf_user, lambda: principal())
         monkeypatch.delenv("SSF_ALLOW_PARALLEL_SESSIONS", raising=False)
         monkeypatch.setattr(session_manager, "allow_parallel_sessions", False)
         session_manager.reset(clear_persistence=True)

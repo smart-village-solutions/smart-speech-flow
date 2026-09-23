@@ -15,8 +15,9 @@ and intentionally has no data-restore path.
 - ClickHouse migration `005_tenant_reference.sql` has been applied before
   quality telemetry is enabled.
 - Studio returns at least two production tenants, and each corresponding
-  Keycloak realm issues a token containing the correct `studio_tenant_id`,
-  audience, and required role.
+  Keycloak realm issues a token containing the audience, a current
+  `ssf_authorization_revision` and the required role; verify with
+  `tenant-auth-verification.md`.
 - The two test tokens are held only in shell environment variables and are not
   pasted into commands, logs, tickets, or chat.
 

@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from prometheus_client import CollectorRegistry, Counter
 from pydantic import BaseModel, Field
 
-from .auth import optional_ssf_user
+from .auth import AuthenticatedPrincipal, optional_ssf_user
 from .realtime_ticket import RealtimeTicketUnavailable, realtime_ticket_store
 from .session_access import require_admin_session_key, require_customer_session_key
 from .session_manager import ClientType
@@ -274,7 +274,7 @@ def _active_client(
 def require_customer_polling_key(
     session_id: str,
     polling_id: str,
-    principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
+    principal: Annotated[AuthenticatedPrincipal | None, Depends(optional_ssf_user)],
 ) -> TenantSessionKey:
     client = polling_store.clients.get(polling_id)
     if (
@@ -283,12 +283,8 @@ def require_customer_polling_key(
         or not hmac.compare_digest(client.key.session_id, session_id)
     ):
         raise HTTPException(status_code=404, detail=_POLLING_CLIENT_NOT_FOUND)
-    if principal is not None:
-        tenant_id = principal.get("studio_tenant_id")
-        if not isinstance(tenant_id, str) or not hmac.compare_digest(
-            tenant_id, client.key.tenant_id
-        ):
-            raise HTTPException(status_code=404, detail=_POLLING_CLIENT_NOT_FOUND)
+    if principal is not None and not hmac.compare_digest(principal.tenant_id, client.key.tenant_id):
+        raise HTTPException(status_code=404, detail=_POLLING_CLIENT_NOT_FOUND)
     return client.key
 
 
