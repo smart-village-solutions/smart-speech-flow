@@ -13,6 +13,7 @@ import { AdminDashboardScreen } from '@/features/admin/AdminDashboardScreen';
 import { AdminSessionScreen } from '@/features/admin/AdminSessionScreen';
 import {
   logoutFromKeycloak,
+  getAccountConsoleUrl,
   getStudioUrlForSystemAdmin,
   requireKeycloakLogin,
   subscribeToKeycloakExpiration,
@@ -102,12 +103,14 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
   if (status !== 'authenticated') return null;
 
   const studioUrl = getStudioUrlForSystemAdmin();
+  const accountUrl = getAccountConsoleUrl();
 
   if (sessionId === null) {
     return (
       <AdminDashboardScreen
         onEnterSession={setSessionId}
         onSignOut={out}
+        accountUrl={accountUrl ?? undefined}
         studioUrl={studioUrl ?? undefined}
       />
     );
@@ -118,6 +121,7 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
       sessionId={sessionId}
       onLeave={leave}
       onSignOut={out}
+      accountUrl={accountUrl ?? undefined}
       studioUrl={studioUrl ?? undefined}
     />
   );

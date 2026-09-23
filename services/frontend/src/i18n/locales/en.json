@@ -101,13 +101,9 @@
     },
     "menu": {
       "open": "User account",
-      "changePassword": "Change password",
-      "newPassword": "New password",
-      "confirmPassword": "Confirm",
-      "changeEmail": "Change email address",
-      "newEmail": "New email address",
-      "save": "Save",
+      "accountSettings": "Account settings",
       "openStudio": "Manage organization",
+      "opensInNewTab": "(opens in a new tab)",
       "signOut": "Sign out"
     },
     "dashboard": {

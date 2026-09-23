@@ -14,6 +14,7 @@ interface AdminSessionScreenProps {
   sessionId: string;
   onLeave: () => void;
   onSignOut: () => void;
+  accountUrl?: string;
   studioUrl?: string;
 }
 
@@ -28,6 +29,7 @@ export function AdminSessionScreen({
   sessionId,
   onLeave,
   onSignOut,
+  accountUrl,
   studioUrl,
 }: Readonly<AdminSessionScreenProps>) {
   const { t } = useTranslation();
@@ -60,6 +62,7 @@ export function AdminSessionScreen({
           onHome={() => void navigate('/')}
           onFeedback={() => openFeedback(sessionId)}
           onSignOut={onSignOut}
+          accountUrl={accountUrl}
           studioUrl={studioUrl}
         />
       }
