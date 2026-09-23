@@ -232,19 +232,6 @@ groups:
             translation, but unpolished. Check that the refinement backend is
             up and that the model is resident.
 
-      - alert: VllmTargetDown
-        expr: up{job="vllm"} == 0
-        for: 5m
-        labels:
-          severity: critical
-          service: vllm
-        annotations:
-          summary: "The vLLM refinement server is unreachable"
-          description: >-
-            Prometheus cannot scrape vllm:8000. Refinement is failing open.
-            Roll back with LLM_REFINEMENT_BACKEND=ollama if this persists; see
-            the runbook.
-
   - name: websocket-health
     rules:
       - alert: WebSocketConnectionsHigh

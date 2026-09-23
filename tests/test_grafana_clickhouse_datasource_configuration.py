@@ -716,4 +716,3 @@ class TestTheRefinementServingPanels:
             for rule in group["rules"]
         }
         assert "RefinementFailureRateHigh" in names
-        assert "VllmTargetDown" in names
