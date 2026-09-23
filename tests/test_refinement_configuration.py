@@ -275,6 +275,16 @@ def test_shadow_compare_is_rejected_on_vllm(env):
         refiner_module.get_translation_refiner()
 
 
+def test_candidate_only_is_rejected_on_vllm(env):
+    """candidate_only resolves LLM_REFINEMENT_CANDIDATE_MODEL, but the vllm
+    service only advertises --served-model-name for the primary model;
+    requesting the candidate model would 404 on every refinement."""
+    env(MODE="candidate_only", BACKEND="vllm")
+
+    with pytest.raises(ValueError, match="candidate_only"):
+        refiner_module.get_translation_refiner()
+
+
 def test_max_tokens_reaches_the_vllm_refiner(env):
     env(ENABLED="true", BACKEND="vllm", MAX_TOKENS="128")
 

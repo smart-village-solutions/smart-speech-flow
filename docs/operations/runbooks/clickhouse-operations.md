@@ -130,12 +130,15 @@ constrained to a label charset with no whitespace:
 | --- | --- | --- |
 | Refiner role | `ssf.quality.refiner_role` | enum: primary (in-path), candidate (shadow) |
 | Model | `ssf.quality.model_ref` | label token, max 64 chars |
-| Outcome | `ssf.quality.refinement_outcome` | enum: success, error, skipped_overload, submission_failed |
+| Outcome | `ssf.quality.refinement_outcome` | enum: success, error, skipped_language, skipped_overload, submission_failed |
 | Latency | `ssf.quality.refinement_latency_ms` | integer |
 | Changed | `ssf.quality.refinement_changed` | enum: true, false |
 | Source language | `ssf.quality.source_lang` | language code, else `und` |
 | Target language | `ssf.quality.target_lang` | language code, else `und` |
 | Error | `ssf.quality.error_code` | enum from the error taxonomy |
+
+`skipped_language` means the target language is on the configured skip list, so
+refinement was not attempted and the translation was passed through unchanged.
 
 And on `translation_message` (mode `enabled` only), one row per processed
 message, thirteen more. Every one is a number, a closed enum or an opaque

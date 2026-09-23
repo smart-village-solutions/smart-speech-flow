@@ -1,7 +1,7 @@
 # Updated from the running production containers on 2026-09-22 for
-# api_gateway, asr, translation, tts, and frontend; the Keycloak theme image
-# was built and verified on 2026-09-13; remaining entries were captured on
-# 2026-09-01 or later.
+# api_gateway, asr, translation, tts, and frontend; on 2026-09-23 for vllm;
+# the Keycloak theme image was built and verified on 2026-09-13; remaining
+# entries were captured on 2026-09-01 or later.
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
@@ -14,6 +14,7 @@ frontend-archive	sha256:5fe65474631a5f74c4ea81a5881ade417809f9c5905b593c6cc2d269
 keycloak	sha256:b9222cecb936372df1fa7154f30306f48277c4ee3acec47d5f487ca225160b20	ssf-keycloak:prod-59c954c
 traefik	sha256:76de233753150da70cde36a5d845c231d408a041b6fcf5a36f924c1322bd98fd	traefik@sha256:ca0f90490fe3091f5f4e582a28638652edb3b26b4d7a1d9ee621ce88fb2bff86
 ollama	sha256:edd5fde06b3f61a0c2de426ea87ea0491101f3bfa3f27b2b997ef6f4624199b2	ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a
+vllm	sha256:d076d77d8dade699041dbcb6bb989a058e51b532e6367f13f80b5a4e63ee5c53	vllm/vllm-openai@sha256:8a69ffad015f138d7170c4ddc429e230a3bc1c1719f67e14324749df200a4b90
 redis	sha256:5f703438f575677037751d8350dc8ca2b8a1075655247757048c8a86f0fb4f02	redis@sha256:3b73847e72874be07e6657b129a94761662b79bc0f679273757d4218573b2a98
 clickhouse	sha256:23ea2eb03548e5b746b202f0b1e27b16b2adc0fcccf75433b7028b21b179bab8	clickhouse/clickhouse-server@sha256:2ef11bbe2e44ab7022f37ff3019b3f2125ed09e919ea6194660be6130b7ca4b7
 otel-collector	sha256:e11c83206a71a0ac3125aa162205dcd8f6b0c27f4ad20799e20c9f4ad2da4d24	otel/opentelemetry-collector-contrib@sha256:1f2c54a30e713fac6b3ae77a1ec84010c2007e29ced8ec666214fc2f6739c1cc

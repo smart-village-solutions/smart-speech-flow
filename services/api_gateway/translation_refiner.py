@@ -645,10 +645,12 @@ def get_translation_refiner() -> BaseTranslationRefiner:
         return NoOpTranslationRefiner()
 
     backend = _resolve_refinement_backend()
-    if backend == "vllm" and mode == "shadow_compare":
+    if backend == "vllm" and mode in ("shadow_compare", "candidate_only"):
         raise ValueError(
-            "LLM_REFINEMENT_MODE=shadow_compare is not supported on "
-            "LLM_REFINEMENT_BACKEND=vllm; run the shadow comparison on ollama"
+            f"LLM_REFINEMENT_MODE={mode} is not supported on "
+            f"LLM_REFINEMENT_BACKEND={backend}; the vllm service only serves "
+            "LLM_REFINEMENT_PRIMARY_MODEL, not the candidate model this mode "
+            "requires -- run it on ollama"
         )
     # Blank counts as unset, matching `_env_flag`: compose always sets this
     # variable (even to an empty default), so `os.getenv`'s own fallback

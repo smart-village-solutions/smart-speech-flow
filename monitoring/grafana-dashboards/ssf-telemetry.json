@@ -470,7 +470,7 @@
             "type": "prometheus",
             "uid": "prometheus-ssf"
           },
-          "expr": "sum by (outcome) (rate(refinement_attempts_total[$__rate_interval]))",
+          "expr": "sum by (outcome) (increase(refinement_attempts_total[$__interval]))",
           "legendFormat": "{{outcome}}",
           "refId": "A"
         }
@@ -482,7 +482,7 @@
           "color": {
             "mode": "palette-classic"
           },
-          "unit": "reqps"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -498,7 +498,7 @@
           "sort": "desc"
         }
       },
-      "description": "Refinement outcomes as counted by refinement_attempts_total. This is the metric alerting reads (RefinementFailureRateHigh); the ClickHouse-backed Outcome Mix panel below is dashboard-only and does not page anyone."
+      "description": "Refinement attempts per outcome, counted with increase() over each interval rather than rate(): production sees only a handful of refinements a day, a rate too low for rate() to render as anything but a flat zero line (the same reasoning behind RefinementFailureRateHigh using increase()). This is the metric alerting reads; the ClickHouse-backed Outcome Mix panel below is dashboard-only and does not page anyone."
     },
     {
       "datasource": {

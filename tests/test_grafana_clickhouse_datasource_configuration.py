@@ -684,9 +684,14 @@ class TestTheRefinementServingPanels:
     def test_the_outcome_panel_reads_the_alertable_counter(self):
         """This is the counter RefinementFailureRateHigh alerts on; the
         ClickHouse-backed Outcome Mix panel elsewhere on this dashboard is not
-        wired to alerting at all."""
+        wired to alerting at all.
+
+        increase(), not rate(): production sees only a handful of
+        refinements a day, and rate() at that traffic renders as a flat zero
+        line almost always -- the same reasoning that already drove
+        RefinementFailureRateHigh away from rate()."""
         (expr,) = _queries("Refinement Outcomes")
-        assert expr == "sum by (outcome) (rate(refinement_attempts_total[$__rate_interval]))"
+        assert expr == "sum by (outcome) (increase(refinement_attempts_total[$__interval]))"
 
     def test_the_in_flight_panel_reads_both_vllm_queue_metrics(self):
         exprs = _queries("Refinement Requests In Flight")
