@@ -22,8 +22,8 @@ from prometheus_client import CollectorRegistry, Counter
 
 from .client_origin import configured_client_origin
 from .pipeline_admission import PipelineAdmission, PipelineAdmissionConfig, PipelineAdmissionMetrics
-from .refinement_metrics import RefinementMetrics
 from .rate_limiter import RateLimitMiddleware
+from .refinement_metrics import RefinementMetrics
 
 # === Service-URLs für die Orchestrierung ===
 # Je nach Umgebung werden interne Docker- oder lokale URLs verwendet
