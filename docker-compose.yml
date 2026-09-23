@@ -134,9 +134,14 @@ services:
       # would break the one-variable backend switch.
       - LLM_REFINEMENT_ENDPOINT=${LLM_REFINEMENT_ENDPOINT:-}
       - LLM_REFINEMENT_TIMEOUT=${LLM_REFINEMENT_TIMEOUT:-4.0}
-      - LLM_REFINEMENT_TEMPERATURE=${LLM_REFINEMENT_TEMPERATURE:-0.7}
+      - LLM_REFINEMENT_TEMPERATURE=${LLM_REFINEMENT_TEMPERATURE:-0.0}
       - LLM_REFINEMENT_THINK=${LLM_REFINEMENT_THINK:-false}
       - LLM_REFINEMENT_MAX_RETRIES=${LLM_REFINEMENT_MAX_RETRIES:-1}
+      - LLM_REFINEMENT_BACKEND=${LLM_REFINEMENT_BACKEND:-ollama}
+      - LLM_REFINEMENT_MAX_TOKENS=${LLM_REFINEMENT_MAX_TOKENS:-256}
+      # No colon before the dash: an explicitly empty value must survive so
+      # "refine everything" is reachable through compose (see I4).
+      - LLM_REFINEMENT_SKIP_TARGET_LANGUAGES=${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,ti,ku,fa}
       # Pipeline Admission Control — bounds concurrent GPU pipeline work.
       # One GPU hosts asr, translation and tts together, so the default is
       # deliberately low; raise it from load-test evidence and watch
@@ -264,11 +269,24 @@ services:
       - vllm-models:/models
     ipc: host
     command:
-      - --model=${LLM_REFINEMENT_MODEL_REPO:-google/gemma-4-E4B-it-qat-w4a16-ct}
-      - --served-model-name=${LLM_REFINEMENT_MODEL:-gemma-4-e4b-qat}
+      - --model=${LLM_REFINEMENT_MODEL_REPO:-Qwen/Qwen3.5-4B}
+      # Matches the gateway's own resolution order (translation_refiner.py
+      # prefers LLM_REFINEMENT_PRIMARY_MODEL), so one variable configures
+      # both sides. Do not read LLM_REFINEMENT_MODEL here: that would let
+      # the name vLLM serves drift from the name the gateway requests.
+      - --served-model-name=${LLM_REFINEMENT_PRIMARY_MODEL:-qwen3.5-4b}
       - --max-model-len=${VLLM_MAX_MODEL_LEN:-4096}
       - --max-num-seqs=${VLLM_MAX_NUM_SEQS:-8}
-      - --gpu-memory-utilization=${VLLM_GPU_MEMORY_UTILIZATION:-0.58}
+      # fp8 and 0.40 are measured (2026-09-23): weights 5.09 GiB, peak
+      # activation 1.36 GiB, KV cache 1.16 GiB, 5.3 GiB of the card free.
+      # The unquantized/0.58 combination was the pre-measurement guess and
+      # left negative room for KV cache on the Gemma build that was rejected.
+      - --quantization=${VLLM_QUANTIZATION:-fp8}
+      - --gpu-memory-utilization=${VLLM_GPU_MEMORY_UTILIZATION:-0.40}
+      # Explicit even though it is vLLM's own default: the model must never
+      # spill into system RAM, so this is a fixed flag, not a variable
+      # someone could override unknowingly.
+      - --cpu-offload-gb=0
       - '--limit-mm-per-prompt={"image": 0, "audio": 0}'
     healthcheck:
       test:

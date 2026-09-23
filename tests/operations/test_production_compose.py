@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import yaml
@@ -6,6 +7,13 @@ import yaml
 COMPOSE_PATH = Path("deploy/production/docker-compose.production.yml")
 ENV_EXAMPLE_PATH = Path("deploy/production/production.env.example")
 DEVELOPMENT_COMPOSE_PATH = Path("docker-compose.yml")
+
+# translation_refiner.py's get_translation_refiner() resolves
+# LLM_REFINEMENT_PRIMARY_MODEL before falling back to LLM_REFINEMENT_MODEL.
+# The vllm service's --served-model-name must read the same variable, or an
+# operator who sets only one of them gets a gateway that requests a model
+# name vLLM never advertised under, and every refinement 404s.
+GATEWAY_MODEL_VARIABLE = "LLM_REFINEMENT_PRIMARY_MODEL"
 
 
 def load_production_compose():
@@ -86,6 +94,81 @@ def test_vllm_is_gated_behind_a_profile_in_both_compose_files():
         compose = yaml.safe_load(path.read_text())
         vllm = compose["services"]["vllm"]
         assert vllm["profiles"] == ["vllm"], path
+
+
+def _served_model_variable(vllm_service):
+    for arg in vllm_service["command"]:
+        if arg.startswith("--served-model-name="):
+            match = re.search(r"\$\{(\w+)", arg)
+            assert match, f"could not parse a variable out of {arg!r}"
+            return match.group(1)
+    raise AssertionError("vllm command has no --served-model-name")
+
+
+def test_vllm_served_model_name_uses_the_same_variable_the_gateway_resolves_first():
+    for path in (DEVELOPMENT_COMPOSE_PATH, COMPOSE_PATH):
+        compose = yaml.safe_load(path.read_text())
+        environment = _environment_by_name(compose["services"]["api_gateway"])
+        assert GATEWAY_MODEL_VARIABLE in environment, path
+
+        vllm = compose["services"]["vllm"]
+        assert _served_model_variable(vllm) == GATEWAY_MODEL_VARIABLE, path
+
+
+def test_skip_target_languages_default_is_reachable_with_an_explicitly_empty_value():
+    """`${VAR:-default}` also substitutes the default for an explicitly empty
+    value, so the documented "empty refines everything" behaviour would be
+    unreachable through compose. `${VAR-default}` (no colon) only substitutes
+    when the variable is unset, so an empty value set by an operator survives."""
+    for path in (DEVELOPMENT_COMPOSE_PATH, COMPOSE_PATH):
+        compose = yaml.safe_load(path.read_text())
+        environment = _environment_by_name(compose["services"]["api_gateway"])
+        assert environment["LLM_REFINEMENT_SKIP_TARGET_LANGUAGES"] == (
+            "${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,ti,ku,fa}"
+        ), path
+
+
+def test_vllm_boots_the_measured_quantized_model_with_no_ram_offload():
+    """Production measurement (2026-09-23) chose Qwen/Qwen3.5-4B at
+    --quantization fp8 and --gpu-memory-utilization 0.40 (weights 5.09 GiB,
+    peak activation 1.36 GiB, KV cache 1.16 GiB, 5.3 GiB free). The Gemma
+    build at 0.58 unquantized was measured and rejected: negative room for
+    KV cache. --cpu-offload-gb=0 must be explicit so the model never spills
+    into system RAM."""
+    for path in (DEVELOPMENT_COMPOSE_PATH, COMPOSE_PATH):
+        compose = yaml.safe_load(path.read_text())
+        command = compose["services"]["vllm"]["command"]
+        assert "--model=${LLM_REFINEMENT_MODEL_REPO:-Qwen/Qwen3.5-4B}" in command, path
+        assert "--quantization=${VLLM_QUANTIZATION:-fp8}" in command, path
+        assert "--gpu-memory-utilization=${VLLM_GPU_MEMORY_UTILIZATION:-0.40}" in command, path
+        assert "--cpu-offload-gb=0" in command, path
+
+
+def test_refinement_temperature_defaults_to_deterministic_output():
+    """Measured (2026-09-23): at 0.7, refining a real German-to-English
+    sentence invented an instruction in two of three runs; at 0.0, three of
+    three preserved the meaning exactly. This is a deliberate change for the
+    Ollama path too, not just vllm."""
+    for path in (DEVELOPMENT_COMPOSE_PATH, COMPOSE_PATH):
+        compose = yaml.safe_load(path.read_text())
+        environment = _environment_by_name(compose["services"]["api_gateway"])
+        assert environment["LLM_REFINEMENT_TEMPERATURE"] == (
+            "${LLM_REFINEMENT_TEMPERATURE:-0.0}"
+        ), path
+
+
+def test_development_gateway_can_exercise_the_vllm_path():
+    """The dev stack's gateway environment previously never passed
+    LLM_REFINEMENT_BACKEND, LLM_REFINEMENT_MAX_TOKENS or
+    LLM_REFINEMENT_SKIP_TARGET_LANGUAGES, so it could never be pointed at
+    the vllm backend the way production can."""
+    compose = yaml.safe_load(DEVELOPMENT_COMPOSE_PATH.read_text())
+    environment = _environment_by_name(compose["services"]["api_gateway"])
+    assert environment["LLM_REFINEMENT_BACKEND"] == "${LLM_REFINEMENT_BACKEND:-ollama}"
+    assert environment["LLM_REFINEMENT_MAX_TOKENS"] == "${LLM_REFINEMENT_MAX_TOKENS:-256}"
+    assert environment["LLM_REFINEMENT_SKIP_TARGET_LANGUAGES"] == (
+        "${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,ti,ku,fa}"
+    )
 
 
 def _environment_by_name(service):
