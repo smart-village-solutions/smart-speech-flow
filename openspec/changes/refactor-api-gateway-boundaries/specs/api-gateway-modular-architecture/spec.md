@@ -1,71 +1,66 @@
 ## ADDED Requirements
 
-### Requirement: Layered gateway boundaries
+### Requirement: Tenant-aware gateway dependency composition
 
-The API gateway SHALL separate presentation, application, domain, port, infrastructure, realtime, and runtime responsibilities with dependencies directed toward domain and ports.
+The API gateway SHALL construct request-facing collaborators in FastAPI lifespan, retain them in a dependency container owned by application state, and expose them through replaceable dependency providers.
 
-#### Scenario: Domain code is isolated from framework infrastructure
+#### Scenario: Isolated test application
 
-- **WHEN** a session or message domain type is imported
-- **THEN** its module does not require FastAPI, Redis, HTTP client, WebSocket, or Prometheus dependencies
+- **WHEN** a test creates an application instance and overrides a gateway dependency provider
+- **THEN** only that application instance uses the replacement and module-level mutable state does not determine the collaborator
 
-#### Scenario: Route behavior is delegated
+#### Scenario: Tenant runtime resolution
 
-- **WHEN** an HTTP or WebSocket request changes session or conversation state
-- **THEN** the route delegates the business workflow to an application service rather than mutating persisted session state directly
+- **WHEN** a tenant-scoped admin or customer operation resolves runtime configuration
+- **THEN** the provider preserves the validated tenant context, correlation identifier, and fail-closed policy
 
-### Requirement: Stable public gateway contracts
+### Requirement: Characterized compatibility during boundary migration
 
-The API gateway SHALL preserve existing REST endpoints, OpenAPI schemas, WebSocket paths and frame contracts, polling fallback behavior, and `pipeline_metadata` response behavior during the boundary refactor.
+The API gateway SHALL characterize and preserve existing public REST, WebSocket, polling, OpenAPI, Redis-session, and pipeline-metadata behavior before moving a responsibility across boundaries.
 
-#### Scenario: Existing frontend request
+#### Scenario: Existing tenant-scoped API client
 
-- **WHEN** a client calls an existing session, admin, customer, message, language, polling, or monitoring endpoint with a valid current request
-- **THEN** the endpoint remains available with the current response schema and semantics
+- **WHEN** a valid current client performs an existing admin or customer session operation during a migration slice
+- **THEN** the route path, authorization semantics, response schema, and tenant isolation behavior remain compatible
 
 #### Scenario: Existing realtime client
 
-- **WHEN** an existing client connects to `/ws/{sessionId}/{clientType}` and exchanges supported frames
-- **THEN** the gateway accepts the connection and emits compatible frames, including heartbeat and translated-message behavior
+- **WHEN** an existing client uses a supported realtime ticket, WebSocket frame, or polling fallback
+- **THEN** the gateway preserves compatible connection, message, heartbeat, and failure behavior
 
-### Requirement: Replaceable persistence and processing adapters
+### Requirement: Tenant-aware session and message boundaries
 
-The application layer SHALL depend on typed ports for session persistence, speech processing, and realtime publication.
+The gateway application layer SHALL preserve `TenantSessionKey`, tenant-scoped persistence, join-index resolution, consent-gated storage, runtime snapshots, and emitted pipeline metadata while separating session and message workflows from transport code.
 
-#### Scenario: Memory persistence in tests
+#### Scenario: Cross-tenant session access
 
-- **WHEN** the gateway is configured without Redis
-- **THEN** the memory repository provides the same session lifecycle and message-history semantics as the Redis repository
+- **WHEN** a principal attempts to access a session belonging to another tenant
+- **THEN** the separated application workflow fails closed without exposing the other tenant's session data
 
-#### Scenario: Existing Redis session data
+#### Scenario: Legacy session path decision
 
-- **WHEN** the Redis repository loads a session persisted by the pre-refactor gateway
-- **THEN** it restores the session, messages, statuses, and timestamps without data loss
+- **WHEN** implementation reaches legacy session-manager cleanup
+- **THEN** a recorded cutover decision and operational evidence determine whether the legacy path is removed or isolated behind a typed compatibility adapter
 
 ### Requirement: Focused realtime collaboration
 
-The gateway SHALL keep realtime protocol, connection registration, dispatch, heartbeat, polling fallback, and monitoring in distinct components coordinated through explicit interfaces.
+The gateway SHALL express realtime ticket consumption, registry ownership, dispatch, heartbeat, polling fallback, and monitoring through focused interfaces that do not expose Redis wire details to application code.
 
-#### Scenario: Message delivery
+#### Scenario: Single-use realtime ticket
 
-- **WHEN** a processed session message is persisted
-- **THEN** the application service publishes it through the realtime publisher and receives a typed delivery result without importing WebSocket implementation details
+- **WHEN** a realtime ticket is consumed
+- **THEN** the ticket backend performs a single domain consume operation and the memory and Redis implementations preserve the same single-use result
 
-#### Scenario: Connection lifecycle
+#### Scenario: Tenant-safe monitoring
 
-- **WHEN** a WebSocket connection becomes inactive or disconnects
-- **THEN** the heartbeat and registry components update connection state while preserving session lifecycle rules in the application layer
+- **WHEN** an authenticated caller requests supported realtime connection information
+- **THEN** the route applies tenant authorization and does not disclose another tenant's connection metadata
 
-### Requirement: Centralized runtime composition
+### Requirement: Compatibility-gated cleanup
 
-The API gateway SHALL construct dependencies during FastAPI lifespan and centrally manage periodic task startup and shutdown.
+The gateway SHALL remove a compatibility facade or duplicate module only after first-party consumers have migrated and the relevant compatibility contract tests pass.
 
-#### Scenario: Gateway startup
+#### Scenario: Facade removal
 
-- **WHEN** the gateway starts
-- **THEN** each application service and realtime component is composed once and background tasks are registered from the runtime layer
-
-#### Scenario: Gateway shutdown
-
-- **WHEN** the gateway shuts down
-- **THEN** runtime tasks are cancelled and awaited without leaving service-monitoring or cleanup loops active
+- **WHEN** a compatibility module has no remaining production consumers
+- **THEN** its removal is verified by consumer search and the applicable gateway contract, tenant-isolation, and realtime tests
