@@ -31,7 +31,7 @@ tests:
               severity: warning
               service: translation
             exp_annotations:
-              summary: "More than a fifth of refinements are failing"
+              summary: "Refinement attempts are happening and none are succeeding"
               description: >-
                 Every refinement attempt in the last 6 hours has failed and none
                 has succeeded. Refinement fails open, so users still receive the
