@@ -9,7 +9,14 @@ conversations until every item below is complete:
 2. Studio has provisioned every listed realm with the common public
    `ssf-frontend` client, PKCE S256, the exact application origin and
    `/login/*` redirects, the `ssf-frontend` audience, the `ssf-user` role, and
-   the signed `studio_tenant_id` and `ssf_authorization_revision` claims.
+   the signed `studio_tenant_id` and `ssf_authorization_revision` claims. The
+   user menu's Account settings link also needs the realm's built-in
+   `account-console` client enabled and every administrator holding
+   `default-roles-<realm>` (or the `account` client's `manage-account` role
+   directly). Keycloak grants that default role to users created through the
+   admin console or admin API, but not to users imported from JSON with an
+   explicit `realmRoles` list; those users see "Something went wrong" in the
+   console.
 3. `SSF_ENABLE_LEGACY_ADMIN_ACCESS=false` is active before multi-realm login is
    enabled.
 4. The separate OpenSpec change `add-multi-tenant-operations` has implemented
@@ -47,6 +54,9 @@ docker build \
   callback remains under `/login/<tenant-id>` and opens only that tenant's
   administration view.
 - Log out from each realm and confirm the browser returns to `/login`.
+- Open Account settings from the user menu of each tenant and confirm the
+  Keycloak account console opens in a new tab, already signed in, on
+  "Personal info", with a back link to `/login/<tenant-id>`.
 - Open an unknown `/login/<tenant-id>` and confirm no Keycloak client is
   initialized and only a neutral unavailable message is shown.
 - Make the Studio directory temporarily unavailable after the configured cache

@@ -56,7 +56,11 @@ following:
 1. Confirm the Studio directory returns at least two ready tenant entries.
 2. Confirm every listed realm has the common public client, PKCE S256, the
    exact application origin and `/login/*` redirects, the configured audience
-   and role, and signed tenant-ID and authorization-revision claims.
+   and role, and signed tenant-ID and authorization-revision claims. For the
+   frontend's Account settings link, the realm's `account-console` client must
+   be enabled and every administrator must hold `default-roles-<realm>` (or
+   `account`/`manage-account`); users imported from JSON with an explicit
+   `realmRoles` list do not get it automatically.
 3. Set `SSF_ENABLE_LEGACY_ADMIN_ACCESS=false` before multi-realm production
    enablement.
 4. Complete the separate OpenSpec change `add-multi-tenant-operations` and pass
