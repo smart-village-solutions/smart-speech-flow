@@ -91,15 +91,16 @@ def test_production_compose_preserves_the_existing_prometheus_volume():
     assert compose["volumes"]["prometheus-data"]["external"] is True
 
 
-def test_vllm_is_gated_behind_a_profile_in_both_compose_files():
-    """A routine deploy brings up all services with no service filter, so an
-    ungated vllm would start on every deploy -- either failing to pull (its
-    image is not yet on the host) or silently booting a GPU-reserving
-    container before its first boot has been measured by hand."""
-    for path in (DEVELOPMENT_COMPOSE_PATH, COMPOSE_PATH):
-        compose = yaml.safe_load(path.read_text())
-        vllm = compose["services"]["vllm"]
-        assert vllm["profiles"] == ["vllm"], path
+def test_vllm_runs_in_default_production_deployments_after_backend_activation():
+    """Production must keep its active refinement backend running.
+
+    Development stays profile-gated because it defaults to Ollama and may run
+    on a CPU-only workstation.
+    """
+    development = yaml.safe_load(DEVELOPMENT_COMPOSE_PATH.read_text())
+    production = yaml.safe_load(COMPOSE_PATH.read_text())
+    assert development["services"]["vllm"]["profiles"] == ["vllm"]
+    assert "profiles" not in production["services"]["vllm"]
 
 
 def _served_model_arg(vllm_service):

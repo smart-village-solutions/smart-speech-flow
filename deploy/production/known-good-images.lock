@@ -5,7 +5,7 @@
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
-api_gateway	sha256:dfec973a439296b1c473b208b4383fb057f92b518efda50bc81ae504aac028b2	ssf-backend-api_gateway:prod-35c4b2f
+api_gateway	sha256:cf30551e781c82bfa3647bb863548dd138ba121c0c6f64dd7a52fee15ab9c866	ssf-backend-api_gateway:prod-10992ea
 asr	sha256:abff6ae86a6d06eb20b7f147739bf0e4560cb1c41ef5d8d1b4d443c7e8510da6	ssf-backend-asr:prod-35c4b2f
 translation	sha256:7095a8c1192cf194013d0130fd0957010b2899e62c4a21464cc5f74ffc9d2dad	ssf-backend-translation:prod-35c4b2f
 tts	sha256:b3baa334539aa270752dfedfeefde80b372c4a62e4092baa132cfe52483dcddc	ssf-backend-tts:prod-35c4b2f

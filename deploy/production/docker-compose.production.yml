@@ -193,7 +193,7 @@ services:
     - traefik.http.services.api_gateway.loadbalancer.passhostheader=true
     - traefik.http.middlewares.websocket-headers.headers.customrequestheaders.X-Forwarded-Proto=https
     restart: unless-stopped
-    image: ssf-backend-api_gateway:prod-35c4b2f
+    image: ssf-backend-api_gateway:prod-10992ea
     pull_policy: never
   ollama:
     image: ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a
@@ -214,12 +214,8 @@ services:
     restart: unless-stopped
     pull_policy: never
   vllm:
-    # Gated behind a profile so a routine `docker compose up` (no service
-    # filter) cannot start this GPU-reserving container before its first
-    # boot has been measured by hand. Remove this gate once the refinement
-    # backend is switched over to vllm.
-    profiles:
-    - vllm
+    # The production gateway uses vLLM for refinement, so routine deployments
+    # must keep this GPU-reserving service running.
     image: vllm/vllm-openai@sha256:8a69ffad015f138d7170c4ddc429e230a3bc1c1719f67e14324749df200a4b90
     expose:
     - '8000'

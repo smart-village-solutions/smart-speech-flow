@@ -16,6 +16,10 @@ scrape_configs:
     static_configs:
       - targets: ['api_gateway:8000']
 
+  - job_name: 'vllm'
+    static_configs:
+      - targets: ['vllm:8000']
+
   # The collector's own counters. These are the only place the gateway SDK's
   # queue-overflow drops become measurable: the gateway counts what it queued,
   # this counts what actually arrived.

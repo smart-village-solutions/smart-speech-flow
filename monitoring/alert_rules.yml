@@ -140,6 +140,20 @@ groups:
             whole product is down, including the WebSocket transport.
           runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/service-down-alerts.md"
 
+      - alert: VllmTargetDown
+        expr: up{job="vllm"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: vllm
+        annotations:
+          summary: "vLLM is not answering Prometheus"
+          description: >-
+            Prometheus has failed to scrape vllm:8000 for 5 minutes.
+            Translation refinement is unavailable; raw translations still
+            succeed without refinement.
+          runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/service-down-alerts.md"
+
       - alert: ASRServiceDown
         expr: asr_health_status == 0
         for: 2m
