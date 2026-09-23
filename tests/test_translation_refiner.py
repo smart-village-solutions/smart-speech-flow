@@ -267,6 +267,38 @@ def test_shadow_comparison_refiner_records_candidate_result(monkeypatch):
     assert refiner.pending == 0
 
 
+def test_shadow_comparison_candidate_skips_a_configured_target_language(monkeypatch):
+    """The candidate must inherit the primary's skip list, not decide on its own.
+
+    Drives the actual code path `_run_candidate` takes
+    (`candidate._perform_refinement`, not the mocked `refine`), so this fails
+    if `skip_target_languages` is ever dropped from the candidate's
+    construction in `_run_candidate`.
+    """
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = mod.ShadowComparisonRefiner(
+        endpoint="http://ollama:11434",
+        model="primary",
+        candidate_model="candidate",
+        queue_limit=1,
+        timeout_seconds=1.0,
+        temperature=0.2,
+        max_retries=1,
+        skip_target_languages=["ti"],
+    )
+    refiner.pending = 1
+    post = Mock()
+    monkeypatch.setattr(mod.requests, "post", post)
+    emitted = []
+    monkeypatch.setattr(refiner, "_emit_attempt", lambda **kwargs: emitted.append(kwargs))
+
+    refiner._run_candidate("ከመይ", "de", "ti")
+
+    post.assert_not_called()
+    assert emitted[0]["outcome"] is mod.RefinementOutcomeCode.SKIPPED_LANGUAGE
+    assert emitted[0]["role"] is mod.RefinerRole.CANDIDATE
+
+
 def test_shadow_comparison_refiner_recovers_when_submission_fails(monkeypatch):
     mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
     refiner = mod.ShadowComparisonRefiner(
