@@ -7,8 +7,9 @@ import { cn } from '@/lib/cn';
 const tokens = readFileSync(path.join(import.meta.dirname, '../../ui/styles/tokens.css'), 'utf8');
 
 /** Every `--text-<name>` size in the theme, read from the stylesheet itself. */
-const TEXT_SIZES = [...tokens.matchAll(/^\s*--text-([a-z][a-z0-9]*(?:-[a-z0-9]+)*):/gm)]
+const TEXT_SIZES = [...tokens.matchAll(/^\s*--text-([\w-]+):/gm)]
   .map((match) => match[1])
+  // `--text-<name>--line-height` companions are not sizes of their own.
   .filter((name) => !name.includes('--'));
 
 describe('cn', () => {
@@ -35,6 +36,11 @@ describe('cn', () => {
 
   it('still lets a later theme text size win over an earlier one', () => {
     expect(cn('text-meta', 'text-note')).toBe('text-note');
+  });
+
+  // Tailwind v4 applies `leading-*` over a size's own line height whatever the order.
+  it('keeps a line height that comes before a theme text size', () => {
+    expect(cn('leading-tight', 'text-note')).toBe('leading-tight text-note');
   });
 
   it('still lets a later text colour win over an earlier one', () => {
