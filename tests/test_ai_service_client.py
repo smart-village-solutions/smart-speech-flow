@@ -91,6 +91,38 @@ class TestOutcomeRecording:
 
         assert breaker.health.failed_requests == 1
 
+    def test_a_late_synchronous_probe_result_cannot_mutate_a_newer_recovery(self):
+        """Outcome classification stays inside ``guard()``'s probe generation."""
+        breaker = _breaker()
+        for _ in range(breaker.config.failure_threshold):
+            breaker.record_health_failure("health endpoint unavailable")
+        breaker.next_attempt_time = 0
+        breaker.record_health_success()
+        assert breaker.state is CircuitState.HALF_OPEN
+
+        class LateFaultResponse:
+            headers: dict = {}
+            triggered = False
+
+            @property
+            def status_code(self) -> int:
+                if not self.triggered:
+                    self.triggered = True
+                    breaker.next_attempt_time = 0
+                    breaker.record_health_success()
+                    assert breaker.state is CircuitState.OPEN
+                    breaker.next_attempt_time = 0
+                    for _ in range(breaker.config.success_threshold):
+                        breaker.record_health_success()
+                    assert breaker.state is CircuitState.CLOSED
+                return 500
+
+        with patch.object(ai_service_client.requests, "post", return_value=LateFaultResponse()):
+            ai_service_client.call_ai_service("asr", "http://asr:8000/transcribe", timeout=60)
+
+        assert breaker.state is CircuitState.CLOSED
+        assert breaker.failure_count == 0
+
 
 class TestDeliberateShedding:
     """#190 sheds load with 503 + Retry-After. Breaking on that makes it worse."""

@@ -258,16 +258,12 @@ class ServiceHealthManager:
         circuit = self.circuit_breakers[service_name]
 
         try:
-            # Deliberately not through circuit.call(). The poll reports
-            # failures to the breaker but never successes: a service can
-            # answer /health perfectly while failing every inference request,
-            # and letting a ping count toward success_threshold reclosed a
-            # breaker the pipeline had opened -- roughly every 75s, for ever,
-            # with no request having been served. A ping proves reachability
-            # and nothing more, so it is recorded as reachability and nothing
-            # more. The probe runs even while the circuit is open, which is
-            # how status.is_healthy recovers on its own.
+            # A ping never counts as inference traffic. It may only recover a
+            # breaker that health checks opened themselves, so startup races
+            # can heal without allowing reachability to pardon an inference
+            # failure. The probe runs even while the circuit is open.
             health_info = await self._perform_health_request(endpoint)
+            circuit.record_health_success()
 
             # Status Update
             status.is_healthy = True
@@ -293,7 +289,7 @@ class ServiceHealthManager:
             # /health cannot serve inference either, so this half does drive
             # the breaker, and opens it without waiting for three users to
             # hit the failure first.
-            circuit.record_failure(f"health check failed: {e}")
+            circuit.record_health_failure(f"health check failed: {e}")
             status.is_healthy = False
             status.last_check = utc_now()
             status.error_message = str(e)
