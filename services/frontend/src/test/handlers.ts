@@ -91,29 +91,35 @@ export const handlers = [
     })
   ),
 
+  // Shapes follow the gateway routes; a fixture that drifts from them hides mapper bugs.
   http.get('*/api/customer/session/:id', ({ params }) =>
     HttpResponse.json({
-      id: params.id,
-      customer_language: null,
-      admin_language: 'de',
+      session_id: params.id,
       status: 'pending',
-      created_at: '2026-08-21T10:00:00+00:00',
-      message_count: 0,
+      customer_language: null,
       admin_connected: true,
       customer_connected: false,
+      is_active: false,
+      can_send_messages: false,
+      created_at: '2026-08-21T10:00:00+00:00',
+      warning_at: '2026-08-21T10:25:00+00:00',
+      timeout_at: '2026-08-21T10:30:00+00:00',
     })
   ),
 
   http.get('*/api/admin/session/:id/status', ({ params }) =>
     HttpResponse.json({
-      id: params.id,
-      customer_language: null,
-      admin_language: 'de',
+      session_id: params.id,
       status: 'pending',
-      created_at: '2026-08-21T10:00:00+00:00',
-      message_count: 0,
+      customer_language: null,
       admin_connected: true,
       customer_connected: false,
+      message_count: 0,
+      created_at: '2026-08-21T10:00:00+00:00',
+      terminated_at: null,
+      termination_reason: null,
+      warning_at: '2026-08-21T10:25:00+00:00',
+      timeout_at: '2026-08-21T10:30:00+00:00',
     })
   ),
 

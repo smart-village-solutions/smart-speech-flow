@@ -1,8 +1,8 @@
 import type { AxiosInstance } from 'axios';
 import { requirePathIdentifier } from '@/utils/identifiers';
 import type { ClientRole } from '@/core/roles';
-import { activationToSession, toSession } from './session.mapper';
-import type { ActivateSessionDto, SessionInfoDto } from './session.mapper';
+import { activationToSession, statusToSession } from './session.mapper';
+import type { ActivateSessionDto, SessionStatusDto } from './session.mapper';
 import type { Session } from './session.types';
 
 export interface SessionRepository {
@@ -23,8 +23,8 @@ export function createSessionRepository(http: AxiosInstance): SessionRepository 
   return {
     async getSession(id, role) {
       const safeId = requirePathIdentifier(id, 'session');
-      const response = await http.get<SessionInfoDto>(sessionPathForRole(role, safeId));
-      return toSession(response.data);
+      const response = await http.get<SessionStatusDto>(sessionPathForRole(role, safeId));
+      return statusToSession(response.data);
     },
 
     async activate(id, languageCode, dataRetentionConsent) {

@@ -1,6 +1,6 @@
 import type { Session, SessionStatus } from './session.types';
 
-/** GET /api/session/{id} — note the field is `id`, not `session_id`. */
+/** `Session.to_dict()`, as in the admin history rows — the field is `id`, not `session_id`. */
 export interface SessionInfoDto {
   id: string;
   customer_language: string | null;
@@ -21,14 +21,32 @@ export interface ActivateSessionDto {
   timestamp: string;
 }
 
-export function toSession(dto: SessionInfoDto): Session {
+/**
+ * GET /api/admin/session/{id}/status and GET /api/customer/session/{id}. Unlike
+ * `Session.to_dict()`, both answer with `session_id`, neither sends the admin
+ * language, and only the admin variant counts messages.
+ */
+export interface SessionStatusDto {
+  session_id: string;
+  status: SessionStatus;
+  customer_language: string | null;
+  admin_connected: boolean;
+  customer_connected: boolean;
+  created_at: string;
+  message_count?: number;
+}
+
+/** The gateway fixes every session's admin language at German and does not report it. */
+const GATEWAY_ADMIN_LANGUAGE = 'de';
+
+export function statusToSession(dto: SessionStatusDto): Session {
   return {
-    id: dto.id,
+    id: dto.session_id,
     status: dto.status,
     customerLanguage: dto.customer_language,
-    adminLanguage: dto.admin_language,
+    adminLanguage: GATEWAY_ADMIN_LANGUAGE,
     createdAt: dto.created_at,
-    messageCount: dto.message_count,
+    messageCount: dto.message_count ?? 0,
     adminConnected: dto.admin_connected,
     customerConnected: dto.customer_connected,
   };
@@ -39,7 +57,7 @@ export function activationToSession(dto: ActivateSessionDto, previous?: Session)
     id: dto.session_id,
     status: dto.status,
     customerLanguage: dto.customer_language,
-    adminLanguage: previous?.adminLanguage ?? 'de',
+    adminLanguage: previous?.adminLanguage ?? GATEWAY_ADMIN_LANGUAGE,
     createdAt: previous?.createdAt ?? dto.timestamp,
     messageCount: previous?.messageCount ?? 0,
     adminConnected: previous?.adminConnected ?? false,

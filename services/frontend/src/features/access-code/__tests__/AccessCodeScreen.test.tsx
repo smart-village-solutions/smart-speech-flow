@@ -2,16 +2,20 @@ import { http, HttpResponse } from 'msw';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes, useParams } from 'react-router-dom';
 import { server } from '@/test/setup';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { AccessCodeScreen } from '@/features/access-code/AccessCodeScreen';
+
+function LanguageScreen() {
+  return <p>language screen {useParams().sessionId}</p>;
+}
 
 function tree() {
   return (
     <Routes>
       <Route path="/" element={<AccessCodeScreen />} />
-      <Route path="/s/:sessionId/language" element={<p>language screen</p>} />
+      <Route path="/s/:sessionId/language" element={<LanguageScreen />} />
     </Routes>
   );
 }
@@ -52,7 +56,7 @@ describe('AccessCodeScreen', () => {
     await userEvent.paste('A1B2C3D4');
     await userEvent.click(screen.getByRole('button', { name: 'Weiter' }));
 
-    expect(await screen.findByText('language screen')).toBeInTheDocument();
+    expect(await screen.findByText('language screen A1B2C3D4')).toBeInTheDocument();
   });
 
   it('shows an inline error and keeps the code when the session is unknown', async () => {

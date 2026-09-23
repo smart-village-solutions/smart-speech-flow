@@ -11,18 +11,22 @@ const client = createHttpClient(readConfig({ VITE_API_BASE_URL: 'http://api.test
 const repository = createSessionRepository(client);
 
 describe('session repository', () => {
-  it('maps the gateway id field onto the domain id', async () => {
+  it('maps the admin status response onto the domain session', async () => {
     server.use(
+      // SessionStatusResponse, services/api_gateway/routes/admin.py
       http.get('http://api.test/api/admin/session/A1B2C3D4/status', () =>
         HttpResponse.json({
-          id: 'A1B2C3D4',
-          customer_language: null,
-          admin_language: 'de',
+          session_id: 'A1B2C3D4',
           status: 'pending',
-          created_at: '2026-08-21T10:00:00+00:00',
-          message_count: 3,
+          customer_language: null,
           admin_connected: true,
           customer_connected: false,
+          message_count: 3,
+          created_at: '2026-08-21T10:00:00+00:00',
+          terminated_at: null,
+          termination_reason: null,
+          warning_at: '2026-08-21T10:25:00+00:00',
+          timeout_at: '2026-08-21T10:30:00+00:00',
         })
       )
     );
@@ -72,25 +76,34 @@ describe('session repository', () => {
     expect(session.customerLanguage).toBe('ar');
   });
 
-  it('reads a customer session from the customer capability route', async () => {
+  it('maps the customer status response, which has no message count', async () => {
     server.use(
+      // get_customer_session_status, services/api_gateway/routes/customer.py
       http.get('http://api.test/api/customer/session/A1B2C3D4', () =>
         HttpResponse.json({
-          id: 'A1B2C3D4',
-          customer_language: 'en',
-          admin_language: 'de',
+          session_id: 'A1B2C3D4',
           status: 'active',
-          created_at: '2026-08-21T10:00:00+00:00',
-          message_count: 0,
+          customer_language: 'en',
           admin_connected: true,
           customer_connected: true,
+          is_active: true,
+          can_send_messages: true,
+          created_at: '2026-08-21T10:00:00+00:00',
+          warning_at: '2026-08-21T10:25:00+00:00',
+          timeout_at: '2026-08-21T10:30:00+00:00',
         })
       )
     );
 
-    await expect(repository.getSession('A1B2C3D4', 'customer')).resolves.toMatchObject({
+    await expect(repository.getSession('A1B2C3D4', 'customer')).resolves.toEqual({
       id: 'A1B2C3D4',
       status: 'active',
+      customerLanguage: 'en',
+      adminLanguage: 'de',
+      createdAt: '2026-08-21T10:00:00+00:00',
+      messageCount: 0,
+      adminConnected: true,
+      customerConnected: true,
     });
   });
 });
