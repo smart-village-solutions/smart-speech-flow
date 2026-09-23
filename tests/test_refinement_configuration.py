@@ -23,6 +23,9 @@ REFINEMENT_VARS = (
     "LLM_REFINEMENT_TEMPERATURE",
     "LLM_REFINEMENT_THINK",
     "LLM_REFINEMENT_MAX_RETRIES",
+    "LLM_REFINEMENT_SKIP_TARGET_LANGUAGES",
+    "LLM_REFINEMENT_BACKEND",
+    "LLM_REFINEMENT_MAX_TOKENS",
 )
 
 
@@ -167,6 +170,22 @@ def test_timeout_bounds_are_inclusive(env, timeout, expected):
     assert refiner_module.get_translation_refiner().timeout_seconds == pytest.approx(expected)
 
 
+def test_default_temperature_is_zero_when_unset(env):
+    env(MODE="primary_only")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.temperature == pytest.approx(0.0)
+
+
+def test_explicit_temperature_overrides_default(env):
+    env(MODE="primary_only", TEMPERATURE="0.5")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.temperature == pytest.approx(0.5)
+
+
 def test_valid_tuning_values_reach_the_refiner(env):
     env(
         MODE="shadow_compare",
@@ -184,3 +203,206 @@ def test_valid_tuning_values_reach_the_refiner(env):
     assert refiner.max_retries == 3
     assert refiner.think is True
     assert refiner.queue_limit == 2
+
+
+def test_skip_list_defaults_to_the_four_unsupported_languages(env):
+    env(ENABLED="true")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.skip_target_languages == frozenset({"am", "ti", "ku", "fa"})
+
+
+def test_skip_list_can_be_emptied(env):
+    env(ENABLED="true", SKIP_TARGET_LANGUAGES="")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.skip_target_languages == frozenset()
+
+
+def test_backend_selects_the_vllm_refiner(env):
+    env(ENABLED="true", BACKEND="vllm")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert type(refiner).__name__ == "VllmTranslationRefiner"
+    assert refiner.endpoint == "http://vllm:8000"
+
+
+def test_blank_endpoint_falls_through_to_the_backend_default(env):
+    """Compose always sets LLM_REFINEMENT_ENDPOINT, even to an empty string,
+    so the variable is present but blank rather than absent. That must still
+    reach the backend-aware default -- otherwise the one-variable switch to
+    vllm silently keeps talking to Ollama."""
+    env(ENABLED="true", BACKEND="vllm", ENDPOINT="")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.endpoint == "http://vllm:8000"
+
+
+def test_non_blank_endpoint_still_overrides_the_backend_default(env):
+    env(ENABLED="true", BACKEND="vllm", ENDPOINT="http://vllm.internal:9000")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.endpoint == "http://vllm.internal:9000"
+
+
+def test_backend_defaults_to_ollama(env):
+    env(ENABLED="true")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert type(refiner).__name__ == "OllamaTranslationRefiner"
+    assert refiner.endpoint == "http://ollama:11434"
+
+
+def test_an_unknown_backend_stops_startup(env):
+    env(ENABLED="true", BACKEND="vlm")
+
+    with pytest.raises(ValueError, match="LLM_REFINEMENT_BACKEND"):
+        refiner_module.get_translation_refiner()
+
+
+def test_shadow_compare_is_rejected_on_vllm(env):
+    """The shadow refiner speaks Ollama's API; failing loudly beats a silent
+    fallback to the wrong backend."""
+    env(MODE="shadow_compare", BACKEND="vllm")
+
+    with pytest.raises(ValueError, match="shadow_compare"):
+        refiner_module.get_translation_refiner()
+
+
+def test_candidate_only_is_rejected_on_vllm(env):
+    """candidate_only resolves LLM_REFINEMENT_CANDIDATE_MODEL, but the vllm
+    service only advertises --served-model-name for the primary model;
+    requesting the candidate model would 404 on every refinement."""
+    env(MODE="candidate_only", BACKEND="vllm")
+
+    with pytest.raises(ValueError, match="candidate_only"):
+        refiner_module.get_translation_refiner()
+
+
+def test_max_tokens_reaches_the_vllm_refiner(env):
+    env(ENABLED="true", BACKEND="vllm", MAX_TOKENS="128")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.max_tokens == 128
+
+
+def test_max_tokens_below_the_minimum_fails_startup(env):
+    env(ENABLED="true", BACKEND="vllm", MAX_TOKENS="8")
+
+    with pytest.raises(ValueError, match="LLM_REFINEMENT_MAX_TOKENS"):
+        refiner_module.get_translation_refiner()
+
+
+def test_vllm_backend_with_an_ollama_hostname_endpoint_warns(env, caplog):
+    """.env.example used to ship LLM_REFINEMENT_ENDPOINT=http://ollama:11434,
+    which a deployment switching to vllm could leave in place: Ollama also
+    serves /v1/chat/completions, so every request would silently keep
+    reaching Ollama."""
+    env(ENABLED="true", BACKEND="vllm", ENDPOINT="http://ollama:11434")
+
+    with caplog.at_level(logging.WARNING, logger=refiner_module.logger.name):
+        refiner_module.get_translation_refiner()
+
+    warning = " ".join(r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+    assert "LLM_REFINEMENT_BACKEND" in warning
+    assert "LLM_REFINEMENT_ENDPOINT" in warning
+
+
+def test_vllm_backend_with_port_11434_on_another_host_warns(env, caplog):
+    env(ENABLED="true", BACKEND="vllm", ENDPOINT="http://ollama.internal:11434")
+
+    with caplog.at_level(logging.WARNING, logger=refiner_module.logger.name):
+        refiner_module.get_translation_refiner()
+
+    warning = " ".join(r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+    assert "LLM_REFINEMENT_ENDPOINT" in warning
+
+
+def test_vllm_backend_with_a_normal_vllm_endpoint_does_not_warn(env, caplog):
+    """A vLLM instance deliberately proxied through an unusual host is valid;
+    the check must never refuse it, only warn on the Ollama-looking shape."""
+    env(ENABLED="true", BACKEND="vllm", ENDPOINT="http://vllm.internal:9000")
+
+    with caplog.at_level(logging.WARNING, logger=refiner_module.logger.name):
+        refiner_module.get_translation_refiner()
+
+    warning = " ".join(r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+    assert "LLM_REFINEMENT_ENDPOINT" not in warning
+
+
+def test_ollama_backend_with_its_own_endpoint_does_not_warn(env, caplog):
+    env(ENABLED="true", BACKEND="ollama", ENDPOINT="http://ollama:11434")
+
+    with caplog.at_level(logging.WARNING, logger=refiner_module.logger.name):
+        refiner_module.get_translation_refiner()
+
+    warning = " ".join(r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+    assert "LLM_REFINEMENT_ENDPOINT" not in warning
+
+
+def test_ollama_backend_defaults_to_gpt_oss_with_no_model_variables_set(env):
+    """Today's behaviour, unchanged: an ollama deployment that sets neither
+    model variable must keep resolving gpt-oss:20b."""
+    env(ENABLED="true", BACKEND="ollama")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.model == "gpt-oss:20b"
+
+
+def test_vllm_backend_defaults_to_qwen_with_no_model_variables_set(env):
+    """The defect this guards against: the vllm service only advertises
+    qwen3.5-4b under --served-model-name, so a gateway that still asked for
+    gpt-oss:20b here would 404 on every refinement."""
+    env(ENABLED="true", BACKEND="vllm")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.model == "qwen3.5-4b"
+
+
+@pytest.mark.parametrize("backend", ["ollama", "vllm"])
+def test_explicit_primary_model_wins_on_both_backends(env, backend):
+    env(ENABLED="true", BACKEND=backend, PRIMARY_MODEL="custom-model")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.model == "custom-model"
+
+
+@pytest.mark.parametrize("backend", ["ollama", "vllm"])
+def test_legacy_model_variable_wins_when_primary_model_is_unset(env, backend):
+    env(ENABLED="true", BACKEND=backend, MODEL="legacy-model")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.model == "legacy-model"
+
+
+@pytest.mark.parametrize("backend", ["ollama", "vllm"])
+def test_blank_model_variables_fall_through_to_the_backend_default(env, backend):
+    """Compose always sets both model variables, even to an empty string, so
+    the variable is present but blank rather than absent -- same reasoning
+    as the endpoint's own blank-falls-through test."""
+    env(ENABLED="true", BACKEND=backend, PRIMARY_MODEL="", MODEL="")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.model == refiner_module._default_refinement_model(backend)
+
+
+def test_startup_log_names_the_configured_backend(env, caplog):
+    env(ENABLED="true", BACKEND="vllm", ENDPOINT="http://vllm.internal:9000")
+
+    with caplog.at_level(logging.INFO, logger=refiner_module.logger.name):
+        refiner_module.get_translation_refiner()
+
+    info = " ".join(r.getMessage() for r in caplog.records if r.levelno == logging.INFO)
+    assert "backend=vllm" in info

@@ -39,6 +39,30 @@ def summary(values: list[float], errors: int, timeouts: int) -> dict[str, float 
     }
 
 
+def refinement_summary(results: list[dict[str, Any]]) -> dict[str, float | int]:
+    """Refinement statistics, counting each attempt once.
+
+    A failed refinement still records a duration, so it arrives inside the
+    value list -- unlike a failed request, which raises and never reaches
+    `summary()`'s values at all. Passing those failures as `errors` as well
+    counted them twice and halved every reported rate. Latency is reported
+    over successes only, so the median stops being the timeout ceiling.
+
+    A skip is excluded the same way as an error, but for the opposite reason:
+    it is not a failure, but its recorded duration is 0 ms because the
+    language policy short-circuited before any request went out. Counting it
+    as a fast success would drag the latency figures down and hide the skip.
+    """
+    durations = [
+        item["refinement_ms"]
+        for item in results
+        if item.get("refinement_ms") is not None
+        and item.get("refinement_status") not in ("error", "skipped")
+    ]
+    errors = sum(item.get("refinement_status") == "error" for item in results)
+    return summary(durations, errors, 0)
+
+
 def load_cases(fixtures: Path) -> list[dict[str, Any]]:
     source = json.loads((fixtures / "transcripts.json").read_text(encoding="utf-8"))
     cases = []
@@ -106,14 +130,11 @@ def main() -> None:
             except requests.RequestException:
                 errors += 1
     totals = [item["duration_ms"] for item in results]
-    refinements = [item["refinement_ms"] for item in results if item["refinement_ms"] is not None]
-    refinement_errors = sum(item.get("refinement_status") == "error" for item in results)
-    # Refinement metadata currently reports only success/error, not a timeout status.
-    refinement_timeouts = 0
+    refinement_report = refinement_summary(results)
     manifest_cases = [{key: value for key, value in case.items() if key != "path"} for case in cases]
     report = {"schema_version": 1, "created_at": datetime.now(timezone.utc).isoformat(), "pipeline": args.pipeline,
               "warmups": args.warmups, "runs": args.runs, "cases": manifest_cases, "results": results,
-              "summary": {"end_to_end": summary(totals, errors, timeouts), "refinement": summary(refinements, refinement_errors, refinement_timeouts)}}
+              "summary": {"end_to_end": summary(totals, errors, timeouts), "refinement": refinement_report}}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(report["summary"], indent=2))

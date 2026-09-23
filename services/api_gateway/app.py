@@ -23,6 +23,7 @@ from prometheus_client import CollectorRegistry, Counter
 from .client_origin import configured_client_origin
 from .pipeline_admission import PipelineAdmission, PipelineAdmissionConfig, PipelineAdmissionMetrics
 from .rate_limiter import RateLimitMiddleware
+from .refinement_metrics import RefinementMetrics
 
 # === Service-URLs für die Orchestrierung ===
 # Je nach Umgebung werden interne Docker- oder lokale URLs verwendet
@@ -610,6 +611,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     translation_refiner.attach_quality_telemetry(app.state.quality_telemetry)
     session_manager.attach_quality_telemetry(app.state.quality_telemetry)
+    translation_refiner.attach_refinement_metrics(refinement_metrics)
+    if translation_refiner.is_active:
+        refinement_model_ref = getattr(translation_refiner, "model", None)
+        if refinement_model_ref:
+            refinement_metrics.pre_create_series(refinement_model_ref)
     # Rehydrated sessions must enforce reconnect and absolute deadlines before
     # the lifespan yields and the gateway can accept a request.
     await session_manager.check_session_timeouts()
@@ -692,6 +698,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # would emit into a provider that no longer has an export thread.
         translation_refiner.attach_quality_telemetry(None)
         session_manager.attach_quality_telemetry(None)
+        translation_refiner.attach_refinement_metrics(None)
         if tenant_persistence is not None:
             tenant_persistence.close()
         bind_runtime_policy(None)
@@ -767,6 +774,7 @@ requests_total.inc(0)
 # created only once per registry, while the admission component itself is rebuilt
 # per lifespan.
 pipeline_admission_metrics = PipelineAdmissionMetrics(registry)
+refinement_metrics = RefinementMetrics(registry)
 
 # Attach to app state
 app.state.prometheus_registry = registry

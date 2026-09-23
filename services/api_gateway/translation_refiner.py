@@ -5,7 +5,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from threading import Lock
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
+from urllib.parse import urlparse
 
 import requests
 from requests import Response, exceptions
@@ -20,54 +21,89 @@ from .quality_telemetry import (
 
 logger = logging.getLogger(__name__)
 
-# Languages listed as supported by the Phi-4-mini-instruct model card.  Phi is
-# still used as a target-language editor, so an unsupported source language is
-# deliberately not a reason to skip refinement; it merely withholds the source
-# text as an unreliable semantic reference.
-_PHI4_MINI_SUPPORTED_LANGUAGE_CODES = frozenset(
-    {
-        "ar",
-        "cs",
-        "da",
-        "de",
-        "en",
-        "es",
-        "fi",
-        "fr",
-        "he",
-        "hu",
-        "it",
-        "ja",
-        "ko",
-        "nl",
-        "no",
-        "pl",
-        "pt",
-        "ru",
-        "sv",
-        "th",
-        "tr",
-        "uk",
-        "zh",
-    }
-)
+DEFAULT_SKIP_TARGET_LANGUAGES = "am,ti,ku,fa"
 
 
-def _language_code_is_supported_by_phi4_mini(language_code: str) -> bool:
-    """Return whether a language code is covered by Phi-4-mini's model card."""
-    normalized_code = language_code.strip().lower().split("-", maxsplit=1)[0]
-    return normalized_code in _PHI4_MINI_SUPPORTED_LANGUAGE_CODES
+def _normalized_language(code: str) -> str:
+    return code.strip().lower().split("-", maxsplit=1)[0]
 
 
-def _is_phi4_mini_model(model: str) -> bool:
-    return model.strip().lower().startswith("phi4-mini")
+def _skip_target_languages() -> frozenset[str]:
+    """Target languages the refiner leaves untouched.
+
+    The default is the four supported languages Phi-4-mini's model card does
+    not cover, which keeps behaviour identical to the model-name check this
+    replaces. Which languages get refined is a product decision, so it belongs
+    in configuration rather than in a check on the model's name.
+    """
+    raw = os.getenv("LLM_REFINEMENT_SKIP_TARGET_LANGUAGES", DEFAULT_SKIP_TARGET_LANGUAGES)
+    return frozenset(_normalized_language(code) for code in raw.split(",") if code.strip())
 
 
-def _default_refinement_endpoint() -> str:
+REFINEMENT_BACKENDS = ("ollama", "vllm")
+_BACKEND_DEFAULT_ENDPOINTS = {
+    "ollama": ("ollama", "11434"),
+    "vllm": ("vllm", "8000"),
+}
+
+
+def _resolve_refinement_backend() -> str:
+    raw = os.getenv("LLM_REFINEMENT_BACKEND", "ollama")
+    backend = raw.strip().lower() or "ollama"
+    if backend not in REFINEMENT_BACKENDS:
+        raise ValueError(
+            f"LLM_REFINEMENT_BACKEND={raw!r} is not supported; "
+            f"use one of {', '.join(REFINEMENT_BACKENDS)}"
+        )
+    return backend
+
+
+def _default_refinement_endpoint(backend: str) -> str:
+    default_host, default_port = _BACKEND_DEFAULT_ENDPOINTS[backend]
     scheme = os.getenv("LLM_REFINEMENT_SCHEME", "http")
-    host = os.getenv("LLM_REFINEMENT_HOST", "ollama")
-    port = os.getenv("LLM_REFINEMENT_PORT", "11434")
+    host = os.getenv("LLM_REFINEMENT_HOST", default_host)
+    port = os.getenv("LLM_REFINEMENT_PORT", default_port)
     return f"{scheme}://{host}:{port}"
+
+
+_BACKEND_DEFAULT_MODELS = {
+    "ollama": "gpt-oss:20b",
+    "vllm": "qwen3.5-4b",
+}
+
+
+def _default_refinement_model(backend: str) -> str:
+    """The model a backend serves when no model variable is set.
+
+    Mirrors `_default_refinement_endpoint`: the vllm service's
+    --served-model-name defaults to the same "qwen3.5-4b" string, so an
+    unset LLM_REFINEMENT_PRIMARY_MODEL resolves to a model vLLM actually
+    advertises instead of the Ollama-only "gpt-oss:20b" default.
+    """
+    return _BACKEND_DEFAULT_MODELS[backend]
+
+
+def _looks_like_ollama_endpoint(endpoint: str) -> bool:
+    parsed = urlparse(endpoint)
+    return parsed.hostname == "ollama" or parsed.port == 11434
+
+
+def _warn_if_endpoint_pins_ollama(backend: str, explicit_endpoint: str) -> None:
+    """An explicit LLM_REFINEMENT_ENDPOINT silently overrides the backend switch.
+
+    Ollama also serves `/v1/chat/completions`, so a deployment that flips
+    LLM_REFINEMENT_BACKEND to vllm while an old Ollama endpoint lingers in
+    LLM_REFINEMENT_ENDPOINT keeps sending every request to Ollama and appears
+    to work. This only warns, never refuses: a vLLM instance deliberately
+    proxied through host `ollama` or port 11434 is a valid setup.
+    """
+    if backend == "vllm" and _looks_like_ollama_endpoint(explicit_endpoint):
+        logger.warning(
+            "LLM_REFINEMENT_BACKEND=vllm but LLM_REFINEMENT_ENDPOINT=%s looks "
+            "like an Ollama endpoint; refinement requests may be reaching "
+            "Ollama instead of vLLM",
+            explicit_endpoint,
+        )
 
 
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
@@ -160,6 +196,7 @@ class RefinementOutcome:
     model: Optional[str] = None
     candidate_model: Optional[str] = None
     candidate_status: Optional[str] = None
+    skipped_reason: Optional[str] = None
 
 
 _CANDIDATE_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="refinement-shadow")
@@ -174,8 +211,15 @@ class BaseTranslationRefiner:
     #: which must be indistinguishable from telemetry being switched off.
     quality_telemetry: Optional[Any] = None
 
+    #: Set by the gateway the same way as `quality_telemetry`. None means the
+    #: counters are not wired up, which must never change an outcome.
+    refinement_metrics: Optional[Any] = None
+
     def attach_quality_telemetry(self, telemetry: Optional[Any]) -> None:
         self.quality_telemetry = telemetry
+
+    def attach_refinement_metrics(self, metrics: Optional[Any]) -> None:
+        self.refinement_metrics = metrics
 
     def _emit_attempt(
         self,
@@ -189,23 +233,37 @@ class BaseTranslationRefiner:
         target_lang: str,
         error_code: "QualityErrorCode",
     ) -> None:
-        """Record one attempt. Never allowed to affect the caller."""
+        """Record one attempt. Never allowed to affect the caller.
+
+        This is the single choke point every emitted attempt passes through
+        -- including `_emit_candidate_not_run`'s SKIPPED_OVERLOAD and
+        SUBMISSION_FAILED codes, which never go through `_emit_outcome`.
+        Recording the counter here, rather than in `_emit_outcome`, is what
+        keeps telemetry and the counter from disagreeing about which
+        outcomes were counted.
+        """
         telemetry = self.quality_telemetry
-        if telemetry is None:
-            return
-        try:
-            telemetry.emit_refinement_attempt(
-                refiner_role=role,
-                model_ref=model_ref,
-                outcome=outcome,
-                latency_ms=latency_ms,
-                changed=changed,
-                source_lang=source_lang,
-                target_lang=target_lang,
-                error_code=error_code,
-            )
-        except Exception:  # telemetry must never change an outcome
-            logger.warning("Quality telemetry emit failed for a refinement attempt")
+        if telemetry is not None:
+            try:
+                telemetry.emit_refinement_attempt(
+                    refiner_role=role,
+                    model_ref=model_ref,
+                    outcome=outcome,
+                    latency_ms=latency_ms,
+                    changed=changed,
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                    error_code=error_code,
+                )
+            except Exception:  # telemetry must never change an outcome
+                logger.warning("Quality telemetry emit failed for a refinement attempt")
+
+        metrics = self.refinement_metrics
+        if metrics is not None:
+            try:
+                metrics.record(outcome.value, model_ref)
+            except Exception:  # metrics must never change an outcome
+                logger.warning("Refinement metrics update failed")
 
     def _emit_outcome(
         self,
@@ -216,11 +274,16 @@ class BaseTranslationRefiner:
         source_lang: str,
         target_lang: str,
     ) -> None:
-        failed = bool(outcome.error)
+        if outcome.skipped_reason:
+            code = RefinementOutcomeCode.SKIPPED_LANGUAGE
+        elif outcome.error:
+            code = RefinementOutcomeCode.ERROR
+        else:
+            code = RefinementOutcomeCode.SUCCESS
         self._emit_attempt(
             role=role,
             model_ref=model_ref,
-            outcome=(RefinementOutcomeCode.ERROR if failed else RefinementOutcomeCode.SUCCESS),
+            outcome=code,
             latency_ms=int(outcome.latency_ms or 0),
             changed=bool(outcome.changed),
             source_lang=source_lang,
@@ -262,6 +325,7 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         temperature: float,
         max_retries: int,
         think: bool = False,
+        skip_target_languages: Optional[Iterable[str]] = None,
     ) -> None:
         self.endpoint = endpoint.rstrip("/")
         self.model = model
@@ -269,6 +333,9 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         self.temperature = temperature
         self.max_retries = max(1, max_retries)
         self.think = think
+        self.skip_target_languages = frozenset(
+            _normalized_language(code) for code in (skip_target_languages or ())
+        )
         self.is_active = True
 
     def _build_prompt(
@@ -292,10 +359,7 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
             prompt += f"\nOriginal language code: {source_lang}."
         if target_lang:
             prompt += f"\nTarget language code: {target_lang}."
-        if original_text and (
-            not _is_phi4_mini_model(self.model)
-            or _language_code_is_supported_by_phi4_mini(source_lang)
-        ):
+        if original_text and _normalized_language(source_lang) not in self.skip_target_languages:
             prompt += (
                 "\nUse the original input only to verify that meaning is preserved. "
                 "Do not translate again unless the current translation contains a clear error."
@@ -314,6 +378,10 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         }
         url = f"{self.endpoint}/api/generate"
         return requests.post(url, json=payload, timeout=self.timeout_seconds)
+
+    def _extract_text(self, data: Dict[str, Any]) -> str:
+        """The generated text, by this backend's response shape."""
+        return (data.get("response") or "").strip()
 
     def refine(
         self,
@@ -351,15 +419,15 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
                 text=text, changed=False, latency_ms=0.0, error=None, model=self.model
             )
 
-        if _is_phi4_mini_model(self.model) and not _language_code_is_supported_by_phi4_mini(
-            target_lang
-        ):
-            logger.info(
-                "Skipping Phi-4-mini refinement for unsupported target language '%s'",
-                target_lang,
-            )
+        if _normalized_language(target_lang) in self.skip_target_languages:
+            logger.info("Skipping refinement for unsupported target language '%s'", target_lang)
             return RefinementOutcome(
-                text=text, changed=False, latency_ms=0.0, error=None, model=self.model
+                text=text,
+                changed=False,
+                latency_ms=0.0,
+                error=None,
+                model=self.model,
+                skipped_reason="unsupported_target_language",
             )
 
         prompt = self._build_prompt(text, source_lang, target_lang, context)
@@ -373,7 +441,7 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
                 response.raise_for_status()
                 data = response.json()
-                refined = (data.get("response") or "").strip()
+                refined = self._extract_text(data)
 
                 if not refined:
                     return RefinementOutcome(
@@ -425,6 +493,71 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         )
 
 
+class VllmTranslationRefiner(OllamaTranslationRefiner):
+    """Refines translation output through vLLM's OpenAI-compatible API.
+
+    Retry, timeout, telemetry and the language policy are inherited; only the
+    request shape and the response shape differ.
+    """
+
+    def __init__(
+        self,
+        endpoint: str,
+        model: str,
+        timeout_seconds: float,
+        temperature: float,
+        max_retries: int,
+        think: bool = False,
+        skip_target_languages: Optional[Iterable[str]] = None,
+        max_tokens: int = 256,
+    ) -> None:
+        super().__init__(
+            endpoint,
+            model,
+            timeout_seconds,
+            temperature,
+            max_retries,
+            think,
+            skip_target_languages,
+        )
+        self.max_tokens = max_tokens
+
+    def _request(self, prompt: str) -> Response:
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            # Deliberation inside a 4 s budget is what made gpt-oss:20b
+            # unusable; models that reason by default must be told not to.
+            "chat_template_kwargs": {"enable_thinking": self.think},
+        }
+        url = f"{self.endpoint}/v1/chat/completions"
+        return requests.post(url, json=payload, timeout=self.timeout_seconds)
+
+    def _extract_text(self, data: Dict[str, Any]) -> str:
+        choices = data.get("choices") or []
+        if not choices:
+            return ""
+        choice = choices[0]
+        message = choice.get("message") or {}
+        text = (message.get("content") or "").strip()
+        if choice.get("finish_reason") == "length":
+            # A response cut off at the token cap is worse than no refinement:
+            # it replaces a complete translation with a sentence fragment that
+            # then gets spoken aloud by TTS. Returning "" here routes through
+            # the same empty-response branch in `_perform_refinement`, which
+            # already keeps the original translation and records an error.
+            logger.warning(
+                "Translation refinement response truncated at max_tokens=%s; "
+                "discarding and keeping the original translation",
+                self.max_tokens,
+            )
+            return ""
+        return text
+
+
 class ShadowComparisonRefiner(OllamaTranslationRefiner):
     """Executes the primary model in-path and a bounded candidate job in background."""
 
@@ -452,6 +585,7 @@ class ShadowComparisonRefiner(OllamaTranslationRefiner):
                 self.temperature,
                 self.max_retries,
                 self.think,
+                skip_target_languages=self.skip_target_languages,
             )
             # _perform_refinement, not refine: the latter would emit this as a
             # PRIMARY attempt under the candidate's model name.
@@ -527,18 +661,46 @@ def get_translation_refiner() -> BaseTranslationRefiner:
         logger.info("LLM translation refinement disabled")
         return NoOpTranslationRefiner()
 
-    endpoint = os.getenv("LLM_REFINEMENT_ENDPOINT", _default_refinement_endpoint())
-    primary_model = os.getenv(
-        "LLM_REFINEMENT_PRIMARY_MODEL", os.getenv("LLM_REFINEMENT_MODEL", "gpt-oss:20b")
+    backend = _resolve_refinement_backend()
+    if backend == "vllm" and mode in ("shadow_compare", "candidate_only"):
+        raise ValueError(
+            f"LLM_REFINEMENT_MODE={mode} is not supported on "
+            f"LLM_REFINEMENT_BACKEND={backend}; the vllm service only serves "
+            "LLM_REFINEMENT_PRIMARY_MODEL, not the candidate model this mode "
+            "requires -- run it on ollama"
+        )
+    # Blank counts as unset, matching `_env_flag`: compose always sets this
+    # variable (even to an empty default), so `os.getenv`'s own fallback
+    # never fires and the backend-aware default below would otherwise be
+    # unreachable.
+    explicit_endpoint = os.getenv("LLM_REFINEMENT_ENDPOINT", "").strip()
+    endpoint = explicit_endpoint or _default_refinement_endpoint(backend)
+    if explicit_endpoint:
+        _warn_if_endpoint_pins_ollama(backend, explicit_endpoint)
+    # Blank counts as unset, matching the endpoint resolution above: compose
+    # always sets these variables (even to an empty default), so `os.getenv`'s
+    # own fallback never fires and the backend-aware default below would
+    # otherwise be unreachable.
+    explicit_primary_model = os.getenv("LLM_REFINEMENT_PRIMARY_MODEL", "").strip()
+    explicit_legacy_model = os.getenv("LLM_REFINEMENT_MODEL", "").strip()
+    primary_model = (
+        explicit_primary_model or explicit_legacy_model or _default_refinement_model(backend)
     )
     candidate_model = os.getenv("LLM_REFINEMENT_CANDIDATE_MODEL", "phi4-mini")
     model = candidate_model if mode == "candidate_only" else primary_model
     timeout_seconds = _env_number("LLM_REFINEMENT_TIMEOUT", "4.0", float, 3.0, 5.0)
-    temperature = _env_number("LLM_REFINEMENT_TEMPERATURE", "0.7", float, 0.0)
+    # Refinement edits rather than composes, so zero temperature ensures deterministic,
+    # reproducible output. Sampling temperature invites hallucinations that alter content.
+    temperature = _env_number("LLM_REFINEMENT_TEMPERATURE", "0.0", float, 0.0)
     max_retries = _env_number("LLM_REFINEMENT_MAX_RETRIES", "1", int, 1)
     think = _env_flag("LLM_REFINEMENT_THINK") is True
 
-    logger.info("LLM translation refinement enabled with model '%s' at %s", model, endpoint)
+    logger.info(
+        "LLM translation refinement enabled with model '%s' at %s (backend=%s)",
+        model,
+        endpoint,
+        backend,
+    )
     args = {
         "endpoint": endpoint,
         "model": model,
@@ -546,12 +708,18 @@ def get_translation_refiner() -> BaseTranslationRefiner:
         "temperature": temperature,
         "max_retries": max_retries,
         "think": think,
+        "skip_target_languages": _skip_target_languages(),
     }
     if mode == "shadow_compare":
         return ShadowComparisonRefiner(
             **args,
             candidate_model=candidate_model,
             queue_limit=_env_number("LLM_REFINEMENT_SHADOW_QUEUE_LIMIT", "4", int, 1),
+        )
+    if backend == "vllm":
+        return VllmTranslationRefiner(
+            **args,
+            max_tokens=_env_number("LLM_REFINEMENT_MAX_TOKENS", "256", int, 16),
         )
     return OllamaTranslationRefiner(**args)
 
@@ -563,6 +731,7 @@ __all__ = [
     "BaseTranslationRefiner",
     "NoOpTranslationRefiner",
     "OllamaTranslationRefiner",
+    "VllmTranslationRefiner",
     "ShadowComparisonRefiner",
     "get_translation_refiner",
     "translation_refiner",

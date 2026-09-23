@@ -1,0 +1,88 @@
+# Unit tests for the alert rules that promtool cannot verify by parsing
+# alone. Run with:
+#   docker run --rm --entrypoint promtool -v "$PWD/monitoring:/m" \
+#     prom/prometheus:latest test rules /m/alert_rules_test.yml
+#
+# RefinementFailureRateHigh exists because outcomes otherwise reach only
+# ClickHouse, which dashboards query but alerting does not: a refiner that
+# failed every request for weeks went unnoticed for exactly that reason. Its
+# first version compared rates over short windows and never fired against
+# the real traffic shape (a handful of messages a day) -- these cases pin
+# down the replacement against that shape and its neighbours.
+rule_files:
+  - alert_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Production shape: one failing attempt, no successes, ever. The alert
+  # must become firing once `for: 15m` has elapsed.
+  - interval: 1m
+    input_series:
+      - series: 'refinement_attempts_total{outcome="error",model_ref="gemma-4-e4b-qat"}'
+        values: "0 1+0x40"
+      - series: 'refinement_attempts_total{outcome="success",model_ref="gemma-4-e4b-qat"}'
+        values: "0+0x41"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: RefinementFailureRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: translation
+            exp_annotations:
+              summary: "Refinement attempts are happening and none are succeeding"
+              description: >-
+                Every refinement attempt in the last 6 hours has failed and none
+                has succeeded. Refinement fails open, so users still receive the
+                translation, but unpolished. Check that the refinement backend is
+                up and that the model is resident.
+
+  # Successes exist alongside errors: the alert must never fire, at no point
+  # in the run.
+  - interval: 1m
+    input_series:
+      - series: 'refinement_attempts_total{outcome="error",model_ref="gemma-4-e4b-qat"}'
+        values: "0 1+0x40"
+      - series: 'refinement_attempts_total{outcome="success",model_ref="gemma-4-e4b-qat"}'
+        values: "0 0 1+0x39"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: RefinementFailureRateHigh
+        exp_alerts: []
+
+  # The error series springs into existence at 1, with no preceding zero
+  # sample to increase() from -- the shape a restart produces without
+  # refinement_metrics.pre_create_series. A single failure frozen at that
+  # value is genuinely invisible to increase() (Prometheus cannot tell "just
+  # started at 1" from "has always been 1"): that is the bug I3 fixes by
+  # pre-creating the zero sample. This case instead pins the next line of
+  # defence -- once failures keep happening every minute, increase() catches
+  # the ongoing rate even without ever having seen a zero sample, so the
+  # alert does not stay blind past the very first occurrence.
+  - interval: 1m
+    input_series:
+      - series: 'refinement_attempts_total{outcome="error",model_ref="gemma-4-e4b-qat"}'
+        values: "1+1x40"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: RefinementFailureRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: translation
+            exp_annotations:
+              summary: "Refinement attempts are happening and none are succeeding"
+              description: >-
+                Every refinement attempt in the last 6 hours has failed and none
+                has succeeded. Refinement fails open, so users still receive the
+                translation, but unpolished. Check that the refinement backend is
+                up and that the model is resident.
+
+  # No attempts at all: an idle deployment must not alert.
+  - interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: RefinementFailureRateHigh
+        exp_alerts: []
