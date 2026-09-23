@@ -245,6 +245,43 @@ services:
               capabilities: [gpu]
     restart: always
 
+  vllm:
+    image: vllm/vllm-openai:v0.30.0
+    # Never published: 8000 is the gateway's own local port.
+    expose:
+      - "8000"
+    environment:
+      - HF_HOME=/models
+    volumes:
+      - vllm-models:/models
+    ipc: host
+    command:
+      - --model=${LLM_REFINEMENT_MODEL_REPO:-google/gemma-4-E4B-it-qat-w4a16-ct}
+      - --served-model-name=${LLM_REFINEMENT_MODEL:-gemma-4-e4b-qat}
+      - --max-model-len=${VLLM_MAX_MODEL_LEN:-4096}
+      - --max-num-seqs=${VLLM_MAX_NUM_SEQS:-8}
+      - --gpu-memory-utilization=${VLLM_GPU_MEMORY_UTILIZATION:-0.58}
+      - '--limit-mm-per-prompt={"image": 0, "audio": 0}'
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health')
+      interval: 30s
+      timeout: 5s
+      retries: 20
+      # Weights load before /health answers, so a healthy vLLM is already warm.
+      start_period: 300s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: always
+
   redis:
     image: redis:7.4.7-alpine
     command: ["redis-server", "--appendonly", "yes"]
@@ -554,6 +591,7 @@ services:
 volumes:
   redis-data:
   ollama-data:
+  vllm-models:
   audio-data:
   clickhouse-data:
   keycloak-postgres-data:

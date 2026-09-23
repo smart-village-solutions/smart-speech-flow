@@ -111,6 +111,9 @@ services:
     - LLM_REFINEMENT_TEMPERATURE=${LLM_REFINEMENT_TEMPERATURE:-0.7}
     - LLM_REFINEMENT_THINK=${LLM_REFINEMENT_THINK:-false}
     - LLM_REFINEMENT_MAX_RETRIES=${LLM_REFINEMENT_MAX_RETRIES:-1}
+    - LLM_REFINEMENT_BACKEND=${LLM_REFINEMENT_BACKEND:-ollama}
+    - LLM_REFINEMENT_MAX_TOKENS=${LLM_REFINEMENT_MAX_TOKENS:-256}
+    - LLM_REFINEMENT_SKIP_TARGET_LANGUAGES=${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES:-am,ti,ku,fa}
     - GLOBAL_RATE_LIMIT=${GLOBAL_RATE_LIMIT:-1200}
     - GLOBAL_RATE_WINDOW_SECONDS=${GLOBAL_RATE_WINDOW_SECONDS:-60}
     - MESSAGE_RATE_LIMIT=${MESSAGE_RATE_LIMIT:-50}
@@ -192,6 +195,42 @@ services:
     - OLLAMA_HOST=0.0.0.0
     volumes:
     - ollama-data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: all
+            capabilities:
+            - gpu
+    restart: unless-stopped
+    pull_policy: never
+  vllm:
+    image: vllm/vllm-openai@sha256:8a69ffad015f138d7170c4ddc429e230a3bc1c1719f67e14324749df200a4b90
+    expose:
+    - '8000'
+    environment:
+    - HF_HOME=/models
+    volumes:
+    - vllm-models:/models
+    ipc: host
+    command:
+    - --model=${LLM_REFINEMENT_MODEL_REPO:-google/gemma-4-E4B-it-qat-w4a16-ct}
+    - --served-model-name=${LLM_REFINEMENT_MODEL:-gemma-4-e4b-qat}
+    - --max-model-len=${VLLM_MAX_MODEL_LEN:-4096}
+    - --max-num-seqs=${VLLM_MAX_NUM_SEQS:-8}
+    - --gpu-memory-utilization=${VLLM_GPU_MEMORY_UTILIZATION:-0.58}
+    - '--limit-mm-per-prompt={"image": 0, "audio": 0}'
+    healthcheck:
+      test:
+      - CMD
+      - python3
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health')
+      interval: 30s
+      timeout: 5s
+      retries: 20
+      start_period: 300s
     deploy:
       resources:
         reservations:
@@ -489,6 +528,7 @@ services:
 volumes:
   redis-data: null
   ollama-data: null
+  vllm-models: null
   audio-data: null
   clickhouse-data: null
   keycloak-postgres-data: null

@@ -17,7 +17,7 @@ if [[ $# -ne 0 ]] || ! is_positive_integer "$timeout_seconds"; then
 fi
 
 required_services=(
-  traefik asr translation tts api_gateway ollama redis clickhouse
+  traefik asr translation tts api_gateway vllm redis clickhouse
   keycloak-postgres ssf-postgres keycloak frontend prometheus
   grafana dcgm_exporter cadvisor node_exporter loki promtail
 )
