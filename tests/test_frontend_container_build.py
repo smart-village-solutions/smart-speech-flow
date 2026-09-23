@@ -29,6 +29,7 @@ def _docker_build(tag: str, *build_args: str) -> subprocess.CompletedProcess[str
 
 def _compose_build(project_name: str) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
+    # Retired by #216; an old .env may still set it, and it must not reach the bundle.
     environment["FRONTEND_DEMO_PASSWORD"] = "container-build-test-password"
     environment["CLICKHOUSE_DB"] = "ssf_analytics_test"
     environment["CLICKHOUSE_USER"] = "ssf_telemetry_test"
@@ -98,7 +99,7 @@ def test_frontend_container_embeds_production_service_urls():
                 (
                     "grep -R -q 'https://ssf.smart-village.solutions' /usr/share/nginx/html/assets "
                     "&& grep -R -q 'wss://ssf.smart-village.solutions' /usr/share/nginx/html/assets "
-                    "&& grep -R -q 'container-build-test-password' /usr/share/nginx/html/assets "
+                    "&& ! grep -R -q 'container-build-test-password' /usr/share/nginx/html/assets "
                     "&& ! grep -R -q 'localhost:8000' /usr/share/nginx/html/assets"
                 ),
             ],
@@ -113,8 +114,8 @@ def test_frontend_container_embeds_production_service_urls():
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_frontend_container_embeds_explicit_public_demo_access_code():
-    """The public demo gate value reaches Vite without Docker secret handling."""
+def test_frontend_container_ignores_the_retired_demo_access_code():
+    """No build argument or default can put the removed admin password in the SPA."""
     tag = f"ssf-frontend-config-test:{uuid.uuid4().hex}"
     try:
         result = _docker_build(
@@ -135,14 +136,18 @@ def test_frontend_container_embeds_explicit_public_demo_access_code():
                 tag,
                 "-R",
                 "-q",
+                "-e",
                 "explicit-public-demo-code",
+                "-e",
+                "ssf2025kassel",
                 "/usr/share/nginx/html/assets",
             ],
             capture_output=True,
             check=False,
             text=True,
         )
-        assert bundle_check.returncode == 0, bundle_check.stderr
+        # grep exits 1 when nothing matched; 2 would mean the check itself broke.
+        assert bundle_check.returncode == 1, bundle_check.stderr
     finally:
         _remove_image(tag)
 
@@ -153,7 +158,7 @@ def test_frontend_container_rejects_missing_production_service_urls():
     """A production image must not silently fall back to browser localhost."""
     tag = f"ssf-frontend-config-test:{uuid.uuid4().hex}"
     try:
-        result = _docker_build(tag, "VITE_DEMO_ACCESS_CODE=test-password")
+        result = _docker_build(tag)
         assert result.returncode != 0
         assert "VITE_API_BASE_URL and VITE_WS_BASE_URL must be set" in result.stderr
     finally:
@@ -187,7 +192,6 @@ def test_frontend_container_rejects_case_insensitive_localhost_urls(
             tag,
             f"VITE_API_BASE_URL={api_base_url}",
             f"VITE_WS_BASE_URL={ws_base_url}",
-            "VITE_DEMO_ACCESS_CODE=test-password",
         )
         assert result.returncode != 0
         assert expected_error in result.stderr

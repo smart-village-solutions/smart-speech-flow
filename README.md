@@ -62,7 +62,6 @@ Resolve a failed check before changing containers. Do not use a bare
 `docker compose up` command for production deployment.
 
 > **🔐 Security Notes:**
-> - **Frontend Demo Password:** Set in `.env` → `FRONTEND_DEMO_PASSWORD` (default: `ssf2025kassel`)
 > - **Grafana Admin:** Set `GRAFANA_ADMIN_PASSWORD` in `.env` (see [Security Guide](docs/deployment/SECURITY.md))
 > - **Production:** All monitoring services are internal-only (Prometheus, Loki, cAdvisor, Ollama)
 > - **Development:** Use `.env.local` for default `admin/admin` credentials

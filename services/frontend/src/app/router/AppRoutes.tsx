@@ -7,21 +7,17 @@ import { AccessCodeScreen } from '@/features/access-code/AccessCodeScreen';
 import { LanguageSelectScreen } from '@/features/language-select/LanguageSelectScreen';
 import { ConsentScreen } from '@/features/consent/ConsentScreen';
 import { ConversationScreen } from '@/features/conversation/ConversationScreen';
-import { SessionProvider } from '@/contexts/SessionContext';
-import CustomerPage from '@/pages/CustomerPage';
 import NotFoundPage from '@/pages/NotFoundPage';
-import ProtectedRoute from '@/components/ProtectedRoute';
 import { useServices } from '@/app/providers/services';
 import { AdminDashboardScreen } from '@/features/admin/AdminDashboardScreen';
 import { AdminSessionScreen } from '@/features/admin/AdminSessionScreen';
 import {
   logoutFromKeycloak,
+  getAccountConsoleUrl,
   getStudioUrlForSystemAdmin,
   requireKeycloakLogin,
   subscribeToKeycloakExpiration,
 } from '@/app/auth/keycloak';
-import { AdminLoginScreen } from '@/features/admin/AdminLoginScreen';
-import { useAdminAuth } from '@/features/admin/useAdminAuth';
 import { TenantLoginScreen } from '@/features/login/TenantLoginScreen';
 
 /** QR deep link: /join/:sessionId lands straight on the language picker. */
@@ -107,12 +103,14 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
   if (status !== 'authenticated') return null;
 
   const studioUrl = getStudioUrlForSystemAdmin();
+  const accountUrl = getAccountConsoleUrl();
 
   if (sessionId === null) {
     return (
       <AdminDashboardScreen
         onEnterSession={setSessionId}
         onSignOut={out}
+        accountUrl={accountUrl ?? undefined}
         studioUrl={studioUrl ?? undefined}
       />
     );
@@ -123,27 +121,9 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
       sessionId={sessionId}
       onLeave={leave}
       onSignOut={out}
+      accountUrl={accountUrl ?? undefined}
       studioUrl={studioUrl ?? undefined}
     />
-  );
-}
-
-function LegacyAdminEntry() {
-  const { signedIn, signIn, signOut } = useAdminAuth();
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const navigate = useNavigate();
-  const out = () => {
-    setSessionId(null);
-    signOut();
-    void navigate('/');
-  };
-
-  if (!signedIn) return <AdminLoginScreen onSignIn={signIn} onBack={out} />;
-  if (sessionId === null) {
-    return <AdminDashboardScreen onEnterSession={setSessionId} onSignOut={out} />;
-  }
-  return (
-    <AdminSessionScreen sessionId={sessionId} onLeave={() => setSessionId(null)} onSignOut={out} />
   );
 }
 
@@ -161,26 +141,6 @@ export function AppRoutes() {
 
       <Route path="/login" element={<TenantLoginScreen />} />
       <Route path="/login/:tenantId" element={<TenantLoginEntry />} />
-      <Route
-        path="/admin"
-        element={
-          <AdminQueryBoundary>
-            <LegacyAdminEntry />
-          </AdminQueryBoundary>
-        }
-      />
-
-      <Route
-        path="/customer"
-        element={
-          <ProtectedRoute>
-            <SessionProvider>
-              <CustomerPage />
-            </SessionProvider>
-          </ProtectedRoute>
-        }
-      />
-
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );

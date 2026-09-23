@@ -1,267 +1,131 @@
 # Frontend Smoke Tests
 
-## Deployment verifiziert am: 10. November 2025
+Run these after every frontend or gateway deployment. The production frontend
+is served at `https://dialog.kassel.de` and the API at
+`https://ssf.smart-village.solutions`.
 
-### ✅ Basis-Tests (automatisch)
+Staff screens are in German; each step names the English label with the German
+one in brackets. Customer screens follow the language the customer picks.
+
+## Automated checks
+
+Run from the repository root on the production host. A bare `docker compose`
+there targets the development stack, so use the production helper:
 
 ```bash
-# 1. Frontend erreichbar
-curl -I https://translate.smart-village.solutions
-# Erwartung: HTTP/2 200
+source scripts/lib/production-common.sh
 
-# 2. Health Check
-curl https://translate.smart-village.solutions/health
-# Erwartung: "healthy"
+# Frontend and its health endpoint
+curl -sI https://dialog.kassel.de | head -1          # HTTP/2 200
+curl -s https://dialog.kassel.de/health              # healthy
 
-# 3. Backend API erreichbar
+# Gateway language list
 curl -s https://ssf.smart-village.solutions/api/languages/supported | jq '.languages | keys'
-# Erwartung: ["ar", "de", "en", "tr", ...]
 
-# 4. Container Status
-docker compose ps frontend
-# Erwartung: Up X seconds (healthy)
+# Administrative API refuses anything but a bearer token (both print 401)
+curl -s -o /dev/null -w '%{http_code}\n' \
+  https://ssf.smart-village.solutions/api/admin/session/history
+curl -s -o /dev/null -w '%{http_code}\n' -H 'X-SSF-Legacy-Access: any' \
+  https://ssf.smart-village.solutions/api/admin/session/history
 
-# 5. Logs überwachen
-docker compose logs -f frontend | grep -E "GET|POST|ERROR"
+# Containers
+production_compose ps frontend api_gateway
+production_compose logs --since 10m frontend api_gateway | grep -iE "error|exception"
 ```
 
----
+## Manual checks
 
-## 🧪 Manuelle Smoke Tests
+Use two browsers, or one normal and one private window: one for staff, one for
+the customer. Keep the browser console (F12) open on both.
 
-### Test 1: Landing Page & Passwort
-1. ✅ Öffne: https://translate.smart-village.solutions
-2. ✅ Seite lädt korrekt (kein CORS-Fehler in Console)
-3. ✅ Passwort eingeben: `ssf2025kassel`
-4. ✅ Buttons sichtbar: "Intern (Verwaltung)" und "Kunde"
-5. ✅ Falsches Passwort zeigt Fehler
+### 1. Entry points
 
-**Erwartung**: Passwort-Schutz funktioniert, Navigation möglich
+1. Open `https://dialog.kassel.de`. The "Enter code" (Code eingeben) screen
+   appears, with an "Admin login" (Admin-Login) link.
+2. Open `https://dialog.kassel.de/admin`. The not-found page appears; there is
+   no password form.
+3. Open `https://dialog.kassel.de/customer`. The not-found page appears.
 
----
+### 2. Staff login
 
-### Test 2: Admin Session Flow
-1. ✅ Klick auf "Intern (Verwaltung)"
-2. ✅ Button "Neue Session erstellen" anklicken
-3. ✅ Session-ID erscheint (8 Zeichen, z.B. `EEF1B592`)
-4. ✅ Status zeigt "Warte auf Kunde..." (gelber Badge)
-5. ⏳ WebSocket-Verbindung grün (ConnectionStatusIndicator)
+1. Follow "Admin login", or open `https://dialog.kassel.de/login`.
+2. The organisation list appears in alphabetical order. Pick one.
+3. Sign in with a Keycloak account that has the `ssf-user` role.
+4. The dashboard shows "Start a new conversation" (Neues Gespräch starten),
+   the system load card and "Past conversations" (Vergangene Gespräche).
 
-**Backend-Logs prüfen**:
-```bash
-docker compose logs api_gateway | grep "Session erstellt"
-# Erwartung: ✅ Neue Admin-Session erstellt: [SESSION_ID]
-```
+A user without `ssf-user` must not reach the dashboard.
 
-**Erwartung**: Session-Erstellung funktioniert, Status korrekt
+### 3. Start a conversation
 
----
+1. Click "Start a new conversation". If a conversation is still running, a
+   dialog asks to end it; confirm with "Start anyway" (Trotzdem starten).
+2. The invite shows an eight-character session code, "Copy link"
+   (Link kopieren) and "QR code" (QR-Code). The link has the form
+   `https://dialog.kassel.de/join/<code>`.
+3. Click "Go to the conversation" (Zum Gespräch wechseln). The conversation
+   screen names the session code and shows "Connected" (Verbunden).
 
-### Test 3: Customer Join Flow
-**Voraussetzung**: Admin-Session aus Test 2 aktiv
+### 4. Customer joins
 
-1. ✅ Neuer Browser-Tab (oder Inkognito-Modus)
-2. ✅ https://translate.smart-village.solutions öffnen
-3. ✅ Passwort: `ssf2025kassel`
-4. ✅ Klick auf "Kunde"
-5. ✅ Session-ID eingeben (aus Test 2, z.B. `EEF1B592`)
-6. ✅ Sprache auswählen (z.B. "Arabisch")
-7. ✅ Button "Session beitreten" klicken
-8. ⏳ Customer-Interface lädt
-9. ⏳ WebSocket-Verbindung grün
+Do each variant with a fresh conversation at least once per release:
 
-**Im Admin-Tab prüfen**:
-- Status wechselt zu "Aktiv" (grüner Badge)
-- WebSocket-Notification: "Customer joined"
+- **QR code or link:** scan the QR code, or open the copied link, in the
+  customer browser. It lands directly on "Choose your language".
+- **Code:** open `https://dialog.kassel.de`, enter the eight-character code on
+  "Enter code" and press "Continue".
 
-**Backend-Logs prüfen**:
-```bash
-docker compose logs api_gateway | grep -i "activate\|customer"
-```
+Then:
 
-**Erwartung**: Customer kann Session beitreten, Admin wird benachrichtigt
+1. Choose a language, for example Arabic.
+2. The information screen explains recording and data retention. Leave the
+   storage checkbox as it is and press "Get started".
+3. The customer conversation screen opens. On the staff side the conversation
+   shows the chosen language.
 
----
+An unknown code shows "That code does not match an open session."
 
-### Test 4: Text-Nachrichten
-**Voraussetzung**: Admin und Customer verbunden (Test 2 + 3)
+### 5. Messages
 
-**Admin sendet Text**:
-1. ⏳ Text eingeben: "Hallo, willkommen!"
-2. ⏳ Send-Button klicken
-3. ⏳ Message erscheint als "Sender" (blaue Bubble)
-4. ⏳ Pulsing dots während Verarbeitung
-5. ⏳ ASR-Text wird angezeigt (gleicher Text)
-6. ⏳ Pipeline-Metadata anklickbar
+1. **Staff, text:** open the keyboard, send "Hallo, willkommen!". The customer
+   receives the translation with a playable audio reply.
+2. **Customer, voice:** press "Record", allow the microphone, speak for a few
+   seconds, then "Send recording". Staff receive the German translation and
+   audio.
+3. **Customer, text:** send a short text; staff receive the translation.
 
-**Customer empfängt Translation**:
-1. ⏳ Message erscheint als "Receiver" (graue Bubble)
-2. ⏳ Übersetzter Text auf Arabisch
-3. ⏳ Audio-Player erscheint
-4. ⏳ Audio spielt automatisch ab (nach User-Geste)
+Microphone access works over HTTPS only. If it is declined, the customer sees
+a hint to type instead.
 
-**Backend-Logs prüfen**:
-```bash
-docker compose logs api_gateway | grep -E "POST.*message|pipeline"
-```
+### 6. Reconnect
 
-**Erwartung**: Text wird übersetzt, TTS generiert, beide Seiten sehen Messages
+1. Reload the customer browser during a conversation. It returns to the same
+   conversation and the message history is still there.
+2. Take the staff browser offline for a few seconds (DevTools → Network →
+   Offline), then back online. The status shows "Connection interrupted"
+   (Verbindung unterbrochen), then "Connected" again, and new messages arrive.
 
----
+### 7. End the conversation
 
-### Test 5: Audio-Nachrichten (HTTPS erforderlich!)
-**Voraussetzung**: Admin und Customer verbunden
+1. On the staff conversation screen, click "End conversation"
+   (Gespräch beenden) and confirm with "End it" (Beenden).
+2. Staff return to the dashboard; the conversation appears as completed under
+   "Past conversations".
+3. The customer sees "This conversation has ended."
 
-**Customer sendet Audio**:
-1. ⏳ Toggle auf Mikrofon-Icon klicken
-2. ⏳ Browser fragt nach Mikrofon-Berechtigung → Erlauben
-3. ⏳ Record-Button klicken (Icon pulsiert rot)
-4. ⏳ 3-5 Sekunden sprechen (Arabisch)
-5. ⏳ Stop-Button klicken
-6. ⏳ Message wird gesendet (Optimistic UI)
-7. ⏳ ASR-Text erscheint (transkribierter arabischer Text)
+### 8. Sign out
 
-**Admin empfängt Translation**:
-1. ⏳ Message erscheint mit deutschem Text
-2. ⏳ Audio-Player mit deutscher TTS
-3. ⏳ Audio spielt automatisch ab
+1. Open "User account" (Benutzerkonto) and choose "Sign out" (Abmelden).
+2. The organisation list appears. Picking the organisation again asks for
+   Keycloak credentials unless the Keycloak session is still valid.
 
-**Fehlerbehebung**:
-- Mikrofon-Zugriff verweigert? → Nur über HTTPS möglich
-- Kein Audio? → Browser-Console prüfen (F12)
-- Audio-Format-Fehler? → MediaRecorder API Browser-Support prüfen
+## Pass criteria
 
-**Erwartung**: Audio-Aufnahme funktioniert, ASR + Translation + TTS Pipeline läuft
-
----
-
-### Test 6: WebSocket Reconnect
-**Voraussetzung**: Aktive Session mit Messages
-
-1. ⏳ Backend kurz stoppen:
-   ```bash
-   docker compose stop api_gateway
-   ```
-2. ⏳ Connection Status wird gelb/rot
-3. ⏳ Frontend zeigt "Verbindung verloren"
-4. ⏳ Backend neu starten:
-   ```bash
-   docker compose start api_gateway
-   ```
-5. ⏳ Connection Status wird gelb (reconnecting)
-6. ⏳ Nach 1-2 Sekunden grün (connected)
-7. ⏳ Message-Historie bleibt erhalten
-8. ⏳ Neue Messages funktionieren
-
-**Erwartung**: Auto-Reconnect funktioniert, keine Message-Verluste
-
----
-
-### Test 7: Session Termination
-**Voraussetzung**: Aktive Session
-
-**Admin beendet Session**:
-1. ⏳ Button "Session beenden" klicken
-2. ⏳ Bestätigungs-Dialog erscheint
-3. ⏳ "Ja, beenden" klicken
-4. ⏳ Admin kehrt zum Erstellungs-Screen zurück
-
-**Customer-Side**:
-1. ⏳ WebSocket-Event empfangen
-2. ⏳ Toast-Notification: "Session beendet"
-3. ⏳ Redirect zur Landing Page
-
-**Backend-Logs**:
-```bash
-docker compose logs api_gateway | grep "beendet"
-# Erwartung: 🔚 Session [ID] beendet
-```
-
-**Erwartung**: Session-Beendigung benachrichtigt beide Seiten
-
----
-
-## 🔍 Monitoring-Checkliste
-
-### Browser-Console (F12)
-- ✅ Keine CORS-Fehler
-- ✅ Keine JavaScript-Fehler
-- ✅ WebSocket-Verbindung erfolgreich (101 Switching Protocols)
-- ✅ API-Calls erfolgreich (200/201 Status)
-
-### Backend-Logs
-```bash
-# Alle Requests anzeigen
-docker compose logs -f api_gateway
-
-# WebSocket-Verbindungen
-docker compose logs api_gateway | grep -i "websocket\|ws"
-
-# Session-Events
-docker compose logs api_gateway | grep -i "session"
-
-# Pipeline-Processing
-docker compose logs api_gateway | grep -i "pipeline"
-```
-
-### Frontend-Logs
-```bash
-# Nginx Access Logs
-docker compose logs -f frontend
-
-# Fehler suchen
-docker compose logs frontend | grep -i "error"
-```
-
----
-
-## 🐛 Bekannte Probleme & Lösungen
-
-### Problem: WebSocket verbindet nicht
-**Symptome**: Roter Connection Status, Console: "WebSocket failed"
-**Lösung**:
-1. Backend-Logs prüfen: `docker compose logs api_gateway | tail -50`
-2. Traefik-Routing prüfen: `curl -I https://ssf.smart-village.solutions/health`
-3. WebSocket-Endpoint manuell testen: `wscat -c wss://ssf.smart-village.solutions/ws/TEST1234/admin`
-
-### Problem: Mikrofon-Zugriff verweigert
-**Symptome**: "Permission denied" bei Audio-Aufnahme
-**Lösung**:
-- Browser-Einstellungen: Site-Permissions → Mikrofon erlauben
-- Nur über HTTPS möglich (HTTP blockiert Media Capture API)
-- Firewall/Antivirus prüfen
-
-### Problem: Audio spielt nicht ab
-**Symptome**: Audio-Player erscheint, aber kein Sound
-**Lösung**:
-1. Browser-Console prüfen (AutoPlay-Policy)
-2. Erste User-Geste erforderlich (Button-Click)
-3. Browser-Volume prüfen
-4. Audio-Format: Prüfe ob Browser WAV/MP3 unterstützt
-
-### Problem: Session-ID nicht gefunden (404)
-**Symptome**: "Session not found" beim Beitreten
-**Lösung**:
-1. Session-ID korrekt eingegeben? (8 Zeichen, Großbuchstaben)
-2. Session noch aktiv? Timeout = 15 Minuten
-3. Backend-Logs: `docker compose logs api_gateway | grep [SESSION_ID]`
-
----
-
-## ✅ Erfolgs-Kriterien
-
-**Deployment ist erfolgreich, wenn**:
-- [x] Frontend erreichbar unter https://translate.smart-village.solutions
-- [x] SSL/TLS funktioniert (Let's Encrypt)
-- [x] Landing Page lädt ohne Fehler
-- [ ] Passwort-Schutz funktioniert
-- [ ] Admin kann Session erstellen
-- [ ] Customer kann Session beitreten
-- [ ] Text-Nachrichten werden übersetzt
-- [ ] Audio-Nachrichten funktionieren (ASR + TTS)
-- [ ] WebSocket-Verbindung stabil
-- [ ] Auto-Reconnect funktioniert
-- [ ] Session-Beendigung benachrichtigt beide Seiten
-- [ ] Keine kritischen Fehler in Logs
-
-**Status**: 🟡 Deployment erfolgreich, manuelle Tests ausstehend
+- Every automated check prints the expected value.
+- `/admin` and `/customer` show the not-found page; staff can only sign in
+  through `/login`.
+- Staff can start, enter, and end a conversation.
+- A customer can join by QR code, link, and code, and both sides exchange
+  translated text and voice messages.
+- The browser consoles show no CORS or JavaScript errors, and the logs show no
+  unexpected errors.

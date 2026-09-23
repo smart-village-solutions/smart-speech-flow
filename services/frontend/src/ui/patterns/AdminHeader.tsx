@@ -6,6 +6,7 @@ interface AdminHeaderProps {
   onHome: () => void;
   onFeedback: () => void;
   onSignOut: () => void;
+  accountUrl?: string;
   studioUrl?: string;
 }
 
@@ -15,6 +16,7 @@ export function AdminHeader({
   onHome,
   onFeedback,
   onSignOut,
+  accountUrl,
   studioUrl,
 }: Readonly<AdminHeaderProps>) {
   return (
@@ -22,7 +24,9 @@ export function AdminHeader({
       onBack={onBack}
       onHome={onHome}
       onFeedback={onFeedback}
-      trailing={<AdminUserMenu onSignOut={onSignOut} studioUrl={studioUrl} />}
+      trailing={
+        <AdminUserMenu onSignOut={onSignOut} accountUrl={accountUrl} studioUrl={studioUrl} />
+      }
     />
   );
 }

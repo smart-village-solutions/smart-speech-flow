@@ -110,7 +110,7 @@ def _unauthorized() -> HTTPException:
 
 
 def get_auth_login_directory_provider() -> Callable[[], StudioLoginDirectoryService]:
-    """Defer directory configuration until after the legacy authentication branch."""
+    """Defer directory configuration so a request without a bearer token stays a 401."""
     return get_studio_login_directory_service
 
 

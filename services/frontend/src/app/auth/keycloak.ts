@@ -37,6 +37,10 @@ function clearSession(session: ActiveKeycloakSession): void {
   session.client.clearToken();
 }
 
+function tenantCallback(tenantId: string): string {
+  return `${window.location.origin}/login/${encodeURIComponent(tenantId)}`;
+}
+
 export async function requireKeycloakLogin(
   config: AppConfig,
   tenant: LoginTenant
@@ -63,7 +67,7 @@ export async function requireKeycloakLogin(
   session.initialization ??= session.client.init({
     onLoad: 'login-required',
     pkceMethod: 'S256',
-    redirectUri: `${window.location.origin}/login/${encodeURIComponent(tenant.id)}`,
+    redirectUri: tenantCallback(tenant.id),
   });
   try {
     const authenticated = await session.initialization;
@@ -81,14 +85,30 @@ export async function requireKeycloakLogin(
   }
 }
 
-/** Returns the selected tenant's public Studio URL only to system administrators. */
-export function getStudioUrlForSystemAdmin(): string | null {
+function authenticatedSession(): ActiveKeycloakSession | null {
   if (active === null || !active.initialized || active.client.authenticated !== true) {
     return null;
   }
-  return active.client.realmAccess?.roles?.includes('system_admin') === true
-    ? (active.studioUrl ?? null)
+  return active;
+}
+
+/** Returns the selected tenant's public Studio URL only to system administrators. */
+export function getStudioUrlForSystemAdmin(): string | null {
+  const session = authenticatedSession();
+  if (session === null) return null;
+  return session.client.realmAccess?.roles?.includes('system_admin') === true
+    ? (session.studioUrl ?? null)
     : null;
+}
+
+/**
+ * Keycloak's own account console, where users change their email and password.
+ * Its back link returns to the tenant callback, which the client already allows.
+ */
+export function getAccountConsoleUrl(): string | null {
+  const session = authenticatedSession();
+  if (session === null) return null;
+  return session.client.createAccountUrl({ redirectUri: tenantCallback(session.tenantId) });
 }
 
 export async function getAdminAccessToken(): Promise<string | null> {

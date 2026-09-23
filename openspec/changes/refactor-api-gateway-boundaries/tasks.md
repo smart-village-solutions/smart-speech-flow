@@ -1,35 +1,29 @@
-## 1. Baseline and Contracts
+## 1. Characterization and Composition Root
 
-- [ ] 1.1 Capture REST/OpenAPI, WebSocket-frame, polling, and Redis-session characterization fixtures for existing behavior.
-- [ ] 1.2 Document ownership and dependency rules for the new gateway layers.
-- [ ] 1.3 Add typed configuration and a lifespan-owned dependency container without changing public behavior.
+- [ ] 1.1 Characterize current tenant-scoped admin/customer REST, Studio-runtime failure, consent/persistence, pipeline-metadata, realtime-ticket, polling, and lifespan contracts.
+- [ ] 1.2 Define dependency ownership and no-new-global rules, including provider override patterns for tests.
+- [ ] 1.3 Introduce a lifespan-owned `GatewayDependencies` container and dependency providers without changing public behavior.
+- [ ] 1.4 Migrate existing app-state collaborators and global adapters incrementally; add tests that isolated app instances do not share injected dependencies.
 
-## 2. Domain and Persistence
+## 2. Session, Message, and Pipeline Boundaries
 
-- [ ] 2.1 Move session, message, status, language-policy, and domain-event types into the domain layer.
-- [ ] 2.2 Define asynchronous `SessionRepository` and implement memory and Redis adapters with legacy-data compatibility.
-- [ ] 2.3 Implement `SessionService` and migrate admin/customer/session lifecycle routes.
-- [ ] 2.4 Add repository parity, lifecycle, timeout, and Redis migration tests.
+- [ ] 2.1 Record the legacy session cutover decision and operational evidence; either plan deletion or define a typed compatibility adapter.
+- [ ] 2.2 Define tenant-aware session/message domain contracts and async persistence ports while retaining `TenantSessionKey`, join-index, Redis, consent, and runtime-snapshot semantics.
+- [ ] 2.3 Extract application services for session lifecycle and message processing; migrate routes without public contract drift.
+- [ ] 2.4 Extract speech HTTP, validation/conversion, and audio-storage adapters behind typed ports; preserve pipeline metadata and failure mapping.
+- [ ] 2.5 Add parity, lifecycle, cross-tenant, persistence, and pipeline contract coverage.
 
-## 3. Speech Pipeline and Messaging
+## 3. Realtime, Polling, and Monitoring Boundaries
 
-- [ ] 3.1 Define the `SpeechPipeline` port and typed processing-result contract.
-- [ ] 3.2 Extract audio validation, conversion/storage, and ASR/Translation/TTS HTTP clients into infrastructure adapters.
-- [ ] 3.3 Implement `MessageService` and migrate unified text/audio message handling and pipeline metadata creation.
-- [ ] 3.4 Add unit and integration coverage for validation, service failures, metadata, and message persistence.
+- [ ] 3.1 Define typed realtime protocol and ticket-backend operations; migrate memory and Redis implementations without exposing Lua details.
+- [ ] 3.2 Extract connection registry, dispatcher, heartbeat, polling fallback, and monitoring collaborators behind focused interfaces.
+- [ ] 3.3 Migrate WebSocket, polling, and supported monitoring routes while preserving tenant isolation, frame, and endpoint behavior.
+- [ ] 3.4 Add realtime lifecycle, broadcast, heartbeat, polling, and cross-tenant denial integration coverage; coordinate public monitoring scope with #348.
 
-## 4. Realtime and Runtime
+## 4. Compatibility Cleanup and Verification
 
-- [ ] 4.1 Define realtime protocol models and extract connection registry, dispatcher, and heartbeat components.
-- [ ] 4.2 Extract polling fallback, adaptive polling, and realtime monitoring behind focused interfaces.
-- [ ] 4.3 Migrate WebSocket, polling, and monitoring routes while preserving frame and endpoint contracts.
-- [ ] 4.4 Move background loops into `runtime/tasks.py` and verify graceful startup and shutdown.
-- [ ] 4.5 Add WebSocket lifecycle, broadcast, heartbeat, fallback, and monitoring integration tests.
-
-## 5. Cleanup and Verification
-
-- [ ] 5.1 Migrate all first-party production imports and tests to the new packages.
-- [ ] 5.2 Convert legacy gateway modules into temporary compatibility facades and prohibit new production imports.
-- [ ] 5.3 Remove the unregistered duplicate `services/api_gateway/session.py` after consumer verification.
-- [ ] 5.4 Run the complete backend suite, API/OpenAPI contract tests, realtime integration tests, and load smoke tests.
-- [ ] 5.5 Update architecture and operational documentation with the final dependency map and migration status.
+- [ ] 4.1 Migrate first-party production imports and tests to the new boundaries; prohibit new production imports of compatibility adapters.
+- [ ] 4.2 Inventory remaining facades and consumers; remove only adapters with no required consumers.
+- [ ] 4.3 Remove obsolete duplicate modules only after consumer search and compatibility proof.
+- [ ] 4.4 Run the full gateway contract suite, tenant-isolation matrix, realtime integration suite, and configured real-system smoke coverage.
+- [ ] 4.5 Update architecture and operations documentation with final dependency ownership and migration status.

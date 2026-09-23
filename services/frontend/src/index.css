@@ -153,8 +153,8 @@
   }
 }
 
-/* body belongs to the legacy pages: these are the v3 base values, so /admin,
-   /customer and /legacy render exactly as they did before the revamp. The new
+/* body belongs to the pages outside ScreenShell, such as the not-found page:
+   these are the v3 base values they rendered with before the revamp. The new
    UI never inherits from here — ScreenShell sets its own surface, colour and
    typeface. Putting the theme on body instead cost /admin white-on-white text,
    found on 2026-08-25. */
@@ -169,7 +169,7 @@ body {
 }
 
 /* The new UI's surface, typeface and colour scheme live on its own root, not on
-   body, so /admin, /customer and /legacy inherit exactly what they did before
+   body, so the pages outside ScreenShell inherit exactly what they did before
    the revamp. The :has() rule is only for overscroll — ScreenShell already
    paints the area the customer can see. */
 html:has([data-screen-shell]) {
