@@ -77,6 +77,17 @@ def test_production_compose_preserves_the_existing_prometheus_volume():
     assert compose["volumes"]["prometheus-data"]["external"] is True
 
 
+def test_vllm_is_gated_behind_a_profile_in_both_compose_files():
+    """A routine deploy brings up all services with no service filter, so an
+    ungated vllm would start on every deploy -- either failing to pull (its
+    image is not yet on the host) or silently booting a GPU-reserving
+    container before its first boot has been measured by hand."""
+    for path in (DEVELOPMENT_COMPOSE_PATH, COMPOSE_PATH):
+        compose = yaml.safe_load(path.read_text())
+        vllm = compose["services"]["vllm"]
+        assert vllm["profiles"] == ["vllm"], path
+
+
 def _environment_by_name(service):
     return {
         entry.split("=", maxsplit=1)[0]: entry.split("=", maxsplit=1)[1]

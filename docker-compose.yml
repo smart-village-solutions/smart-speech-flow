@@ -246,6 +246,11 @@ services:
     restart: always
 
   vllm:
+    # Gated behind a profile so a routine `docker compose up` (no service
+    # filter) cannot start this GPU-reserving container before its first
+    # boot has been measured by hand. Remove this gate once the refinement
+    # backend is switched over to vllm.
+    profiles: ["vllm"]
     image: vllm/vllm-openai:v0.30.0
     # Never published: 8000 is the gateway's own local port.
     expose:

@@ -206,6 +206,12 @@ services:
     restart: unless-stopped
     pull_policy: never
   vllm:
+    # Gated behind a profile so a routine `docker compose up` (no service
+    # filter) cannot start this GPU-reserving container before its first
+    # boot has been measured by hand. Remove this gate once the refinement
+    # backend is switched over to vllm.
+    profiles:
+    - vllm
     image: vllm/vllm-openai@sha256:8a69ffad015f138d7170c4ddc429e230a3bc1c1719f67e14324749df200a4b90
     expose:
     - '8000'
