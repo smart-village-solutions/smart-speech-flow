@@ -151,8 +151,15 @@ class BaseTranslationRefiner:
     #: which must be indistinguishable from telemetry being switched off.
     quality_telemetry: Optional[Any] = None
 
+    #: Set by the gateway the same way as `quality_telemetry`. None means the
+    #: counters are not wired up, which must never change an outcome.
+    refinement_metrics: Optional[Any] = None
+
     def attach_quality_telemetry(self, telemetry: Optional[Any]) -> None:
         self.quality_telemetry = telemetry
+
+    def attach_refinement_metrics(self, metrics: Optional[Any]) -> None:
+        self.refinement_metrics = metrics
 
     def _emit_attempt(
         self,
@@ -209,6 +216,12 @@ class BaseTranslationRefiner:
             target_lang=target_lang,
             error_code=outcome.error_code,
         )
+        metrics = self.refinement_metrics
+        if metrics is not None:
+            try:
+                metrics.record(code.value, model_ref)
+            except Exception:  # metrics must never change an outcome
+                logger.warning("Refinement metrics update failed")
 
     def refine(
         self,

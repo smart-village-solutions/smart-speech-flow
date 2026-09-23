@@ -217,6 +217,55 @@ def test_a_skipped_refinement_is_emitted_as_skipped(monkeypatch):
     assert emitted[0]["outcome"] is mod.RefinementOutcomeCode.SKIPPED_LANGUAGE
 
 
+def test_emit_outcome_records_the_same_code_sent_to_telemetry(monkeypatch):
+    """The counter and the telemetry event must never disagree.
+
+    Both are driven from the one `code` computed inside `_emit_outcome`, so
+    this asserts the metrics call receives exactly the same
+    `RefinementOutcomeCode` value that `_emit_attempt` was given.
+    """
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = mod.NoOpTranslationRefiner()
+    attempted = []
+    recorded = []
+    monkeypatch.setattr(refiner, "_emit_attempt", lambda **kwargs: attempted.append(kwargs))
+    refiner.refinement_metrics = Mock(record=lambda outcome, model_ref: recorded.append((outcome, model_ref)))
+
+    refiner._emit_outcome(
+        mod.RefinementOutcome(text="x", changed=False, error="boom"),
+        role=mod.RefinerRole.PRIMARY,
+        model_ref="gemma-4-e4b-qat",
+        source_lang="de",
+        target_lang="en",
+    )
+
+    assert attempted[0]["outcome"] is mod.RefinementOutcomeCode.ERROR
+    assert recorded == [("error", "gemma-4-e4b-qat")]
+
+
+def test_refinement_metrics_failure_never_changes_the_outcome(monkeypatch, caplog):
+    """Metrics recording is best-effort, exactly like the telemetry emit."""
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = mod.NoOpTranslationRefiner()
+    monkeypatch.setattr(refiner, "_emit_attempt", lambda **kwargs: None)
+
+    def boom(outcome, model_ref):
+        raise RuntimeError("registry is down")
+
+    refiner.refinement_metrics = Mock(record=boom)
+
+    with caplog.at_level("WARNING"):
+        refiner._emit_outcome(
+            mod.RefinementOutcome(text="x", changed=False, error=None),
+            role=mod.RefinerRole.PRIMARY,
+            model_ref="gemma-4-e4b-qat",
+            source_lang="de",
+            target_lang="en",
+        )
+
+    assert "Refinement metrics update failed" in caplog.text
+
+
 def test_shadow_comparison_refiner_schedules_candidate(monkeypatch):
     mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
     refiner = mod.ShadowComparisonRefiner(
