@@ -51,6 +51,34 @@ tests:
         alertname: RefinementFailureRateHigh
         exp_alerts: []
 
+  # The error series springs into existence at 1, with no preceding zero
+  # sample to increase() from -- the shape a restart produces without
+  # refinement_metrics.pre_create_series. A single failure frozen at that
+  # value is genuinely invisible to increase() (Prometheus cannot tell "just
+  # started at 1" from "has always been 1"): that is the bug I3 fixes by
+  # pre-creating the zero sample. This case instead pins the next line of
+  # defence -- once failures keep happening every minute, increase() catches
+  # the ongoing rate even without ever having seen a zero sample, so the
+  # alert does not stay blind past the very first occurrence.
+  - interval: 1m
+    input_series:
+      - series: 'refinement_attempts_total{outcome="error",model_ref="gemma-4-e4b-qat"}'
+        values: "1+1x40"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: RefinementFailureRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: translation
+            exp_annotations:
+              summary: "Refinement attempts are happening and none are succeeding"
+              description: >-
+                Every refinement attempt in the last 6 hours has failed and none
+                has succeeded. Refinement fails open, so users still receive the
+                translation, but unpolished. Check that the refinement backend is
+                up and that the model is resident.
+
   # No attempts at all: an idle deployment must not alert.
   - interval: 1m
     input_series: []

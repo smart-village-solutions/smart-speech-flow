@@ -17,6 +17,30 @@ def test_counts_each_outcome_separately():
     assert value == 2.0
 
 
+def test_pre_create_series_touches_the_in_path_outcomes_at_zero():
+    """Prometheus increase() needs a prior sample; a series that first
+    appears on the first failure makes that failure invisible to the alert.
+    Shadow-only outcomes are deliberately not pre-created here."""
+    registry = CollectorRegistry()
+    metrics = RefinementMetrics(registry)
+
+    metrics.pre_create_series("gemma-4-e4b-qat")
+
+    for outcome in ("success", "error", "skipped_language"):
+        value = registry.get_sample_value(
+            "refinement_attempts_total",
+            {"outcome": outcome, "model_ref": "gemma-4-e4b-qat"},
+        )
+        assert value == 0.0, f"{outcome} series missing or non-zero before any refinement"
+
+    for outcome in ("skipped_overload", "submission_failed"):
+        value = registry.get_sample_value(
+            "refinement_attempts_total",
+            {"outcome": outcome, "model_ref": "gemma-4-e4b-qat"},
+        )
+        assert value is None, f"shadow-only outcome {outcome} must not be pre-created"
+
+
 class TestTheCounterSurvivesTheRegistryBoundary:
     """A counter is not a signal until /metrics can scrape it.
 

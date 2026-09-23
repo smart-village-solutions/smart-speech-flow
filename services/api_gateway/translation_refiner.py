@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from threading import Lock
 from typing import Any, Dict, Iterable, Optional
+from urllib.parse import urlparse
 
 import requests
 from requests import Response, exceptions
@@ -63,6 +64,29 @@ def _default_refinement_endpoint(backend: str) -> str:
     host = os.getenv("LLM_REFINEMENT_HOST", default_host)
     port = os.getenv("LLM_REFINEMENT_PORT", default_port)
     return f"{scheme}://{host}:{port}"
+
+
+def _looks_like_ollama_endpoint(endpoint: str) -> bool:
+    parsed = urlparse(endpoint)
+    return parsed.hostname == "ollama" or parsed.port == 11434
+
+
+def _warn_if_endpoint_pins_ollama(backend: str, explicit_endpoint: str) -> None:
+    """An explicit LLM_REFINEMENT_ENDPOINT silently overrides the backend switch.
+
+    Ollama also serves `/v1/chat/completions`, so a deployment that flips
+    LLM_REFINEMENT_BACKEND to vllm while an old Ollama endpoint lingers in
+    LLM_REFINEMENT_ENDPOINT keeps sending every request to Ollama and appears
+    to work. This only warns, never refuses: a vLLM instance deliberately
+    proxied through host `ollama` or port 11434 is a valid setup.
+    """
+    if backend == "vllm" and _looks_like_ollama_endpoint(explicit_endpoint):
+        logger.warning(
+            "LLM_REFINEMENT_BACKEND=vllm but LLM_REFINEMENT_ENDPOINT=%s looks "
+            "like an Ollama endpoint; refinement requests may be reaching "
+            "Ollama instead of vLLM",
+            explicit_endpoint,
+        )
 
 
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
@@ -499,8 +523,22 @@ class VllmTranslationRefiner(OllamaTranslationRefiner):
         choices = data.get("choices") or []
         if not choices:
             return ""
-        message = choices[0].get("message") or {}
-        return (message.get("content") or "").strip()
+        choice = choices[0]
+        message = choice.get("message") or {}
+        text = (message.get("content") or "").strip()
+        if choice.get("finish_reason") == "length":
+            # A response cut off at the token cap is worse than no refinement:
+            # it replaces a complete translation with a sentence fragment that
+            # then gets spoken aloud by TTS. Returning "" here routes through
+            # the same empty-response branch in `_perform_refinement`, which
+            # already keeps the original translation and records an error.
+            logger.warning(
+                "Translation refinement response truncated at max_tokens=%s; "
+                "discarding and keeping the original translation",
+                self.max_tokens,
+            )
+            return ""
+        return text
 
 
 class ShadowComparisonRefiner(OllamaTranslationRefiner):
@@ -616,9 +654,10 @@ def get_translation_refiner() -> BaseTranslationRefiner:
     # variable (even to an empty default), so `os.getenv`'s own fallback
     # never fires and the backend-aware default below would otherwise be
     # unreachable.
-    endpoint = os.getenv("LLM_REFINEMENT_ENDPOINT", "").strip() or _default_refinement_endpoint(
-        backend
-    )
+    explicit_endpoint = os.getenv("LLM_REFINEMENT_ENDPOINT", "").strip()
+    endpoint = explicit_endpoint or _default_refinement_endpoint(backend)
+    if explicit_endpoint:
+        _warn_if_endpoint_pins_ollama(backend, explicit_endpoint)
     primary_model = os.getenv(
         "LLM_REFINEMENT_PRIMARY_MODEL", os.getenv("LLM_REFINEMENT_MODEL", "gpt-oss:20b")
     )
@@ -631,7 +670,12 @@ def get_translation_refiner() -> BaseTranslationRefiner:
     max_retries = _env_number("LLM_REFINEMENT_MAX_RETRIES", "1", int, 1)
     think = _env_flag("LLM_REFINEMENT_THINK") is True
 
-    logger.info("LLM translation refinement enabled with model '%s' at %s", model, endpoint)
+    logger.info(
+        "LLM translation refinement enabled with model '%s' at %s (backend=%s)",
+        model,
+        endpoint,
+        backend,
+    )
     args = {
         "endpoint": endpoint,
         "model": model,

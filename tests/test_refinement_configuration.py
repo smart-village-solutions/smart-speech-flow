@@ -288,3 +288,60 @@ def test_max_tokens_below_the_minimum_fails_startup(env):
 
     with pytest.raises(ValueError, match="LLM_REFINEMENT_MAX_TOKENS"):
         refiner_module.get_translation_refiner()
+
+
+def test_vllm_backend_with_an_ollama_hostname_endpoint_warns(env, caplog):
+    """.env.example used to ship LLM_REFINEMENT_ENDPOINT=http://ollama:11434,
+    which a deployment switching to vllm could leave in place: Ollama also
+    serves /v1/chat/completions, so every request would silently keep
+    reaching Ollama."""
+    env(ENABLED="true", BACKEND="vllm", ENDPOINT="http://ollama:11434")
+
+    with caplog.at_level(logging.WARNING, logger=refiner_module.logger.name):
+        refiner_module.get_translation_refiner()
+
+    warning = " ".join(r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+    assert "LLM_REFINEMENT_BACKEND" in warning
+    assert "LLM_REFINEMENT_ENDPOINT" in warning
+
+
+def test_vllm_backend_with_port_11434_on_another_host_warns(env, caplog):
+    env(ENABLED="true", BACKEND="vllm", ENDPOINT="http://ollama.internal:11434")
+
+    with caplog.at_level(logging.WARNING, logger=refiner_module.logger.name):
+        refiner_module.get_translation_refiner()
+
+    warning = " ".join(r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+    assert "LLM_REFINEMENT_ENDPOINT" in warning
+
+
+def test_vllm_backend_with_a_normal_vllm_endpoint_does_not_warn(env, caplog):
+    """A vLLM instance deliberately proxied through an unusual host is valid;
+    the check must never refuse it, only warn on the Ollama-looking shape."""
+    env(ENABLED="true", BACKEND="vllm", ENDPOINT="http://vllm.internal:9000")
+
+    with caplog.at_level(logging.WARNING, logger=refiner_module.logger.name):
+        refiner_module.get_translation_refiner()
+
+    warning = " ".join(r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+    assert "LLM_REFINEMENT_ENDPOINT" not in warning
+
+
+def test_ollama_backend_with_its_own_endpoint_does_not_warn(env, caplog):
+    env(ENABLED="true", BACKEND="ollama", ENDPOINT="http://ollama:11434")
+
+    with caplog.at_level(logging.WARNING, logger=refiner_module.logger.name):
+        refiner_module.get_translation_refiner()
+
+    warning = " ".join(r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+    assert "LLM_REFINEMENT_ENDPOINT" not in warning
+
+
+def test_startup_log_names_the_configured_backend(env, caplog):
+    env(ENABLED="true", BACKEND="vllm", ENDPOINT="http://vllm.internal:9000")
+
+    with caplog.at_level(logging.INFO, logger=refiner_module.logger.name):
+        refiner_module.get_translation_refiner()
+
+    info = " ".join(r.getMessage() for r in caplog.records if r.levelno == logging.INFO)
+    assert "backend=vllm" in info

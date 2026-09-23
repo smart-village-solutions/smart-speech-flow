@@ -470,6 +470,60 @@ def test_vllm_refiner_reads_an_empty_choice_list_as_an_empty_response():
     assert refiner._extract_text({"choices": [{"message": {"content": " x "}}]}) == "x"
 
 
+def test_vllm_refiner_discards_a_truncated_response(monkeypatch, caplog):
+    """A response cut off at the token cap must never replace the original
+    translation: it comes back mid-sentence and is then spoken aloud by TTS,
+    which is worse than leaving the unrefined translation in place."""
+    import logging
+
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    response = Mock()
+    response.json.return_value = {
+        "choices": [
+            {
+                "message": {"content": "This is a long sentence that got cut off mid"},
+                "finish_reason": "length",
+            }
+        ]
+    }
+    monkeypatch.setattr(mod.requests, "post", Mock(return_value=response))
+
+    refiner = mod.VllmTranslationRefiner(
+        endpoint="http://vllm:8000",
+        model="m",
+        timeout_seconds=4.0,
+        temperature=0.7,
+        max_retries=1,
+        max_tokens=256,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        outcome = refiner._perform_refinement("Guten tag", "de", "en")
+
+    assert outcome.text == "Guten tag"
+    assert outcome.changed is False
+    assert outcome.error == "empty_response"
+    assert outcome.error_code == mod.QualityErrorCode.UPSTREAM_MALFORMED_RESPONSE
+    assert any("truncated" in r.getMessage() for r in caplog.records)
+
+
+def test_vllm_refiner_accepts_a_normal_stop_response():
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = mod.VllmTranslationRefiner(
+        endpoint="http://vllm:8000",
+        model="m",
+        timeout_seconds=4.0,
+        temperature=0.7,
+        max_retries=1,
+    )
+
+    text = refiner._extract_text(
+        {"choices": [{"message": {"content": "Guten Tag."}, "finish_reason": "stop"}]}
+    )
+
+    assert text == "Guten Tag."
+
+
 def test_extract_text_reads_the_ollama_response_field():
     mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
     refiner = mod.OllamaTranslationRefiner(
