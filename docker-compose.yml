@@ -129,7 +129,10 @@ services:
       - LLM_REFINEMENT_PRIMARY_MODEL=${LLM_REFINEMENT_PRIMARY_MODEL:-gpt-oss:20b}
       - LLM_REFINEMENT_CANDIDATE_MODEL=${LLM_REFINEMENT_CANDIDATE_MODEL:-phi4-mini}
       - LLM_REFINEMENT_SHADOW_QUEUE_LIMIT=${LLM_REFINEMENT_SHADOW_QUEUE_LIMIT:-4}
-      - LLM_REFINEMENT_ENDPOINT=${LLM_REFINEMENT_ENDPOINT:-http://ollama:11434}
+      # Blank, not defaulted to Ollama's address: an explicit value here would
+      # always win over LLM_REFINEMENT_BACKEND's own endpoint default, which
+      # would break the one-variable backend switch.
+      - LLM_REFINEMENT_ENDPOINT=${LLM_REFINEMENT_ENDPOINT:-}
       - LLM_REFINEMENT_TIMEOUT=${LLM_REFINEMENT_TIMEOUT:-4.0}
       - LLM_REFINEMENT_TEMPERATURE=${LLM_REFINEMENT_TEMPERATURE:-0.7}
       - LLM_REFINEMENT_THINK=${LLM_REFINEMENT_THINK:-false}

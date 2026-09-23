@@ -214,6 +214,26 @@ def test_backend_selects_the_vllm_refiner(env):
     assert refiner.endpoint == "http://vllm:8000"
 
 
+def test_blank_endpoint_falls_through_to_the_backend_default(env):
+    """Compose always sets LLM_REFINEMENT_ENDPOINT, even to an empty string,
+    so the variable is present but blank rather than absent. That must still
+    reach the backend-aware default -- otherwise the one-variable switch to
+    vllm silently keeps talking to Ollama."""
+    env(ENABLED="true", BACKEND="vllm", ENDPOINT="")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.endpoint == "http://vllm:8000"
+
+
+def test_non_blank_endpoint_still_overrides_the_backend_default(env):
+    env(ENABLED="true", BACKEND="vllm", ENDPOINT="http://vllm.internal:9000")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.endpoint == "http://vllm.internal:9000"
+
+
 def test_backend_defaults_to_ollama(env):
     env(ENABLED="true")
 

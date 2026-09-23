@@ -612,7 +612,13 @@ def get_translation_refiner() -> BaseTranslationRefiner:
             "LLM_REFINEMENT_MODE=shadow_compare is not supported on "
             "LLM_REFINEMENT_BACKEND=vllm; run the shadow comparison on ollama"
         )
-    endpoint = os.getenv("LLM_REFINEMENT_ENDPOINT", _default_refinement_endpoint(backend))
+    # Blank counts as unset, matching `_env_flag`: compose always sets this
+    # variable (even to an empty default), so `os.getenv`'s own fallback
+    # never fires and the backend-aware default below would otherwise be
+    # unreachable.
+    endpoint = os.getenv("LLM_REFINEMENT_ENDPOINT", "").strip() or _default_refinement_endpoint(
+        backend
+    )
     primary_model = os.getenv(
         "LLM_REFINEMENT_PRIMARY_MODEL", os.getenv("LLM_REFINEMENT_MODEL", "gpt-oss:20b")
     )
