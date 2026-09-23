@@ -25,16 +25,6 @@ const envSchema = z.object({
     .refine(isHttpOrigin, 'Expected an HTTP(S) origin')
     .default('https://auth.kassel.smartspeechflow.de'),
   VITE_KEYCLOAK_CLIENT_ID: z.string().trim().min(1).default('ssf-frontend'),
-  VITE_APP_PASSWORD: z.string().default('ssf2025kassel'),
-  /**
-   * Temporary legacy `/admin` password. `z.string()` with a default, not a
-   * required value: a build that forgets it must fall back rather than fail to
-   * start.
-   *
-   * This is not a secret. Vite inlines it into the bundle at build time, so
-   * anyone who opens the JavaScript can read it. It is a speed bump during the
-   * Keycloak migration, not a security control.
-   */
   VITE_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   /** The message endpoint runs ASR, translation and TTS synchronously. */
   VITE_PIPELINE_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
@@ -46,7 +36,6 @@ export interface AppConfig {
   brand: BrandId;
   keycloakUrl: string;
   keycloakClientId: string;
-  adminPassword: string;
   requestTimeoutMs: number;
   pipelineTimeoutMs: number;
 }
@@ -71,7 +60,6 @@ export function readConfig(source: Record<string, unknown> = import.meta.env): A
     brand: env.VITE_BRAND,
     keycloakUrl: env.VITE_KEYCLOAK_URL.replace(/\/$/, ''),
     keycloakClientId: env.VITE_KEYCLOAK_CLIENT_ID,
-    adminPassword: env.VITE_APP_PASSWORD,
     requestTimeoutMs: env.VITE_REQUEST_TIMEOUT_MS,
     pipelineTimeoutMs: env.VITE_PIPELINE_TIMEOUT_MS,
   };

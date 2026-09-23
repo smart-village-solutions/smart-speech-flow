@@ -122,7 +122,8 @@ def test_production_gateway_uses_the_approved_tenant_timeout_and_cutover_values(
     gateway = load_production_compose()["services"]["api_gateway"]
     environment = _environment_by_name(gateway)
 
-    assert environment["SSF_ENABLE_LEGACY_ADMIN_ACCESS"] == "false"
+    assert "SSF_ENABLE_LEGACY_ADMIN_ACCESS" not in environment
+    assert "SSF_LEGACY_ADMIN_ACCESS_CODE" not in environment
     assert environment["SSF_SESSION_RECONNECT_GRACE_MINUTES"] == "30"
     assert environment["SSF_SESSION_TIMEOUT_WARNING_MINUTES"] == "5"
     assert environment["SSF_SESSION_MAX_HOURS"] == "8"

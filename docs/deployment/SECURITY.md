@@ -143,17 +143,12 @@ its PostgreSQL database and management endpoint have no public route. See the
 
 ## Default Passwords
 
-### ⚠️ Frontend Demo Access Code
+### ✅ Administrative Access
 
-The frontend uses a client-visible demo access code for the landing page:
-- **Configuration:** Set in `.env` using the legacy variable name `FRONTEND_DEMO_PASSWORD`
-- **Default:** `ssf2025kassel`
-- **Docker:** `FRONTEND_DEMO_PASSWORD` is mapped to the intentionally public `VITE_DEMO_ACCESS_CODE` build argument and then embedded in the browser bundle
-- **Security:** Client-side only, with no backend validation; never treat it as authentication or authorization
-- **Production:** Customize it if desired, but enforce access restrictions through server-side authentication
-
-The Keycloak infrastructure does not yet replace this demo gate. SSF login and
-authorization integration require a separate approved change.
+The frontend no longer ships a demo or administrative password. Staff sign in
+at `/login` through their tenant's Keycloak realm, and the gateway accepts only
+bearer tokens for `/api/admin/**`. The former `FRONTEND_DEMO_PASSWORD` variable
+is ignored and can be removed from `.env`.
 
 ### ✅ Grafana Admin Password
 
