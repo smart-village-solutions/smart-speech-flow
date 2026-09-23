@@ -408,7 +408,6 @@ services:
         VITE_WS_BASE_URL: wss://ssf.smart-village.solutions
         VITE_KEYCLOAK_URL: https://auth.dialog.kassel.de
         VITE_KEYCLOAK_CLIENT_ID: ssf-frontend
-        VITE_DEMO_ACCESS_CODE: ${FRONTEND_DEMO_PASSWORD:-ssf2025kassel}
     networks:
       - default
     labels:

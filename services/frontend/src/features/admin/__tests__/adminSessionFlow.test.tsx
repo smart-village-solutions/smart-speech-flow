@@ -16,28 +16,19 @@ vi.mock('@/app/auth/keycloak', () => ({
 
 const services = { config: readConfig({}) };
 
-const signIn = async () => {
-  await userEvent.type(await screen.findByLabelText('E-Mail-Adresse'), 'admin@example.com');
-  await userEvent.type(screen.getByLabelText('Passwort'), 'ssf2025kassel');
-  await userEvent.click(screen.getByRole('button', { name: 'Anmelden' }));
-};
-
-const renderApp = async (route: string) => {
+const renderApp = () =>
   renderWithProviders(<AppRoutes />, {
-    route,
+    route: '/login/tenant-kassel',
     locale: 'de',
     services,
   });
 
-  if (route === '/admin') await signIn();
-};
-
-describe.each(['/admin', '/login/tenant-kassel'])('the admin session flow at %s', (route) => {
+describe('the admin session flow', () => {
   beforeEach(() => sessionStorage.clear());
 
   it('creates a session, hands out the invite, and enters the conversation', async () => {
     installFakeClipboard();
-    await renderApp(route);
+    renderApp();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Neues Gespräch starten' }));
 
@@ -55,7 +46,7 @@ describe.each(['/admin', '/login/tenant-kassel'])('the admin session flow at %s'
   });
 
   it('re-enters a session that is still open', async () => {
-    await renderApp(route);
+    renderApp();
 
     await userEvent.click(
       await screen.findByRole('button', { name: 'Gespräch AR000001 fortsetzen' })
@@ -65,7 +56,7 @@ describe.each(['/admin', '/login/tenant-kassel'])('the admin session flow at %s'
   });
 
   it('leaves a completed session alone', async () => {
-    await renderApp(route);
+    renderApp();
 
     // Waiting on the rows, not the heading: the heading renders before the
     // query answers, and "no button for TR000001" is only meaningful once the
@@ -75,7 +66,7 @@ describe.each(['/admin', '/login/tenant-kassel'])('the admin session flow at %s'
   });
 
   it('drops the open session when the admin signs out', async () => {
-    await renderApp(route);
+    renderApp();
 
     await userEvent.click(
       await screen.findByRole('button', { name: 'Gespräch AR000001 fortsetzen' })
@@ -85,11 +76,7 @@ describe.each(['/admin', '/login/tenant-kassel'])('the admin session flow at %s'
     await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
     await userEvent.click(screen.getByRole('button', { name: 'Abmelden' }));
 
-    if (route === '/admin') {
-      expect(await screen.findByRole('heading', { name: 'Code eingeben' })).toBeInTheDocument();
-    } else {
-      expect(await screen.findByRole('link', { name: 'Stadt Kassel' })).toBeInTheDocument();
-    }
+    expect(await screen.findByRole('link', { name: 'Stadt Kassel' })).toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

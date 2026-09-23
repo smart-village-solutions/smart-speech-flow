@@ -57,7 +57,6 @@ def auth_environment(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_ISSUER", KASSEL_ISSUER)
     monkeypatch.setenv("KEYCLOAK_AUDIENCE", AUDIENCE)
     monkeypatch.setenv("KEYCLOAK_REQUIRED_ROLE", "ssf-user")
-    monkeypatch.setenv("SSF_ENABLE_LEGACY_ADMIN_ACCESS", "false")
     service = StudioLoginDirectoryService(DirectoryFetcher(), cache_seconds=60)
     app.dependency_overrides[get_auth_login_directory_provider] = lambda: lambda: service
     yield service
@@ -302,8 +301,11 @@ def test_tenant_dependency_receives_verified_claims_from_async_auth(
     assert response.json() == {"tenant_id": "tenant-fulda", "revision": REVISION}
 
 
+# An environment file from before #216 may still set the retired variables.
 @pytest.mark.parametrize("configured", [False, True])
-def test_legacy_access_is_rejected_even_when_environment_flag_is_set(monkeypatch, configured):
+def test_legacy_access_header_is_ignored_even_when_retired_variables_are_set(
+    monkeypatch, configured
+):
     monkeypatch.setenv("SSF_ENABLE_LEGACY_ADMIN_ACCESS", "true")
     monkeypatch.setenv("SSF_LEGACY_ADMIN_ACCESS_CODE", "transition-code")
     if configured:
@@ -320,8 +322,7 @@ def test_legacy_access_is_rejected_even_when_environment_flag_is_set(monkeypatch
     assert response.status_code == 401
 
 
-def test_admin_endpoints_reject_legacy_access_after_transition_is_disabled(monkeypatch):
-    monkeypatch.setenv("SSF_LEGACY_ADMIN_ACCESS_CODE", "transition-code")
+def test_admin_endpoints_ignore_the_legacy_access_header():
     response = client.get(
         "/api/admin/session/history", headers={"X-SSF-Legacy-Access": "transition-code"}
     )

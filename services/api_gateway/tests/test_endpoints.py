@@ -42,7 +42,7 @@ def test_cors_preflight_allows_correlation_id_from_customer_ui():
     assert "x-correlation-id" in response.headers["access-control-allow-headers"].lower()
 
 
-def test_cors_preflight_allows_legacy_admin_access_header():
+def test_cors_preflight_no_longer_allows_the_retired_legacy_access_header():
     response = client.options(
         "/api/admin/session/create",
         headers={
@@ -52,5 +52,8 @@ def test_cors_preflight_allows_legacy_admin_access_header():
         },
     )
 
-    assert response.status_code == 200
-    assert "x-ssf-legacy-access" in response.headers["access-control-allow-headers"].lower()
+    assert response.status_code == 400
+    assert (
+        "x-ssf-legacy-access"
+        not in response.headers.get("access-control-allow-headers", "").lower()
+    )

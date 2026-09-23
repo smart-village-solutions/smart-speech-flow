@@ -8,8 +8,8 @@ import { describe, expect, it } from 'vitest';
  * what buried the microphone and keyboard buttons on the conversation screen.
  *
  * `dvh` tracks the viewport actually on screen, so the layout fits whatever the
- * device gives it. The legacy pages under `pages/` and `components/` still use
- * `vh` and are deliberately not scanned.
+ * device gives it. The legacy not-found page under `pages/` still uses `vh`
+ * and is deliberately not scanned.
  */
 // Deliberately quantifier-free: these run over every line of every screen,
 // and a `+` before a literal is where a scanner like this starts backtracking.

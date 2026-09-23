@@ -38,12 +38,9 @@ describe('Keycloak configuration', () => {
   });
 });
 
-describe('the interim admin password', () => {
-  it('falls back to the legacy password when none is set', () => {
-    expect(readConfig({}).adminPassword).toBe('ssf2025kassel');
-  });
-
-  it('takes the password the build supplies', () => {
-    expect(readConfig({ VITE_APP_PASSWORD: 'letmein' }).adminPassword).toBe('letmein');
+describe('the retired admin password', () => {
+  it('is not read into the configuration, so no build can embed it', () => {
+    const retired = { VITE_APP_PASSWORD: crypto.randomUUID() };
+    expect(readConfig(retired)).not.toHaveProperty('adminPassword');
   });
 });
