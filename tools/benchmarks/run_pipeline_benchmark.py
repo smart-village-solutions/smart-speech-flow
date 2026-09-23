@@ -47,11 +47,17 @@ def refinement_summary(results: list[dict[str, Any]]) -> dict[str, float | int]:
     `summary()`'s values at all. Passing those failures as `errors` as well
     counted them twice and halved every reported rate. Latency is reported
     over successes only, so the median stops being the timeout ceiling.
+
+    A skip is excluded the same way as an error, but for the opposite reason:
+    it is not a failure, but its recorded duration is 0 ms because the
+    language policy short-circuited before any request went out. Counting it
+    as a fast success would drag the latency figures down and hide the skip.
     """
     durations = [
         item["refinement_ms"]
         for item in results
-        if item.get("refinement_ms") is not None and item.get("refinement_status") != "error"
+        if item.get("refinement_ms") is not None
+        and item.get("refinement_status") not in ("error", "skipped")
     ]
     errors = sum(item.get("refinement_status") == "error" for item in results)
     return summary(durations, errors, 0)

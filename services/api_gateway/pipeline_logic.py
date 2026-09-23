@@ -624,6 +624,20 @@ def _run_text_translation_step(
     return translation_resp, translation_json, translation_text, tts_text
 
 
+def _primary_refinement_status(outcome: RefinementOutcome) -> str:
+    """The refinement stage's own status, for the pipeline debug/benchmark record.
+
+    A skip has no error, so `"error" if outcome.error else "success"` recorded
+    it as a success with a 0 ms duration -- dragging benchmark latency figures
+    down and hiding the skip. Shared by both pipelines so they cannot drift.
+    """
+    if outcome.error:
+        return "error"
+    if outcome.skipped_reason:
+        return "skipped"
+    return "success"
+
+
 def _apply_translation_refinement(
     *,
     processed_text: str,
@@ -663,7 +677,7 @@ def _apply_translation_refinement(
             "model": outcome.model,
             "refinement_comparison": {
                 "primary_model": outcome.model,
-                "primary_status": "error" if outcome.error else "success",
+                "primary_status": _primary_refinement_status(outcome),
                 "candidate_model": outcome.candidate_model,
                 "candidate_status": outcome.candidate_status,
             },
@@ -1693,7 +1707,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
                     "model": outcome.model,
                     "refinement_comparison": {
                         "primary_model": outcome.model,
-                        "primary_status": "error" if outcome.error else "success",
+                        "primary_status": _primary_refinement_status(outcome),
                         "candidate_model": outcome.candidate_model,
                         "candidate_status": outcome.candidate_status,
                     },

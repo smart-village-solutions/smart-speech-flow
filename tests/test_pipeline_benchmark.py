@@ -36,3 +36,21 @@ def test_end_to_end_summary_still_counts_failures_in_the_denominator():
     result = summary([1.0] * 3, errors=1, timeouts=0)
 
     assert result["error_rate"] == pytest.approx(0.25)
+
+
+def test_refinement_summary_excludes_skipped_attempts_from_latency():
+    """A skip has no request behind it, so its recorded 0 ms duration is not
+    a real latency sample. Counting it as a fast success would drag the
+    reported latency figures down and hide that the skip happened at all."""
+    from tools.benchmarks.run_pipeline_benchmark import refinement_summary
+
+    results = (
+        [{"refinement_ms": 500.0, "refinement_status": "success"} for _ in range(10)]
+        + [{"refinement_ms": 0.0, "refinement_status": "skipped"} for _ in range(5)]
+    )
+
+    result = refinement_summary(results)
+
+    assert result["count"] == 10
+    assert result["median_ms"] == 500.0
+    assert result["error_rate"] == 0.0
