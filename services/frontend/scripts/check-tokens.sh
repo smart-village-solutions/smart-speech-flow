@@ -107,7 +107,6 @@ assert '--ac: #2464a5'
 assert '--status-ok: #22c55e'
 assert '--status-warn: #f59e0b'
 assert '--status-down: #ef4444'
-assert '--color-kc-brand: #0d4a73'
 
 # Phase 2 tokens. The QR plate and ink are asserted once rather than per theme,
 # because a dark-on-dark QR does not scan and they deliberately have no .dark
@@ -127,14 +126,6 @@ assert '--spacing-admin-content: 128px'
 assert '--spacing-status-top: 80px'
 assert '--spacing-composer-lift: 40px'
 assert '--spacing-flag-pill: 16px'
-
-# The Keycloak imitation stays light in both themes. Asserted because the failure
-# is invisible in the light theme: without these pins, dark mode paints
-# --fg-strong (#fff) onto the card's white and the fields become unreadable.
-assert '.kc-page'
-assert '--fg-strong: #111827'
-assert '--surface-field: #fff'
-assert '--border-card: #d1d5db'
 
 # Tailwind v4 dropped v3's preflight `button { cursor: pointer }`, so every
 # button in the app fell back to the browser default arrow. The needle is the

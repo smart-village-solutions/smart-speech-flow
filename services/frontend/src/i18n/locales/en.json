@@ -91,19 +91,6 @@
     "unknown": "Something went wrong."
   },
   "admin": {
-    "login": {
-      "tenant": "Smart Speech Flow",
-      "title": "Sign in",
-      "topBar": "Keycloak — Smart Speech Flow",
-      "email": "Email address",
-      "emailPlaceholder": "admin@example.com",
-      "password": "Password",
-      "passwordPlaceholder": "••••••••",
-      "submit": "Sign in",
-      "back": "Back to Smart Speech Flow",
-      "invalidEmail": "Please enter a valid email address.",
-      "invalidCredentials": "Invalid credentials."
-    },
     "tenantLogin": {
       "title": "Login",
       "instruction": "Please select your department or organisation from the list.",

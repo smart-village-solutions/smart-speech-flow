@@ -17,14 +17,12 @@ conversations until every item below is complete:
    admin console or admin API, but not to users imported from JSON with an
    explicit `realmRoles` list; those users see "Something went wrong" in the
    console.
-3. `SSF_ENABLE_LEGACY_ADMIN_ACCESS=false` is active before multi-realm login is
-   enabled.
-4. The separate OpenSpec change `add-multi-tenant-operations` has implemented
+3. The separate OpenSpec change `add-multi-tenant-operations` has implemented
    and passed its tenant-isolation tests for session creation, history, lookup,
    termination, messages, audio, and customer joins. The login-directory work
    establishes identity context only; it does not prove conversation storage
    isolation.
-5. Operators have manually verified login, reuse of an existing SSO session,
+4. Operators have manually verified login, reuse of an existing SSO session,
    logout, an unknown tenant route, a Studio outage, and cross-tenant negative
    access paths in the deployed environment.
 
@@ -71,7 +69,6 @@ Das Frontend ist vollständig implementiert und bereit für Deployment unter **t
 
 ### Implementierte Features
 
-- ✅ Passwortgeschützte Landing Page (ssf2025kassel)
 - ✅ Admin Session Management (Erstellen, Beenden, Status)
 - ✅ Customer Session Join (ID-Eingabe, Sprach-Auswahl, Validierung)
 - ✅ WebSocket Echtzeit-Kommunikation mit Auto-Reconnect
@@ -143,42 +140,8 @@ docker compose ps api_gateway
 
 ## 📋 Post-Deployment Tests
 
-### Test 1: Landing Page
-- [ ] Öffne https://translate.smart-village.solutions
-- [ ] Passwort `ssf2025kassel` eingeben
-- [ ] "Intern (Verwaltung)" und "Kunde" Buttons sichtbar
-
-### Test 2: Admin Session Flow
-- [ ] Klick auf "Intern (Verwaltung)"
-- [ ] "Neue Session erstellen" Button klicken
-- [ ] Session-ID wird angezeigt (8 Zeichen)
-- [ ] Status: "Warte auf Kunde" (gelb)
-- [ ] WebSocket Status: Grüner Punkt (verbunden)
-
-### Test 3: Customer Join Flow
-- [ ] In neuem Tab: https://translate.smart-village.solutions
-- [ ] Klick auf "Kunde"
-- [ ] Session-ID vom Admin eingeben
-- [ ] Sprache auswählen (z.B. English)
-- [ ] "Session beitreten" klicken
-- [ ] Status: "Erfolgreich verbunden"
-
-### Test 4: Messaging
-**Admin-Seite:**
-- [ ] Text-Nachricht senden → erscheint als blauer Bubble
-- [ ] Audio aufnehmen → Mikrofon-Icon wird rot, Timer läuft
-- [ ] Audio senden → erscheint als blauer Bubble mit Audio-Player
-
-**Customer-Seite:**
-- [ ] Übersetzte Nachricht erscheint als grauer Bubble
-- [ ] Audio wird automatisch abgespielt (nach User-Interaktion)
-- [ ] Metadata ist einsehbar (Klick auf Details)
-
-### Test 5: WebSocket Reconnect
-- [ ] Backend kurz stoppen: `docker compose stop api_gateway`
-- [ ] WebSocket Status: Roter/Gelber Punkt
-- [ ] Backend starten: `docker compose start api_gateway`
-- [ ] WebSocket Status: Grüner Punkt (Auto-Reconnect nach ~2-5 Sekunden)
+Run the automated and manual checks in [SMOKE_TESTS.md](SMOKE_TESTS.md) after
+every deployment.
 
 ## 🐛 Troubleshooting
 

@@ -284,9 +284,10 @@ describe('tenant login routes', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('keeps the legacy password screen isolated at /admin', async () => {
+  it('serves the not-found page at the retired /admin password entry', async () => {
     renderWithProviders(<AppRoutes />, { route: '/admin' });
-    expect(await screen.findByLabelText('Passwort')).toBeInTheDocument();
+    expect(await screen.findByText(/404/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Passwort')).not.toBeInTheDocument();
     expect(requireKeycloakLogin).not.toHaveBeenCalled();
   });
 });
@@ -310,6 +311,13 @@ describe('AppRoutes', () => {
 
   it('renders the not-found page for the removed legacy admin route', async () => {
     renderWithProviders(<AppRoutes />, { route: '/legacy/admin' });
+
+    expect(await screen.findByText(/404/)).toBeInTheDocument();
+  });
+
+  it('renders the not-found page for the removed customer page', async () => {
+    sessionStorage.setItem('authenticated', 'true');
+    renderWithProviders(<AppRoutes />, { route: '/customer' });
 
     expect(await screen.findByText(/404/)).toBeInTheDocument();
   });

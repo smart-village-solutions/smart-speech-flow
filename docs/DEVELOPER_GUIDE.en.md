@@ -260,7 +260,7 @@ Variable groups currently interpolated by Compose include:
 - `LLM_REFINEMENT_*` for optional Ollama refinement. `LLM_REFINEMENT_ENABLED=false` is a kill switch and disables refinement whatever `LLM_REFINEMENT_MODE` says; otherwise an explicit mode wins, `ENABLED=true` without a mode means `primary_only`, and nothing set means `disabled`. The gateway refuses to start on an unrecognised boolean or mode, a timeout outside 3.0–5.0 seconds, a negative temperature, or a retry count or shadow queue limit below 1. A disabled configuration skips the tuning checks, so the kill switch always works.
 - `GLOBAL_RATE_*` and `MESSAGE_RATE_*` for gateway throttling.
 - `ENVIRONMENT` and `DEVELOPMENT_CORS_ORIGINS` for environment-specific CORS behaviour.
-- `GRAFANA_ADMIN_*` and `FRONTEND_DEMO_PASSWORD` for local monitoring and demo access.
+- `GRAFANA_ADMIN_*` for local monitoring access.
 
 In the current Compose stack, `REDIS_URL`, `REDIS_NAMESPACE`, and `CLIENT_BASE_URL` are assigned in `docker-compose.yml` rather than interpolated from `.env`. The `AUDIO_*` variables are likewise documented and passed by Compose, but the gateway currently reads only `SSF_AUDIO_BASE_DIR`; it uses a fixed 24-hour retention period and an hourly cleanup interval. Do not rely on `.env` changes to the `AUDIO_*` variables to change runtime audio-storage behaviour. The following values document those fixed settings:
 
