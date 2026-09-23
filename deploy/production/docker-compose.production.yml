@@ -101,9 +101,12 @@ services:
     - AUDIO_CLEANUP_INTERVAL_MINUTES=60
     - ENABLE_PIPELINE_METADATA=true
     - LLM_REFINEMENT_ENABLED=${LLM_REFINEMENT_ENABLED:-true}
-    - LLM_REFINEMENT_MODEL=${LLM_REFINEMENT_MODEL:-gpt-oss:20b}
+    # No default here: an explicit default would always win over the
+    # backend-aware default translation_refiner.py resolves (ollama keeps
+    # gpt-oss:20b, vllm gets qwen3.5-4b), breaking the one-variable switch.
+    - LLM_REFINEMENT_MODEL=${LLM_REFINEMENT_MODEL-}
     - LLM_REFINEMENT_MODE=${LLM_REFINEMENT_MODE:-primary_only}
-    - LLM_REFINEMENT_PRIMARY_MODEL=${LLM_REFINEMENT_PRIMARY_MODEL:-gpt-oss:20b}
+    - LLM_REFINEMENT_PRIMARY_MODEL=${LLM_REFINEMENT_PRIMARY_MODEL-}
     - LLM_REFINEMENT_CANDIDATE_MODEL=${LLM_REFINEMENT_CANDIDATE_MODEL:-phi4-mini}
     - LLM_REFINEMENT_SHADOW_QUEUE_LIMIT=${LLM_REFINEMENT_SHADOW_QUEUE_LIMIT:-4}
     # Blank, not defaulted to Ollama's address: an explicit value here would

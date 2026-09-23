@@ -1,8 +1,14 @@
 import re
+import sys
 from pathlib import Path
 
 import yaml
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from services.api_gateway import translation_refiner as refiner_module
 
 COMPOSE_PATH = Path("deploy/production/docker-compose.production.yml")
 ENV_EXAMPLE_PATH = Path("deploy/production/production.env.example")
@@ -96,16 +102,36 @@ def test_vllm_is_gated_behind_a_profile_in_both_compose_files():
         assert vllm["profiles"] == ["vllm"], path
 
 
-def _served_model_variable(vllm_service):
+def _served_model_arg(vllm_service):
     for arg in vllm_service["command"]:
         if arg.startswith("--served-model-name="):
-            match = re.search(r"\$\{(\w+)", arg)
-            assert match, f"could not parse a variable out of {arg!r}"
-            return match.group(1)
+            return arg
     raise AssertionError("vllm command has no --served-model-name")
 
 
+def _served_model_variable(vllm_service):
+    arg = _served_model_arg(vllm_service)
+    match = re.search(r"\$\{(\w+)", arg)
+    assert match, f"could not parse a variable out of {arg!r}"
+    return match.group(1)
+
+
+def _served_model_default(vllm_service):
+    """The `default` half of `${VAR:-default}` or `${VAR-default}`."""
+    arg = _served_model_arg(vllm_service)
+    match = re.search(r"\$\{\w+:?-([^}]*)\}", arg)
+    assert match, f"could not parse a default out of {arg!r}"
+    return match.group(1)
+
+
 def test_vllm_served_model_name_uses_the_same_variable_the_gateway_resolves_first():
+    """Also asserts the two sides' defaults agree, with no model variable
+    set at all -- the defect this guards against: an operator who never sets
+    LLM_REFINEMENT_PRIMARY_MODEL gets a gateway asking for one model name and
+    a vllm server advertising another, and every refinement 404s. Neither
+    compose's own default nor translation_refiner.py's backend-aware default
+    may drift alone."""
+    gateway_default = refiner_module._default_refinement_model("vllm")
     for path in (DEVELOPMENT_COMPOSE_PATH, COMPOSE_PATH):
         compose = yaml.safe_load(path.read_text())
         environment = _environment_by_name(compose["services"]["api_gateway"])
@@ -113,6 +139,7 @@ def test_vllm_served_model_name_uses_the_same_variable_the_gateway_resolves_firs
 
         vllm = compose["services"]["vllm"]
         assert _served_model_variable(vllm) == GATEWAY_MODEL_VARIABLE, path
+        assert _served_model_default(vllm) == gateway_default, path
 
 
 def test_skip_target_languages_default_is_reachable_with_an_explicitly_empty_value():

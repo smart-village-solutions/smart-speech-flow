@@ -66,6 +66,23 @@ def _default_refinement_endpoint(backend: str) -> str:
     return f"{scheme}://{host}:{port}"
 
 
+_BACKEND_DEFAULT_MODELS = {
+    "ollama": "gpt-oss:20b",
+    "vllm": "qwen3.5-4b",
+}
+
+
+def _default_refinement_model(backend: str) -> str:
+    """The model a backend serves when no model variable is set.
+
+    Mirrors `_default_refinement_endpoint`: the vllm service's
+    --served-model-name defaults to the same "qwen3.5-4b" string, so an
+    unset LLM_REFINEMENT_PRIMARY_MODEL resolves to a model vLLM actually
+    advertises instead of the Ollama-only "gpt-oss:20b" default.
+    """
+    return _BACKEND_DEFAULT_MODELS[backend]
+
+
 def _looks_like_ollama_endpoint(endpoint: str) -> bool:
     parsed = urlparse(endpoint)
     return parsed.hostname == "ollama" or parsed.port == 11434
@@ -660,8 +677,14 @@ def get_translation_refiner() -> BaseTranslationRefiner:
     endpoint = explicit_endpoint or _default_refinement_endpoint(backend)
     if explicit_endpoint:
         _warn_if_endpoint_pins_ollama(backend, explicit_endpoint)
-    primary_model = os.getenv(
-        "LLM_REFINEMENT_PRIMARY_MODEL", os.getenv("LLM_REFINEMENT_MODEL", "gpt-oss:20b")
+    # Blank counts as unset, matching the endpoint resolution above: compose
+    # always sets these variables (even to an empty default), so `os.getenv`'s
+    # own fallback never fires and the backend-aware default below would
+    # otherwise be unreachable.
+    explicit_primary_model = os.getenv("LLM_REFINEMENT_PRIMARY_MODEL", "").strip()
+    explicit_legacy_model = os.getenv("LLM_REFINEMENT_MODEL", "").strip()
+    primary_model = (
+        explicit_primary_model or explicit_legacy_model or _default_refinement_model(backend)
     )
     candidate_model = os.getenv("LLM_REFINEMENT_CANDIDATE_MODEL", "phi4-mini")
     model = candidate_model if mode == "candidate_only" else primary_model

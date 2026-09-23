@@ -347,6 +347,57 @@ def test_ollama_backend_with_its_own_endpoint_does_not_warn(env, caplog):
     assert "LLM_REFINEMENT_ENDPOINT" not in warning
 
 
+def test_ollama_backend_defaults_to_gpt_oss_with_no_model_variables_set(env):
+    """Today's behaviour, unchanged: an ollama deployment that sets neither
+    model variable must keep resolving gpt-oss:20b."""
+    env(ENABLED="true", BACKEND="ollama")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.model == "gpt-oss:20b"
+
+
+def test_vllm_backend_defaults_to_qwen_with_no_model_variables_set(env):
+    """The defect this guards against: the vllm service only advertises
+    qwen3.5-4b under --served-model-name, so a gateway that still asked for
+    gpt-oss:20b here would 404 on every refinement."""
+    env(ENABLED="true", BACKEND="vllm")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.model == "qwen3.5-4b"
+
+
+@pytest.mark.parametrize("backend", ["ollama", "vllm"])
+def test_explicit_primary_model_wins_on_both_backends(env, backend):
+    env(ENABLED="true", BACKEND=backend, PRIMARY_MODEL="custom-model")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.model == "custom-model"
+
+
+@pytest.mark.parametrize("backend", ["ollama", "vllm"])
+def test_legacy_model_variable_wins_when_primary_model_is_unset(env, backend):
+    env(ENABLED="true", BACKEND=backend, MODEL="legacy-model")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.model == "legacy-model"
+
+
+@pytest.mark.parametrize("backend", ["ollama", "vllm"])
+def test_blank_model_variables_fall_through_to_the_backend_default(env, backend):
+    """Compose always sets both model variables, even to an empty string, so
+    the variable is present but blank rather than absent -- same reasoning
+    as the endpoint's own blank-falls-through test."""
+    env(ENABLED="true", BACKEND=backend, PRIMARY_MODEL="", MODEL="")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.model == refiner_module._default_refinement_model(backend)
+
+
 def test_startup_log_names_the_configured_backend(env, caplog):
     env(ENABLED="true", BACKEND="vllm", ENDPOINT="http://vllm.internal:9000")
 
