@@ -170,6 +170,22 @@ def test_timeout_bounds_are_inclusive(env, timeout, expected):
     assert refiner_module.get_translation_refiner().timeout_seconds == pytest.approx(expected)
 
 
+def test_default_temperature_is_zero_when_unset(env):
+    env(MODE="primary_only")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.temperature == pytest.approx(0.0)
+
+
+def test_explicit_temperature_overrides_default(env):
+    env(MODE="primary_only", TEMPERATURE="0.5")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.temperature == pytest.approx(0.5)
+
+
 def test_valid_tuning_values_reach_the_refiner(env):
     env(
         MODE="shadow_compare",

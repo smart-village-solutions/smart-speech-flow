@@ -625,7 +625,9 @@ def get_translation_refiner() -> BaseTranslationRefiner:
     candidate_model = os.getenv("LLM_REFINEMENT_CANDIDATE_MODEL", "phi4-mini")
     model = candidate_model if mode == "candidate_only" else primary_model
     timeout_seconds = _env_number("LLM_REFINEMENT_TIMEOUT", "4.0", float, 3.0, 5.0)
-    temperature = _env_number("LLM_REFINEMENT_TEMPERATURE", "0.7", float, 0.0)
+    # Refinement edits rather than composes, so zero temperature ensures deterministic,
+    # reproducible output. Sampling temperature invites hallucinations that alter content.
+    temperature = _env_number("LLM_REFINEMENT_TEMPERATURE", "0.0", float, 0.0)
     max_retries = _env_number("LLM_REFINEMENT_MAX_RETRIES", "1", int, 1)
     think = _env_flag("LLM_REFINEMENT_THINK") is True
 
