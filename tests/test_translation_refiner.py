@@ -422,6 +422,54 @@ def test_shadow_comparison_refiner_recovers_when_submission_fails(monkeypatch):
     assert refiner.pending == 0
 
 
+def test_vllm_refiner_posts_a_chat_completion_with_thinking_off(monkeypatch):
+    """Thinking inside a 4 s budget is what made gpt-oss:20b unusable."""
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    response = Mock()
+    response.json.return_value = {"choices": [{"message": {"content": "Guten Tag."}}]}
+    monkeypatch.setattr(mod.requests, "post", Mock(return_value=response))
+
+    refiner = mod.VllmTranslationRefiner(
+        endpoint="http://vllm:8000",
+        model="gemma-4-e4b-qat",
+        timeout_seconds=4.0,
+        temperature=0.7,
+        max_retries=1,
+    )
+
+    outcome = refiner._perform_refinement("Guten tag", "ar", "de")
+
+    assert outcome.text == "Guten Tag."
+    mod.requests.post.assert_called_once_with(
+        "http://vllm:8000/v1/chat/completions",
+        json={
+            "model": "gemma-4-e4b-qat",
+            "messages": [{"role": "user", "content": ANY}],
+            "stream": False,
+            "temperature": 0.7,
+            "max_tokens": 256,
+            "chat_template_kwargs": {"enable_thinking": False},
+        },
+        timeout=4.0,
+    )
+    sent_messages = mod.requests.post.call_args.kwargs["json"]["messages"]
+    assert sent_messages[0]["role"] == "user"
+
+
+def test_vllm_refiner_reads_an_empty_choice_list_as_an_empty_response():
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = mod.VllmTranslationRefiner(
+        endpoint="http://vllm:8000",
+        model="m",
+        timeout_seconds=4.0,
+        temperature=0.7,
+        max_retries=1,
+    )
+
+    assert refiner._extract_text({"choices": []}) == ""
+    assert refiner._extract_text({"choices": [{"message": {"content": " x "}}]}) == "x"
+
+
 def test_extract_text_reads_the_ollama_response_field():
     mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
     refiner = mod.OllamaTranslationRefiner(

@@ -335,7 +335,7 @@ def test_translation_refiner_default_endpoint_and_enabled_configuration():
             reload_module(
                 "services.api_gateway.translation_refiner",
                 {"LLM_REFINEMENT_ENABLED": "0"},
-            )._default_refinement_endpoint()
+            )._default_refinement_endpoint("ollama")
             == "https://llm:443"
         )
 

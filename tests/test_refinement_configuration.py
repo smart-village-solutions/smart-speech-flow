@@ -24,6 +24,8 @@ REFINEMENT_VARS = (
     "LLM_REFINEMENT_THINK",
     "LLM_REFINEMENT_MAX_RETRIES",
     "LLM_REFINEMENT_SKIP_TARGET_LANGUAGES",
+    "LLM_REFINEMENT_BACKEND",
+    "LLM_REFINEMENT_MAX_TOKENS",
 )
 
 
@@ -201,3 +203,52 @@ def test_skip_list_can_be_emptied(env):
     refiner = refiner_module.get_translation_refiner()
 
     assert refiner.skip_target_languages == frozenset()
+
+
+def test_backend_selects_the_vllm_refiner(env):
+    env(ENABLED="true", BACKEND="vllm")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert type(refiner).__name__ == "VllmTranslationRefiner"
+    assert refiner.endpoint == "http://vllm:8000"
+
+
+def test_backend_defaults_to_ollama(env):
+    env(ENABLED="true")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert type(refiner).__name__ == "OllamaTranslationRefiner"
+    assert refiner.endpoint == "http://ollama:11434"
+
+
+def test_an_unknown_backend_stops_startup(env):
+    env(ENABLED="true", BACKEND="vlm")
+
+    with pytest.raises(ValueError, match="LLM_REFINEMENT_BACKEND"):
+        refiner_module.get_translation_refiner()
+
+
+def test_shadow_compare_is_rejected_on_vllm(env):
+    """The shadow refiner speaks Ollama's API; failing loudly beats a silent
+    fallback to the wrong backend."""
+    env(MODE="shadow_compare", BACKEND="vllm")
+
+    with pytest.raises(ValueError, match="shadow_compare"):
+        refiner_module.get_translation_refiner()
+
+
+def test_max_tokens_reaches_the_vllm_refiner(env):
+    env(ENABLED="true", BACKEND="vllm", MAX_TOKENS="128")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.max_tokens == 128
+
+
+def test_max_tokens_below_the_minimum_fails_startup(env):
+    env(ENABLED="true", BACKEND="vllm", MAX_TOKENS="8")
+
+    with pytest.raises(ValueError, match="LLM_REFINEMENT_MAX_TOKENS"):
+        refiner_module.get_translation_refiner()

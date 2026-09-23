@@ -39,10 +39,29 @@ def _skip_target_languages() -> frozenset[str]:
     return frozenset(_normalized_language(code) for code in raw.split(",") if code.strip())
 
 
-def _default_refinement_endpoint() -> str:
+REFINEMENT_BACKENDS = ("ollama", "vllm")
+_BACKEND_DEFAULT_ENDPOINTS = {
+    "ollama": ("ollama", "11434"),
+    "vllm": ("vllm", "8000"),
+}
+
+
+def _resolve_refinement_backend() -> str:
+    raw = os.getenv("LLM_REFINEMENT_BACKEND", "ollama")
+    backend = raw.strip().lower() or "ollama"
+    if backend not in REFINEMENT_BACKENDS:
+        raise ValueError(
+            f"LLM_REFINEMENT_BACKEND={raw!r} is not supported; "
+            f"use one of {', '.join(REFINEMENT_BACKENDS)}"
+        )
+    return backend
+
+
+def _default_refinement_endpoint(backend: str) -> str:
+    default_host, default_port = _BACKEND_DEFAULT_ENDPOINTS[backend]
     scheme = os.getenv("LLM_REFINEMENT_SCHEME", "http")
-    host = os.getenv("LLM_REFINEMENT_HOST", "ollama")
-    port = os.getenv("LLM_REFINEMENT_PORT", "11434")
+    host = os.getenv("LLM_REFINEMENT_HOST", default_host)
+    port = os.getenv("LLM_REFINEMENT_PORT", default_port)
     return f"{scheme}://{host}:{port}"
 
 
@@ -433,6 +452,57 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         )
 
 
+class VllmTranslationRefiner(OllamaTranslationRefiner):
+    """Refines translation output through vLLM's OpenAI-compatible API.
+
+    Retry, timeout, telemetry and the language policy are inherited; only the
+    request shape and the response shape differ.
+    """
+
+    def __init__(
+        self,
+        endpoint: str,
+        model: str,
+        timeout_seconds: float,
+        temperature: float,
+        max_retries: int,
+        think: bool = False,
+        skip_target_languages: Optional[Iterable[str]] = None,
+        max_tokens: int = 256,
+    ) -> None:
+        super().__init__(
+            endpoint,
+            model,
+            timeout_seconds,
+            temperature,
+            max_retries,
+            think,
+            skip_target_languages,
+        )
+        self.max_tokens = max_tokens
+
+    def _request(self, prompt: str) -> Response:
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            # Deliberation inside a 4 s budget is what made gpt-oss:20b
+            # unusable; models that reason by default must be told not to.
+            "chat_template_kwargs": {"enable_thinking": self.think},
+        }
+        url = f"{self.endpoint}/v1/chat/completions"
+        return requests.post(url, json=payload, timeout=self.timeout_seconds)
+
+    def _extract_text(self, data: Dict[str, Any]) -> str:
+        choices = data.get("choices") or []
+        if not choices:
+            return ""
+        message = choices[0].get("message") or {}
+        return (message.get("content") or "").strip()
+
+
 class ShadowComparisonRefiner(OllamaTranslationRefiner):
     """Executes the primary model in-path and a bounded candidate job in background."""
 
@@ -536,7 +606,13 @@ def get_translation_refiner() -> BaseTranslationRefiner:
         logger.info("LLM translation refinement disabled")
         return NoOpTranslationRefiner()
 
-    endpoint = os.getenv("LLM_REFINEMENT_ENDPOINT", _default_refinement_endpoint())
+    backend = _resolve_refinement_backend()
+    if backend == "vllm" and mode == "shadow_compare":
+        raise ValueError(
+            "LLM_REFINEMENT_MODE=shadow_compare is not supported on "
+            "LLM_REFINEMENT_BACKEND=vllm; run the shadow comparison on ollama"
+        )
+    endpoint = os.getenv("LLM_REFINEMENT_ENDPOINT", _default_refinement_endpoint(backend))
     primary_model = os.getenv(
         "LLM_REFINEMENT_PRIMARY_MODEL", os.getenv("LLM_REFINEMENT_MODEL", "gpt-oss:20b")
     )
@@ -563,6 +639,11 @@ def get_translation_refiner() -> BaseTranslationRefiner:
             candidate_model=candidate_model,
             queue_limit=_env_number("LLM_REFINEMENT_SHADOW_QUEUE_LIMIT", "4", int, 1),
         )
+    if backend == "vllm":
+        return VllmTranslationRefiner(
+            **args,
+            max_tokens=_env_number("LLM_REFINEMENT_MAX_TOKENS", "256", int, 16),
+        )
     return OllamaTranslationRefiner(**args)
 
 
@@ -573,6 +654,7 @@ __all__ = [
     "BaseTranslationRefiner",
     "NoOpTranslationRefiner",
     "OllamaTranslationRefiner",
+    "VllmTranslationRefiner",
     "ShadowComparisonRefiner",
     "get_translation_refiner",
     "translation_refiner",

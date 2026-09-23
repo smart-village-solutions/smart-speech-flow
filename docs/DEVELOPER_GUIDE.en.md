@@ -257,7 +257,11 @@ Use `.env.example` as the documented reference for Compose configuration. Keep e
 
 Variable groups currently interpolated by Compose include:
 
-- `LLM_REFINEMENT_*` for optional Ollama refinement. `LLM_REFINEMENT_ENABLED=false` is a kill switch and disables refinement whatever `LLM_REFINEMENT_MODE` says; otherwise an explicit mode wins, `ENABLED=true` without a mode means `primary_only`, and nothing set means `disabled`. The gateway refuses to start on an unrecognised boolean or mode, a timeout outside 3.0–5.0 seconds, a negative temperature, or a retry count or shadow queue limit below 1. A disabled configuration skips the tuning checks, so the kill switch always works.
+- `LLM_REFINEMENT_*` for optional translation refinement. `LLM_REFINEMENT_ENABLED=false` is a kill switch and disables refinement whatever `LLM_REFINEMENT_MODE` says; otherwise an explicit mode wins, `ENABLED=true` without a mode means `primary_only`, and nothing set means `disabled`. The gateway refuses to start on an unrecognised boolean or mode, a timeout outside 3.0–5.0 seconds, a negative temperature, or a retry count or shadow queue limit below 1. A disabled configuration skips the tuning checks, so the kill switch always works.
+  - `LLM_REFINEMENT_BACKEND` selects which server answers refinement requests: `ollama` (the default) or `vllm`. An unrecognised value refuses to start, naming the variable. `LLM_REFINEMENT_ENDPOINT`'s default follows the backend (`http://ollama:11434` or `http://vllm:8000`) unless `LLM_REFINEMENT_SCHEME`/`HOST`/`PORT` override it. `LLM_REFINEMENT_MODE=shadow_compare` is rejected on `vllm`: the shadow candidate speaks Ollama's API, so run the shadow comparison on `ollama`.
+  - `LLM_REFINEMENT_MAX_TOKENS` bounds the generated rewrite on the `vllm` backend (default `256`, minimum `16`). A refinement is one or two sentences, so this is a safety cap rather than a tuning knob.
+  - `LLM_REFINEMENT_SKIP_TARGET_LANGUAGES` (default `am,ti,ku,fa`) lists target languages left unrefined, comma separated; an empty value refines every target language.
+  - The vLLM backend's candidate models enable reasoning ("thinking") by default; the request explicitly disables it (`chat_template_kwargs.enable_thinking=false`) so refinement stays inside its 4-second budget.
 - `GLOBAL_RATE_*` and `MESSAGE_RATE_*` for gateway throttling.
 - `ENVIRONMENT` and `DEVELOPMENT_CORS_ORIGINS` for environment-specific CORS behaviour.
 - `GRAFANA_ADMIN_*` for local monitoring access.
