@@ -23,6 +23,7 @@ REFINEMENT_VARS = (
     "LLM_REFINEMENT_TEMPERATURE",
     "LLM_REFINEMENT_THINK",
     "LLM_REFINEMENT_MAX_RETRIES",
+    "LLM_REFINEMENT_SKIP_TARGET_LANGUAGES",
 )
 
 
@@ -184,3 +185,19 @@ def test_valid_tuning_values_reach_the_refiner(env):
     assert refiner.max_retries == 3
     assert refiner.think is True
     assert refiner.queue_limit == 2
+
+
+def test_skip_list_defaults_to_the_four_unsupported_languages(env):
+    env(ENABLED="true")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.skip_target_languages == frozenset({"am", "ti", "ku", "fa"})
+
+
+def test_skip_list_can_be_emptied(env):
+    env(ENABLED="true", SKIP_TARGET_LANGUAGES="")
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.skip_target_languages == frozenset()

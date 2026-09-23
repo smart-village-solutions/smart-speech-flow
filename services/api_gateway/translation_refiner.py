@@ -5,7 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from threading import Lock
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 import requests
 from requests import Response, exceptions
@@ -20,47 +20,23 @@ from .quality_telemetry import (
 
 logger = logging.getLogger(__name__)
 
-# Languages listed as supported by the Phi-4-mini-instruct model card.  Phi is
-# still used as a target-language editor, so an unsupported source language is
-# deliberately not a reason to skip refinement; it merely withholds the source
-# text as an unreliable semantic reference.
-_PHI4_MINI_SUPPORTED_LANGUAGE_CODES = frozenset(
-    {
-        "ar",
-        "cs",
-        "da",
-        "de",
-        "en",
-        "es",
-        "fi",
-        "fr",
-        "he",
-        "hu",
-        "it",
-        "ja",
-        "ko",
-        "nl",
-        "no",
-        "pl",
-        "pt",
-        "ru",
-        "sv",
-        "th",
-        "tr",
-        "uk",
-        "zh",
-    }
-)
+DEFAULT_SKIP_TARGET_LANGUAGES = "am,ti,ku,fa"
 
 
-def _language_code_is_supported_by_phi4_mini(language_code: str) -> bool:
-    """Return whether a language code is covered by Phi-4-mini's model card."""
-    normalized_code = language_code.strip().lower().split("-", maxsplit=1)[0]
-    return normalized_code in _PHI4_MINI_SUPPORTED_LANGUAGE_CODES
+def _normalized_language(code: str) -> str:
+    return code.strip().lower().split("-", maxsplit=1)[0]
 
 
-def _is_phi4_mini_model(model: str) -> bool:
-    return model.strip().lower().startswith("phi4-mini")
+def _skip_target_languages() -> frozenset[str]:
+    """Target languages the refiner leaves untouched.
+
+    The default is the four supported languages Phi-4-mini's model card does
+    not cover, which keeps behaviour identical to the model-name check this
+    replaces. Which languages get refined is a product decision, so it belongs
+    in configuration rather than in a check on the model's name.
+    """
+    raw = os.getenv("LLM_REFINEMENT_SKIP_TARGET_LANGUAGES", DEFAULT_SKIP_TARGET_LANGUAGES)
+    return frozenset(_normalized_language(code) for code in raw.split(",") if code.strip())
 
 
 def _default_refinement_endpoint() -> str:
@@ -160,6 +136,7 @@ class RefinementOutcome:
     model: Optional[str] = None
     candidate_model: Optional[str] = None
     candidate_status: Optional[str] = None
+    skipped_reason: Optional[str] = None
 
 
 _CANDIDATE_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="refinement-shadow")
@@ -216,11 +193,16 @@ class BaseTranslationRefiner:
         source_lang: str,
         target_lang: str,
     ) -> None:
-        failed = bool(outcome.error)
+        if outcome.skipped_reason:
+            code = RefinementOutcomeCode.SKIPPED_LANGUAGE
+        elif outcome.error:
+            code = RefinementOutcomeCode.ERROR
+        else:
+            code = RefinementOutcomeCode.SUCCESS
         self._emit_attempt(
             role=role,
             model_ref=model_ref,
-            outcome=(RefinementOutcomeCode.ERROR if failed else RefinementOutcomeCode.SUCCESS),
+            outcome=code,
             latency_ms=int(outcome.latency_ms or 0),
             changed=bool(outcome.changed),
             source_lang=source_lang,
@@ -262,6 +244,7 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         temperature: float,
         max_retries: int,
         think: bool = False,
+        skip_target_languages: Optional[Iterable[str]] = None,
     ) -> None:
         self.endpoint = endpoint.rstrip("/")
         self.model = model
@@ -269,6 +252,9 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         self.temperature = temperature
         self.max_retries = max(1, max_retries)
         self.think = think
+        self.skip_target_languages = frozenset(
+            _normalized_language(code) for code in (skip_target_languages or ())
+        )
         self.is_active = True
 
     def _build_prompt(
@@ -292,10 +278,7 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
             prompt += f"\nOriginal language code: {source_lang}."
         if target_lang:
             prompt += f"\nTarget language code: {target_lang}."
-        if original_text and (
-            not _is_phi4_mini_model(self.model)
-            or _language_code_is_supported_by_phi4_mini(source_lang)
-        ):
+        if original_text and _normalized_language(source_lang) not in self.skip_target_languages:
             prompt += (
                 "\nUse the original input only to verify that meaning is preserved. "
                 "Do not translate again unless the current translation contains a clear error."
@@ -351,15 +334,15 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
                 text=text, changed=False, latency_ms=0.0, error=None, model=self.model
             )
 
-        if _is_phi4_mini_model(self.model) and not _language_code_is_supported_by_phi4_mini(
-            target_lang
-        ):
-            logger.info(
-                "Skipping Phi-4-mini refinement for unsupported target language '%s'",
-                target_lang,
-            )
+        if _normalized_language(target_lang) in self.skip_target_languages:
+            logger.info("Skipping refinement for unsupported target language '%s'", target_lang)
             return RefinementOutcome(
-                text=text, changed=False, latency_ms=0.0, error=None, model=self.model
+                text=text,
+                changed=False,
+                latency_ms=0.0,
+                error=None,
+                model=self.model,
+                skipped_reason="unsupported_target_language",
             )
 
         prompt = self._build_prompt(text, source_lang, target_lang, context)
@@ -452,6 +435,7 @@ class ShadowComparisonRefiner(OllamaTranslationRefiner):
                 self.temperature,
                 self.max_retries,
                 self.think,
+                skip_target_languages=self.skip_target_languages,
             )
             # _perform_refinement, not refine: the latter would emit this as a
             # PRIMARY attempt under the candidate's model name.
@@ -546,6 +530,7 @@ def get_translation_refiner() -> BaseTranslationRefiner:
         "temperature": temperature,
         "max_retries": max_retries,
         "think": think,
+        "skip_target_languages": _skip_target_languages(),
     }
     if mode == "shadow_compare":
         return ShadowComparisonRefiner(

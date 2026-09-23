@@ -2,6 +2,8 @@ import importlib
 import os
 from unittest.mock import ANY, Mock
 
+import pytest
+
 MODULE_PATH = "services.api_gateway.translation_refiner"
 
 
@@ -96,7 +98,7 @@ def test_ollama_translation_refiner_returns_refined_text(monkeypatch):
     )
 
 
-def test_phi4_mini_prompt_uses_supported_source_as_meaning_anchor():
+def test_prompt_uses_source_as_meaning_anchor_for_a_language_outside_the_skip_list():
     mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
     refiner = mod.OllamaTranslationRefiner(
         endpoint="http://ollama:11434",
@@ -104,6 +106,7 @@ def test_phi4_mini_prompt_uses_supported_source_as_meaning_anchor():
         timeout_seconds=1.0,
         temperature=0.2,
         max_retries=1,
+        skip_target_languages=["ti", "ku"],
     )
 
     prompt = refiner._build_prompt(
@@ -114,7 +117,7 @@ def test_phi4_mini_prompt_uses_supported_source_as_meaning_anchor():
     assert "Use the original input only to verify" in prompt
 
 
-def test_phi4_mini_prompt_omits_unsupported_source_text():
+def test_prompt_omits_source_text_for_a_language_inside_the_skip_list():
     mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
     refiner = mod.OllamaTranslationRefiner(
         endpoint="http://ollama:11434",
@@ -122,6 +125,7 @@ def test_phi4_mini_prompt_omits_unsupported_source_text():
         timeout_seconds=1.0,
         temperature=0.2,
         max_retries=1,
+        skip_target_languages=["ti", "ku"],
     )
 
     prompt = refiner._build_prompt(
@@ -132,7 +136,7 @@ def test_phi4_mini_prompt_omits_unsupported_source_text():
     assert "\u12a8\u1218\u12ed" not in prompt
 
 
-def test_phi4_mini_skips_unsupported_target_language(monkeypatch):
+def test_skips_refinement_for_a_configured_target_language(monkeypatch):
     mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
     post = Mock()
     monkeypatch.setattr(mod.requests, "post", post)
@@ -142,6 +146,7 @@ def test_phi4_mini_skips_unsupported_target_language(monkeypatch):
         timeout_seconds=1.0,
         temperature=0.2,
         max_retries=1,
+        skip_target_languages=["am", "ti", "ku", "fa"],
     )
 
     outcome = refiner.refine("\u12a8\u1218\u12ed", "de", "ti")
@@ -150,6 +155,66 @@ def test_phi4_mini_skips_unsupported_target_language(monkeypatch):
     assert outcome.changed is False
     assert outcome.latency_ms == 0.0
     post.assert_not_called()
+
+
+def test_skips_a_configured_target_language(monkeypatch):
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = mod.OllamaTranslationRefiner(
+        endpoint="http://vllm:8000",
+        model="gemma-4-e4b-qat",
+        timeout_seconds=4.0,
+        temperature=0.7,
+        max_retries=1,
+        skip_target_languages=["am", "ti"],
+    )
+    monkeypatch.setattr(
+        refiner, "_request", lambda prompt: pytest.fail("no request may be sent")
+    )
+
+    outcome = refiner._perform_refinement("selam", "de", "am")
+
+    assert outcome.text == "selam"
+    assert outcome.changed is False
+    assert outcome.skipped_reason == "unsupported_target_language"
+
+
+def test_refines_a_language_outside_the_skip_list(monkeypatch):
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    response = Mock()
+    response.json.return_value = {"response": "Guten Tag."}
+    monkeypatch.setattr(mod.requests, "post", Mock(return_value=response))
+    refiner = mod.OllamaTranslationRefiner(
+        endpoint="http://vllm:8000",
+        model="gemma-4-e4b-qat",
+        timeout_seconds=4.0,
+        temperature=0.7,
+        max_retries=1,
+        skip_target_languages=["am"],
+    )
+
+    outcome = refiner._perform_refinement("Guten tag", "ar", "de")
+
+    assert outcome.text == "Guten Tag."
+    assert outcome.skipped_reason is None
+
+
+def test_a_skipped_refinement_is_emitted_as_skipped(monkeypatch):
+    """A skip that reads as a success hides exactly the decision we made."""
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    emitted = []
+    refiner = mod.OllamaTranslationRefiner(
+        endpoint="http://vllm:8000",
+        model="gemma-4-e4b-qat",
+        timeout_seconds=4.0,
+        temperature=0.7,
+        max_retries=1,
+        skip_target_languages=["fa"],
+    )
+    monkeypatch.setattr(refiner, "_emit_attempt", lambda **kwargs: emitted.append(kwargs))
+
+    refiner.refine("salam", "de", "fa")
+
+    assert emitted[0]["outcome"] is mod.RefinementOutcomeCode.SKIPPED_LANGUAGE
 
 
 def test_shadow_comparison_refiner_schedules_candidate(monkeypatch):

@@ -103,6 +103,7 @@ class RefinerRole(str, Enum):
 class RefinementOutcomeCode(str, Enum):
     SUCCESS = "success"
     ERROR = "error"
+    SKIPPED_LANGUAGE = "skipped_language"
     SKIPPED_OVERLOAD = "skipped_overload"
     SUBMISSION_FAILED = "submission_failed"
 
