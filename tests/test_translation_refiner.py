@@ -420,3 +420,13 @@ def test_shadow_comparison_refiner_recovers_when_submission_fails(monkeypatch):
 
     assert outcome.candidate_status == "submission_failed"
     assert refiner.pending == 0
+
+
+def test_extract_text_reads_the_ollama_response_field():
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = mod.OllamaTranslationRefiner(
+        "http://ollama:11434", "phi4-mini", 4.0, 0.7, 1, False
+    )
+
+    assert refiner._extract_text({"response": "  Guten Tag.  "}) == "Guten Tag."
+    assert refiner._extract_text({}) == ""

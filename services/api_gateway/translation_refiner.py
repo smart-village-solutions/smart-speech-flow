@@ -319,6 +319,10 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         url = f"{self.endpoint}/api/generate"
         return requests.post(url, json=payload, timeout=self.timeout_seconds)
 
+    def _extract_text(self, data: Dict[str, Any]) -> str:
+        """The generated text, by this backend's response shape."""
+        return (data.get("response") or "").strip()
+
     def refine(
         self,
         text: str,
@@ -377,7 +381,7 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
                 elapsed_ms = (time.perf_counter() - start_time) * 1000
                 response.raise_for_status()
                 data = response.json()
-                refined = (data.get("response") or "").strip()
+                refined = self._extract_text(data)
 
                 if not refined:
                     return RefinementOutcome(
