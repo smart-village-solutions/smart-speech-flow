@@ -85,12 +85,14 @@ async def websocket_monitor_task() -> None:
     # Warte bis der Monitor im Startup initialisiert wurde
     await asyncio.sleep(1)  # Kurz warten bis Startup abgeschlossen
 
+    from .websocket import get_websocket_manager
     from .websocket_monitor import get_websocket_monitor
 
     try:
         print("🚀 WebSocket-Monitoring gestartet")
         monitor = get_websocket_monitor()
-        await monitor.periodic_cleanup()
+        manager = get_websocket_manager()
+        await monitor.periodic_cleanup(lambda: manager.all_connections.keys())
     except Exception as e:
         print(f"⚠️ Fehler im WebSocket-Monitor: {e}")
 
@@ -834,7 +836,6 @@ def setup_cors_for_websockets():
             "Cache-Control",
             "Pragma",
             "X-Correlation-Id",
-            "X-SSF-Legacy-Access",
             # WebSocket-specific headers
             "Upgrade",
             "Connection",

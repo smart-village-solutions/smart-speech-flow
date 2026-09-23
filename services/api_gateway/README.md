@@ -57,13 +57,11 @@ following:
 2. Confirm every listed realm has the common public client, PKCE S256, the
    exact application origin and `/login/*` redirects, the configured audience
    and role, and signed tenant-ID and authorization-revision claims.
-3. Set `SSF_ENABLE_LEGACY_ADMIN_ACCESS=false` before multi-realm production
-   enablement.
-4. Complete the separate OpenSpec change `add-multi-tenant-operations` and pass
+3. Complete the separate OpenSpec change `add-multi-tenant-operations` and pass
    its isolation tests for session creation, history, lookup, termination,
    messages, audio, and customer joins. This is an independent release gate,
    not part of the tenant-login-directory implementation.
-5. Manually verify login, existing SSO, logout, unknown-tenant handling, a
+4. Manually verify login, existing SSO, logout, unknown-tenant handling, a
    Studio outage after cache expiry, and cross-tenant negative paths in the
    deployed environment.
 

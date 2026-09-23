@@ -2,12 +2,11 @@
 @import './fonts.css';
 @import './theme.css';
 @import './brand.css';
-@import './keycloak.css';
 
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  /* ── Legacy Tailwind v3 theme, preserved for /legacy, /admin, /customer ── */
+  /* ── Legacy Tailwind v3 theme, preserved for the pages outside ScreenShell ── */
   --color-primary: #00a99d;
   --color-primary-dark: #0a2342;
   --color-background: #f8f8f8;
@@ -19,7 +18,7 @@
   --leading-relaxed: 1.6;
   /* What the legacy pages actually rendered in: the v3 stack listed Inter
      first, but no @font-face and no font link ever loaded it, so it fell
-     through to system-ui. Naming Inter here would restyle /admin. */
+     through to system-ui. Naming Inter here would restyle them. */
   --font-legacy: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
   --font-sans:
@@ -79,7 +78,6 @@
     100% - var(--spacing-bubble-gutter) - var(--spacing-bubble-inset)
   );
   --container-menu: 288px;
-  --container-kc-card: 384px;
   --spacing-menu-row: 44px;
 
   /* Admin sessions, Phase 2. */

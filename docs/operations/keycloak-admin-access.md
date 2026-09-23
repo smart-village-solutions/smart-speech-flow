@@ -1,20 +1,20 @@
-# Administrative access transition
+# Administrative access
 
-Use `https://translate.smart-village.solutions/login` for the new Keycloak
-login. Operators manually create staff users in realm `ssf` and assign the
-realm role `ssf-user`.
+`/login` is the only administrative entry point. Staff choose their
+organisation there and sign in through that tenant's Keycloak realm; Studio
+provisions the realms, the `ssf-user` role and the staff accounts.
 
-The legacy `/admin` password entry remains temporarily available only when
-`SSF_ENABLE_LEGACY_ADMIN_ACCESS=true` is set for the API gateway and
-`SSF_LEGACY_ADMIN_ACCESS_CODE` matches the legacy frontend build value. This
-mechanism is not secure: the value is delivered in browser code and can be
-recovered by a visitor. Set `SSF_ENABLE_LEGACY_ADMIN_ACCESS=false` to disable
-it without a code change, then remove the legacy route in a follow-up release.
+The temporary `/admin` password entry and the `X-SSF-Legacy-Access` header were
+removed in #216. `/admin` now returns the normal not-found page, and the gateway
+ignores the header. `SSF_ENABLE_LEGACY_ADMIN_ACCESS`,
+`SSF_LEGACY_ADMIN_ACCESS_CODE` and `FRONTEND_DEMO_PASSWORD` are no longer read
+and can be deleted from existing environment files.
 
-Before enabling the new route in production, verify a Keycloak user with
-`ssf-user` can log in at `/login` and make an administrative request. Verify a
-user without that role receives 403 and a request without credentials receives
-401. Verify the QR join route remains available without Keycloak login.
+After a release that touches authentication, verify that a user with `ssf-user`
+can log in at `/login` and make an administrative request, that a user without
+that role receives 403, that a request without a bearer token receives 401 even
+when it carries `X-SSF-Legacy-Access`, and that the QR join route remains
+available without a Keycloak login.
 
 ## Local Studio Runtime Configuration mock
 

@@ -1,99 +1,70 @@
 ## Context
 
-The gateway currently has several broad modules: `routes/session.py` mixes request handling with session and pipeline behavior; `session_manager.py` owns domain objects, persistence, lifecycle, connection state, and singleton setup; `pipeline_logic.py` combines validation, audio conversion, orchestration, and HTTP calls; and `websocket.py` combines protocol, registry, dispatch, heartbeat, fallback, monitoring, and routes. `app.py` also owns configuration, dependency initialization, and all background tasks.
+The gateway is currently tenant-aware. It has `TenantSessionKey`, a tenant Redis session store, Studio runtime resolution, a fail-closed runtime policy, consent-gated persistence, admission control, live resilience, feedback services, and telemetry. Several collaborators already live on `app.state` and are constructed in FastAPI lifespan.
 
-Public clients depend on the existing REST and WebSocket contracts. Existing Redis data and the active in-process realtime registry must remain usable throughout the migration.
+The same gateway retains global `session_manager`, `conversation_service`, and `realtime_ticket_store` instances, zero-argument `lru_cache` factories, and route-to-service imports. `SessionManager` retains legacy and tenant modes. Thus, the old architecture proposal is correct in direction but stale as an execution baseline.
 
 ## Goals / Non-Goals
 
 ### Goals
 
-- Make each gateway responsibility independently testable and replaceable.
-- Establish one dependency direction: presentation -> application -> domain/ports, with infrastructure and realtime implementing ports.
-- Construct concrete dependencies once during FastAPI lifespan and expose them through dependency providers.
-- Preserve endpoint paths, request and response schemas, WebSocket frames, polling behavior, and persisted session format.
+- Preserve delivered tenant, runtime, privacy, resilience, admission, feedback, and telemetry behavior.
+- Move production collaborator ownership to one lifespan-owned dependency container and FastAPI providers.
+- Split session/message/pipeline and realtime/polling/monitoring responsibilities behind typed boundaries.
+- Characterize compatibility before each migration slice and clean up compatibility facades only after callers move.
 
 ### Non-Goals
 
-- Add distributed WebSocket dispatch or multi-replica synchronization.
-- Modify external AI-service interfaces.
-- Alter the product's session lifecycle or language policies.
+- Change external REST, WebSocket, polling, OpenAPI, Redis, or pipeline-metadata contracts.
+- Change tenant or authorization semantics.
+- Add Redis Pub/Sub or multi-replica behavior (#227).
+- Refactor AI service internals (#225).
+- Delete legacy state without an approved and evidence-backed cutover decision.
 
 ## Decisions
 
-### Decision: Layered package boundaries
+### Decision: Current behavior is the characterization baseline
 
-The target gateway package structure is:
+All migration slices first characterize the present admin/customer tenant flows, Studio runtime failures, consent/persistence gates, pipeline metadata, realtime tickets, polling, and lifespan shutdown. Existing public semantics control when an old plan statement conflicts with implemented behavior.
 
-```text
-services/api_gateway/
-  app.py                    # composition root only
-  config.py                 # typed runtime configuration
-  domain/                   # sessions, languages, domain events
-  application/              # session, message, and conversation services
-  ports/                    # repository, speech pipeline, realtime publisher protocols
-  infrastructure/           # Redis/memory repositories, HTTP clients, audio adapters
-  realtime/                 # protocol, registry, dispatcher, heartbeat, polling, monitoring
-  presentation/             # HTTP and WebSocket route adapters
-  runtime/                  # periodic tasks and shutdown management
-  compatibility/            # temporary legacy import facades
-```
+### Decision: Lifespan-owned composition root
 
-Dependencies must point inward. Domain code must not import FastAPI, Redis, HTTP clients, WebSockets, or Prometheus. Presentation code must not mutate persisted session objects directly.
+`GatewayDependencies` holds all request-facing collaborators, created in `lifespan` and stored in `app.state`. Providers retrieve explicit collaborators; test overrides replace providers. New production code must not instantiate or replace module globals, or use zero-argument cached factories for injectable services.
 
-### Decision: Typed ports and results
+Existing app-state services migrate into the container without behavioral changes. Global objects remain temporary adapters until consumers are migrated.
 
-The application layer depends on `SessionRepository`, `SpeechPipeline`, and `RealtimePublisher` protocols. The speech pipeline returns a typed processing result, and realtime delivery returns a typed broadcast result. Raw dictionaries remain only at transport boundaries and are converted by presentation or adapter code.
+### Decision: Preserve tenant-aware state
 
-### Decision: Session persistence is a repository concern
+Session and message boundaries preserve `TenantSessionKey`, tenant Redis keys and join index, consent-gated storage, runtime snapshots, and pipeline metadata. The session compatibility gate records whether legacy mode can be deleted after cutover proof or must be isolated behind a typed adapter. No code slice assumes legacy state is absent merely because the target architecture does.
 
-`MemorySessionRepository` and `RedisSessionRepository` implement the same asynchronous repository port. Redis setup, serialization, loading, persistence failure handling, and fallback behavior move out of session lifecycle code. The serialized `Session` and `SessionMessage` representation remains compatible with existing Redis entries.
+### Decision: Separate transport responsibilities
 
-### Decision: Session and message workflows are application services
+Route adapters call application services; application services depend on typed ports. Speech HTTP access, validation/conversion/storage are infrastructure adapters. The realtime ticket backend exposes `consume`, `put_if_absent`, and `get` domain operations rather than Redis eval details. Realtime registry, dispatch, heartbeat, polling, and monitoring have focused interfaces. #348 decides the supported tenant-safe monitoring API surface.
 
-`SessionService` owns create, activate, terminate, activity update, and timeout workflows. `MessageService` owns input validation, language-pair enforcement, speech-pipeline invocation, message persistence, and publication of a domain event. `ConversationService` supplies session state and message history. Route handlers map HTTP requests and errors to these services but do not contain business decisions.
+### Decision: Four delivery slices
 
-### Decision: Realtime consists of focused collaborators
+1. Characterization and composition root.
+2. Session/message/pipeline boundaries.
+3. Realtime/polling/monitoring boundaries.
+4. First-party migration, compatibility cleanup, and verification.
 
-The realtime package separates:
-
-- `protocol`: Pydantic models and message-type translation.
-- `connection_registry`: in-process connection ownership by session and participant type.
-- `dispatcher`: targeted delivery and broadcast accounting.
-- `heartbeat`: ping/pong state and connection expiry.
-- `polling`: adaptive intervals plus WebSocket fallback integration.
-- `monitoring`: metrics and diagnostics.
-
-The WebSocket route performs origin and parameter validation, creates or resolves a connection, receives frames, delegates handling, and translates failures. Session application services notify realtime only through `RealtimePublisher`; neither side imports the other's manager implementation.
-
-### Decision: Dependency injection replaces global runtime ownership
-
-`app.py` builds adapters and application services during lifespan, stores the composed service container in application state, and starts runtime tasks from `runtime/tasks.py`. FastAPI dependency providers retrieve those instances. There must be no lazy global manager initialization in new code.
-
-### Decision: Incremental compatibility migration
-
-Existing public APIs remain stable. The old `session_manager.py`, `pipeline_logic.py`, and `websocket.py` paths become documented compatibility facades only after their first-party callers have moved. Tests move with the owned component. The unregistered duplicate `services/api_gateway/session.py` is removed only after a repository-wide consumer search confirms it has no required import path.
+Each slice must be independently releasable and preserve public contract behavior.
 
 ## Risks / Trade-offs
 
-- Moving boundaries can introduce subtle response or WebSocket-frame drift.
-  - Mitigation: characterize current public behavior first and run API/OpenAPI and realtime integration tests after every migration slice.
-- Redis serialization changes could make active sessions unreadable.
-  - Mitigation: retain keys and wire shape, add fixtures for legacy data, and test read/write parity across both repositories.
-- In-process realtime dispatch remains limited to one gateway process.
-  - Mitigation: retain an explicit `RealtimePublisher` port so a Redis Pub/Sub implementation can be added without changing domain or route code.
-- Compatibility facades can become permanent debt.
-  - Mitigation: define their removal as an explicit final task and reject new production imports of them.
+- Contract drift: characterize public contracts before migrations and require API and realtime tests per slice.
+- Tenant privacy regression: include tenant-isolation and cross-tenant negative tests in every affected slice.
+- Legacy cleanup error: require a hard decision gate and explicit consumer inventory.
+- Global-to-provider migration test fragility: override dependency providers and use test app instances rather than mutating module state.
+- Competing scopes: explicitly exclude #225, #227, and #348.
 
 ## Migration Plan
 
-1. Add domain types, ports, configuration, and characterization tests without changing route behavior.
-2. Move persistence behind repositories and migrate session lifecycle to `SessionService`.
-3. Split speech pipeline adapters and migrate message processing to `MessageService`.
-4. Extract realtime collaborators and migrate REST/WebSocket/polling routes.
-5. Centralize lifespan composition and periodic tasks.
-6. Migrate all first-party imports and tests, remove the duplicate legacy module, then retire compatibility facades in a follow-up cleanup release.
+1. Rebase planning artifacts only in this PR; do not change runtime code.
+2. Implement phase 1 only after approved tasks and a characterized baseline.
+3. Implement later phases in focused PRs that reference #228 and the phase.
+4. Remove facades only after full compatibility verification.
 
 ## Rollback Plan
 
-Each migration slice is independently releasable and preserves public and Redis contracts. If a slice regresses, revert that slice while retaining its characterization tests; the preceding facade-backed implementation remains available.
+This PR changes no runtime code. A later implementation slice rolls back only that slice while preserving the characterization tests.

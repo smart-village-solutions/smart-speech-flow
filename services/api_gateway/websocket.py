@@ -190,6 +190,11 @@ class WebSocketConnection:
     reconnect_count: int = 0
     client_info: Optional[Dict[str, Any]] = None
     key: Optional[TenantSessionKey] = None
+    # The outstanding ping. Latency is measured only for a pong that echoes its
+    # ping_id: both clients also send pongs on their own timer, and the legacy
+    # client never answers a ping at all.
+    pending_ping_id: Optional[str] = None
+    ping_sent_at: Optional[datetime] = None
 
     # 📱 Mobile-Optimization Fields
     is_mobile: bool = False
@@ -907,7 +912,7 @@ class WebSocketManager:
         message_type = message.get("type")
 
         if message_type == MessageType.HEARTBEAT_PONG.value:
-            await self._handle_heartbeat_pong(connection)
+            await self._handle_heartbeat_pong(connection_id, connection, message)
 
         elif message_type == MessageType.MESSAGE.value:
             await self._handle_client_message(connection, message)
@@ -1021,6 +1026,7 @@ class WebSocketManager:
         """
         ping_message = {
             "type": MessageType.HEARTBEAT_PING.value,
+            "ping_id": uuid4().hex,
             "timestamp": utc_now().isoformat(),
         }
 
@@ -1030,6 +1036,10 @@ class WebSocketManager:
             if connection.state != ConnectionState.CONNECTED:
                 continue
 
+            # Set before the send: the receive loop can handle the reply while
+            # send_json is still awaiting.
+            connection.pending_ping_id = ping_message["ping_id"]
+            connection.ping_sent_at = utc_now()
             try:
                 await connection.websocket.send_json(ping_message)
             except Exception as e:
@@ -1056,13 +1066,31 @@ class WebSocketManager:
             logger.warning(f"💓 Heartbeat-Timeout: {connection_id}")
             await self.disconnect_websocket(connection_id, "heartbeat_timeout", 1001)
 
-    async def _handle_heartbeat_pong(self, connection: WebSocketConnection):
+    async def _handle_heartbeat_pong(
+        self,
+        connection_id: str,
+        connection: WebSocketConnection,
+        message: Optional[Dict[str, Any]] = None,
+    ):
         """
         Heartbeat-Pong verarbeiten
         """
         await asyncio.sleep(0)
-        connection.last_heartbeat = utc_now()
+        now = utc_now()
+        latency = None
+        echoed = (message or {}).get("ping_id")
+        if (
+            echoed is not None
+            and echoed == connection.pending_ping_id
+            and connection.ping_sent_at is not None
+        ):
+            latency = (now - ensure_utc(connection.ping_sent_at)).total_seconds()
+            connection.pending_ping_id = None
+            connection.ping_sent_at = None
+
+        connection.last_heartbeat = now
         connection.state = ConnectionState.CONNECTED
+        get_websocket_monitor().record_heartbeat(connection_id, latency)
 
     async def _handle_client_message(
         self, connection: WebSocketConnection, message: Dict[str, Any]
@@ -1201,14 +1229,16 @@ class WebSocketManager:
         # Aus globalem Pool entfernen
         self.all_connections.pop(connection_id, None)
 
-        # Session-Manager informieren
-        await self.session_manager.remove_websocket_connection(resource_key, connection.client_type)
-
-        # 📊 Monitoring: Connection closed
+        # Recorded in the same step as the pop above: the monitor's cleanup
+        # purges any record the manager no longer holds, and it can run during
+        # the await below.
         get_websocket_monitor().connection_closed(
             connection_id=connection_id,
             reason=reason,
         )
+
+        # Session-Manager informieren
+        await self.session_manager.remove_websocket_connection(resource_key, connection.client_type)
 
         self._update_active_connections_count()
         logger.debug(f"🧹 Connection-Cleanup abgeschlossen: {connection_id}")

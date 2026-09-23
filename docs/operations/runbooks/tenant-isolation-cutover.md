@@ -10,7 +10,6 @@ and intentionally has no data-restore path.
 - The reviewed gateway and frontend commits have been built as immutable
   `prod-<git-sha>` images and those exact tags are set in the production Compose
   file.
-- `SSF_ENABLE_LEGACY_ADMIN_ACCESS=false` is effective.
 - The reconnect grace, warning, and maximum-lifetime settings are respectively
   `30`, `5`, and `8`.
 - ClickHouse migration `005_tenant_reference.sql` has been applied before
