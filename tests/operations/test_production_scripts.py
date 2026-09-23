@@ -46,7 +46,7 @@ def test_health_check_accepts_the_current_production_service_set_without_archive
     fake_bin.mkdir()
     services = "\n".join(
         (
-            "traefik asr translation tts api_gateway vllm redis clickhouse "
+            "traefik asr translation tts api_gateway ollama redis clickhouse "
             "keycloak-postgres ssf-postgres keycloak frontend prometheus grafana "
             "dcgm_exporter cadvisor node_exporter loki promtail"
         ).split()
