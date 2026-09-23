@@ -7,7 +7,7 @@ import { cn } from '@/lib/cn';
 const tokens = readFileSync(path.join(import.meta.dirname, '../../ui/styles/tokens.css'), 'utf8');
 
 /** Every `--text-<name>` size in the theme, read from the stylesheet itself. */
-const TEXT_SIZES = [...tokens.matchAll(/^\s*--text-([\w-]+):/gm)]
+const TEXT_SIZES = [...tokens.matchAll(/^[ \t]*--text-([\w-]+):/gm)]
   .map((match) => match[1])
   // `--text-<name>--line-height` companions are not sizes of their own.
   .filter((name) => !name.includes('--'));
