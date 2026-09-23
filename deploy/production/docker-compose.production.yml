@@ -101,16 +101,27 @@ services:
     - AUDIO_CLEANUP_INTERVAL_MINUTES=60
     - ENABLE_PIPELINE_METADATA=true
     - LLM_REFINEMENT_ENABLED=${LLM_REFINEMENT_ENABLED:-true}
-    - LLM_REFINEMENT_MODEL=${LLM_REFINEMENT_MODEL:-gpt-oss:20b}
+    # No default here: an explicit default would always win over the
+    # backend-aware default translation_refiner.py resolves (ollama keeps
+    # gpt-oss:20b, vllm gets qwen3.5-4b), breaking the one-variable switch.
+    - LLM_REFINEMENT_MODEL=${LLM_REFINEMENT_MODEL-}
     - LLM_REFINEMENT_MODE=${LLM_REFINEMENT_MODE:-primary_only}
-    - LLM_REFINEMENT_PRIMARY_MODEL=${LLM_REFINEMENT_PRIMARY_MODEL:-gpt-oss:20b}
+    - LLM_REFINEMENT_PRIMARY_MODEL=${LLM_REFINEMENT_PRIMARY_MODEL-}
     - LLM_REFINEMENT_CANDIDATE_MODEL=${LLM_REFINEMENT_CANDIDATE_MODEL:-phi4-mini}
     - LLM_REFINEMENT_SHADOW_QUEUE_LIMIT=${LLM_REFINEMENT_SHADOW_QUEUE_LIMIT:-4}
-    - LLM_REFINEMENT_ENDPOINT=${LLM_REFINEMENT_ENDPOINT:-http://ollama:11434}
+    # Blank, not defaulted to Ollama's address: an explicit value here would
+    # always win over LLM_REFINEMENT_BACKEND's own endpoint default, which
+    # would break the one-variable backend switch.
+    - LLM_REFINEMENT_ENDPOINT=${LLM_REFINEMENT_ENDPOINT:-}
     - LLM_REFINEMENT_TIMEOUT=${LLM_REFINEMENT_TIMEOUT:-4.0}
-    - LLM_REFINEMENT_TEMPERATURE=${LLM_REFINEMENT_TEMPERATURE:-0.7}
+    - LLM_REFINEMENT_TEMPERATURE=${LLM_REFINEMENT_TEMPERATURE:-0.0}
     - LLM_REFINEMENT_THINK=${LLM_REFINEMENT_THINK:-false}
     - LLM_REFINEMENT_MAX_RETRIES=${LLM_REFINEMENT_MAX_RETRIES:-1}
+    - LLM_REFINEMENT_BACKEND=${LLM_REFINEMENT_BACKEND:-ollama}
+    - LLM_REFINEMENT_MAX_TOKENS=${LLM_REFINEMENT_MAX_TOKENS:-256}
+    # No colon before the dash: an explicitly empty value must survive so
+    # "refine everything" is reachable through compose (see I4).
+    - LLM_REFINEMENT_SKIP_TARGET_LANGUAGES=${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,ti,ku,fa}
     - GLOBAL_RATE_LIMIT=${GLOBAL_RATE_LIMIT:-1200}
     - GLOBAL_RATE_WINDOW_SECONDS=${GLOBAL_RATE_WINDOW_SECONDS:-60}
     - MESSAGE_RATE_LIMIT=${MESSAGE_RATE_LIMIT:-50}
@@ -192,6 +203,61 @@ services:
     - OLLAMA_HOST=0.0.0.0
     volumes:
     - ollama-data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: all
+            capabilities:
+            - gpu
+    restart: unless-stopped
+    pull_policy: never
+  vllm:
+    # Gated behind a profile so a routine `docker compose up` (no service
+    # filter) cannot start this GPU-reserving container before its first
+    # boot has been measured by hand. Remove this gate once the refinement
+    # backend is switched over to vllm.
+    profiles:
+    - vllm
+    image: vllm/vllm-openai@sha256:8a69ffad015f138d7170c4ddc429e230a3bc1c1719f67e14324749df200a4b90
+    expose:
+    - '8000'
+    environment:
+    - HF_HOME=/models
+    volumes:
+    - vllm-models:/models
+    ipc: host
+    command:
+    - --model=${LLM_REFINEMENT_MODEL_REPO:-Qwen/Qwen3.5-4B}
+    # Matches the gateway's own resolution order (translation_refiner.py
+    # prefers LLM_REFINEMENT_PRIMARY_MODEL), so one variable configures
+    # both sides. Do not read LLM_REFINEMENT_MODEL here: that would let
+    # the name vLLM serves drift from the name the gateway requests.
+    - --served-model-name=${LLM_REFINEMENT_PRIMARY_MODEL:-qwen3.5-4b}
+    - --max-model-len=${VLLM_MAX_MODEL_LEN:-4096}
+    - --max-num-seqs=${VLLM_MAX_NUM_SEQS:-8}
+    # fp8 and 0.40 are measured (2026-09-23): weights 5.09 GiB, peak
+    # activation 1.36 GiB, KV cache 1.16 GiB, 5.3 GiB of the card free.
+    # The unquantized/0.58 combination was the pre-measurement guess and
+    # left negative room for KV cache on the Gemma build that was rejected.
+    - --quantization=${VLLM_QUANTIZATION:-fp8}
+    - --gpu-memory-utilization=${VLLM_GPU_MEMORY_UTILIZATION:-0.40}
+    # Explicit even though it is vLLM's own default: the model must never
+    # spill into system RAM, so this is a fixed flag, not a variable
+    # someone could override unknowingly.
+    - --cpu-offload-gb=0
+    - '--limit-mm-per-prompt={"image": 0, "audio": 0}'
+    healthcheck:
+      test:
+      - CMD
+      - python3
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health')
+      interval: 30s
+      timeout: 5s
+      retries: 20
+      start_period: 300s
     deploy:
       resources:
         reservations:
@@ -489,6 +555,7 @@ services:
 volumes:
   redis-data: null
   ollama-data: null
+  vllm-models: null
   audio-data: null
   clickhouse-data: null
   keycloak-postgres-data: null

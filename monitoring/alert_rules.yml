@@ -200,6 +200,38 @@ groups:
           summary: GPU memory usage above 95%.
           description: GPU memory usage is approaching the limit. Evaluate model footprint and concurrent load.
 
+      # Refinement fails open: a broken refiner still returns the raw
+      # translation, so nothing else in the pipeline notices. Outcomes
+      # otherwise reach only ClickHouse, which dashboards query but alerting
+      # does not, and a 100% failure rate ran unnoticed for weeks for exactly
+      # that reason.
+      #
+      # Traffic is a handful of messages a day, so a rate-ratio over a short
+      # window is undefined almost everywhere and this alert would never
+      # fire (confirmed with promtool test rules against the production
+      # shape). Alert instead on "attempts happened and none of them
+      # succeeded" over a 6h window wide enough to contain that traffic.
+      # `or vector(0)` on both sides matters: without it, a `success` series
+      # that has never existed yields an empty vector, `== 0` on an empty
+      # vector is empty, and `and` silently never matches -- the same class
+      # of bug this replaces.
+      - alert: RefinementFailureRateHigh
+        expr: |
+          (sum(increase(refinement_attempts_total{outcome="error"}[6h])) or vector(0)) > 0
+            and
+          (sum(increase(refinement_attempts_total{outcome="success"}[6h])) or vector(0)) == 0
+        for: 15m
+        labels:
+          severity: warning
+          service: translation
+        annotations:
+          summary: "Refinement attempts are happening and none are succeeding"
+          description: >-
+            Every refinement attempt in the last 6 hours has failed and none
+            has succeeded. Refinement fails open, so users still receive the
+            translation, but unpolished. Check that the refinement backend is
+            up and that the model is resident.
+
   - name: websocket-health
     rules:
       - alert: WebSocketConnectionsHigh

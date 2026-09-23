@@ -122,6 +122,7 @@ def test_pipeline_logic_helpers_cover_refinement_and_tts_paths(monkeypatch):
     assert refined_text == "refined"
     assert refined_tts_text is None
     assert debug_info["steps"][-1]["name"] == "refinement"
+    assert debug_info["steps"][-1]["refinement_comparison"]["primary_status"] == "success"
 
     captured = {}
 
@@ -335,7 +336,7 @@ def test_translation_refiner_default_endpoint_and_enabled_configuration():
             reload_module(
                 "services.api_gateway.translation_refiner",
                 {"LLM_REFINEMENT_ENABLED": "0"},
-            )._default_refinement_endpoint()
+            )._default_refinement_endpoint("ollama")
             == "https://llm:443"
         )
 
@@ -437,3 +438,53 @@ async def test_legacy_pipeline_route_returns_success_and_error_payloads(monkeypa
     assert failure.status_code == 400
     assert failure_payload["success"] is False
     assert failure_payload["error"] == "bad audio"
+
+
+def test_primary_refinement_status_distinguishes_skip_from_success():
+    """A refinement skipped by the language policy has no error, so
+    `"error" if outcome.error else "success"` used to record it as a success
+    with a 0 ms duration, dragging benchmark latency figures down and hiding
+    the skip. `skipped_reason` must produce its own status."""
+    pipeline_logic = importlib.import_module("services.api_gateway.pipeline_logic")
+
+    success = pipeline_logic.RefinementOutcome(text="hallo", changed=False, latency_ms=250.0)
+    skipped = pipeline_logic.RefinementOutcome(
+        text="hallo", changed=False, latency_ms=0.0, skipped_reason="unsupported_target_language"
+    )
+    errored = pipeline_logic.RefinementOutcome(
+        text="hallo", changed=False, latency_ms=10.0, error="timeout"
+    )
+
+    assert pipeline_logic._primary_refinement_status(success) == "success"
+    assert pipeline_logic._primary_refinement_status(skipped) == "skipped"
+    assert pipeline_logic._primary_refinement_status(errored) == "error"
+
+
+def test_apply_translation_refinement_records_a_skip_not_a_success(monkeypatch):
+    pipeline_logic = importlib.import_module("services.api_gateway.pipeline_logic")
+
+    mock_refiner = SimpleNamespace(
+        is_active=True,
+        refine=Mock(
+            return_value=pipeline_logic.RefinementOutcome(
+                text="hallo",
+                changed=False,
+                latency_ms=0.0,
+                skipped_reason="unsupported_target_language",
+            )
+        ),
+    )
+    monkeypatch.setattr(pipeline_logic, "translation_refiner", mock_refiner)
+    debug_info = {"steps": []}
+
+    pipeline_logic._apply_translation_refinement(
+        processed_text="hello",
+        translation_text="hallo",
+        source_lang="en",
+        target_lang="am",
+        debug_info=debug_info,
+        tts_text="hallo",
+    )
+
+    comparison = debug_info["steps"][-1]["refinement_comparison"]
+    assert comparison["primary_status"] == "skipped"

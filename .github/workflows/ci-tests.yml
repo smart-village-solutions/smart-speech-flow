@@ -29,6 +29,19 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -r services/api_gateway/requirements.txt
 
+      # Pinned so a new Prometheus release cannot change CI behaviour
+      # silently. Without this, tests/test_alert_rules_promtool.py and the
+      # promtool-dependent cases in tests/test_feedback_maintenance_alerting.py
+      # and tests/test_quality_telemetry_alerting.py skip instead of running,
+      # and a broken alert expression merges green.
+      - name: Install promtool
+        run: |
+          curl -sL -o /tmp/prometheus.tar.gz \
+            https://github.com/prometheus/prometheus/releases/download/v3.9.1/prometheus-3.9.1.linux-amd64.tar.gz
+          tar xzf /tmp/prometheus.tar.gz -C /tmp prometheus-3.9.1.linux-amd64/promtool
+          sudo mv /tmp/prometheus-3.9.1.linux-amd64/promtool /usr/local/bin/promtool
+          promtool --version
+
       - name: Run hermetic pytest subset
         env:
           PYTHONPATH: .
