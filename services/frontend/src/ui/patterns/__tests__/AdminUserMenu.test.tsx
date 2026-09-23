@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { AdminUserMenu } from '@/ui/patterns/AdminUserMenu';
@@ -31,40 +31,61 @@ describe('AdminUserMenu', () => {
     );
     await open();
 
-    const account = screen.getByRole('link', { name: 'Kontoeinstellungen' });
+    const account = screen.getByRole('link', { name: 'Kontoeinstellungen (öffnet in neuem Tab)' });
     expect(account).toHaveAttribute('href', ACCOUNT_URL);
     expect(account).toHaveAttribute('target', '_blank');
     expect(account).toHaveAttribute('rel', 'noreferrer');
     expect(
-      account.compareDocumentPosition(screen.getByRole('link', { name: 'Organisation verwalten' }))
+      account.compareDocumentPosition(
+        screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })
+      )
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it.each(['Kontoeinstellungen', 'Organisation verwalten'])(
-    'closes once %s has opened its tab',
-    async (name) => {
-      renderWithProviders(
-        <AdminUserMenu
-          onSignOut={vi.fn()}
-          accountUrl={ACCOUNT_URL}
-          studioUrl="https://smartcity.dialog.kassel.de/"
-        />,
-        { locale: 'de' }
-      );
-      await open();
+  it.each([
+    'Kontoeinstellungen (öffnet in neuem Tab)',
+    'Organisation verwalten (öffnet in neuem Tab)',
+  ])('closes once %s has opened its tab', async (name) => {
+    renderWithProviders(
+      <AdminUserMenu
+        onSignOut={vi.fn()}
+        accountUrl={ACCOUNT_URL}
+        studioUrl="https://smartcity.dialog.kassel.de/"
+      />,
+      { locale: 'de' }
+    );
+    await open();
 
-      const link = screen.getByRole('link', { name });
-      // jsdom cannot open tabs; the menu only has to react to the click.
-      link.addEventListener('click', (event) => event.preventDefault());
-      await userEvent.click(link);
-      expect(screen.queryByRole('button', { name: 'Abmelden' })).not.toBeInTheDocument();
+    const link = screen.getByRole('link', { name });
+    // jsdom cannot open tabs; the menu only has to react to the click.
+    link.addEventListener('click', (event) => event.preventDefault());
+    await userEvent.click(link);
+    expect(screen.queryByRole('button', { name: 'Abmelden' })).not.toBeInTheDocument();
+  });
+
+  it('tells assistive technology that each link opens a new tab', async () => {
+    renderWithProviders(
+      <AdminUserMenu
+        onSignOut={vi.fn()}
+        accountUrl={ACCOUNT_URL}
+        studioUrl="https://smartcity.dialog.kassel.de/"
+      />,
+      { locale: 'de' }
+    );
+    await open();
+
+    for (const name of ['Kontoeinstellungen', 'Organisation verwalten']) {
+      const link = screen.getByRole('link', { name: `${name} (öffnet in neuem Tab)` });
+      expect(within(link).getByText('(öffnet in neuem Tab)')).toHaveClass('sr-only');
     }
-  );
+  });
 
   it('does not show account settings without an account console', async () => {
     renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
     await open();
-    expect(screen.queryByRole('link', { name: 'Kontoeinstellungen' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Kontoeinstellungen (öffnet in neuem Tab)' })
+    ).not.toBeInTheDocument();
   });
 
   it('never collects a password or an email address itself', async () => {
@@ -88,16 +109,15 @@ describe('AdminUserMenu', () => {
 
   it('shows the Studio link before sign-out when supplied', async () => {
     renderWithProviders(
-      <AdminUserMenu
-        onSignOut={vi.fn()}
-        studioUrl="https://smartcity.dialog.kassel.de/"
-      />,
+      <AdminUserMenu onSignOut={vi.fn()} studioUrl="https://smartcity.dialog.kassel.de/" />,
       { locale: 'de' }
     );
 
     await open();
 
-    const studio = screen.getByRole('link', { name: 'Organisation verwalten' });
+    const studio = screen.getByRole('link', {
+      name: 'Organisation verwalten (öffnet in neuem Tab)',
+    });
     expect(studio).toHaveAttribute('href', 'https://smartcity.dialog.kassel.de/');
     expect(studio).toHaveAttribute('target', '_blank');
     expect(studio.compareDocumentPosition(screen.getByRole('button', { name: 'Abmelden' }))).toBe(
@@ -108,7 +128,9 @@ describe('AdminUserMenu', () => {
   it('does not show the Studio link when it is not supplied', async () => {
     renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
     await open();
-    expect(screen.queryByRole('link', { name: 'Organisation verwalten' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })
+    ).not.toBeInTheDocument();
   });
 
   it('uses compact text for all menu actions', async () => {
@@ -122,8 +144,12 @@ describe('AdminUserMenu', () => {
     );
     await open();
 
-    expect(screen.getByRole('link', { name: 'Kontoeinstellungen' })).toHaveClass('text-note');
-    expect(screen.getByRole('link', { name: 'Organisation verwalten' })).toHaveClass('text-note');
+    expect(
+      screen.getByRole('link', { name: 'Kontoeinstellungen (öffnet in neuem Tab)' })
+    ).toHaveClass('text-note');
+    expect(
+      screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })
+    ).toHaveClass('text-note');
     expect(screen.getByRole('button', { name: 'Abmelden' })).toHaveClass('text-note');
   });
 
@@ -141,8 +167,8 @@ describe('AdminUserMenu', () => {
     const signOut = screen.getByRole('button', { name: 'Abmelden' });
     expect(signOut.parentElement).toHaveClass('divide-y', 'divide-border-divider');
     for (const row of [
-      screen.getByRole('link', { name: 'Kontoeinstellungen' }),
-      screen.getByRole('link', { name: 'Organisation verwalten' }),
+      screen.getByRole('link', { name: 'Kontoeinstellungen (öffnet in neuem Tab)' }),
+      screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' }),
       signOut,
     ]) {
       expect(row.className).not.toMatch(/\bborder-t\b/);

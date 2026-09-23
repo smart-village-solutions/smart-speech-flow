@@ -32,6 +32,8 @@ interface MenuLinkProps {
 
 /** Leaves SSF in a new tab so a live conversation behind the menu keeps running. */
 function MenuLink({ label, href, onClick }: Readonly<MenuLinkProps>) {
+  const { t } = useTranslation();
+
   return (
     <a
       href={href}
@@ -40,7 +42,9 @@ function MenuLink({ label, href, onClick }: Readonly<MenuLinkProps>) {
       onClick={onClick}
       className={`${ROW} text-fg-body hover:bg-surface-row-hover`}
     >
-      <span>{label}</span>
+      <span>
+        {label} <span className="sr-only">{t('admin.menu.opensInNewTab')}</span>
+      </span>
       <ExternalLink aria-hidden size={16} strokeWidth={2} />
     </a>
   );

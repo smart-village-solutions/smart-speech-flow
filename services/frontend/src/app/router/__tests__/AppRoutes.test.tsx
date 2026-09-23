@@ -75,7 +75,7 @@ describe('tenant login routes', () => {
 
     await screen.findByRole('button', { name: 'Neues Gespräch starten' });
     await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
-    expect(screen.getByRole('link', { name: 'Organisation verwalten' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })).toHaveAttribute(
       'href',
       'https://smartcity.dialog.kassel.de/'
     );
@@ -89,7 +89,7 @@ describe('tenant login routes', () => {
 
     await screen.findByRole('button', { name: 'Neues Gespräch starten' });
     await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
-    expect(screen.getByRole('link', { name: 'Kontoeinstellungen' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Kontoeinstellungen (öffnet in neuem Tab)' })).toHaveAttribute(
       'href',
       accountUrl
     );
@@ -106,7 +106,7 @@ describe('tenant login routes', () => {
     );
     expect(await screen.findByRole('status')).toHaveTextContent('AR000001');
     await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
-    expect(screen.getByRole('link', { name: 'Kontoeinstellungen' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Kontoeinstellungen (öffnet in neuem Tab)' })).toHaveAttribute(
       'href',
       accountUrl
     );

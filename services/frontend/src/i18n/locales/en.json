@@ -116,6 +116,7 @@
       "open": "User account",
       "accountSettings": "Account settings",
       "openStudio": "Manage organization",
+      "opensInNewTab": "(opens in a new tab)",
       "signOut": "Sign out"
     },
     "dashboard": {
