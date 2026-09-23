@@ -14,12 +14,14 @@ import { useAdminSessions } from './useAdminSessions';
 interface AdminDashboardScreenProps {
   onEnterSession: (sessionId: string) => void;
   onSignOut: () => void;
+  accountUrl?: string;
   studioUrl?: string;
 }
 
 export function AdminDashboardScreen({
   onEnterSession,
   onSignOut,
+  accountUrl,
   studioUrl,
 }: Readonly<AdminDashboardScreenProps>) {
   const { t } = useTranslation();
@@ -40,6 +42,7 @@ export function AdminDashboardScreen({
         onHome={() => void navigate('/')}
         onFeedback={() => openFeedback(null)}
         onSignOut={onSignOut}
+        accountUrl={accountUrl}
         studioUrl={studioUrl}
       />
 

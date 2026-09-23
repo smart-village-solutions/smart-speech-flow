@@ -114,12 +114,7 @@
     },
     "menu": {
       "open": "User account",
-      "changePassword": "Change password",
-      "newPassword": "New password",
-      "confirmPassword": "Confirm",
-      "changeEmail": "Change email address",
-      "newEmail": "New email address",
-      "save": "Save",
+      "accountSettings": "Account settings",
       "openStudio": "Manage organization",
       "signOut": "Sign out"
     },

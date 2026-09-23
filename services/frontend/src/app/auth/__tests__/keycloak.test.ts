@@ -14,6 +14,7 @@ const { construct, clients } = vi.hoisted(() => ({
     updateToken: ReturnType<typeof vi.fn>;
     clearToken: ReturnType<typeof vi.fn>;
     logout: ReturnType<typeof vi.fn>;
+    createAccountUrl: ReturnType<typeof vi.fn>;
   }>,
 }));
 
@@ -29,9 +30,13 @@ vi.mock('keycloak-js', () => ({
       this.token = '';
     });
     logout = vi.fn().mockResolvedValue(undefined);
+    createAccountUrl: ReturnType<typeof vi.fn>;
 
-    constructor(options: unknown) {
+    constructor(options: { realm: string }) {
       construct(options);
+      this.createAccountUrl = vi.fn(
+        ({ redirectUri }: { redirectUri: string }) => `console:${options.realm}->${redirectUri}`
+      );
       clients.push(this);
     }
   },
@@ -73,6 +78,38 @@ describe('tenant Keycloak session', () => {
     expect(auth.getStudioUrlForSystemAdmin()).toBeNull();
     clients[0].realmAccess = { roles: ['ssf-user', 'system_admin'] };
     expect(auth.getStudioUrlForSystemAdmin()).toBe('https://smartcity.dialog.kassel.de/');
+  });
+
+  it('offers no account console before a tenant session is authenticated', async () => {
+    const auth = await import('../keycloak');
+    expect(auth.getAccountConsoleUrl()).toBeNull();
+
+    const pending = auth.requireKeycloakLogin(config, kassel);
+    expect(auth.getAccountConsoleUrl()).toBeNull();
+    await pending;
+    clients[0].authenticated = false;
+    expect(auth.getAccountConsoleUrl()).toBeNull();
+  });
+
+  it('asks the tenant client for its account console with a return to the callback', async () => {
+    const auth = await import('../keycloak');
+    await auth.requireKeycloakLogin(config, { ...kassel, id: 'tenant:kassel' });
+
+    const callback = `${globalThis.location.origin}/login/tenant%3Akassel`;
+    expect(auth.getAccountConsoleUrl()).toBe(`console:kassel-ssf-2025->${callback}`);
+    expect(clients[0].createAccountUrl).toHaveBeenCalledWith({ redirectUri: callback });
+  });
+
+  it('follows the tenant when the session switches realms', async () => {
+    const auth = await import('../keycloak');
+    await auth.requireKeycloakLogin(config, kassel);
+    await auth.requireKeycloakLogin(config, fulda);
+    expect(auth.getAccountConsoleUrl()).toBe(
+      `console:fulda-ssf-2025->${globalThis.location.origin}/login/tenant-fulda`
+    );
+
+    await auth.logoutFromKeycloak();
+    expect(auth.getAccountConsoleUrl()).toBeNull();
   });
 
   it('shares initialization for repeated concurrent calls', async () => {

@@ -1,114 +1,65 @@
 import { useCallback, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ChevronDown, ExternalLink, LogOut, User } from 'lucide-react';
+import { ExternalLink, LogOut, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { IconButton } from '@/ui/primitives/IconButton';
-import { TextField } from '@/ui/primitives/TextField';
 import { useDismissOnOutsideTap } from '@/ui/hooks/useDismissOnOutsideTap';
-import { cn } from '@/lib/cn';
 
-type Section = 'none' | 'password' | 'email';
-
-/** Menu fields are labelled by their placeholder, as the export does. */
-function MenuField({ label, type }: Readonly<{ label: string; type: string }>) {
-  return <TextField label={label} labelHidden density="compact" type={type} placeholder={label} />;
-}
-
-interface MenuSectionProps {
-  label: string;
-  expanded: boolean;
-  onToggle: () => void;
-  first?: boolean;
-  children: ReactNode;
-}
+const ROW =
+  'flex h-menu-row w-full items-center justify-between px-4 text-note transition-colors duration-150';
 
 interface MenuRowProps {
   label: string;
   onClick: () => void;
-  className?: string;
-  expanded?: boolean;
+  className: string;
   children: ReactNode;
 }
 
-/** Shared layout for every account-menu action, including sign-out. */
-function MenuRow({ label, onClick, className, expanded, children }: Readonly<MenuRowProps>) {
+function MenuRow({ label, onClick, className, children }: Readonly<MenuRowProps>) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-expanded={expanded}
-      className={`flex h-menu-row w-full items-center justify-between border-t border-border-divider px-4 text-start text-note transition-colors duration-150 ${className ?? ''}`}
-    >
+    <button type="button" onClick={onClick} className={`${ROW} text-start ${className}`}>
       <span>{label}</span>
       {children}
     </button>
   );
 }
 
-/** A disclosure row plus its form body. Every section ends in the same inert
- *  save button, so it lives here rather than in each caller. */
-function MenuSection({
-  label,
-  expanded,
-  onToggle,
-  first = false,
-  children,
-}: Readonly<MenuSectionProps>) {
-  const { t } = useTranslation();
+interface MenuLinkProps {
+  label: string;
+  href: string;
+  onClick: () => void;
+}
 
+/** Leaves SSF in a new tab so a live conversation behind the menu keeps running. */
+function MenuLink({ label, href, onClick }: Readonly<MenuLinkProps>) {
   return (
-    <>
-      <MenuRow
-        label={label}
-        onClick={onToggle}
-        className={cn(
-          'text-fg-body hover:bg-surface-row-hover',
-          first && 'border-t-0'
-        )}
-        expanded={expanded}
-      >
-        <ChevronDown
-          aria-hidden
-          size={16}
-          strokeWidth={2}
-          className={cn('text-fg-muted transition-transform duration-150', expanded && 'rotate-180')}
-        />
-      </MenuRow>
-
-      {expanded && (
-        <div className="flex flex-col gap-2 border-t border-border-divider px-4 pb-4 pt-3">
-          {children}
-          <button
-            type="button"
-            className="self-start rounded-row bg-accent px-3 py-1.5 text-meta font-semibold text-accent-on"
-          >
-            {t('admin.menu.save')}
-          </button>
-        </div>
-      )}
-    </>
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      onClick={onClick}
+      className={`${ROW} text-fg-body hover:bg-surface-row-hover`}
+    >
+      <span>{label}</span>
+      <ExternalLink aria-hidden size={16} strokeWidth={2} />
+    </a>
   );
 }
 
 interface AdminUserMenuProps {
   onSignOut: () => void;
+  accountUrl?: string;
   studioUrl?: string;
 }
 
-/** Both forms are UI only: issue #202 defers account management to Keycloak. */
-export function AdminUserMenu({ onSignOut, studioUrl }: Readonly<AdminUserMenuProps>) {
+/** Credentials are Keycloak's concern (#396): SSF only links to its account console. */
+export function AdminUserMenu({ onSignOut, accountUrl, studioUrl }: Readonly<AdminUserMenuProps>) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const [section, setSection] = useState<Section>('none');
 
-  const close = useCallback(() => {
-    setOpen(false);
-    setSection('none');
-  }, []);
+  const close = useCallback(() => setOpen(false), []);
 
   useDismissOnOutsideTap(open, close);
-
-  const toggle = (next: Section) => setSection((current) => (current === next ? 'none' : next));
 
   return (
     <div className="relative" data-dismiss-keep="">
@@ -123,35 +74,13 @@ export function AdminUserMenu({ onSignOut, studioUrl }: Readonly<AdminUserMenuPr
       </IconButton>
 
       {open && (
-        <div className="absolute end-0 top-11 z-50 w-menu overflow-hidden rounded-2xl border border-border-card bg-surface-card shadow-xl">
-          <MenuSection
-            first
-            label={t('admin.menu.changePassword')}
-            expanded={section === 'password'}
-            onToggle={() => toggle('password')}
-          >
-            <MenuField label={t('admin.menu.newPassword')} type="password" />
-            <MenuField label={t('admin.menu.confirmPassword')} type="password" />
-          </MenuSection>
-
-          <MenuSection
-            label={t('admin.menu.changeEmail')}
-            expanded={section === 'email'}
-            onToggle={() => toggle('email')}
-          >
-            <MenuField label={t('admin.menu.newEmail')} type="email" />
-          </MenuSection>
+        <div className="absolute end-0 top-11 z-50 w-menu divide-y divide-border-divider overflow-hidden rounded-2xl border border-border-card bg-surface-card shadow-xl">
+          {accountUrl && (
+            <MenuLink label={t('admin.menu.accountSettings')} href={accountUrl} onClick={close} />
+          )}
 
           {studioUrl && (
-            <a
-              href={studioUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="flex h-menu-row w-full items-center justify-between border-t border-border-divider px-4 text-note text-fg-body transition-colors duration-150 hover:bg-surface-row-hover"
-            >
-              <span>{t('admin.menu.openStudio')}</span>
-              <ExternalLink aria-hidden size={16} strokeWidth={2} />
-            </a>
+            <MenuLink label={t('admin.menu.openStudio')} href={studioUrl} onClick={close} />
           )}
 
           <MenuRow

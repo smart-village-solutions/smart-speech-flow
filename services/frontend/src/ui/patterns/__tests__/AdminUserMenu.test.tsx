@@ -4,6 +4,9 @@ import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { AdminUserMenu } from '@/ui/patterns/AdminUserMenu';
 
+const ACCOUNT_URL =
+  'https://auth.dialog.kassel.de/realms/smartcity/account?referrer=ssf-frontend&referrer_uri=https%3A%2F%2Fdialog.kassel.de%2Flogin%2Ftenant-kassel';
+
 const open = () => userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
 
 describe('AdminUserMenu', () => {
@@ -17,30 +20,62 @@ describe('AdminUserMenu', () => {
     expect(screen.queryByRole('button', { name: 'Abmelden' })).not.toBeInTheDocument();
   });
 
-  it('shows only one form at a time', async () => {
-    renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
+  it('links to the Keycloak account console first, in a new tab', async () => {
+    renderWithProviders(
+      <AdminUserMenu
+        onSignOut={vi.fn()}
+        accountUrl={ACCOUNT_URL}
+        studioUrl="https://smartcity.dialog.kassel.de/"
+      />,
+      { locale: 'de' }
+    );
     await open();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Passwort ändern' }));
-    expect(screen.getByLabelText('Neues Passwort')).toBeInTheDocument();
-    expect(screen.getByLabelText('Bestätigen')).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole('button', { name: 'E-Mail-Adresse ändern' }));
-    expect(screen.getByLabelText('Neue E-Mail-Adresse')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Neues Passwort')).not.toBeInTheDocument();
+    const account = screen.getByRole('link', { name: 'Kontoeinstellungen' });
+    expect(account).toHaveAttribute('href', ACCOUNT_URL);
+    expect(account).toHaveAttribute('target', '_blank');
+    expect(account).toHaveAttribute('rel', 'noreferrer');
+    expect(
+      account.compareDocumentPosition(screen.getByRole('link', { name: 'Organisation verwalten' }))
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it('collapses a form when its own row is tapped again', async () => {
+  it.each(['Kontoeinstellungen', 'Organisation verwalten'])(
+    'closes once %s has opened its tab',
+    async (name) => {
+      renderWithProviders(
+        <AdminUserMenu
+          onSignOut={vi.fn()}
+          accountUrl={ACCOUNT_URL}
+          studioUrl="https://smartcity.dialog.kassel.de/"
+        />,
+        { locale: 'de' }
+      );
+      await open();
+
+      const link = screen.getByRole('link', { name });
+      // jsdom cannot open tabs; the menu only has to react to the click.
+      link.addEventListener('click', (event) => event.preventDefault());
+      await userEvent.click(link);
+      expect(screen.queryByRole('button', { name: 'Abmelden' })).not.toBeInTheDocument();
+    }
+  );
+
+  it('does not show account settings without an account console', async () => {
     renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
     await open();
+    expect(screen.queryByRole('link', { name: 'Kontoeinstellungen' })).not.toBeInTheDocument();
+  });
 
-    const row = screen.getByRole('button', { name: 'Passwort ändern' });
-    await userEvent.click(row);
-    expect(row).toHaveAttribute('aria-expanded', 'true');
-
-    await userEvent.click(row);
-    expect(row).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByLabelText('Neues Passwort')).not.toBeInTheDocument();
+  it('never collects a password or an email address itself', async () => {
+    const { container } = renderWithProviders(
+      <AdminUserMenu onSignOut={vi.fn()} accountUrl={ACCOUNT_URL} />,
+      { locale: 'de' }
+    );
+    await open();
+    expect(container.querySelector('input, form')).toBeNull();
+    expect(screen.queryByText('Passwort ändern')).not.toBeInTheDocument();
+    expect(screen.queryByText('E-Mail-Adresse ändern')).not.toBeInTheDocument();
   });
 
   it('signs out', async () => {
@@ -78,15 +113,40 @@ describe('AdminUserMenu', () => {
 
   it('uses compact text for all menu actions', async () => {
     renderWithProviders(
-      <AdminUserMenu onSignOut={vi.fn()} studioUrl="https://smartcity.dialog.kassel.de/" />,
+      <AdminUserMenu
+        onSignOut={vi.fn()}
+        accountUrl={ACCOUNT_URL}
+        studioUrl="https://smartcity.dialog.kassel.de/"
+      />,
       { locale: 'de' }
     );
     await open();
 
-    expect(screen.getByRole('button', { name: 'Passwort ändern' })).toHaveClass('text-note');
-    expect(screen.getByRole('button', { name: 'E-Mail-Adresse ändern' })).toHaveClass('text-note');
+    expect(screen.getByRole('link', { name: 'Kontoeinstellungen' })).toHaveClass('text-note');
     expect(screen.getByRole('link', { name: 'Organisation verwalten' })).toHaveClass('text-note');
     expect(screen.getByRole('button', { name: 'Abmelden' })).toHaveClass('text-note');
+  });
+
+  it('lets the panel draw a divider between rows, never the rows themselves', async () => {
+    renderWithProviders(
+      <AdminUserMenu
+        onSignOut={vi.fn()}
+        accountUrl={ACCOUNT_URL}
+        studioUrl="https://smartcity.dialog.kassel.de/"
+      />,
+      { locale: 'de' }
+    );
+    await open();
+
+    const signOut = screen.getByRole('button', { name: 'Abmelden' });
+    expect(signOut.parentElement).toHaveClass('divide-y', 'divide-border-divider');
+    for (const row of [
+      screen.getByRole('link', { name: 'Kontoeinstellungen' }),
+      screen.getByRole('link', { name: 'Organisation verwalten' }),
+      signOut,
+    ]) {
+      expect(row.className).not.toMatch(/\bborder-t\b/);
+    }
   });
 
   it('closes on a tap outside the menu', async () => {

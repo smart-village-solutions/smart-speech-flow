@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { AppRoutes } from '@/app/router/AppRoutes';
 import {
+  getAccountConsoleUrl,
   getStudioUrlForSystemAdmin,
   requireKeycloakLogin,
   logoutFromKeycloak,
@@ -17,6 +18,7 @@ vi.mock('@/app/auth/keycloak', () => ({
   requireKeycloakLogin: vi.fn(),
   logoutFromKeycloak: vi.fn(),
   getStudioUrlForSystemAdmin: vi.fn(),
+  getAccountConsoleUrl: vi.fn(),
   getAdminAccessToken: vi.fn().mockResolvedValue('tenant-token'),
   subscribeToKeycloakExpiration: (listener: () => void) => {
     expirationListeners.add(listener);
@@ -39,6 +41,7 @@ describe('tenant login routes', () => {
     vi.mocked(requireKeycloakLogin).mockReset().mockResolvedValue(true);
     vi.mocked(logoutFromKeycloak).mockReset().mockResolvedValue(undefined);
     vi.mocked(getStudioUrlForSystemAdmin).mockReset().mockReturnValue(null);
+    vi.mocked(getAccountConsoleUrl).mockReset().mockReturnValue(null);
     sessionStorage.clear();
   });
 
@@ -75,6 +78,37 @@ describe('tenant login routes', () => {
     expect(screen.getByRole('link', { name: 'Organisation verwalten' })).toHaveAttribute(
       'href',
       'https://smartcity.dialog.kassel.de/'
+    );
+  });
+
+  it('links the signed-in tenant user to their Keycloak account console', async () => {
+    const accountUrl =
+      'https://auth.dialog.kassel.de/realms/kassel-ssf-2025/account?referrer=ssf-frontend';
+    vi.mocked(getAccountConsoleUrl).mockReturnValue(accountUrl);
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+
+    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
+    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
+    expect(screen.getByRole('link', { name: 'Kontoeinstellungen' })).toHaveAttribute(
+      'href',
+      accountUrl
+    );
+  });
+
+  it('keeps the account console link inside a live conversation', async () => {
+    const accountUrl =
+      'https://auth.dialog.kassel.de/realms/kassel-ssf-2025/account?referrer=ssf-frontend';
+    vi.mocked(getAccountConsoleUrl).mockReturnValue(accountUrl);
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Gespräch AR000001 fortsetzen' })
+    );
+    expect(await screen.findByRole('status')).toHaveTextContent('AR000001');
+    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
+    expect(screen.getByRole('link', { name: 'Kontoeinstellungen' })).toHaveAttribute(
+      'href',
+      accountUrl
     );
   });
 
