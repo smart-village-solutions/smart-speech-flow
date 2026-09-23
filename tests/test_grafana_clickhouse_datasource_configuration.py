@@ -502,15 +502,6 @@ class TestTheFeedbackPanelsCanBeFilteredByTenant:
 
 ALERT_RULES = ROOT / "monitoring" / "alert_rules.yml"
 
-# Task 7 (vLLM refinement serving): these three sit above Go-live, not below
-# it, so Go-live's own "sits above every older panel" test must not count them
-# as one of the older panels it is guarding against.
-REFINEMENT_SERVING_TITLES = (
-    "Refinement Outcomes",
-    "Refinement Requests In Flight",
-    "KV Cache Utilisation",
-)
-
 
 def _panel(title: str) -> dict:
     dashboard = json.loads(DASHBOARD.read_text())
@@ -557,12 +548,7 @@ class TestTheGoLiveKpiPanels:
         """A go-live view that has to be scrolled to is not one."""
         dashboard = json.loads(DASHBOARD.read_text())
         ours = [p["gridPos"] for p in dashboard["panels"] if p["title"] in self.TITLES]
-        older = [
-            p["gridPos"]
-            for p in dashboard["panels"]
-            if p["title"] not in self.TITLES
-            and p["title"] not in REFINEMENT_SERVING_TITLES
-        ]
+        older = [p["gridPos"] for p in dashboard["panels"] if p["title"] not in self.TITLES]
         assert max(g["y"] + g["h"] for g in ours) <= min(g["y"] for g in older)
 
     def test_every_panel_names_the_kpi_it_answers(self):
@@ -670,20 +656,30 @@ class TestTheRefinementServingPanels:
     otherwise reached only ClickHouse, which dashboards query but alerting
     does not, so a 100% failure rate ran unnoticed for weeks. These panels
     chart the Prometheus counter that RefinementFailureRateHigh alerts on and
-    the vLLM server's own /metrics, and sit above Go-live: an operator should
-    not have to scroll past the go-live view to see refinement is down."""
+    the vLLM server's own /metrics. Go-live is what stakeholders open the
+    dashboard for and keeps the top; this is operational detail and sits
+    directly below it, above everything older."""
 
-    TITLES = REFINEMENT_SERVING_TITLES
+    TITLES = (
+        "Refinement Outcomes",
+        "Refinement Requests In Flight",
+        "KV Cache Utilisation",
+    )
 
     def test_every_panel_is_present(self):
         for title in self.TITLES:
             _panel(title)
 
-    def test_they_sit_above_everything_else(self):
+    def test_they_sit_below_go_live_and_above_everything_older(self):
         dashboard = json.loads(DASHBOARD.read_text())
+        go_live = TestTheGoLiveKpiPanels.TITLES
         ours = [p["gridPos"] for p in dashboard["panels"] if p["title"] in self.TITLES]
-        rest = [p["gridPos"] for p in dashboard["panels"] if p["title"] not in self.TITLES]
-        assert max(g["y"] + g["h"] for g in ours) <= min(g["y"] for g in rest)
+        older = [
+            p["gridPos"]
+            for p in dashboard["panels"]
+            if p["title"] not in self.TITLES and p["title"] not in go_live
+        ]
+        assert max(g["y"] + g["h"] for g in ours) <= min(g["y"] for g in older)
 
     def test_the_outcome_panel_reads_the_alertable_counter(self):
         """This is the counter RefinementFailureRateHigh alerts on; the

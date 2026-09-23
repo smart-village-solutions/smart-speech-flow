@@ -24,159 +24,6 @@
   "liveNow": false,
   "panels": [
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus-ssf"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 0
-      },
-      "id": 69,
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus-ssf"
-          },
-          "expr": "sum by (outcome) (rate(refinement_attempts_total[$__rate_interval]))",
-          "legendFormat": "{{outcome}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Refinement Outcomes",
-      "type": "timeseries",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "unit": "reqps"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "description": "Refinement outcomes as counted by refinement_attempts_total. This is the metric alerting reads (RefinementFailureRateHigh); the ClickHouse-backed Outcome Mix panel below is dashboard-only and does not page anyone."
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus-ssf"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 0
-      },
-      "id": 70,
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus-ssf"
-          },
-          "expr": "vllm:num_requests_running",
-          "legendFormat": "running",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus-ssf"
-          },
-          "expr": "vllm:num_requests_waiting",
-          "legendFormat": "waiting",
-          "refId": "B"
-        }
-      ],
-      "title": "Refinement Requests In Flight",
-      "type": "timeseries",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "unit": "none"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "description": "vLLM's own request queue depth. Metric name is documented but unverified against a running server; the server is stood up in a later task, which must confirm the name before relying on this panel."
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus-ssf"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 0
-      },
-      "id": 71,
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus-ssf"
-          },
-          "expr": "vllm:kv_cache_usage_perc",
-          "legendFormat": "kv cache",
-          "refId": "A"
-        }
-      ],
-      "title": "KV Cache Utilisation",
-      "type": "timeseries",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "description": "vLLM's KV cache occupancy. Metric name is documented but unverified against a running server; the server is stood up in a later task, which must confirm the name before relying on this panel."
-    },
-    {
       "id": 60,
       "type": "stat",
       "title": "Conversation Completion Rate",
@@ -189,7 +36,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 8
+        "y": 0
       },
       "targets": [
         {
@@ -224,7 +71,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 8
+        "y": 0
       },
       "targets": [
         {
@@ -259,7 +106,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 8
+        "y": 0
       },
       "targets": [
         {
@@ -294,7 +141,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 8
+        "y": 0
       },
       "targets": [
         {
@@ -329,7 +176,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 12
+        "y": 4
       },
       "targets": [
         {
@@ -386,7 +233,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 12
+        "y": 4
       },
       "targets": [
         {
@@ -432,7 +279,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 20
+        "y": 12
       },
       "targets": [
         {
@@ -469,7 +316,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 20
+        "y": 12
       },
       "targets": [
         {
@@ -526,7 +373,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 20
+        "y": 12
       },
       "targets": [
         {
@@ -604,6 +451,159 @@
           "sort": "desc"
         }
       }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 20
+      },
+      "id": 69,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "expr": "sum by (outcome) (rate(refinement_attempts_total[$__rate_interval]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Refinement Outcomes",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Refinement outcomes as counted by refinement_attempts_total. This is the metric alerting reads (RefinementFailureRateHigh); the ClickHouse-backed Outcome Mix panel below is dashboard-only and does not page anyone."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 20
+      },
+      "id": 70,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "expr": "vllm:num_requests_running",
+          "legendFormat": "running",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "expr": "vllm:num_requests_waiting",
+          "legendFormat": "waiting",
+          "refId": "B"
+        }
+      ],
+      "title": "Refinement Requests In Flight",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "vLLM's own request queue depth. Metric name is documented but unverified against a running server; the server is stood up in a later task, which must confirm the name before relying on this panel."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 20
+      },
+      "id": 71,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-ssf"
+          },
+          "expr": "vllm:kv_cache_usage_perc",
+          "legendFormat": "kv cache",
+          "refId": "A"
+        }
+      ],
+      "title": "KV Cache Utilisation",
+      "type": "timeseries",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "vLLM's KV cache occupancy. Metric name is documented but unverified against a running server; the server is stood up in a later task, which must confirm the name before relying on this panel."
     },
     {
       "id": 30,
