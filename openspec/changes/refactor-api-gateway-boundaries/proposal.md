@@ -1,27 +1,29 @@
-# Change: Refactor API Gateway Boundaries
+# Change: Rebase API Gateway Boundary Refactor
 
 ## Why
 
-The API gateway combines HTTP and WebSocket transport, session lifecycle, Redis persistence, speech-pipeline orchestration, audio processing, polling fallback, monitoring, and runtime scheduling in a small number of highly coupled modules. This makes behavior difficult to test in isolation and causes routine changes to cross unrelated responsibilities.
+The existing boundary-refactor plan predates delivered tenant isolation, Studio runtime integration, fail-closed persistence, pipeline admission, live resilience, feedback persistence, and quality telemetry. Its current task list has no completed items and no longer describes the gateway that implementation must preserve.
+
+Without a rebase, #228 risks undoing current tenant/runtime behavior or duplicating delivered work while trying to establish maintainable boundaries.
 
 ## What Changes
 
-- Introduce a layered gateway architecture with explicit domain, application, port, infrastructure, realtime, presentation, and runtime boundaries.
-- Replace direct coupling among route handlers, `SessionManager`, `WebSocketManager`, and pipeline functions with typed application services and dependency-injected ports.
-- Separate session persistence, speech-service clients, audio processing, realtime connection handling, polling fallback, and background tasks into dedicated components.
-- Preserve all current public REST, WebSocket, polling, OpenAPI, and message-metadata contracts.
-- Retain temporary compatibility import facades while first-party consumers migrate, then remove obsolete duplicate and facade modules in a later cleanup step.
+- Rebase the existing `refactor-api-gateway-boundaries` execution plan on the current tenant-aware gateway.
+- Treat `TenantSessionKey`, tenant-scoped persistence, Studio runtime resolution, fail-closed persistence, pipeline admission, live resilience, feedback, telemetry, and existing lifespan-owned state as baseline constraints.
+- Sequence implementation into characterization/composition root, session/message/pipeline, realtime/polling/monitoring, and compatibility-cleanup slices.
+- Require a recorded decision before deleting or isolating the legacy session path.
+- Preserve public REST, WebSocket, polling, OpenAPI, Redis-session, and pipeline-metadata contracts throughout all slices.
 
 ## Impact
 
 - Affected capability: `api-gateway-modular-architecture`
-- Affected code: `services/api_gateway`, gateway tests, architecture documentation
-- Compatibility: no intentional change to public APIs, WebSocket frame types, Redis session data, or deployment topology
-- Coordination: this change overlaps with active quality work in gateway files. Implementations must be sequenced after, or rebased onto, relevant quality fixes; no competing edits to the same production file should be merged concurrently.
+- Affected artifacts: this change's proposal, design, tasks, and spec delta; subsequent work affects `services/api_gateway`, tests, and architecture docs.
+- Compatibility: no intentional public or deployment behavior change in this planning rebase.
+- Coordination: #347 provides the first detailed structural slice. #227, #225, and #348 retain their own scopes.
 
 ## Non-Goals
 
-- Redesigning ASR, Translation, or TTS service internals
-- Introducing a message broker or changing the single-gateway-replica realtime deployment model
-- Changing authentication, authorization, rate limits, session rules, or public endpoint behavior
-- Replacing Redis as the existing session persistence backend
+- Implementing the refactor in this PR.
+- Changing authorization, tenant identity, session lifecycle, rate limits, or public endpoint behavior.
+- Adding distributed realtime or multi-replica behavior (#227).
+- Extracting transport-free AI service cores (#225).
