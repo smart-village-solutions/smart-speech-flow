@@ -86,3 +86,29 @@ tests:
       - eval_time: 20m
         alertname: RefinementFailureRateHigh
         exp_alerts: []
+
+  # vLLM is a separate target from the gateway. Its model can be absent while
+  # raw translation still succeeds, so target loss needs its own alert.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="vllm",instance="vllm:8000"}'
+        values: "0+0x10"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: VllmTargetDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: VllmTargetDown
+        exp_alerts:
+          - exp_labels:
+              instance: vllm:8000
+              job: vllm
+              severity: critical
+              service: vllm
+            exp_annotations:
+              summary: "vLLM is not answering Prometheus"
+              description: >-
+                Prometheus has failed to scrape vllm:8000 for 5 minutes.
+                Translation refinement is unavailable; raw translations still
+                succeed without refinement.
+              runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/service-down-alerts.md"
