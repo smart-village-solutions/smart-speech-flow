@@ -14,6 +14,7 @@ Version: 1.0
 """
 
 import asyncio
+import contextvars
 import logging
 import math
 import threading
@@ -107,6 +108,18 @@ class CircuitBreaker:
         self.last_failure_time: Optional[float] = None
         self.next_attempt_time: Optional[float] = None
         self.current_recovery_timeout = self.config.recovery_timeout
+        # Only an outage observed by the health monitor can be cleared by
+        # subsequent health probes. A failed inference requires an inference
+        # success, because reachability alone does not prove the model works.
+        self._health_recovery_eligible = False
+        # A half-open inference probe owns the recovery slot until it reports.
+        # Health polls must not close the breaker around an in-flight probe.
+        self._half_open_probe_owner: Optional[str] = None
+        self._active_inference_probe_generation: Optional[int] = None
+        self._next_inference_probe_generation = 0
+        self._probe_generation_context: contextvars.ContextVar[Optional[int]] = (
+            contextvars.ContextVar(f"{name}_probe_generation", default=None)
+        )
 
         # Health Metrics
         self.health = ServiceHealth(service_name=name)
@@ -152,7 +165,9 @@ class CircuitBreaker:
             TimeoutError: Bei Timeout
         """
         self._notify_loop = asyncio.get_running_loop()
-        await self._announce(self._admit())
+        transition = self._admit()
+        context_token = self._probe_generation_context.set(self._active_inference_probe_generation)
+        await self._announce(transition)
 
         # Request Execution mit Timeout
         start_time = time.time()
@@ -173,12 +188,26 @@ class CircuitBreaker:
 
         except asyncio.TimeoutError:
             execution_time = time.time() - start_time
-            await self._announce(self._apply_failure(f"Timeout nach {execution_time:.2f}s"))
+            with self._lock:
+                if self._is_stale_inference_probe_result():
+                    transition = None
+                else:
+                    self._health_recovery_eligible = False
+                    transition = self._apply_failure(f"Timeout nach {execution_time:.2f}s")
+            await self._announce(transition)
             raise TimeoutError(f"Service '{self.name}' Timeout nach {execution_time:.2f}s")
 
         except Exception as e:
-            await self._announce(self._apply_failure(str(e)))
+            with self._lock:
+                if self._is_stale_inference_probe_result():
+                    transition = None
+                else:
+                    self._health_recovery_eligible = False
+                    transition = self._apply_failure(str(e))
+            await self._announce(transition)
             raise
+        finally:
+            self._probe_generation_context.reset(context_token)
 
     # --- Synchronous front door ------------------------------------------
     # The pipeline functions are synchronous and run on a worker thread under
@@ -193,8 +222,13 @@ class CircuitBreaker:
         a success or a failure, because an HTTP reply can be both delivered and
         wrong. Pair every ``guard()`` with exactly one ``record_*`` call.
         """
-        self._dispatch(self._admit())
-        yield self
+        transition = self._admit()
+        context_token = self._probe_generation_context.set(self._active_inference_probe_generation)
+        self._dispatch(transition)
+        try:
+            yield self
+        finally:
+            self._probe_generation_context.reset(context_token)
 
     def record_success(self, response_time: float) -> None:
         """Counts a completed call and advances the state machine."""
@@ -202,7 +236,58 @@ class CircuitBreaker:
 
     def record_failure(self, error: str) -> None:
         """Counts a failed call and opens the circuit once the threshold is met."""
-        self._dispatch(self._apply_failure(error))
+        with self._lock:
+            if self._is_stale_inference_probe_result():
+                transition = None
+            else:
+                self._health_recovery_eligible = False
+                transition = self._apply_failure(error)
+        self._dispatch(transition)
+
+    def record_health_failure(self, error: str) -> None:
+        """Counts an unreachable health endpoint as recovery-eligible evidence."""
+        with self._lock:
+            # Once an inference failure contributed to this failure window,
+            # health reachability cannot establish that the model recovered.
+            # A fresh closed window may be established by health failures.
+            if self.state is CircuitState.CLOSED and self.failure_count == 0:
+                self._health_recovery_eligible = True
+            transition = self._apply_failure(error)
+        self._dispatch(transition)
+
+    def record_health_success(self) -> None:
+        """Advance recovery after health checks opened this breaker.
+
+        Health responses never count as inference traffic. They only supply
+        the recovery probes for a breaker whose own opening evidence came from
+        the health monitor, such as a dependency that was still starting.
+        """
+        with self._lock:
+            if not self._health_recovery_eligible:
+                return
+
+            transitions: list[Transition] = []
+            if self.state is CircuitState.OPEN:
+                if not self._should_attempt_reset():
+                    return
+                transitions.append(self._half_open())
+
+            if self.state is CircuitState.HALF_OPEN:
+                if self._half_open_probe_owner == "inference":
+                    # The admitted inference never reported. Treat its expired
+                    # lease as a failed recovery probe before health checks can
+                    # start a fresh recovery window.
+                    if self._should_attempt_reset():
+                        transitions.append(self._open_circuit())
+                else:
+                    self.success_count += 1
+                    if self.success_count >= self.config.success_threshold:
+                        transitions.append(self._close_circuit())
+                    else:
+                        self.next_attempt_time = time.time()
+
+        for transition in transitions:
+            self._dispatch(transition)
 
     def time_until_next_attempt(self) -> float:
         """Seconds until an open circuit will admit a probe. Zero when closed."""
@@ -238,11 +323,16 @@ class CircuitBreaker:
             # _apply_failure release it as soon as the probe reports; the
             # timeout is the backstop for a probe that reports nothing, which
             # a deliberate load shed does.
+            self._half_open_probe_owner = "inference"
+            self._next_inference_probe_generation += 1
+            self._active_inference_probe_generation = self._next_inference_probe_generation
             self.next_attempt_time = time.time() + self.current_recovery_timeout
             return transition
 
     def _apply_success(self, response_time: float) -> Optional[Transition]:
         with self._lock:
+            if self._is_stale_inference_probe_result():
+                return None
             self.health.total_requests += 1
             self.health.successful_requests += 1
             self.health.last_success = utc_now()
@@ -256,6 +346,8 @@ class CircuitBreaker:
 
             transition: Optional[Transition] = None
             if self.state == CircuitState.HALF_OPEN:
+                self._half_open_probe_owner = None
+                self._active_inference_probe_generation = None
                 self.success_count += 1
                 if self.success_count >= self.config.success_threshold:
                     transition = self._close_circuit()
@@ -274,6 +366,8 @@ class CircuitBreaker:
 
     def _apply_failure(self, error: str) -> Optional[Transition]:
         with self._lock:
+            if self._is_stale_inference_probe_result():
+                return None
             self.health.total_requests += 1
             self.health.failed_requests += 1
             self.health.last_failure = utc_now()
@@ -285,6 +379,8 @@ class CircuitBreaker:
                     transition = self._open_circuit()
             elif self.state == CircuitState.HALF_OPEN:
                 # Zurück zu OPEN bei Fehler im Test
+                self._half_open_probe_owner = None
+                self._active_inference_probe_generation = None
                 transition = self._open_circuit()
 
             logger.warning(f"❌ '{self.name}' Failure: {error} (Count: {self.failure_count})")
@@ -294,6 +390,8 @@ class CircuitBreaker:
         """Öffnet Circuit Breaker - Service wird blockiert. Caller holds the lock."""
         old_state = self.state
         self.state = CircuitState.OPEN
+        self._half_open_probe_owner = None
+        self._active_inference_probe_generation = None
         self.last_failure_time = time.time()
 
         # Exponential Backoff für Recovery Time
@@ -319,6 +417,9 @@ class CircuitBreaker:
         self.failure_count = 0
         self.success_count = 0
         self.current_recovery_timeout = self.config.recovery_timeout  # Reset backoff
+        self._health_recovery_eligible = False
+        self._half_open_probe_owner = None
+        self._active_inference_probe_generation = None
         self.health.current_state = self.state
 
         logger.info(f"🟢 Circuit Breaker '{self.name}' CLOSED - Service wieder verfügbar")
@@ -329,6 +430,8 @@ class CircuitBreaker:
         old_state = self.state
         self.state = CircuitState.HALF_OPEN
         self.success_count = 0
+        self._half_open_probe_owner = None
+        self._active_inference_probe_generation = None
         self.health.current_state = self.state
 
         logger.info(f"🟡 Circuit Breaker '{self.name}' HALF_OPEN - Teste Service Verfügbarkeit")
@@ -388,6 +491,11 @@ class CircuitBreaker:
             return 0.0
         return max(0.0, self.next_attempt_time - time.time())
 
+    def _is_stale_inference_probe_result(self) -> bool:
+        """Whether this call reports after its half-open probe lease expired."""
+        generation = self._probe_generation_context.get()
+        return generation is not None and generation != self._active_inference_probe_generation
+
     async def _notify_state_change(self, old_state: CircuitState, new_state: CircuitState):
         """Benachrichtigt über State Changes"""
         if self.on_state_change:
@@ -442,6 +550,9 @@ class CircuitBreaker:
             self.last_failure_time = None
             self.next_attempt_time = None
             self.current_recovery_timeout = self.config.recovery_timeout
+            self._health_recovery_eligible = False
+            self._half_open_probe_owner = None
+            self._active_inference_probe_generation = None
             self.health.current_state = self.state
             transition = None if old_state == self.state else (old_state, self.state)
 

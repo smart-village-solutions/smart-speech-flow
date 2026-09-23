@@ -118,16 +118,16 @@ def call_ai_service(
             breaker.record_failure(f"{type(exc).__name__}: {exc}")
             raise
 
-    elapsed = time.perf_counter() - started
-    if _sheds_load(response):
-        # Deliberate refusal: no outcome to record in either direction, and
-        # the microseconds it took must not enter the latency average.
-        return response
-    status = getattr(response, "status_code", 0)
-    if _is_service_fault(response):
-        breaker.record_failure(f"HTTP {status}")
-    elif 200 <= status < 300 and served is not None and not served(response):
-        breaker.record_failure(f"HTTP {status} without the expected payload")
-    else:
-        breaker.record_success(elapsed)
+        elapsed = time.perf_counter() - started
+        if _sheds_load(response):
+            # Deliberate refusal: no outcome to record in either direction, and
+            # the microseconds it took must not enter the latency average.
+            return response
+        status = getattr(response, "status_code", 0)
+        if _is_service_fault(response):
+            breaker.record_failure(f"HTTP {status}")
+        elif 200 <= status < 300 and served is not None and not served(response):
+            breaker.record_failure(f"HTTP {status} without the expected payload")
+        else:
+            breaker.record_success(elapsed)
     return response
