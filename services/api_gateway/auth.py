@@ -3,7 +3,8 @@
 import json
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Annotated, Any
 from urllib.parse import urlsplit
@@ -166,11 +167,8 @@ def _settings() -> KeycloakSettings:
         raise _Rejected(AuthRejectionReason.GATEWAY_AUTH_MISCONFIGURED) from None
 
 
-def _unverified_issuer(token: str) -> str:
-    try:
-        issuer = jwt.decode(token, options={"verify_signature": False}).get("iss")
-    except (InvalidTokenError, ValueError):
-        raise _Rejected(AuthRejectionReason.MALFORMED_TOKEN) from None
+def _issuer_of(unverified_claims: dict[str, Any]) -> str:
+    issuer = unverified_claims.get("iss")
     if not isinstance(issuer, str):
         raise _Rejected(AuthRejectionReason.MALFORMED_TOKEN)
     return issuer
@@ -222,26 +220,21 @@ async def _public_key(token: str, issuer: str) -> rsa.RSAPublicKey:
     return public_key
 
 
-def _verified_claims(
-    token: str, public_key: rsa.RSAPublicKey, issuer: str, settings: KeycloakSettings
-) -> dict[str, Any]:
+def _decode_reason(error: Exception) -> AuthRejectionReason:
+    return next(
+        (reason for kind, reason in _DECODE_REASONS if isinstance(error, kind)),
+        AuthRejectionReason.INVALID_TOKEN,
+    )
+
+
+@contextmanager
+def _attributed_to(tenant: StudioLoginTenant) -> Iterator[None]:
+    """Tag every rejection raised once the tenant is known with that tenant."""
     try:
-        return jwt.decode(
-            token,
-            public_key,
-            algorithms=["RS256"],
-            audience=settings.audience,
-            issuer=issuer,
-            options={"require": ["exp", "iss", "aud"]},
-        )
-    except InvalidTokenError as error:
-        reason = next(
-            (reason for kind, reason in _DECODE_REASONS if isinstance(error, kind)),
-            AuthRejectionReason.INVALID_TOKEN,
-        )
-        raise _Rejected(reason) from None
-    except (TypeError, ValueError):
-        raise _Rejected(AuthRejectionReason.INVALID_TOKEN) from None
+        yield
+    except _Rejected as rejection:
+        rejection.tenant_id = tenant.id
+        raise
 
 
 def _principal(
@@ -276,15 +269,29 @@ async def _authenticate(
 ) -> AuthenticatedPrincipal:
     token = _bearer_token(request)
     settings = _settings()
-    issuer = _unverified_issuer(token)
-    tenant = await _directory_tenant(directory_provider, settings, issuer, correlation_id)
+    # Peek then verify: the unverified issuer only selects an allowlisted
+    # directory tenant and its signing keys. Nothing from the token is trusted
+    # until the jwt.decode below verifies this same token; keep both here.
     try:
+        unverified_claims = jwt.decode(token, options={"verify_signature": False})
+    except (InvalidTokenError, ValueError):
+        raise _Rejected(AuthRejectionReason.MALFORMED_TOKEN) from None
+    issuer = _issuer_of(unverified_claims)
+    tenant = await _directory_tenant(directory_provider, settings, issuer, correlation_id)
+    with _attributed_to(tenant):
         public_key = await _public_key(token, issuer)
-        claims = _verified_claims(token, public_key, issuer, settings)
+        try:
+            claims = jwt.decode(
+                token,
+                public_key,
+                algorithms=["RS256"],
+                audience=settings.audience,
+                issuer=issuer,
+                options={"require": ["exp", "iss", "aud"]},
+            )
+        except (InvalidTokenError, TypeError, ValueError) as error:
+            raise _Rejected(_decode_reason(error)) from None
         return _principal(claims, tenant, settings)
-    except _Rejected as rejection:
-        rejection.tenant_id = tenant.id
-        raise
 
 
 async def require_ssf_user(

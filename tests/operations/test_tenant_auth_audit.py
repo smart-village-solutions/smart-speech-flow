@@ -169,8 +169,9 @@ def test_every_request_is_a_get_and_nothing_else_is_possible():
     http = audit.ReadOnlyHttp(fake)
     before = len(fake.requests)
     for method in ("POST", "PUT", "PATCH", "DELETE"):
+        request = urllib.request.Request("https://auth.example/x", data=b"{}", method=method)
         with pytest.raises(audit.AuditError, match="^refusing non-GET request$"):
-            http._open(urllib.request.Request("https://auth.example/x", data=b"{}", method=method))
+            http._open(request)
     assert len(fake.requests) == before
 
 

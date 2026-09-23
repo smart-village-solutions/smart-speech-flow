@@ -102,11 +102,12 @@ def test_smoke_cleans_up_a_partial_run_without_leaking_credentials(capsys):
             return httpx.Response(200, json={"status": "terminated"})
         return httpx.Response(500)
 
+    settings = _settings(smoke)
     transport = httpx.MockTransport(handler)
     with pytest.raises(
         smoke.SmokeFailure, match="^Tenant B session creation failed with HTTP 503$"
     ):
-        smoke.run_smoke(_settings(smoke), transport=transport)
+        smoke.run_smoke(settings, transport=transport)
 
     assert ("DELETE", "/api/admin/session/AAAA0001/terminate", f"Bearer {TOKEN_A}") in requests
     captured = capsys.readouterr()
@@ -133,20 +134,19 @@ def test_token_preconditions_fail_before_any_request(claims, message):
         requests.append(request)
         return httpx.Response(500)
 
+    settings = _settings(smoke, token_a=_jwt(**claims))
+    transport = httpx.MockTransport(handler)
     with pytest.raises(smoke.SmokeFailure, match=f"^{message}$"):
-        smoke.run_smoke(
-            _settings(smoke, token_a=_jwt(**claims)), transport=httpx.MockTransport(handler)
-        )
+        smoke.run_smoke(settings, transport=transport)
     assert requests == []
 
 
 def test_tenant_b_is_checked_too():
     smoke = _load_script()
+    settings = _settings(smoke, token_b=_jwt(realm_access={"roles": ["system_admin"]}))
+    transport = httpx.MockTransport(lambda request: httpx.Response(500))
     with pytest.raises(smoke.SmokeFailure, match="^Tenant B token lacks the ssf-user realm role$"):
-        smoke.run_smoke(
-            _settings(smoke, token_b=_jwt(realm_access={"roles": ["system_admin"]})),
-            transport=httpx.MockTransport(lambda request: httpx.Response(500)),
-        )
+        smoke.run_smoke(settings, transport=transport)
 
 
 @pytest.mark.parametrize("token", ["opaque", "a.b", "a.bm90IGpzb24.c"])
@@ -165,11 +165,13 @@ def test_a_stale_revision_is_named():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(502, json={"detail": "studio_runtime_authorization_mismatch"})
 
+    settings = _settings(smoke)
+    transport = httpx.MockTransport(handler)
     with pytest.raises(
         smoke.SmokeFailure,
         match="^Tenant A token carries a stale ssf_authorization_revision$",
     ):
-        smoke.run_smoke(_settings(smoke), transport=httpx.MockTransport(handler))
+        smoke.run_smoke(settings, transport=transport)
 
 
 @pytest.mark.parametrize(
@@ -181,11 +183,13 @@ def test_a_stale_revision_is_named():
 )
 def test_any_other_creation_failure_reports_its_status(response):
     smoke = _load_script()
+    settings = _settings(smoke)
+    transport = httpx.MockTransport(lambda request: response)
     with pytest.raises(
         smoke.SmokeFailure,
         match=f"^Tenant A session creation failed with HTTP {response.status_code}$",
     ):
-        smoke.run_smoke(_settings(smoke), transport=httpx.MockTransport(lambda request: response))
+        smoke.run_smoke(settings, transport=transport)
 
 
 def test_main_prints_the_specific_failure_without_claim_values(monkeypatch, capsys):

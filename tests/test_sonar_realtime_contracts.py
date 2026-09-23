@@ -366,10 +366,9 @@ def test_customer_polling_principal_cannot_cross_tenants(
         polling.TenantSessionKey(session_tenant, "SESSION1"), ClientType.CUSTOMER
     )
     monkeypatch.setattr(polling, "polling_store", store)
+    other_tenant = principal(principal_tenant)
     with pytest.raises(HTTPException) as unauthorized:
-        polling.require_customer_polling_key(
-            "SESSION1", client.polling_id, principal(principal_tenant)
-        )
+        polling.require_customer_polling_key("SESSION1", client.polling_id, other_tenant)
     assert unauthorized.value.status_code == 404
     assert unauthorized.value.detail == "Polling client not found"
 

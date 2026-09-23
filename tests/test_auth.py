@@ -19,6 +19,7 @@ from services.api_gateway.auth import (
     get_auth_login_directory_provider,
     require_ssf_user,
 )
+from services.api_gateway.session_pseudonym import tenant_ref
 from services.api_gateway.studio_login_directory import StudioLoginDirectoryService
 from services.api_gateway.studio_login_directory_client import (
     StudioLoginDirectory,
@@ -650,6 +651,25 @@ def test_invalid_correlation_id_does_not_change_the_rejection(
     assert response.status_code == 401
     assert response.json() == {"detail": "A valid bearer token is required"}
     assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected_ref"),
+    [
+        ({"ssf_authorization_revision": None}, tenant_ref("tenant-kassel")),
+        ({"iss": FULDA_ISSUER, "realm_access": {"roles": []}}, tenant_ref("tenant-fulda")),
+        ({"iss": f"{BASE_URL}/realms/unknown"}, "-"),
+    ],
+)
+def test_a_rejection_is_attributed_to_the_matched_tenant_only(
+    monkeypatch, signing_key, caplog, overrides, expected_ref
+):
+    caplog.set_level(logging.WARNING, logger=AUTH_LOGGER)
+    mock_keycloak(monkeypatch, signing_key)
+    request_with_token(access_token(signing_key, **overrides))
+    assert [record.tenant_ref for record in caplog.records if record.name == AUTH_LOGGER] == [
+        expected_ref
+    ]
 
 
 def test_accepted_token_logs_no_rejection(monkeypatch, signing_key, caplog):

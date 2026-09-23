@@ -25,10 +25,9 @@ def test_principal_creates_one_internal_tenant_context() -> None:
 
 
 def test_a_legacy_tenant_claim_fails_closed() -> None:
+    legacy = principal("tenant-kassel", carries_legacy_tenant_claim=True)
     with pytest.raises(HTTPException) as error:
-        studio_tenant_context_from_principal(
-            principal("tenant-kassel", carries_legacy_tenant_claim=True)
-        )
+        studio_tenant_context_from_principal(legacy)
 
     assert error.value.status_code == 401
 

@@ -123,8 +123,9 @@ async def test_customer_bearer_must_match_capability_tenant(
         RuntimeConfigurationSnapshot.from_configuration(_configuration(session_tenant)),
     )
 
+    other_tenant = principal(principal_tenant)
     with pytest.raises(HTTPException) as caught:
-        require_customer_session_key(session.id, principal(principal_tenant))
+        require_customer_session_key(session.id, other_tenant)
 
     assert caught.value.status_code == 404
     assert caught.value.detail == "Session not found"
