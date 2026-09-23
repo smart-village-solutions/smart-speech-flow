@@ -502,6 +502,15 @@ class TestTheFeedbackPanelsCanBeFilteredByTenant:
 
 ALERT_RULES = ROOT / "monitoring" / "alert_rules.yml"
 
+# Task 7 (vLLM refinement serving): these three sit above Go-live, not below
+# it, so Go-live's own "sits above every older panel" test must not count them
+# as one of the older panels it is guarding against.
+REFINEMENT_SERVING_TITLES = (
+    "Refinement Outcomes",
+    "Refinement Requests In Flight",
+    "KV Cache Utilisation",
+)
+
 
 def _panel(title: str) -> dict:
     dashboard = json.loads(DASHBOARD.read_text())
@@ -548,7 +557,12 @@ class TestTheGoLiveKpiPanels:
         """A go-live view that has to be scrolled to is not one."""
         dashboard = json.loads(DASHBOARD.read_text())
         ours = [p["gridPos"] for p in dashboard["panels"] if p["title"] in self.TITLES]
-        older = [p["gridPos"] for p in dashboard["panels"] if p["title"] not in self.TITLES]
+        older = [
+            p["gridPos"]
+            for p in dashboard["panels"]
+            if p["title"] not in self.TITLES
+            and p["title"] not in REFINEMENT_SERVING_TITLES
+        ]
         assert max(g["y"] + g["h"] for g in ours) <= min(g["y"] for g in older)
 
     def test_every_panel_names_the_kpi_it_answers(self):
@@ -649,3 +663,61 @@ class TestTheGoLiveKpiPanels:
                 if "rate(" in expr:
                     assert "[$__rate_interval]" in expr, (title, expr)
                     assert "[5m]" not in expr, (title, expr)
+
+
+class TestTheRefinementServingPanels:
+    """Task 7 of the vLLM refinement serving plan: refinement outcomes
+    otherwise reached only ClickHouse, which dashboards query but alerting
+    does not, so a 100% failure rate ran unnoticed for weeks. These panels
+    chart the Prometheus counter that RefinementFailureRateHigh alerts on and
+    the vLLM server's own /metrics, and sit above Go-live: an operator should
+    not have to scroll past the go-live view to see refinement is down."""
+
+    TITLES = REFINEMENT_SERVING_TITLES
+
+    def test_every_panel_is_present(self):
+        for title in self.TITLES:
+            _panel(title)
+
+    def test_they_sit_above_everything_else(self):
+        dashboard = json.loads(DASHBOARD.read_text())
+        ours = [p["gridPos"] for p in dashboard["panels"] if p["title"] in self.TITLES]
+        rest = [p["gridPos"] for p in dashboard["panels"] if p["title"] not in self.TITLES]
+        assert max(g["y"] + g["h"] for g in ours) <= min(g["y"] for g in rest)
+
+    def test_the_outcome_panel_reads_the_alertable_counter(self):
+        """This is the counter RefinementFailureRateHigh alerts on; the
+        ClickHouse-backed Outcome Mix panel elsewhere on this dashboard is not
+        wired to alerting at all."""
+        (expr,) = _queries("Refinement Outcomes")
+        assert expr == "sum by (outcome) (rate(refinement_attempts_total[$__rate_interval]))"
+
+    def test_the_in_flight_panel_reads_both_vllm_queue_metrics(self):
+        exprs = _queries("Refinement Requests In Flight")
+        assert "vllm:num_requests_running" in exprs
+        assert "vllm:num_requests_waiting" in exprs
+
+    def test_the_kv_cache_panel_reads_the_current_metric_name(self):
+        """`vllm:gpu_cache_usage_perc` is the older, no-longer-current name;
+        current vLLM documentation calls this `vllm:kv_cache_usage_perc`."""
+        (expr,) = _queries("KV Cache Utilisation")
+        assert expr == "vllm:kv_cache_usage_perc"
+
+    def test_the_vllm_native_metrics_are_flagged_unverified(self):
+        """No vLLM server exists yet to confirm these names against; a later
+        task stands one up and must confirm them before anyone relies on this
+        panel without question."""
+        for title in ("Refinement Requests In Flight", "KV Cache Utilisation"):
+            assert "unverified" in _panel(title).get("description", "").lower(), title
+
+    def test_the_alerts_this_panel_backs_exist(self):
+        """The panel and the pager must read the same failure this counter
+        can report, or a dashboard fix and an alert fix can drift apart."""
+        rules = yaml.safe_load(ALERT_RULES.read_text())
+        names = {
+            rule["alert"]
+            for group in rules["groups"]
+            for rule in group["rules"]
+        }
+        assert "RefinementFailureRateHigh" in names
+        assert "VllmTargetDown" in names

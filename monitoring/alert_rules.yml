@@ -200,6 +200,39 @@ groups:
           summary: GPU memory usage above 95%.
           description: GPU memory usage is approaching the limit. Evaluate model footprint and concurrent load.
 
+      # Refinement fails open: a broken refiner still returns the raw
+      # translation, so nothing else in the pipeline notices. Outcomes
+      # otherwise reach only ClickHouse, which dashboards query but alerting
+      # does not, and a 100% failure rate ran unnoticed for weeks for exactly
+      # that reason.
+      - alert: RefinementFailureRateHigh
+        expr: |
+          sum(rate(refinement_attempts_total{outcome="error"}[15m]))
+            / sum(rate(refinement_attempts_total[15m])) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+          service: translation
+        annotations:
+          summary: "More than a fifth of refinements are failing"
+          description: >-
+            Refinement errors exceed 20% of attempts. Refinement fails open, so
+            users still receive the translation, but unpolished. Check that the
+            refinement backend is up and that the model is resident.
+
+      - alert: VllmTargetDown
+        expr: up{job="vllm"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          service: vllm
+        annotations:
+          summary: "The vLLM refinement server is unreachable"
+          description: >-
+            Prometheus cannot scrape vllm:8000. Refinement is failing open.
+            Roll back with LLM_REFINEMENT_BACKEND=ollama if this persists; see
+            the runbook.
+
   - name: websocket-health
     rules:
       - alert: WebSocketConnectionsHigh
