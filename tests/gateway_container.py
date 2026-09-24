@@ -19,10 +19,12 @@ def installed_gateway_dependencies(app: FastAPI) -> Iterator[GatewayDependencies
     """Install what the lifespan would build, minus its startup I/O, and put it back.
 
     Refinement stays off, as it is in a process without LLM_REFINEMENT_* settings.
+    The WebSocket monitor counts into the series /metrics serves, as the lifespan's does.
     """
     previous = getattr(app.state, "dependencies", None)
     dependencies = build_gateway_dependencies(
         prometheus_registry=app.state.prometheus_registry,
+        websocket_metrics=app.state.websocket_metrics,
         translation_refiner=NoOpTranslationRefiner(),
     )
     app.state.dependencies = dependencies

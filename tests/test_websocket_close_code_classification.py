@@ -82,8 +82,6 @@ class TestTheReasonReachesCleanup:
                 return _Session()
 
         class _Manager:
-            session_manager = _SessionManager()
-
             async def connect_websocket(self, *args, **kwargs):
                 return "conn-1"
 
@@ -100,6 +98,7 @@ class TestTheReasonReachesCleanup:
             key=TenantSessionKey("tenant-a", "SESSION1"),
             client_type=ClientType.CUSTOMER,
             manager=_Manager(),
+            sessions=_SessionManager(),
             origin="https://console.example",
         )
 

@@ -17,10 +17,13 @@ from services.api_gateway.app import create_app
 from services.api_gateway.dependencies import GatewayDependencies, get_login_directory
 from services.api_gateway.service_health import ServiceHealthManager
 from services.api_gateway.studio_login_directory_client import StudioLoginDirectory
+from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 REVISION = f"sha256:{'a' * 64}"
 
 CONTAINER_BUILT = (
+    "pseudonymizer",
+    "websocket_monitor",
     "audio_store",
     "session_manager",
     "realtime_tickets",
@@ -41,9 +44,6 @@ CONTAINER_BUILT = (
 # "Dependency ownership" table of the OpenSpec design replaces each of them.
 ADAPTERS = (
     "prometheus_registry",
-    "pseudonymizer",
-    "websocket_monitor",
-    "fallback_manager",
     "oidc_key_cache",
 )
 # None without a feedback database, as tests/gateway_contract/test_contract_lifespan.py pins.
@@ -119,6 +119,9 @@ def test_each_apps_session_manager_is_wired_to_that_apps_collaborators() -> None
             assert sessions.polling_store is dependencies.polling_store
             assert sessions.websocket_manager is dependencies.websocket_manager
             assert sessions.pseudonymizer is dependencies.pseudonymizer
+            # One reference per session in the manager's and the monitor's log lines.
+            assert dependencies.websocket_monitor.pseudonymizer is dependencies.pseudonymizer
+            assert dependencies.websocket_manager.monitor is dependencies.websocket_monitor
             assert sessions.runtime_policy is not None
             gates.append(sessions.runtime_policy)
         assert gates[0] is not gates[1]
@@ -210,3 +213,30 @@ def test_a_provider_override_stays_on_its_own_app(monkeypatch: pytest.MonkeyPatc
         assert second.get("/api/login/tenants").status_code == 503
 
     assert untouched.dependency_overrides == {}
+
+
+def test_polling_records_presence_in_its_own_apps_sessions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A poller's presence lands in the session manager of the app it polled.
+
+    Each app's session store is its own, so a route that reached another
+    app's manager would not find the session at all.
+    """
+    for variable in ("REDIS_URL", "SSF_DEPLOYMENT_ENV", "STUDIO_RUNTIME_CONFIGURATION_BASE_URL"):
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
+    snapshot = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
+    first_app, second_app = create_app(), create_app()
+
+    with TestClient(first_app) as first, TestClient(second_app) as second:
+        keys = []
+        for client, app in ((first, first_app), (second, second_app)):
+            sessions = app.state.dependencies.session_manager
+            session = client.portal.call(sessions.create_admin_session, "tenant-a", snapshot)
+            activated = client.post(f"/api/customer/session/{session.id}/polling/activate")
+            assert activated.status_code == 200, activated.text
+            keys.append(session.key)
+
+        for app, key in ((first_app, keys[0]), (second_app, keys[1])):
+            sessions = app.state.dependencies.session_manager
+            assert sessions.get_session(key).customer_connection_count == 1
+        assert first_app.state.dependencies.session_manager.get_session(keys[1]) is None

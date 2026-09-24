@@ -131,11 +131,8 @@ module = [
     "services.api_gateway.tests.test_pipeline",
     "services.api_gateway.translation_refiner",
     "services.api_gateway.utils.health_utils",
-    "services.api_gateway.websocket",
     "services.api_gateway.websocket_fallback",
-    "services.api_gateway.websocket_monitor",
     "services.api_gateway.websocket_monitoring_routes",
-    "services.api_gateway.websocket_polling_routes",
 ]
 ignore_errors = true
 

@@ -70,6 +70,20 @@ them only through its own issue.
 
 ## Pinned as found
 
+Pinned by `test_contract_heartbeat.py` and `test_contract_realtime_metrics.py` (found in PR 6b):
+
+- A pong counts as a heartbeat whether or not it echoes the ping's `ping_id`; only an echoed
+  one is timed for `websocket_heartbeat_latency_seconds`.
+- A socket that stops answering gets a `connection_status` frame (`disconnecting`,
+  `heartbeat_timeout`), then close 1001 with reason `heartbeat_timeout`; its peer gets
+  `client_left` with the same reason, and one `heartbeat_timeout` disconnect is counted.
+- `websocket_messages_received_total`, `websocket_errors_total`,
+  `websocket_broadcast_messages_failed_total` and `websocket_polling_messages_dropped_total`
+  are exposed but nothing on the realtime surface makes them count: no caller records a
+  received message, the other two need a send that fails mid-broadcast, and the last is the
+  unwired fallback's. The test reads their label names from the registry.
+- The Info series `websocket_system_info` is exposed as `websocket_system_info_info`.
+
 Surprising, but pinned by `test_contract_audio.py` as they behave (found in PR5b). Changing
 one changes a contract test and needs its own issue.
 
@@ -157,6 +171,15 @@ Changes a later slice made on purpose, where the output differs from what came b
   reset routes resolve their collaborators through providers (PR5a). On an app whose
   lifespan has not run they now fail with `GatewayDependenciesUnavailable` instead of using
   the process-wide breakers and running unbounded. A running app always has its container.
+- Each app builds its own WebSocket monitor and session pseudonymizer (PR 6b). Both were
+  process-wide, so in a process running two apps, which only the test suites do,
+  `GET /api/websocket/monitoring/health` counted the other app's sockets, and without
+  `SSF_QUALITY_TELEMETRY_SESSION_KEY` both apps logged the same `session_ref` for a session
+  id. Each app now reports only its own sockets, and its manager, monitor, feedback service
+  and maintenance share that app's pseudonymizer, so one app's log lines still correlate. A
+  production process runs one app, which sees what it saw before. The Prometheus series stay
+  process-wide: every app's monitor counts into the one `WebSocketMetrics` app.py builds on
+  the registry `/metrics` serves.
 
 ## Inventory for PR7 (task 4.2)
 
@@ -173,3 +196,37 @@ unchanged. `tests/test_audio_processing_boundary.py` walks every module reachabl
 - `enhanced_audio_validation.py`, all of it. Consumers: `tests/test_audio_service_behavior.py`,
   `test_service_app_helpers.py`, `test_sonar_new_coverage_audio.py`, and the example in
   `docs/guides/audio-format-handling.md`.
+
+Unregistered and removed in PR 6b, with a before/after check that `app.routes` (55 routes,
+both WebSocket routes included) and `app.openapi()` are identical:
+
+- `websocket_monitoring_routes.py`: `websocket_connection_stats`, `list_active_connections`,
+  `get_session_connections`, `websocket_metrics_summary`, `force_close_connection`,
+  `get_prometheus_metrics`, and their helpers `_serialize_connection` and
+  `MONITORING_ROUTE_RESPONSES`. Only `GET /api/websocket/monitoring/health` was ever
+  registered from that module; it stays. Consumer: `tests/test_websocket_polling_coverage.py`,
+  whose test of them went with them.
+- `websocket_monitor.py`: the module global `websocket_monitor`, `initialize_websocket_monitor`
+  and `get_websocket_monitor`. Each app's `build_gateway_dependencies` builds its monitor.
+- `routes/metrics.py`: the branch that appended a second registry when the WebSocket monitor
+  had one of its own. The monitor was always built on the registry `/metrics` serves, so the
+  branch never ran; the route and its body are unchanged.
+- `websocket.py`: the unregistered `get_session_connections(session_id: str, ...)`,
+  `enable_polling_fallback` and `get_polling_messages`, the unused `WEBSOCKET_ROUTE_RESPONSES`,
+  and on `WebSocketManager` the legacy polling methods `enable_polling_fallback` and
+  `get_polling_messages` with `polling_clients` and `polling_interval`, and
+  `_evaluate_connection_error`, `_classify_error_for_fallback` and
+  `_send_fallback_activation_message`, which only a connection without a `TenantSessionKey`
+  reached. Consumers: tests only, removed with them.
+- `app.py`: `websocket_fallback_task` and the `fallback_manager` import and registry binding.
+
+Still unregistered after PR 6b, for PR7:
+
+- `websocket.py`: `get_websocket_stats` and `websocket_connection_test`.
+- `websocket_fallback.py`, all of it. Nothing in the gateway imports it; its suites
+  (`test_websocket_polling_queue_overflow.py`, `test_websocket_polling_coverage.py`,
+  `test_service_app_helpers.py`, `test_sonar_new_coverage_websocket.py`,
+  `test_websocket_connection_identity.py`) test the class directly.
+- `routes/session.py`: the unregistered activity-update helper passes a bare session id to
+  `WebSocketManager.get_session_connections`, which takes a `TenantSessionKey` since PR 6b. It
+  is on the mypy ignore list and no route reaches it.

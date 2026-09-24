@@ -14,7 +14,8 @@ from prometheus_client import CollectorRegistry
 
 from services.api_gateway import websocket as ws
 from services.api_gateway import websocket_monitor as wm
-from services.api_gateway.legacy_session_manager import LegacySessionManager
+from services.api_gateway.tenant_session import TenantSessionKey
+from tests.realtime_sessions import TENANT, open_session, tenant_session_manager, websocket_monitor
 
 CLIENT = ws.ClientType.CUSTOMER.value
 
@@ -40,15 +41,15 @@ def registry():
 
 
 @pytest.fixture
-def monitor(monkeypatch, registry):
-    real = wm.WebSocketMonitor(registry=registry)
-    monkeypatch.setattr(ws, "get_websocket_monitor", lambda: real)
-    return real
+def monitor(registry):
+    return websocket_monitor(registry)
 
 
 @pytest.fixture
 def manager(monkeypatch, monitor):
-    real = ws.WebSocketManager(LegacySessionManager())
+    sessions = tenant_session_manager()
+    open_session(sessions, "session-1")
+    real = ws.WebSocketManager(sessions, monitor=monitor)
 
     async def no_heartbeat_loop():
         return None
@@ -58,7 +59,8 @@ def manager(monkeypatch, monitor):
 
 
 async def _connect(manager) -> str:
-    return await manager.connect_websocket(_Socket(), "session-1", ws.ClientType.CUSTOMER)
+    key = next(iter(manager.session_manager.sessions))
+    return await manager.connect_websocket(_Socket(), key, ws.ClientType.CUSTOMER)
 
 
 def _age(manager, monitor, connection_id: str, seconds: int) -> None:
@@ -216,7 +218,9 @@ async def test_a_reply_that_beats_the_send_is_still_matched(manager, monitor, re
 async def test_a_record_the_manager_no_longer_holds_is_purged_without_a_disconnect(
     manager, monitor, registry, monkeypatch
 ):
-    monitor.connection_established("orphan", "session-9", CLIENT)
+    monitor.connection_established(
+        "orphan", "session-9", CLIENT, resource_key=TenantSessionKey(TENANT, "session-9")
+    )
 
     await _run_one_cleanup(monitor, manager, monkeypatch)
 
@@ -245,7 +249,9 @@ async def test_a_cleanup_during_the_close_does_not_lose_the_disconnect(
 
 def test_a_heartbeat_between_two_pings_is_healthy(monitor):
     """Pings go out every 30 s, so a 45 s old heartbeat is on schedule."""
-    metrics = monitor.connection_established("connection-1", "session-1", CLIENT)
+    metrics = monitor.connection_established(
+        "connection-1", "session-1", CLIENT, resource_key=TenantSessionKey(TENANT, "session-1")
+    )
     metrics.last_heartbeat = wm.utc_now() - timedelta(seconds=45)
 
     health = monitor.get_health_status()

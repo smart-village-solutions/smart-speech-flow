@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
-from prometheus_client import Counter, Gauge, Histogram, Info
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info
 
 from .session_pseudonym import SessionPseudonymizer
 from .tenant_session import TenantSessionKey
@@ -29,14 +29,12 @@ def utc_now() -> datetime:
 
 
 def _resource_log_fields(
-    resource: TenantSessionKey | str, pseudonymizer: SessionPseudonymizer
+    resource: TenantSessionKey, pseudonymizer: SessionPseudonymizer
 ) -> dict[str, str]:
-    if isinstance(resource, TenantSessionKey):
-        return {
-            "tenant_ref": resource.tenant_ref,
-            "session_ref": pseudonymizer.reference(resource.session_id),
-        }
-    return {"tenant_ref": "legacy", "session_ref": pseudonymizer.reference(resource)}
+    return {
+        "tenant_ref": resource.tenant_ref,
+        "session_ref": pseudonymizer.reference(resource.session_id),
+    }
 
 
 class ConnectionState(Enum):
@@ -112,7 +110,7 @@ class ConnectionMetrics:
     """Connection-specific metrics data"""
 
     session_id: str
-    resource_key: TenantSessionKey | str
+    resource_key: TenantSessionKey
     client_type: str
     origin: Optional[str]
     connect_time: datetime
@@ -127,49 +125,29 @@ class ConnectionMetrics:
     connection_duration: Optional[float] = None
 
 
-class WebSocketMonitor:
+class WebSocketMetrics:
+    """The realtime Prometheus series, registered once on one registry.
+
+    A series can be registered only once per registry, while every app builds
+    its own monitor, so the gateway builds this once per process on the
+    registry /metrics serves (app.py, an adapter until PR7 of #228) and every
+    app's monitor counts into it. The names and labels are queried by
+    monitoring/alert_rules.yml and the Grafana dashboards.
     """
-    Comprehensive WebSocket monitoring system with Prometheus integration
-    """
 
-    def __init__(self, registry=None, pseudonymizer: Optional[SessionPseudonymizer] = None):
-        self._pseudonymizer = pseudonymizer or SessionPseudonymizer.from_environment()
-        self._active_connections: Dict[str, ConnectionMetrics] = {}
-        self._connection_history: List[ConnectionMetrics] = []
-        self._session_connections: Dict[TenantSessionKey | str, Set[str]] = defaultdict(set)
-
-        # Store registry for Prometheus metrics
-        # Falls keine Registry übergeben wird, verwende die Standard-Registry
-        if registry is None:
-            from prometheus_client import REGISTRY
-
-            self._registry = REGISTRY
-        else:
-            self._registry = registry
-
-        # Prometheus Metrics
-        self._setup_prometheus_metrics()
-
-        # Performance tracking
-        self._performance_samples: List[Dict[str, Any]] = []
-        self._max_history_size = 10000
-
-    def _setup_prometheus_metrics(self):
-        """Initialize Prometheus metrics for WebSocket monitoring"""
-
-        # Connection Metrics
+    def __init__(self, registry: CollectorRegistry) -> None:
         self.connections_total = Counter(
             "websocket_connections_total",
             "Total number of WebSocket connections established",
             ["client_type"],
-            registry=self._registry,
+            registry=registry,
         )
 
         self.connections_active = Gauge(
             "websocket_connections_active",
             "Current number of active WebSocket connections",
             ["client_type"],
-            registry=self._registry,
+            registry=registry,
         )
 
         self.connections_duration = Histogram(
@@ -177,22 +155,21 @@ class WebSocketMonitor:
             "WebSocket connection duration in seconds",
             ["client_type", "disconnect_reason"],
             buckets=[1, 5, 10, 30, 60, 300, 600, 1800, 3600, float("inf")],
-            registry=self._registry,
+            registry=registry,
         )
 
-        # Message Metrics
         self.messages_sent_total = Counter(
             "websocket_messages_sent_total",
             "Total number of messages sent via WebSocket",
             ["client_type"],
-            registry=self._registry,
+            registry=registry,
         )
 
         self.messages_received_total = Counter(
             "websocket_messages_received_total",
             "Total number of messages received via WebSocket",
             ["client_type"],
-            registry=self._registry,
+            registry=registry,
         )
 
         self.message_size_bytes = Histogram(
@@ -200,91 +177,85 @@ class WebSocketMonitor:
             "WebSocket message size in bytes",
             ["direction", "client_type"],
             buckets=[64, 256, 1024, 4096, 16384, 65536, 262144, float("inf")],
-            registry=self._registry,
+            registry=registry,
         )
 
-        # Error Metrics
         self.errors_total = Counter(
             "websocket_errors_total",
             "Total number of WebSocket errors",
             ["client_type"],
-            registry=self._registry,
+            registry=registry,
         )
 
         self.disconnects_total = Counter(
             "websocket_disconnects_total",
             "Total number of WebSocket disconnections",
             ["client_type", "disconnect_reason"],
-            registry=self._registry,
+            registry=registry,
         )
 
-        # Performance Metrics
         self.heartbeat_latency = Histogram(
             "websocket_heartbeat_latency_seconds",
             "WebSocket heartbeat response latency",
             ["client_type"],
             buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, float("inf")],
-            registry=self._registry,
+            registry=registry,
         )
 
-        # Session Metrics
         self.sessions_with_connections = Gauge(
             "websocket_sessions_with_connections",
             "Number of sessions with active WebSocket connections",
-            registry=self._registry,
+            registry=registry,
         )
 
         self.connections_per_session = Histogram(
             "websocket_connections_per_session",
             "Number of WebSocket connections per session",
             buckets=[1, 2, 3, 4, 5, 10, 20, float("inf")],
-            registry=self._registry,
+            registry=registry,
         )
 
-        # System Health
         self.system_info = Info(
             "websocket_system_info",
             "WebSocket system information",
-            registry=self._registry,
+            registry=registry,
         )
 
-        # Broadcast Metrics (Task 4.8)
         self.broadcast_total = Counter(
             "websocket_broadcast_total",
             "Total number of broadcast operations",
             ["sender_type"],
-            registry=self._registry,
+            registry=registry,
         )
 
         self.broadcast_success_total = Counter(
             "websocket_broadcast_success_total",
             "Total number of successful broadcast operations",
             ["sender_type"],
-            registry=self._registry,
+            registry=registry,
         )
 
         self.broadcast_failure_total = Counter(
             "websocket_broadcast_failure_total",
             "Total number of failed broadcast operations",
             ["sender_type", "reason"],
-            registry=self._registry,
+            registry=registry,
         )
 
         self.broadcast_messages_delivered = Counter(
             "websocket_broadcast_messages_delivered_total",
             "Total number of messages successfully delivered in broadcasts",
             ["sender_type"],
-            registry=self._registry,
+            registry=registry,
         )
 
         self.broadcast_messages_failed = Counter(
             "websocket_broadcast_messages_failed_total",
             "Total number of messages that failed to deliver in broadcasts",
             ["sender_type"],
-            registry=self._registry,
+            registry=registry,
         )
 
-        # Initialize system info
         self.system_info.info(
             {
                 "version": "1.0.0",
@@ -293,9 +264,45 @@ class WebSocketMonitor:
             }
         )
 
+        # Counted only by the legacy polling fallback (websocket_fallback.py), which
+        # nothing registered reaches any more; kept exposed until PR7 deletes it.
+        self.polling_messages_dropped = Counter(
+            "websocket_polling_messages_dropped_total",
+            "Messages discarded because a polling client's queue was full",
+            ["client_type"],
+            registry=registry,
+        )
+
+        # The ssf-overview dashboard's "monitor initialised" panel reads this.
+        self.monitor_initialized = Gauge(
+            "websocket_monitor_initialized",
+            "WebSocket monitor initialization indicator",
+            registry=registry,
+        )
+        self.monitor_initialized.set(1)
+
+
+class WebSocketMonitor:
+    """One app's view of its WebSocket connections: live records, history and sessions.
+
+    `build_gateway_dependencies` builds one per app, with the process-wide
+    series and the pseudonymizer the app's session manager also uses, so a
+    session's log lines correlate across both.
+    """
+
+    def __init__(self, metrics: WebSocketMetrics, pseudonymizer: SessionPseudonymizer) -> None:
+        self.metrics = metrics
+        self._pseudonymizer = pseudonymizer
+        self._active_connections: Dict[str, ConnectionMetrics] = {}
+        self._connection_history: List[ConnectionMetrics] = []
+        self._session_connections: Dict[TenantSessionKey, Set[str]] = defaultdict(set)
+
+        # Performance tracking
+        self._performance_samples: List[Dict[str, Any]] = []
+        self._max_history_size = 10000
+
     @property
     def pseudonymizer(self) -> SessionPseudonymizer:
-        """Until PR6 (#228), every app's container shares this one, so log lines correlate."""
         return self._pseudonymizer
 
     def connection_established(
@@ -304,7 +311,8 @@ class WebSocketMonitor:
         session_id: str,
         client_type: str,
         origin: Optional[str] = None,
-        resource_key: TenantSessionKey | None = None,
+        *,
+        resource_key: TenantSessionKey,
     ) -> ConnectionMetrics:
         """Record new WebSocket connection establishment"""
 
@@ -313,17 +321,17 @@ class WebSocketMonitor:
             client_type=client_type,
             origin=origin,
             connect_time=utc_now(),
-            resource_key=resource_key or session_id,
+            resource_key=resource_key,
         )
 
         self._active_connections[connection_id] = metrics
         self._session_connections[metrics.resource_key].add(connection_id)
 
         # Update Prometheus metrics
-        self.connections_total.labels(client_type=client_type).inc()
+        self.metrics.connections_total.labels(client_type=client_type).inc()
 
-        self.connections_active.labels(client_type=client_type).inc()
-        self.sessions_with_connections.set(len(self._session_connections))
+        self.metrics.connections_active.labels(client_type=client_type).inc()
+        self.metrics.sessions_with_connections.set(len(self._session_connections))
 
         fields = _resource_log_fields(metrics.resource_key, self._pseudonymizer)
         logger.info("websocket_connection_established", extra=fields)
@@ -348,10 +356,10 @@ class WebSocketMonitor:
             metrics.disconnect_time - metrics.connect_time
         ).total_seconds()
 
-        self.connections_duration.labels(
+        self.metrics.connections_duration.labels(
             client_type=metrics.client_type, disconnect_reason=reason.value
         ).observe(metrics.connection_duration)
-        self.disconnects_total.labels(
+        self.metrics.disconnects_total.labels(
             client_type=metrics.client_type, disconnect_reason=reason.value
         ).inc()
 
@@ -379,8 +387,8 @@ class WebSocketMonitor:
         if not self._session_connections[metrics.resource_key]:
             del self._session_connections[metrics.resource_key]
 
-        self.connections_active.labels(client_type=metrics.client_type).dec()
-        self.sessions_with_connections.set(len(self._session_connections))
+        self.metrics.connections_active.labels(client_type=metrics.client_type).dec()
+        self.metrics.sessions_with_connections.set(len(self._session_connections))
         return metrics
 
     def record_rejected_connection(self, reason: DisconnectReason) -> None:
@@ -390,9 +398,13 @@ class WebSocketMonitor:
         pop, so it logs "non-existent connection" and returns None. The
         WebSocketOriginBlocked alert needs the counter incremented anyway.
         """
-        self.disconnects_total.labels(client_type="unknown", disconnect_reason=reason.value).inc()
+        self.metrics.disconnects_total.labels(
+            client_type="unknown", disconnect_reason=reason.value
+        ).inc()
 
-    def message_sent(self, connection_id: str, message_data: str, _message_type: str = "unknown"):
+    def message_sent(
+        self, connection_id: str, message_data: str, _message_type: str = "unknown"
+    ) -> None:
         """Record outbound message"""
         metrics = self._active_connections.get(connection_id)
         if not metrics:
@@ -403,17 +415,17 @@ class WebSocketMonitor:
         metrics.bytes_sent += message_size
 
         # Update Prometheus metrics
-        self.messages_sent_total.labels(
+        self.metrics.messages_sent_total.labels(
             client_type=metrics.client_type,
         ).inc()
 
-        self.message_size_bytes.labels(
+        self.metrics.message_size_bytes.labels(
             direction="outbound", client_type=metrics.client_type
         ).observe(message_size)
 
     def message_received(
         self, connection_id: str, message_data: str, _message_type: str = "unknown"
-    ):
+    ) -> None:
         """Record inbound message"""
         metrics = self._active_connections.get(connection_id)
         if not metrics:
@@ -424,17 +436,17 @@ class WebSocketMonitor:
         metrics.bytes_received += message_size
 
         # Update Prometheus metrics
-        self.messages_received_total.labels(
+        self.metrics.messages_received_total.labels(
             client_type=metrics.client_type,
         ).inc()
 
-        self.message_size_bytes.labels(
+        self.metrics.message_size_bytes.labels(
             direction="inbound", client_type=metrics.client_type
         ).observe(message_size)
 
     def record_error(
         self, connection_id: str, _error_type: str, _error_details: Optional[str] = None
-    ):
+    ) -> None:
         """Record WebSocket error"""
         metrics = self._active_connections.get(connection_id)
         if not metrics:
@@ -443,7 +455,7 @@ class WebSocketMonitor:
         metrics.errors += 1
 
         # Update Prometheus metrics
-        self.errors_total.labels(
+        self.metrics.errors_total.labels(
             client_type=metrics.client_type,
         ).inc()
 
@@ -455,7 +467,7 @@ class WebSocketMonitor:
             },
         )
 
-    def record_heartbeat(self, connection_id: str, latency_seconds: Optional[float] = None):
+    def record_heartbeat(self, connection_id: str, latency_seconds: Optional[float] = None) -> None:
         """Record a pong; latency is None when it answered no outstanding ping."""
         metrics = self._active_connections.get(connection_id)
         if not metrics:
@@ -464,9 +476,11 @@ class WebSocketMonitor:
         metrics.last_heartbeat = utc_now()
 
         if latency_seconds is not None:
-            self.heartbeat_latency.labels(client_type=metrics.client_type).observe(latency_seconds)
+            self.metrics.heartbeat_latency.labels(client_type=metrics.client_type).observe(
+                latency_seconds
+            )
 
-    def session_closed(self, session_id: TenantSessionKey | str, reason: str = "session_expired"):
+    def session_closed(self, session_id: TenantSessionKey, reason: str = "session_expired") -> None:
         """Handle session closure - disconnect all associated WebSocket connections"""
         connection_ids = list(self._session_connections.get(session_id, []))
 
@@ -492,9 +506,7 @@ class WebSocketMonitor:
         """Get all active WebSocket connections"""
         return self._active_connections.copy()
 
-    def get_session_connections(
-        self, session_id: TenantSessionKey | str
-    ) -> List[ConnectionMetrics]:
+    def get_session_connections(self, session_id: TenantSessionKey) -> List[ConnectionMetrics]:
         """Get all active connections for a specific session"""
         connection_ids = self._session_connections.get(session_id, set())
         return [
@@ -506,13 +518,15 @@ class WebSocketMonitor:
     def get_connection_stats(self) -> Dict[str, Any]:
         """Get comprehensive connection statistics"""
         active_connections = list(self._active_connections.values())
+        by_client_type: Dict[str, int] = {}
+        by_session: Dict[TenantSessionKey, int] = {}
 
-        stats = {
+        stats: Dict[str, Any] = {
             "active_connections": len(active_connections),
             "sessions_with_connections": len(self._session_connections),
             "total_historical_connections": len(self._connection_history),
-            "connections_by_client_type": {},
-            "connections_by_session": {},
+            "connections_by_client_type": by_client_type,
+            "connections_by_session": by_session,
             "average_connection_duration": 0,
             "message_throughput": {"sent_per_second": 0, "received_per_second": 0},
         }
@@ -520,13 +534,11 @@ class WebSocketMonitor:
         # Group by client type
         for metrics in active_connections:
             client_type = metrics.client_type
-            if client_type not in stats["connections_by_client_type"]:
-                stats["connections_by_client_type"][client_type] = 0
-            stats["connections_by_client_type"][client_type] += 1
+            by_client_type[client_type] = by_client_type.get(client_type, 0) + 1
 
         # Group by session
         for session_id, connection_ids in self._session_connections.items():
-            stats["connections_by_session"][session_id] = len(connection_ids)
+            by_session[session_id] = len(connection_ids)
 
         # Calculate average duration from history
         if self._connection_history:
@@ -580,7 +592,7 @@ class WebSocketMonitor:
         except Exception:
             return "unknown"
 
-    def _trim_history(self):
+    def _trim_history(self) -> None:
         """Trim connection history to prevent memory growth"""
         if len(self._connection_history) > self._max_history_size:
             # Keep most recent entries
@@ -594,7 +606,7 @@ class WebSocketMonitor:
             self._forget(connection_id)
         return orphaned
 
-    async def periodic_cleanup(self, live_connection_ids: Callable[[], Iterable[str]]):
+    async def periodic_cleanup(self, live_connection_ids: Callable[[], Iterable[str]]) -> None:
         """Purge records for sockets the WebSocketManager no longer holds.
 
         It never closes or times out a connection. The manager owns the
@@ -616,36 +628,3 @@ class WebSocketMonitor:
 
             except Exception:
                 logger.exception("WebSocket cleanup task failed")
-
-
-# Global WebSocket Monitor Instance
-websocket_monitor = None
-
-
-def initialize_websocket_monitor(registry=None):
-    """Initialize the global WebSocket monitor with the given registry"""
-    global websocket_monitor
-    if websocket_monitor is None:
-        websocket_monitor = WebSocketMonitor(registry=registry)
-
-        # Test-Metrik hinzufügen um Registry-Verbindung zu bestätigen
-        if registry is not None:
-            from prometheus_client import Gauge
-
-            test_metric = Gauge(
-                "websocket_monitor_initialized",
-                "WebSocket monitor initialization indicator",
-                registry=registry,
-            )
-            test_metric.set(1)
-
-    return websocket_monitor
-
-
-def get_websocket_monitor():
-    """Get the websocket monitor instance, should already be initialized by app startup"""
-    if websocket_monitor is None:
-        # Lazily initialize a default monitor for tests and simple setups
-        # to avoid hard dependency on app startup ordering.
-        initialize_websocket_monitor()
-    return websocket_monitor
