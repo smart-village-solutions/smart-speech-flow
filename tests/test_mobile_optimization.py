@@ -15,7 +15,7 @@ from services.api_gateway.websocket import (
     ConnectionState, ClientType, MessageType
 )
 from services.api_gateway.routes.session import ClientActivityUpdate
-from tests.realtime_sessions import open_session, tenant_session_manager
+from tests.realtime_sessions import open_session, tenant_session_manager, websocket_monitor
 
 
 class TestAdaptivePollingManager:
@@ -128,7 +128,7 @@ class TestWebSocketMobileOptimization:
         """Test-Setup"""
         self.session_manager = tenant_session_manager()
         self.session_key = open_session(self.session_manager, "TEST123")
-        self.websocket_manager = WebSocketManager(self.session_manager)
+        self.websocket_manager = WebSocketManager(self.session_manager, monitor=websocket_monitor())
 
     @pytest.mark.asyncio
     async def test_connection_with_mobile_info(self):

@@ -9,10 +9,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from prometheus_client import CollectorRegistry
+
 from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.session_manager import Session, SessionStatus, TenantSessionManager
+from services.api_gateway.session_pseudonym import SessionPseudonymizer
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from services.api_gateway.websocket_monitor import WebSocketMetrics, WebSocketMonitor
 
 TENANT = "tenant-a"
 _REVISION = f"sha256:{'a' * 64}"
@@ -23,6 +27,12 @@ def tenant_session_manager() -> TenantSessionManager:
     return TenantSessionManager(
         store=MemoryTenantSessionStore(), audio_store=AudioStore.from_environment()
     )
+
+
+def websocket_monitor(registry: CollectorRegistry | None = None) -> WebSocketMonitor:
+    """A monitor counting into `registry`, or into one nothing serves."""
+    metrics = WebSocketMetrics(registry if registry is not None else CollectorRegistry())
+    return WebSocketMonitor(metrics, SessionPseudonymizer.from_environment())
 
 
 def open_session(

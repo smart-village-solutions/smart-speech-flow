@@ -519,32 +519,28 @@ def test_service_apps_collect_gpu_metrics_and_metrics_route_fallbacks(
     assert translation_app._collect_gpu_metrics() == payload
     assert tts_app._collect_gpu_metrics() == payload
 
-    websocket_monitor = types.ModuleType("services.api_gateway.websocket_monitor")
-    websocket_monitor.WebSocketMonitor = object
-    monitor = SimpleNamespace(_registry="ws-registry")
-
     metrics_route = load_module(
         monkeypatch,
         "services.api_gateway.routes.metrics",
         "services/api_gateway/routes/metrics.py",
-        {"services.api_gateway.websocket_monitor": websocket_monitor},
+        {},
     )
     monkeypatch.setattr(
         metrics_route,
         "generate_latest",
-        lambda registry: (b"main_metric 1\n" if registry == "main-registry" else b"ws_metric 2\n"),
+        lambda registry: (b"main_metric 1\n" if registry == "main-registry" else b""),
     )
 
-    combined_response = metrics_route.metrics("main-registry", monitor)
-    assert combined_response.media_type == "text/plain"
-    assert combined_response.body == b"main_metric 1\nws_metric 2\n"
+    response = metrics_route.metrics("main-registry")
+    assert response.media_type == "text/plain"
+    assert response.body == b"main_metric 1\n"
 
     monkeypatch.setattr(
         metrics_route,
         "generate_latest",
         lambda registry: (_ for _ in ()).throw(RuntimeError("broken")),
     )
-    fallback_response = metrics_route.metrics("main-registry", monitor)
+    fallback_response = metrics_route.metrics("main-registry")
     assert fallback_response.body == b"# Fehler beim Generieren der Metriken\n"
 
 
@@ -975,9 +971,9 @@ def test_enhanced_audio_validator_convert_with_ffmpeg(tmp_path, monkeypatch):
 
 def test_websocket_monitor_utc_and_overdue_heartbeat_health():
     websocket_monitor = importlib.import_module("services.api_gateway.websocket_monitor")
-    from prometheus_client import CollectorRegistry
+    from tests.realtime_sessions import websocket_monitor as build_monitor
 
-    monitor = websocket_monitor.WebSocketMonitor(registry=CollectorRegistry())
+    monitor = build_monitor()
     metrics = monitor.connection_established(
         "conn-1", "session-1", "admin", "https://example.com:443"
     )

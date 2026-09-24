@@ -95,7 +95,6 @@ class TestTheCounterSurvivesTheRegistryBoundary:
         from services.api_gateway.app import app
         from services.api_gateway.routes.metrics import metrics
         from services.api_gateway.websocket_fallback import fallback_manager
-        from services.api_gateway.websocket_monitor import get_websocket_monitor
 
         polling_id = await fallback_manager.activate_polling_fallback(
             "session-metrics", "customer", None, FallbackReason.NETWORK_ERROR
@@ -106,7 +105,7 @@ class TestTheCounterSurvivesTheRegistryBoundary:
                     polling_id, {"type": "translation", "seq": index}
                 )
             registry = app.state.prometheus_registry
-            body = metrics(registry, get_websocket_monitor()).body.decode("utf-8")
+            body = metrics(registry).body.decode("utf-8")
         finally:
             fallback_manager.deactivate_polling_fallback(polling_id)
 

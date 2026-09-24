@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
-from prometheus_client import CollectorRegistry
 from starlette.testclient import WebSocketDenialResponse
 from starlette.websockets import WebSocketDisconnect
 
@@ -33,11 +32,11 @@ from services.api_gateway.websocket import (
     WebSocketManager,
     _safe_identifier,
 )
-from services.api_gateway.websocket_monitor import WebSocketMonitor
 from services.api_gateway.websocket_polling_routes import (
     POLLING_QUEUE_SIZE,
     TenantPollingStore,
 )
+from tests.realtime_sessions import websocket_monitor
 
 REVISION = f"sha256:{'a' * 64}"
 ALLOWED_ORIGIN = "https://translate.smart-village.solutions"
@@ -66,7 +65,7 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 @pytest.mark.asyncio
 async def test_same_public_id_in_two_tenants_never_cross_broadcast(session_manager) -> None:
     session_manager = _PresenceManager()
-    socket_manager = WebSocketManager(session_manager)
+    socket_manager = WebSocketManager(session_manager, monitor=websocket_monitor())
     socket_manager.start_heartbeat_system = AsyncMock()
     socket_a = AsyncMock()
     socket_b = AsyncMock()
@@ -195,7 +194,7 @@ async def test_connection_is_not_registered_if_session_terminates_during_accept(
         audio_store=AudioStore.from_environment(),
     )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    sockets = WebSocketManager(manager)
+    sockets = WebSocketManager(manager, monitor=websocket_monitor())
     sockets.start_heartbeat_system = AsyncMock()
     accept_started = asyncio.Event()
     accept_release = asyncio.Event()
@@ -226,7 +225,7 @@ async def test_inbound_message_is_not_dispatched_after_termination_starts() -> N
         audio_store=AudioStore.from_environment(),
     )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    sockets = WebSocketManager(manager)
+    sockets = WebSocketManager(manager, monitor=websocket_monitor())
     sockets.start_heartbeat_system = AsyncMock()
     sender = AsyncMock()
     receiver = AsyncMock()
@@ -264,7 +263,7 @@ async def test_polling_overflow_reports_current_delivery_and_historical_eviction
     receiver = store.activate(key, ClientType.CUSTOMER)
     for index in range(POLLING_QUEUE_SIZE):
         receiver.messages.append({"type": "old", "index": index})
-    sockets = WebSocketManager(_PresenceManager(), store)
+    sockets = WebSocketManager(_PresenceManager(), store, monitor=websocket_monitor())
 
     result = await sockets.broadcast_with_differentiated_content(
         key,
@@ -290,7 +289,7 @@ async def test_polling_overflow_reports_current_delivery_and_historical_eviction
 @pytest.mark.asyncio
 async def test_termination_cleans_only_the_addressed_tenant(session_manager) -> None:
     session_manager = _PresenceManager()
-    socket_manager = WebSocketManager(session_manager)
+    socket_manager = WebSocketManager(session_manager, monitor=websocket_monitor())
     socket_manager.start_heartbeat_system = AsyncMock()
     socket_a = AsyncMock()
     socket_b = AsyncMock()
@@ -308,7 +307,7 @@ async def test_termination_cleans_only_the_addressed_tenant(session_manager) -> 
 @pytest.mark.asyncio
 async def test_admin_connection_listing_is_filtered_by_token_tenant(session_manager) -> None:
     session_manager = _PresenceManager()
-    socket_manager = WebSocketManager(session_manager)
+    socket_manager = WebSocketManager(session_manager, monitor=websocket_monitor())
     socket_manager.start_heartbeat_system = AsyncMock()
     await socket_manager.connect_websocket(
         AsyncMock(), TenantSessionKey("tenant-a", "DUPL1234"), ClientType.ADMIN
@@ -326,7 +325,7 @@ async def test_admin_connection_listing_is_filtered_by_token_tenant(session_mana
 
 
 def test_monitor_keeps_duplicate_public_ids_in_separate_tenant_buckets() -> None:
-    monitor = WebSocketMonitor(registry=CollectorRegistry())
+    monitor = websocket_monitor()
     key_a = TenantSessionKey("tenant-a", "DUPL1234")
     key_b = TenantSessionKey("tenant-b", "DUPL1234")
 
@@ -347,7 +346,7 @@ async def test_legacy_fallback_log_never_contains_the_public_session_id(
     import services.api_gateway.websocket as websocket_module
 
     session_id = "SECRET42"
-    socket_manager = WebSocketManager(_PresenceManager())
+    socket_manager = WebSocketManager(_PresenceManager(), monitor=websocket_monitor())
     connection = WebSocketConnection(
         websocket=AsyncMock(),
         client_type=ClientType.ADMIN,

@@ -17,7 +17,7 @@ from services.api_gateway.websocket_fallback import (
     FallbackReason,
     WebSocketFallbackManager,
 )
-from tests.realtime_sessions import TENANT, open_session, tenant_session_manager
+from tests.realtime_sessions import TENANT, open_session, tenant_session_manager, websocket_monitor
 
 SESSION_A = TenantSessionKey(TENANT, "session-a")
 
@@ -64,7 +64,7 @@ class TestTheEndpointItselfBuildsUniqueIds:
     async def test_two_connections_for_one_session_get_different_ids(self):
         sessions = tenant_session_manager()
         key = open_session(sessions, "session-a")
-        manager = WebSocketManager(sessions)
+        manager = WebSocketManager(sessions, monitor=websocket_monitor())
 
         first = await manager.connect_websocket(_websocket(), key, ClientType.CUSTOMER)
         second = await manager.connect_websocket(_websocket(), key, ClientType.CUSTOMER)

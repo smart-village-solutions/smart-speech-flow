@@ -20,12 +20,6 @@ from services.api_gateway.tenant_session import TenantSessionKey
 from tests.realtime_sessions import TENANT, open_session, tenant_session_manager
 
 
-@pytest.fixture(autouse=True)
-def _silent_monitor(monkeypatch):
-    """broadcast_to_session reports every send to the monitor."""
-    monkeypatch.setattr(ws, "get_websocket_monitor", lambda: Mock())
-
-
 def _register(manager: ws.WebSocketManager, key: TenantSessionKey, client_type: ws.ClientType):
     """Register a live connection the way connect_websocket does."""
     connection_id = manager._build_connection_id(key, client_type)
@@ -49,7 +43,8 @@ def _register(manager: ws.WebSocketManager, key: TenantSessionKey, client_type: 
 def session():
     sessions = tenant_session_manager()
     key = open_session(sessions, "session-1")
-    manager = ws.WebSocketManager(sessions)
+    # broadcast_to_session reports every send to the monitor.
+    manager = ws.WebSocketManager(sessions, monitor=Mock())
     _, admin, admin_socket = _register(manager, key, ws.ClientType.ADMIN)
     _, customer, customer_socket = _register(manager, key, ws.ClientType.CUSTOMER)
     return {

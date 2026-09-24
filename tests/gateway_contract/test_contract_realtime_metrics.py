@@ -1,7 +1,7 @@
 """The realtime series /metrics exposes, by family name and label names.
 
-monitoring/alert_rules.yml and the ssf-overview Grafana dashboard query these
-series by name and label. A renamed series or a dropped label breaks an alert
+monitoring/alert_rules.yml and the Grafana dashboards query these series by
+name and label. A renamed series or a dropped label breaks an alert
 or a panel without failing anything else, so the names are pinned here after
 driving the realtime surface: two sockets, a relay, a pong, polling, an HTTP
 message and a refused origin.
@@ -22,7 +22,7 @@ ORIGIN = {"Origin": ALLOWED_ORIGIN}
 REPOSITORY = Path(__file__).resolve().parents[2]
 MONITORING_FILES = (
     REPOSITORY / "monitoring" / "alert_rules.yml",
-    REPOSITORY / "monitoring" / "grafana-dashboards" / "ssf-overview.json",
+    *sorted((REPOSITORY / "monitoring" / "grafana-dashboards").glob("*.json")),
 )
 REALTIME_SERIES = re.compile(r"\b(?:websocket_|tenant_polling_)[a-z_]+")
 

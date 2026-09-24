@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from .translation_refiner import BaseTranslationRefiner
     from .websocket import WebSocketManager
     from .websocket_fallback import WebSocketFallbackManager
-    from .websocket_monitor import WebSocketMonitor
+    from .websocket_monitor import WebSocketMetrics, WebSocketMonitor
     from .websocket_polling_routes import TenantPollingStore
 
 
@@ -88,6 +88,7 @@ def build_gateway_dependencies(
     studio_runtime_flow: StudioRuntimeFlow | None = None,
     runtime_policy: RuntimePolicyGate | None = None,
     polling_messages_dropped: Counter | None = None,
+    websocket_metrics: WebSocketMetrics | None = None,
     translation_refiner: BaseTranslationRefiner,
     pipeline_admission: PipelineAdmission | None = None,
     quality_telemetry: QualityTelemetry | None = None,
@@ -104,9 +105,13 @@ def build_gateway_dependencies(
     the admission gate and quality telemetry come from the lifespan too, which
     builds them first; None leaves the pipeline unbounded and emits no rows.
     Without an `audio_store` the app stores audio under SSF_AUDIO_BASE_DIR as
-    it is set when this runs.
+    it is set when this runs. The process-wide series (`polling_messages_dropped`,
+    `websocket_metrics`) come from app.py; without them this app counts into a
+    registry of its own that no /metrics serves.
     """
     # Imported here: every module below imports its provider from this one.
+    from prometheus_client import CollectorRegistry
+
     from .audio_processing import WavAudioValidator
     from .audio_storage import AudioStore
     from .auth import _key_cache
@@ -121,12 +126,13 @@ def build_gateway_dependencies(
     from .service_health import ServiceHealthManager
     from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
+    from .session_pseudonym import SessionPseudonymizer
     from .session_store import MemoryTenantSessionStore, RedisTenantSessionStore
     from .speech_services import HttpSpeechServices
     from .studio_login_directory import login_directory_from_environment
     from .websocket import WebSocketManager
     from .websocket_fallback import fallback_manager
-    from .websocket_monitor import get_websocket_monitor
+    from .websocket_monitor import WebSocketMetrics, WebSocketMonitor
     from .websocket_polling_routes import TenantPollingStore
 
     realtime_tickets = RealtimeTicketStore(
@@ -135,10 +141,13 @@ def build_gateway_dependencies(
     )
     polling_store = TenantPollingStore(messages_dropped=polling_messages_dropped)
     audio_store = audio_store if audio_store is not None else AudioStore.from_environment()
-    websocket_monitor = get_websocket_monitor()
-    # The monitor's, while it is a process-wide adapter: with no configured key
-    # every pseudonymizer draws its own, and the two would stop correlating.
-    pseudonymizer = websocket_monitor.pseudonymizer
+    # One per app, shared by everything that logs a session reference: with
+    # no configured key every pseudonymizer draws its own, and two would stop
+    # correlating.
+    pseudonymizer = SessionPseudonymizer.from_environment()
+    websocket_monitor = WebSocketMonitor(
+        websocket_metrics or WebSocketMetrics(CollectorRegistry()), pseudonymizer
+    )
     session_manager = TenantSessionManager(
         store=(
             RedisTenantSessionStore(redis, namespace=redis_namespace)
@@ -151,7 +160,7 @@ def build_gateway_dependencies(
         runtime_policy=runtime_policy,
         pseudonymizer=pseudonymizer,
     )
-    websocket_manager = WebSocketManager(session_manager, polling_store)
+    websocket_manager = WebSocketManager(session_manager, polling_store, monitor=websocket_monitor)
     service_health = ServiceHealthManager()
     speech_pipeline = SpeechPipeline(
         speech=HttpSpeechServices(service_health.circuit_breakers),

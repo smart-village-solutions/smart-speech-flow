@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-import services.api_gateway.websocket as websocket_module
 from services.api_gateway.session_manager import ClientType
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
@@ -20,7 +19,13 @@ from services.api_gateway.websocket import (
     MessageType,
     WebSocketManager,
 )
-from tests.realtime_sessions import SNAPSHOT, TENANT, open_session, tenant_session_manager
+from tests.realtime_sessions import (
+    SNAPSHOT,
+    TENANT,
+    open_session,
+    tenant_session_manager,
+    websocket_monitor,
+)
 
 
 class MockWebSocket:
@@ -68,7 +73,7 @@ class _MetricFamily:
         return self.counters[key]
 
 
-class MockMonitor:
+class MockMetrics:
     def __init__(self):
         self.broadcast_total = _MetricFamily()
         self.broadcast_failure_total = _MetricFamily()
@@ -86,7 +91,7 @@ def session_manager():
 @pytest.fixture
 def websocket_manager(session_manager):
     """WebSocket-Manager für Tests"""
-    return WebSocketManager(session_manager)
+    return WebSocketManager(session_manager, monitor=websocket_monitor())
 
 
 @pytest.fixture
@@ -264,10 +269,6 @@ class TestWebSocketManager:
         from types import SimpleNamespace
 
         from services.api_gateway.websocket import get_websocket_manager
-        from services.api_gateway.websocket_monitor import initialize_websocket_monitor
-
-        # Monitor initialisieren (wird von connect_websocket benötigt)
-        initialize_websocket_monitor()
 
         # Mehrere Requests derselben App sollten dieselbe Instanz erhalten
         app = SimpleNamespace(state=SimpleNamespace(dependencies=gateway_dependencies))
@@ -349,7 +350,7 @@ class TestWebSocketManager:
     ):
         """A targeted broadcast must neither leak nor echo to an excluded client."""
         monitor = Mock()
-        monkeypatch.setattr(websocket_module, "get_websocket_monitor", lambda: monitor)
+        monkeypatch.setattr(websocket_manager, "monitor", monitor)
         session_id = open_session(websocket_manager.session_manager, "TARGETED123")
         admin_socket = MockWebSocket()
         customer_socket = MockWebSocket()
@@ -382,7 +383,7 @@ class TestWebSocketManager:
     ):
         """A send failure must not prevent healthy session peers from receiving data."""
         monitor = Mock()
-        monkeypatch.setattr(websocket_module, "get_websocket_monitor", lambda: monitor)
+        monkeypatch.setattr(websocket_manager, "monitor", monitor)
         session_id = open_session(websocket_manager.session_manager, "BROADCAST123")
         failing_socket = MockWebSocket()
         healthy_socket = MockWebSocket()
@@ -405,11 +406,6 @@ class TestWebSocketManager:
 
     async def test_broadcast_with_differentiated_content_returns_status(self, websocket_manager):
         """Test: broadcast_with_differentiated_content gibt BroadcastResult zurück"""
-        from services.api_gateway.websocket_monitor import initialize_websocket_monitor
-
-        # Monitor initialisieren
-        initialize_websocket_monitor()
-
         session_id = open_session(websocket_manager.session_manager, "TEST_BROADCAST")
 
         # Zwei Verbindungen erstellen
@@ -480,11 +476,6 @@ class TestWebSocketManager:
         self, websocket_manager
     ):
         """Test: Broadcasting an Session ohne Connections gibt Fehler zurück"""
-        from services.api_gateway.websocket_monitor import initialize_websocket_monitor
-
-        # Monitor initialisieren
-        initialize_websocket_monitor()
-
         session_id = TenantSessionKey(TENANT, "EMPTY_SESSION")
 
         original_message = {
@@ -594,10 +585,10 @@ class TestWebSocketManager:
     async def test_record_broadcast_summary_updates_partial_failure_metrics(
         self, websocket_manager
     ):
-        monitor = MockMonitor()
+        monitor = MockMetrics()
 
         websocket_manager._record_broadcast_summary(
-            monitor=monitor,
+            metrics=monitor,
             session_id="TEST123",
             sender_type=ClientType.ADMIN,
             total_connections=2,
@@ -624,7 +615,7 @@ class TestWebSocketManager:
     async def test_build_no_connection_broadcast_result_marks_failure_metric(
         self, websocket_manager
     ):
-        monitor = MockMonitor()
+        monitor = MockMetrics()
 
         result = websocket_manager._build_no_connection_broadcast_result(
             monitor, "EMPTY_SESSION", ClientType.CUSTOMER

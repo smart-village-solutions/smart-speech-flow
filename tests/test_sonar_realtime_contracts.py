@@ -9,7 +9,6 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
-from prometheus_client import CollectorRegistry
 from starlette.websockets import WebSocket
 
 from services.api_gateway import websocket
@@ -20,7 +19,7 @@ from services.api_gateway.routes import session as session_routes
 from services.api_gateway.legacy_session_manager import LegacySessionManager
 from services.api_gateway.session_manager import ClientType, Session, TenantSessionManager
 from services.api_gateway.session_store import MemoryTenantSessionStore
-from services.api_gateway.websocket_monitor import WebSocketMonitor
+from tests.realtime_sessions import websocket_monitor
 
 
 @pytest.fixture
@@ -168,7 +167,7 @@ async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch
     sessions.customer_connected(expired_key)
     now[0] = 121.0
     live_client = store.activate(live_key, ClientType.ADMIN)
-    manager = websocket.WebSocketManager(sessions)
+    manager = websocket.WebSocketManager(sessions, monitor=websocket_monitor())
     loop = asyncio.get_running_loop()
     release_admin = sessions.admin_disconnected
 
@@ -210,7 +209,7 @@ def polling_http_state():
     )
     key = polling.TenantSessionKey("tenant-a", "SESSION1")
     sessions.store.create(Session(id=key.session_id, tenant_id=key.tenant_id))
-    manager = websocket.WebSocketManager(sessions)
+    manager = websocket.WebSocketManager(sessions, monitor=websocket_monitor())
     endpoint_app = FastAPI()
     endpoint_app.include_router(polling.router)
     endpoint_app.dependency_overrides[polling.require_admin_session_key] = lambda: key
@@ -336,10 +335,13 @@ async def test_terminated_polling_client_cannot_send_recover_or_read_status():
         ClientType.ADMIN,
         terminated=True,
     )
-    manager = websocket.WebSocketManager(TenantSessionManager(
-        store=MemoryTenantSessionStore(),
-        audio_store=AudioStore.from_environment(),
-    ))
+    manager = websocket.WebSocketManager(
+        TenantSessionManager(
+            store=MemoryTenantSessionStore(),
+            audio_store=AudioStore.from_environment(),
+        ),
+        monitor=websocket_monitor(),
+    )
     message = polling.PollingMessage(type="message", content={"text": "private"})
     with pytest.raises(HTTPException) as sent:
         await polling._send(polling.TenantPollingStore(), client, message, manager)
@@ -369,10 +371,13 @@ def test_customer_polling_principal_cannot_cross_tenants():
 
 
 async def test_websocket_missing_session_keeps_close_code_and_reason():
-    manager = websocket.WebSocketManager(TenantSessionManager(
-        store=MemoryTenantSessionStore(),
-        audio_store=AudioStore.from_environment(),
-    ))
+    manager = websocket.WebSocketManager(
+        TenantSessionManager(
+            store=MemoryTenantSessionStore(),
+            audio_store=AudioStore.from_environment(),
+        ),
+        monitor=websocket_monitor(),
+    )
     incoming = asyncio.Queue()
     outgoing = asyncio.Queue()
     socket = WebSocket({"type": "websocket"}, receive=incoming.get, send=outgoing.put)
@@ -399,7 +404,7 @@ async def test_websocket_registration_race_keeps_close_code_and_reason(monkeypat
     key = polling.TenantSessionKey("tenant-a", "SESSION1")
     # Cached only, so dropping it from the cache makes it unavailable.
     sessions.sessions[key] = Session(id="SESSION1", tenant_id="tenant-a")
-    manager = websocket.WebSocketManager(sessions)
+    manager = websocket.WebSocketManager(sessions, monitor=websocket_monitor())
     register = sessions.add_websocket_connection
 
     async def expire_before_registration(*args):
@@ -424,7 +429,7 @@ async def test_websocket_registration_race_keeps_close_code_and_reason(monkeypat
 
 
 def test_monitor_callback_arguments_preserve_metrics_and_redact_payloads(caplog):
-    monitor = WebSocketMonitor(registry=CollectorRegistry())
+    monitor = websocket_monitor()
     metrics = monitor.connection_established("connection", "SESSION1", "admin")
     monitor.message_sent("connection", "hé", "private-type")
     monitor.message_received("connection", "hello", "private-type")
@@ -477,7 +482,8 @@ async def test_websocket_query_helpers_remain_awaitable():
         TenantSessionManager(
             store=MemoryTenantSessionStore(),
             audio_store=AudioStore.from_environment(),
-        )
+        ),
+        monitor=websocket_monitor(),
     )
     assert await websocket.get_websocket_stats(manager) == manager.get_connection_stats()
     assert await websocket.get_session_connections("SESSION1", manager) == {

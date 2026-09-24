@@ -19,7 +19,7 @@ from services.api_gateway.websocket_fallback import (
     PollingClient,
     WebSocketFallbackManager,
 )
-from tests.realtime_sessions import TENANT, tenant_session_manager
+from tests.realtime_sessions import TENANT, tenant_session_manager, websocket_monitor
 
 
 class _Counter:
@@ -38,7 +38,7 @@ class _Monitor:
 
 @pytest.mark.asyncio
 async def test_no_connection_broadcast_uses_redacted_warning(caplog):
-    manager = WebSocketManager(tenant_session_manager())
+    manager = WebSocketManager(tenant_session_manager(), monitor=websocket_monitor())
 
     with caplog.at_level(logging.WARNING):
         result = await manager.broadcast_with_differentiated_content(
@@ -55,7 +55,7 @@ async def test_no_connection_broadcast_uses_redacted_warning(caplog):
 
 @pytest.mark.asyncio
 async def test_heartbeat_monitor_logs_unexpected_failure(monkeypatch, caplog):
-    manager = WebSocketManager(tenant_session_manager())
+    manager = WebSocketManager(tenant_session_manager(), monitor=websocket_monitor())
 
     async def fail_sleep(_delay):
         raise RuntimeError("scheduler unavailable")

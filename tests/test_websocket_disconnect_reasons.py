@@ -83,11 +83,9 @@ class TestTheReasonSurvivesCleanup:
                 recorded.append(reason)
                 return None
 
-        monkeypatch.setattr(ws, "get_websocket_monitor", lambda: _Monitor())
-
         sessions = tenant_session_manager()
         key = open_session(sessions, "s1")
-        manager = ws.WebSocketManager(sessions)
+        manager = ws.WebSocketManager(sessions, monitor=_Monitor())
         connection_id = manager._build_connection_id(key, ws.ClientType.CUSTOMER)
         manager.all_connections[connection_id] = ws.WebSocketConnection(
             websocket=Mock(),
@@ -123,11 +121,9 @@ class _RecordingMonitor:
 def _manager_with_one_connection(monkeypatch, monitor: _RecordingMonitor):
     from services.api_gateway import websocket as ws
 
-    monkeypatch.setattr(ws, "get_websocket_monitor", lambda: monitor)
-
     sessions = tenant_session_manager()
     key = open_session(sessions, "s1")
-    manager = ws.WebSocketManager(sessions)
+    manager = ws.WebSocketManager(sessions, monitor=monitor)
     connection_id = manager._build_connection_id(key, ws.ClientType.CUSTOMER)
     socket = Mock()
     socket.send_json = AsyncMock()
@@ -200,7 +196,6 @@ class TestARejectedOriginIsCounted:
         from services.api_gateway import websocket as ws
 
         monitor = _RecordingMonitor()
-        monkeypatch.setattr(ws, "get_websocket_monitor", lambda: monitor)
 
         async def deny(_origin):
             return False
@@ -214,7 +209,7 @@ class TestARejectedOriginIsCounted:
             socket,
             TenantSessionKey(TENANT, "TEST1234"),
             ws.ClientType.ADMIN,
-            Mock(),
+            Mock(monitor=monitor),
             "https://not-allowed.example",
         )
 

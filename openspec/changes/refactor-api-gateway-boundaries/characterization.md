@@ -157,6 +157,15 @@ Changes a later slice made on purpose, where the output differs from what came b
   reset routes resolve their collaborators through providers (PR5a). On an app whose
   lifespan has not run they now fail with `GatewayDependenciesUnavailable` instead of using
   the process-wide breakers and running unbounded. A running app always has its container.
+- Each app builds its own WebSocket monitor and session pseudonymizer (PR 6b). Both were
+  process-wide, so in a process running two apps, which only the test suites do,
+  `GET /api/websocket/monitoring/health` counted the other app's sockets, and without
+  `SSF_QUALITY_TELEMETRY_SESSION_KEY` both apps logged the same `session_ref` for a session
+  id. Each app now reports only its own sockets, and its manager, monitor, feedback service
+  and maintenance share that app's pseudonymizer, so one app's log lines still correlate. A
+  production process runs one app, which sees what it saw before. The Prometheus series stay
+  process-wide: every app's monitor counts into the one `WebSocketMetrics` app.py builds on
+  the registry `/metrics` serves.
 
 ## Inventory for PR7 (task 4.2)
 
@@ -173,3 +182,18 @@ unchanged. `tests/test_audio_processing_boundary.py` walks every module reachabl
 - `enhanced_audio_validation.py`, all of it. Consumers: `tests/test_audio_service_behavior.py`,
   `test_service_app_helpers.py`, `test_sonar_new_coverage_audio.py`, and the example in
   `docs/guides/audio-format-handling.md`.
+
+Unregistered and removed in PR 6b, with a before/after check that `app.routes` (55 routes,
+both WebSocket routes included) and `app.openapi()` are identical:
+
+- `websocket_monitoring_routes.py`: `websocket_connection_stats`, `list_active_connections`,
+  `get_session_connections`, `websocket_metrics_summary`, `force_close_connection`,
+  `get_prometheus_metrics`, and their helpers `_serialize_connection` and
+  `MONITORING_ROUTE_RESPONSES`. Only `GET /api/websocket/monitoring/health` was ever
+  registered from that module; it stays. Consumer: `tests/test_websocket_polling_coverage.py`,
+  whose test of them went with them.
+- `websocket_monitor.py`: the module global `websocket_monitor`, `initialize_websocket_monitor`
+  and `get_websocket_monitor`. Each app's `build_gateway_dependencies` builds its monitor.
+- `routes/metrics.py`: the branch that appended a second registry when the WebSocket monitor
+  had one of its own. The monitor was always built on the registry `/metrics` serves, so the
+  branch never ran; the route and its body are unchanged.

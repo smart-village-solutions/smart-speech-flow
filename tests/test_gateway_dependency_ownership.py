@@ -29,7 +29,7 @@ ALLOWLIST = {
     ("app.py", "requests_total"): "adapter until PR7",
     ("app.py", "pipeline_admission_metrics"): "adapter until PR7",
     ("app.py", "refinement_metrics"): "adapter until PR7",
-    ("app.py", "websocket_monitor"): "adapter until PR6",
+    ("app.py", "websocket_metrics"): "adapter until PR7",
     ("audio_storage.py", "audio_storage_disk_usage_bytes"): "adapter until PR7",
     ("audio_storage.py", "audio_files_total"): "adapter until PR7",
     ("audio_storage.py", "audio_cleanup_deleted_files_total"): "adapter until PR7",
@@ -40,7 +40,6 @@ ALLOWLIST = {
 # Module globals still rebound through a `global` statement. Only shrinks.
 GLOBAL_REBINDING_ALLOWLIST = {
     ("rate_limiter.py", "LATEST_RATE_LIMIT_MIDDLEWARE"): "adapter until PR7",
-    ("websocket_monitor.py", "websocket_monitor"): "adapter until PR6",
 }
 
 # The str-keyed compatibility adapter, and the unregistered legacy route

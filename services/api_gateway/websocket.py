@@ -30,7 +30,7 @@ from .session_access import require_customer_session_key
 from .session_manager import ClientType, SessionRegistry, SessionStatus
 from .tenant_session import TenantSessionKey
 from .websocket_fallback import FallbackReason, fallback_manager
-from .websocket_monitor import DisconnectReason, get_websocket_monitor
+from .websocket_monitor import DisconnectReason, WebSocketMetrics, WebSocketMonitor
 
 if TYPE_CHECKING:
     from .websocket_polling_routes import TenantPollingStore
@@ -339,11 +339,14 @@ class WebSocketManager:
         self,
         session_manager: SessionRegistry[Any],
         polling_store: Optional["TenantPollingStore"] = None,
+        *,
+        monitor: WebSocketMonitor,
     ):
         self.session_manager = session_manager
         self.session_manager.register_websocket_manager(self)
         # Tenant broadcasts also reach this app's HTTP pollers.
         self.polling_store = polling_store
+        self.monitor = monitor
 
         # Session-basierte Connection-Pools
         self.session_connections: Dict[Any, Dict[str, WebSocketConnection]] = {}
@@ -508,7 +511,7 @@ class WebSocketManager:
 
         # 📊 Monitoring: Connection established
         origin = client_info.get("origin") if client_info else None
-        get_websocket_monitor().connection_established(
+        self.monitor.connection_established(
             connection_id=connection_id,
             session_id=_safe_identifier(public_session_id),
             client_type=client_type.value,
@@ -662,7 +665,7 @@ class WebSocketManager:
 
                 # 📊 Monitoring: Message sent
                 message_type = message.get("type", "unknown")
-                get_websocket_monitor().message_sent(
+                self.monitor.message_sent(
                     connection_id=connection_id,
                     message_data=str(message),
                     _message_type=message_type,
@@ -673,7 +676,7 @@ class WebSocketManager:
                 failed_sends += 1
 
                 # 📊 Monitoring: Error occurred
-                get_websocket_monitor().record_error(
+                self.monitor.record_error(
                     connection_id=connection_id,
                     _error_type="broadcast_error",
                     _error_details=str(e),
@@ -709,13 +712,13 @@ class WebSocketManager:
         Returns:
             BroadcastResult with success status and detailed metrics
         """
-        monitor = get_websocket_monitor()
+        metrics = self.monitor.metrics
         metric_session_id = (
             _safe_identifier(session_id.session_id)
             if isinstance(session_id, TenantSessionKey)
             else session_id
         )
-        self._record_broadcast_attempt(monitor, metric_session_id, sender_type)
+        self._record_broadcast_attempt(metrics, metric_session_id, sender_type)
 
         errors = []
         successful_sends = 0
@@ -738,7 +741,7 @@ class WebSocketManager:
             if polling_delivered:
                 success = failed_sends == 0
                 self._record_broadcast_summary(
-                    monitor=monitor,
+                    metrics=metrics,
                     session_id=metric_session_id,
                     sender_type=sender_type,
                     total_connections=polling_delivered,
@@ -756,7 +759,7 @@ class WebSocketManager:
                     messages_dropped=polling_dropped,
                 )
             return self._build_no_connection_broadcast_result(
-                monitor, metric_session_id, sender_type
+                metrics, metric_session_id, sender_type
             )
 
         connections = self.session_connections[session_id]
@@ -799,7 +802,7 @@ class WebSocketManager:
         success = successful_sends > 0 and failed_sends == 0
 
         self._record_broadcast_summary(
-            monitor=monitor,
+            metrics=metrics,
             session_id=metric_session_id,
             sender_type=sender_type,
             total_connections=total_connections,
@@ -819,22 +822,22 @@ class WebSocketManager:
         )
 
     def _record_broadcast_attempt(
-        self, monitor: Any, session_id: str, sender_type: ClientType
+        self, metrics: WebSocketMetrics, session_id: str, sender_type: ClientType
     ) -> None:
         logger.debug(
             "WebSocket broadcast attempted",
             extra={"session_ref": _safe_identifier(session_id)},
         )
-        monitor.broadcast_total.labels(sender_type=sender_type.value).inc()
+        metrics.broadcast_total.labels(sender_type=sender_type.value).inc()
 
     def _build_no_connection_broadcast_result(
-        self, monitor: Any, session_id: str, sender_type: ClientType
+        self, metrics: WebSocketMetrics, session_id: str, sender_type: ClientType
     ) -> BroadcastResult:
         logger.warning(
             "Broadcast attempted without active connections",
             extra={"session_ref": _safe_identifier(session_id)},
         )
-        monitor.broadcast_failure_total.labels(
+        metrics.broadcast_failure_total.labels(
             sender_type=sender_type.value,
             reason="no_connections",
         ).inc()
@@ -867,7 +870,7 @@ class WebSocketManager:
     def _record_broadcast_summary(
         self,
         *,
-        monitor: Any,
+        metrics: WebSocketMetrics,
         session_id: str,
         sender_type: ClientType,
         total_connections: int,
@@ -880,24 +883,24 @@ class WebSocketManager:
                 f"✅ Broadcast successful: {successful_sends}/{total_connections} delivered",
                 extra={"session_ref": _safe_identifier(session_id)},
             )
-            monitor.broadcast_success_total.labels(sender_type=sender_type.value).inc()
+            metrics.broadcast_success_total.labels(sender_type=sender_type.value).inc()
         else:
             logger.warning(
                 f"⚠️ Broadcast partial/failed: {successful_sends} succeeded, "
                 f"{failed_sends} failed out of {total_connections}",
                 extra={"session_ref": _safe_identifier(session_id)},
             )
-            monitor.broadcast_failure_total.labels(
+            metrics.broadcast_failure_total.labels(
                 sender_type=sender_type.value,
                 reason=("partial_failure" if successful_sends > 0 else "complete_failure"),
             ).inc()
 
         if successful_sends > 0:
-            monitor.broadcast_messages_delivered.labels(sender_type=sender_type.value).inc(
+            metrics.broadcast_messages_delivered.labels(sender_type=sender_type.value).inc(
                 successful_sends
             )
         if failed_sends > 0:
-            monitor.broadcast_messages_failed.labels(sender_type=sender_type.value).inc(
+            metrics.broadcast_messages_failed.labels(sender_type=sender_type.value).inc(
                 failed_sends
             )
 
@@ -1098,7 +1101,7 @@ class WebSocketManager:
 
         connection.last_heartbeat = now
         connection.state = ConnectionState.CONNECTED
-        get_websocket_monitor().record_heartbeat(connection_id, latency)
+        self.monitor.record_heartbeat(connection_id, latency)
 
     async def _handle_client_message(
         self, connection: WebSocketConnection, message: Dict[str, Any]
@@ -1240,7 +1243,7 @@ class WebSocketManager:
         # Recorded in the same step as the pop above: the monitor's cleanup
         # purges any record the manager no longer holds, and it can run during
         # the await below.
-        get_websocket_monitor().connection_closed(
+        self.monitor.connection_closed(
             connection_id=connection_id,
             reason=reason,
         )
@@ -1629,7 +1632,7 @@ async def websocket_endpoint(
     """
     # 1. CORS Origin Validation (before WebSocket accept)
     if not await validate_websocket_origin(origin):
-        get_websocket_monitor().record_rejected_connection(DisconnectReason.ORIGIN_NOT_ALLOWED)
+        manager.monitor.record_rejected_connection(DisconnectReason.ORIGIN_NOT_ALLOWED)
         await websocket.close(code=1008, reason="Origin not allowed")
         logger.warning(
             "❌ WebSocket connection rejected - invalid origin: %s",

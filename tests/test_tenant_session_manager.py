@@ -21,6 +21,7 @@ from services.api_gateway.session_store import (
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 from services.api_gateway.websocket import WebSocketManager
 from services.api_gateway.websocket_polling_routes import TenantPollingStore
+from tests.realtime_sessions import websocket_monitor
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
@@ -194,7 +195,7 @@ async def test_termination_persists_tombstone_before_socket_presence_cleanup(
     manager: TenantSessionManager,
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    sockets = WebSocketManager(manager)
+    sockets = WebSocketManager(manager, monitor=websocket_monitor())
     sockets.start_heartbeat_system = AsyncMock()
     websocket = AsyncMock()
     websocket.client_state = WebSocketState.CONNECTED
@@ -245,7 +246,7 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
     manager.realtime_tickets = tickets
     manager.polling_store = polling
 
-    sockets = WebSocketManager(manager, polling)
+    sockets = WebSocketManager(manager, polling, monitor=websocket_monitor())
     sockets.start_heartbeat_system = AsyncMock()
     websocket = AsyncMock()
     websocket.client_state = WebSocketState.CONNECTED

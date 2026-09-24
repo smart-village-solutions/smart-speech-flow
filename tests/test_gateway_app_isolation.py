@@ -21,6 +21,8 @@ from services.api_gateway.studio_login_directory_client import StudioLoginDirect
 REVISION = f"sha256:{'a' * 64}"
 
 CONTAINER_BUILT = (
+    "pseudonymizer",
+    "websocket_monitor",
     "audio_store",
     "session_manager",
     "realtime_tickets",
@@ -41,8 +43,6 @@ CONTAINER_BUILT = (
 # "Dependency ownership" table of the OpenSpec design replaces each of them.
 ADAPTERS = (
     "prometheus_registry",
-    "pseudonymizer",
-    "websocket_monitor",
     "fallback_manager",
     "oidc_key_cache",
 )
@@ -119,6 +119,9 @@ def test_each_apps_session_manager_is_wired_to_that_apps_collaborators() -> None
             assert sessions.polling_store is dependencies.polling_store
             assert sessions.websocket_manager is dependencies.websocket_manager
             assert sessions.pseudonymizer is dependencies.pseudonymizer
+            # One reference per session in the manager's and the monitor's log lines.
+            assert dependencies.websocket_monitor.pseudonymizer is dependencies.pseudonymizer
+            assert dependencies.websocket_manager.monitor is dependencies.websocket_monitor
             assert sessions.runtime_policy is not None
             gates.append(sessions.runtime_policy)
         assert gates[0] is not gates[1]
