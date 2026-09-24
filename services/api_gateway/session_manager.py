@@ -457,18 +457,17 @@ KeyT = TypeVar("KeyT")
 KeyT_contra = TypeVar("KeyT_contra", contravariant=True)
 
 
-class SessionSockets(Protocol[KeyT_contra]):
+class SessionSockets[KeyT_in](Protocol):
     """What a session manager calls on the realtime side of its app.
 
     `WebSocketManager` is a `SessionSockets[TenantSessionKey]`. The legacy
     adapter's `SessionSockets[str]` is satisfied only by test doubles now.
+    The key is inferred contravariant: it appears only as a parameter.
     """
 
-    async def handle_session_termination(self, session_id: KeyT_contra, reason: str) -> None: ...
+    async def handle_session_termination(self, session_id: KeyT_in, reason: str) -> None: ...
 
-    async def broadcast_to_session(
-        self, session_id: KeyT_contra, message: Dict[str, Any]
-    ) -> None: ...
+    async def broadcast_to_session(self, session_id: KeyT_in, message: Dict[str, Any]) -> None: ...
 
 
 class SessionRegistry(Protocol[KeyT_contra]):

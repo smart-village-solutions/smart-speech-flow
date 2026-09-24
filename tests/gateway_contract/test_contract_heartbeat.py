@@ -49,6 +49,16 @@ def _settle(socket) -> None:
         pass
 
 
+def _frames_until_closed(socket) -> tuple[list[dict[str, Any]], WebSocketDisconnect]:
+    frames: list[dict[str, Any]] = []
+    while True:
+        try:
+            frame = socket.receive_json()
+        except WebSocketDisconnect as closed:
+            return frames, closed
+        frames.append(frame)
+
+
 def _health(client) -> dict[str, Any]:
     data: dict[str, Any] = client.get("/api/websocket/monitoring/health").json()["data"]
     return data
@@ -119,10 +129,7 @@ def test_a_silent_socket_is_closed_and_its_peer_told(client, conversations, fast
                     left = frame
                     break
 
-            frames = []
-            with pytest.raises(WebSocketDisconnect) as closed:
-                while True:
-                    frames.append(customer.receive_json())
+            frames, closed = _frames_until_closed(customer)
         # The admin kept answering, so it is still connected.
         _settle(admin)
 
@@ -134,6 +141,6 @@ def test_a_silent_socket_is_closed_and_its_peer_told(client, conversations, fast
         "disconnecting",
         "heartbeat_timeout",
     )
-    assert (closed.value.code, closed.value.reason) == (1001, "heartbeat_timeout")
+    assert (closed.code, closed.reason) == (1001, "heartbeat_timeout")
     assert (left["client_type"], left["reason"]) == ("customer", "heartbeat_timeout")
     assert _timeouts_counted(client) == counted_before + 1
