@@ -43,7 +43,7 @@ Existing app-state services migrate into the container without behavioral change
 | Runtime policy gate | lifespan (`_build_runtime_policy`), handed to `build_gateway_dependencies`, which gives it to the session manager; shutdown clears it there | none; message persistence reads `TenantSessionManager.runtime_policy` | container |
 | Realtime ticket store (`RealtimeTicketStore`) | `build_gateway_dependencies`, over a `RedisRealtimeTicketBackend` wrapping the lifespan's verified Redis client, with its namespace, or a `MemoryRealtimeTicketBackend` without `REDIS_URL` | `get_realtime_ticket_store` | container |
 | Polling store | `build_gateway_dependencies` | `get_polling_store` | container |
-| WebSocket manager | `build_gateway_dependencies`, with this app's session manager, polling store and WebSocket monitor. It starts its heartbeat task with the first socket; the lifespan stops it at shutdown | `get_websocket_manager` | container |
+| WebSocket manager | `build_gateway_dependencies`, with this app's session manager, polling store and WebSocket monitor. It builds its own registry, dispatcher, heartbeat and client-status handler (PR6c, below). It starts its heartbeat task with the first socket; the lifespan stops it at shutdown | `get_websocket_manager` | container |
 | Conversation service (`ConversationService`) | `build_gateway_dependencies`, with this app's session manager, speech pipeline, audio store, pipeline admission, quality telemetry and WebSocket manager | `get_conversation_service` | container |
 | Session lifecycle service (`SessionLifecycleService`) | `build_gateway_dependencies`, with this app's session manager | `get_session_lifecycle` | container |
 | Studio runtime flow | lifespan (`runtime_flow_from_environment`), which also binds the persistence gate with it | `get_studio_runtime_flow`; `None` when Studio is unconfigured | container |
@@ -147,7 +147,25 @@ Route adapters call application services; application services depend on typed p
 - The heartbeat task starts with the first socket, so it is not among the lifespan's background tasks. Shutdown now stops it after those tasks; before, it outlived the lifespan (`tests/test_realtime_heartbeat_shutdown.py`).
 - `TenantSessionManager.heartbeat_received` no longer calls `send_to_client`, which `WebSocketManager` never had. A heartbeat changes no tenant session state, as before; the legacy manager's method is unchanged.
 - `websocket.py`, `websocket_monitor.py` and `websocket_polling_routes.py` are off the mypy ignore list. The polling `send` route keeps its `dict[str, str]` response model, which refuses an overflow's partial body with 500 (characterization.md), under a one-line `type: ignore[return-value]`.
-- Left for PR6c: splitting `WebSocketManager` into registry, dispatcher and heartbeat collaborators, and typed frame models.
+- Left for PR6c: splitting `WebSocketManager` into registry, dispatcher and heartbeat collaborators, and typed frame models. Done; see below.
+
+#### Realtime split (PR6c)
+
+- `realtime_protocol.py` is the realtime protocol: `MessageType`, `ConnectionState`, and a TypedDict and one builder per server frame, the differentiated broadcast's sender confirmation and receiver message and the polling envelope and termination frame included. `MessageType` gained `TIMEOUT_WARNING` and `BATTERY_SAVER_MODE`, the two types that were sent as bare strings. `tests/test_realtime_protocol_guard.py` fails when any other gateway module writes a dict whose `"type"` is a `MessageType`, as an attribute or as the string it spells; only `legacy_session_manager.py` is allowlisted. `tests/gateway_contract/test_contract_realtime_frames.py` pins every frame's keys and fixed values over real sockets and pollers, and passed unchanged before the module existed.
+- `WebSocketManager` (`websocket.py`) is a facade. It builds four collaborators, each in its own type-checked module and given its dependencies by constructor:
+
+| Collaborator | Module | Owns |
+| --- | --- | --- |
+| `ConnectionRegistry` | `realtime_registry.py` | the session pools keyed by `TenantSessionKey`, the app-wide map, connection ids, lookup, the connection stats |
+| `BroadcastDispatcher` | `realtime_dispatch.py` | `broadcast_to_session`, the differentiated broadcast, delivery to the polling store, the broadcast metrics, `BroadcastResult` |
+| `Heartbeat` | `realtime_heartbeat.py` | the task's lifecycle, pings, pong latency, timeouts; it closes a failing socket through the `ConnectionCloser` protocol, which the manager meets |
+| `ClientStatusHandler` | `realtime_client_status.py` | `AdaptivePollingManager` and the tab, battery and network handlers |
+
+- `WebSocketConnection` and the time helpers live in `realtime_connection.py`.
+- The facade keeps the socket lifecycle (connect, disconnect, session termination), the dispatch of inbound frames, and the public methods and attributes production uses, so `ConversationService`, the session manager, the routes, the lifespan and `build_gateway_dependencies` did not change. `heartbeat_interval` and `heartbeat_timeout` delegate to the heartbeat, because the contract suite tunes them. `_cleanup_connection` became the public `release_connection`, which the heartbeat calls. The facade has no private aliases; tests that reached private manager methods call the collaborator that owns them.
+- The collaborators log under the manager's logger name (`services.api_gateway.websocket`), so no log line moved.
+- `app.routes` (55 routes, walking included routers, both WebSocket routes included), the OpenAPI document and the `/metrics` families and label names are identical to `970ea7b`.
+- `websocket_fallback.py`, `get_websocket_stats` and `websocket_connection_test` are untouched; PR7 deletes them. #348 still decides the public monitoring scope, and this slice adds, removes or changes no endpoint.
 
 ### Decision: Four delivery slices
 

@@ -23,6 +23,7 @@ the gap is filled below.
 | Audio validation, conversion and storage | `test_contract_pipeline.py` (a valid 16 kHz mono message succeeds, and its translated audio is served as a WAV); `test_audio_validation.py`, `test_tenant_audio_storage.py` and `test_audio_service_behavior.py` call `validate_audio_input`, `process_wav` or the storage functions directly. No test sent an invalid or convertible recording over HTTP | `test_contract_audio.py`, passing unchanged at `1d1b42e` (PR5b): a non-WAV body, a WAV under 0.1 s and a body one byte over 32 MB are 400 on the admin and customer message routes with the validator's code (`INVALID_WAV_FORMAT`, `INVALID_AUDIO_SPECS`, `FILE_TOO_LARGE`), message and `validation_details`, before any speech service is called and with nothing stored; audio is checked after the session-language match and before the supported-language check; `POST /pipeline` answers the same inputs with 400 and its single `Audio_Validation` step, `POST /upload` with its 400 page; a 44.1 kHz stereo WAV reaches ASR as 16 kHz mono 16-bit on all three routes, and `/pipeline` reports the conversion in its validation step; the message metadata has no validation step; message audio is stored at `v2/<tenant_ref>/<session_id>/<variant>/<message_id>.wav` under `SSF_AUDIO_BASE_DIR`, the original as uploaded, and both roles are served exactly those bytes. The message path validates once: `_validate_audio_payload`, then `process_wav` with `validate_audio=False` (`tests/test_audio_adapters.py` pins the single call) |
 | Realtime-ticket issue and consume | `test_admin_realtime_ticket_route.py::*` (issue, cross-tenant issue 404); `test_tenant_polling.py::test_ticket_issued_before_termination_cannot_activate_polling`; `test_tenant_websocket.py::test_admin_websocket_rejects_invalid_ticket_before_accept`. `test_realtime_ticket.py` tests the store class directly | `test_contract_realtime_tickets.py`: issue body and 60-second expiry; 422 outside the transport literal; single use over WebSocket and over polling; expiry for both transports; transport binding; a rejected ticket is spent; termination revokes WebSocket tickets; a foreign tenant cannot activate polling with the ticket and does not spend it; an unavailable store gives 503, close 1013 and 503 |
 | WebSocket connect, frames, close codes | `services/api_gateway/tests/test_tenant_realtime_integration_contract.py::test_admin_can_observe_only_its_session_realtime_connection`; `test_tenant_websocket.py::test_customer_websocket_still_accepts_an_anonymous_capability`, `::test_customer_websocket_rejects_a_cross_tenant_supplied_bearer_before_accept`, `::test_customer_websocket_rejects_a_malformed_supplied_bearer_before_accept`, `::test_legacy_client_selected_websocket_route_is_absent`. Frame and close behaviour beyond the ack is unit-tested on `WebSocketManager` only | `test_contract_websocket.py`: `connection_ack` fields; missing ticket 1008; missing or foreign origin 1008 for both roles; unknown or ended session denied with 404 before accept; `client_joined`, relayed `message` without echo, `typing_indicator` and `client_left` between two live sockets; malformed frames answered with `error` while the socket stays open; termination sends `session_terminated` then closes 1000; tenant-wide and per-session connection listings are tenant-scoped |
+| Every realtime frame | `test_contract_websocket.py`, `test_contract_heartbeat.py`, `test_contract_polling.py` and `test_contract_message_delivery.py` pinned some frames' keys; nothing pinned what reaches a poller, the device-status replies or the timeout warning | `test_contract_realtime_frames.py`, added in PR6c and passing unchanged at `970ea7b`: the key set and fixed values of `connection_ack` for both roles, the heartbeat ping, `error` (malformed text and a JSON array), `client_joined` with and without `customer_language`, `client_left`, the relayed message and typing (to the peer and to pollers, never back to the sender), the differentiated message per role on sockets and pollers, `session_terminated` on both transports for two reasons, `timeout_warning` on both transports, and the tab, battery-saver and network replies, which only the reporting socket gets. Timestamps and ids: presence and type. `test_contract_realtime_isolation.py` adds the cross-tenant denials: a ticket on another tenant's session, frames crossing tenants, a foreign admin reading a poller's status, a foreign bearer on a customer poller, a poller driven through another session |
 | HTTP message delivery to live WebSockets | None end to end. `test_contract_websocket.py` relays frames one socket sends; `test_contract_pipeline.py` checks the HTTP response only; `broadcast_message_to_session` and `WebSocketManager.broadcast_with_differentiated_content` are unit-tested with doubles. Found in PR4b: building `ConversationService` without its WebSocket manager failed no contract test | `test_contract_message_delivery.py`, added in PR4b and passing unchanged at `2847140`: for admin-to-customer and customer-to-admin, text and audio input, with both parties on WebSockets, `POST /api/<role>/session/{id}/message` gives the receiver a `receiver_message` frame with the translated text, the translated and original audio URLs and the pipeline metadata scoped to its own role, and gives the sender a `sender_confirmation` frame with its original text, no translated audio URL and its own role's URLs; the HTTP response fields are unchanged |
 | Polling fallback | `test_tenant_polling.py::*`; `test_sonar_realtime_contracts.py::test_polling_timeout_openapi_and_request_contract`, `::test_admin_activation_documents_its_actual_not_found_response` | `test_contract_polling.py`: activation body for both roles; 422 ticket validation; customer activation needs a live session and a matching bearer; 429 at ten pollers per role; send delivers an exact envelope to the other role and not back to the sender; 422 envelope validation; a polled send reaches a live WebSocket; cross-tenant poll, send, recover and delete 404; role binding; status, recover and disconnect bodies; an admin poller gets `session_terminated` and is then removed |
 | Lifespan startup and shutdown | `test_tenant_persistence_lifespan.py::*`; `test_runtime_policy_lifespan.py::*`; `test_quality_telemetry_lifespan.py::*`; `test_pipeline_admission.py::TestLifespanOwnership::test_lifespan_publishes_admission_on_app_state`; `test_feedback_connection_wiring.py::TestTheLifespanWiresTheAppItWasGiven::*`; `test_sonar_route_auth_contracts.py::test_lifespan_reports_a_background_task_failure_during_shutdown` | `test_contract_lifespan.py`: the `app.state` collaborators present after startup, in disabled and probe telemetry modes, while a request is served; everything acquired is `None` after shutdown; each lifespan builds its own admission gate |
@@ -107,6 +108,25 @@ Pinned against a real Redis by `test_realtime_ticket_redis.py` (found in PR6a):
   `<namespace>:v2:tenant:<base64url(tenant)>:session:<id>:realtime-revoked`, value `1`.
 - Production's Redis client decodes replies; the adapter also decodes a bytes reply, and the
   file runs every adapter case with both kinds of client.
+
+Pinned by `test_contract_realtime_frames.py` (found in PR6c):
+
+- `polling_interval_update` reads `old_interval` after the update, so it always equals `new_interval`.
+- `session_terminated` carries a German text chosen by reason. The admin's own termination (`manual_admin_termination`) and a timeout (`session_timeout`) are not among the reasons the text table knows (`manual_termination`, `timeout`), so both get the fallback `Die Session wurde beendet.`
+- The poller's `session_terminated` has no `message` and no `timestamp`; the socket's has both.
+- `battery_saver_mode` is sent with every battery report under 20 % that is not charging, even when the interval does not change.
+- A poller receives every relay, join and leave broadcast to its session, including those of a socket with its own role. It does not receive the device-status replies.
+- A customer who joins before activation, and an admin, get a `client_joined` without `customer_language`.
+- A frame that is valid JSON but not an object is answered with the same `error` as unparseable text.
+
+Pinned by `test_contract_websocket.py` and `test_contract_realtime_metrics.py` (gaps closed in PR6c; each was shown undetected by mutation at `970ea7b` and caught afterwards):
+
+- The admin WebSocket closes with 4404 `Session not found` when the session behind a valid ticket no longer exists, before the origin check. No HTTP request reaches that state; the `lapse_sessions` fixture drops the sessions without terminating them, as a lapsed Redis record would.
+- `/metrics` serves `websocket_monitor_initialized` with the value 1.
+
+Found in PR6c, not changed:
+
+- If the heartbeat never timed out a silent socket, `test_contract_heartbeat.py::test_a_silent_socket_is_closed_and_its_peer_told` would loop on pings forever instead of failing. The unit tests on the heartbeat fail at once; the contract test only times the job out.
 
 ## Accepted divergences
 Changes a later slice made on purpose, where the output differs from what came before.
@@ -229,4 +249,18 @@ Still unregistered after PR 6b, for PR7:
   `test_websocket_connection_identity.py`) test the class directly.
 - `routes/session.py`: the unregistered activity-update helper passes a bare session id to
   `WebSocketManager.get_session_connections`, which takes a `TenantSessionKey` since PR 6b. It
-  is on the mypy ignore list and no route reaches it.
+  is on the mypy ignore list and no route reaches it. Since PR6c it reaches the adaptive polling
+  through `WebSocketManager.client_status`.
+
+Found while splitting the realtime manager (PR6c), left unchanged:
+
+- `WebSocketManager`: `max_reconnect_attempts`, `base_reconnect_delay` and
+  `_calculate_reconnect_delay`, which nothing outside `tests/test_websocket_manager.py` uses.
+- `AdaptivePollingManager.client_profiles`, which nothing reads or writes.
+- `MessageType.DEVICE_ORIENTATION_CHANGE` and `RECONNECT_REQUIRED`, which no code path sends
+  or handles, and `ConnectionState.HEARTBEAT_TIMEOUT`, which none sets.
+- `WebSocketManager.get_connection_stats`, whose only caller is the unregistered
+  `get_websocket_stats`.
+- `tests/test_translation_refiner.py` reloads `translation_refiner` and leaves it reloaded, the
+  pattern `tests/test_sonar_backlog_coverage.py` now undoes. No test fails in either file order
+  today.
