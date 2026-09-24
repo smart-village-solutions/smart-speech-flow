@@ -63,7 +63,13 @@ RUN printf '%s%s\n' \
     && rm -rf /wheels /var/lib/apt/lists/* /tmp/pip-bootstrap.txt \
     && addgroup --system app \
     && adduser --system --ingroup app app \
-    && chown -R app:app /app
+    && chown -R app:app /app \
+    # Compose mounts a named volume here. Docker initialises such a volume
+    # from the image path, so the directory must exist and belong to app --
+    # otherwise the volume is created root:root and the container, which runs
+    # as app, cannot write a single audio file into it.
+    && mkdir -p /data/audio \
+    && chown -R app:app /data
 
 COPY services/api_gateway/ /app/services/api_gateway/
 COPY services/__init__.py /app/services/__init__.py

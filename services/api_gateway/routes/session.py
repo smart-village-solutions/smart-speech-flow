@@ -529,7 +529,13 @@ def _store_audio_artifacts(
         save_audio(key, message_id, AudioVariant.ORIGINAL, file_bytes)
         original_audio_available = True
     except Exception as e:
-        logger.warning("⚠️ Failed to save original audio: %s", type(e).__name__)
+        # See the translated-audio branch: success is still reported to the
+        # caller, so a warning here is invisible in practice.
+        logger.exception(
+            "⚠️ Failed to save original audio: %s",
+            type(e).__name__,
+            exc_info=_redacted_exception_info(e),
+        )
 
     return original_audio_available
 
@@ -1246,7 +1252,14 @@ async def create_session_message(
             )
             translated_audio_available = True
         except Exception as error:
-            logger.warning("⚠️ Failed to save translated audio: %s", type(error).__name__)
+            # Logged at error, not warning: the pipeline still answers
+            # successfully, so this line is the only signal that the reply
+            # reached the customer with no audio to play.
+            logger.exception(
+                "⚠️ Failed to save translated audio: %s",
+                type(error).__name__,
+                exc_info=_redacted_exception_info(error),
+            )
 
     message = SessionMessage(
         id=resolved_message_id,
