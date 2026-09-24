@@ -85,6 +85,11 @@ Changes a later slice made on purpose, where the output differs from what came b
   `services.api_gateway.session_lifecycle` instead of `services.api_gateway.routes.customer`
   (PR4b). Their messages, fields and order are unchanged. The request line and the
   unexpected-error line stay on the route's logger.
+- The activation log lines name the customer language by looking it up among the supported
+  codes (PR4b follow-up): `customer_language`, `previous_language` and `new_language` log
+  the matching constant, and an unsupported or absent code is logged as `unsupported`
+  instead of the value the request carried. Activation itself still accepts an unsupported
+  code with its warning, and the responses are unchanged.
 - Each app builds its own circuit breakers, health state and degradation mode (PR5a). They
   came from the process-wide `CircuitBreakerFactory` and two module singletons, so in a
   process running two apps, which only the test suites do, one app's failures opened the

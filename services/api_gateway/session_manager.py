@@ -594,7 +594,7 @@ class SessionManagerBase(Generic[KeyT]):
         # write must leave the live session and its files untouched,
         # or the next pass sees an already-pruned list, computes an
         # empty deletion set, and the refused files are stranded.
-        working = replace(session)
+        working: Session = replace(session)
         working.messages = [copy.deepcopy(message) for message in session.messages]
         changed = False
         doomed_audio: list[tuple[str, Any]] = []
@@ -793,7 +793,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         # the cached object and runtime indexes untouched until the atomic
         # record/index/tombstone mutation succeeds, so a transient store
         # failure remains both internally consistent and retryable.
-        terminal_session = replace(
+        terminal_session: Session = replace(
             session,
             status=SessionStatus.TERMINATED,
             terminated_at=self.clock(),

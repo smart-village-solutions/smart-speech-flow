@@ -27,6 +27,13 @@ _TENANT_CONFLICT_CODES = frozenset(
     {"tenant_suspended", "ssf_plugin_inactive", "ssf_tenant_not_ready"}
 )
 _SUPPORTED_CUSTOMER_LANGUAGES = ("de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa")
+# A logged language is looked up here, so the value written to the log is one of these
+# constants and never the code the request carried.
+_LOGGED_LANGUAGES = {code: code for code in _SUPPORTED_CUSTOMER_LANGUAGES}
+
+
+def _logged_language(code: Optional[str]) -> str:
+    return _LOGGED_LANGUAGES.get(code or "", "unsupported")
 
 
 class SessionNotFoundError(LookupError):
@@ -160,7 +167,7 @@ class SessionLifecycleService:
             sanitize_log_value(
                 {
                     "session_ref": _safe_session_ref(key.session_id),
-                    "customer_language": customer_language,
+                    "customer_language": _logged_language(customer_language),
                 }
             ),
         )
@@ -181,8 +188,8 @@ class SessionLifecycleService:
             sanitize_log_value(
                 {
                     "session_ref": _safe_session_ref(key.session_id),
-                    "previous_language": session.customer_language,
-                    "new_language": customer_language,
+                    "previous_language": _logged_language(session.customer_language),
+                    "new_language": _logged_language(customer_language),
                 }
             ),
         )

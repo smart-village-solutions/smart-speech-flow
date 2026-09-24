@@ -143,3 +143,38 @@ async def test_create_replaces_only_the_same_tenants_active_session(
     assert sessions.get_session(first.key).status is SessionStatus.TERMINATED
     assert sessions.get_session(other.key).status is SessionStatus.PENDING
     assert lifecycle.current("tenant-a", None).id == second.id
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "logged"),
+    [
+        ("en", "ar", ["en", "en", "ar"]),
+        ("xx<injected>", "yy\nforged", ["unsupported", "unsupported", "unsupported"]),
+    ],
+)
+async def test_activation_logs_only_allowlisted_language_codes(
+    sessions: TenantSessionManager,
+    caplog: pytest.LogCaptureFixture,
+    first: str,
+    second: str,
+    logged: list[str],
+) -> None:
+    lifecycle = SessionLifecycleService(sessions)
+    key = await _pending(sessions)
+
+    with caplog.at_level("INFO", logger="services.api_gateway.session_lifecycle"):
+        await lifecycle.activate(key, first, True, None, lambda: "first")
+        await lifecycle.activate(key, second, None, None, _must_not_read)
+
+    text = caplog.text
+    activated = next(
+        r.getMessage() for r in caplog.records if "erfolgreich aktiviert" in r.getMessage()
+    )
+    switched = next(
+        r.getMessage() for r in caplog.records if "Sprache wird aktualisiert" in r.getMessage()
+    )
+    assert f"'customer_language': '{logged[0]}'" in activated
+    assert f"'previous_language': '{logged[1]}'" in switched
+    assert f"'new_language': '{logged[2]}'" in switched
+    assert "injected" not in text
+    assert "forged" not in text
