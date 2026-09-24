@@ -121,13 +121,16 @@ class TicketClock:
 
 
 class _UnavailableTicketBackend:
-    def set(self, *args: object, **kwargs: object) -> bool:
+    def put_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool:
         raise ConnectionError("ticket backend down")
 
-    def eval(self, *args: object, **kwargs: object) -> str | None:
+    def put(self, key: str, value: str, ttl_seconds: int) -> None:
         raise ConnectionError("ticket backend down")
 
-    def get(self, *args: object, **kwargs: object) -> str | None:
+    def consume(self, key: str) -> str | None:
+        raise ConnectionError("ticket backend down")
+
+    def get(self, key: str) -> str | None:
         raise ConnectionError("ticket backend down")
 
 
@@ -197,10 +200,10 @@ def realtime_tickets(gateway_dependencies: GatewayDependencies) -> RealtimeTicke
     realtime_ticket_store = gateway_dependencies.realtime_tickets
     clock = TicketClock()
     realtime_ticket_store.clock = clock
-    realtime_ticket_store.redis = MemoryRealtimeTicketBackend(clock=clock)
+    realtime_ticket_store.backend = MemoryRealtimeTicketBackend(clock=clock)
 
     def make_unavailable() -> None:
-        realtime_ticket_store.redis = _UnavailableTicketBackend()
+        realtime_ticket_store.backend = _UnavailableTicketBackend()
 
     return RealtimeTickets(clock=clock, make_unavailable=make_unavailable)
 

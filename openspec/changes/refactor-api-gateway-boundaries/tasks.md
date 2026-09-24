@@ -32,6 +32,8 @@
 ## 3. Realtime, Polling, and Monitoring Boundaries
 
 - [ ] 3.1 Define typed realtime protocol and ticket-backend operations; migrate memory and Redis implementations without exposing Lua details.
+  - Ticket backend (PR6a): the `RealtimeTicketBackend` port (`put_if_absent`, `put`, `consume`, `get`), with `RedisRealtimeTicketBackend`, the only code that runs the Lua, and a `MemoryRealtimeTicketBackend` that never sees a script. `test_realtime_ticket_redis.py` pins the semantics against a real Redis, unchanged before and after. See design.md.
+  - Open: the typed realtime protocol is PR6b.
 - [ ] 3.2 Extract connection registry, dispatcher, heartbeat, polling fallback, and monitoring collaborators behind focused interfaces.
 - [ ] 3.3 Migrate WebSocket, polling, and supported monitoring routes while preserving tenant isolation, frame, and endpoint behavior.
 - [ ] 3.4 Add realtime lifecycle, broadcast, heartbeat, polling, and cross-tenant denial integration coverage; coordinate public monitoring scope with #348.

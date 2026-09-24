@@ -8,7 +8,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from hashlib import sha256
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, Protocol
 
 from .session_manager import utc_now
 from .tenant_session import TenantSessionKey
@@ -36,15 +36,32 @@ def _ticket_hash(ticket: str) -> str:
     return sha256(ticket.encode("ascii")).hexdigest()
 
 
+class RealtimeTicketBackend(Protocol):
+    """The storage operations realtime tickets need, with a lifetime per key.
+
+    `consume` is an atomic get-and-delete: however many callers race for one
+    key, exactly one receives its value. That is what makes a ticket single
+    use. `put` overwrites and restarts the lifetime, which revocation relies on.
+    """
+
+    def put_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool: ...
+
+    def put(self, key: str, value: str, ttl_seconds: int) -> None: ...
+
+    def consume(self, key: str) -> str | None: ...
+
+    def get(self, key: str) -> str | None: ...
+
+
 class RealtimeTicketStore:
     def __init__(
         self,
-        redis: Any,
+        backend: RealtimeTicketBackend,
         *,
         namespace: str = "ssf",
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
-        self.redis = redis
+        self.backend = backend
         self.namespace = namespace
         self.clock = clock
 
@@ -60,7 +77,7 @@ class RealtimeTicketStore:
     def revoke(self, key: TenantSessionKey) -> None:
         """Invalidate every outstanding ticket for one terminal session."""
         try:
-            self.redis.set(self._revoked_key(key), "1", ex=8 * 60 * 60, nx=False)
+            self.backend.put(self._revoked_key(key), "1", 8 * 60 * 60)
         except Exception as error:
             raise RealtimeTicketUnavailable() from error
 
@@ -85,7 +102,7 @@ class RealtimeTicketStore:
         try:
             for _attempt in range(3):
                 ticket = secrets.token_urlsafe(32)
-                if self.redis.set(self._key(ticket), payload, ex=ttl_seconds, nx=True):
+                if self.backend.put_if_absent(self._key(ticket), payload, ttl_seconds):
                     return IssuedRealtimeTicket(
                         ticket=ticket,
                         expires_at=self.clock() + timedelta(seconds=ttl_seconds),
@@ -117,13 +134,7 @@ class RealtimeTicketStore:
     ) -> TenantSessionKey | None:
         """Consume a ticket and recover its server-issued tenant scope."""
         try:
-            raw_payload = self.redis.eval(
-                CONSUME_TICKET_LUA,
-                1,
-                self._key(raw_ticket),
-            )
-            if isinstance(raw_payload, bytes):
-                raw_payload = raw_payload.decode("utf-8")
+            raw_payload = self.backend.consume(self._key(raw_ticket))
             payload = json.loads(raw_payload) if raw_payload is not None else None
         except Exception as error:
             raise RealtimeTicketUnavailable() from error
@@ -149,30 +160,54 @@ class RealtimeTicketStore:
         except ValueError:
             return None
         try:
-            if self.redis.get(self._revoked_key(resolved)) is not None:
+            if self.backend.get(self._revoked_key(resolved)) is not None:
                 return None
         except Exception as error:
             raise RealtimeTicketUnavailable() from error
         return resolved
 
 
+def _decoded(value: bytes | str | None) -> str | None:
+    return value.decode("utf-8") if isinstance(value, bytes) else value
+
+
+class RedisRealtimeTicketBackend:
+    """Tickets in Redis. The only code that knows about CONSUME_TICKET_LUA."""
+
+    def __init__(self, redis: Any) -> None:
+        self.redis = redis
+
+    def put_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool:
+        return bool(self.redis.set(key, value, ex=ttl_seconds, nx=True))
+
+    def put(self, key: str, value: str, ttl_seconds: int) -> None:
+        self.redis.set(key, value, ex=ttl_seconds, nx=False)
+
+    def consume(self, key: str) -> str | None:
+        return _decoded(self.redis.eval(CONSUME_TICKET_LUA, 1, key))
+
+    def get(self, key: str) -> str | None:
+        return _decoded(self.redis.get(key))
+
+
 class MemoryRealtimeTicketBackend:
-    """Minimal process-local Redis contract for tests and local development."""
+    """Process-local tickets for tests and local development without Redis."""
 
     def __init__(self, clock: Callable[[], datetime] = utc_now) -> None:
         self.clock = clock
         self.values: dict[str, tuple[str, datetime]] = {}
 
-    def set(self, key: str, value: str, *, ex: int, nx: bool) -> bool:
+    def put_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool:
         self._expire(key)
-        if nx and key in self.values:
+        if key in self.values:
             return False
-        self.values[key] = (value, self.clock() + timedelta(seconds=ex))
+        self.put(key, value, ttl_seconds)
         return True
 
-    def eval(self, script: str, number_of_keys: int, key: str) -> str | None:
-        if script != CONSUME_TICKET_LUA or number_of_keys != 1:
-            raise ValueError("unsupported realtime ticket script")
+    def put(self, key: str, value: str, ttl_seconds: int) -> None:
+        self.values[key] = (value, self.clock() + timedelta(seconds=ttl_seconds))
+
+    def consume(self, key: str) -> str | None:
         self._expire(key)
         stored = self.values.pop(key, None)
         return stored[0] if stored else None
