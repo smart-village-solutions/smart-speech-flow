@@ -314,17 +314,19 @@ async def test_created_message_persists_translated_audio_without_retaining_bytes
     manager = TenantSessionManager(store=MemoryTenantSessionStore(), audio_store=store)
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
 
+    available = message_processing._store_translated_audio(
+        session.key, "message-1", b"translated", audio_store=store
+    )
     message = await message_processing.create_session_message(
         session_id=session.key,
         client_type=ClientType.ADMIN,
         original_text="Hallo",
         translated_text="Hello",
-        audio_bytes=b"translated",
         source_lang="de",
         target_lang="en",
         message_id="message-1",
         sessions=manager,
-        audio_store=store,
+        translated_audio_available=available,
     )
 
     assert store.saved == [(session.key, "message-1", AudioVariant.TRANSLATED, b"translated")]

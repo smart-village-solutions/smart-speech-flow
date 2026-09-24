@@ -107,12 +107,11 @@ async def test_a_failed_broadcast_is_logged_as_a_failure_not_as_a_crash(
             client_type=ClientType.ADMIN,
             original_text="Hallo",
             translated_text="Hello",
-            audio_bytes=None,
             source_lang="de",
             target_lang="en",
             manager=Mock(),
             sessions=sessions,
-            audio_store=AudioStore.from_environment(),
+            translated_audio_available=False,
         )
 
     messages = [record.getMessage() for record in caplog.records]

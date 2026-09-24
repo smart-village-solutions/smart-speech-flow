@@ -47,16 +47,19 @@ async def test_a_failed_translated_audio_write_still_delivers_the_message(
     key = await _session(session_manager)
 
     with caplog.at_level(logging.ERROR, logger=message_processing.logger.name):
+        available = message_processing._store_translated_audio(
+            key, "message-id", b"audio-bytes", audio_store=refusing_audio_storage
+        )
         message = await message_processing.create_session_message(
             key,
             ClientType.CUSTOMER,
             "hallo",
             "hello",
-            b"audio-bytes",
             "de",
             "en",
+            message_id="message-id",
             sessions=session_manager,
-            audio_store=refusing_audio_storage,
+            translated_audio_available=available,
         )
 
     assert message.translated_text == "hello"

@@ -156,8 +156,9 @@ def test_tenant_active_lookup_rejects_ambiguity_and_excludes_other_tenants():
     first.status = second.status = SessionStatus.TERMINATED
     assert manager.get_active_session(tenant_id="tenant-a") is None
     # A tenant manager without a store cannot be built any more.
+    audio_store = AudioStore.from_environment()
     with pytest.raises(TypeError):
-        TenantSessionManager(audio_store=AudioStore.from_environment())
+        TenantSessionManager(audio_store=audio_store)
 
 
 async def test_unknown_expired_polling_client_does_not_prevent_customer_disconnect():

@@ -1,12 +1,10 @@
 """A refusal records the fact, never the content."""
 
 import logging
-from pathlib import Path
 
 import pytest
 from prometheus_client import CollectorRegistry
 
-from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway import message_processing
 from services.api_gateway.runtime_policy import (
@@ -24,17 +22,12 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture
-def audio_store(tmp_path: Path) -> AudioStore:
-    return AudioStore(tmp_path)
-
-
-@pytest.fixture
 def policy_metrics_registry() -> CollectorRegistry:
     return CollectorRegistry()
 
 
 async def test_refusal_log_contains_no_conversation_content(
-    caplog, audio_store, policy_metrics_registry, session_manager
+    caplog, policy_metrics_registry, session_manager
 ):
     secret_original = "mein geheimes anliegen"
     secret_translated = "my secret request"
@@ -56,11 +49,10 @@ async def test_refusal_log_contains_no_conversation_content(
             ClientType.CUSTOMER,
             secret_original,
             secret_translated,
-            b"audio-bytes",
             "de",
             "en",
             sessions=session_manager,
-            audio_store=audio_store,
+            translated_audio_available=True,
         )
 
     assert message.record_authorized is False

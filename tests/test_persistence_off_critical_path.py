@@ -35,7 +35,7 @@ async def _session_with_consent(session_manager, status: ConsentStatus):
     return session.key
 
 
-async def test_broadcast_precedes_every_policy_read(session_manager, monkeypatch, audio_store):
+async def test_broadcast_precedes_every_policy_read(session_manager, monkeypatch):
     # The read blocks until the test releases it. If it were awaited before the
     # broadcast, the broadcast would never happen and the wait below times out.
     released = asyncio.Event()
@@ -68,12 +68,11 @@ async def test_broadcast_precedes_every_policy_read(session_manager, monkeypatch
             ClientType.CUSTOMER,
             "hallo",
             "hello",
-            b"audio-bytes",
             "de",
             "en",
             manager=object(),
             sessions=session_manager,
-            audio_store=audio_store,
+            translated_audio_available=True,
         )
     )
     try:
@@ -92,22 +91,25 @@ async def test_declined_session_still_gets_playable_audio(session_manager, audio
     session_manager.runtime_policy = _RefusingGate()
     key = await _session_with_consent(session_manager, ConsentStatus.DECLINED)
 
+    available = message_processing._store_translated_audio(
+        key, "m1", b"audio-bytes", audio_store=audio_store
+    )
     message = await message_processing.create_session_message(
         key,
         ClientType.CUSTOMER,
         "hallo",
         "hello",
-        b"audio-bytes",
         "de",
         "en",
+        message_id="m1",
         sessions=session_manager,
-        audio_store=audio_store,
+        translated_audio_available=available,
     )
 
     # Live delivery is untouched: the response builder reads exactly this flag
     # to decide whether to hand the listener an audio URL.
     assert message.translated_audio_available is True
-    saved = audio_store.path(key, message.id, AudioVariant.TRANSLATED)
+    saved = audio_store.path(key, "m1", AudioVariant.TRANSLATED)
     assert saved.is_file()
     # The outcome is recorded as refused, for removal at termination.
     assert message.record_authorized is False
@@ -115,7 +117,7 @@ async def test_declined_session_still_gets_playable_audio(session_manager, audio
 
 
 async def test_a_terminated_session_does_not_fail_a_delivered_message(
-    audio_store, monkeypatch, session_manager
+    monkeypatch, session_manager
 ):
     """Recording the outcome must not fail a request already served.
 
@@ -147,19 +149,16 @@ async def test_a_terminated_session_does_not_fail_a_delivered_message(
         ClientType.CUSTOMER,
         "hallo",
         "hello",
-        b"audio-bytes",
         "de",
         "en",
         sessions=session_manager,
-        audio_store=audio_store,
+        translated_audio_available=True,
     )
 
     assert message.translated_audio_available is True
 
 
-async def test_the_production_default_refuses_when_no_gate_is_bound(
-    session_manager, audio_store
-):
+async def test_the_production_default_refuses_when_no_gate_is_bound(session_manager):
     """conftest sets a permissive gate for every suite; this asserts the real
     default it hides.
 
@@ -174,11 +173,10 @@ async def test_the_production_default_refuses_when_no_gate_is_bound(
         ClientType.CUSTOMER,
         "hallo",
         "hello",
-        b"audio-bytes",
         "de",
         "en",
         sessions=session_manager,
-        audio_store=audio_store,
+        translated_audio_available=True,
     )
 
     assert message.record_authorized is False

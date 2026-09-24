@@ -428,7 +428,7 @@ def _store_audio_artifacts(
         audio_store.save(key, message_id, AudioVariant.ORIGINAL, file_bytes)
         original_audio_available = True
     except Exception as e:
-        # See the translated-audio branch: success is still reported to the
+        # See _store_translated_audio: success is still reported to the
         # caller, so a warning here is invisible in practice.
         logger.exception(
             "⚠️ Failed to save original audio: %s",
@@ -437,6 +437,31 @@ def _store_audio_artifacts(
         )
 
     return original_audio_available
+
+
+def _store_translated_audio(
+    key: TenantSessionKey,
+    message_id: str,
+    audio_bytes: Optional[bytes],
+    *,
+    audio_store: AudioStore,
+) -> bool:
+    """Save the synthesised reply, reporting whether the listener can play it."""
+    if not audio_bytes:
+        return False
+    try:
+        audio_store.save(key, message_id, AudioVariant.TRANSLATED, audio_bytes)
+    except Exception as error:
+        # Logged at error, not warning: the pipeline still answers
+        # successfully, so this line is the only signal that the reply
+        # reached the customer with no audio to play.
+        logger.exception(
+            "⚠️ Failed to save translated audio: %s",
+            type(error).__name__,
+            exc_info=_redacted_exception_info(error),
+        )
+        return False
+    return True
 
 
 def _build_message_response(
@@ -772,12 +797,14 @@ async def process_audio_input(
         original_audio_available=original_audio_available,
     )
 
+    translated_audio_available = _store_translated_audio(
+        key, message_id, audio_bytes, audio_store=audio_store
+    )
     message = await create_session_message(
         session_id=key,
         client_type=client_type,
         original_text=result.get("asr_text", ""),
         translated_text=result.get("translation_text", ""),
-        audio_bytes=audio_bytes,
         source_lang=source_lang,
         target_lang=target_lang,
         manager=manager,
@@ -788,7 +815,7 @@ async def process_audio_input(
         message_id=message_id,
         correlation_id=correlation_id,
         sessions=sessions,
-        audio_store=audio_store,
+        translated_audio_available=translated_audio_available,
     )
     message.id = message_id
     return _build_message_response(
@@ -911,12 +938,14 @@ async def process_text_input(
         message_id=message_id,  # Pass message_id for audio URL
     )
 
+    translated_audio_available = _store_translated_audio(
+        key, message_id, audio_bytes, audio_store=audio_store
+    )
     message = await create_session_message(
         session_id=key,
         client_type=client_type,
         original_text=pipeline_result.get("asr_text", text_request.text),
         translated_text=translated_text,
-        audio_bytes=audio_bytes,
         source_lang=text_request.source_lang,
         target_lang=text_request.target_lang,
         manager=manager,
@@ -925,7 +954,7 @@ async def process_text_input(
         message_id=message_id,
         correlation_id=correlation_id,
         sessions=sessions,
-        audio_store=audio_store,
+        translated_audio_available=translated_audio_available,
     )
 
     return _build_message_response(
@@ -945,7 +974,6 @@ async def create_session_message(
     client_type: ClientType,
     original_text: str,
     translated_text: str,
-    audio_bytes: Optional[bytes],
     source_lang: str,
     target_lang: str,
     manager: Optional[WebSocketManager] = None,
@@ -955,33 +983,18 @@ async def create_session_message(
     correlation_id: Optional[str] = None,
     *,
     sessions: TenantSessionManager,
-    audio_store: AudioStore,
+    translated_audio_available: bool,
 ) -> SessionMessage:
-    """Session-Message erstellen und zur Session hinzufügen"""
+    """Session-Message erstellen und zur Session hinzufügen.
+
+    Both audio variants are already stored by the caller; the message only
+    records whether each is available.
+    """
     import logging
 
     logger = logging.getLogger(__name__)
 
     resolved_message_id = message_id or str(uuid.uuid4())
-    translated_audio_available = False
-    if audio_bytes:
-        try:
-            audio_store.save(
-                session_id,
-                resolved_message_id,
-                AudioVariant.TRANSLATED,
-                audio_bytes,
-            )
-            translated_audio_available = True
-        except Exception as error:
-            # Logged at error, not warning: the pipeline still answers
-            # successfully, so this line is the only signal that the reply
-            # reached the customer with no audio to play.
-            logger.exception(
-                "⚠️ Failed to save translated audio: %s",
-                type(error).__name__,
-                exc_info=_redacted_exception_info(error),
-            )
 
     message = SessionMessage(
         id=resolved_message_id,

@@ -179,11 +179,10 @@ async def test_create_message_persists_under_the_complete_tenant_key(
         ClientType.CUSTOMER,
         "Hello",
         "Hallo",
-        None,
         "en",
         "de",
         sessions=manager,
-        audio_store=AudioStore.from_environment(),
+        translated_audio_available=False,
     )
 
     stored = manager.get_session(session.key)
