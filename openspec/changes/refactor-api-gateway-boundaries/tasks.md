@@ -1,6 +1,6 @@
 ## 1. Characterization and Composition Root
 
-- [ ] 1.1 Characterize current tenant-scoped admin/customer REST, Studio-runtime failure, consent/persistence, pipeline-metadata, realtime-ticket, polling, and lifespan contracts.
+- [x] 1.1 Characterize current tenant-scoped admin/customer REST, Studio-runtime failure, consent/persistence, pipeline-metadata, realtime-ticket, polling, and lifespan contracts.
 - [ ] 1.2 Define dependency ownership and no-new-global rules, including provider override patterns for tests.
 - [ ] 1.3 Introduce a lifespan-owned `GatewayDependencies` container and dependency providers without changing public behavior.
 - [ ] 1.4 Migrate existing app-state collaborators and global adapters incrementally; add tests that isolated app instances do not share injected dependencies.
@@ -27,3 +27,9 @@
 - [ ] 4.3 Remove obsolete duplicate modules only after consumer search and compatibility proof.
 - [ ] 4.4 Run the full gateway contract suite, tenant-isolation matrix, realtime integration suite, and configured real-system smoke coverage.
 - [ ] 4.5 Update architecture and operations documentation with final dependency ownership and migration status.
+
+## 5. Consistency Items from #347
+
+- [ ] 5.1 Record audio availability on the message when it is written; listing messages performs no filesystem stat per message (#347 §6).
+- [ ] 5.2 Compare the Studio tenant id in constant time, matching the adjacent authorization-revision check in studio_runtime_flow.py (#347 §6).
+- [ ] 5.3 Normalise tenant selector names (casefold, strip "_" and "-") instead of enumerating spellings in tenant_context.py (#347 §6).

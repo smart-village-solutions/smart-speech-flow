@@ -1,0 +1,49 @@
+# Gateway Characterization Inventory (task 1.1)
+
+This is the compatibility checklist for every later #228 slice. A slice is compatible when
+`pytest tests/gateway_contract` and the existing suites named below pass unchanged. The
+exception is `tests/gateway_contract/conftest.py`, which is the one place that reaches
+module-level globals and is expected to be repointed when they move.
+
+Inventoried against `origin/main` at `d8aa98b`.
+
+Tests under `tests/integration/` never run in CI. Both CI pytest jobs pass
+`--ignore=tests/integration`. That includes `test_tenant_isolation_matrix.py`, even though
+`tests/conftest.py` lists it as hermetic. Where the matrix was the only cross-tenant proof,
+the gap is filled below.
+
+| Area | Existing coverage (public surface, runs in CI) | Gap filled by (`tests/gateway_contract/`) |
+| --- | --- | --- |
+| Tenant-scoped admin REST | `test_tenant_session_access.py::test_http_admin_cannot_observe_another_tenant` (status, terminate), `::test_current_session_cross_tenant_lookup_uses_the_neutral_error_contract`, `::test_http_create_freezes_each_tenants_own_runtime_configuration`; `services/api_gateway/tests/test_admin.py::TestAdminRoutes::*`; `test_admin_realtime_ticket_route.py::*`; `test_tenant_message_routes.py::test_audio_lookup_requires_message_ownership`, `::test_terminal_session_denies_all_admin_audio_variants`, `::test_history_audio_urls_are_scoped_to_requesting_role`; `test_auth.py::*` (history only); `test_quality_telemetry_endpoint.py::*` | `test_contract_admin_rest.py`: create response fields and join link; replacement ends only the signed tenant's session; full `SessionStatusResponse`; current with and without an id; terminate and repeated terminate bodies; history fields and tenant filter; cross-tenant 404 for messages, message, both audio variants; 401 on every admin route family; 400 for tenant selectors in query, header, cookie and JSON body |
+| Tenant-scoped customer REST | `services/api_gateway/tests/test_customer.py::*`; `test_customer_activation_consent.py::*`; `test_tenant_session_access.py::test_http_customer_bearer_cannot_downgrade_to_anonymous_capability`, `::test_http_customer_rejects_a_malformed_supplied_bearer` (status only); `test_correlation_id_validation.py::*` | `test_contract_customer_rest.py`: activation fields (first, repeated, language switch); unknown session 404; 422 body validation; customer status fields before and after activation; foreign bearer 404 on messages, message, audio and activate; malformed bearer 401; ended session 404 across the customer routes; customer audio 404 and 422; the three language lists agree |
+| Studio runtime failure mapping | `test_customer_activation_consent.py::test_conflict_refuses_activation` (status only), `::test_failed_read_leaves_pending_and_still_activates`; `test_login_directory_route.py::*`. `test_studio_runtime_flow.py` exercises the class and a throwaway app, not the gateway route | `test_contract_studio_runtime.py`: session create resolves the signed tenant with the caller's correlation id; retryable failure 503 and non-retryable 502 with `{"detail": code}`, and no session left behind; tenant mismatch and revision mismatch 502; unconfigured Studio 502; malformed correlation id 400 before any fetch; activation 409 body for all three tenant-conflict codes, retryable or not; activation proceeds when the policy read fails or Studio is unconfigured |
+| Consent-gated persistence | `test_customer_activation_consent.py::*` (HTTP in, internal state asserted). `test_persistence_gate.py`, `test_refused_content_removal.py`, `test_runtime_policy.py` and `test_session_message_public_shape.py` are unit tests | `test_contract_consent_persistence.py`: activate, send, terminate, then read history. Granted consent in ask mode retains the message. Declined, unanswered, storage disabled, a Studio failure at write time and an unbound gate each discard it. Consent and authorization fields never reach a client |
+| Pipeline metadata and failure mapping | `test_pipeline_admission.py::TestEndToEndOverTheWire::test_saturated_gateway_answers_503_with_retry_after`; `test_rate_limiting.py::test_session_message_rate_limit`; `test_correlation_id_validation.py::test_a_message_refuses_a_malformed_correlation_id`. Everything else calls handlers or `process_wav` directly | `test_contract_pipeline.py`: `MessageResponse` fields and `pipeline_metadata` for text and audio input, including the step order and role-scoped audio URLs; history and audio served per role; customer attribution; an upstream shedding load is 503 `SYSTEM_BUSY` with `Retry-After` on both paths; a failed audio stage is 500 `PIPELINE_ERROR`; a pending session is 400 `SESSION_NOT_ACTIVE` for both roles; `UNSUPPORTED_CONTENT_TYPE`, `INVALID_JSON`, `VALIDATION_ERROR`, `UNSUPPORTED_LANGUAGE` and `MISSING_FIELDS` envelopes. The speech services are replaced at their HTTP boundary |
+| Realtime-ticket issue and consume | `test_admin_realtime_ticket_route.py::*` (issue, cross-tenant issue 404); `test_tenant_polling.py::test_ticket_issued_before_termination_cannot_activate_polling`; `test_tenant_websocket.py::test_admin_websocket_rejects_invalid_ticket_before_accept`. `test_realtime_ticket.py` tests the store class directly | `test_contract_realtime_tickets.py`: issue body and 60-second expiry; 422 outside the transport literal; single use over WebSocket and over polling; expiry for both transports; transport binding; a rejected ticket is spent; termination revokes WebSocket tickets; a foreign tenant cannot activate polling with the ticket and does not spend it; an unavailable store gives 503, close 1013 and 503 |
+| WebSocket connect, frames, close codes | `services/api_gateway/tests/test_tenant_realtime_integration_contract.py::test_admin_can_observe_only_its_session_realtime_connection`; `test_tenant_websocket.py::test_customer_websocket_still_accepts_an_anonymous_capability`, `::test_customer_websocket_rejects_a_cross_tenant_supplied_bearer_before_accept`, `::test_customer_websocket_rejects_a_malformed_supplied_bearer_before_accept`, `::test_legacy_client_selected_websocket_route_is_absent`. Frame and close behaviour beyond the ack is unit-tested on `WebSocketManager` only | `test_contract_websocket.py`: `connection_ack` fields; missing ticket 1008; missing or foreign origin 1008 for both roles; unknown or ended session denied with 404 before accept; `client_joined`, relayed `message` without echo, `typing_indicator` and `client_left` between two live sockets; malformed frames answered with `error` while the socket stays open; termination sends `session_terminated` then closes 1000; tenant-wide and per-session connection listings are tenant-scoped |
+| Polling fallback | `test_tenant_polling.py::*`; `test_sonar_realtime_contracts.py::test_polling_timeout_openapi_and_request_contract`, `::test_admin_activation_documents_its_actual_not_found_response` | `test_contract_polling.py`: activation body for both roles; 422 ticket validation; customer activation needs a live session and a matching bearer; 429 at ten pollers per role; send delivers an exact envelope to the other role and not back to the sender; 422 envelope validation; a polled send reaches a live WebSocket; cross-tenant poll, send, recover and delete 404; role binding; status, recover and disconnect bodies; an admin poller gets `session_terminated` and is then removed |
+| Lifespan startup and shutdown | `test_tenant_persistence_lifespan.py::*`; `test_runtime_policy_lifespan.py::*`; `test_quality_telemetry_lifespan.py::*`; `test_pipeline_admission.py::TestLifespanOwnership::test_lifespan_publishes_admission_on_app_state`; `test_feedback_connection_wiring.py::TestTheLifespanWiresTheAppItWasGiven::*`; `test_sonar_route_auth_contracts.py::test_lifespan_reports_a_background_task_failure_during_shutdown` | `test_contract_lifespan.py`: the `app.state` collaborators present after startup, in disabled and probe telemetry modes, while a request is served; everything acquired is `None` after shutdown; each lifespan builds its own admission gate |
+| OpenAPI | Presence checks only, for example `test_tenant_polling.py::test_generic_client_controlled_polling_routes_are_absent` and `test_sonar_route_auth_contracts.py::test_affected_routes_keep_their_response_schemas_and_query_contracts` | `test_contract_openapi_snapshot.py` against `snapshots/openapi.json`, the full `app.openapi()` document. Regenerate on purpose with `SSF_UPDATE_OPENAPI_SNAPSHOT=1 pytest tests/gateway_contract/test_contract_openapi_snapshot.py` and review the diff |
+
+## Deliberately not characterized
+
+Each of these looks wrong, so none is pinned by a passing test. A later slice may change
+them only through its own issue.
+
+- A polling `/send` that overflows a recipient queue answers 500. The route's
+  `dict[str, str]` return annotation rejects the documented partial body, after the message
+  was already enqueued.
+- A non-ASCII realtime ticket is reported as a service outage: close 1013 or HTTP 503
+  instead of 404/4404.
+- The admin WebSocket consumes its ticket before the origin check, so a rejected origin spends
+  the ticket.
+- A ticket is issued for a terminated session; the revocation makes it unusable.
+- Closes for a missing or terminated session use 1003 in one path and 4404 in another.
+- A repeated terminate returns `already_terminated` without re-running the cleanup that
+  `SessionManager.terminate_session` treats as idempotent.
+- On the text path, a failed upstream stage is reported as 400 `TEXT_PIPELINE_ERROR`, and the
+  language-pair errors use a different error body.
+- `app.state.quality_telemetry` is not released on shutdown.
+- `GET /api/websocket/monitoring/health` has no authentication and no tenant scope. Its status
+  also depends on the WebSocketMonitor heartbeat accounting, which a separate fix owns.
+- WebSocketMonitor disconnect metrics and heartbeat-timeout accounting.
