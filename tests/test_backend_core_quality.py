@@ -12,15 +12,15 @@ class _Counter:
 
 
 def test_no_connection_broadcast_log_redacts_session_id(caplog):
-    websocket = importlib.import_module("services.api_gateway.websocket")
+    dispatch = importlib.import_module("services.api_gateway.realtime_dispatch")
     monitor = type("Monitor", (), {"broadcast_failure_total": _Counter()})()
     session_id = "session-secret-123"
 
-    websocket.WebSocketManager._build_no_connection_broadcast_result(
+    dispatch.BroadcastDispatcher.build_no_connection_broadcast_result(
         None,
         monitor,
         session_id,
-        websocket.ClientType.ADMIN,
+        dispatch.ClientType.ADMIN,
     )
 
     assert "Broadcast attempted without active connections" in caplog.text

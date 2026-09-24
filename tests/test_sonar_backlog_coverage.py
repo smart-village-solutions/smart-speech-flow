@@ -8,6 +8,25 @@ import pytest
 
 from tests.pipeline_helpers import pipeline_collaborators, speech_pipeline
 
+# Module namespaces as they were before this test reloaded them.
+_RELOADED: dict[str, dict[str, object]] = {}
+
+
+@pytest.fixture(autouse=True)
+def restore_reloaded_modules():
+    """Put every reloaded module back as it was once the test ends.
+
+    A reload leaves new classes and import-time constants behind. Later tests
+    then build apps from classes they never imported and patched, as
+    test_gateway_app_isolation.py does, or find a different `app`.
+    """
+    yield
+    for module_path, namespace in _RELOADED.items():
+        module = importlib.import_module(module_path)
+        module.__dict__.clear()
+        module.__dict__.update(namespace)
+    _RELOADED.clear()
+
 
 def reload_module(module_path: str, env: dict[str, str | None]):
     saved: dict[str, str | None] = {}
@@ -20,6 +39,7 @@ def reload_module(module_path: str, env: dict[str, str | None]):
 
     try:
         module = importlib.import_module(module_path)
+        _RELOADED.setdefault(module_path, dict(module.__dict__))
         return importlib.reload(module)
     finally:
         for key, value in saved.items():
@@ -96,13 +116,6 @@ def _speech_services(env: dict[str, str | None]):
     return module, module.HttpSpeechServices(ServiceHealthManager().circuit_breakers)
 
 
-@pytest.fixture
-def restore_speech_service_urls():
-    yield
-    reload_module("services.api_gateway.speech_services", {})
-
-
-@pytest.mark.usefixtures("restore_speech_service_urls")
 def test_pipeline_logic_helpers_cover_refinement_and_tts_paths(monkeypatch):
     pipeline_logic = importlib.import_module("services.api_gateway.pipeline_logic")
     speech_services, speech = _speech_services(
@@ -177,7 +190,6 @@ def test_pipeline_logic_helpers_cover_refinement_and_tts_paths(monkeypatch):
     assert debug_info["steps"][-1]["error"] == "tts failed"
 
 
-@pytest.mark.usefixtures("restore_speech_service_urls")
 def test_pipeline_logic_translation_helper_records_debug_step(monkeypatch):
     pipeline_logic = importlib.import_module("services.api_gateway.pipeline_logic")
     _, speech = _speech_services(
@@ -301,11 +313,13 @@ async def test_routes_session_activity_helper_and_endpoint(monkeypatch):
     connection_two = SimpleNamespace(current_polling_interval=15)
     manager = SimpleNamespace(
         session_connections={"session-1": {"a": connection_one, "b": connection_two}},
-        adaptive_polling=SimpleNamespace(
-            update_client_status=Mock(side_effect=[10, 15]),
-            get_battery_optimization_tips=Mock(side_effect=[["tip-a"], ["tip-b"]]),
+        client_status=SimpleNamespace(
+            adaptive_polling=SimpleNamespace(
+                update_client_status=Mock(side_effect=[10, 15]),
+                get_battery_optimization_tips=Mock(side_effect=[["tip-a"], ["tip-b"]]),
+            ),
+            send_polling_interval_update=AsyncMock(),
         ),
-        _send_polling_interval_update=AsyncMock(),
         get_session_connections=Mock(return_value=[{"id": "a"}, {"id": "b"}]),
     )
     activity = session_routes.ClientActivityUpdate(
@@ -320,7 +334,7 @@ async def test_routes_session_activity_helper_and_endpoint(monkeypatch):
     )
     assert new_intervals == [10, 15]
     assert sorted(tips) == ["tip-a", "tip-b"]
-    manager._send_polling_interval_update.assert_awaited_once_with(
+    manager.client_status.send_polling_interval_update.assert_awaited_once_with(
         connection_one, 10, reason="client_activity_update"
     )
 
@@ -333,11 +347,11 @@ async def test_routes_session_activity_helper_and_endpoint(monkeypatch):
         get_session=lambda session_id: active_session,
         update_session_activity=update_activity,
     )
-    manager.adaptive_polling.update_client_status = Mock(side_effect=[10, 15])
-    manager.adaptive_polling.get_battery_optimization_tips = Mock(
+    manager.client_status.adaptive_polling.update_client_status = Mock(side_effect=[10, 15])
+    manager.client_status.adaptive_polling.get_battery_optimization_tips = Mock(
         side_effect=[["tip-a"], ["tip-b"]]
     )
-    manager._send_polling_interval_update = AsyncMock()
+    manager.client_status.send_polling_interval_update = AsyncMock()
 
     response = await session_routes.update_client_activity("session-1", activity, manager, sessions)
     assert response.status == "success"

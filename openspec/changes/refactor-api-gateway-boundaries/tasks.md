@@ -31,18 +31,22 @@
 
 ## 3. Realtime, Polling, and Monitoring Boundaries
 
-- [ ] 3.1 Define typed realtime protocol and ticket-backend operations; migrate memory and Redis implementations without exposing Lua details.
+- [x] 3.1 Define typed realtime protocol and ticket-backend operations; migrate memory and Redis implementations without exposing Lua details.
   - Ticket backend (PR6a): the `RealtimeTicketBackend` port (`put_if_absent`, `put`, `consume`, `get`), with `RedisRealtimeTicketBackend`, the only code that runs the Lua, and a `MemoryRealtimeTicketBackend` that never sees a script. `test_realtime_ticket_redis.py` pins the semantics against a real Redis, unchanged before and after. See design.md.
-  - Open: the typed realtime protocol is PR6b.
-- [ ] 3.2 Extract connection registry, dispatcher, heartbeat, polling fallback, and monitoring collaborators behind focused interfaces.
+  - Realtime protocol (PR6c): `realtime_protocol.py` holds `MessageType`, `ConnectionState`, and a TypedDict and builder for every server frame; every frame the sockets, the pollers and the differentiated broadcast send is built there. `test_realtime_protocol_guard.py` fails on an inline frame elsewhere (shown by adding one to `websocket.py`), and `test_contract_realtime_frames.py` pins each frame's keys and fixed values, unchanged before and after.
+- [x] 3.2 Extract connection registry, dispatcher, heartbeat, polling fallback, and monitoring collaborators behind focused interfaces.
   - Monitoring (PR6b): `WebSocketMetrics` holds the process-wide series; each app's container builds its own `WebSocketMonitor` and pseudonymizer, and the WebSocket manager receives the monitor by constructor. The module global and its accessors are gone.
   - Polling fallback (PR6b): `fallback_manager` is unwired from the app and the container; `websocket_fallback.py` waits for PR7.
   - Heartbeat (PR6b): the lifespan stops the task at shutdown.
-  - Open for PR6c: the registry, dispatcher and heartbeat split of `WebSocketManager`, and typed frames.
-- [ ] 3.3 Migrate WebSocket, polling, and supported monitoring routes while preserving tenant isolation, frame, and endpoint behavior.
+  - Registry, dispatcher, heartbeat and client status (PR6c): `ConnectionRegistry`, `BroadcastDispatcher`, `Heartbeat` and `ClientStatusHandler`, each in its own type-checked module and given its dependencies by constructor; `WebSocketManager` is the facade that composes them (`tests/test_realtime_collaborators.py`). Mutations that make a broadcast skip pollers, stop the heartbeat timing out a silent socket, or pool two tenants' same-id sessions together each fail tests.
+- [x] 3.3 Migrate WebSocket, polling, and supported monitoring routes while preserving tenant isolation, frame, and endpoint behavior.
   - PR6b: `WebSocketManager` is typed on `SessionRegistry[TenantSessionKey]` and `TenantSessionKey`; the WebSocket endpoints and polling routes reach the session manager through `get_session_manager`. `app.routes` and the OpenAPI document are unchanged, and the realtime metric names and labels are pinned (`test_contract_realtime_metrics.py`, `test_contract_heartbeat.py`).
-  - Open for PR6c: the routes on the split collaborators. #348 still decides the public monitoring scope; `/api/websocket/monitoring/health` is unchanged.
-- [ ] 3.4 Add realtime lifecycle, broadcast, heartbeat, polling, and cross-tenant denial integration coverage; coordinate public monitoring scope with #348.
+  - PR6c: the routes run on the split collaborators through the unchanged facade. `app.routes`, the OpenAPI snapshot and the realtime metric families and labels are identical to `970ea7b`. #348 still decides the public monitoring scope; `/api/websocket/monitoring/health` is unchanged.
+- [x] 3.4 Add realtime lifecycle, broadcast, heartbeat, polling, and cross-tenant denial integration coverage; coordinate public monitoring scope with #348.
+  - Lifecycle, broadcast and heartbeat: `test_contract_websocket.py`, `test_contract_heartbeat.py`, `test_contract_message_delivery.py` and, from PR6c, `test_contract_realtime_frames.py`, which drives every frame over real sockets and, where the frame reaches them, pollers. PR6c also pins the 4404 close for a ticket whose session has lapsed and the value 1 of `websocket_monitor_initialized`, which no test caught before.
+  - Polling: `test_contract_polling.py` and `test_contract_realtime_tickets.py`.
+  - Cross-tenant denial (PR6c, `test_contract_realtime_isolation.py`): a ticket on another tenant's session, one tenant's frames reaching another's sockets or pollers, a foreign admin reading a poller's status, a foreign bearer on a customer poller, and a poller driven through another session; beside the listings in `test_contract_websocket.py` and the matrix, which passes (19 tests) but CI does not run.
+  - #348 stays open. This change adds no monitoring endpoint and changes none.
 
 ## 4. Compatibility Cleanup and Verification
 

@@ -58,7 +58,7 @@ async def _apply_activity_update_to_session_connections(
     connections = list(manager.session_connections.get(session_id, {}).values())
     for connection in connections:
         old_interval = connection.current_polling_interval
-        new_interval = manager.adaptive_polling.update_client_status(
+        new_interval = manager.client_status.adaptive_polling.update_client_status(
             connection,
             is_mobile=activity.is_mobile,
             tab_active=activity.tab_active,
@@ -67,10 +67,12 @@ async def _apply_activity_update_to_session_connections(
         )
 
         new_intervals.append(new_interval)
-        optimization_tips.extend(manager.adaptive_polling.get_battery_optimization_tips(connection))
+        optimization_tips.extend(
+            manager.client_status.adaptive_polling.get_battery_optimization_tips(connection)
+        )
 
         if new_interval != old_interval:
-            await manager._send_polling_interval_update(
+            await manager.client_status.send_polling_interval_update(
                 connection, new_interval, reason="client_activity_update"
             )
 

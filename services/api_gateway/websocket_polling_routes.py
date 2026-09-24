@@ -23,6 +23,7 @@ from .dependencies import (
     get_session_manager,
     get_websocket_manager,
 )
+from .realtime_protocol import Frame, polled_envelope_frame, polled_session_terminated_frame
 from .realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from .session_access import require_admin_session_key, require_customer_session_key
 from .session_manager import ClientType, TenantSessionManager
@@ -63,7 +64,7 @@ class PollingClient:
     polling_id: str
     key: TenantSessionKey
     client_type: ClientType
-    messages: deque[dict[str, Any]] = field(default_factory=deque)
+    messages: deque[Frame] = field(default_factory=deque)
     event: asyncio.Event = field(default_factory=asyncio.Event)
     last_seen: float = field(default_factory=time.monotonic)
     terminated: bool = False
@@ -127,7 +128,7 @@ class TenantPollingStore:
             self.remove(client)
         return expired
 
-    def _enqueue(self, client: PollingClient, message: dict[str, Any]) -> bool:
+    def _enqueue(self, client: PollingClient, message: Frame) -> bool:
         dropped = len(client.messages) >= POLLING_QUEUE_SIZE
         if dropped:
             client.messages.popleft()
@@ -143,7 +144,7 @@ class TenantPollingStore:
     def broadcast(
         self,
         key: TenantSessionKey,
-        message: dict[str, Any],
+        message: Frame,
         *,
         exclude_polling_id: str | None = None,
     ) -> tuple[int, int]:
@@ -160,8 +161,8 @@ class TenantPollingStore:
         self,
         key: TenantSessionKey,
         sender_type: ClientType,
-        original_message: dict[str, Any],
-        translated_message: dict[str, Any],
+        original_message: Frame,
+        translated_message: Frame,
     ) -> tuple[int, int]:
         delivered = 0
         dropped = 0
@@ -176,12 +177,7 @@ class TenantPollingStore:
         return delivered, dropped
 
     def terminate(self, key: TenantSessionKey, reason: str) -> None:
-        message = {
-            "type": "session_terminated",
-            "session_id": key.session_id,
-            "reason": reason,
-            "reconnect_allowed": False,
-        }
+        message = polled_session_terminated_frame(key.session_id, reason)
         for client in self.clients.values():
             if client.key == key:
                 client.terminated = True
@@ -324,12 +320,9 @@ async def _send(
 ) -> dict[str, object]:
     if client.terminated:
         raise HTTPException(status_code=404, detail=_POLLING_CLIENT_NOT_FOUND)
-    envelope = {
-        "type": message.type,
-        "content": message.content,
-        "session_id": client.key.session_id,
-        "client_type": client.client_type.value,
-    }
+    envelope = polled_envelope_frame(
+        message.type, message.content, client.key.session_id, client.client_type
+    )
     _delivered, dropped = polling_store.broadcast(
         client.key, envelope, exclude_polling_id=client.polling_id
     )

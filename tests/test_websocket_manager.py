@@ -10,15 +10,12 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from services.api_gateway.realtime_protocol import ConnectionState, MessageType
 from services.api_gateway.session_manager import ClientType
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
 # WebSocket-Manager und Dependencies
-from services.api_gateway.websocket import (
-    ConnectionState,
-    MessageType,
-    WebSocketManager,
-)
+from services.api_gateway.websocket import WebSocketManager
 from tests.realtime_sessions import (
     SNAPSHOT,
     TENANT,
@@ -228,12 +225,12 @@ class TestWebSocketManager:
         """Test: Heartbeat-System starten und stoppen"""
         # Heartbeat-System starten
         await websocket_manager.start_heartbeat_system()
-        assert websocket_manager.heartbeat_task is not None
-        assert not websocket_manager.heartbeat_task.done()
+        assert websocket_manager.heartbeat.task is not None
+        assert not websocket_manager.heartbeat.task.done()
 
         # Heartbeat-System stoppen
         await websocket_manager.stop_heartbeat_system()
-        assert websocket_manager.heartbeat_task is None
+        assert websocket_manager.heartbeat.task is None
 
     async def test_heartbeat_ping_pong(self, websocket_manager, mock_websocket):
         """Test: Heartbeat-Ping/Pong-Mechanismus"""
@@ -243,7 +240,7 @@ class TestWebSocketManager:
         )
 
         # Heartbeat-Pings manuell senden
-        await websocket_manager._send_heartbeat_pings()
+        await websocket_manager.heartbeat.send_pings()
 
         # Assertions: Ping wurde gesendet
         ping_messages = [
@@ -258,7 +255,7 @@ class TestWebSocketManager:
         old_heartbeat = connection.last_heartbeat
 
         await asyncio.sleep(0.01)  # Kleine Verzögerung für Timestamp-Unterschied
-        await websocket_manager._handle_heartbeat_pong(connection_id, connection)
+        await websocket_manager.heartbeat.handle_pong(connection_id, connection)
 
         # Assertions: Heartbeat wurde aktualisiert
         assert connection.last_heartbeat > old_heartbeat
@@ -310,13 +307,13 @@ class TestWebSocketManager:
         connection.last_heartbeat = datetime.now() - timedelta(seconds=70)  # Über Timeout-Limit
 
         # Timeout-Check ausführen
-        await websocket_manager._check_heartbeat_timeouts()
+        await websocket_manager.heartbeat.check_timeouts()
 
         # Assertions: Connection wurde wegen Timeout geschlossen
         assert mock_websocket.is_closed
         assert mock_websocket.close_code == 1001  # Heartbeat-Timeout-Code
         assert connection_id not in websocket_manager.all_connections
-        assert websocket_manager.connection_stats["heartbeat_timeouts"] == 1
+        assert websocket_manager.registry.connection_stats["heartbeat_timeouts"] == 1
 
     async def test_broadcast_to_session(self, websocket_manager):
         """Test: Broadcasting an Session-Teilnehmer"""
@@ -563,14 +560,14 @@ class TestWebSocketManager:
         original_message = {"type": "message", "text": "orig"}
         translated_message = {"type": "message", "text": "translated"}
 
-        await websocket_manager._send_differentiated_message(
+        await websocket_manager.dispatcher.send_differentiated_message(
             connection=websocket_manager.all_connections[sender_connection_id],
             connection_id=sender_connection_id,
             sender_type=ClientType.ADMIN,
             original_message=original_message,
             translated_message=translated_message,
         )
-        await websocket_manager._send_differentiated_message(
+        await websocket_manager.dispatcher.send_differentiated_message(
             connection=websocket_manager.all_connections[receiver_connection_id],
             connection_id=receiver_connection_id,
             sender_type=ClientType.ADMIN,
@@ -586,7 +583,7 @@ class TestWebSocketManager:
     ):
         monitor = MockMetrics()
 
-        websocket_manager._record_broadcast_summary(
+        websocket_manager.dispatcher.record_broadcast_summary(
             metrics=monitor,
             session_id="TEST123",
             sender_type=ClientType.ADMIN,
@@ -616,7 +613,7 @@ class TestWebSocketManager:
     ):
         monitor = MockMetrics()
 
-        result = websocket_manager._build_no_connection_broadcast_result(
+        result = websocket_manager.dispatcher.build_no_connection_broadcast_result(
             monitor, "EMPTY_SESSION", ClientType.CUSTOMER
         )
 

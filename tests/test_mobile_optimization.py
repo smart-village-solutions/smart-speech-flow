@@ -10,10 +10,11 @@ Tests für Mobile-Optimization Features
 import pytest
 from datetime import datetime
 from unittest.mock import Mock, AsyncMock
-from services.api_gateway.websocket import (
-    WebSocketManager, WebSocketConnection, AdaptivePollingManager,
-    ConnectionState, ClientType, MessageType
-)
+from services.api_gateway.realtime_client_status import AdaptivePollingManager
+from services.api_gateway.realtime_connection import WebSocketConnection
+from services.api_gateway.realtime_protocol import ConnectionState, MessageType
+from services.api_gateway.session_manager import ClientType
+from services.api_gateway.websocket import WebSocketManager
 from services.api_gateway.routes.session import ClientActivityUpdate
 from services.api_gateway.tenant_session import TenantSessionKey
 from tests.realtime_sessions import open_session, tenant_session_manager, websocket_monitor
@@ -171,7 +172,7 @@ class TestWebSocketMobileOptimization:
             "is_visible": False
         }
 
-        await self.websocket_manager._handle_tab_visibility_change(connection, message)
+        await self.websocket_manager.client_status.handle_tab_visibility_change(connection, message)
 
         # Polling-Intervall sollte sich geändert haben
         assert connection.tab_active is False
@@ -192,7 +193,7 @@ class TestWebSocketMobileOptimization:
             "is_charging": False
         }
 
-        await self.websocket_manager._handle_battery_status_update(connection, message)
+        await self.websocket_manager.client_status.handle_battery_status_update(connection, message)
 
         # Battery-Saver-Mode sollte aktiviert sein
         assert connection.battery_level == 0.15
@@ -213,7 +214,7 @@ class TestWebSocketMobileOptimization:
             "connection_type": "cellular"
         }
 
-        await self.websocket_manager._handle_network_status_change(connection, message)
+        await self.websocket_manager.client_status.handle_network_status_change(connection, message)
 
         # Polling sollte angepasst sein
         assert connection.network_quality == "slow"
@@ -230,7 +231,7 @@ class TestWebSocketMobileOptimization:
         mock_websocket.send_json.reset_mock()
 
         # Polling-Intervall-Update senden
-        await self.websocket_manager._send_polling_interval_update(
+        await self.websocket_manager.client_status.send_polling_interval_update(
             connection, new_interval=30, reason="test_optimization"
         )
 
@@ -253,7 +254,7 @@ class TestWebSocketMobileOptimization:
         mock_websocket.send_json.reset_mock()
 
         # Battery-Saver-Modus senden
-        await self.websocket_manager._send_battery_saver_notification(connection)
+        await self.websocket_manager.client_status.send_battery_saver_notification(connection)
 
         # WebSocket send_json sollte aufgerufen worden sein
         mock_websocket.send_json.assert_called_once()

@@ -35,10 +35,12 @@ from .pipeline_logic import (
     process_wav,
 )
 from .quality_telemetry import InputMode, QualityTelemetry
+from .realtime_dispatch import BroadcastResult
+from .realtime_protocol import receiver_message_frame, sender_confirmation_frame
 from .session_manager import ClientType, SessionMessage, SessionStatus, TenantSessionManager
 from .studio_runtime_flow import correlation_id_from_request
 from .tenant_session import TenantSessionKey
-from .websocket import BroadcastResult, MessageType, WebSocketManager
+from .websocket import WebSocketManager
 
 logger = logging.getLogger(__name__)
 
@@ -1091,6 +1093,26 @@ async def create_session_message(
     return message
 
 
+def _role_scoped_artifacts(
+    message: SessionMessage,
+    key: TenantSessionKey,
+    role: ClientType,
+    has_original_audio: bool,
+) -> tuple[Optional[dict[str, Any]], Optional[str]]:
+    """The pipeline metadata and original-audio URL as `role` may see them, where present."""
+    metadata = (
+        scope_pipeline_audio_urls(message.pipeline_metadata, key, role.value, message.id)
+        if message.pipeline_metadata
+        else None
+    )
+    original = (
+        scoped_audio_url(key, role.value, message.id, AudioVariant.ORIGINAL)
+        if has_original_audio
+        else None
+    )
+    return metadata, original
+
+
 async def broadcast_message_to_session(
     session_id: TenantSessionKey,
     message: SessionMessage,
@@ -1129,43 +1151,34 @@ async def broadcast_message_to_session(
     )
 
     # Original Message für Sender (ASR-Bestätigung)
-    sender_message: Dict[str, Any] = {
-        "type": MessageType.MESSAGE.value,
-        "message_id": message.id,
-        "session_id": session_id.session_id,
-        "text": message.original_text,  # 👈 Sender sieht original Text
-        "source_lang": message.source_lang,
-        "target_lang": message.target_lang,
-        "sender": message.sender.value,
-        "timestamp": message.timestamp.isoformat(),
-        "audio_available": False,  # Sender braucht keine Audio-Bestätigung
-        "role": "sender_confirmation",
-    }
-    # Add pipeline metadata if available
-    if message.pipeline_metadata:
-        sender_message["pipeline_metadata"] = scope_pipeline_audio_urls(
-            message.pipeline_metadata,
-            session_id,
-            sender_type.value,
-            message.id,
-        )
-    if has_original_audio:
-        sender_message["original_audio_url"] = scoped_audio_url(
-            session_id, sender_type.value, message.id, AudioVariant.ORIGINAL
-        )
+    sender_metadata, sender_original = _role_scoped_artifacts(
+        message, session_id, sender_type, has_original_audio
+    )
+    sender_message = sender_confirmation_frame(
+        message_id=message.id,
+        session_id=session_id.session_id,
+        text=message.original_text,  # 👈 Sender sieht original Text
+        source_lang=message.source_lang,
+        target_lang=message.target_lang,
+        sender=message.sender.value,
+        timestamp=message.timestamp.isoformat(),
+        pipeline_metadata=sender_metadata,
+        original_audio_url=sender_original,
+    )
 
     # Translated Message für Empfänger (mit Audio)
-    receiver_message: Dict[str, Any] = {
-        "type": MessageType.MESSAGE.value,
-        "message_id": message.id,
-        "session_id": session_id.session_id,
-        "text": message.translated_text,  # 👈 Empfänger sieht übersetzten Text
-        "source_lang": message.source_lang,
-        "target_lang": message.target_lang,
-        "sender": message.sender.value,
-        "timestamp": message.timestamp.isoformat(),
-        "audio_available": message.translated_audio_available,
-        "audio_url": (
+    receiver_metadata, receiver_original = _role_scoped_artifacts(
+        message, session_id, receiver_type, has_original_audio
+    )
+    receiver_message = receiver_message_frame(
+        message_id=message.id,
+        session_id=session_id.session_id,
+        text=message.translated_text,  # 👈 Empfänger sieht übersetzten Text
+        source_lang=message.source_lang,
+        target_lang=message.target_lang,
+        sender=message.sender.value,
+        timestamp=message.timestamp.isoformat(),
+        audio_url=(
             scoped_audio_url(
                 session_id,
                 receiver_type.value,
@@ -1175,20 +1188,9 @@ async def broadcast_message_to_session(
             if message.translated_audio_available
             else None
         ),
-        "role": "receiver_message",
-    }
-    # Add pipeline metadata if available
-    if message.pipeline_metadata:
-        receiver_message["pipeline_metadata"] = scope_pipeline_audio_urls(
-            message.pipeline_metadata,
-            session_id,
-            receiver_type.value,
-            message.id,
-        )
-    if has_original_audio:
-        receiver_message["original_audio_url"] = scoped_audio_url(
-            session_id, receiver_type.value, message.id, AudioVariant.ORIGINAL
-        )
+        pipeline_metadata=receiver_metadata,
+        original_audio_url=receiver_original,
+    )
 
     # 🎯 Differentiated Broadcasting ausführen
     _log_session_event("📤 Broadcasting differentiated content", session_id.session_id)
