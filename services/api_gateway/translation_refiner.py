@@ -207,6 +207,11 @@ class BaseTranslationRefiner:
 
     is_active: bool = False
 
+    #: Which backend the factory built this refiner against. Carried on the
+    #: instance so the gateway can name it in its startup banner without
+    #: re-reading the environment.
+    backend: str = "none"
+
     #: Set by the gateway's lifespan. None means telemetry is not wired up,
     #: which must be indistinguishable from telemetry being switched off.
     quality_telemetry: Optional[Any] = None
@@ -714,18 +719,41 @@ def get_translation_refiner() -> BaseTranslationRefiner:
         "think": think,
         "skip_target_languages": _skip_target_languages(),
     }
+    refiner: BaseTranslationRefiner
     if mode == "shadow_compare":
-        return ShadowComparisonRefiner(
+        refiner = ShadowComparisonRefiner(
             **args,
             candidate_model=candidate_model,
             queue_limit=_env_number("LLM_REFINEMENT_SHADOW_QUEUE_LIMIT", "4", int, 1),
         )
-    if backend == "vllm":
-        return VllmTranslationRefiner(
+    elif backend == "vllm":
+        refiner = VllmTranslationRefiner(
             **args,
             max_tokens=_env_number("LLM_REFINEMENT_MAX_TOKENS", "256", int, 16),
         )
-    return OllamaTranslationRefiner(**args)
+    else:
+        refiner = OllamaTranslationRefiner(**args)
+    refiner.backend = backend
+    return refiner
+
+
+def describe_refinement(refiner: BaseTranslationRefiner) -> str:
+    """One line naming the live refinement configuration, for the startup banner.
+
+    `get_translation_refiner` logs the same facts, but it runs at import --
+    before the gateway configures logging -- so that line never reaches
+    production logs. Without this, the only way to tell which backend is
+    serving refinement is to read a Prometheus label.
+    """
+    if not refiner.is_active:
+        return "Refinement disabled"
+    return (
+        f"Refinement ready (backend={refiner.backend}, "
+        f"model={getattr(refiner, 'model', 'unknown')}, "
+        f"endpoint={getattr(refiner, 'endpoint', 'unknown')}, "
+        f"temperature={getattr(refiner, 'temperature', 'unknown')}, "
+        f"timeout={getattr(refiner, 'timeout_seconds', 'unknown')}s)"
+    )
 
 
 translation_refiner: BaseTranslationRefiner = get_translation_refiner()
@@ -738,5 +766,6 @@ __all__ = [
     "VllmTranslationRefiner",
     "ShadowComparisonRefiner",
     "get_translation_refiner",
+    "describe_refinement",
     "translation_refiner",
 ]
