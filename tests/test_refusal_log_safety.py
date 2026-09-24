@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from prometheus_client import CollectorRegistry
 
-from services.api_gateway import audio_storage
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway import message_processing
 from services.api_gateway.runtime_policy import (
@@ -24,14 +24,8 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture
-def audio_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    real_save = audio_storage.save_audio
-
-    def save(key, message_id, variant, data, *, base_dir=None):
-        return real_save(key, message_id, variant, data, base_dir=tmp_path)
-
-    monkeypatch.setattr(audio_storage, "save_audio", save)
-    return tmp_path
+def audio_store(tmp_path: Path) -> AudioStore:
+    return AudioStore(tmp_path)
 
 
 @pytest.fixture
@@ -40,7 +34,7 @@ def policy_metrics_registry() -> CollectorRegistry:
 
 
 async def test_refusal_log_contains_no_conversation_content(
-    caplog, audio_dir, policy_metrics_registry, session_manager
+    caplog, audio_store, policy_metrics_registry, session_manager
 ):
     secret_original = "mein geheimes anliegen"
     secret_translated = "my secret request"
@@ -66,6 +60,7 @@ async def test_refusal_log_contains_no_conversation_content(
             "de",
             "en",
             sessions=session_manager,
+            audio_store=audio_store,
         )
 
     assert message.record_authorized is False

@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.session_manager import ClientType, TenantSessionManager
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from tests.pipeline_helpers import (
@@ -29,7 +30,10 @@ BLOCK_SECONDS = 0.4
 
 @pytest.fixture
 def session_manager():
-    return TenantSessionManager(store=MemoryTenantSessionStore())
+    return TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
 
 
 class _ThreadRecorder:
@@ -65,6 +69,7 @@ class TestPipelineRunsOffTheEventLoop:
                 0.0,
                 sessions=session_manager,
                 pipeline=speech_pipeline(),
+                audio_store=AudioStore.from_environment(),
             )
 
         assert recorder.thread_ids, "process_wav was never called"
@@ -91,6 +96,7 @@ class TestPipelineRunsOffTheEventLoop:
                 0.0,
                 sessions=session_manager,
                 pipeline=speech_pipeline(),
+                audio_store=AudioStore.from_environment(),
             )
 
         assert recorder.thread_ids, "process_text_pipeline was never called"
@@ -170,6 +176,7 @@ class TestConcurrentProgress:
                         0.0,
                         sessions=session_manager,
                         pipeline=speech_pipeline(),
+                        audio_store=AudioStore.from_environment(),
                     ),
                     message_processing.process_audio_input(
                         second,
@@ -178,6 +185,7 @@ class TestConcurrentProgress:
                         0.0,
                         sessions=session_manager,
                         pipeline=speech_pipeline(),
+                        audio_store=AudioStore.from_environment(),
                     ),
                 ),
                 timeout=SAFETY_TIMEOUT,
@@ -242,6 +250,7 @@ class TestEventLoopResponsiveness:
                     0.0,
                     sessions=session_manager,
                     pipeline=speech_pipeline(),
+                    audio_store=AudioStore.from_environment(),
                 ),
                 entered,
             )
@@ -276,6 +285,7 @@ class TestEventLoopResponsiveness:
                     0.0,
                     sessions=session_manager,
                     pipeline=speech_pipeline(),
+                    audio_store=AudioStore.from_environment(),
                 ),
                 entered,
             )

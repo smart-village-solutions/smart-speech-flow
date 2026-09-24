@@ -11,7 +11,7 @@ import logging
 
 import pytest
 
-from services.api_gateway import audio_storage
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway import message_processing
 from services.api_gateway.session_manager import ClientType
@@ -21,14 +21,16 @@ REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
-@pytest.fixture
-def refusing_audio_storage(monkeypatch: pytest.MonkeyPatch) -> None:
+class RefusingAudioStore(AudioStore):
     """Every write fails the way a root-owned volume makes it fail."""
 
-    def refuse(*args, **kwargs):
+    def save(self, *args, **kwargs):
         raise PermissionError(13, "Permission denied", "/data/audio")
 
-    monkeypatch.setattr(audio_storage, "save_audio", refuse)
+
+@pytest.fixture
+def refusing_audio_storage(tmp_path) -> AudioStore:
+    return RefusingAudioStore(tmp_path)
 
 
 async def _session(session_manager) -> object:
@@ -54,6 +56,7 @@ async def test_a_failed_translated_audio_write_still_delivers_the_message(
             "de",
             "en",
             sessions=session_manager,
+            audio_store=refusing_audio_storage,
         )
 
     assert message.translated_text == "hello"
@@ -71,7 +74,11 @@ def test_a_failed_original_audio_write_is_reported_not_swallowed(refusing_audio_
 
     with caplog.at_level(logging.ERROR, logger=message_processing.logger.name):
         available = message_processing._store_audio_artifacts(
-            key, ClientType.CUSTOMER, "message-id", b"audio-bytes"
+            key,
+            ClientType.CUSTOMER,
+            "message-id",
+            b"audio-bytes",
+            audio_store=refusing_audio_storage,
         )
 
     assert available is False
@@ -92,7 +99,11 @@ def test_the_failure_log_carries_a_traceback_without_the_exception_text(
 
     with caplog.at_level(logging.ERROR, logger=message_processing.logger.name):
         message_processing._store_audio_artifacts(
-            key, ClientType.CUSTOMER, "message-id", b"audio-bytes"
+            key,
+            ClientType.CUSTOMER,
+            "message-id",
+            b"audio-bytes",
+            audio_store=refusing_audio_storage,
         )
 
     record = next(r for r in caplog.records if r.levelno >= logging.ERROR)

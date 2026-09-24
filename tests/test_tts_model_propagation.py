@@ -12,7 +12,7 @@ import pytest
 from requests.structures import CaseInsensitiveDict
 
 from services.api_gateway.pipeline_logic import process_text_pipeline, process_wav
-from tests.pipeline_helpers import pipeline_collaborators
+from tests.pipeline_helpers import pipeline_collaborators, wav_collaborators
 
 AUDIO_WAV_MIME = "audio/wav"
 
@@ -52,7 +52,7 @@ def _run_audio(target_lang: str, tts_response: Mock) -> dict:
     with patch("services.api_gateway.pipeline_logic.requests.post") as post:
         post.side_effect = [_asr(), _translation(), tts_response]
         return process_wav(
-            b"audio", "en", target_lang, validate_audio=False, **pipeline_collaborators()
+            b"audio", "en", target_lang, validate_audio=False, **wav_collaborators()
         )
 
 

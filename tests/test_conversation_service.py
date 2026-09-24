@@ -9,6 +9,7 @@ import pytest
 from prometheus_client import CollectorRegistry
 
 from services.api_gateway import message_processing
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.dependencies import build_gateway_dependencies
 from services.api_gateway.session_manager import ClientType, SessionStatus, TenantSessionManager
 from services.api_gateway.session_store import MemoryTenantSessionStore
@@ -83,7 +84,10 @@ async def test_the_container_wires_its_own_socket_manager_into_the_service(
 async def test_a_failed_broadcast_is_logged_as_a_failure_not_as_a_crash(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    sessions = TenantSessionManager(store=MemoryTenantSessionStore())
+    sessions = TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
     key = await _active_session(sessions)
     failed = BroadcastResult(
         success=False,
@@ -108,6 +112,7 @@ async def test_a_failed_broadcast_is_logged_as_a_failure_not_as_a_crash(
             target_lang="en",
             manager=Mock(),
             sessions=sessions,
+            audio_store=AudioStore.from_environment(),
         )
 
     messages = [record.getMessage() for record in caplog.records]

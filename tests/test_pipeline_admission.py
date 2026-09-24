@@ -9,6 +9,7 @@ import httpx
 import pytest
 from prometheus_client import CollectorRegistry
 
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.pipeline_admission import (
     PipelineAdmission,
     PipelineAdmissionConfig,
@@ -123,7 +124,10 @@ class _Saturated:
 
 @pytest.fixture
 def session_manager():
-    return TenantSessionManager(store=MemoryTenantSessionStore())
+    return TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
 
 
 class TestConfiguration:
@@ -615,6 +619,7 @@ class TestSystemBusyResponse:
                         sessions=session_manager,
                         pipeline=speech_pipeline(),
                         admission=admission,
+                        audio_store=AudioStore.from_environment(),
                     )
 
         error = excinfo.value
@@ -649,6 +654,7 @@ class TestSystemBusyResponse:
                         sessions=session_manager,
                         pipeline=speech_pipeline(),
                         admission=admission,
+                        audio_store=AudioStore.from_environment(),
                     )
 
         error = excinfo.value
@@ -684,6 +690,7 @@ class TestSystemBusyResponse:
                         sessions=session_manager,
                         pipeline=speech_pipeline(),
                         admission=admission,
+                        audio_store=AudioStore.from_environment(),
                     )
 
         error = excinfo.value
@@ -719,6 +726,7 @@ class TestSystemBusyResponse:
                         sessions=session_manager,
                         pipeline=speech_pipeline(),
                         admission=admission,
+                        audio_store=AudioStore.from_environment(),
                     )
 
         assert excinfo.value.status_code == 503
@@ -746,6 +754,7 @@ class TestSystemBusyResponse:
                 sessions=session_manager,
                 pipeline=speech_pipeline(),
                 admission=admission,
+                audio_store=AudioStore.from_environment(),
             )
             second = await message_processing.process_text_input(
                 session_id,
@@ -755,6 +764,7 @@ class TestSystemBusyResponse:
                 sessions=session_manager,
                 pipeline=speech_pipeline(),
                 admission=admission,
+                audio_store=AudioStore.from_environment(),
             )
 
         assert first.status == "success"
@@ -918,6 +928,7 @@ class TestUpstreamSaturationStaysRetryable:
                     0.0,
                     sessions=session_manager,
                     pipeline=speech_pipeline(),
+                    audio_store=AudioStore.from_environment(),
                 )
 
         error = excinfo.value
@@ -952,6 +963,7 @@ class TestUpstreamSaturationStaysRetryable:
                     0.0,
                     sessions=session_manager,
                     pipeline=speech_pipeline(),
+                    audio_store=AudioStore.from_environment(),
                 )
 
         error = excinfo.value
@@ -981,6 +993,7 @@ class TestUpstreamSaturationStaysRetryable:
                     0.0,
                     sessions=session_manager,
                     pipeline=speech_pipeline(),
+                    audio_store=AudioStore.from_environment(),
                 )
 
         assert excinfo.value.status_code == 500

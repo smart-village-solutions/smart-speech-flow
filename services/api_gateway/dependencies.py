@@ -17,6 +17,7 @@ from starlette.requests import HTTPConnection
 if TYPE_CHECKING:
     from prometheus_client import CollectorRegistry, Counter
 
+    from .audio_storage import AudioStore
     from .auth import OidcKeyCache
     from .circuit_breaker_client import CircuitBreakerServiceClient
     from .conversation_service import ConversationService
@@ -48,6 +49,8 @@ class GatewayDependencies:
 
     prometheus_registry: CollectorRegistry
     pseudonymizer: SessionPseudonymizer
+    # The directory every audio write, read and deletion of this app uses.
+    audio_store: AudioStore
     session_manager: TenantSessionManager
     realtime_tickets: RealtimeTicketStore
     polling_store: TenantPollingStore
@@ -89,6 +92,7 @@ def build_gateway_dependencies(
     pipeline_admission: PipelineAdmission | None = None,
     quality_telemetry: QualityTelemetry | None = None,
     quality_telemetry_exporter: Any = None,
+    audio_store: AudioStore | None = None,
 ) -> GatewayDependencies:
     """Construct one app's collaborators.
 
@@ -99,8 +103,12 @@ def build_gateway_dependencies(
     and a None gate refuses every write of conversation content. The refiner,
     the admission gate and quality telemetry come from the lifespan too, which
     builds them first; None leaves the pipeline unbounded and emits no rows.
+    Without an `audio_store` the app stores audio under SSF_AUDIO_BASE_DIR as
+    it is set when this runs.
     """
     # Imported here: every module below imports its provider from this one.
+    from .audio_processing import WavAudioValidator
+    from .audio_storage import AudioStore
     from .auth import _key_cache
     from .circuit_breaker_client import CircuitBreakerServiceClient
     from .conversation_service import ConversationService
@@ -122,6 +130,7 @@ def build_gateway_dependencies(
         namespace=redis_namespace,
     )
     polling_store = TenantPollingStore(messages_dropped=polling_messages_dropped)
+    audio_store = audio_store if audio_store is not None else AudioStore.from_environment()
     websocket_monitor = get_websocket_monitor()
     # The monitor's, while it is a process-wide adapter: with no configured key
     # every pseudonymizer draws its own, and the two would stop correlating.
@@ -132,6 +141,7 @@ def build_gateway_dependencies(
             if redis is not None
             else MemoryTenantSessionStore()
         ),
+        audio_store=audio_store,
         realtime_tickets=realtime_tickets,
         polling_store=polling_store,
         runtime_policy=runtime_policy,
@@ -142,10 +152,12 @@ def build_gateway_dependencies(
     speech_pipeline = SpeechPipeline(
         speech=HttpSpeechServices(service_health.circuit_breakers),
         refiner=translation_refiner,
+        validator=WavAudioValidator(),
     )
     return GatewayDependencies(
         prometheus_registry=prometheus_registry,
         pseudonymizer=pseudonymizer,
+        audio_store=audio_store,
         session_manager=session_manager,
         realtime_tickets=realtime_tickets,
         polling_store=polling_store,
@@ -153,6 +165,7 @@ def build_gateway_dependencies(
         conversation_service=ConversationService(
             session_manager,
             pipeline=speech_pipeline,
+            audio_store=audio_store,
             admission=pipeline_admission,
             quality_telemetry=quality_telemetry,
             websocket_manager=websocket_manager,

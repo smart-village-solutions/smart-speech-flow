@@ -25,7 +25,7 @@ from services.api_gateway.pipeline_logic import (
     _validate_and_normalize_text,
 )
 from services.api_gateway.quality_telemetry import PipelineStage, QualityErrorCode
-from tests.pipeline_helpers import pipeline_collaborators
+from tests.pipeline_helpers import wav_collaborators
 
 
 def create_test_wav(
@@ -412,7 +412,7 @@ class TestProcessWavIntegration:
         audio_bytes = create_test_wav(duration_seconds=3.0)
 
         result = process_wav(
-            audio_bytes, "en", "de", debug=True, validate_audio=True, **pipeline_collaborators()
+            audio_bytes, "en", "de", debug=True, validate_audio=True, **wav_collaborators()
         )
 
         # Check that result was successful (no error field or error=False)
@@ -444,7 +444,7 @@ class TestProcessWavIntegration:
         )
 
         result = process_wav(
-            audio_bytes, "en", "de", debug=True, validate_audio=True, **pipeline_collaborators()
+            audio_bytes, "en", "de", debug=True, validate_audio=True, **wav_collaborators()
         )
 
         # Check that validation failed
@@ -482,7 +482,7 @@ class TestProcessWavIntegration:
             audio_bytes = b"invalid audio"
 
             result = process_wav(
-                audio_bytes, "en", "de", validate_audio=False, **pipeline_collaborators()
+                audio_bytes, "en", "de", validate_audio=False, **wav_collaborators()
             )
 
             # Should not have validation step

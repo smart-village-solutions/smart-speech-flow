@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from services.api_gateway.app import app
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.auth import optional_ssf_user, require_ssf_user
 from services.api_gateway.realtime_ticket import (
     MemoryRealtimeTicketBackend,
@@ -407,6 +408,7 @@ async def test_presence_grace_warning_and_absolute_lifetime_boundaries() -> None
         store=MemoryTenantSessionStore(),
         clock=clock,
         session_id_factory=lambda: next(identifiers),
+        audio_store=AudioStore.from_environment(),
     )
     snapshot = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
     grace = await manager.create_admin_session("tenant-a", snapshot)

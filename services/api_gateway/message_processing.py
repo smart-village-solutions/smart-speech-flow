@@ -13,7 +13,8 @@ from fastapi import HTTPException, Request, UploadFile
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from .audio_storage import AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
+from .audio_processing import AudioValidator
+from .audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
 from .consent import ConsentStatus
 from .log_safety import sanitize_log_value
 from .message_models import (
@@ -323,13 +324,11 @@ def _should_validate_upload_file(file: Any) -> bool:
     return isinstance(file, (UploadFile, StarletteUploadFile))
 
 
-def _validate_audio_payload(file: Any, file_bytes: bytes) -> bytes:
+def _validate_audio_payload(file: Any, file_bytes: bytes, validator: AudioValidator) -> bytes:
     if not _should_validate_upload_file(file):
         return file_bytes
 
-    from .audio_processing import validate_audio_input
-
-    validation_result = validate_audio_input(file_bytes, normalize=True)
+    validation_result = validator.validate(file_bytes, normalize=True)
     if validation_result.is_valid:
         return validation_result.processed_audio or file_bytes
 
@@ -421,12 +420,12 @@ def _store_audio_artifacts(
     _sender: ClientType,
     message_id: str,
     file_bytes: bytes,
+    *,
+    audio_store: AudioStore,
 ) -> bool:
-    from .audio_storage import AudioVariant, save_audio
-
     original_audio_available = False
     try:
-        save_audio(key, message_id, AudioVariant.ORIGINAL, file_bytes)
+        audio_store.save(key, message_id, AudioVariant.ORIGINAL, file_bytes)
         original_audio_available = True
     except Exception as e:
         # See the translated-audio branch: success is still reported to the
@@ -548,6 +547,7 @@ async def send_unified_message(
     *,
     sessions: TenantSessionManager,
     pipeline: SpeechPipeline,
+    audio_store: AudioStore,
     admission: Optional[PipelineAdmission] = None,
     telemetry: Optional[QualityTelemetry] = None,
 ) -> MessageResponse:
@@ -623,6 +623,7 @@ async def send_unified_message(
                 recorder=recorder,
                 sessions=sessions,
                 pipeline=pipeline,
+                audio_store=audio_store,
                 admission=admission,
             )
             _log_session_event("✅ Audio-Pipeline erfolgreich", session_id)
@@ -640,6 +641,7 @@ async def send_unified_message(
                 recorder=recorder,
                 sessions=sessions,
                 pipeline=pipeline,
+                audio_store=audio_store,
                 admission=admission,
             )
             _log_session_event("✅ Text-Pipeline erfolgreich", session_id)
@@ -695,6 +697,7 @@ async def process_audio_input(
     *,
     sessions: TenantSessionManager,
     pipeline: SpeechPipeline,
+    audio_store: AudioStore,
     admission: Optional[PipelineAdmission] = None,
 ) -> MessageResponse:
     """Audio-Input verarbeiten (multipart/form-data)"""
@@ -718,7 +721,7 @@ async def process_audio_input(
 
     _validate_audio_file_input(file)
     file_bytes = await file.read()
-    processed_file_bytes = _validate_audio_payload(file, file_bytes)
+    processed_file_bytes = _validate_audio_payload(file, file_bytes, pipeline.validator)
     _validate_supported_languages(source_lang, target_lang)
 
     # Audio-Pipeline ausführen (Validation bereits durchgeführt).
@@ -737,6 +740,7 @@ async def process_audio_input(
             validate_audio=False,
             speech=pipeline.speech,
             refiner=pipeline.refiner,
+            validator=pipeline.validator,
         )
     except PipelineBusyError as busy:
         raise _system_busy_error(busy) from busy
@@ -756,7 +760,9 @@ async def process_audio_input(
 
     message_id = str(uuid.uuid4())
     audio_bytes = result.get("audio_bytes")
-    original_audio_available = _store_audio_artifacts(key, client_type, message_id, file_bytes)
+    original_audio_available = _store_audio_artifacts(
+        key, client_type, message_id, file_bytes, audio_store=audio_store
+    )
 
     pipeline_metadata = transform_pipeline_metadata(
         result.get("debug"),
@@ -782,6 +788,7 @@ async def process_audio_input(
         message_id=message_id,
         correlation_id=correlation_id,
         sessions=sessions,
+        audio_store=audio_store,
     )
     message.id = message_id
     return _build_message_response(
@@ -806,6 +813,7 @@ async def process_text_input(
     *,
     sessions: TenantSessionManager,
     pipeline: SpeechPipeline,
+    audio_store: AudioStore,
     admission: Optional[PipelineAdmission] = None,
 ) -> MessageResponse:
     """Text-Input verarbeiten (application/json)"""
@@ -917,6 +925,7 @@ async def process_text_input(
         message_id=message_id,
         correlation_id=correlation_id,
         sessions=sessions,
+        audio_store=audio_store,
     )
 
     return _build_message_response(
@@ -946,11 +955,10 @@ async def create_session_message(
     correlation_id: Optional[str] = None,
     *,
     sessions: TenantSessionManager,
+    audio_store: AudioStore,
 ) -> SessionMessage:
     """Session-Message erstellen und zur Session hinzufügen"""
     import logging
-
-    from .audio_storage import AudioVariant, save_audio
 
     logger = logging.getLogger(__name__)
 
@@ -958,7 +966,7 @@ async def create_session_message(
     translated_audio_available = False
     if audio_bytes:
         try:
-            save_audio(
+            audio_store.save(
                 session_id,
                 resolved_message_id,
                 AudioVariant.TRANSLATED,

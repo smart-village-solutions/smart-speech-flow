@@ -1,6 +1,8 @@
 """WAV validation and conversion to the format the ASR service expects.
 
-The only production module that imports `audioop`, which Python 3.13 removes.
+The only production module that imports `audioop`, which Python 3.13 removes;
+tests/test_audio_processing_boundary.py fails if another one does. Callers
+reach it through the `AudioValidator` port.
 """
 
 import audioop
@@ -9,7 +11,7 @@ import logging
 import time
 import wave
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Protocol, Tuple
 
 import numpy as np
 
@@ -515,3 +517,20 @@ def convert_audio_to_required_specs(
         working_channels,
         duration_seconds,
     )
+
+
+class AudioValidator(Protocol):
+    """Validates an uploaded recording and converts it for ASR.
+
+    A valid result carries the audio to send on in `processed_audio`; an
+    invalid one carries the error code, message and details the routes report.
+    """
+
+    def validate(self, audio_bytes: bytes, *, normalize: bool) -> AudioValidationResult: ...
+
+
+class WavAudioValidator:
+    """The gateway's validator: WAV parsing, spec conversion and normalisation."""
+
+    def validate(self, audio_bytes: bytes, *, normalize: bool) -> AudioValidationResult:
+        return validate_audio_input(audio_bytes, normalize=normalize)

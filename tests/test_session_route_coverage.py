@@ -6,6 +6,7 @@ import pytest
 from fastapi import Request
 
 from services.api_gateway.app import app
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.routes import customer
 from services.api_gateway.session_lifecycle import SessionLifecycleService
 from services.api_gateway.session_manager import (
@@ -32,7 +33,10 @@ def _http_request() -> Request:
 
 @pytest.fixture
 def manager() -> TenantSessionManager:
-    return TenantSessionManager(store=MemoryTenantSessionStore())
+    return TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
 
 
 def test_session_round_trip_keeps_scope_message_and_timeout_state() -> None:

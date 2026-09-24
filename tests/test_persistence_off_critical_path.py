@@ -10,8 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from services.api_gateway import audio_storage
-from services.api_gateway.audio_storage import AudioVariant, audio_path
+from services.api_gateway.audio_storage import AudioStore, AudioVariant
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway import message_processing
 from services.api_gateway.runtime_policy import PolicyDecision, PolicyReason
@@ -23,15 +22,9 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture
-def audio_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """Redirect every audio write below the test's own directory."""
-    real_save = audio_storage.save_audio
-
-    def save(key, message_id, variant, data, *, base_dir=None):
-        return real_save(key, message_id, variant, data, base_dir=tmp_path)
-
-    monkeypatch.setattr(audio_storage, "save_audio", save)
-    return tmp_path
+def audio_store(tmp_path: Path) -> AudioStore:
+    """Every audio write lands below the test's own directory."""
+    return AudioStore(tmp_path)
 
 
 async def _session_with_consent(session_manager, status: ConsentStatus):
@@ -42,7 +35,7 @@ async def _session_with_consent(session_manager, status: ConsentStatus):
     return session.key
 
 
-async def test_broadcast_precedes_every_policy_read(session_manager, monkeypatch, audio_dir):
+async def test_broadcast_precedes_every_policy_read(session_manager, monkeypatch, audio_store):
     # The read blocks until the test releases it. If it were awaited before the
     # broadcast, the broadcast would never happen and the wait below times out.
     released = asyncio.Event()
@@ -80,6 +73,7 @@ async def test_broadcast_precedes_every_policy_read(session_manager, monkeypatch
             "en",
             manager=object(),
             sessions=session_manager,
+            audio_store=audio_store,
         )
     )
     try:
@@ -90,7 +84,7 @@ async def test_broadcast_precedes_every_policy_read(session_manager, monkeypatch
         await task
 
 
-async def test_declined_session_still_gets_playable_audio(session_manager, audio_dir):
+async def test_declined_session_still_gets_playable_audio(session_manager, audio_store):
     class _RefusingGate:
         async def authorize(self, tenant_id, consent_status, correlation_id):
             return PolicyDecision(False, PolicyReason.CONSENT_DECLINED)
@@ -107,14 +101,13 @@ async def test_declined_session_still_gets_playable_audio(session_manager, audio
         "de",
         "en",
         sessions=session_manager,
+        audio_store=audio_store,
     )
 
     # Live delivery is untouched: the response builder reads exactly this flag
     # to decide whether to hand the listener an audio URL.
     assert message.translated_audio_available is True
-    saved = audio_path(
-        key, message.id, AudioVariant.TRANSLATED, base_dir=audio_dir
-    )
+    saved = audio_store.path(key, message.id, AudioVariant.TRANSLATED)
     assert saved.is_file()
     # The outcome is recorded as refused, for removal at termination.
     assert message.record_authorized is False
@@ -122,7 +115,7 @@ async def test_declined_session_still_gets_playable_audio(session_manager, audio
 
 
 async def test_a_terminated_session_does_not_fail_a_delivered_message(
-    audio_dir, monkeypatch, session_manager
+    audio_store, monkeypatch, session_manager
 ):
     """Recording the outcome must not fail a request already served.
 
@@ -158,13 +151,14 @@ async def test_a_terminated_session_does_not_fail_a_delivered_message(
         "de",
         "en",
         sessions=session_manager,
+        audio_store=audio_store,
     )
 
     assert message.translated_audio_available is True
 
 
 async def test_the_production_default_refuses_when_no_gate_is_bound(
-    session_manager, audio_dir
+    session_manager, audio_store
 ):
     """conftest sets a permissive gate for every suite; this asserts the real
     default it hides.
@@ -184,6 +178,7 @@ async def test_the_production_default_refuses_when_no_gate_is_bound(
         "de",
         "en",
         sessions=session_manager,
+        audio_store=audio_store,
     )
 
     assert message.record_authorized is False

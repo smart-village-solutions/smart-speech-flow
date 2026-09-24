@@ -12,6 +12,7 @@ from hashlib import sha256
 import pytest
 from prometheus_client import CollectorRegistry
 
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.quality_telemetry import (
     QualityTelemetry,
     SessionLifecyclePhase,
@@ -62,7 +63,9 @@ class TestTheThreeTransitions:
         self,
     ):
         manager = TenantSessionManager(
-            store=MemoryTenantSessionStore(), session_id_factory=lambda: "ABC12345"
+            store=MemoryTenantSessionStore(),
+            session_id_factory=lambda: "ABC12345",
+            audio_store=AudioStore.from_environment(),
         )
         spy = _Spy()
         manager.attach_quality_telemetry(spy)

@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.feedback.models import MAX_IMPROVEMENTS_LENGTH, FeedbackTextTooLong
 from services.api_gateway.feedback.repository import FeedbackStorageUnavailable
 from services.api_gateway.feedback.service import UnknownSession
@@ -210,7 +211,10 @@ def test_a_session_id_no_session_could_carry_answers_404(client_for) -> None:
         repository=None,
         cipher=None,
         tenant_resolver=ConfiguredTenantResolver(tenant_id="tenant-a"),
-        session_manager=TenantSessionManager(store=RedisTenantSessionStore(EmptyRedis())),
+        session_manager=TenantSessionManager(
+            store=RedisTenantSessionStore(EmptyRedis()),
+            audio_store=AudioStore.from_environment(),
+        ),
         telemetry=None,
         pseudonymizer=SessionPseudonymizer(key=b"feedback-route-test"),
     )

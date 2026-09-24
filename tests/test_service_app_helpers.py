@@ -1022,7 +1022,7 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
     # No admission gate, so the route runs unbounded — this test is about HTML
     # escaping, not capacity.
     request = SimpleNamespace(app=SimpleNamespace(requests_total=counter))
-    pipeline = SimpleNamespace(speech=None, refiner=None)
+    pipeline = SimpleNamespace(speech=None, refiner=None, validator=None)
     error_response = await upload_module.upload(
         request, pipeline, None, FakeUploadFile(b"audio"), "de", "en"
     )

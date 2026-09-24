@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 import psutil
 import requests
 
+from .audio_processing import AudioValidator
 from .circuit_breaker import CircuitBreakerOpenError
 from .quality_telemetry import (
     PipelineStage,
@@ -598,14 +599,13 @@ def _append_audio_validation_step(
 def _apply_audio_validation(
     file_bytes: bytes,
     *,
+    validator: AudioValidator,
     debug_info: Dict[str, Any],
     start_total: float,
 ) -> Tuple[Optional[bytes], Optional[Dict[str, Any]]]:
-    from .audio_processing import validate_audio_input
-
     start_validation = time.perf_counter()
     original_file_size = len(file_bytes)
-    validation_result = validate_audio_input(file_bytes, normalize=True)
+    validation_result = validator.validate(file_bytes, normalize=True)
     processed_bytes = (
         validation_result.processed_audio
         if validation_result.is_valid and validation_result.processed_audio
@@ -853,11 +853,13 @@ class SpeechPipeline:
 
     Built by build_gateway_dependencies. The conversation service and the
     /pipeline and /upload routes hold this one object and pass its parts to
-    the pipeline functions, so every entry point runs with the same pair.
+    the pipeline functions, so every entry point runs with the same speech
+    services, refiner and audio validator.
     """
 
     speech: SpeechServices
     refiner: BaseTranslationRefiner
+    validator: AudioValidator
 
 
 def process_text_pipeline(
@@ -1021,6 +1023,7 @@ def process_wav(
     *,
     speech: SpeechServices,
     refiner: BaseTranslationRefiner,
+    validator: AudioValidator,
 ):
     """
     Enhanced WAV processing with optional audio validation
@@ -1033,6 +1036,7 @@ def process_wav(
         validate_audio: Enable comprehensive audio validation
         speech: The app's speech services
         refiner: The app's translation refiner
+        validator: The app's audio validator, used when validate_audio is set
 
     Returns:
         Dict with processing results including validation info
@@ -1057,6 +1061,7 @@ def process_wav(
         if validate_audio:
             validated_bytes, validation_failure = _apply_audio_validation(
                 file_bytes,
+                validator=validator,
                 debug_info=debug_info,
                 start_total=start_total,
             )

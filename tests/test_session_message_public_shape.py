@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.conversation_service import ConversationService
 from services.api_gateway.session_manager import (
     ClientType,
@@ -43,7 +44,11 @@ async def test_history_response_has_no_authorization_field(
     granted_session_with_message,
 ):
     key, role = granted_session_with_message
-    items = ConversationService(session_manager, pipeline=speech_pipeline()).messages(key, role)
+    items = ConversationService(
+        session_manager,
+        pipeline=speech_pipeline(),
+        audio_store=AudioStore.from_environment(),
+    ).messages(key, role)
     assert items
     for item in items:
         assert "record_authorized" not in item

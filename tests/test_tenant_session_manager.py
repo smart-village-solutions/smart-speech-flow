@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 from starlette.websockets import WebSocketState
 
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.session_manager import (
     ClientType,
     TenantSessionManager,
@@ -48,6 +49,7 @@ def manager(clock: Clock) -> TenantSessionManager:
         store=MemoryTenantSessionStore(),
         clock=clock,
         session_id_factory=lambda: next(identifiers),
+        audio_store=AudioStore.from_environment(),
     )
 
 
@@ -232,6 +234,7 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
         store=store,
         clock=clock,
         session_id_factory=lambda: "RETRY123",
+        audio_store=AudioStore.from_environment(),
     )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     tickets = RealtimeTicketStore(MemoryRealtimeTicketBackend(clock=clock), clock=clock)
@@ -402,6 +405,7 @@ async def test_the_window_survives_a_naive_clock() -> None:
         store=MemoryTenantSessionStore(),
         clock=lambda: naive,
         session_id_factory=lambda: "NAIVE001",
+        audio_store=AudioStore.from_environment(),
     )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     await manager.terminate_session(session.key, "manual_admin_termination")
