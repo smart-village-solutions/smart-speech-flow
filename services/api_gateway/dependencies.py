@@ -121,14 +121,17 @@ def build_gateway_dependencies(
         runtime_policy=runtime_policy,
         pseudonymizer=pseudonymizer,
     )
+    websocket_manager = WebSocketManager(session_manager, polling_store)
     return GatewayDependencies(
         prometheus_registry=prometheus_registry,
         pseudonymizer=pseudonymizer,
         session_manager=session_manager,
         realtime_tickets=realtime_tickets,
         polling_store=polling_store,
-        websocket_manager=WebSocketManager(session_manager, polling_store),
-        conversation_service=ConversationService(session_manager),
+        websocket_manager=websocket_manager,
+        conversation_service=ConversationService(
+            session_manager, websocket_manager=websocket_manager
+        ),
         studio_runtime_flow=studio_runtime_flow,
         login_directory=login_directory_from_environment(),
         circuit_breaker_client=circuit_breaker_client,

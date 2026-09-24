@@ -59,3 +59,12 @@ Changes a later slice made on purpose, where the output differs from what came b
   those links were never fetchable, and no reachable behaviour changes. Hiding the
   unfetchable links on terminated sessions would change the history contract, so it belongs
   in its own issue.
+- Message processing logs under `services.api_gateway.message_processing` instead of
+  `services.api_gateway.routes.session`, because the code moved there (PR4b). The messages
+  and their fields are unchanged.
+- When a broadcast reports failure, the gateway now logs `WebSocket-Broadcasting
+  fehlgeschlagen` with its send counts, as the code always intended (PR4b). Before, building
+  that line hashed the `TenantSessionKey` instead of its session id and raised, so the handler
+  logged `WebSocket-Broadcasting-Fehler` with a redacted traceback. Both lines are at ERROR
+  level, and the HTTP response is unchanged. A broadcast to a session with no open WebSocket
+  or polling connection reports failure, so the corrected line appears in normal operation.

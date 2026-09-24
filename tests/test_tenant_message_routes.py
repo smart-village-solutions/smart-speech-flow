@@ -66,7 +66,7 @@ def test_message_route_uses_server_assigned_role(
     )
 
     assert response.status_code == 200
-    key, sender, _request, _manager = process.await_args.args
+    key, sender, _request = process.await_args.args
     assert key.tenant_id == "tenant-test"
     assert key.session_id == session_id
     assert sender is expected_role

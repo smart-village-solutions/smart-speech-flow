@@ -25,7 +25,7 @@ class TextMessageRequest(BaseModel):
 
     @field_validator("text")
     @classmethod
-    def validate_text_content(cls, v):
+    def validate_text_content(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("Text content cannot be empty")
         return v.strip()

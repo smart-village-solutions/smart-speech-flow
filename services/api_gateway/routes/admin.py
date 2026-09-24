@@ -195,10 +195,9 @@ async def send_admin_message(
     session_id: str,
     request: Request,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
-    manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ):
-    return await conversations.process(key, ClientType.ADMIN, request, manager)
+    return await conversations.process(key, ClientType.ADMIN, request)
 
 
 @router.get("/session/{session_id}/messages", responses=ADMIN_ROUTE_RESPONSES)

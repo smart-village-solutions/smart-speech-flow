@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import hashlib
-import inspect
 import logging
 import time
 import uuid
 from types import TracebackType
-from typing import Annotated, Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
-from fastapi import Depends, HTTPException, Request, UploadFile
+from fastapi import HTTPException, Request, UploadFile
 from pydantic import ValidationError
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from .audio_storage import AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
 from .consent import ConsentStatus
@@ -36,9 +36,22 @@ from .quality_telemetry import InputMode
 from .session_manager import ClientType, SessionMessage, SessionStatus, TenantSessionManager
 from .studio_runtime_flow import correlation_id_from_request
 from .tenant_session import TenantSessionKey
-from .websocket import MessageType, WebSocketManager, get_websocket_manager
+from .websocket import BroadcastResult, MessageType, WebSocketManager
 
 logger = logging.getLogger(__name__)
+
+
+def _nothing_delivered() -> BroadcastResult:
+    """What a broadcast reports when there is no WebSocket manager to deliver through."""
+    return BroadcastResult(
+        success=True,
+        total_connections=0,
+        successful_sends=0,
+        failed_sends=0,
+        session_has_connections=False,
+        errors=[],
+    )
+
 
 _REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
 
@@ -75,12 +88,6 @@ def _log_session_event(message: str, session_id: Optional[str], **extra: Any) ->
     safe_extra = {"session_ref": _safe_identifier(session_id)}
     safe_extra.update(sanitize_log_value(extra))
     logger.info("%s | %s", message, safe_extra)
-
-
-OptionalManagerDependency = Annotated[
-    Optional[WebSocketManager],
-    Depends(get_websocket_manager),
-]
 
 
 def validate_session_languages(
@@ -292,7 +299,7 @@ def _validate_supported_languages(source_lang: str, target_lang: str) -> None:
     )
 
 
-async def _parse_audio_form(request: Request) -> tuple[Any, str, str]:
+async def _parse_audio_form(request: Request) -> tuple[Any, Any, Any]:
     form = await request.form()
     required_fields = ["file", "source_lang", "target_lang"]
     missing_fields = [field for field in required_fields if field not in form]
@@ -324,14 +331,7 @@ def _validate_audio_file_input(file: Any) -> None:
 
 
 def _should_validate_upload_file(file: Any) -> bool:
-    try:
-        from starlette.datastructures import UploadFile as StarletteUploadFile
-
-        upload_file_types = (UploadFile, StarletteUploadFile)
-    except ImportError:  # pragma: no cover - defensive fallback
-        upload_file_types = (UploadFile,)
-
-    return isinstance(file, upload_file_types)
+    return isinstance(file, (UploadFile, StarletteUploadFile))
 
 
 def _validate_audio_payload(file: Any, file_bytes: bytes) -> bytes:
@@ -354,19 +354,6 @@ def _validate_audio_payload(file: Any, file_bytes: bytes) -> bytes:
                 "validation_time_ms": validation_result.validation_time_ms,
             },
         ),
-    )
-
-
-def _supports_extended_session_message_args() -> bool:
-    signature = inspect.signature(create_session_message)
-    return all(
-        parameter_name in signature.parameters
-        for parameter_name in (
-            "manager",
-            "pipeline_metadata",
-            "original_audio_url",
-            "message_id",
-        )
     )
 
 
@@ -464,50 +451,6 @@ def _store_audio_artifacts(
     return original_audio_available
 
 
-async def _create_session_message_with_fallback(
-    *,
-    session_id: TenantSessionKey,
-    client_type: ClientType,
-    original_text: str,
-    translated_text: str,
-    audio_bytes: Optional[bytes],
-    source_lang: str,
-    target_lang: str,
-    manager: Optional[WebSocketManager],
-    pipeline_metadata: Optional[Dict[str, Any]],
-    original_audio_url: Optional[str],
-    message_id: str,
-    correlation_id: Optional[str] = None,
-    sessions: TenantSessionManager,
-) -> SessionMessage:
-    if _supports_extended_session_message_args():
-        return await create_session_message(
-            session_id=session_id,
-            client_type=client_type,
-            original_text=original_text,
-            translated_text=translated_text,
-            audio_bytes=audio_bytes,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            manager=manager,
-            pipeline_metadata=pipeline_metadata,
-            original_audio_url=original_audio_url,
-            message_id=message_id,
-            correlation_id=correlation_id,
-            sessions=sessions,
-        )
-
-    return await create_session_message(
-        session_id,
-        client_type,
-        original_text,
-        translated_text,
-        audio_bytes,
-        source_lang,
-        target_lang,
-    )
-
-
 def _build_message_response(
     *,
     message: SessionMessage,
@@ -572,7 +515,7 @@ async def _parse_text_request(request: Request) -> TextMessageRequest:
 def _build_text_validation_error(
     e: ValidationError, body: Optional[Dict[str, Any]]
 ) -> HTTPException:
-    error_details = e.errors()[0] if e.errors() else {}
+    error_details: Mapping[str, Any] = e.errors()[0] if e.errors() else {}
     error_type = error_details.get("type", "unknown")
     field_name = error_details.get("loc", ["unknown"])[-1]
 
@@ -612,7 +555,7 @@ async def send_unified_message(
     key: TenantSessionKey,
     sender: ClientType,
     request: Request,
-    manager: OptionalManagerDependency = None,
+    manager: Optional[WebSocketManager] = None,
     *,
     sessions: TenantSessionManager,
 ) -> MessageResponse:
@@ -811,7 +754,7 @@ async def process_audio_input(
         original_audio_available=original_audio_available,
     )
 
-    message = await _create_session_message_with_fallback(
+    message = await create_session_message(
         session_id=key,
         client_type=client_type,
         original_text=result.get("asr_text", ""),
@@ -944,7 +887,7 @@ async def process_text_input(
         message_id=message_id,  # Pass message_id for audio URL
     )
 
-    message = await _create_session_message_with_fallback(
+    message = await create_session_message(
         session_id=key,
         client_type=client_type,
         original_text=pipeline_result.get("asr_text", text_request.text),
@@ -1045,16 +988,7 @@ async def create_session_message(
             result = await broadcast_message_to_session(session_id, message, client_type, manager)
         else:
             # No manager available (e.g., unit tests running without DI)
-            # Return a noop-like result object to keep behaviour consistent
-            class _NoopResult:
-                success = True
-                total_connections = 0
-                successful_sends = 0
-                failed_sends = 0
-                session_has_connections = False
-                errors = []
-
-            result = _NoopResult()
+            result = _nothing_delivered()
 
         # Task 4.7: Handle broadcast failures
         if result.success:
@@ -1069,7 +1003,7 @@ async def create_session_message(
                 "❌ WebSocket-Broadcasting fehlgeschlagen | %s",
                 sanitize_log_value(
                     {
-                        "session_ref": _safe_identifier(session_id),
+                        "session_ref": _safe_identifier(session_id.session_id),
                         "successful_sends": result.successful_sends,
                         "failed_sends": result.failed_sends,
                         "total_connections": result.total_connections,
@@ -1125,7 +1059,7 @@ async def broadcast_message_to_session(
     message: SessionMessage,
     sender_type: ClientType,
     manager: Optional[WebSocketManager] = None,
-):
+) -> BroadcastResult:
     """
     🚀 Differentiated Message Broadcasting:
     - Sender erhält original_text (ASR-Bestätigung)
@@ -1158,7 +1092,7 @@ async def broadcast_message_to_session(
     )
 
     # Original Message für Sender (ASR-Bestätigung)
-    sender_message = {
+    sender_message: Dict[str, Any] = {
         "type": MessageType.MESSAGE.value,
         "message_id": message.id,
         "session_id": session_id.session_id,
@@ -1184,7 +1118,7 @@ async def broadcast_message_to_session(
         )
 
     # Translated Message für Empfänger (mit Audio)
-    receiver_message = {
+    receiver_message: Dict[str, Any] = {
         "type": MessageType.MESSAGE.value,
         "message_id": message.id,
         "session_id": session_id.session_id,
@@ -1223,15 +1157,7 @@ async def broadcast_message_to_session(
     _log_session_event("📤 Broadcasting differentiated content", session_id.session_id)
     if manager is None:
         # No WebSocketManager provided (e.g., unit tests without DI) -> noop
-        class _NoopResult:
-            success = True
-            total_connections = 0
-            successful_sends = 0
-            failed_sends = 0
-            session_has_connections = False
-            errors = []
-
-        result = _NoopResult()
+        result = _nothing_delivered()
     else:
         result = await manager.broadcast_with_differentiated_content(
             session_id=session_id,

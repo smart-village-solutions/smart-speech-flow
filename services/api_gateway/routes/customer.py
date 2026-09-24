@@ -21,7 +21,6 @@ from ..dependencies import (
     get_conversation_service,
     get_session_manager,
     get_studio_runtime_flow,
-    get_websocket_manager,
 )
 from ..log_safety import safe_language_code, sanitize_log_value
 from ..session_access import require_customer_session_key
@@ -30,7 +29,6 @@ from ..studio_runtime_client import RuntimeConfiguration, StudioRuntimeClientErr
 from ..studio_runtime_flow import StudioRuntimeFlow, correlation_id_from_request
 from ..studio_runtime_token import StudioTokenError
 from ..tenant_session import TenantSessionKey
-from ..websocket import WebSocketManager
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -99,10 +97,9 @@ async def send_customer_message(
     session_id: str,
     request: Request,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
-    manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ):
-    return await conversations.process(key, ClientType.CUSTOMER, request, manager)
+    return await conversations.process(key, ClientType.CUSTOMER, request)
 
 
 @router.get("/session/{session_id}/messages", responses=CUSTOMER_ROUTE_RESPONSES)
