@@ -115,8 +115,15 @@ Only tracked files count here: `LOCAL_SETUP.md` and `docs/frontend/` are in
 
 ## 8. Follow-ups (not this change)
 
-- [ ] 8.1 Raise `MAX_CONCURRENT_PIPELINES` and `MAX_CONCURRENT_TRANSLATIONS` from
+- [x] 8.1 Raise `MAX_CONCURRENT_PIPELINES` and `MAX_CONCURRENT_TRANSLATIONS` from
   load-test evidence, and set the queue waits from the measured p95.
+  Measured on the production GPU 2026-09-24: ASR at concurrency 5 held p50
+  0.52 s, translation plus refinement p95 1.96 s, peak 15345 MiB of 20475,
+  no failures at any level up to 8. `MAX_CONCURRENT_PIPELINES` raised 2 -> 5.
+  `MAX_CONCURRENT_TRANSLATIONS` left at 2: the measurement above ran with it
+  at 2, so five conversations are already served inside p95 by queueing there,
+  and raising it adds concurrent M2M100 beam searches for about half a second.
+  Queue waits left at 10.0 / 25.0, both above the measured pipeline p95.
 - [ ] 8.2 Optional `AppError` `busy` kind and a dedicated i18n message.
 - [ ] 8.3 Cross-replica admission (#227).
 - [ ] 8.4 Bound ASR and TTS inference, which already offload but are unbounded.
