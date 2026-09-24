@@ -17,10 +17,11 @@ if [[ $# -ne 0 ]] || ! is_positive_integer "$timeout_seconds"; then
 fi
 
 # Services that must be running. This array names the containers checked by
-# all_containers_running(). When the refinement backend is switched from Ollama
-# to vLLM, replace 'ollama' with 'vllm' here and remove the compose profile gate.
+# all_containers_running(). It lists 'vllm' because that is the refinement
+# backend production runs; Ollama is kept running only as a rollback, so it is
+# deliberately absent -- stopping it must not fail the gate.
 required_services=(
-  traefik asr translation tts api_gateway ollama redis clickhouse
+  traefik asr translation tts api_gateway vllm redis clickhouse
   keycloak-postgres ssf-postgres keycloak frontend prometheus
   grafana dcgm_exporter cadvisor node_exporter loki promtail
 )

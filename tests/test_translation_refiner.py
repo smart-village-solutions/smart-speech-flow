@@ -117,6 +117,30 @@ def test_prompt_uses_source_as_meaning_anchor_for_a_language_outside_the_skip_li
     assert "Use the original input only to verify" in prompt
 
 
+def test_prompt_forbids_substituting_a_synonym_for_the_candidate_s_own_terms():
+    """Measured on the production model (2026-09-24, Qwen3.5-4B, 24 samples).
+
+    The earlier wording asked only to "preserve technical terms" and lost 6 of
+    24: `Personalausweis`/"identity card" came back as "passport" and
+    `Buergeramt`/"citizens office" as "city hall" -- a mistranslation spoken
+    aloud by TTS. Naming the substitution itself took that to 0 of 24 without
+    leaving any of the 7 ungrammatical candidates uncorrected.
+    """
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = mod.OllamaTranslationRefiner(
+        endpoint="http://ollama:11434",
+        model="phi4-mini",
+        timeout_seconds=1.0,
+        temperature=0.2,
+        max_retries=1,
+    )
+
+    prompt = refiner._build_prompt("Hello", "de", "en")
+
+    assert "a synonym is a mistranslation here" in prompt
+    assert "Keep every word the candidate already uses" in prompt
+
+
 def test_prompt_omits_source_text_for_a_language_inside_the_skip_list():
     mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
     refiner = mod.OllamaTranslationRefiner(

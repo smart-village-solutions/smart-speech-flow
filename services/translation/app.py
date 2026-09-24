@@ -115,11 +115,13 @@ DENY_EMPTY = os.getenv("DENY_EMPTY", "1") == "1"
 # ----------------------------
 # Inference admission control
 # ----------------------------
-# Matches the gateway's MAX_CONCURRENT_PIPELINES so this service is not a
-# tighter chokepoint than the system-level boundary. Exactly 0 disables the
-# bound. The figure is inferred from the hardware — one RTX 4000 Ada shared by
-# ASR, translation and TTS, one M2M100 instance here — not measured; the metrics
-# below exist so load tests can raise it.
+# Deliberately below the gateway's MAX_CONCURRENT_PIPELINES (5). Measured on
+# the production card 2026-09-24: with this bound at 2, five concurrent
+# conversations still finished translation and refinement at p95 1.96 s with
+# nothing shed, because excess requests queue here rather than failing. Raising
+# it would buy roughly half a second at the cost of more concurrent M2M100 beam
+# searches on a GPU already shared with ASR, TTS and vLLM. Exactly 0 disables
+# the bound.
 DEFAULT_MAX_CONCURRENT_TRANSLATIONS = 2
 # Under the gateway's 30s HTTP timeout for /translate, so a saturated queue
 # answers with an attributable 503 rather than leaving the caller to time out.

@@ -100,6 +100,14 @@ services:
     - AUDIO_MAX_DISK_USAGE_GB=9
     - AUDIO_CLEANUP_INTERVAL_MINUTES=60
     - ENABLE_PIPELINE_METADATA=true
+    # Bounds concurrent GPU pipeline work. Set here, not left to the code
+    # default, so the limit production runs on can be tuned from the env file
+    # without a gateway build. Five is measured on this card (2026-09-24):
+    # five concurrent conversations peaked at 15345 MiB of 20475, ASR p50
+    # 0.52 s, translation plus refinement p95 1.96 s, nothing shed. The queue
+    # wait must stay above that pipeline p95. 0 disables the bound.
+    - MAX_CONCURRENT_PIPELINES=${MAX_CONCURRENT_PIPELINES:-5}
+    - PIPELINE_QUEUE_WAIT_SECONDS=${PIPELINE_QUEUE_WAIT_SECONDS:-10.0}
     - LLM_REFINEMENT_ENABLED=${LLM_REFINEMENT_ENABLED:-true}
     # No default here: an explicit default would always win over the
     # backend-aware default translation_refiner.py resolves (ollama keeps

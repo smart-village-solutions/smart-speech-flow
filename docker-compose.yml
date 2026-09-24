@@ -146,11 +146,11 @@ services:
       # "refine everything" is reachable through compose (see I4).
       - LLM_REFINEMENT_SKIP_TARGET_LANGUAGES=${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,ti,ku,fa}
       # Pipeline Admission Control — bounds concurrent GPU pipeline work.
-      # One GPU hosts asr, translation and tts together, so the default is
-      # deliberately low; raise it from load-test evidence and watch
-      # gateway_pipeline_in_flight / _queue_wait_seconds / _rejected_total.
-      # 0 disables the bound.
-      - MAX_CONCURRENT_PIPELINES=${MAX_CONCURRENT_PIPELINES:-2}
+      # One GPU hosts asr, translation, tts and vllm together. Five is the
+      # limit measured on the production card (2026-09-24): peak 15345 MiB of
+      # 20475, nothing shed. Watch gateway_pipeline_in_flight /
+      # _queue_wait_seconds / _rejected_total. 0 disables the bound.
+      - MAX_CONCURRENT_PIPELINES=${MAX_CONCURRENT_PIPELINES:-5}
       - PIPELINE_QUEUE_WAIT_SECONDS=${PIPELINE_QUEUE_WAIT_SECONDS:-10.0}
       # Rate Limiting Configuration für Produktion
       - GLOBAL_RATE_LIMIT=${GLOBAL_RATE_LIMIT:-1200}

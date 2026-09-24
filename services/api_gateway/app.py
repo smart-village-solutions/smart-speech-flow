@@ -607,7 +607,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # import time; telemetry is built here, per lifespan. Nothing connects them
     # unless these lines do.
     from .session_manager import session_manager
-    from .translation_refiner import translation_refiner
+    from .translation_refiner import describe_refinement, translation_refiner
 
     translation_refiner.attach_quality_telemetry(app.state.quality_telemetry)
     session_manager.attach_quality_telemetry(app.state.quality_telemetry)
@@ -616,6 +616,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         refinement_model_ref = getattr(translation_refiner, "model", None)
         if refinement_model_ref:
             refinement_metrics.pre_create_series(refinement_model_ref)
+    sys.stderr.write(f"{describe_refinement(translation_refiner)}\n")
+    sys.stderr.flush()
     # Rehydrated sessions must enforce reconnect and absolute deadlines before
     # the lifespan yields and the gateway can accept a request.
     await session_manager.check_session_timeouts()

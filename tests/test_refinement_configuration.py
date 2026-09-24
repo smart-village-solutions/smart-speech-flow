@@ -406,3 +406,36 @@ def test_startup_log_names_the_configured_backend(env, caplog):
 
     info = " ".join(r.getMessage() for r in caplog.records if r.levelno == logging.INFO)
     assert "backend=vllm" in info
+
+
+@pytest.mark.parametrize("backend", ["ollama", "vllm"])
+def test_the_refiner_carries_the_backend_that_built_it(env, backend):
+    env(ENABLED="true", BACKEND=backend)
+
+    refiner = refiner_module.get_translation_refiner()
+
+    assert refiner.backend == backend
+
+
+def test_refinement_banner_names_the_live_backend(env):
+    """The factory's own log line runs at import, before the gateway configures
+    logging, so it never reaches production logs: on 2026-09-24 the live
+    gateway had no refinement line at all and the backend could only be read
+    off a Prometheus label. The banner the lifespan prints is what an operator
+    actually sees."""
+    env(ENABLED="true", BACKEND="vllm", ENDPOINT="http://vllm:8000", TEMPERATURE="0.0")
+
+    banner = refiner_module.describe_refinement(refiner_module.get_translation_refiner())
+
+    assert "backend=vllm" in banner
+    assert "model=qwen3.5-4b" in banner
+    assert "endpoint=http://vllm:8000" in banner
+    assert "temperature=0.0" in banner
+
+
+def test_refinement_banner_reports_a_disabled_refiner(env):
+    env(ENABLED="false")
+
+    banner = refiner_module.describe_refinement(refiner_module.get_translation_refiner())
+
+    assert banner == "Refinement disabled"

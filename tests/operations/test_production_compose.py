@@ -321,3 +321,24 @@ def test_recovery_unit_reconciles_with_the_guarded_production_deploy_script():
     assert "ExecStop=" not in unit
     assert "ExecStartPost=/root/projects/ssf-backend/scripts/production-health-check.sh --timeout-seconds 300" in unit
     assert "Restart=on-failure" in unit
+
+
+def test_both_composes_admit_the_measured_number_of_concurrent_pipelines():
+    """Production ran the code default because it set neither variable.
+
+    Measured on the production GPU 2026-09-24: five concurrent conversations
+    peaked at 15345 MiB of 20475 with nothing shed, so the gateway admits five
+    rather than the inferred two. Setting it in compose also means the limit
+    can be tuned from the env file instead of rebuilt into the image.
+    """
+    from services.api_gateway.pipeline_admission import DEFAULT_MAX_CONCURRENT_PIPELINES
+
+    for path in (DEVELOPMENT_COMPOSE_PATH, COMPOSE_PATH):
+        compose = yaml.safe_load(path.read_text())
+        environment = _environment_by_name(compose["services"]["api_gateway"])
+        assert environment["MAX_CONCURRENT_PIPELINES"] == (
+            "${MAX_CONCURRENT_PIPELINES:-" f"{DEFAULT_MAX_CONCURRENT_PIPELINES}" "}"
+        ), path
+        assert environment["PIPELINE_QUEUE_WAIT_SECONDS"] == (
+            "${PIPELINE_QUEUE_WAIT_SECONDS:-10.0}"
+        ), path

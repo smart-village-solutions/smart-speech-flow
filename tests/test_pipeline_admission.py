@@ -128,13 +128,19 @@ def session_manager():
 class TestConfiguration:
     """The limit and wait timeout are typed, documented configuration."""
 
-    def test_defaults_are_conservative(self, monkeypatch):
+    def test_defaults_carry_the_measured_limit(self, monkeypatch):
+        """Five is measured on the production GPU (2026-09-24), not inferred.
+
+        Five concurrent conversations peaked at 15345 MiB of 20475 with ASR at
+        p50 0.52 s and translation plus refinement at p95 1.96 s, no failures.
+        The queue wait stays at 10.0 because it must exceed that pipeline p95.
+        """
         monkeypatch.delenv("MAX_CONCURRENT_PIPELINES", raising=False)
         monkeypatch.delenv("PIPELINE_QUEUE_WAIT_SECONDS", raising=False)
 
         config = PipelineAdmissionConfig()
 
-        assert config.max_concurrent == 2
+        assert config.max_concurrent == 5
         assert config.queue_wait_seconds == pytest.approx(10.0)
 
     def test_reads_environment_at_instantiation(self, monkeypatch):
@@ -153,7 +159,7 @@ class TestConfiguration:
 
         config = PipelineAdmissionConfig()
 
-        assert config.max_concurrent == 2
+        assert config.max_concurrent == 5
         assert config.queue_wait_seconds == pytest.approx(10.0)
 
     def test_negative_limit_falls_back_rather_than_disabling(self, monkeypatch):
@@ -162,7 +168,7 @@ class TestConfiguration:
 
         config = PipelineAdmissionConfig()
 
-        assert config.max_concurrent == 2
+        assert config.max_concurrent == 5
         assert PipelineAdmission(config).enabled is True
 
     def test_negative_wait_falls_back_to_default(self):
