@@ -10,8 +10,11 @@ whole queue.
 import time
 from unittest.mock import AsyncMock, Mock
 
+from services.api_gateway.realtime_connection import safe_identifier
+from services.api_gateway.realtime_registry import ConnectionRegistry
+from services.api_gateway.session_manager import ClientType
 from services.api_gateway.tenant_session import TenantSessionKey
-from services.api_gateway.websocket import ClientType, WebSocketManager, _safe_identifier
+from services.api_gateway.websocket import WebSocketManager
 from services.api_gateway.websocket_fallback import (
     FallbackConfig,
     FallbackReason,
@@ -35,7 +38,7 @@ def test_ids_are_unique_within_the_same_second(monkeypatch):
     monkeypatch.setattr(time, "time", lambda: 1_757_000_000.0)
 
     ids = {
-        WebSocketManager._build_connection_id(SESSION_A, ClientType.CUSTOMER)
+        ConnectionRegistry.build_connection_id(SESSION_A, ClientType.CUSTOMER)
         for _ in range(100)
     }
 
@@ -47,15 +50,15 @@ def test_the_id_still_names_its_session_and_client_type():
 
     The session id itself is a join credential, so only its hash is in the id.
     """
-    connection_id = WebSocketManager._build_connection_id(SESSION_A, ClientType.CUSTOMER)
+    connection_id = ConnectionRegistry.build_connection_id(SESSION_A, ClientType.CUSTOMER)
 
-    scope = f"{SESSION_A.tenant_ref}_{_safe_identifier(SESSION_A.session_id)}"
+    scope = f"{SESSION_A.tenant_ref}_{safe_identifier(SESSION_A.session_id)}"
     assert connection_id.startswith(f"{scope}_{ClientType.CUSTOMER.value}_")
     assert SESSION_A.session_id not in connection_id
 
 
 class TestTheEndpointItselfBuildsUniqueIds:
-    """_build_connection_id in isolation is not the seam that broke.
+    """build_connection_id in isolation is not the seam that broke.
 
     connect_websocket used to inline the id construction; a revert that puts
     the timestamp back there passes every test that only calls the helper.

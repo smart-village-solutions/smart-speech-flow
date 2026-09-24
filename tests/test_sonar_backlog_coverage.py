@@ -313,11 +313,13 @@ async def test_routes_session_activity_helper_and_endpoint(monkeypatch):
     connection_two = SimpleNamespace(current_polling_interval=15)
     manager = SimpleNamespace(
         session_connections={"session-1": {"a": connection_one, "b": connection_two}},
-        adaptive_polling=SimpleNamespace(
-            update_client_status=Mock(side_effect=[10, 15]),
-            get_battery_optimization_tips=Mock(side_effect=[["tip-a"], ["tip-b"]]),
+        client_status=SimpleNamespace(
+            adaptive_polling=SimpleNamespace(
+                update_client_status=Mock(side_effect=[10, 15]),
+                get_battery_optimization_tips=Mock(side_effect=[["tip-a"], ["tip-b"]]),
+            ),
+            send_polling_interval_update=AsyncMock(),
         ),
-        _send_polling_interval_update=AsyncMock(),
         get_session_connections=Mock(return_value=[{"id": "a"}, {"id": "b"}]),
     )
     activity = session_routes.ClientActivityUpdate(
@@ -332,7 +334,7 @@ async def test_routes_session_activity_helper_and_endpoint(monkeypatch):
     )
     assert new_intervals == [10, 15]
     assert sorted(tips) == ["tip-a", "tip-b"]
-    manager._send_polling_interval_update.assert_awaited_once_with(
+    manager.client_status.send_polling_interval_update.assert_awaited_once_with(
         connection_one, 10, reason="client_activity_update"
     )
 
@@ -345,11 +347,11 @@ async def test_routes_session_activity_helper_and_endpoint(monkeypatch):
         get_session=lambda session_id: active_session,
         update_session_activity=update_activity,
     )
-    manager.adaptive_polling.update_client_status = Mock(side_effect=[10, 15])
-    manager.adaptive_polling.get_battery_optimization_tips = Mock(
+    manager.client_status.adaptive_polling.update_client_status = Mock(side_effect=[10, 15])
+    manager.client_status.adaptive_polling.get_battery_optimization_tips = Mock(
         side_effect=[["tip-a"], ["tip-b"]]
     )
-    manager._send_polling_interval_update = AsyncMock()
+    manager.client_status.send_polling_interval_update = AsyncMock()
 
     response = await session_routes.update_client_activity("session-1", activity, manager, sessions)
     assert response.status == "success"

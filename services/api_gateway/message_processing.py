@@ -35,11 +35,12 @@ from .pipeline_logic import (
     process_wav,
 )
 from .quality_telemetry import InputMode, QualityTelemetry
+from .realtime_dispatch import BroadcastResult
 from .realtime_protocol import receiver_message_frame, sender_confirmation_frame
 from .session_manager import ClientType, SessionMessage, SessionStatus, TenantSessionManager
 from .studio_runtime_flow import correlation_id_from_request
 from .tenant_session import TenantSessionKey
-from .websocket import BroadcastResult, WebSocketManager
+from .websocket import WebSocketManager
 
 logger = logging.getLogger(__name__)
 

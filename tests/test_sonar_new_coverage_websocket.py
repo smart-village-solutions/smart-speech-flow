@@ -60,10 +60,10 @@ async def test_heartbeat_monitor_logs_unexpected_failure(monkeypatch, caplog):
     async def fail_sleep(_delay):
         raise RuntimeError("scheduler unavailable")
 
-    monkeypatch.setattr("services.api_gateway.websocket.asyncio.sleep", fail_sleep)
+    monkeypatch.setattr("services.api_gateway.realtime_heartbeat.asyncio.sleep", fail_sleep)
 
     with caplog.at_level(logging.ERROR):
-        await manager._heartbeat_monitor()
+        await manager.heartbeat.monitor_loop()
 
     assert "Heartbeat monitor failed" in caplog.messages
 

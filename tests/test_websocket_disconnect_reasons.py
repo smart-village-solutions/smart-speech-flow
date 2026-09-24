@@ -86,7 +86,7 @@ class TestTheReasonSurvivesCleanup:
         sessions = tenant_session_manager()
         key = open_session(sessions, "s1")
         manager = ws.WebSocketManager(sessions, monitor=_Monitor())
-        connection_id = manager._build_connection_id(key, ws.ClientType.CUSTOMER)
+        connection_id = manager.registry.build_connection_id(key, ws.ClientType.CUSTOMER)
         manager.all_connections[connection_id] = ws.WebSocketConnection(
             websocket=Mock(),
             client_type=ws.ClientType.CUSTOMER,
@@ -96,7 +96,7 @@ class TestTheReasonSurvivesCleanup:
             state=ws.ConnectionState.CONNECTED,
             key=key,
         )
-        await manager._cleanup_connection(
+        await manager.release_connection(
             connection_id, DisconnectReason.HEARTBEAT_TIMEOUT
         )
 
@@ -124,7 +124,7 @@ def _manager_with_one_connection(monkeypatch, monitor: _RecordingMonitor):
     sessions = tenant_session_manager()
     key = open_session(sessions, "s1")
     manager = ws.WebSocketManager(sessions, monitor=monitor)
-    connection_id = manager._build_connection_id(key, ws.ClientType.CUSTOMER)
+    connection_id = manager.registry.build_connection_id(key, ws.ClientType.CUSTOMER)
     socket = Mock()
     socket.send_json = AsyncMock()
     socket.close = AsyncMock()
@@ -143,7 +143,7 @@ def _manager_with_one_connection(monkeypatch, monitor: _RecordingMonitor):
 
 
 class TestTheReasonSurvivesTheCallOperatorsActuallyMake:
-    """_cleanup_connection is the seam the fix edited; disconnect_websocket is
+    """release_connection is the seam the fix edited; disconnect_websocket is
     the seam every caller uses. Dropping the argument at that call site passes
     a suite that only exercises the former."""
 
@@ -277,7 +277,7 @@ class TestNormalSessionEndDoesNotPageWebSocketConnectionFailures:
         )
 
     def test_a_session_error_is_an_error_not_a_protocol_violation(self):
-        """_get_termination_message carries "error"; it is a fault and must
+        """termination_text carries "error"; it is a fault and must
         still page, but calling it a protocol violation misroutes triage."""
         assert DisconnectReason.from_wire("error") is DisconnectReason.CONNECTION_ERROR
         assert (

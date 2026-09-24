@@ -109,7 +109,7 @@ async def test_a_long_conversation_that_answers_pings_is_not_a_heartbeat_timeout
 ):
     connection_id = await _connect(manager)
     _age(manager, monitor, connection_id, 400)
-    await manager._send_heartbeat_pings()
+    await manager.heartbeat.send_pings()
     await manager.handle_websocket_message(connection_id, {"type": "heartbeat_pong"})
 
     await _run_one_cleanup(monitor, manager, monkeypatch)
@@ -124,10 +124,10 @@ async def test_a_connection_that_stops_answering_counts_once_as_heartbeat_timeou
 ):
     connection_id = await _connect(manager)
     manager.all_connections[connection_id].last_heartbeat = ws.utc_now() - timedelta(
-        seconds=manager.heartbeat_timeout + 1
+        seconds=manager.heartbeat.timeout + 1
     )
 
-    await manager._check_heartbeat_timeouts()
+    await manager.heartbeat.check_timeouts()
     # The endpoint's finally block runs once the closed socket raises.
     await manager.disconnect_websocket(connection_id, "client_disconnect")
     await _run_one_cleanup(monitor, manager, monkeypatch)
@@ -170,7 +170,7 @@ async def test_a_pong_echoing_the_ping_reports_the_heartbeat_and_its_latency(
 ):
     connection_id = await _connect(manager)
 
-    await manager._send_heartbeat_pings()
+    await manager.heartbeat.send_pings()
     ping_id = _last_ping_id(manager, connection_id)
     await manager.handle_websocket_message(
         connection_id, {"type": "heartbeat_pong", "ping_id": ping_id}
@@ -186,7 +186,7 @@ async def test_a_pong_that_does_not_echo_the_ping_records_no_latency(manager, mo
     the phase of two timers, not the network."""
     connection_id = await _connect(manager)
 
-    await manager._send_heartbeat_pings()
+    await manager.heartbeat.send_pings()
     await manager.handle_websocket_message(connection_id, {"type": "heartbeat_pong"})
     await manager.handle_websocket_message(
         connection_id, {"type": "heartbeat_pong", "ping_id": "stale"}
@@ -209,7 +209,7 @@ async def test_a_reply_that_beats_the_send_is_still_matched(manager, monitor, re
             )
 
     socket.send_json = send_and_answer_at_once
-    await manager._send_heartbeat_pings()
+    await manager.heartbeat.send_pings()
     await manager.handle_websocket_message(connection_id, {"type": "heartbeat_pong"})
 
     assert _latency_samples(registry) == 1

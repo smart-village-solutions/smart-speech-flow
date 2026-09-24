@@ -42,7 +42,7 @@ async def test_the_heartbeat_task_does_not_outlive_the_lifespan() -> None:
         await dependencies.websocket_manager.connect_websocket(
             socket, session.key, ClientType.ADMIN
         )
-        heartbeat = dependencies.websocket_manager.heartbeat_task
+        heartbeat = dependencies.websocket_manager.heartbeat.task
         assert heartbeat is not None
         assert not heartbeat.done()
 
