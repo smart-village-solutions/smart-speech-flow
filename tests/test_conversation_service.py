@@ -13,6 +13,7 @@ from services.api_gateway.dependencies import build_gateway_dependencies
 from services.api_gateway.session_manager import ClientType, SessionStatus, TenantSessionManager
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from services.api_gateway.translation_refiner import NoOpTranslationRefiner
 from services.api_gateway.websocket import BroadcastResult
 
 REVISION = f"sha256:{'a' * 64}"
@@ -46,7 +47,9 @@ async def _active_session(sessions: TenantSessionManager) -> TenantSessionKey:
 async def test_the_container_wires_its_own_socket_manager_into_the_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    dependencies = build_gateway_dependencies(prometheus_registry=CollectorRegistry())
+    dependencies = build_gateway_dependencies(
+        prometheus_registry=CollectorRegistry(), translation_refiner=NoOpTranslationRefiner()
+    )
     key = await _active_session(dependencies.session_manager)
     broadcast = AsyncMock(
         return_value=BroadcastResult(
@@ -110,3 +113,28 @@ async def test_a_failed_broadcast_is_logged_as_a_failure_not_as_a_crash(
     messages = [record.getMessage() for record in caplog.records]
     assert any("WebSocket-Broadcasting fehlgeschlagen" in text for text in messages), messages
     assert not any("WebSocket-Broadcasting-Fehler" in text for text in messages), messages
+
+
+async def test_the_container_hands_the_service_its_pipeline_gate_and_telemetry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admission = Mock(name="admission")
+    telemetry = Mock(name="telemetry")
+    dependencies = build_gateway_dependencies(
+        prometheus_registry=CollectorRegistry(),
+        translation_refiner=NoOpTranslationRefiner(),
+        pipeline_admission=admission,
+        quality_telemetry=telemetry,
+    )
+    key = await _active_session(dependencies.session_manager)
+    run_pipeline = AsyncMock(return_value=dict(PIPELINE_SUCCESS))
+    monkeypatch.setattr(message_processing, "run_pipeline", run_pipeline)
+
+    await dependencies.conversation_service.process(key, ClientType.ADMIN, _text_request())
+
+    assert run_pipeline.await_args is not None
+    assert run_pipeline.await_args.args[0] is admission
+    pipeline = dependencies.speech_pipeline
+    assert run_pipeline.await_args.kwargs["speech"] is pipeline.speech
+    assert run_pipeline.await_args.kwargs["refiner"] is pipeline.refiner
+    telemetry.emit_translation_message.assert_called_once()

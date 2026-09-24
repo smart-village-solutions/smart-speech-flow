@@ -347,7 +347,8 @@ def tts_app(monkeypatch):
 def upload_module(monkeypatch):
     fastapi_stub, responses_stub = build_fastapi_stub()
     pipeline_module = types.ModuleType("services.api_gateway.pipeline_logic")
-    pipeline_module.process_wav = lambda file_bytes, source_lang, target_lang: {}
+    pipeline_module.process_wav = lambda file_bytes, source_lang, target_lang, **_: {}
+    pipeline_module.SpeechPipeline = object
 
     return load_module(
         monkeypatch,
@@ -1010,7 +1011,7 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
     monkeypatch.setattr(
         upload_module,
         "process_wav",
-        lambda file_bytes, source_lang, target_lang: {
+        lambda file_bytes, source_lang, target_lang, **_: {
             "error": True,
             "error_msg": "<script>alert(1)</script>",
             "asr_text": "<b>roher text</b>",
@@ -1018,10 +1019,13 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
             "audio_bytes": b"",
         },
     )
-    # An app with no dependency container carries no admission component, so the
-    # route runs unbounded — this test is about HTML escaping, not capacity.
+    # No admission gate, so the route runs unbounded — this test is about HTML
+    # escaping, not capacity.
     request = SimpleNamespace(app=SimpleNamespace(requests_total=counter))
-    error_response = await upload_module.upload(request, FakeUploadFile(b"audio"), "de", "en")
+    pipeline = SimpleNamespace(speech=None, refiner=None)
+    error_response = await upload_module.upload(
+        request, pipeline, None, FakeUploadFile(b"audio"), "de", "en"
+    )
     assert error_response.status_code == 400
     assert b"&lt;script&gt;alert(1)&lt;/script&gt;" in error_response.body
     assert b"Keine Ausgabe verfuegbar." in error_response.body
@@ -1029,7 +1033,7 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
     monkeypatch.setattr(
         upload_module,
         "process_wav",
-        lambda file_bytes, source_lang, target_lang: {
+        lambda file_bytes, source_lang, target_lang, **_: {
             "error": False,
             "asr_text": "<b>Hallo</b>",
             "translation_text": "<i>Hello</i>",
@@ -1038,6 +1042,8 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
     )
     success_response = await upload_module.upload(
         request,
+        pipeline,
+        None,
         FakeUploadFile(b"audio"),
         "<de>",
         "<en>",
@@ -1258,20 +1264,22 @@ async def test_circuit_breaker_client_status_and_monitoring(monkeypatch):
     read-only status methods and the lifespan's monitoring control remain.
     """
     client_module = importlib.import_module("services.api_gateway.circuit_breaker_client")
-    client = client_module.CircuitBreakerServiceClient()
+    health_module = importlib.import_module("services.api_gateway.service_health")
+    service_health_manager = health_module.ServiceHealthManager()
+    client = client_module.CircuitBreakerServiceClient(service_health_manager)
 
     monkeypatch.setattr(
-        client_module.service_health_manager,
+        service_health_manager,
         "get_overall_health",
         lambda: {"status": "ok"},
     )
     monkeypatch.setattr(
-        client_module.service_health_manager,
+        service_health_manager,
         "get_service_health",
         lambda service_name: {"service": service_name},
     )
     monkeypatch.setattr(
-        client_module.graceful_degradation_manager,
+        service_health_manager.degradation,
         "get_degradation_status",
         lambda: {"fallbacks": 0},
     )
@@ -1291,8 +1299,8 @@ async def test_circuit_breaker_client_status_and_monitoring(monkeypatch):
         nonlocal stopped
         stopped = True
 
-    monkeypatch.setattr(client_module.service_health_manager, "start_monitoring", start_monitoring)
-    monkeypatch.setattr(client_module.service_health_manager, "stop_monitoring", stop_monitoring)
+    monkeypatch.setattr(service_health_manager, "start_monitoring", start_monitoring)
+    monkeypatch.setattr(service_health_manager, "stop_monitoring", stop_monitoring)
 
     await client.start_health_monitoring()
     await client.stop_health_monitoring()

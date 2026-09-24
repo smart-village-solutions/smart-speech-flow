@@ -85,3 +85,30 @@ Changes a later slice made on purpose, where the output differs from what came b
   `services.api_gateway.session_lifecycle` instead of `services.api_gateway.routes.customer`
   (PR4b). Their messages, fields and order are unchanged. The request line and the
   unexpected-error line stay on the route's logger.
+- Each app builds its own circuit breakers, health state and degradation mode (PR5a). They
+  came from the process-wide `CircuitBreakerFactory` and two module singletons, so in a
+  process running two apps, which only the test suites do, one app's failures opened the
+  other's breakers. `/api/health/circuit-breakers` and the reset routes now list this app's
+  breakers instead of every breaker the factory ever built; in production both are the same
+  three. Each lifespan starts and stops its own health polling and aiohttp session.
+- A malformed `LLM_REFINEMENT_*` setting refuses startup in the lifespan instead of at
+  import (PR5a): `import services.api_gateway.app` succeeds and uvicorn reports that the
+  application startup failed. The refiner is still the first thing built, so the gateway
+  still stops before it connects to Redis or Studio.
+- Startup logs lines that used to be lost (PR5a): the refiner's configuration line
+  (`LLM translation refinement disabled`, or `... enabled with model ...`) and the health
+  manager's `Graceful Degradation Manager initialisiert`, per-breaker `initialisiert` and
+  `registriert`, and `Service Health Manager initialisiert`. They ran at import, before any
+  logging handler existed; they now run in the lifespan.
+- The startup banner prints `Pipeline admission ready` and the quality telemetry mode
+  warning before `Building gateway dependencies...` (PR5a), because the container now
+  receives both. The lines themselves are unchanged, and the `/health`, `/api/health/*` and
+  circuit breaker reset bodies are identical to the base commit's.
+- The shadow-compare refiner owns its candidate worker and the lifespan shuts it down
+  without waiting (PR5a). One process-wide worker used to outlive every lifespan. A
+  candidate already running or queued still finishes; one submitted after shutdown reports
+  `submission_failed`, which no request can reach.
+- `POST /pipeline`, `POST /upload`, `/api/health/circuit-breakers` and the circuit breaker
+  reset routes resolve their collaborators through providers (PR5a). On an app whose
+  lifespan has not run they now fail with `GatewayDependenciesUnavailable` instead of using
+  the process-wide breakers and running unbounded. A running app always has its container.

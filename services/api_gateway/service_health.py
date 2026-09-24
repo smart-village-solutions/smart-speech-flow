@@ -24,13 +24,8 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 
-from .circuit_breaker import (
-    CircuitBreaker,
-    CircuitBreakerConfig,
-    CircuitBreakerFactory,
-    CircuitState,
-)
-from .graceful_degradation import graceful_degradation_manager
+from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitState
+from .graceful_degradation import GracefulDegradationManager
 
 logger = logging.getLogger(__name__)
 DEFAULT_HEALTH_PATH = "/health"
@@ -91,7 +86,10 @@ class ServiceHealthManager:
     - Graceful Degradation Support
     """
 
-    def __init__(self):
+    def __init__(self, degradation: Optional[GracefulDegradationManager] = None):
+        # Derived from this manager's breakers, so it belongs to the same app.
+        self.degradation = degradation if degradation is not None else GracefulDegradationManager()
+
         # Service Endpoints
         self.services: Dict[str, ServiceEndpoint] = {}
         self.service_status: Dict[str, ServiceStatus] = {}
@@ -164,7 +162,9 @@ class ServiceHealthManager:
             max_recovery_time=300,
         )
 
-        circuit_breaker = CircuitBreakerFactory.get_circuit_breaker(endpoint.name, circuit_config)
+        # Built here rather than taken from CircuitBreakerFactory, whose
+        # registry is process-wide: two apps must not share a breaker.
+        circuit_breaker = CircuitBreaker(endpoint.name, circuit_config)
         circuit_breaker.on_state_change = self._on_circuit_state_change
         self.circuit_breakers[endpoint.name] = circuit_breaker
 
@@ -378,7 +378,7 @@ class ServiceHealthManager:
         # Every transition, not just this service's: the reported mode depends
         # on how many services are down, so a second one opening has to move it
         # even though this service did not change.
-        graceful_degradation_manager.apply_service_states(
+        self.degradation.apply_service_states(
             {
                 # CLOSED, not "not OPEN": a half-open breaker is still
                 # probing. Counting it as usable made the reported mode flap
@@ -713,7 +713,3 @@ class ServiceHealthManager:
             summary["recommended_action"] = "steady"
 
         return summary
-
-
-# Globale Service Health Manager Instanz. Adapter until PR5 (#228).
-service_health_manager = ServiceHealthManager()

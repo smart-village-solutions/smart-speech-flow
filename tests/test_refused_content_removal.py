@@ -17,6 +17,7 @@ from services.api_gateway.session_store import (
     SessionStoreConsistencyError,
 )
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
+from tests.pipeline_helpers import speech_pipeline
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
@@ -180,7 +181,9 @@ async def test_a_retained_message_stops_advertising_removed_original_audio(
         "services.api_gateway.conversation_service.audio_path",
         lambda key, mid, variant: audio_path(key, mid, variant, base_dir=audio_dir),
     )
-    items = ConversationService(manager).messages(session.key, ClientType.ADMIN)
+    items = ConversationService(manager, pipeline=speech_pipeline()).messages(
+        session.key, ClientType.ADMIN
+    )
     assert "original_audio_url" not in items[0]
 
 
@@ -247,7 +250,9 @@ async def test_refused_translated_audio_leaves_no_url_in_pipeline_metadata(
         "services.api_gateway.conversation_service.audio_path",
         lambda key, mid, variant: audio_path(key, mid, variant, base_dir=audio_dir),
     )
-    item = ConversationService(manager).messages(session.key, ClientType.ADMIN)[0]
+    item = ConversationService(manager, pipeline=speech_pipeline()).messages(
+        session.key, ClientType.ADMIN
+    )[0]
     emitted = repr(item.get("pipeline_metadata"))
     assert "audio_url" not in emitted
     assert "translated.wav" not in emitted

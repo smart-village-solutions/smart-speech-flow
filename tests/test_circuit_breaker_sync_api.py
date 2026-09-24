@@ -338,11 +338,9 @@ class TestTheGatewayBindsItsLoop:
     async def test_starting_health_monitoring_binds_every_breaker(self):
         from unittest.mock import AsyncMock, patch
 
-        from services.api_gateway.service_health import service_health_manager
+        from services.api_gateway.service_health import ServiceHealthManager
 
-        manager = service_health_manager
-        for circuit in manager.circuit_breakers.values():
-            circuit._notify_loop = None
+        manager = ServiceHealthManager()
 
         with (
             patch.object(manager, "_check_all_services", new=AsyncMock()),

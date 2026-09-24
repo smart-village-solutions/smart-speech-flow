@@ -345,22 +345,17 @@ class SpeechServices:
         return _SpeechResponse(200, content=wav_bytes(0.2), headers={"content-type": "audio/wav"})
 
 
-def _reset_speech_breakers() -> None:
-    from services.api_gateway.circuit_breaker import CircuitBreakerFactory
-
-    CircuitBreakerFactory.reset_all()
-
-
 @pytest.fixture
-def speech_services(monkeypatch) -> Iterator[SpeechServices]:
-    """The speech services at their HTTP boundary, with closed circuit breakers."""
+def speech_services(monkeypatch) -> SpeechServices:
+    """The speech services at their HTTP boundary.
+
+    Each test's container has its own circuit breakers, so they start closed.
+    """
     import requests
 
     services = SpeechServices()
     monkeypatch.setattr(requests, "post", services.post)
-    _reset_speech_breakers()
-    yield services
-    _reset_speech_breakers()
+    return services
 
 
 REFINER_ENDPOINT = "http://refiner.contract:11434"
@@ -369,9 +364,10 @@ REFINER_SKIPPED_TARGET = "fa"
 
 
 @pytest.fixture
-def refinement(monkeypatch, speech_services: SpeechServices) -> SpeechServices:
+def refinement(
+    speech_services: SpeechServices, gateway_dependencies: GatewayDependencies
+) -> SpeechServices:
     """An active Ollama refiner, answered at its HTTP boundary by `speech_services`."""
-    from services.api_gateway import pipeline_logic
     from services.api_gateway.translation_refiner import OllamaTranslationRefiner
 
     refiner = OllamaTranslationRefiner(
@@ -382,7 +378,8 @@ def refinement(monkeypatch, speech_services: SpeechServices) -> SpeechServices:
         max_retries=1,
         skip_target_languages=[REFINER_SKIPPED_TARGET],
     )
-    monkeypatch.setattr(pipeline_logic, "translation_refiner", refiner)
+    # The conversation service and the pipeline routes hold this one object.
+    gateway_dependencies.speech_pipeline.refiner = refiner
     return speech_services
 
 

@@ -8,12 +8,14 @@ constructs, and a provider override on one app must not reach another.
 from __future__ import annotations
 
 from dataclasses import fields
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import create_app
 from services.api_gateway.dependencies import GatewayDependencies, get_login_directory
+from services.api_gateway.service_health import ServiceHealthManager
 from services.api_gateway.studio_login_directory_client import StudioLoginDirectory
 
 REVISION = f"sha256:{'a' * 64}"
@@ -27,6 +29,9 @@ CONTAINER_BUILT = (
     "session_lifecycle",
     "studio_runtime_flow",
     "login_directory",
+    "service_health",
+    "circuit_breaker_client",
+    "speech_pipeline",
     "pipeline_admission",
     "quality_telemetry",
     "quality_telemetry_exporter",
@@ -36,10 +41,8 @@ CONTAINER_BUILT = (
 ADAPTERS = (
     "prometheus_registry",
     "pseudonymizer",
-    "circuit_breaker_client",
     "websocket_monitor",
     "fallback_manager",
-    "translation_refiner",
     "oidc_key_cache",
 )
 # None without a feedback database, as tests/gateway_contract/test_contract_lifespan.py pins.
@@ -130,6 +133,56 @@ def test_a_second_lifespan_builds_a_fresh_container() -> None:
         second = _built(app.state.dependencies)
 
     _assert_owned_separately(first, second)
+
+
+def _speech_collaborators(dependencies: GatewayDependencies) -> list[object]:
+    """Everything a speech call or a health report reaches in one app."""
+    health = dependencies.service_health
+    return [
+        health,
+        health.degradation,
+        *health.circuit_breakers.values(),
+        dependencies.speech_pipeline.speech,
+        dependencies.speech_pipeline.refiner,
+    ]
+
+
+@pytest.mark.usefixtures("configured_process")
+def test_two_running_apps_share_no_breaker_or_health_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Health polls that reach nothing would count failures on both apps' breakers.
+    monkeypatch.setattr(
+        ServiceHealthManager,
+        "_perform_health_request",
+        AsyncMock(return_value={"status_code": 200, "response_time": 0.0}),
+    )
+    first_app, second_app = create_app(), create_app()
+
+    with TestClient(first_app) as first, TestClient(second_app) as second:
+        first_dependencies = first_app.state.dependencies
+        second_dependencies = second_app.state.dependencies
+        shared = {id(item) for item in _speech_collaborators(first_dependencies)} & {
+            id(item) for item in _speech_collaborators(second_dependencies)
+        }
+        assert not shared
+        for dependencies in (first_dependencies, second_dependencies):
+            assert dependencies.circuit_breaker_client.circuit_breakers() == (
+                dependencies.service_health.circuit_breakers
+            )
+
+        tts = first_dependencies.service_health.circuit_breakers["tts"]
+        for _ in range(tts.config.failure_threshold):
+            tts.record_failure("opened on the first app only")
+
+        opened = first.get("/api/health/circuit-breakers").json()["circuits"]["tts"]
+        untouched = second.get("/api/health/circuit-breakers").json()["circuits"]["tts"]
+        assert (opened["state"], untouched["state"]) == ("open", "closed")
+        assert untouched["circuit_info"]["failure_count"] == 0
+
+    for dependencies in (first_dependencies, second_dependencies):
+        assert dependencies.service_health.is_monitoring is False
+        assert dependencies.service_health.session is None
 
 
 class _StubDirectory:

@@ -16,6 +16,7 @@ from tests.pipeline_helpers import (
     make_active_session,
     pipeline_route,
     request_with,
+    speech_pipeline,
     text_request,
     upload_file,
     upload_route,
@@ -58,7 +59,12 @@ class TestPipelineRunsOffTheEventLoop:
             patch.object(message_processing, "process_wav", new=recorder),
         ):
             await message_processing.process_audio_input(
-                session_id, ClientType.ADMIN, audio_request(), 0.0, sessions=session_manager
+                session_id,
+                ClientType.ADMIN,
+                audio_request(),
+                0.0,
+                sessions=session_manager,
+                pipeline=speech_pipeline(),
             )
 
         assert recorder.thread_ids, "process_wav was never called"
@@ -79,7 +85,12 @@ class TestPipelineRunsOffTheEventLoop:
             patch.object(message_processing, "process_text_pipeline", new=recorder),
         ):
             await message_processing.process_text_input(
-                session_id, ClientType.ADMIN, text_request(), 0.0, sessions=session_manager
+                session_id,
+                ClientType.ADMIN,
+                text_request(),
+                0.0,
+                sessions=session_manager,
+                pipeline=speech_pipeline(),
             )
 
         assert recorder.thread_ids, "process_text_pipeline was never called"
@@ -95,6 +106,8 @@ class TestPipelineRunsOffTheEventLoop:
         with patch.object(upload_route, "process_wav", new=recorder):
             await upload_route.upload(
                 request=request_with(),
+                pipeline=speech_pipeline(),
+                admission=None,
                 file=upload_file(),
                 source_lang="de",
                 target_lang="en",
@@ -113,6 +126,8 @@ class TestPipelineRunsOffTheEventLoop:
         with patch.object(pipeline_route, "process_wav", new=recorder):
             await pipeline_route.pipeline(
                 request=legacy_pipeline_request(),
+                pipeline=speech_pipeline(),
+                admission=None,
                 file=upload_file(),
                 source_lang="de",
                 target_lang="en",
@@ -149,10 +164,20 @@ class TestConcurrentProgress:
             results = await asyncio.wait_for(
                 asyncio.gather(
                     message_processing.process_audio_input(
-                        first, ClientType.ADMIN, audio_request(), 0.0, sessions=session_manager
+                        first,
+                        ClientType.ADMIN,
+                        audio_request(),
+                        0.0,
+                        sessions=session_manager,
+                        pipeline=speech_pipeline(),
                     ),
                     message_processing.process_audio_input(
-                        second, ClientType.ADMIN, audio_request(), 0.0, sessions=session_manager
+                        second,
+                        ClientType.ADMIN,
+                        audio_request(),
+                        0.0,
+                        sessions=session_manager,
+                        pipeline=speech_pipeline(),
                     ),
                 ),
                 timeout=SAFETY_TIMEOUT,
@@ -211,7 +236,12 @@ class TestEventLoopResponsiveness:
         ):
             ticks = await self._count_ticks_during(
                 message_processing.process_audio_input(
-                    session_id, ClientType.ADMIN, audio_request(), 0.0, sessions=session_manager
+                    session_id,
+                    ClientType.ADMIN,
+                    audio_request(),
+                    0.0,
+                    sessions=session_manager,
+                    pipeline=speech_pipeline(),
                 ),
                 entered,
             )
@@ -240,7 +270,12 @@ class TestEventLoopResponsiveness:
         ):
             ticks = await self._count_ticks_during(
                 message_processing.process_text_input(
-                    session_id, ClientType.ADMIN, text_request(), 0.0, sessions=session_manager
+                    session_id,
+                    ClientType.ADMIN,
+                    text_request(),
+                    0.0,
+                    sessions=session_manager,
+                    pipeline=speech_pipeline(),
                 ),
                 entered,
             )

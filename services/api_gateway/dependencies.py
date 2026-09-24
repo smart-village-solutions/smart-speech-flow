@@ -21,9 +21,11 @@ if TYPE_CHECKING:
     from .circuit_breaker_client import CircuitBreakerServiceClient
     from .conversation_service import ConversationService
     from .pipeline_admission import PipelineAdmission
+    from .pipeline_logic import SpeechPipeline
     from .quality_telemetry import QualityTelemetry
     from .realtime_ticket import RealtimeTicketStore
     from .runtime_policy import RuntimePolicyGate
+    from .service_health import ServiceHealthManager
     from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
     from .session_pseudonym import SessionPseudonymizer
@@ -56,10 +58,13 @@ class GatewayDependencies:
     # fail-closed answer.
     studio_runtime_flow: StudioRuntimeFlow | None
     login_directory: StudioLoginDirectoryService | None
+    # The breakers, their health polling and the degradation mode derived
+    # from them; the speech pipeline calls through the same breakers.
+    service_health: ServiceHealthManager
     circuit_breaker_client: CircuitBreakerServiceClient
+    speech_pipeline: SpeechPipeline
     websocket_monitor: WebSocketMonitor
     fallback_manager: WebSocketFallbackManager
-    translation_refiner: BaseTranslationRefiner
     oidc_key_cache: OidcKeyCache
     pipeline_admission: PipelineAdmission | None = None
     quality_telemetry: QualityTelemetry | None = None
@@ -80,6 +85,10 @@ def build_gateway_dependencies(
     studio_runtime_flow: StudioRuntimeFlow | None = None,
     runtime_policy: RuntimePolicyGate | None = None,
     polling_messages_dropped: Counter | None = None,
+    translation_refiner: BaseTranslationRefiner,
+    pipeline_admission: PipelineAdmission | None = None,
+    quality_telemetry: QualityTelemetry | None = None,
+    quality_telemetry_exporter: Any = None,
 ) -> GatewayDependencies:
     """Construct one app's collaborators.
 
@@ -87,18 +96,22 @@ def build_gateway_dependencies(
     store and the realtime tickets; without one both live in process memory,
     as local development always has. `studio_runtime_flow` and the persistence
     gate built on it come from the lifespan; None means Studio is unconfigured,
-    and a None gate refuses every write of conversation content.
+    and a None gate refuses every write of conversation content. The refiner,
+    the admission gate and quality telemetry come from the lifespan too, which
+    builds them first; None leaves the pipeline unbounded and emits no rows.
     """
     # Imported here: every module below imports its provider from this one.
     from .auth import _key_cache
-    from .circuit_breaker_client import circuit_breaker_client
+    from .circuit_breaker_client import CircuitBreakerServiceClient
     from .conversation_service import ConversationService
+    from .pipeline_logic import SpeechPipeline
     from .realtime_ticket import MemoryRealtimeTicketBackend, RealtimeTicketStore
+    from .service_health import ServiceHealthManager
     from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
     from .session_store import MemoryTenantSessionStore, RedisTenantSessionStore
+    from .speech_services import HttpSpeechServices
     from .studio_login_directory import login_directory_from_environment
-    from .translation_refiner import translation_refiner
     from .websocket import WebSocketManager
     from .websocket_fallback import fallback_manager
     from .websocket_monitor import get_websocket_monitor
@@ -125,6 +138,11 @@ def build_gateway_dependencies(
         pseudonymizer=pseudonymizer,
     )
     websocket_manager = WebSocketManager(session_manager, polling_store)
+    service_health = ServiceHealthManager()
+    speech_pipeline = SpeechPipeline(
+        speech=HttpSpeechServices(service_health.circuit_breakers),
+        refiner=translation_refiner,
+    )
     return GatewayDependencies(
         prometheus_registry=prometheus_registry,
         pseudonymizer=pseudonymizer,
@@ -133,16 +151,24 @@ def build_gateway_dependencies(
         polling_store=polling_store,
         websocket_manager=websocket_manager,
         conversation_service=ConversationService(
-            session_manager, websocket_manager=websocket_manager
+            session_manager,
+            pipeline=speech_pipeline,
+            admission=pipeline_admission,
+            quality_telemetry=quality_telemetry,
+            websocket_manager=websocket_manager,
         ),
         session_lifecycle=SessionLifecycleService(session_manager),
         studio_runtime_flow=studio_runtime_flow,
         login_directory=login_directory_from_environment(),
-        circuit_breaker_client=circuit_breaker_client,
+        service_health=service_health,
+        circuit_breaker_client=CircuitBreakerServiceClient(service_health),
+        speech_pipeline=speech_pipeline,
         websocket_monitor=websocket_monitor,
         fallback_manager=fallback_manager,
-        translation_refiner=translation_refiner,
         oidc_key_cache=_key_cache,
+        pipeline_admission=pipeline_admission,
+        quality_telemetry=quality_telemetry,
+        quality_telemetry_exporter=quality_telemetry_exporter,
     )
 
 
@@ -194,6 +220,14 @@ def get_login_directory(connection: HTTPConnection) -> StudioLoginDirectoryServi
 
 def get_circuit_breaker_client(connection: HTTPConnection) -> CircuitBreakerServiceClient:
     return _container(connection).circuit_breaker_client
+
+
+def get_speech_pipeline(connection: HTTPConnection) -> SpeechPipeline:
+    return _container(connection).speech_pipeline
+
+
+def get_pipeline_admission(connection: HTTPConnection) -> PipelineAdmission | None:
+    return _container(connection).pipeline_admission
 
 
 def get_connection_monitor(connection: HTTPConnection) -> WebSocketMonitor:

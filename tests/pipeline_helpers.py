@@ -10,10 +10,17 @@ import importlib
 from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, Mock
 
+from services.api_gateway.pipeline_logic import SpeechPipeline
+from services.api_gateway.service_health import ServiceHealthManager
 from services.api_gateway.session_manager import SessionStatus
+from services.api_gateway.speech_services import HttpSpeechServices
 from services.api_gateway.tenant_session import (
     RuntimeConfigurationSnapshot,
     TenantSessionKey,
+)
+from services.api_gateway.translation_refiner import (
+    BaseTranslationRefiner,
+    NoOpTranslationRefiner,
 )
 
 # routes/__init__.py re-exports the endpoint functions under their module names,
@@ -44,6 +51,33 @@ SAFETY_TIMEOUT = 15.0
 
 
 REVISION = f"sha256:{'a' * 64}"
+
+
+def speech_pipeline(
+    health: Optional[ServiceHealthManager] = None,
+    refiner: Optional[BaseTranslationRefiner] = None,
+) -> SpeechPipeline:
+    """One app's speech pipeline, as build_gateway_dependencies builds it.
+
+    Its own breakers unless ``health`` is given, and refinement off unless a
+    ``refiner`` is, as in a process without LLM_REFINEMENT_* settings.
+    """
+    health = health if health is not None else ServiceHealthManager()
+    return SpeechPipeline(
+        speech=HttpSpeechServices(health.circuit_breakers),
+        refiner=refiner if refiner is not None else NoOpTranslationRefiner(),
+    )
+
+
+def pipeline_collaborators(
+    health: Optional[ServiceHealthManager] = None,
+    refiner: Optional[BaseTranslationRefiner] = None,
+) -> Dict[str, Any]:
+    """The keyword arguments process_wav and process_text_pipeline take."""
+    pipeline = speech_pipeline(health, refiner)
+    return {"speech": pipeline.speech, "refiner": pipeline.refiner}
+
+
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
@@ -60,19 +94,13 @@ async def make_active_session(manager) -> TenantSessionKey:
     return session.key
 
 
-def request_with(admission: Optional[Any] = None) -> Mock:
-    """A fake request whose app state carries ``admission``.
-
-    ``None`` leaves the handler unbounded, which is what the non-blocking suite
-    wants and what any route reached before lifespan startup gets.
-    """
-    request = Mock()
-    request.app.state.dependencies.pipeline_admission = admission
-    return request
+def request_with() -> Mock:
+    """A fake request. The handlers take their admission gate as an argument."""
+    return Mock()
 
 
-def audio_request(admission: Optional[Any] = None) -> Mock:
-    request = request_with(admission)
+def audio_request() -> Mock:
+    request = request_with()
     request.headers = {"content-type": "multipart/form-data; boundary=boundary"}
     request.form = AsyncMock(
         return_value={
@@ -85,8 +113,8 @@ def audio_request(admission: Optional[Any] = None) -> Mock:
     return request
 
 
-def text_request(admission: Optional[Any] = None) -> Mock:
-    request = request_with(admission)
+def text_request() -> Mock:
+    request = request_with()
     request.headers = {"content-type": "application/json"}
     request.json = AsyncMock(
         return_value={
@@ -106,9 +134,9 @@ def upload_file() -> Mock:
     return handle
 
 
-def legacy_pipeline_request(admission: Optional[Any] = None) -> Mock:
+def legacy_pipeline_request() -> Mock:
     """The /pipeline handler also reads query params and origin headers."""
-    request = request_with(admission)
+    request = request_with()
     request.query_params = {}
     request.headers = {}
     return request

@@ -17,6 +17,7 @@ from services.api_gateway import websocket_monitor as monitor_module
 from services.api_gateway.dependencies import build_gateway_dependencies
 from services.api_gateway.session_pseudonym import SESSION_KEY_ENV
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
+from services.api_gateway.translation_refiner import NoOpTranslationRefiner
 
 REVISION = f"sha256:{'a' * 64}"
 
@@ -38,7 +39,9 @@ async def test_the_manager_and_the_monitor_agree_on_a_session_ref_without_a_key(
         "websocket_monitor",
         monitor_module.WebSocketMonitor(registry=CollectorRegistry()),
     )
-    dependencies = build_gateway_dependencies(prometheus_registry=CollectorRegistry())
+    dependencies = build_gateway_dependencies(
+        prometheus_registry=CollectorRegistry(), translation_refiner=NoOpTranslationRefiner()
+    )
     spy = _LifecycleSpy()
     dependencies.session_manager.attach_quality_telemetry(spy)
     session = await dependencies.session_manager.create_admin_session(

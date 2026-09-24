@@ -9,18 +9,18 @@ from __future__ import annotations
 import pytest
 
 from services.api_gateway.circuit_breaker import CircuitBreakerFactory, CircuitState, ServiceHealth
-from services.api_gateway.graceful_degradation import ServiceMode, graceful_degradation_manager
 
 
 @pytest.fixture(autouse=True)
 def reset_circuit_breakers():
-    """Hands every test a set of breakers in their start-of-process state.
+    """Hands every test the factory's breakers in their start-of-process state.
 
-    The breakers are process-wide singletons (``CircuitBreakerFactory._instances``)
-    and, since the pipeline calls through them, ordinary pipeline tests now move
-    their state. Three failures in one test would otherwise leave a breaker OPEN
-    and the next test would be refused before it sent a request -- a failure
-    that depends on test order and reads as a bug in the code under test.
+    ``CircuitBreakerFactory._instances`` is a process-wide registry. The gateway
+    no longer takes its breakers from it -- each app's ServiceHealthManager
+    builds its own (#228) -- but tests that use the factory directly still
+    share it. Three failures in one test would otherwise leave a breaker OPEN
+    for the next -- a failure that depends on test order and reads as a bug in
+    the code under test.
 
     Cleaning up afterwards rather than beforehand keeps a failing test's final
     breaker state visible while it is being debugged.
@@ -28,10 +28,6 @@ def reset_circuit_breakers():
     ``CircuitBreaker.reset()`` is the admin reset and deliberately keeps the
     lifetime counters, which is right for an operator and wrong here, so the
     health record is replaced as well.
-
-    The degradation manager is reset with them: since #219 a breaker
-    transition also moves its mode, so it is part of the same shared state and
-    leaks the same way.
     """
     yield
 
@@ -53,6 +49,3 @@ def reset_circuit_breakers():
         circuit.reset()
         circuit.health = ServiceHealth(service_name=circuit.name)
         circuit.response_times.clear()
-
-    graceful_degradation_manager.current_mode = ServiceMode.FULL
-    graceful_degradation_manager.mode_history.clear()
