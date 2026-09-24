@@ -201,3 +201,17 @@ def test_session_connection_listing_is_scoped_to_the_signed_tenant(client, conve
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Session not found"}
+
+
+def test_admin_websocket_for_a_lapsed_session_closes_before_the_origin_check(
+    client, conversations, lapse_sessions
+):
+    session_id = conversations.create()
+    ticket = conversations.ticket(session_id)
+    lapse_sessions()
+
+    with pytest.raises(WebSocketDisconnect) as closed:
+        with client.websocket_connect(f"/ws/admin/{session_id}?ticket={ticket}", headers=ORIGIN):
+            pass
+
+    assert (closed.value.code, closed.value.reason) == (4404, "Session not found")

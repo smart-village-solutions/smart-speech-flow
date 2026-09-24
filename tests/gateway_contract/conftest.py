@@ -208,6 +208,47 @@ def realtime_tickets(gateway_dependencies: GatewayDependencies) -> RealtimeTicke
     return RealtimeTickets(clock=clock, make_unavailable=make_unavailable)
 
 
+class SessionClock:
+    """The session manager's clock, moved forward instead of waited out."""
+
+    def __init__(self, dependencies: GatewayDependencies) -> None:
+        self.offset = timedelta()
+        self.sessions = dependencies.session_manager
+        self.sessions.clock = self
+
+    def __call__(self) -> datetime:
+        return datetime.now(timezone.utc) + self.offset
+
+    def advance(self, **delta: float) -> None:
+        self.offset += timedelta(**delta)
+
+    def check_timeouts(self, client: TestClient) -> None:
+        """One pass of the lifespan's session-timeout task, on the client's loop."""
+        client.portal.call(self.sessions.check_session_timeouts)
+
+
+@pytest.fixture
+def session_clock(gateway_dependencies: GatewayDependencies) -> SessionClock:
+    return SessionClock(gateway_dependencies)
+
+
+@pytest.fixture
+def lapse_sessions(gateway_dependencies: GatewayDependencies) -> Callable[[], None]:
+    """Drops every session from the manager and its store without terminating any.
+
+    This is how a lapsed Redis record looks to the gateway: nothing was
+    terminated, so no realtime ticket was revoked. No HTTP request leaves a
+    session in that state.
+    """
+    sessions = gateway_dependencies.session_manager
+
+    def lapse() -> None:
+        sessions.sessions.clear()
+        sessions.store.clear()
+
+    return lapse
+
+
 @pytest.fixture
 def openapi_document(gateway) -> dict[str, Any]:
     return gateway.openapi()
