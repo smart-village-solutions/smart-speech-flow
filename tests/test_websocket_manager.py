@@ -393,7 +393,6 @@ class TestWebSocketManager:
         )
         await websocket_manager.connect_websocket(healthy_socket, session_id, ClientType.CUSTOMER)
         failing_socket.send_json = AsyncMock(side_effect=RuntimeError("send failed"))
-        monkeypatch.setattr(websocket_manager, "_evaluate_connection_error", AsyncMock())
 
         await websocket_manager.broadcast_to_session(session_id, {"type": "resilient_broadcast"})
 
@@ -641,16 +640,12 @@ class TestWebSocketManager:
         await websocket_manager.connect_websocket(mock_ws1, session_id, ClientType.ADMIN)
         await websocket_manager.connect_websocket(mock_ws2, session_id, ClientType.CUSTOMER)
 
-        # Polling-Fallback aktivieren
-        await websocket_manager.enable_polling_fallback(session_id.session_id, ClientType.ADMIN)
-
         # Stats abrufen
         stats = websocket_manager.get_connection_stats()
 
         # Assertions
         assert stats["global_stats"]["total_connections"] == 2
         assert stats["global_stats"]["active_connections"] == 2
-        assert stats["global_stats"]["polling_fallbacks"] == 1
 
         assert session_id in stats["session_stats"]
         session_stats = stats["session_stats"][session_id]

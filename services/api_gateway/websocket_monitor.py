@@ -29,14 +29,12 @@ def utc_now() -> datetime:
 
 
 def _resource_log_fields(
-    resource: TenantSessionKey | str, pseudonymizer: SessionPseudonymizer
+    resource: TenantSessionKey, pseudonymizer: SessionPseudonymizer
 ) -> dict[str, str]:
-    if isinstance(resource, TenantSessionKey):
-        return {
-            "tenant_ref": resource.tenant_ref,
-            "session_ref": pseudonymizer.reference(resource.session_id),
-        }
-    return {"tenant_ref": "legacy", "session_ref": pseudonymizer.reference(resource)}
+    return {
+        "tenant_ref": resource.tenant_ref,
+        "session_ref": pseudonymizer.reference(resource.session_id),
+    }
 
 
 class ConnectionState(Enum):
@@ -112,7 +110,7 @@ class ConnectionMetrics:
     """Connection-specific metrics data"""
 
     session_id: str
-    resource_key: TenantSessionKey | str
+    resource_key: TenantSessionKey
     client_type: str
     origin: Optional[str]
     connect_time: datetime
@@ -266,6 +264,15 @@ class WebSocketMetrics:
             }
         )
 
+        # Counted only by the legacy polling fallback (websocket_fallback.py), which
+        # nothing registered reaches any more; kept exposed until PR7 deletes it.
+        self.polling_messages_dropped = Counter(
+            "websocket_polling_messages_dropped_total",
+            "Messages discarded because a polling client's queue was full",
+            ["client_type"],
+            registry=registry,
+        )
+
         # The ssf-overview dashboard's "monitor initialised" panel reads this.
         self.monitor_initialized = Gauge(
             "websocket_monitor_initialized",
@@ -288,7 +295,7 @@ class WebSocketMonitor:
         self._pseudonymizer = pseudonymizer
         self._active_connections: Dict[str, ConnectionMetrics] = {}
         self._connection_history: List[ConnectionMetrics] = []
-        self._session_connections: Dict[TenantSessionKey | str, Set[str]] = defaultdict(set)
+        self._session_connections: Dict[TenantSessionKey, Set[str]] = defaultdict(set)
 
         # Performance tracking
         self._performance_samples: List[Dict[str, Any]] = []
@@ -304,7 +311,8 @@ class WebSocketMonitor:
         session_id: str,
         client_type: str,
         origin: Optional[str] = None,
-        resource_key: TenantSessionKey | None = None,
+        *,
+        resource_key: TenantSessionKey,
     ) -> ConnectionMetrics:
         """Record new WebSocket connection establishment"""
 
@@ -313,7 +321,7 @@ class WebSocketMonitor:
             client_type=client_type,
             origin=origin,
             connect_time=utc_now(),
-            resource_key=resource_key or session_id,
+            resource_key=resource_key,
         )
 
         self._active_connections[connection_id] = metrics
@@ -394,7 +402,9 @@ class WebSocketMonitor:
             client_type="unknown", disconnect_reason=reason.value
         ).inc()
 
-    def message_sent(self, connection_id: str, message_data: str, _message_type: str = "unknown"):
+    def message_sent(
+        self, connection_id: str, message_data: str, _message_type: str = "unknown"
+    ) -> None:
         """Record outbound message"""
         metrics = self._active_connections.get(connection_id)
         if not metrics:
@@ -415,7 +425,7 @@ class WebSocketMonitor:
 
     def message_received(
         self, connection_id: str, message_data: str, _message_type: str = "unknown"
-    ):
+    ) -> None:
         """Record inbound message"""
         metrics = self._active_connections.get(connection_id)
         if not metrics:
@@ -436,7 +446,7 @@ class WebSocketMonitor:
 
     def record_error(
         self, connection_id: str, _error_type: str, _error_details: Optional[str] = None
-    ):
+    ) -> None:
         """Record WebSocket error"""
         metrics = self._active_connections.get(connection_id)
         if not metrics:
@@ -457,7 +467,7 @@ class WebSocketMonitor:
             },
         )
 
-    def record_heartbeat(self, connection_id: str, latency_seconds: Optional[float] = None):
+    def record_heartbeat(self, connection_id: str, latency_seconds: Optional[float] = None) -> None:
         """Record a pong; latency is None when it answered no outstanding ping."""
         metrics = self._active_connections.get(connection_id)
         if not metrics:
@@ -470,7 +480,7 @@ class WebSocketMonitor:
                 latency_seconds
             )
 
-    def session_closed(self, session_id: TenantSessionKey | str, reason: str = "session_expired"):
+    def session_closed(self, session_id: TenantSessionKey, reason: str = "session_expired") -> None:
         """Handle session closure - disconnect all associated WebSocket connections"""
         connection_ids = list(self._session_connections.get(session_id, []))
 
@@ -496,9 +506,7 @@ class WebSocketMonitor:
         """Get all active WebSocket connections"""
         return self._active_connections.copy()
 
-    def get_session_connections(
-        self, session_id: TenantSessionKey | str
-    ) -> List[ConnectionMetrics]:
+    def get_session_connections(self, session_id: TenantSessionKey) -> List[ConnectionMetrics]:
         """Get all active connections for a specific session"""
         connection_ids = self._session_connections.get(session_id, set())
         return [
@@ -510,13 +518,15 @@ class WebSocketMonitor:
     def get_connection_stats(self) -> Dict[str, Any]:
         """Get comprehensive connection statistics"""
         active_connections = list(self._active_connections.values())
+        by_client_type: Dict[str, int] = {}
+        by_session: Dict[TenantSessionKey, int] = {}
 
-        stats = {
+        stats: Dict[str, Any] = {
             "active_connections": len(active_connections),
             "sessions_with_connections": len(self._session_connections),
             "total_historical_connections": len(self._connection_history),
-            "connections_by_client_type": {},
-            "connections_by_session": {},
+            "connections_by_client_type": by_client_type,
+            "connections_by_session": by_session,
             "average_connection_duration": 0,
             "message_throughput": {"sent_per_second": 0, "received_per_second": 0},
         }
@@ -524,13 +534,11 @@ class WebSocketMonitor:
         # Group by client type
         for metrics in active_connections:
             client_type = metrics.client_type
-            if client_type not in stats["connections_by_client_type"]:
-                stats["connections_by_client_type"][client_type] = 0
-            stats["connections_by_client_type"][client_type] += 1
+            by_client_type[client_type] = by_client_type.get(client_type, 0) + 1
 
         # Group by session
         for session_id, connection_ids in self._session_connections.items():
-            stats["connections_by_session"][session_id] = len(connection_ids)
+            by_session[session_id] = len(connection_ids)
 
         # Calculate average duration from history
         if self._connection_history:
@@ -584,7 +592,7 @@ class WebSocketMonitor:
         except Exception:
             return "unknown"
 
-    def _trim_history(self):
+    def _trim_history(self) -> None:
         """Trim connection history to prevent memory growth"""
         if len(self._connection_history) > self._max_history_size:
             # Keep most recent entries
@@ -598,7 +606,7 @@ class WebSocketMonitor:
             self._forget(connection_id)
         return orphaned
 
-    async def periodic_cleanup(self, live_connection_ids: Callable[[], Iterable[str]]):
+    async def periodic_cleanup(self, live_connection_ids: Callable[[], Iterable[str]]) -> None:
         """Purge records for sockets the WebSocketManager no longer holds.
 
         It never closes or times out a connection. The manager owns the

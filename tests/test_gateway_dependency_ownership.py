@@ -34,7 +34,8 @@ ALLOWLIST = {
     ("audio_storage.py", "audio_files_total"): "adapter until PR7",
     ("audio_storage.py", "audio_cleanup_deleted_files_total"): "adapter until PR7",
     ("auth.py", "_key_cache"): "adapter until PR7",
-    ("websocket_fallback.py", "fallback_manager"): "adapter until PR6",
+    # Unwired in PR 6b: nothing imports websocket_fallback.py; PR7 deletes the module.
+    ("websocket_fallback.py", "fallback_manager"): "adapter until PR7",
 }
 
 # Module globals still rebound through a `global` statement. Only shrinks.

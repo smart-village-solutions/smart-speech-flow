@@ -77,10 +77,10 @@ async def test_endpoint_returns_error_message_after_message_handler_failure(
         send_json=AsyncMock(side_effect=RuntimeError("client disconnected")),
         close=AsyncMock(),
     )
+    sessions = SimpleNamespace(
+        get_session=Mock(return_value=SimpleNamespace(status=SessionStatus.ACTIVE))
+    )
     manager = SimpleNamespace(
-        session_manager=SimpleNamespace(
-            get_session=Mock(return_value=SimpleNamespace(status=SessionStatus.ACTIVE))
-        ),
         connect_websocket=AsyncMock(return_value="connection-1"),
         handle_websocket_message=AsyncMock(),
         disconnect_websocket=AsyncMock(),
@@ -95,7 +95,7 @@ async def test_endpoint_returns_error_message_after_message_handler_failure(
 
     with caplog.at_level(logging.ERROR):
         await websocket_endpoint(
-            websocket, TenantSessionKey(TENANT, "TEST1234"), ClientType.ADMIN, manager, None
+            websocket, TenantSessionKey(TENANT, "TEST1234"), ClientType.ADMIN, manager, sessions
         )
 
     assert "WebSocket message processing failed" in caplog.messages

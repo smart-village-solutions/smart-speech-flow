@@ -210,6 +210,7 @@ class TestARejectedOriginIsCounted:
             TenantSessionKey(TENANT, "TEST1234"),
             ws.ClientType.ADMIN,
             Mock(monitor=monitor),
+            Mock(),
             "https://not-allowed.example",
         )
 

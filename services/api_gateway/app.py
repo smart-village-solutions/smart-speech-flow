@@ -100,15 +100,6 @@ async def websocket_monitor_task(monitor: Any, manager: Any) -> None:
         print(f"⚠️ Fehler im WebSocket-Monitor: {e}")
 
 
-async def websocket_fallback_task(fallback_manager: Any) -> None:
-    """Background Task für WebSocket-Fallback-System"""
-    try:
-        print("🔄 WebSocket-Fallback-System gestartet")
-        await fallback_manager.periodic_cleanup()
-    except Exception as e:
-        print(f"⚠️ Fehler im WebSocket-Fallback-System: {e}")
-
-
 async def circuit_breaker_monitor(circuit_breaker_client: Any) -> None:
     """Starts the service health polling for the lifespan.
 
@@ -678,7 +669,6 @@ def _start_background_tasks(
         asyncio.create_task(
             websocket_monitor_task(dependencies.websocket_monitor, dependencies.websocket_manager)
         ),
-        asyncio.create_task(websocket_fallback_task(dependencies.fallback_manager)),
         asyncio.create_task(audio_cleanup_task(sessions, dependencies.audio_store)),
         asyncio.create_task(feedback_maintenance_task(dependencies)),
         asyncio.create_task(
@@ -720,6 +710,8 @@ async def _shut_down(
 
     task_results = await asyncio.gather(*tasks, return_exceptions=True)
     _report_background_task_shutdown_errors(task_results)
+    # Started by the first socket, so it is not among the tasks above.
+    await dependencies.websocket_manager.stop_heartbeat_system()
 
     dependencies.pipeline_admission = None
 
@@ -813,13 +805,6 @@ pipeline_admission_metrics = PipelineAdmissionMetrics(registry)
 refinement_metrics = RefinementMetrics(registry)
 # Every app's WebSocket monitor counts into these; the monitor itself is per app.
 websocket_metrics = WebSocketMetrics(registry)
-
-# The fallback manager is a module-level singleton built before this registry
-# exists; without this its drop counter would sit on prometheus_client's global
-# default registry, which /metrics does not serve.
-from .websocket_fallback import fallback_manager
-
-fallback_manager.bind_metrics_registry(registry)
 
 from .websocket_polling_routes import polling_dropped_counter
 

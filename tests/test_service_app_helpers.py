@@ -971,13 +971,15 @@ def test_enhanced_audio_validator_convert_with_ffmpeg(tmp_path, monkeypatch):
 
 def test_websocket_monitor_utc_and_overdue_heartbeat_health():
     websocket_monitor = importlib.import_module("services.api_gateway.websocket_monitor")
+    from services.api_gateway.tenant_session import TenantSessionKey
     from tests.realtime_sessions import websocket_monitor as build_monitor
 
     monitor = build_monitor()
+    key = TenantSessionKey("tenant-a", "session-1")
     metrics = monitor.connection_established(
-        "conn-1", "session-1", "admin", "https://example.com:443"
+        "conn-1", "session-1", "admin", "https://example.com:443", resource_key=key
     )
-    monitor.connection_established("conn-2", "session-1", "customer")
+    monitor.connection_established("conn-2", "session-1", "customer", resource_key=key)
 
     now = websocket_monitor.utc_now()
     assert now.tzinfo is not None

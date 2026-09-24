@@ -15,6 +15,7 @@ from services.api_gateway.websocket import (
     ConnectionState, ClientType, MessageType
 )
 from services.api_gateway.routes.session import ClientActivityUpdate
+from services.api_gateway.tenant_session import TenantSessionKey
 from tests.realtime_sessions import open_session, tenant_session_manager, websocket_monitor
 
 
@@ -112,6 +113,7 @@ class TestAdaptivePollingManager:
             connected_at=datetime.now(),
             last_heartbeat=datetime.now(),
             state=ConnectionState.CONNECTED,
+            key=TenantSessionKey("tenant-a", "TEST123"),
             is_mobile=kwargs.get("is_mobile", False),
             tab_active=kwargs.get("tab_active", True),
             battery_level=kwargs.get("battery_level", 1.0),

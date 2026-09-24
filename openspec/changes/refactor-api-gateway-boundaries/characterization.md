@@ -70,6 +70,20 @@ them only through its own issue.
 
 ## Pinned as found
 
+Pinned by `test_contract_heartbeat.py` and `test_contract_realtime_metrics.py` (found in PR 6b):
+
+- A pong counts as a heartbeat whether or not it echoes the ping's `ping_id`; only an echoed
+  one is timed for `websocket_heartbeat_latency_seconds`.
+- A socket that stops answering gets a `connection_status` frame (`disconnecting`,
+  `heartbeat_timeout`), then close 1001 with reason `heartbeat_timeout`; its peer gets
+  `client_left` with the same reason, and one `heartbeat_timeout` disconnect is counted.
+- `websocket_messages_received_total`, `websocket_errors_total`,
+  `websocket_broadcast_messages_failed_total` and `websocket_polling_messages_dropped_total`
+  are exposed but nothing on the realtime surface makes them count: no caller records a
+  received message, the other two need a send that fails mid-broadcast, and the last is the
+  unwired fallback's. The test reads their label names from the registry.
+- The Info series `websocket_system_info` is exposed as `websocket_system_info_info`.
+
 Surprising, but pinned by `test_contract_audio.py` as they behave (found in PR5b). Changing
 one changes a contract test and needs its own issue.
 
@@ -197,3 +211,22 @@ both WebSocket routes included) and `app.openapi()` are identical:
 - `routes/metrics.py`: the branch that appended a second registry when the WebSocket monitor
   had one of its own. The monitor was always built on the registry `/metrics` serves, so the
   branch never ran; the route and its body are unchanged.
+- `websocket.py`: the unregistered `get_session_connections(session_id: str, ...)`,
+  `enable_polling_fallback` and `get_polling_messages`, the unused `WEBSOCKET_ROUTE_RESPONSES`,
+  and on `WebSocketManager` the legacy polling methods `enable_polling_fallback` and
+  `get_polling_messages` with `polling_clients` and `polling_interval`, and
+  `_evaluate_connection_error`, `_classify_error_for_fallback` and
+  `_send_fallback_activation_message`, which only a connection without a `TenantSessionKey`
+  reached. Consumers: tests only, removed with them.
+- `app.py`: `websocket_fallback_task` and the `fallback_manager` import and registry binding.
+
+Still unregistered after PR 6b, for PR7:
+
+- `websocket.py`: `get_websocket_stats` and `websocket_connection_test`.
+- `websocket_fallback.py`, all of it. Nothing in the gateway imports it; its suites
+  (`test_websocket_polling_queue_overflow.py`, `test_websocket_polling_coverage.py`,
+  `test_service_app_helpers.py`, `test_sonar_new_coverage_websocket.py`,
+  `test_websocket_connection_identity.py`) test the class directly.
+- `routes/session.py`: the unregistered activity-update helper passes a bare session id to
+  `WebSocketManager.get_session_connections`, which takes a `TenantSessionKey` since PR 6b. It
+  is on the mypy ignore list and no route reaches it.

@@ -1,7 +1,6 @@
 """Tenant isolation for realtime WebSocket registries."""
 
 import asyncio
-from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -27,10 +26,7 @@ from services.api_gateway.tenant_session import (
     TenantSessionKey,
 )
 from services.api_gateway.websocket import (
-    ConnectionState,
-    WebSocketConnection,
     WebSocketManager,
-    _safe_identifier,
 )
 from services.api_gateway.websocket_polling_routes import (
     POLLING_QUEUE_SIZE,
@@ -335,48 +331,3 @@ def test_monitor_keeps_duplicate_public_ids_in_separate_tenant_buckets() -> None
     assert monitor.get_connection_stats()["sessions_with_connections"] == 2
     assert len(monitor.get_session_connections(key_a)) == 1
     assert len(monitor.get_session_connections(key_b)) == 1
-
-
-@pytest.mark.asyncio
-async def test_legacy_fallback_log_never_contains_the_public_session_id(
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """A fallback success log must retain only the pseudonymous session reference."""
-    import services.api_gateway.websocket as websocket_module
-
-    session_id = "SECRET42"
-    socket_manager = WebSocketManager(_PresenceManager(), monitor=websocket_monitor())
-    connection = WebSocketConnection(
-        websocket=AsyncMock(),
-        client_type=ClientType.ADMIN,
-        session_id=session_id,
-        connected_at=datetime.now(timezone.utc),
-        last_heartbeat=datetime.now(timezone.utc),
-        state=ConnectionState.CONNECTED,
-    )
-    monkeypatch.setattr(
-        websocket_module.fallback_manager,
-        "evaluate_websocket_failure",
-        lambda **_kwargs: True,
-    )
-    monkeypatch.setattr(
-        websocket_module.fallback_manager,
-        "activate_polling_fallback",
-        AsyncMock(return_value="safe-polling-id"),
-    )
-    monkeypatch.setattr(
-        socket_manager,
-        "_send_fallback_activation_message",
-        AsyncMock(),
-    )
-
-    with caplog.at_level("INFO", logger="services.api_gateway.websocket"):
-        await socket_manager._evaluate_connection_error(
-            connection,
-            RuntimeError("network unavailable"),
-            "receive_error",
-        )
-
-    assert session_id not in caplog.text
-    assert _safe_identifier(session_id) in caplog.text

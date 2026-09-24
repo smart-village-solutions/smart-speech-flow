@@ -35,7 +35,13 @@
   - Ticket backend (PR6a): the `RealtimeTicketBackend` port (`put_if_absent`, `put`, `consume`, `get`), with `RedisRealtimeTicketBackend`, the only code that runs the Lua, and a `MemoryRealtimeTicketBackend` that never sees a script. `test_realtime_ticket_redis.py` pins the semantics against a real Redis, unchanged before and after. See design.md.
   - Open: the typed realtime protocol is PR6b.
 - [ ] 3.2 Extract connection registry, dispatcher, heartbeat, polling fallback, and monitoring collaborators behind focused interfaces.
+  - Monitoring (PR6b): `WebSocketMetrics` holds the process-wide series; each app's container builds its own `WebSocketMonitor` and pseudonymizer, and the WebSocket manager receives the monitor by constructor. The module global and its accessors are gone.
+  - Polling fallback (PR6b): `fallback_manager` is unwired from the app and the container; `websocket_fallback.py` waits for PR7.
+  - Heartbeat (PR6b): the lifespan stops the task at shutdown.
+  - Open for PR6c: the registry, dispatcher and heartbeat split of `WebSocketManager`, and typed frames.
 - [ ] 3.3 Migrate WebSocket, polling, and supported monitoring routes while preserving tenant isolation, frame, and endpoint behavior.
+  - PR6b: `WebSocketManager` is typed on `SessionRegistry[TenantSessionKey]` and `TenantSessionKey`; the WebSocket endpoints and polling routes reach the session manager through `get_session_manager`. `app.routes` and the OpenAPI document are unchanged, and the realtime metric names and labels are pinned (`test_contract_realtime_metrics.py`, `test_contract_heartbeat.py`).
+  - Open for PR6c: the routes on the split collaborators. #348 still decides the public monitoring scope; `/api/websocket/monitoring/health` is unchanged.
 - [ ] 3.4 Add realtime lifecycle, broadcast, heartbeat, polling, and cross-tenant denial integration coverage; coordinate public monitoring scope with #348.
 
 ## 4. Compatibility Cleanup and Verification

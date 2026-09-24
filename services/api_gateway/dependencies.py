@@ -34,7 +34,6 @@ if TYPE_CHECKING:
     from .studio_runtime_flow import StudioRuntimeFlow
     from .translation_refiner import BaseTranslationRefiner
     from .websocket import WebSocketManager
-    from .websocket_fallback import WebSocketFallbackManager
     from .websocket_monitor import WebSocketMetrics, WebSocketMonitor
     from .websocket_polling_routes import TenantPollingStore
 
@@ -67,7 +66,6 @@ class GatewayDependencies:
     circuit_breaker_client: CircuitBreakerServiceClient
     speech_pipeline: SpeechPipeline
     websocket_monitor: WebSocketMonitor
-    fallback_manager: WebSocketFallbackManager
     oidc_key_cache: OidcKeyCache
     pipeline_admission: PipelineAdmission | None = None
     quality_telemetry: QualityTelemetry | None = None
@@ -131,7 +129,6 @@ def build_gateway_dependencies(
     from .speech_services import HttpSpeechServices
     from .studio_login_directory import login_directory_from_environment
     from .websocket import WebSocketManager
-    from .websocket_fallback import fallback_manager
     from .websocket_monitor import WebSocketMetrics, WebSocketMonitor
     from .websocket_polling_routes import TenantPollingStore
 
@@ -190,7 +187,6 @@ def build_gateway_dependencies(
         circuit_breaker_client=CircuitBreakerServiceClient(service_health),
         speech_pipeline=speech_pipeline,
         websocket_monitor=websocket_monitor,
-        fallback_manager=fallback_manager,
         oidc_key_cache=_key_cache,
         pipeline_admission=pipeline_admission,
         quality_telemetry=quality_telemetry,

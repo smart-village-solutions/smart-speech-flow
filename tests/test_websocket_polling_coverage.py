@@ -8,6 +8,7 @@ import pytest
 from prometheus_client import CollectorRegistry, generate_latest
 
 from services.api_gateway import websocket_monitoring_routes as monitoring_routes
+from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket_fallback import (
     FallbackConfig,
     FallbackReason,
@@ -72,7 +73,11 @@ def test_monitor_tracks_connection_lifecycle_and_health():
     """The real monitor tracks traffic, errors, and stale connection health."""
     monitor = websocket_monitor()
     metrics = monitor.connection_established(
-        "connection-1", "session-3", "customer", "https://client.example:8443"
+        "connection-1",
+        "session-3",
+        "customer",
+        "https://client.example:8443",
+        resource_key=TenantSessionKey("tenant-a", "session-3"),
     )
     monitor.message_sent("connection-1", "hello", "chat")
     monitor.message_received("connection-1", "world", "chat")
@@ -93,7 +98,12 @@ def test_monitor_tracks_connection_lifecycle_and_health():
 def test_websocket_prometheus_metrics_have_no_session_label():
     registry = CollectorRegistry()
     monitor = websocket_monitor(registry)
-    monitor.connection_established("connection-1", "session-secret", "admin")
+    monitor.connection_established(
+        "connection-1",
+        "session-ref",
+        "admin",
+        resource_key=TenantSessionKey("tenant-a", "session-secret"),
+    )
     monitor.message_sent("connection-1", "hello", "chat")
     monitor.record_error("connection-1", "decode_error")
 

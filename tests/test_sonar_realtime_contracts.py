@@ -167,7 +167,6 @@ async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch
     sessions.customer_connected(expired_key)
     now[0] = 121.0
     live_client = store.activate(live_key, ClientType.ADMIN)
-    manager = websocket.WebSocketManager(sessions, monitor=websocket_monitor())
     loop = asyncio.get_running_loop()
     release_admin = sessions.admin_disconnected
 
@@ -183,7 +182,7 @@ async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch
             polling_id=live_client.polling_id,
             key=live_key,
             wait_seconds=60,
-            manager=manager,
+            sessions=sessions,
             polling_store=store,
         )
     )
@@ -215,6 +214,7 @@ def polling_http_state():
     endpoint_app.dependency_overrides[polling.require_admin_session_key] = lambda: key
     endpoint_app.dependency_overrides[polling.require_customer_session_key] = lambda: key
     endpoint_app.dependency_overrides[polling.get_websocket_manager] = lambda: manager
+    endpoint_app.dependency_overrides[polling.get_session_manager] = lambda: sessions
     endpoint_app.dependency_overrides[polling.get_polling_store] = lambda: store
     return SimpleNamespace(store=store, sessions=sessions, key=key, app=endpoint_app)
 
@@ -386,6 +386,7 @@ async def test_websocket_missing_session_keeps_close_code_and_reason():
         polling.TenantSessionKey("tenant-a", "MISSING1"),
         ClientType.ADMIN,
         manager,
+        manager.session_manager,
         "https://translate.smart-village.solutions",
     )
     assert outgoing.get_nowait() == {
@@ -430,7 +431,9 @@ async def test_websocket_registration_race_keeps_close_code_and_reason(monkeypat
 
 def test_monitor_callback_arguments_preserve_metrics_and_redact_payloads(caplog):
     monitor = websocket_monitor()
-    metrics = monitor.connection_established("connection", "SESSION1", "admin")
+    metrics = monitor.connection_established(
+        "connection", "SESSION1", "admin", resource_key=polling.TenantSessionKey("t", "SESSION1")
+    )
     monitor.message_sent("connection", "hé", "private-type")
     monitor.message_received("connection", "hello", "private-type")
     monitor.record_error("connection", "private-error", "private-details")
@@ -486,8 +489,3 @@ async def test_websocket_query_helpers_remain_awaitable():
         monitor=websocket_monitor(),
     )
     assert await websocket.get_websocket_stats(manager) == manager.get_connection_stats()
-    assert await websocket.get_session_connections("SESSION1", manager) == {
-        "session_id": "SESSION1",
-        "connections": [],
-        "count": 0,
-    }
