@@ -28,7 +28,7 @@ from ..log_safety import sanitize_log_value
 from ..quality_telemetry import QualityTelemetry
 from ..realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from ..session_access import require_admin_session_key
-from ..session_manager import ClientType, SessionManager, SessionStatus
+from ..session_manager import ClientType, SessionStatus, TenantSessionManager
 from ..studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
     require_validated_runtime_configuration,
@@ -257,7 +257,7 @@ async def create_admin_session(
         ValidatedRuntimeConfiguration,
         Depends(require_validated_runtime_configuration),
     ],
-    sessions: Annotated[SessionManager, Depends(get_session_manager)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
 ) -> SessionCreateResponse:
     """
     Erstellt eine neue Admin-Session
@@ -314,7 +314,7 @@ async def create_admin_session(
 )
 async def get_current_session(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
-    sessions: Annotated[SessionManager, Depends(get_session_manager)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
     session_id: Annotated[
         Optional[str],
         Query(description="Spezifische Session-ID, die geladen werden soll."),
@@ -392,7 +392,7 @@ async def get_current_session(
 async def terminate_session(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
-    sessions: Annotated[SessionManager, Depends(get_session_manager)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
 ) -> JSONResponse:
     """
     Beendet eine Session manuell
@@ -455,7 +455,7 @@ async def terminate_session(
 )
 async def get_session_history(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
-    sessions: Annotated[SessionManager, Depends(get_session_manager)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
     limit: int = 10,
 ) -> SessionHistoryResponse:
     """
@@ -498,7 +498,7 @@ async def get_session_history(
 async def get_session_status(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
-    sessions: Annotated[SessionManager, Depends(get_session_manager)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
 ) -> SessionStatusResponse:
     """
     Ruft Status einer spezifischen Session ab

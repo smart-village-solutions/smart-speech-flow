@@ -39,6 +39,8 @@ Existing app-state services migrate into the container without behavioral change
 
 | Collaborator | Constructed by | Provider | Status |
 | --- | --- | --- | --- |
+| Tenant session manager (`TenantSessionManager`) | `build_gateway_dependencies`, on a `RedisTenantSessionStore` over the lifespan's verified Redis connection, or a `MemoryTenantSessionStore` without `REDIS_URL`, with this app's tickets, polling store, persistence gate and pseudonymizer. The lifespan rehydrates it before startup continues | `get_session_manager` | container |
+| Runtime policy gate | lifespan (`_build_runtime_policy`), handed to `build_gateway_dependencies`, which gives it to the session manager; shutdown clears it there | none; message persistence reads `TenantSessionManager.runtime_policy` | container |
 | Realtime ticket store | `build_gateway_dependencies`, on the lifespan's verified Redis client and namespace, or in memory without `REDIS_URL` | `get_realtime_ticket_store` | container |
 | Polling store | `build_gateway_dependencies` | `get_polling_store` | container |
 | WebSocket manager | `build_gateway_dependencies` | `get_websocket_manager` | container |
@@ -48,14 +50,12 @@ Existing app-state services migrate into the container without behavioral change
 | Pipeline admission | lifespan | `get_pipeline_admission` (`pipeline_admission.py`) | container |
 | Quality telemetry and its exporter | lifespan | `get_quality_telemetry` | container |
 | Feedback repositories and services | lifespan, retried by `feedback_connect_task` | `get_feedback_service`, `get_feedback_read_service` (`routes/feedback.py`) | container |
-| `session_manager` | module instance | `get_session_manager` | adapter until PR4 |
-| Runtime policy gate (`runtime_policy._GATE`) | lifespan, rebinding the module global through `bind_runtime_policy` | none; `current_runtime_policy()` | adapter until PR4 |
-| Session pseudonymizer (`session_pseudonym._process_pseudonymizer`) | first use, rebinding the module global | none | adapter until PR4 |
 | `circuit_breaker_client` | module instance | `get_circuit_breaker_client` | adapter until PR5 |
 | `service_health_manager`, `graceful_degradation_manager` | module instances, reached only through `circuit_breaker_client` and `ai_service_client` | none | adapter until PR5 |
 | `translation_refiner` and its candidate executor | module instances | none; the lifespan attaches telemetry through the container | adapter until PR5 |
 | `fallback_manager` | module instance | none; its background task reads the container | adapter until PR6 |
 | WebSocket monitor (`websocket_monitor.websocket_monitor`) | `initialize_websocket_monitor` in `app.py`, rebinding the module global | `get_connection_monitor` | adapter until PR6 |
+| Session pseudonymizer | the WebSocket monitor (`SessionPseudonymizer.from_environment`); `build_gateway_dependencies` takes the monitor's | none; injected into the session manager, the feedback service and feedback maintenance, and read by the session access guards through the manager | shared with the WebSocket monitor until PR6 |
 | Prometheus registry and metric objects | `app.py` and `audio_storage.py` at import, attached by `create_app()` | `get_prometheus_registry` | adapter until PR7 |
 | OIDC key cache (`auth._key_cache`) | module instance | `get_oidc_key_cache` | adapter until PR7 |
 | Latest rate-limit middleware (`rate_limiter.LATEST_RATE_LIMIT_MIDDLEWARE`) | the middleware, rebinding the module global when it is built | none | adapter until PR7 |
@@ -67,8 +67,8 @@ Rules:
 - A provider takes only the `HTTPConnection`, so it serves HTTP and WebSocket routes alike and adds nothing to the OpenAPI document.
 - Route handlers reach collaborators only through `Depends(provider)`.
 - Tests replace a collaborator with `app.dependency_overrides[provider]`, or build their own app with `create_app()` and run its lifespan. Suites that drive the shared app without its lifespan get a fresh container per test from `tests/conftest.py`. Tests do not mutate module state.
-- `tests/test_gateway_dependency_ownership.py` enforces the first two rules and lists every remaining adapter with the PR that removes it. The list only shrinks. It sees module-level constructions only: the four objects above that are rebound through `global` statements (`_GATE`, `_process_pseudonymizer`, the WebSocket monitor global, `LATEST_RATE_LIMIT_MIDDLEWARE`) are tracked by this table alone.
-- Until PR4, two apps in one process share the adapters. The session manager then follows the most recently built container for its WebSocket manager, ticket revocation and polling notifications.
+- `tests/test_gateway_dependency_ownership.py` enforces the first two rules and lists every remaining adapter with the PR that removes it. Its second list names the module globals still rebound through a `global` statement (the WebSocket monitor global, `LATEST_RATE_LIMIT_MIDDLEWARE`). Both lists only shrink.
+- Until the PR named in the table, two apps in one process share the remaining adapters. Each app owns its session manager, so termination revokes that app's tickets and notifies that app's pollers and sockets.
 
 ### Decision: Preserve tenant-aware state
 
@@ -79,6 +79,17 @@ Session and message boundaries preserve `TenantSessionKey`, tenant Redis keys an
 Decided on 2026-09-24. `SessionManager` keeps its legacy `str`-keyed path, but the path moves behind a typed compatibility adapter. Tenant-aware code then depends only on the typed `TenantSessionKey` contract, and the legacy path keeps working until a later removal. The adapter is built in the session-boundary slice (task 2.1).
 
 This isolates the legacy path; it does not approve deleting it. Removal still needs the recorded cutover decision and operational evidence that the "Legacy session path decision" scenario requires.
+
+#### Session manager split (PR4a)
+
+- `TenantSessionManager` (`session_manager.py`) is the production path. Every public method takes a `TenantSessionKey`, it has no mode flag, and it requires its store at construction. `session_manager.py` is off the mypy ignore list, so the contract is checked.
+- `LegacySessionManager` (`legacy_session_manager.py`) is the compatibility adapter: the `str`-keyed path and its own Redis persistence, moved unchanged. Only tests and the unregistered `services/api_gateway/session.py` construct it, the latter through a dependency no app provides. `test_only_the_legacy_adapter_reaches_the_legacy_session_manager` fails if any other gateway module imports it.
+- Both managers share `Session`, `SessionMessage`, the helpers, and `SessionManagerBase[KeyT]`: the session cache, lifecycle telemetry and the content sweep.
+
+No single Protocol covers both managers. Their key types differ, so every key-taking method on such a Protocol would need `Any` or a `Union`. Where a consumer does serve both, it gets a Protocol limited to what it calls:
+
+- `SessionRegistry[KeyT]` in `session_manager.py`, generic in the key, for the WebSocket manager: `register_websocket_manager`, `get_session`, `add_websocket_connection`, `remove_websocket_connection`. `TenantSessionManager` is a `SessionRegistry[TenantSessionKey]` and `LegacySessionManager` a `SessionRegistry[str]`. The WebSocket manager takes `SessionRegistry[Any]` because its own session identifiers are still untyped; PR6 narrows it with the realtime boundary.
+- `FeedbackSessions` in `feedback/service.py`: `resolve_customer_session`, `resolve_ended_session` and `has_unscoped_session`, all keyed by the bare id a browser sends. A tenant session is never stored under a bare id, so `TenantSessionManager.has_unscoped_session` is always false.
 
 ### Decision: Separate transport responsibilities
 

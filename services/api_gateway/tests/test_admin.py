@@ -10,7 +10,6 @@ if str(ROOT_DIR) not in sys.path:
 
 from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
-from services.api_gateway.session_manager import session_manager
 from services.api_gateway.tenant_session import TenantSessionKey
 
 client = TestClient(app)
@@ -18,7 +17,7 @@ client = TestClient(app)
 
 class TestAdminRoutes:
     @pytest.fixture(autouse=True)
-    def reset_sessions(self, monkeypatch):
+    def reset_sessions(self, session_manager, monkeypatch):
         """Reset session manager before each test."""
         monkeypatch.setitem(
             app.dependency_overrides, require_ssf_user, lambda: {"sub": "test-admin"}
@@ -29,7 +28,9 @@ class TestAdminRoutes:
         yield
         session_manager.reset(clear_persistence=True)
 
-    def test_create_admin_session_terminates_previous_active_session_by_default(self):
+    def test_create_admin_session_terminates_previous_active_session_by_default(
+        self, session_manager
+    ):
         first_response = client.post("/api/admin/session/create")
         assert first_response.status_code == 201
         first_session_id = first_response.json()["session_id"]
@@ -62,6 +63,7 @@ class TestAdminRoutes:
 
     def test_get_current_session_requires_explicit_id_when_parallel_sessions_enabled(
         self,
+        session_manager,
         monkeypatch,
     ):
         monkeypatch.setattr(session_manager, "allow_parallel_sessions", True)

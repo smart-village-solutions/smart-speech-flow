@@ -40,7 +40,7 @@ them only through its own issue.
 - A ticket is issued for a terminated session; the revocation makes it unusable.
 - Closes for a missing or terminated session use 1003 in one path and 4404 in another.
 - A repeated terminate returns `already_terminated` without re-running the cleanup that
-  `SessionManager.terminate_session` treats as idempotent.
+  `TenantSessionManager.terminate_session` treats as idempotent.
 - On the text path, a failed upstream stage is reported as 400 `TEXT_PIPELINE_ERROR`, and the
   language-pair errors use a different error body.
 - `app.state.quality_telemetry` is not released on shutdown.

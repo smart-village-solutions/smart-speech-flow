@@ -49,6 +49,12 @@ def gateway_dependencies():
         yield dependencies
 
 
+@pytest.fixture
+def session_manager(gateway_dependencies):
+    """The tenant session manager the shared app's routes see in this test."""
+    return gateway_dependencies.session_manager
+
+
 @pytest.fixture(autouse=True)
 def tenant_dependencies():
     context = StudioTenantContext("tenant-test", REVISION)

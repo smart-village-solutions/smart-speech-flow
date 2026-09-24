@@ -1056,13 +1056,9 @@ async def test_legacy_session_route_uses_new_process_wav_contract(monkeypatch):
     fake_session = SimpleNamespace(id="SESSION1", messages=[])
     captured = {}
 
-    monkeypatch.setattr(
-        legacy_session.session_manager, "get_session", lambda session_id: fake_session
-    )
-    monkeypatch.setattr(
-        legacy_session.session_manager,
-        "add_message",
-        lambda session_id, message: captured.setdefault("message", message),
+    sessions = SimpleNamespace(
+        get_session=lambda session_id: fake_session,
+        add_message=lambda session_id, message: captured.setdefault("message", message),
     )
     monkeypatch.setattr(
         legacy_session,
@@ -1080,6 +1076,7 @@ async def test_legacy_session_route_uses_new_process_wav_contract(monkeypatch):
         FakeUploadFile(b"input-audio"),
         "de",
         "en",
+        sessions,
     )
 
     assert response["status"] == "success"

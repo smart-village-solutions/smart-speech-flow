@@ -116,26 +116,3 @@ class SessionPseudonymizer:
         message = (f"{domain}:{text}" if domain else text).encode("utf-8")
         digest = hmac.new(self._key, message, hashlib.sha256)
         return digest.hexdigest()[:_REFERENCE_LENGTH]
-
-
-_process_pseudonymizer: SessionPseudonymizer | None = None
-
-
-def session_ref(session_id: Any) -> str:
-    """The process-wide reference for a session id.
-
-    Built on first use rather than at import so a test, or a deployment that
-    sets the key after the module is loaded, still sees the configured key.
-    """
-    global _process_pseudonymizer
-    if _process_pseudonymizer is None:
-        _process_pseudonymizer = SessionPseudonymizer.from_environment()
-    return _process_pseudonymizer.reference(session_id)
-
-
-def feedback_ref(feedback_id: Any) -> str:
-    """The process-wide reference for a feedback record id."""
-    global _process_pseudonymizer
-    if _process_pseudonymizer is None:
-        _process_pseudonymizer = SessionPseudonymizer.from_environment()
-    return _process_pseudonymizer.feedback_reference(feedback_id)

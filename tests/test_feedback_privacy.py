@@ -19,6 +19,7 @@ from services.api_gateway.feedback.repository import FeedbackStorageUnavailable
 from services.api_gateway.feedback.service import FeedbackService
 from services.api_gateway.feedback.tenant import ConfiguredTenantResolver
 from services.api_gateway.routes.feedback import get_feedback_service
+from services.api_gateway.session_pseudonym import SessionPseudonymizer
 
 SENTINEL = "PURPLE-RHINOCEROS-9317-SENTINEL"
 
@@ -70,10 +71,8 @@ class RecordingTelemetry:
 class KnownSessions:
     """A legacy session: known by its bare id, with no tenant key behind it."""
 
-    def get_session(self, session_id):
-        from types import SimpleNamespace
-
-        return SimpleNamespace(id=session_id)
+    def has_unscoped_session(self, session_id):
+        return True
 
     def resolve_customer_session(self, session_id):
         return None
@@ -91,6 +90,7 @@ def _assemble(repository=None):
         tenant_resolver=ConfiguredTenantResolver(tenant_id="tenant-a"),
         session_manager=KnownSessions(),
         telemetry=telemetry,
+        pseudonymizer=SessionPseudonymizer(key=b"feedback-privacy-test"),
     )
     app.dependency_overrides[get_feedback_service] = lambda: service
     return TestClient(app), repository, telemetry

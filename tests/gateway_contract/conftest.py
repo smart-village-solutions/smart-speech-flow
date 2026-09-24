@@ -137,13 +137,6 @@ class RealtimeTickets:
     make_unavailable: Callable[[], None]
 
 
-def _reset_conversation_state(dependencies: GatewayDependencies) -> None:
-    from services.api_gateway.session_manager import session_manager
-
-    session_manager.reset(clear_persistence=True)
-    session_manager.register_websocket_manager(dependencies.websocket_manager)
-
-
 @pytest.fixture(autouse=True)
 def gateway_state(
     monkeypatch, gateway_dependencies: GatewayDependencies
@@ -151,18 +144,16 @@ def gateway_state(
     """Fresh conversation state and a signed identity per test, restored afterwards.
 
     Every test gets its own dependency container from tests/conftest.py, so
-    realtime tickets, pollers and sockets start empty. Studio is unconfigured
+    sessions, realtime tickets, pollers and sockets start empty. Studio is unconfigured
     unless a test asks for the `studio` fixture, so no Studio request can
     leave the process.
     """
     for variable in STUDIO_ENVIRONMENT:
         monkeypatch.delenv(variable, raising=False)
     overrides = app.dependency_overrides.copy()
-    _reset_conversation_state(gateway_dependencies)
     try:
         yield SignedIdentity()
     finally:
-        _reset_conversation_state(gateway_dependencies)
         app.dependency_overrides.clear()
         app.dependency_overrides.update(overrides)
 
@@ -250,21 +241,13 @@ class StudioStub:
 def studio(gateway_dependencies: GatewayDependencies) -> Iterator[StudioStub]:
     """Route every Studio read to a stub, with the real resolution dependency."""
     from services.api_gateway import studio_runtime_flow
-    from services.api_gateway.runtime_policy import (
-        RuntimePolicyGate,
-        bind_runtime_policy,
-        current_runtime_policy,
-    )
+    from services.api_gateway.runtime_policy import RuntimePolicyGate
 
     stub = StudioStub()
     app.dependency_overrides.pop(require_validated_runtime_configuration, None)
     gateway_dependencies.studio_runtime_flow = studio_runtime_flow.StudioRuntimeFlow(stub)
-    previous_gate = current_runtime_policy()
-    bind_runtime_policy(RuntimePolicyGate(stub))
-    try:
-        yield stub
-    finally:
-        bind_runtime_policy(previous_gate)
+    gateway_dependencies.session_manager.runtime_policy = RuntimePolicyGate(stub)
+    yield stub
 
 
 @pytest.fixture
@@ -274,16 +257,9 @@ def studio_unconfigured() -> None:
 
 
 @pytest.fixture
-def unbound_persistence_gate() -> Iterator[None]:
+def unbound_persistence_gate(gateway_dependencies: GatewayDependencies) -> None:
     """The production default when Studio is unconfigured: every write refused."""
-    from services.api_gateway.runtime_policy import bind_runtime_policy, current_runtime_policy
-
-    previous_gate = current_runtime_policy()
-    bind_runtime_policy(None)
-    try:
-        yield
-    finally:
-        bind_runtime_policy(previous_gate)
+    gateway_dependencies.session_manager.runtime_policy = None
 
 
 class _SpeechResponse:

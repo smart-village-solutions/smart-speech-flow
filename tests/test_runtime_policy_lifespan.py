@@ -3,7 +3,6 @@
 import pytest
 
 from services.api_gateway.app import app, lifespan
-from services.api_gateway.runtime_policy import current_runtime_policy
 
 _STUDIO_VARIABLES = (
     "STUDIO_RUNTIME_CONFIGURATION_BASE_URL",
@@ -16,11 +15,6 @@ _STUDIO_VARIABLES = (
 @pytest.fixture(autouse=True)
 def quiet_lifespan(monkeypatch: pytest.MonkeyPatch):
     """Keep the lifespan local: no telemetry exporter, no Redis."""
-    from services.api_gateway.runtime_policy import bind_runtime_policy
-
-    # conftest binds a permissive gate for every suite; this one asserts on
-    # what the lifespan itself binds, so it starts from nothing.
-    bind_runtime_policy(None)
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
 
 
@@ -34,20 +28,20 @@ async def test_gateway_starts_with_no_studio_configuration(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     async with lifespan(app):
         assert app.state is not None
-        assert current_runtime_policy() is None
+        assert app.state.dependencies.session_manager.runtime_policy is None
 
 
 async def test_gateway_binds_the_gate_when_configured(monkeypatch):
     _configure_studio(monkeypatch)
     async with lifespan(app):
-        assert current_runtime_policy() is not None
+        assert app.state.dependencies.session_manager.runtime_policy is not None
 
 
 async def test_shutdown_unbinds_the_gate(monkeypatch):
     _configure_studio(monkeypatch)
     async with lifespan(app):
-        pass
-    assert current_runtime_policy() is None
+        sessions = app.state.dependencies.session_manager
+    assert sessions.runtime_policy is None
 
 
 def test_timeout_variable_reaches_the_client(monkeypatch):

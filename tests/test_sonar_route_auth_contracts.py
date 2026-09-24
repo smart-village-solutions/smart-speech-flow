@@ -13,7 +13,6 @@ from services.api_gateway.realtime_ticket import (
     RealtimeTicketStore,
 )
 from services.api_gateway.routes import admin, customer
-from services.api_gateway.session_manager import session_manager
 from services.api_gateway.studio_login_directory_client import DirectoryTransport
 from services.api_gateway.tenant_session import TenantSessionKey
 
@@ -190,6 +189,7 @@ async def test_feedback_maintenance_failure_is_reported_and_next_pass_runs(
 )
 @pytest.mark.asyncio
 async def test_admin_session_routes_return_not_found_after_session_disappears(
+    session_manager,
     handler,
 ) -> None:
     """Admin session operations must preserve the public 404 race contract."""
@@ -204,7 +204,7 @@ async def test_admin_session_routes_return_not_found_after_session_disappears(
 
 
 @pytest.mark.asyncio
-async def test_customer_status_returns_not_found_after_session_disappears() -> None:
+async def test_customer_status_returns_not_found_after_session_disappears(session_manager) -> None:
     """Customer status must preserve the public 404 race contract."""
     session_id = "MISSING2"
     key = TenantSessionKey("tenant-test", session_id)
@@ -218,6 +218,7 @@ async def test_customer_status_returns_not_found_after_session_disappears() -> N
 
 @pytest.mark.asyncio
 async def test_customer_activation_returns_not_found_after_session_disappears(
+    session_manager,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Activation must return 404 if a resolved session disappears before use."""

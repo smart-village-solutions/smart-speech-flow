@@ -23,6 +23,3 @@ def installed_gateway_dependencies(app: FastAPI) -> Iterator[GatewayDependencies
         yield dependencies
     finally:
         app.state.dependencies = previous
-        sessions = dependencies.session_manager
-        if sessions.realtime_tickets is dependencies.realtime_tickets:
-            sessions.attach_realtime(None, None)

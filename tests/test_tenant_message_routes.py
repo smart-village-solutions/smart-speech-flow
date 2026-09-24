@@ -16,10 +16,9 @@ from services.api_gateway.routes.session import (
 )
 from services.api_gateway.session_manager import (
     ClientType,
-    SessionManager,
+    TenantSessionManager,
     SessionMessage,
     SessionStatus,
-    session_manager,
 )
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import (
@@ -32,7 +31,7 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client(session_manager) -> TestClient:
     session_manager.reset(clear_persistence=True)
     return TestClient(app)
 
@@ -73,7 +72,7 @@ def test_message_route_uses_server_assigned_role(
     assert sender is expected_role
 
 
-def test_audio_lookup_requires_message_ownership(client: TestClient) -> None:
+def test_audio_lookup_requires_message_ownership(session_manager, client: TestClient) -> None:
     session_id = client.post("/api/admin/session/create").json()["session_id"]
     other = asyncio.run(session_manager.create_admin_session("tenant-other", SNAPSHOT))
     message = SessionMessage(
@@ -95,6 +94,7 @@ def test_audio_lookup_requires_message_ownership(client: TestClient) -> None:
 
 
 def test_translated_audio_is_unavailable_after_its_retained_file_is_gone(
+    session_manager,
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
@@ -140,7 +140,7 @@ async def test_live_audio_urls_are_scoped_to_each_receiving_role(
     receiver_type: ClientType,
 ) -> None:
     key = (
-        await SessionManager(store=MemoryTenantSessionStore()).create_admin_session(
+        await TenantSessionManager(store=MemoryTenantSessionStore()).create_admin_session(
             "tenant-a", SNAPSHOT
         )
     ).key
@@ -213,6 +213,7 @@ async def test_live_audio_urls_are_scoped_to_each_receiving_role(
 
 
 def test_history_audio_urls_are_scoped_to_requesting_role(
+    session_manager,
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
@@ -317,10 +318,9 @@ async def test_created_message_persists_translated_audio_without_retaining_bytes
     from services.api_gateway import audio_storage
     from services.api_gateway.routes import session as session_routes
 
-    manager = SessionManager(store=MemoryTenantSessionStore())
+    manager = TenantSessionManager(store=MemoryTenantSessionStore())
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     stored: list[tuple[TenantSessionKey, str, AudioVariant, bytes]] = []
-    monkeypatch.setattr(session_routes, "session_manager", manager)
     monkeypatch.setattr(
         audio_storage,
         "save_audio",
@@ -336,6 +336,7 @@ async def test_created_message_persists_translated_audio_without_retaining_bytes
         source_lang="de",
         target_lang="en",
         message_id="message-1",
+        sessions=manager,
     )
 
     assert stored == [(session.key, "message-1", AudioVariant.TRANSLATED, b"translated")]
@@ -345,6 +346,7 @@ async def test_created_message_persists_translated_audio_without_retaining_bytes
 
 @pytest.mark.parametrize("variant", ["original", "translated"])
 def test_terminal_session_denies_all_admin_audio_variants(
+    session_manager,
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
@@ -398,12 +400,11 @@ async def test_text_processing_ignores_a_spoofed_client_role(
 ) -> None:
     from services.api_gateway.routes import session as session_routes
 
-    manager = SessionManager(store=MemoryTenantSessionStore())
+    manager = TenantSessionManager(store=MemoryTenantSessionStore())
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
     manager.store.save(session)
-    monkeypatch.setattr(session_routes, "session_manager", manager)
     monkeypatch.setattr(
         session_routes,
         "run_pipeline",
@@ -433,6 +434,7 @@ async def test_text_processing_ignores_a_spoofed_client_role(
         ClientType.ADMIN,
         request,
         0.0,
+        sessions=manager,
     )
 
     assert manager.get_session(session.key).messages[-1].sender is ClientType.ADMIN

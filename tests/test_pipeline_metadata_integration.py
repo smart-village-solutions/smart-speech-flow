@@ -17,7 +17,8 @@ from pathlib import Path
 from typing import Dict, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from services.api_gateway.session_manager import SessionManager, SessionMessage
+from services.api_gateway.legacy_session_manager import LegacySessionManager
+from services.api_gateway.session_manager import SessionMessage
 from services.api_gateway.pipeline_logic import process_wav, process_text_pipeline
 from services.api_gateway.audio_storage import (
     save_original_audio,
@@ -31,7 +32,7 @@ pytestmark = pytest.mark.integration
 @pytest.fixture
 def session_manager():
     """Provide a SessionManager instance"""
-    return SessionManager()
+    return LegacySessionManager()
 
 
 @pytest.fixture

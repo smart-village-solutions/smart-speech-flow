@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from services.api_gateway import websocket as ws
-from services.api_gateway.session_manager import SessionManager
+from services.api_gateway.legacy_session_manager import LegacySessionManager
 
 
 @pytest.fixture(autouse=True)
@@ -45,7 +45,7 @@ def _register(manager: ws.WebSocketManager, session_id: str, client_type: ws.Cli
 
 @pytest.fixture
 def session():
-    manager = ws.WebSocketManager(SessionManager())
+    manager = ws.WebSocketManager(LegacySessionManager())
     _, admin, admin_socket = _register(manager, "session-1", ws.ClientType.ADMIN)
     _, customer, customer_socket = _register(
         manager, "session-1", ws.ClientType.CUSTOMER

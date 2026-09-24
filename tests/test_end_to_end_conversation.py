@@ -18,14 +18,15 @@ from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock, AsyncMock
 from pathlib import Path
 
-from services.api_gateway.session_manager import SessionManager, SessionMessage
+from services.api_gateway.legacy_session_manager import LegacySessionManager
+from services.api_gateway.session_manager import SessionMessage
 from services.api_gateway.audio_storage import save_original_audio, cleanup_old_audio_files
 
 
 @pytest.fixture
 def session_manager_fixture():
     """Create a SessionManager instance."""
-    return SessionManager()
+    return LegacySessionManager()
 
 
 @pytest.fixture

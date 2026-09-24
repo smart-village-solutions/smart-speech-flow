@@ -403,6 +403,7 @@ async def test_a_full_reconciliation_pass_recovers_a_pending_row(repository) -> 
         FeedbackMaintenanceMetrics,
     )
     from services.api_gateway.quality_telemetry import QualityTelemetry, TelemetryMode
+    from services.api_gateway.session_pseudonym import SessionPseudonymizer
 
     record = _record()
     await _store(record)
@@ -416,6 +417,8 @@ async def test_a_full_reconciliation_pass_recovers_a_pending_row(repository) -> 
             registry=CollectorRegistry(),
         ),
         metrics=FeedbackMaintenanceMetrics(CollectorRegistry()),
+        # As the gateway builds it: the deployment key, or a per-process one without it.
+        pseudonymizer=SessionPseudonymizer.from_environment(),
     )
 
     first = await maintenance.reconcile_once()

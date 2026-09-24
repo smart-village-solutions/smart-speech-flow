@@ -13,10 +13,9 @@ from services.api_gateway.runtime_policy import (
     PolicyDecision,
     PolicyReason,
     RuntimePolicyGate,
-    bind_runtime_policy,
 )
 from services.api_gateway.runtime_policy_metrics import RuntimePolicyMetrics
-from services.api_gateway.session_manager import ClientType, session_manager
+from services.api_gateway.session_manager import ClientType
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 from tests.runtime_policy_helpers import RecordingClient, configuration
 
@@ -41,7 +40,7 @@ def policy_metrics_registry() -> CollectorRegistry:
 
 
 async def test_refusal_log_contains_no_conversation_content(
-    caplog, audio_dir, policy_metrics_registry
+    caplog, audio_dir, policy_metrics_registry, session_manager
 ):
     secret_original = "mein geheimes anliegen"
     secret_translated = "my secret request"
@@ -55,7 +54,7 @@ async def test_refusal_log_contains_no_conversation_content(
         RecordingClient(configuration(tenant_id="tenant-test", mode="ask")),
         metrics=RuntimePolicyMetrics(policy_metrics_registry),
     )
-    bind_runtime_policy(gate)
+    session_manager.runtime_policy = gate
 
     with caplog.at_level(logging.DEBUG):
         message = await session_routes.create_session_message(
@@ -66,6 +65,7 @@ async def test_refusal_log_contains_no_conversation_content(
             b"audio-bytes",
             "de",
             "en",
+            sessions=session_manager,
         )
 
     assert message.record_authorized is False

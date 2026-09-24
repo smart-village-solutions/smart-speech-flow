@@ -10,7 +10,7 @@ from services.api_gateway.routes import customer
 from services.api_gateway.session_manager import (
     ClientType,
     Session,
-    SessionManager,
+    TenantSessionManager,
     SessionMessage,
     SessionStatus,
 )
@@ -30,8 +30,8 @@ def _http_request() -> Request:
 
 
 @pytest.fixture
-def manager() -> SessionManager:
-    return SessionManager(store=MemoryTenantSessionStore())
+def manager() -> TenantSessionManager:
+    return TenantSessionManager(store=MemoryTenantSessionStore())
 
 
 def test_session_round_trip_keeps_scope_message_and_timeout_state() -> None:
@@ -69,7 +69,7 @@ def test_session_round_trip_keeps_scope_message_and_timeout_state() -> None:
 
 @pytest.mark.asyncio
 async def test_manager_replaces_only_the_same_tenants_active_session(
-    manager: SessionManager,
+    manager: TenantSessionManager,
 ) -> None:
     first = await manager.create_admin_session("tenant-a", SNAPSHOT)
     other = await manager.create_admin_session("tenant-b", SNAPSHOT)
@@ -92,7 +92,7 @@ def test_openapi_omits_generic_session_management_routes() -> None:
 
 @pytest.mark.asyncio
 async def test_customer_activation_uses_the_resolved_capability_key(
-    manager: SessionManager,
+    manager: TenantSessionManager,
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     request = customer.ActivateSessionRequest(

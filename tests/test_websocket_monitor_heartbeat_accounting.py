@@ -14,7 +14,7 @@ from prometheus_client import CollectorRegistry
 
 from services.api_gateway import websocket as ws
 from services.api_gateway import websocket_monitor as wm
-from services.api_gateway.session_manager import SessionManager
+from services.api_gateway.legacy_session_manager import LegacySessionManager
 
 CLIENT = ws.ClientType.CUSTOMER.value
 
@@ -48,7 +48,7 @@ def monitor(monkeypatch, registry):
 
 @pytest.fixture
 def manager(monkeypatch, monitor):
-    real = ws.WebSocketManager(SessionManager())
+    real = ws.WebSocketManager(LegacySessionManager())
 
     async def no_heartbeat_loop():
         return None

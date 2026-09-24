@@ -27,7 +27,7 @@ from .dependencies import get_realtime_ticket_store, get_websocket_manager
 from .log_safety import sanitize_log_value
 from .realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from .session_access import require_customer_session_key
-from .session_manager import ClientType, SessionManager, SessionStatus
+from .session_manager import ClientType, SessionRegistry, SessionStatus
 from .tenant_session import TenantSessionKey
 from .websocket_fallback import FallbackReason, fallback_manager
 from .websocket_monitor import DisconnectReason, get_websocket_monitor
@@ -337,7 +337,7 @@ class WebSocketManager:
 
     def __init__(
         self,
-        session_manager: SessionManager,
+        session_manager: SessionRegistry[Any],
         polling_store: Optional["TenantPollingStore"] = None,
     ):
         self.session_manager = session_manager

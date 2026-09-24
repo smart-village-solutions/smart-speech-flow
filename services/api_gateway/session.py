@@ -10,13 +10,33 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
+
+from services.api_gateway.legacy_session_manager import LegacySessionManager
 
 # Import der bestehenden Pipeline-Logik
 from services.api_gateway.pipeline_logic import process_wav
-from services.api_gateway.session_manager import ClientType, SessionMessage, session_manager
+from services.api_gateway.session_manager import ClientType, SessionMessage
 
 router = APIRouter()
+
+
+def legacy_session_manager(request: Request) -> LegacySessionManager:
+    """An app serving this router would have to provide one; app.py registers neither (#230)."""
+    return request.app.state.legacy_session_manager
+
+
+LegacySessions = Annotated[LegacySessionManager, Depends(legacy_session_manager)]
 SESSION_NOT_FOUND_DETAIL = "Session nicht gefunden"
 SESSION_CREATE_RESPONSES = {
     400: {"description": "Unsupported customer language"},
@@ -46,7 +66,7 @@ SUPPORTED_LANGUAGES = {
 
 
 @router.post("/session/create", responses=SESSION_CREATE_RESPONSES)
-async def create_session(customer_language: str):
+async def create_session(customer_language: str, session_manager: LegacySessions):
     """Neue Session für Admin-Kunde Gespräch erstellen"""
     if customer_language not in SUPPORTED_LANGUAGES:
         raise HTTPException(400, f"Sprache '{customer_language}' nicht unterstützt")
@@ -63,7 +83,7 @@ async def create_session(customer_language: str):
 
 
 @router.get("/session/{session_id}", responses=SESSION_INFO_RESPONSES)
-async def get_session_info(session_id: str):
+async def get_session_info(session_id: str, session_manager: LegacySessions):
     """Session-Informationen abrufen"""
     session = session_manager.get_session(session_id)
     if not session:
@@ -82,7 +102,7 @@ async def get_session_info(session_id: str):
 
 
 @router.get("/sessions/active")
-async def get_active_sessions():
+async def get_active_sessions(session_manager: LegacySessions):
     """Aktive Sessions für Admin-Übersicht"""
     return {"sessions": session_manager.get_active_sessions()}
 
@@ -94,6 +114,7 @@ async def send_session_message(
     file: Annotated[UploadFile, File(...)],
     source_lang: Annotated[str, Form(...)],
     target_lang: Annotated[str, Form(...)],
+    session_manager: LegacySessions,
 ):
     """Neue Audio-Nachricht zur Session hinzufügen"""
     session = session_manager.get_session(session_id)
@@ -138,7 +159,7 @@ async def send_session_message(
 
 
 @router.get("/session/{session_id}/messages", responses=SESSION_MESSAGES_RESPONSES)
-async def get_session_messages(session_id: str):
+async def get_session_messages(session_id: str, session_manager: LegacySessions):
     """Nachrichten einer Session abrufen"""
     session = session_manager.get_session(session_id)
     if not session:
