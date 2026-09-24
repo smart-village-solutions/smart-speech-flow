@@ -17,13 +17,11 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-import services.api_gateway.websocket as websocket_module
 from services.api_gateway.app import app
 from services.api_gateway.auth import optional_ssf_user, require_ssf_user
 from services.api_gateway.realtime_ticket import (
     MemoryRealtimeTicketBackend,
     RealtimeTicketStore,
-    realtime_ticket_store,
 )
 from services.api_gateway.session_manager import (
     ClientType,
@@ -47,10 +45,7 @@ from services.api_gateway.tenant_session import (
     TenantSessionKey,
 )
 from services.api_gateway.websocket import WebSocketManager
-from services.api_gateway.websocket_polling_routes import (
-    TenantPollingStore,
-    polling_store,
-)
+from services.api_gateway.websocket_polling_routes import TenantPollingStore
 
 REVISION = f"sha256:{'a' * 64}"
 _CLIENT_ADDRESSES = itertools.count(1)
@@ -266,12 +261,13 @@ class TwoTenantSystem:
 
 @pytest.fixture
 def two_tenant_system():
+    """Two tenants on one running app.
+
+    The lifespan builds a fresh ticket store, polling store and WebSocket
+    manager for the app, so only the shared session manager needs resetting.
+    """
     original_overrides = app.dependency_overrides.copy()
-    original_websocket_manager = websocket_module.websocket_manager
     session_manager.reset(clear_persistence=True)
-    polling_store.clients.clear()
-    realtime_ticket_store.redis.values.clear()
-    websocket_module.websocket_manager = None
     address = next(_CLIENT_ADDRESSES)
     with TestClient(
         app,
@@ -289,9 +285,6 @@ def two_tenant_system():
         yield system
     app.dependency_overrides.clear()
     app.dependency_overrides.update(original_overrides)
-    polling_store.clients.clear()
-    realtime_ticket_store.redis.values.clear()
-    websocket_module.websocket_manager = original_websocket_manager
     session_manager.reset(clear_persistence=True)
 
 
