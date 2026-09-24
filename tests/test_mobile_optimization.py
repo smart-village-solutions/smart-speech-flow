@@ -14,8 +14,8 @@ from services.api_gateway.websocket import (
     WebSocketManager, WebSocketConnection, AdaptivePollingManager,
     ConnectionState, ClientType, MessageType
 )
-from services.api_gateway.legacy_session_manager import LegacySessionManager
 from services.api_gateway.routes.session import ClientActivityUpdate
+from tests.realtime_sessions import open_session, tenant_session_manager
 
 
 class TestAdaptivePollingManager:
@@ -126,8 +126,8 @@ class TestWebSocketMobileOptimization:
 
     def setup_method(self):
         """Test-Setup"""
-        self.session_manager = LegacySessionManager()
-        self.session_manager.reset(clear_persistence=True)
+        self.session_manager = tenant_session_manager()
+        self.session_key = open_session(self.session_manager, "TEST123")
         self.websocket_manager = WebSocketManager(self.session_manager)
 
     @pytest.mark.asyncio
@@ -144,7 +144,7 @@ class TestWebSocketMobileOptimization:
 
         connection_id = await self.websocket_manager.connect_websocket(
             websocket=mock_websocket,
-            session_id="TEST123",
+            session_id=self.session_key,
             client_type=ClientType.CUSTOMER,
             client_info=client_info
         )
@@ -272,7 +272,7 @@ class TestWebSocketMobileOptimization:
 
         return await self.websocket_manager.connect_websocket(
             websocket=mock_websocket,
-            session_id="TEST123",
+            session_id=self.session_key,
             client_type=ClientType.CUSTOMER,
             client_info=client_info
         )

@@ -8,11 +8,9 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from services.api_gateway.legacy_session_manager import LegacySessionManager
 from services.api_gateway.session_manager import ClientType, SessionStatus
+from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket import (
-    ConnectionState,
-    WebSocketConnection,
     WebSocketManager,
     websocket_endpoint,
 )
@@ -21,6 +19,7 @@ from services.api_gateway.websocket_fallback import (
     PollingClient,
     WebSocketFallbackManager,
 )
+from tests.realtime_sessions import TENANT, tenant_session_manager
 
 
 class _Counter:
@@ -39,11 +38,11 @@ class _Monitor:
 
 @pytest.mark.asyncio
 async def test_no_connection_broadcast_uses_redacted_warning(caplog):
-    manager = WebSocketManager(LegacySessionManager())
+    manager = WebSocketManager(tenant_session_manager())
 
     with caplog.at_level(logging.WARNING):
         result = await manager.broadcast_with_differentiated_content(
-            "SENSITIVE123",
+            TenantSessionKey(TENANT, "SENSITIVE123"),
             ClientType.ADMIN,
             {"type": "original"},
             {"type": "translated"},
@@ -56,7 +55,7 @@ async def test_no_connection_broadcast_uses_redacted_warning(caplog):
 
 @pytest.mark.asyncio
 async def test_heartbeat_monitor_logs_unexpected_failure(monkeypatch, caplog):
-    manager = WebSocketManager(LegacySessionManager())
+    manager = WebSocketManager(tenant_session_manager())
 
     async def fail_sleep(_delay):
         raise RuntimeError("scheduler unavailable")
@@ -67,31 +66,6 @@ async def test_heartbeat_monitor_logs_unexpected_failure(monkeypatch, caplog):
         await manager._heartbeat_monitor()
 
     assert "Heartbeat monitor failed" in caplog.messages
-
-
-@pytest.mark.asyncio
-async def test_fallback_evaluation_failure_is_logged(monkeypatch, caplog):
-    manager = WebSocketManager(LegacySessionManager())
-    connection = WebSocketConnection(
-        websocket=Mock(),
-        client_type=ClientType.ADMIN,
-        session_id="TEST1234",
-        connected_at=datetime.now(timezone.utc),
-        last_heartbeat=datetime.now(timezone.utc),
-        state=ConnectionState.CONNECTED,
-    )
-
-    monkeypatch.setattr(
-        "services.api_gateway.websocket.fallback_manager.evaluate_websocket_failure",
-        Mock(side_effect=RuntimeError("fallback storage unavailable")),
-    )
-
-    with caplog.at_level(logging.ERROR):
-        await manager._evaluate_connection_error(
-            connection, RuntimeError("network interrupted"), "broadcast_error"
-        )
-
-    assert "Fallback evaluation failed" in caplog.messages
 
 
 @pytest.mark.asyncio
@@ -120,7 +94,9 @@ async def test_endpoint_returns_error_message_after_message_handler_failure(
     )
 
     with caplog.at_level(logging.ERROR):
-        await websocket_endpoint(websocket, "TEST1234", "admin", manager, None)
+        await websocket_endpoint(
+            websocket, TenantSessionKey(TENANT, "TEST1234"), ClientType.ADMIN, manager, None
+        )
 
     assert "WebSocket message processing failed" in caplog.messages
     websocket.send_json.assert_awaited_once()

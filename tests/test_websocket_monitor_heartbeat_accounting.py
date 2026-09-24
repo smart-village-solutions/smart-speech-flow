@@ -14,7 +14,7 @@ from prometheus_client import CollectorRegistry
 
 from services.api_gateway import websocket as ws
 from services.api_gateway import websocket_monitor as wm
-from services.api_gateway.legacy_session_manager import LegacySessionManager
+from tests.realtime_sessions import open_session, tenant_session_manager
 
 CLIENT = ws.ClientType.CUSTOMER.value
 
@@ -48,7 +48,9 @@ def monitor(monkeypatch, registry):
 
 @pytest.fixture
 def manager(monkeypatch, monitor):
-    real = ws.WebSocketManager(LegacySessionManager())
+    sessions = tenant_session_manager()
+    open_session(sessions, "session-1")
+    real = ws.WebSocketManager(sessions)
 
     async def no_heartbeat_loop():
         return None
@@ -58,7 +60,8 @@ def manager(monkeypatch, monitor):
 
 
 async def _connect(manager) -> str:
-    return await manager.connect_websocket(_Socket(), "session-1", ws.ClientType.CUSTOMER)
+    key = next(iter(manager.session_manager.sessions))
+    return await manager.connect_websocket(_Socket(), key, ws.ClientType.CUSTOMER)
 
 
 def _age(manager, monitor, connection_id: str, seconds: int) -> None:

@@ -473,7 +473,12 @@ async def test_unregistered_session_helpers_remain_awaitable(monkeypatch, tmp_pa
 
 
 async def test_websocket_query_helpers_remain_awaitable():
-    manager = websocket.WebSocketManager(LegacySessionManager())
+    manager = websocket.WebSocketManager(
+        TenantSessionManager(
+            store=MemoryTenantSessionStore(),
+            audio_store=AudioStore.from_environment(),
+        )
+    )
     assert await websocket.get_websocket_stats(manager) == manager.get_connection_stats()
     assert await websocket.get_session_connections("SESSION1", manager) == {
         "session_id": "SESSION1",

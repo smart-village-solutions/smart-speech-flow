@@ -12,7 +12,9 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 import yaml
 
+from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket_monitor import DisconnectReason
+from tests.realtime_sessions import TENANT, open_session, tenant_session_manager
 
 ALERT_RULES = Path(__file__).resolve().parents[1] / "monitoring" / "alert_rules.yml"
 
@@ -73,7 +75,6 @@ class TestTheAlertsCanFire:
 class TestTheReasonSurvivesCleanup:
     async def test_a_heartbeat_timeout_reaches_the_monitor(self, monkeypatch):
         from services.api_gateway import websocket as ws
-        from services.api_gateway.legacy_session_manager import LegacySessionManager
 
         recorded: list[DisconnectReason] = []
 
@@ -84,15 +85,18 @@ class TestTheReasonSurvivesCleanup:
 
         monkeypatch.setattr(ws, "get_websocket_monitor", lambda: _Monitor())
 
-        manager = ws.WebSocketManager(LegacySessionManager())
-        connection_id = manager._build_connection_id("s1", ws.ClientType.CUSTOMER)
+        sessions = tenant_session_manager()
+        key = open_session(sessions, "s1")
+        manager = ws.WebSocketManager(sessions)
+        connection_id = manager._build_connection_id(key, ws.ClientType.CUSTOMER)
         manager.all_connections[connection_id] = ws.WebSocketConnection(
             websocket=Mock(),
             client_type=ws.ClientType.CUSTOMER,
-            session_id="s1",
+            session_id=key.session_id,
             connected_at=datetime.now(timezone.utc),
             last_heartbeat=datetime.now(timezone.utc),
             state=ws.ConnectionState.CONNECTED,
+            key=key,
         )
         await manager._cleanup_connection(
             connection_id, DisconnectReason.HEARTBEAT_TIMEOUT
@@ -118,25 +122,27 @@ class _RecordingMonitor:
 
 def _manager_with_one_connection(monkeypatch, monitor: _RecordingMonitor):
     from services.api_gateway import websocket as ws
-    from services.api_gateway.legacy_session_manager import LegacySessionManager
 
     monkeypatch.setattr(ws, "get_websocket_monitor", lambda: monitor)
 
-    manager = ws.WebSocketManager(LegacySessionManager())
-    connection_id = manager._build_connection_id("s1", ws.ClientType.CUSTOMER)
+    sessions = tenant_session_manager()
+    key = open_session(sessions, "s1")
+    manager = ws.WebSocketManager(sessions)
+    connection_id = manager._build_connection_id(key, ws.ClientType.CUSTOMER)
     socket = Mock()
     socket.send_json = AsyncMock()
     socket.close = AsyncMock()
     connection = ws.WebSocketConnection(
         websocket=socket,
         client_type=ws.ClientType.CUSTOMER,
-        session_id="s1",
+        session_id=key.session_id,
         connected_at=datetime.now(timezone.utc),
         last_heartbeat=datetime.now(timezone.utc),
         state=ws.ConnectionState.CONNECTED,
+        key=key,
     )
     manager.all_connections[connection_id] = connection
-    manager.session_connections["s1"] = {connection_id: connection}
+    manager.session_connections[key] = {connection_id: connection}
     return manager, connection_id
 
 
@@ -181,7 +187,7 @@ class TestASessionTerminationIsNotAFailure:
         monitor = _RecordingMonitor()
         manager, _ = _manager_with_one_connection(monkeypatch, monitor)
 
-        await manager.handle_session_termination("s1", reason)
+        await manager.handle_session_termination(TenantSessionKey(TENANT, "s1"), reason)
 
         assert monitor.closed == [expected]
 
@@ -205,7 +211,11 @@ class TestARejectedOriginIsCounted:
         socket.close = AsyncMock()
 
         await ws.websocket_endpoint(
-            socket, "TEST1234", "admin", Mock(), "https://not-allowed.example"
+            socket,
+            TenantSessionKey(TENANT, "TEST1234"),
+            ws.ClientType.ADMIN,
+            Mock(),
+            "https://not-allowed.example",
         )
 
         assert monitor.rejected == [DisconnectReason.ORIGIN_NOT_ALLOWED]
