@@ -13,17 +13,9 @@ from .auth import require_ssf_user
 _TENANT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _AUTHORIZATION_REVISION_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 _LEGACY_CLAIM_NAMES = frozenset({"tenant_id", "studio_instance_id"})
-_SELECTOR_NAMES = frozenset(
-    {
-        "studio_instance_id",
-        "studio_tenant_id",
-        "studiotenantid",
-        "tenant_id",
-        "tenantid",
-        "instanceid",
-    }
-)
-_SELECTOR_HEADER_NAMES = frozenset({"x-studio-instance-id", "x-studio-tenant-id", "x-tenant-id"})
+# Compared after _normalized_name, so every casing and "_"/"-" spelling is covered.
+_SELECTOR_NAMES = frozenset({"studioinstanceid", "studiotenantid", "tenantid", "instanceid"})
+_SELECTOR_HEADER_NAMES = frozenset({"xstudioinstanceid", "xstudiotenantid", "xtenantid"})
 
 
 @dataclass(frozen=True)
@@ -77,7 +69,7 @@ def _request_has_tenant_selector(request: Request, body: object) -> bool:
         return True
     if _has_selector_name(request.cookies.keys()):
         return True
-    if _SELECTOR_HEADER_NAMES.intersection(name.lower() for name in request.headers.keys()):
+    if any(_normalized_name(name) in _SELECTOR_HEADER_NAMES for name in request.headers.keys()):
         return True
     return _contains_tenant_selector(body)
 
@@ -96,7 +88,13 @@ def _contains_tenant_selector(value: object) -> bool:
 
 
 def _has_selector_name(names: Iterable[object]) -> bool:
-    return any(isinstance(name, str) and name.lower() in _SELECTOR_NAMES for name in names)
+    return any(
+        isinstance(name, str) and _normalized_name(name) in _SELECTOR_NAMES for name in names
+    )
+
+
+def _normalized_name(name: str) -> str:
+    return name.casefold().replace("_", "").replace("-", "")
 
 
 async def _json_body(request: Request) -> object:

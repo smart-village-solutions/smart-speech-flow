@@ -30,6 +30,6 @@
 
 ## 5. Consistency Items from #347
 
-- [ ] 5.1 Record audio availability on the message when it is written; listing messages performs no filesystem stat per message (#347 §6).
-- [ ] 5.2 Compare the Studio tenant id in constant time, matching the adjacent authorization-revision check in studio_runtime_flow.py (#347 §6).
-- [ ] 5.3 Normalise tenant selector names (casefold, strip "_" and "-") instead of enumerating spellings in tenant_context.py (#347 §6).
+- [x] 5.1 Record audio availability on the message when it is written; listing messages performs no filesystem stat per message (#347 §6).
+- [x] 5.2 Compare the Studio tenant id in constant time, matching the adjacent authorization-revision check in studio_runtime_flow.py (#347 §6).
+- [x] 5.3 Normalise tenant selector names (casefold, strip "_" and "-") instead of enumerating spellings in tenant_context.py (#347 §6).
