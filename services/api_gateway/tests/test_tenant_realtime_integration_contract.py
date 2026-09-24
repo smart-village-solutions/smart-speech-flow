@@ -3,24 +3,23 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from services.api_gateway import websocket as websocket_module
 from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
+from services.api_gateway.dependencies import GatewayDependencies
 from services.api_gateway.session_manager import session_manager
 
 REVISION = f"sha256:{'a' * 64}"
 
 
 def test_admin_can_observe_only_its_session_realtime_connection(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, gateway_dependencies: GatewayDependencies
 ) -> None:
     """The supported admin API exposes connections only inside its tenant session."""
-    original_module_manager = websocket_module.websocket_manager
     original_session_manager = session_manager.websocket_manager
     with monkeypatch.context() as patcher:
-        patcher.setattr(websocket_module, "websocket_manager", None)
         patcher.setattr(session_manager, "websocket_manager", None)
         session_manager.reset(clear_persistence=True)
+        session_manager.register_websocket_manager(gateway_dependencies.websocket_manager)
         patcher.setitem(
             app.dependency_overrides,
             require_ssf_user,
@@ -65,5 +64,4 @@ def test_admin_can_observe_only_its_session_realtime_connection(
         finally:
             session_manager.reset(clear_persistence=True)
 
-    assert websocket_module.websocket_manager is original_module_manager
     assert session_manager.websocket_manager is original_session_manager

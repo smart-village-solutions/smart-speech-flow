@@ -13,6 +13,7 @@ from services.api_gateway.realtime_ticket import (
     RealtimeTicketStore,
 )
 from services.api_gateway.routes import admin, customer
+from services.api_gateway.session_manager import session_manager
 from services.api_gateway.studio_login_directory_client import DirectoryTransport
 from services.api_gateway.tenant_session import TenantSessionKey
 
@@ -29,10 +30,10 @@ async def test_lifespan_reports_a_background_task_failure_during_shutdown(
 ) -> None:
     """A completed task failure remains visible while shutdown continues."""
 
-    async def first_failure() -> None:
+    async def first_failure(*_collaborators: object) -> None:
         raise RuntimeError("first background task failed")
 
-    async def second_failure() -> None:
+    async def second_failure(*_collaborators: object) -> None:
         raise RuntimeError("second background task failed")
 
     monkeypatch.setenv("SSF_AUDIO_BASE_DIR", str(tmp_path))
@@ -196,7 +197,7 @@ async def test_admin_session_routes_return_not_found_after_session_disappears(
     key = TenantSessionKey("tenant-test", session_id)
 
     with pytest.raises(HTTPException) as caught:
-        await handler(session_id, key)
+        await handler(session_id, key, session_manager)
 
     assert caught.value.status_code == 404
     assert caught.value.detail == "Session not found"
@@ -209,7 +210,7 @@ async def test_customer_status_returns_not_found_after_session_disappears() -> N
     key = TenantSessionKey("tenant-test", session_id)
 
     with pytest.raises(HTTPException) as caught:
-        await customer.get_customer_session_status(session_id, key)
+        await customer.get_customer_session_status(session_id, key, session_manager)
 
     assert caught.value.status_code == 404
     assert caught.value.detail == "Session not found"
@@ -230,11 +231,11 @@ async def test_customer_activation_returns_not_found_after_session_disappears(
     monkeypatch.setattr(
         customer,
         "require_customer_session_key",
-        lambda _session_id, _principal: key,
+        lambda _session_id, _principal, _sessions: key,
     )
 
     with pytest.raises(HTTPException) as caught:
-        await customer.activate_session(activation, request, None)
+        await customer.activate_session(activation, request, None, session_manager, None)
 
     assert caught.value.status_code == 404
     assert caught.value.detail == "Session not found"

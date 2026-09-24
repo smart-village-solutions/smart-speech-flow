@@ -1,10 +1,13 @@
+from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
-from services.api_gateway.app import SERVICE_URLS, app
+from services.api_gateway.app import SERVICE_URLS
 from services.api_gateway.utils.health_utils import get_health_status_html
 
+router = APIRouter()
 
-@app.get("/", response_class=HTMLResponse)
+
+@router.get("/", response_class=HTMLResponse)
 def index():
     health_html = get_health_status_html(SERVICE_URLS)
     html = f"""

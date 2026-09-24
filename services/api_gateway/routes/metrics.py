@@ -1,26 +1,26 @@
+from typing import Annotated
+
+from fastapi import Depends
 from fastapi.responses import Response
-from prometheus_client import generate_latest
+from prometheus_client import CollectorRegistry, generate_latest
+
+from services.api_gateway.dependencies import get_connection_monitor, get_prometheus_registry
+from services.api_gateway.websocket_monitor import WebSocketMonitor
 
 TEXT_PLAIN_MEDIA_TYPE = "text/plain"
 
 
-def metrics():
+def metrics(
+    registry: Annotated[CollectorRegistry, Depends(get_prometheus_registry)],
+    monitor: Annotated[WebSocketMonitor, Depends(get_connection_monitor)],
+):
     """Kombinierte Prometheus-Metriken für Gateway und WebSocket-Monitoring"""
     try:
-        # Importiere zur Laufzeit um zirkuläre Imports zu vermeiden
-        from services.api_gateway.app import app
-
-        registry = app.state.prometheus_registry
-
         # Hole alle Metriken aus der Haupt-Registry
         main_metrics = generate_latest(registry)
 
         # Versuche WebSocket-Metriken hinzuzufügen wenn sie in separater Registry sind
         try:
-            from services.api_gateway.websocket_monitor import get_websocket_monitor
-
-            monitor = get_websocket_monitor()
-
             # Wenn WebSocket-Monitor separate Registry hat, füge sie hinzu
             if (
                 hasattr(monitor, "_registry")

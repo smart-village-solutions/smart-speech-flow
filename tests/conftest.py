@@ -20,6 +20,7 @@ from services.api_gateway.tenant_context import (
     StudioTenantContext,
     require_studio_tenant_context,
 )
+from tests.gateway_container import installed_gateway_dependencies
 
 REVISION = f"sha256:{'a' * 64}"
 
@@ -108,6 +109,18 @@ def pytest_configure(config):  # pragma: no cover - exercised via pytest hooks
         "markers",
         "real_system: mark test as requiring live ASR, Translation, and TTS services",
     )
+
+
+@pytest.fixture(autouse=True)
+def gateway_dependencies():
+    """A fresh dependency container on the shared app for every test.
+
+    Most suites drive `app` through TestClient without its lifespan, so its
+    routes find their collaborators here. A test that runs the lifespan gets
+    the container that lifespan builds instead.
+    """
+    with installed_gateway_dependencies(app) as dependencies:
+        yield dependencies
 
 
 @pytest.fixture(autouse=True)

@@ -92,9 +92,10 @@ class TestTheCounterSurvivesTheRegistryBoundary:
     """
 
     async def test_a_real_drop_reaches_the_metrics_endpoint(self):
-        import services.api_gateway.app  # noqa: F401  binds the gateway registry
+        from services.api_gateway.app import app
         from services.api_gateway.routes.metrics import metrics
         from services.api_gateway.websocket_fallback import fallback_manager
+        from services.api_gateway.websocket_monitor import get_websocket_monitor
 
         polling_id = await fallback_manager.activate_polling_fallback(
             "session-metrics", "customer", None, FallbackReason.NETWORK_ERROR
@@ -104,7 +105,8 @@ class TestTheCounterSurvivesTheRegistryBoundary:
                 fallback_manager.send_message_to_polling_client(
                     polling_id, {"type": "translation", "seq": index}
                 )
-            body = metrics().body.decode("utf-8")
+            registry = app.state.prometheus_registry
+            body = metrics(registry, get_websocket_monitor()).body.decode("utf-8")
         finally:
             fallback_manager.deactivate_polling_fallback(polling_id)
 

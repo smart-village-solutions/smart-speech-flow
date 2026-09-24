@@ -8,7 +8,7 @@ from fastapi import HTTPException, Request
 
 from services.api_gateway import app as app_module
 from services.api_gateway.routes import admin, customer
-from services.api_gateway.session_manager import SessionStatus
+from services.api_gateway.session_manager import SessionStatus, session_manager
 from services.api_gateway.tenant_context import StudioTenantContext
 from services.api_gateway.tenant_session import TenantSessionKey
 
@@ -30,14 +30,14 @@ async def test_admin_history_redacts_internal_exception_from_response(monkeypatc
         authorization_revision=f"sha256:{'a' * 64}",
     )
     monkeypatch.setattr(
-        admin.session_manager,
+        session_manager,
         "get_session_history",
         lambda **_kwargs: (_ for _ in ()).throw(SensitiveRouteError(exception_text)),
     )
 
     with caplog.at_level(logging.ERROR, logger=admin.logger.name):
         with pytest.raises(HTTPException) as raised:
-            await admin.get_session_history(context)
+            await admin.get_session_history(context, session_manager)
 
     assert raised.value.status_code == 500
     assert raised.value.detail == "Session history lookup failed"
@@ -58,10 +58,12 @@ def test_customer_exception_log_keeps_traceback_without_sensitive_message(monkey
         raise SensitiveRouteError(exception_text)
 
     monkeypatch.setattr(customer, "require_customer_session_key", lambda *_args: key)
-    monkeypatch.setattr(customer.session_manager, "get_session", fail_session_lookup)
+    monkeypatch.setattr(session_manager, "get_session", fail_session_lookup)
 
     with caplog.at_level(logging.ERROR, logger=customer.logger.name):
-        activation = customer.activate_session(request, _http_request(), None)
+        activation = customer.activate_session(
+            request, _http_request(), None, session_manager, None
+        )
         with pytest.raises(HTTPException) as raised:
             asyncio.run(activation)
 
@@ -83,19 +85,21 @@ def test_unsupported_customer_language_warning_omits_tainted_value(monkeypatch, 
     session = SimpleNamespace(status=SessionStatus.PENDING)
     key = TenantSessionKey("tenant-test", "session-id")
     monkeypatch.setattr(customer, "require_customer_session_key", lambda *_args: key)
-    monkeypatch.setattr(customer.session_manager, "get_session", lambda _session_id: session)
+    monkeypatch.setattr(session_manager, "get_session", lambda _session_id: session)
 
     async def activate_session(_session_id, _language):
         return None
 
-    monkeypatch.setattr(customer.session_manager, "activate_session", activate_session)
+    monkeypatch.setattr(session_manager, "activate_session", activate_session)
     request = customer.ActivateSessionRequest(
         session_id="session-id",
         customer_language=language,
     )
 
     with caplog.at_level(logging.WARNING, logger=customer.logger.name):
-        response = asyncio.run(customer.activate_session(request, _http_request(), None))
+        response = asyncio.run(
+            customer.activate_session(request, _http_request(), None, session_manager, None)
+        )
 
     assert response.customer_language == language
     warning_messages = [

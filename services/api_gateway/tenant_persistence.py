@@ -1,4 +1,4 @@
-"""Application-lifespan ownership of tenant session and ticket persistence."""
+"""Application-lifespan ownership of the tenant Redis connection."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ try:
 except ImportError:  # pragma: no cover - exercised only in stripped deployments
     Redis = None  # type: ignore[assignment]
 
-from .realtime_ticket import realtime_ticket_store
 from .session_manager import SessionManager, session_manager
 from .session_store import RedisTenantSessionStore, TenantSessionStore
 
@@ -32,20 +31,21 @@ def _reset_runtime(manager: SessionManager) -> None:
 
 @dataclass(slots=True)
 class TenantPersistenceBinding:
-    """Restore process-wide development backends after a lifespan exits."""
+    """The verified connection the app's ticket store is built on.
+
+    Restoring the session manager's previous store on close is the session
+    adapter's swap, which PR4 removes with the module-level manager.
+    """
 
     redis: Any
+    namespace: str
     manager: SessionManager
     previous_store: TenantSessionStore | None
-    previous_ticket_backend: Any
-    previous_ticket_namespace: str
 
     def close(self) -> None:
         self.manager.store = self.previous_store
         self.manager.tenant_mode = self.previous_store is not None
         _reset_runtime(self.manager)
-        realtime_ticket_store.redis = self.previous_ticket_backend
-        realtime_ticket_store.namespace = self.previous_ticket_namespace
         close = getattr(self.redis, "close", None)
         if callable(close):
             close()
@@ -59,7 +59,7 @@ def _redis_namespace() -> str:
 
 
 def configure_tenant_persistence() -> TenantPersistenceBinding | None:
-    """Bind both v2 stores to one verified Redis connection.
+    """Verify the one Redis connection the v2 session and ticket stores share.
 
     Local processes without a configured Redis URL retain the explicit memory
     implementations. A production process must configure Redis, and any
@@ -90,16 +90,13 @@ def configure_tenant_persistence() -> TenantPersistenceBinding | None:
 
     binding = TenantPersistenceBinding(
         redis=redis,
+        namespace=namespace,
         manager=session_manager,
         previous_store=session_manager.store,
-        previous_ticket_backend=realtime_ticket_store.redis,
-        previous_ticket_namespace=realtime_ticket_store.namespace,
     )
     session_manager.store = RedisTenantSessionStore(redis, namespace=namespace)
     session_manager.tenant_mode = True
     _reset_runtime(session_manager)
-    realtime_ticket_store.redis = redis
-    realtime_ticket_store.namespace = namespace
     session_manager.rehydrate_tenant_sessions()
     logger.info("tenant_redis_persistence_ready")
     return binding

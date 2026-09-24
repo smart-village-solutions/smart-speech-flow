@@ -158,9 +158,7 @@ def test_tenant_active_lookup_rejects_ambiguity_and_excludes_other_tenants():
     assert manager.get_active_session(tenant_id="tenant-a") is None
 
 
-async def test_unknown_expired_polling_client_does_not_prevent_customer_disconnect(
-    monkeypatch,
-):
+async def test_unknown_expired_polling_client_does_not_prevent_customer_disconnect():
     store = MemoryTenantSessionStore()
     manager = SessionManager(store=store, clock=lambda: NOW)
     session = make_session("tenant-a", "SESSION1")
@@ -171,7 +169,7 @@ async def test_unknown_expired_polling_client_does_not_prevent_customer_disconne
     polling = TenantPollingStore(clock=lambda: tick)
     polling.activate(TenantSessionKey("tenant-a", "MISSING1"), ClientType.ADMIN)
     polling.activate(session.key, ClientType.CUSTOMER)
-    monkeypatch.setattr("services.api_gateway.websocket_polling_routes.polling_store", polling)
+    manager.attach_realtime(None, polling)
     tick = 1000.0
 
     await manager.check_session_timeouts()

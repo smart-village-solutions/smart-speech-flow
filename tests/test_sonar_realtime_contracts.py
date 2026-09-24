@@ -23,13 +23,11 @@ from services.api_gateway.websocket_monitor import WebSocketMonitor
 @pytest.fixture
 def polling_client():
     session_routes.session_manager.reset(clear_persistence=True)
-    polling.polling_store.clients.clear()
     yield TestClient(app)
-    polling.polling_store.clients.clear()
 
 
 @pytest.mark.parametrize("role", ["admin", "customer"])
-def test_polling_timeout_openapi_and_request_contract(polling_client, role):
+def test_polling_timeout_openapi_and_request_contract(polling_client, gateway_dependencies, role):
     path = f"/api/{role}/session/{{session_id}}/polling/{{polling_id}}"
     query = [
         parameter
@@ -54,8 +52,8 @@ def test_polling_timeout_openapi_and_request_contract(polling_client, role):
     polling_id = activated.json()["polling_id"]
     path = f"{base}/{polling_id}"
     for query in ("", "?timeout=0", "?timeout=60"):
-        stored = polling.polling_store.clients[polling_id]
-        polling.polling_store.broadcast(stored.key, {"type": "heartbeat"})
+        stored = gateway_dependencies.polling_store.clients[polling_id]
+        gateway_dependencies.polling_store.broadcast(stored.key, {"type": "heartbeat"})
         response = polling_client.get(path + query)
         assert response.status_code == 200
         assert response.json() == {
@@ -164,7 +162,6 @@ async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch
     sessions.customer_connected(expired_key)
     now[0] = 121.0
     live_client = store.activate(live_key, ClientType.ADMIN)
-    monkeypatch.setattr(polling, "polling_store", store)
     manager = websocket.WebSocketManager(sessions)
     loop = asyncio.get_running_loop()
     release_admin = sessions.admin_disconnected
@@ -182,6 +179,7 @@ async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch
             key=live_key,
             wait_seconds=60,
             manager=manager,
+            polling_store=store,
         )
     )
     with pytest.raises(asyncio.CancelledError):
@@ -198,18 +196,18 @@ async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch
 
 
 @pytest.fixture
-def polling_http_state(monkeypatch):
+def polling_http_state():
     store = polling.TenantPollingStore()
     sessions = SessionManager()
     key = polling.TenantSessionKey("tenant-a", "SESSION1")
     sessions.sessions[key] = Session(id=key.session_id, tenant_id=key.tenant_id)
     manager = websocket.WebSocketManager(sessions)
-    monkeypatch.setattr(polling, "polling_store", store)
     endpoint_app = FastAPI()
     endpoint_app.include_router(polling.router)
     endpoint_app.dependency_overrides[polling.require_admin_session_key] = lambda: key
     endpoint_app.dependency_overrides[polling.require_customer_session_key] = lambda: key
     endpoint_app.dependency_overrides[polling.get_websocket_manager] = lambda: manager
+    endpoint_app.dependency_overrides[polling.get_polling_store] = lambda: store
     return SimpleNamespace(store=store, sessions=sessions, key=key, app=endpoint_app)
 
 
@@ -332,7 +330,7 @@ async def test_terminated_polling_client_cannot_send_recover_or_read_status():
     manager = websocket.WebSocketManager(SessionManager())
     message = polling.PollingMessage(type="message", content={"text": "private"})
     with pytest.raises(HTTPException) as sent:
-        await polling._send(client, message, manager)
+        await polling._send(polling.TenantPollingStore(), client, message, manager)
     assert (sent.value.status_code, sent.value.detail) == (
         404,
         "Polling client not found",
@@ -347,13 +345,12 @@ async def test_terminated_polling_client_cannot_send_recover_or_read_status():
     assert not client.messages
 
 
-def test_customer_polling_principal_cannot_cross_tenants(monkeypatch):
+def test_customer_polling_principal_cannot_cross_tenants():
     store = polling.TenantPollingStore()
     client = store.activate(polling.TenantSessionKey("tenant-a", "SESSION1"), ClientType.CUSTOMER)
-    monkeypatch.setattr(polling, "polling_store", store)
     with pytest.raises(HTTPException) as unauthorized:
         polling.require_customer_polling_key(
-            "SESSION1", client.polling_id, {"studio_tenant_id": "tenant-b"}
+            "SESSION1", client.polling_id, {"studio_tenant_id": "tenant-b"}, store
         )
     assert unauthorized.value.status_code == 404
     assert unauthorized.value.detail == "Polling client not found"

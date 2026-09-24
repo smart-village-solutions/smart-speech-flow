@@ -143,7 +143,7 @@ def test_monitoring_health_and_summary_reflect_monitor_state(monkeypatch):
     monitor.get_connection_stats.return_value = {"active_connections": 2}
     monkeypatch.setattr(monitoring_routes, "get_websocket_monitor", lambda: monitor)
 
-    health = monitoring_routes.websocket_health_check()
+    health = monitoring_routes.websocket_health_check(monitor)
     summary = monitoring_routes.websocket_metrics_summary(hours=4)
 
     assert health.status_code == 503

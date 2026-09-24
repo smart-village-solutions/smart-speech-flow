@@ -161,7 +161,7 @@ async def test_a_retained_message_stops_advertising_removed_original_audio(
     markers with no existence check, so a retained message whose original audio
     was refused would hand a listener a URL whose file is gone.
     """
-    from services.api_gateway.conversation_service import conversation_service
+    from services.api_gateway.conversation_service import ConversationService
 
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     message = _message("m1", record=True, original=False, translated=True)
@@ -176,12 +176,11 @@ async def test_a_retained_message_stops_advertising_removed_original_audio(
     retained = manager.get_session(session.key).messages[0]
     assert retained.original_audio_url is None
 
-    monkeypatch.setattr("services.api_gateway.conversation_service.session_manager", manager)
     monkeypatch.setattr(
         "services.api_gateway.conversation_service.audio_path",
         lambda key, mid, variant: audio_path(key, mid, variant, base_dir=audio_dir),
     )
-    items = conversation_service.messages(session.key, ClientType.ADMIN)
+    items = ConversationService(manager).messages(session.key, ClientType.ADMIN)
     assert "original_audio_url" not in items[0]
 
 
@@ -231,7 +230,7 @@ async def test_refused_translated_audio_leaves_no_url_in_pipeline_metadata(
     `steps[*].output`, so clearing `translated_audio_available` alone still
     emits a URL for a file `_delete_settled_audio` just unlinked.
     """
-    from services.api_gateway.conversation_service import conversation_service
+    from services.api_gateway.conversation_service import ConversationService
 
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     message = _message("m1", record=True, original=True, translated=False)
@@ -244,12 +243,11 @@ async def test_refused_translated_audio_leaves_no_url_in_pipeline_metadata(
 
     await manager.terminate_session(session.key, reason="test")
 
-    monkeypatch.setattr("services.api_gateway.conversation_service.session_manager", manager)
     monkeypatch.setattr(
         "services.api_gateway.conversation_service.audio_path",
         lambda key, mid, variant: audio_path(key, mid, variant, base_dir=audio_dir),
     )
-    item = conversation_service.messages(session.key, ClientType.ADMIN)[0]
+    item = ConversationService(manager).messages(session.key, ClientType.ADMIN)[0]
     emitted = repr(item.get("pipeline_metadata"))
     assert "audio_url" not in emitted
     assert "translated.wav" not in emitted

@@ -17,19 +17,23 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Annotated, Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Optional, Set
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect
 
 from .client_origin import configured_client_origin
+from .dependencies import get_realtime_ticket_store, get_websocket_manager
 from .log_safety import sanitize_log_value
-from .realtime_ticket import RealtimeTicketUnavailable, realtime_ticket_store
+from .realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from .session_access import require_customer_session_key
 from .session_manager import ClientType, SessionManager, SessionStatus
 from .tenant_session import TenantSessionKey
 from .websocket_fallback import FallbackReason, fallback_manager
 from .websocket_monitor import DisconnectReason, get_websocket_monitor
+
+if TYPE_CHECKING:
+    from .websocket_polling_routes import TenantPollingStore
 
 # === Logging Setup ===
 logger = logging.getLogger(__name__)
@@ -331,9 +335,15 @@ class WebSocketManager:
     Erweiterte WebSocket-Verwaltung mit Session-basierter Organisation
     """
 
-    def __init__(self, session_manager: SessionManager):
+    def __init__(
+        self,
+        session_manager: SessionManager,
+        polling_store: Optional["TenantPollingStore"] = None,
+    ):
         self.session_manager = session_manager
         self.session_manager.register_websocket_manager(self)
+        # Tenant broadcasts also reach this app's HTTP pollers.
+        self.polling_store = polling_store
 
         # Session-basierte Connection-Pools
         self.session_connections: Dict[Any, Dict[str, WebSocketConnection]] = {}
@@ -620,12 +630,12 @@ class WebSocketManager:
         """
         Nachricht an alle Clients einer Session broadcasten
         """
-        if include_polling and isinstance(session_id, TenantSessionKey):
-            # Import lazily to avoid the polling router importing this manager
-            # during application startup.
-            from .websocket_polling_routes import polling_store
-
-            polling_store.broadcast(session_id, message)
+        if (
+            include_polling
+            and isinstance(session_id, TenantSessionKey)
+            and self.polling_store is not None
+        ):
+            self.polling_store.broadcast(session_id, message)
 
         if session_id not in self.session_connections:
             return
@@ -713,10 +723,8 @@ class WebSocketManager:
         polling_delivered = 0
         polling_dropped = 0
 
-        if isinstance(session_id, TenantSessionKey):
-            from .websocket_polling_routes import polling_store
-
-            polling_delivered, polling_dropped = polling_store.broadcast_differentiated(
+        if isinstance(session_id, TenantSessionKey) and self.polling_store is not None:
+            polling_delivered, polling_dropped = self.polling_store.broadcast_differentiated(
                 session_id,
                 sender_type,
                 original_message,
@@ -1572,22 +1580,6 @@ WEBSOCKET_ROUTE_RESPONSES = {
     404: {"description": "Requested WebSocket resource not found"},
 }
 
-# Globale WebSocket-Manager-Instanz
-websocket_manager: Optional[WebSocketManager] = None
-
-
-def get_websocket_manager() -> WebSocketManager:
-    """
-    WebSocket-Manager-Instanz abrufen (Dependency Injection)
-    """
-    global websocket_manager
-    if websocket_manager is None:
-        from .session_manager import session_manager
-
-        websocket_manager = WebSocketManager(session_manager)
-    return websocket_manager
-
-
 WebSocketManagerDependency = Annotated[
     WebSocketManager,
     Depends(get_websocket_manager),
@@ -1600,10 +1592,11 @@ async def admin_websocket_endpoint(
     session_id: str,
     ticket: str,
     manager: WebSocketManagerDependency,
+    tickets: Annotated[RealtimeTicketStore, Depends(get_realtime_ticket_store)],
     origin: Annotated[Optional[str], Header()] = None,
 ):
     try:
-        key = realtime_ticket_store.consume_key(ticket, session_id, "websocket")
+        key = tickets.consume_key(ticket, session_id, "websocket")
     except RealtimeTicketUnavailable:
         await websocket.close(code=1013, reason="Realtime service unavailable")
         return

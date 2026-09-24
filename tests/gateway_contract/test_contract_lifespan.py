@@ -1,4 +1,4 @@
-"""What the lifespan wires onto app.state, and what it releases on shutdown."""
+"""What the lifespan wires into the app's dependency container, and what it releases on shutdown."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ def test_startup_wires_the_request_collaborators(
     local_environment.setenv("SSF_QUALITY_TELEMETRY_MODE", telemetry_mode)
 
     with client:
-        state = gateway.state
+        state = gateway.state.dependencies
         assert state.pipeline_admission is not None
         assert state.quality_telemetry is not None
         assert state.quality_telemetry.mode.value == telemetry_mode
@@ -56,18 +56,19 @@ def test_shutdown_releases_what_startup_acquired(
     local_environment.setenv("SSF_QUALITY_TELEMETRY_MODE", telemetry_mode)
 
     with client:
-        pass
+        state = gateway.state.dependencies
 
+    assert gateway.state.dependencies is None
     for name in RELEASED_ON_SHUTDOWN:
-        assert getattr(gateway.state, name) is None, name
+        assert getattr(state, name) is None, name
 
 
 @pytest.mark.usefixtures("local_environment")
 def test_a_second_lifespan_wires_a_fresh_admission_gate(client, gateway):
     with client:
-        first = gateway.state.pipeline_admission
+        first = gateway.state.dependencies.pipeline_admission
     with client:
-        second = gateway.state.pipeline_admission
+        second = gateway.state.dependencies.pipeline_admission
 
     assert first is not None
     assert second is not None

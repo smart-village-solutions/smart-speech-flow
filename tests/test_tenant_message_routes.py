@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.audio_storage import AudioVariant, scope_pipeline_audio_urls
-from services.api_gateway.conversation_service import conversation_service
 from services.api_gateway.routes.session import (
     broadcast_message_to_session,
     transform_pipeline_metadata,
@@ -47,6 +46,7 @@ def client() -> TestClient:
 )
 def test_message_route_uses_server_assigned_role(
     client: TestClient,
+    gateway_dependencies,
     monkeypatch: pytest.MonkeyPatch,
     prefix: str,
     spoofed_role: str,
@@ -54,7 +54,7 @@ def test_message_route_uses_server_assigned_role(
 ) -> None:
     session_id = client.post("/api/admin/session/create").json()["session_id"]
     process = AsyncMock(return_value={"status": "success"})
-    monkeypatch.setattr(conversation_service, "process", process)
+    monkeypatch.setattr(gateway_dependencies.conversation_service, "process", process)
 
     response = client.post(
         f"/api/{prefix}/session/{session_id}/message",

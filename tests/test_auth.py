@@ -11,6 +11,7 @@ from jwt.algorithms import RSAAlgorithm
 
 from services.api_gateway.app import app
 from services.api_gateway.auth import _key_cache, get_auth_login_directory_provider
+from services.api_gateway.dependencies import get_oidc_key_cache
 from services.api_gateway.studio_login_directory import StudioLoginDirectoryService
 from services.api_gateway.studio_login_directory_client import (
     StudioLoginDirectory,
@@ -285,6 +286,7 @@ def test_tenant_dependency_receives_verified_claims_from_async_auth(
     tenant_app.dependency_overrides[get_auth_login_directory_provider] = (
         lambda: lambda: auth_environment
     )
+    tenant_app.dependency_overrides[get_oidc_key_cache] = lambda: _key_cache
 
     @tenant_app.get("/tenant")
     async def tenant(

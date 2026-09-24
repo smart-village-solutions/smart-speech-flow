@@ -50,12 +50,8 @@ def _configuration(tenant_id: str) -> RuntimeConfiguration:
 
 
 @pytest.fixture
-def manager(monkeypatch: pytest.MonkeyPatch) -> SessionManager:
-    manager = SessionManager(store=MemoryTenantSessionStore())
-    import services.api_gateway.session_access as access_module
-
-    monkeypatch.setattr(access_module, "session_manager", manager)
-    return manager
+def manager() -> SessionManager:
+    return SessionManager(store=MemoryTenantSessionStore())
 
 
 @pytest.mark.asyncio
@@ -74,6 +70,7 @@ async def test_admin_access_uses_only_the_authenticated_tenant(
         require_admin_session_key(
             session.id,
             context,
+            manager,
         )
 
     assert caught.value.status_code == 404
@@ -91,7 +88,7 @@ async def test_customer_capability_allows_an_anonymous_request(
         RuntimeConfigurationSnapshot.from_configuration(_configuration("tenant-a")),
     )
 
-    assert require_customer_session_key(session.id, None) == session.key
+    assert require_customer_session_key(session.id, None, manager) == session.key
 
 
 @pytest.mark.asyncio
@@ -112,6 +109,7 @@ async def test_customer_bearer_must_match_capability_tenant(
                 "studio_tenant_id": "tenant-a",
                 "ssf_authorization_revision": REVISION,
             },
+            manager,
         )
 
     assert caught.value.status_code == 404
@@ -125,7 +123,7 @@ async def test_unknown_customer_capability_has_the_same_neutral_response(
     from services.api_gateway.session_access import require_customer_session_key
 
     with pytest.raises(HTTPException) as caught:
-        require_customer_session_key("UNKNOWN1", None)
+        require_customer_session_key("UNKNOWN1", None, manager)
 
     assert caught.value.status_code == 404
     assert caught.value.detail == "Session not found"

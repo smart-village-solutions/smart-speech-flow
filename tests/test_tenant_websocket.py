@@ -95,14 +95,12 @@ def test_admin_websocket_rejects_invalid_ticket_before_accept() -> None:
 
 
 @pytest.fixture
-def customer_websocket_client():
-    from services.api_gateway import websocket as websocket_module
+def customer_websocket_client(gateway_dependencies):
     from services.api_gateway.session_manager import session_manager
 
     original_overrides = app.dependency_overrides.copy()
-    original_websocket_manager = websocket_module.websocket_manager
     session_manager.reset(clear_persistence=True)
-    websocket_module.websocket_manager = None
+    session_manager.register_websocket_manager(gateway_dependencies.websocket_manager)
     client = TestClient(app)
     try:
         created = client.post("/api/admin/session/create")
@@ -112,10 +110,8 @@ def customer_websocket_client():
         client.close()
         app.dependency_overrides.clear()
         app.dependency_overrides.update(original_overrides)
-        websocket_module.websocket_manager = original_websocket_manager
         session_manager.reset(clear_persistence=True)
-        if original_websocket_manager is not None:
-            session_manager.register_websocket_manager(original_websocket_manager)
+        session_manager.register_websocket_manager(gateway_dependencies.websocket_manager)
 
 
 def test_customer_websocket_rejects_a_cross_tenant_supplied_bearer_before_accept(
@@ -256,16 +252,13 @@ async def test_inbound_message_is_not_dispatched_after_termination_starts() -> N
 
 
 @pytest.mark.asyncio
-async def test_polling_overflow_reports_current_delivery_and_historical_eviction(
-    monkeypatch,
-) -> None:
+async def test_polling_overflow_reports_current_delivery_and_historical_eviction() -> None:
     key = TenantSessionKey("tenant-a", "SESSION1")
     store = TenantPollingStore()
     receiver = store.activate(key, ClientType.CUSTOMER)
     for index in range(POLLING_QUEUE_SIZE):
         receiver.messages.append({"type": "old", "index": index})
-    monkeypatch.setattr("services.api_gateway.websocket_polling_routes.polling_store", store)
-    sockets = WebSocketManager(_PresenceManager())
+    sockets = WebSocketManager(_PresenceManager(), store)
 
     result = await sockets.broadcast_with_differentiated_content(
         key,
@@ -307,11 +300,7 @@ async def test_termination_cleans_only_the_addressed_tenant() -> None:
 
 
 @pytest.mark.asyncio
-async def test_admin_connection_listing_is_filtered_by_token_tenant(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "services.api_gateway.websocket_polling_routes.polling_store",
-        TenantPollingStore(),
-    )
+async def test_admin_connection_listing_is_filtered_by_token_tenant() -> None:
     session_manager = _PresenceManager()
     socket_manager = WebSocketManager(session_manager)
     socket_manager.start_heartbeat_system = AsyncMock()
@@ -323,7 +312,7 @@ async def test_admin_connection_listing_is_filtered_by_token_tenant(monkeypatch)
     )
 
     response = await list_tenant_realtime_connections(
-        StudioTenantContext("tenant-a", REVISION), socket_manager
+        StudioTenantContext("tenant-a", REVISION), socket_manager, TenantPollingStore()
     )
 
     assert response["count"] == 1

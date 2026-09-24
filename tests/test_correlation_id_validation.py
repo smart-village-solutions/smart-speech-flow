@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.consent import ConsentStatus
+from services.api_gateway.dependencies import get_studio_runtime_flow
 from services.api_gateway.session_manager import session_manager
 from tests.runtime_policy_helpers import configuration
 
@@ -33,10 +34,7 @@ class _FakeStudio:
 @pytest.fixture
 def studio(monkeypatch: pytest.MonkeyPatch) -> _FakeStudio:
     fake = _FakeStudio()
-    monkeypatch.setattr(
-        "services.api_gateway.routes.customer.runtime_flow_from_environment",
-        lambda: fake,
-    )
+    monkeypatch.setitem(app.dependency_overrides, get_studio_runtime_flow, lambda: fake)
     return fake
 
 

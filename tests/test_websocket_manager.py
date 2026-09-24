@@ -257,19 +257,21 @@ class TestWebSocketManager:
         assert connection.last_heartbeat > old_heartbeat
         assert connection.state == ConnectionState.CONNECTED
 
-    async def test_websocket_manager_singleton_behavior(self):
-        """Test: WebSocketManager Singleton-Verhalten via Dependency Injection"""
-        from services.api_gateway.session_manager import SessionManager
+    async def test_websocket_manager_singleton_behavior(self, gateway_dependencies):
+        """Test: one WebSocketManager per app, shared by every request via Dependency Injection"""
+        from types import SimpleNamespace
+
         from services.api_gateway.websocket import get_websocket_manager
         from services.api_gateway.websocket_monitor import initialize_websocket_monitor
 
         # Monitor initialisieren (wird von connect_websocket benötigt)
         initialize_websocket_monitor()
 
-        # Mehrere Aufrufe sollten dieselbe Instanz zurückgeben
-        manager1 = get_websocket_manager()
-        manager2 = get_websocket_manager()
-        manager3 = get_websocket_manager()
+        # Mehrere Requests derselben App sollten dieselbe Instanz erhalten
+        app = SimpleNamespace(state=SimpleNamespace(dependencies=gateway_dependencies))
+        manager1 = get_websocket_manager(SimpleNamespace(app=app))
+        manager2 = get_websocket_manager(SimpleNamespace(app=app))
+        manager3 = get_websocket_manager(SimpleNamespace(app=app))
 
         # Assertions: Alle Referenzen zeigen auf dieselbe Instanz
         assert manager1 is manager2

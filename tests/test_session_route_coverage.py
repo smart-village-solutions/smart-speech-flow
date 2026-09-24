@@ -93,20 +93,15 @@ def test_openapi_omits_generic_session_management_routes() -> None:
 @pytest.mark.asyncio
 async def test_customer_activation_uses_the_resolved_capability_key(
     manager: SessionManager,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    import services.api_gateway.session_access as session_access
-
-    monkeypatch.setattr(customer, "session_manager", manager)
-    monkeypatch.setattr(session_access, "session_manager", manager)
     request = customer.ActivateSessionRequest(
         session_id=session.id,
         customer_language="ar",
     )
 
-    activation = await customer.activate_session(request, _http_request(), None)
-    status = await customer.get_customer_session_status(session.id, session.key)
+    activation = await customer.activate_session(request, _http_request(), None, manager, None)
+    status = await customer.get_customer_session_status(session.id, session.key, manager)
 
     assert activation.status == "active"
     assert activation.customer_language == "ar"

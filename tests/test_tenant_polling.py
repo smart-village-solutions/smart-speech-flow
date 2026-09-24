@@ -1,13 +1,18 @@
 """Role and session binding for the polling fallback."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.session_manager import session_manager
-from services.api_gateway.websocket_polling_routes import polling_store
 
 
-def test_polling_id_is_bound_to_its_server_assigned_role_and_session() -> None:
+@pytest.fixture
+def polling_store(gateway_dependencies):
+    return gateway_dependencies.polling_store
+
+
+def test_polling_id_is_bound_to_its_server_assigned_role_and_session(polling_store) -> None:
     session_manager.reset(clear_persistence=True)
     polling_store.clients.clear()
     client = TestClient(app)
@@ -29,7 +34,7 @@ def test_polling_id_is_bound_to_its_server_assigned_role_and_session() -> None:
     assert wrong_session.status_code == 404
 
 
-def test_customer_polling_activation_resolves_public_capability() -> None:
+def test_customer_polling_activation_resolves_public_capability(polling_store) -> None:
     session_manager.reset(clear_persistence=True)
     polling_store.clients.clear()
     client = TestClient(app)
@@ -53,7 +58,7 @@ def test_generic_client_controlled_polling_routes_are_absent() -> None:
     assert "/api/customer/session/{session_id}/polling/activate" in paths
 
 
-def test_ticket_issued_before_termination_cannot_activate_polling() -> None:
+def test_ticket_issued_before_termination_cannot_activate_polling(polling_store) -> None:
     session_manager.reset(clear_persistence=True)
     polling_store.clients.clear()
     client = TestClient(app)
@@ -73,7 +78,7 @@ def test_ticket_issued_before_termination_cannot_activate_polling() -> None:
     assert activation.status_code == 404
 
 
-def test_existing_customer_poll_receives_termination_then_is_removed() -> None:
+def test_existing_customer_poll_receives_termination_then_is_removed(polling_store) -> None:
     session_manager.reset(clear_persistence=True)
     polling_store.clients.clear()
     client = TestClient(app)
@@ -90,7 +95,7 @@ def test_existing_customer_poll_receives_termination_then_is_removed() -> None:
 
 
 def test_stale_admin_poll_request_releases_presence_before_refresh(
-    monkeypatch,
+    monkeypatch, polling_store
 ) -> None:
     """An abandoned polling client cannot revive itself after the idle deadline."""
     now = [0.0]
