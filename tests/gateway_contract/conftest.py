@@ -280,40 +280,107 @@ class _SpeechResponse:
     def json(self) -> dict[str, Any]:
         return self._payload
 
+    def raise_for_status(self) -> None:
+        import requests
+
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"{self.status_code} from upstream", response=self)
+
+
+_SERVICE_BY_PATH = {
+    "/transcribe": "asr",
+    "/translate": "translation",
+    "/synthesize": "tts",
+    "/generate": "refinement",
+}
+
 
 class SpeechServices:
-    """The ASR, translation and TTS services, answered at their HTTP boundary."""
+    """The ASR, translation, TTS and refinement services, answered at their HTTP boundary."""
 
     def __init__(self) -> None:
         self.calls: list[str] = []
-        self.failures: dict[str, _SpeechResponse] = {}
+        self.requests: list[tuple[str, dict[str, Any]]] = []
+        self.failures: dict[str, _SpeechResponse | Exception] = {}
+        self.refined_text = "Good day, refined"
+        self.tts_text: str | None = None
 
     def fail(self, service: str, status_code: int, headers: dict[str, str] | None = None) -> None:
         self.failures[service] = _SpeechResponse(
             status_code, payload={"detail": f"{service} failed"}, headers=headers
         )
 
-    def post(self, url: str, **_kwargs: Any) -> _SpeechResponse:
-        service = {"/transcribe": "asr", "/translate": "translation", "/synthesize": "tts"}[
-            "/" + url.rsplit("/", 1)[-1]
-        ]
+    def raise_on(self, service: str, error: Exception) -> None:
+        """The transport itself fails, as a refused connection or a timeout does."""
+        self.failures[service] = error
+
+    def answer_tts_without_audio(self) -> None:
+        """TTS answers 200 with a JSON error body, as it does when synthesis fails."""
+        self.failures["tts"] = _SpeechResponse(200, payload={"error": "synthesis failed"})
+
+    def recover(self, service: str) -> None:
+        self.failures.pop(service, None)
+
+    def sent_to(self, service: str) -> list[dict[str, Any]]:
+        return [options for name, options in self.requests if name == service]
+
+    def post(self, url: str, **options: Any) -> _SpeechResponse:
+        service = _SERVICE_BY_PATH["/" + url.rsplit("/", 1)[-1]]
         self.calls.append(service)
-        if service in self.failures:
-            return self.failures[service]
+        self.requests.append((service, options))
+        failure = self.failures.get(service)
+        if isinstance(failure, Exception):
+            raise failure
+        if failure is not None:
+            return failure
         if service == "asr":
             return _SpeechResponse(200, payload={"text": "Guten Tag", "debug": {"model": "asr"}})
         if service == "translation":
-            return _SpeechResponse(200, payload={"translations": "Good day"})
+            payload = {"translations": "Good day"}
+            if self.tts_text is not None:
+                payload["tts_text"] = self.tts_text
+            return _SpeechResponse(200, payload=payload)
+        if service == "refinement":
+            return _SpeechResponse(200, payload={"response": self.refined_text})
         return _SpeechResponse(200, content=wav_bytes(0.2), headers={"content-type": "audio/wav"})
 
 
 @pytest.fixture
 def speech_services(monkeypatch) -> SpeechServices:
+    """The speech services at their HTTP boundary.
+
+    Each test's container has its own circuit breakers, so they start closed.
+    """
     import requests
 
     services = SpeechServices()
     monkeypatch.setattr(requests, "post", services.post)
     return services
+
+
+REFINER_ENDPOINT = "http://refiner.contract:11434"
+REFINER_MODEL = "contract-refiner"
+REFINER_SKIPPED_TARGET = "fa"
+
+
+@pytest.fixture
+def refinement(
+    speech_services: SpeechServices, gateway_dependencies: GatewayDependencies
+) -> SpeechServices:
+    """An active Ollama refiner, answered at its HTTP boundary by `speech_services`."""
+    from services.api_gateway.translation_refiner import OllamaTranslationRefiner
+
+    refiner = OllamaTranslationRefiner(
+        REFINER_ENDPOINT,
+        REFINER_MODEL,
+        timeout_seconds=4.0,
+        temperature=0.0,
+        max_retries=1,
+        skip_target_languages=[REFINER_SKIPPED_TARGET],
+    )
+    # The conversation service and the pipeline routes hold this one object.
+    gateway_dependencies.speech_pipeline.refiner = refiner
+    return speech_services
 
 
 class Conversations:

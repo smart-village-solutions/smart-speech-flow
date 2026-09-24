@@ -199,10 +199,6 @@ class RefinementOutcome:
     skipped_reason: Optional[str] = None
 
 
-# Adapter until PR5 (#228), with the refiner that owns it.
-_CANDIDATE_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="refinement-shadow")
-
-
 class BaseTranslationRefiner:
     """Base class for optional translation refinement."""
 
@@ -226,6 +222,9 @@ class BaseTranslationRefiner:
 
     def attach_refinement_metrics(self, metrics: Optional[Any]) -> None:
         self.refinement_metrics = metrics
+
+    def shutdown(self) -> None:
+        """Release what the refiner runs on. Called once, by its app's lifespan."""
 
     def _emit_attempt(
         self,
@@ -577,6 +576,13 @@ class ShadowComparisonRefiner(OllamaTranslationRefiner):
         self.queue_limit = max(1, queue_limit)
         self.pending = 0
         self.lock = Lock()
+        # One worker per refiner, so a candidate never runs on another app's thread.
+        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="refinement-shadow")
+
+    def shutdown(self) -> None:
+        # Not waiting: a candidate in flight finishes on its own and emits nothing,
+        # because the lifespan has already detached telemetry and metrics.
+        self.executor.shutdown(wait=False)
 
     @staticmethod
     def _requested_languages(args: Any, kwargs: Any) -> tuple[str, str]:
@@ -655,7 +661,7 @@ class ShadowComparisonRefiner(OllamaTranslationRefiner):
             self.pending += 1
         outcome.candidate_status = "scheduled"
         try:
-            _CANDIDATE_EXECUTOR.submit(self._run_candidate, *args, **kwargs)
+            self.executor.submit(self._run_candidate, *args, **kwargs)
         except RuntimeError:
             with self.lock:
                 self.pending -= 1
@@ -741,10 +747,10 @@ def get_translation_refiner() -> BaseTranslationRefiner:
 def describe_refinement(refiner: BaseTranslationRefiner) -> str:
     """One line naming the live refinement configuration, for the startup banner.
 
-    `get_translation_refiner` logs the same facts, but it runs at import --
-    before the gateway configures logging -- so that line never reaches
-    production logs. Without this, the only way to tell which backend is
-    serving refinement is to read a Prometheus label.
+    `get_translation_refiner` logs the same facts through `logging`, which the
+    process does not always route anywhere. This line goes to stderr with the
+    rest of the startup banner. Without it, the only reliable way to tell which
+    backend is serving refinement is to read a Prometheus label.
     """
     if not refiner.is_active:
         return "Refinement disabled"
@@ -757,9 +763,6 @@ def describe_refinement(refiner: BaseTranslationRefiner) -> str:
     )
 
 
-# Adapter until PR5 (#228): the container refers to this instance.
-translation_refiner: BaseTranslationRefiner = get_translation_refiner()
-
 __all__ = [
     "RefinementOutcome",
     "BaseTranslationRefiner",
@@ -769,5 +772,4 @@ __all__ = [
     "ShadowComparisonRefiner",
     "get_translation_refiner",
     "describe_refinement",
-    "translation_refiner",
 ]

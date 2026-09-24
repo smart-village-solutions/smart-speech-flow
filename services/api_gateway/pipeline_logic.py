@@ -1,7 +1,6 @@
 import audioop
 import io
 import logging
-import os
 import re
 import time
 import unicodedata
@@ -14,7 +13,6 @@ import numpy as np
 import psutil
 import requests
 
-from .ai_service_client import call_ai_service
 from .circuit_breaker import CircuitBreakerOpenError
 from .quality_telemetry import (
     PipelineStage,
@@ -22,45 +20,10 @@ from .quality_telemetry import (
     classify_exception,
     classify_upstream_status,
 )
-from .translation_refiner import RefinementOutcome, translation_refiner
-
-# Import service URLs from app.py (respects DOCKER_COMPOSE env var)
-# Define defaults here for backwards compatibility, but prefer importing from app
-DOCKER_ENV = os.environ.get("DOCKER_COMPOSE", "1") == "1"
-DEFAULT_INTERNAL_SCHEME = os.environ.get("SERVICE_SCHEME", "http")
-DEFAULT_LOCAL_SCHEME = os.environ.get("LOCAL_SERVICE_SCHEME", DEFAULT_INTERNAL_SCHEME)
-
-
-def _build_service_url(host: str, port: int, path: str, *, scheme: str) -> str:
-    return f"{scheme}://{host}:{port}{path}"
-
-
-if DOCKER_ENV:
-    ASR_URL = _build_service_url("asr", 8000, "/transcribe", scheme=DEFAULT_INTERNAL_SCHEME)
-    TRANSLATION_URL = _build_service_url(
-        "translation", 8000, "/translate", scheme=DEFAULT_INTERNAL_SCHEME
-    )
-    TTS_URL = _build_service_url("tts", 8000, "/synthesize", scheme=DEFAULT_INTERNAL_SCHEME)
-else:
-    ASR_URL = _build_service_url("localhost", 8001, "/transcribe", scheme=DEFAULT_LOCAL_SCHEME)
-    TRANSLATION_URL = _build_service_url(
-        "localhost", 8002, "/translate", scheme=DEFAULT_LOCAL_SCHEME
-    )
-    TTS_URL = _build_service_url("localhost", 8003, "/synthesize", scheme=DEFAULT_LOCAL_SCHEME)
+from .speech_services import AUDIO_WAV_MIME, SpeechServices
+from .translation_refiner import BaseTranslationRefiner, RefinementOutcome
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
-AUDIO_WAV_MIME = "audio/wav"
-
-
-def _tts_served_audio(response: Any) -> bool:
-    """Whether a TTS reply actually carried audio.
-
-    TTS answers 200 with a JSON error body when synthesis fails, which
-    _finish_tts_stage has always treated as a failure. The breaker needs the
-    same view, or it stays CLOSED while every synthesis fails.
-    """
-    return bool(response.headers.get("content-type", "") == AUDIO_WAV_MIME)
 
 
 # Marks a pipeline failure the client may usefully retry, so the routes can
@@ -587,6 +550,7 @@ def _run_text_translation_step(
     target_lang: str,
     debug: bool,
     debug_info: Dict[str, Any],
+    speech: SpeechServices,
 ) -> Tuple[requests.Response, Dict[str, Any], str, Optional[str]]:
     start_translation = time.perf_counter()
     translation_started_at = utc_now()
@@ -598,9 +562,7 @@ def _run_text_translation_step(
         "debug": str(debug).lower(),
     }
 
-    translation_resp = call_ai_service(
-        "translation", TRANSLATION_URL, json=translation_payload, timeout=30
-    )
+    translation_resp = speech.translate(translation_payload)
     translation_completed_at = utc_now()
     translation_json = translation_resp.json()
     translation_text = translation_json.get("translations", "")
@@ -646,13 +608,14 @@ def _apply_translation_refinement(
     target_lang: str,
     debug_info: Dict[str, Any],
     tts_text: Optional[str],
+    refiner: BaseTranslationRefiner,
 ) -> Tuple[str, Optional[str]]:
     refined_tts_text = tts_text
-    if not translation_refiner.is_active:
+    if not refiner.is_active:
         return translation_text, refined_tts_text
 
     refinement_started_at = utc_now()
-    outcome: RefinementOutcome = translation_refiner.refine(
+    outcome: RefinementOutcome = refiner.refine(
         translation_text,
         source_lang,
         target_lang,
@@ -698,6 +661,7 @@ def _run_text_tts_step(
     session_id: Optional[str],
     debug: bool,
     refined_tts_text: Optional[str],
+    speech: SpeechServices,
 ) -> TTSCall:
     start_tts = time.perf_counter()
     tts_started_at = utc_now()
@@ -710,22 +674,19 @@ def _run_text_tts_step(
     if refined_tts_text:
         tts_payload["tts_text"] = refined_tts_text
 
-    tts_resp = call_ai_service(
-        "tts", TTS_URL, served=_tts_served_audio, json=tts_payload, timeout=30
-    )
+    tts_resp = speech.synthesize(tts_payload, timeout=30)
     tts_completed_at = utc_now()
     tts_duration_ms = int((time.perf_counter() - start_tts) * 1000)
     return tts_resp, tts_duration_ms, tts_started_at, tts_completed_at, start_tts
 
 
-def _run_wav_tts_step(*, translation_text: str, target_lang: str, debug: bool) -> TTSCall:
+def _run_wav_tts_step(
+    *, translation_text: str, target_lang: str, debug: bool, speech: SpeechServices
+) -> TTSCall:
     start_tts = time.perf_counter()
     tts_started_at = utc_now()
-    tts_resp = call_ai_service(
-        "tts",
-        TTS_URL,
-        served=_tts_served_audio,
-        json={
+    tts_resp = speech.synthesize(
+        {
             "text": translation_text,
             "lang": target_lang,
             "debug": str(debug).lower(),
@@ -1389,6 +1350,19 @@ def detect_harmful_content(text: str) -> bool:
     return False
 
 
+@dataclass(slots=True)
+class SpeechPipeline:
+    """What process_wav and process_text_pipeline call out to, for one app.
+
+    Built by build_gateway_dependencies. The conversation service and the
+    /pipeline and /upload routes hold this one object and pass its parts to
+    the pipeline functions, so every entry point runs with the same pair.
+    """
+
+    speech: SpeechServices
+    refiner: BaseTranslationRefiner
+
+
 def process_text_pipeline(
     text: str,
     source_lang: str,
@@ -1396,6 +1370,9 @@ def process_text_pipeline(
     session_id: str = None,
     debug: bool = False,
     validate_text: bool = True,
+    *,
+    speech: SpeechServices,
+    refiner: BaseTranslationRefiner,
 ) -> Dict[str, Any]:
     """
     Optimized text processing pipeline that skips ASR
@@ -1409,6 +1386,8 @@ def process_text_pipeline(
         session_id: Session ID for deterministic TTS seed
         debug: Enable debug information
         validate_text: Enable text validation
+        speech: The app's speech services
+        refiner: The app's translation refiner
 
     Returns:
         Processing result with translation and audio
@@ -1446,6 +1425,7 @@ def process_text_pipeline(
             target_lang=target_lang,
             debug=debug,
             debug_info=debug_info,
+            speech=speech,
         )
 
         # Translation error handling
@@ -1471,6 +1451,7 @@ def process_text_pipeline(
             target_lang=target_lang,
             debug_info=debug_info,
             tts_text=tts_text,
+            refiner=refiner,
         )
 
         # Step 3: TTS
@@ -1480,6 +1461,7 @@ def process_text_pipeline(
             session_id=session_id,
             debug=debug,
             refined_tts_text=refined_tts_text,
+            speech=speech,
         )
         tts_failure = _finish_tts_stage(
             tts_call,
@@ -1533,7 +1515,16 @@ def process_text_pipeline(
         )
 
 
-def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audio=True):
+def process_wav(
+    file_bytes,
+    source_lang,
+    target_lang,
+    debug=False,
+    validate_audio=True,
+    *,
+    speech: SpeechServices,
+    refiner: BaseTranslationRefiner,
+):
     """
     Enhanced WAV processing with optional audio validation
 
@@ -1543,6 +1534,8 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
         target_lang: Target language code
         debug: Enable debug information
         validate_audio: Enable comprehensive audio validation
+        speech: The app's speech services
+        refiner: The app's translation refiner
 
     Returns:
         Dict with processing results including validation info
@@ -1577,13 +1570,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
         # ASR
         start_asr = time.perf_counter()
         asr_started_at = utc_now()
-        asr_resp = call_ai_service(
-            "asr",
-            ASR_URL,
-            files={"file": ("input.wav", file_bytes, AUDIO_WAV_MIME)},
-            data={"lang": source_lang, "debug": str(debug).lower()},
-            timeout=60,  # ASR kann länger dauern
-        )
+        asr_resp = speech.transcribe(file_bytes, lang=source_lang, debug=debug)
         asr_completed_at = utc_now()
         asr_duration_ms = int((time.perf_counter() - start_asr) * 1000)
 
@@ -1645,9 +1632,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
             "model": "m2m100_1.2B",
             "debug": str(debug).lower(),
         }
-        translation_resp = call_ai_service(
-            "translation", TRANSLATION_URL, json=translation_payload, timeout=30
-        )
+        translation_resp = speech.translate(translation_payload)
         translation_completed_at = utc_now()
         translation_json = translation_resp.json()
         translation_text = translation_json.get("translations", "")
@@ -1681,9 +1666,9 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
                 upstream_response=translation_resp,
             )
         # Optional LLM refinement
-        if translation_refiner.is_active:
+        if refiner.is_active:
             refinement_started_at = utc_now()
-            outcome = translation_refiner.refine(
+            outcome = refiner.refine(
                 translation_text,
                 source_lang,
                 target_lang,
@@ -1715,7 +1700,7 @@ def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audi
             )
         # TTS
         tts_call = _run_wav_tts_step(
-            translation_text=translation_text, target_lang=target_lang, debug=debug
+            translation_text=translation_text, target_lang=target_lang, debug=debug, speech=speech
         )
         tts_failure = _finish_tts_stage(
             tts_call,

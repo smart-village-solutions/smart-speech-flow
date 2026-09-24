@@ -12,6 +12,7 @@ from services.api_gateway.conversation_service import ConversationService
 from services.api_gateway.session_manager import ClientType, TenantSessionManager, SessionMessage
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from tests.pipeline_helpers import speech_pipeline
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
@@ -62,7 +63,7 @@ def _list_without_filesystem(
     with pytest.MonkeyPatch.context() as patch:
         for name in ("is_file", "exists", "stat"):
             patch.setattr(Path, name, refuse)
-        return ConversationService(manager).messages(key, role)
+        return ConversationService(manager, pipeline=speech_pipeline()).messages(key, role)
 
 
 def _save_both(key: TenantSessionKey, audio_dir: Path) -> None:
@@ -115,7 +116,9 @@ async def test_settled_refused_audio_is_not_advertised_even_if_its_file_survives
     [retained] = manager.get_session(session.key).messages
     assert retained.translated_audio_available is False
     assert retained.original_audio_url is None
-    [item] = ConversationService(manager).messages(session.key, ClientType.ADMIN)
+    [item] = ConversationService(manager, pipeline=speech_pipeline()).messages(
+        session.key, ClientType.ADMIN
+    )
     assert "audio_url" not in item
     assert "original_audio_url" not in item
     assert "audio_url" not in repr(item.get("pipeline_metadata"))
@@ -146,6 +149,8 @@ async def test_serving_audio_still_checks_that_the_file_exists(
     manager.add_message(session.key, _audio_message())
 
     with pytest.raises(HTTPException) as missing:
-        ConversationService(manager).audio(session.key, "m1", AudioVariant.TRANSLATED)
+        ConversationService(manager, pipeline=speech_pipeline()).audio(
+            session.key, "m1", AudioVariant.TRANSLATED
+        )
 
     assert missing.value.status_code == 404

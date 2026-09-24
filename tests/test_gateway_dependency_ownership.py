@@ -34,11 +34,6 @@ ALLOWLIST = {
     ("audio_storage.py", "audio_files_total"): "adapter until PR7",
     ("audio_storage.py", "audio_cleanup_deleted_files_total"): "adapter until PR7",
     ("auth.py", "_key_cache"): "adapter until PR7",
-    ("circuit_breaker_client.py", "circuit_breaker_client"): "adapter until PR5",
-    ("graceful_degradation.py", "graceful_degradation_manager"): "adapter until PR5",
-    ("service_health.py", "service_health_manager"): "adapter until PR5",
-    ("translation_refiner.py", "_CANDIDATE_EXECUTOR"): "adapter until PR5",
-    ("translation_refiner.py", "translation_refiner"): "adapter until PR5",
     ("websocket_fallback.py", "fallback_manager"): "adapter until PR6",
 }
 

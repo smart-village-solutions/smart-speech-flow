@@ -25,14 +25,15 @@ from .message_models import (
 )
 from .message_telemetry import MessageTelemetryRecorder
 from .persistence_authorization import authorize_message_artifacts
-from .pipeline_admission import PipelineBusyError, run_pipeline
+from .pipeline_admission import PipelineAdmission, PipelineBusyError, run_pipeline
 from .pipeline_logic import (
     DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS,
     UPSTREAM_BUSY_ERROR_CODE,
+    SpeechPipeline,
     process_text_pipeline,
     process_wav,
 )
-from .quality_telemetry import InputMode
+from .quality_telemetry import InputMode, QualityTelemetry
 from .session_manager import ClientType, SessionMessage, SessionStatus, TenantSessionManager
 from .studio_runtime_flow import correlation_id_from_request
 from .tenant_session import TenantSessionKey
@@ -64,18 +65,6 @@ def _redacted_exception_info(
         RuntimeError(_REDACTED_EXCEPTION_MESSAGE),
         error.__traceback__,
     )
-
-
-def _quality_telemetry(request: Request) -> Any:
-    """The gateway's emitter, or None when there is no app behind the request.
-
-    Never raises: the route's `finally` calls this, so an exception here would
-    replace whatever the request was actually about to return.
-    """
-    try:
-        return request.app.state.dependencies.quality_telemetry
-    except Exception:
-        return None
 
 
 def _safe_identifier(value: Optional[str]) -> str:
@@ -558,6 +547,9 @@ async def send_unified_message(
     manager: Optional[WebSocketManager] = None,
     *,
     sessions: TenantSessionManager,
+    pipeline: SpeechPipeline,
+    admission: Optional[PipelineAdmission] = None,
+    telemetry: Optional[QualityTelemetry] = None,
 ) -> MessageResponse:
     """
     Unified Message Endpoint für Audio- und Text-Input
@@ -623,7 +615,15 @@ async def send_unified_message(
             recorder.arm(InputMode.AUDIO)
             _log_session_event("🎵 Starte Audio-Pipeline", session_id)
             result = await process_audio_input(
-                key, sender, request, start_time, manager, recorder=recorder, sessions=sessions
+                key,
+                sender,
+                request,
+                start_time,
+                manager,
+                recorder=recorder,
+                sessions=sessions,
+                pipeline=pipeline,
+                admission=admission,
             )
             _log_session_event("✅ Audio-Pipeline erfolgreich", session_id)
             return result
@@ -632,7 +632,15 @@ async def send_unified_message(
             recorder.arm(InputMode.TEXT)
             _log_session_event("📝 Starte Text-Pipeline", session_id)
             result = await process_text_input(
-                key, sender, request, start_time, manager, recorder=recorder, sessions=sessions
+                key,
+                sender,
+                request,
+                start_time,
+                manager,
+                recorder=recorder,
+                sessions=sessions,
+                pipeline=pipeline,
+                admission=admission,
             )
             _log_session_event("✅ Text-Pipeline erfolgreich", session_id)
             return result
@@ -674,7 +682,7 @@ async def send_unified_message(
             ),
         )
     finally:
-        recorder.emit(_quality_telemetry(request))
+        recorder.emit(telemetry)
 
 
 async def process_audio_input(
@@ -686,6 +694,8 @@ async def process_audio_input(
     recorder: Optional[MessageTelemetryRecorder] = None,
     *,
     sessions: TenantSessionManager,
+    pipeline: SpeechPipeline,
+    admission: Optional[PipelineAdmission] = None,
 ) -> MessageResponse:
     """Audio-Input verarbeiten (multipart/form-data)"""
     # A recorder nobody armed emits nothing, so a direct caller -- every test
@@ -719,12 +729,14 @@ async def process_audio_input(
     # the GPU call: form parsing and audio storage need no capacity.
     try:
         result = await run_pipeline(
-            request,
+            admission,
             process_wav,
             processed_file_bytes,
             source_lang,
             target_lang,
             validate_audio=False,
+            speech=pipeline.speech,
+            refiner=pipeline.refiner,
         )
     except PipelineBusyError as busy:
         raise _system_busy_error(busy) from busy
@@ -793,6 +805,8 @@ async def process_text_input(
     recorder: Optional[MessageTelemetryRecorder] = None,
     *,
     sessions: TenantSessionManager,
+    pipeline: SpeechPipeline,
+    admission: Optional[PipelineAdmission] = None,
 ) -> MessageResponse:
     """Text-Input verarbeiten (application/json)"""
     session_id = key.session_id
@@ -848,12 +862,14 @@ async def process_text_input(
     # as the audio pipeline: blocking translation/TTS calls must not hold the loop.
     try:
         pipeline_result = await run_pipeline(
-            request,
+            admission,
             process_text_pipeline,
             text_request.text,
             text_request.source_lang,
             text_request.target_lang,
             session_id=session_id,
+            speech=pipeline.speech,
+            refiner=pipeline.refiner,
         )
     except PipelineBusyError as busy:
         raise _system_busy_error(busy) from busy
