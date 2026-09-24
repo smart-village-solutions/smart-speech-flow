@@ -1,6 +1,7 @@
 """Behavior tests for the tenant-bound Studio runtime integration."""
 
 import hashlib
+import hmac
 import json
 from collections.abc import Mapping
 from urllib.parse import urlsplit
@@ -98,6 +99,33 @@ async def test_rejects_configuration_with_a_different_tenant() -> None:
 
     assert caught.value.code == "studio_runtime_tenant_mismatch"
     assert caught.value.retryable is False
+
+
+@pytest.mark.asyncio
+async def test_rejects_a_non_ascii_studio_tenant_as_a_mismatch() -> None:
+    flow = StudioRuntimeFlow(StubRuntimeClient(_configuration("tenant-kässel", REVISION)))
+
+    with pytest.raises(StudioRuntimeFlowError) as caught:
+        await flow.resolve(_context(), "correlation-1")
+
+    assert caught.value.code == "studio_runtime_tenant_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_compares_the_tenant_id_in_constant_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    compared: list[tuple[object, object]] = []
+    compare_digest = hmac.compare_digest
+
+    def recording_compare_digest(left: bytes | str, right: bytes | str) -> bool:
+        compared.append((left, right))
+        return compare_digest(left, right)
+
+    monkeypatch.setattr(runtime_flow_module.hmac, "compare_digest", recording_compare_digest)
+    flow = StudioRuntimeFlow(StubRuntimeClient(_configuration("tenant-kassel", REVISION)))
+
+    await flow.resolve(_context(), "correlation-1")
+
+    assert (b"tenant-kassel", b"tenant-kassel") in compared
 
 
 @pytest.mark.asyncio
@@ -237,7 +265,7 @@ class StubRuntimeFlow:
 
 def _dependency_client(
     monkeypatch: pytest.MonkeyPatch,
-    runtime_flow: StubRuntimeFlow,
+    runtime_flow: StubRuntimeFlow | StudioRuntimeFlow,
 ) -> TestClient:
     app = FastAPI()
     app.dependency_overrides[require_ssf_user] = lambda: {
@@ -297,3 +325,14 @@ def test_dependency_returns_safe_error_without_fallback(monkeypatch: pytest.Monk
 
     assert response.status_code == 503
     assert response.json() == {"detail": "runtime_configuration_unavailable"}
+
+
+def test_dependency_reports_a_non_ascii_tenant_mismatch_as_502(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flow = StudioRuntimeFlow(StubRuntimeClient(_configuration("tenant-kässel", REVISION)))
+
+    response = _dependency_client(monkeypatch, flow).get("/runtime-operation")
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "studio_runtime_tenant_mismatch"}

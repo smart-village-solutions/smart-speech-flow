@@ -47,3 +47,15 @@ them only through its own issue.
 - `GET /api/websocket/monitoring/health` has no authentication and no tenant scope. Its status
   also depends on the WebSocketMonitor heartbeat accounting, which a separate fix owns.
 - WebSocketMonitor disconnect metrics and heartbeat-timeout accounting.
+
+## Accepted divergences
+Changes a later slice made on purpose, where the output differs from what came before.
+
+- Message listings take audio availability from the markers the writer records instead of
+  checking the disk (task 5.1). The hourly retention cleanup deletes files by age, and the
+  content sweep that runs after it skips terminated sessions. So after that cleanup, a
+  terminated session's history can list audio links whose files are gone. This is accepted
+  because `audio()` already answers 404 for every audio request on a terminated session:
+  those links were never fetchable, and no reachable behaviour changes. Hiding the
+  unfetchable links on terminated sessions would change the history contract, so it belongs
+  in its own issue.
