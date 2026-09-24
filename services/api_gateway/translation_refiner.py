@@ -346,14 +346,18 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         context: Optional[Dict[str, Any]] = None,
     ) -> str:
         original_text = context.get("original_text") if context else None
+        # "Preserve technical terms" was too weak to stop the model rewriting a
+        # correct term into a more idiomatic wrong one; naming the substitution
+        # is what stops it. See the measurement in the test of this wording.
         prompt = (
-            "You improve a translation for a spoken conversation.\n"
-            "Return only the improved translation in the target language.\n"
-            "Preserve the original meaning, intent, tone, level of formality, names, "
-            "numbers, dates, units, and technical terms. Do not add, omit, summarize, "
-            "or explain anything. Make only changes that improve grammatical correctness, "
-            "fluency, and naturalness for speech. If the candidate is already good, "
-            "return it unchanged."
+            "You correct the grammar of a translation for a spoken conversation.\n"
+            "Return only the corrected translation in the target language.\n"
+            "Change only grammar, word order, articles, verb forms, agreement and "
+            "punctuation. Keep every word the candidate already uses to name a person, "
+            "place, office, document, procedure or product, even when a different word "
+            "would sound more natural -- a synonym is a mistranslation here. Do not add, "
+            "omit, summarize, explain, or replace correct wording with your own. If the "
+            "candidate is already grammatical, return it unchanged."
         )
         if source_lang:
             prompt += f"\nOriginal language code: {source_lang}."
