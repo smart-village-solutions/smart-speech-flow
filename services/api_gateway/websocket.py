@@ -17,7 +17,6 @@ import re
 from collections.abc import Coroutine
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from enum import Enum
 from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -26,6 +25,23 @@ from fastapi import APIRouter, Depends, Header, WebSocket, WebSocketDisconnect
 from .client_origin import configured_client_origin
 from .dependencies import get_realtime_ticket_store, get_session_manager, get_websocket_manager
 from .log_safety import sanitize_log_value
+from .realtime_protocol import (
+    ConnectionState,
+    Frame,
+    MessageType,
+    SessionTerminatedFrame,
+    battery_saver_frame,
+    client_joined_frame,
+    client_left_frame,
+    connection_ack_frame,
+    disconnecting_frame,
+    error_frame,
+    heartbeat_ping_frame,
+    polling_interval_update_frame,
+    relayed_message_frame,
+    session_terminated_frame,
+    typing_frame,
+)
 from .realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from .session_access import require_customer_session_key
 from .session_manager import ClientType, SessionRegistry, SessionStatus, TenantSessionManager
@@ -131,41 +147,6 @@ def disconnect_reason_for_close_code(code: Optional[int]) -> str:
     if code is None:
         return "connection_error"
     return _CLOSE_CODE_REASONS.get(code, "connection_error")
-
-
-class ConnectionState(str, Enum):
-    CONNECTING = "connecting"
-    CONNECTED = "connected"
-    DISCONNECTING = "disconnecting"
-    DISCONNECTED = "disconnected"
-    HEARTBEAT_TIMEOUT = "heartbeat_timeout"
-    ERROR = "error"
-
-
-class MessageType(str, Enum):
-    # System Messages
-    CONNECTION_ACK = "connection_ack"
-    HEARTBEAT_PING = "heartbeat_ping"
-    HEARTBEAT_PONG = "heartbeat_pong"
-    SESSION_TERMINATED = "session_terminated"
-    CONNECTION_STATUS = "connection_status"
-
-    # Communication Messages
-    MESSAGE = "message"
-    TYPING_INDICATOR = "typing_indicator"
-    CLIENT_JOINED = "client_joined"
-    CLIENT_LEFT = "client_left"
-
-    # 📱 Mobile-Optimization Messages
-    TAB_VISIBILITY_CHANGE = "tab_visibility_change"
-    BATTERY_STATUS_UPDATE = "battery_status_update"
-    NETWORK_STATUS_CHANGE = "network_status_change"
-    DEVICE_ORIENTATION_CHANGE = "device_orientation_change"
-    POLLING_INTERVAL_UPDATE = "polling_interval_update"
-
-    # Error Messages
-    ERROR = "error"
-    RECONNECT_REQUIRED = "reconnect_required"
 
 
 @dataclass
@@ -581,14 +562,7 @@ class WebSocketManager:
         )
 
         # Termination-Nachricht an alle Clients senden
-        termination_message = {
-            "type": MessageType.SESSION_TERMINATED.value,
-            "session_id": public_session_id,
-            "reason": reason,
-            "message": self._get_termination_message(reason),
-            "timestamp": utc_now().isoformat(),
-            "reconnect_allowed": False,
-        }
+        termination_message = session_terminated_frame(public_session_id, reason)
 
         # Parallel alle Verbindungen benachrichtigen und schließen
         disconnect_tasks: list[Coroutine[Any, Any, None]] = []
@@ -608,7 +582,7 @@ class WebSocketManager:
     async def broadcast_to_session(
         self,
         session_id: TenantSessionKey,
-        message: Dict[str, Any],
+        message: Frame,
         exclude_connection: Optional[str] = None,
         target_client_type: Optional[ClientType] = None,
         include_polling: bool = True,
@@ -675,8 +649,8 @@ class WebSocketManager:
         self,
         session_id: TenantSessionKey,
         sender_type: ClientType,
-        original_message: Dict[str, Any],
-        translated_message: Dict[str, Any],
+        original_message: Frame,
+        translated_message: Frame,
     ) -> BroadcastResult:
         """
         Differentiated Broadcasting with validation and error handling:
@@ -826,8 +800,8 @@ class WebSocketManager:
         connection: WebSocketConnection,
         connection_id: str,
         sender_type: ClientType,
-        original_message: Dict[str, Any],
-        translated_message: Dict[str, Any],
+        original_message: Frame,
+        translated_message: Frame,
     ) -> None:
         if connection.client_type == sender_type:
             await connection.websocket.send_json(original_message)
@@ -974,11 +948,7 @@ class WebSocketManager:
         """
         Heartbeat-Pings an alle aktive Verbindungen senden
         """
-        ping_message = {
-            "type": MessageType.HEARTBEAT_PING.value,
-            "ping_id": uuid4().hex,
-            "timestamp": utc_now().isoformat(),
-        }
+        ping_message = heartbeat_ping_frame()
 
         dead_connections = []
 
@@ -1049,13 +1019,9 @@ class WebSocketManager:
         Client-Message verarbeiten und weiterleiten
         """
         # Message an alle anderen Clients der Session weiterleiten
-        forward_message = {
-            "type": MessageType.MESSAGE.value,
-            "from": connection.client_type.value,
-            "session_id": connection.session_id,
-            "content": message.get("content"),
-            "timestamp": utc_now().isoformat(),
-        }
+        forward_message = relayed_message_frame(
+            connection.client_type, connection.session_id, message.get("content")
+        )
 
         await self.broadcast_to_session(
             connection.key,
@@ -1069,13 +1035,9 @@ class WebSocketManager:
         """
         Typing-Indicator weiterleiten
         """
-        typing_message = {
-            "type": MessageType.TYPING_INDICATOR.value,
-            "from": connection.client_type.value,
-            "session_id": connection.session_id,
-            "is_typing": message.get("is_typing", False),
-            "timestamp": utc_now().isoformat(),
-        }
+        typing_message = typing_frame(
+            connection.client_type, connection.session_id, message.get("is_typing", False)
+        )
 
         await self.broadcast_to_session(
             connection.key,
@@ -1087,13 +1049,9 @@ class WebSocketManager:
         """
         Connection-Bestätigung senden
         """
-        ack_message = {
-            "type": MessageType.CONNECTION_ACK.value,
-            "session_id": connection.session_id,
-            "client_type": connection.client_type.value,
-            "timestamp": utc_now().isoformat(),
-            "heartbeat_interval": self.heartbeat_interval,
-        }
+        ack_message = connection_ack_frame(
+            connection.session_id, connection.client_type, self.heartbeat_interval
+        )
 
         try:
             await connection.websocket.send_json(ack_message)
@@ -1104,12 +1062,7 @@ class WebSocketManager:
         """
         Disconnect-Nachricht vor dem Schließen senden
         """
-        disconnect_message = {
-            "type": MessageType.CONNECTION_STATUS.value,
-            "status": "disconnecting",
-            "reason": reason,
-            "timestamp": utc_now().isoformat(),
-        }
+        disconnect_message = disconnecting_frame(reason)
 
         try:
             await connection.websocket.send_json(disconnect_message)
@@ -1117,7 +1070,7 @@ class WebSocketManager:
             pass  # Ignore Fehler beim Disconnect
 
     async def _disconnect_connection_with_message(
-        self, connection: WebSocketConnection, termination_message: Dict[str, Any]
+        self, connection: WebSocketConnection, termination_message: SessionTerminatedFrame
     ) -> None:
         """
         Verbindung mit spezifischer Nachricht trennen
@@ -1199,19 +1152,15 @@ class WebSocketManager:
         """
         Client-Join-Event an andere Session-Teilnehmer senden
         """
-        join_message = {
-            "type": MessageType.CLIENT_JOINED.value,
-            "session_id": session_id.session_id,
-            "client_type": client_type.value,
-            "connection_id": connection_id,
-            "timestamp": utc_now().isoformat(),
-        }
-
         # Include customer_language when customer joins
+        customer_language = None
         if client_type == ClientType.CUSTOMER:
             session = self.session_manager.get_session(session_id)
-            if session and session.customer_language:
-                join_message["customer_language"] = session.customer_language
+            if session:
+                customer_language = session.customer_language
+        join_message = client_joined_frame(
+            session_id.session_id, client_type, connection_id, customer_language
+        )
 
         await self.broadcast_to_session(session_id, join_message, exclude_connection=connection_id)
 
@@ -1221,30 +1170,9 @@ class WebSocketManager:
         """
         Client-Leave-Event an andere Session-Teilnehmer senden
         """
-        leave_message = {
-            "type": MessageType.CLIENT_LEFT.value,
-            "session_id": session_id.session_id,
-            "client_type": client_type.value,
-            "connection_id": connection_id,
-            "reason": reason,
-            "timestamp": utc_now().isoformat(),
-        }
+        leave_message = client_left_frame(session_id.session_id, client_type, connection_id, reason)
 
         await self.broadcast_to_session(session_id, leave_message)
-
-    def _get_termination_message(self, reason: str) -> str:
-        """
-        Benutzerfreundliche Termination-Messages
-        """
-        messages = {
-            "new_session_created": "Die Session wurde beendet, da eine neue Session gestartet wurde.",
-            "timeout": "Die Session wurde aufgrund von Inaktivität beendet.",
-            "manual_termination": "Die Session wurde manuell beendet.",
-            "system_cleanup": "Die Session wurde für System-Wartung beendet.",
-            "error": "Die Session wurde aufgrund eines Fehlers beendet.",
-            "session_ended": "Die Session wurde ordnungsgemäß beendet.",
-        }
-        return messages.get(reason, "Die Session wurde beendet.")
 
     def _update_active_connections_count(self) -> None:
         """
@@ -1350,17 +1278,15 @@ class WebSocketManager:
         """
         optimization_tips = self.adaptive_polling.get_battery_optimization_tips(connection)
 
-        message = {
-            "type": MessageType.POLLING_INTERVAL_UPDATE.value,
-            "new_interval": new_interval,
-            "old_interval": connection.current_polling_interval,
-            "reason": reason,
-            "optimization_tips": optimization_tips,
-            "battery_level": connection.battery_level,
-            "is_mobile": connection.is_mobile,
-            "tab_active": connection.tab_active,
-            "timestamp": utc_now().isoformat(),
-        }
+        message = polling_interval_update_frame(
+            new_interval=new_interval,
+            old_interval=connection.current_polling_interval,
+            reason=reason,
+            optimization_tips=optimization_tips,
+            battery_level=connection.battery_level,
+            is_mobile=connection.is_mobile,
+            tab_active=connection.tab_active,
+        )
 
         try:
             await connection.websocket.send_json(message)
@@ -1371,19 +1297,7 @@ class WebSocketManager:
         """
         Battery-Saver-Notification an Client senden
         """
-        message = {
-            "type": "battery_saver_mode",
-            "title": "🔋 Battery-Saver aktiviert",
-            "message": "Update-Frequenz wurde auf 60 Sekunden reduziert um Akku zu schonen.",
-            "battery_level": connection.battery_level,
-            "new_polling_interval": 60,
-            "tips": [
-                "📱 Tab schließen wenn nicht benötigt",
-                "🔌 Gerät ans Ladegerät anschließen",
-                "⚡ Battery-Saver-Modus deaktivieren für normale Geschwindigkeit",
-            ],
-            "timestamp": utc_now().isoformat(),
-        }
+        message = battery_saver_frame(connection.battery_level)
 
         try:
             await connection.websocket.send_json(message)
@@ -1503,11 +1417,7 @@ async def websocket_endpoint(
             except Exception:
                 logger.exception("WebSocket message processing failed")
                 # Error-Message an Client senden
-                error_message = {
-                    "type": MessageType.ERROR.value,
-                    "error": "Message processing failed",
-                    "timestamp": utc_now().isoformat(),
-                }
+                error_message = error_frame("Message processing failed")
                 try:
                     await websocket.send_json(error_message)
                 except Exception:

@@ -21,7 +21,7 @@ from pathlib import Path
 GATEWAY = Path(__file__).resolve().parents[1] / "services" / "api_gateway"
 
 # Constructed values that are configuration or routing, not collaborators.
-VALUE_TYPES = frozenset({"APIRouter", "Field", "Path", "TypeVar"})
+VALUE_TYPES = frozenset({"APIRouter", "Field", "Path", "TypeVar", "TypedDict"})
 
 ALLOWLIST = {
     ("app.py", "app"): "permanent: the ASGI entry point uvicorn and the Dockerfile target",
