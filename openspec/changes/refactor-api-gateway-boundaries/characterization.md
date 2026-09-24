@@ -68,3 +68,8 @@ Changes a later slice made on purpose, where the output differs from what came b
   logged `WebSocket-Broadcasting-Fehler` with a redacted traceback. Both lines are at ERROR
   level, and the HTTP response is unchanged. A broadcast to a session with no open WebSocket
   or polling connection reports failure, so the corrected line appears in normal operation.
+- The activation log lines that sit between lifecycle decisions (ended session, idempotent
+  answer, language switch, unsupported language, success) log under
+  `services.api_gateway.session_lifecycle` instead of `services.api_gateway.routes.customer`
+  (PR4b). Their messages, fields and order are unchanged. The request line and the
+  unexpected-error line stay on the route's logger.

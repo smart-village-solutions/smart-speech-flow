@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from .quality_telemetry import QualityTelemetry
     from .realtime_ticket import RealtimeTicketStore
     from .runtime_policy import RuntimePolicyGate
+    from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
     from .session_pseudonym import SessionPseudonymizer
     from .studio_login_directory import StudioLoginDirectoryService
@@ -50,6 +51,7 @@ class GatewayDependencies:
     polling_store: TenantPollingStore
     websocket_manager: WebSocketManager
     conversation_service: ConversationService
+    session_lifecycle: SessionLifecycleService
     # None when Studio is unconfigured; each consumer maps that to its own
     # fail-closed answer.
     studio_runtime_flow: StudioRuntimeFlow | None
@@ -92,6 +94,7 @@ def build_gateway_dependencies(
     from .circuit_breaker_client import circuit_breaker_client
     from .conversation_service import ConversationService
     from .realtime_ticket import MemoryRealtimeTicketBackend, RealtimeTicketStore
+    from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
     from .session_store import MemoryTenantSessionStore, RedisTenantSessionStore
     from .studio_login_directory import login_directory_from_environment
@@ -132,6 +135,7 @@ def build_gateway_dependencies(
         conversation_service=ConversationService(
             session_manager, websocket_manager=websocket_manager
         ),
+        session_lifecycle=SessionLifecycleService(session_manager),
         studio_runtime_flow=studio_runtime_flow,
         login_directory=login_directory_from_environment(),
         circuit_breaker_client=circuit_breaker_client,
@@ -174,6 +178,10 @@ def get_websocket_manager(connection: HTTPConnection) -> WebSocketManager:
 
 def get_conversation_service(connection: HTTPConnection) -> ConversationService:
     return _container(connection).conversation_service
+
+
+def get_session_lifecycle(connection: HTTPConnection) -> SessionLifecycleService:
+    return _container(connection).session_lifecycle
 
 
 def get_studio_runtime_flow(connection: HTTPConnection) -> StudioRuntimeFlow | None:
