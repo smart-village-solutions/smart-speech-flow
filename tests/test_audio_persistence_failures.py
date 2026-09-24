@@ -14,7 +14,7 @@ import pytest
 from services.api_gateway import audio_storage
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.routes import session as session_routes
-from services.api_gateway.session_manager import ClientType, session_manager
+from services.api_gateway.session_manager import ClientType
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
 REVISION = f"sha256:{'a' * 64}"
@@ -31,7 +31,7 @@ def refusing_audio_storage(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(audio_storage, "save_audio", refuse)
 
 
-async def _session() -> object:
+async def _session(session_manager) -> object:
     session_manager.reset(clear_persistence=True)
     session = await session_manager.create_admin_session("tenant-test", SNAPSHOT)
     session.consent_status = ConsentStatus.GRANTED
@@ -40,9 +40,9 @@ async def _session() -> object:
 
 
 async def test_a_failed_translated_audio_write_still_delivers_the_message(
-    refusing_audio_storage, caplog
+    refusing_audio_storage, caplog, session_manager
 ):
-    key = await _session()
+    key = await _session(session_manager)
 
     with caplog.at_level(logging.ERROR, logger=session_routes.logger.name):
         message = await session_routes.create_session_message(
@@ -53,6 +53,7 @@ async def test_a_failed_translated_audio_write_still_delivers_the_message(
             b"audio-bytes",
             "de",
             "en",
+            sessions=session_manager,
         )
 
     assert message.translated_text == "hello"
