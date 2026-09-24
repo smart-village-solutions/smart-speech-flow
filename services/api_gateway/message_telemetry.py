@@ -26,7 +26,7 @@ from .quality_telemetry import (
     TerminalOutcome,
 )
 from .session_manager import ClientType
-from .session_pseudonym import MISSING_TENANT_REFERENCE, session_ref
+from .session_pseudonym import MISSING_TENANT_REFERENCE, SessionPseudonymizer
 from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
@@ -61,8 +61,11 @@ def _member(enum_class, value, fallback):
 class MessageTelemetryRecorder:
     """Accumulates one row. Every method is safe to call in any order."""
 
-    def __init__(self, *, session_id: Any, start_time: float) -> None:
+    def __init__(
+        self, *, session_id: Any, start_time: float, pseudonymizer: SessionPseudonymizer
+    ) -> None:
         self._session_id = session_id
+        self._pseudonymizer = pseudonymizer
         self._start_time = start_time
         self._armed = False
         self._emitted = False
@@ -170,7 +173,7 @@ class MessageTelemetryRecorder:
         try:
             key = self._session_id
             emit(
-                session_ref=session_ref(
+                session_ref=self._pseudonymizer.reference(
                     key.session_id if isinstance(key, TenantSessionKey) else key
                 ),
                 tenant_ref=(

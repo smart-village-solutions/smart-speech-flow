@@ -14,7 +14,7 @@ from services.api_gateway.websocket import (
     WebSocketManager, WebSocketConnection, AdaptivePollingManager,
     ConnectionState, ClientType, MessageType
 )
-from services.api_gateway.session_manager import SessionManager
+from services.api_gateway.legacy_session_manager import LegacySessionManager
 from services.api_gateway.routes.session import ClientActivityUpdate
 
 
@@ -126,7 +126,7 @@ class TestWebSocketMobileOptimization:
 
     def setup_method(self):
         """Test-Setup"""
-        self.session_manager = SessionManager()
+        self.session_manager = LegacySessionManager()
         self.session_manager.reset(clear_persistence=True)
         self.websocket_manager = WebSocketManager(self.session_manager)
 

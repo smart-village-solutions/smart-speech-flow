@@ -198,7 +198,8 @@ def test_a_session_id_no_session_could_carry_answers_404(client_for) -> None:
     """
     from services.api_gateway.feedback.service import FeedbackService
     from services.api_gateway.feedback.tenant import ConfiguredTenantResolver
-    from services.api_gateway.session_manager import SessionManager
+    from services.api_gateway.session_manager import TenantSessionManager
+    from services.api_gateway.session_pseudonym import SessionPseudonymizer
     from services.api_gateway.session_store import RedisTenantSessionStore
 
     class EmptyRedis:
@@ -209,8 +210,9 @@ def test_a_session_id_no_session_could_carry_answers_404(client_for) -> None:
         repository=None,
         cipher=None,
         tenant_resolver=ConfiguredTenantResolver(tenant_id="tenant-a"),
-        session_manager=SessionManager(store=RedisTenantSessionStore(EmptyRedis())),
+        session_manager=TenantSessionManager(store=RedisTenantSessionStore(EmptyRedis())),
         telemetry=None,
+        pseudonymizer=SessionPseudonymizer(key=b"feedback-route-test"),
     )
     client = client_for(service)
 

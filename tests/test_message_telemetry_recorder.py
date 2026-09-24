@@ -18,7 +18,10 @@ from services.api_gateway.quality_telemetry import (
     TerminalOutcome,
 )
 from services.api_gateway.session_manager import ClientType
+from services.api_gateway.session_pseudonym import SessionPseudonymizer
 from services.api_gateway.tenant_session import TenantSessionKey
+
+PSEUDONYMIZER = SessionPseudonymizer(key=b"message-telemetry-test")
 
 
 class _Spy:
@@ -50,7 +53,9 @@ def _debug(**overrides) -> dict:
 
 
 def _armed(input_mode=InputMode.AUDIO) -> MessageTelemetryRecorder:
-    recorder = MessageTelemetryRecorder(session_id="42", start_time=0.0)
+    recorder = MessageTelemetryRecorder(
+        session_id="42", start_time=0.0, pseudonymizer=PSEUDONYMIZER
+    )
     recorder.arm(input_mode)
     recorder.record_request(
         client_type=ClientType.CUSTOMER, source_lang="de", target_lang="en"
@@ -68,7 +73,9 @@ def _emit(recorder) -> dict:
 class TestArming:
     def test_a_tenant_message_carries_only_the_pseudonymous_tenant_reference(self):
         recorder = MessageTelemetryRecorder(
-            session_id=TenantSessionKey("secret-tenant", "ABC12345"), start_time=0.0
+            session_id=TenantSessionKey("secret-tenant", "ABC12345"),
+            start_time=0.0,
+            pseudonymizer=PSEUDONYMIZER,
         )
         recorder.arm(InputMode.TEXT)
 
@@ -88,12 +95,16 @@ class TestArming:
         """
         spy = _Spy()
 
-        MessageTelemetryRecorder(session_id="42", start_time=0.0).emit(spy)
+        MessageTelemetryRecorder(session_id="42", start_time=0.0, pseudonymizer=PSEUDONYMIZER).emit(
+            spy
+        )
 
         assert spy.calls == []
 
     def test_an_armed_request_emits_even_if_nothing_else_was_recorded(self):
-        recorder = MessageTelemetryRecorder(session_id="42", start_time=0.0)
+        recorder = MessageTelemetryRecorder(
+            session_id="42", start_time=0.0, pseudonymizer=PSEUDONYMIZER
+        )
         recorder.arm(InputMode.TEXT)
 
         assert _emit(recorder)["input_mode"] is InputMode.TEXT
@@ -117,7 +128,9 @@ class TestDirection:
         ],
     )
     def test_the_sending_client_decides_the_direction(self, client_type, expected):
-        recorder = MessageTelemetryRecorder(session_id="42", start_time=0.0)
+        recorder = MessageTelemetryRecorder(
+            session_id="42", start_time=0.0, pseudonymizer=PSEUDONYMIZER
+        )
         recorder.arm(InputMode.TEXT)
         recorder.record_request(
             client_type=client_type, source_lang="de", target_lang="en"
@@ -126,7 +139,9 @@ class TestDirection:
         assert _emit(recorder)["direction"] is expected
 
     def test_an_unparsed_request_has_no_direction_rather_than_a_guessed_one(self):
-        recorder = MessageTelemetryRecorder(session_id="42", start_time=0.0)
+        recorder = MessageTelemetryRecorder(
+            session_id="42", start_time=0.0, pseudonymizer=PSEUDONYMIZER
+        )
         recorder.arm(InputMode.AUDIO)
 
         assert _emit(recorder)["direction"] is MessageDirection.UNKNOWN

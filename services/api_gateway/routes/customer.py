@@ -25,7 +25,7 @@ from ..dependencies import (
 )
 from ..log_safety import safe_language_code, sanitize_log_value
 from ..session_access import require_customer_session_key
-from ..session_manager import ClientType, SessionManager, SessionStatus
+from ..session_manager import ClientType, SessionStatus, TenantSessionManager
 from ..studio_runtime_client import RuntimeConfiguration, StudioRuntimeClientError
 from ..studio_runtime_flow import StudioRuntimeFlow, correlation_id_from_request
 from ..studio_runtime_token import StudioTokenError
@@ -190,7 +190,7 @@ async def activate_session(
     request: ActivateSessionRequest,
     http_request: Request,
     principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
-    sessions: Annotated[SessionManager, Depends(get_session_manager)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
     runtime_flow: Annotated[StudioRuntimeFlow | None, Depends(get_studio_runtime_flow)],
 ) -> ActivateSessionResponse:
     """
@@ -335,7 +335,7 @@ async def activate_session(
 async def get_customer_session_status(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
-    sessions: Annotated[SessionManager, Depends(get_session_manager)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
 ) -> dict[str, object]:
     """
     Session-Status für Customer-Interface abrufen

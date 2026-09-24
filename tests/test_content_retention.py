@@ -14,7 +14,7 @@ from services.api_gateway.audio_storage import (
 )
 from services.api_gateway.session_manager import (
     ClientType,
-    SessionManager,
+    TenantSessionManager,
     SessionMessage,
 )
 from services.api_gateway.session_manager import SessionStatus
@@ -62,8 +62,8 @@ def audio_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def manager() -> SessionManager:
-    return SessionManager(store=MemoryTenantSessionStore())
+def manager() -> TenantSessionManager:
+    return TenantSessionManager(store=MemoryTenantSessionStore())
 
 
 async def _session_aged(manager, *, age: timedelta, authorized: bool):
@@ -159,8 +159,8 @@ class _LifecycleEnforcingStore(MemoryTenantSessionStore):
 
 
 @pytest.fixture
-def strict_manager() -> SessionManager:
-    return SessionManager(store=_LifecycleEnforcingStore())
+def strict_manager() -> TenantSessionManager:
+    return TenantSessionManager(store=_LifecycleEnforcingStore())
 
 
 async def test_one_terminated_session_does_not_abort_the_whole_sweep(
@@ -234,9 +234,7 @@ async def test_an_audio_only_removal_is_persisted(
     assert stored.messages[0].translated_audio_available is False
 
 
-async def test_a_legacy_session_sweeps_without_logging_a_failure(
-    manager, audio_dir, monkeypatch, caplog
-):
+async def test_a_legacy_session_sweeps_without_logging_a_failure(audio_dir, monkeypatch, caplog):
     """`Session.key` raises without a tenant, and the sweep read it blindly.
 
     The prune commits first, so the ValueError is pure noise -- but it is
@@ -245,6 +243,7 @@ async def test_a_legacy_session_sweeps_without_logging_a_failure(
     """
     import logging
 
+    from services.api_gateway.legacy_session_manager import LegacySessionManager
     from services.api_gateway.session_manager import Session
 
     monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
@@ -263,6 +262,7 @@ async def test_a_legacy_session_sweeps_without_logging_a_failure(
             record_authorized=True,
         )
     ]
+    manager = LegacySessionManager()
     manager.sessions[legacy.id] = legacy
 
     with caplog.at_level(logging.WARNING):

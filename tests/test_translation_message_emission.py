@@ -23,7 +23,7 @@ from services.api_gateway.quality_telemetry import (
     discard_event,
 )
 from services.api_gateway.routes import session as session_routes
-from services.api_gateway.session_manager import ClientType, SessionManager
+from services.api_gateway.session_manager import ClientType, TenantSessionManager
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import TenantSessionKey
 from tests.pipeline_helpers import AUDIO_BYTES, make_active_session
@@ -35,7 +35,7 @@ UPSTREAM_DETAIL = "HTTPConnectionPool(host='asr', port=8001): Max retries exceed
 
 @pytest.fixture
 def manager():
-    return SessionManager(store=MemoryTenantSessionStore())
+    return TenantSessionManager(store=MemoryTenantSessionStore())
 
 
 class _CapturingExporter:
@@ -127,12 +127,11 @@ async def _send(manager, telemetry, *, content_type, pipeline_result):
     session_id = await make_active_session(manager)
     target = "process_wav" if "multipart" in content_type else "process_text_pipeline"
     with (
-        patch.object(session_routes, "session_manager", manager),
         patch.object(session_routes, target, return_value=pipeline_result),
         patch.object(session_routes, "_store_audio_artifacts", return_value=None),
     ):
         return await session_routes.send_unified_message(
-            session_id, ClientType.ADMIN, _request(content_type, telemetry)
+            session_id, ClientType.ADMIN, _request(content_type, telemetry), sessions=manager
         )
 
 
@@ -219,13 +218,13 @@ class TestOneRowPerMessage:
 
         session_key = TenantSessionKey("tenant-test", "UNKNOWN1")
         request = _request("application/json", _telemetry(exporter))
-        with patch.object(session_routes, "session_manager", manager):
-            with pytest.raises(HTTPException) as excinfo:
-                await session_routes.send_unified_message(
-                    session_key,
-                    ClientType.ADMIN,
-                    request,
-                )
+        with pytest.raises(HTTPException) as excinfo:
+            await session_routes.send_unified_message(
+                session_key,
+                ClientType.ADMIN,
+                request,
+                sessions=manager,
+            )
 
         assert excinfo.value.status_code == 404
         assert exporter.messages == []
@@ -236,13 +235,13 @@ class TestOneRowPerMessage:
         session_id = await make_active_session(manager)
 
         request = _request("text/plain", _telemetry(exporter))
-        with patch.object(session_routes, "session_manager", manager):
-            with pytest.raises(HTTPException):
-                await session_routes.send_unified_message(
-                    session_id,
-                    ClientType.ADMIN,
-                    request,
-                )
+        with pytest.raises(HTTPException):
+            await session_routes.send_unified_message(
+                session_id,
+                ClientType.ADMIN,
+                request,
+                sessions=manager,
+            )
 
         assert exporter.messages == []
 
@@ -276,13 +275,13 @@ class TestNoContentLeavesTheGateway:
         session_id = await make_active_session(manager)
 
         with (
-            patch.object(session_routes, "session_manager", manager),
             patch.object(session_routes, "process_text_pipeline", return_value=_success()),
         ):
             await session_routes.send_unified_message(
                 session_id,
                 ClientType.ADMIN,
                 _request("application/json", _telemetry(exporter)),
+                sessions=manager,
             )
 
         assert session_id not in exporter.messages[0].values()
@@ -339,11 +338,10 @@ class TestTelemetryNeverChangesTheOutcome:
 
         session_id = await make_active_session(manager)
         with (
-            patch.object(session_routes, "session_manager", manager),
             patch.object(session_routes, "process_text_pipeline", return_value=_success()),
         ):
             response = await session_routes.send_unified_message(
-                session_id, ClientType.ADMIN, request
+                session_id, ClientType.ADMIN, request, sessions=manager
             )
 
         assert response.status == "success"

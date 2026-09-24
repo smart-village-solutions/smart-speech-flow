@@ -8,7 +8,7 @@ from fastapi import HTTPException, Request
 
 from services.api_gateway import app as app_module
 from services.api_gateway.routes import admin, customer
-from services.api_gateway.session_manager import SessionStatus, session_manager
+from services.api_gateway.session_manager import SessionStatus
 from services.api_gateway.tenant_context import StudioTenantContext
 from services.api_gateway.tenant_session import TenantSessionKey
 
@@ -23,7 +23,9 @@ def _http_request() -> Request:
 
 
 @pytest.mark.asyncio
-async def test_admin_history_redacts_internal_exception_from_response(monkeypatch, caplog):
+async def test_admin_history_redacts_internal_exception_from_response(
+    session_manager, monkeypatch, caplog
+):
     exception_text = "private-history-exception"
     context = StudioTenantContext(
         tenant_id="tenant-test",
@@ -44,7 +46,9 @@ async def test_admin_history_redacts_internal_exception_from_response(monkeypatc
     assert exception_text not in caplog.text
 
 
-def test_customer_exception_log_keeps_traceback_without_sensitive_message(monkeypatch, caplog):
+def test_customer_exception_log_keeps_traceback_without_sensitive_message(
+    session_manager, monkeypatch, caplog
+):
     session_id = "private-session-id"
     language = "private-language"
     exception_text = "private-exception-text"
@@ -80,7 +84,9 @@ def test_customer_exception_log_keeps_traceback_without_sensitive_message(monkey
     assert exception_text not in caplog.text
 
 
-def test_unsupported_customer_language_warning_omits_tainted_value(monkeypatch, caplog):
+def test_unsupported_customer_language_warning_omits_tainted_value(
+    session_manager, monkeypatch, caplog
+):
     language = "tainted-language-value"
     session = SimpleNamespace(status=SessionStatus.PENDING)
     key = TenantSessionKey("tenant-test", "session-id")

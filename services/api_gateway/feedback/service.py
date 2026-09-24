@@ -12,11 +12,11 @@ import calendar
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Final
+from typing import Any, Callable, Final, Optional, Protocol
 from uuid import UUID, uuid4
 
 from ..quality_telemetry import ProbeOutcome
-from ..session_pseudonym import MISSING_REFERENCE, feedback_ref, session_ref, tenant_ref
+from ..session_pseudonym import MISSING_REFERENCE, SessionPseudonymizer, tenant_ref
 from ..tenant_session import TenantSessionKey
 from .models import (
     MAX_IMPROVEMENTS_LENGTH,
@@ -71,6 +71,18 @@ class UnknownSession(LookupError):
     """A session id was supplied but the session manager does not know it."""
 
 
+class FeedbackSessions(Protocol):
+    """The lookups feedback needs, which both session managers provide."""
+
+    def resolve_customer_session(self, session_id: str) -> Optional[TenantSessionKey]: ...
+
+    def resolve_ended_session(
+        self, session_id: str, *, within: timedelta
+    ) -> Optional[TenantSessionKey]: ...
+
+    def has_unscoped_session(self, session_id: str) -> bool: ...
+
+
 class FeedbackService:
     def __init__(
         self,
@@ -78,8 +90,9 @@ class FeedbackService:
         repository: FeedbackRepository,
         cipher: Any,
         tenant_resolver: TenantResolver,
-        session_manager: Any,
+        session_manager: FeedbackSessions,
         telemetry: Any,
+        pseudonymizer: SessionPseudonymizer,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         grace_window: timedelta | None = None,
     ) -> None:
@@ -88,6 +101,7 @@ class FeedbackService:
         self._tenant_resolver = tenant_resolver
         self._session_manager = session_manager
         self._telemetry = telemetry
+        self._pseudonymizer = pseudonymizer
         self._clock = clock
         self._grace_window = (
             grace_window if grace_window is not None else _configured_grace_window()
@@ -136,7 +150,7 @@ class FeedbackService:
             event_id=analytics_event_id,
             session_ref=reference,
             tenant_ref=tenant_ref(tenant_id),
-            feedback_ref=feedback_ref(feedback_id),
+            feedback_ref=self._pseudonymizer.feedback_reference(feedback_id),
             translation_quality=request.translation_quality,
             performance=request.performance,
             usability=request.usability,
@@ -193,7 +207,7 @@ class FeedbackService:
         Three places a session can be. A legacy session sits under its bare id.
         A session opened through the tenant flow sits under a TenantSessionKey,
         and the bare id the browser sends reaches it through the join index --
-        so checking get_session alone answers 404 to every tenant's citizens.
+        so checking the bare id alone answers 404 to every tenant's citizens.
         Once the conversation ends the store revokes that link, and the only
         remaining route is the tombstone behind resolve_ended_session, which a
         zero-length window skips rather than consults (#324).
@@ -212,9 +226,9 @@ class FeedbackService:
             # answer. An id no session could carry is an unknown session, not
             # a 500. `from None` keeps the submitted id out of the traceback.
             raise UnknownSession from None
-        if key is None and self._session_manager.get_session(session_id) is None:
+        if key is None and not self._session_manager.has_unscoped_session(session_id):
             raise UnknownSession
-        return session_ref(session_id), key
+        return self._pseudonymizer.reference(session_id), key
 
 
 def _add_months(moment: datetime, months: int) -> datetime:

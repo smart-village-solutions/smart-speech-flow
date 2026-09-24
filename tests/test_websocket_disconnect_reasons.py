@@ -73,7 +73,7 @@ class TestTheAlertsCanFire:
 class TestTheReasonSurvivesCleanup:
     async def test_a_heartbeat_timeout_reaches_the_monitor(self, monkeypatch):
         from services.api_gateway import websocket as ws
-        from services.api_gateway.session_manager import SessionManager
+        from services.api_gateway.legacy_session_manager import LegacySessionManager
 
         recorded: list[DisconnectReason] = []
 
@@ -84,7 +84,7 @@ class TestTheReasonSurvivesCleanup:
 
         monkeypatch.setattr(ws, "get_websocket_monitor", lambda: _Monitor())
 
-        manager = ws.WebSocketManager(SessionManager())
+        manager = ws.WebSocketManager(LegacySessionManager())
         connection_id = manager._build_connection_id("s1", ws.ClientType.CUSTOMER)
         manager.all_connections[connection_id] = ws.WebSocketConnection(
             websocket=Mock(),
@@ -118,11 +118,11 @@ class _RecordingMonitor:
 
 def _manager_with_one_connection(monkeypatch, monitor: _RecordingMonitor):
     from services.api_gateway import websocket as ws
-    from services.api_gateway.session_manager import SessionManager
+    from services.api_gateway.legacy_session_manager import LegacySessionManager
 
     monkeypatch.setattr(ws, "get_websocket_monitor", lambda: monitor)
 
-    manager = ws.WebSocketManager(SessionManager())
+    manager = ws.WebSocketManager(LegacySessionManager())
     connection_id = manager._build_connection_id("s1", ws.ClientType.CUSTOMER)
     socket = Mock()
     socket.send_json = AsyncMock()

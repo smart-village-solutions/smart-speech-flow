@@ -9,7 +9,7 @@ from fastapi import HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
 from .audio_storage import AudioVariant, audio_path, scope_pipeline_audio_urls, scoped_audio_url
-from .session_manager import ClientType, SessionManager, SessionStatus
+from .session_manager import ClientType, SessionStatus, TenantSessionManager
 from .tenant_session import TenantSessionKey
 
 if TYPE_CHECKING:
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 class ConversationService:
     """Apply the server-assigned role before entering the shared pipeline."""
 
-    def __init__(self, sessions: SessionManager) -> None:
+    def __init__(self, sessions: TenantSessionManager) -> None:
         self._sessions = sessions
 
     async def process(
@@ -32,7 +32,7 @@ class ConversationService:
     ) -> MessageResponse:
         from .routes.session import send_unified_message
 
-        return await send_unified_message(key, sender, request, manager)
+        return await send_unified_message(key, sender, request, manager, sessions=self._sessions)
 
     async def process_text(
         self,
@@ -43,7 +43,9 @@ class ConversationService:
     ) -> MessageResponse:
         from .routes.session import process_text_input
 
-        return await process_text_input(key, sender, request, time.perf_counter(), manager)
+        return await process_text_input(
+            key, sender, request, time.perf_counter(), manager, sessions=self._sessions
+        )
 
     async def process_audio(
         self,
@@ -54,7 +56,9 @@ class ConversationService:
     ) -> MessageResponse:
         from .routes.session import process_audio_input
 
-        return await process_audio_input(key, sender, request, time.perf_counter(), manager)
+        return await process_audio_input(
+            key, sender, request, time.perf_counter(), manager, sessions=self._sessions
+        )
 
     def messages(self, key: TenantSessionKey, role: ClientType) -> list[dict[str, object]]:
         session = self._sessions.get_session(key)

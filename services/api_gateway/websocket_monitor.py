@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
 from prometheus_client import Counter, Gauge, Histogram, Info
 
-from .session_pseudonym import session_ref
+from .session_pseudonym import SessionPseudonymizer
 from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
@@ -28,13 +28,15 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _resource_log_fields(resource: TenantSessionKey | str) -> dict[str, str]:
+def _resource_log_fields(
+    resource: TenantSessionKey | str, pseudonymizer: SessionPseudonymizer
+) -> dict[str, str]:
     if isinstance(resource, TenantSessionKey):
         return {
             "tenant_ref": resource.tenant_ref,
-            "session_ref": session_ref(resource.session_id),
+            "session_ref": pseudonymizer.reference(resource.session_id),
         }
-    return {"tenant_ref": "legacy", "session_ref": session_ref(resource)}
+    return {"tenant_ref": "legacy", "session_ref": pseudonymizer.reference(resource)}
 
 
 class ConnectionState(Enum):
@@ -130,7 +132,8 @@ class WebSocketMonitor:
     Comprehensive WebSocket monitoring system with Prometheus integration
     """
 
-    def __init__(self, registry=None):
+    def __init__(self, registry=None, pseudonymizer: Optional[SessionPseudonymizer] = None):
+        self._pseudonymizer = pseudonymizer or SessionPseudonymizer.from_environment()
         self._active_connections: Dict[str, ConnectionMetrics] = {}
         self._connection_history: List[ConnectionMetrics] = []
         self._session_connections: Dict[TenantSessionKey | str, Set[str]] = defaultdict(set)
@@ -290,6 +293,11 @@ class WebSocketMonitor:
             }
         )
 
+    @property
+    def pseudonymizer(self) -> SessionPseudonymizer:
+        """Until PR6 (#228), every app's container shares this one, so log lines correlate."""
+        return self._pseudonymizer
+
     def connection_established(
         self,
         connection_id: str,
@@ -317,7 +325,7 @@ class WebSocketMonitor:
         self.connections_active.labels(client_type=client_type).inc()
         self.sessions_with_connections.set(len(self._session_connections))
 
-        fields = _resource_log_fields(metrics.resource_key)
+        fields = _resource_log_fields(metrics.resource_key, self._pseudonymizer)
         logger.info("websocket_connection_established", extra=fields)
         return metrics
 
@@ -354,7 +362,7 @@ class WebSocketMonitor:
         logger.info(
             "websocket_connection_closed",
             extra={
-                **_resource_log_fields(metrics.resource_key),
+                **_resource_log_fields(metrics.resource_key, self._pseudonymizer),
                 "client_type": metrics.client_type,
                 "disconnect_reason": reason.value,
             },
@@ -442,7 +450,7 @@ class WebSocketMonitor:
         logger.error(
             "websocket_connection_error",
             extra={
-                **_resource_log_fields(metrics.resource_key),
+                **_resource_log_fields(metrics.resource_key, self._pseudonymizer),
                 "client_type": metrics.client_type,
             },
         )
@@ -475,7 +483,7 @@ class WebSocketMonitor:
         logger.info(
             "websocket_session_closed",
             extra={
-                **_resource_log_fields(session_id),
+                **_resource_log_fields(session_id, self._pseudonymizer),
                 "disconnected_count": len(connection_ids),
             },
         )

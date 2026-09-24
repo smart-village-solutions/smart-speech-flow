@@ -16,7 +16,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from types import TracebackType
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Mapping, Optional, Protocol
 
 from fastapi import (
     APIRouter,
@@ -44,8 +44,13 @@ from ..pipeline_logic import (
     process_wav,
 )
 from ..quality_telemetry import InputMode
-from ..runtime_policy import current_runtime_policy
-from ..session_manager import ClientType, SessionMessage, SessionStatus, session_manager
+from ..session_manager import (
+    ClientType,
+    Session,
+    SessionMessage,
+    SessionStatus,
+    TenantSessionManager,
+)
 from ..studio_runtime_flow import correlation_id_from_request
 from ..tenant_session import TenantSessionKey
 from ..websocket import MessageType, WebSocketManager, get_websocket_manager
@@ -54,6 +59,19 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 SESSION_NOT_FOUND_MESSAGE = "Session nicht gefunden"
+
+
+class _UnscopedSessions(Protocol):
+    """What the unregistered str-keyed helpers below read; only a legacy manager has it."""
+
+    @property
+    def sessions(self) -> Mapping[str, Session]: ...
+
+    def get_session(self, session_id: str) -> Optional[Session]: ...
+
+    def update_session_activity(self, session_id: str) -> None: ...
+
+
 _REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
 
 
@@ -480,9 +498,9 @@ def _raise_if_upstream_busy(result: Dict[str, Any]) -> None:
     )
 
 
-def _session_consent_status(key: TenantSessionKey) -> ConsentStatus:
+def _session_consent_status(key: TenantSessionKey, sessions: TenantSessionManager) -> ConsentStatus:
     """The session's resolved consent, or `pending` when it cannot be read."""
-    session = session_manager.get_session(key)
+    session = sessions.get_session(key)
     if session is None:
         return ConsentStatus.PENDING
     return session.consent_status
@@ -530,6 +548,7 @@ async def _create_session_message_with_fallback(
     original_audio_url: Optional[str],
     message_id: str,
     correlation_id: Optional[str] = None,
+    sessions: TenantSessionManager,
 ) -> SessionMessage:
     if _supports_extended_session_message_args():
         return await create_session_message(
@@ -545,6 +564,7 @@ async def _create_session_message_with_fallback(
             original_audio_url=original_audio_url,
             message_id=message_id,
             correlation_id=correlation_id,
+            sessions=sessions,
         )
 
     return await create_session_message(
@@ -832,6 +852,8 @@ async def send_unified_message(
     sender: ClientType,
     request: Request,
     manager: OptionalManagerDependency = None,
+    *,
+    sessions: TenantSessionManager,
 ) -> MessageResponse:
     """
     Unified Message Endpoint für Audio- und Text-Input
@@ -850,12 +872,14 @@ async def send_unified_message(
     start_time = time.perf_counter()
     # One row per processed message, assembled across every exit below and
     # emitted once from the `finally`. See message_telemetry.py.
-    recorder = MessageTelemetryRecorder(session_id=key, start_time=start_time)
+    recorder = MessageTelemetryRecorder(
+        session_id=key, start_time=start_time, pseudonymizer=sessions.pseudonymizer
+    )
     _log_session_event("🚀 Processing message", session_id)
 
     # Session-Validation
     logger.debug("🔍 Validating session")
-    session = session_manager.get_session(key)
+    session = sessions.get_session(key)
     if not session:
         _log_session_event("❌ Session nicht gefunden", session_id)
         raise HTTPException(
@@ -895,7 +919,7 @@ async def send_unified_message(
             recorder.arm(InputMode.AUDIO)
             _log_session_event("🎵 Starte Audio-Pipeline", session_id)
             result = await process_audio_input(
-                key, sender, request, start_time, manager, recorder=recorder
+                key, sender, request, start_time, manager, recorder=recorder, sessions=sessions
             )
             _log_session_event("✅ Audio-Pipeline erfolgreich", session_id)
             return result
@@ -904,7 +928,7 @@ async def send_unified_message(
             recorder.arm(InputMode.TEXT)
             _log_session_event("📝 Starte Text-Pipeline", session_id)
             result = await process_text_input(
-                key, sender, request, start_time, manager, recorder=recorder
+                key, sender, request, start_time, manager, recorder=recorder, sessions=sessions
             )
             _log_session_event("✅ Text-Pipeline erfolgreich", session_id)
             return result
@@ -956,11 +980,15 @@ async def process_audio_input(
     start_time: float,
     manager: Optional[WebSocketManager] = None,
     recorder: Optional[MessageTelemetryRecorder] = None,
+    *,
+    sessions: TenantSessionManager,
 ) -> MessageResponse:
     """Audio-Input verarbeiten (multipart/form-data)"""
     # A recorder nobody armed emits nothing, so a direct caller -- every test
     # that drives this function without the route -- needs to pass nothing.
-    recorder = recorder or MessageTelemetryRecorder(session_id=key, start_time=start_time)
+    recorder = recorder or MessageTelemetryRecorder(
+        session_id=key, start_time=start_time, pseudonymizer=sessions.pseudonymizer
+    )
     # Before the pipeline: a malformed header is the caller's mistake and must
     # not cost a pipeline run.
     correlation_id = _correlation_id_for(request)
@@ -970,7 +998,7 @@ async def process_audio_input(
     )
 
     # Validate languages match session configuration
-    session = session_manager.get_session(key)
+    session = sessions.get_session(key)
     if session:
         validate_session_languages(session, source_lang, target_lang, client_type)
 
@@ -1037,6 +1065,7 @@ async def process_audio_input(
         original_audio_url="available" if original_audio_available else None,
         message_id=message_id,
         correlation_id=correlation_id,
+        sessions=sessions,
     )
     message.id = message_id
     return _build_message_response(
@@ -1058,10 +1087,14 @@ async def process_text_input(
     start_time: float,
     manager: Optional[WebSocketManager] = None,
     recorder: Optional[MessageTelemetryRecorder] = None,
+    *,
+    sessions: TenantSessionManager,
 ) -> MessageResponse:
     """Text-Input verarbeiten (application/json)"""
     session_id = key.session_id
-    recorder = recorder or MessageTelemetryRecorder(session_id=key, start_time=start_time)
+    recorder = recorder or MessageTelemetryRecorder(
+        session_id=key, start_time=start_time, pseudonymizer=sessions.pseudonymizer
+    )
     correlation_id = _correlation_id_for(request)
     text_request = await _parse_text_request(request)
     recorder.record_request(
@@ -1084,7 +1117,7 @@ async def process_text_input(
     _validate_supported_languages(text_request.source_lang, text_request.target_lang)
 
     # Validate languages match session configuration
-    session = session_manager.get_session(key)
+    session = sessions.get_session(key)
     logger.info(
         "🔎 Session lookup for text input | %s",
         sanitize_log_value(
@@ -1163,6 +1196,7 @@ async def process_text_input(
         original_audio_url=None,
         message_id=message_id,
         correlation_id=correlation_id,
+        sessions=sessions,
     )
 
     return _build_message_response(
@@ -1190,6 +1224,8 @@ async def create_session_message(
     original_audio_url: Optional[str] = None,
     message_id: Optional[str] = None,  # Allow pre-generated message_id
     correlation_id: Optional[str] = None,
+    *,
+    sessions: TenantSessionManager,
 ) -> SessionMessage:
     """Session-Message erstellen und zur Session hinzufügen"""
     import logging
@@ -1227,7 +1263,7 @@ async def create_session_message(
     )
 
     # Zur Session hinzufügen
-    session_manager.add_message(session_id, message)
+    sessions.add_message(session_id, message)
 
     # ✨ WebSocket Broadcasting mit differentiated content
     _log_session_event(
@@ -1284,9 +1320,9 @@ async def create_session_message(
     # Each artefact carries its own live read; the outcome decides what
     # survives termination, never what the conversation delivered.
     authorization = await authorize_message_artifacts(
-        gate=current_runtime_policy(),
+        gate=sessions.runtime_policy,
         tenant_id=session_id.tenant_id,
-        consent_status=_session_consent_status(session_id),
+        consent_status=_session_consent_status(session_id, sessions),
         correlation_id=correlation_id or str(uuid.uuid4()),
         has_original_audio=original_audio_url is not None,
         has_translated_audio=translated_audio_available,
@@ -1295,7 +1331,7 @@ async def create_session_message(
     message.original_audio_authorized = authorization.original_audio
     message.translated_audio_authorized = authorization.translated_audio
     try:
-        session_manager.record_message_authorization(
+        sessions.record_message_authorization(
             session_id,
             resolved_message_id,
             record=authorization.record,
@@ -1456,9 +1492,9 @@ def create_error_response(
     ).model_dump()
 
 
-async def get_session_messages(session_id: str) -> Dict[str, Any]:
+async def get_session_messages(session_id: str, sessions: _UnscopedSessions) -> Dict[str, Any]:
     """Nachrichten einer Session abrufen"""
-    session = await asyncio.to_thread(session_manager.get_session, session_id)
+    session = await asyncio.to_thread(sessions.get_session, session_id)
     if not session:
         raise HTTPException(404, SESSION_NOT_FOUND_MESSAGE)
 
@@ -1468,12 +1504,12 @@ async def get_session_messages(session_id: str) -> Dict[str, Any]:
     }
 
 
-async def get_message_audio(message_id: str):
+async def get_message_audio(message_id: str, sessions: _UnscopedSessions):
     """Audio-Datei einer Nachricht abrufen (übersetztes Audio)"""
     from fastapi.responses import Response
 
     # Message in allen Sessions suchen
-    for session in session_manager.sessions.values():
+    for session in sessions.sessions.values():
         for message in session.messages:
             if message.id == message_id and message.audio_base64:
                 audio_bytes = await asyncio.to_thread(base64.b64decode, message.audio_base64)
@@ -1533,13 +1569,14 @@ async def update_client_activity(
     session_id: str,
     activity: ClientActivityUpdate,
     manager: ManagerDependency,
+    sessions: _UnscopedSessions,
 ) -> ActivityUpdateResponse:
     """
     📱 Client-Activity-Status aktualisieren für Mobile-Optimization
     Ermöglicht adaptive Polling-Intervalle basierend auf Device-Status
     """
     # Session validieren
-    session = session_manager.get_session(session_id)
+    session = sessions.get_session(session_id)
     if not session:
         raise HTTPException(404, SESSION_NOT_FOUND_MESSAGE)
 
@@ -1554,7 +1591,7 @@ async def update_client_activity(
     )
 
     # Session-Aktivität aktualisieren (für Timeout-Management)
-    session_manager.update_session_activity(session_id)
+    sessions.update_session_activity(session_id)
 
     # Response zusammenstellen
     avg_interval = int(sum(new_intervals) / len(new_intervals)) if new_intervals else 5

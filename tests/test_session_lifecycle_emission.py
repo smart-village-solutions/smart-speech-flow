@@ -1,10 +1,10 @@
 """`session_lifecycle` from the real SessionManager (tasks 1.2, 2.3, 2.4).
 
-SessionManager is a process-wide singleton with no request behind it, so it
-takes its emitter the way `translation_refiner` does -- attached by the
-gateway's lifespan. The properties that matter are the same as everywhere else
-in this pipeline: one row per transition, nothing content-bearing on it, and a
-dead ClickHouse changing no session outcome.
+The session manager has no request behind it, so it takes its emitter the
+way `translation_refiner` does -- attached by the gateway's lifespan. The
+properties that matter are the same as everywhere else in this pipeline: one
+row per transition, nothing content-bearing on it, and a dead ClickHouse
+changing no session outcome.
 """
 
 from hashlib import sha256
@@ -19,7 +19,8 @@ from services.api_gateway.quality_telemetry import (
     TelemetryMode,
     discard_event,
 )
-from services.api_gateway.session_manager import SessionManager, SessionStatus
+from services.api_gateway.legacy_session_manager import LegacySessionManager
+from services.api_gateway.session_manager import SessionStatus, TenantSessionManager
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
@@ -40,7 +41,7 @@ class _Spy:
 
 @pytest.fixture
 def manager():
-    instance = SessionManager()
+    instance = LegacySessionManager()
     instance.reset()
     instance.attach_quality_telemetry(None)
     yield instance
@@ -60,7 +61,7 @@ class TestTheThreeTransitions:
     async def test_tenant_lifecycle_carries_only_a_pseudonymous_tenant_reference(
         self,
     ):
-        manager = SessionManager(
+        manager = TenantSessionManager(
             store=MemoryTenantSessionStore(), session_id_factory=lambda: "ABC12345"
         )
         spy = _Spy()
@@ -334,10 +335,10 @@ class TestTelemetryNeverChangesTheOutcome:
     async def test_resetting_the_manager_does_not_detach_the_emitter(
         self, manager, spy
     ):
-        """`SessionManager()` re-runs `__init__` on the singleton, and the test
+        """`LegacySessionManager()` runs `__init__` again, and the test
         suite builds many of them. An attachment cleared there would leave the
         gateway silently un-instrumented after the first one."""
-        SessionManager()
+        LegacySessionManager()
 
         await manager.create_admin_session()
 
