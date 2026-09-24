@@ -3,7 +3,9 @@
 The unit suites run the ticket store over an in-memory double, which cannot
 show that CONSUME_TICKET_LUA really is an atomic get-and-delete, that Redis
 expires a ticket, or what the keys and values look like on the server. These
-tests drive the store over a real client and pin all of that.
+tests drive the store over the Redis adapter and a real client and pin all
+of that. The adapter's own contract cases match the memory adapter's in
+tests/test_realtime_ticket.py, so both are held to one contract.
 
 Marked integration, and skipped unless SSF_TEST_REDIS_URL is set. CI has no
 Redis service, so CI skips them. Run with
@@ -31,6 +33,7 @@ from redis import Redis
 from services.api_gateway.realtime_ticket import (
     RealtimeTicketStore,
     RealtimeTicketUnavailable,
+    RedisRealtimeTicketBackend,
 )
 from services.api_gateway.tenant_session import TenantSessionKey
 
@@ -66,9 +69,20 @@ def namespace(redis_client: Redis) -> Iterator[str]:
             redis_client.delete(*keys)
 
 
+# Production's client decodes replies (tenant_persistence.py); a default
+# client returns bytes, which the adapter must decode itself.
+@pytest.fixture(params=[True, False], ids=["decoded-client", "bytes-client"])
+def backend(request: pytest.FixtureRequest) -> Iterator[RedisRealtimeTicketBackend]:
+    client = Redis.from_url(os.environ["SSF_TEST_REDIS_URL"], decode_responses=request.param)
+    try:
+        yield RedisRealtimeTicketBackend(client)
+    finally:
+        client.close()
+
+
 @pytest.fixture
-def store(redis_client: Redis, namespace: str) -> RealtimeTicketStore:
-    return RealtimeTicketStore(redis_client, namespace=namespace)
+def store(backend: RedisRealtimeTicketBackend, namespace: str) -> RealtimeTicketStore:
+    return RealtimeTicketStore(backend, namespace=namespace)
 
 
 def _keys(redis_client: Redis, namespace: str) -> list[str]:
@@ -259,7 +273,7 @@ def test_the_revocation_key_layout_and_value(
 
 def test_an_unreachable_redis_is_reported_as_unavailable(namespace: str) -> None:
     unreachable = Redis(host="127.0.0.1", port=1, socket_connect_timeout=0.5)
-    store = RealtimeTicketStore(unreachable, namespace=namespace)
+    store = RealtimeTicketStore(RedisRealtimeTicketBackend(unreachable), namespace=namespace)
 
     with pytest.raises(RealtimeTicketUnavailable):
         store.issue(KEY, "websocket")
@@ -267,3 +281,97 @@ def test_an_unreachable_redis_is_reported_as_unavailable(namespace: str) -> None
         store.consume("any-ticket", KEY, "websocket")
     with pytest.raises(RealtimeTicketUnavailable):
         store.revoke(KEY)
+
+
+def test_redis_consume_is_single_use(backend: RedisRealtimeTicketBackend, namespace: str) -> None:
+    key = f"{namespace}:k"
+    assert backend.put_if_absent(key, "value", 60) is True
+
+    assert backend.consume(key) == "value"
+    assert backend.consume(key) is None
+    assert backend.get(key) is None
+
+
+def test_redis_get_does_not_consume(backend: RedisRealtimeTicketBackend, namespace: str) -> None:
+    key = f"{namespace}:k"
+    backend.put(key, "value", 60)
+
+    assert backend.get(key) == "value"
+    assert backend.consume(key) == "value"
+
+
+def test_redis_consume_has_one_winner_among_twenty_threads(
+    backend: RedisRealtimeTicketBackend, namespace: str
+) -> None:
+    key = f"{namespace}:k"
+    backend.put_if_absent(key, "value", 60)
+    contenders = 20
+    start = threading.Barrier(contenders)
+    results: list[str | None] = []
+    results_lock = threading.Lock()
+
+    def contend() -> None:
+        start.wait()
+        outcome = backend.consume(key)
+        with results_lock:
+            results.append(outcome)
+
+    threads = [threading.Thread(target=contend) for _ in range(contenders)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert len(results) == contenders
+    assert results.count("value") == 1
+
+
+def test_redis_values_expire_after_their_lifetime(
+    backend: RedisRealtimeTicketBackend, namespace: str
+) -> None:
+    ticket, revoked = f"{namespace}:ticket", f"{namespace}:revoked"
+    backend.put_if_absent(ticket, "value", 1)
+    backend.put(revoked, "1", 1)
+    assert backend.get(ticket) == "value"
+
+    time.sleep(1.5)
+
+    assert backend.consume(ticket) is None
+    assert backend.get(revoked) is None
+
+
+def test_redis_put_if_absent_keeps_a_live_value(
+    backend: RedisRealtimeTicketBackend, namespace: str
+) -> None:
+    key = f"{namespace}:k"
+    assert backend.put_if_absent(key, "first", 1) is True
+    assert backend.put_if_absent(key, "second", 60) is False
+    assert backend.get(key) == "first"
+
+    time.sleep(1.5)
+
+    assert backend.put_if_absent(key, "third", 60) is True
+    assert backend.get(key) == "third"
+
+
+def test_redis_put_overwrites_and_restarts_the_lifetime(
+    backend: RedisRealtimeTicketBackend, redis_client: Redis, namespace: str
+) -> None:
+    key = f"{namespace}:k"
+    backend.put(key, "first", 10)
+    redis_client.expire(key, 2)
+
+    backend.put(key, "second", 10)
+
+    assert backend.get(key) == "second"
+    assert redis_client.ttl(key) > 5
+
+
+def test_the_redis_adapter_returns_str_from_a_bytes_client(
+    backend: RedisRealtimeTicketBackend, namespace: str
+) -> None:
+    key = f"{namespace}:k"
+    backend.put(key, "välue", 60)
+
+    assert backend.get(key) == "välue"
+    assert backend.consume(key) == "välue"

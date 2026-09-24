@@ -113,7 +113,11 @@ def build_gateway_dependencies(
     from .circuit_breaker_client import CircuitBreakerServiceClient
     from .conversation_service import ConversationService
     from .pipeline_logic import SpeechPipeline
-    from .realtime_ticket import MemoryRealtimeTicketBackend, RealtimeTicketStore
+    from .realtime_ticket import (
+        MemoryRealtimeTicketBackend,
+        RealtimeTicketStore,
+        RedisRealtimeTicketBackend,
+    )
     from .service_health import ServiceHealthManager
     from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
@@ -126,7 +130,7 @@ def build_gateway_dependencies(
     from .websocket_polling_routes import TenantPollingStore
 
     realtime_tickets = RealtimeTicketStore(
-        redis if redis is not None else MemoryRealtimeTicketBackend(),
+        RedisRealtimeTicketBackend(redis) if redis is not None else MemoryRealtimeTicketBackend(),
         namespace=redis_namespace,
     )
     polling_store = TenantPollingStore(messages_dropped=polling_messages_dropped)
