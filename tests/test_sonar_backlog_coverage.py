@@ -8,6 +8,25 @@ import pytest
 
 from tests.pipeline_helpers import pipeline_collaborators, speech_pipeline
 
+# Module namespaces as they were before this test reloaded them.
+_RELOADED: dict[str, dict[str, object]] = {}
+
+
+@pytest.fixture(autouse=True)
+def restore_reloaded_modules():
+    """Put every reloaded module back as it was once the test ends.
+
+    A reload leaves new classes and import-time constants behind. Later tests
+    then build apps from classes they never imported and patched, as
+    test_gateway_app_isolation.py does, or find a different `app`.
+    """
+    yield
+    for module_path, namespace in _RELOADED.items():
+        module = importlib.import_module(module_path)
+        module.__dict__.clear()
+        module.__dict__.update(namespace)
+    _RELOADED.clear()
+
 
 def reload_module(module_path: str, env: dict[str, str | None]):
     saved: dict[str, str | None] = {}
@@ -20,6 +39,7 @@ def reload_module(module_path: str, env: dict[str, str | None]):
 
     try:
         module = importlib.import_module(module_path)
+        _RELOADED.setdefault(module_path, dict(module.__dict__))
         return importlib.reload(module)
     finally:
         for key, value in saved.items():
@@ -96,13 +116,6 @@ def _speech_services(env: dict[str, str | None]):
     return module, module.HttpSpeechServices(ServiceHealthManager().circuit_breakers)
 
 
-@pytest.fixture
-def restore_speech_service_urls():
-    yield
-    reload_module("services.api_gateway.speech_services", {})
-
-
-@pytest.mark.usefixtures("restore_speech_service_urls")
 def test_pipeline_logic_helpers_cover_refinement_and_tts_paths(monkeypatch):
     pipeline_logic = importlib.import_module("services.api_gateway.pipeline_logic")
     speech_services, speech = _speech_services(
@@ -177,7 +190,6 @@ def test_pipeline_logic_helpers_cover_refinement_and_tts_paths(monkeypatch):
     assert debug_info["steps"][-1]["error"] == "tts failed"
 
 
-@pytest.mark.usefixtures("restore_speech_service_urls")
 def test_pipeline_logic_translation_helper_records_debug_step(monkeypatch):
     pipeline_logic = importlib.import_module("services.api_gateway.pipeline_logic")
     _, speech = _speech_services(
