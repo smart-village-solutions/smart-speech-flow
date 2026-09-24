@@ -203,7 +203,8 @@ def test_client_joined_and_left_reach_the_peer_and_the_pollers(client, conversat
     }
     assert left["connection_id"] == joined["connection_id"]
     assert isinstance(joined["connection_id"], str)
-    assert _is_timestamp(joined["timestamp"]) and _is_timestamp(left["timestamp"])
+    assert _is_timestamp(joined["timestamp"])
+    assert _is_timestamp(left["timestamp"])
     # The admin's own join reaches the poller as well.
     assert [(frame["type"], frame["client_type"]) for frame in polled] == [
         ("client_joined", "admin"),
