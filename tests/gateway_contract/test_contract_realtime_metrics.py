@@ -135,13 +135,18 @@ def _settle(socket) -> None:
         pass
 
 
-def _answer_one_ping(socket) -> None:
-    while True:
+def _answer_a_fresh_ping(socket) -> None:
+    """Answer the first ping sent after everything already queued for `socket`.
+
+    Pings keep coming, and only a pong that echoes the latest one is timed, so
+    a pong for a ping read from behind a backlog would record no latency.
+    """
+    _settle(socket)
+    frame = socket.receive_json()
+    while frame["type"] != "heartbeat_ping":
         frame = socket.receive_json()
-        if frame["type"] == "heartbeat_ping":
-            socket.send_json({"type": "heartbeat_pong", "ping_id": frame["ping_id"]})
-            _settle(socket)
-            return
+    socket.send_json({"type": "heartbeat_pong", "ping_id": frame["ping_id"]})
+    _settle(socket)
 
 
 @pytest.fixture
@@ -159,7 +164,8 @@ def local_environment(monkeypatch):
 
 
 def _drive_the_realtime_surface(client, conversations, dependencies) -> None:
-    dependencies.websocket_manager.heartbeat_interval = 0.05
+    # Long enough that a pong answered at once always beats the next ping.
+    dependencies.websocket_manager.heartbeat_interval = 0.2
     session_id = conversations.create()
     conversations.activate(session_id, "en")
     poller = client.post(f"/api/customer/session/{session_id}/polling/activate")
@@ -179,7 +185,7 @@ def _drive_the_realtime_surface(client, conversations, dependencies) -> None:
             for number in range(101):
                 admin.send_json({"type": "message", "content": {"number": number}})
             _settle(admin)
-            _answer_one_ping(customer)
+            _answer_a_fresh_ping(customer)
 
             sent = client.post(
                 f"/api/customer/session/{session_id}/polling/{polling_id}/send",
