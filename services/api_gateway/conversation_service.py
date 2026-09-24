@@ -13,7 +13,7 @@ from .session_manager import ClientType, SessionStatus, TenantSessionManager
 from .tenant_session import TenantSessionKey
 
 if TYPE_CHECKING:
-    from .routes.session import MessageResponse
+    from .message_models import MessageResponse
     from .websocket import WebSocketManager
 
 
@@ -30,7 +30,7 @@ class ConversationService:
         request: Request,
         manager: WebSocketManager | None = None,
     ) -> MessageResponse:
-        from .routes.session import send_unified_message
+        from .message_processing import send_unified_message
 
         return await send_unified_message(key, sender, request, manager, sessions=self._sessions)
 
@@ -41,7 +41,7 @@ class ConversationService:
         request: Request,
         manager: WebSocketManager | None = None,
     ) -> MessageResponse:
-        from .routes.session import process_text_input
+        from .message_processing import process_text_input
 
         return await process_text_input(
             key, sender, request, time.perf_counter(), manager, sessions=self._sessions
@@ -54,7 +54,7 @@ class ConversationService:
         request: Request,
         manager: WebSocketManager | None = None,
     ) -> MessageResponse:
-        from .routes.session import process_audio_input
+        from .message_processing import process_audio_input
 
         return await process_audio_input(
             key, sender, request, time.perf_counter(), manager, sessions=self._sessions

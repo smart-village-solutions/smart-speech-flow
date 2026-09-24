@@ -8,7 +8,7 @@ import base64
 from datetime import datetime
 from unittest.mock import Mock, patch, MagicMock
 from services.api_gateway.session_manager import SessionMessage, ClientType
-from services.api_gateway.routes.session import transform_pipeline_metadata
+from services.api_gateway.message_processing import transform_pipeline_metadata
 
 
 class TestPipelineMetadataTransformation:
