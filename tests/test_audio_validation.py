@@ -10,15 +10,17 @@ import wave
 import numpy as np
 from unittest.mock import Mock, patch
 
-from services.api_gateway.pipeline_logic import (
+from services.api_gateway.audio_processing import (
     validate_audio_input,
     normalize_audio,
     AudioValidationResult,
     AudioSpecs,
-    process_wav,
     _build_audio_validation_failure,
     _collect_audio_validation_errors,
     _normalize_audio_if_requested,
+)
+from services.api_gateway.pipeline_logic import (
+    process_wav,
     _pipeline_error_result,
     _validate_and_normalize_text,
 )

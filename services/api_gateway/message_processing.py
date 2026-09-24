@@ -327,7 +327,7 @@ def _validate_audio_payload(file: Any, file_bytes: bytes) -> bytes:
     if not _should_validate_upload_file(file):
         return file_bytes
 
-    from .pipeline_logic import validate_audio_input
+    from .audio_processing import validate_audio_input
 
     validation_result = validate_audio_input(file_bytes, normalize=True)
     if validation_result.is_valid:
