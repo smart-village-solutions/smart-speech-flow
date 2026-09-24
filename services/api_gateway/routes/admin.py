@@ -21,6 +21,7 @@ from ..dependencies import (
     get_polling_store,
     get_quality_telemetry,
     get_realtime_ticket_store,
+    get_session_lifecycle,
     get_session_manager,
     get_websocket_manager,
 )
@@ -28,13 +29,14 @@ from ..log_safety import sanitize_log_value
 from ..quality_telemetry import QualityTelemetry
 from ..realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from ..session_access import require_admin_session_key
-from ..session_manager import ClientType, SessionStatus, TenantSessionManager
+from ..session_lifecycle import NoActiveSessionError, SessionLifecycleService, SessionNotFoundError
+from ..session_manager import ClientType, TenantSessionManager
 from ..studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
     require_validated_runtime_configuration,
 )
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
-from ..tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from ..tenant_session import TenantSessionKey
 from ..websocket import WebSocketManager
 from ..websocket_polling_routes import TenantPollingStore
 
@@ -195,10 +197,9 @@ async def send_admin_message(
     session_id: str,
     request: Request,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
-    manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ):
-    return await conversations.process(key, ClientType.ADMIN, request, manager)
+    return await conversations.process(key, ClientType.ADMIN, request)
 
 
 @router.get("/session/{session_id}/messages", responses=ADMIN_ROUTE_RESPONSES)
@@ -257,7 +258,7 @@ async def create_admin_session(
         ValidatedRuntimeConfiguration,
         Depends(require_validated_runtime_configuration),
     ],
-    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
+    lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
 ) -> SessionCreateResponse:
     """
     Erstellt eine neue Admin-Session
@@ -273,10 +274,7 @@ async def create_admin_session(
     try:
         logger.info("🚀 Admin-Session-Erstellung gestartet")
 
-        session = await sessions.create_admin_session(
-            runtime.context.tenant_id,
-            RuntimeConfigurationSnapshot.from_configuration(runtime.configuration),
-        )
+        session = await lifecycle.create(runtime.context.tenant_id, runtime.configuration)
         session_id = session.id
 
         # Client-URL generieren
@@ -314,7 +312,7 @@ async def create_admin_session(
 )
 async def get_current_session(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
-    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
+    lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
     session_id: Annotated[
         Optional[str],
         Query(description="Spezifische Session-ID, die geladen werden soll."),
@@ -327,31 +325,9 @@ async def get_current_session(
         SessionStatusResponse: Details der aktiven Session
     """
     try:
-        active_session_data = sessions.get_active_session(
-            session_id=session_id,
-            tenant_id=context.tenant_id,
-        )
-
-        if not active_session_data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=(
-                    _SESSION_NOT_FOUND
-                    if session_id is not None
-                    else "Keine aktive Admin-Session gefunden"
-                ),
-            )
-
-        session_id = active_session_data["id"]
-        session = sessions.get_session(TenantSessionKey(context.tenant_id, session_id))
-        if session is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=_SESSION_NOT_FOUND,
-            )
-
+        session = lifecycle.current(context.tenant_id, session_id)
         return SessionStatusResponse(
-            session_id=session_id,
+            session_id=session.id,
             status=session.status.value,
             customer_language=session.customer_language,
             admin_connected=session.admin_connected,
@@ -364,8 +340,20 @@ async def get_current_session(
             timeout_at=session.next_timeout_at().isoformat(),
         )
 
-    except HTTPException:
-        raise
+    except NoActiveSessionError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                _SESSION_NOT_FOUND
+                if session_id is not None
+                else "Keine aktive Admin-Session gefunden"
+            ),
+        )
+    except SessionNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=_SESSION_NOT_FOUND,
+        )
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -392,7 +380,7 @@ async def get_current_session(
 async def terminate_session(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
-    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
+    lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
 ) -> JSONResponse:
     """
     Beendet eine Session manuell
@@ -404,11 +392,7 @@ async def terminate_session(
         JSON-Response mit Erfolgs-/Fehlermeldung
     """
     try:
-        session = sessions.get_session(key)
-        if session is None:
-            raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
-
-        if session.status == SessionStatus.TERMINATED:
+        if not await lifecycle.terminate(key):
             return JSONResponse(
                 content={
                     "message": f"Session {session_id} ist bereits beendet",
@@ -416,9 +400,6 @@ async def terminate_session(
                     "status": "already_terminated",
                 }
             )
-
-        # Session beenden
-        await sessions.terminate_session(key, "manual_admin_termination")
 
         logger.info(
             "✅ Session manuell beendet | %s",
@@ -434,8 +415,8 @@ async def terminate_session(
             }
         )
 
-    except HTTPException:
-        raise
+    except SessionNotFoundError:
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
     except Exception as e:
         logger.exception(
             "❌ Fehler beim Beenden der Session",
@@ -455,7 +436,7 @@ async def terminate_session(
 )
 async def get_session_history(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
-    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
+    lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
     limit: int = 10,
 ) -> SessionHistoryResponse:
     """
@@ -468,12 +449,7 @@ async def get_session_history(
         SessionHistoryResponse: Historie und aktuelle Session
     """
     try:
-        # Vergangene Sessions
-        history = sessions.get_session_history(limit=limit, tenant_id=context.tenant_id)
-
-        # Aktuelle Session
-        active_sessions = sessions.get_active_sessions(tenant_id=context.tenant_id)
-
+        history, active_sessions = lifecycle.history(context.tenant_id, limit)
         return SessionHistoryResponse(
             sessions=history, total_count=len(history), active_sessions=active_sessions
         )

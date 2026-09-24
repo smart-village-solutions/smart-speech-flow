@@ -17,7 +17,7 @@ from services.api_gateway.session_manager import (
     SessionMessage,
     SessionStatus,
 )
-from services.api_gateway.routes import session as session_routes
+from services.api_gateway import message_processing
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 client = TestClient(app)
@@ -64,6 +64,7 @@ def _patch_pipeline(monkeypatch, session_manager):
         audio_bytes,
         source_lang: str,
         target_lang: str,
+        **_kwargs,
     ) -> SessionMessage:
         message = SessionMessage(
             id=str(uuid.uuid4()),
@@ -78,8 +79,8 @@ def _patch_pipeline(monkeypatch, session_manager):
         session_manager.add_message(session_id, message)
         return message
 
-    monkeypatch.setattr(session_routes, "process_text_pipeline", fake_process_text_pipeline)
-    monkeypatch.setattr(session_routes, "create_session_message", fake_create_session_message)
+    monkeypatch.setattr(message_processing, "process_text_pipeline", fake_process_text_pipeline)
+    monkeypatch.setattr(message_processing, "create_session_message", fake_create_session_message)
 
 
 def test_session_message_rate_limit(monkeypatch, session_manager):

@@ -16,7 +16,10 @@
 - [x] 2.2a Define typed tenant session contracts: `TenantSessionKey` on every public `TenantSessionManager` method, with `TenantSessionKey`, join-index, Redis, consent, and runtime-snapshot semantics retained.
 - [ ] 2.2b Define an async persistence port for the tenant session store.
   - Assessed in PR4a and planned as its own change.
-- [ ] 2.3 Extract application services for session lifecycle and message processing; migrate routes without public contract drift.
+- [x] 2.3 Extract application services for session lifecycle and message processing; migrate routes without public contract drift.
+  - Message processing (PR4b): `message_models.py` and `message_processing.py`, entered only through `ConversationService`; nothing outside `routes/` imports from `routes/` (`tests/test_gateway_import_direction.py`).
+  - Session lifecycle (PR4b): `SessionLifecycleService` in `session_lifecycle.py`; the admin create, current, terminate and history handlers and the customer activation handler map its results onto HTTP.
+  - `routes/session.py` still holds the unregistered leftovers; task 4.2 inventories them for PR7.
 - [ ] 2.4 Extract speech HTTP, validation/conversion, and audio-storage adapters behind typed ports; preserve pipeline metadata and failure mapping.
 - [ ] 2.5 Add parity, lifecycle, cross-tenant, persistence, and pipeline contract coverage.
 

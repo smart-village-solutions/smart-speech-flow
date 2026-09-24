@@ -44,7 +44,8 @@ Existing app-state services migrate into the container without behavioral change
 | Realtime ticket store | `build_gateway_dependencies`, on the lifespan's verified Redis client and namespace, or in memory without `REDIS_URL` | `get_realtime_ticket_store` | container |
 | Polling store | `build_gateway_dependencies` | `get_polling_store` | container |
 | WebSocket manager | `build_gateway_dependencies` | `get_websocket_manager` | container |
-| Conversation service | `build_gateway_dependencies` | `get_conversation_service` | container |
+| Conversation service (`ConversationService`) | `build_gateway_dependencies`, with this app's session manager and WebSocket manager | `get_conversation_service` | container |
+| Session lifecycle service (`SessionLifecycleService`) | `build_gateway_dependencies`, with this app's session manager | `get_session_lifecycle` | container |
 | Studio runtime flow | lifespan (`runtime_flow_from_environment`), which also binds the persistence gate with it | `get_studio_runtime_flow`; `None` when Studio is unconfigured | container |
 | Studio login directory service | `build_gateway_dependencies` (`login_directory_from_environment`) | `get_login_directory`; `get_studio_login_directory_service` and `get_auth_login_directory_provider` turn `None` into 503 | container |
 | Pipeline admission | lifespan | `get_pipeline_admission` (`pipeline_admission.py`) | container |
@@ -93,7 +94,17 @@ No single Protocol covers both managers. Their key types differ, so every key-ta
 
 ### Decision: Separate transport responsibilities
 
-Route adapters call application services; application services depend on typed ports. Speech HTTP access, validation/conversion/storage are infrastructure adapters. The realtime ticket backend exposes `consume`, `put_if_absent`, and `get` domain operations rather than Redis eval details. Realtime registry, dispatch, heartbeat, polling, and monitoring have focused interfaces. #348 decides the supported tenant-safe monitoring API surface.
+Route adapters call application services; application services depend on typed ports.
+
+#### Message processing (PR4b)
+
+- `message_models.py` holds the message request, response and error models, the error envelope (`create_error_response`) and `SUPPORTED_LANGUAGES`.
+- `message_processing.py` holds the pipeline steps: parsing, validation, the pipeline-metadata transform, busy and error mapping, audio artefact storage, persistence authorization, response building and the differentiated broadcast.
+- `ConversationService` is its only production entry point. The admin and customer message routes call `process` through `get_conversation_service` and pass only the key, the server-assigned role and the request.
+- `routes/session.py` keeps `GET /languages/supported` and the unregistered leftovers PR7 removes. It re-exports nothing that moved.
+- Rules, enforced by `tests/test_gateway_import_direction.py`: no gateway module outside `routes/` imports from `routes/`, at module level, inside a function or under `TYPE_CHECKING`. `app.py` is the one exception, because it registers the routers. Only `conversation_service.py` imports `message_processing`.
+- `SessionLifecycleService` (`session_lifecycle.py`) decides create, current, terminate, history and activation: the frozen runtime snapshot, consent resolution and the live policy read, the idempotent and language-switch paths. `TenantSessionManager.create_admin_session` still ends the tenant's previous session. The routes keep authentication, key resolution, logging of the request itself, and the mapping of results and `SessionNotFoundError`, `NoActiveSessionError`, `SessionTerminatedError` and `TenantConflictError` to status codes and bodies. The Studio runtime flow reaches `activate` per call from `get_studio_runtime_flow`, the provider `require_validated_runtime_configuration` also reads, so one app never holds two flows.
+- Still read through the request: the pipeline admission gate (`run_pipeline`) and quality telemetry. The lifespan builds both after the container and releases them on shutdown, and the upload and pipeline routes share the admission gate. They are read from the request's own app container, not from a module global. PR5 moves them behind the pipeline adapter. Speech HTTP access, validation/conversion/storage are infrastructure adapters. The realtime ticket backend exposes `consume`, `put_if_absent`, and `get` domain operations rather than Redis eval details. Realtime registry, dispatch, heartbeat, polling, and monitoring have focused interfaces. #348 decides the supported tenant-safe monitoring API surface.
 
 ### Decision: Four delivery slices
 

@@ -15,22 +15,24 @@ from pydantic import BaseModel, Field
 
 from ..audio_storage import AudioVariant
 from ..auth import optional_ssf_user
-from ..consent_resolution import resolve_consent
 from ..conversation_service import ConversationService
 from ..dependencies import (
     get_conversation_service,
+    get_session_lifecycle,
     get_session_manager,
     get_studio_runtime_flow,
-    get_websocket_manager,
 )
-from ..log_safety import safe_language_code, sanitize_log_value
+from ..log_safety import safe_language_code
 from ..session_access import require_customer_session_key
+from ..session_lifecycle import (
+    SessionLifecycleService,
+    SessionNotFoundError,
+    SessionTerminatedError,
+    TenantConflictError,
+)
 from ..session_manager import ClientType, SessionStatus, TenantSessionManager
-from ..studio_runtime_client import RuntimeConfiguration, StudioRuntimeClientError
 from ..studio_runtime_flow import StudioRuntimeFlow, correlation_id_from_request
-from ..studio_runtime_token import StudioTokenError
 from ..tenant_session import TenantSessionKey
-from ..websocket import WebSocketManager
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -99,10 +101,9 @@ async def send_customer_message(
     session_id: str,
     request: Request,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
-    manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ):
-    return await conversations.process(key, ClientType.CUSTOMER, request, manager)
+    return await conversations.process(key, ClientType.CUSTOMER, request)
 
 
 @router.get("/session/{session_id}/messages", responses=CUSTOMER_ROUTE_RESPONSES)
@@ -141,44 +142,6 @@ def _safe_session_ref(session_id: Optional[str]) -> str:
     return sha256(session_id.encode("utf-8")).hexdigest()[:12]
 
 
-# The Contract V1 codes that mean the tenant may not start a session at all.
-_TENANT_CONFLICT_CODES = frozenset(
-    {"tenant_suspended", "ssf_plugin_inactive", "ssf_tenant_not_ready"}
-)
-
-
-async def _read_activation_configuration(
-    http_request: Request, tenant_id: str, runtime_flow: StudioRuntimeFlow | None
-) -> Optional[RuntimeConfiguration]:
-    """Read the live storage policy for one activation.
-
-    Returns `None` for every failure except a tenant conflict, which is raised
-    as `409` because no session may start. Deliberately not routed through
-    `RuntimePolicyGate`: that records discarded conversation content, and
-    activation writes none.
-
-    Args:
-        http_request: The activation request, read only for its correlation ID.
-        tenant_id: The tenant the session belongs to.
-        runtime_flow: The app's Studio flow, or None when Studio is unconfigured.
-
-    Returns:
-        The live runtime configuration, or `None` when the read failed.
-
-    Raises:
-        HTTPException: 409 when the tenant may not start a session.
-    """
-    correlation_id = correlation_id_from_request(http_request)
-    if runtime_flow is None:
-        return None
-    try:
-        return await runtime_flow.client.fetch(tenant_id, correlation_id)
-    except (StudioRuntimeClientError, StudioTokenError) as error:
-        if getattr(error, "code", None) in _TENANT_CONFLICT_CODES:
-            raise HTTPException(status_code=409, detail=error.code) from None
-        return None
-
-
 @router.post(
     "/session/activate",
     status_code=status.HTTP_200_OK,
@@ -192,6 +155,7 @@ async def activate_session(
     principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
     sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
     runtime_flow: Annotated[StudioRuntimeFlow | None, Depends(get_studio_runtime_flow)],
+    lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
 ) -> ActivateSessionResponse:
     """
     Aktiviert eine Session für Customer-Teilnahme
@@ -219,91 +183,23 @@ async def activate_session(
             safe_language_code(request.customer_language),
         )
 
-        # Session validieren
         key = require_customer_session_key(request.session_id, principal, sessions)
-        session = sessions.get_session(key)
-        if session is None:
-            raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
+        activation = await lifecycle.activate(
+            key,
+            request.customer_language,
+            request.data_retention_consent,
+            runtime_flow,
+            lambda: correlation_id_from_request(http_request),
+        )
 
-        # Status prüfen
-        if session.status == SessionStatus.TERMINATED:
-            logger.warning(
-                "❌ Session bereits beendet | %s",
-                sanitize_log_value({"session_ref": _safe_session_ref(request.session_id)}),
-            )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Session {request.session_id} wurde bereits beendet und kann nicht aktiviert werden",
-            )
-
-        # Idempotenz: Bereits aktive Session
-        if session.status == SessionStatus.ACTIVE:
-            # Prüfen, ob Sprache geändert werden soll
-            if session.customer_language != request.customer_language:
-                logger.info(
-                    "🔄 Sprache wird aktualisiert | %s",
-                    sanitize_log_value(
-                        {
-                            "session_ref": _safe_session_ref(request.session_id),
-                            "previous_language": session.customer_language,
-                            "new_language": request.customer_language,
-                        }
-                    ),
-                )
-                await sessions.activate_session(key, request.customer_language)
-                session = sessions.get_session(key)
-            else:
-                logger.info(
-                    "ℹ️ Session bereits aktiv - idempotente Antwort | %s",
-                    sanitize_log_value({"session_ref": _safe_session_ref(request.session_id)}),
-                )
-
+        if activation.already_active:
             return ActivateSessionResponse(
                 session_id=request.session_id,
-                status=session.status.value,
-                customer_language=session.customer_language,
+                status=activation.session.status.value,
+                customer_language=activation.session.customer_language,
                 message=f"Session {request.session_id} ist bereits aktiv",
                 timestamp=utc_now().isoformat(),
             )
-
-        # Sprache validieren (optional - die Implementierung kann erweitert werden)
-        supported_languages = [
-            "de",
-            "en",
-            "ar",
-            "tr",
-            "ru",
-            "uk",
-            "am",
-            "ti",
-            "ku",
-            "fa",
-        ]
-        if request.customer_language not in supported_languages:
-            logger.warning("⚠️ Nicht unterstützte Kundensprache angefordert")
-            # Warnung, aber nicht blockieren - der TTS-Service entscheidet final
-
-        # Consent is resolved on this transition alone. `activate_session` is
-        # re-entered on every customer language change, and re-resolving there
-        # would let a consent-less call overwrite a granted answer.
-        live_configuration = await _read_activation_configuration(
-            http_request, key.tenant_id, runtime_flow
-        )
-        session.consent_status = resolve_consent(live_configuration, request.data_retention_consent)
-
-        # Session aktivieren
-        await sessions.activate_session(key, request.customer_language)
-
-        # Erfolgsmeldung
-        logger.info(
-            "✅ Session erfolgreich aktiviert | %s",
-            sanitize_log_value(
-                {
-                    "session_ref": _safe_session_ref(request.session_id),
-                    "customer_language": request.customer_language,
-                }
-            ),
-        )
 
         return ActivateSessionResponse(
             session_id=request.session_id,
@@ -313,6 +209,15 @@ async def activate_session(
             timestamp=utc_now().isoformat(),
         )
 
+    except SessionNotFoundError:
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
+    except SessionTerminatedError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Session {request.session_id} wurde bereits beendet und kann nicht aktiviert werden",
+        )
+    except TenantConflictError as conflict:
+        raise HTTPException(status_code=409, detail=conflict.code) from None
     except HTTPException:
         raise
     except Exception as e:

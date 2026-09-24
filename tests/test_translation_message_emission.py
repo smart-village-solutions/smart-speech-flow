@@ -22,7 +22,7 @@ from services.api_gateway.quality_telemetry import (
     TerminalOutcome,
     discard_event,
 )
-from services.api_gateway.routes import session as session_routes
+from services.api_gateway import message_processing
 from services.api_gateway.session_manager import ClientType, TenantSessionManager
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import TenantSessionKey
@@ -127,10 +127,10 @@ async def _send(manager, telemetry, *, content_type, pipeline_result):
     session_id = await make_active_session(manager)
     target = "process_wav" if "multipart" in content_type else "process_text_pipeline"
     with (
-        patch.object(session_routes, target, return_value=pipeline_result),
-        patch.object(session_routes, "_store_audio_artifacts", return_value=None),
+        patch.object(message_processing, target, return_value=pipeline_result),
+        patch.object(message_processing, "_store_audio_artifacts", return_value=None),
     ):
-        return await session_routes.send_unified_message(
+        return await message_processing.send_unified_message(
             session_id, ClientType.ADMIN, _request(content_type, telemetry), sessions=manager
         )
 
@@ -219,7 +219,7 @@ class TestOneRowPerMessage:
         session_key = TenantSessionKey("tenant-test", "UNKNOWN1")
         request = _request("application/json", _telemetry(exporter))
         with pytest.raises(HTTPException) as excinfo:
-            await session_routes.send_unified_message(
+            await message_processing.send_unified_message(
                 session_key,
                 ClientType.ADMIN,
                 request,
@@ -236,7 +236,7 @@ class TestOneRowPerMessage:
 
         request = _request("text/plain", _telemetry(exporter))
         with pytest.raises(HTTPException):
-            await session_routes.send_unified_message(
+            await message_processing.send_unified_message(
                 session_id,
                 ClientType.ADMIN,
                 request,
@@ -275,9 +275,9 @@ class TestNoContentLeavesTheGateway:
         session_id = await make_active_session(manager)
 
         with (
-            patch.object(session_routes, "process_text_pipeline", return_value=_success()),
+            patch.object(message_processing, "process_text_pipeline", return_value=_success()),
         ):
-            await session_routes.send_unified_message(
+            await message_processing.send_unified_message(
                 session_id,
                 ClientType.ADMIN,
                 _request("application/json", _telemetry(exporter)),
@@ -338,9 +338,9 @@ class TestTelemetryNeverChangesTheOutcome:
 
         session_id = await make_active_session(manager)
         with (
-            patch.object(session_routes, "process_text_pipeline", return_value=_success()),
+            patch.object(message_processing, "process_text_pipeline", return_value=_success()),
         ):
-            response = await session_routes.send_unified_message(
+            response = await message_processing.send_unified_message(
                 session_id, ClientType.ADMIN, request, sessions=manager
             )
 
