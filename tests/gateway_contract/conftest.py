@@ -1,9 +1,9 @@
 """Fixtures for the gateway contract suite (#228).
 
 The tests beside this file drive only the public surface: HTTP through
-TestClient, the WebSocket endpoints and app.openapi(). State that still lives
-in module-level globals is reached here and nowhere else, so the composition
-root work repoints this one file instead of every test.
+TestClient, the WebSocket endpoints and app.openapi(). The app's dependency
+container and the globals that remain are reached here and nowhere else, so
+the composition root work repoints this one file instead of every test.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.auth import optional_ssf_user, require_ssf_user
+from services.api_gateway.dependencies import GatewayDependencies
 from services.api_gateway.studio_runtime_client import RuntimeConfiguration
 from services.api_gateway.studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
@@ -136,52 +137,34 @@ class RealtimeTickets:
     make_unavailable: Callable[[], None]
 
 
-def _reset_conversation_state() -> None:
-    from services.api_gateway import websocket as websocket_module
+def _reset_conversation_state(dependencies: GatewayDependencies) -> None:
     from services.api_gateway.session_manager import session_manager
-    from services.api_gateway.websocket_polling_routes import polling_store
 
     session_manager.reset(clear_persistence=True)
-    websocket_module.websocket_manager = None
-    polling_store.clients.clear()
+    session_manager.register_websocket_manager(dependencies.websocket_manager)
 
 
 @pytest.fixture(autouse=True)
-def gateway_state(monkeypatch) -> Iterator[SignedIdentity]:
+def gateway_state(
+    monkeypatch, gateway_dependencies: GatewayDependencies
+) -> Iterator[SignedIdentity]:
     """Fresh conversation state and a signed identity per test, restored afterwards.
 
-    Studio is unconfigured unless a test asks for the `studio` fixture, so no
-    Studio request can leave the process.
+    Every test gets its own dependency container from tests/conftest.py, so
+    realtime tickets, pollers and sockets start empty. Studio is unconfigured
+    unless a test asks for the `studio` fixture, so no Studio request can
+    leave the process.
     """
-    from services.api_gateway import websocket as websocket_module
-    from services.api_gateway.realtime_ticket import (
-        MemoryRealtimeTicketBackend,
-        realtime_ticket_store,
-    )
-    from services.api_gateway.session_manager import session_manager
-    from services.api_gateway.studio_runtime_flow import runtime_flow_from_environment
-
     for variable in STUDIO_ENVIRONMENT:
         monkeypatch.delenv(variable, raising=False)
-    runtime_flow_from_environment.cache_clear()
     overrides = app.dependency_overrides.copy()
-    websocket_manager = websocket_module.websocket_manager
-    ticket_backend = realtime_ticket_store.redis
-    ticket_clock = realtime_ticket_store.clock
-    realtime_ticket_store.redis = MemoryRealtimeTicketBackend()
-    _reset_conversation_state()
+    _reset_conversation_state(gateway_dependencies)
     try:
         yield SignedIdentity()
     finally:
-        _reset_conversation_state()
-        realtime_ticket_store.redis = ticket_backend
-        realtime_ticket_store.clock = ticket_clock
-        websocket_module.websocket_manager = websocket_manager
-        if websocket_manager is not None:
-            session_manager.register_websocket_manager(websocket_manager)
+        _reset_conversation_state(gateway_dependencies)
         app.dependency_overrides.clear()
         app.dependency_overrides.update(overrides)
-        runtime_flow_from_environment.cache_clear()
 
 
 @pytest.fixture
@@ -216,13 +199,11 @@ def client() -> Iterator[TestClient]:
 
 
 @pytest.fixture
-def realtime_tickets() -> RealtimeTickets:
+def realtime_tickets(gateway_dependencies: GatewayDependencies) -> RealtimeTickets:
     """Control over the realtime ticket backend's clock and availability."""
-    from services.api_gateway.realtime_ticket import (
-        MemoryRealtimeTicketBackend,
-        realtime_ticket_store,
-    )
+    from services.api_gateway.realtime_ticket import MemoryRealtimeTicketBackend
 
+    realtime_ticket_store = gateway_dependencies.realtime_tickets
     clock = TicketClock()
     realtime_ticket_store.clock = clock
     realtime_ticket_store.redis = MemoryRealtimeTicketBackend(clock=clock)
@@ -266,10 +247,9 @@ class StudioStub:
 
 
 @pytest.fixture
-def studio(monkeypatch) -> Iterator[StudioStub]:
+def studio(gateway_dependencies: GatewayDependencies) -> Iterator[StudioStub]:
     """Route every Studio read to a stub, with the real resolution dependency."""
     from services.api_gateway import studio_runtime_flow
-    from services.api_gateway.routes import customer as customer_routes
     from services.api_gateway.runtime_policy import (
         RuntimePolicyGate,
         bind_runtime_policy,
@@ -278,9 +258,7 @@ def studio(monkeypatch) -> Iterator[StudioStub]:
 
     stub = StudioStub()
     app.dependency_overrides.pop(require_validated_runtime_configuration, None)
-    flow = studio_runtime_flow.StudioRuntimeFlow(stub)
-    monkeypatch.setattr(studio_runtime_flow, "runtime_flow_from_environment", lambda: flow)
-    monkeypatch.setattr(customer_routes, "runtime_flow_from_environment", lambda: flow)
+    gateway_dependencies.studio_runtime_flow = studio_runtime_flow.StudioRuntimeFlow(stub)
     previous_gate = current_runtime_policy()
     bind_runtime_policy(RuntimePolicyGate(stub))
     try:

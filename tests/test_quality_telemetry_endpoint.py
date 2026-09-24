@@ -17,14 +17,14 @@ _PROBE_URL = "/api/admin/telemetry/probe"
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     app.dependency_overrides[require_ssf_user] = lambda: {"sub": "test-admin"}
-    previous = getattr(app.state, "quality_telemetry", None)
+    previous = app.state.dependencies.quality_telemetry
     yield TestClient(app)
     app.dependency_overrides.clear()
-    app.state.quality_telemetry = previous
+    app.state.dependencies.quality_telemetry = previous
 
 
 def _install(exporter, mode: TelemetryMode = TelemetryMode.PROBE) -> None:
-    app.state.quality_telemetry = QualityTelemetry(
+    app.state.dependencies.quality_telemetry = QualityTelemetry(
         mode=mode, exporter=exporter, registry=CollectorRegistry()
     )
 

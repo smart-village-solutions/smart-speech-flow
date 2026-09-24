@@ -6,10 +6,11 @@ Provides comprehensive monitoring and health check endpoints for WebSocket infra
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from .websocket_monitor import get_websocket_monitor
+from .dependencies import get_connection_monitor
+from .websocket_monitor import WebSocketMonitor, get_websocket_monitor
 
 router = APIRouter(prefix="/api/websocket/monitoring", tags=["WebSocket Monitoring"])
 MONITORING_ROUTE_RESPONSES = {
@@ -47,13 +48,15 @@ def _serialize_connection(metrics, connection_id: str | None = None) -> dict:
 
 
 @router.get("/health")
-def websocket_health_check():
+def websocket_health_check(
+    monitor: Annotated[WebSocketMonitor, Depends(get_connection_monitor)],
+):
     """
     WebSocket system health check endpoint
     Returns current health status and key metrics
     """
     try:
-        health_status = get_websocket_monitor().get_health_status()
+        health_status = monitor.get_health_status()
 
         return JSONResponse(
             status_code=200 if health_status["status"] == "healthy" else 503,

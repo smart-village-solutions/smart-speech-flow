@@ -55,16 +55,15 @@ class TestTheCounterSurvivesTheRegistryBoundary:
     def test_the_module_level_counter_is_in_the_served_registry(self):
         import services.api_gateway.app as gateway_app
         from services.api_gateway.routes.metrics import metrics
+        from services.api_gateway.websocket_monitor import get_websocket_monitor
 
         gateway_app.refinement_metrics.record("error", "vllm-shadow-test")
 
-        body = metrics().body.decode("utf-8")
+        registry = gateway_app.app.state.prometheus_registry
+        body = metrics(registry, get_websocket_monitor()).body.decode("utf-8")
 
         assert "refinement_attempts_total" in body, (
             "the refinement counter is not in the scraped registry; it would "
             "look wired up while alerting could never see it"
         )
-        assert (
-            'refinement_attempts_total{model_ref="vllm-shadow-test",outcome="error"}'
-            in body
-        )
+        assert 'refinement_attempts_total{model_ref="vllm-shadow-test",outcome="error"}' in body

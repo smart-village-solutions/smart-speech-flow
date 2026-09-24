@@ -60,8 +60,8 @@ def _telemetry(exporter, mode=TelemetryMode.ENABLED):
 
 def _request(content_type: str, telemetry) -> Mock:
     request = Mock()
-    request.app.state.pipeline_admission = None
-    request.app.state.quality_telemetry = telemetry
+    request.app.state.dependencies.pipeline_admission = None
+    request.app.state.dependencies.quality_telemetry = telemetry
     request.headers = {"content-type": content_type}
     if content_type.startswith("application/json"):
         request.json = AsyncMock(

@@ -27,6 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from ..auth import require_ssf_user
+from ..dependencies import optional_container
 from ..feedback.models import (
     FeedbackAcceptedResponse,
     FeedbackSubmissionRequest,
@@ -52,13 +53,13 @@ _RETRY_AFTER_SECONDS = "30"
 
 
 def get_feedback_service(request: Request):
-    """FastAPI provider, following the app.state pattern used across app.py.
+    """FastAPI provider for the app container's submission service.
 
     None when the feedback store is unconfigured or could not be reached at
     startup. The gateway serves the whole conversation pipeline, so that
     degrades submissions to a retryable 503 rather than refusing to boot.
     """
-    service = getattr(request.app.state, "feedback_service", None)
+    service = getattr(optional_container(request), "feedback_service", None)
     if service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -141,7 +142,7 @@ def get_feedback_read_service(request: Request):
     a site that never granted Studio read access should answer 503 here while
     POST /api/feedback keeps working.
     """
-    service = getattr(request.app.state, "feedback_read_service", None)
+    service = getattr(optional_container(request), "feedback_read_service", None)
     if service is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

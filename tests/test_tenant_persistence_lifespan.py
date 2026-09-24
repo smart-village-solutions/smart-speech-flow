@@ -11,7 +11,6 @@ import pytest
 from starlette.websockets import WebSocketState
 
 from services.api_gateway.app import app, lifespan
-from services.api_gateway.realtime_ticket import realtime_ticket_store
 from services.api_gateway.session_manager import (
     ClientType,
     SessionMessage,
@@ -22,11 +21,9 @@ from services.api_gateway.session_store import (
     RedisTenantSessionStore,
     SessionStoreConsistencyError,
     join_key,
-    session_key as persisted_session_key,
 )
+from services.api_gateway.session_store import session_key as persisted_session_key
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
-from services.api_gateway.websocket import get_websocket_manager
-from services.api_gateway.websocket_polling_routes import TenantPollingStore
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
@@ -156,22 +153,13 @@ class PersistentFakeRedis:
 
 
 @pytest.fixture(autouse=True)
-def _clean_global_memory_state():
+def _clean_global_memory_state(gateway_dependencies):
+    sockets = gateway_dependencies.websocket_manager
     session_manager.reset(clear_persistence=True)
-    original_ticket_backend = realtime_ticket_store.redis
-    if hasattr(original_ticket_backend, "values"):
-        original_ticket_backend.values.clear()
-    sockets = get_websocket_manager()
     session_manager.register_websocket_manager(sockets)
-    sockets.session_connections.clear()
-    sockets.all_connections.clear()
     yield
     session_manager.reset(clear_persistence=True)
     session_manager.register_websocket_manager(sockets)
-    sockets.session_connections.clear()
-    sockets.all_connections.clear()
-    if hasattr(original_ticket_backend, "values"):
-        original_ticket_backend.values.clear()
 
 
 @pytest.mark.asyncio
@@ -191,27 +179,24 @@ async def test_production_startup_uses_shared_redis_and_survives_restart(
     )
 
     async with lifespan(app):
+        dependencies = app.state.dependencies
         assert isinstance(session_manager.store, RedisTenantSessionStore)
         assert session_manager.store.redis is redis
-        assert realtime_ticket_store.redis is redis
-        assert session_manager.websocket_manager is get_websocket_manager()
+        assert dependencies.realtime_tickets.redis is redis
+        assert session_manager.websocket_manager is dependencies.websocket_manager
         session = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
-        issued = realtime_ticket_store.issue(session.key, "websocket")
+        issued = dependencies.realtime_tickets.issue(session.key, "websocket")
 
     async with lifespan(app):
-        assert session_manager.websocket_manager is get_websocket_manager()
+        dependencies = app.state.dependencies
+        assert session_manager.websocket_manager is dependencies.websocket_manager
+        realtime_ticket_store = dependencies.realtime_tickets
         restored = session_manager.get_session(session.key)
         assert restored is not None
         assert restored is not session
         assert json.loads(restored.runtime_configuration.canonical_json) == {}
-        assert (
-            realtime_ticket_store.consume(issued.ticket, session.key, "websocket")
-            is True
-        )
-        assert (
-            realtime_ticket_store.consume(issued.ticket, session.key, "websocket")
-            is False
-        )
+        assert realtime_ticket_store.consume(issued.ticket, session.key, "websocket") is True
+        assert realtime_ticket_store.consume(issued.ticket, session.key, "websocket") is False
 
     assert redis.pings == 2
 
@@ -266,14 +251,14 @@ async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
     monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
-    polling = TenantPollingStore(clock=lambda: 0.0)
-    monkeypatch.setattr(
-        "services.api_gateway.websocket_polling_routes.polling_store", polling
-    )
-    sockets = get_websocket_manager()
-    monkeypatch.setattr(sockets, "start_heartbeat_system", AsyncMock())
 
     async with lifespan(app):
+        dependencies = app.state.dependencies
+        realtime_ticket_store = dependencies.realtime_tickets
+        polling = dependencies.polling_store
+        monkeypatch.setattr(polling, "clock", lambda: 0.0)
+        sockets = dependencies.websocket_manager
+        monkeypatch.setattr(sockets, "start_heartbeat_system", AsyncMock())
         session = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
         usable_after_failure = realtime_ticket_store.issue(session.key, "websocket")
         revoked_after_retry = realtime_ticket_store.issue(session.key, "websocket")
@@ -288,17 +273,13 @@ async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
 
         assert session.status is SessionStatus.PENDING
         assert json.loads(redis.get(join_key("ssf", session.id)))["active"] is False
-        committed = json.loads(
-            redis.get(persisted_session_key("ssf", session.key))
-        )
+        committed = json.loads(redis.get(persisted_session_key("ssf", session.key)))
         committed_payload = redis.get(persisted_session_key("ssf", session.key))
         assert committed["status"] == "terminated"
         assert polling_client.terminated is False
         assert session.key in sockets.session_connections
         assert (
-            realtime_ticket_store.consume(
-                usable_after_failure.ticket, session.key, "websocket"
-            )
+            realtime_ticket_store.consume(usable_after_failure.ticket, session.key, "websocket")
             is True
         )
 
@@ -338,9 +319,7 @@ async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
         assert polling_client.terminated is True
         assert session.key not in sockets.session_connections
         assert (
-            realtime_ticket_store.consume(
-                revoked_after_retry.ticket, session.key, "websocket"
-            )
+            realtime_ticket_store.consume(revoked_after_retry.ticket, session.key, "websocket")
             is False
         )
 

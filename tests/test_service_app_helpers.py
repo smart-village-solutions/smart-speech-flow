@@ -204,6 +204,8 @@ def build_fastapi_stub() -> tuple[types.ModuleType, types.ModuleType]:
         return {"args": args, "kwargs": kwargs}
 
     fastapi_stub.FastAPI = FastAPI
+    fastapi_stub.APIRouter = FastAPI
+    fastapi_stub.Depends = _marker
     fastapi_stub.File = _marker
     fastapi_stub.Form = _marker
     fastapi_stub.HTTPException = StubHTTPError
@@ -217,6 +219,7 @@ def build_fastapi_stub() -> tuple[types.ModuleType, types.ModuleType]:
 
 def build_prometheus_stub() -> types.ModuleType:
     prometheus_stub = types.ModuleType("prometheus_client")
+    prometheus_stub.CollectorRegistry = object
     prometheus_stub.Counter = lambda *args, **kwargs: DummyMetric()
     prometheus_stub.Gauge = lambda *args, **kwargs: DummyMetric()
     prometheus_stub.Histogram = lambda *args, **kwargs: DummyMetric()
@@ -343,11 +346,6 @@ def tts_app(monkeypatch):
 @pytest.fixture
 def upload_module(monkeypatch):
     fastapi_stub, responses_stub = build_fastapi_stub()
-    app_module = types.ModuleType("services.api_gateway.app")
-    app_module.app = SimpleNamespace(
-        requests_total=DummyMetric(),
-        post=lambda *args, **kwargs: (lambda func: func),
-    )
     pipeline_module = types.ModuleType("services.api_gateway.pipeline_logic")
     pipeline_module.process_wav = lambda file_bytes, source_lang, target_lang: {}
 
@@ -358,7 +356,6 @@ def upload_module(monkeypatch):
         {
             "fastapi": fastapi_stub,
             "fastapi.responses": responses_stub,
-            "services.api_gateway.app": app_module,
             "services.api_gateway.pipeline_logic": pipeline_module,
         },
     )
@@ -521,19 +518,15 @@ def test_service_apps_collect_gpu_metrics_and_metrics_route_fallbacks(
     assert translation_app._collect_gpu_metrics() == payload
     assert tts_app._collect_gpu_metrics() == payload
 
-    app_module = types.ModuleType("services.api_gateway.app")
-    app_module.app = SimpleNamespace(state=SimpleNamespace(prometheus_registry="main-registry"))
     websocket_monitor = types.ModuleType("services.api_gateway.websocket_monitor")
-    websocket_monitor.get_websocket_monitor = lambda: SimpleNamespace(_registry="ws-registry")
+    websocket_monitor.WebSocketMonitor = object
+    monitor = SimpleNamespace(_registry="ws-registry")
 
     metrics_route = load_module(
         monkeypatch,
         "services.api_gateway.routes.metrics",
         "services/api_gateway/routes/metrics.py",
-        {
-            "services.api_gateway.app": app_module,
-            "services.api_gateway.websocket_monitor": websocket_monitor,
-        },
+        {"services.api_gateway.websocket_monitor": websocket_monitor},
     )
     monkeypatch.setattr(
         metrics_route,
@@ -541,7 +534,7 @@ def test_service_apps_collect_gpu_metrics_and_metrics_route_fallbacks(
         lambda registry: (b"main_metric 1\n" if registry == "main-registry" else b"ws_metric 2\n"),
     )
 
-    combined_response = metrics_route.metrics()
+    combined_response = metrics_route.metrics("main-registry", monitor)
     assert combined_response.media_type == "text/plain"
     assert combined_response.body == b"main_metric 1\nws_metric 2\n"
 
@@ -550,7 +543,7 @@ def test_service_apps_collect_gpu_metrics_and_metrics_route_fallbacks(
         "generate_latest",
         lambda registry: (_ for _ in ()).throw(RuntimeError("broken")),
     )
-    fallback_response = metrics_route.metrics()
+    fallback_response = metrics_route.metrics("main-registry", monitor)
     assert fallback_response.body == b"# Fehler beim Generieren der Metriken\n"
 
 
@@ -1013,7 +1006,6 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
             self.calls += 1
 
     counter = FakeAppCounter()
-    upload_module.app.requests_total = counter
 
     monkeypatch.setattr(
         upload_module,
@@ -1026,9 +1018,9 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
             "audio_bytes": b"",
         },
     )
-    # A request with no app carries no admission component, so the route runs
-    # unbounded — this test is about HTML escaping, not capacity.
-    request = SimpleNamespace()
+    # An app with no dependency container carries no admission component, so the
+    # route runs unbounded — this test is about HTML escaping, not capacity.
+    request = SimpleNamespace(app=SimpleNamespace(requests_total=counter))
     error_response = await upload_module.upload(request, FakeUploadFile(b"audio"), "de", "en")
     assert error_response.status_code == 400
     assert b"&lt;script&gt;alert(1)&lt;/script&gt;" in error_response.body

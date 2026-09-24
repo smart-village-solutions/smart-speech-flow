@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 import services.api_gateway.studio_runtime_flow as runtime_flow_module
 from services.api_gateway.auth import require_ssf_user
+from services.api_gateway.dependencies import get_studio_runtime_flow
 from services.api_gateway.studio_runtime_client import (
     RuntimeConfiguration,
     RuntimeHttpResponse,
@@ -263,17 +264,14 @@ class StubRuntimeFlow:
         )
 
 
-def _dependency_client(
-    monkeypatch: pytest.MonkeyPatch,
-    runtime_flow: StubRuntimeFlow | StudioRuntimeFlow,
-) -> TestClient:
+def _dependency_client(runtime_flow: StubRuntimeFlow | StudioRuntimeFlow) -> TestClient:
     app = FastAPI()
     app.dependency_overrides[require_ssf_user] = lambda: {
         "sub": "user-1",
         "studio_tenant_id": "tenant-kassel",
         "ssf_authorization_revision": REVISION,
     }
-    monkeypatch.setattr(runtime_flow_module, "runtime_flow_from_environment", lambda: runtime_flow)
+    app.dependency_overrides[get_studio_runtime_flow] = lambda: runtime_flow
 
     @app.get("/runtime-operation")
     async def runtime_operation(
@@ -287,13 +285,13 @@ def _dependency_client(
     return TestClient(app)
 
 
-def test_dependency_forwards_valid_correlation_id(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dependency_forwards_valid_correlation_id() -> None:
     context = _context()
     flow = StubRuntimeFlow(
         ValidatedRuntimeConfiguration(context, _configuration("tenant-kassel", REVISION), "unused")
     )
 
-    response = _dependency_client(monkeypatch, flow).get(
+    response = _dependency_client(flow).get(
         "/runtime-operation", headers={"X-Correlation-Id": "request-123"}
     )
 
@@ -302,13 +300,13 @@ def test_dependency_forwards_valid_correlation_id(monkeypatch: pytest.MonkeyPatc
     assert flow.requests == [(context, "request-123")]
 
 
-def test_dependency_generates_correlation_id_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dependency_generates_correlation_id_when_absent() -> None:
     context = _context()
     flow = StubRuntimeFlow(
         ValidatedRuntimeConfiguration(context, _configuration("tenant-kassel", REVISION), "unused")
     )
 
-    response = _dependency_client(monkeypatch, flow).get("/runtime-operation")
+    response = _dependency_client(flow).get("/runtime-operation")
 
     assert response.status_code == 200
     correlation_id = response.json()["correlation_id"]
@@ -316,23 +314,21 @@ def test_dependency_generates_correlation_id_when_absent(monkeypatch: pytest.Mon
     assert flow.requests == [(context, correlation_id)]
 
 
-def test_dependency_returns_safe_error_without_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dependency_returns_safe_error_without_fallback() -> None:
     flow = StubRuntimeFlow(
         StudioRuntimeFlowError("runtime_configuration_unavailable", retryable=True)
     )
 
-    response = _dependency_client(monkeypatch, flow).get("/runtime-operation")
+    response = _dependency_client(flow).get("/runtime-operation")
 
     assert response.status_code == 503
     assert response.json() == {"detail": "runtime_configuration_unavailable"}
 
 
-def test_dependency_reports_a_non_ascii_tenant_mismatch_as_502(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_dependency_reports_a_non_ascii_tenant_mismatch_as_502() -> None:
     flow = StudioRuntimeFlow(StubRuntimeClient(_configuration("tenant-kässel", REVISION)))
 
-    response = _dependency_client(monkeypatch, flow).get("/runtime-operation")
+    response = _dependency_client(flow).get("/runtime-operation")
 
     assert response.status_code == 502
     assert response.json() == {"detail": "studio_runtime_tenant_mismatch"}

@@ -33,6 +33,43 @@ All migration slices first characterize the present admin/customer tenant flows,
 
 Existing app-state services migrate into the container without behavioral changes. Global objects remain temporary adapters until consumers are migrated.
 
+#### Dependency ownership
+
+`create_app()` in `app.py` builds one app. Its lifespan builds that app's `GatewayDependencies` (`services/api_gateway/dependencies.py`), keeps it at `app.state.dependencies`, and sets that to `None` on shutdown. `app = create_app()` stays the module attribute uvicorn and the Dockerfile target.
+
+| Collaborator | Constructed by | Provider | Status |
+| --- | --- | --- | --- |
+| Realtime ticket store | `build_gateway_dependencies`, on the lifespan's verified Redis client and namespace, or in memory without `REDIS_URL` | `get_realtime_ticket_store` | container |
+| Polling store | `build_gateway_dependencies` | `get_polling_store` | container |
+| WebSocket manager | `build_gateway_dependencies` | `get_websocket_manager` | container |
+| Conversation service | `build_gateway_dependencies` | `get_conversation_service` | container |
+| Studio runtime flow | lifespan (`runtime_flow_from_environment`), which also binds the persistence gate with it | `get_studio_runtime_flow`; `None` when Studio is unconfigured | container |
+| Studio login directory service | `build_gateway_dependencies` (`login_directory_from_environment`) | `get_login_directory`; `get_studio_login_directory_service` and `get_auth_login_directory_provider` turn `None` into 503 | container |
+| Pipeline admission | lifespan | `get_pipeline_admission` (`pipeline_admission.py`) | container |
+| Quality telemetry and its exporter | lifespan | `get_quality_telemetry` | container |
+| Feedback repositories and services | lifespan, retried by `feedback_connect_task` | `get_feedback_service`, `get_feedback_read_service` (`routes/feedback.py`) | container |
+| `session_manager` | module instance | `get_session_manager` | adapter until PR4 |
+| Runtime policy gate (`runtime_policy._GATE`) | lifespan, rebinding the module global through `bind_runtime_policy` | none; `current_runtime_policy()` | adapter until PR4 |
+| Session pseudonymizer (`session_pseudonym._process_pseudonymizer`) | first use, rebinding the module global | none | adapter until PR4 |
+| `circuit_breaker_client` | module instance | `get_circuit_breaker_client` | adapter until PR5 |
+| `service_health_manager`, `graceful_degradation_manager` | module instances, reached only through `circuit_breaker_client` and `ai_service_client` | none | adapter until PR5 |
+| `translation_refiner` and its candidate executor | module instances | none; the lifespan attaches telemetry through the container | adapter until PR5 |
+| `fallback_manager` | module instance | none; its background task reads the container | adapter until PR6 |
+| WebSocket monitor (`websocket_monitor.websocket_monitor`) | `initialize_websocket_monitor` in `app.py`, rebinding the module global | `get_connection_monitor` | adapter until PR6 |
+| Prometheus registry and metric objects | `app.py` and `audio_storage.py` at import, attached by `create_app()` | `get_prometheus_registry` | adapter until PR7 |
+| OIDC key cache (`auth._key_cache`) | module instance | `get_oidc_key_cache` | adapter until PR7 |
+| Latest rate-limit middleware (`rate_limiter.LATEST_RATE_LIMIT_MIDDLEWARE`) | the middleware, rebinding the module global when it is built | none | adapter until PR7 |
+
+Rules:
+
+- `services/api_gateway` adds no module-level collaborator instance. A new collaborator is constructed in `build_gateway_dependencies` or the lifespan and reached through a provider.
+- No zero-argument cached factory (`lru_cache`, `cache`) builds an injectable service.
+- A provider takes only the `HTTPConnection`, so it serves HTTP and WebSocket routes alike and adds nothing to the OpenAPI document.
+- Route handlers reach collaborators only through `Depends(provider)`.
+- Tests replace a collaborator with `app.dependency_overrides[provider]`, or build their own app with `create_app()` and run its lifespan. Suites that drive the shared app without its lifespan get a fresh container per test from `tests/conftest.py`. Tests do not mutate module state.
+- `tests/test_gateway_dependency_ownership.py` enforces the first two rules and lists every remaining adapter with the PR that removes it. The list only shrinks. It sees module-level constructions only: the four objects above that are rebound through `global` statements (`_GATE`, `_process_pseudonymizer`, the WebSocket monitor global, `LATEST_RATE_LIMIT_MIDDLEWARE`) are tracked by this table alone.
+- Until PR4, two apps in one process share the adapters. The session manager then follows the most recently built container for its WebSocket manager, ticket revocation and polling notifications.
+
 ### Decision: Preserve tenant-aware state
 
 Session and message boundaries preserve `TenantSessionKey`, tenant Redis keys and join index, consent-gated storage, runtime snapshots, and pipeline metadata. The session compatibility gate records whether legacy mode can be deleted after cutover proof or must be isolated behind a typed adapter. No code slice assumes legacy state is absent merely because the target architecture does.

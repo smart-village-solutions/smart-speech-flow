@@ -9,8 +9,9 @@ from typing import Annotated, Any
 from fastapi import Depends, HTTPException, status
 
 from .auth import optional_ssf_user
+from .dependencies import get_session_manager
 from .log_safety import safe_closed_value
-from .session_manager import session_manager
+from .session_manager import SessionManager
 from .session_pseudonym import session_ref
 from .tenant_context import StudioTenantContext, require_studio_tenant_context
 from .tenant_session import TenantSessionKey
@@ -49,13 +50,14 @@ def require_admin_session_key(
         StudioTenantContext,
         Depends(require_studio_tenant_context),
     ],
+    sessions: Annotated[SessionManager, Depends(get_session_manager)],
 ) -> TenantSessionKey:
     """Resolve an admin resource strictly inside its authenticated tenant."""
     try:
         key = TenantSessionKey(context.tenant_id, session_id)
     except ValueError:
         raise _not_found() from None
-    if session_manager.get_session(key) is None:
+    if sessions.get_session(key) is None:
         log_tenant_access_denied(key, outcome="not_found")
         raise _not_found()
     return key
@@ -64,10 +66,11 @@ def require_admin_session_key(
 def require_customer_session_key(
     session_id: str,
     principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
+    sessions: Annotated[SessionManager, Depends(get_session_manager)],
 ) -> TenantSessionKey:
     """Resolve a public capability and constrain any supplied authenticated user."""
     try:
-        key = session_manager.resolve_customer_session(session_id)
+        key = sessions.resolve_customer_session(session_id)
     except ValueError:
         raise _not_found() from None
     if key is None:

@@ -16,19 +16,21 @@ from pydantic import BaseModel, Field
 from ..audio_storage import AudioVariant
 from ..auth import optional_ssf_user
 from ..consent_resolution import resolve_consent
-from ..conversation_service import conversation_service
+from ..conversation_service import ConversationService
+from ..dependencies import (
+    get_conversation_service,
+    get_session_manager,
+    get_studio_runtime_flow,
+    get_websocket_manager,
+)
 from ..log_safety import safe_language_code, sanitize_log_value
 from ..session_access import require_customer_session_key
-from ..session_manager import ClientType, SessionStatus, session_manager
+from ..session_manager import ClientType, SessionManager, SessionStatus
 from ..studio_runtime_client import RuntimeConfiguration, StudioRuntimeClientError
-from ..studio_runtime_flow import (
-    StudioRuntimeFlowError,
-    correlation_id_from_request,
-    runtime_flow_from_environment,
-)
+from ..studio_runtime_flow import StudioRuntimeFlow, correlation_id_from_request
 from ..studio_runtime_token import StudioTokenError
 from ..tenant_session import TenantSessionKey
-from ..websocket import WebSocketManager, get_websocket_manager
+from ..websocket import WebSocketManager
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -98,18 +100,20 @@ async def send_customer_message(
     request: Request,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
     manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
+    conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ):
-    return await conversation_service.process(key, ClientType.CUSTOMER, request, manager)
+    return await conversations.process(key, ClientType.CUSTOMER, request, manager)
 
 
 @router.get("/session/{session_id}/messages", responses=CUSTOMER_ROUTE_RESPONSES)
 async def get_customer_messages(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
+    conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> dict[str, object]:
     return {
         "session_id": session_id,
-        "messages": conversation_service.messages(key, ClientType.CUSTOMER),
+        "messages": conversations.messages(key, ClientType.CUSTOMER),
     }
 
 
@@ -122,8 +126,9 @@ async def get_customer_audio(
     message_id: str,
     variant: AudioVariant,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
+    conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> Response:
-    return conversation_service.audio(key, message_id, variant)
+    return conversations.audio(key, message_id, variant)
 
 
 def utc_now() -> datetime:
@@ -143,7 +148,7 @@ _TENANT_CONFLICT_CODES = frozenset(
 
 
 async def _read_activation_configuration(
-    http_request: Request, tenant_id: str
+    http_request: Request, tenant_id: str, runtime_flow: StudioRuntimeFlow | None
 ) -> Optional[RuntimeConfiguration]:
     """Read the live storage policy for one activation.
 
@@ -155,6 +160,7 @@ async def _read_activation_configuration(
     Args:
         http_request: The activation request, read only for its correlation ID.
         tenant_id: The tenant the session belongs to.
+        runtime_flow: The app's Studio flow, or None when Studio is unconfigured.
 
     Returns:
         The live runtime configuration, or `None` when the read failed.
@@ -163,14 +169,13 @@ async def _read_activation_configuration(
         HTTPException: 409 when the tenant may not start a session.
     """
     correlation_id = correlation_id_from_request(http_request)
+    if runtime_flow is None:
+        return None
     try:
-        flow = runtime_flow_from_environment()
-        return await flow.client.fetch(tenant_id, correlation_id)
+        return await runtime_flow.client.fetch(tenant_id, correlation_id)
     except (StudioRuntimeClientError, StudioTokenError) as error:
         if getattr(error, "code", None) in _TENANT_CONFLICT_CODES:
             raise HTTPException(status_code=409, detail=error.code) from None
-        return None
-    except StudioRuntimeFlowError:
         return None
 
 
@@ -185,6 +190,8 @@ async def activate_session(
     request: ActivateSessionRequest,
     http_request: Request,
     principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
+    sessions: Annotated[SessionManager, Depends(get_session_manager)],
+    runtime_flow: Annotated[StudioRuntimeFlow | None, Depends(get_studio_runtime_flow)],
 ) -> ActivateSessionResponse:
     """
     Aktiviert eine Session für Customer-Teilnahme
@@ -213,8 +220,8 @@ async def activate_session(
         )
 
         # Session validieren
-        key = require_customer_session_key(request.session_id, principal)
-        session = session_manager.get_session(key)
+        key = require_customer_session_key(request.session_id, principal, sessions)
+        session = sessions.get_session(key)
         if session is None:
             raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
 
@@ -243,8 +250,8 @@ async def activate_session(
                         }
                     ),
                 )
-                await session_manager.activate_session(key, request.customer_language)
-                session = session_manager.get_session(key)
+                await sessions.activate_session(key, request.customer_language)
+                session = sessions.get_session(key)
             else:
                 logger.info(
                     "ℹ️ Session bereits aktiv - idempotente Antwort | %s",
@@ -279,11 +286,13 @@ async def activate_session(
         # Consent is resolved on this transition alone. `activate_session` is
         # re-entered on every customer language change, and re-resolving there
         # would let a consent-less call overwrite a granted answer.
-        live_configuration = await _read_activation_configuration(http_request, key.tenant_id)
+        live_configuration = await _read_activation_configuration(
+            http_request, key.tenant_id, runtime_flow
+        )
         session.consent_status = resolve_consent(live_configuration, request.data_retention_consent)
 
         # Session aktivieren
-        await session_manager.activate_session(key, request.customer_language)
+        await sessions.activate_session(key, request.customer_language)
 
         # Erfolgsmeldung
         logger.info(
@@ -326,6 +335,7 @@ async def activate_session(
 async def get_customer_session_status(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
+    sessions: Annotated[SessionManager, Depends(get_session_manager)],
 ) -> dict[str, object]:
     """
     Session-Status für Customer-Interface abrufen
@@ -333,7 +343,7 @@ async def get_customer_session_status(
     Weniger Details als die Admin-Variante, fokussiert auf Customer-Bedürfnisse
     """
     try:
-        session = session_manager.get_session(key)
+        session = sessions.get_session(key)
         if session is None:
             raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
 

@@ -17,11 +17,12 @@ from prometheus_client import CollectorRegistry, Counter
 from pydantic import BaseModel, Field
 
 from .auth import optional_ssf_user
-from .realtime_ticket import RealtimeTicketUnavailable, realtime_ticket_store
+from .dependencies import get_polling_store, get_realtime_ticket_store, get_websocket_manager
+from .realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from .session_access import require_admin_session_key, require_customer_session_key
 from .session_manager import ClientType
 from .tenant_session import TenantSessionKey
-from .websocket import WebSocketManager, get_websocket_manager
+from .websocket import WebSocketManager
 
 router = APIRouter(tags=["realtime-polling"])
 logger = logging.getLogger(__name__)
@@ -32,7 +33,8 @@ POLLING_QUEUE_SIZE = 100
 _POLLING_CLIENT_NOT_FOUND = "Polling client not found"
 
 
-def _dropped_counter(registry: CollectorRegistry) -> Counter:
+def polling_dropped_counter(registry: CollectorRegistry) -> Counter:
+    """Registered once per registry; every app's polling store counts into it."""
     return Counter(
         "tenant_polling_messages_dropped_total",
         "Polling messages discarded because a bounded recipient queue was full",
@@ -62,14 +64,11 @@ class PollingClient:
 
 
 class TenantPollingStore:
-    def __init__(self, clock=time.monotonic, registry=None) -> None:
+    def __init__(self, clock=time.monotonic, messages_dropped: Counter | None = None) -> None:
         self.clients: dict[str, PollingClient] = {}
         self.mutation_lock = asyncio.Lock()
         self.clock = clock
-        self.messages_dropped = _dropped_counter(registry or CollectorRegistry())
-
-    def bind_metrics_registry(self, registry: CollectorRegistry) -> None:
-        self.messages_dropped = _dropped_counter(registry)
+        self.messages_dropped = messages_dropped or polling_dropped_counter(CollectorRegistry())
 
     def activate(self, key: TenantSessionKey, client_type: ClientType) -> PollingClient:
         scoped_count = sum(
@@ -179,9 +178,6 @@ class TenantPollingStore:
                 self._enqueue(client, message)
 
 
-polling_store = TenantPollingStore()
-
-
 def _activation_response(client: PollingClient) -> dict[str, object]:
     return {
         "polling_id": client.polling_id,
@@ -203,10 +199,12 @@ async def activate_admin_polling(
     request: AdminPollingActivation,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
     manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
+    polling_store: Annotated[TenantPollingStore, Depends(get_polling_store)],
+    tickets: Annotated[RealtimeTicketStore, Depends(get_realtime_ticket_store)],
 ) -> dict[str, object]:
     async with polling_store.mutation_lock:
         try:
-            accepted = realtime_ticket_store.consume(request.ticket, key, "polling")
+            accepted = tickets.consume(request.ticket, key, "polling")
         except RealtimeTicketUnavailable:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -217,7 +215,7 @@ async def activate_admin_polling(
         session = manager.session_manager.get_session(key)
         if session is None or session.status.value == "terminated":
             raise HTTPException(status_code=404, detail="Session not found")
-        _release_stale_clients(manager)
+        _release_stale_clients(polling_store, manager)
         client = polling_store.activate(key, ClientType.ADMIN)
         manager.session_manager.admin_connected(key)
         return _activation_response(client)
@@ -228,15 +226,16 @@ async def activate_customer_polling(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
     manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
+    polling_store: Annotated[TenantPollingStore, Depends(get_polling_store)],
 ) -> dict[str, object]:
     async with polling_store.mutation_lock:
-        _release_stale_clients(manager)
+        _release_stale_clients(polling_store, manager)
         client = polling_store.activate(key, ClientType.CUSTOMER)
         manager.session_manager.customer_connected(key)
         return _activation_response(client)
 
 
-def _release_stale_clients(manager: WebSocketManager) -> None:
+def _release_stale_clients(polling_store: TenantPollingStore, manager: WebSocketManager) -> None:
     """Release the entire pruned batch without a cancellation point."""
     for client in polling_store.prune():
         _release_presence(client, manager)
@@ -252,29 +251,23 @@ def _release_presence(client: PollingClient, manager: WebSocketManager) -> None:
         pass
 
 
-def _client(
-    polling_id: str,
-    key: TenantSessionKey,
-    client_type: ClientType,
-) -> PollingClient:
-    return polling_store.require(polling_id, key, client_type)
-
-
 def _active_client(
+    polling_store: TenantPollingStore,
     polling_id: str,
     key: TenantSessionKey,
     client_type: ClientType,
     manager: WebSocketManager,
 ) -> PollingClient:
     """Release expired presence before accepting activity from a poller."""
-    _release_stale_clients(manager)
-    return _client(polling_id, key, client_type)
+    _release_stale_clients(polling_store, manager)
+    return polling_store.require(polling_id, key, client_type)
 
 
 def require_customer_polling_key(
     session_id: str,
     polling_id: str,
     principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
+    polling_store: Annotated[TenantPollingStore, Depends(get_polling_store)],
 ) -> TenantSessionKey:
     client = polling_store.clients.get(polling_id)
     if (
@@ -312,6 +305,7 @@ async def _poll_messages(client: PollingClient, wait_seconds: int) -> dict[str, 
 
 
 async def _send(
+    polling_store: TenantPollingStore,
     client: PollingClient,
     message: PollingMessage,
     manager: WebSocketManager,
@@ -354,7 +348,9 @@ def _recover(client: PollingClient) -> dict[str, str]:
     return {"status": "recovery_requested"}
 
 
-def _disconnect(client: PollingClient, manager: WebSocketManager) -> dict[str, str]:
+def _disconnect(
+    polling_store: TenantPollingStore, client: PollingClient, manager: WebSocketManager
+) -> dict[str, str]:
     polling_store.remove(client)
     _release_presence(client, manager)
     return {"status": "disconnected"}
@@ -373,14 +369,15 @@ def _register_role_routes(
         key: TenantSessionKey = Depends(key_dependency),
         wait_seconds: Annotated[int, Query(alias="timeout", ge=0, le=60)] = 0,
         manager: WebSocketManager = Depends(get_websocket_manager),
+        polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, object]:
         async with polling_store.mutation_lock:
-            client = _active_client(polling_id, key, client_type, manager)
+            client = _active_client(polling_store, polling_id, key, client_type, manager)
         response = await _poll(client, wait_seconds)
         if client.terminated:
             async with polling_store.mutation_lock:
                 if polling_store.clients.get(polling_id) is client:
-                    _disconnect(client, manager)
+                    _disconnect(polling_store, client, manager)
         return response
 
     async def send(
@@ -389,38 +386,42 @@ def _register_role_routes(
         message: PollingMessage,
         key: TenantSessionKey = Depends(key_dependency),
         manager: WebSocketManager = Depends(get_websocket_manager),
+        polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, str]:
         async with polling_store.mutation_lock:
-            client = _active_client(polling_id, key, client_type, manager)
-        return await _send(client, message, manager)
+            client = _active_client(polling_store, polling_id, key, client_type, manager)
+        return await _send(polling_store, client, message, manager)
 
     async def polling_status(
         session_id: str,
         polling_id: str,
         key: TenantSessionKey = Depends(key_dependency),
         manager: WebSocketManager = Depends(get_websocket_manager),
+        polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, object]:
         async with polling_store.mutation_lock:
-            return _status(_active_client(polling_id, key, client_type, manager))
+            return _status(_active_client(polling_store, polling_id, key, client_type, manager))
 
     async def recover(
         session_id: str,
         polling_id: str,
         key: TenantSessionKey = Depends(key_dependency),
         manager: WebSocketManager = Depends(get_websocket_manager),
+        polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, str]:
         async with polling_store.mutation_lock:
-            return _recover(_active_client(polling_id, key, client_type, manager))
+            return _recover(_active_client(polling_store, polling_id, key, client_type, manager))
 
     async def disconnect(
         session_id: str,
         polling_id: str,
         key: TenantSessionKey = Depends(key_dependency),
         manager: WebSocketManager = Depends(get_websocket_manager),
+        polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, str]:
         async with polling_store.mutation_lock:
-            client = _active_client(polling_id, key, client_type, manager)
-            return _disconnect(client, manager)
+            client = _active_client(polling_store, polling_id, key, client_type, manager)
+            return _disconnect(polling_store, client, manager)
 
     router.add_api_route(base, poll, methods=["GET"], name=f"{prefix}_poll")
     router.add_api_route(base + "/send", send, methods=["POST"], name=f"{prefix}_send")

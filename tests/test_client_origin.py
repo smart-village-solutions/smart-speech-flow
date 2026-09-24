@@ -52,7 +52,7 @@ async def test_production_http_and_websocket_use_exact_configured_origin(monkeyp
     monkeypatch.setattr(
         app_module.app, "add_middleware", lambda cls, **kwargs: captured.update(kwargs)
     )
-    app_module.setup_cors_for_websockets()
+    app_module.setup_cors_for_websockets(app_module.app)
     cors = CORSMiddleware(app_module.app, **captured)
     for origin, allowed in [
         ("https://dialog.kassel.de", True),
@@ -78,7 +78,7 @@ async def test_unconfigured_origin_keeps_existing_production_defaults(monkeypatc
     monkeypatch.setattr(
         app_module.app, "add_middleware", lambda cls, **kwargs: captured.update(kwargs)
     )
-    app_module.setup_cors_for_websockets()
+    app_module.setup_cors_for_websockets(app_module.app)
     cors = CORSMiddleware(app_module.app, **captured)
     assert not cors.is_allowed_origin("https://dialog.kassel.de")
     assert not await validate_websocket_origin("https://dialog.kassel.de")

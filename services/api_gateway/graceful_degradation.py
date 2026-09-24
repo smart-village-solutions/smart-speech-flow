@@ -108,5 +108,5 @@ class GracefulDegradationManager:
         }
 
 
-# Globale Graceful Degradation Manager Instanz
+# Globale Graceful Degradation Manager Instanz. Adapter until PR5 (#228).
 graceful_degradation_manager = GracefulDegradationManager()

@@ -29,7 +29,7 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-# Prometheus metrics
+# Prometheus metrics. Adapters until PR7 (#228).
 try:
     from prometheus_client import Counter, Gauge
 
