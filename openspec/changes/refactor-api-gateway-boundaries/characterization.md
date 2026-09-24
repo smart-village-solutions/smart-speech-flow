@@ -20,6 +20,7 @@ the gap is filled below.
 | Consent-gated persistence | `test_customer_activation_consent.py::*` (HTTP in, internal state asserted). `test_persistence_gate.py`, `test_refused_content_removal.py`, `test_runtime_policy.py` and `test_session_message_public_shape.py` are unit tests | `test_contract_consent_persistence.py`: activate, send, terminate, then read history. Granted consent in ask mode retains the message. Declined, unanswered, storage disabled, a Studio failure at write time and an unbound gate each discard it. Consent and authorization fields never reach a client |
 | Pipeline metadata and failure mapping | `test_pipeline_admission.py::TestEndToEndOverTheWire::test_saturated_gateway_answers_503_with_retry_after`; `test_rate_limiting.py::test_session_message_rate_limit`; `test_correlation_id_validation.py::test_a_message_refuses_a_malformed_correlation_id`. Everything else calls handlers or `process_wav` directly | `test_contract_pipeline.py`: `MessageResponse` fields and `pipeline_metadata` for text and audio input, including the step order and role-scoped audio URLs; history and audio served per role; customer attribution; an upstream shedding load is 503 `SYSTEM_BUSY` with `Retry-After` on both paths; a failed audio stage is 500 `PIPELINE_ERROR`; a pending session is 400 `SESSION_NOT_ACTIVE` for both roles; `UNSUPPORTED_CONTENT_TYPE`, `INVALID_JSON`, `VALIDATION_ERROR`, `UNSUPPORTED_LANGUAGE` and `MISSING_FIELDS` envelopes. The speech services are replaced at their HTTP boundary |
 | Speech-service failures, circuit breakers and refinement | `test_contract_pipeline.py` (a shedding TTS is 503 on both paths; a failed audio stage is 500 `PIPELINE_ERROR`); `test_pipeline_failure_stage_and_code.py`, `test_pipeline_circuit_breaker.py`, `test_ai_service_client.py`, `test_circuit_breaker*.py`, `test_degradation_mode_follows_breakers.py` and `test_translation_refiner.py` call `process_wav`, `call_ai_service` or the classes directly | `test_contract_speech_failures.py`, passing unchanged at `b2266c4`: on the audio path each failed stage (ASR, translation, TTS) is 500 `PIPELINE_ERROR` with the stage's message prefix, `failed_stage`, the `upstream_error` code, the transcript and translation already produced, and no stored message; TTS answering 200 without audio is `upstream_malformed_response`; a 4xx is `upstream_rejected`; a refused connection or timeout reaches the client only as `Pipeline-Fehler: <code>`, never the service host, on both paths; a shedding stage is 503 `SYSTEM_BUSY` with the upstream's own `Retry-After` for every stage on both paths, and a 503 without one gets 5 seconds; three failures open a stage's breaker (`/api/health/circuit-breakers`: state, failure count, 45-second recovery), after which that stage is 503 `SYSTEM_BUSY` with a `Retry-After` inside the window, is not called, and stores nothing, on both paths; `/api/health/summary` raises a `circuit_open` alert and the operator reset closes it; TTS without audio counts toward its breaker, a load shed or a 4xx does not; refinement applied, unchanged, failed, empty and skipped by target language, as the translated text, the `refinement` step, its comparison status and the text sent to TTS; a changed refinement drops the translation service's `tts_text`; `POST /pipeline` and `POST /upload` success, and `/pipeline` running the refiner. The speech services and the refiner are replaced at their HTTP boundary. Half-open probing and the recovery clock, and the degradation mode following breaker transitions, stay unit-tested: the first needs a clock, and without the lifespan no loop is bound, so the contract harness drops the transition callbacks |
+| Audio validation, conversion and storage | `test_contract_pipeline.py` (a valid 16 kHz mono message succeeds, and its translated audio is served as a WAV); `test_audio_validation.py`, `test_tenant_audio_storage.py` and `test_audio_service_behavior.py` call `validate_audio_input`, `process_wav` or the storage functions directly. No test sent an invalid or convertible recording over HTTP | `test_contract_audio.py`, passing unchanged at `1d1b42e` (PR5b): a non-WAV body, a WAV under 0.1 s and a body one byte over 32 MB are 400 on the admin and customer message routes with the validator's code (`INVALID_WAV_FORMAT`, `INVALID_AUDIO_SPECS`, `FILE_TOO_LARGE`), message and `validation_details`, before any speech service is called and with nothing stored; audio is checked after the session-language match and before the supported-language check; `POST /pipeline` answers the same inputs with 400 and its single `Audio_Validation` step, `POST /upload` with its 400 page; a 44.1 kHz stereo WAV reaches ASR as 16 kHz mono 16-bit on all three routes, and `/pipeline` reports the conversion in its validation step; the message metadata has no validation step; message audio is stored at `v2/<tenant_ref>/<session_id>/<variant>/<message_id>.wav` under `SSF_AUDIO_BASE_DIR`, the original as uploaded, and both roles are served exactly those bytes. The message path validates once: `_validate_audio_payload`, then `process_wav` with `validate_audio=False` (`tests/test_audio_adapters.py` pins the single call) |
 | Realtime-ticket issue and consume | `test_admin_realtime_ticket_route.py::*` (issue, cross-tenant issue 404); `test_tenant_polling.py::test_ticket_issued_before_termination_cannot_activate_polling`; `test_tenant_websocket.py::test_admin_websocket_rejects_invalid_ticket_before_accept`. `test_realtime_ticket.py` tests the store class directly | `test_contract_realtime_tickets.py`: issue body and 60-second expiry; 422 outside the transport literal; single use over WebSocket and over polling; expiry for both transports; transport binding; a rejected ticket is spent; termination revokes WebSocket tickets; a foreign tenant cannot activate polling with the ticket and does not spend it; an unavailable store gives 503, close 1013 and 503 |
 | WebSocket connect, frames, close codes | `services/api_gateway/tests/test_tenant_realtime_integration_contract.py::test_admin_can_observe_only_its_session_realtime_connection`; `test_tenant_websocket.py::test_customer_websocket_still_accepts_an_anonymous_capability`, `::test_customer_websocket_rejects_a_cross_tenant_supplied_bearer_before_accept`, `::test_customer_websocket_rejects_a_malformed_supplied_bearer_before_accept`, `::test_legacy_client_selected_websocket_route_is_absent`. Frame and close behaviour beyond the ack is unit-tested on `WebSocketManager` only | `test_contract_websocket.py`: `connection_ack` fields; missing ticket 1008; missing or foreign origin 1008 for both roles; unknown or ended session denied with 404 before accept; `client_joined`, relayed `message` without echo, `typing_indicator` and `client_left` between two live sockets; malformed frames answered with `error` while the socket stays open; termination sends `session_terminated` then closes 1000; tenant-wide and per-session connection listings are tenant-scoped |
 | HTTP message delivery to live WebSockets | None end to end. `test_contract_websocket.py` relays frames one socket sends; `test_contract_pipeline.py` checks the HTTP response only; `broadcast_message_to_session` and `WebSocketManager.broadcast_with_differentiated_content` are unit-tested with doubles. Found in PR4b: building `ConversationService` without its WebSocket manager failed no contract test | `test_contract_message_delivery.py`, added in PR4b and passing unchanged at `2847140`: for admin-to-customer and customer-to-admin, text and audio input, with both parties on WebSockets, `POST /api/<role>/session/{id}/message` gives the receiver a `receiver_message` frame with the translated text, the translated and original audio URLs and the pipeline metadata scoped to its own role, and gives the sender a `sender_confirmation` frame with its original text, no translated audio URL and its own role's URLs; the HTTP response fields are unchanged |
@@ -59,9 +60,35 @@ them only through its own issue.
 - `GET /api/websocket/monitoring/health` has no authentication and no tenant scope. Its status
   also depends on the WebSocketMonitor heartbeat accounting, which a separate fix owns.
 - WebSocketMonitor disconnect metrics and heartbeat-timeout accounting.
+- The message path validates only an `UploadFile`. Any other object with a `read` method
+  skips validation, and `process_wav` runs with `validate_audio=False`, so it would reach ASR
+  unvalidated. Over HTTP every file part is an `UploadFile` and anything else is refused as
+  `INVALID_FILE`, so no request reaches that branch (found in PR5b).
+- `validation_time_ms` is a timing, so only its presence and type are pinned.
+- Every route reads the whole upload into memory before the 32 MB check refuses it. No
+  response shows the difference.
+
+## Pinned as found
+
+Surprising, but pinned by `test_contract_audio.py` as they behave (found in PR5b). Changing
+one changes a contract test and needs its own issue.
+
+- A body one byte over the 32 MB limit is refused as `Audio file too large: 32.0MB. Maximum
+  allowed: 32.0MB`: the size is rounded to one decimal for display.
+- The stored and served original is the recording as uploaded, not the 16 kHz mono audio
+  ASR received.
+- `POST /pipeline` returns its debug record, including the `Audio_Validation` step, whether
+  or not `debug=true` was sent. The record also carries host CPU and RAM figures, which are
+  not pinned.
 
 ## Accepted divergences
 Changes a later slice made on purpose, where the output differs from what came before.
+
+- Each app reads `SSF_AUDIO_BASE_DIR` when `build_gateway_dependencies` builds its audio
+  store, not when `audio_storage` is imported (PR5b). Production sets the variable in the
+  container environment before the process starts and never changes it, so both readings
+  give the same directory. Only a process that changes the variable between import and
+  startup, which only tests do, sees a different one.
 
 - Message listings take audio availability from the markers the writer records instead of
   checking the disk (task 5.1). The hourly retention cleanup deletes files by age, and the
@@ -117,3 +144,19 @@ Changes a later slice made on purpose, where the output differs from what came b
   reset routes resolve their collaborators through providers (PR5a). On an app whose
   lifespan has not run they now fail with `GatewayDependenciesUnavailable` instead of using
   the process-wide breakers and running unbounded. A running app always has its container.
+
+## Inventory for PR7 (task 4.2)
+
+Code with no production caller, found while moving the audio adapters (PR5b) and left
+unchanged. `tests/test_audio_processing_boundary.py` walks every module reachable from
+`app.py`; none of these is among them except `audio_storage.py` itself.
+
+- `audio_storage.py`: `save_original_audio`, `save_translated_audio`, `get_audio_file_path`,
+  `ensure_directories`, `ORIGINAL_AUDIO_DIR` and `TRANSLATED_AUDIO_DIR`, and
+  `AUDIO_BASE_DIR`, which now exists only for them. Consumers: the unregistered leftovers in
+  `routes/session.py` (`get_audio_file_path`), and `tests/test_sonar_new_coverage_audio.py`,
+  `test_pipeline_metadata_enhancement.py`, `test_pipeline_metadata_integration.py`,
+  `test_end_to_end_conversation.py` and `test_sonar_realtime_contracts.py`.
+- `enhanced_audio_validation.py`, all of it. Consumers: `tests/test_audio_service_behavior.py`,
+  `test_service_app_helpers.py`, `test_sonar_new_coverage_audio.py`, and the example in
+  `docs/guides/audio-format-handling.md`.

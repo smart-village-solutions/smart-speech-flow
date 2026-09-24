@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 from services.api_gateway import message_models, message_processing
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.session_manager import ClientType, TenantSessionManager, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
@@ -18,7 +19,10 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 @pytest.fixture
 async def active_session(monkeypatch: pytest.MonkeyPatch):
-    manager = TenantSessionManager(store=MemoryTenantSessionStore())
+    manager = TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
@@ -78,6 +82,7 @@ async def test_unified_message_dispatches_json_with_trusted_role(
         None,
         sessions=manager,
         pipeline=speech_pipeline(),
+        audio_store=AudioStore.from_environment(),
     )
 
     assert result == expected
@@ -98,6 +103,7 @@ async def test_unified_message_rejects_unsupported_content_type(active_session) 
             None,
             sessions=manager,
             pipeline=speech_pipeline(),
+            audio_store=AudioStore.from_environment(),
         )
 
     assert caught.value.status_code == 400
@@ -128,6 +134,7 @@ async def test_unified_message_redacts_unexpected_exception_from_response_and_ou
             None,
             sessions=manager,
             pipeline=speech_pipeline(),
+            audio_store=AudioStore.from_environment(),
         )
 
     captured = capsys.readouterr()
@@ -154,6 +161,7 @@ async def test_audio_pipeline_requires_only_file_and_languages(active_session) -
             0.0,
             sessions=manager,
             pipeline=speech_pipeline(),
+            audio_store=AudioStore.from_environment(),
         )
 
     assert caught.value.status_code == 400
@@ -171,10 +179,10 @@ async def test_create_message_persists_under_the_complete_tenant_key(
         ClientType.CUSTOMER,
         "Hello",
         "Hallo",
-        None,
         "en",
         "de",
         sessions=manager,
+        translated_audio_available=False,
     )
 
     stored = manager.get_session(session.key)

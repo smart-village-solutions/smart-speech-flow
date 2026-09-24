@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.auth import optional_ssf_user, require_ssf_user
 from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_store import MemoryTenantSessionStore
@@ -51,7 +52,10 @@ def _configuration(tenant_id: str) -> RuntimeConfiguration:
 
 @pytest.fixture
 def manager() -> TenantSessionManager:
-    return TenantSessionManager(store=MemoryTenantSessionStore())
+    return TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
 
 
 @pytest.mark.asyncio

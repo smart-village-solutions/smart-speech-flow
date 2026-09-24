@@ -11,6 +11,7 @@ from uuid import UUID
 
 import pytest
 
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.feedback.crypto import FeedbackCipher
 from services.api_gateway.feedback.models import (
     MAX_IMPROVEMENTS_LENGTH,
@@ -491,6 +492,7 @@ class TestTenantBoundSessions:
         manager = TenantSessionManager(
             store=MemoryTenantSessionStore(),
             session_id_factory=lambda: "TENANT01",
+            audio_store=AudioStore.from_environment(),
         )
         session = await manager.create_admin_session(
             "tenant-kassel", RuntimeConfigurationSnapshot(revision, revision, "{}")
@@ -506,7 +508,10 @@ class TestTenantBoundSessions:
         from services.api_gateway.session_manager import TenantSessionManager
         from services.api_gateway.session_store import MemoryTenantSessionStore
 
-        manager = TenantSessionManager(store=MemoryTenantSessionStore())
+        manager = TenantSessionManager(
+            store=MemoryTenantSessionStore(),
+            audio_store=AudioStore.from_environment(),
+        )
         service, _ = _service(session_manager=manager)
         request = _request(session_id="NOSUCH99")
 
@@ -521,7 +526,9 @@ class TestTenantBoundSessions:
 
         revision = f"sha256:{'a' * 64}"
         manager = TenantSessionManager(
-            store=MemoryTenantSessionStore(), session_id_factory=lambda: "KASSEL01"
+            store=MemoryTenantSessionStore(),
+            session_id_factory=lambda: "KASSEL01",
+            audio_store=AudioStore.from_environment(),
         )
         session = await manager.create_admin_session(
             "tenant-kassel", RuntimeConfigurationSnapshot(revision, revision, "{}")
@@ -581,6 +588,7 @@ class TestFeedbackJustAfterTheConversationEnds:
             store=MemoryTenantSessionStore(),
             clock=clock,
             session_id_factory=lambda: "KASSEL01",
+            audio_store=AudioStore.from_environment(),
         )
         session = await manager.create_admin_session(
             "tenant-kassel",
@@ -699,7 +707,10 @@ class TestAnIdNoSessionCouldCarry:
         from services.api_gateway.session_manager import TenantSessionManager
         from services.api_gateway.session_store import RedisTenantSessionStore
 
-        manager = TenantSessionManager(store=RedisTenantSessionStore(self.EmptyRedis()))
+        manager = TenantSessionManager(
+            store=RedisTenantSessionStore(self.EmptyRedis()),
+            audio_store=AudioStore.from_environment(),
+        )
         service, _parts = _service(session_manager=manager)
         return service
 

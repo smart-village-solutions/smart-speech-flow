@@ -59,6 +59,7 @@ async def upload(
             target_lang,
             speech=pipeline.speech,
             refiner=pipeline.refiner,
+            validator=pipeline.validator,
         )
     except PipelineBusyError as busy:
         logger.info("Upload rejected: pipeline at capacity")

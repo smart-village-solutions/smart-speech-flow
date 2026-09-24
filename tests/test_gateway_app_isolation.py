@@ -21,6 +21,7 @@ from services.api_gateway.studio_login_directory_client import StudioLoginDirect
 REVISION = f"sha256:{'a' * 64}"
 
 CONTAINER_BUILT = (
+    "audio_store",
     "session_manager",
     "realtime_tickets",
     "polling_store",

@@ -13,6 +13,7 @@ from starlette.testclient import WebSocketDenialResponse
 from starlette.websockets import WebSocketDisconnect
 
 from services.api_gateway.app import app
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.auth import optional_ssf_user
 from services.api_gateway.routes.admin import list_tenant_realtime_connections
 from services.api_gateway.session_manager import (
@@ -189,7 +190,10 @@ def test_production_uvicorn_access_log_is_disabled_for_capability_urls() -> None
 
 @pytest.mark.asyncio
 async def test_connection_is_not_registered_if_session_terminates_during_accept() -> None:
-    manager = TenantSessionManager(store=MemoryTenantSessionStore())
+    manager = TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     sockets = WebSocketManager(manager)
     sockets.start_heartbeat_system = AsyncMock()
@@ -217,7 +221,10 @@ async def test_connection_is_not_registered_if_session_terminates_during_accept(
 
 @pytest.mark.asyncio
 async def test_inbound_message_is_not_dispatched_after_termination_starts() -> None:
-    manager = TenantSessionManager(store=MemoryTenantSessionStore())
+    manager = TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     sockets = WebSocketManager(manager)
     sockets.start_heartbeat_system = AsyncMock()

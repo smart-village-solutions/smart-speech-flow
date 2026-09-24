@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.session_manager import (
     ClientType,
     TenantSessionManager,
@@ -134,7 +135,7 @@ def test_malformed_session_is_quarantined_instead_of_loaded():
 
 def test_tenant_active_lookup_rejects_ambiguity_and_excludes_other_tenants():
     store = MemoryTenantSessionStore()
-    manager = TenantSessionManager(store=store)
+    manager = TenantSessionManager(store=store, audio_store=AudioStore.from_environment())
     first = make_session("tenant-a", "SESSION1")
     second = make_session("tenant-a", "SESSION2")
     foreign = make_session("tenant-b", "SESSION3")
@@ -155,13 +156,18 @@ def test_tenant_active_lookup_rejects_ambiguity_and_excludes_other_tenants():
     first.status = second.status = SessionStatus.TERMINATED
     assert manager.get_active_session(tenant_id="tenant-a") is None
     # A tenant manager without a store cannot be built any more.
+    audio_store = AudioStore.from_environment()
     with pytest.raises(TypeError):
-        TenantSessionManager()
+        TenantSessionManager(audio_store=audio_store)
 
 
 async def test_unknown_expired_polling_client_does_not_prevent_customer_disconnect():
     store = MemoryTenantSessionStore()
-    manager = TenantSessionManager(store=store, clock=lambda: NOW)
+    manager = TenantSessionManager(
+        store=store,
+        clock=lambda: NOW,
+        audio_store=AudioStore.from_environment(),
+    )
     session = make_session("tenant-a", "SESSION1")
     session.created_at = NOW
     assert store.create(session)
@@ -184,7 +190,7 @@ def test_sweep_preserves_snapshot_when_store_adds_session_during_write(monkeypat
     from services.api_gateway.session_manager import SessionMessage
 
     store = MemoryTenantSessionStore()
-    manager = TenantSessionManager(store=store)
+    manager = TenantSessionManager(store=store, audio_store=AudioStore.from_environment())
     first = make_session("tenant-a", "SESSION1")
     second = make_session("tenant-b", "SESSION2")
     for session in (first, second):

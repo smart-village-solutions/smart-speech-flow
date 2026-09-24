@@ -13,7 +13,8 @@ from fastapi import HTTPException, Request, UploadFile
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from .audio_storage import AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
+from .audio_processing import AudioValidator
+from .audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
 from .consent import ConsentStatus
 from .log_safety import sanitize_log_value
 from .message_models import (
@@ -323,13 +324,11 @@ def _should_validate_upload_file(file: Any) -> bool:
     return isinstance(file, (UploadFile, StarletteUploadFile))
 
 
-def _validate_audio_payload(file: Any, file_bytes: bytes) -> bytes:
+def _validate_audio_payload(file: Any, file_bytes: bytes, validator: AudioValidator) -> bytes:
     if not _should_validate_upload_file(file):
         return file_bytes
 
-    from .pipeline_logic import validate_audio_input
-
-    validation_result = validate_audio_input(file_bytes, normalize=True)
+    validation_result = validator.validate(file_bytes, normalize=True)
     if validation_result.is_valid:
         return validation_result.processed_audio or file_bytes
 
@@ -421,15 +420,15 @@ def _store_audio_artifacts(
     _sender: ClientType,
     message_id: str,
     file_bytes: bytes,
+    *,
+    audio_store: AudioStore,
 ) -> bool:
-    from .audio_storage import AudioVariant, save_audio
-
     original_audio_available = False
     try:
-        save_audio(key, message_id, AudioVariant.ORIGINAL, file_bytes)
+        audio_store.save(key, message_id, AudioVariant.ORIGINAL, file_bytes)
         original_audio_available = True
     except Exception as e:
-        # See the translated-audio branch: success is still reported to the
+        # See _store_translated_audio: success is still reported to the
         # caller, so a warning here is invisible in practice.
         logger.exception(
             "⚠️ Failed to save original audio: %s",
@@ -438,6 +437,31 @@ def _store_audio_artifacts(
         )
 
     return original_audio_available
+
+
+def _store_translated_audio(
+    key: TenantSessionKey,
+    message_id: str,
+    audio_bytes: Optional[bytes],
+    *,
+    audio_store: AudioStore,
+) -> bool:
+    """Save the synthesised reply, reporting whether the listener can play it."""
+    if not audio_bytes:
+        return False
+    try:
+        audio_store.save(key, message_id, AudioVariant.TRANSLATED, audio_bytes)
+    except Exception as error:
+        # Logged at error, not warning: the pipeline still answers
+        # successfully, so this line is the only signal that the reply
+        # reached the customer with no audio to play.
+        logger.exception(
+            "⚠️ Failed to save translated audio: %s",
+            type(error).__name__,
+            exc_info=_redacted_exception_info(error),
+        )
+        return False
+    return True
 
 
 def _build_message_response(
@@ -548,6 +572,7 @@ async def send_unified_message(
     *,
     sessions: TenantSessionManager,
     pipeline: SpeechPipeline,
+    audio_store: AudioStore,
     admission: Optional[PipelineAdmission] = None,
     telemetry: Optional[QualityTelemetry] = None,
 ) -> MessageResponse:
@@ -623,6 +648,7 @@ async def send_unified_message(
                 recorder=recorder,
                 sessions=sessions,
                 pipeline=pipeline,
+                audio_store=audio_store,
                 admission=admission,
             )
             _log_session_event("✅ Audio-Pipeline erfolgreich", session_id)
@@ -640,6 +666,7 @@ async def send_unified_message(
                 recorder=recorder,
                 sessions=sessions,
                 pipeline=pipeline,
+                audio_store=audio_store,
                 admission=admission,
             )
             _log_session_event("✅ Text-Pipeline erfolgreich", session_id)
@@ -695,6 +722,7 @@ async def process_audio_input(
     *,
     sessions: TenantSessionManager,
     pipeline: SpeechPipeline,
+    audio_store: AudioStore,
     admission: Optional[PipelineAdmission] = None,
 ) -> MessageResponse:
     """Audio-Input verarbeiten (multipart/form-data)"""
@@ -718,7 +746,7 @@ async def process_audio_input(
 
     _validate_audio_file_input(file)
     file_bytes = await file.read()
-    processed_file_bytes = _validate_audio_payload(file, file_bytes)
+    processed_file_bytes = _validate_audio_payload(file, file_bytes, pipeline.validator)
     _validate_supported_languages(source_lang, target_lang)
 
     # Audio-Pipeline ausführen (Validation bereits durchgeführt).
@@ -737,6 +765,7 @@ async def process_audio_input(
             validate_audio=False,
             speech=pipeline.speech,
             refiner=pipeline.refiner,
+            validator=pipeline.validator,
         )
     except PipelineBusyError as busy:
         raise _system_busy_error(busy) from busy
@@ -756,7 +785,9 @@ async def process_audio_input(
 
     message_id = str(uuid.uuid4())
     audio_bytes = result.get("audio_bytes")
-    original_audio_available = _store_audio_artifacts(key, client_type, message_id, file_bytes)
+    original_audio_available = _store_audio_artifacts(
+        key, client_type, message_id, file_bytes, audio_store=audio_store
+    )
 
     pipeline_metadata = transform_pipeline_metadata(
         result.get("debug"),
@@ -766,12 +797,14 @@ async def process_audio_input(
         original_audio_available=original_audio_available,
     )
 
+    translated_audio_available = _store_translated_audio(
+        key, message_id, audio_bytes, audio_store=audio_store
+    )
     message = await create_session_message(
         session_id=key,
         client_type=client_type,
         original_text=result.get("asr_text", ""),
         translated_text=result.get("translation_text", ""),
-        audio_bytes=audio_bytes,
         source_lang=source_lang,
         target_lang=target_lang,
         manager=manager,
@@ -782,6 +815,7 @@ async def process_audio_input(
         message_id=message_id,
         correlation_id=correlation_id,
         sessions=sessions,
+        translated_audio_available=translated_audio_available,
     )
     message.id = message_id
     return _build_message_response(
@@ -806,6 +840,7 @@ async def process_text_input(
     *,
     sessions: TenantSessionManager,
     pipeline: SpeechPipeline,
+    audio_store: AudioStore,
     admission: Optional[PipelineAdmission] = None,
 ) -> MessageResponse:
     """Text-Input verarbeiten (application/json)"""
@@ -903,12 +938,14 @@ async def process_text_input(
         message_id=message_id,  # Pass message_id for audio URL
     )
 
+    translated_audio_available = _store_translated_audio(
+        key, message_id, audio_bytes, audio_store=audio_store
+    )
     message = await create_session_message(
         session_id=key,
         client_type=client_type,
         original_text=pipeline_result.get("asr_text", text_request.text),
         translated_text=translated_text,
-        audio_bytes=audio_bytes,
         source_lang=text_request.source_lang,
         target_lang=text_request.target_lang,
         manager=manager,
@@ -917,6 +954,7 @@ async def process_text_input(
         message_id=message_id,
         correlation_id=correlation_id,
         sessions=sessions,
+        translated_audio_available=translated_audio_available,
     )
 
     return _build_message_response(
@@ -936,7 +974,6 @@ async def create_session_message(
     client_type: ClientType,
     original_text: str,
     translated_text: str,
-    audio_bytes: Optional[bytes],
     source_lang: str,
     target_lang: str,
     manager: Optional[WebSocketManager] = None,
@@ -946,34 +983,18 @@ async def create_session_message(
     correlation_id: Optional[str] = None,
     *,
     sessions: TenantSessionManager,
+    translated_audio_available: bool,
 ) -> SessionMessage:
-    """Session-Message erstellen und zur Session hinzufügen"""
-    import logging
+    """Session-Message erstellen und zur Session hinzufügen.
 
-    from .audio_storage import AudioVariant, save_audio
+    Both audio variants are already stored by the caller; the message only
+    records whether each is available.
+    """
+    import logging
 
     logger = logging.getLogger(__name__)
 
     resolved_message_id = message_id or str(uuid.uuid4())
-    translated_audio_available = False
-    if audio_bytes:
-        try:
-            save_audio(
-                session_id,
-                resolved_message_id,
-                AudioVariant.TRANSLATED,
-                audio_bytes,
-            )
-            translated_audio_available = True
-        except Exception as error:
-            # Logged at error, not warning: the pipeline still answers
-            # successfully, so this line is the only signal that the reply
-            # reached the customer with no audio to play.
-            logger.exception(
-                "⚠️ Failed to save translated audio: %s",
-                type(error).__name__,
-                exc_info=_redacted_exception_info(error),
-            )
 
     message = SessionMessage(
         id=resolved_message_id,
