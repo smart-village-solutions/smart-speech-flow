@@ -37,6 +37,12 @@ Existing app-state services migrate into the container without behavioral change
 
 Session and message boundaries preserve `TenantSessionKey`, tenant Redis keys and join index, consent-gated storage, runtime snapshots, and pipeline metadata. The session compatibility gate records whether legacy mode can be deleted after cutover proof or must be isolated behind a typed adapter. No code slice assumes legacy state is absent merely because the target architecture does.
 
+### Decision: Legacy session path is isolated behind a typed compatibility adapter
+
+Decided on 2026-09-24. `SessionManager` keeps its legacy `str`-keyed path, but the path moves behind a typed compatibility adapter. Tenant-aware code then depends only on the typed `TenantSessionKey` contract, and the legacy path keeps working until a later removal. The adapter is built in the session-boundary slice (task 2.1).
+
+This isolates the legacy path; it does not approve deleting it. Removal still needs the recorded cutover decision and operational evidence that the "Legacy session path decision" scenario requires.
+
 ### Decision: Separate transport responsibilities
 
 Route adapters call application services; application services depend on typed ports. Speech HTTP access, validation/conversion/storage are infrastructure adapters. The realtime ticket backend exposes `consume`, `put_if_absent`, and `get` domain operations rather than Redis eval details. Realtime registry, dispatch, heartbeat, polling, and monitoring have focused interfaces. #348 decides the supported tenant-safe monitoring API surface.
