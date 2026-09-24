@@ -115,9 +115,7 @@ def test_a_wedged_telemetry_shutdown_does_not_hold_the_gateway_open(
     try:
         with TestClient(app):
             app.state.quality_telemetry_exporter.shutdown()
-            monkeypatch.setattr(
-                app.state, "quality_telemetry_exporter", _WedgedExporter()
-            )
+            monkeypatch.setattr(app.state, "quality_telemetry_exporter", _WedgedExporter())
             started = time.monotonic()
         elapsed = time.monotonic() - started
     finally:

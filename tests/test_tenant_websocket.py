@@ -4,7 +4,6 @@ import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-
 from unittest.mock import AsyncMock
 
 import pytest
@@ -265,9 +264,7 @@ async def test_polling_overflow_reports_current_delivery_and_historical_eviction
     receiver = store.activate(key, ClientType.CUSTOMER)
     for index in range(POLLING_QUEUE_SIZE):
         receiver.messages.append({"type": "old", "index": index})
-    monkeypatch.setattr(
-        "services.api_gateway.websocket_polling_routes.polling_store", store
-    )
+    monkeypatch.setattr("services.api_gateway.websocket_polling_routes.polling_store", store)
     sockets = WebSocketManager(_PresenceManager())
 
     result = await sockets.broadcast_with_differentiated_content(

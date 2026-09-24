@@ -96,9 +96,7 @@ async def mixed_session_with_content(manager, audio_dir):
     )
 
 
-async def test_declined_session_retains_nothing(
-    declined_session_with_content, audio_dir
-):
+async def test_declined_session_retains_nothing(declined_session_with_content, audio_dir):
     session, key, manager = declined_session_with_content
     await manager.terminate_session(key, reason="test")
     assert manager.get_session(key).messages == []
@@ -106,9 +104,7 @@ async def test_declined_session_retains_nothing(
         assert not audio_path(key, "m1", variant, base_dir=audio_dir).exists()
 
 
-async def test_granted_session_retains_everything(
-    granted_session_with_content, audio_dir
-):
+async def test_granted_session_retains_everything(granted_session_with_content, audio_dir):
     session, key, manager = granted_session_with_content
     await manager.terminate_session(key, reason="test")
     assert len(manager.get_session(key).messages) == 1
@@ -116,9 +112,7 @@ async def test_granted_session_retains_everything(
         assert audio_path(key, "m1", variant, base_dir=audio_dir).exists()
 
 
-async def test_mixed_session_retains_only_the_authorised(
-    mixed_session_with_content, audio_dir
-):
+async def test_mixed_session_retains_only_the_authorised(mixed_session_with_content, audio_dir):
     # m1 fully authorised; m2 record authorised but its translated audio
     # refused; m3 refused outright.
     session, key, manager = mixed_session_with_content
@@ -131,9 +125,7 @@ async def test_mixed_session_retains_only_the_authorised(
     assert not audio_path(key, "m3", translated, base_dir=audio_dir).exists()
 
 
-async def test_dropping_a_message_removes_its_audio(
-    mixed_session_with_content, audio_dir
-):
+async def test_dropping_a_message_removes_its_audio(mixed_session_with_content, audio_dir):
     session, key, manager = mixed_session_with_content
     await manager.terminate_session(key, reason="test")
     # m3's record was refused, so neither of its files may survive even though
@@ -184,9 +176,7 @@ async def test_a_retained_message_stops_advertising_removed_original_audio(
     retained = manager.get_session(session.key).messages[0]
     assert retained.original_audio_url is None
 
-    monkeypatch.setattr(
-        "services.api_gateway.conversation_service.session_manager", manager
-    )
+    monkeypatch.setattr("services.api_gateway.conversation_service.session_manager", manager)
     monkeypatch.setattr(
         "services.api_gateway.conversation_service.audio_path",
         lambda key, mid, variant: audio_path(key, mid, variant, base_dir=audio_dir),
@@ -195,9 +185,7 @@ async def test_a_retained_message_stops_advertising_removed_original_audio(
     assert "original_audio_url" not in items[0]
 
 
-async def test_a_failed_termination_leaves_the_audio_in_place(
-    manager, audio_dir, monkeypatch
-):
+async def test_a_failed_termination_leaves_the_audio_in_place(manager, audio_dir, monkeypatch):
     """Deleting before the commit destroys content a retry still needs.
 
     Termination treats a store failure as transient: the session stays active
@@ -248,9 +236,7 @@ async def test_refused_translated_audio_leaves_no_url_in_pipeline_metadata(
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     message = _message("m1", record=True, original=True, translated=False)
     message.pipeline_metadata = {
-        "steps": [
-            {"step": "TTS", "output": {"audio_available": True, "audio_url": "x.wav"}}
-        ]
+        "steps": [{"step": "TTS", "output": {"audio_available": True, "audio_url": "x.wav"}}]
     }
     manager.add_message(session.key, message)
     for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
@@ -258,9 +244,7 @@ async def test_refused_translated_audio_leaves_no_url_in_pipeline_metadata(
 
     await manager.terminate_session(session.key, reason="test")
 
-    monkeypatch.setattr(
-        "services.api_gateway.conversation_service.session_manager", manager
-    )
+    monkeypatch.setattr("services.api_gateway.conversation_service.session_manager", manager)
     monkeypatch.setattr(
         "services.api_gateway.conversation_service.audio_path",
         lambda key, mid, variant: audio_path(key, mid, variant, base_dir=audio_dir),
@@ -272,7 +256,7 @@ async def test_refused_translated_audio_leaves_no_url_in_pipeline_metadata(
 
 
 async def test_a_consented_text_message_keeps_its_metadata(manager, audio_dir):
-    """"Not authorised" and "never existed" are different things.
+    """ "Not authorised" and "never existed" are different things.
 
     `authorize_message_artifacts` reports False for an artefact that was never
     produced, so a text message arrives here with `original_audio_authorized`
@@ -295,9 +279,7 @@ async def test_a_consented_text_message_keeps_its_metadata(manager, audio_dir):
     assert retained.pipeline_metadata["steps"][0]["output"]["audio_available"] is True
 
 
-async def test_a_message_without_tts_audio_keeps_its_negative_marker(
-    manager, audio_dir
-):
+async def test_a_message_without_tts_audio_keeps_its_negative_marker(manager, audio_dir):
     """A step that produced no audio must keep saying so, not lose the key."""
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     message = _message("m1", record=True, original=True, translated=False)

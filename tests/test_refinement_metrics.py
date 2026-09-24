@@ -64,7 +64,4 @@ class TestTheCounterSurvivesTheRegistryBoundary:
             "the refinement counter is not in the scraped registry; it would "
             "look wired up while alerting could never see it"
         )
-        assert (
-            'refinement_attempts_total{model_ref="vllm-shadow-test",outcome="error"}'
-            in body
-        )
+        assert 'refinement_attempts_total{model_ref="vllm-shadow-test",outcome="error"}' in body

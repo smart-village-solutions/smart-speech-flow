@@ -238,12 +238,8 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
     revoked_after_success = tickets.issue(session.key, "websocket")
     polling = TenantPollingStore(clock=lambda: 0.0)
     polling_client = polling.activate(session.key, ClientType.CUSTOMER)
-    monkeypatch.setattr(
-        "services.api_gateway.realtime_ticket.realtime_ticket_store", tickets
-    )
-    monkeypatch.setattr(
-        "services.api_gateway.websocket_polling_routes.polling_store", polling
-    )
+    monkeypatch.setattr("services.api_gateway.realtime_ticket.realtime_ticket_store", tickets)
+    monkeypatch.setattr("services.api_gateway.websocket_polling_routes.polling_store", polling)
 
     sockets = WebSocketManager(manager)
     sockets.start_heartbeat_system = AsyncMock()
@@ -260,9 +256,7 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
     assert manager.active_admin_sessions == {"tenant-a": {session.id}}
     assert polling_client.terminated is False
     assert session.key in sockets.session_connections
-    assert tickets.consume(
-        usable_after_failure.ticket, session.key, "websocket"
-    ) is True
+    assert tickets.consume(usable_after_failure.ticket, session.key, "websocket") is True
 
     await manager.terminate_session(session.key, "manual_admin_termination")
 
@@ -271,9 +265,7 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
     assert manager.active_admin_sessions == {}
     assert polling_client.terminated is True
     assert session.key not in sockets.session_connections
-    assert tickets.consume(
-        revoked_after_success.ticket, session.key, "websocket"
-    ) is False
+    assert tickets.consume(revoked_after_success.ticket, session.key, "websocket") is False
 
 
 @pytest.mark.asyncio

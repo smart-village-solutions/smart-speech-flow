@@ -56,9 +56,7 @@ def test_services_health_converts_client_failure_to_server_error(client, monkeyp
     assert response.json()["detail"] == "Health status check failed: upstream unavailable"
 
 
-def test_single_service_health_validates_name_and_handles_missing_service(
-    client, monkeypatch
-):
+def test_single_service_health_validates_name_and_handles_missing_service(client, monkeypatch):
     invalid_response = client.get("/api/health/services/unknown")
     assert invalid_response.status_code == 400
     assert "Valid services: asr, translation, tts" in invalid_response.json()["detail"]
@@ -97,13 +95,9 @@ def test_single_service_health_returns_status_and_wraps_client_error(client, mon
     assert error_response.json()["detail"] == "Service health check failed: monitor failed"
 
 
-def test_circuit_breaker_status_lists_each_circuit_and_handles_factory_error(
-    client, monkeypatch
-):
+def test_circuit_breaker_status_lists_each_circuit_and_handles_factory_error(client, monkeypatch):
     circuits = {"asr": _circuit("open"), "tts": _circuit("closed")}
-    monkeypatch.setattr(
-        circuit_breaker.CircuitBreakerFactory, "get_all_circuits", lambda: circuits
-    )
+    monkeypatch.setattr(circuit_breaker.CircuitBreakerFactory, "get_all_circuits", lambda: circuits)
 
     success_response = client.get("/api/health/circuit-breakers")
 
@@ -149,9 +143,7 @@ def test_degradation_status_returns_client_data_and_wraps_errors(client, monkeyp
     )
 
 
-def test_reset_one_circuit_validates_service_and_returns_state_transition(
-    client, monkeypatch
-):
+def test_reset_one_circuit_validates_service_and_returns_state_transition(client, monkeypatch):
     invalid_response = client.post("/api/admin/circuit-breakers/invalid/reset")
     assert invalid_response.status_code == 400
 
@@ -174,9 +166,7 @@ def test_reset_one_circuit_validates_service_and_returns_state_transition(
 
 def test_reset_all_circuits_and_wraps_reset_failure(client, monkeypatch):
     circuits = {"asr": _circuit("open"), "translation": _circuit("half_open")}
-    monkeypatch.setattr(
-        circuit_breaker.CircuitBreakerFactory, "get_all_circuits", lambda: circuits
-    )
+    monkeypatch.setattr(circuit_breaker.CircuitBreakerFactory, "get_all_circuits", lambda: circuits)
 
     success_response = client.post("/api/admin/circuit-breakers/reset-all")
 

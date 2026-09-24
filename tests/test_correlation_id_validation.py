@@ -54,9 +54,7 @@ def _pending(client: TestClient):
 
 
 @pytest.mark.parametrize("correlation_id", MALFORMED)
-def test_activation_refuses_a_malformed_correlation_id(
-    client, studio, correlation_id
-):
+def test_activation_refuses_a_malformed_correlation_id(client, studio, correlation_id):
     session_id, key = _pending(client)
     response = client.post(
         "/api/customer/session/activate",

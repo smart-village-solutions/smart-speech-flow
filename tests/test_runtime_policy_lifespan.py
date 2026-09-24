@@ -33,9 +33,7 @@ def quiet_lifespan(monkeypatch: pytest.MonkeyPatch):
 
 
 def _configure_studio(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(
-        "STUDIO_RUNTIME_CONFIGURATION_BASE_URL", "http://studio-mock:8000"
-    )
+    monkeypatch.setenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", "http://studio-mock:8000")
     monkeypatch.setenv("STUDIO_RUNTIME_FIXED_TOKEN", "studio-mock-authorized-token")
 
 
@@ -85,9 +83,7 @@ def test_timeout_defaults_to_the_client_default(monkeypatch):
 
 
 @pytest.mark.parametrize("raw", ["60", "0", "-1", "not-a-number", "31"])
-def test_an_out_of_range_timeout_falls_back_instead_of_breaking_the_flow(
-    monkeypatch, raw
-):
+def test_an_out_of_range_timeout_falls_back_instead_of_breaking_the_flow(monkeypatch, raw):
     """A bad timeout must not take tenant login down with it.
 
     `runtime_flow_from_environment` also backs

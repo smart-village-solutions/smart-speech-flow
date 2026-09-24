@@ -171,9 +171,7 @@ async def test_unknown_expired_polling_client_does_not_prevent_customer_disconne
     polling = TenantPollingStore(clock=lambda: tick)
     polling.activate(TenantSessionKey("tenant-a", "MISSING1"), ClientType.ADMIN)
     polling.activate(session.key, ClientType.CUSTOMER)
-    monkeypatch.setattr(
-        "services.api_gateway.websocket_polling_routes.polling_store", polling
-    )
+    monkeypatch.setattr("services.api_gateway.websocket_polling_routes.polling_store", polling)
     tick = 1000.0
 
     await manager.check_session_timeouts()

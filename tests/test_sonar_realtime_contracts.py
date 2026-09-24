@@ -77,9 +77,7 @@ def test_polling_timeout_openapi_and_request_contract(polling_client, role):
     response = polling_client.post(path + "/recover")
     assert response.status_code == 200
     assert response.json() == {"status": "recovery_requested"}
-    response = polling_client.post(
-        path + "/send", json={"type": "heartbeat", "content": {}}
-    )
+    response = polling_client.post(path + "/send", json={"type": "heartbeat", "content": {}})
     assert response.status_code == 200
     assert response.json() == {"status": "success"}
     response = polling_client.delete(path)
@@ -98,9 +96,9 @@ def test_admin_activation_documents_its_actual_not_found_response(polling_client
     )
     assert response.status_code == 404
     assert response.json() == {"detail": "Session not found"}
-    responses = app.openapi()["paths"][
-        "/api/admin/session/{session_id}/polling/activate"
-    ]["post"]["responses"]
+    responses = app.openapi()["paths"]["/api/admin/session/{session_id}/polling/activate"]["post"][
+        "responses"
+    ]
     assert "404" in responses
     assert "503" in responses
 
@@ -176,9 +174,7 @@ async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch
         loop.call_soon_threadsafe(request_task.cancel)
 
     monkeypatch.setattr(sessions, "admin_disconnected", release_and_cancel)
-    endpoint = next(
-        route.endpoint for route in polling.router.routes if route.name == "admin_poll"
-    )
+    endpoint = next(route.endpoint for route in polling.router.routes if route.name == "admin_poll")
     request_task = asyncio.create_task(
         endpoint(
             session_id=live_key.session_id,
@@ -212,9 +208,7 @@ def polling_http_state(monkeypatch):
     endpoint_app = FastAPI()
     endpoint_app.include_router(polling.router)
     endpoint_app.dependency_overrides[polling.require_admin_session_key] = lambda: key
-    endpoint_app.dependency_overrides[polling.require_customer_session_key] = (
-        lambda: key
-    )
+    endpoint_app.dependency_overrides[polling.require_customer_session_key] = lambda: key
     endpoint_app.dependency_overrides[polling.get_websocket_manager] = lambda: manager
     return SimpleNamespace(store=store, sessions=sessions, key=key, app=endpoint_app)
 
@@ -355,9 +349,7 @@ async def test_terminated_polling_client_cannot_send_recover_or_read_status():
 
 def test_customer_polling_principal_cannot_cross_tenants(monkeypatch):
     store = polling.TenantPollingStore()
-    client = store.activate(
-        polling.TenantSessionKey("tenant-a", "SESSION1"), ClientType.CUSTOMER
-    )
+    client = store.activate(polling.TenantSessionKey("tenant-a", "SESSION1"), ClientType.CUSTOMER)
     monkeypatch.setattr(polling, "polling_store", store)
     with pytest.raises(HTTPException) as unauthorized:
         polling.require_customer_polling_key(
@@ -398,9 +390,7 @@ async def test_websocket_registration_race_keeps_close_code_and_reason(monkeypat
         sessions.sessions.pop(key)
         await register(*args)
 
-    monkeypatch.setattr(
-        sessions, "add_websocket_connection", expire_before_registration
-    )
+    monkeypatch.setattr(sessions, "add_websocket_connection", expire_before_registration)
     incoming = asyncio.Queue()
     outgoing = asyncio.Queue()
     incoming.put_nowait({"type": "websocket.connect"})
@@ -469,9 +459,7 @@ async def test_unregistered_session_helpers_remain_awaitable(monkeypatch, tmp_pa
 
 async def test_websocket_query_helpers_remain_awaitable():
     manager = websocket.WebSocketManager(SessionManager())
-    assert (
-        await websocket.get_websocket_stats(manager) == manager.get_connection_stats()
-    )
+    assert await websocket.get_websocket_stats(manager) == manager.get_connection_stats()
     assert await websocket.get_session_connections("SESSION1", manager) == {
         "session_id": "SESSION1",
         "connections": [],

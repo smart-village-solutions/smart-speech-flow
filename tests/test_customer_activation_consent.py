@@ -125,15 +125,10 @@ def test_disabled_mode_sets_policy_disabled(pending_session, client, studio):
             "data_retention_consent": True,
         },
     )
-    assert (
-        session_manager.get_session(key).consent_status
-        is ConsentStatus.POLICY_DISABLED
-    )
+    assert session_manager.get_session(key).consent_status is ConsentStatus.POLICY_DISABLED
 
 
-def test_failed_read_leaves_pending_and_still_activates(
-    pending_session, client, studio
-):
+def test_failed_read_leaves_pending_and_still_activates(pending_session, client, studio):
     session_id, key = pending_session
     studio.fail("runtime_configuration_unavailable", retryable=True)
     response = client.post(
@@ -162,9 +157,7 @@ def test_conflict_refuses_activation(pending_session, client, studio, code):
     assert session.consent_status is ConsentStatus.PENDING
 
 
-def test_language_change_does_not_re_resolve_consent(
-    active_granted_session, client, studio
-):
+def test_language_change_does_not_re_resolve_consent(active_granted_session, client, studio):
     session_id, key = active_granted_session
     studio.set_mode("ask")
     studio.reset_calls()
@@ -179,9 +172,7 @@ def test_language_change_does_not_re_resolve_consent(
     assert studio.calls == 0
 
 
-def test_language_change_succeeds_while_tenant_unavailable(
-    active_granted_session, client, studio
-):
+def test_language_change_succeeds_while_tenant_unavailable(active_granted_session, client, studio):
     session_id, key = active_granted_session
     studio.fail("tenant_suspended", retryable=False)
     response = client.post(
@@ -210,7 +201,4 @@ def test_activation_never_routes_through_the_policy_gate(
         json={"session_id": session_id, "customer_language": "en"},
     )
     assert response.status_code == 200
-    assert (
-        session_manager.get_session(key).consent_status
-        is ConsentStatus.POLICY_DISABLED
-    )
+    assert session_manager.get_session(key).consent_status is ConsentStatus.POLICY_DISABLED

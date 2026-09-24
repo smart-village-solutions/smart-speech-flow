@@ -112,9 +112,7 @@ def test_stale_admin_poll_request_releases_presence_before_refresh(
     assert session_manager.get_session(key).admin_connection_count == 1
 
     now[0] = 121.0
-    response = client.get(
-        f"/api/admin/session/{session_id}/polling/{polling_id}/status"
-    )
+    response = client.get(f"/api/admin/session/{session_id}/polling/{polling_id}/status")
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Polling client not found"}

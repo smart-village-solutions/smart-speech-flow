@@ -1,7 +1,7 @@
 import asyncio
 import inspect
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 

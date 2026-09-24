@@ -22,8 +22,8 @@ from services.api_gateway.session_store import (
     RedisTenantSessionStore,
     SessionStoreConsistencyError,
     join_key,
-    session_key as persisted_session_key,
 )
+from services.api_gateway.session_store import session_key as persisted_session_key
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 from services.api_gateway.websocket import get_websocket_manager
 from services.api_gateway.websocket_polling_routes import TenantPollingStore
@@ -204,14 +204,8 @@ async def test_production_startup_uses_shared_redis_and_survives_restart(
         assert restored is not None
         assert restored is not session
         assert json.loads(restored.runtime_configuration.canonical_json) == {}
-        assert (
-            realtime_ticket_store.consume(issued.ticket, session.key, "websocket")
-            is True
-        )
-        assert (
-            realtime_ticket_store.consume(issued.ticket, session.key, "websocket")
-            is False
-        )
+        assert realtime_ticket_store.consume(issued.ticket, session.key, "websocket") is True
+        assert realtime_ticket_store.consume(issued.ticket, session.key, "websocket") is False
 
     assert redis.pings == 2
 
@@ -267,9 +261,7 @@ async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
     monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
     polling = TenantPollingStore(clock=lambda: 0.0)
-    monkeypatch.setattr(
-        "services.api_gateway.websocket_polling_routes.polling_store", polling
-    )
+    monkeypatch.setattr("services.api_gateway.websocket_polling_routes.polling_store", polling)
     sockets = get_websocket_manager()
     monkeypatch.setattr(sockets, "start_heartbeat_system", AsyncMock())
 
@@ -288,17 +280,13 @@ async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
 
         assert session.status is SessionStatus.PENDING
         assert json.loads(redis.get(join_key("ssf", session.id)))["active"] is False
-        committed = json.loads(
-            redis.get(persisted_session_key("ssf", session.key))
-        )
+        committed = json.loads(redis.get(persisted_session_key("ssf", session.key)))
         committed_payload = redis.get(persisted_session_key("ssf", session.key))
         assert committed["status"] == "terminated"
         assert polling_client.terminated is False
         assert session.key in sockets.session_connections
         assert (
-            realtime_ticket_store.consume(
-                usable_after_failure.ticket, session.key, "websocket"
-            )
+            realtime_ticket_store.consume(usable_after_failure.ticket, session.key, "websocket")
             is True
         )
 
@@ -338,9 +326,7 @@ async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
         assert polling_client.terminated is True
         assert session.key not in sockets.session_connections
         assert (
-            realtime_ticket_store.consume(
-                revoked_after_retry.ticket, session.key, "websocket"
-            )
+            realtime_ticket_store.consume(revoked_after_retry.ticket, session.key, "websocket")
             is False
         )
 

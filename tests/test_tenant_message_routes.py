@@ -17,8 +17,8 @@ from services.api_gateway.routes.session import (
 )
 from services.api_gateway.session_manager import (
     ClientType,
-    SessionMessage,
     SessionManager,
+    SessionMessage,
     SessionStatus,
     session_manager,
 )
@@ -121,9 +121,7 @@ def test_translated_audio_is_unavailable_after_its_retained_file_is_gone(
         lambda *_args, **_kwargs: missing,
     )
 
-    response = client.get(
-        f"/api/admin/session/{session_id}/audio/message-1/translated.wav"
-    )
+    response = client.get(f"/api/admin/session/{session_id}/audio/message-1/translated.wav")
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Audio file not found"}
@@ -141,9 +139,11 @@ async def test_live_audio_urls_are_scoped_to_each_receiving_role(
     sender_type: ClientType,
     receiver_type: ClientType,
 ) -> None:
-    key = (await SessionManager(store=MemoryTenantSessionStore()).create_admin_session(
-        "tenant-a", SNAPSHOT
-    )).key
+    key = (
+        await SessionManager(store=MemoryTenantSessionStore()).create_admin_session(
+            "tenant-a", SNAPSHOT
+        )
+    ).key
     message = SessionMessage(
         id="message-1",
         sender=sender_type,
@@ -170,8 +170,7 @@ async def test_live_audio_urls_are_scoped_to_each_receiving_role(
             ],
         },
         original_audio_url=(
-            f"/api/{sender_type.value}/session/{key.session_id}/audio/"
-            "message-1/original.wav"
+            f"/api/{sender_type.value}/session/{key.session_id}/audio/" "message-1/original.wav"
         ),
     )
     manager = SimpleNamespace(
@@ -193,30 +192,22 @@ async def test_live_audio_urls_are_scoped_to_each_receiving_role(
     sender_payload = sent["original_message"]
     receiver_payload = sent["translated_message"]
     assert sender_payload["original_audio_url"] == (
-        f"/api/{sender_type.value}/session/{key.session_id}/audio/"
-        "message-1/original.wav"
+        f"/api/{sender_type.value}/session/{key.session_id}/audio/" "message-1/original.wav"
     )
     assert receiver_payload["original_audio_url"] == (
-        f"/api/{receiver_type.value}/session/{key.session_id}/audio/"
-        "message-1/original.wav"
+        f"/api/{receiver_type.value}/session/{key.session_id}/audio/" "message-1/original.wav"
     )
     assert receiver_payload["audio_url"] == (
-        f"/api/{receiver_type.value}/session/{key.session_id}/audio/"
-        "message-1/translated.wav"
+        f"/api/{receiver_type.value}/session/{key.session_id}/audio/" "message-1/translated.wav"
     )
     assert sender_payload["pipeline_metadata"]["input"]["audio_url"] == (
-        f"/api/{sender_type.value}/session/{key.session_id}/audio/"
-        "message-1/original.wav"
+        f"/api/{sender_type.value}/session/{key.session_id}/audio/" "message-1/original.wav"
     )
     assert receiver_payload["pipeline_metadata"]["input"]["audio_url"] == (
-        f"/api/{receiver_type.value}/session/{key.session_id}/audio/"
-        "message-1/original.wav"
+        f"/api/{receiver_type.value}/session/{key.session_id}/audio/" "message-1/original.wav"
     )
-    assert receiver_payload["pipeline_metadata"]["steps"][0]["output"][
-        "audio_url"
-    ] == (
-        f"/api/{receiver_type.value}/session/{key.session_id}/audio/"
-        "message-1/translated.wav"
+    assert receiver_payload["pipeline_metadata"]["steps"][0]["output"]["audio_url"] == (
+        f"/api/{receiver_type.value}/session/{key.session_id}/audio/" "message-1/translated.wav"
     )
     assert "/api/audio/" not in repr(sent)
 
@@ -241,9 +232,7 @@ def test_history_audio_urls_are_scoped_to_requesting_role(
             target_lang="en",
             timestamp=datetime.now(timezone.utc),
             translated_audio_available=True,
-            original_audio_url=(
-                f"/api/admin/session/{session_id}/audio/message-1/original.wav"
-            ),
+            original_audio_url=(f"/api/admin/session/{session_id}/audio/message-1/original.wav"),
         ),
     )
     retained_audio = tmp_path / "message-1.wav"
@@ -287,9 +276,7 @@ def test_persisted_pipeline_metadata_contains_no_reusable_audio_url() -> None:
     assert "audio_url" not in metadata["input"]
     assert "audio_url" not in metadata["steps"][0]["output"]
 
-    scoped = scope_pipeline_audio_urls(
-        metadata, key, ClientType.ADMIN.value, "message-1"
-    )
+    scoped = scope_pipeline_audio_urls(metadata, key, ClientType.ADMIN.value, "message-1")
     assert scoped is not None
     assert scoped["input"]["audio_url"] == (
         "/api/admin/session/ABC12345/audio/message-1/original.wav"
@@ -337,9 +324,7 @@ async def test_created_message_persists_translated_audio_without_retaining_bytes
     monkeypatch.setattr(
         audio_storage,
         "save_audio",
-        lambda key, message_id, variant, data: stored.append(
-            (key, message_id, variant, data)
-        ),
+        lambda key, message_id, variant, data: stored.append((key, message_id, variant, data)),
     )
 
     message = await session_routes.create_session_message(
@@ -353,9 +338,7 @@ async def test_created_message_persists_translated_audio_without_retaining_bytes
         message_id="message-1",
     )
 
-    assert stored == [
-        (session.key, "message-1", AudioVariant.TRANSLATED, b"translated")
-    ]
+    assert stored == [(session.key, "message-1", AudioVariant.TRANSLATED, b"translated")]
     assert message.audio_base64 is None
     assert message.translated_audio_available is True
 
@@ -391,9 +374,7 @@ def test_terminal_session_denies_all_admin_audio_variants(
     assert session is not None
     session.status = SessionStatus.TERMINATED
 
-    response = client.get(
-        f"/api/admin/session/{session_id}/audio/message-1/{variant}.wav"
-    )
+    response = client.get(f"/api/admin/session/{session_id}/audio/message-1/{variant}.wav")
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Session not found"}
