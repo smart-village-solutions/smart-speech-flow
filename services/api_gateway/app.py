@@ -25,7 +25,7 @@ from .client_origin import configured_client_origin
 from .dependencies import GatewayDependencies, build_gateway_dependencies
 from .gateway_metrics import GatewayMetrics
 from .pipeline_admission import PipelineAdmission, PipelineAdmissionConfig, PipelineAdmissionMetrics
-from .rate_limiter import RateLimitMiddleware
+from .rate_limiter import RateLimitMiddleware, RateLimits
 from .refinement_metrics import RefinementMetrics
 
 if TYPE_CHECKING:
@@ -944,7 +944,8 @@ def create_app() -> FastAPI:
     app.state.dependencies = None
 
     setup_cors_for_websockets(app)
-    app.add_middleware(RateLimitMiddleware)
+    app.state.rate_limits = RateLimits()
+    app.add_middleware(RateLimitMiddleware, limits=app.state.rate_limits)
     _include_routes(app)
     return app
 

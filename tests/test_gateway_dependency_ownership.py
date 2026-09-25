@@ -30,9 +30,7 @@ ALLOWLIST = {
 }
 
 # Module globals still rebound through a `global` statement. Only shrinks.
-GLOBAL_REBINDING_ALLOWLIST = {
-    ("rate_limiter.py", "LATEST_RATE_LIMIT_MIDDLEWARE"): "adapter until PR7",
-}
+GLOBAL_REBINDING_ALLOWLIST: dict[tuple[str, str], str] = {}
 
 # The str-keyed compatibility adapter, and the unregistered legacy route
 # module that still needs it (#230). No other gateway module may import it.

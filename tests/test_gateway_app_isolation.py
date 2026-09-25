@@ -349,3 +349,23 @@ def test_an_oidc_key_cached_by_one_app_stays_there() -> None:
     # A new lifespan starts with no keys, as a new process always has.
     with TestClient(first_app):
         assert first_app.state.dependencies.oidc_key_cache.entries == {}
+
+
+@pytest.mark.usefixtures("configured_process")
+def test_one_apps_rate_limit_does_not_throttle_another() -> None:
+    first_app, second_app = create_app(), create_app()
+    client_address = {"x-forwarded-for": "10.99.0.1"}
+
+    with TestClient(first_app) as first, TestClient(second_app) as second:
+        limits = first_app.state.rate_limits
+        assert limits is not second_app.state.rate_limits
+        for _ in range(limits.config.global_limit):
+            allowed, _ = first.portal.call(limits.global_limiter.check, "10.99.0.1")
+            assert allowed
+
+        throttled = first.get("/languages", headers=client_address)
+        untouched = second.get("/languages", headers=client_address)
+
+    assert throttled.status_code == 429
+    assert throttled.json()["error_code"] == "GLOBAL_RATE_LIMIT_EXCEEDED"
+    assert untouched.status_code == 200
