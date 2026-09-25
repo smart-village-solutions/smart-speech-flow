@@ -80,10 +80,11 @@ def load_speakers(device: str) -> tuple[Dict[str, Any], Dict[str, str]]:
 async def lifespan(app: FastAPI):
     app.state.speakers, app.state.load_errors = await asyncio.to_thread(load_speakers, DEVICE)
     # Each synthesis briefly needs tens to hundreds of MiB of VRAM on a card
-    # shared with ASR, translation and vLLM; unbounded, eight parallel requests
-    # ran the probe out of memory. At ~0.1 s per Piper request a queue is cheap.
+    # shared with ASR, translation and vLLM. On the production card two long
+    # requests at once already ran out of memory; one at a time peaked at
+    # 1722 MiB. At ~0.1 s per Piper request the queue is cheap.
     app.state.synthesis_slots = asyncio.Semaphore(
-        int(os.environ.get("TTS_MAX_CONCURRENT_SYNTHESES", "2"))
+        int(os.environ.get("TTS_MAX_CONCURRENT_SYNTHESES", "1"))
     )
     yield
 

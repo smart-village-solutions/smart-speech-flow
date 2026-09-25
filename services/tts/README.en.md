@@ -63,7 +63,7 @@ engine). `tts_text` is accepted and ignored: voices read their own script.
 All voices load onto the GPU at startup. A voice that does not get the CUDA
 execution provider fails to load rather than running on the CPU unnoticed.
 Set `TTS_DEVICE=cpu` to run the image on a machine without a GPU.
-At most `TTS_MAX_CONCURRENT_SYNTHESES` (default 2) syntheses run on the GPU at
+At most `TTS_MAX_CONCURRENT_SYNTHESES` (default 1) syntheses run on the GPU at
 once; further requests wait, which bounds the VRAM the service needs.
 
 ```bash

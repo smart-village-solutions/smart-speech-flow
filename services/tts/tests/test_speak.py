@@ -117,14 +117,17 @@ class _OverlapCounter:
         return np.zeros(4, dtype=np.float32), 22050
 
 
-@pytest.mark.parametrize(("limit", "expected_peak"), [("1", 1), ("3", 3)])
+@pytest.mark.parametrize(("limit", "expected_peak"), [(None, 1), ("3", 3)])
 def test_gpu_syntheses_are_capped(monkeypatch, speakers, limit, expected_peak):
     from fastapi.testclient import TestClient
 
     from services.tts import app as tts_app
 
     counter = _OverlapCounter()
-    monkeypatch.setenv("TTS_MAX_CONCURRENT_SYNTHESES", limit)
+    if limit is None:
+        monkeypatch.delenv("TTS_MAX_CONCURRENT_SYNTHESES", raising=False)
+    else:
+        monkeypatch.setenv("TTS_MAX_CONCURRENT_SYNTHESES", limit)
     monkeypatch.setattr(tts_app, "_load_speaker", lambda voice, device: counter)
 
     with TestClient(tts_app.app) as test_client, ThreadPoolExecutor(6) as pool:
