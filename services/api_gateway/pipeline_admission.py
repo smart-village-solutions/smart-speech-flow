@@ -201,7 +201,7 @@ class PipelineBusyError(RuntimeError):
 class PipelineAdmissionMetrics:
     """Prometheus series for capacity tuning.
 
-    Registered once per process against the gateway's own registry; the
+    Registered once per app against the app's own registry; the
     admission component itself is rebuilt per lifespan, which is why these are
     passed in rather than created alongside the semaphore.
     """

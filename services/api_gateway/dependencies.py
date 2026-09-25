@@ -17,7 +17,7 @@ from starlette.requests import HTTPConnection
 if TYPE_CHECKING:
     from prometheus_client import CollectorRegistry, Counter
 
-    from .audio_storage import AudioStore
+    from .audio_storage import AudioStorageMetrics, AudioStore
     from .auth import OidcKeyCache
     from .circuit_breaker_client import CircuitBreakerServiceClient
     from .conversation_service import ConversationService
@@ -92,6 +92,7 @@ def build_gateway_dependencies(
     quality_telemetry: QualityTelemetry | None = None,
     quality_telemetry_exporter: Any = None,
     audio_store: AudioStore | None = None,
+    audio_storage_metrics: AudioStorageMetrics | None = None,
 ) -> GatewayDependencies:
     """Construct one app's collaborators.
 
@@ -103,9 +104,10 @@ def build_gateway_dependencies(
     the admission gate and quality telemetry come from the lifespan too, which
     builds them first; None leaves the pipeline unbounded and emits no rows.
     Without an `audio_store` the app stores audio under SSF_AUDIO_BASE_DIR as
-    it is set when this runs. The process-wide series (`polling_messages_dropped`,
-    `websocket_metrics`) come from app.py; without them this app counts into a
-    registry of its own that no /metrics serves.
+    it is set when this runs, counting into `audio_storage_metrics`. The app's
+    series (`polling_messages_dropped`, `websocket_metrics`,
+    `audio_storage_metrics`) come from create_app(); without them this
+    container counts into a registry of its own that no /metrics serves.
     """
     # Imported here: every module below imports its provider from this one.
     from prometheus_client import CollectorRegistry
@@ -137,7 +139,8 @@ def build_gateway_dependencies(
         namespace=redis_namespace,
     )
     polling_store = TenantPollingStore(messages_dropped=polling_messages_dropped)
-    audio_store = audio_store if audio_store is not None else AudioStore.from_environment()
+    if audio_store is None:
+        audio_store = AudioStore.from_environment(audio_storage_metrics)
     # One per app, shared by everything that logs a session reference: with
     # no configured key every pseudonymizer draws its own, and two would stop
     # correlating.
