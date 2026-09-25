@@ -4,7 +4,6 @@ Testet Audio Storage, Pipeline Metadata Collection und WebSocket Broadcasting
 """
 
 import pytest
-import base64
 from datetime import datetime
 from unittest.mock import Mock, patch, MagicMock
 from services.api_gateway.session_manager import SessionMessage, ClientType
@@ -253,55 +252,6 @@ class TestSessionMessageEnhancement:
 
 class TestAudioStorage:
     """Test Audio Storage Service"""
-
-    def test_save_and_get_original_audio(self):
-        """Test saving and retrieving original audio"""
-        from services.api_gateway.audio_storage import save_original_audio, get_audio_file_path
-
-        message_id = "test-audio-123"
-        audio_data = b"fake audio data"
-        audio_base64 = base64.b64encode(audio_data).decode()
-
-        # Save
-        url = save_original_audio(message_id, audio_base64)
-        assert url == f"/api/audio/input_{message_id}.wav"
-
-        # Get
-        filepath = get_audio_file_path(f"input_{message_id}.wav")
-        assert filepath is not None
-        assert filepath.exists()
-
-        # Verify content
-        saved_data = filepath.read_bytes()
-        assert saved_data == audio_data
-
-        # Cleanup
-        filepath.unlink()
-
-    def test_cleanup_old_audio_files(self):
-        """Test audio cleanup job"""
-        from services.api_gateway.audio_storage import AudioStore, save_original_audio
-        import time
-
-        # Save test file
-        message_id = "cleanup-test-123"
-        audio_base64 = base64.b64encode(b"test data").decode()
-        save_original_audio(message_id, audio_base64)
-
-        # Cleanup (may delete old files, but not the recent one)
-        stats = AudioStore.from_environment().cleanup_expired()
-        # The recent file we just created should not be deleted
-        # But old files from previous tests might be cleaned up
-        assert stats["errors"] == 0  # No errors during cleanup
-
-        # Verify our recent file still exists
-        from services.api_gateway.audio_storage import ORIGINAL_AUDIO_DIR
-        filepath = ORIGINAL_AUDIO_DIR / f"input_{message_id}.wav"
-        assert filepath.exists(), "Recently created file should not be deleted"
-
-        # Cleanup test file
-        if filepath.exists():
-            filepath.unlink()
 
     def test_get_disk_usage(self):
         """Test disk usage statistics"""

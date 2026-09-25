@@ -578,31 +578,3 @@ class CircuitBreakerOpenError(Exception):
         self.service_name = service_name
         # Whole seconds and never below one, so the header and the body agree.
         self.retry_after_seconds = max(1, retry_after_seconds)
-
-
-# Factory für Circuit Breaker Instanzen
-class CircuitBreakerFactory:
-    """Factory für Service-spezifische Circuit Breaker"""
-
-    _instances: Dict[str, CircuitBreaker] = {}
-
-    @classmethod
-    def get_circuit_breaker(
-        cls, service_name: str, config: CircuitBreakerConfig = None
-    ) -> CircuitBreaker:
-        """Holt oder erstellt Circuit Breaker für Service"""
-        if service_name not in cls._instances:
-            cls._instances[service_name] = CircuitBreaker(service_name, config)
-        return cls._instances[service_name]
-
-    @classmethod
-    def get_all_circuits(cls) -> Dict[str, CircuitBreaker]:
-        """Alle Circuit Breaker Instanzen"""
-        return cls._instances.copy()
-
-    @classmethod
-    def reset_all(cls):
-        """Reset aller Circuit Breaker - nur für Testing"""
-        for circuit in cls._instances.values():
-            circuit.reset()
-        logger.warning("⚠️ Alle Circuit Breaker wurden zurückgesetzt")

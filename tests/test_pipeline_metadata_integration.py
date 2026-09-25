@@ -13,6 +13,7 @@ import pytest
 import asyncio
 import json
 import base64
+import os
 from pathlib import Path
 from typing import Dict, Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -20,13 +21,29 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from services.api_gateway.legacy_session_manager import LegacySessionManager
 from services.api_gateway.session_manager import SessionMessage
 from services.api_gateway.pipeline_logic import process_wav, process_text_pipeline
-from services.api_gateway.audio_storage import (
-    AudioStore,
-    save_original_audio,
-    get_audio_file_path,
-)
+from services.api_gateway.audio_storage import AudioStore
+from services.api_gateway.audio_processing import WavAudioValidator
+from services.api_gateway.service_health import ServiceHealthManager
+from services.api_gateway.speech_services import HttpSpeechServices
+from services.api_gateway.translation_refiner import NoOpTranslationRefiner
 
 pytestmark = pytest.mark.integration
+
+
+def real_speech_services() -> HttpSpeechServices:
+    """The speech services as build_gateway_dependencies builds them, at the real-system URLs.
+
+    The defaults are the ports the services publish outside the Docker network;
+    each SSF_REAL_SYSTEM_*_URL variable overrides one.
+    """
+    return HttpSpeechServices(
+        ServiceHealthManager().circuit_breakers,
+        asr_url=os.environ.get("SSF_REAL_SYSTEM_ASR_URL", "http://localhost:8001/transcribe"),
+        translation_url=os.environ.get(
+            "SSF_REAL_SYSTEM_TRANSLATION_URL", "http://localhost:8002/translate"
+        ),
+        tts_url=os.environ.get("SSF_REAL_SYSTEM_TTS_URL", "http://localhost:8003/synthesize"),
+    )
 
 
 @pytest.fixture
@@ -68,14 +85,11 @@ class TestAudioPipelineIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.real_system
-    async def test_audio_pipeline_generates_metadata(self, sample_audio_base64, monkeypatch):
+    async def test_audio_pipeline_generates_metadata(self, sample_audio_base64):
         """Test that audio pipeline generates complete metadata with real services"""
         import base64
 
-        # Patch service URLs to use localhost ports (outside Docker network)
-        monkeypatch.setattr("services.api_gateway.pipeline_logic.ASR_URL", "http://localhost:8001/transcribe")
-        monkeypatch.setattr("services.api_gateway.pipeline_logic.TRANSLATION_URL", "http://localhost:8002/translate")
-        monkeypatch.setattr("services.api_gateway.pipeline_logic.TTS_URL", "http://localhost:8003/synthesize")
+        speech = real_speech_services()
 
         # Decode base64 to bytes for process_wav
         audio_bytes = base64.b64decode(sample_audio_base64)
@@ -87,9 +101,15 @@ class TestAudioPipelineIntegration:
                 source_lang="en",
                 target_lang="de",
                 debug=True,
-                validate_audio=True  # Use real audio from examples/
+                validate_audio=True,  # Use real audio from examples/
+                speech=speech,
+                refiner=NoOpTranslationRefiner(),
+                validator=WavAudioValidator(),
             )
         )
+
+        # The pipeline reports an unreachable service rather than raising.
+        assert not result.get("error"), result.get("error_msg")
 
         # Verify result structure (process_wav returns these keys)
         assert "original_text" in result or "asr_text" in result  # Can be either
@@ -108,33 +128,6 @@ class TestAudioPipelineIntegration:
             # Not all steps have started_at/completed_at (e.g., validation step)
             # Just check for duration_ms or duration
             assert "duration_ms" in step or "duration" in step
-    @pytest.mark.asyncio
-    async def test_original_audio_storage_and_retrieval(self, sample_audio, sample_audio_base64):
-        """Test that original audio is stored and can be retrieved"""
-
-        message_id = "test-message-123"
-
-        # Save original audio (expects base64)
-        audio_url = save_original_audio(message_id, sample_audio_base64)
-
-        assert audio_url is not None
-        assert audio_url.startswith("/api/audio/input_")
-
-        # Retrieve audio path
-        retrieved_path = get_audio_file_path(f"input_{message_id}.wav")
-        assert retrieved_path is not None
-        assert retrieved_path.exists()
-
-        # Verify content (stored as decoded bytes)
-        # Ensure the stored file looks like a WAV (starts with 'RIFF')
-        with open(retrieved_path, "rb") as f:
-            stored_audio = f.read()
-        assert stored_audio[:4] == b"RIFF"
-
-        # Cleanup
-        retrieved_path.unlink()
-
-
     @pytest.mark.asyncio
     async def test_metadata_transformation_audio_pipeline(self, mock_pipeline_responses):
         """Test transformation of debug_info to pipeline_metadata format"""
@@ -213,11 +206,9 @@ class TestTextPipelineIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.real_system
-    async def test_text_pipeline_generates_metadata(self, monkeypatch):
+    async def test_text_pipeline_generates_metadata(self):
         """Test that text pipeline generates complete metadata with real services"""
-        # Patch service URLs to use localhost ports (outside Docker network)
-        monkeypatch.setattr("services.api_gateway.pipeline_logic.TRANSLATION_URL", "http://localhost:8002/translate")
-        monkeypatch.setattr("services.api_gateway.pipeline_logic.TTS_URL", "http://localhost:8003/synthesize")
+        speech = real_speech_services()
 
         # Real integration test - calls actual Translation/TTS services
         result = await asyncio.to_thread(
@@ -226,9 +217,14 @@ class TestTextPipelineIntegration:
                 source_lang="en",
                 target_lang="de",
                 debug=True,
-                validate_text=False
+                validate_text=False,
+                speech=speech,
+                refiner=NoOpTranslationRefiner(),
             )
         )
+
+        # The pipeline reports an unreachable service rather than raising.
+        assert not result.get("error"), result.get("error_msg")
 
         # Verify result structure (process_text_pipeline returns these keys)
         assert "asr_text" in result
@@ -384,34 +380,6 @@ class TestSessionMessageIntegration:
         msg_dict = message.to_dict()
         assert "pipeline_metadata" not in msg_dict
         assert "original_audio_url" not in msg_dict
-
-
-class TestAudioCleanupIntegration:
-    """Test audio cleanup background task"""
-
-    def test_cleanup_deletes_old_files_only(self, sample_audio_base64, tmp_path):
-        """Test that cleanup only deletes files older than retention period"""
-
-        # This test would need to mock file timestamps
-        # or use a custom retention period for testing
-
-        # Create test files
-        message_id = "cleanup-test-123"
-        audio_url = save_original_audio(message_id, sample_audio_base64)
-
-        # Get file path
-        filepath = get_audio_file_path(f"input_{message_id}.wav")
-        assert filepath is not None
-
-        # Run cleanup (with default 24h retention)
-        stats = AudioStore.from_environment().cleanup_expired()
-
-        # File should NOT be deleted (too recent)
-        assert filepath.exists()
-        assert stats["deleted_original"] == 0
-
-        # Cleanup test file
-        filepath.unlink()
 
 
 class TestPrometheusMetrics:

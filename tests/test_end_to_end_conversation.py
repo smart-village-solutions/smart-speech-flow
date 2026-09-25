@@ -20,7 +20,7 @@ from pathlib import Path
 
 from services.api_gateway.legacy_session_manager import LegacySessionManager
 from services.api_gateway.session_manager import SessionMessage
-from services.api_gateway.audio_storage import save_original_audio, cleanup_old_audio_files
+from services.api_gateway.audio_storage import cleanup_old_audio_files
 
 
 @pytest.fixture

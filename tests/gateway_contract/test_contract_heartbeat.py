@@ -7,6 +7,7 @@ every 30 seconds and closes a socket after 60 seconds without a pong.
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 import pytest
@@ -15,6 +16,8 @@ from starlette.websockets import WebSocketDisconnect
 from tests.gateway_contract.contract_support import ALLOWED_ORIGIN
 
 ORIGIN = {"Origin": ALLOWED_ORIGIN}
+# Far longer than the one-second timeout below, and far shorter than a CI job.
+FRAME_DEADLINE_SECONDS = 10.0
 TIMEOUT_SERIES = re.compile(
     r'^websocket_disconnects_total\{client_type="customer",'
     r'disconnect_reason="heartbeat_timeout"\} (\S+)$',
@@ -47,6 +50,34 @@ def _settle(socket) -> None:
     socket.send_text("not json")
     while socket.receive_json()["type"] != "error":
         pass
+
+
+def _before_a_sentinel(socket) -> list[dict[str, Any]]:
+    """Every frame already queued on `socket`, read up to the answer to a malformed frame."""
+    socket.send_text("not json")
+    frames: list[dict[str, Any]] = []
+    while True:
+        frame: dict[str, Any] = socket.receive_json()
+        if frame["type"] == "error":
+            return frames
+        frames.append(frame)
+
+
+def _answer_pings_until(socket, frame_type: str) -> dict[str, Any]:
+    """Answers every ping on `socket` until a `frame_type` frame arrives.
+
+    TestClient's receive has no timeout, so each read ends at a sentinel and a
+    frame that never comes fails the test instead of hanging it.
+    """
+    deadline = time.monotonic() + FRAME_DEADLINE_SECONDS
+    while time.monotonic() < deadline:
+        for frame in _before_a_sentinel(socket):
+            if frame["type"] == "heartbeat_ping":
+                socket.send_json({"type": "heartbeat_pong", "ping_id": frame["ping_id"]})
+            elif frame["type"] == frame_type:
+                return frame
+        time.sleep(0.05)
+    pytest.fail(f"no {frame_type} frame within {FRAME_DEADLINE_SECONDS} seconds")
 
 
 def _frames_until_closed(socket) -> tuple[list[dict[str, Any]], WebSocketDisconnect]:
@@ -121,14 +152,7 @@ def test_a_silent_socket_is_closed_and_its_peer_told(client, conversations, fast
         admin.receive_json()
         with client.websocket_connect(f"/ws/customer/{session_id}", headers=ORIGIN) as customer:
             customer.receive_json()
-            while True:
-                frame = admin.receive_json()
-                if frame["type"] == "heartbeat_ping":
-                    admin.send_json({"type": "heartbeat_pong", "ping_id": frame["ping_id"]})
-                elif frame["type"] == "client_left":
-                    left = frame
-                    break
-
+            left = _answer_pings_until(admin, "client_left")
             frames, closed = _frames_until_closed(customer)
         # The admin kept answering, so it is still connected.
         _settle(admin)

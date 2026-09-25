@@ -298,48 +298,45 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 }
 ```
 
-**session_manager.py:**
-- **SessionManager:** Paralleles Session-Management mit optionalem Cleanup
-  - **Active Session Tracking:** Menge aktiver Admin-Sessions (Redis-persistiert)
-  - **Session Termination Logic:** Manuelles oder Timeout-basiertes Beenden bestehender Sessions
-  - **WebSocket-Connection-Pool:** Verbindungsmanagement pro Session
-  - **Graceful Disconnect:** Client-Benachrichtigung bei Session-Beendigung
-  - **Broadcast-Funktionalität:** Echtzeit-Updates an alle Session-Teilnehmer
-  - **Persistence Layer:** Redis-gestütztes Session- und Message-Storage (Fallback: In-Memory)
-- **Session:** Session-Model mit paralleler Nutzung
-  - **State:** inactive → pending → active → terminated
-  - **Language-Pair:** Admin (DE) ↔ Customer (selected language)
-  - **Timeout-Management:** Automatische Cleanup nach Inaktivität
-- **SessionMessage:** Nachrichten-Datenstrukturen mit differenzierter Text-Ausgabe
-  - original_text: ASR-erkannter Text oder eingegebener Text (für Sprecher-Anzeige)
-  - translated_text: Übersetzter Text (für Empfänger-Anzeige)
-  - audio_data: Übersetzte Audio-Datei (für Empfänger-Wiedergabe)
-- **ClientType:** Admin/Customer-Unterscheidung mit Role-basierter Session-Control
+**Internal structure:**
 
-> **Failover:** Ist Redis nicht erreichbar, schaltet der SessionManager automatisch auf den bewährten In-Memory-Betrieb zurück (Startup-Log-Hinweis). In Docker-Deployments stellt `docker-compose.yml` den Redis-Dienst inklusive AOF-Persistenz und Namespace-Konfiguration bereit.
+One lifespan-owned composition root builds the gateway's collaborators; the
+full description, with the port and adapter tables, is in
+`services/api_gateway/README.md`, and the ownership table and its decisions in
+`openspec/changes/refactor-api-gateway-boundaries/design.md`.
 
-**routes-Module:**
-- session.py: Session-CRUD-Operationen mit UUID-Support
-- admin.py: Admin-Session-Erstellung ohne Sprachauswahl
-- customer.py: Client-Session-Aktivierung mit Sprachauswahl
-- websocket.py: WebSocket-Handler für bidirektionale Echtzeit-Kommunikation
-  - Connection-Management pro Session und Client-Typ
-  - Message-Broadcasting mit Sender-Ausschluss
-  - Heartbeat und Reconnect-Logic
-  - Graceful Degradation zu Polling-Fallback
+- **Composition root:** `create_app()` (`app.py`) builds one app with its
+  Prometheus registry and metric objects (`GatewayMetrics`) and its rate limits
+  (`RateLimits`). Its lifespan builds the `GatewayDependencies` container
+  (`build_gateway_dependencies` in `dependencies.py`), keeps it at
+  `app.state.dependencies`, runs the background tasks and releases everything on
+  shutdown.
+- **Providers:** route handlers read collaborators only through
+  `Depends(get_...)` providers in `dependencies.py`, which a test overrides per
+  app.
+- **Application services:** `SessionLifecycleService` (create, current,
+  terminate, history, activation), `ConversationService` (message processing,
+  the pipeline and the differentiated broadcast) and `TenantSessionManager`
+  (sessions keyed by `TenantSessionKey`). Routes map their results onto HTTP;
+  nothing outside `routes/` imports from `routes/`.
+- **Ports and adapters:** `TenantSessionStore` (Redis or memory),
+  `RealtimeTicketBackend` (Redis or memory), `SpeechServices`
+  (`HttpSpeechServices`, one circuit breaker per service), `AudioValidator`
+  (`WavAudioValidator`) and the per-app `AudioStore`.
+- **Realtime:** `WebSocketManager` is a facade over `ConnectionRegistry`,
+  `BroadcastDispatcher`, `Heartbeat` and `ClientStatusHandler`;
+  `realtime_protocol.py` builds every frame, and the tenant polling store
+  receives the same broadcasts. See `websocket-architecture.md`.
+- **Per app and process-wide:** every collaborator belongs to one app; two apps
+  in one process share none. Only the module attribute `app` and configuration
+  read at import (the speech-service URLs) are process-wide.
 
-**pipeline_logic.py:**
-- process_wav(): Audio-Pipeline-Orchestrierung mit differenzierter Response-Strukturierung
-  - original_text: Für Sprecher-Frontend (ASR-Bestätigung)
-  - translated_text: Für Empfänger-Frontend (Anzeige)
-  - translated_audio: Für Empfänger-Frontend (Wiedergabe)
-- service_health_check(): Mikroservice-Monitoring
-- error_recovery(): Retry-Logic und Fallbacks
-
-**middleware-Module:**
-- cors.py: Cross-Origin-Konfiguration
-- rate_limiting.py: Request-Rate-Begrenzung
-- authentication.py: Zukünftige Auth-Integration
+> **Persistence:** with `REDIS_URL` set, the session store and the realtime
+> tickets share one Redis connection that the lifespan verifies before startup
+> continues; an unreachable Redis refuses startup instead of falling back to
+> memory. Production (`SSF_DEPLOYMENT_ENV=production`) without `REDIS_URL` also
+> refuses startup. Only local processes without `REDIS_URL` use the memory
+> stores.
 
 ### **ASR Service** *(Interner Host: `http://asr:8000`)*
 

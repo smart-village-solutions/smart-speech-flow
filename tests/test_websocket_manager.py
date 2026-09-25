@@ -626,31 +626,6 @@ class TestWebSocketManager:
         )
         assert failure_counter.value == 1
 
-    async def test_connection_stats_monitoring(self, websocket_manager):
-        """Test: Connection-Statistiken für Monitoring"""
-        session_id = open_session(websocket_manager.session_manager, "TEST123")
-
-        mock_ws1 = MockWebSocket()
-        mock_ws2 = MockWebSocket()
-
-        # Verbindungen erstellen
-        await websocket_manager.connect_websocket(mock_ws1, session_id, ClientType.ADMIN)
-        await websocket_manager.connect_websocket(mock_ws2, session_id, ClientType.CUSTOMER)
-
-        # Stats abrufen
-        stats = websocket_manager.get_connection_stats()
-
-        # Assertions
-        assert stats["global_stats"]["total_connections"] == 2
-        assert stats["global_stats"]["active_connections"] == 2
-
-        assert session_id in stats["session_stats"]
-        session_stats = stats["session_stats"][session_id]
-        assert session_stats["total_connections"] == 2
-        assert session_stats["active_connections"] == 2
-        assert ClientType.ADMIN.value in session_stats["client_types"]
-        assert ClientType.CUSTOMER.value in session_stats["client_types"]
-
     async def test_connection_lifecycle_is_alive(self, websocket_manager, mock_websocket):
         """Test: Connection-Lifecycle und is_alive-Checks"""
         session_id = open_session(websocket_manager.session_manager, "TEST123")
@@ -672,23 +647,6 @@ class TestWebSocketManager:
         connection.state = ConnectionState.CONNECTED
         connection.last_heartbeat = datetime.now() - timedelta(seconds=70)
         assert not connection.is_alive()  # Heartbeat-Timeout
-
-    async def test_exponential_backoff_calculation(self, websocket_manager):
-        """Test: Exponential Backoff für Reconnects"""
-        # Test verschiedene Reconnect-Attempts
-        delay1 = websocket_manager._calculate_reconnect_delay(0)  # Erster Versuch
-        delay2 = websocket_manager._calculate_reconnect_delay(1)  # Zweiter Versuch
-        delay3 = websocket_manager._calculate_reconnect_delay(3)  # Vierter Versuch
-        delay_max = websocket_manager._calculate_reconnect_delay(10)  # Maximal-Test
-
-        # Assertions: Exponential backoff
-        assert delay1 == 1  # base_delay * 2^0
-        assert delay2 == 2  # base_delay * 2^1
-        assert delay3 == 8  # base_delay * 2^3
-        assert delay_max == 60  # Maximum cap
-
-        # Delays sollten wachsen (bis zum Maximum)
-        assert delay1 < delay2 < delay3
 
     async def test_error_handling_dead_connections(self, websocket_manager):
         """Test: Error-Handling für tote Verbindungen"""

@@ -72,154 +72,176 @@ following:
 If any gate is incomplete, keep real multi-tenant conversations disabled. A
 healthy directory or successful login alone is not production approval.
 
-## Beschreibung
+## What the gateway does
 
-Das API Gateway ist der zentrale Einstiegspunkt fuer Smart Speech Flow. Es verbindet die Fachservices fuer ASR, Translation und TTS mit der sessionbasierten Admin/Customer-Kommunikation im Frontend.
+The API gateway is the single entry point of Smart Speech Flow. It connects the
+ASR, translation and TTS services to the tenant-scoped admin and customer
+conversations in the frontend: session lifecycle, text and audio messages,
+realtime delivery over WebSockets and the polling fallback, persistence with
+consent and retention, and health, resilience and metrics.
 
-Heute ist das Gateway nicht nur ein einfacher Pipeline-Proxy, sondern vor allem:
+## Routes
 
-- Session-Manager fuer Admin- und Customer-Gespraeche
-- Unified Message API fuer Text und Audio
-- WebSocket-Hub fuer Echtzeitkommunikation
-- Persistenz- und Timeout-Schicht fuer Sessions
-- Fallback- und Monitoring-Schicht fuer produktionsnahe Nutzung
+The frontends use the tenant-scoped routes. An admin route requires a signed
+tenant bearer token; a customer route accepts the session's anonymous
+capability or a bearer token of the same tenant.
 
-## Primaere API-Oberflaeche
+- Admin sessions: `POST /api/admin/session/create`, `GET /api/admin/session/current`,
+  `GET /api/admin/session/history`, and below `/api/admin/session/{session_id}`:
+  `status`, `terminate` (DELETE), `message` (POST), `messages`,
+  `audio/{message_id}/{variant}.wav`, `realtime-ticket` (POST) and
+  `realtime/connections`; `GET /api/admin/realtime/connections` for the tenant.
+- Customer sessions: `POST /api/customer/session/activate`,
+  `GET /api/customer/session/{session_id}`, and below it `message` (POST),
+  `messages` and `audio/{message_id}/{variant}.wav`;
+  `GET /api/customer/languages/supported`.
+- Realtime: `WS /ws/admin/{session_id}?ticket=...` with a single-use ticket from
+  `realtime-ticket`, and `WS /ws/customer/{session_id}`. The polling fallback
+  lives below `/api/{admin|customer}/session/{session_id}/polling`: `activate`,
+  then `{polling_id}` (GET polls, DELETE disconnects), `send`, `recover` and
+  `status`.
+- Login and feedback: `GET /api/login/tenants`, `POST /api/feedback`,
+  `GET /api/feedback`, `GET /api/feedback/{feedback_id}`.
+- Health and operations: `GET /health`, `GET /metrics`, `/api/health/*`,
+  `/api/admin/circuit-breakers/*`, `POST /api/admin/telemetry/probe` and
+  `GET /api/websocket/monitoring/health`.
+- Language lists: `GET /api/languages/supported` and its alias `GET /languages`.
+- Direct pipeline: `POST /pipeline` and `POST /upload` run ASR, translation and
+  TTS on one upload outside any session. They are for service tests and
+  technical integrations, not the frontend workflow.
 
-Der empfohlene Einstieg fuer Frontends laeuft ueber die sessionbasierten Endpunkte:
+`tests/gateway_contract/snapshots/openapi.json` is the complete, pinned
+OpenAPI document.
 
-- `POST /api/admin/session/create`
-- `GET /api/admin/session/current`
-- `POST /api/customer/session/activate`
-- `GET /api/customer/session/{session_id}/status`
-- `POST /api/session/{session_id}/message`
-- `GET /api/session/{session_id}/messages`
-- `GET /api/languages/supported`
-- `WS /ws/{session_id}/{client_type}`
+## Internal structure
 
-## Legacy- und Low-Level-Endpunkte
+### Composition root
 
-Zusaetzlich existieren weiterhin generische Gateway-Endpunkte:
+`create_app()` in `app.py` builds one app. It keeps two collaborators that
+outlive a lifespan: the app's Prometheus registry and metric objects
+(`GatewayMetrics`, at `app.state.gateway_metrics`) and its rate limits
+(`RateLimits`, handed to `RateLimitMiddleware`). `app = create_app()` is the
+module attribute uvicorn and the Dockerfile start.
 
-- `POST /pipeline`
-- `POST /upload`
-- `GET /health`
-- `GET /metrics`
-- `GET /languages`
+The lifespan builds everything else, in this order: the translation refiner
+(a malformed `LLM_REFINEMENT_*` setting refuses startup here), the verified
+Redis connection (`configure_tenant_persistence`; production without
+`REDIS_URL` refuses startup), the Studio runtime flow and its runtime policy,
+the pipeline admission gate and quality telemetry, and then the app's
+`GatewayDependencies` (`build_gateway_dependencies` in `dependencies.py`). It
+rehydrates the tenant sessions from Redis, keeps the container at
+`app.state.dependencies`, wires feedback persistence, and starts the
+background tasks: session timeouts, health polling, the WebSocket monitor,
+audio retention and feedback maintenance. Shutdown stops those tasks and the
+heartbeat, releases the refiner, telemetry, Redis and feedback pools, and sets
+`app.state.dependencies` to `None`.
 
-`/pipeline` ist weiterhin nuetzlich fuer direkte End-to-End-Tests, bildet aber nicht den heutigen Haupt-Workflow des Frontends ab.
+### Providers
 
-## Typischer Frontend-Workflow
+Route handlers reach collaborators only through `Depends(provider)`. Every
+provider in `dependencies.py` takes the `HTTPConnection` and reads the app's
+container, so it serves HTTP and WebSocket routes alike and adds nothing to the
+OpenAPI document: `get_session_manager`, `get_realtime_ticket_store`,
+`get_polling_store`, `get_websocket_manager`, `get_conversation_service`,
+`get_session_lifecycle`, `get_studio_runtime_flow`, `get_login_directory`,
+`get_circuit_breaker_client`, `get_speech_pipeline`, `get_pipeline_admission`,
+`get_connection_monitor`, `get_prometheus_registry`, `get_oidc_key_cache` and
+`get_quality_telemetry`. A test replaces one with
+`app.dependency_overrides[provider]`, or builds its own app with
+`create_app()` and runs its lifespan.
 
-1. Admin erstellt eine Session ueber `POST /api/admin/session/create`
-2. Customer waehlt Sprache und aktiviert die Session ueber `POST /api/customer/session/activate`
-3. Beide Seiten verbinden sich per WebSocket an `/ws/{session_id}/{client_type}`
-4. Nachrichten laufen ueber `POST /api/session/{session_id}/message`
-5. Historie und Audio koennen ueber REST-Endpunkte nachgeladen werden
+### Application services
 
-## Unified Message Endpoint
+- `SessionLifecycleService` (`session_lifecycle.py`) decides create, current,
+  terminate, history and activation; the routes map its results and errors
+  onto HTTP.
+- `ConversationService` (`conversation_service.py`) is the only entry point to
+  message processing (`message_processing.py`): parsing, validation, the
+  pipeline, audio storage, persistence authorization and the differentiated
+  broadcast.
+- `TenantSessionManager` (`session_manager.py`) holds the sessions, keyed by
+  `TenantSessionKey` on every public method.
 
-### `POST /api/session/{session_id}/message`
+No module outside `routes/` imports from `routes/`, except `app.py`, which
+registers the routers.
 
-Der Endpoint akzeptiert beide Eingabeformen:
+### Ports and adapters
 
-- `application/json` fuer Textnachrichten
-- `multipart/form-data` fuer Audioeingaben
+| Port | Adapters | Module |
+| --- | --- | --- |
+| `TenantSessionStore` | `RedisTenantSessionStore`, `MemoryTenantSessionStore` | `session_store.py` |
+| `RealtimeTicketBackend` | `RedisRealtimeTicketBackend` (the only code that runs the consume Lua), `MemoryRealtimeTicketBackend` | `realtime_ticket.py` |
+| `SpeechServices` | `HttpSpeechServices`, each call through its service's circuit breaker | `speech_services.py` |
+| `AudioValidator` | `WavAudioValidator`; the only production module that imports `audioop` | `audio_processing.py` |
+| `SessionRegistry[KeyT]`, `SessionSockets[KeyT]` | `TenantSessionManager` and `WebSocketManager`, each on `TenantSessionKey` | `session_manager.py` |
+| `FeedbackSessions` | `TenantSessionManager` | `feedback/service.py` |
 
-### Text-Beispiel
+`AudioStore` (`audio_storage.py`) is built per app from `SSF_AUDIO_BASE_DIR`
+and stores the v2 layout,
+`v2/<tenant_ref>/<session_id>/<original|translated>/<message_id>.wav`.
 
-```json
-{
-  "text": "Guten Tag",
-  "source_lang": "de",
-  "target_lang": "en",
-  "client_type": "admin"
-}
-```
+Without `REDIS_URL`, as in local development and most tests, the container
+uses the memory adapters. A production process never does.
 
-### Audio-Beispiel
+### Realtime collaborators
 
-Multipart-Request mit:
+`WebSocketManager` (`websocket.py`) is a facade over four collaborators, each
+given its dependencies by constructor:
 
-- `file`
-- `source_lang`
-- `target_lang`
-- `client_type`
+| Collaborator | Module | Owns |
+| --- | --- | --- |
+| `ConnectionRegistry` | `realtime_registry.py` | the session pools keyed by `TenantSessionKey` and the app-wide connection map |
+| `BroadcastDispatcher` | `realtime_dispatch.py` | broadcasts, the differentiated message and delivery to pollers |
+| `Heartbeat` | `realtime_heartbeat.py` | pings, pong latency and closing a silent socket |
+| `ClientStatusHandler` | `realtime_client_status.py` | tab, battery and network reports and the adaptive polling interval |
 
-### Response
+`realtime_protocol.py` builds every server frame. The polling fallback is the
+`TenantPollingStore` and routes in `websocket_polling_routes.py`, which receive
+the same broadcasts. `WebSocketMonitor` (`websocket_monitor.py`) keeps the
+connection records and counts into the app's `WebSocketMetrics`.
 
-Der Endpoint liefert ein einheitliches Response-Schema mit:
+### Per app and process-wide
 
-- `status`
-- `message_id`
-- `session_id`
-- `original_text`
-- `translated_text`
-- `audio_available`
-- `audio_url`
-- `processing_time_ms`
-- `pipeline_type`
-- `pipeline_metadata`
+Everything above is built per app, and every lifespan builds a fresh container,
+except the metrics and rate limits `create_app()` keeps. Two apps in one
+process share no collaborator (`tests/test_gateway_app_isolation.py`).
 
-## Weitere wichtige Endpunkte
+What stays process-wide is the module attribute `app` and configuration read
+at import: the speech-service URLs and schemes (`DOCKER_COMPOSE`,
+`SERVICE_SCHEME`, `LOCAL_SERVICE_SCHEME`). No gateway module adds a
+module-level collaborator or rebinds a global
+(`tests/test_gateway_dependency_ownership.py`).
 
-### `GET /api/session/{session_id}/messages`
+The str-keyed `LegacySessionManager` (`legacy_session_manager.py`) is a
+compatibility adapter no app builds; only its tests use it, and no gateway
+module may import it. The OpenSpec change `refactor-api-gateway-boundaries`
+records the decision and the full ownership table.
 
-Liefert die Nachrichtenhistorie einer Session.
-
-### `GET /api/audio/{message_id}.wav`
-
-Liefert das erzeugte Audio einer Nachricht.
-
-### `GET /api/audio/input_{message_id}.wav`
-
-Liefert das urspruengliche Eingabe-Audio, sofern es noch innerhalb der Aufbewahrungszeit vorhanden ist.
-
-### `GET /api/languages/supported`
-
-Liefert die vom Frontend verwendete Sprachliste inklusive `admin_default` und `popular`.
-
-### `GET /languages`
-
-Oeffentlicher Alias fuer die Sprachliste ohne `/api`-Praefix.
-
-## Betrieb und Architektur
-
-Das Gateway umfasst unter anderem:
-
-- Session-Management mit optionaler Redis-Persistenz
-- WebSocket-Management mit Heartbeats
-- Polling-Fallback bei Verbindungsproblemen
-- Audio-Validierung und Text-Validierung
-- Circuit Breaker und Graceful Degradation
-- Monitoring ueber Prometheus-Metriken
-
-## Lokale Entwicklung
+## Local development
 
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+# Separate calls: the gateway's requirements are hash-pinned.
+pip install -r requirements-dev.txt
+pip install -r services/api_gateway/requirements.txt
 uvicorn services.api_gateway.app:app --reload --port 8000
 ```
 
 ## Docker
 
-Der Service wird im Projektkontext ueber das Root-`docker-compose.yml` gestartet:
+The service starts from the repository's `docker-compose.yml`:
 
 ```bash
 docker compose up -d api_gateway
 ```
 
-## Testen
+## Tests
 
 ```bash
-pytest services/api_gateway/tests/
-pytest tests/test_unified_message_endpoint.py
-pytest tests/test_websocket_manager.py
+PYTHONPATH=. pytest tests/gateway_contract
+PYTHONPATH=. pytest services/api_gateway/tests
 ```
 
-## Hinweise
-
-- Fuer neue Frontend-Integrationen sollte immer die sessionbasierte API verwendet werden.
-- `/pipeline` bleibt fuer direkte Service-Tests und technische Integrationen sinnvoll, ist aber nicht mehr die alleinige Leit-API.
+`tests/gateway_contract` pins the public REST, WebSocket, polling, OpenAPI and
+metrics behaviour of the gateway.

@@ -1,4 +1,3 @@
-import asyncio
 import contextlib
 import importlib
 import importlib.util
@@ -943,32 +942,6 @@ async def test_tts_does_not_call_a_configured_mms_voice_a_fallback(tts_app):
     assert response.headers["x-tts-fallback"] == "false"
 
 
-def test_enhanced_audio_validator_convert_with_ffmpeg(tmp_path, monkeypatch):
-    from services.api_gateway.enhanced_audio_validation import EnhancedAudioValidator
-
-    validator = EnhancedAudioValidator()
-
-    def successful_run(cmd, capture_output=True, timeout=30):
-        output_path = cmd[-1]
-        with open(output_path, "wb") as file_obj:
-            file_obj.write(b"converted")
-        return SimpleNamespace(returncode=0, stderr=b"")
-
-    monkeypatch.setattr(
-        "services.api_gateway.enhanced_audio_validation.subprocess.run", successful_run
-    )
-    converted = validator._convert_with_ffmpeg(b"source", "webm")
-    assert converted == b"converted"
-
-    def failing_run(cmd, capture_output=True, timeout=30):
-        return SimpleNamespace(returncode=1, stderr=b"broken")
-
-    monkeypatch.setattr(
-        "services.api_gateway.enhanced_audio_validation.subprocess.run", failing_run
-    )
-    assert validator._convert_with_ffmpeg(b"source", "webm") is None
-
-
 def test_websocket_monitor_utc_and_overdue_heartbeat_health():
     websocket_monitor = importlib.import_module("services.api_gateway.websocket_monitor")
     from services.api_gateway.tenant_session import TenantSessionKey
@@ -1052,46 +1025,6 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
     assert counter.calls == 2
 
 
-@pytest.mark.asyncio
-async def test_legacy_session_route_uses_new_process_wav_contract(monkeypatch):
-    from services.api_gateway import session as legacy_session
-    from services.api_gateway.session_manager import ClientType
-
-    fake_session = SimpleNamespace(id="SESSION1", messages=[])
-    captured = {}
-
-    sessions = SimpleNamespace(
-        get_session=lambda session_id: fake_session,
-        add_message=lambda session_id, message: captured.setdefault("message", message),
-    )
-    monkeypatch.setattr(
-        legacy_session,
-        "process_wav",
-        lambda file_bytes, source_lang, target_lang: {
-            "asr_text": "Hallo",
-            "translation_text": "Hello",
-            "audio_bytes": b"audio",
-        },
-    )
-
-    response = await legacy_session.send_session_message(
-        "SESSION1",
-        ClientType.ADMIN,
-        FakeUploadFile(b"input-audio"),
-        "de",
-        "en",
-        sessions,
-    )
-
-    assert response["status"] == "success"
-    assert response["original_text"] == "Hallo"
-    assert response["translated_text"] == "Hello"
-    assert response["audio_available"] is True
-    assert captured["message"].source_lang == "de"
-    assert captured["message"].target_lang == "en"
-    assert captured["message"].audio_base64 is not None
-
-
 def test_asr_module_imports_with_real_fastapi(monkeypatch):
     pytest.importorskip("fastapi")
 
@@ -1112,145 +1045,6 @@ def test_asr_module_imports_with_real_fastapi(monkeypatch):
 
     assert signature.parameters["lang"].default == "de"
     assert signature.parameters["debug"].default is None
-
-
-@pytest.mark.asyncio
-async def test_websocket_fallback_lifecycle_and_cleanup(monkeypatch):
-    websocket_fallback = importlib.import_module("services.api_gateway.websocket_fallback")
-
-    manager = websocket_fallback.WebSocketFallbackManager(
-        websocket_fallback.FallbackConfig(
-            enable_jitter=False,
-            polling_interval=2,
-            max_websocket_retries=2,
-            enable_user_notifications=True,
-            enable_automatic_recovery=True,
-        )
-    )
-    notifications = []
-
-    async def notification_callback(notification):
-        notifications.append(notification)
-
-    manager.notification_callbacks.append(notification_callback)
-
-    polling_id = await manager.activate_polling_fallback(
-        "session-1",
-        "customer",
-        "https://example.com",
-        websocket_fallback.FallbackReason.NETWORK_ERROR,
-    )
-
-    assert notifications[0]["type"] == "fallback_notification"
-    assert manager.send_message_to_polling_client(polling_id, {"type": "chat", "text": "Hello"})
-
-    client = manager.polling_clients[polling_id]
-    client.websocket_retry_after = websocket_fallback.utc_now() - timedelta(seconds=1)
-    messages = manager.poll_messages(polling_id)
-
-    assert any(message["type"] == "websocket_retry_suggestion" for message in messages)
-    recovery = manager.attempt_websocket_recovery(polling_id)
-    assert recovery["success"] is True
-
-    manager.websocket_recovery_failed(polling_id, websocket_fallback.FallbackReason.TIMEOUT_ERROR)
-    assert manager.polling_clients[polling_id].websocket_retry_after is not None
-
-    manager.polling_clients[polling_id].created_at = websocket_fallback.utc_now() - timedelta(
-        seconds=1900
-    )
-    manager.polling_clients[polling_id].last_poll = None
-
-    sleep_calls = {"count": 0}
-
-    async def fake_sleep(seconds):
-        sleep_calls["count"] += 1
-        if sleep_calls["count"] == 1:
-            return None
-        raise asyncio.CancelledError()
-
-    monkeypatch.setattr(websocket_fallback.asyncio, "sleep", fake_sleep)
-    with pytest.raises(asyncio.CancelledError):
-        await manager.periodic_cleanup()
-
-    assert polling_id not in manager.polling_clients
-
-
-def test_websocket_fallback_classifies_failures_and_limits_queue():
-    websocket_fallback = importlib.import_module("services.api_gateway.websocket_fallback")
-
-    manager = websocket_fallback.WebSocketFallbackManager(
-        websocket_fallback.FallbackConfig(enable_jitter=False)
-    )
-
-    assert (
-        manager._classify_failure_reason({"message": "CORS preflight blocked"})
-        == websocket_fallback.FallbackReason.CORS_PREFLIGHT_FAILED
-    )
-    assert (
-        manager.evaluate_websocket_failure(
-            "session-1",
-            "admin",
-            "https://example.com",
-            {"message": "network down", "code": 0},
-        )
-        is False
-    )
-    assert (
-        manager.evaluate_websocket_failure(
-            "session-1",
-            "admin",
-            "https://example.com",
-            {"message": "network down", "code": 0},
-        )
-        is True
-    )
-
-    polling_id = "poll-session-1-admin"
-    client = websocket_fallback.PollingClient(
-        polling_id=polling_id,
-        session_id="session-1",
-        client_type="admin",
-        origin=None,
-        created_at=websocket_fallback.utc_now(),
-    )
-    manager.polling_clients[polling_id] = client
-    manager.session_polling_clients["session-1"].add(polling_id)
-
-    # Overflow now returns False instead of silently dropping the oldest
-    # queued message, so sends past the 100-message bound must fail.
-    for index in range(105):
-        sent = manager.send_message_to_polling_client(polling_id, {"type": "msg", "index": index})
-        assert sent is (index < 100)
-
-    assert len(manager.polling_clients[polling_id].message_queue) == 100
-    session_status = manager.get_session_fallback_status("session-1")
-    assert session_status["has_active_fallbacks"] is True
-    assert manager.deactivate_polling_fallback(polling_id) is True
-    assert manager.get_polling_client_status("missing") is None
-
-
-def test_websocket_fallback_uses_origin_in_failure_history_key():
-    websocket_fallback = importlib.import_module("services.api_gateway.websocket_fallback")
-
-    manager = websocket_fallback.WebSocketFallbackManager(
-        websocket_fallback.FallbackConfig(enable_jitter=False)
-    )
-
-    manager.evaluate_websocket_failure(
-        "session-1",
-        "admin",
-        "https://admin.example",
-        {"message": "network down", "code": 0},
-    )
-    manager.evaluate_websocket_failure(
-        "session-1",
-        "admin",
-        None,
-        {"message": "network down", "code": 0},
-    )
-
-    assert "session-1_admin_https://admin.example" in manager.failure_history
-    assert "session-1_admin_unknown_origin" in manager.failure_history
 
 
 @pytest.mark.asyncio
