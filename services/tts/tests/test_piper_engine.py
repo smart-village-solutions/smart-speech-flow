@@ -49,7 +49,9 @@ class FakeConfig:
 
 @pytest.fixture
 def tashkeel(monkeypatch):
-    FakeOrt.active_providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    monkeypatch.setattr(
+        FakeOrt, "active_providers", ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    )
     tashkeel = types.ModuleType("piper.tashkeel")
     tashkeel.InferenceSession = None
 
@@ -85,21 +87,22 @@ def test_cuda_sessions_use_heuristic_conv_search_and_a_tight_arena():
     assert options["arena_extend_strategy"] == "kSameAsRequested"
 
 
-def test_a_voice_that_did_not_get_cuda_refuses_to_load(tashkeel, tmp_path):
-    FakeOrt.active_providers = ["CPUExecutionProvider"]
+def test_a_voice_that_did_not_get_cuda_refuses_to_load(tashkeel, tmp_path, monkeypatch):
+    monkeypatch.setattr(FakeOrt, "active_providers", ["CPUExecutionProvider"])
+    voice_dir = _voice_dir(tmp_path)
     with pytest.raises(piper_engine.VoiceUnavailableError, match="CPUExecutionProvider"):
-        piper_engine.load_piper_speaker(_voice_dir(tmp_path), "cuda")
+        piper_engine.load_piper_speaker(voice_dir, "cuda")
 
 
-def test_cpu_device_is_allowed_to_run_on_cpu(tashkeel, tmp_path):
-    FakeOrt.active_providers = ["CPUExecutionProvider"]
+def test_cpu_device_is_allowed_to_run_on_cpu(tashkeel, tmp_path, monkeypatch):
+    monkeypatch.setattr(FakeOrt, "active_providers", ["CPUExecutionProvider"])
     speaker = piper_engine.load_piper_speaker(_voice_dir(tmp_path), "cpu")
     assert speaker.device == "cpu"
 
 
 def test_synthesis_concatenates_sentence_chunks(tashkeel, tmp_path):
     speaker = piper_engine.load_piper_speaker(_voice_dir(tmp_path), "cuda")
-    audio, rate = speaker.synthesize("Hallo. Welt.", seed=1)
+    audio, rate = speaker.synthesize("Hallo. Welt.", 1)
     assert rate == 22050
     assert audio.tolist() == pytest.approx([0.1, 0.2, 0.3])
 
@@ -108,7 +111,7 @@ def test_text_that_yields_no_audio_is_unspeakable(tashkeel, tmp_path):
     speaker = piper_engine.load_piper_speaker(_voice_dir(tmp_path), "cuda")
     speaker._voice.chunks = []
     with pytest.raises(UnspeakableTextError):
-        speaker.synthesize("…", seed=1)
+        speaker.synthesize("…", 1)
 
 
 def test_non_arabic_voices_leave_the_diacritizer_alone(tashkeel, tmp_path):

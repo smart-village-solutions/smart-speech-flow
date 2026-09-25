@@ -1,6 +1,6 @@
-"""Download every pinned voice file and verify it. Runs in the image build.
+"""Download every pinned voice file into TTS_VOICE_DIR and verify it.
 
-A stalled read from Hugging Face would otherwise fail the whole image build,
+Runs in the image build. A stalled read from Hugging Face would otherwise fail the whole image build,
 so network errors are retried; a hash mismatch never is.
 """
 
@@ -10,7 +10,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from services.tts.voices import VOICES
+from services.tts.voices import VOICES, voice_root
 
 ATTEMPTS = 4
 _CHUNK = 1 << 20
@@ -51,4 +51,4 @@ def fetch_all(root: Path, opener=urllib.request.urlopen) -> None:
 
 
 if __name__ == "__main__":
-    fetch_all(Path(sys.argv[1]))
+    fetch_all(voice_root())

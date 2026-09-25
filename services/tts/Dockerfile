@@ -47,9 +47,11 @@ RUN python3 -m pip download \
 
 FROM wheel-builder AS voices
 
-COPY services/__init__.py /src/services/__init__.py
-COPY services/tts/__init__.py services/tts/voices.py services/tts/fetch_voices.py /src/services/tts/
-RUN cd /src && python3 -m services.tts.fetch_voices /opt/tts-voices
+WORKDIR /src
+ENV TTS_VOICE_DIR=/opt/tts-voices
+COPY services/__init__.py ./services/__init__.py
+COPY services/tts/__init__.py services/tts/voices.py services/tts/fetch_voices.py ./services/tts/
+RUN python3 -m services.tts.fetch_voices
 
 FROM nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04
 

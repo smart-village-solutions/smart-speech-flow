@@ -1,4 +1,5 @@
 import contextlib
+import sys
 import types
 
 import numpy as np
@@ -95,3 +96,45 @@ def test_unspeakable_text_raises_before_the_model_runs():
     with pytest.raises(UnspeakableTextError):
         speaker.synthesize("…", seed=3)
     assert speaker._model.calls == 0
+
+
+def test_loading_puts_the_model_on_the_device_in_eval_mode(monkeypatch, tmp_path):
+    loaded = {}
+
+    class FakeVits:
+        config = types.SimpleNamespace(sampling_rate=16000)
+
+        @classmethod
+        def from_pretrained(cls, directory):
+            loaded["model_dir"] = directory
+            return cls()
+
+        def to(self, device):
+            loaded["device"] = device
+            return self
+
+        def eval(self):
+            loaded["eval"] = True
+            return self
+
+    class FakeAutoTokenizer:
+        @staticmethod
+        def from_pretrained(directory):
+            loaded["tokenizer_dir"] = directory
+            return _Tokenizer([0, 5])
+
+    transformers = types.ModuleType("transformers")
+    transformers.VitsModel = FakeVits
+    transformers.AutoTokenizer = FakeAutoTokenizer
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+
+    speaker = mms_engine.MmsSpeaker(tmp_path, "cuda")
+
+    assert loaded == {
+        "tokenizer_dir": tmp_path,
+        "model_dir": tmp_path,
+        "device": "cuda",
+        "eval": True,
+    }
+    assert speaker.device == "cuda"
+    assert speaker.sample_rate == 16000

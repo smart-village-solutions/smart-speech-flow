@@ -760,7 +760,8 @@ def test_tts_helper_functions_cover_responses_and_loading(tts_app, monkeypatch):
 
     monkeypatch.setattr(tts_app, "_load_speaker", load)
     speakers, errors = tts_app.load_speakers("cpu")
-    assert len(speakers) == 9 and "fa" not in speakers
+    assert len(speakers) == 9
+    assert "fa" not in speakers
     assert errors == {"fa": "RuntimeError: corrupt voice file"}
 
     debug_info = tts_app._build_debug_info("Hallo", "de")

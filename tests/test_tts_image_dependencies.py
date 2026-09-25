@@ -42,7 +42,7 @@ def test_the_dockerfile_downloads_piper_without_dependencies():
 
 def test_the_image_bakes_the_voices_in_and_runs_the_package():
     dockerfile = (TTS / "Dockerfile").read_text()
-    assert "python3 -m services.tts.fetch_voices /opt/tts-voices" in dockerfile
+    assert "RUN python3 -m services.tts.fetch_voices" in dockerfile
     assert "TTS_VOICE_DIR=/opt/tts-voices" in dockerfile
     assert '"services.tts.app:app"' in dockerfile
     for module in ("speech_text.py", "voices.py", "piper_engine.py", "mms_engine.py", "app.py"):

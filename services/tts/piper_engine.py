@@ -56,7 +56,8 @@ class PiperSpeaker:
         self.device = device
         self.sample_rate = voice.config.sample_rate
 
-    def synthesize(self, text: str, seed: int) -> tuple[np.ndarray, int]:
+    def synthesize(self, text: str, _seed: int) -> tuple[np.ndarray, int]:
+        # Piper's noise is drawn inside the ONNX graph and cannot be seeded.
         chunks = [chunk.audio_float_array for chunk in self._voice.synthesize(text)]
         if not chunks:
             raise UnspeakableTextError(text)

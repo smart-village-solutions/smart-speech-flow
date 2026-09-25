@@ -108,8 +108,8 @@ def test_fetch_gives_up_after_the_last_attempt(monkeypatch, tmp_path):
 def test_fetch_refuses_a_file_whose_hash_differs(monkeypatch, tmp_path):
     voice = VOICES["de"]
     monkeypatch.setattr(fetch_voices, "VOICES", {"de": voice})
-    payloads = {f.url: b"tampered" for f in voice.files}
+    opener = _opener_serving({f.url: b"tampered" for f in voice.files})
 
     with pytest.raises(fetch_voices.HashMismatchError):
-        fetch_voices.fetch_all(tmp_path, opener=_opener_serving(payloads))
+        fetch_voices.fetch_all(tmp_path, opener=opener)
     assert not any((tmp_path / "de").glob("*"))
