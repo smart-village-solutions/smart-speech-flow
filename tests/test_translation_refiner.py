@@ -6,6 +6,25 @@ import pytest
 
 MODULE_PATH = "services.api_gateway.translation_refiner"
 
+# The module namespace as it was before this test reloaded it.
+_BEFORE_RELOAD: dict[str, object] = {}
+
+
+@pytest.fixture(autouse=True)
+def restore_reloaded_module():
+    """Put the refiner module back as it was once the test ends.
+
+    A reload leaves new classes behind. Later tests then build refiners from
+    classes that pipeline_logic and app.py never imported, and patch the wrong
+    ones.
+    """
+    yield
+    if _BEFORE_RELOAD:
+        module = importlib.import_module(MODULE_PATH)
+        module.__dict__.clear()
+        module.__dict__.update(_BEFORE_RELOAD)
+        _BEFORE_RELOAD.clear()
+
 
 def reload_module(env: dict[str, str | None]):
     """Reload translation refiner module with temporary env overrides."""
@@ -19,6 +38,8 @@ def reload_module(env: dict[str, str | None]):
 
     try:
         module = importlib.import_module(MODULE_PATH)
+        if not _BEFORE_RELOAD:
+            _BEFORE_RELOAD.update(module.__dict__)
         return importlib.reload(module)
     finally:
         for key, value in saved.items():
