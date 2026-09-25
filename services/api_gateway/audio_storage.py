@@ -254,7 +254,7 @@ def _managed_v2_audio_files(
             logger.warning("Skipped unsafe audio storage entry")
 
 
-def ensure_directories():
+def ensure_directories() -> None:
     """Ensure audio storage directories exist."""
     ORIGINAL_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     TRANSLATED_AUDIO_DIR.mkdir(parents=True, exist_ok=True)

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Deque, Dict, Optional, Tuple
 
 from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
 
 
@@ -97,7 +97,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.global_limiter = limits.global_limiter
         self.message_limiter = limits.message_limiter
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         """Apply rate limiting before the request reaches the endpoint."""
         session_key = self._session_message_key(request)
         if session_key:
