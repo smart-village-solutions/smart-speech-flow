@@ -1,3 +1,8 @@
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+import numpy as np
 import pytest
 
 from services.tts.speech_text import UnspeakableTextError
@@ -92,3 +97,43 @@ def test_debug_reports_the_spoken_text(client):
         "/synthesize", json={"text": "Zimmer 0621", "lang": "de", "debug": "true"}
     )
     assert "0 6 2 1" in response.headers["x-debug-info"]
+
+
+class _OverlapCounter:
+    device = "cuda"
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.active = 0
+        self.peak = 0
+
+    def synthesize(self, text, seed):
+        with self.lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        time.sleep(0.05)
+        with self.lock:
+            self.active -= 1
+        return np.zeros(4, dtype=np.float32), 22050
+
+
+@pytest.mark.parametrize(("limit", "expected_peak"), [("1", 1), ("3", 3)])
+def test_gpu_syntheses_are_capped(monkeypatch, speakers, limit, expected_peak):
+    from fastapi.testclient import TestClient
+
+    from services.tts import app as tts_app
+
+    counter = _OverlapCounter()
+    monkeypatch.setenv("TTS_MAX_CONCURRENT_SYNTHESES", limit)
+    monkeypatch.setattr(tts_app, "_load_speaker", lambda voice, device: counter)
+
+    with TestClient(tts_app.app) as test_client, ThreadPoolExecutor(6) as pool:
+        responses = list(
+            pool.map(
+                lambda _: test_client.post("/synthesize", json={"text": "Hallo", "lang": "de"}),
+                range(6),
+            )
+        )
+
+    assert {r.status_code for r in responses} == {200}
+    assert counter.peak == expected_peak

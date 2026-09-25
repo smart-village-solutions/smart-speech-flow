@@ -79,6 +79,12 @@ def load_speakers(device: str) -> tuple[Dict[str, Any], Dict[str, str]]:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.speakers, app.state.load_errors = await asyncio.to_thread(load_speakers, DEVICE)
+    # Each synthesis briefly needs tens to hundreds of MiB of VRAM on a card
+    # shared with ASR, translation and vLLM; unbounded, eight parallel requests
+    # ran the probe out of memory. At ~0.1 s per Piper request a queue is cheap.
+    app.state.synthesis_slots = asyncio.Semaphore(
+        int(os.environ.get("TTS_MAX_CONCURRENT_SYNTHESES", "2"))
+    )
     yield
 
 
@@ -271,7 +277,8 @@ async def synthesize(request: Request):
     debug_info["spoken_text"] = spoken
     seed = _seed_for_request(data.get("session_id"), text, debug_info)
     try:
-        audio, sampling_rate = await asyncio.to_thread(speaker.synthesize, spoken, seed)
+        async with request.app.state.synthesis_slots:
+            audio, sampling_rate = await asyncio.to_thread(speaker.synthesize, spoken, seed)
     except UnspeakableTextError:
         return fail(
             400, f"Text enthält nichts, was die Stimme für '{normalized_lang}' sprechen kann."

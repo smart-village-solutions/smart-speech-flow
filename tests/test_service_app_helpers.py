@@ -718,7 +718,9 @@ class FakeTTSSpeaker:
 
 
 def tts_request(tts_app, payload, speakers=None, errors=None):
-    tts_app.app.state = SimpleNamespace(speakers=speakers or {}, load_errors=errors or {})
+    tts_app.app.state = SimpleNamespace(
+        speakers=speakers or {}, load_errors=errors or {}, synthesis_slots=asyncio.Semaphore(2)
+    )
     request = build_request(payload=payload, query_params={})
     request.app = tts_app.app
     return request
