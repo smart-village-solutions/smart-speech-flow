@@ -8,8 +8,8 @@ are listed below with the PR that removes them. The list only shrinks.
 
 A call counts as a construction when its name is CapWords (a class), a
 factory (build_, create_, make_, init_, initialize_, get_), or a `Class.from_*`
-classmethod. Loggers, compiled regexes and frozensets are lowercase calls, so
-they pass without an entry.
+or `Class.build` classmethod. Loggers, compiled regexes and frozensets are
+lowercase calls, so they pass without an entry.
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ def _constructed(call: ast.Call) -> str | None:
     if isinstance(function, ast.Attribute):
         owner = function.value
         if (
-            function.attr.startswith("from_")
+            (function.attr.startswith("from_") or function.attr == "build")
             and isinstance(owner, ast.Name)
             and owner.id[:1].isupper()
         ):
@@ -217,6 +217,7 @@ if True:
     store = TicketStore(backend)
 service: Service = build_service()
 client = Client.from_environment()
+metrics = Metrics.build()
 left, right = Pair()
 
 @lru_cache(maxsize=1)
@@ -227,7 +228,14 @@ def factory():
 def keyed(tenant):
     return Service()
 """
-    assert module_level_constructions(source) == {"store", "service", "client", "left", "right"}
+    assert module_level_constructions(source) == {
+        "store",
+        "service",
+        "client",
+        "metrics",
+        "left",
+        "right",
+    }
     assert zero_argument_cached_factories(source) == {"factory"}
     assert rebound_globals("def bind(gate):\n    global _GATE\n    _GATE = gate\n") == {"_GATE"}
     for legacy_import in (
