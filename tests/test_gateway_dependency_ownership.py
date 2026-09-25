@@ -8,8 +8,8 @@ are listed below with the PR that removes them. The list only shrinks.
 
 A call counts as a construction when its name is CapWords (a class), a
 factory (build_, create_, make_, init_, initialize_, get_), or a `Class.from_*`
-classmethod. Loggers, compiled regexes and frozensets are lowercase calls, so
-they pass without an entry.
+or `Class.build` classmethod. Loggers, compiled regexes and frozensets are
+lowercase calls, so they pass without an entry.
 """
 
 from __future__ import annotations
@@ -25,23 +25,12 @@ VALUE_TYPES = frozenset({"APIRouter", "Field", "Path", "TypeVar", "TypedDict"})
 
 ALLOWLIST = {
     ("app.py", "app"): "permanent: the ASGI entry point uvicorn and the Dockerfile target",
-    ("app.py", "registry"): "adapter until PR7",
-    ("app.py", "requests_total"): "adapter until PR7",
-    ("app.py", "pipeline_admission_metrics"): "adapter until PR7",
-    ("app.py", "refinement_metrics"): "adapter until PR7",
-    ("app.py", "websocket_metrics"): "adapter until PR7",
-    ("audio_storage.py", "audio_storage_disk_usage_bytes"): "adapter until PR7",
-    ("audio_storage.py", "audio_files_total"): "adapter until PR7",
-    ("audio_storage.py", "audio_cleanup_deleted_files_total"): "adapter until PR7",
-    ("auth.py", "_key_cache"): "adapter until PR7",
     # Unwired in PR 6b: nothing imports websocket_fallback.py; PR7 deletes the module.
     ("websocket_fallback.py", "fallback_manager"): "adapter until PR7",
 }
 
 # Module globals still rebound through a `global` statement. Only shrinks.
-GLOBAL_REBINDING_ALLOWLIST = {
-    ("rate_limiter.py", "LATEST_RATE_LIMIT_MIDDLEWARE"): "adapter until PR7",
-}
+GLOBAL_REBINDING_ALLOWLIST: dict[tuple[str, str], str] = {}
 
 # The str-keyed compatibility adapter, and the unregistered legacy route
 # module that still needs it (#230). No other gateway module may import it.
@@ -66,7 +55,7 @@ def _constructed(call: ast.Call) -> str | None:
     if isinstance(function, ast.Attribute):
         owner = function.value
         if (
-            function.attr.startswith("from_")
+            (function.attr.startswith("from_") or function.attr == "build")
             and isinstance(owner, ast.Name)
             and owner.id[:1].isupper()
         ):
@@ -228,6 +217,7 @@ if True:
     store = TicketStore(backend)
 service: Service = build_service()
 client = Client.from_environment()
+metrics = Metrics.build()
 left, right = Pair()
 
 @lru_cache(maxsize=1)
@@ -238,7 +228,14 @@ def factory():
 def keyed(tenant):
     return Service()
 """
-    assert module_level_constructions(source) == {"store", "service", "client", "left", "right"}
+    assert module_level_constructions(source) == {
+        "store",
+        "service",
+        "client",
+        "metrics",
+        "left",
+        "right",
+    }
     assert zero_argument_cached_factories(source) == {"factory"}
     assert rebound_globals("def bind(gate):\n    global _GATE\n    _GATE = gate\n") == {"_GATE"}
     for legacy_import in (

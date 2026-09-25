@@ -88,9 +88,6 @@ disallow_untyped_defs = false
 # Never add to it to make a new change pass.
 [[tool.mypy.overrides]]
 module = [
-    "services.api_gateway.app",
-    "services.api_gateway.audio_storage",
-    "services.api_gateway.auth",
     "services.api_gateway.circuit_breaker",
     "services.api_gateway.circuit_breaker_client",
     "services.api_gateway.enhanced_audio_validation",
@@ -102,7 +99,6 @@ module = [
     "services.api_gateway.pipeline_logic",
     "services.api_gateway.quality_telemetry",
     "services.api_gateway.quality_telemetry_otlp",
-    "services.api_gateway.rate_limiter",
     "services.api_gateway.realtime_ticket",
     "services.api_gateway.routes.admin",
     "services.api_gateway.routes.circuit_breaker",
