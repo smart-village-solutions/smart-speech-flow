@@ -13,6 +13,7 @@ import pytest
 import asyncio
 import json
 import base64
+import os
 from pathlib import Path
 from typing import Dict, Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,8 +22,28 @@ from services.api_gateway.legacy_session_manager import LegacySessionManager
 from services.api_gateway.session_manager import SessionMessage
 from services.api_gateway.pipeline_logic import process_wav, process_text_pipeline
 from services.api_gateway.audio_storage import AudioStore
+from services.api_gateway.audio_processing import WavAudioValidator
+from services.api_gateway.service_health import ServiceHealthManager
+from services.api_gateway.speech_services import HttpSpeechServices
+from services.api_gateway.translation_refiner import NoOpTranslationRefiner
 
 pytestmark = pytest.mark.integration
+
+
+def real_speech_services() -> HttpSpeechServices:
+    """The speech services as build_gateway_dependencies builds them, at the real-system URLs.
+
+    The defaults are the ports the services publish outside the Docker network;
+    each SSF_REAL_SYSTEM_*_URL variable overrides one.
+    """
+    return HttpSpeechServices(
+        ServiceHealthManager().circuit_breakers,
+        asr_url=os.environ.get("SSF_REAL_SYSTEM_ASR_URL", "http://localhost:8001/transcribe"),
+        translation_url=os.environ.get(
+            "SSF_REAL_SYSTEM_TRANSLATION_URL", "http://localhost:8002/translate"
+        ),
+        tts_url=os.environ.get("SSF_REAL_SYSTEM_TTS_URL", "http://localhost:8003/synthesize"),
+    )
 
 
 @pytest.fixture
@@ -64,14 +85,11 @@ class TestAudioPipelineIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.real_system
-    async def test_audio_pipeline_generates_metadata(self, sample_audio_base64, monkeypatch):
+    async def test_audio_pipeline_generates_metadata(self, sample_audio_base64):
         """Test that audio pipeline generates complete metadata with real services"""
         import base64
 
-        # Patch service URLs to use localhost ports (outside Docker network)
-        monkeypatch.setattr("services.api_gateway.pipeline_logic.ASR_URL", "http://localhost:8001/transcribe")
-        monkeypatch.setattr("services.api_gateway.pipeline_logic.TRANSLATION_URL", "http://localhost:8002/translate")
-        monkeypatch.setattr("services.api_gateway.pipeline_logic.TTS_URL", "http://localhost:8003/synthesize")
+        speech = real_speech_services()
 
         # Decode base64 to bytes for process_wav
         audio_bytes = base64.b64decode(sample_audio_base64)
@@ -83,9 +101,15 @@ class TestAudioPipelineIntegration:
                 source_lang="en",
                 target_lang="de",
                 debug=True,
-                validate_audio=True  # Use real audio from examples/
+                validate_audio=True,  # Use real audio from examples/
+                speech=speech,
+                refiner=NoOpTranslationRefiner(),
+                validator=WavAudioValidator(),
             )
         )
+
+        # The pipeline reports an unreachable service rather than raising.
+        assert not result.get("error"), result.get("error_msg")
 
         # Verify result structure (process_wav returns these keys)
         assert "original_text" in result or "asr_text" in result  # Can be either
@@ -182,11 +206,9 @@ class TestTextPipelineIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.real_system
-    async def test_text_pipeline_generates_metadata(self, monkeypatch):
+    async def test_text_pipeline_generates_metadata(self):
         """Test that text pipeline generates complete metadata with real services"""
-        # Patch service URLs to use localhost ports (outside Docker network)
-        monkeypatch.setattr("services.api_gateway.pipeline_logic.TRANSLATION_URL", "http://localhost:8002/translate")
-        monkeypatch.setattr("services.api_gateway.pipeline_logic.TTS_URL", "http://localhost:8003/synthesize")
+        speech = real_speech_services()
 
         # Real integration test - calls actual Translation/TTS services
         result = await asyncio.to_thread(
@@ -195,9 +217,14 @@ class TestTextPipelineIntegration:
                 source_lang="en",
                 target_lang="de",
                 debug=True,
-                validate_text=False
+                validate_text=False,
+                speech=speech,
+                refiner=NoOpTranslationRefiner(),
             )
         )
+
+        # The pipeline reports an unreachable service rather than raising.
+        assert not result.get("error"), result.get("error_msg")
 
         # Verify result structure (process_text_pipeline returns these keys)
         assert "asr_text" in result

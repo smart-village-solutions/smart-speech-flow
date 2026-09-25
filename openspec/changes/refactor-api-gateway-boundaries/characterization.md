@@ -295,10 +295,11 @@ Found in PR7b, not changed (outside the inventory):
   `WebSocketManager.get_connection_stats`, its one reader, is gone. The heartbeat's unit tests
   read `heartbeat_timeouts` from it to observe a timeout.
 - `WebSocketMonitor.get_connection_stats` has no production caller; two tests read it.
-- The two `real_system` tests in `tests/test_pipeline_metadata_integration.py` fail before any
-  request: they patch `pipeline_logic.ASR_URL` and `TRANSLATION_URL`, which moved to
-  `speech_services.py` in PR5a (`8e0d520`), and call `process_wav` without the `speech`,
-  `refiner` and `validator` it requires since then. CI never runs them.
+- The two `real_system` tests in `tests/test_pipeline_metadata_integration.py` failed before any
+  request: they patched `pipeline_logic.ASR_URL` and `TRANSLATION_URL`, which moved to
+  `speech_services.py` in PR5a (`8e0d520`), and called `process_wav` without the `speech`,
+  `refiner` and `validator` it requires since then. CI never runs them. Fixed in a PR7b
+  follow-up: they build the per-app speech services, and pass against local stubs (task 4.4).
 - `tests/integration/test_websocket_integration.py` collects no tests. It is a script against a
   live gateway on `localhost:8000` that drives `/api/websocket/polling/*` and
   `/api/websocket/monitoring/stats` and `/connections`, none of which is registered (#348).

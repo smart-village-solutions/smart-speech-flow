@@ -63,7 +63,7 @@
 - [x] 4.1 Migrate first-party production imports and tests to the new boundaries; prohibit new production imports of compatibility adapters.
   - No gateway module imports `LegacySessionManager` (`LEGACY_SESSION_IMPORTERS` is empty in `tests/test_gateway_dependency_ownership.py`), builds a module-level collaborator or rebinds a global (the same file; `app` is its one permanent entry), or imports from `routes/` outside `app.py` (`tests/test_gateway_import_direction.py`). PR7b showed each guard failing on a mutation that adds such an import or instance.
   - The tests of deleted code went with it; `tests/test_audio_adapters.py` no longer reads the import-time `AUDIO_BASE_DIR`.
-  - Not migrated: the two `real_system` tests in `tests/test_pipeline_metadata_integration.py` still patch `pipeline_logic` URLs that moved in PR5a and call `process_wav` without its speech collaborators. CI never runs them, and they need live speech services to prove a rewrite (characterization.md).
+  - The two `real_system` tests in `tests/test_pipeline_metadata_integration.py`, broken since PR5a, now build `HttpSpeechServices` over a `ServiceHealthManager`'s breakers, refinement off and, for `process_wav`, a `WavAudioValidator`, as the app does (4.4).
 - [x] 4.2 Inventory remaining facades and consumers; remove only adapters with no required consumers.
   - characterization.md, "Inventory for PR7 (task 4.2)": every item and its consumers, what PR7b deleted, and what it kept and why.
 - [x] 4.3 Remove obsolete duplicate modules only after consumer search and compatibility proof.
@@ -78,7 +78,7 @@
     - A booted gateway under uvicorn: `/health` and `/metrics` answer 200; an admin socket (with a realtime ticket) and a customer socket connect, relay a message each way and disconnect; shutdown logs no "Task was destroyed". In production mode without `REDIS_URL` it exits 3.
   - Not run:
     - `tests/integration/test_websocket_integration.py` collects no tests: it is a script against a live gateway that drives `/api/websocket/polling/*` and the monitoring endpoints #348 owns, which are not registered. The realtime integration coverage is the contract suite's realtime files above.
-    - The `real_system` tests need running ASR, translation and TTS services. With `--run-real-system` both fail before any request, as they have since PR5a (4.1).
+    - The `real_system` tests against live ASR, translation and TTS services, which needs the speech stack. They now run on the per-app speech services, at URLs `SSF_REAL_SYSTEM_ASR_URL`, `SSF_REAL_SYSTEM_TRANSLATION_URL` and `SSF_REAL_SYSTEM_TTS_URL` override (default `localhost:8001` to `8003`). Proven against three local HTTP stubs answering with the contract suite's reply shapes: `pytest --run-real-system tests/test_pipeline_metadata_integration.py -m real_system` passed both, and with nothing listening both failed on `Pipeline-Fehler: upstream_unreachable` from a refused connection. CI still skips them.
 - [x] 4.5 Update architecture and operations documentation with final dependency ownership and migration status.
   - `services/api_gateway/README.md` (composition root, providers, application services, ports and adapters, realtime collaborators, per app and process-wide), `docs/architecture/SYSTEM_ARCHITECTURE.md`, `websocket-architecture.md` and `session-flow.md`; design.md holds the final ownership table and decisions. The change is archived after deployment.
 
