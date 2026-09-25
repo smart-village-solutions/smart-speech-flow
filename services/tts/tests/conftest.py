@@ -1,8 +1,9 @@
-import io
 import sys
 import types
 
 import numpy as np
+import pytest
+from fastapi.testclient import TestClient
 
 
 def _install_fake_torch() -> None:
@@ -44,37 +45,46 @@ def _install_fake_soundfile() -> None:
         return
 
     def _write(target, audio, sampling_rate, format="WAV"):
-        payload = b"RIFFfakeWAVEfmt " + bytes(str(sampling_rate), "ascii")
-        if isinstance(target, io.BytesIO):
-            target.write(payload)
-            return
-        target.write(payload)
+        target.write(b"RIFFfakeWAVEfmt " + bytes(str(sampling_rate), "ascii"))
 
     fake_soundfile = types.ModuleType("soundfile")
     fake_soundfile.write = _write
     sys.modules["soundfile"] = fake_soundfile
 
 
-def _install_fake_transformers() -> None:
-    fake_transformers = sys.modules.get("transformers")
-    if fake_transformers is None:
-        fake_transformers = types.ModuleType("transformers")
-        sys.modules["transformers"] = fake_transformers
-
-    class _FakePipeline:
-        def __call__(self, _text):
-            return {
-                "audio": np.array([[0.1, -0.1, 0.0, 0.2]], dtype=np.float32),
-                "sampling_rate": 16000,
-            }
-
-    fake_transformers.pipeline = lambda *_args, **_kwargs: _FakePipeline()
-    fake_transformers.M2M100ForConditionalGeneration = getattr(
-        fake_transformers, "M2M100ForConditionalGeneration", None
-    )
-    fake_transformers.M2M100Tokenizer = getattr(fake_transformers, "M2M100Tokenizer", None)
-
-
 _install_fake_torch()
 _install_fake_soundfile()
-_install_fake_transformers()
+
+
+class FakeSpeaker:
+    def __init__(self, device="cuda"):
+        self.device = device
+        self.calls = []
+
+    def synthesize(self, text, seed):
+        self.calls.append((text, seed))
+        return np.array([0.1, -0.1, 0.0, 0.2], dtype=np.float32), 22050
+
+
+@pytest.fixture
+def failing_langs():
+    return set()
+
+
+@pytest.fixture
+def speakers():
+    return {}
+
+
+@pytest.fixture
+def client(monkeypatch, speakers, failing_langs):
+    from services.tts import app as tts_app
+
+    def load(voice, device):
+        if voice.lang in failing_langs:
+            raise RuntimeError(f"{voice.lang} voice file is corrupt")
+        return speakers.setdefault(voice.lang, FakeSpeaker())
+
+    monkeypatch.setattr(tts_app, "_load_speaker", load)
+    with TestClient(tts_app.app) as test_client:
+        yield test_client

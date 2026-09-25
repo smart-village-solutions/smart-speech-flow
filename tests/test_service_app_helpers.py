@@ -224,31 +224,6 @@ def build_prometheus_stub() -> types.ModuleType:
     return prometheus_stub
 
 
-def build_tts_stub() -> tuple[types.ModuleType, types.ModuleType]:
-    tts_pkg = types.ModuleType("TTS")
-    tts_api = types.ModuleType("TTS.api")
-
-    class FakeTTS:
-        def __init__(self, model_name):
-            self.model_name = model_name
-            self._device = "cpu"
-
-        def to(self, device):
-            self._device = device
-            return self
-
-        def parameters(self):
-            return iter([SimpleNamespace(device=self._device)])
-
-        def tts_to_file(self, text, file_path):
-            with open(file_path, "wb") as file_obj:
-                file_obj.write(b"COQUI-WAV")
-
-    tts_api.TTS = FakeTTS
-    tts_pkg.api = tts_api
-    return tts_pkg, tts_api
-
-
 def load_module(monkeypatch, module_name: str, relative_path: str, stubs: dict[str, object]):
     for stub_name, stub_module in stubs.items():
         monkeypatch.setitem(sys.modules, stub_name, stub_module)
@@ -321,7 +296,6 @@ def translation_app(monkeypatch):
 
 @pytest.fixture
 def tts_app(monkeypatch):
-    tts_pkg, tts_api = build_tts_stub()
     fastapi_stub, responses_stub = build_fastapi_stub()
     return load_module(
         monkeypatch,
@@ -331,8 +305,6 @@ def tts_app(monkeypatch):
             "torch": build_torch_stub(cuda_available=False),
             "transformers": build_transformers_stub(),
             "soundfile": build_soundfile_stub(),
-            "TTS": tts_pkg,
-            "TTS.api": tts_api,
             "fastapi": fastapi_stub,
             "fastapi.responses": responses_stub,
             "prometheus_client": build_prometheus_stub(),
@@ -732,13 +704,30 @@ async def test_translation_translate_handles_invalid_json_and_success(translatio
     assert b'"debug"' in response.body
 
 
-def test_tts_helper_functions_cover_model_resolution_and_responses(tts_app, monkeypatch):
+class FakeTTSSpeaker:
+    def __init__(self, device="cuda", error=None):
+        self.device = device
+        self.error = error
+        self.calls = []
+
+    def synthesize(self, text, seed):
+        self.calls.append(text)
+        if self.error:
+            raise self.error
+        return [0.1, -0.1], 22050
+
+
+def tts_request(tts_app, payload, speakers=None, errors=None):
+    tts_app.app.state = SimpleNamespace(speakers=speakers or {}, load_errors=errors or {})
+    request = build_request(payload=payload, query_params={})
+    request.app = tts_app.app
+    return request
+
+
+def test_tts_helper_functions_cover_responses_and_loading(tts_app, monkeypatch):
     assert tts_app._normalize_lang_code(" EN ") == "en"
-    assert tts_app._resolve_hf_model_name("ar") == "facebook/mms-tts-ara"
-    assert tts_app.resolve_tts_model_name("de") == "tts_models/de/thorsten/vits"
-    assert tts_app.resolve_tts_model_name("ar") == "facebook/mms-tts-ara"
     with pytest.raises(ValueError):
-        tts_app.resolve_tts_model_name("")
+        tts_app._normalize_lang_code("")
 
     debug_info = {}
     session_seed = tts_app._seed_for_request("session-1", "Hallo", debug_info)
@@ -764,32 +753,15 @@ def test_tts_helper_functions_cover_model_resolution_and_responses(tts_app, monk
     )
     assert reasons == ["gpu1_util>=85", "gpu1_mem>=85"]
 
-    monkeypatch.setattr(
-        tts_app, "_load_coqui_model", lambda lang: (_ for _ in ()).throw(RuntimeError("nope"))
-    )
-    monkeypatch.setattr(tts_app, "_load_hf_tts_model", lambda lang: {"hf": lang})
-    tts_app.tts_model_cache.clear()
-    assert tts_app.get_tts_model("ar") == {"hf": "ar"}
+    def load(voice, device):
+        if voice.lang == "fa":
+            raise RuntimeError("corrupt voice file")
+        return FakeTTSSpeaker(device)
 
-    text, normalized_lang, session_id, model_name = tts_app._resolve_synthesis_request(
-        {"text": " Hallo ", "lang": " EN ", "session_id": "sess-1"},
-        {"error": None},
-        0.0,
-    )
-    assert text == " Hallo "
-    assert normalized_lang == "en"
-    assert session_id == "sess-1"
-    assert model_name == "tts_models/en/ljspeech/vits"
-
-    payload, sampling_rate = tts_app._extract_audio_payload(
-        {"audio": [0.1], "sampling_rate": 22050}
-    )
-    assert payload == [0.1]
-    assert sampling_rate == 22050
-
-    payload, sampling_rate = tts_app._extract_audio_payload([{"audio": [0.2]}])
-    assert payload == [0.2]
-    assert sampling_rate == 16000
+    monkeypatch.setattr(tts_app, "_load_speaker", load)
+    speakers, errors = tts_app.load_speakers("cpu")
+    assert len(speakers) == 9 and "fa" not in speakers
+    assert errors == {"fa": "RuntimeError: corrupt voice file"}
 
     debug_info = tts_app._build_debug_info("Hallo", "de")
     assert debug_info["input"] == {"text": "Hallo", "lang": "de"}
@@ -798,9 +770,8 @@ def test_tts_helper_functions_cover_model_resolution_and_responses(tts_app, monk
 
 
 def test_tts_health_and_support_endpoints(tts_app, monkeypatch):
-    tts_app.tts_model_cache.clear()
-    tts_app.tts_model_cache["de"] = SimpleNamespace(_device="cuda")
-    tts_app.tts_model_cache["en"] = SimpleNamespace(device="cpu")
+    speakers = {lang: FakeTTSSpeaker("cpu") for lang in tts_app.VOICES}
+    speakers["de"] = FakeTTSSpeaker("cuda")
     monkeypatch.setattr(
         tts_app,
         "_collect_resource_metrics",
@@ -811,145 +782,56 @@ def test_tts_health_and_support_endpoints(tts_app, monkeypatch):
         "_derive_auto_scaling_signal",
         lambda metrics: {"recommended_action": "steady", "reasons": []},
     )
-    monkeypatch.setattr(
-        tts_app.torch.cuda,
-        "is_available",
-        staticmethod(lambda: False),
-    )
 
-    health = tts_app.health()
+    health = tts_app.health(tts_request(tts_app, {}, speakers))
     assert health["status"] == "ok"
     assert health["gpu_used"] is True
     assert health["loaded_models"]["de"] is True
+    assert health["voices"]["de"]["device"] == "cuda"
     assert "ar" in tts_app.supported_languages()["languages"]
     assert tts_app.metrics().body == b"metrics"
 
 
-def test_tts_hf_audio_synthesis_and_error_resolution(tts_app, monkeypatch):
-    class FakeArray:
-        def __init__(self):
-            self.size = 2
-            self.shape = (2,)
-
-        def squeeze(self):
-            return self
-
-        def astype(self, dtype):
-            return self
-
-    numpy_stub = types.ModuleType("numpy")
-    numpy_stub.ndarray = FakeArray
-    numpy_stub.float32 = "float32"
-    monkeypatch.setitem(sys.modules, "numpy", numpy_stub)
-
-    captured = {}
-
-    def fake_wav_writer(audio, sampling_rate):
-        captured["result"] = (audio, sampling_rate)
-        return b"WAV"
-
-    monkeypatch.setattr(tts_app, "_numpy_audio_to_wav_bytes", fake_wav_writer)
-    monkeypatch.setattr(
-        tts_app,
-        "_extract_audio_payload",
-        lambda result: (FakeArray(), 24000),
-    )
-
-    wav_bytes = tts_app._synthesize_hf_audio(lambda text: {"audio": [0.1]}, "Hallo")
-    assert captured["result"][1] == 24000
-    assert wav_bytes == b"WAV"
-
-    with pytest.raises(ValueError):
-        tts_app._resolve_synthesis_request({"text": "   ", "lang": "de"}, {"error": None}, 0.0)
-
-
 @pytest.mark.asyncio
-async def test_tts_synthesize_handles_invalid_and_success_paths(tts_app, monkeypatch):
-    invalid_response = await tts_app.synthesize(
-        build_request(payload={"text": "   ", "lang": "de"}, query_params={})
-    )
+async def test_tts_synthesize_handles_invalid_and_success_paths(tts_app):
+    invalid_response = await tts_app.synthesize(tts_request(tts_app, {"text": "   ", "lang": "de"}))
     assert invalid_response.status_code == 400
 
-    monkeypatch.setattr(tts_app, "get_tts_model", lambda lang: object())
-    monkeypatch.setattr(
-        tts_app,
-        "_render_audio_bytes",
-        lambda tts_model, text: __import__("asyncio").sleep(0, result=(b"WAV", True)),
-    )
-
+    speaker = FakeTTSSpeaker()
     response = await tts_app.synthesize(
-        build_request(
-            payload={"text": "Hallo", "lang": "ar", "session_id": "abc", "debug": "true"},
-            query_params={},
+        tts_request(
+            tts_app,
+            {"text": "Hallo", "lang": "ar", "session_id": "abc", "debug": "true"},
+            {"ar": speaker},
         )
     )
-
     assert response.status_code == 200
     assert response.headers["x-tts-language"] == "ar"
-    assert response.headers["x-tts-model"] == "facebook/mms-tts-ara"
+    assert response.headers["x-tts-model"] == "piper:ar_JO-kareem-medium"
+    assert speaker.calls == ["Hallo"]
 
-    monkeypatch.setattr(tts_app, "get_tts_model", lambda lang: None)
     missing_response = await tts_app.synthesize(
-        build_request(payload={"text": "Hallo", "lang": "de"}, query_params={})
+        tts_request(tts_app, {"text": "Hallo", "lang": "de"}, {})
     )
     assert missing_response.status_code == 503
 
 
-async def _synthesize(tts_app, lang):
-    return await tts_app.synthesize(
-        build_request(payload={"text": "Hallo", "lang": lang}, query_params={})
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("lang", "voice"),
+    [
+        ("de", "piper:de_DE-thorsten-high"),
+        ("en", "piper:en_US-ljspeech-high"),
+        ("am", "facebook/mms-tts-amh"),
+    ],
+)
+async def test_tts_names_the_voice_that_ran_and_is_never_a_fallback(tts_app, lang, voice):
+    response = await tts_app.synthesize(
+        tts_request(tts_app, {"text": "Hallo", "lang": lang}, {lang: FakeTTSSpeaker()})
     )
 
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("lang", "mms_model"),
-    [("de", "facebook/mms-tts-deu"), ("en", "facebook/mms-tts-eng")],
-)
-async def test_tts_names_the_mms_model_when_coqui_is_not_installed(
-    tts_app, monkeypatch, lang, mms_model
-):
-    # The production image of issue #323: `import TTS` fails.
-    monkeypatch.setattr(tts_app, "TTSApi", None)
-
-    response = await _synthesize(tts_app, lang)
-
     assert response.status_code == 200
-    assert response.headers["x-tts-model"] == mms_model
-    assert response.headers["x-tts-fallback"] == "true"
-
-
-@pytest.mark.asyncio
-async def test_tts_names_the_mms_model_when_coqui_fails_to_load(tts_app, monkeypatch):
-    def broken_checkpoint(lang):
-        raise RuntimeError("checkpoint missing")
-
-    monkeypatch.setattr(tts_app, "_load_coqui_model", broken_checkpoint)
-
-    response = await _synthesize(tts_app, "de")
-
-    assert response.headers["x-tts-model"] == "facebook/mms-tts-deu"
-    assert response.headers["x-tts-fallback"] == "true"
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("lang", "coqui_model"),
-    [("de", "tts_models/de/thorsten/vits"), ("en", "tts_models/en/ljspeech/vits")],
-)
-async def test_tts_names_the_coqui_voice_when_it_loads(tts_app, lang, coqui_model):
-    response = await _synthesize(tts_app, lang)
-
-    assert response.status_code == 200
-    assert response.headers["x-tts-model"] == coqui_model
-    assert response.headers["x-tts-fallback"] == "false"
-
-
-@pytest.mark.asyncio
-async def test_tts_does_not_call_a_configured_mms_voice_a_fallback(tts_app):
-    response = await _synthesize(tts_app, "ar")
-
-    assert response.headers["x-tts-model"] == "facebook/mms-tts-ara"
+    assert response.headers["x-tts-model"] == voice
     assert response.headers["x-tts-fallback"] == "false"
 
 

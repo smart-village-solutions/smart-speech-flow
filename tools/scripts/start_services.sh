@@ -19,7 +19,7 @@ set -e
 (cd services/translation && source .venv/bin/activate && pip install --break-system-packages -r requirements.txt && uvicorn app:app --host 0.0.0.0 --port 8102 &)
 
 # TTS
-(cd services/tts && source .venv/bin/activate && pip install --break-system-packages -r requirements.txt && uvicorn app:app --host 0.0.0.0 --port 8103 &)
+(cd services/tts && source .venv/bin/activate && pip install --break-system-packages -r requirements.txt && PYTHONPATH=../.. uvicorn app:app --host 0.0.0.0 --port 8103 &)
 
 # API-Gateway
 (cd services/api_gateway && source .venv/bin/activate && pip install --break-system-packages -r requirements.txt && PYTHONPATH=../.. uvicorn app:app --host 0.0.0.0 --port 8100 &)
