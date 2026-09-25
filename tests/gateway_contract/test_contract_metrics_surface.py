@@ -187,11 +187,6 @@ EXPECTED_SURFACE: dict[str, Family] = {
         "WebSocket monitor initialization indicator",
         frozenset(),
     ),
-    "websocket_polling_messages_dropped_total": (
-        "counter",
-        "Messages discarded because a polling client's queue was full",
-        frozenset({"client_type"}),
-    ),
     "websocket_sessions_with_connections": (
         "gauge",
         "Number of sessions with active WebSocket connections",

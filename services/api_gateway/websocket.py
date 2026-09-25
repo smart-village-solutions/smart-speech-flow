@@ -5,8 +5,7 @@ Features:
 - Session-basierte Connection-Pools
 - Graceful-Disconnect bei Session-Termination
 - Heartbeat-System für Connection-Health
-- Polling-Fallback bei WebSocket-Problemen
-- Auto-Reconnect mit exponential backoff
+- Zustellung an Polling-Clients derselben Session
 """
 
 import asyncio
@@ -160,10 +159,6 @@ class WebSocketManager:
         self.heartbeat = Heartbeat(self.registry, monitor, self)
         # 📱 Mobile-Optimization
         self.client_status = ClientStatusHandler(AdaptivePollingManager())
-
-        # Auto-Reconnect Configuration
-        self.max_reconnect_attempts = 5
-        self.base_reconnect_delay = 1  # Sekunden (exponential backoff)
 
         logger.info("🔗 WebSocketManager initialisiert")
 
@@ -445,29 +440,6 @@ class WebSocketManager:
                 sanitize_log_value(message_type),
             )
 
-    def get_connection_stats(self) -> Dict[str, Any]:
-        """
-        WebSocket-Verbindungsstatistiken für Monitoring
-        """
-        self.registry.update_active_connections_count()
-
-        # Session-Stats
-        session_stats: Dict[TenantSessionKey, Dict[str, Any]] = {}
-        for session_id, connections in self.registry.session_connections.items():
-            session_stats[session_id] = {
-                "total_connections": len(connections),
-                "active_connections": sum(1 for c in connections.values() if c.is_alive()),
-                "client_types": list(
-                    {connection.client_type.value for connection in connections.values()}
-                ),
-            }
-
-        return {
-            "global_stats": self.registry.connection_stats,
-            "session_stats": session_stats,
-            "heartbeat_active": self.heartbeat.active,
-        }
-
     def get_session_connections(self, session_id: TenantSessionKey) -> List[Dict[str, Any]]:
         """
         Verbindungen einer Session für Debugging/Monitoring
@@ -628,14 +600,6 @@ class WebSocketManager:
 
         await self.broadcast_to_session(session_id, leave_message)
 
-    def _calculate_reconnect_delay(self, attempt: int) -> float:
-        """
-        Exponential backoff für Reconnect-Delays
-        """
-        delay: float = self.base_reconnect_delay * (2**attempt)
-        max_delay = 60  # Maximum 60 Sekunden
-        return min(delay, max_delay)
-
 
 # === FastAPI WebSocket Endpoints ===
 
@@ -764,68 +728,3 @@ async def websocket_endpoint(
         # Cleanup bei Disconnect
         if connection_id:
             await manager.disconnect_websocket(connection_id, exit_reason)
-
-
-async def get_websocket_stats(
-    manager: WebSocketManagerDependency,
-) -> Dict[str, Any]:
-    """
-    WebSocket-Statistiken für Monitoring
-    """
-    return await asyncio.to_thread(manager.get_connection_stats)
-
-
-async def websocket_connection_test(
-    origin: Annotated[Optional[str], Header()] = None,
-    user_agent: Annotated[Optional[str], Header()] = None,
-) -> Dict[str, Any]:
-    """
-    Debug endpoint to test WebSocket connection feasibility
-    """
-    origin_allowed = await validate_websocket_origin(origin) if origin else False
-    environment = os.environ.get("ENVIRONMENT", "production")
-
-    suggestions = []
-    if not origin:
-        suggestions.append("Origin header is missing - ensure frontend sends Origin header")
-    elif not origin_allowed:
-        if environment == "development":
-            suggestions.append("Add your origin to DEVELOPMENT_CORS_ORIGINS environment variable")
-        else:
-            suggestions.append(
-                "Origin must match production pattern: *.figma.site or translate.smart-village.solutions"
-            )
-        suggestions.append("Check if origin is correctly formatted (include protocol)")
-    else:
-        suggestions.append("Origin is allowed for WebSocket connections")
-        suggestions.append("Ensure WebSocket upgrade headers are included in request")
-
-    if environment == "production":
-        suggestions.append("Use wss:// protocol for production connections")
-
-    return {
-        "timestamp": utc_now().isoformat(),
-        "origin": origin,
-        "user_agent": user_agent,
-        "origin_allowed": origin_allowed,
-        "cors_headers": {
-            "Access-Control-Allow-Origin": origin if origin_allowed else None,
-            "Access-Control-Allow-Headers": "Upgrade, Connection, Sec-WebSocket-Key, Sec-WebSocket-Version",
-            "Access-Control-Allow-Methods": "GET, OPTIONS",
-        },
-        "websocket_endpoint": "/ws/{session_id}/{client_type}",
-        "environment": environment,
-        "configuration": {
-            "development_origins": (
-                os.environ.get("DEVELOPMENT_CORS_ORIGINS", "").split(",")
-                if environment == "development"
-                else "Hidden in production"
-            ),
-            "production_pattern": (
-                "https://.*\\.figma\\.site|https://translate\\.smart-village\\.solutions"
-                if environment == "production"
-                else None
-            ),
-        },
-        "suggestions": suggestions,
-    }

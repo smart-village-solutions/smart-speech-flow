@@ -1,8 +1,6 @@
 """Behavioral coverage for Sonar remediation paths in WebSocket services."""
 
-import asyncio
 import logging
-from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -13,11 +11,6 @@ from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket import (
     WebSocketManager,
     websocket_endpoint,
-)
-from services.api_gateway.websocket_fallback import (
-    FallbackReason,
-    PollingClient,
-    WebSocketFallbackManager,
 )
 from tests.realtime_sessions import TENANT, tenant_session_manager, websocket_monitor
 
@@ -105,49 +98,3 @@ async def test_endpoint_returns_error_message_after_message_handler_failure(
     manager.disconnect_websocket.assert_awaited_once_with(
         "connection-1", "connection_error"
     )
-
-
-@pytest.mark.asyncio
-async def test_fallback_notification_is_queued_when_callback_fails(caplog):
-    manager = WebSocketFallbackManager()
-    client = PollingClient(
-        polling_id="poll-1",
-        session_id="TEST1234",
-        client_type="admin",
-        origin=None,
-        created_at=datetime.now(timezone.utc),
-        fallback_reason=FallbackReason.NETWORK_ERROR,
-    )
-
-    async def failing_callback(_notification):
-        raise RuntimeError("callback unavailable")
-
-    manager.notification_callbacks.append(failing_callback)
-
-    with caplog.at_level(logging.ERROR):
-        await manager._send_fallback_notification(client)
-
-    assert len(client.message_queue) == 1
-    assert client.message_queue[0]["type"] == "fallback_notification"
-    assert "Notification callback failed" in caplog.messages
-
-
-@pytest.mark.asyncio
-async def test_periodic_cleanup_logs_internal_failure_before_cancellation(
-    monkeypatch, caplog
-):
-    manager = WebSocketFallbackManager()
-    outcomes = iter((RuntimeError("clock unavailable"), asyncio.CancelledError()))
-
-    async def controlled_sleep(_delay):
-        outcome = next(outcomes)
-        raise outcome
-
-    monkeypatch.setattr(
-        "services.api_gateway.websocket_fallback.asyncio.sleep", controlled_sleep
-    )
-
-    with caplog.at_level(logging.ERROR), pytest.raises(asyncio.CancelledError):
-        await manager.periodic_cleanup()
-
-    assert "Polling cleanup task failed" in caplog.messages

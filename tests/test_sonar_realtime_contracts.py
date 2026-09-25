@@ -15,8 +15,6 @@ from services.api_gateway import websocket
 from services.api_gateway import websocket_polling_routes as polling
 from services.api_gateway.app import app
 from services.api_gateway.audio_storage import AudioStore
-from services.api_gateway.routes import session as session_routes
-from services.api_gateway.legacy_session_manager import LegacySessionManager
 from services.api_gateway.session_manager import ClientType, Session, TenantSessionManager
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from tests.realtime_sessions import websocket_monitor
@@ -132,22 +130,6 @@ async def test_poll_factory_preserves_timeout_keyword_and_cancellation():
     pending.cancel()
     with pytest.raises(asyncio.CancelledError):
         await pending
-
-
-async def test_legacy_echo_endpoint_keeps_callback_arguments():
-    incoming = asyncio.Queue()
-    outgoing = asyncio.Queue()
-    incoming.put_nowait({"type": "websocket.connect"})
-    incoming.put_nowait({"type": "websocket.receive", "text": "heartbeat"})
-    incoming.put_nowait({"type": "websocket.disconnect", "code": 1000})
-    socket = WebSocket({"type": "websocket"}, receive=incoming.get, send=outgoing.put)
-    await session_routes.websocket_endpoint(socket, "SESSION1", "admin")
-    assert outgoing.get_nowait()["type"] == "websocket.accept"
-    assert outgoing.get_nowait() == {
-        "type": "websocket.send",
-        "text": "pong: heartbeat",
-    }
-    assert outgoing.empty()
 
 
 async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch):
@@ -441,51 +423,3 @@ def test_monitor_callback_arguments_preserve_metrics_and_redact_payloads(caplog)
     assert (metrics.messages_received, metrics.bytes_received) == (1, 5)
     assert metrics.errors == 1
     assert "private-" not in caplog.text
-
-
-async def test_unregistered_session_helpers_remain_awaitable(monkeypatch, tmp_path):
-    manager = LegacySessionManager()
-    manager.sessions["SESSION1"] = Session(id="SESSION1")
-    assert await session_routes.get_session_messages("SESSION1", manager) == {
-        "session_id": "SESSION1",
-        "messages": [],
-    }
-    with pytest.raises(HTTPException) as missing:
-        await session_routes.get_session_messages("MISSING", manager)
-    assert missing.value.status_code == 404
-    manager.sessions["SESSION1"].messages.append(
-        SimpleNamespace(id="message-1", audio_base64="aGVsbG8=")
-    )
-    audio = await session_routes.get_message_audio("message-1", manager)
-    assert audio.body == b"hello"
-    assert audio.media_type == "audio/wav"
-    with pytest.raises(HTTPException) as missing:
-        await session_routes.get_message_audio("missing", manager)
-    assert missing.value.status_code == 404
-
-    monkeypatch.setattr(
-        "services.api_gateway.audio_storage.get_audio_file_path", lambda _name: None
-    )
-    with pytest.raises(HTTPException) as missing:
-        await session_routes.get_original_audio("missing")
-    assert missing.value.detail["error_code"] == "AUDIO_NOT_FOUND"
-    audio_path = tmp_path / "input_message-1.wav"
-    audio_path.touch()
-    monkeypatch.setattr(
-        "services.api_gateway.audio_storage.get_audio_file_path",
-        lambda _name: audio_path,
-    )
-    original = await session_routes.get_original_audio("message-1")
-    assert original.path == str(audio_path)
-    assert original.media_type == "audio/wav"
-
-
-async def test_websocket_query_helpers_remain_awaitable():
-    manager = websocket.WebSocketManager(
-        TenantSessionManager(
-            store=MemoryTenantSessionStore(),
-            audio_store=AudioStore.from_environment(),
-        ),
-        monitor=websocket_monitor(),
-    )
-    assert await websocket.get_websocket_stats(manager) == manager.get_connection_stats()

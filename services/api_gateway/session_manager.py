@@ -1143,13 +1143,3 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             await self.websocket_manager.broadcast_to_session(session.key, warning_message)
             session.timeout_warning_sent = True
             self.store.save(session)
-
-    async def heartbeat_received(
-        self, session_id: TenantSessionKey, client_type: ClientType
-    ) -> None:
-        """A heartbeat changes no business or timeout state of a tenant session.
-
-        The WebSocket manager answers pings and tracks liveness itself; the
-        reconnect grace runs on admin presence, not on heartbeats.
-        """
-        await asyncio.sleep(0)

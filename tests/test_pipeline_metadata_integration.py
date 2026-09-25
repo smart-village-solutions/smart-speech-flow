@@ -20,11 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from services.api_gateway.legacy_session_manager import LegacySessionManager
 from services.api_gateway.session_manager import SessionMessage
 from services.api_gateway.pipeline_logic import process_wav, process_text_pipeline
-from services.api_gateway.audio_storage import (
-    AudioStore,
-    save_original_audio,
-    get_audio_file_path,
-)
+from services.api_gateway.audio_storage import AudioStore
 
 pytestmark = pytest.mark.integration
 
@@ -108,33 +104,6 @@ class TestAudioPipelineIntegration:
             # Not all steps have started_at/completed_at (e.g., validation step)
             # Just check for duration_ms or duration
             assert "duration_ms" in step or "duration" in step
-    @pytest.mark.asyncio
-    async def test_original_audio_storage_and_retrieval(self, sample_audio, sample_audio_base64):
-        """Test that original audio is stored and can be retrieved"""
-
-        message_id = "test-message-123"
-
-        # Save original audio (expects base64)
-        audio_url = save_original_audio(message_id, sample_audio_base64)
-
-        assert audio_url is not None
-        assert audio_url.startswith("/api/audio/input_")
-
-        # Retrieve audio path
-        retrieved_path = get_audio_file_path(f"input_{message_id}.wav")
-        assert retrieved_path is not None
-        assert retrieved_path.exists()
-
-        # Verify content (stored as decoded bytes)
-        # Ensure the stored file looks like a WAV (starts with 'RIFF')
-        with open(retrieved_path, "rb") as f:
-            stored_audio = f.read()
-        assert stored_audio[:4] == b"RIFF"
-
-        # Cleanup
-        retrieved_path.unlink()
-
-
     @pytest.mark.asyncio
     async def test_metadata_transformation_audio_pipeline(self, mock_pipeline_responses):
         """Test transformation of debug_info to pipeline_metadata format"""
@@ -384,34 +353,6 @@ class TestSessionMessageIntegration:
         msg_dict = message.to_dict()
         assert "pipeline_metadata" not in msg_dict
         assert "original_audio_url" not in msg_dict
-
-
-class TestAudioCleanupIntegration:
-    """Test audio cleanup background task"""
-
-    def test_cleanup_deletes_old_files_only(self, sample_audio_base64, tmp_path):
-        """Test that cleanup only deletes files older than retention period"""
-
-        # This test would need to mock file timestamps
-        # or use a custom retention period for testing
-
-        # Create test files
-        message_id = "cleanup-test-123"
-        audio_url = save_original_audio(message_id, sample_audio_base64)
-
-        # Get file path
-        filepath = get_audio_file_path(f"input_{message_id}.wav")
-        assert filepath is not None
-
-        # Run cleanup (with default 24h retention)
-        stats = AudioStore.from_environment().cleanup_expired()
-
-        # File should NOT be deleted (too recent)
-        assert filepath.exists()
-        assert stats["deleted_original"] == 0
-
-        # Cleanup test file
-        filepath.unlink()
 
 
 class TestPrometheusMetrics:

@@ -27,7 +27,6 @@ class ConnectionState(str, Enum):
     CONNECTED = "connected"
     DISCONNECTING = "disconnecting"
     DISCONNECTED = "disconnected"
-    HEARTBEAT_TIMEOUT = "heartbeat_timeout"
     ERROR = "error"
 
 
@@ -50,13 +49,11 @@ class MessageType(str, Enum):
     TAB_VISIBILITY_CHANGE = "tab_visibility_change"
     BATTERY_STATUS_UPDATE = "battery_status_update"
     NETWORK_STATUS_CHANGE = "network_status_change"
-    DEVICE_ORIENTATION_CHANGE = "device_orientation_change"
     POLLING_INTERVAL_UPDATE = "polling_interval_update"
     BATTERY_SAVER_MODE = "battery_saver_mode"
 
     # Error Messages
     ERROR = "error"
-    RECONNECT_REQUIRED = "reconnect_required"
 
 
 _TERMINATION_TEXTS = {

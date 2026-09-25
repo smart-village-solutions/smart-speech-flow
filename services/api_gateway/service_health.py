@@ -162,8 +162,7 @@ class ServiceHealthManager:
             max_recovery_time=300,
         )
 
-        # Built here rather than taken from CircuitBreakerFactory, whose
-        # registry is process-wide: two apps must not share a breaker.
+        # Built per manager, so two apps never share a breaker.
         circuit_breaker = CircuitBreaker(endpoint.name, circuit_config)
         circuit_breaker.on_state_change = self._on_circuit_state_change
         self.circuit_breakers[endpoint.name] = circuit_breaker
