@@ -6,6 +6,7 @@ RUN apt-get update \
 
 WORKDIR /build
 COPY services/tts/requirements.txt ./requirements.txt
+COPY services/tts/requirements-piper.txt ./requirements-piper.txt
 
 RUN printf '%s%s\n' \
     'pip==25.1.1 --hash=sha256:' \
@@ -35,6 +36,21 @@ RUN python3 -m pip wheel \
     --wheel-dir /wheels \
     -r requirements.txt
 
+RUN python3 -m pip download \
+    --disable-pip-version-check \
+    --no-cache-dir \
+    --only-binary=:all: \
+    --no-deps \
+    --require-hashes \
+    --dest /wheels \
+    -r requirements-piper.txt
+
+FROM wheel-builder AS voices
+
+COPY services/__init__.py /src/services/__init__.py
+COPY services/tts/__init__.py services/tts/voices.py services/tts/fetch_voices.py /src/services/tts/
+RUN cd /src && python3 -m services.tts.fetch_voices /opt/tts-voices
+
 FROM nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04
 
 RUN apt-get update \
@@ -43,10 +59,13 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=wheel-builder /wheels /wheels
+COPY --from=voices /opt/tts-voices /opt/tts-voices
 COPY services/tts/requirements.txt ./requirements.txt
-COPY services/tts/app.py ./app.py
-COPY services/gpu_metrics.py ./services/gpu_metrics.py
-COPY services/resource_metrics.py ./services/resource_metrics.py
+COPY services/__init__.py ./services/__init__.py
+COPY services/gpu_metrics.py services/resource_metrics.py ./services/
+COPY services/tts/__init__.py services/tts/app.py services/tts/speech_text.py \
+     services/tts/voices.py services/tts/piper_engine.py services/tts/mms_engine.py \
+     ./services/tts/
 
 RUN printf '%s%s\n' \
     'pip==25.1.1 --hash=sha256:' \
@@ -75,5 +94,6 @@ RUN printf '%s%s\n' \
     && useradd --system --create-home --uid 10001 appuser \
     && chown -R appuser:appuser /app
 
+ENV TTS_VOICE_DIR=/opt/tts-voices
 USER appuser
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "services.tts.app:app", "--host", "0.0.0.0", "--port", "8000"]

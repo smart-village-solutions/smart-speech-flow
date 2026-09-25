@@ -2,6 +2,9 @@ fastapi
 uvicorn
 prometheus_client
 torch
+# The GPU build; piper-tts is installed from requirements-piper.txt with
+# --no-deps because it requires the CPU onnxruntime, which would overwrite it.
+onnxruntime-gpu==1.30.0
 soundfile
 numpy>=2.5.3
 # Ceiling, not a preference. transformers 5.17.0 added an unconditional
