@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -9,31 +10,30 @@ import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
-from services.api_gateway.audio_storage import AudioVariant, scope_pipeline_audio_urls
-from services.api_gateway.conversation_service import conversation_service
-from services.api_gateway.routes.session import (
+from services.api_gateway.audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls
+from services.api_gateway.message_processing import (
     broadcast_message_to_session,
     transform_pipeline_metadata,
 )
 from services.api_gateway.session_manager import (
     ClientType,
+    TenantSessionManager,
     SessionMessage,
-    SessionManager,
     SessionStatus,
-    session_manager,
 )
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import (
     RuntimeConfigurationSnapshot,
     TenantSessionKey,
 )
+from tests.pipeline_helpers import speech_pipeline
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client(session_manager) -> TestClient:
     session_manager.reset(clear_persistence=True)
     return TestClient(app)
 
@@ -47,6 +47,7 @@ def client() -> TestClient:
 )
 def test_message_route_uses_server_assigned_role(
     client: TestClient,
+    gateway_dependencies,
     monkeypatch: pytest.MonkeyPatch,
     prefix: str,
     spoofed_role: str,
@@ -54,7 +55,7 @@ def test_message_route_uses_server_assigned_role(
 ) -> None:
     session_id = client.post("/api/admin/session/create").json()["session_id"]
     process = AsyncMock(return_value={"status": "success"})
-    monkeypatch.setattr(conversation_service, "process", process)
+    monkeypatch.setattr(gateway_dependencies.conversation_service, "process", process)
 
     response = client.post(
         f"/api/{prefix}/session/{session_id}/message",
@@ -67,13 +68,13 @@ def test_message_route_uses_server_assigned_role(
     )
 
     assert response.status_code == 200
-    key, sender, _request, _manager = process.await_args.args
+    key, sender, _request = process.await_args.args
     assert key.tenant_id == "tenant-test"
     assert key.session_id == session_id
     assert sender is expected_role
 
 
-def test_audio_lookup_requires_message_ownership(client: TestClient) -> None:
+def test_audio_lookup_requires_message_ownership(session_manager, client: TestClient) -> None:
     session_id = client.post("/api/admin/session/create").json()["session_id"]
     other = asyncio.run(session_manager.create_admin_session("tenant-other", SNAPSHOT))
     message = SessionMessage(
@@ -95,9 +96,8 @@ def test_audio_lookup_requires_message_ownership(client: TestClient) -> None:
 
 
 def test_translated_audio_is_unavailable_after_its_retained_file_is_gone(
+    session_manager,
     client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
 ) -> None:
     session_id = client.post("/api/admin/session/create").json()["session_id"]
     key = session_manager.resolve_customer_session(session_id)
@@ -115,15 +115,8 @@ def test_translated_audio_is_unavailable_after_its_retained_file_is_gone(
             timestamp=datetime.now(timezone.utc),
         ),
     )
-    missing = tmp_path / "deleted-by-retention.wav"
-    monkeypatch.setattr(
-        "services.api_gateway.conversation_service.audio_path",
-        lambda *_args, **_kwargs: missing,
-    )
 
-    response = client.get(
-        f"/api/admin/session/{session_id}/audio/message-1/translated.wav"
-    )
+    response = client.get(f"/api/admin/session/{session_id}/audio/message-1/translated.wav")
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Audio file not found"}
@@ -141,9 +134,11 @@ async def test_live_audio_urls_are_scoped_to_each_receiving_role(
     sender_type: ClientType,
     receiver_type: ClientType,
 ) -> None:
-    key = (await SessionManager(store=MemoryTenantSessionStore()).create_admin_session(
-        "tenant-a", SNAPSHOT
-    )).key
+    key = (
+        await TenantSessionManager(
+            store=MemoryTenantSessionStore(), audio_store=AudioStore.from_environment()
+        ).create_admin_session("tenant-a", SNAPSHOT)
+    ).key
     message = SessionMessage(
         id="message-1",
         sender=sender_type,
@@ -170,8 +165,7 @@ async def test_live_audio_urls_are_scoped_to_each_receiving_role(
             ],
         },
         original_audio_url=(
-            f"/api/{sender_type.value}/session/{key.session_id}/audio/"
-            "message-1/original.wav"
+            f"/api/{sender_type.value}/session/{key.session_id}/audio/" "message-1/original.wav"
         ),
     )
     manager = SimpleNamespace(
@@ -193,38 +187,29 @@ async def test_live_audio_urls_are_scoped_to_each_receiving_role(
     sender_payload = sent["original_message"]
     receiver_payload = sent["translated_message"]
     assert sender_payload["original_audio_url"] == (
-        f"/api/{sender_type.value}/session/{key.session_id}/audio/"
-        "message-1/original.wav"
+        f"/api/{sender_type.value}/session/{key.session_id}/audio/" "message-1/original.wav"
     )
     assert receiver_payload["original_audio_url"] == (
-        f"/api/{receiver_type.value}/session/{key.session_id}/audio/"
-        "message-1/original.wav"
+        f"/api/{receiver_type.value}/session/{key.session_id}/audio/" "message-1/original.wav"
     )
     assert receiver_payload["audio_url"] == (
-        f"/api/{receiver_type.value}/session/{key.session_id}/audio/"
-        "message-1/translated.wav"
+        f"/api/{receiver_type.value}/session/{key.session_id}/audio/" "message-1/translated.wav"
     )
     assert sender_payload["pipeline_metadata"]["input"]["audio_url"] == (
-        f"/api/{sender_type.value}/session/{key.session_id}/audio/"
-        "message-1/original.wav"
+        f"/api/{sender_type.value}/session/{key.session_id}/audio/" "message-1/original.wav"
     )
     assert receiver_payload["pipeline_metadata"]["input"]["audio_url"] == (
-        f"/api/{receiver_type.value}/session/{key.session_id}/audio/"
-        "message-1/original.wav"
+        f"/api/{receiver_type.value}/session/{key.session_id}/audio/" "message-1/original.wav"
     )
-    assert receiver_payload["pipeline_metadata"]["steps"][0]["output"][
-        "audio_url"
-    ] == (
-        f"/api/{receiver_type.value}/session/{key.session_id}/audio/"
-        "message-1/translated.wav"
+    assert receiver_payload["pipeline_metadata"]["steps"][0]["output"]["audio_url"] == (
+        f"/api/{receiver_type.value}/session/{key.session_id}/audio/" "message-1/translated.wav"
     )
     assert "/api/audio/" not in repr(sent)
 
 
 def test_history_audio_urls_are_scoped_to_requesting_role(
+    session_manager,
     client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
 ) -> None:
     session_id = client.post("/api/admin/session/create").json()["session_id"]
     key = session_manager.resolve_customer_session(session_id)
@@ -241,16 +226,8 @@ def test_history_audio_urls_are_scoped_to_requesting_role(
             target_lang="en",
             timestamp=datetime.now(timezone.utc),
             translated_audio_available=True,
-            original_audio_url=(
-                f"/api/admin/session/{session_id}/audio/message-1/original.wav"
-            ),
+            original_audio_url=(f"/api/admin/session/{session_id}/audio/message-1/original.wav"),
         ),
-    )
-    retained_audio = tmp_path / "message-1.wav"
-    retained_audio.write_bytes(b"RIFFtranslated")
-    monkeypatch.setattr(
-        "services.api_gateway.conversation_service.audio_path",
-        lambda *_args, **_kwargs: retained_audio,
     )
 
     for role in ("admin", "customer"):
@@ -287,9 +264,7 @@ def test_persisted_pipeline_metadata_contains_no_reusable_audio_url() -> None:
     assert "audio_url" not in metadata["input"]
     assert "audio_url" not in metadata["steps"][0]["output"]
 
-    scoped = scope_pipeline_audio_urls(
-        metadata, key, ClientType.ADMIN.value, "message-1"
-    )
+    scoped = scope_pipeline_audio_urls(metadata, key, ClientType.ADMIN.value, "message-1")
     assert scoped is not None
     assert scoped["input"]["audio_url"] == (
         "/api/admin/session/ABC12345/audio/message-1/original.wav"
@@ -299,72 +274,71 @@ def test_persisted_pipeline_metadata_contains_no_reusable_audio_url() -> None:
     )
 
 
-def test_audio_storage_reports_availability_without_persisting_a_role_url(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from services.api_gateway import audio_storage
-    from services.api_gateway.routes import session as session_routes
+class RecordingAudioStore(AudioStore):
+    """Records every write instead of touching the disk."""
 
-    stored: list[tuple[AudioVariant, bytes]] = []
-    monkeypatch.setattr(
-        audio_storage,
-        "save_audio",
-        lambda _key, _message_id, variant, data: stored.append((variant, data)),
-    )
+    def __init__(self) -> None:
+        super().__init__(Path("/nonexistent"))
+        self.saved: list[tuple[TenantSessionKey, str, AudioVariant, bytes]] = []
 
-    available = session_routes._store_audio_artifacts(
-        TenantSessionKey("tenant-a", "ABC12345"),
+    def save(
+        self, key: TenantSessionKey, message_id: str, variant: AudioVariant, data: bytes
+    ) -> Path:
+        self.saved.append((key, message_id, variant, data))
+        return self.path(key, message_id, variant)
+
+
+def test_audio_storage_reports_availability_without_persisting_a_role_url() -> None:
+    from services.api_gateway import message_processing
+
+    store = RecordingAudioStore()
+    key = TenantSessionKey("tenant-a", "ABC12345")
+
+    available = message_processing._store_audio_artifacts(
+        key,
         ClientType.ADMIN,
         "message-1",
         b"original",
+        audio_store=store,
     )
 
     assert available is True
-    assert stored == [(AudioVariant.ORIGINAL, b"original")]
+    assert store.saved == [(key, "message-1", AudioVariant.ORIGINAL, b"original")]
 
 
 @pytest.mark.asyncio
-async def test_created_message_persists_translated_audio_without_retaining_bytes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from services.api_gateway import audio_storage
-    from services.api_gateway.routes import session as session_routes
+async def test_created_message_persists_translated_audio_without_retaining_bytes() -> None:
+    from services.api_gateway import message_processing
 
-    manager = SessionManager(store=MemoryTenantSessionStore())
+    store = RecordingAudioStore()
+    manager = TenantSessionManager(store=MemoryTenantSessionStore(), audio_store=store)
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    stored: list[tuple[TenantSessionKey, str, AudioVariant, bytes]] = []
-    monkeypatch.setattr(session_routes, "session_manager", manager)
-    monkeypatch.setattr(
-        audio_storage,
-        "save_audio",
-        lambda key, message_id, variant, data: stored.append(
-            (key, message_id, variant, data)
-        ),
-    )
 
-    message = await session_routes.create_session_message(
+    available = message_processing._store_translated_audio(
+        session.key, "message-1", b"translated", audio_store=store
+    )
+    message = await message_processing.create_session_message(
         session_id=session.key,
         client_type=ClientType.ADMIN,
         original_text="Hallo",
         translated_text="Hello",
-        audio_bytes=b"translated",
         source_lang="de",
         target_lang="en",
         message_id="message-1",
+        sessions=manager,
+        translated_audio_available=available,
     )
 
-    assert stored == [
-        (session.key, "message-1", AudioVariant.TRANSLATED, b"translated")
-    ]
+    assert store.saved == [(session.key, "message-1", AudioVariant.TRANSLATED, b"translated")]
     assert message.audio_base64 is None
     assert message.translated_audio_available is True
 
 
 @pytest.mark.parametrize("variant", ["original", "translated"])
 def test_terminal_session_denies_all_admin_audio_variants(
+    gateway_dependencies,
+    session_manager,
     client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
     variant: str,
 ) -> None:
     session_id = client.post("/api/admin/session/create").json()["session_id"]
@@ -381,19 +355,14 @@ def test_terminal_session_denies_all_admin_audio_variants(
         timestamp=datetime.now(timezone.utc),
     )
     session_manager.add_message(key, message)
-    original = tmp_path / "message-1.wav"
-    original.write_bytes(b"RIFForiginal")
-    monkeypatch.setattr(
-        "services.api_gateway.conversation_service.audio_path",
-        lambda *_args, **_kwargs: original,
+    original = gateway_dependencies.audio_store.save(
+        key, "message-1", AudioVariant(variant), b"RIFForiginal"
     )
     session = session_manager.get_session(key)
     assert session is not None
     session.status = SessionStatus.TERMINATED
 
-    response = client.get(
-        f"/api/admin/session/{session_id}/audio/message-1/{variant}.wav"
-    )
+    response = client.get(f"/api/admin/session/{session_id}/audio/message-1/{variant}.wav")
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Session not found"}
@@ -415,16 +384,17 @@ def test_openapi_exposes_only_role_specific_message_and_audio_routes() -> None:
 async def test_text_processing_ignores_a_spoofed_client_role(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from services.api_gateway.routes import session as session_routes
+    from services.api_gateway import message_processing
 
-    manager = SessionManager(store=MemoryTenantSessionStore())
+    manager = TenantSessionManager(
+        store=MemoryTenantSessionStore(), audio_store=AudioStore.from_environment()
+    )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
     manager.store.save(session)
-    monkeypatch.setattr(session_routes, "session_manager", manager)
     monkeypatch.setattr(
-        session_routes,
+        message_processing,
         "run_pipeline",
         AsyncMock(
             return_value={
@@ -447,11 +417,14 @@ async def test_text_processing_ignores_a_spoofed_client_role(
         "client_type": "customer",
     }
 
-    await session_routes.process_text_input(
+    await message_processing.process_text_input(
         session.key,
         ClientType.ADMIN,
         request,
         0.0,
+        sessions=manager,
+        pipeline=speech_pipeline(),
+        audio_store=manager.audio_store,
     )
 
     assert manager.get_session(session.key).messages[-1].sender is ClientType.ADMIN

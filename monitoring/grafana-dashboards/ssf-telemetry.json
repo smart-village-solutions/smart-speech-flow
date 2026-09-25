@@ -97,7 +97,7 @@
       "id": 62,
       "type": "stat",
       "title": "Unexpected Disconnect Rate",
-      "description": "KPI R2. Disconnects with a reason other than a normal end, divided by connections opened in the range. 'Normal' is the same reason list the WebSocketConnectionFailures alert excludes. Each client_type and reason series is created by its first event in a gateway process, and increase() cannot see that event, so after every restart the first disconnect and the first connection per series go uncounted. Pre-initialising the label combinations in WebSocketMonitor._setup_prometheus_metrics would remove this bias and is worth doing.",
+      "description": "KPI R2. Disconnects with a reason other than a normal end, divided by connections opened in the range. 'Normal' is the same reason list the WebSocketConnectionFailures alert excludes. Each client_type and reason series is created by its first event in a gateway process, and increase() cannot see that event, so after every restart the first disconnect and the first connection per series go uncounted. Pre-initialising the label combinations in WebSocketMetrics.__init__ would remove this bias and is worth doing.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus-ssf"
@@ -132,7 +132,7 @@
       "id": 63,
       "type": "stat",
       "title": "Heartbeat Timeouts per 1,000 Connection-Minutes",
-      "description": "KPI R4. Heartbeat-timeout disconnects per 1,000 minutes of connection time. Connection time is recorded when a connection closes: a connection still open at the end of the range is missing from the denominator (reads high), while a long connection closing inside the range brings all its minutes, including those before the range (reads low). The first heartbeat timeout per client_type after a gateway restart is not counted, because that event creates its series and increase() cannot see it. Pre-initialising the label combinations in WebSocketMonitor._setup_prometheus_metrics would remove this bias and is worth doing.",
+      "description": "KPI R4. Heartbeat-timeout disconnects per 1,000 minutes of connection time. Connection time is recorded when a connection closes: a connection still open at the end of the range is missing from the denominator (reads high), while a long connection closing inside the range brings all its minutes, including those before the range (reads low). The first heartbeat timeout per client_type after a gateway restart is not counted, because that event creates its series and increase() cannot see it. Pre-initialising the label combinations in WebSocketMetrics.__init__ would remove this bias and is worth doing.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus-ssf"

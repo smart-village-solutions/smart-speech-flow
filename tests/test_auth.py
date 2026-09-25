@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 from jwt.algorithms import RSAAlgorithm
 
 from services.api_gateway.app import app
-from services.api_gateway.auth import _key_cache, get_auth_login_directory_provider
+from services.api_gateway.auth import OidcKeyCache, get_auth_login_directory_provider
+from services.api_gateway.dependencies import get_oidc_key_cache
 from services.api_gateway.studio_login_directory import StudioLoginDirectoryService
 from services.api_gateway.studio_login_directory_client import (
     StudioLoginDirectory,
@@ -52,7 +53,6 @@ class DirectoryFetcher:
 
 @pytest.fixture(autouse=True)
 def auth_environment(monkeypatch):
-    _key_cache.entries.clear()
     monkeypatch.setenv("KEYCLOAK_BASE_URL", BASE_URL)
     monkeypatch.setenv("KEYCLOAK_ISSUER", KASSEL_ISSUER)
     monkeypatch.setenv("KEYCLOAK_AUDIENCE", AUDIENCE)
@@ -61,7 +61,6 @@ def auth_environment(monkeypatch):
     app.dependency_overrides[get_auth_login_directory_provider] = lambda: lambda: service
     yield service
     app.dependency_overrides.pop(get_auth_login_directory_provider, None)
-    _key_cache.entries.clear()
 
 
 @pytest.fixture
@@ -285,6 +284,8 @@ def test_tenant_dependency_receives_verified_claims_from_async_auth(
     tenant_app.dependency_overrides[get_auth_login_directory_provider] = (
         lambda: lambda: auth_environment
     )
+    key_cache = OidcKeyCache()
+    tenant_app.dependency_overrides[get_oidc_key_cache] = lambda: key_cache
 
     @tenant_app.get("/tenant")
     async def tenant(

@@ -18,6 +18,7 @@ from prometheus_client import CollectorRegistry
 
 from services.api_gateway import app as gateway
 from services.api_gateway.feedback import repository as repository_module
+from services.api_gateway.session_pseudonym import SessionPseudonymizer
 
 APP_URL = "postgresql://ssf_feedback_app@db:5432/ssf"
 MAINTENANCE_URL = "postgresql://ssf_feedback_maintenance@db:5432/ssf"
@@ -69,6 +70,7 @@ def wired(monkeypatch):
         monkeypatch.setattr(state, name, None, raising=False)
     monkeypatch.setattr(state, "quality_telemetry", object(), raising=False)
     monkeypatch.setattr(state, "prometheus_registry", CollectorRegistry(), raising=False)
+    monkeypatch.setattr(state, "pseudonymizer", SessionPseudonymizer(key=b"k"), raising=False)
 
     return state
 
@@ -327,9 +329,9 @@ class TestTheLifespanWiresTheAppItWasGiven:
             monkeypatch.delenv(variable, raising=False)
 
         async with gateway.lifespan(original):
-            assert original.state.feedback_service is None
-            assert original.state.feedback_maintenance is None
-            assert original.state.feedback_read_service is None
+            assert original.state.dependencies.feedback_service is None
+            assert original.state.dependencies.feedback_maintenance is None
+            assert original.state.dependencies.feedback_read_service is None
 
     async def test_each_path_wires_the_state_it_was_given(self, wired_reader, monkeypatch) -> None:
         """With no DSN set, the helpers return before touching any state.
@@ -355,6 +357,7 @@ class TestTheLifespanWiresTheAppItWasGiven:
         live.state.feedback_maintenance = None
         live.state.quality_telemetry = object()
         live.state.prometheus_registry = CollectorRegistry()
+        live.state.pseudonymizer = SessionPseudonymizer(key=b"k")
 
         await gateway._connect_feedback_request_path(live.state, APP_URL, object())
         await gateway._connect_feedback_read_path(live.state, READER_URL)

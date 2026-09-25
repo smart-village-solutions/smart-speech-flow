@@ -5,12 +5,12 @@ from __future__ import annotations
 import hmac
 import os
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Annotated, Protocol
 from uuid import uuid4
 
 from fastapi import Depends, HTTPException, Request, status
 
+from .dependencies import get_studio_runtime_flow
 from .studio_runtime_client import (
     RuntimeConfiguration,
     StudioRuntimeClient,
@@ -67,7 +67,11 @@ class StudioRuntimeFlow:
         except (StudioRuntimeClientError, StudioTokenError) as error:
             raise StudioRuntimeFlowError(error.code, retryable=error.retryable) from None
 
-        if configuration.tenant.id != context.tenant_id:
+        # Studio's tenant id is not guaranteed ASCII, and compare_digest raises on non-ASCII str.
+        if not hmac.compare_digest(
+            configuration.tenant.id.encode("utf-8"),
+            context.tenant_id.encode("utf-8"),
+        ):
             raise StudioRuntimeFlowError("studio_runtime_tenant_mismatch", retryable=False)
         if not hmac.compare_digest(
             configuration.authorization_revision,
@@ -108,9 +112,11 @@ def _configuration_timeout_seconds() -> float:
     return value
 
 
-@lru_cache(maxsize=1)
 def runtime_flow_from_environment() -> StudioRuntimeFlow:
-    """Build the process-local runtime flow from explicit environment settings."""
+    """Build a runtime flow from explicit environment settings.
+
+    Called once per app by its lifespan; the flow lives in the app's container.
+    """
     base_url = os.getenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", "").strip()
     try:
         token_provider = StudioRuntimeTokenProvider(StudioTokenConfig.from_env())
@@ -129,11 +135,13 @@ def runtime_flow_from_environment() -> StudioRuntimeFlow:
 async def require_validated_runtime_configuration(
     request: Request,
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
+    runtime_flow: Annotated[StudioRuntimeFlow | None, Depends(get_studio_runtime_flow)],
 ) -> ValidatedRuntimeConfiguration:
     """Resolve a tenant-bound runtime configuration for a later route dependency."""
     correlation_id = correlation_id_from_request(request)
     try:
-        runtime_flow = runtime_flow_from_environment()
+        if runtime_flow is None:
+            raise StudioRuntimeFlowError("studio_runtime_configuration_invalid", retryable=False)
         return await runtime_flow.resolve(context, correlation_id)
     except StudioRuntimeFlowError as error:
         raise HTTPException(

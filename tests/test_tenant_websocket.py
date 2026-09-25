@@ -1,24 +1,22 @@
 """Tenant isolation for realtime WebSocket registries."""
 
 import asyncio
-from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
-from prometheus_client import CollectorRegistry
 from starlette.testclient import WebSocketDenialResponse
 from starlette.websockets import WebSocketDisconnect
 
 from services.api_gateway.app import app
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.auth import optional_ssf_user
 from services.api_gateway.routes.admin import list_tenant_realtime_connections
 from services.api_gateway.session_manager import (
     ClientType,
-    SessionManager,
+    TenantSessionManager,
     SessionStatus,
 )
 from services.api_gateway.session_store import MemoryTenantSessionStore
@@ -28,16 +26,13 @@ from services.api_gateway.tenant_session import (
     TenantSessionKey,
 )
 from services.api_gateway.websocket import (
-    ConnectionState,
-    WebSocketConnection,
     WebSocketManager,
-    _safe_identifier,
 )
-from services.api_gateway.websocket_monitor import WebSocketMonitor
 from services.api_gateway.websocket_polling_routes import (
     POLLING_QUEUE_SIZE,
     TenantPollingStore,
 )
+from tests.realtime_sessions import websocket_monitor
 
 REVISION = f"sha256:{'a' * 64}"
 ALLOWED_ORIGIN = "https://translate.smart-village.solutions"
@@ -64,9 +59,9 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.mark.asyncio
-async def test_same_public_id_in_two_tenants_never_cross_broadcast() -> None:
+async def test_same_public_id_in_two_tenants_never_cross_broadcast(session_manager) -> None:
     session_manager = _PresenceManager()
-    socket_manager = WebSocketManager(session_manager)
+    socket_manager = WebSocketManager(session_manager, monitor=websocket_monitor())
     socket_manager.start_heartbeat_system = AsyncMock()
     socket_a = AsyncMock()
     socket_b = AsyncMock()
@@ -96,14 +91,11 @@ def test_admin_websocket_rejects_invalid_ticket_before_accept() -> None:
 
 
 @pytest.fixture
-def customer_websocket_client():
-    from services.api_gateway import websocket as websocket_module
-    from services.api_gateway.session_manager import session_manager
+def customer_websocket_client(session_manager, gateway_dependencies):
 
     original_overrides = app.dependency_overrides.copy()
-    original_websocket_manager = websocket_module.websocket_manager
     session_manager.reset(clear_persistence=True)
-    websocket_module.websocket_manager = None
+    session_manager.register_websocket_manager(gateway_dependencies.websocket_manager)
     client = TestClient(app)
     try:
         created = client.post("/api/admin/session/create")
@@ -113,10 +105,8 @@ def customer_websocket_client():
         client.close()
         app.dependency_overrides.clear()
         app.dependency_overrides.update(original_overrides)
-        websocket_module.websocket_manager = original_websocket_manager
         session_manager.reset(clear_persistence=True)
-        if original_websocket_manager is not None:
-            session_manager.register_websocket_manager(original_websocket_manager)
+        session_manager.register_websocket_manager(gateway_dependencies.websocket_manager)
 
 
 def test_customer_websocket_rejects_a_cross_tenant_supplied_bearer_before_accept(
@@ -195,9 +185,12 @@ def test_production_uvicorn_access_log_is_disabled_for_capability_urls() -> None
 
 @pytest.mark.asyncio
 async def test_connection_is_not_registered_if_session_terminates_during_accept() -> None:
-    manager = SessionManager(store=MemoryTenantSessionStore())
+    manager = TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    sockets = WebSocketManager(manager)
+    sockets = WebSocketManager(manager, monitor=websocket_monitor())
     sockets.start_heartbeat_system = AsyncMock()
     accept_started = asyncio.Event()
     accept_release = asyncio.Event()
@@ -223,9 +216,12 @@ async def test_connection_is_not_registered_if_session_terminates_during_accept(
 
 @pytest.mark.asyncio
 async def test_inbound_message_is_not_dispatched_after_termination_starts() -> None:
-    manager = SessionManager(store=MemoryTenantSessionStore())
+    manager = TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    sockets = WebSocketManager(manager)
+    sockets = WebSocketManager(manager, monitor=websocket_monitor())
     sockets.start_heartbeat_system = AsyncMock()
     sender = AsyncMock()
     receiver = AsyncMock()
@@ -257,18 +253,13 @@ async def test_inbound_message_is_not_dispatched_after_termination_starts() -> N
 
 
 @pytest.mark.asyncio
-async def test_polling_overflow_reports_current_delivery_and_historical_eviction(
-    monkeypatch,
-) -> None:
+async def test_polling_overflow_reports_current_delivery_and_historical_eviction() -> None:
     key = TenantSessionKey("tenant-a", "SESSION1")
     store = TenantPollingStore()
     receiver = store.activate(key, ClientType.CUSTOMER)
     for index in range(POLLING_QUEUE_SIZE):
         receiver.messages.append({"type": "old", "index": index})
-    monkeypatch.setattr(
-        "services.api_gateway.websocket_polling_routes.polling_store", store
-    )
-    sockets = WebSocketManager(_PresenceManager())
+    sockets = WebSocketManager(_PresenceManager(), store, monitor=websocket_monitor())
 
     result = await sockets.broadcast_with_differentiated_content(
         key,
@@ -292,9 +283,9 @@ async def test_polling_overflow_reports_current_delivery_and_historical_eviction
 
 
 @pytest.mark.asyncio
-async def test_termination_cleans_only_the_addressed_tenant() -> None:
+async def test_termination_cleans_only_the_addressed_tenant(session_manager) -> None:
     session_manager = _PresenceManager()
-    socket_manager = WebSocketManager(session_manager)
+    socket_manager = WebSocketManager(session_manager, monitor=websocket_monitor())
     socket_manager.start_heartbeat_system = AsyncMock()
     socket_a = AsyncMock()
     socket_b = AsyncMock()
@@ -310,13 +301,9 @@ async def test_termination_cleans_only_the_addressed_tenant() -> None:
 
 
 @pytest.mark.asyncio
-async def test_admin_connection_listing_is_filtered_by_token_tenant(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "services.api_gateway.websocket_polling_routes.polling_store",
-        TenantPollingStore(),
-    )
+async def test_admin_connection_listing_is_filtered_by_token_tenant(session_manager) -> None:
     session_manager = _PresenceManager()
-    socket_manager = WebSocketManager(session_manager)
+    socket_manager = WebSocketManager(session_manager, monitor=websocket_monitor())
     socket_manager.start_heartbeat_system = AsyncMock()
     await socket_manager.connect_websocket(
         AsyncMock(), TenantSessionKey("tenant-a", "DUPL1234"), ClientType.ADMIN
@@ -326,7 +313,7 @@ async def test_admin_connection_listing_is_filtered_by_token_tenant(monkeypatch)
     )
 
     response = await list_tenant_realtime_connections(
-        StudioTenantContext("tenant-a", REVISION), socket_manager
+        StudioTenantContext("tenant-a", REVISION), socket_manager, TenantPollingStore()
     )
 
     assert response["count"] == 1
@@ -334,7 +321,7 @@ async def test_admin_connection_listing_is_filtered_by_token_tenant(monkeypatch)
 
 
 def test_monitor_keeps_duplicate_public_ids_in_separate_tenant_buckets() -> None:
-    monitor = WebSocketMonitor(registry=CollectorRegistry())
+    monitor = websocket_monitor()
     key_a = TenantSessionKey("tenant-a", "DUPL1234")
     key_b = TenantSessionKey("tenant-b", "DUPL1234")
 
@@ -344,48 +331,3 @@ def test_monitor_keeps_duplicate_public_ids_in_separate_tenant_buckets() -> None
     assert monitor.get_connection_stats()["sessions_with_connections"] == 2
     assert len(monitor.get_session_connections(key_a)) == 1
     assert len(monitor.get_session_connections(key_b)) == 1
-
-
-@pytest.mark.asyncio
-async def test_legacy_fallback_log_never_contains_the_public_session_id(
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """A fallback success log must retain only the pseudonymous session reference."""
-    import services.api_gateway.websocket as websocket_module
-
-    session_id = "SECRET42"
-    socket_manager = WebSocketManager(_PresenceManager())
-    connection = WebSocketConnection(
-        websocket=AsyncMock(),
-        client_type=ClientType.ADMIN,
-        session_id=session_id,
-        connected_at=datetime.now(timezone.utc),
-        last_heartbeat=datetime.now(timezone.utc),
-        state=ConnectionState.CONNECTED,
-    )
-    monkeypatch.setattr(
-        websocket_module.fallback_manager,
-        "evaluate_websocket_failure",
-        lambda **_kwargs: True,
-    )
-    monkeypatch.setattr(
-        websocket_module.fallback_manager,
-        "activate_polling_fallback",
-        AsyncMock(return_value="safe-polling-id"),
-    )
-    monkeypatch.setattr(
-        socket_manager,
-        "_send_fallback_activation_message",
-        AsyncMock(),
-    )
-
-    with caplog.at_level("INFO", logger="services.api_gateway.websocket"):
-        await socket_manager._evaluate_connection_error(
-            connection,
-            RuntimeError("network unavailable"),
-            "receive_error",
-        )
-
-    assert session_id not in caplog.text
-    assert _safe_identifier(session_id) in caplog.text

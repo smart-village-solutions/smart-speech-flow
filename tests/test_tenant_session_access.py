@@ -7,8 +7,9 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.auth import optional_ssf_user, require_ssf_user
-from services.api_gateway.session_manager import SessionManager
+from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.studio_runtime_client import RuntimeConfiguration
 from services.api_gateway.studio_runtime_flow import (
@@ -50,17 +51,16 @@ def _configuration(tenant_id: str) -> RuntimeConfiguration:
 
 
 @pytest.fixture
-def manager(monkeypatch: pytest.MonkeyPatch) -> SessionManager:
-    manager = SessionManager(store=MemoryTenantSessionStore())
-    import services.api_gateway.session_access as access_module
-
-    monkeypatch.setattr(access_module, "session_manager", manager)
-    return manager
+def manager() -> TenantSessionManager:
+    return TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
 
 
 @pytest.mark.asyncio
 async def test_admin_access_uses_only_the_authenticated_tenant(
-    manager: SessionManager,
+    manager: TenantSessionManager,
 ) -> None:
     from services.api_gateway.session_access import require_admin_session_key
 
@@ -74,6 +74,7 @@ async def test_admin_access_uses_only_the_authenticated_tenant(
         require_admin_session_key(
             session.id,
             context,
+            manager,
         )
 
     assert caught.value.status_code == 404
@@ -82,7 +83,7 @@ async def test_admin_access_uses_only_the_authenticated_tenant(
 
 @pytest.mark.asyncio
 async def test_customer_capability_allows_an_anonymous_request(
-    manager: SessionManager,
+    manager: TenantSessionManager,
 ) -> None:
     from services.api_gateway.session_access import require_customer_session_key
 
@@ -91,12 +92,12 @@ async def test_customer_capability_allows_an_anonymous_request(
         RuntimeConfigurationSnapshot.from_configuration(_configuration("tenant-a")),
     )
 
-    assert require_customer_session_key(session.id, None) == session.key
+    assert require_customer_session_key(session.id, None, manager) == session.key
 
 
 @pytest.mark.asyncio
 async def test_customer_bearer_must_match_capability_tenant(
-    manager: SessionManager,
+    manager: TenantSessionManager,
 ) -> None:
     from services.api_gateway.session_access import require_customer_session_key
 
@@ -112,6 +113,7 @@ async def test_customer_bearer_must_match_capability_tenant(
                 "studio_tenant_id": "tenant-a",
                 "ssf_authorization_revision": REVISION,
             },
+            manager,
         )
 
     assert caught.value.status_code == 404
@@ -120,12 +122,12 @@ async def test_customer_bearer_must_match_capability_tenant(
 
 @pytest.mark.asyncio
 async def test_unknown_customer_capability_has_the_same_neutral_response(
-    manager: SessionManager,
+    manager: TenantSessionManager,
 ) -> None:
     from services.api_gateway.session_access import require_customer_session_key
 
     with pytest.raises(HTTPException) as caught:
-        require_customer_session_key("UNKNOWN1", None)
+        require_customer_session_key("UNKNOWN1", None, manager)
 
     assert caught.value.status_code == 404
     assert caught.value.detail == "Session not found"
@@ -134,9 +136,8 @@ async def test_unknown_customer_capability_has_the_same_neutral_response(
 @pytest.fixture
 def http_client():
     original_overrides = app.dependency_overrides.copy()
-    from services.api_gateway.session_manager import session_manager
 
-    session_manager.reset(clear_persistence=True)
+    # The lifespan builds a fresh container, and with it a fresh session manager.
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()
@@ -160,7 +161,7 @@ def _authenticate_as(tenant_id: str) -> None:
 def test_http_create_freezes_each_tenants_own_runtime_configuration(
     http_client: TestClient,
 ) -> None:
-    from services.api_gateway.session_manager import session_manager
+    session_manager = app.state.dependencies.session_manager
 
     _authenticate_as("tenant-a")
     created_a = http_client.post("/api/admin/session/create")

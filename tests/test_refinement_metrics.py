@@ -46,25 +46,38 @@ class TestTheCounterSurvivesTheRegistryBoundary:
 
     Building a RefinementMetrics(CollectorRegistry()) proves the class works
     but nothing about wiring: a series left on a registry the gateway does not
-    serve is invisible to Prometheus. This exercises the real module-level
-    object the gateway attaches to the refiner, through the same `metrics()`
-    endpoint function the running gateway would serve, and reads it off
+    serve is invisible to Prometheus. This exercises the app's own object the
+    lifespan attaches to the refiner, through the same `metrics()` endpoint
+    function the running gateway would serve, and reads it off
     `app.state.prometheus_registry` -- the registry /metrics actually renders.
     """
 
-    def test_the_module_level_counter_is_in_the_served_registry(self):
-        import services.api_gateway.app as gateway_app
+    def test_the_apps_counter_is_in_the_served_registry(self):
+        from services.api_gateway.app import create_app
         from services.api_gateway.routes.metrics import metrics
 
-        gateway_app.refinement_metrics.record("error", "vllm-shadow-test")
+        app = create_app()
+        app.state.gateway_metrics.refinement.record("error", "vllm-shadow-test")
 
-        body = metrics().body.decode("utf-8")
+        registry = app.state.prometheus_registry
+        body = metrics(registry).body.decode("utf-8")
 
         assert "refinement_attempts_total" in body, (
             "the refinement counter is not in the scraped registry; it would "
             "look wired up while alerting could never see it"
         )
-        assert (
-            'refinement_attempts_total{model_ref="vllm-shadow-test",outcome="error"}'
-            in body
-        )
+        assert 'refinement_attempts_total{model_ref="vllm-shadow-test",outcome="error"}' in body
+
+    def test_the_lifespan_attaches_the_apps_counter_to_its_refiner(self, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from services.api_gateway.app import create_app
+
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.delenv("SSF_DEPLOYMENT_ENV", raising=False)
+        monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
+        app = create_app()
+
+        with TestClient(app):
+            refiner = app.state.dependencies.speech_pipeline.refiner
+            assert refiner.refinement_metrics is app.state.gateway_metrics.refinement

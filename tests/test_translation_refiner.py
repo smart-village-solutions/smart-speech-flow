@@ -6,6 +6,25 @@ import pytest
 
 MODULE_PATH = "services.api_gateway.translation_refiner"
 
+# The module namespace as it was before this test reloaded it.
+_BEFORE_RELOAD: dict[str, object] = {}
+
+
+@pytest.fixture(autouse=True)
+def restore_reloaded_module():
+    """Put the refiner module back as it was once the test ends.
+
+    A reload leaves new classes behind. Later tests then build refiners from
+    classes that pipeline_logic and app.py never imported, and patch the wrong
+    ones.
+    """
+    yield
+    if _BEFORE_RELOAD:
+        module = importlib.import_module(MODULE_PATH)
+        module.__dict__.clear()
+        module.__dict__.update(_BEFORE_RELOAD)
+        _BEFORE_RELOAD.clear()
+
 
 def reload_module(env: dict[str, str | None]):
     """Reload translation refiner module with temporary env overrides."""
@@ -19,6 +38,8 @@ def reload_module(env: dict[str, str | None]):
 
     try:
         module = importlib.import_module(MODULE_PATH)
+        if not _BEFORE_RELOAD:
+            _BEFORE_RELOAD.update(module.__dict__)
         return importlib.reload(module)
     finally:
         for key, value in saved.items():
@@ -29,34 +50,32 @@ def reload_module(env: dict[str, str | None]):
 
 
 def test_translation_refiner_disabled_returns_noop(monkeypatch):
-    mod = reload_module({
-        "LLM_REFINEMENT_ENABLED": "0",
-        "LLM_REFINEMENT_ENDPOINT": None,
-    })
-    outcome = mod.translation_refiner.refine("Hallo", "de", "en", context=None)
+    mod = importlib.import_module(MODULE_PATH)
+    monkeypatch.setenv("LLM_REFINEMENT_ENABLED", "0")
+    monkeypatch.delenv("LLM_REFINEMENT_ENDPOINT", raising=False)
+    refiner = mod.get_translation_refiner()
+
+    outcome = refiner.refine("Hallo", "de", "en", context=None)
     assert outcome.text == "Hallo"
     assert outcome.changed is False
-    assert mod.translation_refiner.is_active is False
+    assert refiner.is_active is False
 
 
 def test_translation_refiner_handles_errors(monkeypatch):
-    mod = reload_module({
-        "LLM_REFINEMENT_ENABLED": "1",
-        "LLM_REFINEMENT_ENDPOINT": "http://ollama:11434",
-    })
+    mod = importlib.import_module(MODULE_PATH)
+    monkeypatch.setenv("LLM_REFINEMENT_ENABLED", "1")
+    monkeypatch.setenv("LLM_REFINEMENT_ENDPOINT", "http://ollama:11434")
+    refiner = mod.get_translation_refiner()
 
     def fake_post(*args, **kwargs):  # noqa: ANN001, D401
         raise ConnectionError("unreachable")
 
     monkeypatch.setattr(mod.requests, "post", fake_post)
 
-    outcome = mod.translation_refiner.refine("Hallo", "de", "en", context=None)
+    outcome = refiner.refine("Hallo", "de", "en", context=None)
     assert outcome.text == "Hallo"
     assert outcome.changed is False
     assert outcome.error is not None
-
-    # restore default module state for other tests
-    reload_module({"LLM_REFINEMENT_ENABLED": "0"})
 
 
 def test_ollama_translation_refiner_returns_refined_text(monkeypatch):
@@ -353,7 +372,7 @@ def test_shadow_comparison_refiner_schedules_candidate(monkeypatch):
         Mock(return_value=mod.RefinementOutcome(text="refined", changed=True)),
     )
     submit = Mock()
-    monkeypatch.setattr(mod._CANDIDATE_EXECUTOR, "submit", submit)
+    monkeypatch.setattr(refiner.executor, "submit", submit)
 
     outcome = refiner.refine("Hallo", "de", "en")
 
@@ -435,7 +454,7 @@ def test_shadow_comparison_refiner_recovers_when_submission_fails(monkeypatch):
         Mock(return_value=mod.RefinementOutcome(text="refined", changed=True)),
     )
     monkeypatch.setattr(
-        mod._CANDIDATE_EXECUTOR,
+        refiner.executor,
         "submit",
         Mock(side_effect=RuntimeError("executor shut down")),
     )
@@ -444,6 +463,35 @@ def test_shadow_comparison_refiner_recovers_when_submission_fails(monkeypatch):
 
     assert outcome.candidate_status == "submission_failed"
     assert refiner.pending == 0
+
+
+def test_each_shadow_refiner_owns_its_candidate_worker_until_shutdown(monkeypatch):
+    """Two apps' refiners never share a worker, and the lifespan's shutdown stops one."""
+    mod = importlib.import_module(MODULE_PATH)
+    first, second = (
+        mod.ShadowComparisonRefiner(
+            endpoint="http://ollama:11434",
+            model="primary",
+            candidate_model="candidate",
+            queue_limit=1,
+            timeout_seconds=1.0,
+            temperature=0.2,
+            max_retries=1,
+        )
+        for _ in range(2)
+    )
+    monkeypatch.setattr(
+        mod.OllamaTranslationRefiner,
+        "refine",
+        Mock(return_value=mod.RefinementOutcome(text="refined", changed=True)),
+    )
+    assert first.executor is not second.executor
+
+    first.shutdown()
+
+    assert first.refine("Hallo", "de", "en").candidate_status == "submission_failed"
+    assert first.pending == 0
+    second.shutdown()
 
 
 def test_vllm_refiner_posts_a_chat_completion_with_thinking_off(monkeypatch):

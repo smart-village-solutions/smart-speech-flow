@@ -1,7 +1,9 @@
 # services/api_gateway/session_manager.py
 """
-Session Management für bidirektionale Admin-Kunde Gespräche
-Speichert Sessions in-memory (für Entwicklung) oder Redis (für Produktion)
+Session Management für bidirektionale Admin-Kunde Gespräche.
+
+`TenantSessionManager` is the production path. The str-keyed legacy path lives
+in legacy_session_manager.py; the dataclasses and helpers here serve both.
 """
 
 from __future__ import annotations
@@ -9,38 +11,41 @@ from __future__ import annotations
 import asyncio
 import copy
 import hmac
-import json
 import logging
 import os
 import uuid
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
-
-if TYPE_CHECKING:
-    from .websocket import WebSocketManager
-
 from dataclasses import dataclass, field, fields, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    Protocol,
+    TypeVar,
+)
 
 from .consent import ConsentStatus
 from .quality_telemetry import SessionLifecyclePhase, SessionTerminationReason
-from .session_pseudonym import MISSING_TENANT_REFERENCE, session_ref, tenant_ref
+from .realtime_protocol import Frame, timeout_warning_frame
+from .session_pseudonym import MISSING_TENANT_REFERENCE, SessionPseudonymizer, tenant_ref
 from .session_store import MemoryTenantSessionStore, TenantSessionStore
 from .tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
+if TYPE_CHECKING:
+    from .audio_storage import AudioStore
+    from .realtime_ticket import RealtimeTicketStore
+    from .runtime_policy import RuntimePolicyGate
+    from .websocket import WebSocketManager
+    from .websocket_polling_routes import TenantPollingStore
+
 logger = logging.getLogger(__name__)
 
-_TENANT_STORE_UNAVAILABLE = "tenant session store is unavailable"
 _SESSION_NOT_FOUND = "session not found"
-
-try:  # Optional dependency for persistence
-    from redis import Redis
-    from redis.exceptions import RedisError
-except ImportError:  # pragma: no cover - redis optional for tests
-    Redis = None  # type: ignore
-
-    class RedisError(Exception):  # type: ignore
-        pass
 
 
 class ClientType(str, Enum):
@@ -130,8 +135,8 @@ class SessionMessage:
     original_audio_authorized: bool = False
     translated_audio_authorized: bool = False
 
-    def to_dict(self, *, include_authorization: bool = False):
-        data = {
+    def to_dict(self, *, include_authorization: bool = False) -> Dict[str, Any]:
+        data: Dict[str, Any] = {
             "id": self.id,
             "sender": self.sender.value,
             "original_text": self.original_text,
@@ -233,7 +238,7 @@ class Session:
         return _ensure_utc(now) >= self.next_timeout_at()
 
     def to_dict(self, include_messages: bool = False) -> Dict[str, Any]:
-        data = {
+        data: Dict[str, Any] = {
             "id": self.id,
             "tenant_id": self.tenant_id,
             "runtime_configuration": (
@@ -284,7 +289,7 @@ class Session:
         data.pop("runtime_configuration", None)
         return data
 
-    def update_activity(self):
+    def update_activity(self) -> None:
         """Session-Aktivität aktualisieren (für Heartbeat/Messages)"""
         self.last_activity = utc_now()
         self.timeout_warning_sent = False
@@ -377,41 +382,144 @@ def _mark_translated_audio_gone(metadata: Optional[Dict[str, Any]]) -> None:
             output["audio_available"] = False
 
 
-class SessionManager:
+def _settle_refused_content(session: Session) -> tuple[bool, list[tuple[str, Any]]]:
+    """Prune refused messages and report the audio files they leave behind.
+
+    The record is mutated here but no file is touched. Deletion is the
+    caller's to perform once the record write has committed: termination
+    treats a store failure as transient and retryable, and files removed
+    ahead of that commit are gone for a conversation still running.
+
+    Args:
+        session: The session whose content is being settled. Its message
+            list is replaced in place with the messages that may be kept.
+
+    Returns:
+        Whether the record changed, and the artefacts to delete afterwards.
+        An artefact removal that keeps the message leaves the count
+        identical, so the count alone is the wrong predicate for "this
+        needs writing back". A session without a tenant is never settled.
+    """
+    from .audio_storage import AudioVariant
+
+    if session.tenant_id is None:
+        return False, []
+
+    changed = False
+    doomed: list[tuple[str, Any]] = []
+    retained = []
+    for message in session.messages:
+        if not message.record_authorized:
+            doomed.append((message.id, AudioVariant.ORIGINAL))
+            doomed.append((message.id, AudioVariant.TRANSLATED))
+            changed = True
+            continue
+        if _remove_refused_original_audio(message, doomed):
+            changed = True
+        if message.translated_audio_available and (not message.translated_audio_authorized):
+            doomed.append((message.id, AudioVariant.TRANSLATED))
+            # A retained message must not advertise audio it no longer has,
+            # on either marker: `scope_pipeline_audio_urls` rebuilds a
+            # translated URL from the step outputs alone.
+            message.translated_audio_available = False
+            _mark_translated_audio_gone(message.pipeline_metadata)
+            changed = True
+        retained.append(message)
+    session.messages = retained
+    return changed, doomed
+
+
+def _remove_refused_original_audio(message: SessionMessage, doomed: list[tuple[str, Any]]) -> bool:
+    from .audio_storage import AudioVariant
+
+    # An artefact that was never produced reports as unauthorised too,
+    # because no read was taken for it. Only clear markers that
+    # actually describe audio this message had.
+    pipeline_input = (
+        message.pipeline_metadata.get("input")
+        if isinstance(message.pipeline_metadata, dict)
+        else None
+    )
+    had_original = bool(message.original_audio_url) or (
+        isinstance(pipeline_input, dict) and pipeline_input.get("type") == "audio"
+    )
+    if had_original and not message.original_audio_authorized:
+        doomed.append((message.id, AudioVariant.ORIGINAL))
+        # Both markers, or `conversation_service` still derives an
+        # original-audio URL for a file that is gone.
+        message.original_audio_url = None
+        if isinstance(pipeline_input, dict):
+            pipeline_input.pop("type", None)
+        return True
+    return False
+
+
+KeyT = TypeVar("KeyT")
+KeyT_contra = TypeVar("KeyT_contra", contravariant=True)
+
+
+class SessionSockets[KeyT_in](Protocol):
+    """What a session manager calls on the realtime side of its app.
+
+    `WebSocketManager` is a `SessionSockets[TenantSessionKey]`. The legacy
+    adapter's `SessionSockets[str]` is satisfied only by test doubles now.
+    The key is inferred contravariant: it appears only as a parameter.
+    """
+
+    async def handle_session_termination(self, session_id: KeyT_in, reason: str) -> None: ...
+
+    async def broadcast_to_session(self, session_id: KeyT_in, message: Frame) -> None: ...
+
+
+class SessionRegistry(Protocol[KeyT_contra]):
+    """What the WebSocket manager needs from a session manager.
+
+    Generic in the key rather than widened to `Any`. The WebSocket manager
+    takes a `SessionRegistry[TenantSessionKey]`, which `TenantSessionManager`
+    is; `LegacySessionManager` is only a `SessionRegistry[str]`.
+    """
+
+    def register_websocket_manager(self, manager: WebSocketManager) -> None: ...
+
+    def get_session(self, session_id: KeyT_contra) -> Optional[Session]: ...
+
+    async def add_websocket_connection(
+        self, session_id: KeyT_contra, client_type: ClientType, websocket: Any
+    ) -> None: ...
+
+    async def remove_websocket_connection(
+        self, session_id: KeyT_contra, client_type: ClientType
+    ) -> None: ...
+
+
+class SessionManagerBase(Generic[KeyT]):
+    """The session cache, lifecycle telemetry and content sweep both managers share."""
+
     quality_telemetry: Optional[Any] = None
 
     def __init__(
         self,
         *,
-        store: Optional[TenantSessionStore] = None,
-        clock: Callable[[], datetime] = utc_now,
-        session_id_factory: Optional[Callable[[], str]] = None,
-    ):
-        self.redis_client: Optional[Redis] = None
-        self.redis_namespace: str = os.getenv("REDIS_NAMESPACE", "ssf")
-        self.redis_enabled: bool = False
+        clock: Callable[[], datetime],
+        pseudonymizer: Optional[SessionPseudonymizer],
+    ) -> None:
         self.allow_parallel_sessions: bool = _env_flag("SSF_ALLOW_PARALLEL_SESSIONS", False)
-        self.store = store
         self.clock = clock
-        self.session_id_factory = session_id_factory or (lambda: str(uuid.uuid4())[:8].upper())
-        self.tenant_mode = store is not None
-
-        self.reset()
-        if not self.tenant_mode:
-            self._init_persistence()
+        self.pseudonymizer = pseudonymizer or SessionPseudonymizer.from_environment()
+        self.sessions: Dict[KeyT, Session] = {}
+        self.websocket_manager: Optional[SessionSockets[KeyT]] = None
 
     def attach_quality_telemetry(self, telemetry: Optional[Any]) -> None:
-        """Wired by the gateway's lifespan; None detaches it on teardown.
-
-        The manager is a process-wide singleton with no request behind it, so
-        it cannot reach `app.state` the way a route dependency does. This
-        mirrors how `translation_refiner` receives the same emitter.
-        """
+        """Wired by the gateway's lifespan; None detaches it on teardown."""
         self.quality_telemetry = telemetry
+
+    def register_websocket_manager(self, manager: SessionSockets[KeyT]) -> None:
+        """WebSocketManager-Referenz für bidirektionale Cleanup-Prozesse registrieren."""
+        self.websocket_manager = manager
 
     def _emit_lifecycle(
         self,
-        session: "Session",
+        session: Session,
         phase: SessionLifecyclePhase,
         reason: SessionTerminationReason = SessionTerminationReason.NONE,
     ) -> None:
@@ -421,7 +529,7 @@ class SessionManager:
             return
         try:
             telemetry.emit_session_lifecycle(
-                session_ref=session_ref(session.id),
+                session_ref=self.pseudonymizer.reference(session.id),
                 tenant_ref=(
                     tenant_ref(session.tenant_id) if session.tenant_id else MISSING_TENANT_REFERENCE
                 ),
@@ -433,716 +541,22 @@ class SessionManager:
         except Exception:  # telemetry must never reach the caller
             logger.warning("Session quality telemetry failed", exc_info=True)
 
-    def reset(self, *, clear_persistence: bool = False):
-        """SessionManager Zustand auf Initialwerte zurücksetzen."""
-        if clear_persistence and isinstance(self.store, MemoryTenantSessionStore):
-            self.store.clear()
-        if self.tenant_mode:
-            self.sessions: Dict[Any, Session] = {}
-            self.websocket_connections: Dict[Any, Dict[str, Any]] = {}
-            self.active_admin_sessions: Any = {}
-        else:
-            self.sessions = {}
-            self.websocket_connections = {}
-            self.active_admin_sessions = set()
-        self.websocket_manager: Optional["WebSocketManager"] = None
-
-        if clear_persistence and self.redis_enabled:
-            self._clear_persistence_store()
-
-        if self.redis_enabled:
-            self._load_sessions_from_persistence()
-
-    def rehydrate_tenant_sessions(self) -> None:
-        """Restore active v2 sessions and discard process-local presence.
-
-        Redis connection counts describe sockets owned by the process that
-        wrote them. They cannot survive a gateway restart. A previously
-        connected administrator receives a fresh reconnect-grace anchor at
-        restart; an already disconnected administrator retains its original
-        anchor so restarting cannot extend an expired session indefinitely.
-        """
-
-        if self.store is None:
-            raise RuntimeError(_TENANT_STORE_UNAVAILABLE)
-        restored = self.store.list_active()
-        restarted_at = self.clock()
-        for session in restored:
-            stale_admin_presence = session.admin_connected or session.admin_connection_count > 0
-            session.admin_connected = False
-            session.customer_connected = False
-            session.admin_connection_count = 0
-            session.customer_connection_count = 0
-            if stale_admin_presence:
-                session.admin_disconnected_at = restarted_at
-                session.timeout_warning_sent = False
-            elif session.admin_disconnected_at is None:
-                session.admin_disconnected_at = session.created_at
-            self.store.save(session)
-            self.sessions[session.key] = session
-            self.active_admin_sessions.setdefault(session.tenant_id, set()).add(session.id)
-
-    # === Persistence Helpers ===
-
-    def _init_persistence(self):
-        """Initialisiert optionales Redis-Backend für Session-Persistenz."""
-        redis_url = os.getenv("REDIS_URL")
-
-        if not redis_url or Redis is None:
-            print("ℹ️ Session-Persistenz deaktiviert – verwende In-Memory Store")
-            return
-
-        try:
-            self.redis_client = Redis.from_url(redis_url, decode_responses=True)
-            self.redis_client.ping()
-        except RedisError as exc:
-            print(f"⚠️ Redis nicht erreichbar ({exc}). Fallback auf In-Memory Store.")
-            self.redis_client = None
-            self.redis_enabled = False
-            return
-
-        self.redis_enabled = True
-        print("✅ Redis Session-Persistenz aktiviert")
-        self._load_sessions_from_persistence()
-
-    def _key(self, *parts: str) -> str:
-        return ":".join([self.redis_namespace, *parts])
-
-    def _persist_active_sessions(self):
-        if not self.redis_enabled or not self.redis_client:
-            return
-
-        if self.active_admin_sessions:
-            try:
-                payload = json.dumps(sorted(self.active_admin_sessions))
-                self.redis_client.set(self._key("session", "active_admin"), payload)
-            except RedisError as exc:
-                print(f"⚠️ Persistierung der aktiven Sessions fehlgeschlagen: {exc}")
-        else:
-            self.redis_client.delete(self._key("session", "active_admin"))
-
-    def _persist_session(self, session: Session):
-        if not self.redis_enabled or not self.redis_client:
-            return
-
-        try:
-            payload = session.to_dict(include_messages=True)
-            self.redis_client.set(self._key("session", session.id), json.dumps(payload))
-            self.redis_client.sadd(self._key("sessions"), session.id)
-        except RedisError as exc:
-            print(f"⚠️ Persistierung der Session {session.id} fehlgeschlagen: {exc}")
-
-    def _load_sessions_from_persistence(self):
-        if not self.redis_enabled or not self.redis_client:
-            return
-
-        try:
-            session_ids = self.redis_client.smembers(self._key("sessions"))
-            for session_id in session_ids:
-                raw = self.redis_client.get(self._key("session", session_id))
-                if not raw:
-                    continue
-                data = json.loads(raw)
-                session = Session.from_dict(data)
-                self.sessions[session.id] = session
-
-            stored_active = self.redis_client.get(self._key("session", "active_admin"))
-            if stored_active:
-                try:
-                    payload = json.loads(stored_active)
-                    if isinstance(payload, list):
-                        self.active_admin_sessions = set(payload)
-                    elif isinstance(payload, str):
-                        self.active_admin_sessions = {payload}
-                except (json.JSONDecodeError, TypeError):
-                    self.active_admin_sessions = {stored_active}
-
-                # Stale IDs bereinigen
-                self.active_admin_sessions = {
-                    sid
-                    for sid in self.active_admin_sessions
-                    if sid in self.sessions
-                    and self.sessions[sid].status != SessionStatus.TERMINATED
-                }
-        except RedisError as exc:
-            print(f"⚠️ Laden der Sessions aus Redis fehlgeschlagen: {exc}")
-
-    def _clear_persistence_store(self):
-        if not self.redis_enabled or not self.redis_client:
-            return
-
-        try:
-            session_ids = self.redis_client.smembers(self._key("sessions"))
-            for session_id in session_ids:
-                self.redis_client.delete(self._key("session", session_id))
-            self.redis_client.delete(self._key("sessions"))
-            self.redis_client.delete(self._key("session", "active_admin"))
-        except RedisError as exc:
-            print(f"⚠️ Bereinigung des Session-Stores fehlgeschlagen: {exc}")
-
-    async def create_admin_session(
-        self,
-        tenant_id: Optional[str] = None,
-        runtime_configuration: Optional[RuntimeConfigurationSnapshot] = None,
-    ) -> Any:
-        """Neue Admin-Session erstellen.
-
-        Standardmäßig wird aus Datenschutzgründen genau eine aktive Admin-Session
-        gleichzeitig erlaubt. Das bisherige Parallelverhalten kann explizit über
-        ``SSF_ALLOW_PARALLEL_SESSIONS=true`` reaktiviert werden.
-        """
-        await asyncio.sleep(0)
-        if tenant_id is not None and runtime_configuration is not None:
-            return await self._create_tenant_admin_session(tenant_id, runtime_configuration)
-        if not self.allow_parallel_sessions:
-            await self.terminate_all_active_sessions(reason="new_session_created")
-
-        session_id = str(uuid.uuid4())[:8].upper()
-        session = Session(id=session_id, status=SessionStatus.PENDING)  # Wartet auf Customer-Join
-        self.sessions[session_id] = session
-        self.active_admin_sessions.add(session_id)
-
-        self._persist_session(session)
-        self._persist_active_sessions()
-
-        self._emit_lifecycle(session, SessionLifecyclePhase.CREATED)
-
-        print(f"✅ Neue Admin-Session erstellt: {session_id}")
-        return session_id
-
-    async def _create_tenant_admin_session(
-        self,
-        tenant_id: str,
-        runtime_configuration: RuntimeConfigurationSnapshot,
-    ) -> Session:
-        if self.store is None:
-            self.store = MemoryTenantSessionStore()
-        if not self.allow_parallel_sessions:
-            await self.terminate_all_active_sessions(
-                reason="new_session_created", tenant_id=tenant_id
-            )
-        for _attempt in range(32):
-            created_at = self.clock()
-            session = Session(
-                id=self.session_id_factory(),
-                tenant_id=tenant_id,
-                runtime_configuration=runtime_configuration,
-                status=SessionStatus.PENDING,
-                created_at=created_at,
-                last_activity=created_at,
-                admin_disconnected_at=created_at,
-                reconnect_grace_minutes=_positive_env_int(
-                    "SSF_SESSION_RECONNECT_GRACE_MINUTES", 30
-                ),
-                timeout_warning_minutes=_positive_env_int("SSF_SESSION_TIMEOUT_WARNING_MINUTES", 5),
-                maximum_lifetime_hours=_positive_env_int("SSF_SESSION_MAX_HOURS", 8),
-            )
-            if self.store.create(session):
-                self.sessions[session.key] = session
-                self.active_admin_sessions.setdefault(tenant_id, set()).add(session.id)
-                self._emit_lifecycle(session, SessionLifecyclePhase.CREATED)
-                return session
-        raise RuntimeError("could not allocate a globally unique session id")
-
-    async def terminate_all_active_sessions(
-        self, reason: str = "system_cleanup", tenant_id: Optional[str] = None
-    ):
-        """Alle aktiven Sessions beenden (manueller Cleanup)"""
-        if tenant_id is not None:
-            keys = [
-                key
-                for key, session in tuple(self.sessions.items())
-                if isinstance(key, TenantSessionKey)
-                and hmac.compare_digest(key.tenant_id, tenant_id)
-                and session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
-            ]
-            for key in keys:
-                await self.terminate_session(key, reason)
-            return
-        terminated_count = 0
-        terminated_session_ids: set[str] = set()
-
-        for session_id, session in tuple(self.sessions.items()):
-            if session.status in [SessionStatus.PENDING, SessionStatus.ACTIVE]:
-                await self.terminate_session(session_id, reason)
-                terminated_count += 1
-                terminated_session_ids.add(session_id)
-
-        for session_id in terminated_session_ids:
-            session = self.sessions.get(session_id)
-            if session is not None:
-                session.termination_reason = reason
-                self._persist_session(session)
-
-        if terminated_count > 0:
-            print(f"🔄 {terminated_count} Sessions beendet. Grund: {reason}")
-
-        # Active session tracking zurücksetzen
-        self.active_admin_sessions.clear()
-        self._persist_active_sessions()
-
-    async def terminate_session(self, session_id: Any, reason: str = "manual_termination"):
-        """Einzelne Session beenden mit WebSocket-Notifications"""
-        session = self.get_session(session_id)
-        if not session:
-            return
-
-        if isinstance(session_id, TenantSessionKey):
-            if self.store is None:
-                raise RuntimeError(_TENANT_STORE_UNAVAILABLE)
-
-            if session.status != SessionStatus.TERMINATED:
-                self._commit_tenant_termination(session_id, session, reason, self.store)
-
-            # Cleanup is deliberately idempotent and also runs for a terminal
-            # session. If notification/socket cleanup was interrupted after the
-            # Redis commit, a retry can still revoke capabilities and finish it.
-            from .realtime_ticket import RealtimeTicketUnavailable, realtime_ticket_store
-
-            try:
-                realtime_ticket_store.revoke(session_id)
-            except RealtimeTicketUnavailable:
-                logger.error(
-                    "realtime_ticket_revocation_unavailable",
-                    extra={"tenant_ref": session_id.tenant_ref},
-                )
-            from .websocket_polling_routes import polling_store
-
-            polling_store.terminate(session_id, reason)
-            await self._send_termination_notifications(session_id, reason)
-            await self._cleanup_websocket_connections(session_id)
-            return
-
-        if session.status == SessionStatus.TERMINATED:
-            return
-
-        # Legacy session mutation remains process-local and follows its
-        # established persistence path.
-        session.status = SessionStatus.TERMINATED
-        session.terminated_at = self.clock()
-        session.termination_reason = reason
-        session.admin_connected = False
-        session.customer_connected = False
-        session.admin_connection_count = 0
-        session.customer_connection_count = 0
-
-        self._emit_lifecycle(
-            session,
-            SessionLifecyclePhase.TERMINATED,
-            SessionTerminationReason.classify(reason),
-        )
-
-        if session_id in self.active_admin_sessions:
-            self.active_admin_sessions.discard(session_id)
-
-        # WebSocket-Disconnect-Notifications senden
-        await self._send_termination_notifications(session_id, reason)
-
-        # WebSocket-Verbindungen cleanup
-        await self._cleanup_websocket_connections(session_id)
-
-        # Session persistieren
-        self._persist_session(session)
-        self._persist_active_sessions()
-
-        print(f"🔚 Session {session_id} beendet. Grund: {reason}")
-
-    def _commit_tenant_termination(
-        self,
-        session_id: TenantSessionKey,
-        session: Session,
-        reason: str,
-        store: TenantSessionStore,
-    ) -> None:
-        # Redis termination is the security-sensitive commit point. Keep
-        # the cached object and runtime indexes untouched until the atomic
-        # record/index/tombstone mutation succeeds, so a transient store
-        # failure remains both internally consistent and retryable.
-        terminal_session = replace(
-            session,
-            status=SessionStatus.TERMINATED,
-            terminated_at=self.clock(),
-            termination_reason=reason,
-            admin_connected=False,
-            customer_connected=False,
-            admin_connection_count=0,
-            customer_connection_count=0,
-        )
-        # `replace` copies the message list by reference, so settling
-        # it would reach back into the running conversation and strip
-        # audio references from messages whose files are still on disk.
-        # The terminal record gets its own messages; the live session
-        # is untouched until the commit succeeds.
-        terminal_session.messages = [copy.deepcopy(message) for message in session.messages]
-        # The pruned message list is part of the record being
-        # committed. The files it drops are deleted only once that
-        # commit has succeeded: a store failure here is transient and
-        # the caller retries, so anything deleted first would be lost
-        # for a session that is still live.
-        _, doomed_audio = self._settle_refused_content(terminal_session)
-        committed_terminal = store.terminate(terminal_session)
-        # A store may accept the termination while keeping a terminal
-        # record it already held, discarding the payload settled here.
-        # Only delete artefacts when this payload is the committed one.
-        # `None` means the store reported success without echoing a
-        # record, which the fakes do; that is this payload.
-        payload_committed = committed_terminal in (None, terminal_session)
-        if committed_terminal is None:
-            committed_terminal = terminal_session
-        if payload_committed and doomed_audio:
-            self._delete_settled_audio(session_id, doomed_audio)
-
-        # Preserve references held by handlers while replacing every
-        # cached field with Redis' canonical terminal snapshot. This
-        # discards any stale mutations made after a committed
-        # termination whose response was lost.
-        for session_field in fields(Session):
-            setattr(
-                session,
-                session_field.name,
-                getattr(committed_terminal, session_field.name),
-            )
-        tenant_active = self.active_admin_sessions.get(session_id.tenant_id, set())
-        tenant_active.discard(session_id.session_id)
-        if not tenant_active:
-            self.active_admin_sessions.pop(session_id.tenant_id, None)
-        self._emit_lifecycle(
-            session,
-            SessionLifecyclePhase.TERMINATED,
-            SessionTerminationReason.classify(reason),
-        )
-
-    async def _send_termination_notifications(self, session_id: Any, reason: str) -> bool:
-        """WebSocket-Benachrichtigungen bei Session-Beendigung"""
-        if self.websocket_manager:
-            await self.websocket_manager.handle_session_termination(session_id, reason)
-            return True
-
-        if session_id not in self.websocket_connections:
-            return False
-
-        termination_message = {
-            "type": "session_terminated",
-            "session_id": session_id,
-            "reason": reason,
-            "message": self._get_termination_message(reason),
-            "timestamp": utc_now().isoformat(),
-        }
-
-        # Alle WebSocket-Verbindungen der Session benachrichtigen
-        connections = self.websocket_connections.get(session_id, {})
-        for client_type, websocket in connections.items():
-            try:
-                if websocket:
-                    await websocket.send_json(termination_message)
-                    if hasattr(websocket, "close"):
-                        await websocket.close(code=1000, reason=f"Session terminated: {reason}")
-            except Exception as e:
-                print(f"⚠️ WebSocket-Notification-Fehler ({client_type}): {e}")
-
-        return False
-
-    def _get_termination_message(self, reason: str) -> str:
-        """Benutzerfreundliche Termination-Messages"""
-        messages = {
-            "new_session_created": "Die Session wurde beendet, da eine neue Session gestartet wurde.",
-            "timeout": "Die Session wurde aufgrund von Inaktivität beendet.",
-            "manual_termination": "Die Session wurde manuell beendet.",
-            "manual_admin_termination": "Die Session wurde vom Admin beendet.",
-            "system_cleanup": "Die Session wurde für System-Wartung beendet.",
-            "error": "Die Session wurde aufgrund eines Fehlers beendet.",
-        }
-        return messages.get(reason, "Die Session wurde beendet.")
-
-    async def _cleanup_websocket_connections(self, session_id: Any):
-        """WebSocket-Connection-Pool cleanup"""
-        await asyncio.sleep(0)
-        if session_id in self.websocket_connections:
-            del self.websocket_connections[session_id]
-            print(f"🧹 WebSocket-Connections für Session {session_id} bereinigt")
-
-    def create_session(self, customer_language: str) -> str:
-        """Legacy-Methode - deprecated zugunsten von create_admin_session()"""
-        print("⚠️ Warning: create_session() ist deprecated. Verwende create_admin_session()")
-        session_id = str(uuid.uuid4())[:8].upper()
-        session = Session(
-            id=session_id,
-            customer_language=customer_language,
-            status=SessionStatus.ACTIVE,
-        )
-        self.sessions[session_id] = session
-        self._persist_session(session)
-
-        # Both phases: this path opens the session already ACTIVE, with the
-        # customer language known, so the transition `activate_session` would
-        # otherwise report has already happened -- and its PENDING check would
-        # never fire. Emitting only `created` would leave the funnel showing a
-        # termination for a session that was never activated.
-        self._emit_lifecycle(session, SessionLifecyclePhase.CREATED)
-        self._emit_lifecycle(session, SessionLifecyclePhase.ACTIVATED)
-
-        return session_id
-
-    def get_session(self, session_id: Any) -> Optional[Session]:
-        """Session abrufen"""
-        if isinstance(session_id, TenantSessionKey):
-            session = self.sessions.get(session_id)
-            if session is None and self.store is not None:
-                session = self.store.load(session_id)
-                if session is not None:
-                    self.sessions[session_id] = session
-            return session
-        session = self.sessions.get(session_id)
-        if session is None and self.redis_enabled and self.redis_client:
-            try:
-                raw = self.redis_client.get(self._key("session", session_id))
-                if raw:
-                    data = json.loads(raw)
-                    session = Session.from_dict(data)
-                    self.sessions[session_id] = session
-            except RedisError as exc:
-                print(f"⚠️ Lesen der Session {session_id} aus Redis fehlgeschlagen: {exc}")
-        return session
-
-    def resolve_customer_session(self, session_id: str) -> Optional[TenantSessionKey]:
-        if self.store is None:
-            return None
-        key = self.store.resolve_join(session_id)
-        if key is None:
-            return None
-        session = self.get_session(key)
-        if session is None or session.status == SessionStatus.TERMINATED:
-            return None
-        return key
-
-    def resolve_ended_session(
-        self, session_id: str, *, within: timedelta
-    ) -> Optional[TenantSessionKey]:
-        """The key of a session that terminated no longer than ``within`` ago.
-
-        Terminating a session revokes its join link, which is what stops an
-        ended conversation being rejoined or observed. It also removed the only
-        route from the bare session id a browser holds back to the tenant that
-        owns the conversation, so feedback offered in the ended-conversation
-        screen was refused as unknown (#324). This reads the tombstone the
-        revocation leaves behind. It returns the key alone -- enough to
-        attribute a feedback row to its tenant, and no way back into the
-        conversation -- and takes the window from the caller rather than
-        holding a policy of its own.
-        """
-        if self.store is None:
-            return None
-        resolved = self.store.resolve_ended_join(session_id)
-        if resolved is None:
-            return None
-        key, terminated_at = resolved
-        # An undatable record cannot be shown to be inside the window.
-        if terminated_at is None:
-            return None
-        if _ensure_utc(self.clock()) - _ensure_utc(terminated_at) > within:
-            return None
-        return key
-
-    def admin_connected(self, key: TenantSessionKey) -> None:
-        session = self.get_session(key)
-        if session is None or session.status == SessionStatus.TERMINATED:
-            raise KeyError(_SESSION_NOT_FOUND)
-        session.admin_connection_count += 1
-        session.admin_connected = True
-        session.admin_disconnected_at = None
-        session.timeout_warning_sent = False
-        if self.store is not None:
-            self.store.save(session)
-
-    def admin_disconnected(self, key: TenantSessionKey) -> None:
-        session = self.get_session(key)
-        if session is None:
-            raise KeyError(_SESSION_NOT_FOUND)
-        if session.status == SessionStatus.TERMINATED:
-            return
-        session.admin_connection_count = max(0, session.admin_connection_count - 1)
-        session.admin_connected = session.admin_connection_count > 0
-        if session.admin_connection_count == 0:
-            session.admin_disconnected_at = self.clock()
-        if self.store is not None:
-            self.store.save(session)
-
-    def customer_connected(self, key: TenantSessionKey) -> None:
-        session = self.get_session(key)
-        if session is None or session.status == SessionStatus.TERMINATED:
-            raise KeyError(_SESSION_NOT_FOUND)
-        session.customer_connection_count += 1
-        session.customer_connected = True
-        if self.store is not None:
-            self.store.save(session)
-
-    def customer_disconnected(self, key: TenantSessionKey) -> None:
-        session = self.get_session(key)
-        if session is None:
-            raise KeyError(_SESSION_NOT_FOUND)
-        if session.status == SessionStatus.TERMINATED:
-            return
-        session.customer_connection_count = max(0, session.customer_connection_count - 1)
-        session.customer_connected = session.customer_connection_count > 0
-        if self.store is not None:
-            self.store.save(session)
-
-    def get_session_status(self, session_id: str) -> Optional[SessionStatus]:
-        """Session-Status abrufen"""
-        session = self.get_session(session_id)
-        return session.status if session else None
-
-    def add_message(self, session_id: Any, message: SessionMessage):
-        """Nachricht zur Session hinzufügen"""
-        if session := self.get_session(session_id):
-            session.messages.append(message)
-            # ✨ Session-Aktivität bei neuer Nachricht aktualisieren
-            session.update_activity()
-            if isinstance(session_id, TenantSessionKey):
-                if self.store is None:
-                    raise RuntimeError(_TENANT_STORE_UNAVAILABLE)
-                self.store.save(session)
-            else:
-                self._persist_session(session)
-
-    def record_message_authorization(
-        self,
-        session_id: Any,
-        message_id: str,
-        *,
-        record: bool,
-        original_audio: bool,
-        translated_audio: bool,
-    ) -> None:
-        """Store the outcome of one message's three policy reads.
-
-        Args:
-            session_id: The session key or legacy identifier.
-            message_id: The message whose outcome this is.
-            record: Whether the message record itself may be retained.
-            original_audio: Whether the guest's input audio may be retained.
-            translated_audio: Whether the synthesised audio may be retained.
-        """
-        session = self.get_session(session_id)
-        if session is None:
-            return
-        for message in session.messages:
-            if message.id != message_id:
-                continue
-            message.record_authorized = record
-            message.original_audio_authorized = original_audio
-            message.translated_audio_authorized = translated_audio
-            break
-        else:
-            return
-        if isinstance(session_id, TenantSessionKey):
-            if self.store is None:
-                raise RuntimeError(_TENANT_STORE_UNAVAILABLE)
-            self.store.save(session)
-        else:
-            self._persist_session(session)
-
-    def _tenant_key_for(self, session: "Session") -> Optional[TenantSessionKey]:
-        """The key a session is stored under, or `None` for a legacy session."""
-        if session.tenant_id is None:
-            return None
-        return session.key
-
-    def _settle_refused_content(self, session: "Session") -> tuple[bool, list[tuple[str, Any]]]:
-        """Prune refused messages and report the audio files they leave behind.
-
-        The record is mutated here but no file is touched. Deletion is the
-        caller's to perform once the record write has committed: termination
-        treats a store failure as transient and retryable, and files removed
-        ahead of that commit are gone for a conversation still running.
-
-        Args:
-            session: The session whose content is being settled. Its message
-                list is replaced in place with the messages that may be kept.
-
-        Returns:
-            Whether the record changed, and the artefacts to delete afterwards.
-            An artefact removal that keeps the message leaves the count
-            identical, so the count alone is the wrong predicate for "this
-            needs writing back".
-        """
-        from .audio_storage import AudioVariant
-
-        key = self._tenant_key_for(session)
-        if key is None:
-            return False, []
-
-        changed = False
-        doomed: list[tuple[str, Any]] = []
-        retained = []
-        for message in session.messages:
-            if not message.record_authorized:
-                doomed.append((message.id, AudioVariant.ORIGINAL))
-                doomed.append((message.id, AudioVariant.TRANSLATED))
-                changed = True
-                continue
-            if self._remove_refused_original_audio(message, doomed):
-                changed = True
-            if message.translated_audio_available and (not message.translated_audio_authorized):
-                doomed.append((message.id, AudioVariant.TRANSLATED))
-                # A retained message must not advertise audio it no longer has,
-                # on either marker: `scope_pipeline_audio_urls` rebuilds a
-                # translated URL from the step outputs alone.
-                message.translated_audio_available = False
-                _mark_translated_audio_gone(message.pipeline_metadata)
-                changed = True
-            retained.append(message)
-        session.messages = retained
-        return changed, doomed
-
-    @staticmethod
-    def _remove_refused_original_audio(
-        message: SessionMessage, doomed: list[tuple[str, Any]]
-    ) -> bool:
-        from .audio_storage import AudioVariant
-
-        # An artefact that was never produced reports as unauthorised too,
-        # because no read was taken for it. Only clear markers that
-        # actually describe audio this message had.
-        pipeline_input = (
-            message.pipeline_metadata.get("input")
-            if isinstance(message.pipeline_metadata, dict)
-            else None
-        )
-        had_original = bool(message.original_audio_url) or (
-            isinstance(pipeline_input, dict) and pipeline_input.get("type") == "audio"
-        )
-        if had_original and not message.original_audio_authorized:
-            doomed.append((message.id, AudioVariant.ORIGINAL))
-            # Both markers, or `conversation_service` still derives an
-            # original-audio URL for a file that is gone.
-            message.original_audio_url = None
-            if isinstance(pipeline_input, dict):
-                pipeline_input.pop("type", None)
-            return True
-        return False
-
-    def _delete_settled_audio(self, key: TenantSessionKey, doomed: list[tuple[str, Any]]) -> None:
-        """Delete the artefacts a settled record no longer accounts for."""
-        from .audio_storage import delete_message_audio
-
-        for message_id, variant in doomed:
-            delete_message_audio(key, message_id, variant)
-
-    def _persist_swept_session(self, session: "Session") -> None:
+    def _persist_swept_session(self, session: Session) -> None:
         """Write back a session the sweep changed.
 
         Called only when something actually changed: a sweep that rewrote every
         session on every pass would turn an hourly maintenance task into
         continuous write amplification against Redis.
         """
-        key = self._tenant_key_for(session)
-        if key is None:
-            self._persist_session(session)
-            return
-        if self.store is None:
-            raise RuntimeError(_TENANT_STORE_UNAVAILABLE)
-        self.store.save(session)
+        raise NotImplementedError
+
+    def _delete_settled_audio(self, key: TenantSessionKey, doomed: list[tuple[str, Any]]) -> None:
+        """Delete the artefacts a settled record no longer accounts for.
+
+        Only a tenant session yields any, so only `TenantSessionManager` has an
+        audio store to delete them from.
+        """
+        raise NotImplementedError
 
     def sweep_expired_content(self, now: datetime) -> Dict[str, int]:
         """Remove refused content past session lifetime, and expired text.
@@ -1179,7 +593,7 @@ class SessionManager:
             except Exception:  # noqa: BLE001 - one session must not stop the pass
                 logger.warning(
                     "content_sweep_failed",
-                    extra={"session_ref": session_ref(session.id)},
+                    extra={"session_ref": self.pseudonymizer.reference(session.id)},
                 )
                 continue
 
@@ -1204,7 +618,7 @@ class SessionManager:
         max_age = timedelta(hours=session.maximum_lifetime_hours)
         if now - session.created_at >= max_age:
             before = len(working.messages)
-            changed, doomed_audio = self._settle_refused_content(working)
+            changed, doomed_audio = _settle_refused_content(working)
             refused_delta = before - len(working.messages)
         if keep_for:
             cutoff = now - timedelta(hours=keep_for)
@@ -1226,53 +640,383 @@ class SessionManager:
 
         # `Session.key` raises without a tenant, and a legacy
         # session never yields artefacts to delete anyway.
-        key = self._tenant_key_for(session)
-        if key is not None and doomed_audio:
-            self._delete_settled_audio(key, doomed_audio)
+        if session.tenant_id is not None and doomed_audio:
+            self._delete_settled_audio(session.key, doomed_audio)
         return refused_delta, expired_delta
+
+    def get_sessions_requiring_timeout_check(self) -> List[Session]:
+        """Sessions zurückgeben, die Timeout-Checks benötigen"""
+        return [
+            session
+            for session in self.sessions.values()
+            if session.status in [SessionStatus.ACTIVE, SessionStatus.PENDING]
+        ]
+
+
+class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
+    """Tenant-scoped sessions behind a `TenantSessionStore`.
+
+    Each gateway app builds one in `build_gateway_dependencies`, with the
+    app's store, audio store, realtime tickets, polling store, persistence
+    gate and pseudonymizer.
+    """
+
+    def __init__(
+        self,
+        *,
+        store: TenantSessionStore,
+        audio_store: AudioStore,
+        realtime_tickets: Optional[RealtimeTicketStore] = None,
+        polling_store: Optional[TenantPollingStore] = None,
+        runtime_policy: Optional[RuntimePolicyGate] = None,
+        pseudonymizer: Optional[SessionPseudonymizer] = None,
+        clock: Callable[[], datetime] = utc_now,
+        session_id_factory: Optional[Callable[[], str]] = None,
+    ) -> None:
+        super().__init__(clock=clock, pseudonymizer=pseudonymizer)
+        self.store = store
+        # Where settlement and the content sweep delete refused audio.
+        self.audio_store = audio_store
+        self.realtime_tickets = realtime_tickets
+        self.polling_store = polling_store
+        # None refuses every write of conversation content.
+        self.runtime_policy = runtime_policy
+        self.session_id_factory = session_id_factory or (lambda: str(uuid.uuid4())[:8].upper())
+        self.active_admin_sessions: Dict[str, set[str]] = {}
+
+    def reset(self, *, clear_persistence: bool = False) -> None:
+        """SessionManager Zustand auf Initialwerte zurücksetzen."""
+        if clear_persistence and isinstance(self.store, MemoryTenantSessionStore):
+            self.store.clear()
+        self.sessions = {}
+        self.active_admin_sessions = {}
+        self.websocket_manager = None
+
+    def _delete_settled_audio(self, key: TenantSessionKey, doomed: list[tuple[str, Any]]) -> None:
+        for message_id, variant in doomed:
+            self.audio_store.delete(key, message_id, variant)
+
+    def rehydrate_tenant_sessions(self) -> None:
+        """Restore active v2 sessions and discard process-local presence.
+
+        Redis connection counts describe sockets owned by the process that
+        wrote them. They cannot survive a gateway restart. A previously
+        connected administrator receives a fresh reconnect-grace anchor at
+        restart; an already disconnected administrator retains its original
+        anchor so restarting cannot extend an expired session indefinitely.
+        """
+        restored = self.store.list_active()
+        restarted_at = self.clock()
+        for session in restored:
+            stale_admin_presence = session.admin_connected or session.admin_connection_count > 0
+            session.admin_connected = False
+            session.customer_connected = False
+            session.admin_connection_count = 0
+            session.customer_connection_count = 0
+            if stale_admin_presence:
+                session.admin_disconnected_at = restarted_at
+                session.timeout_warning_sent = False
+            elif session.admin_disconnected_at is None:
+                session.admin_disconnected_at = session.created_at
+            self.store.save(session)
+            self.sessions[session.key] = session
+            self.active_admin_sessions.setdefault(session.key.tenant_id, set()).add(session.id)
+
+    async def create_admin_session(
+        self,
+        tenant_id: str,
+        runtime_configuration: RuntimeConfigurationSnapshot,
+    ) -> Session:
+        """Neue Admin-Session erstellen.
+
+        Standardmäßig wird aus Datenschutzgründen genau eine aktive Admin-Session
+        je Mandant gleichzeitig erlaubt. Das bisherige Parallelverhalten kann
+        explizit über ``SSF_ALLOW_PARALLEL_SESSIONS=true`` reaktiviert werden.
+        """
+        await asyncio.sleep(0)
+        if not self.allow_parallel_sessions:
+            await self.terminate_all_active_sessions(
+                reason="new_session_created", tenant_id=tenant_id
+            )
+        for _attempt in range(32):
+            created_at = self.clock()
+            session = Session(
+                id=self.session_id_factory(),
+                tenant_id=tenant_id,
+                runtime_configuration=runtime_configuration,
+                status=SessionStatus.PENDING,
+                created_at=created_at,
+                last_activity=created_at,
+                admin_disconnected_at=created_at,
+                reconnect_grace_minutes=_positive_env_int(
+                    "SSF_SESSION_RECONNECT_GRACE_MINUTES", 30
+                ),
+                timeout_warning_minutes=_positive_env_int("SSF_SESSION_TIMEOUT_WARNING_MINUTES", 5),
+                maximum_lifetime_hours=_positive_env_int("SSF_SESSION_MAX_HOURS", 8),
+            )
+            if self.store.create(session):
+                self.sessions[session.key] = session
+                self.active_admin_sessions.setdefault(tenant_id, set()).add(session.id)
+                self._emit_lifecycle(session, SessionLifecyclePhase.CREATED)
+                return session
+        raise RuntimeError("could not allocate a globally unique session id")
+
+    async def terminate_all_active_sessions(
+        self, reason: str = "system_cleanup", *, tenant_id: str
+    ) -> None:
+        """Alle aktiven Sessions eines Mandanten beenden."""
+        keys = [
+            key
+            for key, session in tuple(self.sessions.items())
+            if hmac.compare_digest(key.tenant_id, tenant_id)
+            and session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
+        ]
+        for key in keys:
+            await self.terminate_session(key, reason)
+
+    async def terminate_session(
+        self, session_id: TenantSessionKey, reason: str = "manual_termination"
+    ) -> None:
+        """Einzelne Session beenden mit WebSocket-Notifications"""
+        session = self.get_session(session_id)
+        if not session:
+            return
+
+        if session.status != SessionStatus.TERMINATED:
+            self._commit_tenant_termination(session_id, session, reason)
+
+        # Cleanup is deliberately idempotent and also runs for a terminal
+        # session. If notification/socket cleanup was interrupted after the
+        # Redis commit, a retry can still revoke capabilities and finish it.
+        from .realtime_ticket import RealtimeTicketUnavailable
+
+        if self.realtime_tickets is not None:
+            try:
+                self.realtime_tickets.revoke(session_id)
+            except RealtimeTicketUnavailable:
+                logger.error(
+                    "realtime_ticket_revocation_unavailable",
+                    extra={"tenant_ref": session_id.tenant_ref},
+                )
+        if self.polling_store is not None:
+            self.polling_store.terminate(session_id, reason)
+        if self.websocket_manager:
+            await self.websocket_manager.handle_session_termination(session_id, reason)
+        # The yield the socket-pool cleanup always took before returning.
+        await asyncio.sleep(0)
+
+    def _commit_tenant_termination(
+        self,
+        session_id: TenantSessionKey,
+        session: Session,
+        reason: str,
+    ) -> None:
+        # Redis termination is the security-sensitive commit point. Keep
+        # the cached object and runtime indexes untouched until the atomic
+        # record/index/tombstone mutation succeeds, so a transient store
+        # failure remains both internally consistent and retryable.
+        terminal_session = replace(
+            session,
+            status=SessionStatus.TERMINATED,
+            terminated_at=self.clock(),
+            termination_reason=reason,
+            admin_connected=False,
+            customer_connected=False,
+            admin_connection_count=0,
+            customer_connection_count=0,
+        )
+        # `replace` copies the message list by reference, so settling
+        # it would reach back into the running conversation and strip
+        # audio references from messages whose files are still on disk.
+        # The terminal record gets its own messages; the live session
+        # is untouched until the commit succeeds.
+        terminal_session.messages = [copy.deepcopy(message) for message in session.messages]
+        # The pruned message list is part of the record being
+        # committed. The files it drops are deleted only once that
+        # commit has succeeded: a store failure here is transient and
+        # the caller retries, so anything deleted first would be lost
+        # for a session that is still live.
+        _, doomed_audio = _settle_refused_content(terminal_session)
+        committed_terminal: Optional[Session] = self.store.terminate(terminal_session)
+        # A store may accept the termination while keeping a terminal
+        # record it already held, discarding the payload settled here.
+        # Only delete artefacts when this payload is the committed one.
+        # `None` means the store reported success without echoing a
+        # record, which the fakes do; that is this payload.
+        payload_committed = committed_terminal in (None, terminal_session)
+        if committed_terminal is None:
+            committed_terminal = terminal_session
+        if payload_committed and doomed_audio:
+            self._delete_settled_audio(session_id, doomed_audio)
+
+        # Preserve references held by handlers while replacing every
+        # cached field with Redis' canonical terminal snapshot. This
+        # discards any stale mutations made after a committed
+        # termination whose response was lost.
+        for session_field in fields(Session):
+            setattr(
+                session,
+                session_field.name,
+                getattr(committed_terminal, session_field.name),
+            )
+        tenant_active = self.active_admin_sessions.get(session_id.tenant_id, set())
+        tenant_active.discard(session_id.session_id)
+        if not tenant_active:
+            self.active_admin_sessions.pop(session_id.tenant_id, None)
+        self._emit_lifecycle(
+            session,
+            SessionLifecyclePhase.TERMINATED,
+            SessionTerminationReason.classify(reason),
+        )
+
+    def get_session(self, session_id: TenantSessionKey) -> Optional[Session]:
+        """Session abrufen"""
+        session = self.sessions.get(session_id)
+        if session is None:
+            session = self.store.load(session_id)
+            if session is not None:
+                self.sessions[session_id] = session
+        return session
+
+    def has_unscoped_session(self, session_id: str) -> bool:
+        """Always False: a tenant session is reachable only through its key or join index."""
+        return False
+
+    def resolve_customer_session(self, session_id: str) -> Optional[TenantSessionKey]:
+        key = self.store.resolve_join(session_id)
+        if key is None:
+            return None
+        session = self.get_session(key)
+        if session is None or session.status == SessionStatus.TERMINATED:
+            return None
+        return key
+
+    def resolve_ended_session(
+        self, session_id: str, *, within: timedelta
+    ) -> Optional[TenantSessionKey]:
+        """The key of a session that terminated no longer than ``within`` ago.
+
+        Terminating a session revokes its join link, which is what stops an
+        ended conversation being rejoined or observed. It also removed the only
+        route from the bare session id a browser holds back to the tenant that
+        owns the conversation, so feedback offered in the ended-conversation
+        screen was refused as unknown (#324). This reads the tombstone the
+        revocation leaves behind. It returns the key alone -- enough to
+        attribute a feedback row to its tenant, and no way back into the
+        conversation -- and takes the window from the caller rather than
+        holding a policy of its own.
+        """
+        resolved = self.store.resolve_ended_join(session_id)
+        if resolved is None:
+            return None
+        key, terminated_at = resolved
+        # An undatable record cannot be shown to be inside the window.
+        if terminated_at is None:
+            return None
+        if _ensure_utc(self.clock()) - _ensure_utc(terminated_at) > within:
+            return None
+        return key
+
+    def admin_connected(self, key: TenantSessionKey) -> None:
+        session = self.get_session(key)
+        if session is None or session.status == SessionStatus.TERMINATED:
+            raise KeyError(_SESSION_NOT_FOUND)
+        session.admin_connection_count += 1
+        session.admin_connected = True
+        session.admin_disconnected_at = None
+        session.timeout_warning_sent = False
+        self.store.save(session)
+
+    def admin_disconnected(self, key: TenantSessionKey) -> None:
+        session = self.get_session(key)
+        if session is None:
+            raise KeyError(_SESSION_NOT_FOUND)
+        if session.status == SessionStatus.TERMINATED:
+            return
+        session.admin_connection_count = max(0, session.admin_connection_count - 1)
+        session.admin_connected = session.admin_connection_count > 0
+        if session.admin_connection_count == 0:
+            session.admin_disconnected_at = self.clock()
+        self.store.save(session)
+
+    def customer_connected(self, key: TenantSessionKey) -> None:
+        session = self.get_session(key)
+        if session is None or session.status == SessionStatus.TERMINATED:
+            raise KeyError(_SESSION_NOT_FOUND)
+        session.customer_connection_count += 1
+        session.customer_connected = True
+        self.store.save(session)
+
+    def customer_disconnected(self, key: TenantSessionKey) -> None:
+        session = self.get_session(key)
+        if session is None:
+            raise KeyError(_SESSION_NOT_FOUND)
+        if session.status == SessionStatus.TERMINATED:
+            return
+        session.customer_connection_count = max(0, session.customer_connection_count - 1)
+        session.customer_connected = session.customer_connection_count > 0
+        self.store.save(session)
+
+    def get_session_status(self, session_id: TenantSessionKey) -> Optional[SessionStatus]:
+        """Session-Status abrufen"""
+        session = self.get_session(session_id)
+        return session.status if session else None
+
+    def add_message(self, session_id: TenantSessionKey, message: SessionMessage) -> None:
+        """Nachricht zur Session hinzufügen"""
+        if session := self.get_session(session_id):
+            session.messages.append(message)
+            # ✨ Session-Aktivität bei neuer Nachricht aktualisieren
+            session.update_activity()
+            self.store.save(session)
+
+    def record_message_authorization(
+        self,
+        session_id: TenantSessionKey,
+        message_id: str,
+        *,
+        record: bool,
+        original_audio: bool,
+        translated_audio: bool,
+    ) -> None:
+        """Store the outcome of one message's three policy reads.
+
+        Args:
+            session_id: The session key.
+            message_id: The message whose outcome this is.
+            record: Whether the message record itself may be retained.
+            original_audio: Whether the guest's input audio may be retained.
+            translated_audio: Whether the synthesised audio may be retained.
+        """
+        session = self.get_session(session_id)
+        if session is None:
+            return
+        for message in session.messages:
+            if message.id != message_id:
+                continue
+            message.record_authorized = record
+            message.original_audio_authorized = original_audio
+            message.translated_audio_authorized = translated_audio
+            break
+        else:
+            return
+        self.store.save(session)
+
+    def _persist_swept_session(self, session: Session) -> None:
+        self.store.save(session)
 
     def get_active_session(
         self,
         session_id: Optional[str] = None,
         *,
-        tenant_id: Optional[str] = None,
-    ) -> Optional[Dict]:
-        """Aktive Admin-Session abrufen.
+        tenant_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Aktive Admin-Session eines Mandanten abrufen.
 
         Wenn eine Session-ID übergeben wird, wird genau diese Session zurückgegeben,
         sofern sie noch nicht beendet wurde. Ohne Session-ID wird die zuletzt erstellte
         aktive Session geliefert, solange diese eindeutig ist.
         """
-
-        if tenant_id is not None:
-            return self._get_tenant_active_session(tenant_id, session_id)
-
-        if session_id:
-            session = self.get_session(session_id)
-            if not session or session.status == SessionStatus.TERMINATED:
-                return None
-            return session.to_dict()
-
-        active_sessions = [
-            session
-            for session in self.sessions.values()
-            if session.status in [SessionStatus.PENDING, SessionStatus.ACTIVE]
-        ]
-
-        if not active_sessions:
-            return None
-
-        if len(active_sessions) > 1:
-            raise ValueError("Mehrere aktive Sessions vorhanden; explizite session_id erforderlich")
-
-        active_sessions.sort(key=lambda s: s.created_at, reverse=True)
-        return active_sessions[0].to_public_dict()
-
-    def _get_tenant_active_session(
-        self, tenant_id: str, session_id: Optional[str]
-    ) -> Optional[Dict[str, Any]]:
-        if self.store is None:
-            return None
         candidates = [
             session
             for session in self.store.list_for_tenant(tenant_id)
@@ -1286,48 +1030,25 @@ class SessionManager:
         candidates.sort(key=lambda item: item.created_at, reverse=True)
         return candidates[0].to_public_dict()
 
-    def get_active_sessions(self, *, tenant_id: Optional[str] = None) -> List[Dict]:
+    def get_active_sessions(self, *, tenant_id: str) -> List[Dict[str, Any]]:
         """Alle aktiven oder ausstehende Sessions zurückgeben."""
-        if tenant_id is not None:
-            if self.store is None:
-                return []
-            return [
-                session.to_public_dict()
-                for session in self.store.list_for_tenant(tenant_id)
-                if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
-            ]
         return [
             session.to_public_dict()
-            for session in self.sessions.values()
-            if session.status in [SessionStatus.PENDING, SessionStatus.ACTIVE]
+            for session in self.store.list_for_tenant(tenant_id)
+            if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
         ]
 
-    def get_session_history(
-        self, limit: int = 10, *, tenant_id: Optional[str] = None
-    ) -> List[Dict]:
+    def get_session_history(self, limit: int = 10, *, tenant_id: str) -> List[Dict[str, Any]]:
         """Vergangene Sessions für Admin-Dashboard"""
-        if tenant_id is not None:
-            if self.store is None:
-                return []
-            terminated_sessions = [
-                session.to_public_dict()
-                for session in self.store.list_for_tenant(tenant_id)
-                if session.status == SessionStatus.TERMINATED
-            ]
-            terminated_sessions.sort(key=lambda item: item.get("terminated_at", ""), reverse=True)
-            return terminated_sessions[:limit]
         terminated_sessions = [
             session.to_public_dict()
-            for session in self.sessions.values()
+            for session in self.store.list_for_tenant(tenant_id)
             if session.status == SessionStatus.TERMINATED
         ]
-
-        # Nach Beendigungszeit sortieren (neueste zuerst)
-        terminated_sessions.sort(key=lambda s: s.get("terminated_at", ""), reverse=True)
-
+        terminated_sessions.sort(key=lambda item: item.get("terminated_at", ""), reverse=True)
         return terminated_sessions[:limit]
 
-    async def activate_session(self, session_id: Any, customer_language: str):
+    async def activate_session(self, session_id: TenantSessionKey, customer_language: str) -> None:
         """Session aktivieren wenn Customer beitritt oder Sprache ändern"""
         await asyncio.sleep(0)
         session = self.get_session(session_id)
@@ -1340,7 +1061,6 @@ class SessionManager:
                 f"Session {session_id} ist beendet und kann nicht mehr geändert werden"
             )
 
-        # Sprache und Status aktualisieren
         session.customer_language = customer_language
         # This method doubles as the language-update path, so the transition --
         # not the call -- is what counts. Emitting unconditionally would report
@@ -1349,133 +1069,64 @@ class SessionManager:
         if activated:
             session.status = SessionStatus.ACTIVE
         session.customer_connected = True
-        if isinstance(session_id, TenantSessionKey):
-            if self.store is None:
-                raise RuntimeError(_TENANT_STORE_UNAVAILABLE)
-            self.store.save(session)
-        else:
-            self._persist_session(session)
+        self.store.save(session)
 
         if activated:
             self._emit_lifecycle(session, SessionLifecyclePhase.ACTIVATED)
 
-        if isinstance(session_id, TenantSessionKey):
-            logger.info(
-                "tenant_session_activation tenant_ref=%s session_ref=%s",
-                tenant_ref(session_id.tenant_id),
-                session_ref(session_id.session_id),
-            )
-        else:
-            print(
-                f"🎯 Session {session_id} aktiviert/aktualisiert mit Sprache: "
-                f"{customer_language}"
-            )
+        logger.info(
+            "tenant_session_activation tenant_ref=%s session_ref=%s",
+            tenant_ref(session_id.tenant_id),
+            self.pseudonymizer.reference(session_id.session_id),
+        )
 
-    async def add_websocket_connection(self, session_id: Any, client_type: ClientType, websocket):
+    async def add_websocket_connection(
+        self, session_id: TenantSessionKey, client_type: ClientType, websocket: Any
+    ) -> None:
         """WebSocket-Verbindung zur Session hinzufügen"""
         await asyncio.sleep(0)
-        if isinstance(session_id, TenantSessionKey):
-            if client_type == ClientType.ADMIN:
-                self.admin_connected(session_id)
-            else:
-                self.customer_connected(session_id)
-            logger.info(
-                "tenant_websocket_registered",
-                extra={"tenant_ref": session_id.tenant_ref},
-            )
-            return
+        if client_type == ClientType.ADMIN:
+            self.admin_connected(session_id)
+        else:
+            self.customer_connected(session_id)
+        logger.info(
+            "tenant_websocket_registered",
+            extra={"tenant_ref": session_id.tenant_ref},
+        )
 
-        if session_id not in self.websocket_connections:
-            self.websocket_connections[session_id] = {}
-
-        self.websocket_connections[session_id][client_type.value] = websocket
-
-        # Session-Status aktualisieren
-        session = self.get_session(session_id)
-        if session:
-            if client_type == ClientType.ADMIN:
-                session.admin_connected = True
-            else:
-                session.customer_connected = True
-            self._persist_session(session)
-
-        print(f"🔗 WebSocket-Verbindung hinzugefügt: {session_id} ({client_type.value})")
-
-    async def remove_websocket_connection(self, session_id: Any, client_type: ClientType):
+    async def remove_websocket_connection(
+        self, session_id: TenantSessionKey, client_type: ClientType
+    ) -> None:
         """WebSocket-Verbindung von Session entfernen"""
         await asyncio.sleep(0)
-        if isinstance(session_id, TenantSessionKey):
-            if client_type == ClientType.ADMIN:
-                self.admin_disconnected(session_id)
-            else:
-                self.customer_disconnected(session_id)
-            logger.info(
-                "tenant_websocket_unregistered",
-                extra={"tenant_ref": session_id.tenant_ref},
-            )
-            return
+        if client_type == ClientType.ADMIN:
+            self.admin_disconnected(session_id)
+        else:
+            self.customer_disconnected(session_id)
+        logger.info(
+            "tenant_websocket_unregistered",
+            extra={"tenant_ref": session_id.tenant_ref},
+        )
 
-        if session_id in self.websocket_connections:
-            self.websocket_connections[session_id].pop(client_type.value, None)
-
-            # Session-Status aktualisieren
-            session = self.get_session(session_id)
-            if session:
-                if client_type == ClientType.ADMIN:
-                    session.admin_connected = False
-                else:
-                    session.customer_connected = False
-                self._persist_session(session)
-
-            print(f"🔌 WebSocket-Verbindung entfernt: {session_id} ({client_type.value})")
-
-    def register_websocket_manager(self, manager: "WebSocketManager") -> None:
-        """WebSocketManager-Referenz für bidirektionale Cleanup-Prozesse registrieren."""
-        self.websocket_manager = manager
-
-    def get_websocket_connection(self, session_id: str, client_type: ClientType):
-        """WebSocket-Verbindung abrufen"""
-        return self.websocket_connections.get(session_id, {}).get(client_type.value)
-
-    # ✨ Timeout Management Functions
-
-    def update_session_activity(self, session_id: str):
-        """Session-Aktivität aktualisieren (Heartbeat/Message)"""
-        session = self.get_session(session_id)
-        if session:
-            session.update_activity()
-            self._persist_session(session)
-
-    async def check_session_timeouts(self):
+    async def check_session_timeouts(self) -> None:
         """Alle Sessions auf Timeouts prüfen und entsprechende Aktionen durchführen"""
         self._prune_polling_presence()
 
-        current_sessions = tuple(self.sessions.values())
-
-        for session in current_sessions:
+        for session in tuple(self.sessions.values()):
             if session.status == SessionStatus.TERMINATED:
                 continue
 
-            warning_due = (
-                session.warning_due(self.clock())
-                if session.tenant_id
-                else session.is_timeout_warning_due()
-            )
-            timeout_due = (
-                session.timeout_due(self.clock()) if session.tenant_id else session.is_timeout_due()
-            )
+            warning_due = session.warning_due(self.clock())
+            timeout_due = session.timeout_due(self.clock())
             if warning_due:
                 await self._send_timeout_warning(session)
             if timeout_due:
-                await self.terminate_session(
-                    session.key if session.tenant_id else session.id,
-                    reason="session_timeout",
-                )
+                await self.terminate_session(session.key, reason="session_timeout")
 
     def _prune_polling_presence(self) -> None:
-        from .websocket_polling_routes import polling_store
-
-        for client in polling_store.prune():
+        if self.polling_store is None:
+            return
+        for client in self.polling_store.prune():
             try:
                 if client.client_type is ClientType.ADMIN:
                     self.admin_disconnected(client.key)
@@ -1484,60 +1135,11 @@ class SessionManager:
             except KeyError:
                 pass
 
-    async def _send_timeout_warning(self, session: Session):
+    async def _send_timeout_warning(self, session: Session) -> None:
         """Timeout-Warning an alle WebSocket-Clients der Session senden"""
         if self.websocket_manager:
-            remaining_minutes = (
-                session.timeout_warning_minutes
-                if session.tenant_id
-                else session.session_timeout_minutes - session.warning_timeout_minutes
-            )
+            warning_message = timeout_warning_frame(session.id, session.timeout_warning_minutes)
 
-            warning_message = {
-                "type": "timeout_warning",
-                "session_id": session.id,
-                "message": f"Session wird in {remaining_minutes} Minuten aufgrund von Inaktivität beendet.",
-                "remaining_minutes": remaining_minutes,
-                "timestamp": utc_now().isoformat(),
-            }
-
-            await self.websocket_manager.broadcast_to_session(
-                session.key if session.tenant_id else session.id,
-                warning_message,
-            )
+            await self.websocket_manager.broadcast_to_session(session.key, warning_message)
             session.timeout_warning_sent = True
-            if session.tenant_id and self.store is not None:
-                self.store.save(session)
-            else:
-                self._persist_session(session)
-
-    def get_sessions_requiring_timeout_check(self) -> List[Session]:
-        """Sessions zurückgeben, die Timeout-Checks benötigen"""
-        return [
-            session
-            for session in self.sessions.values()
-            if session.status in [SessionStatus.ACTIVE, SessionStatus.PENDING]
-        ]
-
-    async def heartbeat_received(self, session_id: Any, client_type: ClientType):
-        """Heartbeat von Client empfangen - Aktivität aktualisieren"""
-        if not isinstance(session_id, TenantSessionKey):
-            self.update_session_activity(session_id)
-
-        # Optional: Heartbeat-Response senden
-        if self.websocket_manager:
-            response = {
-                "type": "heartbeat_response",
-                "session_id": (
-                    session_id.session_id
-                    if isinstance(session_id, TenantSessionKey)
-                    else session_id
-                ),
-                "client_type": client_type.value,
-                "timestamp": utc_now().isoformat(),
-            }
-            await self.websocket_manager.send_to_client(session_id, client_type, response)
-
-
-# Globale Instanz
-session_manager = SessionManager(store=MemoryTenantSessionStore())
+            self.store.save(session)

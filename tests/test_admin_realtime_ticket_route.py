@@ -5,8 +5,6 @@ import asyncio
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
-from services.api_gateway.realtime_ticket import realtime_ticket_store
-from services.api_gateway.session_manager import session_manager
 from services.api_gateway.tenant_session import (
     RuntimeConfigurationSnapshot,
     TenantSessionKey,
@@ -15,7 +13,9 @@ from services.api_gateway.tenant_session import (
 REVISION = f"sha256:{'a' * 64}"
 
 
-def test_admin_issues_a_ticket_scoped_to_the_authenticated_session() -> None:
+def test_admin_issues_a_ticket_scoped_to_the_authenticated_session(
+    session_manager, gateway_dependencies
+) -> None:
     session_manager.reset(clear_persistence=True)
     client = TestClient(app)
     session_id = client.post("/api/admin/session/create").json()["session_id"]
@@ -30,7 +30,7 @@ def test_admin_issues_a_ticket_scoped_to_the_authenticated_session() -> None:
     assert body["ticket"]
     assert body["expires_at"]
     assert (
-        realtime_ticket_store.consume(
+        gateway_dependencies.realtime_tickets.consume(
             body["ticket"],
             TenantSessionKey("tenant-test", session_id),
             "websocket",
@@ -39,7 +39,7 @@ def test_admin_issues_a_ticket_scoped_to_the_authenticated_session() -> None:
     )
 
 
-def test_admin_cannot_issue_a_ticket_for_another_tenant() -> None:
+def test_admin_cannot_issue_a_ticket_for_another_tenant(session_manager) -> None:
     session_manager.reset(clear_persistence=True)
     client = TestClient(app)
     session = asyncio.run(

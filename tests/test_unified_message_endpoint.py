@@ -6,10 +6,12 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from services.api_gateway.routes import session as session_routes
-from services.api_gateway.session_manager import ClientType, SessionManager, SessionStatus
+from services.api_gateway import message_models, message_processing
+from services.api_gateway.audio_storage import AudioStore
+from services.api_gateway.session_manager import ClientType, TenantSessionManager, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
+from tests.pipeline_helpers import speech_pipeline
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
@@ -17,17 +19,19 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 @pytest.fixture
 async def active_session(monkeypatch: pytest.MonkeyPatch):
-    manager = SessionManager(store=MemoryTenantSessionStore())
+    manager = TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
     manager.store.save(session)
-    monkeypatch.setattr(session_routes, "session_manager", manager)
     return manager, session
 
 
 def test_text_request_has_no_client_controlled_role() -> None:
-    request = session_routes.TextMessageRequest(
+    request = message_models.TextMessageRequest(
         text=" Hallo ",
         source_lang="de",
         target_lang="en",
@@ -41,7 +45,7 @@ def test_text_request_has_no_client_controlled_role() -> None:
 @pytest.mark.parametrize("text", ["", "   ", "x" * 501])
 def test_text_request_rejects_invalid_content(text: str) -> None:
     with pytest.raises(ValueError):
-        session_routes.TextMessageRequest(
+        message_models.TextMessageRequest(
             text=text,
             source_lang="de",
             target_lang="en",
@@ -52,8 +56,8 @@ def test_text_request_rejects_invalid_content(text: str) -> None:
 async def test_unified_message_dispatches_json_with_trusted_role(
     active_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _manager, session = active_session
-    expected = session_routes.MessageResponse(
+    manager, session = active_session
+    expected = message_models.MessageResponse(
         status="success",
         message_id="message-1",
         session_id=session.id,
@@ -67,15 +71,18 @@ async def test_unified_message_dispatches_json_with_trusted_role(
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
     process = AsyncMock(return_value=expected)
-    monkeypatch.setattr(session_routes, "process_text_input", process)
+    monkeypatch.setattr(message_processing, "process_text_input", process)
     request = AsyncMock()
     request.headers = {"content-type": "application/json"}
 
-    result = await session_routes.send_unified_message(
+    result = await message_processing.send_unified_message(
         session.key,
         ClientType.ADMIN,
         request,
         None,
+        sessions=manager,
+        pipeline=speech_pipeline(),
+        audio_store=AudioStore.from_environment(),
     )
 
     assert result == expected
@@ -84,16 +91,19 @@ async def test_unified_message_dispatches_json_with_trusted_role(
 
 @pytest.mark.asyncio
 async def test_unified_message_rejects_unsupported_content_type(active_session) -> None:
-    _manager, session = active_session
+    manager, session = active_session
     request = AsyncMock()
     request.headers = {"content-type": "text/plain"}
 
     with pytest.raises(HTTPException) as caught:
-        await session_routes.send_unified_message(
+        await message_processing.send_unified_message(
             session.key,
             ClientType.ADMIN,
             request,
             None,
+            sessions=manager,
+            pipeline=speech_pipeline(),
+            audio_store=AudioStore.from_environment(),
         )
 
     assert caught.value.status_code == 400
@@ -106,22 +116,25 @@ async def test_unified_message_redacts_unexpected_exception_from_response_and_ou
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _manager, session = active_session
+    manager, session = active_session
     request = AsyncMock()
     request.headers = {"content-type": "application/json"}
     secret = "private-upstream-exception"
     monkeypatch.setattr(
-        session_routes,
+        message_processing,
         "process_text_input",
         AsyncMock(side_effect=RuntimeError(secret)),
     )
 
     with pytest.raises(HTTPException) as caught:
-        await session_routes.send_unified_message(
+        await message_processing.send_unified_message(
             session.key,
             ClientType.ADMIN,
             request,
             None,
+            sessions=manager,
+            pipeline=speech_pipeline(),
+            audio_store=AudioStore.from_environment(),
         )
 
     captured = capsys.readouterr()
@@ -133,7 +146,7 @@ async def test_unified_message_redacts_unexpected_exception_from_response_and_ou
 
 @pytest.mark.asyncio
 async def test_audio_pipeline_requires_only_file_and_languages(active_session) -> None:
-    _manager, session = active_session
+    manager, session = active_session
     request = AsyncMock()
     # A real mapping: an AsyncMock would hand the route a coroutine where the
     # correlation header should be.
@@ -141,11 +154,14 @@ async def test_audio_pipeline_requires_only_file_and_languages(active_session) -
     request.form.return_value = {"source_lang": "de", "target_lang": "en"}
 
     with pytest.raises(HTTPException) as caught:
-        await session_routes.process_audio_input(
+        await message_processing.process_audio_input(
             session.key,
             ClientType.ADMIN,
             request,
             0.0,
+            sessions=manager,
+            pipeline=speech_pipeline(),
+            audio_store=AudioStore.from_environment(),
         )
 
     assert caught.value.status_code == 400
@@ -158,14 +174,15 @@ async def test_create_message_persists_under_the_complete_tenant_key(
 ) -> None:
     manager, session = active_session
 
-    message = await session_routes.create_session_message(
+    message = await message_processing.create_session_message(
         session.key,
         ClientType.CUSTOMER,
         "Hello",
         "Hallo",
-        None,
         "en",
         "de",
+        sessions=manager,
+        translated_audio_available=False,
     )
 
     stored = manager.get_session(session.key)

@@ -15,12 +15,12 @@ Version: 1.0
 
 import logging
 from types import TracebackType
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from ..circuit_breaker import CircuitBreakerFactory
-from ..circuit_breaker_client import circuit_breaker_client
+from ..circuit_breaker_client import CircuitBreakerServiceClient
+from ..dependencies import get_circuit_breaker_client
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ CIRCUIT_BREAKER_ROUTE_RESPONSES = {
     500: {"description": "Circuit breaker health operation failed"},
 }
 _REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
+CircuitBreakerClient = Annotated[CircuitBreakerServiceClient, Depends(get_circuit_breaker_client)]
 
 
 def _redacted_exception_info(
@@ -48,7 +49,7 @@ def _redacted_exception_info(
     "/health/services",
     responses={500: {"description": "Health status lookup failed"}},
 )
-async def get_services_health() -> Dict[str, Any]:
+async def get_services_health(circuit_breaker_client: CircuitBreakerClient) -> Dict[str, Any]:
     """
     Gesamter Health Status aller Services
 
@@ -74,7 +75,9 @@ async def get_services_health() -> Dict[str, Any]:
     "/health/services/{service_name}",
     responses=CIRCUIT_BREAKER_ROUTE_RESPONSES,
 )
-async def get_service_health(service_name: str) -> Dict[str, Any]:
+async def get_service_health(
+    service_name: str, circuit_breaker_client: CircuitBreakerClient
+) -> Dict[str, Any]:
     """
     Health Status für einzelnen Service
 
@@ -118,7 +121,9 @@ async def get_service_health(service_name: str) -> Dict[str, Any]:
     "/health/circuit-breakers",
     responses={500: {"description": "Circuit breaker status lookup failed"}},
 )
-async def get_circuit_breakers_status() -> Dict[str, Any]:
+async def get_circuit_breakers_status(
+    circuit_breaker_client: CircuitBreakerClient,
+) -> Dict[str, Any]:
     """
     Status aller Circuit Breaker
 
@@ -126,7 +131,7 @@ async def get_circuit_breakers_status() -> Dict[str, Any]:
         Circuit Breaker Status für alle Services
     """
     try:
-        circuits = CircuitBreakerFactory.get_all_circuits()
+        circuits = circuit_breaker_client.circuit_breakers()
 
         circuit_status = {}
         for name, circuit in circuits.items():
@@ -149,7 +154,7 @@ async def get_circuit_breakers_status() -> Dict[str, Any]:
     "/health/degradation",
     responses={500: {"description": "Degradation status lookup failed"}},
 )
-async def get_degradation_status() -> Dict[str, Any]:
+async def get_degradation_status(circuit_breaker_client: CircuitBreakerClient) -> Dict[str, Any]:
     """
     Graceful Degradation Status
 
@@ -172,7 +177,9 @@ async def get_degradation_status() -> Dict[str, Any]:
     "/admin/circuit-breakers/{service_name}/reset",
     responses=CIRCUIT_BREAKER_ROUTE_RESPONSES,
 )
-async def reset_circuit_breaker(service_name: str) -> Dict[str, Any]:
+async def reset_circuit_breaker(
+    service_name: str, circuit_breaker_client: CircuitBreakerClient
+) -> Dict[str, Any]:
     """
     Manueller Circuit Breaker Reset (Admin Only)
 
@@ -189,7 +196,7 @@ async def reset_circuit_breaker(service_name: str) -> Dict[str, Any]:
         )
 
     try:
-        circuits = CircuitBreakerFactory.get_all_circuits()
+        circuits = circuit_breaker_client.circuit_breakers()
 
         if service_name not in circuits:
             raise HTTPException(
@@ -228,7 +235,9 @@ async def reset_circuit_breaker(service_name: str) -> Dict[str, Any]:
     "/admin/circuit-breakers/reset-all",
     responses={500: {"description": "Circuit breaker reset failed"}},
 )
-async def reset_all_circuit_breakers() -> Dict[str, Any]:
+async def reset_all_circuit_breakers(
+    circuit_breaker_client: CircuitBreakerClient,
+) -> Dict[str, Any]:
     """
     Manueller Reset aller Circuit Breaker (Admin Only)
 
@@ -236,7 +245,7 @@ async def reset_all_circuit_breakers() -> Dict[str, Any]:
         Reset Status aller Circuit Breaker
     """
     try:
-        circuits = CircuitBreakerFactory.get_all_circuits()
+        circuits = circuit_breaker_client.circuit_breakers()
 
         reset_results = {}
         for name, circuit in circuits.items():
@@ -268,7 +277,7 @@ async def reset_all_circuit_breakers() -> Dict[str, Any]:
     "/health/summary",
     responses={500: {"description": "Health summary generation failed"}},
 )
-async def get_health_summary() -> Dict[str, Any]:
+async def get_health_summary(circuit_breaker_client: CircuitBreakerClient) -> Dict[str, Any]:
     """
     Kompakte Health Summary für Dashboard
 
@@ -282,7 +291,7 @@ async def get_health_summary() -> Dict[str, Any]:
         gpu_summary = health_status.get("gpu_summary", {})
 
         # Circuit Breaker States
-        circuits = CircuitBreakerFactory.get_all_circuits()
+        circuits = circuit_breaker_client.circuit_breakers()
         circuit_states = {name: circuit.state.value for name, circuit in circuits.items()}
 
         # Degradation Info

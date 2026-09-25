@@ -1,25 +1,18 @@
 """Behavioral coverage for Sonar remediation paths in WebSocket services."""
 
-import asyncio
 import logging
-from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from services.api_gateway.session_manager import ClientType, SessionManager, SessionStatus
+from services.api_gateway.session_manager import ClientType, SessionStatus
+from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket import (
-    ConnectionState,
-    WebSocketConnection,
     WebSocketManager,
     websocket_endpoint,
 )
-from services.api_gateway.websocket_fallback import (
-    FallbackReason,
-    PollingClient,
-    WebSocketFallbackManager,
-)
+from tests.realtime_sessions import TENANT, tenant_session_manager, websocket_monitor
 
 
 class _Counter:
@@ -38,11 +31,11 @@ class _Monitor:
 
 @pytest.mark.asyncio
 async def test_no_connection_broadcast_uses_redacted_warning(caplog):
-    manager = WebSocketManager(SessionManager())
+    manager = WebSocketManager(tenant_session_manager(), monitor=websocket_monitor())
 
     with caplog.at_level(logging.WARNING):
         result = await manager.broadcast_with_differentiated_content(
-            "SENSITIVE123",
+            TenantSessionKey(TENANT, "SENSITIVE123"),
             ClientType.ADMIN,
             {"type": "original"},
             {"type": "translated"},
@@ -55,42 +48,17 @@ async def test_no_connection_broadcast_uses_redacted_warning(caplog):
 
 @pytest.mark.asyncio
 async def test_heartbeat_monitor_logs_unexpected_failure(monkeypatch, caplog):
-    manager = WebSocketManager(SessionManager())
+    manager = WebSocketManager(tenant_session_manager(), monitor=websocket_monitor())
 
     async def fail_sleep(_delay):
         raise RuntimeError("scheduler unavailable")
 
-    monkeypatch.setattr("services.api_gateway.websocket.asyncio.sleep", fail_sleep)
+    monkeypatch.setattr("services.api_gateway.realtime_heartbeat.asyncio.sleep", fail_sleep)
 
     with caplog.at_level(logging.ERROR):
-        await manager._heartbeat_monitor()
+        await manager.heartbeat.monitor_loop()
 
     assert "Heartbeat monitor failed" in caplog.messages
-
-
-@pytest.mark.asyncio
-async def test_fallback_evaluation_failure_is_logged(monkeypatch, caplog):
-    manager = WebSocketManager(SessionManager())
-    connection = WebSocketConnection(
-        websocket=Mock(),
-        client_type=ClientType.ADMIN,
-        session_id="TEST1234",
-        connected_at=datetime.now(timezone.utc),
-        last_heartbeat=datetime.now(timezone.utc),
-        state=ConnectionState.CONNECTED,
-    )
-
-    monkeypatch.setattr(
-        "services.api_gateway.websocket.fallback_manager.evaluate_websocket_failure",
-        Mock(side_effect=RuntimeError("fallback storage unavailable")),
-    )
-
-    with caplog.at_level(logging.ERROR):
-        await manager._evaluate_connection_error(
-            connection, RuntimeError("network interrupted"), "broadcast_error"
-        )
-
-    assert "Fallback evaluation failed" in caplog.messages
 
 
 @pytest.mark.asyncio
@@ -102,10 +70,10 @@ async def test_endpoint_returns_error_message_after_message_handler_failure(
         send_json=AsyncMock(side_effect=RuntimeError("client disconnected")),
         close=AsyncMock(),
     )
+    sessions = SimpleNamespace(
+        get_session=Mock(return_value=SimpleNamespace(status=SessionStatus.ACTIVE))
+    )
     manager = SimpleNamespace(
-        session_manager=SimpleNamespace(
-            get_session=Mock(return_value=SimpleNamespace(status=SessionStatus.ACTIVE))
-        ),
         connect_websocket=AsyncMock(return_value="connection-1"),
         handle_websocket_message=AsyncMock(),
         disconnect_websocket=AsyncMock(),
@@ -119,7 +87,9 @@ async def test_endpoint_returns_error_message_after_message_handler_failure(
     )
 
     with caplog.at_level(logging.ERROR):
-        await websocket_endpoint(websocket, "TEST1234", "admin", manager, None)
+        await websocket_endpoint(
+            websocket, TenantSessionKey(TENANT, "TEST1234"), ClientType.ADMIN, manager, sessions
+        )
 
     assert "WebSocket message processing failed" in caplog.messages
     websocket.send_json.assert_awaited_once()
@@ -128,49 +98,3 @@ async def test_endpoint_returns_error_message_after_message_handler_failure(
     manager.disconnect_websocket.assert_awaited_once_with(
         "connection-1", "connection_error"
     )
-
-
-@pytest.mark.asyncio
-async def test_fallback_notification_is_queued_when_callback_fails(caplog):
-    manager = WebSocketFallbackManager()
-    client = PollingClient(
-        polling_id="poll-1",
-        session_id="TEST1234",
-        client_type="admin",
-        origin=None,
-        created_at=datetime.now(timezone.utc),
-        fallback_reason=FallbackReason.NETWORK_ERROR,
-    )
-
-    async def failing_callback(_notification):
-        raise RuntimeError("callback unavailable")
-
-    manager.notification_callbacks.append(failing_callback)
-
-    with caplog.at_level(logging.ERROR):
-        await manager._send_fallback_notification(client)
-
-    assert len(client.message_queue) == 1
-    assert client.message_queue[0]["type"] == "fallback_notification"
-    assert "Notification callback failed" in caplog.messages
-
-
-@pytest.mark.asyncio
-async def test_periodic_cleanup_logs_internal_failure_before_cancellation(
-    monkeypatch, caplog
-):
-    manager = WebSocketFallbackManager()
-    outcomes = iter((RuntimeError("clock unavailable"), asyncio.CancelledError()))
-
-    async def controlled_sleep(_delay):
-        outcome = next(outcomes)
-        raise outcome
-
-    monkeypatch.setattr(
-        "services.api_gateway.websocket_fallback.asyncio.sleep", controlled_sleep
-    )
-
-    with caplog.at_level(logging.ERROR), pytest.raises(asyncio.CancelledError):
-        await manager.periodic_cleanup()
-
-    assert "Polling cleanup task failed" in caplog.messages

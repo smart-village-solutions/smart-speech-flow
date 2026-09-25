@@ -18,21 +18,21 @@ import time
 import pytest
 
 from services.api_gateway.circuit_breaker import CircuitState
-from services.api_gateway.graceful_degradation import (
-    MODE_HISTORY_LIMIT,
-    ServiceMode,
-    graceful_degradation_manager,
-)
-from services.api_gateway.service_health import service_health_manager
+from services.api_gateway.graceful_degradation import MODE_HISTORY_LIMIT, ServiceMode
+from services.api_gateway.service_health import ServiceHealthManager
 
 ALL_SERVICES = ("asr", "translation", "tts")
 
 
-@pytest.fixture(autouse=True)
-def restore_mode():
-    yield
-    graceful_degradation_manager.current_mode = ServiceMode.FULL
-    graceful_degradation_manager.mode_history.clear()
+@pytest.fixture
+def service_health_manager():
+    """One app's health manager, as build_gateway_dependencies builds it."""
+    return ServiceHealthManager()
+
+
+@pytest.fixture
+def graceful_degradation_manager(service_health_manager):
+    return service_health_manager.degradation
 
 
 def _states(**overrides) -> dict:
@@ -42,27 +42,27 @@ def _states(**overrides) -> dict:
 
 
 class TestTheModeIsDerived:
-    def test_everything_up_is_full_service(self):
+    def test_everything_up_is_full_service(self, graceful_degradation_manager):
         graceful_degradation_manager.apply_service_states(_states())
 
         assert graceful_degradation_manager.current_mode is ServiceMode.FULL
 
-    def test_one_service_down_is_degraded(self):
+    def test_one_service_down_is_degraded(self, graceful_degradation_manager):
         graceful_degradation_manager.apply_service_states(_states(tts=False))
 
         assert graceful_degradation_manager.current_mode is ServiceMode.DEGRADED
 
-    def test_two_services_down_is_minimal(self):
+    def test_two_services_down_is_minimal(self, graceful_degradation_manager):
         graceful_degradation_manager.apply_service_states(_states(tts=False, translation=False))
 
         assert graceful_degradation_manager.current_mode is ServiceMode.MINIMAL
 
-    def test_everything_down_is_offline(self):
+    def test_everything_down_is_offline(self, graceful_degradation_manager):
         graceful_degradation_manager.apply_service_states({name: False for name in ALL_SERVICES})
 
         assert graceful_degradation_manager.current_mode is ServiceMode.OFFLINE
 
-    def test_it_recovers(self):
+    def test_it_recovers(self, graceful_degradation_manager):
         """The old ratchet could not do this; its recovery branch was `pass`."""
         graceful_degradation_manager.apply_service_states(_states(tts=False))
         assert graceful_degradation_manager.current_mode is ServiceMode.DEGRADED
@@ -71,7 +71,7 @@ class TestTheModeIsDerived:
 
         assert graceful_degradation_manager.current_mode is ServiceMode.FULL
 
-    def test_a_change_is_recorded_in_the_history(self):
+    def test_a_change_is_recorded_in_the_history(self, graceful_degradation_manager):
         graceful_degradation_manager.apply_service_states(_states(asr=False))
 
         last = graceful_degradation_manager.mode_history[-1]
@@ -79,13 +79,13 @@ class TestTheModeIsDerived:
         assert last["new_mode"] == "degraded"
         assert "asr" in last["trigger_service"]
 
-    def test_no_change_writes_no_history(self):
+    def test_no_change_writes_no_history(self, graceful_degradation_manager):
         graceful_degradation_manager.apply_service_states(_states())
         graceful_degradation_manager.apply_service_states(_states())
 
         assert graceful_degradation_manager.mode_history == []
 
-    def test_the_status_endpoint_payload_carries_the_mode(self):
+    def test_the_status_endpoint_payload_carries_the_mode(self, graceful_degradation_manager):
         graceful_degradation_manager.apply_service_states(_states(tts=False))
 
         status = graceful_degradation_manager.get_degradation_status()
@@ -117,7 +117,9 @@ class TestItFollowsRealBreakers:
             time.sleep(0.01)
         raise AssertionError("the degradation mode never followed the breaker")
 
-    def test_opening_a_breaker_degrades_the_reported_mode(self, running_loop):
+    def test_opening_a_breaker_degrades_the_reported_mode(
+        self, running_loop, service_health_manager, graceful_degradation_manager
+    ):
         breaker = service_health_manager.circuit_breakers["tts"]
         breaker.bind_loop(running_loop)
 
@@ -127,7 +129,9 @@ class TestItFollowsRealBreakers:
 
         self._wait_for(lambda: graceful_degradation_manager.current_mode is ServiceMode.DEGRADED)
 
-    def test_closing_it_again_restores_full_service(self, running_loop):
+    def test_closing_it_again_restores_full_service(
+        self, running_loop, service_health_manager, graceful_degradation_manager
+    ):
         breaker = service_health_manager.circuit_breakers["tts"]
         breaker.bind_loop(running_loop)
 
@@ -144,7 +148,9 @@ class TestItFollowsRealBreakers:
 
         self._wait_for(lambda: graceful_degradation_manager.current_mode is ServiceMode.FULL)
 
-    def test_an_admin_reset_also_restores_the_mode(self, running_loop):
+    def test_an_admin_reset_also_restores_the_mode(
+        self, running_loop, service_health_manager, graceful_degradation_manager
+    ):
         """An operator closing a breaker by hand must not leave a stale mode.
 
         ``reset()`` is reachable from ``/api/admin/circuit-breakers/{name}/reset``
@@ -168,17 +174,19 @@ class TestTheHistoryIsBounded:
     """It was bounded by accident: a one-way ratchet could only move three times.
 
     Now that the mode is derived it moves on every recovery, so an unbounded
-    list on a process-wide singleton is a slow leak in a gateway that stays up
-    for weeks.
+    list on a manager that lives as long as its app is a slow leak in a
+    gateway that stays up for weeks.
     """
 
-    def test_a_long_outage_does_not_grow_the_history_without_bound(self):
+    def test_a_long_outage_does_not_grow_the_history_without_bound(
+        self, graceful_degradation_manager
+    ):
         for i in range(500):
             graceful_degradation_manager.apply_service_states(_states(tts=bool(i % 2)))
 
         assert len(graceful_degradation_manager.mode_history) <= MODE_HISTORY_LIMIT
 
-    def test_the_most_recent_changes_are_the_ones_kept(self):
+    def test_the_most_recent_changes_are_the_ones_kept(self, graceful_degradation_manager):
         """Trimming from the front, so the newest entry is always the live one."""
         for i in range(500):
             graceful_degradation_manager.apply_service_states(_states(tts=bool(i % 2)))

@@ -185,26 +185,35 @@ export default {
 
 ## 🔧 **Backend-Erweiterung (Optional)**
 
-### **Enhanced Audio Validation**
+### **Accepting other formats in the gateway**
+
+The gateway validates every recording through one `AudioValidator` per app
+(`services/api_gateway/audio_processing.py`). `build_gateway_dependencies`
+builds a `WavAudioValidator`, and the message routes, `POST /pipeline` and
+`POST /upload` all validate with it. Accepting another format means a second
+adapter for the same port that converts to WAV first, then hands the result to
+the WAV validator:
 
 ```python
-# services/api_gateway/pipeline_logic.py erweitern
+# services/api_gateway/audio_processing.py
 
-from .enhanced_audio_validation import enhanced_validate_audio_input
+class ConvertingAudioValidator:
+    """Converts a non-WAV recording to WAV, then validates it as the gateway always has."""
 
-def process_wav(file_bytes, source_lang, target_lang, debug=False, validate_audio=True):
-    """
-    Enhanced WAV processing mit Multi-Format-Support
-    """
-    # Verwende erweiterte Validierung statt der ursprünglichen
-    if validate_audio:
-        validation_result = enhanced_validate_audio_input(file_bytes, normalize=True)
+    def __init__(self, convert: Callable[[bytes], bytes], wav: AudioValidator) -> None:
+        self.convert = convert
+        self.wav = wav
 
-        if validation_result.is_valid and validation_result.processed_audio:
-            file_bytes = validation_result.processed_audio  # Konvertierte Audio-Daten verwenden
-
-        # Rest der Funktion bleibt gleich...
+    def validate(self, audio_bytes: bytes, *, normalize: bool) -> AudioValidationResult:
+        if not audio_bytes.startswith(b"RIFF"):
+            audio_bytes = self.convert(audio_bytes)
+        return self.wav.validate(audio_bytes, normalize=normalize)
 ```
+
+`build_gateway_dependencies` would then pass
+`ConvertingAudioValidator(convert, WavAudioValidator())` as the
+`SpeechPipeline`'s `validator`. A valid result carries the audio sent on to
+ASR in `processed_audio`, so nothing downstream changes.
 
 ### **Docker-Container Update für FFmpeg**
 

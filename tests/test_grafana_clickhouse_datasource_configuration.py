@@ -639,7 +639,7 @@ class TestTheGoLiveKpiPanels:
         ):
             description = _panel(title)["description"]
             assert "restart" in description, title
-            assert "_setup_prometheus_metrics" in description, title
+            assert "WebSocketMetrics.__init__" in description, title
         description = _panel("Heartbeat Timeouts per 1,000 Connection-Minutes")["description"]
         assert "recorded when a connection closes" in description
 

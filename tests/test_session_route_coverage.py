@@ -6,11 +6,13 @@ import pytest
 from fastapi import Request
 
 from services.api_gateway.app import app
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.routes import customer
+from services.api_gateway.session_lifecycle import SessionLifecycleService
 from services.api_gateway.session_manager import (
     ClientType,
     Session,
-    SessionManager,
+    TenantSessionManager,
     SessionMessage,
     SessionStatus,
 )
@@ -30,8 +32,11 @@ def _http_request() -> Request:
 
 
 @pytest.fixture
-def manager() -> SessionManager:
-    return SessionManager(store=MemoryTenantSessionStore())
+def manager() -> TenantSessionManager:
+    return TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
 
 
 def test_session_round_trip_keeps_scope_message_and_timeout_state() -> None:
@@ -69,7 +74,7 @@ def test_session_round_trip_keeps_scope_message_and_timeout_state() -> None:
 
 @pytest.mark.asyncio
 async def test_manager_replaces_only_the_same_tenants_active_session(
-    manager: SessionManager,
+    manager: TenantSessionManager,
 ) -> None:
     first = await manager.create_admin_session("tenant-a", SNAPSHOT)
     other = await manager.create_admin_session("tenant-b", SNAPSHOT)
@@ -92,21 +97,18 @@ def test_openapi_omits_generic_session_management_routes() -> None:
 
 @pytest.mark.asyncio
 async def test_customer_activation_uses_the_resolved_capability_key(
-    manager: SessionManager,
-    monkeypatch: pytest.MonkeyPatch,
+    manager: TenantSessionManager,
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    import services.api_gateway.session_access as session_access
-
-    monkeypatch.setattr(customer, "session_manager", manager)
-    monkeypatch.setattr(session_access, "session_manager", manager)
     request = customer.ActivateSessionRequest(
         session_id=session.id,
         customer_language="ar",
     )
 
-    activation = await customer.activate_session(request, _http_request(), None)
-    status = await customer.get_customer_session_status(session.id, session.key)
+    activation = await customer.activate_session(
+        request, _http_request(), None, manager, None, SessionLifecycleService(manager)
+    )
+    status = await customer.get_customer_session_status(session.id, session.key, manager)
 
     assert activation.status == "active"
     assert activation.customer_language == "ar"

@@ -1,7 +1,7 @@
 """Lifespan wiring: the gateway must survive bad telemetry config and clean up.
 
 These are the only tests that run the real lifespan. Every other telemetry test
-installs `app.state.quality_telemetry` by hand, which is exactly why the env
+installs the quality telemetry by hand, which is exactly why the env
 parsing and the provider teardown went unnoticed.
 """
 
@@ -13,8 +13,6 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.quality_telemetry import TelemetryMode
-from services.api_gateway.session_manager import session_manager
-from services.api_gateway.translation_refiner import translation_refiner
 
 
 def _batch_threads() -> list[str]:
@@ -34,14 +32,14 @@ def test_an_unknown_mode_disables_telemetry_instead_of_killing_the_gateway(
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", bad_mode)
 
     with TestClient(app):
-        assert app.state.quality_telemetry.mode is TelemetryMode.DISABLED
+        assert app.state.dependencies.quality_telemetry.mode is TelemetryMode.DISABLED
 
 
 def test_a_valid_mode_is_honoured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "  PROBE  ")
 
     with TestClient(app):
-        assert app.state.quality_telemetry.mode is TelemetryMode.PROBE
+        assert app.state.dependencies.quality_telemetry.mode is TelemetryMode.PROBE
 
 
 def test_disabled_mode_builds_no_exporter_and_starts_no_export_thread(
@@ -53,7 +51,7 @@ def test_disabled_mode_builds_no_exporter_and_starts_no_export_thread(
 
     with TestClient(app):
         assert _batch_threads() == before
-        assert app.state.quality_telemetry_exporter is None
+        assert app.state.dependencies.quality_telemetry_exporter is None
 
 
 def test_probe_mode_shuts_its_export_thread_down_on_lifespan_exit(
@@ -92,8 +90,8 @@ def test_a_malformed_otlp_env_var_disables_telemetry_instead_of_crashlooping(
     before = _batch_threads()
 
     with TestClient(app):
-        assert app.state.quality_telemetry.mode is TelemetryMode.DISABLED
-        assert app.state.quality_telemetry_exporter is None
+        assert app.state.dependencies.quality_telemetry.mode is TelemetryMode.DISABLED
+        assert app.state.dependencies.quality_telemetry_exporter is None
         assert _batch_threads() == before
 
 
@@ -114,9 +112,9 @@ def test_a_wedged_telemetry_shutdown_does_not_hold_the_gateway_open(
 
     try:
         with TestClient(app):
-            app.state.quality_telemetry_exporter.shutdown()
+            app.state.dependencies.quality_telemetry_exporter.shutdown()
             monkeypatch.setattr(
-                app.state, "quality_telemetry_exporter", _WedgedExporter()
+                app.state.dependencies, "quality_telemetry_exporter", _WedgedExporter()
             )
             started = time.monotonic()
         elapsed = time.monotonic() - started
@@ -137,8 +135,8 @@ def test_a_failing_telemetry_shutdown_is_reported_and_teardown_continues(
             raise RuntimeError("collector connection reset")
 
     with TestClient(app):
-        app.state.quality_telemetry_exporter.shutdown()
-        monkeypatch.setattr(app.state, "quality_telemetry_exporter", _BrokenExporter())
+        app.state.dependencies.quality_telemetry_exporter.shutdown()
+        monkeypatch.setattr(app.state.dependencies, "quality_telemetry_exporter", _BrokenExporter())
 
     assert "collector connection reset" in capsys.readouterr().out
 
@@ -146,13 +144,15 @@ def test_a_failing_telemetry_shutdown_is_reported_and_teardown_continues(
 def test_the_shadow_refiner_is_given_the_telemetry_the_lifespan_built(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The refiner is a module-level singleton created at import time, while
-    telemetry is built per lifespan -- so the two only meet if the lifespan
-    says so. Without this the refinement event silently never fires."""
+    """The refiner is built before the telemetry and handed to the container
+    separately, so the two only meet if the lifespan says so. Without this the
+    refinement event silently never fires."""
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
 
     with TestClient(app):
-        assert translation_refiner.quality_telemetry is app.state.quality_telemetry
+        dependencies = app.state.dependencies
+        refiner = dependencies.speech_pipeline.refiner
+        assert refiner.quality_telemetry is dependencies.quality_telemetry
 
 
 def test_the_refiner_is_released_when_the_lifespan_ends(
@@ -163,21 +163,21 @@ def test_the_refiner_is_released_when_the_lifespan_ends(
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
 
     with TestClient(app):
-        pass
+        refiner = app.state.dependencies.speech_pipeline.refiner
 
-    assert translation_refiner.quality_telemetry is None
+    assert refiner.quality_telemetry is None
 
 
 def test_the_session_manager_is_given_the_telemetry_the_lifespan_built(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Same problem as the refiner, one layer over: SessionManager is a
-    process-wide singleton with no request behind it, so nothing hands it an
-    emitter unless the lifespan does."""
+    """Same problem as the refiner, one layer over: the session manager has no
+    request behind it, so nothing hands it an emitter unless the lifespan does."""
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
 
     with TestClient(app):
-        assert session_manager.quality_telemetry is app.state.quality_telemetry
+        dependencies = app.state.dependencies
+        assert dependencies.session_manager.quality_telemetry is dependencies.quality_telemetry
 
 
 def test_the_session_manager_is_released_when_the_lifespan_ends(
@@ -186,7 +186,7 @@ def test_the_session_manager_is_released_when_the_lifespan_ends(
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
 
     with TestClient(app):
-        pass
+        session_manager = app.state.dependencies.session_manager
 
     assert session_manager.quality_telemetry is None
 
@@ -232,5 +232,5 @@ def test_a_hostile_registry_leaves_a_serving_gateway(
 
     with TestClient(app) as client:
         assert client.get("/health").status_code == 200
-        assert app.state.quality_telemetry is not None
-        app.state.quality_telemetry.emit_probe(event_type="telemetry_probe")
+        assert app.state.dependencies.quality_telemetry is not None
+        app.state.dependencies.quality_telemetry.emit_probe(event_type="telemetry_probe")

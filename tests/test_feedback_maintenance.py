@@ -30,9 +30,11 @@ from services.api_gateway.feedback.repository import (
     RetentionLockUnavailable,
 )
 from services.api_gateway.quality_telemetry import ProbeOutcome, ProbeResult
-from services.api_gateway.session_pseudonym import feedback_ref, tenant_ref
+from services.api_gateway.session_pseudonym import SessionPseudonymizer, tenant_ref
 
 NOW = datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc)
+
+PSEUDONYMIZER = SessionPseudonymizer(key=b"feedback-maintenance-test")
 
 
 def _pending(**overrides) -> PendingAnalytics:
@@ -127,6 +129,7 @@ def _maintenance(repository, telemetry=None, registry=None):
         repository=repository,
         telemetry=telemetry or FakeTelemetry(),
         metrics=FeedbackMaintenanceMetrics(registry or CollectorRegistry()),
+        pseudonymizer=PSEUDONYMIZER,
         clock=lambda: NOW,
     )
 
@@ -173,7 +176,9 @@ class TestReconciliationRecoversDelivery:
 
         await _maintenance(FakeRepository([row]), telemetry).reconcile_once()
 
-        assert telemetry.calls[0]["feedback_ref"] == feedback_ref(row.feedback_id)
+        assert telemetry.calls[0]["feedback_ref"] == PSEUDONYMIZER.feedback_reference(
+            row.feedback_id
+        )
         assert telemetry.calls[0]["session_ref"] == row.session_ref
 
     async def test_it_emits_the_tenant_reference_derived_from_the_row(self):
@@ -332,6 +337,7 @@ class TestTheMetricsMakeItObservable:
             repository=FakeRepository([_pending(), _pending()]),
             telemetry=FakeTelemetry(),
             metrics=metrics,
+            pseudonymizer=PSEUDONYMIZER,
             clock=lambda: NOW,
         )
         await first.reconcile_once()
@@ -341,6 +347,7 @@ class TestTheMetricsMakeItObservable:
             repository=FakeRepository([]),
             telemetry=FakeTelemetry(),
             metrics=metrics,
+            pseudonymizer=PSEUDONYMIZER,
             clock=lambda: NOW,
         )
         await second.reconcile_once()
@@ -362,12 +369,14 @@ class TestTheMetricsMakeItObservable:
             repository=FakeRepository(claim_raises=FeedbackStorageUnavailable("x")),
             telemetry=FakeTelemetry(),
             metrics=metrics,
+            pseudonymizer=PSEUDONYMIZER,
             clock=lambda: NOW,
         ).reconcile_once()
         await FeedbackMaintenance(
             repository=FakeRepository(delete_raises=FeedbackStorageUnavailable("x")),
             telemetry=FakeTelemetry(),
             metrics=metrics,
+            pseudonymizer=PSEUDONYMIZER,
             clock=lambda: NOW,
         ).expire_once()
 

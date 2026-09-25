@@ -12,6 +12,7 @@ import pytest
 from fastapi import HTTPException
 from prometheus_client import CollectorRegistry
 
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.quality_telemetry import (
     InputMode,
     MessageDirection,
@@ -22,11 +23,11 @@ from services.api_gateway.quality_telemetry import (
     TerminalOutcome,
     discard_event,
 )
-from services.api_gateway.routes import session as session_routes
-from services.api_gateway.session_manager import ClientType, SessionManager
+from services.api_gateway import message_processing
+from services.api_gateway.session_manager import ClientType, TenantSessionManager
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import TenantSessionKey
-from tests.pipeline_helpers import AUDIO_BYTES, make_active_session
+from tests.pipeline_helpers import AUDIO_BYTES, make_active_session, speech_pipeline
 
 TRANSCRIPT = "Guten Tag"
 TRANSLATION = "Good day"
@@ -35,7 +36,10 @@ UPSTREAM_DETAIL = "HTTPConnectionPool(host='asr', port=8001): Max retries exceed
 
 @pytest.fixture
 def manager():
-    return SessionManager(store=MemoryTenantSessionStore())
+    return TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
 
 
 class _CapturingExporter:
@@ -58,10 +62,8 @@ def _telemetry(exporter, mode=TelemetryMode.ENABLED):
     return QualityTelemetry(mode=mode, exporter=exporter, registry=CollectorRegistry())
 
 
-def _request(content_type: str, telemetry) -> Mock:
+def _request(content_type: str) -> Mock:
     request = Mock()
-    request.app.state.pipeline_admission = None
-    request.app.state.quality_telemetry = telemetry
     request.headers = {"content-type": content_type}
     if content_type.startswith("application/json"):
         request.json = AsyncMock(
@@ -127,12 +129,17 @@ async def _send(manager, telemetry, *, content_type, pipeline_result):
     session_id = await make_active_session(manager)
     target = "process_wav" if "multipart" in content_type else "process_text_pipeline"
     with (
-        patch.object(session_routes, "session_manager", manager),
-        patch.object(session_routes, target, return_value=pipeline_result),
-        patch.object(session_routes, "_store_audio_artifacts", return_value=None),
+        patch.object(message_processing, target, return_value=pipeline_result),
+        patch.object(message_processing, "_store_audio_artifacts", return_value=None),
     ):
-        return await session_routes.send_unified_message(
-            session_id, ClientType.ADMIN, _request(content_type, telemetry)
+        return await message_processing.send_unified_message(
+            session_id,
+            ClientType.ADMIN,
+            _request(content_type),
+            sessions=manager,
+            pipeline=speech_pipeline(),
+            telemetry=telemetry,
+            audio_store=AudioStore.from_environment(),
         )
 
 
@@ -218,14 +225,17 @@ class TestOneRowPerMessage:
         exporter = _CapturingExporter()
 
         session_key = TenantSessionKey("tenant-test", "UNKNOWN1")
-        request = _request("application/json", _telemetry(exporter))
-        with patch.object(session_routes, "session_manager", manager):
-            with pytest.raises(HTTPException) as excinfo:
-                await session_routes.send_unified_message(
-                    session_key,
-                    ClientType.ADMIN,
-                    request,
-                )
+        request = _request("application/json")
+        with pytest.raises(HTTPException) as excinfo:
+            await message_processing.send_unified_message(
+                session_key,
+                ClientType.ADMIN,
+                request,
+                sessions=manager,
+                pipeline=speech_pipeline(),
+                telemetry=_telemetry(exporter),
+                audio_store=AudioStore.from_environment(),
+            )
 
         assert excinfo.value.status_code == 404
         assert exporter.messages == []
@@ -235,14 +245,17 @@ class TestOneRowPerMessage:
         exporter = _CapturingExporter()
         session_id = await make_active_session(manager)
 
-        request = _request("text/plain", _telemetry(exporter))
-        with patch.object(session_routes, "session_manager", manager):
-            with pytest.raises(HTTPException):
-                await session_routes.send_unified_message(
-                    session_id,
-                    ClientType.ADMIN,
-                    request,
-                )
+        request = _request("text/plain")
+        with pytest.raises(HTTPException):
+            await message_processing.send_unified_message(
+                session_id,
+                ClientType.ADMIN,
+                request,
+                sessions=manager,
+                pipeline=speech_pipeline(),
+                telemetry=_telemetry(exporter),
+                audio_store=AudioStore.from_environment(),
+            )
 
         assert exporter.messages == []
 
@@ -276,13 +289,16 @@ class TestNoContentLeavesTheGateway:
         session_id = await make_active_session(manager)
 
         with (
-            patch.object(session_routes, "session_manager", manager),
-            patch.object(session_routes, "process_text_pipeline", return_value=_success()),
+            patch.object(message_processing, "process_text_pipeline", return_value=_success()),
         ):
-            await session_routes.send_unified_message(
+            await message_processing.send_unified_message(
                 session_id,
                 ClientType.ADMIN,
-                _request("application/json", _telemetry(exporter)),
+                _request("application/json"),
+                sessions=manager,
+                pipeline=speech_pipeline(),
+                telemetry=_telemetry(exporter),
+                audio_store=AudioStore.from_environment(),
             )
 
         assert session_id not in exporter.messages[0].values()
@@ -335,15 +351,20 @@ class TestTelemetryNeverChangesTheOutcome:
 
     @pytest.mark.asyncio
     async def test_a_gateway_with_no_telemetry_wired_up_still_serves(self, manager):
-        request = _request("application/json", None)
+        request = _request("application/json")
 
         session_id = await make_active_session(manager)
         with (
-            patch.object(session_routes, "session_manager", manager),
-            patch.object(session_routes, "process_text_pipeline", return_value=_success()),
+            patch.object(message_processing, "process_text_pipeline", return_value=_success()),
         ):
-            response = await session_routes.send_unified_message(
-                session_id, ClientType.ADMIN, request
+            response = await message_processing.send_unified_message(
+                session_id,
+                ClientType.ADMIN,
+                request,
+                sessions=manager,
+                pipeline=speech_pipeline(),
+                telemetry=None,
+                audio_store=AudioStore.from_environment(),
             )
 
         assert response.status == "success"

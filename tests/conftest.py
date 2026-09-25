@@ -1,7 +1,7 @@
 import asyncio
 import inspect
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -20,6 +20,7 @@ from services.api_gateway.tenant_context import (
     StudioTenantContext,
     require_studio_tenant_context,
 )
+from tests.gateway_container import installed_gateway_dependencies
 
 REVISION = f"sha256:{'a' * 64}"
 
@@ -111,6 +112,18 @@ def pytest_configure(config):  # pragma: no cover - exercised via pytest hooks
 
 
 @pytest.fixture(autouse=True)
+def gateway_dependencies():
+    """A fresh dependency container on the shared app for every test.
+
+    Most suites drive `app` through TestClient without its lifespan, so its
+    routes find their collaborators here. A test that runs the lifespan gets
+    the container that lifespan builds instead.
+    """
+    with installed_gateway_dependencies(app) as dependencies:
+        yield dependencies
+
+
+@pytest.fixture(autouse=True)
 def bypass_admin_auth_for_legacy_route_tests(request):
     """Keep pre-auth route tests focused on their domain behavior.
 
@@ -140,32 +153,31 @@ def bypass_admin_auth_for_legacy_route_tests(request):
     app.dependency_overrides.pop(require_validated_runtime_configuration, None)
 
 
+@pytest.fixture
+def session_manager(gateway_dependencies):
+    """The tenant session manager the shared app's routes see in this test."""
+    return gateway_dependencies.session_manager
+
+
+class AlwaysAuthorized:
+    """A persistence gate that grants every write."""
+
+    async def authorize(self, tenant_id, consent_status, correlation_id):
+        from services.api_gateway.runtime_policy import PolicyDecision, PolicyReason
+
+        return PolicyDecision(True, PolicyReason.GRANTED)
+
+
 @pytest.fixture(autouse=True)
-def permissive_runtime_policy():
+def permissive_runtime_policy(gateway_dependencies):
     """Authorise persistence by default so suites unrelated to consent pass.
 
-    An unbound gate refuses every write, which is the right production
-    default and the wrong default for suites that assert a message survives.
-    The consent and gate suites override this with their own binding.
+    No gate refuses every write, which is the right production default and
+    the wrong default for suites that assert a message survives. The consent
+    and gate suites set their own gate on the session manager.
     """
-    from services.api_gateway.runtime_policy import (
-        PolicyDecision,
-        PolicyReason,
-        bind_runtime_policy,
-    )
-
-    class _AlwaysAuthorized:
-        async def authorize(self, tenant_id, consent_status, correlation_id):
-            return PolicyDecision(True, PolicyReason.GRANTED)
-
-    from services.api_gateway.runtime_policy import current_runtime_policy
-
-    previous = current_runtime_policy()
-    bind_runtime_policy(_AlwaysAuthorized())
+    gateway_dependencies.session_manager.runtime_policy = AlwaysAuthorized()
     yield
-    # Restore rather than unbind: an unconditional None would clobber a
-    # binding established by any wider-scoped fixture.
-    bind_runtime_policy(previous)
 
 
 def pytest_collection_modifyitems(config, items):  # pragma: no cover - exercised via pytest hooks

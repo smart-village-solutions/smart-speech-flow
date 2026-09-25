@@ -2,9 +2,30 @@ import importlib
 import json
 import os
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 
 import pytest
+
+from tests.pipeline_helpers import pipeline_collaborators, speech_pipeline
+
+# Module namespaces as they were before this test reloaded them.
+_RELOADED: dict[str, dict[str, object]] = {}
+
+
+@pytest.fixture(autouse=True)
+def restore_reloaded_modules():
+    """Put every reloaded module back as it was once the test ends.
+
+    A reload leaves new classes and import-time constants behind. Later tests
+    then build apps from classes they never imported and patched, as
+    test_gateway_app_isolation.py does, or find a different `app`.
+    """
+    yield
+    for module_path, namespace in _RELOADED.items():
+        module = importlib.import_module(module_path)
+        module.__dict__.clear()
+        module.__dict__.update(namespace)
+    _RELOADED.clear()
 
 
 def reload_module(module_path: str, env: dict[str, str | None]):
@@ -18,6 +39,7 @@ def reload_module(module_path: str, env: dict[str, str | None]):
 
     try:
         module = importlib.import_module(module_path)
+        _RELOADED.setdefault(module_path, dict(module.__dict__))
         return importlib.reload(module)
     finally:
         for key, value in saved.items():
@@ -76,7 +98,7 @@ def test_app_cors_setup_uses_localhost_helpers_in_development(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "development")
     monkeypatch.setenv("DEVELOPMENT_CORS_ORIGINS", "https://example.test,http://devbox:3000")
 
-    app_module.setup_cors_for_websockets()
+    app_module.setup_cors_for_websockets(app_module.app)
 
     allow_origins = captured["kwargs"]["allow_origins"]
     assert "https://example.test" in allow_origins
@@ -86,16 +108,24 @@ def test_app_cors_setup_uses_localhost_helpers_in_development(monkeypatch):
     assert captured["kwargs"]["allow_origin_regex"] is None
 
 
+def _speech_services(env: dict[str, str | None]):
+    """The speech adapter with its URLs resolved under ``env``, on its own breakers."""
+    from services.api_gateway.service_health import ServiceHealthManager
+
+    module = reload_module("services.api_gateway.speech_services", env)
+    return module, module.HttpSpeechServices(ServiceHealthManager().circuit_breakers)
+
+
 def test_pipeline_logic_helpers_cover_refinement_and_tts_paths(monkeypatch):
-    pipeline_logic = reload_module(
-        "services.api_gateway.pipeline_logic",
+    pipeline_logic = importlib.import_module("services.api_gateway.pipeline_logic")
+    speech_services, speech = _speech_services(
         {
             "DOCKER_COMPOSE": "0",
             "SERVICE_SCHEME": "http",
             "LOCAL_SERVICE_SCHEME": "https",
         },
     )
-    assert pipeline_logic.ASR_URL == "https://localhost:8001/transcribe"
+    assert speech_services.ASR_URL == "https://localhost:8001/transcribe"
 
     debug_info = {"steps": []}
     mock_refiner = SimpleNamespace(
@@ -109,8 +139,6 @@ def test_pipeline_logic_helpers_cover_refinement_and_tts_paths(monkeypatch):
             )
         ),
     )
-    monkeypatch.setattr(pipeline_logic, "translation_refiner", mock_refiner)
-
     refined_text, refined_tts_text = pipeline_logic._apply_translation_refinement(
         processed_text="hello",
         translation_text="hallo",
@@ -118,6 +146,7 @@ def test_pipeline_logic_helpers_cover_refinement_and_tts_paths(monkeypatch):
         target_lang="de",
         debug_info=debug_info,
         tts_text="romanized",
+        refiner=mock_refiner,
     )
     assert refined_text == "refined"
     assert refined_tts_text is None
@@ -139,6 +168,7 @@ def test_pipeline_logic_helpers_cover_refinement_and_tts_paths(monkeypatch):
         session_id="session-1",
         debug=True,
         refined_tts_text="tts-ready",
+        speech=speech,
     )
     assert response.status_code == 200
     assert duration_ms >= 0
@@ -161,8 +191,8 @@ def test_pipeline_logic_helpers_cover_refinement_and_tts_paths(monkeypatch):
 
 
 def test_pipeline_logic_translation_helper_records_debug_step(monkeypatch):
-    pipeline_logic = reload_module(
-        "services.api_gateway.pipeline_logic",
+    pipeline_logic = importlib.import_module("services.api_gateway.pipeline_logic")
+    _, speech = _speech_services(
         {
             "DOCKER_COMPOSE": "1",
             "SERVICE_SCHEME": "https",
@@ -189,6 +219,7 @@ def test_pipeline_logic_translation_helper_records_debug_step(monkeypatch):
         target_lang="de",
         debug=True,
         debug_info=debug_info,
+        speech=speech,
     )
 
     assert response.status_code == 200
@@ -240,7 +271,7 @@ def test_process_text_pipeline_covers_tts_error_and_success_paths(monkeypatch):
         ),
     )
     error_result = pipeline_logic.process_text_pipeline(
-        "Hello", "en", "de", session_id="s1", debug=True
+        "Hello", "en", "de", session_id="s1", debug=True, **pipeline_collaborators()
     )
     assert error_result["error"] is True
     assert error_result["translation_text"] == "Hallo"
@@ -266,65 +297,12 @@ def test_process_text_pipeline_covers_tts_error_and_success_paths(monkeypatch):
         ),
     )
     success_result = pipeline_logic.process_text_pipeline(
-        "Hello", "en", "tr", session_id="s2", debug=True
+        "Hello", "en", "tr", session_id="s2", debug=True, **pipeline_collaborators()
     )
     assert success_result["error"] is False
     assert success_result["audio_bytes"] == b"WAV"
     assert success_result["debug"]["steps"][-1]["model"] == "tts_models/tr/common-voice/glow-tts"
     assert success_result["debug"]["steps"][-1]["language"] == "tr"
-
-
-@pytest.mark.asyncio
-async def test_routes_session_activity_helper_and_endpoint(monkeypatch):
-    session_routes = importlib.import_module("services.api_gateway.routes.session")
-
-    connection_one = SimpleNamespace(current_polling_interval=5)
-    connection_two = SimpleNamespace(current_polling_interval=15)
-    manager = SimpleNamespace(
-        session_connections={"session-1": {"a": connection_one, "b": connection_two}},
-        adaptive_polling=SimpleNamespace(
-            update_client_status=Mock(side_effect=[10, 15]),
-            get_battery_optimization_tips=Mock(side_effect=[["tip-a"], ["tip-b"]]),
-        ),
-        _send_polling_interval_update=AsyncMock(),
-        get_session_connections=Mock(return_value=[{"id": "a"}, {"id": "b"}]),
-    )
-    activity = session_routes.ClientActivityUpdate(
-        is_mobile=True,
-        tab_active=False,
-        battery_level=0.2,
-        network_quality="slow",
-    )
-
-    new_intervals, tips = await session_routes._apply_activity_update_to_session_connections(
-        manager, "session-1", activity
-    )
-    assert new_intervals == [10, 15]
-    assert sorted(tips) == ["tip-a", "tip-b"]
-    manager._send_polling_interval_update.assert_awaited_once_with(
-        connection_one, 10, reason="client_activity_update"
-    )
-
-    active_session = SimpleNamespace(
-        status=session_routes.SessionStatus.ACTIVE,
-        id="session-1",
-    )
-    monkeypatch.setattr(
-        session_routes.session_manager, "get_session", lambda session_id: active_session
-    )
-    update_activity = Mock()
-    monkeypatch.setattr(session_routes.session_manager, "update_session_activity", update_activity)
-    manager.adaptive_polling.update_client_status = Mock(side_effect=[10, 15])
-    manager.adaptive_polling.get_battery_optimization_tips = Mock(
-        side_effect=[["tip-a"], ["tip-b"]]
-    )
-    manager._send_polling_interval_update = AsyncMock()
-
-    response = await session_routes.update_client_activity("session-1", activity, manager)
-    assert response.status == "success"
-    assert response.new_polling_interval == 12
-    assert sorted(response.optimization_tips) == ["tip-a", "tip-b"]
-    update_activity.assert_called_once_with("session-1")
 
 
 def test_translation_refiner_default_endpoint_and_enabled_configuration():
@@ -340,20 +318,16 @@ def test_translation_refiner_default_endpoint_and_enabled_configuration():
             == "https://llm:443"
         )
 
-    module = reload_module(
-        "services.api_gateway.translation_refiner",
-        {
-            "LLM_REFINEMENT_ENABLED": "1",
-            "LLM_REFINEMENT_ENDPOINT": None,
-            "LLM_REFINEMENT_SCHEME": "https",
-            "LLM_REFINEMENT_HOST": "llm",
-            "LLM_REFINEMENT_PORT": "443",
-        },
-    )
-    assert module.translation_refiner.is_active is True
-    assert module.translation_refiner.endpoint == "https://llm:443"
-
-    reload_module("services.api_gateway.translation_refiner", {"LLM_REFINEMENT_ENABLED": "0"})
+    module = importlib.import_module("services.api_gateway.translation_refiner")
+    with pytest.MonkeyPatch.context() as env:
+        env.setenv("LLM_REFINEMENT_ENABLED", "1")
+        env.delenv("LLM_REFINEMENT_ENDPOINT", raising=False)
+        env.setenv("LLM_REFINEMENT_SCHEME", "https")
+        env.setenv("LLM_REFINEMENT_HOST", "llm")
+        env.setenv("LLM_REFINEMENT_PORT", "443")
+        refiner = module.get_translation_refiner()
+    assert refiner.is_active is True
+    assert refiner.endpoint == "https://llm:443"
 
 
 def test_service_health_helpers_use_configured_scheme():
@@ -392,6 +366,7 @@ async def test_legacy_pipeline_route_returns_success_and_error_payloads(monkeypa
             return b"wav-bytes"
 
     request = SimpleNamespace(
+        app=SimpleNamespace(),
         query_params={},
         headers={"origin": "https://translate.smart-village.solutions"},
     )
@@ -409,6 +384,8 @@ async def test_legacy_pipeline_route_returns_success_and_error_payloads(monkeypa
     )
     success = await pipeline_route.pipeline(
         request=request,
+        pipeline=speech_pipeline(),
+        admission=None,
         file=UploadStub(),
         source_lang="en",
         target_lang="de",
@@ -430,6 +407,8 @@ async def test_legacy_pipeline_route_returns_success_and_error_payloads(monkeypa
     )
     failure = await pipeline_route.pipeline(
         request=request,
+        pipeline=speech_pipeline(),
+        admission=None,
         file=UploadStub(),
         source_lang="en",
         target_lang="de",
@@ -474,7 +453,6 @@ def test_apply_translation_refinement_records_a_skip_not_a_success(monkeypatch):
             )
         ),
     )
-    monkeypatch.setattr(pipeline_logic, "translation_refiner", mock_refiner)
     debug_info = {"steps": []}
 
     pipeline_logic._apply_translation_refinement(
@@ -484,6 +462,7 @@ def test_apply_translation_refinement_records_a_skip_not_a_success(monkeypatch):
         target_lang="am",
         debug_info=debug_info,
         tts_text="hallo",
+        refiner=mock_refiner,
     )
 
     comparison = debug_info["steps"][-1]["refinement_comparison"]

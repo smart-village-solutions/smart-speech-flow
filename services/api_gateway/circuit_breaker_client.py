@@ -16,8 +16,8 @@ import asyncio
 import logging
 from typing import Any, Dict
 
-from .graceful_degradation import graceful_degradation_manager
-from .service_health import service_health_manager
+from .circuit_breaker import CircuitBreaker
+from .service_health import ServiceHealthManager
 
 logger = logging.getLogger(__name__)
 
@@ -28,33 +28,39 @@ class CircuitBreakerServiceClient:
     Holds no HTTP session of its own any more: the only requests it used to
     make were the three call paths that nothing called. The health checks
     have always had their own session in :mod:`.service_health`.
+
+    ``build_gateway_dependencies`` hands it the app's health manager, whose
+    breakers and degradation mode it reports.
     """
+
+    def __init__(self, health: ServiceHealthManager) -> None:
+        self._health = health
+
+    def circuit_breakers(self) -> Dict[str, CircuitBreaker]:
+        """This app's breakers by service name, as a copy the caller may iterate."""
+        return dict(self._health.circuit_breakers)
 
     async def get_health_status(self) -> Dict[str, Any]:
         """Gesamter Health Status aller Services"""
         await asyncio.sleep(0)
-        return service_health_manager.get_overall_health()
+        return self._health.get_overall_health()
 
     async def get_service_status(self, service_name: str) -> Dict[str, Any]:
         """Health Status für einzelnen Service"""
         await asyncio.sleep(0)
-        return service_health_manager.get_service_health(service_name)
+        return self._health.get_service_health(service_name)
 
     async def get_degradation_status(self) -> Dict[str, Any]:
         """Aktueller Degradation Status"""
         await asyncio.sleep(0)
-        return graceful_degradation_manager.get_degradation_status()
+        return self._health.degradation.get_degradation_status()
 
     async def start_health_monitoring(self):
         """Startet Health Monitoring"""
-        await service_health_manager.start_monitoring()
+        await self._health.start_monitoring()
         logger.info("🚀 Circuit Breaker Health Monitoring gestartet")
 
     async def stop_health_monitoring(self):
         """Stoppt Health Monitoring"""
-        await service_health_manager.stop_monitoring()
+        await self._health.stop_monitoring()
         logger.info("🛑 Circuit Breaker Health Monitoring gestoppt")
-
-
-# Globale Circuit Breaker Service Client Instanz
-circuit_breaker_client = CircuitBreakerServiceClient()

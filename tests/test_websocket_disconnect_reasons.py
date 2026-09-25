@@ -12,7 +12,9 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 import yaml
 
+from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket_monitor import DisconnectReason
+from tests.realtime_sessions import TENANT, open_session, tenant_session_manager
 
 ALERT_RULES = Path(__file__).resolve().parents[1] / "monitoring" / "alert_rules.yml"
 
@@ -73,7 +75,6 @@ class TestTheAlertsCanFire:
 class TestTheReasonSurvivesCleanup:
     async def test_a_heartbeat_timeout_reaches_the_monitor(self, monkeypatch):
         from services.api_gateway import websocket as ws
-        from services.api_gateway.session_manager import SessionManager
 
         recorded: list[DisconnectReason] = []
 
@@ -82,19 +83,20 @@ class TestTheReasonSurvivesCleanup:
                 recorded.append(reason)
                 return None
 
-        monkeypatch.setattr(ws, "get_websocket_monitor", lambda: _Monitor())
-
-        manager = ws.WebSocketManager(SessionManager())
-        connection_id = manager._build_connection_id("s1", ws.ClientType.CUSTOMER)
+        sessions = tenant_session_manager()
+        key = open_session(sessions, "s1")
+        manager = ws.WebSocketManager(sessions, monitor=_Monitor())
+        connection_id = manager.registry.build_connection_id(key, ws.ClientType.CUSTOMER)
         manager.all_connections[connection_id] = ws.WebSocketConnection(
             websocket=Mock(),
             client_type=ws.ClientType.CUSTOMER,
-            session_id="s1",
+            session_id=key.session_id,
             connected_at=datetime.now(timezone.utc),
             last_heartbeat=datetime.now(timezone.utc),
             state=ws.ConnectionState.CONNECTED,
+            key=key,
         )
-        await manager._cleanup_connection(
+        await manager.release_connection(
             connection_id, DisconnectReason.HEARTBEAT_TIMEOUT
         )
 
@@ -118,30 +120,30 @@ class _RecordingMonitor:
 
 def _manager_with_one_connection(monkeypatch, monitor: _RecordingMonitor):
     from services.api_gateway import websocket as ws
-    from services.api_gateway.session_manager import SessionManager
 
-    monkeypatch.setattr(ws, "get_websocket_monitor", lambda: monitor)
-
-    manager = ws.WebSocketManager(SessionManager())
-    connection_id = manager._build_connection_id("s1", ws.ClientType.CUSTOMER)
+    sessions = tenant_session_manager()
+    key = open_session(sessions, "s1")
+    manager = ws.WebSocketManager(sessions, monitor=monitor)
+    connection_id = manager.registry.build_connection_id(key, ws.ClientType.CUSTOMER)
     socket = Mock()
     socket.send_json = AsyncMock()
     socket.close = AsyncMock()
     connection = ws.WebSocketConnection(
         websocket=socket,
         client_type=ws.ClientType.CUSTOMER,
-        session_id="s1",
+        session_id=key.session_id,
         connected_at=datetime.now(timezone.utc),
         last_heartbeat=datetime.now(timezone.utc),
         state=ws.ConnectionState.CONNECTED,
+        key=key,
     )
     manager.all_connections[connection_id] = connection
-    manager.session_connections["s1"] = {connection_id: connection}
+    manager.session_connections[key] = {connection_id: connection}
     return manager, connection_id
 
 
 class TestTheReasonSurvivesTheCallOperatorsActuallyMake:
-    """_cleanup_connection is the seam the fix edited; disconnect_websocket is
+    """release_connection is the seam the fix edited; disconnect_websocket is
     the seam every caller uses. Dropping the argument at that call site passes
     a suite that only exercises the former."""
 
@@ -181,7 +183,7 @@ class TestASessionTerminationIsNotAFailure:
         monitor = _RecordingMonitor()
         manager, _ = _manager_with_one_connection(monkeypatch, monitor)
 
-        await manager.handle_session_termination("s1", reason)
+        await manager.handle_session_termination(TenantSessionKey(TENANT, "s1"), reason)
 
         assert monitor.closed == [expected]
 
@@ -194,7 +196,6 @@ class TestARejectedOriginIsCounted:
         from services.api_gateway import websocket as ws
 
         monitor = _RecordingMonitor()
-        monkeypatch.setattr(ws, "get_websocket_monitor", lambda: monitor)
 
         async def deny(_origin):
             return False
@@ -205,7 +206,12 @@ class TestARejectedOriginIsCounted:
         socket.close = AsyncMock()
 
         await ws.websocket_endpoint(
-            socket, "TEST1234", "admin", Mock(), "https://not-allowed.example"
+            socket,
+            TenantSessionKey(TENANT, "TEST1234"),
+            ws.ClientType.ADMIN,
+            Mock(monitor=monitor),
+            Mock(),
+            "https://not-allowed.example",
         )
 
         assert monitor.rejected == [DisconnectReason.ORIGIN_NOT_ALLOWED]
@@ -271,7 +277,7 @@ class TestNormalSessionEndDoesNotPageWebSocketConnectionFailures:
         )
 
     def test_a_session_error_is_an_error_not_a_protocol_violation(self):
-        """_get_termination_message carries "error"; it is a fault and must
+        """termination_text carries "error"; it is a fault and must
         still page, but calling it a protocol violation misroutes triage."""
         assert DisconnectReason.from_wire("error") is DisconnectReason.CONNECTION_ERROR
         assert (

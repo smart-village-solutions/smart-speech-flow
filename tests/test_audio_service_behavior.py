@@ -87,41 +87,6 @@ def tts_service(monkeypatch):
     )
 
 
-def test_enhanced_audio_validator_converts_browser_audio_and_rejects_invalid_output(monkeypatch):
-    from services.api_gateway.enhanced_audio_validation import EnhancedAudioValidator
-
-    validator = EnhancedAudioValidator()
-    validator.ffmpeg_available = True
-    monkeypatch.setattr(validator, "_convert_with_ffmpeg", lambda *_: _wav_bytes())
-
-    success, converted, error, details = validator.validate_and_convert_audio(b"ID3browser-audio")
-
-    assert success is True
-    assert error == ""
-    assert converted.startswith(b"RIFF")
-    assert details["conversion_method"] == "ffmpeg"
-    assert details["sample_rate"] == 16000
-
-    monkeypatch.setattr(validator, "_convert_with_ffmpeg", lambda *_: b"not-a-wav")
-    success, _, error, details = validator.validate_and_convert_audio(b"ID3broken-audio")
-
-    assert success is False
-    assert "konnte nicht" in error.lower()
-    assert "conversion_wav_error" in details
-
-
-def test_enhanced_audio_validation_preserves_valid_wav_metadata():
-    from services.api_gateway.enhanced_audio_validation import enhanced_validate_audio_input
-
-    result = enhanced_validate_audio_input(_wav_bytes())
-
-    assert result.is_valid is True
-    assert result.sample_rate == 16000
-    assert result.channels == 1
-    assert result.duration_seconds == pytest.approx(0.2)
-    assert result.details["format_details"]["original_format"] == "wav"
-
-
 def test_audio_storage_separates_files_and_cleans_only_expired_audio(tmp_path):
     from services.api_gateway import audio_storage
     from services.api_gateway.tenant_session import TenantSessionKey

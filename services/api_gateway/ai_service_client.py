@@ -24,19 +24,6 @@ from typing import Any, Callable, Optional
 import requests
 
 from .circuit_breaker import CircuitBreaker
-from .service_health import service_health_manager
-
-
-def breaker_for(service: str) -> CircuitBreaker:
-    """The breaker the status routes already report on, never a private one.
-
-    Taken from the health manager rather than ``CircuitBreakerFactory`` on
-    purpose: the factory hands out a default-configured breaker for an unknown
-    name and then keeps it forever, so a call made before the service was
-    registered would silently pin the wrong thresholds. ``KeyError`` here is a
-    typo in a call site, which is a programming error, not a runtime condition.
-    """
-    return service_health_manager.circuit_breakers[service]
 
 
 def _sheds_load(response: Any) -> bool:
@@ -81,13 +68,17 @@ def _is_service_fault(response: Any) -> bool:
 
 
 def call_ai_service(
-    service: str,
+    breaker: CircuitBreaker,
     url: str,
     *,
     served: Optional[Callable[[Any], bool]] = None,
     **kwargs: Any,
 ) -> requests.Response:
     """POSTs to an AI service through its circuit breaker.
+
+    ``breaker`` is the one the app's health manager registered for the
+    service, which is the one the status routes report on; see
+    :class:`~.speech_services.HttpSpeechServices`.
 
     Returns the response untouched, including error responses: classifying an
     upstream reply into a pipeline result is the caller's job and it already
@@ -108,8 +99,6 @@ def call_ai_service(
         requests.RequestException: whatever the transport raised, after it has
             been recorded as a failure.
     """
-    breaker = breaker_for(service)
-
     with breaker.guard():
         started = time.perf_counter()
         try:

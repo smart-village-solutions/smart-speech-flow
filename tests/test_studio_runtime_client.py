@@ -1,10 +1,12 @@
 """Contract and negative-path tests for the Studio Runtime Configuration V1 client."""
 
+import hmac
 from copy import deepcopy
 from typing import Any, Mapping
 
 import pytest
 
+import services.api_gateway.studio_runtime_client as runtime_client_module
 from services.api_gateway.studio_runtime_client import (
     RUNTIME_PATH,
     RuntimeHttpResponse,
@@ -165,6 +167,35 @@ async def test_preserves_stable_error_retryability(status: int, code: str, retry
     assert caught.value.code == code
     assert caught.value.retryable is retryable
     assert caught.value.status == status
+
+
+@pytest.mark.asyncio
+async def test_rejects_a_non_ascii_studio_tenant_as_a_mismatch() -> None:
+    payload = valid_configuration()
+    payload["tenant"]["id"] = "tenant-kässel"
+    runtime_client, _ = client(RuntimeHttpResponse(200, payload))
+
+    with pytest.raises(StudioRuntimeClientError) as caught:
+        await runtime_client.fetch("tenant-kassel", "correlation-1")
+
+    assert caught.value.code == "studio_runtime_tenant_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_compares_the_tenant_id_in_constant_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    compared: list[tuple[object, object]] = []
+    compare_digest = hmac.compare_digest
+
+    def recording_compare_digest(left: bytes | str, right: bytes | str) -> bool:
+        compared.append((left, right))
+        return compare_digest(left, right)
+
+    monkeypatch.setattr(runtime_client_module.hmac, "compare_digest", recording_compare_digest)
+    runtime_client, _ = client(RuntimeHttpResponse(200, valid_configuration()))
+
+    await runtime_client.fetch("tenant-kassel", "correlation-1")
+
+    assert (b"tenant-kassel", b"tenant-kassel") in compared
 
 
 @pytest.mark.asyncio

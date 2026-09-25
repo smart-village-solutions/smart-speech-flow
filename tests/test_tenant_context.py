@@ -104,10 +104,45 @@ def test_dependency_rejects_browser_controlled_tenant_selectors(
     request_kwargs: dict[str, Any],
 ) -> None:
     client = _tenant_test_client()
-    method = (
-        client.post if {"json", "content"}.intersection(request_kwargs) else client.get
-    )
+    method = client.post if {"json", "content"}.intersection(request_kwargs) else client.get
 
     response = method("/tenant-operation", **request_kwargs)
 
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    ("request_kwargs"),
+    [
+        {"params": {"studio-tenant-id": "tenant-berlin"}},
+        {"params": {"Studio_Instance-ID": "tenant-berlin"}},
+        {"cookies": {"tenant-id": "tenant-berlin"}},
+        {"cookies": {"StudioTenantId": "tenant-berlin"}},
+        {"headers": {"X_Tenant_Id": "tenant-berlin"}},
+        {"headers": {"x-studio-tenantid": "tenant-berlin"}},
+        {"json": {"studio-tenant-id": "tenant-berlin"}},
+        {"json": {"payload": [{"Tenant-Id": "tenant-berlin"}]}},
+        {"json": {"payload": {"meta": [{"STUDIO-instance_id": "tenant-berlin"}]}}},
+    ],
+)
+def test_dependency_rejects_selector_spellings_regardless_of_separators_and_case(
+    request_kwargs: dict[str, Any],
+) -> None:
+    client = _tenant_test_client()
+    method = client.post if "json" in request_kwargs else client.get
+
+    response = method("/tenant-operation", **request_kwargs)
+
+    assert response.status_code == 400
+
+
+def test_dependency_accepts_ordinary_keys_that_only_resemble_selectors() -> None:
+    response = _tenant_test_client().post(
+        "/tenant-operation",
+        params={"tenant": "kassel"},
+        headers={"X-Correlation-Id": "request-1"},
+        json={"session_id": "s-1", "tenant": {"name": "Kassel"}, "id": "m-1"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"tenant_id": "tenant-kassel"}

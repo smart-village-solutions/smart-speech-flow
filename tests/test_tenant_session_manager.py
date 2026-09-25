@@ -8,9 +8,10 @@ from unittest.mock import AsyncMock
 import pytest
 from starlette.websockets import WebSocketState
 
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.session_manager import (
     ClientType,
-    SessionManager,
+    TenantSessionManager,
     SessionStatus,
 )
 from services.api_gateway.session_store import (
@@ -20,6 +21,7 @@ from services.api_gateway.session_store import (
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 from services.api_gateway.websocket import WebSocketManager
 from services.api_gateway.websocket_polling_routes import TenantPollingStore
+from tests.realtime_sessions import websocket_monitor
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
@@ -42,18 +44,19 @@ def clock() -> Clock:
 
 
 @pytest.fixture
-def manager(clock: Clock) -> SessionManager:
+def manager(clock: Clock) -> TenantSessionManager:
     identifiers = iter(["AAAA1111", "BBBB2222", "CCCC3333"])
-    return SessionManager(
+    return TenantSessionManager(
         store=MemoryTenantSessionStore(),
         clock=clock,
         session_id_factory=lambda: next(identifiers),
+        audio_store=AudioStore.from_environment(),
     )
 
 
 @pytest.mark.asyncio
 async def test_single_active_session_limit_is_per_tenant(
-    manager: SessionManager,
+    manager: TenantSessionManager,
 ) -> None:
     first_a = await manager.create_admin_session("tenant-a", SNAPSHOT)
     first_b = await manager.create_admin_session("tenant-b", SNAPSHOT)
@@ -70,7 +73,7 @@ async def test_single_active_session_limit_is_per_tenant(
 
 @pytest.mark.asyncio
 async def test_customer_resolution_uses_server_owned_join_index(
-    manager: SessionManager,
+    manager: TenantSessionManager,
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
 
@@ -83,7 +86,7 @@ async def test_customer_resolution_uses_server_owned_join_index(
 
 @pytest.mark.asyncio
 async def test_connected_admin_survives_silence_until_absolute_limit(
-    manager: SessionManager, clock: Clock
+    manager: TenantSessionManager, clock: Clock
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     manager.admin_connected(session.key)
@@ -98,7 +101,7 @@ async def test_connected_admin_survives_silence_until_absolute_limit(
 
 @pytest.mark.asyncio
 async def test_customer_alone_does_not_cancel_admin_reconnect_grace(
-    manager: SessionManager, clock: Clock
+    manager: TenantSessionManager, clock: Clock
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     manager.admin_connected(session.key)
@@ -114,7 +117,9 @@ async def test_customer_alone_does_not_cancel_admin_reconnect_grace(
 
 
 @pytest.mark.asyncio
-async def test_admin_reconnect_cancels_grace_warning(manager: SessionManager, clock: Clock) -> None:
+async def test_admin_reconnect_cancels_grace_warning(
+    manager: TenantSessionManager, clock: Clock
+) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     manager.admin_connected(session.key)
     manager.admin_disconnected(session.key)
@@ -129,22 +134,8 @@ async def test_admin_reconnect_cancels_grace_warning(manager: SessionManager, cl
 
 
 @pytest.mark.asyncio
-async def test_heartbeat_does_not_change_business_or_timeout_state(
-    manager: SessionManager, clock: Clock
-) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    before = session.last_activity
-    clock.advance(minutes=10)
-
-    await manager.heartbeat_received(session.key, ClientType.ADMIN)
-
-    assert session.last_activity == before
-    assert session.admin_disconnected_at == session.created_at
-
-
-@pytest.mark.asyncio
 async def test_pending_session_without_admin_connection_expires_from_creation(
-    manager: SessionManager, clock: Clock
+    manager: TenantSessionManager, clock: Clock
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
 
@@ -155,7 +146,7 @@ async def test_pending_session_without_admin_connection_expires_from_creation(
 
 @pytest.mark.asyncio
 async def test_session_status_exposes_warning_and_timeout_deadlines(
-    manager: SessionManager,
+    manager: TenantSessionManager,
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
 
@@ -168,7 +159,7 @@ async def test_session_status_exposes_warning_and_timeout_deadlines(
 
 @pytest.mark.asyncio
 async def test_multiple_admin_sockets_decrement_presence_independently(
-    manager: SessionManager,
+    manager: TenantSessionManager,
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
 
@@ -187,10 +178,10 @@ async def test_multiple_admin_sockets_decrement_presence_independently(
 
 @pytest.mark.asyncio
 async def test_termination_persists_tombstone_before_socket_presence_cleanup(
-    manager: SessionManager,
+    manager: TenantSessionManager,
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    sockets = WebSocketManager(manager)
+    sockets = WebSocketManager(manager, monitor=websocket_monitor())
     sockets.start_heartbeat_system = AsyncMock()
     websocket = AsyncMock()
     websocket.client_state = WebSocketState.CONNECTED
@@ -207,7 +198,6 @@ async def test_termination_persists_tombstone_before_socket_presence_cleanup(
 
 @pytest.mark.asyncio
 async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime(
-    monkeypatch: pytest.MonkeyPatch,
     clock: Clock,
 ) -> None:
     from services.api_gateway.realtime_ticket import (
@@ -227,10 +217,11 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
             super().terminate(session)
 
     store = FailOnceStore()
-    manager = SessionManager(
+    manager = TenantSessionManager(
         store=store,
         clock=clock,
         session_id_factory=lambda: "RETRY123",
+        audio_store=AudioStore.from_environment(),
     )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     tickets = RealtimeTicketStore(MemoryRealtimeTicketBackend(clock=clock), clock=clock)
@@ -238,14 +229,10 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
     revoked_after_success = tickets.issue(session.key, "websocket")
     polling = TenantPollingStore(clock=lambda: 0.0)
     polling_client = polling.activate(session.key, ClientType.CUSTOMER)
-    monkeypatch.setattr(
-        "services.api_gateway.realtime_ticket.realtime_ticket_store", tickets
-    )
-    monkeypatch.setattr(
-        "services.api_gateway.websocket_polling_routes.polling_store", polling
-    )
+    manager.realtime_tickets = tickets
+    manager.polling_store = polling
 
-    sockets = WebSocketManager(manager)
+    sockets = WebSocketManager(manager, polling, monitor=websocket_monitor())
     sockets.start_heartbeat_system = AsyncMock()
     websocket = AsyncMock()
     websocket.client_state = WebSocketState.CONNECTED
@@ -260,9 +247,7 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
     assert manager.active_admin_sessions == {"tenant-a": {session.id}}
     assert polling_client.terminated is False
     assert session.key in sockets.session_connections
-    assert tickets.consume(
-        usable_after_failure.ticket, session.key, "websocket"
-    ) is True
+    assert tickets.consume(usable_after_failure.ticket, session.key, "websocket") is True
 
     await manager.terminate_session(session.key, "manual_admin_termination")
 
@@ -271,14 +256,12 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
     assert manager.active_admin_sessions == {}
     assert polling_client.terminated is True
     assert session.key not in sockets.session_connections
-    assert tickets.consume(
-        revoked_after_success.ticket, session.key, "websocket"
-    ) is False
+    assert tickets.consume(revoked_after_success.ticket, session.key, "websocket") is False
 
 
 @pytest.mark.asyncio
 async def test_timeout_monitor_uses_tenant_deadlines_and_full_key(
-    manager: SessionManager, clock: Clock
+    manager: TenantSessionManager, clock: Clock
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     realtime = AsyncMock()
@@ -299,7 +282,7 @@ async def test_timeout_monitor_uses_tenant_deadlines_and_full_key(
 
 @pytest.mark.asyncio
 async def test_connected_admin_is_not_terminated_at_legacy_30_minute_deadline(
-    manager: SessionManager, clock: Clock
+    manager: TenantSessionManager, clock: Clock
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     manager.admin_connected(session.key)
@@ -312,13 +295,10 @@ async def test_connected_admin_is_not_terminated_at_legacy_30_minute_deadline(
 
 @pytest.mark.asyncio
 async def test_timeout_monitor_releases_idle_polling_presence(
-    manager: SessionManager,
-    monkeypatch,
+    manager: TenantSessionManager,
 ) -> None:
     polling_store = TenantPollingStore(clock=lambda: 121.0)
-    monkeypatch.setattr(
-        "services.api_gateway.websocket_polling_routes.polling_store", polling_store
-    )
+    manager.polling_store = polling_store
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     client = polling_store.activate(session.key, ClientType.ADMIN)
     manager.admin_connected(session.key)
@@ -335,7 +315,7 @@ GRACE = timedelta(minutes=30)
 
 @pytest.mark.asyncio
 async def test_a_session_that_just_ended_resolves_for_its_grace_window(
-    manager: SessionManager, clock: Clock
+    manager: TenantSessionManager, clock: Clock
 ) -> None:
     """#324: the feedback path's only route back to an ended conversation.
 
@@ -356,7 +336,7 @@ async def test_a_session_that_just_ended_resolves_for_its_grace_window(
 
 @pytest.mark.asyncio
 async def test_resolving_an_ended_session_grants_no_route_back_into_it(
-    manager: SessionManager,
+    manager: TenantSessionManager,
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     await manager.terminate_session(session.key, "manual_admin_termination")
@@ -367,7 +347,7 @@ async def test_resolving_an_ended_session_grants_no_route_back_into_it(
 
 
 @pytest.mark.asyncio
-async def test_a_live_session_is_not_an_ended_one(manager: SessionManager) -> None:
+async def test_a_live_session_is_not_an_ended_one(manager: TenantSessionManager) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
 
     assert manager.resolve_customer_session(session.id) == session.key
@@ -375,7 +355,7 @@ async def test_a_live_session_is_not_an_ended_one(manager: SessionManager) -> No
 
 
 @pytest.mark.asyncio
-async def test_an_unknown_id_never_resolves_as_ended(manager: SessionManager) -> None:
+async def test_an_unknown_id_never_resolves_as_ended(manager: TenantSessionManager) -> None:
     await manager.create_admin_session("tenant-a", SNAPSHOT)
 
     assert manager.resolve_ended_session("NOSUCH99", within=GRACE) is None
@@ -383,7 +363,7 @@ async def test_an_unknown_id_never_resolves_as_ended(manager: SessionManager) ->
 
 @pytest.mark.asyncio
 async def test_an_ended_session_without_a_termination_time_fails_closed(
-    manager: SessionManager,
+    manager: TenantSessionManager,
 ) -> None:
     """A record that cannot be dated cannot be shown to be inside the window.
 
@@ -408,10 +388,11 @@ async def test_the_window_survives_a_naive_clock() -> None:
     the endpoint owes a 201 or a 404.
     """
     naive = datetime(2026, 9, 11, 8, 0)
-    manager = SessionManager(
+    manager = TenantSessionManager(
         store=MemoryTenantSessionStore(),
         clock=lambda: naive,
         session_id_factory=lambda: "NAIVE001",
+        audio_store=AudioStore.from_environment(),
     )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     await manager.terminate_session(session.key, "manual_admin_termination")

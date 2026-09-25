@@ -15,19 +15,30 @@ from pydantic import BaseModel, Field
 
 from ..audio_storage import AudioVariant
 from ..auth import require_ssf_user
-from ..conversation_service import conversation_service
+from ..conversation_service import ConversationService
+from ..dependencies import (
+    get_conversation_service,
+    get_polling_store,
+    get_quality_telemetry,
+    get_realtime_ticket_store,
+    get_session_lifecycle,
+    get_session_manager,
+    get_websocket_manager,
+)
 from ..log_safety import sanitize_log_value
-from ..quality_telemetry import QualityTelemetry, get_quality_telemetry
-from ..realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable, realtime_ticket_store
+from ..quality_telemetry import QualityTelemetry
+from ..realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from ..session_access import require_admin_session_key
-from ..session_manager import ClientType, SessionStatus, session_manager
+from ..session_lifecycle import NoActiveSessionError, SessionLifecycleService, SessionNotFoundError
+from ..session_manager import ClientType, TenantSessionManager
 from ..studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
     require_validated_runtime_configuration,
 )
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
-from ..tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
-from ..websocket import WebSocketManager, get_websocket_manager
+from ..tenant_session import TenantSessionKey
+from ..websocket import WebSocketManager
+from ..websocket_polling_routes import TenantPollingStore
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -97,12 +108,12 @@ class RealtimeTicketResponse(BaseModel):
     expires_at: str
 
 
-def _connection_payload(manager: WebSocketManager, key: TenantSessionKey) -> list[dict[str, Any]]:
+def _connection_payload(
+    manager: WebSocketManager, polling_store: TenantPollingStore, key: TenantSessionKey
+) -> list[dict[str, Any]]:
     connections = manager.get_session_connections(key)
     for connection in connections:
         connection["transport"] = "websocket"
-    from ..websocket_polling_routes import polling_store
-
     connections.extend(
         {
             "transport": "polling",
@@ -122,15 +133,14 @@ def _connection_payload(manager: WebSocketManager, key: TenantSessionKey) -> lis
 async def list_tenant_realtime_connections(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
     manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
+    polling_store: Annotated[TenantPollingStore, Depends(get_polling_store)],
 ) -> dict[str, object]:
-    from ..websocket_polling_routes import polling_store
-
     connections: list[dict[str, Any]] = []
     keys = {key for key in manager.session_connections if isinstance(key, TenantSessionKey)}
     keys.update(client.key for client in polling_store.clients.values())
     for key in keys:
         if key.tenant_id == context.tenant_id:
-            connections.extend(_connection_payload(manager, key))
+            connections.extend(_connection_payload(manager, polling_store, key))
     return {"connections": connections, "count": len(connections)}
 
 
@@ -142,17 +152,14 @@ async def list_session_realtime_connections(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
     manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
+    polling_store: Annotated[TenantPollingStore, Depends(get_polling_store)],
 ) -> dict[str, object]:
-    connections = _connection_payload(manager, key)
+    connections = _connection_payload(manager, polling_store, key)
     return {
         "session_id": session_id,
         "connections": connections,
         "count": len(connections),
     }
-
-
-def get_realtime_ticket_store() -> RealtimeTicketStore:
-    return realtime_ticket_store
 
 
 @router.post(
@@ -190,19 +197,20 @@ async def send_admin_message(
     session_id: str,
     request: Request,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
-    manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
+    conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ):
-    return await conversation_service.process(key, ClientType.ADMIN, request, manager)
+    return await conversations.process(key, ClientType.ADMIN, request)
 
 
 @router.get("/session/{session_id}/messages", responses=ADMIN_ROUTE_RESPONSES)
 async def get_admin_messages(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
+    conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> dict[str, object]:
     return {
         "session_id": session_id,
-        "messages": conversation_service.messages(key, ClientType.ADMIN),
+        "messages": conversations.messages(key, ClientType.ADMIN),
     }
 
 
@@ -215,8 +223,9 @@ async def get_admin_audio(
     message_id: str,
     variant: AudioVariant,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
+    conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> Response:
-    return conversation_service.audio(key, message_id, variant)
+    return conversations.audio(key, message_id, variant)
 
 
 def utc_now() -> datetime:
@@ -249,6 +258,7 @@ async def create_admin_session(
         ValidatedRuntimeConfiguration,
         Depends(require_validated_runtime_configuration),
     ],
+    lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
 ) -> SessionCreateResponse:
     """
     Erstellt eine neue Admin-Session
@@ -264,10 +274,7 @@ async def create_admin_session(
     try:
         logger.info("🚀 Admin-Session-Erstellung gestartet")
 
-        session = await session_manager.create_admin_session(
-            runtime.context.tenant_id,
-            RuntimeConfigurationSnapshot.from_configuration(runtime.configuration),
-        )
+        session = await lifecycle.create(runtime.context.tenant_id, runtime.configuration)
         session_id = session.id
 
         # Client-URL generieren
@@ -305,6 +312,7 @@ async def create_admin_session(
 )
 async def get_current_session(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
+    lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
     session_id: Annotated[
         Optional[str],
         Query(description="Spezifische Session-ID, die geladen werden soll."),
@@ -317,31 +325,9 @@ async def get_current_session(
         SessionStatusResponse: Details der aktiven Session
     """
     try:
-        active_session_data = session_manager.get_active_session(
-            session_id=session_id,
-            tenant_id=context.tenant_id,
-        )
-
-        if not active_session_data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=(
-                    _SESSION_NOT_FOUND
-                    if session_id is not None
-                    else "Keine aktive Admin-Session gefunden"
-                ),
-            )
-
-        session_id = active_session_data["id"]
-        session = session_manager.get_session(TenantSessionKey(context.tenant_id, session_id))
-        if session is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=_SESSION_NOT_FOUND,
-            )
-
+        session = lifecycle.current(context.tenant_id, session_id)
         return SessionStatusResponse(
-            session_id=session_id,
+            session_id=session.id,
             status=session.status.value,
             customer_language=session.customer_language,
             admin_connected=session.admin_connected,
@@ -354,8 +340,20 @@ async def get_current_session(
             timeout_at=session.next_timeout_at().isoformat(),
         )
 
-    except HTTPException:
-        raise
+    except NoActiveSessionError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                _SESSION_NOT_FOUND
+                if session_id is not None
+                else "Keine aktive Admin-Session gefunden"
+            ),
+        )
+    except SessionNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=_SESSION_NOT_FOUND,
+        )
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -382,6 +380,7 @@ async def get_current_session(
 async def terminate_session(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
+    lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
 ) -> JSONResponse:
     """
     Beendet eine Session manuell
@@ -393,11 +392,7 @@ async def terminate_session(
         JSON-Response mit Erfolgs-/Fehlermeldung
     """
     try:
-        session = session_manager.get_session(key)
-        if session is None:
-            raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
-
-        if session.status == SessionStatus.TERMINATED:
+        if not await lifecycle.terminate(key):
             return JSONResponse(
                 content={
                     "message": f"Session {session_id} ist bereits beendet",
@@ -405,9 +400,6 @@ async def terminate_session(
                     "status": "already_terminated",
                 }
             )
-
-        # Session beenden
-        await session_manager.terminate_session(key, "manual_admin_termination")
 
         logger.info(
             "✅ Session manuell beendet | %s",
@@ -423,8 +415,8 @@ async def terminate_session(
             }
         )
 
-    except HTTPException:
-        raise
+    except SessionNotFoundError:
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
     except Exception as e:
         logger.exception(
             "❌ Fehler beim Beenden der Session",
@@ -444,6 +436,7 @@ async def terminate_session(
 )
 async def get_session_history(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
+    lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
     limit: int = 10,
 ) -> SessionHistoryResponse:
     """
@@ -456,12 +449,7 @@ async def get_session_history(
         SessionHistoryResponse: Historie und aktuelle Session
     """
     try:
-        # Vergangene Sessions
-        history = session_manager.get_session_history(limit=limit, tenant_id=context.tenant_id)
-
-        # Aktuelle Session
-        active_sessions = session_manager.get_active_sessions(tenant_id=context.tenant_id)
-
+        history, active_sessions = lifecycle.history(context.tenant_id, limit)
         return SessionHistoryResponse(
             sessions=history, total_count=len(history), active_sessions=active_sessions
         )
@@ -486,6 +474,7 @@ async def get_session_history(
 async def get_session_status(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
 ) -> SessionStatusResponse:
     """
     Ruft Status einer spezifischen Session ab
@@ -497,7 +486,7 @@ async def get_session_status(
         SessionStatusResponse: Detaillierte Session-Informationen
     """
     try:
-        session = session_manager.get_session(key)
+        session = sessions.get_session(key)
         if session is None:
             raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
 

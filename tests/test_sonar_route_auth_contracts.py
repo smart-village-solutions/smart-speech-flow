@@ -7,12 +7,8 @@ import pytest
 from fastapi import HTTPException, Request
 
 import services.api_gateway.app as gateway
-from services.api_gateway.realtime_ticket import (
-    CONSUME_TICKET_LUA,
-    MemoryRealtimeTicketBackend,
-    RealtimeTicketStore,
-)
 from services.api_gateway.routes import admin, customer
+from services.api_gateway.session_lifecycle import SessionLifecycleService
 from services.api_gateway.studio_login_directory_client import DirectoryTransport
 from services.api_gateway.tenant_session import TenantSessionKey
 
@@ -29,10 +25,10 @@ async def test_lifespan_reports_a_background_task_failure_during_shutdown(
 ) -> None:
     """A completed task failure remains visible while shutdown continues."""
 
-    async def first_failure() -> None:
+    async def first_failure(*_collaborators: object) -> None:
         raise RuntimeError("first background task failed")
 
-    async def second_failure() -> None:
+    async def second_failure(*_collaborators: object) -> None:
         raise RuntimeError("second background task failed")
 
     monkeypatch.setenv("SSF_AUDIO_BASE_DIR", str(tmp_path))
@@ -40,7 +36,6 @@ async def test_lifespan_reports_a_background_task_failure_during_shutdown(
     monkeypatch.setattr(gateway, "circuit_breaker_monitor", second_failure)
     for task_name in (
         "websocket_monitor_task",
-        "websocket_fallback_task",
         "audio_cleanup_task",
         "feedback_maintenance_task",
         "feedback_connect_task",
@@ -59,30 +54,6 @@ async def test_lifespan_reports_a_background_task_failure_during_shutdown(
         "Background task shutdown error: first background task failed",
         "Background task shutdown error: second background task failed",
     ]
-
-
-@pytest.mark.parametrize(
-    ("script", "number_of_keys"),
-    [
-        pytest.param("return nil", 1, id="unexpected-script"),
-        pytest.param(CONSUME_TICKET_LUA, 2, id="unexpected-key-count"),
-    ],
-)
-def test_memory_ticket_backend_rejects_invalid_eval_without_consuming_ticket(
-    script: str, number_of_keys: int
-) -> None:
-    """A rejected Redis contract must leave the single-use ticket available."""
-    backend = MemoryRealtimeTicketBackend()
-    store = RealtimeTicketStore(backend)
-    session_key = TenantSessionKey("tenant-test", "ABC12345")
-    issued = store.issue(session_key, "websocket")
-    stored_ticket_key = next(iter(backend.values))
-
-    with pytest.raises(ValueError, match="unsupported realtime ticket script"):
-        backend.eval(script, number_of_keys, stored_ticket_key)
-
-    assert store.consume(issued.ticket, session_key, "websocket") is True
-    assert store.consume(issued.ticket, session_key, "websocket") is False
 
 
 @pytest.mark.asyncio
@@ -181,35 +152,37 @@ async def test_feedback_maintenance_failure_is_reported_and_next_pass_runs(
 
 
 @pytest.mark.parametrize(
-    "handler",
+    ("handler", "collaborator"),
     [
-        pytest.param(admin.terminate_session, id="terminate"),
-        pytest.param(admin.get_session_status, id="status"),
+        pytest.param(admin.terminate_session, SessionLifecycleService, id="terminate"),
+        pytest.param(admin.get_session_status, lambda sessions: sessions, id="status"),
     ],
 )
 @pytest.mark.asyncio
 async def test_admin_session_routes_return_not_found_after_session_disappears(
+    session_manager,
     handler,
+    collaborator,
 ) -> None:
     """Admin session operations must preserve the public 404 race contract."""
     session_id = "MISSING1"
     key = TenantSessionKey("tenant-test", session_id)
 
     with pytest.raises(HTTPException) as caught:
-        await handler(session_id, key)
+        await handler(session_id, key, collaborator(session_manager))
 
     assert caught.value.status_code == 404
     assert caught.value.detail == "Session not found"
 
 
 @pytest.mark.asyncio
-async def test_customer_status_returns_not_found_after_session_disappears() -> None:
+async def test_customer_status_returns_not_found_after_session_disappears(session_manager) -> None:
     """Customer status must preserve the public 404 race contract."""
     session_id = "MISSING2"
     key = TenantSessionKey("tenant-test", session_id)
 
     with pytest.raises(HTTPException) as caught:
-        await customer.get_customer_session_status(session_id, key)
+        await customer.get_customer_session_status(session_id, key, session_manager)
 
     assert caught.value.status_code == 404
     assert caught.value.detail == "Session not found"
@@ -217,6 +190,7 @@ async def test_customer_status_returns_not_found_after_session_disappears() -> N
 
 @pytest.mark.asyncio
 async def test_customer_activation_returns_not_found_after_session_disappears(
+    session_manager,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Activation must return 404 if a resolved session disappears before use."""
@@ -230,11 +204,13 @@ async def test_customer_activation_returns_not_found_after_session_disappears(
     monkeypatch.setattr(
         customer,
         "require_customer_session_key",
-        lambda _session_id, _principal: key,
+        lambda _session_id, _principal, _sessions: key,
     )
 
     with pytest.raises(HTTPException) as caught:
-        await customer.activate_session(activation, request, None)
+        await customer.activate_session(
+            activation, request, None, session_manager, None, SessionLifecycleService(session_manager)
+        )
 
     assert caught.value.status_code == 404
     assert caught.value.detail == "Session not found"

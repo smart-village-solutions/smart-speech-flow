@@ -10,19 +10,22 @@ import wave
 import numpy as np
 from unittest.mock import Mock, patch
 
-from services.api_gateway.pipeline_logic import (
+from services.api_gateway.audio_processing import (
     validate_audio_input,
     normalize_audio,
     AudioValidationResult,
     AudioSpecs,
-    process_wav,
     _build_audio_validation_failure,
     _collect_audio_validation_errors,
     _normalize_audio_if_requested,
+)
+from services.api_gateway.pipeline_logic import (
+    process_wav,
     _pipeline_error_result,
     _validate_and_normalize_text,
 )
 from services.api_gateway.quality_telemetry import PipelineStage, QualityErrorCode
+from tests.pipeline_helpers import wav_collaborators
 
 
 def create_test_wav(
@@ -408,7 +411,9 @@ class TestProcessWavIntegration:
         # Valid audio
         audio_bytes = create_test_wav(duration_seconds=3.0)
 
-        result = process_wav(audio_bytes, "en", "de", debug=True, validate_audio=True)
+        result = process_wav(
+            audio_bytes, "en", "de", debug=True, validate_audio=True, **wav_collaborators()
+        )
 
         # Check that result was successful (no error field or error=False)
         assert result.get("error", False) is False
@@ -438,7 +443,9 @@ class TestProcessWavIntegration:
             channels=4,  # Unsupported channel layout
         )
 
-        result = process_wav(audio_bytes, "en", "de", debug=True, validate_audio=True)
+        result = process_wav(
+            audio_bytes, "en", "de", debug=True, validate_audio=True, **wav_collaborators()
+        )
 
         # Check that validation failed
         assert result.get("error", False) is True
@@ -474,7 +481,9 @@ class TestProcessWavIntegration:
             # Even invalid audio should proceed if validation is disabled
             audio_bytes = b"invalid audio"
 
-            result = process_wav(audio_bytes, "en", "de", validate_audio=False)
+            result = process_wav(
+                audio_bytes, "en", "de", validate_audio=False, **wav_collaborators()
+            )
 
             # Should not have validation step
             if "debug" in result and "steps" in result["debug"]:

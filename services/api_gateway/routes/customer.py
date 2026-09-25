@@ -15,20 +15,24 @@ from pydantic import BaseModel, Field
 
 from ..audio_storage import AudioVariant
 from ..auth import optional_ssf_user
-from ..consent_resolution import resolve_consent
-from ..conversation_service import conversation_service
-from ..log_safety import safe_language_code, sanitize_log_value
-from ..session_access import require_customer_session_key
-from ..session_manager import ClientType, SessionStatus, session_manager
-from ..studio_runtime_client import RuntimeConfiguration, StudioRuntimeClientError
-from ..studio_runtime_flow import (
-    StudioRuntimeFlowError,
-    correlation_id_from_request,
-    runtime_flow_from_environment,
+from ..conversation_service import ConversationService
+from ..dependencies import (
+    get_conversation_service,
+    get_session_lifecycle,
+    get_session_manager,
+    get_studio_runtime_flow,
 )
-from ..studio_runtime_token import StudioTokenError
+from ..log_safety import safe_language_code
+from ..session_access import require_customer_session_key
+from ..session_lifecycle import (
+    SessionLifecycleService,
+    SessionNotFoundError,
+    SessionTerminatedError,
+    TenantConflictError,
+)
+from ..session_manager import ClientType, SessionStatus, TenantSessionManager
+from ..studio_runtime_flow import StudioRuntimeFlow, correlation_id_from_request
 from ..tenant_session import TenantSessionKey
-from ..websocket import WebSocketManager, get_websocket_manager
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -97,19 +101,20 @@ async def send_customer_message(
     session_id: str,
     request: Request,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
-    manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
+    conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ):
-    return await conversation_service.process(key, ClientType.CUSTOMER, request, manager)
+    return await conversations.process(key, ClientType.CUSTOMER, request)
 
 
 @router.get("/session/{session_id}/messages", responses=CUSTOMER_ROUTE_RESPONSES)
 async def get_customer_messages(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
+    conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> dict[str, object]:
     return {
         "session_id": session_id,
-        "messages": conversation_service.messages(key, ClientType.CUSTOMER),
+        "messages": conversations.messages(key, ClientType.CUSTOMER),
     }
 
 
@@ -122,8 +127,9 @@ async def get_customer_audio(
     message_id: str,
     variant: AudioVariant,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
+    conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> Response:
-    return conversation_service.audio(key, message_id, variant)
+    return conversations.audio(key, message_id, variant)
 
 
 def utc_now() -> datetime:
@@ -134,44 +140,6 @@ def _safe_session_ref(session_id: Optional[str]) -> str:
     if not session_id:
         return "missing"
     return sha256(session_id.encode("utf-8")).hexdigest()[:12]
-
-
-# The Contract V1 codes that mean the tenant may not start a session at all.
-_TENANT_CONFLICT_CODES = frozenset(
-    {"tenant_suspended", "ssf_plugin_inactive", "ssf_tenant_not_ready"}
-)
-
-
-async def _read_activation_configuration(
-    http_request: Request, tenant_id: str
-) -> Optional[RuntimeConfiguration]:
-    """Read the live storage policy for one activation.
-
-    Returns `None` for every failure except a tenant conflict, which is raised
-    as `409` because no session may start. Deliberately not routed through
-    `RuntimePolicyGate`: that records discarded conversation content, and
-    activation writes none.
-
-    Args:
-        http_request: The activation request, read only for its correlation ID.
-        tenant_id: The tenant the session belongs to.
-
-    Returns:
-        The live runtime configuration, or `None` when the read failed.
-
-    Raises:
-        HTTPException: 409 when the tenant may not start a session.
-    """
-    correlation_id = correlation_id_from_request(http_request)
-    try:
-        flow = runtime_flow_from_environment()
-        return await flow.client.fetch(tenant_id, correlation_id)
-    except (StudioRuntimeClientError, StudioTokenError) as error:
-        if getattr(error, "code", None) in _TENANT_CONFLICT_CODES:
-            raise HTTPException(status_code=409, detail=error.code) from None
-        return None
-    except StudioRuntimeFlowError:
-        return None
 
 
 @router.post(
@@ -185,6 +153,9 @@ async def activate_session(
     request: ActivateSessionRequest,
     http_request: Request,
     principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
+    runtime_flow: Annotated[StudioRuntimeFlow | None, Depends(get_studio_runtime_flow)],
+    lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
 ) -> ActivateSessionResponse:
     """
     Aktiviert eine Session für Customer-Teilnahme
@@ -212,89 +183,23 @@ async def activate_session(
             safe_language_code(request.customer_language),
         )
 
-        # Session validieren
-        key = require_customer_session_key(request.session_id, principal)
-        session = session_manager.get_session(key)
-        if session is None:
-            raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
+        key = require_customer_session_key(request.session_id, principal, sessions)
+        activation = await lifecycle.activate(
+            key,
+            request.customer_language,
+            request.data_retention_consent,
+            runtime_flow,
+            lambda: correlation_id_from_request(http_request),
+        )
 
-        # Status prüfen
-        if session.status == SessionStatus.TERMINATED:
-            logger.warning(
-                "❌ Session bereits beendet | %s",
-                sanitize_log_value({"session_ref": _safe_session_ref(request.session_id)}),
-            )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Session {request.session_id} wurde bereits beendet und kann nicht aktiviert werden",
-            )
-
-        # Idempotenz: Bereits aktive Session
-        if session.status == SessionStatus.ACTIVE:
-            # Prüfen, ob Sprache geändert werden soll
-            if session.customer_language != request.customer_language:
-                logger.info(
-                    "🔄 Sprache wird aktualisiert | %s",
-                    sanitize_log_value(
-                        {
-                            "session_ref": _safe_session_ref(request.session_id),
-                            "previous_language": session.customer_language,
-                            "new_language": request.customer_language,
-                        }
-                    ),
-                )
-                await session_manager.activate_session(key, request.customer_language)
-                session = session_manager.get_session(key)
-            else:
-                logger.info(
-                    "ℹ️ Session bereits aktiv - idempotente Antwort | %s",
-                    sanitize_log_value({"session_ref": _safe_session_ref(request.session_id)}),
-                )
-
+        if activation.already_active:
             return ActivateSessionResponse(
                 session_id=request.session_id,
-                status=session.status.value,
-                customer_language=session.customer_language,
+                status=activation.session.status.value,
+                customer_language=activation.session.customer_language,
                 message=f"Session {request.session_id} ist bereits aktiv",
                 timestamp=utc_now().isoformat(),
             )
-
-        # Sprache validieren (optional - die Implementierung kann erweitert werden)
-        supported_languages = [
-            "de",
-            "en",
-            "ar",
-            "tr",
-            "ru",
-            "uk",
-            "am",
-            "ti",
-            "ku",
-            "fa",
-        ]
-        if request.customer_language not in supported_languages:
-            logger.warning("⚠️ Nicht unterstützte Kundensprache angefordert")
-            # Warnung, aber nicht blockieren - der TTS-Service entscheidet final
-
-        # Consent is resolved on this transition alone. `activate_session` is
-        # re-entered on every customer language change, and re-resolving there
-        # would let a consent-less call overwrite a granted answer.
-        live_configuration = await _read_activation_configuration(http_request, key.tenant_id)
-        session.consent_status = resolve_consent(live_configuration, request.data_retention_consent)
-
-        # Session aktivieren
-        await session_manager.activate_session(key, request.customer_language)
-
-        # Erfolgsmeldung
-        logger.info(
-            "✅ Session erfolgreich aktiviert | %s",
-            sanitize_log_value(
-                {
-                    "session_ref": _safe_session_ref(request.session_id),
-                    "customer_language": request.customer_language,
-                }
-            ),
-        )
 
         return ActivateSessionResponse(
             session_id=request.session_id,
@@ -304,6 +209,15 @@ async def activate_session(
             timestamp=utc_now().isoformat(),
         )
 
+    except SessionNotFoundError:
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
+    except SessionTerminatedError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Session {request.session_id} wurde bereits beendet und kann nicht aktiviert werden",
+        )
+    except TenantConflictError as conflict:
+        raise HTTPException(status_code=409, detail=conflict.code) from None
     except HTTPException:
         raise
     except Exception as e:
@@ -326,6 +240,7 @@ async def activate_session(
 async def get_customer_session_status(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
 ) -> dict[str, object]:
     """
     Session-Status für Customer-Interface abrufen
@@ -333,7 +248,7 @@ async def get_customer_session_status(
     Weniger Details als die Admin-Variante, fokussiert auf Customer-Bedürfnisse
     """
     try:
-        session = session_manager.get_session(key)
+        session = sessions.get_session(key)
         if session is None:
             raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
 

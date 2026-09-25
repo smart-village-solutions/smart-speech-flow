@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.consent import ConsentStatus
-from services.api_gateway.session_manager import session_manager
+from services.api_gateway.dependencies import get_studio_runtime_flow
 from tests.runtime_policy_helpers import configuration
 
 MALFORMED = ["x" * 129, "has\nnewline", "has\x00null", ""]
@@ -33,20 +33,17 @@ class _FakeStudio:
 @pytest.fixture
 def studio(monkeypatch: pytest.MonkeyPatch) -> _FakeStudio:
     fake = _FakeStudio()
-    monkeypatch.setattr(
-        "services.api_gateway.routes.customer.runtime_flow_from_environment",
-        lambda: fake,
-    )
+    monkeypatch.setitem(app.dependency_overrides, get_studio_runtime_flow, lambda: fake)
     return fake
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client(session_manager) -> TestClient:
     session_manager.reset(clear_persistence=True)
     return TestClient(app)
 
 
-def _pending(client: TestClient):
+def _pending(client: TestClient, session_manager):
     session_id = client.post("/api/admin/session/create").json()["session_id"]
     key = session_manager.resolve_customer_session(session_id)
     assert key is not None
@@ -55,9 +52,9 @@ def _pending(client: TestClient):
 
 @pytest.mark.parametrize("correlation_id", MALFORMED)
 def test_activation_refuses_a_malformed_correlation_id(
-    client, studio, correlation_id
+    session_manager, client, studio, correlation_id
 ):
-    session_id, key = _pending(client)
+    session_id, key = _pending(client, session_manager)
     response = client.post(
         "/api/customer/session/activate",
         json={"session_id": session_id, "customer_language": "en"},
@@ -69,8 +66,8 @@ def test_activation_refuses_a_malformed_correlation_id(
     assert studio.calls == 0
 
 
-def test_activation_accepts_a_well_formed_correlation_id(client, studio):
-    session_id, key = _pending(client)
+def test_activation_accepts_a_well_formed_correlation_id(session_manager, client, studio):
+    session_id, key = _pending(client, session_manager)
     response = client.post(
         "/api/customer/session/activate",
         json={
@@ -85,11 +82,13 @@ def test_activation_accepts_a_well_formed_correlation_id(client, studio):
 
 
 @pytest.mark.parametrize("correlation_id", MALFORMED)
-def test_a_message_refuses_a_malformed_correlation_id(client, studio, correlation_id):
+def test_a_message_refuses_a_malformed_correlation_id(
+    client, studio, correlation_id, session_manager
+):
     # Not merely a 500 risk: an unvalidated header reaches the policy gate,
     # whose blanket `except Exception` turns it into a refusal to persist. That
     # would hand any client a silent switch for another guest's retention.
-    session_id, _key = _pending(client)
+    session_id, _key = _pending(client, session_manager)
     assert (
         client.post(
             "/api/customer/session/activate",

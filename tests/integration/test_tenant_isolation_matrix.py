@@ -17,20 +17,18 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-import services.api_gateway.websocket as websocket_module
 from services.api_gateway.app import app
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.auth import optional_ssf_user, require_ssf_user
 from services.api_gateway.realtime_ticket import (
     MemoryRealtimeTicketBackend,
     RealtimeTicketStore,
-    realtime_ticket_store,
 )
 from services.api_gateway.session_manager import (
     ClientType,
-    SessionManager,
     SessionMessage,
     SessionStatus,
-    session_manager,
+    TenantSessionManager,
 )
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.studio_runtime_client import RuntimeConfiguration
@@ -47,10 +45,8 @@ from services.api_gateway.tenant_session import (
     TenantSessionKey,
 )
 from services.api_gateway.websocket import WebSocketManager
-from services.api_gateway.websocket_polling_routes import (
-    TenantPollingStore,
-    polling_store,
-)
+from services.api_gateway.websocket_polling_routes import TenantPollingStore
+from tests.realtime_sessions import websocket_monitor
 
 REVISION = f"sha256:{'a' * 64}"
 _CLIENT_ADDRESSES = itertools.count(1)
@@ -117,6 +113,11 @@ class TwoTenantSystem:
         self.resources: dict[str, TenantResource] = {}
         self.polling_ids: dict[str, str] = {}
 
+    @property
+    def sessions(self) -> TenantSessionManager:
+        """The session manager the running app's lifespan built."""
+        return app.state.dependencies.session_manager
+
     def claims(self) -> dict[str, str]:
         return {
             "sub": f"operator-{self.actor}",
@@ -142,7 +143,7 @@ class TwoTenantSystem:
         session_id = body["session_id"]
         message_id = f"message-{tenant_id}"
         key = TenantSessionKey(tenant_id, session_id)
-        session_manager.add_message(
+        self.sessions.add_message(
             key,
             SessionMessage(
                 id=message_id,
@@ -266,12 +267,12 @@ class TwoTenantSystem:
 
 @pytest.fixture
 def two_tenant_system():
+    """Two tenants on one running app.
+
+    The lifespan builds a fresh session manager, ticket store, polling store
+    and WebSocket manager for the app, so every test starts empty.
+    """
     original_overrides = app.dependency_overrides.copy()
-    original_websocket_manager = websocket_module.websocket_manager
-    session_manager.reset(clear_persistence=True)
-    polling_store.clients.clear()
-    realtime_ticket_store.redis.values.clear()
-    websocket_module.websocket_manager = None
     address = next(_CLIENT_ADDRESSES)
     with TestClient(
         app,
@@ -289,10 +290,6 @@ def two_tenant_system():
         yield system
     app.dependency_overrides.clear()
     app.dependency_overrides.update(original_overrides)
-    polling_store.clients.clear()
-    realtime_ticket_store.redis.values.clear()
-    websocket_module.websocket_manager = original_websocket_manager
-    session_manager.reset(clear_persistence=True)
 
 
 @pytest.mark.parametrize("operation", PROTECTED_OPERATIONS)
@@ -382,7 +379,7 @@ def test_each_tenant_session_keeps_its_creation_time_runtime_snapshot(
     two_tenant_system,
 ) -> None:
     snapshots = {
-        tenant_id: session_manager.get_session(
+        tenant_id: two_tenant_system.sessions.get_session(
             TenantSessionKey(tenant_id, resource.session_id)
         ).runtime_configuration
         for tenant_id, resource in two_tenant_system.resources.items()
@@ -408,10 +405,11 @@ class Clock:
 async def test_presence_grace_warning_and_absolute_lifetime_boundaries() -> None:
     clock = Clock()
     identifiers = iter(["GRACE001", "MAXIMUM1"])
-    manager = SessionManager(
+    manager = TenantSessionManager(
         store=MemoryTenantSessionStore(),
         clock=clock,
         session_id_factory=lambda: next(identifiers),
+        audio_store=AudioStore.from_environment(),
     )
     snapshot = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
     grace = await manager.create_admin_session("tenant-a", snapshot)
@@ -468,7 +466,7 @@ async def test_malformed_same_id_registries_and_cleanup_remain_tenant_isolated()
 
     key_a = TenantSessionKey("tenant-a", "DUPL1234")
     key_b = TenantSessionKey("tenant-b", "DUPL1234")
-    sockets = WebSocketManager(Presence())
+    sockets = WebSocketManager(Presence(), monitor=websocket_monitor())
     sockets.start_heartbeat_system = AsyncMock()
     socket_a = AsyncMock()
     socket_b = AsyncMock()

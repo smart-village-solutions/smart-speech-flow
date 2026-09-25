@@ -19,6 +19,7 @@ from services.api_gateway.pipeline_logic import (
     _mark_pipeline_failure,
     process_wav,
 )
+from tests.pipeline_helpers import wav_collaborators
 
 AUDIO_WAV_MIME = "audio/wav"
 
@@ -50,7 +51,9 @@ class TestAudioPipelineAsrFailure:
         # "successful" empty result rather than as a StopIteration.
         mock_post.side_effect = [asr, _ok_translation(), _ok_tts()]
 
-        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+        result = process_wav(
+            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+        )
 
         assert result["error"] is True
         assert "ASR" in result["error_msg"]
@@ -65,7 +68,9 @@ class TestAudioPipelineAsrFailure:
         asr.json.return_value = {"detail": "overloaded"}
         mock_post.side_effect = [asr, _ok_translation(), _ok_tts()]
 
-        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+        result = process_wav(
+            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+        )
 
         assert result["error"] is True
         assert result["error_code"] == UPSTREAM_BUSY_ERROR_CODE
@@ -78,7 +83,9 @@ class TestAudioPipelineAsrFailure:
         asr.json.side_effect = ValueError("Expecting value: line 1 column 1")
         mock_post.side_effect = [asr, _ok_translation(), _ok_tts()]
 
-        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+        result = process_wav(
+            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+        )
 
         assert result["error"] is True
         assert result["audio_bytes"] is None
@@ -87,7 +94,9 @@ class TestAudioPipelineAsrFailure:
     def test_an_asr_transport_error_fails_the_pipeline_instead_of_raising(self, mock_post):
         mock_post.side_effect = OSError("connection reset by peer")
 
-        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+        result = process_wav(
+            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+        )
 
         assert result["error"] is True
         assert result["audio_bytes"] is None
@@ -117,7 +126,9 @@ class TestFailureFinalisation:
         asr.json.return_value = {"error": "model not loaded"}
         mock_post.side_effect = [asr, _ok_translation(), _ok_tts()]
 
-        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+        result = process_wav(
+            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+        )
 
         assert result["error"] is True
         assert isinstance(result["debug"]["total_duration_ms"], int)
@@ -181,7 +192,9 @@ class TestTheExceptionPathDoesNotLeakInternals:
     def test_the_upstream_hostname_and_port_are_not_in_the_result(self, mock_post):
         mock_post.side_effect = self._transport_error()
 
-        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+        result = process_wav(
+            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+        )
 
         rendered = f"{result['error_msg']} {result['debug']}"
         assert "HTTPConnectionPool" not in rendered
@@ -192,7 +205,9 @@ class TestTheExceptionPathDoesNotLeakInternals:
     def test_the_failure_carries_a_stable_code_instead(self, mock_post):
         mock_post.side_effect = self._transport_error()
 
-        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+        result = process_wav(
+            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+        )
 
         assert result["debug"]["error_code"] == "upstream_unreachable"
 
@@ -200,7 +215,9 @@ class TestTheExceptionPathDoesNotLeakInternals:
     def test_a_timeout_is_classified_as_a_timeout(self, mock_post):
         mock_post.side_effect = TimeoutError("read timed out")
 
-        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+        result = process_wav(
+            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+        )
 
         assert result["debug"]["error_code"] == "upstream_timeout"
 
@@ -218,7 +235,9 @@ class TestTheExceptionPathKeepsWhatItAlreadyHas:
         translation = _ok_translation()
         mock_post.side_effect = [asr, translation, OSError("connection reset")]
 
-        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+        result = process_wav(
+            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+        )
 
         assert result["error"] is True
         assert result["asr_text"] == "Hello world"
@@ -229,7 +248,9 @@ class TestTheExceptionPathKeepsWhatItAlreadyHas:
     def test_an_asr_transport_failure_still_has_nothing_to_keep(self, mock_post):
         mock_post.side_effect = OSError("connection reset")
 
-        result = process_wav(b"not-really-audio", "en", "de", validate_audio=False)
+        result = process_wav(
+            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+        )
 
         assert result["asr_text"] is None
         assert result["translation_text"] is None

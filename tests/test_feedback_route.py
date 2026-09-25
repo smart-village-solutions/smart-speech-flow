@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.feedback.models import MAX_IMPROVEMENTS_LENGTH, FeedbackTextTooLong
 from services.api_gateway.feedback.repository import FeedbackStorageUnavailable
 from services.api_gateway.feedback.service import UnknownSession
@@ -59,10 +60,8 @@ def test_a_valid_submission_is_created(client_for) -> None:
 
 
 def test_the_route_is_registered_on_the_application() -> None:
-    """A route can exist in a module and never be mounted.
-
-    api_gateway/session.py is dead code for exactly that reason, so this
-    asserts against the generated schema rather than the import.
+    """A route can exist in a module and never be mounted, so this asserts
+    against the generated schema rather than the import.
     """
     assert "/api/feedback" in app.openapi()["paths"]
     assert "post" in app.openapi()["paths"]["/api/feedback"]
@@ -198,7 +197,8 @@ def test_a_session_id_no_session_could_carry_answers_404(client_for) -> None:
     """
     from services.api_gateway.feedback.service import FeedbackService
     from services.api_gateway.feedback.tenant import ConfiguredTenantResolver
-    from services.api_gateway.session_manager import SessionManager
+    from services.api_gateway.session_manager import TenantSessionManager
+    from services.api_gateway.session_pseudonym import SessionPseudonymizer
     from services.api_gateway.session_store import RedisTenantSessionStore
 
     class EmptyRedis:
@@ -209,8 +209,12 @@ def test_a_session_id_no_session_could_carry_answers_404(client_for) -> None:
         repository=None,
         cipher=None,
         tenant_resolver=ConfiguredTenantResolver(tenant_id="tenant-a"),
-        session_manager=SessionManager(store=RedisTenantSessionStore(EmptyRedis())),
+        session_manager=TenantSessionManager(
+            store=RedisTenantSessionStore(EmptyRedis()),
+            audio_store=AudioStore.from_environment(),
+        ),
         telemetry=None,
+        pseudonymizer=SessionPseudonymizer(key=b"feedback-route-test"),
     )
     client = client_for(service)
 

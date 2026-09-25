@@ -15,6 +15,8 @@ import requests
 
 from services.api_gateway import ai_service_client
 from services.api_gateway.circuit_breaker import CircuitBreakerOpenError, CircuitState
+from services.api_gateway.service_health import ServiceHealthManager
+from services.api_gateway.speech_services import HttpSpeechServices
 
 
 class FakeResponse:
@@ -25,48 +27,50 @@ class FakeResponse:
         self.headers = headers or {}
 
 
-def _breaker(service: str = "asr"):
-    return ai_service_client.breaker_for(service)
+@pytest.fixture
+def breakers():
+    """One app's breakers, as its health manager registers them."""
+    return ServiceHealthManager().circuit_breakers
 
 
-def _post(status_code: int, headers: dict | None = None, service: str = "asr"):
+def _post(breakers, status_code: int, headers: dict | None = None, service: str = "asr"):
     response = FakeResponse(status_code, headers)
     with patch.object(ai_service_client.requests, "post", return_value=response) as post:
         returned = ai_service_client.call_ai_service(
-            service, "http://asr:8000/transcribe", json={"a": 1}, timeout=60
+            breakers[service], "http://asr:8000/transcribe", json={"a": 1}, timeout=60
         )
     return returned, post
 
 
 class TestOutcomeRecording:
-    def test_a_2xx_is_recorded_as_a_success(self):
-        breaker = _breaker()
+    def test_a_2xx_is_recorded_as_a_success(self, breakers):
+        breaker = breakers["asr"]
 
-        returned, _ = _post(200)
+        returned, _ = _post(breakers, 200)
 
         assert returned.status_code == 200
         assert breaker.health.successful_requests == 1
         assert breaker.health.failed_requests == 0
 
-    def test_a_5xx_is_recorded_as_a_failure_and_still_returned(self):
-        breaker = _breaker()
+    def test_a_5xx_is_recorded_as_a_failure_and_still_returned(self, breakers):
+        breaker = breakers["asr"]
 
-        returned, _ = _post(500)
+        returned, _ = _post(breakers, 500)
 
         assert returned.status_code == 500, "the caller still classifies the reply"
         assert breaker.health.failed_requests == 1
 
-    def test_a_4xx_is_not_a_service_fault(self):
+    def test_a_4xx_is_not_a_service_fault(self, breakers):
         """The service is healthy and rejecting a bad request."""
-        breaker = _breaker()
+        breaker = breakers["asr"]
 
-        _post(422)
+        _post(breakers, 422)
 
         assert breaker.health.failed_requests == 0
         assert breaker.health.successful_requests == 1
 
-    def test_a_transport_error_is_a_failure_and_propagates(self):
-        breaker = _breaker()
+    def test_a_transport_error_is_a_failure_and_propagates(self, breakers):
+        breaker = breakers["asr"]
 
         with patch.object(
             ai_service_client.requests,
@@ -74,12 +78,14 @@ class TestOutcomeRecording:
             side_effect=requests.ConnectionError("no route to host"),
         ):
             with pytest.raises(requests.ConnectionError):
-                ai_service_client.call_ai_service("asr", "http://asr:8000/transcribe", timeout=60)
+                ai_service_client.call_ai_service(
+                    breakers["asr"], "http://asr:8000/transcribe", timeout=60
+                )
 
         assert breaker.health.failed_requests == 1
 
-    def test_a_timeout_is_a_failure_and_propagates(self):
-        breaker = _breaker()
+    def test_a_timeout_is_a_failure_and_propagates(self, breakers):
+        breaker = breakers["asr"]
 
         with patch.object(
             ai_service_client.requests,
@@ -87,13 +93,15 @@ class TestOutcomeRecording:
             side_effect=requests.Timeout("timed out"),
         ):
             with pytest.raises(requests.Timeout):
-                ai_service_client.call_ai_service("asr", "http://asr:8000/transcribe", timeout=60)
+                ai_service_client.call_ai_service(
+                    breakers["asr"], "http://asr:8000/transcribe", timeout=60
+                )
 
         assert breaker.health.failed_requests == 1
 
-    def test_a_late_synchronous_probe_result_cannot_mutate_a_newer_recovery(self):
+    def test_a_late_synchronous_probe_result_cannot_mutate_a_newer_recovery(self, breakers):
         """Outcome classification stays inside ``guard()``'s probe generation."""
-        breaker = _breaker()
+        breaker = breakers["asr"]
         for _ in range(breaker.config.failure_threshold):
             breaker.record_health_failure("health endpoint unavailable")
         breaker.next_attempt_time = 0
@@ -118,7 +126,9 @@ class TestOutcomeRecording:
                 return 500
 
         with patch.object(ai_service_client.requests, "post", return_value=LateFaultResponse()):
-            ai_service_client.call_ai_service("asr", "http://asr:8000/transcribe", timeout=60)
+            ai_service_client.call_ai_service(
+                breakers["asr"], "http://asr:8000/transcribe", timeout=60
+            )
 
         assert breaker.state is CircuitState.CLOSED
         assert breaker.failure_count == 0
@@ -127,106 +137,106 @@ class TestOutcomeRecording:
 class TestDeliberateShedding:
     """#190 sheds load with 503 + Retry-After. Breaking on that makes it worse."""
 
-    def test_a_503_with_retry_after_records_no_outcome(self):
+    def test_a_503_with_retry_after_records_no_outcome(self, breakers):
         """Not a fault -- and not a success either, because nothing was served.
 
         Recording a shed as a success is the tempting shortcut and it is wrong
         in both directions; the next two tests are the directions.
         """
-        breaker = _breaker("translation")
+        breaker = breakers["translation"]
 
-        returned, _ = _post(503, {"Retry-After": "5"}, service="translation")
+        returned, _ = _post(breakers, 503, {"Retry-After": "5"}, service="translation")
 
         assert returned.status_code == 503
         assert breaker.health.failed_requests == 0
         assert breaker.health.successful_requests == 0
         assert breaker.health.total_requests == 0
 
-    def test_repeated_shedding_never_opens_the_circuit(self):
-        breaker = _breaker("translation")
+    def test_repeated_shedding_never_opens_the_circuit(self, breakers):
+        breaker = breakers["translation"]
 
         for _ in range(10):
-            _post(503, {"Retry-After": "5"}, service="translation")
+            _post(breakers, 503, {"Retry-After": "5"}, service="translation")
 
         assert breaker.state is CircuitState.CLOSED
 
-    def test_shedding_does_not_clear_accumulated_failures(self):
+    def test_shedding_does_not_clear_accumulated_failures(self, breakers):
         """A service alternating real faults with shed load must still open.
 
         A success resets ``failure_count`` while the circuit is CLOSED, so if a
         shed counted as one, a half-broken service that sheds between its 500s
         would never reach the threshold and the breaker would never open.
         """
-        breaker = _breaker("translation")
+        breaker = breakers["translation"]
 
         for _ in range(breaker.config.failure_threshold - 1):
-            _post(500, service="translation")
-            _post(503, {"Retry-After": "5"}, service="translation")
+            _post(breakers, 500, service="translation")
+            _post(breakers, 503, {"Retry-After": "5"}, service="translation")
 
         assert breaker.state is CircuitState.CLOSED, "opened before the threshold"
 
-        _post(500, service="translation")
+        _post(breakers, 500, service="translation")
 
         assert breaker.state is CircuitState.OPEN
 
-    def test_shedding_does_not_close_a_half_open_circuit(self):
+    def test_shedding_does_not_close_a_half_open_circuit(self, breakers):
         """Nothing was served, so nothing shows the service has recovered."""
-        breaker = _breaker("translation")
+        breaker = breakers["translation"]
         for _ in range(breaker.config.failure_threshold):
             breaker.record_failure("forced open by test")
         breaker.next_attempt_time = time.time() - 1
 
-        _post(503, {"Retry-After": "5"}, service="translation")
+        _post(breakers, 503, {"Retry-After": "5"}, service="translation")
 
         assert breaker.state is CircuitState.HALF_OPEN
         assert breaker.health.successful_requests == 0
 
-    def test_a_shed_probe_does_not_turn_the_breaker_into_a_no_op(self):
+    def test_a_shed_probe_does_not_turn_the_breaker_into_a_no_op(self, breakers):
         """Recording nothing must not also mean gating nothing.
 
         The probe reported no outcome, so the slot stays reserved and the next
         caller waits out the window instead of streaming through a service
         that has told us it cannot cope.
         """
-        breaker = _breaker("translation")
+        breaker = breakers["translation"]
         for _ in range(breaker.config.failure_threshold):
             breaker.record_failure("forced open by test")
         breaker.next_attempt_time = time.time() - 1
 
-        _post(503, {"Retry-After": "5"}, service="translation")
+        _post(breakers, 503, {"Retry-After": "5"}, service="translation")
 
         with pytest.raises(CircuitBreakerOpenError):
-            _post(503, {"Retry-After": "5"}, service="translation")
+            _post(breakers, 503, {"Retry-After": "5"}, service="translation")
 
-    def test_shedding_does_not_enter_the_latency_average(self):
+    def test_shedding_does_not_enter_the_latency_average(self, breakers):
         """A refusal costs microseconds and would flatter /api/health/services."""
-        breaker = _breaker("translation")
-        _post(200, service="translation")
+        breaker = breakers["translation"]
+        _post(breakers, 200, service="translation")
         served = breaker.health.average_response_time
 
         for _ in range(5):
-            _post(503, {"Retry-After": "5"}, service="translation")
+            _post(breakers, 503, {"Retry-After": "5"}, service="translation")
 
         assert breaker.health.average_response_time == served
 
-    def test_a_503_without_retry_after_is_an_ordinary_fault(self):
-        breaker = _breaker("translation")
+    def test_a_503_without_retry_after_is_an_ordinary_fault(self, breakers):
+        breaker = breakers["translation"]
 
-        _post(503, service="translation")
+        _post(breakers, 503, service="translation")
 
         assert breaker.health.failed_requests == 1
 
-    def test_an_unparseable_retry_after_is_an_ordinary_fault(self):
-        breaker = _breaker("translation")
+    def test_an_unparseable_retry_after_is_an_ordinary_fault(self, breakers):
+        breaker = breakers["translation"]
 
-        _post(503, {"Retry-After": "soon"}, service="translation")
+        _post(breakers, 503, {"Retry-After": "soon"}, service="translation")
 
         assert breaker.health.failed_requests == 1
 
 
 class TestOpenCircuit:
-    def test_an_open_circuit_sends_no_request(self):
-        breaker = _breaker("tts")
+    def test_an_open_circuit_sends_no_request(self, breakers):
+        breaker = breakers["tts"]
         for _ in range(breaker.config.failure_threshold):
             breaker.record_failure("boom")
         assert breaker.state is CircuitState.OPEN
@@ -234,60 +244,64 @@ class TestOpenCircuit:
         with patch.object(ai_service_client.requests, "post") as post:
             with pytest.raises(CircuitBreakerOpenError):
                 ai_service_client.call_ai_service(
-                    "tts", "http://tts:8000/synthesize", json={}, timeout=45
+                    breakers["tts"], "http://tts:8000/synthesize", json={}, timeout=45
                 )
 
         post.assert_not_called()
 
-    def test_the_error_carries_the_wait_the_caller_must_report(self):
-        breaker = _breaker("tts")
+    def test_the_error_carries_the_wait_the_caller_must_report(self, breakers):
+        breaker = breakers["tts"]
         for _ in range(breaker.config.failure_threshold):
             breaker.record_failure("boom")
 
         with pytest.raises(CircuitBreakerOpenError) as caught:
             ai_service_client.call_ai_service(
-                "tts", "http://tts:8000/synthesize", json={}, timeout=45
+                breakers["tts"], "http://tts:8000/synthesize", json={}, timeout=45
             )
 
         assert caught.value.retry_after_seconds >= 1
         assert caught.value.service_name == "tts"
 
-    def test_enough_failures_open_the_circuit_through_this_path(self):
-        breaker = _breaker("asr")
+    def test_enough_failures_open_the_circuit_through_this_path(self, breakers):
+        breaker = breakers["asr"]
 
         for _ in range(breaker.config.failure_threshold):
-            _post(500)
+            _post(breakers, 500)
 
         assert breaker.state is CircuitState.OPEN
 
 
 class TestItUsesTheRegisteredBreakers:
-    def test_the_breaker_is_the_one_the_status_routes_report(self):
+    def test_the_breaker_is_the_one_the_status_routes_report(self, breakers):
         """A private breaker would leave /api/health/services describing nothing."""
-        from services.api_gateway.service_health import service_health_manager
+        health = ServiceHealthManager()
+        speech = HttpSpeechServices(health.circuit_breakers)
+
+        audio = FakeResponse(200, {"content-type": "audio/wav"})
+        with patch.object(ai_service_client.requests, "post", return_value=audio):
+            speech.transcribe(b"", lang="de", debug=False)
+            speech.translate({"text": "hallo"})
+            speech.synthesize({"text": "hello"}, timeout=30)
 
         for service in ("asr", "translation", "tts"):
-            assert (
-                ai_service_client.breaker_for(service)
-                is service_health_manager.circuit_breakers[service]
-            )
+            assert health.circuit_breakers[service].health.successful_requests == 1, service
 
-    def test_an_unknown_service_is_a_programming_error(self):
+    def test_a_missing_breaker_is_a_programming_error(self):
         with pytest.raises(KeyError):
-            ai_service_client.breaker_for("nope")
+            HttpSpeechServices({})
 
 
 class TestItDoesNotImposeTheHealthCheckTimeout:
-    def test_the_call_timeout_is_the_callers(self):
+    def test_the_call_timeout_is_the_callers(self, breakers):
         """``config.timeout`` is the /health budget: 8-10s against 60s inference."""
-        breaker = _breaker("asr")
+        breaker = breakers["asr"]
         assert breaker.config.timeout <= 10.0
 
         with patch.object(
             ai_service_client.requests, "post", return_value=FakeResponse(200)
         ) as post:
             ai_service_client.call_ai_service(
-                "asr", "http://asr:8000/transcribe", files={"f": b""}, timeout=60
+                breakers["asr"], "http://asr:8000/transcribe", files={"f": b""}, timeout=60
             )
 
         assert post.call_args.kwargs["timeout"] == 60
@@ -306,40 +320,40 @@ class TestAServedReplyIsMoreThanAStatusCode:
     def _audio(response) -> bool:
         return getattr(response, "headers", {}).get("content-type") == "audio/wav"
 
-    def _call(self, status_code, headers, *, served=None):
+    def _call(self, breakers, status_code, headers, *, served=None):
         response = FakeResponse(status_code, headers)
         with patch.object(ai_service_client.requests, "post", return_value=response):
             return ai_service_client.call_ai_service(
-                "tts", "http://tts:8000/synthesize", served=served, timeout=30
+                breakers["tts"], "http://tts:8000/synthesize", served=served, timeout=30
             )
 
-    def test_a_200_without_the_expected_payload_is_a_failure(self):
-        breaker = _breaker("tts")
+    def test_a_200_without_the_expected_payload_is_a_failure(self, breakers):
+        breaker = breakers["tts"]
 
-        self._call(200, {"content-type": "application/json"}, served=self._audio)
+        self._call(breakers, 200, {"content-type": "application/json"}, served=self._audio)
 
         assert breaker.health.failed_requests == 1
         assert breaker.health.successful_requests == 0
 
-    def test_a_200_carrying_the_payload_is_a_success(self):
-        breaker = _breaker("tts")
+    def test_a_200_carrying_the_payload_is_a_success(self, breakers):
+        breaker = breakers["tts"]
 
-        self._call(200, {"content-type": "audio/wav"}, served=self._audio)
+        self._call(breakers, 200, {"content-type": "audio/wav"}, served=self._audio)
 
         assert breaker.health.successful_requests == 1
         assert breaker.health.failed_requests == 0
 
-    def test_a_4xx_is_still_not_a_service_fault(self):
+    def test_a_4xx_is_still_not_a_service_fault(self, breakers):
         """Bad client input must not open a breaker, predicate or not."""
-        breaker = _breaker("tts")
+        breaker = breakers["tts"]
 
-        self._call(422, {"content-type": "application/json"}, served=self._audio)
+        self._call(breakers, 422, {"content-type": "application/json"}, served=self._audio)
 
         assert breaker.health.failed_requests == 0
 
-    def test_without_a_predicate_the_status_code_still_decides(self):
-        breaker = _breaker("tts")
+    def test_without_a_predicate_the_status_code_still_decides(self, breakers):
+        breaker = breakers["tts"]
 
-        self._call(200, {"content-type": "application/json"})
+        self._call(breakers, 200, {"content-type": "application/json"})
 
         assert breaker.health.successful_requests == 1

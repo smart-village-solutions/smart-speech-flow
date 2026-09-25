@@ -1,4 +1,9 @@
-"""Trusted, tenant-scoped entry point for conversation message processing."""
+"""Trusted, tenant-scoped entry point for conversation message processing.
+
+Routes reach message processing only through this service, and the service
+imports nothing from routes/: the dependency points from transport to
+application, never back (#347 §2).
+"""
 
 from __future__ import annotations
 
@@ -8,59 +13,102 @@ from typing import TYPE_CHECKING
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
-from .audio_storage import AudioVariant, audio_path, scope_pipeline_audio_urls, scoped_audio_url
-from .session_manager import ClientType, SessionStatus, session_manager
+from .audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
+from .message_processing import process_audio_input, process_text_input, send_unified_message
+from .session_manager import ClientType, SessionStatus, TenantSessionManager
 from .tenant_session import TenantSessionKey
 
 if TYPE_CHECKING:
-    from .routes.session import MessageResponse
+    from .message_models import MessageResponse
+    from .pipeline_admission import PipelineAdmission
+    from .pipeline_logic import SpeechPipeline
+    from .quality_telemetry import QualityTelemetry
     from .websocket import WebSocketManager
 
 
 class ConversationService:
-    """Apply the server-assigned role before entering the shared pipeline."""
+    """Apply the server-assigned role before entering the shared pipeline.
+
+    `build_gateway_dependencies` hands it the app's session manager, speech
+    pipeline, audio store, admission gate, quality telemetry and WebSocket
+    manager. Without a WebSocket manager a processed message reaches no live
+    connection, without an admission gate the pipeline runs unbounded, and
+    without telemetry no row is emitted: what unit tests that build one
+    directly want.
+    """
+
+    def __init__(
+        self,
+        sessions: TenantSessionManager,
+        *,
+        pipeline: SpeechPipeline,
+        audio_store: AudioStore,
+        admission: PipelineAdmission | None = None,
+        quality_telemetry: QualityTelemetry | None = None,
+        websocket_manager: WebSocketManager | None = None,
+    ) -> None:
+        self._sessions = sessions
+        self._pipeline = pipeline
+        self._audio_store = audio_store
+        self._admission = admission
+        self._quality_telemetry = quality_telemetry
+        self._websocket_manager = websocket_manager
 
     async def process(
-        self,
-        key: TenantSessionKey,
-        sender: ClientType,
-        request: Request,
-        manager: WebSocketManager | None = None,
+        self, key: TenantSessionKey, sender: ClientType, request: Request
     ) -> MessageResponse:
-        from .routes.session import send_unified_message
-
-        return await send_unified_message(key, sender, request, manager)
+        return await send_unified_message(
+            key,
+            sender,
+            request,
+            self._websocket_manager,
+            sessions=self._sessions,
+            pipeline=self._pipeline,
+            audio_store=self._audio_store,
+            admission=self._admission,
+            telemetry=self._quality_telemetry,
+        )
 
     async def process_text(
-        self,
-        key: TenantSessionKey,
-        sender: ClientType,
-        request: Request,
-        manager: WebSocketManager | None = None,
+        self, key: TenantSessionKey, sender: ClientType, request: Request
     ) -> MessageResponse:
-        from .routes.session import process_text_input
-
-        return await process_text_input(key, sender, request, time.perf_counter(), manager)
+        return await process_text_input(
+            key,
+            sender,
+            request,
+            time.perf_counter(),
+            self._websocket_manager,
+            sessions=self._sessions,
+            pipeline=self._pipeline,
+            audio_store=self._audio_store,
+            admission=self._admission,
+        )
 
     async def process_audio(
-        self,
-        key: TenantSessionKey,
-        sender: ClientType,
-        request: Request,
-        manager: WebSocketManager | None = None,
+        self, key: TenantSessionKey, sender: ClientType, request: Request
     ) -> MessageResponse:
-        from .routes.session import process_audio_input
-
-        return await process_audio_input(key, sender, request, time.perf_counter(), manager)
+        return await process_audio_input(
+            key,
+            sender,
+            request,
+            time.perf_counter(),
+            self._websocket_manager,
+            sessions=self._sessions,
+            pipeline=self._pipeline,
+            audio_store=self._audio_store,
+            admission=self._admission,
+        )
 
     def messages(self, key: TenantSessionKey, role: ClientType) -> list[dict[str, object]]:
-        session = session_manager.get_session(key)
+        session = self._sessions.get_session(key)
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
+        # Availability comes from the markers the writer recorded; settlement clears them
+        # when it removes audio. `audio()` alone checks the disk, as it serves the file.
         result: list[dict[str, object]] = []
         for message in session.messages:
             item = message.to_dict()
-            if audio_path(key, message.id, AudioVariant.TRANSLATED).is_file():
+            if message.translated_audio_available:
                 item["audio_url"] = scoped_audio_url(
                     key, role.value, message.id, AudioVariant.TRANSLATED
                 )
@@ -72,7 +120,7 @@ class ConversationService:
             has_original_audio = bool(message.original_audio_url) or (
                 isinstance(pipeline_input, dict) and pipeline_input.get("type") == "audio"
             )
-            if has_original_audio and audio_path(key, message.id, AudioVariant.ORIGINAL).is_file():
+            if has_original_audio:
                 item["original_audio_url"] = scoped_audio_url(
                     key, role.value, message.id, AudioVariant.ORIGINAL
                 )
@@ -90,7 +138,7 @@ class ConversationService:
         message_id: str,
         variant: AudioVariant,
     ) -> Response:
-        session = session_manager.get_session(key)
+        session = self._sessions.get_session(key)
         if session is None or session.status is SessionStatus.TERMINATED:
             raise HTTPException(status_code=404, detail="Session not found")
         message = next(
@@ -99,10 +147,7 @@ class ConversationService:
         )
         if message is None:
             raise HTTPException(status_code=404, detail="Audio file not found")
-        path = audio_path(key, message_id, variant)
+        path = self._audio_store.path(key, message_id, variant)
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Audio file not found")
         return FileResponse(path, media_type="audio/wav")
-
-
-conversation_service = ConversationService()

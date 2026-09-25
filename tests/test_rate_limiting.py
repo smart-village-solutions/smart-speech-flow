@@ -11,14 +11,12 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.rate_limiter import RateLimitConfig
-from services.api_gateway import rate_limiter
 from services.api_gateway.session_manager import (
     ClientType,
     SessionMessage,
     SessionStatus,
-    session_manager,
 )
-from services.api_gateway.routes import session as session_routes
+from services.api_gateway import message_processing
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 client = TestClient(app)
@@ -27,17 +25,14 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture(autouse=True)
-def reset_session_manager() -> None:
+def reset_session_manager(session_manager) -> None:
     session_manager.reset(clear_persistence=True)
-    middleware = rate_limiter.LATEST_RATE_LIMIT_MIDDLEWARE
-    if middleware is not None:
-        asyncio.run(middleware.message_limiter.reset())
-        asyncio.run(middleware.global_limiter.reset())
+    asyncio.run(app.state.rate_limits.reset())
     yield
     session_manager.reset(clear_persistence=True)
 
 
-def _register_active_session() -> str:
+def _register_active_session(session_manager) -> str:
     session = asyncio.run(session_manager.create_admin_session("tenant-test", SNAPSHOT))
     session.customer_language = "en"
     session.status = SessionStatus.ACTIVE
@@ -45,7 +40,7 @@ def _register_active_session() -> str:
     return session.id
 
 
-def _patch_pipeline(monkeypatch):
+def _patch_pipeline(monkeypatch, session_manager):
     def fake_process_text_pipeline(
         text: str, source_lang: str, target_lang: str, session_id: str = None, **kwargs
     ) -> dict:
@@ -62,9 +57,9 @@ def _patch_pipeline(monkeypatch):
         client_type: ClientType,
         original_text: str,
         translated_text: str,
-        audio_bytes,
         source_lang: str,
         target_lang: str,
+        **_kwargs,
     ) -> SessionMessage:
         message = SessionMessage(
             id=str(uuid.uuid4()),
@@ -79,13 +74,13 @@ def _patch_pipeline(monkeypatch):
         session_manager.add_message(session_id, message)
         return message
 
-    monkeypatch.setattr(session_routes, "process_text_pipeline", fake_process_text_pipeline)
-    monkeypatch.setattr(session_routes, "create_session_message", fake_create_session_message)
+    monkeypatch.setattr(message_processing, "process_text_pipeline", fake_process_text_pipeline)
+    monkeypatch.setattr(message_processing, "create_session_message", fake_create_session_message)
 
 
-def test_session_message_rate_limit(monkeypatch):
-    session_id = _register_active_session()
-    _patch_pipeline(monkeypatch)
+def test_session_message_rate_limit(monkeypatch, session_manager):
+    session_id = _register_active_session(session_manager)
+    _patch_pipeline(monkeypatch, session_manager)
 
     config_limit = RateLimitConfig().message_limit
     if config_limit <= 0:

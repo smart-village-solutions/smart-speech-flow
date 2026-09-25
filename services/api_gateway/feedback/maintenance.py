@@ -36,7 +36,7 @@ from typing import Any, Callable
 from prometheus_client import CollectorRegistry, Counter, Gauge
 
 from ..quality_telemetry import ProbeOutcome
-from ..session_pseudonym import feedback_ref, tenant_ref
+from ..session_pseudonym import SessionPseudonymizer, tenant_ref
 from .models import AnalyticsState
 from .repository import FeedbackRepository, ReconciliationLockUnavailable, RetentionLockUnavailable
 
@@ -187,6 +187,7 @@ class FeedbackMaintenance:
         repository: FeedbackRepository,
         telemetry: Any,
         metrics: FeedbackMaintenanceMetrics,
+        pseudonymizer: SessionPseudonymizer,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         reconciliation_limit: int = RECONCILIATION_BATCH_LIMIT,
         retention_limit: int = RETENTION_BATCH_LIMIT,
@@ -194,6 +195,7 @@ class FeedbackMaintenance:
         self._repository = repository
         self._telemetry = telemetry
         self._metrics = metrics
+        self._pseudonymizer = pseudonymizer
         self._clock = clock
         self._reconciliation_limit = reconciliation_limit
         self._retention_limit = retention_limit
@@ -252,7 +254,7 @@ class FeedbackMaintenance:
                 event_id=row.analytics_event_id,
                 session_ref=row.session_ref,
                 tenant_ref=tenant_ref(row.tenant_id),
-                feedback_ref=feedback_ref(row.feedback_id),
+                feedback_ref=self._pseudonymizer.feedback_reference(row.feedback_id),
                 translation_quality=row.translation_quality,
                 performance=row.performance,
                 usability=row.usability,

@@ -5,7 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from services.api_gateway.session_manager import ClientType, SessionManager
+from services.api_gateway.audio_storage import AudioStore
+from services.api_gateway.session_manager import ClientType, TenantSessionManager
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from tests.pipeline_helpers import (
     PIPELINE_SUCCESS,
@@ -16,6 +17,7 @@ from tests.pipeline_helpers import (
     make_active_session,
     pipeline_route,
     request_with,
+    speech_pipeline,
     text_request,
     upload_file,
     upload_route,
@@ -28,7 +30,10 @@ BLOCK_SECONDS = 0.4
 
 @pytest.fixture
 def session_manager():
-    return SessionManager(store=MemoryTenantSessionStore())
+    return TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
 
 
 class _ThreadRecorder:
@@ -48,18 +53,23 @@ class TestPipelineRunsOffTheEventLoop:
 
     @pytest.mark.asyncio
     async def test_audio_pipeline_runs_off_event_loop(self, session_manager):
-        from services.api_gateway.routes import session as session_routes
+        from services.api_gateway import message_processing
 
         session_id = await make_active_session(session_manager)
         recorder = _ThreadRecorder(PIPELINE_SUCCESS)
         loop_thread_id = threading.get_ident()
 
         with (
-            patch.object(session_routes, "session_manager", session_manager),
-            patch.object(session_routes, "process_wav", new=recorder),
+            patch.object(message_processing, "process_wav", new=recorder),
         ):
-            await session_routes.process_audio_input(
-                session_id, ClientType.ADMIN, audio_request(), 0.0
+            await message_processing.process_audio_input(
+                session_id,
+                ClientType.ADMIN,
+                audio_request(),
+                0.0,
+                sessions=session_manager,
+                pipeline=speech_pipeline(),
+                audio_store=AudioStore.from_environment(),
             )
 
         assert recorder.thread_ids, "process_wav was never called"
@@ -70,18 +80,23 @@ class TestPipelineRunsOffTheEventLoop:
 
     @pytest.mark.asyncio
     async def test_text_pipeline_runs_off_event_loop(self, session_manager):
-        from services.api_gateway.routes import session as session_routes
+        from services.api_gateway import message_processing
 
         session_id = await make_active_session(session_manager)
         recorder = _ThreadRecorder(TEXT_PIPELINE_SUCCESS)
         loop_thread_id = threading.get_ident()
 
         with (
-            patch.object(session_routes, "session_manager", session_manager),
-            patch.object(session_routes, "process_text_pipeline", new=recorder),
+            patch.object(message_processing, "process_text_pipeline", new=recorder),
         ):
-            await session_routes.process_text_input(
-                session_id, ClientType.ADMIN, text_request(), 0.0
+            await message_processing.process_text_input(
+                session_id,
+                ClientType.ADMIN,
+                text_request(),
+                0.0,
+                sessions=session_manager,
+                pipeline=speech_pipeline(),
+                audio_store=AudioStore.from_environment(),
             )
 
         assert recorder.thread_ids, "process_text_pipeline was never called"
@@ -97,6 +112,8 @@ class TestPipelineRunsOffTheEventLoop:
         with patch.object(upload_route, "process_wav", new=recorder):
             await upload_route.upload(
                 request=request_with(),
+                pipeline=speech_pipeline(),
+                admission=None,
                 file=upload_file(),
                 source_lang="de",
                 target_lang="en",
@@ -115,6 +132,8 @@ class TestPipelineRunsOffTheEventLoop:
         with patch.object(pipeline_route, "process_wav", new=recorder):
             await pipeline_route.pipeline(
                 request=legacy_pipeline_request(),
+                pipeline=speech_pipeline(),
+                admission=None,
                 file=upload_file(),
                 source_lang="de",
                 target_lang="en",
@@ -132,7 +151,7 @@ class TestConcurrentProgress:
 
     @pytest.mark.asyncio
     async def test_two_audio_messages_progress_concurrently(self, session_manager):
-        from services.api_gateway.routes import session as session_routes
+        from services.api_gateway import message_processing
 
         first = await make_active_session(session_manager)
         second = await make_active_session(session_manager)
@@ -146,16 +165,27 @@ class TestConcurrentProgress:
             return dict(PIPELINE_SUCCESS)
 
         with (
-            patch.object(session_routes, "session_manager", session_manager),
-            patch.object(session_routes, "process_wav", new=rendezvous),
+            patch.object(message_processing, "process_wav", new=rendezvous),
         ):
             results = await asyncio.wait_for(
                 asyncio.gather(
-                    session_routes.process_audio_input(
-                        first, ClientType.ADMIN, audio_request(), 0.0
+                    message_processing.process_audio_input(
+                        first,
+                        ClientType.ADMIN,
+                        audio_request(),
+                        0.0,
+                        sessions=session_manager,
+                        pipeline=speech_pipeline(),
+                        audio_store=AudioStore.from_environment(),
                     ),
-                    session_routes.process_audio_input(
-                        second, ClientType.ADMIN, audio_request(), 0.0
+                    message_processing.process_audio_input(
+                        second,
+                        ClientType.ADMIN,
+                        audio_request(),
+                        0.0,
+                        sessions=session_manager,
+                        pipeline=speech_pipeline(),
+                        audio_store=AudioStore.from_environment(),
                     ),
                 ),
                 timeout=SAFETY_TIMEOUT,
@@ -200,22 +230,27 @@ class TestEventLoopResponsiveness:
 
     @pytest.mark.asyncio
     async def test_loop_keeps_ticking_during_audio_pipeline(self, session_manager):
-        from services.api_gateway.routes import session as session_routes
+        from services.api_gateway import message_processing
 
         session_id = await make_active_session(session_manager)
         entered = threading.Event()
 
         with (
-            patch.object(session_routes, "session_manager", session_manager),
             patch.object(
-                session_routes,
+                message_processing,
                 "process_wav",
                 new=self._blocking_pipeline(entered, PIPELINE_SUCCESS),
             ),
         ):
             ticks = await self._count_ticks_during(
-                session_routes.process_audio_input(
-                    session_id, ClientType.ADMIN, audio_request(), 0.0
+                message_processing.process_audio_input(
+                    session_id,
+                    ClientType.ADMIN,
+                    audio_request(),
+                    0.0,
+                    sessions=session_manager,
+                    pipeline=speech_pipeline(),
+                    audio_store=AudioStore.from_environment(),
                 ),
                 entered,
             )
@@ -230,22 +265,27 @@ class TestEventLoopResponsiveness:
 
     @pytest.mark.asyncio
     async def test_loop_keeps_ticking_during_text_pipeline(self, session_manager):
-        from services.api_gateway.routes import session as session_routes
+        from services.api_gateway import message_processing
 
         session_id = await make_active_session(session_manager)
         entered = threading.Event()
 
         with (
-            patch.object(session_routes, "session_manager", session_manager),
             patch.object(
-                session_routes,
+                message_processing,
                 "process_text_pipeline",
                 new=self._blocking_pipeline(entered, TEXT_PIPELINE_SUCCESS),
             ),
         ):
             ticks = await self._count_ticks_during(
-                session_routes.process_text_input(
-                    session_id, ClientType.ADMIN, text_request(), 0.0
+                message_processing.process_text_input(
+                    session_id,
+                    ClientType.ADMIN,
+                    text_request(),
+                    0.0,
+                    sessions=session_manager,
+                    pipeline=speech_pipeline(),
+                    audio_store=AudioStore.from_environment(),
                 ),
                 entered,
             )

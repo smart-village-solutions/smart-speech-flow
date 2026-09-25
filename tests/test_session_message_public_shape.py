@@ -4,20 +4,21 @@ from datetime import datetime, timezone
 
 import pytest
 
-from services.api_gateway.conversation_service import conversation_service
+from services.api_gateway.audio_storage import AudioStore
+from services.api_gateway.conversation_service import ConversationService
 from services.api_gateway.session_manager import (
     ClientType,
     SessionMessage,
-    session_manager,
 )
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
+from tests.pipeline_helpers import speech_pipeline
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture
-async def granted_session_with_message():
+async def granted_session_with_message(session_manager):
     session_manager.reset(clear_persistence=True)
     session = await session_manager.create_admin_session("tenant-test", SNAPSHOT)
     session_manager.add_message(
@@ -39,10 +40,15 @@ async def granted_session_with_message():
 
 
 async def test_history_response_has_no_authorization_field(
+    session_manager,
     granted_session_with_message,
 ):
     key, role = granted_session_with_message
-    items = conversation_service.messages(key, role)
+    items = ConversationService(
+        session_manager,
+        pipeline=speech_pipeline(),
+        audio_store=AudioStore.from_environment(),
+    ).messages(key, role)
     assert items
     for item in items:
         assert "record_authorized" not in item

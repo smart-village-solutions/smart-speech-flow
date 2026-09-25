@@ -18,7 +18,6 @@ from enum import Enum
 from typing import Final, TypedDict, Unpack
 from uuid import UUID, uuid4
 
-from fastapi import Request
 from prometheus_client import CollectorRegistry, Counter
 
 from .session_pseudonym import MISSING_TENANT_REFERENCE
@@ -741,12 +740,12 @@ def _events_counter(registry: CollectorRegistry) -> Counter:
     """Register the counter once per registry, reusing it on repeat calls.
 
     app.py's lifespan builds a fresh QualityTelemetry on every startup, but
-    the gateway's CollectorRegistry is a module-level object that outlives a
-    single lifespan cycle: a test suite spins up many TestClient instances
-    against the same app within one process, re-entering lifespan each time.
+    the app's CollectorRegistry, built by create_app(), outlives a single
+    lifespan cycle: a test suite spins up many TestClient instances against
+    the same app within one process, re-entering lifespan each time.
     prometheus_client raises on a second registration of the same metric name,
-    so this mirrors app.py's own precedent of registering a series once and
-    reusing it thereafter.
+    so this mirrors create_app()'s own precedent of registering a series once
+    and reusing it thereafter.
 
     Registration is attempted through the public API first, and every fallback
     ends in a counter rather than an exception. Telemetry is optional; a
@@ -1064,8 +1063,3 @@ class QualityTelemetry:
     @property
     def mode(self) -> TelemetryMode:
         return self._mode
-
-
-def get_quality_telemetry(request: Request) -> "QualityTelemetry":
-    """FastAPI provider, following the app.state pattern used across app.py."""
-    return request.app.state.quality_telemetry

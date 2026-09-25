@@ -19,10 +19,10 @@ from jwt.exceptions import InvalidKeyError, InvalidTokenError
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import HTTPConnection
 
+from .dependencies import get_login_directory, get_oidc_key_cache
 from .studio_login_directory import (
     StudioLoginDirectoryConfigurationError,
     StudioLoginDirectoryService,
-    get_studio_login_directory_service,
 )
 from .studio_login_directory_client import StudioLoginDirectoryClientError
 from .studio_runtime_token import StudioTokenError
@@ -98,9 +98,6 @@ class OidcKeyCache:
         return keys
 
 
-_key_cache = OidcKeyCache()
-
-
 def _unauthorized() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -109,9 +106,19 @@ def _unauthorized() -> HTTPException:
     )
 
 
-def get_auth_login_directory_provider() -> Callable[[], StudioLoginDirectoryService]:
+def get_auth_login_directory_provider(
+    directory: Annotated[StudioLoginDirectoryService | None, Depends(get_login_directory)],
+) -> Callable[[], StudioLoginDirectoryService]:
     """Defer directory configuration so a request without a bearer token stays a 401."""
-    return get_studio_login_directory_service
+
+    def provide() -> StudioLoginDirectoryService:
+        if directory is None:
+            raise StudioLoginDirectoryConfigurationError(
+                "studio_login_directory_configuration_invalid"
+            )
+        return directory
+
+    return provide
 
 
 async def require_ssf_user(
@@ -120,6 +127,7 @@ async def require_ssf_user(
         Callable[[], StudioLoginDirectoryService],
         Depends(get_auth_login_directory_provider),
     ],
+    key_cache: Annotated[OidcKeyCache, Depends(get_oidc_key_cache)],
 ) -> dict[str, Any]:
     """Validate an administrative bearer token and return its claims."""
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
@@ -158,7 +166,7 @@ async def require_ssf_user(
         header = jwt.get_unverified_header(token)
         if header.get("alg") != "RS256" or not isinstance(header.get("kid"), str):
             raise _unauthorized()
-        keys = await run_in_threadpool(_key_cache.keys_for, issuer)
+        keys = await run_in_threadpool(key_cache.keys_for, issuer)
         signing_key = keys[header["kid"]]
         public_key = RSAAlgorithm.from_jwk(json.dumps(signing_key))
         if not isinstance(public_key, rsa.RSAPublicKey):
@@ -205,8 +213,9 @@ async def optional_ssf_user(
         Callable[[], StudioLoginDirectoryService],
         Depends(get_auth_login_directory_provider),
     ],
+    key_cache: Annotated[OidcKeyCache, Depends(get_oidc_key_cache)],
 ) -> dict[str, Any] | None:
     """Authenticate a supplied bearer token while allowing no token at all."""
     if "Authorization" not in request.headers:
         return None
-    return await require_ssf_user(request, directory_provider)
+    return await require_ssf_user(request, directory_provider, key_cache)

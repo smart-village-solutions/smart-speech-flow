@@ -1,4 +1,3 @@
-import asyncio
 import contextlib
 import importlib
 import importlib.util
@@ -204,6 +203,8 @@ def build_fastapi_stub() -> tuple[types.ModuleType, types.ModuleType]:
         return {"args": args, "kwargs": kwargs}
 
     fastapi_stub.FastAPI = FastAPI
+    fastapi_stub.APIRouter = FastAPI
+    fastapi_stub.Depends = _marker
     fastapi_stub.File = _marker
     fastapi_stub.Form = _marker
     fastapi_stub.HTTPException = StubHTTPError
@@ -217,6 +218,7 @@ def build_fastapi_stub() -> tuple[types.ModuleType, types.ModuleType]:
 
 def build_prometheus_stub() -> types.ModuleType:
     prometheus_stub = types.ModuleType("prometheus_client")
+    prometheus_stub.CollectorRegistry = object
     prometheus_stub.Counter = lambda *args, **kwargs: DummyMetric()
     prometheus_stub.Gauge = lambda *args, **kwargs: DummyMetric()
     prometheus_stub.Histogram = lambda *args, **kwargs: DummyMetric()
@@ -343,13 +345,9 @@ def tts_app(monkeypatch):
 @pytest.fixture
 def upload_module(monkeypatch):
     fastapi_stub, responses_stub = build_fastapi_stub()
-    app_module = types.ModuleType("services.api_gateway.app")
-    app_module.app = SimpleNamespace(
-        requests_total=DummyMetric(),
-        post=lambda *args, **kwargs: (lambda func: func),
-    )
     pipeline_module = types.ModuleType("services.api_gateway.pipeline_logic")
-    pipeline_module.process_wav = lambda file_bytes, source_lang, target_lang: {}
+    pipeline_module.process_wav = lambda file_bytes, source_lang, target_lang, **_: {}
+    pipeline_module.SpeechPipeline = object
 
     return load_module(
         monkeypatch,
@@ -358,7 +356,6 @@ def upload_module(monkeypatch):
         {
             "fastapi": fastapi_stub,
             "fastapi.responses": responses_stub,
-            "services.api_gateway.app": app_module,
             "services.api_gateway.pipeline_logic": pipeline_module,
         },
     )
@@ -521,36 +518,28 @@ def test_service_apps_collect_gpu_metrics_and_metrics_route_fallbacks(
     assert translation_app._collect_gpu_metrics() == payload
     assert tts_app._collect_gpu_metrics() == payload
 
-    app_module = types.ModuleType("services.api_gateway.app")
-    app_module.app = SimpleNamespace(state=SimpleNamespace(prometheus_registry="main-registry"))
-    websocket_monitor = types.ModuleType("services.api_gateway.websocket_monitor")
-    websocket_monitor.get_websocket_monitor = lambda: SimpleNamespace(_registry="ws-registry")
-
     metrics_route = load_module(
         monkeypatch,
         "services.api_gateway.routes.metrics",
         "services/api_gateway/routes/metrics.py",
-        {
-            "services.api_gateway.app": app_module,
-            "services.api_gateway.websocket_monitor": websocket_monitor,
-        },
+        {},
     )
     monkeypatch.setattr(
         metrics_route,
         "generate_latest",
-        lambda registry: (b"main_metric 1\n" if registry == "main-registry" else b"ws_metric 2\n"),
+        lambda registry: (b"main_metric 1\n" if registry == "main-registry" else b""),
     )
 
-    combined_response = metrics_route.metrics()
-    assert combined_response.media_type == "text/plain"
-    assert combined_response.body == b"main_metric 1\nws_metric 2\n"
+    response = metrics_route.metrics("main-registry")
+    assert response.media_type == "text/plain"
+    assert response.body == b"main_metric 1\n"
 
     monkeypatch.setattr(
         metrics_route,
         "generate_latest",
         lambda registry: (_ for _ in ()).throw(RuntimeError("broken")),
     )
-    fallback_response = metrics_route.metrics()
+    fallback_response = metrics_route.metrics("main-registry")
     assert fallback_response.body == b"# Fehler beim Generieren der Metriken\n"
 
 
@@ -953,41 +942,17 @@ async def test_tts_does_not_call_a_configured_mms_voice_a_fallback(tts_app):
     assert response.headers["x-tts-fallback"] == "false"
 
 
-def test_enhanced_audio_validator_convert_with_ffmpeg(tmp_path, monkeypatch):
-    from services.api_gateway.enhanced_audio_validation import EnhancedAudioValidator
-
-    validator = EnhancedAudioValidator()
-
-    def successful_run(cmd, capture_output=True, timeout=30):
-        output_path = cmd[-1]
-        with open(output_path, "wb") as file_obj:
-            file_obj.write(b"converted")
-        return SimpleNamespace(returncode=0, stderr=b"")
-
-    monkeypatch.setattr(
-        "services.api_gateway.enhanced_audio_validation.subprocess.run", successful_run
-    )
-    converted = validator._convert_with_ffmpeg(b"source", "webm")
-    assert converted == b"converted"
-
-    def failing_run(cmd, capture_output=True, timeout=30):
-        return SimpleNamespace(returncode=1, stderr=b"broken")
-
-    monkeypatch.setattr(
-        "services.api_gateway.enhanced_audio_validation.subprocess.run", failing_run
-    )
-    assert validator._convert_with_ffmpeg(b"source", "webm") is None
-
-
 def test_websocket_monitor_utc_and_overdue_heartbeat_health():
     websocket_monitor = importlib.import_module("services.api_gateway.websocket_monitor")
-    from prometheus_client import CollectorRegistry
+    from services.api_gateway.tenant_session import TenantSessionKey
+    from tests.realtime_sessions import websocket_monitor as build_monitor
 
-    monitor = websocket_monitor.WebSocketMonitor(registry=CollectorRegistry())
+    monitor = build_monitor()
+    key = TenantSessionKey("tenant-a", "session-1")
     metrics = monitor.connection_established(
-        "conn-1", "session-1", "admin", "https://example.com:443"
+        "conn-1", "session-1", "admin", "https://example.com:443", resource_key=key
     )
-    monitor.connection_established("conn-2", "session-1", "customer")
+    monitor.connection_established("conn-2", "session-1", "customer", resource_key=key)
 
     now = websocket_monitor.utc_now()
     assert now.tzinfo is not None
@@ -1013,12 +978,11 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
             self.calls += 1
 
     counter = FakeAppCounter()
-    upload_module.app.requests_total = counter
 
     monkeypatch.setattr(
         upload_module,
         "process_wav",
-        lambda file_bytes, source_lang, target_lang: {
+        lambda file_bytes, source_lang, target_lang, **_: {
             "error": True,
             "error_msg": "<script>alert(1)</script>",
             "asr_text": "<b>roher text</b>",
@@ -1026,10 +990,13 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
             "audio_bytes": b"",
         },
     )
-    # A request with no app carries no admission component, so the route runs
-    # unbounded — this test is about HTML escaping, not capacity.
-    request = SimpleNamespace()
-    error_response = await upload_module.upload(request, FakeUploadFile(b"audio"), "de", "en")
+    # No admission gate, so the route runs unbounded — this test is about HTML
+    # escaping, not capacity.
+    request = SimpleNamespace(app=SimpleNamespace(requests_total=counter))
+    pipeline = SimpleNamespace(speech=None, refiner=None, validator=None)
+    error_response = await upload_module.upload(
+        request, pipeline, None, FakeUploadFile(b"audio"), "de", "en"
+    )
     assert error_response.status_code == 400
     assert b"&lt;script&gt;alert(1)&lt;/script&gt;" in error_response.body
     assert b"Keine Ausgabe verfuegbar." in error_response.body
@@ -1037,7 +1004,7 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
     monkeypatch.setattr(
         upload_module,
         "process_wav",
-        lambda file_bytes, source_lang, target_lang: {
+        lambda file_bytes, source_lang, target_lang, **_: {
             "error": False,
             "asr_text": "<b>Hallo</b>",
             "translation_text": "<i>Hello</i>",
@@ -1046,6 +1013,8 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
     )
     success_response = await upload_module.upload(
         request,
+        pipeline,
+        None,
         FakeUploadFile(b"audio"),
         "<de>",
         "<en>",
@@ -1054,49 +1023,6 @@ async def test_upload_route_escapes_html_and_handles_success(upload_module, monk
     assert b"&lt;b&gt;Hallo&lt;/b&gt;" in success_response.body
     assert b"&lt;de&gt;" in success_response.body
     assert counter.calls == 2
-
-
-@pytest.mark.asyncio
-async def test_legacy_session_route_uses_new_process_wav_contract(monkeypatch):
-    from services.api_gateway import session as legacy_session
-    from services.api_gateway.session_manager import ClientType
-
-    fake_session = SimpleNamespace(id="SESSION1", messages=[])
-    captured = {}
-
-    monkeypatch.setattr(
-        legacy_session.session_manager, "get_session", lambda session_id: fake_session
-    )
-    monkeypatch.setattr(
-        legacy_session.session_manager,
-        "add_message",
-        lambda session_id, message: captured.setdefault("message", message),
-    )
-    monkeypatch.setattr(
-        legacy_session,
-        "process_wav",
-        lambda file_bytes, source_lang, target_lang: {
-            "asr_text": "Hallo",
-            "translation_text": "Hello",
-            "audio_bytes": b"audio",
-        },
-    )
-
-    response = await legacy_session.send_session_message(
-        "SESSION1",
-        ClientType.ADMIN,
-        FakeUploadFile(b"input-audio"),
-        "de",
-        "en",
-    )
-
-    assert response["status"] == "success"
-    assert response["original_text"] == "Hallo"
-    assert response["translated_text"] == "Hello"
-    assert response["audio_available"] is True
-    assert captured["message"].source_lang == "de"
-    assert captured["message"].target_lang == "en"
-    assert captured["message"].audio_base64 is not None
 
 
 def test_asr_module_imports_with_real_fastapi(monkeypatch):
@@ -1122,145 +1048,6 @@ def test_asr_module_imports_with_real_fastapi(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_websocket_fallback_lifecycle_and_cleanup(monkeypatch):
-    websocket_fallback = importlib.import_module("services.api_gateway.websocket_fallback")
-
-    manager = websocket_fallback.WebSocketFallbackManager(
-        websocket_fallback.FallbackConfig(
-            enable_jitter=False,
-            polling_interval=2,
-            max_websocket_retries=2,
-            enable_user_notifications=True,
-            enable_automatic_recovery=True,
-        )
-    )
-    notifications = []
-
-    async def notification_callback(notification):
-        notifications.append(notification)
-
-    manager.notification_callbacks.append(notification_callback)
-
-    polling_id = await manager.activate_polling_fallback(
-        "session-1",
-        "customer",
-        "https://example.com",
-        websocket_fallback.FallbackReason.NETWORK_ERROR,
-    )
-
-    assert notifications[0]["type"] == "fallback_notification"
-    assert manager.send_message_to_polling_client(polling_id, {"type": "chat", "text": "Hello"})
-
-    client = manager.polling_clients[polling_id]
-    client.websocket_retry_after = websocket_fallback.utc_now() - timedelta(seconds=1)
-    messages = manager.poll_messages(polling_id)
-
-    assert any(message["type"] == "websocket_retry_suggestion" for message in messages)
-    recovery = manager.attempt_websocket_recovery(polling_id)
-    assert recovery["success"] is True
-
-    manager.websocket_recovery_failed(polling_id, websocket_fallback.FallbackReason.TIMEOUT_ERROR)
-    assert manager.polling_clients[polling_id].websocket_retry_after is not None
-
-    manager.polling_clients[polling_id].created_at = websocket_fallback.utc_now() - timedelta(
-        seconds=1900
-    )
-    manager.polling_clients[polling_id].last_poll = None
-
-    sleep_calls = {"count": 0}
-
-    async def fake_sleep(seconds):
-        sleep_calls["count"] += 1
-        if sleep_calls["count"] == 1:
-            return None
-        raise asyncio.CancelledError()
-
-    monkeypatch.setattr(websocket_fallback.asyncio, "sleep", fake_sleep)
-    with pytest.raises(asyncio.CancelledError):
-        await manager.periodic_cleanup()
-
-    assert polling_id not in manager.polling_clients
-
-
-def test_websocket_fallback_classifies_failures_and_limits_queue():
-    websocket_fallback = importlib.import_module("services.api_gateway.websocket_fallback")
-
-    manager = websocket_fallback.WebSocketFallbackManager(
-        websocket_fallback.FallbackConfig(enable_jitter=False)
-    )
-
-    assert (
-        manager._classify_failure_reason({"message": "CORS preflight blocked"})
-        == websocket_fallback.FallbackReason.CORS_PREFLIGHT_FAILED
-    )
-    assert (
-        manager.evaluate_websocket_failure(
-            "session-1",
-            "admin",
-            "https://example.com",
-            {"message": "network down", "code": 0},
-        )
-        is False
-    )
-    assert (
-        manager.evaluate_websocket_failure(
-            "session-1",
-            "admin",
-            "https://example.com",
-            {"message": "network down", "code": 0},
-        )
-        is True
-    )
-
-    polling_id = "poll-session-1-admin"
-    client = websocket_fallback.PollingClient(
-        polling_id=polling_id,
-        session_id="session-1",
-        client_type="admin",
-        origin=None,
-        created_at=websocket_fallback.utc_now(),
-    )
-    manager.polling_clients[polling_id] = client
-    manager.session_polling_clients["session-1"].add(polling_id)
-
-    # Overflow now returns False instead of silently dropping the oldest
-    # queued message, so sends past the 100-message bound must fail.
-    for index in range(105):
-        sent = manager.send_message_to_polling_client(polling_id, {"type": "msg", "index": index})
-        assert sent is (index < 100)
-
-    assert len(manager.polling_clients[polling_id].message_queue) == 100
-    session_status = manager.get_session_fallback_status("session-1")
-    assert session_status["has_active_fallbacks"] is True
-    assert manager.deactivate_polling_fallback(polling_id) is True
-    assert manager.get_polling_client_status("missing") is None
-
-
-def test_websocket_fallback_uses_origin_in_failure_history_key():
-    websocket_fallback = importlib.import_module("services.api_gateway.websocket_fallback")
-
-    manager = websocket_fallback.WebSocketFallbackManager(
-        websocket_fallback.FallbackConfig(enable_jitter=False)
-    )
-
-    manager.evaluate_websocket_failure(
-        "session-1",
-        "admin",
-        "https://admin.example",
-        {"message": "network down", "code": 0},
-    )
-    manager.evaluate_websocket_failure(
-        "session-1",
-        "admin",
-        None,
-        {"message": "network down", "code": 0},
-    )
-
-    assert "session-1_admin_https://admin.example" in manager.failure_history
-    assert "session-1_admin_unknown_origin" in manager.failure_history
-
-
-@pytest.mark.asyncio
 async def test_circuit_breaker_client_status_and_monitoring(monkeypatch):
     """What the client still does after #219: report status and run monitoring.
 
@@ -1269,20 +1056,22 @@ async def test_circuit_breaker_client_status_and_monitoring(monkeypatch):
     read-only status methods and the lifespan's monitoring control remain.
     """
     client_module = importlib.import_module("services.api_gateway.circuit_breaker_client")
-    client = client_module.CircuitBreakerServiceClient()
+    health_module = importlib.import_module("services.api_gateway.service_health")
+    service_health_manager = health_module.ServiceHealthManager()
+    client = client_module.CircuitBreakerServiceClient(service_health_manager)
 
     monkeypatch.setattr(
-        client_module.service_health_manager,
+        service_health_manager,
         "get_overall_health",
         lambda: {"status": "ok"},
     )
     monkeypatch.setattr(
-        client_module.service_health_manager,
+        service_health_manager,
         "get_service_health",
         lambda service_name: {"service": service_name},
     )
     monkeypatch.setattr(
-        client_module.graceful_degradation_manager,
+        service_health_manager.degradation,
         "get_degradation_status",
         lambda: {"fallbacks": 0},
     )
@@ -1302,8 +1091,8 @@ async def test_circuit_breaker_client_status_and_monitoring(monkeypatch):
         nonlocal stopped
         stopped = True
 
-    monkeypatch.setattr(client_module.service_health_manager, "start_monitoring", start_monitoring)
-    monkeypatch.setattr(client_module.service_health_manager, "stop_monitoring", stop_monitoring)
+    monkeypatch.setattr(service_health_manager, "start_monitoring", start_monitoring)
+    monkeypatch.setattr(service_health_manager, "stop_monitoring", stop_monitoring)
 
     await client.start_health_monitoring()
     await client.stop_health_monitoring()

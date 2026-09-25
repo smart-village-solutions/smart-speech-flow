@@ -1,15 +1,21 @@
 import logging
 from html import escape
+from typing import Annotated, Optional
 
-from fastapi import File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
-from services.api_gateway.app import app
+from services.api_gateway.dependencies import get_pipeline_admission, get_speech_pipeline
 from services.api_gateway.log_safety import safe_language_code, sanitize_log_value
-from services.api_gateway.pipeline_admission import PipelineBusyError, run_pipeline
-from services.api_gateway.pipeline_logic import process_wav
+from services.api_gateway.pipeline_admission import (
+    PipelineAdmission,
+    PipelineBusyError,
+    run_pipeline,
+)
+from services.api_gateway.pipeline_logic import SpeechPipeline, process_wav
 
 logger = logging.getLogger("api_gateway")
+router = APIRouter()
 
 
 def _safe_text_preview(value: object) -> str:
@@ -19,16 +25,18 @@ def _safe_text_preview(value: object) -> str:
     return escape(text[:200])
 
 
-@app.post("/upload")
+@router.post("/upload")
 async def upload(
     request: Request,
+    pipeline: Annotated[SpeechPipeline, Depends(get_speech_pipeline)],
+    admission: Annotated[Optional[PipelineAdmission], Depends(get_pipeline_admission)],
     file: UploadFile = File(...),
     source_lang: str = Form(...),
     target_lang: str = Form(...),
 ):
     from base64 import b64encode
 
-    requests_total = app.requests_total if hasattr(app, "requests_total") else None
+    requests_total = getattr(request.app, "requests_total", None)
     if requests_total:
         requests_total.inc()
     logger.info(
@@ -43,7 +51,16 @@ async def upload(
         )
     file_bytes = await file.read()
     try:
-        result = await run_pipeline(request, process_wav, file_bytes, source_lang, target_lang)
+        result = await run_pipeline(
+            admission,
+            process_wav,
+            file_bytes,
+            source_lang,
+            target_lang,
+            speech=pipeline.speech,
+            refiner=pipeline.refiner,
+            validator=pipeline.validator,
+        )
     except PipelineBusyError as busy:
         logger.info("Upload rejected: pipeline at capacity")
         return HTMLResponse(

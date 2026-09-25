@@ -11,27 +11,29 @@ import logging
 
 import pytest
 
-from services.api_gateway import audio_storage
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.consent import ConsentStatus
-from services.api_gateway.routes import session as session_routes
-from services.api_gateway.session_manager import ClientType, session_manager
+from services.api_gateway import message_processing
+from services.api_gateway.session_manager import ClientType
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
-@pytest.fixture
-def refusing_audio_storage(monkeypatch: pytest.MonkeyPatch) -> None:
+class RefusingAudioStore(AudioStore):
     """Every write fails the way a root-owned volume makes it fail."""
 
-    def refuse(*args, **kwargs):
+    def save(self, *args, **kwargs):
         raise PermissionError(13, "Permission denied", "/data/audio")
 
-    monkeypatch.setattr(audio_storage, "save_audio", refuse)
+
+@pytest.fixture
+def refusing_audio_storage(tmp_path) -> AudioStore:
+    return RefusingAudioStore(tmp_path)
 
 
-async def _session() -> object:
+async def _session(session_manager) -> object:
     session_manager.reset(clear_persistence=True)
     session = await session_manager.create_admin_session("tenant-test", SNAPSHOT)
     session.consent_status = ConsentStatus.GRANTED
@@ -40,19 +42,24 @@ async def _session() -> object:
 
 
 async def test_a_failed_translated_audio_write_still_delivers_the_message(
-    refusing_audio_storage, caplog
+    refusing_audio_storage, caplog, session_manager
 ):
-    key = await _session()
+    key = await _session(session_manager)
 
-    with caplog.at_level(logging.ERROR, logger=session_routes.logger.name):
-        message = await session_routes.create_session_message(
+    with caplog.at_level(logging.ERROR, logger=message_processing.logger.name):
+        available = message_processing._store_translated_audio(
+            key, "message-id", b"audio-bytes", audio_store=refusing_audio_storage
+        )
+        message = await message_processing.create_session_message(
             key,
             ClientType.CUSTOMER,
             "hallo",
             "hello",
-            b"audio-bytes",
             "de",
             "en",
+            message_id="message-id",
+            sessions=session_manager,
+            translated_audio_available=available,
         )
 
     assert message.translated_text == "hello"
@@ -68,9 +75,13 @@ async def test_a_failed_translated_audio_write_still_delivers_the_message(
 def test_a_failed_original_audio_write_is_reported_not_swallowed(refusing_audio_storage, caplog):
     key = TenantSessionKey("tenant-test", "audio-failure-session")
 
-    with caplog.at_level(logging.ERROR, logger=session_routes.logger.name):
-        available = session_routes._store_audio_artifacts(
-            key, ClientType.CUSTOMER, "message-id", b"audio-bytes"
+    with caplog.at_level(logging.ERROR, logger=message_processing.logger.name):
+        available = message_processing._store_audio_artifacts(
+            key,
+            ClientType.CUSTOMER,
+            "message-id",
+            b"audio-bytes",
+            audio_store=refusing_audio_storage,
         )
 
     assert available is False
@@ -89,9 +100,13 @@ def test_the_failure_log_carries_a_traceback_without_the_exception_text(
     """
     key = TenantSessionKey("tenant-test", "audio-failure-session")
 
-    with caplog.at_level(logging.ERROR, logger=session_routes.logger.name):
-        session_routes._store_audio_artifacts(
-            key, ClientType.CUSTOMER, "message-id", b"audio-bytes"
+    with caplog.at_level(logging.ERROR, logger=message_processing.logger.name):
+        message_processing._store_audio_artifacts(
+            key,
+            ClientType.CUSTOMER,
+            "message-id",
+            b"audio-bytes",
+            audio_store=refusing_audio_storage,
         )
 
     record = next(r for r in caplog.records if r.levelno >= logging.ERROR)

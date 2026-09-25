@@ -10,12 +10,13 @@ Tests für Mobile-Optimization Features
 import pytest
 from datetime import datetime
 from unittest.mock import Mock, AsyncMock
-from services.api_gateway.websocket import (
-    WebSocketManager, WebSocketConnection, AdaptivePollingManager,
-    ConnectionState, ClientType, MessageType
-)
-from services.api_gateway.session_manager import SessionManager
-from services.api_gateway.routes.session import ClientActivityUpdate
+from services.api_gateway.realtime_client_status import AdaptivePollingManager
+from services.api_gateway.realtime_connection import WebSocketConnection
+from services.api_gateway.realtime_protocol import ConnectionState, MessageType
+from services.api_gateway.session_manager import ClientType
+from services.api_gateway.websocket import WebSocketManager
+from services.api_gateway.tenant_session import TenantSessionKey
+from tests.realtime_sessions import open_session, tenant_session_manager, websocket_monitor
 
 
 class TestAdaptivePollingManager:
@@ -112,6 +113,7 @@ class TestAdaptivePollingManager:
             connected_at=datetime.now(),
             last_heartbeat=datetime.now(),
             state=ConnectionState.CONNECTED,
+            key=TenantSessionKey("tenant-a", "TEST123"),
             is_mobile=kwargs.get("is_mobile", False),
             tab_active=kwargs.get("tab_active", True),
             battery_level=kwargs.get("battery_level", 1.0),
@@ -126,9 +128,9 @@ class TestWebSocketMobileOptimization:
 
     def setup_method(self):
         """Test-Setup"""
-        self.session_manager = SessionManager()
-        self.session_manager.reset(clear_persistence=True)
-        self.websocket_manager = WebSocketManager(self.session_manager)
+        self.session_manager = tenant_session_manager()
+        self.session_key = open_session(self.session_manager, "TEST123")
+        self.websocket_manager = WebSocketManager(self.session_manager, monitor=websocket_monitor())
 
     @pytest.mark.asyncio
     async def test_connection_with_mobile_info(self):
@@ -144,7 +146,7 @@ class TestWebSocketMobileOptimization:
 
         connection_id = await self.websocket_manager.connect_websocket(
             websocket=mock_websocket,
-            session_id="TEST123",
+            session_id=self.session_key,
             client_type=ClientType.CUSTOMER,
             client_info=client_info
         )
@@ -169,7 +171,7 @@ class TestWebSocketMobileOptimization:
             "is_visible": False
         }
 
-        await self.websocket_manager._handle_tab_visibility_change(connection, message)
+        await self.websocket_manager.client_status.handle_tab_visibility_change(connection, message)
 
         # Polling-Intervall sollte sich geändert haben
         assert connection.tab_active is False
@@ -190,7 +192,7 @@ class TestWebSocketMobileOptimization:
             "is_charging": False
         }
 
-        await self.websocket_manager._handle_battery_status_update(connection, message)
+        await self.websocket_manager.client_status.handle_battery_status_update(connection, message)
 
         # Battery-Saver-Mode sollte aktiviert sein
         assert connection.battery_level == 0.15
@@ -211,7 +213,7 @@ class TestWebSocketMobileOptimization:
             "connection_type": "cellular"
         }
 
-        await self.websocket_manager._handle_network_status_change(connection, message)
+        await self.websocket_manager.client_status.handle_network_status_change(connection, message)
 
         # Polling sollte angepasst sein
         assert connection.network_quality == "slow"
@@ -228,7 +230,7 @@ class TestWebSocketMobileOptimization:
         mock_websocket.send_json.reset_mock()
 
         # Polling-Intervall-Update senden
-        await self.websocket_manager._send_polling_interval_update(
+        await self.websocket_manager.client_status.send_polling_interval_update(
             connection, new_interval=30, reason="test_optimization"
         )
 
@@ -251,7 +253,7 @@ class TestWebSocketMobileOptimization:
         mock_websocket.send_json.reset_mock()
 
         # Battery-Saver-Modus senden
-        await self.websocket_manager._send_battery_saver_notification(connection)
+        await self.websocket_manager.client_status.send_battery_saver_notification(connection)
 
         # WebSocket send_json sollte aufgerufen worden sein
         mock_websocket.send_json.assert_called_once()
@@ -272,51 +274,10 @@ class TestWebSocketMobileOptimization:
 
         return await self.websocket_manager.connect_websocket(
             websocket=mock_websocket,
-            session_id="TEST123",
+            session_id=self.session_key,
             client_type=ClientType.CUSTOMER,
             client_info=client_info
         )
-
-
-class TestClientActivityAPI:
-    """Tests für Client-Activity-Update API"""
-
-    def test_client_activity_update_model(self):
-        """Test: ClientActivityUpdate Pydantic-Model Validation"""
-        # Valid update
-        update = ClientActivityUpdate(
-            is_mobile=True,
-            tab_active=False,
-            battery_level=0.75,
-            is_charging=True,
-            network_quality="good",
-            connection_type="wifi"
-        )
-
-        assert update.is_mobile is True
-        assert update.tab_active is False
-        assert update.battery_level == 0.75
-        assert update.network_quality == "good"
-
-    def test_battery_level_validation(self):
-        """Test: Battery-Level-Validation (0.0-1.0)"""
-        # Valid range
-        update = ClientActivityUpdate(battery_level=0.5)
-        assert update.battery_level == 0.5
-
-        # Invalid range (should be clamped or raise error)
-        with pytest.raises(ValueError):
-            ClientActivityUpdate(battery_level=1.5)
-
-        with pytest.raises(ValueError):
-            ClientActivityUpdate(battery_level=-0.1)
-
-    def test_optional_fields(self):
-        """Test: Alle Felder sind optional"""
-        update = ClientActivityUpdate()
-        assert update.is_mobile is None
-        assert update.tab_active is None
-        assert update.battery_level is None
 
 
 # Integration Tests würden hier folgen...

@@ -3,19 +3,16 @@ WebSocket Monitoring API Routes
 Provides comprehensive monitoring and health check endpoints for WebSocket infrastructure.
 """
 
-from datetime import datetime, timedelta, timezone
-from typing import Annotated, Optional
+from datetime import datetime, timezone
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from .websocket_monitor import get_websocket_monitor
+from .dependencies import get_connection_monitor
+from .websocket_monitor import WebSocketMonitor
 
 router = APIRouter(prefix="/api/websocket/monitoring", tags=["WebSocket Monitoring"])
-MONITORING_ROUTE_RESPONSES = {
-    404: {"description": "Requested WebSocket resource not found"},
-    500: {"description": "Monitoring operation failed"},
-}
 
 
 def utc_now() -> datetime:
@@ -26,34 +23,16 @@ def utc_now_iso() -> str:
     return utc_now().isoformat()
 
 
-def _serialize_connection(metrics, connection_id: str | None = None) -> dict:
-    """Convert monitor metrics to the common API representation."""
-    connection = {
-        "session_id": metrics.session_id,
-        "client_type": metrics.client_type,
-        "origin": metrics.origin,
-        "connect_time": metrics.connect_time.isoformat(),
-        "last_heartbeat": (metrics.last_heartbeat.isoformat() if metrics.last_heartbeat else None),
-        "messages_sent": metrics.messages_sent,
-        "messages_received": metrics.messages_received,
-        "bytes_sent": metrics.bytes_sent,
-        "bytes_received": metrics.bytes_received,
-        "errors": metrics.errors,
-        "connection_duration": (utc_now() - metrics.connect_time).total_seconds(),
-    }
-    if connection_id is not None:
-        connection["connection_id"] = connection_id
-    return connection
-
-
 @router.get("/health")
-def websocket_health_check():
+def websocket_health_check(
+    monitor: Annotated[WebSocketMonitor, Depends(get_connection_monitor)],
+):
     """
     WebSocket system health check endpoint
     Returns current health status and key metrics
     """
     try:
-        health_status = get_websocket_monitor().get_health_status()
+        health_status = monitor.get_health_status()
 
         return JSONResponse(
             status_code=200 if health_status["status"] == "healthy" else 503,
@@ -71,232 +50,4 @@ def websocket_health_check():
                 "message": "Health check failed",
                 "timestamp": utc_now_iso(),
             },
-        )
-
-
-def websocket_connection_stats():
-    """
-    Comprehensive WebSocket connection statistics
-    """
-    try:
-        stats = get_websocket_monitor().get_connection_stats()
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "data": stats,
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve WebSocket statistics: {str(e)}"
-        )
-
-
-def list_active_connections(
-    session_id: Annotated[Optional[str], Query(description="Filter by session ID")] = None,
-    client_type: Annotated[
-        Optional[str], Query(description="Filter by client type (admin/customer)")
-    ] = None,
-    limit: Annotated[
-        int, Query(ge=1, le=1000, description="Maximum number of connections to return")
-    ] = 100,
-):
-    """
-    List active WebSocket connections with optional filtering
-    """
-    try:
-        active_connections = get_websocket_monitor().get_active_connections()
-
-        # Filter by session_id if provided
-        if session_id:
-            active_connections = {
-                conn_id: metrics
-                for conn_id, metrics in active_connections.items()
-                if metrics.session_id == session_id
-            }
-
-        # Filter by client_type if provided
-        if client_type:
-            active_connections = {
-                conn_id: metrics
-                for conn_id, metrics in active_connections.items()
-                if metrics.client_type == client_type
-            }
-
-        # Limit results
-        connection_list = list(active_connections.items())[:limit]
-
-        serialized_connections = [
-            _serialize_connection(metrics, connection_id=conn_id)
-            for conn_id, metrics in connection_list
-        ]
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "data": {
-                    "connections": serialized_connections,
-                    "total_count": len(active_connections),
-                    "filtered_count": len(serialized_connections),
-                    "filters": {
-                        "session_id": session_id,
-                        "client_type": client_type,
-                        "limit": limit,
-                    },
-                },
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve active connections: {str(e)}"
-        )
-
-
-def get_session_connections(session_id: str):
-    """
-    Get all WebSocket connections for a specific session
-    """
-    try:
-        session_connections = get_websocket_monitor().get_session_connections(session_id)
-
-        if not session_connections:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No active WebSocket connections found for session {session_id}",
-            )
-
-        serialized_connections = [_serialize_connection(metrics) for metrics in session_connections]
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "data": {
-                    "session_id": session_id,
-                    "connections": serialized_connections,
-                    "connection_count": len(serialized_connections),
-                },
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve session connections: {str(e)}"
-        )
-
-
-def websocket_metrics_summary(
-    hours: Annotated[
-        int, Query(ge=1, le=168, description="Number of hours to analyze (max 1 week)")
-    ] = 1,
-):
-    """
-    WebSocket metrics summary for specified time period
-    """
-    try:
-        # This would typically query a time-series database
-        # For now, we'll return current statistics
-        stats = get_websocket_monitor().get_connection_stats()
-        health = get_websocket_monitor().get_health_status()
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "data": {
-                    "time_period": {
-                        "hours": hours,
-                        "start_time": (utc_now() - timedelta(hours=hours)).isoformat(),
-                        "end_time": utc_now_iso(),
-                    },
-                    "current_stats": stats,
-                    "health_status": health,
-                    "note": "Historical metrics require time-series database integration",
-                },
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate metrics summary: {str(e)}")
-
-
-def force_close_connection(
-    connection_id: str,
-    reason: Annotated[
-        str, Query(description="Reason for forced disconnect")
-    ] = "admin_forced_disconnect",
-):
-    """
-    Force close a specific WebSocket connection (admin function)
-    """
-    try:
-        active_connections = get_websocket_monitor().get_active_connections()
-
-        if connection_id not in active_connections:
-            raise HTTPException(
-                status_code=404,
-                detail=f"WebSocket connection {connection_id} not found or already disconnected",
-            )
-
-        # Close the connection through the monitor
-        from .websocket_monitor import DisconnectReason
-
-        get_websocket_monitor().connection_closed(
-            connection_id=connection_id, reason=DisconnectReason.SERVER_DISCONNECT
-        )
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "message": f"WebSocket connection {connection_id} force-closed",
-                "reason": reason,
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to force close connection: {str(e)}")
-
-
-def get_prometheus_metrics():
-    """
-    Get current Prometheus metrics for WebSocket monitoring
-    (Useful for debugging Prometheus integration)
-    """
-    try:
-        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-
-        metrics_output = generate_latest().decode("utf-8")
-
-        # Filter only WebSocket-related metrics
-        websocket_metrics = []
-        for line in metrics_output.split("\n"):
-            if "websocket_" in line.lower():
-                websocket_metrics.append(line)
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "data": {
-                    "metrics_format": "prometheus",
-                    "websocket_metrics": websocket_metrics,
-                    "total_metric_lines": len(websocket_metrics),
-                    "content_type": CONTENT_TYPE_LATEST,
-                },
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve Prometheus metrics: {str(e)}"
         )

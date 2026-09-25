@@ -2,13 +2,11 @@
 Audio Storage Service for SSF Backend
 
 Manages persistent storage of audio files with automatic cleanup.
-- Original audio files: /data/audio/original/
-- Translated audio files: /data/audio/translated/
+- Files: <SSF_AUDIO_BASE_DIR>/v2/<tenant_ref>/<session_id>/<original|translated>/<message_id>.wav
 - Retention: 24 hours
 - Cleanup: Hourly background job
 """
 
-import base64
 import copy
 import logging
 import os
@@ -17,6 +15,8 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Iterator, Optional
+
+from prometheus_client import CollectorRegistry, Counter, Gauge
 
 from .log_safety import sanitize_log_value
 from .tenant_session import TenantSessionKey
@@ -29,35 +29,47 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-# Prometheus metrics
-try:
-    from prometheus_client import Counter, Gauge
+class AudioStorageMetrics:
+    """The audio store's series: disk usage, file counts and files cleanup deleted.
 
-    # Disk usage metrics
-    audio_storage_disk_usage_bytes = Gauge(
-        "audio_storage_disk_usage_bytes",
-        "Total disk usage in bytes for audio storage",
-        ["directory"],
-    )
+    create_app() builds one per app on a registry of its own. /metrics does not
+    serve it, as it never served the process default these used to live on, so
+    the audio alerts in monitoring/alert_rules.yml still have no data. Serving
+    them changes what production alerts on, which is a change of its own.
+    """
 
-    audio_files_total = Gauge("audio_files_total", "Total number of audio files", ["directory"])
+    def __init__(self, registry: CollectorRegistry) -> None:
+        self.disk_usage_bytes = Gauge(
+            "audio_storage_disk_usage_bytes",
+            "Total disk usage in bytes for audio storage",
+            ["directory"],
+            registry=registry,
+        )
+        self.files = Gauge(
+            "audio_files_total", "Total number of audio files", ["directory"], registry=registry
+        )
+        self.cleanup_deleted_files = Counter(
+            "audio_cleanup_deleted_files_total",
+            "Total number of audio files deleted by cleanup job",
+            ["directory"],
+            registry=registry,
+        )
 
-    audio_cleanup_deleted_files_total = Counter(
-        "audio_cleanup_deleted_files_total",
-        "Total number of audio files deleted by cleanup job",
-        ["directory"],
-    )
+    def record_cleanup(self, stats: dict) -> None:
+        self.cleanup_deleted_files.labels(directory="original").inc(stats["deleted_original"])
+        self.cleanup_deleted_files.labels(directory="translated").inc(stats["deleted_translated"])
 
-    PROMETHEUS_AVAILABLE = True
-except ImportError:
-    PROMETHEUS_AVAILABLE = False
-    logger.warning("Prometheus client not available - metrics disabled")
+    def record_disk_usage(self, stats: dict) -> None:
+        self.disk_usage_bytes.labels(directory="original").set(stats["original_bytes"])
+        self.disk_usage_bytes.labels(directory="translated").set(stats["translated_bytes"])
+        self.files.labels(directory="original").set(stats["original_files"])
+        self.files.labels(directory="translated").set(stats["translated_files"])
 
-# Storage paths
-# Default remains /data/audio for local/Docker parity, but CI can override it.
-AUDIO_BASE_DIR = Path(os.environ.get("SSF_AUDIO_BASE_DIR", "/data/audio"))
-ORIGINAL_AUDIO_DIR = AUDIO_BASE_DIR / "original"
-TRANSLATED_AUDIO_DIR = AUDIO_BASE_DIR / "translated"
+
+def _configured_base_dir() -> Path:
+    # Default remains /data/audio for local/Docker parity, but CI can override it.
+    return Path(os.environ.get("SSF_AUDIO_BASE_DIR", "/data/audio"))
+
 
 # Retention policy. Zero disables automatic deletion so an operator removes
 # content by hand, which is what the tester environment asks for. It never
@@ -104,7 +116,7 @@ def audio_path(
     message_id: str,
     variant: AudioVariant,
     *,
-    base_dir: Path = AUDIO_BASE_DIR,
+    base_dir: Path,
 ) -> Path:
     """Return a v2 path without exposing the raw tenant identifier."""
     safe_message_id = _storage_identifier(message_id)
@@ -118,7 +130,7 @@ def delete_message_audio(
     message_id: str,
     variant: AudioVariant,
     *,
-    base_dir: Path = AUDIO_BASE_DIR,
+    base_dir: Path,
 ) -> bool:
     """Delete one message's audio file, reporting whether it existed.
 
@@ -126,7 +138,7 @@ def delete_message_audio(
         key: The tenant-scoped session the message belongs to.
         message_id: The message whose artefact is being removed.
         variant: Which of the two artefacts to remove.
-        base_dir: The storage root, overridden in tests.
+        base_dir: The storage root.
 
     Returns:
         True when a file was removed, False when there was nothing to remove
@@ -149,7 +161,7 @@ def save_audio(
     variant: AudioVariant,
     data: bytes,
     *,
-    base_dir: Path = AUDIO_BASE_DIR,
+    base_dir: Path,
 ) -> Path:
     """Persist one audio artifact below its tenant and session scope."""
     if not data:
@@ -234,136 +246,7 @@ def _managed_v2_audio_files(
             logger.warning("Skipped unsafe audio storage entry")
 
 
-def ensure_directories():
-    """Ensure audio storage directories exist."""
-    ORIGINAL_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-    TRANSLATED_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-    logger.info(
-        "Audio storage directories initialized: %s",
-        sanitize_log_value(AUDIO_BASE_DIR),
-    )
-
-
-def save_original_audio(message_id: str, audio_base64: str) -> str:
-    """
-    Save original audio file to persistent storage.
-
-    Args:
-        message_id: Unique message identifier
-        audio_base64: Base64-encoded audio data
-
-    Returns:
-        URL path to the saved audio file
-
-    Raises:
-        ValueError: If audio_base64 is invalid
-        IOError: If file cannot be written
-    """
-    if not audio_base64:
-        raise ValueError("audio_base64 cannot be empty")
-
-    ensure_directories()
-
-    # Decode base64 audio
-    try:
-        audio_data = base64.b64decode(audio_base64)
-    except Exception as e:
-        logger.exception("Failed to decode base64 audio")
-        raise ValueError(f"Invalid base64 audio data: {e}")
-
-    # Save to disk
-    filename = f"input_{message_id}.wav"
-    filepath = ORIGINAL_AUDIO_DIR / filename
-
-    try:
-        filepath.write_bytes(audio_data)
-        logger.info(
-            "Saved original audio: %s (%s bytes)",
-            sanitize_log_value(filepath),
-            len(audio_data),
-        )
-    except Exception as e:
-        logger.exception("Failed to save audio file")
-        raise IOError(f"Failed to save audio file: {e}")
-
-    # Return URL path
-    return f"/api/audio/{filename}"
-
-
-def save_translated_audio(message_id: str, audio_base64: str) -> str:
-    """
-    Save translated audio file to persistent storage.
-
-    Args:
-        message_id: Unique message identifier
-        audio_base64: Base64-encoded audio data
-
-    Returns:
-        URL path to the saved audio file
-
-    Raises:
-        ValueError: If audio_base64 is invalid
-        IOError: If file cannot be written
-    """
-    if not audio_base64:
-        raise ValueError("audio_base64 cannot be empty")
-
-    ensure_directories()
-
-    # Decode base64 audio
-    try:
-        audio_data = base64.b64decode(audio_base64)
-    except Exception as e:
-        logger.exception("Failed to decode base64 audio")
-        raise ValueError(f"Invalid base64 audio data: {e}")
-
-    # Save to disk
-    filename = f"{message_id}.wav"
-    filepath = TRANSLATED_AUDIO_DIR / filename
-
-    try:
-        filepath.write_bytes(audio_data)
-        logger.info(
-            "Saved translated audio: %s (%s bytes)",
-            sanitize_log_value(filepath),
-            len(audio_data),
-        )
-    except Exception as e:
-        logger.exception("Failed to save audio file")
-        raise IOError(f"Failed to save audio file: {e}")
-
-    # Return URL path
-    return f"/api/audio/{filename}"
-
-
-def get_audio_file_path(filename: str) -> Optional[Path]:
-    """
-    Get absolute path to an audio file.
-
-    Args:
-        filename: Audio filename (e.g., "input_uuid.wav" or "uuid.wav")
-
-    Returns:
-        Absolute Path to the file, or None if not found
-    """
-    ensure_directories()
-
-    # Check original directory
-    if filename.startswith("input_"):
-        filepath = ORIGINAL_AUDIO_DIR / filename
-        if filepath.exists():
-            return filepath
-
-    # Check translated directory
-    filepath = TRANSLATED_AUDIO_DIR / filename
-    if filepath.exists():
-        return filepath
-
-    logger.warning("Audio file not found in managed storage")
-    return None
-
-
-def cleanup_old_audio_files(*, base_dir: Path = AUDIO_BASE_DIR) -> dict:
+def cleanup_old_audio_files(*, base_dir: Path) -> dict:
     """
     Delete audio files older than the configured retention.
 
@@ -412,19 +295,10 @@ def cleanup_old_audio_files(*, base_dir: Path = AUDIO_BASE_DIR) -> dict:
     stats["total_deleted"] = stats["deleted_original"] + stats["deleted_translated"]
     logger.info("Audio cleanup completed: %s", sanitize_log_value(stats))
 
-    # Update Prometheus metrics
-    if PROMETHEUS_AVAILABLE:
-        audio_cleanup_deleted_files_total.labels(directory="original").inc(
-            stats["deleted_original"]
-        )
-        audio_cleanup_deleted_files_total.labels(directory="translated").inc(
-            stats["deleted_translated"]
-        )
-
     return stats
 
 
-def get_disk_usage(*, base_dir: Path = AUDIO_BASE_DIR) -> dict:
+def get_disk_usage(*, base_dir: Path) -> dict:
     """
     Get disk usage statistics for audio storage.
 
@@ -455,11 +329,44 @@ def get_disk_usage(*, base_dir: Path = AUDIO_BASE_DIR) -> dict:
     stats["total_bytes"] = stats["original_bytes"] + stats["translated_bytes"]
     stats["total_files"] = stats["original_files"] + stats["translated_files"]
 
-    # Update Prometheus metrics
-    if PROMETHEUS_AVAILABLE:
-        audio_storage_disk_usage_bytes.labels(directory="original").set(stats["original_bytes"])
-        audio_storage_disk_usage_bytes.labels(directory="translated").set(stats["translated_bytes"])
-        audio_files_total.labels(directory="original").set(stats["original_files"])
-        audio_files_total.labels(directory="translated").set(stats["translated_files"])
-
     return stats
+
+
+class AudioStore:
+    """One app's v2 audio files, below the directory it was built with.
+
+    `build_gateway_dependencies` builds one per app and hands it to the
+    conversation service, the session manager and the retention cleanup, so
+    every write, read and deletion of that app uses the same directory.
+    """
+
+    def __init__(self, base_dir: Path, metrics: AudioStorageMetrics | None = None) -> None:
+        self.base_dir = base_dir
+        # Without its app's series, as when a test builds a store, it counts into its own.
+        self.metrics = metrics if metrics is not None else AudioStorageMetrics(CollectorRegistry())
+
+    @classmethod
+    def from_environment(cls, metrics: AudioStorageMetrics | None = None) -> "AudioStore":
+        """A store under SSF_AUDIO_BASE_DIR as it is set now, not at import."""
+        return cls(_configured_base_dir(), metrics)
+
+    def path(self, key: TenantSessionKey, message_id: str, variant: AudioVariant) -> Path:
+        return audio_path(key, message_id, variant, base_dir=self.base_dir)
+
+    def save(
+        self, key: TenantSessionKey, message_id: str, variant: AudioVariant, data: bytes
+    ) -> Path:
+        return save_audio(key, message_id, variant, data, base_dir=self.base_dir)
+
+    def delete(self, key: TenantSessionKey, message_id: str, variant: AudioVariant) -> bool:
+        return delete_message_audio(key, message_id, variant, base_dir=self.base_dir)
+
+    def cleanup_expired(self) -> dict:
+        stats = cleanup_old_audio_files(base_dir=self.base_dir)
+        self.metrics.record_cleanup(stats)
+        return stats
+
+    def disk_usage(self) -> dict:
+        stats = get_disk_usage(base_dir=self.base_dir)
+        self.metrics.record_disk_usage(stats)
+        return stats
