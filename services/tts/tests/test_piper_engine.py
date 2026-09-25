@@ -12,15 +12,29 @@ from services.tts.speech_text import UnspeakableTextError
 class FakeSession:
     def __init__(self, path, sess_options=None, providers=None):
         self.path, self.providers = path, providers
+        self.runs = []
 
     def get_providers(self):
         return FakeOrt.active_providers
+
+    def run(self, output_names, input_feed, run_options=None):
+        self.runs.append(run_options)
+        return ["audio"]
+
+
+class FakeRunOptions:
+    def __init__(self):
+        self.entries = {}
+
+    def add_run_config_entry(self, key, value):
+        self.entries[key] = value
 
 
 class FakeOrt(types.ModuleType):
     active_providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
     InferenceSession = FakeSession
     SessionOptions = object
+    RunOptions = FakeRunOptions
 
 
 class FakeChunk:
@@ -124,3 +138,22 @@ def test_arabic_diacritizer_gets_explicit_providers(tashkeel, tmp_path):
     diacritizer_session = speaker._voice.tashkeel_diacritizier.session
     assert diacritizer_session.providers == piper_engine.providers_for("cuda")
     assert tashkeel.InferenceSession is None
+
+
+def test_cuda_runs_hand_unused_arena_memory_back(tashkeel, tmp_path):
+    session = piper_engine.create_session(_voice_dir(tmp_path) / "model.onnx", "cuda")
+
+    assert session.run(None, {"input": 1}) == ["audio"]
+
+    (run_options,) = session.runs
+    assert run_options.entries == {"memory.enable_memory_arena_shrinkage": "gpu:0"}
+    assert session.get_providers()[0] == "CUDAExecutionProvider"
+
+
+def test_cpu_runs_are_left_alone(tashkeel, tmp_path, monkeypatch):
+    monkeypatch.setattr(FakeOrt, "active_providers", ["CPUExecutionProvider"])
+    session = piper_engine.create_session(_voice_dir(tmp_path) / "model.onnx", "cpu")
+
+    session.run(None, {"input": 1})
+
+    assert session.runs == [None]

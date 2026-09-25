@@ -47,7 +47,31 @@ def create_session(model_path: Path, device: str) -> Any:
     active = session.get_providers()
     if not active or active[0] != expected:
         raise VoiceUnavailableError(f"{model_path} runs on {active}, expected {expected}")
-    return session
+    if device != "cuda":
+        return session
+    run_options = onnxruntime.RunOptions()
+    run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:0")
+    return _ShrinkingSession(session, run_options)
+
+
+class _ShrinkingSession:
+    """Hands a session's unused CUDA arena back after every run.
+
+    Each voice has its own arena, which otherwise keeps the peak of the
+    longest input it has seen: on the production card eight voices grew by
+    150-360 MiB each. Piper calls run() without run options, so they are
+    supplied here.
+    """
+
+    def __init__(self, session: Any, run_options: Any) -> None:
+        self._session = session
+        self._run_options = run_options
+
+    def run(self, output_names: Any, input_feed: Any) -> Any:
+        return self._session.run(output_names, input_feed, self._run_options)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._session, name)
 
 
 class PiperSpeaker:
