@@ -313,7 +313,13 @@ jobs:
       run: |
         source .venv/bin/activate
         export PYTHONPATH=.
+        # The same suites ci-tests.yml runs; without the per-service ones, code
+        # tested only there counts as uncovered new code.
         pytest tests/ \
+          services/api_gateway/tests \
+          services/asr/tests \
+          services/translation/tests \
+          services/tts/tests \
           -m "not integration and not real_system" \
           --ignore=tests/integration \
           --ignore=tests/load \
