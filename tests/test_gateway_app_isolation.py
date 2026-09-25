@@ -41,12 +41,10 @@ CONTAINER_BUILT = (
     "pipeline_admission",
     "quality_telemetry",
     "quality_telemetry_exporter",
+    "oidc_key_cache",
 )
 # Built once per app by create_app(), so every lifespan of that app reuses it.
 APP_BUILT = ("prometheus_registry",)
-# Module instances the container only refers to, until the PR named in the
-# "Dependency ownership" table of the OpenSpec design replaces each of them.
-ADAPTERS = ("oidc_key_cache",)
 # None without a feedback database, as tests/gateway_contract/test_contract_lifespan.py pins.
 FEEDBACK = (
     "feedback_repository",
@@ -91,7 +89,6 @@ def test_every_container_field_is_classified() -> None:
     assert {field.name for field in fields(GatewayDependencies)} == {
         *CONTAINER_BUILT,
         *APP_BUILT,
-        *ADAPTERS,
         *FEEDBACK,
     }
 
@@ -107,8 +104,6 @@ def test_two_running_apps_hold_distinct_collaborators() -> None:
         _assert_owned_separately(_built(first), _built(second))
         for name in APP_BUILT:
             assert getattr(first, name) is not getattr(second, name), name
-        for name in ADAPTERS:
-            assert getattr(first, name) is getattr(second, name), name
 
 
 @pytest.mark.usefixtures("configured_process")
@@ -338,3 +333,19 @@ def test_each_apps_audio_store_counts_into_that_apps_metrics(
             untouched.disk_usage_bytes,
         ):
             assert _sample(metric, "original") is None
+
+
+@pytest.mark.usefixtures("configured_process")
+def test_an_oidc_key_cached_by_one_app_stays_there() -> None:
+    first_app, second_app = create_app(), create_app()
+    issuer = "https://keycloak.example/realms/tenant-a"
+
+    with TestClient(first_app), TestClient(second_app):
+        cached = first_app.state.dependencies.oidc_key_cache
+        cached.entries[issuer] = (float("inf"), {"kid-1": {"kid": "kid-1"}})
+
+        assert second_app.state.dependencies.oidc_key_cache.entries == {}
+
+    # A new lifespan starts with no keys, as a new process always has.
+    with TestClient(first_app):
+        assert first_app.state.dependencies.oidc_key_cache.entries == {}

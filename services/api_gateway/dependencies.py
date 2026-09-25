@@ -114,7 +114,7 @@ def build_gateway_dependencies(
 
     from .audio_processing import WavAudioValidator
     from .audio_storage import AudioStore
-    from .auth import _key_cache
+    from .auth import OidcKeyCache
     from .circuit_breaker_client import CircuitBreakerServiceClient
     from .conversation_service import ConversationService
     from .pipeline_logic import SpeechPipeline
@@ -190,7 +190,8 @@ def build_gateway_dependencies(
         circuit_breaker_client=CircuitBreakerServiceClient(service_health),
         speech_pipeline=speech_pipeline,
         websocket_monitor=websocket_monitor,
-        oidc_key_cache=_key_cache,
+        # Empty until the first bearer token, as in a new process.
+        oidc_key_cache=OidcKeyCache(),
         pipeline_admission=pipeline_admission,
         quality_telemetry=quality_telemetry,
         quality_telemetry_exporter=quality_telemetry_exporter,

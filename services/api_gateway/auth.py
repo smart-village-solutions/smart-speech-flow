@@ -98,10 +98,6 @@ class OidcKeyCache:
         return keys
 
 
-# Adapter until PR7 (#228): the container refers to this instance; routes use get_oidc_key_cache.
-_key_cache = OidcKeyCache()
-
-
 def _unauthorized() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

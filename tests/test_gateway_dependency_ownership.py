@@ -25,7 +25,6 @@ VALUE_TYPES = frozenset({"APIRouter", "Field", "Path", "TypeVar", "TypedDict"})
 
 ALLOWLIST = {
     ("app.py", "app"): "permanent: the ASGI entry point uvicorn and the Dockerfile target",
-    ("auth.py", "_key_cache"): "adapter until PR7",
     # Unwired in PR 6b: nothing imports websocket_fallback.py; PR7 deletes the module.
     ("websocket_fallback.py", "fallback_manager"): "adapter until PR7",
 }
