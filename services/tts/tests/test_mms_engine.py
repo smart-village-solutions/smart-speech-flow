@@ -48,12 +48,20 @@ class _Tensor:
 
 class _Tokenizer:
     pad_token_id = 0
+    is_uroman = True
 
     def __init__(self, ids):
         self.ids = ids
+        self.texts = []
 
     def __call__(self, text, return_tensors):
+        self.texts.append(text)
         return {"input_ids": _Tensor([self.ids])}
+
+
+class _Romanizer:
+    def romanize_string(self, text):
+        return f"roman({text})"
 
 
 class _Model:
@@ -79,6 +87,7 @@ class _Torch:
 def _speaker(ids):
     speaker = object.__new__(mms_engine.MmsSpeaker)
     speaker._torch, speaker._tokenizer, speaker._model = _Torch(), _Tokenizer(ids), _Model()
+    speaker._romanizer = _Romanizer()
     speaker.device, speaker.sample_rate = "cpu", 16000
     return speaker
 
@@ -89,6 +98,12 @@ def test_synthesis_is_seeded_and_returns_float_audio():
     assert rate == 16000
     assert audio.tolist() == [0.5, -0.5]
     assert speaker._torch.seeds == [3]
+
+
+def test_text_is_romanized_once_by_the_cached_romanizer():
+    speaker = _speaker([0, 5, 0])
+    speaker.synthesize("ሰላም", seed=3)
+    assert speaker._tokenizer.texts == ["roman(ሰላም)"]
 
 
 def test_unspeakable_text_raises_before_the_model_runs():
@@ -127,6 +142,9 @@ def test_loading_puts_the_model_on_the_device_in_eval_mode(monkeypatch, tmp_path
     transformers.VitsModel = FakeVits
     transformers.AutoTokenizer = FakeAutoTokenizer
     monkeypatch.setitem(sys.modules, "transformers", transformers)
+    uroman = types.ModuleType("uroman")
+    uroman.Uroman = _Romanizer
+    monkeypatch.setitem(sys.modules, "uroman", uroman)
 
     speaker = mms_engine.MmsSpeaker(tmp_path, "cuda")
 
@@ -138,3 +156,4 @@ def test_loading_puts_the_model_on_the_device_in_eval_mode(monkeypatch, tmp_path
     }
     assert speaker.device == "cuda"
     assert speaker.sample_rate == 16000
+    assert isinstance(speaker._romanizer, _Romanizer)
