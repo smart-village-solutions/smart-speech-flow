@@ -12,9 +12,11 @@ import logging
 import os
 import time
 import traceback
+import zlib
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List
 
+import numpy as np
 import soundfile as sf
 import torch
 from fastapi import FastAPI, Request
@@ -29,8 +31,12 @@ from services.resource_metrics import (
     get_system_stats,
 )
 from services.tts.mms_engine import MmsSpeaker
-from services.tts.piper_engine import load_piper_speaker
-from services.tts.speech_text import UnspeakableTextError, normalize_for_speech
+from services.tts.piper_engine import load_piper_speaker, parse_device
+from services.tts.speech_text import (
+    UnspeakableTextError,
+    normalize_for_speech,
+    split_for_synthesis,
+)
 from services.tts.voices import VOICES, Voice, voice_dir
 
 try:
@@ -45,7 +51,6 @@ except ImportError:  # pragma: no cover - optional dependency
 
 logger = logging.getLogger(__name__)
 
-DEVICE = os.environ.get("TTS_DEVICE", "cuda")
 _nvml_initialized = False
 AUDIO_WAV_MIME = "audio/wav"
 SYNTHESIS_ERROR_RESPONSES = {
@@ -76,16 +81,30 @@ def load_speakers(device: str) -> tuple[Dict[str, Any], Dict[str, str]]:
     return speakers, errors
 
 
+def _configured_device() -> str:
+    kind, index = parse_device(os.environ.get("TTS_DEVICE", "cuda"))
+    return "cpu" if kind == "cpu" else f"cuda:{index}"
+
+
+def _configured_synthesis_slots() -> int:
+    raw = os.environ.get("TTS_MAX_CONCURRENT_SYNTHESES", "1")
+    if not raw.strip().isdigit() or int(raw) < 1:
+        raise ValueError(
+            f"TTS_MAX_CONCURRENT_SYNTHESES must be a whole number of at least 1, not {raw!r}"
+        )
+    return int(raw)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.speakers, app.state.load_errors = await asyncio.to_thread(load_speakers, DEVICE)
+    device = _configured_device()
     # Each synthesis briefly needs tens to hundreds of MiB of VRAM on a card
     # shared with ASR, translation and vLLM. On the production card two long
     # requests at once already ran out of memory; one at a time peaked at
     # 1722 MiB. At ~0.1 s per Piper request the queue is cheap.
-    app.state.synthesis_slots = asyncio.Semaphore(
-        int(os.environ.get("TTS_MAX_CONCURRENT_SYNTHESES", "1"))
-    )
+    slots = _configured_synthesis_slots()
+    app.state.speakers, app.state.load_errors = await asyncio.to_thread(load_speakers, device)
+    app.state.synthesis_slots = asyncio.Semaphore(slots)
     yield
 
 
@@ -110,12 +129,14 @@ def _normalize_lang_code(lang: str) -> str:
 
 
 def _seed_for_request(session_id: str | None, text: str, debug_info: Dict[str, Any]) -> int:
+    # crc32, not hash(): str hashes are salted per process, so a session's MMS
+    # voice would change on every restart.
     if session_id:
         debug_info["seed_source"] = "session_id"
-        return hash(session_id) % (2**32)
+        return zlib.crc32(session_id.encode())
 
     debug_info["seed_source"] = "text_hash"
-    return hash(text) % (2**32)
+    return zlib.crc32(text.encode())
 
 
 def _audio_response(
@@ -219,7 +240,7 @@ def health(request: Request):
         "status": "ok" if all_loaded else "degraded",
         "model": any(entry["loaded"] for entry in voices.values()),
         "gpu": gpu_available,
-        "gpu_used": any(entry["device"] == "cuda" for entry in voices.values()),
+        "gpu_used": any(str(entry["device"]).startswith("cuda") for entry in voices.values()),
         "gpu_error": "; ".join(gpu_errors) if gpu_errors else None,
         "voices": voices,
         "loaded_models": {lang: entry["loaded"] for lang, entry in voices.items()},
@@ -236,6 +257,27 @@ def supported_languages():
 @app.get("/metrics")
 def metrics():
     return Response(generate_latest(), media_type="text/plain")
+
+
+async def _synthesize_in_chunks(
+    speaker: Any, spoken: str, seed: int, slots: asyncio.Semaphore
+) -> tuple[np.ndarray, int] | None:
+    """Speak the text piece by piece, taking the GPU slot for each piece.
+
+    Returns None when no piece contains anything the voice can pronounce.
+    """
+    parts: List[np.ndarray] = []
+    sampling_rate = 0
+    for chunk in split_for_synthesis(spoken):
+        try:
+            async with slots:
+                audio, sampling_rate = await asyncio.to_thread(speaker.synthesize, chunk, seed)
+        except UnspeakableTextError:
+            continue
+        parts.append(np.asarray(audio, dtype=np.float32).reshape(-1))
+    if not parts:
+        return None
+    return np.concatenate(parts), sampling_rate
 
 
 @app.post("/synthesize", responses=SYNTHESIS_ERROR_RESPONSES)
@@ -278,20 +320,21 @@ async def synthesize(request: Request):
     debug_info["spoken_text"] = spoken
     seed = _seed_for_request(data.get("session_id"), text, debug_info)
     try:
-        async with request.app.state.synthesis_slots:
-            audio, sampling_rate = await asyncio.to_thread(speaker.synthesize, spoken, seed)
-    except UnspeakableTextError:
-        return fail(
-            400, f"Text enthält nichts, was die Stimme für '{normalized_lang}' sprechen kann."
+        spoken_audio = await _synthesize_in_chunks(
+            speaker, spoken, seed, request.app.state.synthesis_slots
         )
     except Exception as exc:
         debug_info["traceback"] = traceback.format_exc()
         return fail(500, f"TTS fehlgeschlagen: {exc}")
 
+    if spoken_audio is None:
+        return fail(
+            400, f"Text enthält nichts, was die Stimme für '{normalized_lang}' sprechen kann."
+        )
     debug_info["output"] = AUDIO_WAV_MIME
     _update_duration(debug_info, start)
     return _audio_response(
-        _numpy_audio_to_wav_bytes(audio, sampling_rate),
+        _numpy_audio_to_wav_bytes(*spoken_audio),
         voice.name,
         normalized_lang,
         debug_active,

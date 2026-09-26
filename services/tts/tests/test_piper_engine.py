@@ -157,3 +157,41 @@ def test_cpu_runs_are_left_alone(tashkeel, tmp_path, monkeypatch):
     session.run(None, {"input": 1})
 
     assert session.runs == [None]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("cpu", ("cpu", 0)),
+        ("cuda", ("cuda", 0)),
+        ("cuda:1", ("cuda", 1)),
+        (" CUDA:0 ", ("cuda", 0)),
+    ],
+)
+def test_device_values_are_parsed(value, expected):
+    assert piper_engine.parse_device(value) == expected
+
+
+@pytest.mark.parametrize("value", ["gpu", "cuda:", "cuda:x", "cuda:-1", "", "cpu:0"])
+def test_unknown_device_values_are_refused(value):
+    with pytest.raises(ValueError, match="TTS_DEVICE"):
+        piper_engine.parse_device(value)
+
+
+def test_a_cuda_index_selects_the_card_and_its_arena():
+    ((name, options),) = piper_engine.providers_for("cuda:1")
+    assert name == "CUDAExecutionProvider"
+    assert options["device_id"] == 1
+
+
+def test_cuda_with_an_index_still_refuses_a_cpu_session(tashkeel, tmp_path, monkeypatch):
+    monkeypatch.setattr(FakeOrt, "active_providers", ["CPUExecutionProvider"])
+    voice_dir = _voice_dir(tmp_path)
+    with pytest.raises(piper_engine.VoiceUnavailableError, match="CPUExecutionProvider"):
+        piper_engine.load_piper_speaker(voice_dir, "cuda:0")
+
+
+def test_the_arena_of_the_selected_card_is_shrunk(tashkeel, tmp_path):
+    session = piper_engine.create_session(_voice_dir(tmp_path) / "model.onnx", "cuda:1")
+    session.run(None, {})
+    assert session.runs[0].entries == {"memory.enable_memory_arena_shrinkage": "gpu:1"}

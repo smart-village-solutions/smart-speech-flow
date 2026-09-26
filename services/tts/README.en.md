@@ -65,6 +65,11 @@ execution provider fails to load rather than running on the CPU unnoticed.
 Set `TTS_DEVICE=cpu` to run the image on a machine without a GPU.
 At most `TTS_MAX_CONCURRENT_SYNTHESES` (default 1) syntheses run on the GPU at
 once; further requests wait, which bounds the VRAM the service needs.
+Keep it at 1 unless the card has room and only Piper voices are busy: the MMS
+voices seed through `torch.manual_seed`, which is process-wide, so concurrent
+Amharic or Tigrinya requests race on the seed. Values below 1, and a
+`TTS_DEVICE` other than `cpu`, `cuda` or `cuda:<n>`, stop the service at
+startup.
 
 ```bash
 docker build -f services/tts/Dockerfile -t tts-service .

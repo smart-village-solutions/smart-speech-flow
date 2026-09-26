@@ -8,6 +8,7 @@ explicit ones.
 """
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -20,12 +21,28 @@ class VoiceUnavailableError(RuntimeError):
     pass
 
 
+def parse_device(value: str) -> tuple[str, int]:
+    """Split TTS_DEVICE into a kind and a card index; refuse anything else.
+
+    Anything that is not exactly "cpu", "cuda" or "cuda:<n>" is an error, so
+    no spelling of a GPU can slip past the CUDA check onto the CPU.
+    """
+    match = re.fullmatch(r"(cpu)|(cuda)(?::(\d+))?", value.strip().lower())
+    if match is None:
+        raise ValueError(f"TTS_DEVICE must be cpu, cuda or cuda:<n>, not {value!r}")
+    if match[1]:
+        return "cpu", 0
+    return "cuda", int(match[3] or 0)
+
+
 def providers_for(device: str) -> list[Any]:
-    if device == "cuda":
+    kind, index = parse_device(device)
+    if kind == "cuda":
         return [
             (
                 "CUDAExecutionProvider",
                 {
+                    "device_id": index,
                     # The default exhaustive search re-runs for every new input length.
                     "cudnn_conv_algo_search": "HEURISTIC",
                     "arena_extend_strategy": "kSameAsRequested",
@@ -38,19 +55,20 @@ def providers_for(device: str) -> list[Any]:
 def create_session(model_path: Path, device: str) -> Any:
     import onnxruntime
 
+    kind, index = parse_device(device)
     session = onnxruntime.InferenceSession(
         str(model_path),
         sess_options=onnxruntime.SessionOptions(),
         providers=providers_for(device),
     )
-    expected = "CUDAExecutionProvider" if device == "cuda" else "CPUExecutionProvider"
+    expected = "CUDAExecutionProvider" if kind == "cuda" else "CPUExecutionProvider"
     active = session.get_providers()
     if not active or active[0] != expected:
         raise VoiceUnavailableError(f"{model_path} runs on {active}, expected {expected}")
-    if device != "cuda":
+    if kind != "cuda":
         return session
     run_options = onnxruntime.RunOptions()
-    run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", "gpu:0")
+    run_options.add_run_config_entry("memory.enable_memory_arena_shrinkage", f"gpu:{index}")
     return _ShrinkingSession(session, run_options)
 
 

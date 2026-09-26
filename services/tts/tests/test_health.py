@@ -42,3 +42,25 @@ def test_supported_languages_are_the_voice_table(client):
     assert client.get("/supported-languages").json() == {
         "languages": ["am", "ar", "de", "en", "fa", "ku", "ru", "ti", "tr", "uk"]
     }
+
+
+@pytest.mark.parametrize("variable", ["TTS_DEVICE", "TTS_MAX_CONCURRENT_SYNTHESES"])
+@pytest.mark.parametrize("value", ["gpu", "0", "-1", "x"])
+def test_invalid_settings_stop_the_service_from_starting(monkeypatch, variable, value):
+    from fastapi.testclient import TestClient
+
+    from services.tts import app as tts_app
+
+    loaded = []
+    monkeypatch.setenv(variable, value)
+    monkeypatch.setattr(tts_app, "_load_speaker", lambda voice, device: loaded.append(voice))
+
+    with pytest.raises(ValueError, match=variable), TestClient(tts_app.app):
+        pass
+    assert loaded == []
+
+
+def test_a_numbered_cuda_device_counts_as_gpu(client, speakers):
+    for speaker in speakers.values():
+        speaker.device = "cuda:0"
+    assert client.get("/health").json()["gpu_used"] is True

@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -140,3 +143,82 @@ def test_gpu_syntheses_are_capped(monkeypatch, speakers, limit, expected_peak):
 
     assert {r.status_code for r in responses} == {200}
     assert counter.peak == expected_peak
+
+
+def test_seeds_survive_a_restart():
+    probe = (
+        "from services.tts.app import _seed_for_request;"
+        "print(_seed_for_request('session-1', 'x', {}), _seed_for_request(None, 'Hallo', {}))"
+    )
+    runs = {
+        subprocess.run(
+            [sys.executable, "-c", f"import services.tts.tests.conftest;{probe}"],
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "PYTHONHASHSEED": seed},
+        ).stdout
+        for seed in ("1", "2")
+    }
+    assert len(runs) == 1
+
+
+def test_long_text_is_synthesized_in_chunks_and_joined(client, speakers):
+    text = " ".join(f"Satz Nummer {i} ist ein ganz normaler Satz." for i in range(40))
+    response = client.post("/synthesize", json={"text": text, "lang": "de"})
+    assert response.status_code == 200
+    calls = speakers["de"].calls
+    assert len(calls) > 1
+    assert all(len(chunk) <= 400 for chunk, _ in calls)
+
+
+def test_an_unspeakable_chunk_is_skipped_but_the_rest_is_spoken(client, speakers):
+    original = speakers["uk"].synthesize
+
+    def refuse_dots(text, seed):
+        if not any(ch.isalpha() for ch in text):
+            raise UnspeakableTextError(text)
+        return original(text, seed)
+
+    speakers["uk"].synthesize = refuse_dots
+    text = "Добрий день. " + "… " * 300 + "Дякую."
+    response = client.post("/synthesize", json={"text": text, "lang": "uk"})
+    assert response.status_code == 200
+
+
+class _SlowPerChunk:
+    device = "cuda"
+
+    def __init__(self):
+        self.finished = {}
+
+    def synthesize(self, text, seed):
+        time.sleep(0.05)
+        self.finished[text[:5]] = time.perf_counter()
+        return np.zeros(4, dtype=np.float32), 22050
+
+
+def test_a_short_request_is_not_held_up_by_a_long_one(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from services.tts import app as tts_app
+
+    speaker = _SlowPerChunk()
+    monkeypatch.delenv("TTS_MAX_CONCURRENT_SYNTHESES", raising=False)
+    monkeypatch.setattr(tts_app, "_load_speaker", lambda voice, device: speaker)
+    long_text = " ".join(f"Lang {i:03d} " + "wort " * 60 + "." for i in range(8))
+
+    with TestClient(tts_app.app) as test_client, ThreadPoolExecutor(2) as pool:
+        long_request = pool.submit(
+            test_client.post, "/synthesize", json={"text": long_text, "lang": "de"}
+        )
+        time.sleep(0.08)
+        short_done = pool.submit(
+            test_client.post, "/synthesize", json={"text": "Kurz.", "lang": "de"}
+        )
+        assert short_done.result().status_code == 200
+        short_finished = time.perf_counter()
+        assert long_request.result().status_code == 200
+        long_finished = time.perf_counter()
+
+    assert short_finished < long_finished - 0.1
