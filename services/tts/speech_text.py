@@ -27,7 +27,7 @@ _EURO = {
 }
 # A group separator followed by exactly three digits, after a lead of one to
 # three digits that is not zero ("0,125" is a decimal).
-_GROUPED_NUMBER = re.compile(r"(?<![\d.,])[1-9]\d{0,2}(?:([.,])\d{3})(?:\1\d{3})*(?!\d)(?!\1\d)")
+_GROUPED_NUMBER = re.compile(r"(?<![\d.,])[1-9]\d{0,2}([.,])\d{3}(?:\1\d{3})*(?!\d)(?!\1\d)")
 
 # Only where a time is clearly meant do clock words ("Uhr", "o'clock") get added;
 # "Ergebnis 10:15" is a score.
@@ -147,10 +147,12 @@ def _rewrite_money(text: str, lang: str) -> str:
             return f"{units} {word} {cents}"
         return f"{units} {word}"
 
-    amount = r"(\d+)(?:[.,](\d{2}))?(?!\d)"
+    # Anchored to the start of a digit run and possessive: unanchored, a long
+    # run of digits is retried from every position (30 s for 40 000 digits).
+    amount = r"(?<![\d.,])(\d++)(?:[.,](\d{2}))?(?!\d)"
     text = re.sub(rf"€\s?{amount}", spoken, text)
     text = re.sub(rf"{amount}\s?€", spoken, text)
-    return re.sub(rf"(\d+)[.,](\d{{2}})(?!\d)\s+{re.escape(word)}\b", spoken, text)
+    return re.sub(rf"(?<![\d.,])(\d++)[.,](\d{{2}})(?!\d)\s+{re.escape(word)}\b", spoken, text)
 
 
 def _rewrite_digit_sequences(text: str) -> str:
@@ -160,7 +162,7 @@ def _rewrite_digit_sequences(text: str) -> str:
 
     # "-" and "/" join any group; a space only joins a group of three or more
     # digits, so "PLZ 01067 25 Personen" keeps its 25.
-    return re.sub(r"(?<![\d.,])0\d{2,}(?:[/-]\d{2,}| \d{3,})*(?![\d.,]\d)", replace, text)
+    return re.sub(r"(?<![\d.,])0\d{2,}+(?:[/-]\d{2,}+| \d{3,}+)*(?![\d.,]\d)", replace, text)
 
 
 def _rewrite_german_days(text: str) -> str:
@@ -194,17 +196,18 @@ def _spell_ethiopic_numbers(text: str, lang: str) -> str:
         fraction = " ".join(_spell_ethiopic(digit, lang) for digit in match[2])
         return f"{_spell_ethiopic(match[1], lang)} {point} {fraction}"
 
-    text = re.sub(r"(?<![\d.,])(\d+)[.,](\d+)(?![\d.,])", decimal, text)
+    text = re.sub(r"(?<![\d.,])(\d++)[.,](\d++)(?![.,])", decimal, text)
     return re.sub(r"\d+", lambda match: _spell_ethiopic(match.group(), lang), text)
 
 
 def _spell_ethiopic(digits: str, lang: str) -> str:
     words = _ETHIOPIC[lang]
+    # Checked on the string: int() refuses more than 4300 digits.
+    if len(digits.lstrip("0")) > 9:
+        return " ".join(words["units"][int(d)] if d != "0" else words["zero"] for d in digits)
     number = int(digits)
     if number == 0:
         return words["zero"]
-    if number >= 1_000_000_000:
-        return " ".join(words["units"][int(d)] if d != "0" else words["zero"] for d in digits)
     parts = []
     for scale, name in ((1_000_000, "million"), (1_000, "thousand")):
         count, number = divmod(number, scale)

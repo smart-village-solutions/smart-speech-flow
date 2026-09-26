@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from services.tts.speech_text import normalize_for_speech, split_for_synthesis
@@ -249,3 +251,26 @@ def test_a_sentence_longer_than_the_limit_is_cut_between_words():
 
 def test_a_word_longer_than_the_limit_is_cut_hard():
     assert split_for_synthesis("x" * 120, max_chars=50) == ["x" * 50, "x" * 50, "x" * 20]
+
+
+def test_a_digit_run_too_long_for_int_is_read_digit_by_digit():
+    spoken = mms("7" * 5000, "am")
+    assert spoken.split() == ["ሰባት"] * 5000
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "1" * 20000 + "." + "2" * 20000 + ".",
+        "1" * 30000 + " x",
+        "0" + "1" * 30000 + ".5",
+        "0621 " + "4589 " * 5000 + ".5",
+        "€" + "1" * 30000,
+    ],
+    ids=["decimal", "digits", "leading-zero", "phone-groups", "euro"],
+)
+@pytest.mark.parametrize("lang", ["de", "ru", "am"])
+def test_pathological_digit_runs_are_normalized_in_linear_time(text, lang):
+    started = time.perf_counter()
+    normalize_for_speech(text, lang, spell_numbers=lang == "am")
+    assert time.perf_counter() - started < 1.0
