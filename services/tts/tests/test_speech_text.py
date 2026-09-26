@@ -1,6 +1,6 @@
 import pytest
 
-from services.tts.speech_text import normalize_for_speech
+from services.tts.speech_text import normalize_for_speech, split_for_synthesis
 
 
 def piper(text, lang):
@@ -50,7 +50,6 @@ def test_money_is_read_as_units_then_cents(lang, text, expected):
     ("text", "expected"),
     [
         ("Rufen Sie 0621 4589 an.", "Rufen Sie 0 6 2 1, 4 5 8 9 an."),
-        ("Tel. 0621-458 90", "Tel. 0 6 2 1, 4 5 8, 9 0"),
         ("Zimmer 204 im 2. Stock", "Zimmer 204 im 2. Stock"),
         ("0 Euro", "0 Euro"),
     ],
@@ -132,3 +131,121 @@ def test_unknown_language_only_gets_the_generic_rules():
 
 def test_whitespace_is_collapsed():
     assert piper("  Hallo   Welt ", "de") == "Hallo Welt"
+
+
+@pytest.mark.parametrize(
+    ("lang", "text", "expected"),
+    [
+        ("ru", "€1,000", "1000 евро"),
+        ("ru", "1.000 €", "1000 евро"),
+        ("uk", "Плата €1,000.", "Плата 1000 євро."),
+        ("ar", "€1,000", "1000 يورو"),
+        ("ar", "١٬٠٠٠ €", "1000 يورو"),
+        ("fa", "€1,250,000", "1250000 یورو"),
+        ("ku", "1.000 €", "1000 euro"),
+        ("de", "1.000.000 Euro", "1000000 Euro"),
+        ("en", "1,000,000 euros", "1000000 euros"),
+    ],
+)
+def test_thousands_groups_are_merged_in_every_language(lang, text, expected):
+    assert piper(text, lang) == expected
+
+
+@pytest.mark.parametrize(
+    ("lang", "text", "expected"),
+    [
+        ("am", "1,000 ዩሮ", "ሺህ ዩሮ"),
+        ("ti", "1.500 ዩሮ", "ሽሕ ሓሙሽተ ሚእቲ ዩሮ"),
+        ("am", "€1,000", "ሺህ ዩሮ"),
+    ],
+)
+def test_ethiopic_thousands_are_one_number(lang, text, expected):
+    assert mms(text, lang) == expected
+
+
+@pytest.mark.parametrize(
+    ("lang", "text", "expected"),
+    [
+        ("am", "3.5 ኪሎ", "ሶስት ነጥብ አምስት ኪሎ"),
+        ("am", "0,25", "ዜሮ ነጥብ ሁለት አምስት"),
+        ("ti", "3,5 ኪሎ", "ሰለስተ ነጥቢ ሓሙሽተ ኪሎ"),
+    ],
+)
+def test_ethiopic_decimals_are_read_with_a_point_word(lang, text, expected):
+    assert mms(text, lang) == expected
+
+
+def test_a_small_decimal_is_not_mistaken_for_a_thousands_group():
+    assert piper("0,125 Liter", "de") == "0,125 Liter"
+
+
+@pytest.mark.parametrize(
+    ("lang", "text", "expected"),
+    [
+        ("de", "um 24:30", "um 24:30"),
+        ("de", "bis 24:00 Uhr", "bis 24 Uhr"),
+        ("de", "Ergebnis 10:15 Punkte", "Ergebnis 10 15 Punkte"),
+        ("de", "ab 7:45", "ab 7 Uhr 45"),
+        ("de", "Treffen 7:45 Uhr", "Treffen 7 Uhr 45"),
+        ("en", "Score 10:15 today", "Score 10 15 today"),
+        ("en", "from 7:05 am", "from 7 oh 5 am"),
+    ],
+)
+def test_clock_words_are_only_added_where_a_time_is_meant(lang, text, expected):
+    assert piper(text, lang) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Heute ist der 1. Mai", "Heute ist der erste Mai"),
+        ("Der 3. Oktober ist ein Feiertag", "Der dritte Oktober ist ein Feiertag"),
+        ("der 21. Juni", "der einundzwanzigste Juni"),
+        ("der 20. Juni", "der zwanzigste Juni"),
+        ("seit dem 3. Oktober", "seit dem dritten Oktober"),
+    ],
+)
+def test_german_day_after_der_is_nominative(text, expected):
+    assert piper(text, "de") == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("PLZ 01067 25 Personen", "PLZ 0 1 0 6 7 25 Personen"),
+        ("Tel. 0621/458-90", "Tel. 0 6 2 1, 4 5 8, 9 0"),
+        ("Tel. 0621-458 90", "Tel. 0 6 2 1, 4 5 8 90"),
+    ],
+)
+def test_a_space_joins_only_groups_that_look_like_a_phone_number(text, expected):
+    assert piper(text, "de") == expected
+
+
+def test_short_text_is_one_chunk():
+    assert split_for_synthesis("Guten Tag. Wie geht es?") == ["Guten Tag. Wie geht es?"]
+
+
+def test_long_text_splits_at_sentence_ends_within_the_limit():
+    sentences = [f"Satz Nummer {i} ist ein ganz normaler Satz." for i in range(30)]
+    chunks = split_for_synthesis(" ".join(sentences), max_chars=200)
+    assert len(chunks) > 1
+    assert all(len(chunk) <= 200 for chunk in chunks)
+    assert all(chunk.endswith(".") for chunk in chunks)
+    assert " ".join(chunks) == " ".join(sentences)
+
+
+@pytest.mark.parametrize("end", ["።", "؟", "!", "?", "…"])
+def test_other_scripts_sentence_ends_are_recognised(end):
+    text = f"{'ሀ' * 150}{end} {'ለ' * 150}{end}"
+    assert split_for_synthesis(text, max_chars=200) == [f"{'ሀ' * 150}{end}", f"{'ለ' * 150}{end}"]
+
+
+def test_a_sentence_longer_than_the_limit_is_cut_between_words():
+    words = ["Wort"] * 100
+    chunks = split_for_synthesis(" ".join(words), max_chars=50)
+    assert all(len(chunk) <= 50 for chunk in chunks)
+    assert " ".join(chunks).split() == words
+
+
+def test_a_word_longer_than_the_limit_is_cut_hard():
+    assert split_for_synthesis("x" * 120, max_chars=50) == ["x" * 50, "x" * 50, "x" * 20]

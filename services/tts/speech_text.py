@@ -1,15 +1,17 @@
 """Rewrite text into a form a voice can speak.
 
 Piper voices read plain integers through espeak-ng, which inflects them, so
-only what espeak misreads is rewritten: clock times, money with cents, phone
-numbers and German days of the month. MMS voices were trained on text without
-digits and drop or garble them, so for those every integer is spelled out.
-The Amharic and Tigrinya number words await review by a native speaker.
+only what espeak misreads is rewritten: thousands separators, clock times,
+money with cents, phone numbers and German days of the month. MMS voices were
+trained on text without digits and drop or garble them, so for those every
+number is spelled out, decimals with a point word. The Amharic and Tigrinya
+number words await review by a native speaker.
 """
 
 import re
 
-_EASTERN_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+# Arabic-Indic and Persian digits, and the Arabic decimal and thousands signs.
+_EASTERN_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹٫٬", "01234567890123456789.,")
 
 _EURO = {
     "de": "Euro",
@@ -23,7 +25,16 @@ _EURO = {
     "am": "ዩሮ",
     "ti": "ዩሮ",
 }
-_THOUSANDS_SEPARATOR = {"de": ".", "tr": ".", "en": ","}
+# A group separator followed by exactly three digits, after a lead of one to
+# three digits that is not zero ("0,125" is a decimal).
+_GROUPED_NUMBER = re.compile(r"(?<![\d.,])[1-9]\d{0,2}(?:([.,])\d{3})(?:\1\d{3})*(?!\d)(?!\1\d)")
+
+# Only where a time is clearly meant do clock words ("Uhr", "o'clock") get added;
+# "Ergebnis 10:15" is a score.
+_TIME_CONTEXT = {
+    "de": (r"um|ab|bis|gegen|von|vor|nach|seit|zwischen", r"Uhr\b"),
+    "en": (r"at|from|until|till|to|by|before|after|around|between", r"[ap]\.?m\.?(?!\w)"),
+}
 
 _GERMAN_MONTHS = (
     "Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember"
@@ -62,6 +73,7 @@ _ETHIOPIC = {
         "hundred": "መቶ",
         "thousand": "ሺህ",
         "million": "ሚሊዮን",
+        "point": "ነጥብ",
     },
     "ti": {
         "zero": "ዜሮ",
@@ -72,6 +84,7 @@ _ETHIOPIC = {
         "hundred": "ሚእቲ",
         "thousand": "ሽሕ",
         "million": "ሚልዮን",
+        "point": "ነጥቢ",
     },
 }
 
@@ -83,46 +96,46 @@ class UnspeakableTextError(ValueError):
 def normalize_for_speech(text: str, lang: str, *, spell_numbers: bool) -> str:
     text = text.translate(_EASTERN_DIGITS)
     text = _rewrite_times(text, lang)
-    text = _drop_thousands_separators(text, lang)
+    text = _GROUPED_NUMBER.sub(lambda match: re.sub(r"[.,]", "", match.group()), text)
     text = _rewrite_money(text, lang)
     text = _rewrite_digit_sequences(text)
     if lang == "de":
         text = _rewrite_german_days(text)
     if spell_numbers and lang in _ETHIOPIC:
-        text = re.sub(r"\d+", lambda match: _spell_ethiopic(match.group(), lang), text)
+        text = _spell_ethiopic_numbers(text, lang)
     return " ".join(text.split())
 
 
-def _spoken_time(hour: int, minute: int, lang: str) -> str:
-    if lang == "de":
+def _spoken_time(hour: int, minute: int, lang: str, timed: bool) -> str:
+    if timed and lang == "de":
         return f"{hour} Uhr {minute}" if minute else f"{hour} Uhr"
-    if lang == "en":
+    if timed and lang == "en":
         if not minute:
             return f"{hour} o'clock"
         return f"{hour} oh {minute}" if minute < 10 else f"{hour} {minute}"
-    return f"{hour} {minute}" if minute else str(hour)
+    if lang in _TIME_CONTEXT or minute:
+        return f"{hour} {minute}"
+    return str(hour)
 
 
 def _rewrite_times(text: str, lang: str) -> str:
+    before, after = _TIME_CONTEXT.get(lang, (r"(?!)", r"(?!)"))
+    pattern = (
+        rf"(?P<before>\b(?:{before})\s+)?(?<!\d)(?P<hour>\d{{1,2}}):(?P<minute>\d{{2}})(?!\d)"
+        rf"(?P<after>\s*(?:{after}))?"
+    )
+
     def replace(match: re.Match[str]) -> str:
-        hour, minute = int(match.group(1)), int(match.group(2))
-        if hour > 24 or minute > 59:
+        hour, minute = int(match["hour"]), int(match["minute"])
+        if minute > 59 or (hour > 23 and not (hour == 24 and minute == 0)):
             return match.group()
-        return _spoken_time(hour, minute, lang)
+        timed = bool(match["before"] or match["after"])
+        spoken = _spoken_time(hour, minute, lang, timed)
+        # "Uhr" is part of the spoken German time; "am"/"pm" stay.
+        trailing = match["after"] if match["after"] and lang != "de" else ""
+        return f"{match['before'] or ''}{spoken}{trailing}"
 
-    pattern = r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)"
-    if lang == "de":
-        pattern += r"(?:\s*Uhr\b)?"
-    return re.sub(pattern, replace, text)
-
-
-def _drop_thousands_separators(text: str, lang: str) -> str:
-    separator = _THOUSANDS_SEPARATOR.get(lang)
-    if separator is None:
-        return text
-    sep = re.escape(separator)
-    grouped = rf"(?<![\d{sep}])\d{{1,3}}(?:{sep}\d{{3}})+(?![\d]|{sep}\d)"
-    return re.sub(grouped, lambda match: match.group().replace(separator, ""), text)
+    return re.sub(pattern, replace, text, flags=re.IGNORECASE)
 
 
 def _rewrite_money(text: str, lang: str) -> str:
@@ -145,25 +158,44 @@ def _rewrite_digit_sequences(text: str) -> str:
         groups = re.split(r"[ /-]", match.group())
         return ", ".join(" ".join(group) for group in groups)
 
-    return re.sub(r"(?<![\d.,])0\d{2,}(?:[ /-]\d{2,})*(?![\d.,]\d)", replace, text)
+    # "-" and "/" join any group; a space only joins a group of three or more
+    # digits, so "PLZ 01067 25 Personen" keeps its 25.
+    return re.sub(r"(?<![\d.,])0\d{2,}(?:[/-]\d{2,}| \d{3,})*(?![\d.,]\d)", replace, text)
 
 
 def _rewrite_german_days(text: str) -> str:
     def replace(match: re.Match[str]) -> str:
-        day = int(match.group(1))
+        day = int(match["day"])
         if not 1 <= day <= 31:
             return match.group()
-        return f"{_german_ordinal(day)} {match.group(2)}"
+        # "der 1. Mai" is nominative (erste); "am", "vom", "den" take -ten.
+        ordinal = _german_ordinal(day, "te" if match["article"] else "ten")
+        return f"{match['article'] or ''}{ordinal} {match['month']}"
 
-    return re.sub(rf"(?<!\d)(\d{{1,2}})\.\s*({_GERMAN_MONTHS})\b", replace, text)
+    return re.sub(
+        rf"(?P<article>\b[Dd]er\s+)?(?<!\d)(?P<day>\d{{1,2}})\.\s*(?P<month>{_GERMAN_MONTHS})\b",
+        replace,
+        text,
+    )
 
 
-def _german_ordinal(day: int) -> str:
+def _german_ordinal(day: int, suffix: str) -> str:
     if day < 20:
-        return f"{_GERMAN_ORDINAL_STEMS[day]}ten"
-    tens = "zwanzigsten" if day < 30 else "dreißigsten"
+        return f"{_GERMAN_ORDINAL_STEMS[day]}{suffix}"
+    tens = "zwanzigs" if day < 30 else "dreißigs"
     unit = day % 10
-    return f"{_GERMAN_UNITS[unit]}und{tens}" if unit else tens
+    return f"{_GERMAN_UNITS[unit]}und{tens}{suffix}" if unit else f"{tens}{suffix}"
+
+
+def _spell_ethiopic_numbers(text: str, lang: str) -> str:
+    point = _ETHIOPIC[lang]["point"]
+
+    def decimal(match: re.Match[str]) -> str:
+        fraction = " ".join(_spell_ethiopic(digit, lang) for digit in match[2])
+        return f"{_spell_ethiopic(match[1], lang)} {point} {fraction}"
+
+    text = re.sub(r"(?<![\d.,])(\d+)[.,](\d+)(?![\d.,])", decimal, text)
+    return re.sub(r"\d+", lambda match: _spell_ethiopic(match.group(), lang), text)
 
 
 def _spell_ethiopic(digits: str, lang: str) -> str:
@@ -205,3 +237,48 @@ def _below_100(number: int, words: dict) -> str:
         return f"{words['teen']} {words['units'][number - 10]}"
     tens, unit = divmod(number, 10)
     return f"{words['tens'][tens]} {words['units'][unit]}" if unit else words["tens"][tens]
+
+
+_SENTENCE_END = re.compile(r"(?<=[.!?…።؟])\s+")
+
+
+def split_for_synthesis(text: str, max_chars: int = 400) -> list[str]:
+    """Cut text into sentence-sized pieces of at most max_chars.
+
+    Synthesis runs one piece at a time on the GPU, so a long message cannot
+    hold the card while other languages wait, and MMS stays within the input
+    lengths it handles well. Sentences are packed together up to the limit; a
+    longer sentence is cut between words, a longer word hard.
+    """
+    chunks: list[str] = []
+    current = ""
+    for piece in (p for s in _SENTENCE_END.split(text) for p in _fit(s, max_chars)):
+        if current and len(current) + 1 + len(piece) <= max_chars:
+            current = f"{current} {piece}"
+            continue
+        if current:
+            chunks.append(current)
+        current = piece
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _fit(sentence: str, max_chars: int) -> list[str]:
+    pieces: list[str] = []
+    current = ""
+    for word in sentence.split():
+        while len(word) > max_chars:
+            if current:
+                pieces.append(current)
+                current = ""
+            pieces.append(word[:max_chars])
+            word = word[max_chars:]
+        if current and len(current) + 1 + len(word) > max_chars:
+            pieces.append(current)
+            current = word
+        else:
+            current = f"{current} {word}" if current else word
+    if current:
+        pieces.append(current)
+    return pieces
