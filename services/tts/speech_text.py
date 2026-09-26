@@ -25,9 +25,9 @@ _EURO = {
     "am": "ዩሮ",
     "ti": "ዩሮ",
 }
-# A group separator followed by exactly three digits, after a lead of one to
-# three digits that is not zero ("0,125" is a decimal).
-_GROUPED_NUMBER = re.compile(r"(?<![\d.,])[1-9]\d{0,2}([.,])\d{3}(?:\1\d{3})*(?!\d)(?!\1\d)")
+# The decimal sign where the language has a settled one; the other sign groups
+# thousands there. Elsewhere either sign may group ("0,125" stays a decimal).
+_DECIMAL_SIGN = {"de": ",", "tr": ",", "ru": ",", "uk": ",", "en": "."}
 
 # Only where a time is clearly meant do clock words ("Uhr", "o'clock") get added;
 # "Ergebnis 10:15" is a score.
@@ -96,7 +96,7 @@ class UnspeakableTextError(ValueError):
 def normalize_for_speech(text: str, lang: str, *, spell_numbers: bool) -> str:
     text = text.translate(_EASTERN_DIGITS)
     text = _rewrite_times(text, lang)
-    text = _GROUPED_NUMBER.sub(lambda match: re.sub(r"[.,]", "", match.group()), text)
+    text = _drop_group_separators(text, lang)
     text = _rewrite_money(text, lang)
     text = _rewrite_digit_sequences(text)
     if lang == "de":
@@ -104,6 +104,14 @@ def normalize_for_speech(text: str, lang: str, *, spell_numbers: bool) -> str:
     if spell_numbers and lang in _ETHIOPIC:
         text = _spell_ethiopic_numbers(text, lang)
     return " ".join(text.split())
+
+
+def _drop_group_separators(text: str, lang: str) -> str:
+    """Remove thousands separators: a sign followed by exactly three digits."""
+    decimal = _DECIMAL_SIGN.get(lang)
+    sign = "[.,]" if decimal is None else re.escape("," if decimal == "." else ".")
+    grouped = rf"(?<![\d.,])[1-9]\d{{0,2}}({sign})\d{{3}}(?:\1\d{{3}})*(?!\d)(?!\1\d)"
+    return re.sub(grouped, lambda match: re.sub(r"[.,]", "", match.group()), text)
 
 
 def _spoken_time(hour: int, minute: int, lang: str, timed: bool) -> str:
@@ -129,7 +137,9 @@ def _rewrite_times(text: str, lang: str) -> str:
         hour, minute = int(match["hour"]), int(match["minute"])
         if minute > 59 or (hour > 23 and not (hour == 24 and minute == 0)):
             return match.group()
-        timed = bool(match["before"] or match["after"])
+        # ":00" after an hour is a time even without a preposition; scores
+        # almost never end in it.
+        timed = bool(match["before"] or match["after"]) or minute == 0
         spoken = _spoken_time(hour, minute, lang, timed)
         # "Uhr" is part of the spoken German time; "am"/"pm" stay.
         trailing = match["after"] if match["after"] and lang != "de" else ""
@@ -142,14 +152,16 @@ def _rewrite_money(text: str, lang: str) -> str:
     word = _EURO.get(lang, "euro")
 
     def spoken(match: re.Match[str]) -> str:
-        units, cents = match.group(1), match.group(2)
+        units, cents = re.sub(r"[.,]", "", match.group(1)), match.group(2)
         if cents and cents != "00":
             return f"{units} {word} {cents}"
         return f"{units} {word}"
 
     # Anchored to the start of a digit run and possessive: unanchored, a long
     # run of digits is retried from every position (30 s for 40 000 digits).
-    amount = r"(?<![\d.,])(\d++)(?:[.,](\d{2}))?(?!\d)"
+    # Money never has three decimal places, so a three-digit group is thousands
+    # whatever the language's decimal sign ("€1,000" in Russian).
+    amount = r"(?<![\d.,])(\d{1,3}(?:[.,]\d{3})+(?!\d)|\d++)(?:[.,](\d{2}))?(?!\d)"
     text = re.sub(rf"€\s?{amount}", spoken, text)
     text = re.sub(rf"{amount}\s?€", spoken, text)
     return re.sub(rf"(?<![\d.,])(\d++)[.,](\d{{2}})(?!\d)\s+{re.escape(word)}\b", spoken, text)

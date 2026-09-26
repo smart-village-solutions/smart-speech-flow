@@ -276,3 +276,46 @@ def test_pathological_digit_runs_are_normalized_in_linear_time(text, lang):
     started = time.perf_counter()
     normalize_for_speech(text, lang, spell_numbers=lang == "am")
     assert time.perf_counter() - started < 1.0
+
+
+@pytest.mark.parametrize(
+    ("lang", "text", "expected"),
+    [
+        ("de", "Termin: 14:00", "Termin: 14 Uhr"),
+        ("en", "Meeting 14:00", "Meeting 14 o'clock"),
+        ("de", "Ergebnis 10:15 Punkte", "Ergebnis 10 15 Punkte"),
+    ],
+)
+def test_on_the_hour_is_a_time_even_without_a_preposition(lang, text, expected):
+    assert piper(text, lang) == expected
+
+
+@pytest.mark.parametrize(
+    ("lang", "text", "expected"),
+    [
+        ("de", "Gewicht 1,500 kg", "Gewicht 1,500 kg"),
+        ("de", "Es sind 2,250 Liter", "Es sind 2,250 Liter"),
+        ("ru", "Вес 1,500 кг", "Вес 1,500 кг"),
+        ("tr", "Ağırlık 1,500 kg", "Ağırlık 1,500 kg"),
+        ("en", "It weighs 1.500 kg", "It weighs 1.500 kg"),
+        ("de", "Es sind 2.250 Liter", "Es sind 2250 Liter"),
+        ("en", "It weighs 1,500 kg", "It weighs 1500 kg"),
+    ],
+)
+def test_the_languages_own_decimal_sign_is_kept(lang, text, expected):
+    assert piper(text, lang) == expected
+
+
+@pytest.mark.parametrize(
+    ("lang", "text", "expected"),
+    [
+        ("de", "Kosten 1.250,50 €", "Kosten 1250 Euro 50"),
+        ("en", "€1,250.99", "1250 euros 99"),
+        ("ru", "€1,000", "1000 евро"),
+        ("uk", "1,000 €", "1000 євро"),
+        ("de", "1,000 €", "1000 Euro"),
+        ("en", "€1.000", "1000 euros"),
+    ],
+)
+def test_money_never_has_three_decimal_places(lang, text, expected):
+    assert piper(text, lang) == expected
