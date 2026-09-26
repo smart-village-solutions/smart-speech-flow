@@ -46,8 +46,8 @@ RUN python3 -m pip download \
     -r requirements-piper.txt
 
 # Standard library only, so it neither waits for nor is invalidated by the
-# wheel build.
-FROM nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04 AS voices
+# wheel build, and needs no CUDA.
+FROM ubuntu:24.04 AS voices
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates python3 \

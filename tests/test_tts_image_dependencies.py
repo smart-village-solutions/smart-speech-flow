@@ -61,4 +61,4 @@ def test_the_voices_stage_does_not_depend_on_the_python_requirements():
     dockerfile = (TTS / "Dockerfile").read_text()
     stage = re.search(r"^FROM (\S+) AS voices$", dockerfile, re.MULTILINE)
     assert stage, "no voices stage"
-    assert stage.group(1).startswith("nvidia/cuda:")
+    assert stage.group(1) == "ubuntu:24.04"
