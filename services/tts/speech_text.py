@@ -109,7 +109,10 @@ def normalize_for_speech(text: str, lang: str, *, spell_numbers: bool) -> str:
 def _drop_group_separators(text: str, lang: str) -> str:
     """Remove thousands separators: a sign followed by exactly three digits."""
     decimal = _DECIMAL_SIGN.get(lang)
-    sign = "[.,]" if decimal is None else re.escape("," if decimal == "." else ".")
+    if decimal is None:
+        sign = "[.,]"
+    else:
+        sign = re.escape("," if decimal == "." else ".")
     grouped = rf"(?<![\d.,])[1-9]\d{{0,2}}({sign})\d{{3}}(?:\1\d{{3}})*(?!\d)(?!\1\d)"
     return re.sub(grouped, lambda match: re.sub(r"[.,]", "", match.group()), text)
 
