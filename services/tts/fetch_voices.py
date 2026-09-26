@@ -1,12 +1,16 @@
 """Download every pinned voice file into TTS_VOICE_DIR and verify it.
 
-Runs in the image build. A stalled read from Hugging Face would otherwise fail the whole image build,
-so network errors are retried; a hash mismatch never is.
+Runs in the image build, and before a TTS started outside the image. A dropped
+connection would otherwise fail the whole build, so network and server errors
+are retried; a client error (404, 403) or a hash mismatch never is. Files
+already on disk with the pinned hash are kept.
 """
 
 import hashlib
+import http.client
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -20,6 +24,12 @@ class HashMismatchError(RuntimeError):
     pass
 
 
+def _is_retryable(exc: Exception) -> bool:
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code >= 500
+    return isinstance(exc, (OSError, http.client.HTTPException))
+
+
 def _download(url: str, part: Path, opener) -> str:
     for attempt in range(1, ATTEMPTS + 1):
         digest = hashlib.sha256()
@@ -29,12 +39,20 @@ def _download(url: str, part: Path, opener) -> str:
                     digest.update(chunk)
                     out.write(chunk)
             return digest.hexdigest()
-        except OSError as exc:
-            if attempt == ATTEMPTS:
+        except (OSError, http.client.HTTPException) as exc:
+            if attempt == ATTEMPTS or not _is_retryable(exc):
                 raise
-            print(f"{url}: {exc}; retrying ({attempt}/{ATTEMPTS})", file=sys.stderr)
+            print(f"{url}: {exc!r}; retrying ({attempt}/{ATTEMPTS})", file=sys.stderr)
             time.sleep(5 * attempt)
     raise AssertionError("unreachable")
+
+
+def _sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        while chunk := file.read(_CHUNK):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def fetch_all(root: Path, opener=urllib.request.urlopen) -> None:
@@ -42,12 +60,15 @@ def fetch_all(root: Path, opener=urllib.request.urlopen) -> None:
         directory = root / voice.lang
         directory.mkdir(parents=True, exist_ok=True)
         for file in voice.files:
+            target = directory / file.name
+            if target.exists() and _sha256_of(target) == file.sha256:
+                continue
             part = directory / f"{file.name}.part"
             digest = _download(file.url, part, opener)
             if digest != file.sha256:
                 part.unlink()
                 raise HashMismatchError(f"{file.url}: expected {file.sha256}, got {digest}")
-            part.replace(directory / file.name)
+            part.replace(target)
 
 
 if __name__ == "__main__":

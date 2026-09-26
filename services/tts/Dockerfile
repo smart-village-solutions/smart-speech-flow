@@ -45,7 +45,13 @@ RUN python3 -m pip download \
     --dest /wheels \
     -r requirements-piper.txt
 
-FROM wheel-builder AS voices
+# Standard library only, so it neither waits for nor is invalidated by the
+# wheel build.
+FROM nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04 AS voices
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates python3 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 ENV TTS_VOICE_DIR=/opt/tts-voices

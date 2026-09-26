@@ -1,6 +1,8 @@
 import dataclasses
 import hashlib
+import http.client
 import io
+import urllib.error
 
 import pytest
 
@@ -113,3 +115,61 @@ def test_fetch_refuses_a_file_whose_hash_differs(monkeypatch, tmp_path):
     with pytest.raises(fetch_voices.HashMismatchError):
         fetch_voices.fetch_all(tmp_path, opener=opener)
     assert not any((tmp_path / "de").glob("*"))
+
+
+def test_fetch_retries_a_body_cut_off_mid_transfer(monkeypatch, tmp_path):
+    payloads = {f.url: f"payload {f.name}".encode() for f in VOICES["de"].files}
+    voice = _pinned_to(monkeypatch, payloads)
+    cut = {voice.files[0].url}
+
+    def cutting_opener(url, timeout):
+        if url in cut:
+            cut.discard(url)
+            raise http.client.IncompleteRead(b"partial", 100)
+        return io.BytesIO(payloads[url])
+
+    fetch_voices.fetch_all(tmp_path, opener=cutting_opener)
+
+    assert (tmp_path / "de" / voice.files[0].name).read_bytes() == payloads[voice.files[0].url]
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_calls"), [(404, 1), (403, 1), (503, fetch_voices.ATTEMPTS)]
+)
+def test_client_errors_fail_at_once_and_server_errors_are_retried(
+    monkeypatch, tmp_path, status, expected_calls
+):
+    _pinned_to(monkeypatch, {f.url: b"x" for f in VOICES["de"].files})
+    calls = []
+
+    def failing_opener(url, timeout):
+        calls.append(url)
+        raise urllib.error.HTTPError(url, status, "status", None, None)
+
+    with pytest.raises(urllib.error.HTTPError):
+        fetch_voices.fetch_all(tmp_path, opener=failing_opener)
+    assert len(calls) == expected_calls
+
+
+def test_a_file_already_on_disk_with_the_right_hash_is_not_downloaded_again(monkeypatch, tmp_path):
+    payloads = {f.url: f"payload {f.name}".encode() for f in VOICES["de"].files}
+    voice = _pinned_to(monkeypatch, payloads)
+    (tmp_path / "de").mkdir()
+    for f in voice.files:
+        (tmp_path / "de" / f.name).write_bytes(payloads[f.url])
+
+    def no_network(url, timeout):
+        raise AssertionError(f"downloaded {url} again")
+
+    fetch_voices.fetch_all(tmp_path, opener=no_network)
+
+
+def test_a_file_on_disk_with_the_wrong_hash_is_replaced(monkeypatch, tmp_path):
+    payloads = {f.url: f"payload {f.name}".encode() for f in VOICES["de"].files}
+    voice = _pinned_to(monkeypatch, payloads)
+    (tmp_path / "de").mkdir()
+    (tmp_path / "de" / voice.files[0].name).write_bytes(b"stale")
+
+    fetch_voices.fetch_all(tmp_path, opener=_opener_serving(payloads))
+
+    assert (tmp_path / "de" / voice.files[0].name).read_bytes() == payloads[voice.files[0].url]

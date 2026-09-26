@@ -1,9 +1,10 @@
 """piper-tts is installed without its dependencies.
 
-Its one runtime dependency besides numpy, onnxruntime, is the CPU build and
-installs into the same module directory as onnxruntime-gpu. The service lock
-carries onnxruntime-gpu instead, and piper-tts is pinned on its own and
-installed with --no-deps.
+piper-tts 1.8.0 declares onnxruntime and pathvalidate. onnxruntime is the CPU
+build and installs into the same module directory as onnxruntime-gpu, so the
+service lock carries onnxruntime-gpu instead, piper-tts is pinned on its own
+and installed with --no-deps, and every other declared dependency has to be in
+the lock by hand.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import re
 from pathlib import Path
 
 TTS = Path(__file__).resolve().parents[1] / "services" / "tts"
+PIPER_DEPENDENCIES_BESIDES_ONNXRUNTIME = {"pathvalidate", "numpy"}
 
 
 def _pins(path: Path) -> dict[str, str]:
@@ -23,7 +25,12 @@ def test_the_lock_has_the_gpu_onnxruntime_and_not_the_cpu_one():
     assert "onnxruntime-gpu" in pins
     assert "onnxruntime" not in pins
     assert "piper-tts" not in pins
-    assert "numpy" in pins
+
+
+def test_every_other_piper_dependency_is_locked():
+    pins = _pins(TTS / "requirements.txt")
+    assert PIPER_DEPENDENCIES_BESIDES_ONNXRUNTIME <= set(pins)
+    assert pins["pathvalidate"].startswith("3.")
 
 
 def test_piper_is_pinned_alone_with_a_hash():
@@ -47,3 +54,11 @@ def test_the_image_bakes_the_voices_in_and_runs_the_package():
     assert '"services.tts.app:app"' in dockerfile
     for module in ("speech_text.py", "voices.py", "piper_engine.py", "mms_engine.py", "app.py"):
         assert f"services/tts/{module}" in dockerfile
+
+
+def test_the_voices_stage_does_not_depend_on_the_python_requirements():
+    """A requirements change must not re-download the voices."""
+    dockerfile = (TTS / "Dockerfile").read_text()
+    stage = re.search(r"^FROM (\S+) AS voices$", dockerfile, re.MULTILINE)
+    assert stage, "no voices stage"
+    assert stage.group(1).startswith("nvidia/cuda:")

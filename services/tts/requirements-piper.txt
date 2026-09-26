@@ -1,5 +1,5 @@
-# Installed with --no-deps: piper-tts requires the CPU onnxruntime, which the
-# service replaces with onnxruntime-gpu from requirements.txt. Its only other
-# runtime dependency, numpy, is locked there too.
+# Installed with --no-deps: piper-tts 1.8.0 declares onnxruntime, the CPU
+# build, which the service replaces with onnxruntime-gpu, and pathvalidate,
+# which requirements.txt locks by hand. It also imports numpy, locked there too.
 piper-tts==1.8.0 \
     --hash=sha256:25b4d3f31ff70c8fa7151908e00aaa5650cbdf16bca8fcf21299f3941b89a7d3
