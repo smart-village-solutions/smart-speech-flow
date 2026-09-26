@@ -60,8 +60,6 @@ services:
   tts:
     expose:
     - '8000'
-    volumes:
-    - ../../models:/models
     deploy:
       resources:
         reservations:

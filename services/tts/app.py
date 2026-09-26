@@ -1,18 +1,27 @@
+"""HTTP front of the TTS service.
+
+Every voice is loaded once at startup (see voices.py); a voice that fails to
+load degrades /health and answers 503 for its language instead of silently
+falling back to another engine.
+"""
+
 import asyncio
 import io
 import json
-import tempfile
+import logging
+import os
 import time
 import traceback
-from pathlib import Path
+import zlib
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List
 
+import numpy as np
 import soundfile as sf
 import torch
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import Counter, Gauge, generate_latest
-from transformers import pipeline
 
 from services.gpu_metrics import collect_gpu_metrics
 from services.resource_metrics import (
@@ -21,13 +30,14 @@ from services.resource_metrics import (
     derive_auto_scaling_signal,
     get_system_stats,
 )
-
-try:
-    from TTS.api import TTS
-
-    TTSApi = TTS
-except ImportError:
-    TTSApi = None
+from services.tts.mms_engine import MmsSpeaker
+from services.tts.piper_engine import load_piper_speaker, parse_device
+from services.tts.speech_text import (
+    UnspeakableTextError,
+    normalize_for_speech,
+    split_for_synthesis,
+)
+from services.tts.voices import VOICES, Voice, voice_dir
 
 try:
     import psutil
@@ -39,7 +49,8 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     pynvml = None
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+logger = logging.getLogger(__name__)
+
 _nvml_initialized = False
 AUDIO_WAV_MIME = "audio/wav"
 SYNTHESIS_ERROR_RESPONSES = {
@@ -48,52 +59,56 @@ SYNTHESIS_ERROR_RESPONSES = {
     503: {"description": "TTS model unavailable"},
 }
 
-app = FastAPI(title="TTS Service")
 requests_total = Counter("tts_requests_total", "Total TTS requests")
 health_status = Gauge("tts_health_status", "Health status of TTS service")
-MODEL_PATH = "/models/tts_model.pt"
-
-# Primäre, konkret verifizierte Coqui-Modelle aus deiner Liste/Umgebung
-tts_models = {
-    "de": "tts_models/de/thorsten/vits",
-    "en": "tts_models/en/ljspeech/vits",
-    "tr": "tts_models/tr/common-voice/glow-tts",
-    "fa": "tts_models/fa/custom/glow-tts",
-    "uk": "tts_models/uk/mai/vits",
-}
-
-# Explizite HF-MMS-Modell-Overrides für Sprachcodes, deren Checkpoint nicht
-# direkt dem schlichten ISO-639-3-Muster folgt.
-hf_model_overrides = {
-    # Kurmanci wird im Produkt in lateinischer Schrift angeboten.
-    "ku": "facebook/mms-tts-kmr-script_latin",
-}
-
-# Mapping ISO-639-1 -> ISO-639-3 für HuggingFace MMS-TTS
-iso1_to_iso3_hf = {
-    "de": "deu",
-    "en": "eng",
-    "ar": "ara",
-    "tr": "tur",
-    "ru": "rus",
-    "uk": "ukr",
-    "am": "amh",
-    "ti": "tir",
-    "fa": "fas",
-}
-
-tts_model_cache = {}
 
 
-def _supported_language_codes() -> List[str]:
-    return sorted(set(tts_models) | set(iso1_to_iso3_hf) | set(hf_model_overrides))
+def _load_speaker(voice: Voice, device: str) -> Any:
+    if voice.engine == "piper":
+        return load_piper_speaker(voice_dir(voice), device)
+    return MmsSpeaker(voice_dir(voice), device)
 
 
-def _coqui_tts_to_audio_bytes(tts_model: Any, text: str) -> bytes:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir) / "tts-output.wav"
-        tts_model.tts_to_file(text=text, file_path=str(tmp_path))
-        return tmp_path.read_bytes()
+def load_speakers(device: str) -> tuple[Dict[str, Any], Dict[str, str]]:
+    speakers: Dict[str, Any] = {}
+    errors: Dict[str, str] = {}
+    for lang, voice in VOICES.items():
+        try:
+            speakers[lang] = _load_speaker(voice, device)
+        except Exception as exc:
+            logger.exception("TTS voice %s (%s) failed to load", lang, voice.name)
+            errors[lang] = f"{type(exc).__name__}: {exc}"
+    return speakers, errors
+
+
+def _configured_device() -> str:
+    kind, index = parse_device(os.environ.get("TTS_DEVICE", "cuda"))
+    return "cpu" if kind == "cpu" else f"cuda:{index}"
+
+
+def _configured_synthesis_slots() -> int:
+    raw = os.environ.get("TTS_MAX_CONCURRENT_SYNTHESES", "1")
+    if not raw.strip().isdigit() or int(raw) < 1:
+        raise ValueError(
+            f"TTS_MAX_CONCURRENT_SYNTHESES must be a whole number of at least 1, not {raw!r}"
+        )
+    return int(raw)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    device = _configured_device()
+    # Each synthesis briefly needs tens to hundreds of MiB of VRAM on a card
+    # shared with ASR, translation and vLLM. On the production card two long
+    # requests at once already ran out of memory; one at a time peaked at
+    # 1722 MiB. At ~0.1 s per Piper request the queue is cheap.
+    slots = _configured_synthesis_slots()
+    app.state.speakers, app.state.load_errors = await asyncio.to_thread(load_speakers, device)
+    app.state.synthesis_slots = asyncio.Semaphore(slots)
+    yield
+
+
+app = FastAPI(title="TTS Service", lifespan=lifespan)
 
 
 def _numpy_audio_to_wav_bytes(audio: Any, sampling_rate: int) -> bytes:
@@ -113,92 +128,15 @@ def _normalize_lang_code(lang: str) -> str:
     return normalized_lang
 
 
-def _resolve_hf_model_name(lang: str) -> str | None:
-    override_model_name = hf_model_overrides.get(lang)
-    if override_model_name is not None:
-        return override_model_name
-
-    hf_code = iso1_to_iso3_hf.get(lang)
-    if hf_code is None:
-        return None
-    return f"facebook/mms-tts-{hf_code}"
-
-
-def resolve_tts_model_name(lang: str) -> str:
-    normalized_lang = _normalize_lang_code(lang)
-    if normalized_lang in tts_models:
-        return tts_models[normalized_lang]
-
-    hf_model_name = _resolve_hf_model_name(normalized_lang)
-    if hf_model_name:
-        return hf_model_name
-
-    raise ValueError(f"Keine TTS-Stimme für Sprache '{normalized_lang}' konfiguriert.")
-
-
-def _load_coqui_model(normalized_lang: str):
-    model_name = tts_models[normalized_lang]
-    print(f"Lade TTS-Modell für Sprache: {normalized_lang} ({model_name})")
-    tts_device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = TTSApi(model_name=model_name).to(tts_device)
-    setattr(model, "_device", tts_device)
-    try:
-        print(f"Modell-Device: {next(model.parameters()).device}")
-    except Exception as exc:
-        print(f"Device-Check nicht möglich: {exc}")
-    print(f"TTS-Modell für Sprache {normalized_lang} erfolgreich geladen auf {tts_device}.")
-    return model
-
-
-def _load_hf_tts_model(normalized_lang: str):
-    hf_model_id = _resolve_hf_model_name(normalized_lang)
-    if hf_model_id is None:
-        return None
-
-    print(f"Versuche HuggingFace MMS-TTS für Sprache: {normalized_lang} ({hf_model_id})")
-    tts_pipe = pipeline("text-to-speech", model=hf_model_id)
-    print(f"HuggingFace MMS-TTS für Sprache {normalized_lang} erfolgreich geladen.")
-    return tts_pipe
-
-
-def get_tts_model(lang: str):
-    normalized_lang = _normalize_lang_code(lang)
-    if normalized_lang in tts_model_cache:
-        return tts_model_cache[normalized_lang]
-
-    if normalized_lang in tts_models and TTSApi:
-        try:
-            model = _load_coqui_model(normalized_lang)
-            tts_model_cache[normalized_lang] = model
-            return model
-        except Exception as exc:
-            print(f"Coqui-TTS fehlgeschlagen: {exc}")
-
-    try:
-        tts_pipe = _load_hf_tts_model(normalized_lang)
-        if tts_pipe is None:
-            return None
-        tts_model_cache[normalized_lang] = tts_pipe
-        return tts_pipe
-    except Exception as exc:
-        print(f"Fehler beim Laden von HuggingFace MMS-TTS für Sprache {normalized_lang}: {exc}")
-        print(traceback.format_exc())
-        return None
-
-
 def _seed_for_request(session_id: str | None, text: str, debug_info: Dict[str, Any]) -> int:
+    # crc32, not hash(): str hashes are salted per process, so a session's MMS
+    # voice would change on every restart.
     if session_id:
         debug_info["seed_source"] = "session_id"
-        return hash(session_id) % (2**32)
+        return zlib.crc32(session_id.encode())
 
     debug_info["seed_source"] = "text_hash"
-    return hash(text) % (2**32)
-
-
-def _apply_seed(seed: int) -> None:
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
+    return zlib.crc32(text.encode())
 
 
 def _audio_response(
@@ -230,16 +168,10 @@ def _error_response(
     fallback: bool,
     error: str,
 ) -> JSONResponse:
+    content: Dict[str, Any] = {"fallback": fallback, "error": error}
     if debug_active:
-        return JSONResponse(
-            content={"fallback": fallback, "error": error, "debug": debug_info},
-            status_code=status_code,
-        )
-
-    return JSONResponse(
-        content={"fallback": fallback, "error": error},
-        status_code=status_code,
-    )
+        content["debug"] = debug_info
+    return JSONResponse(content=content, status_code=status_code)
 
 
 def _collect_gpu_metrics() -> Dict[str, Any]:
@@ -247,24 +179,6 @@ def _collect_gpu_metrics() -> Dict[str, Any]:
     global _nvml_initialized
     gpu_info, _nvml_initialized = collect_gpu_metrics(torch, pynvml, _nvml_initialized)
     return gpu_info
-
-
-def _inspect_loaded_model_gpu_usage() -> tuple[bool, List[str]]:
-    gpu_used = False
-    gpu_errors: List[str] = []
-
-    for loaded_model in tts_model_cache.values():
-        try:
-            if hasattr(loaded_model, "_device"):
-                gpu_used = gpu_used or loaded_model._device == "cuda"
-            elif hasattr(loaded_model, "device"):
-                gpu_used = gpu_used or str(loaded_model.device).startswith("cuda")
-            else:
-                gpu_errors.append("model_missing_device_attribute")
-        except Exception as exc:
-            gpu_errors.append(str(exc))
-
-    return gpu_used, gpu_errors
 
 
 def _collect_resource_metrics() -> Dict[str, Any]:
@@ -295,102 +209,49 @@ def _update_duration(debug_info: Dict[str, Any], start: float) -> None:
     debug_info["duration"] = round(time.perf_counter() - start, 3)
 
 
-def _resolve_synthesis_request(
-    data: Dict[str, Any], debug_info: Dict[str, Any], start: float
-) -> tuple[str, str, str | None, str]:
-    text = data.get("tts_text") or data.get("text", "Hallo Welt")
-    lang = data.get("lang", "de")
-    session_id = data.get("session_id")
-
-    if not isinstance(text, str) or not text.strip():
-        debug_info["error"] = "Field 'text' must be a non-empty string"
-        _update_duration(debug_info, start)
-        raise ValueError(debug_info["error"])
-
-    normalized_lang = _normalize_lang_code(lang)
-    model_name = resolve_tts_model_name(normalized_lang)
-    return text, normalized_lang, session_id, model_name
-
-
-def _extract_audio_payload(result: Any) -> tuple[Any, int]:
-    if isinstance(result, dict):
-        return result["audio"], result.get("sampling_rate", 16000)
-    if isinstance(result, (list, tuple)) and result:
-        first_item = result[0]
-        if isinstance(first_item, dict):
-            return first_item["audio"], first_item.get("sampling_rate", 16000)
-    raise TypeError(f"Unsupported TTS pipeline output format: {type(result)!r}")
-
-
-def _synthesize_hf_audio(tts_model: Any, text: str) -> bytes:
-    import numpy as np
-
-    result = tts_model(text)
-    audio, sampling_rate = _extract_audio_payload(result)
-    print(
-        "MMS-TTS Output: type=%s, shape=%s, size=%s, sampling_rate=%s"
-        % (
-            type(audio),
-            getattr(audio, "shape", None),
-            getattr(audio, "size", None),
-            sampling_rate,
-        )
-    )
-    if isinstance(audio, np.ndarray):
-        audio = audio.squeeze().astype(np.float32)
-        if audio.size == 0:
-            print("Warnung: MMS-TTS Output ist leer!")
-    else:
-        print(f"Warnung: MMS-TTS Output ist kein numpy-Array, sondern: {type(audio)}")
-    return _numpy_audio_to_wav_bytes(audio, sampling_rate)
-
-
-async def _render_audio_bytes(tts_model: Any, text: str) -> tuple[bytes, bool]:
-    if hasattr(tts_model, "tts_to_file"):
-        audio_bytes = await asyncio.to_thread(_coqui_tts_to_audio_bytes, tts_model, text)
-        return audio_bytes, False
-    if hasattr(tts_model, "__call__"):
-        audio_bytes = await asyncio.to_thread(_synthesize_hf_audio, tts_model, text)
-        return audio_bytes, True
-    raise RuntimeError("Unbekannter TTS-Modelltyp")
+def _voice_states(request: Request) -> Dict[str, Dict[str, Any]]:
+    speakers = getattr(request.app.state, "speakers", {})
+    errors = getattr(request.app.state, "load_errors", {})
+    return {
+        lang: {
+            "engine": voice.engine,
+            "voice": voice.name,
+            "loaded": lang in speakers,
+            "device": getattr(speakers.get(lang), "device", None),
+            "error": errors.get(lang),
+        }
+        for lang, voice in VOICES.items()
+    }
 
 
 @app.get("/health")
-def health():
-    configured_langs = _supported_language_codes()
-    model_available = any(tts_model_cache.values())
+def health(request: Request):
+    voices = _voice_states(request)
+    all_loaded = all(entry["loaded"] for entry in voices.values())
     resources = _collect_resource_metrics()
-    autoscaling = _derive_auto_scaling_signal(resources)
     gpu_info = resources.get("gpu", {})
     gpu_available = gpu_info.get("available", False)
-    gpu_used, model_gpu_errors = _inspect_loaded_model_gpu_usage()
-    gpu_errors: List[str] = list(gpu_info.get("errors", [])) if gpu_info.get("errors") else []
-    gpu_errors.extend(model_gpu_errors)
-
-    loaded_models = {}
-    for lang in configured_langs:
-        loaded_models[lang] = lang in tts_model_cache and tts_model_cache[lang] is not None
-
+    gpu_errors: List[str] = list(gpu_info.get("errors") or [])
     if not gpu_available and not gpu_errors:
         gpu_errors.append("torch.cuda.is_available()==False")
 
-    health_status.set(1 if model_available else 0)
+    health_status.set(1 if all_loaded else 0)
     return {
-        "status": "ok" if model_available else "degraded",
-        "model": model_available,
+        "status": "ok" if all_loaded else "degraded",
+        "model": any(entry["loaded"] for entry in voices.values()),
         "gpu": gpu_available,
-        "gpu_used": gpu_used,
+        "gpu_used": any(str(entry["device"]).startswith("cuda") for entry in voices.values()),
         "gpu_error": "; ".join(gpu_errors) if gpu_errors else None,
-        "configured_models": {"coqui": tts_models, "hf_overrides": hf_model_overrides},
-        "loaded_models": loaded_models,
+        "voices": voices,
+        "loaded_models": {lang: entry["loaded"] for lang, entry in voices.items()},
         "resources": resources,
-        "autoscaling": autoscaling,
+        "autoscaling": _derive_auto_scaling_signal(resources),
     }
 
 
 @app.get("/supported-languages")
 def supported_languages():
-    return {"languages": _supported_language_codes()}
+    return {"languages": sorted(VOICES)}
 
 
 @app.get("/metrics")
@@ -398,11 +259,35 @@ def metrics():
     return Response(generate_latest(), media_type="text/plain")
 
 
+async def _synthesize_in_chunks(
+    speaker: Any, spoken: str, seed: int, slots: asyncio.Semaphore
+) -> tuple[np.ndarray, int] | None:
+    """Speak the text piece by piece, taking the GPU slot for each piece.
+
+    Returns None when no piece contains anything the voice can pronounce.
+    """
+    parts: List[np.ndarray] = []
+    sampling_rate = 0
+    for chunk in split_for_synthesis(spoken):
+        try:
+            async with slots:
+                audio, sampling_rate = await asyncio.to_thread(speaker.synthesize, chunk, seed)
+        except UnspeakableTextError:
+            continue
+        parts.append(np.asarray(audio, dtype=np.float32).reshape(-1))
+    if not parts:
+        return None
+    return np.concatenate(parts), sampling_rate
+
+
 @app.post("/synthesize", responses=SYNTHESIS_ERROR_RESPONSES)
 async def synthesize(request: Request):
     start = time.perf_counter()
+    requests_total.inc()
     data = await request.json()
-    text = data.get("tts_text") or data.get("text", "Hallo Welt")
+    # tts_text is the translation service's romanization. Voices read their
+    # own script, and the MMS tokenizers romanize Ethiopic themselves.
+    text = data.get("text", "Hallo Welt")
     lang = data.get("lang", "de")
     debug_active = (
         str(data.get("debug", "false")).lower() == "true"
@@ -410,73 +295,49 @@ async def synthesize(request: Request):
     )
     debug_info = _build_debug_info(text, lang)
 
+    def fail(status_code: int, error: str, *, fallback: bool = False) -> JSONResponse:
+        debug_info["error"] = error
+        _update_duration(debug_info, start)
+        return _error_response(
+            debug_active, debug_info, status_code, fallback=fallback, error=error
+        )
+
     if not isinstance(text, str) or not text.strip():
-        debug_info["error"] = "Field 'text' must be a non-empty string"
-        _update_duration(debug_info, start)
-        return _error_response(
-            debug_active,
-            debug_info,
-            400,
-            fallback=False,
-            error=debug_info["error"],
-        )
-
+        return fail(400, "Field 'text' must be a non-empty string")
     try:
-        text, normalized_lang, session_id, model_name = _resolve_synthesis_request(
-            data, debug_info, start
-        )
+        normalized_lang = _normalize_lang_code(lang)
     except ValueError as exc:
-        debug_info["error"] = str(exc)
-        _update_duration(debug_info, start)
-        return _error_response(
-            debug_active,
-            debug_info,
-            400,
-            fallback=False,
-            error=debug_info["error"],
-        )
+        return fail(400, str(exc))
+    voice = VOICES.get(normalized_lang)
+    if voice is None:
+        return fail(400, f"Keine TTS-Stimme für Sprache '{normalized_lang}' konfiguriert.")
+    debug_info["model"] = voice.name
+    speaker = request.app.state.speakers.get(normalized_lang)
+    if speaker is None:
+        return fail(503, f"Kein TTS-Modell für Sprache '{normalized_lang}' geladen.", fallback=True)
 
-    tts_model = get_tts_model(normalized_lang)
-    debug_info["model"] = model_name
-    if not tts_model:
-        debug_info["error"] = (
-            f"Kein TTS-Modell für Sprache '{normalized_lang}' (Konfig oder Download prüfen)."
-        )
-        _update_duration(debug_info, start)
-        return _error_response(
-            debug_active,
-            debug_info,
-            503,
-            fallback=True,
-            error=debug_info["error"],
-        )
-
+    spoken = normalize_for_speech(text, normalized_lang, spell_numbers=voice.spell_numbers)
+    debug_info["spoken_text"] = spoken
+    seed = _seed_for_request(data.get("session_id"), text, debug_info)
     try:
-        seed = _seed_for_request(session_id, text, debug_info)
-        _apply_seed(seed)
-        audio_bytes, rendered_by_mms = await _render_audio_bytes(tts_model, text)
-        # A Coqui voice that failed to import or load is served by MMS instead,
-        # so name the model that produced the audio, not the configured one.
-        effective_model = _resolve_hf_model_name(normalized_lang) if rendered_by_mms else model_name
-        debug_info["model"] = effective_model
-        debug_info["output"] = AUDIO_WAV_MIME
-        _update_duration(debug_info, start)
-        return _audio_response(
-            audio_bytes,
-            effective_model,
-            normalized_lang,
-            debug_active,
-            debug_info,
-            fallback=effective_model != model_name,
+        spoken_audio = await _synthesize_in_chunks(
+            speaker, spoken, seed, request.app.state.synthesis_slots
         )
     except Exception as exc:
-        debug_info["error"] = str(exc)
         debug_info["traceback"] = traceback.format_exc()
-        _update_duration(debug_info, start)
-        return _error_response(
-            debug_active,
-            debug_info,
-            500,
-            fallback=False,
-            error=f"TTS fehlgeschlagen: {exc}",
+        return fail(500, f"TTS fehlgeschlagen: {exc}")
+
+    if spoken_audio is None:
+        return fail(
+            400, f"Text enthält nichts, was die Stimme für '{normalized_lang}' sprechen kann."
         )
+    debug_info["output"] = AUDIO_WAV_MIME
+    _update_duration(debug_info, start)
+    return _audio_response(
+        _numpy_audio_to_wav_bytes(*spoken_audio),
+        voice.name,
+        normalized_lang,
+        debug_active,
+        debug_info,
+        fallback=False,
+    )

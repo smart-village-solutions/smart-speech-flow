@@ -14,8 +14,8 @@ from test_service_app_helpers import (
     build_soundfile_stub,
     build_torch_stub,
     build_transformers_stub,
-    build_tts_stub,
     load_module,
+    tts_request,
 )
 
 
@@ -54,7 +54,6 @@ def translation_service(monkeypatch):
 
 @pytest.fixture
 def tts_service(monkeypatch):
-    tts_package, tts_api = build_tts_stub()
     fastapi_stub, responses_stub = build_fastapi_stub()
     return load_module(
         monkeypatch,
@@ -64,8 +63,6 @@ def tts_service(monkeypatch):
             "torch": build_torch_stub(),
             "transformers": build_transformers_stub(),
             "soundfile": build_soundfile_stub(),
-            "TTS": tts_package,
-            "TTS.api": tts_api,
             "fastapi": fastapi_stub,
             "fastapi.responses": responses_stub,
             "prometheus_client": build_prometheus_stub(),
@@ -189,37 +186,45 @@ async def test_translation_returns_debuggable_model_unavailable_response(transla
     assert b'"translations":null' in response.body
 
 
+class _SeededSpeaker:
+    device = "cuda"
+
+    def __init__(self):
+        self.calls = []
+
+    def synthesize(self, text, seed):
+        self.calls.append((text, seed))
+        return [0.1, -0.1], 22050
+
+
 @pytest.mark.asyncio
 async def test_tts_synthesis_returns_wav_with_model_metadata(tts_service):
+    speaker = _SeededSpeaker()
     response = await tts_service.synthesize(
-        build_request(
-            {"text": "Hallo", "lang": "de", "session_id": "session-123", "debug": True}
+        tts_request(
+            tts_service,
+            {"text": "Hallo", "lang": "de", "session_id": "session-123", "debug": True},
+            {"de": speaker},
         )
     )
 
     assert response.status_code == 200
-    assert response.body == b"COQUI-WAV"
+    assert response.body == b"FAKE-WAV"
     assert response.media_type == "audio/wav"
     assert response.headers["x-tts-language"] == "de"
-    assert response.headers["x-tts-model"] == "tts_models/de/thorsten/vits"
+    assert response.headers["x-tts-model"] == "piper:de_DE-thorsten-high"
     assert b'"seed_source": "session_id"' in response.headers["x-debug-info"].encode()
+    assert speaker.calls[0][0] == "Hallo"
 
 
 @pytest.mark.asyncio
-async def test_tts_rejects_unknown_language_without_loading_a_model(tts_service, monkeypatch):
-    model_lookup_called = False
-
-    def unexpected_model_lookup(_):
-        nonlocal model_lookup_called
-        model_lookup_called = True
-        return object()
-
-    monkeypatch.setattr(tts_service, "get_tts_model", unexpected_model_lookup)
+async def test_tts_rejects_unknown_language_without_touching_a_voice(tts_service):
+    speaker = _SeededSpeaker()
 
     response = await tts_service.synthesize(
-        build_request({"text": "Hallo", "lang": "xx", "debug": True})
+        tts_request(tts_service, {"text": "Hallo", "lang": "xx", "debug": True}, {"xx": speaker})
     )
 
     assert response.status_code == 400
-    assert model_lookup_called is False
+    assert speaker.calls == []
     assert b"Keine TTS-Stimme" in response.body

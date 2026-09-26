@@ -1,85 +1,91 @@
 # TTS Service
 
-Dieser Service bietet eine robuste Text-zu-Sprache-Schnittstelle für verschiedene Sprachen und ist als eigenständiger Microservice konzipiert. Die Implementierung basiert auf FastAPI und unterstützt sowohl Coqui-TTS als auch HuggingFace MMS-TTS als Fallback.
+FastAPI microservice that turns translated text into speech. Each product
+language has exactly one voice: Piper voices on the GPU for most languages,
+Meta MMS for Amharic and Tigrinya, which Piper has no voice for.
 
-## Input / Output
-- **Input:**
-  - Text (String, Pflichtfeld)
-  - Sprachcode (`lang`, z. B. 'de', 'en', 'ar')
-- **Output:**
-  - Bei Erfolg: Audiodatei (WAV)
-  - Bei Fehler: JSON mit Fehlermeldung und Fallback-Status
+## Voices
 
-## Features
-- **Text-to-Speech (TTS) für viele Sprachen**
-- **Automatischer Fallback:** Coqui-TTS für direkt unterstützte Sprachen, HuggingFace MMS-TTS für alle weiteren
-- **REST API mit `/synthesize`, `/health`, `/metrics` und `/supported-languages`**
-- **Prometheus-Metriken**
-- **Docker- und venv-ready**
-- **Automatisierte Tests für alle Zielsprachen**
+| Language | Engine | Voice |
+|---|---|---|
+| German (`de`) | Piper | `de_DE-thorsten-high` |
+| English (`en`) | Piper | `en_US-ljspeech-high` |
+| Turkish (`tr`) | Piper | `tr_TR-dfki-medium` |
+| Russian (`ru`) | Piper | `ru_RU-denis-medium` |
+| Ukrainian (`uk`) | Piper | `uk_UA-tetiana-high` |
+| Arabic (`ar`) | Piper | `ar_JO-kareem-medium` |
+| Persian (`fa`) | Piper | `fa_IR-gyro-medium` |
+| Kurdish, Kurmanji (`ku`) | Piper | `ku_TR-berfin_renas-medium` |
+| Amharic (`am`) | MMS | `facebook/mms-tts-amh` |
+| Tigrinya (`ti`) | MMS | `facebook/mms-tts-tir` |
 
-## Unterstützte Sprachen
-- Coqui-TTS: Deutsch (de), Englisch (en), Türkisch (tr), Persisch (fa), Ukrainisch (uk)
-- HuggingFace MMS-TTS: Arabisch (ar), Kurdisch (ku), Tigrinya (ti), Amharisch (am), Russisch (ru) und weitere, sofern ein Modell verfügbar ist
+`voices.py` pins every file to a revision and a SHA-256 hash. The image build
+downloads and verifies them (`fetch_voices.py`), so the service needs no
+network access at runtime. Licences are listed in
+`docs/architecture/models.md`.
 
-## Endpunkte
-### `/synthesize` (POST)
-Erzeugt eine Sprachdatei aus Text.
-- **Payload:**
-  ```json
-  {
-    "text": "Hallo Welt",
-    "lang": "de"
-  }
-  ```
-  Alternativ akzeptiert der Service auch `tts_text` statt `text`.
-- **Antwort:**
-  - Bei Erfolg: WAV-Datei
-  - Bei Fehler: JSON mit Fehlermeldung und Fallback-Status
+## Text preparation
 
-### `/health` (GET)
-Gibt den Status des Dienstes, geladene Modelle und GPU-Infos zurück.
+`speech_text.py` rewrites text before synthesis. Piper reads plain integers
+through espeak-ng, so only what espeak misreads is rewritten: clock times,
+money with cents, numbers with a leading zero (read digit by digit), and German
+days of the month. MMS voices cannot read digits at all, so for Amharic and
+Tigrinya every number is spelled out.
 
-### `/metrics` (GET)
-Prometheus-kompatible Metriken für Monitoring.
+## Endpoints
 
-### `/supported-languages` (GET)
-Gibt die verfuegbaren Sprachcodes fuer Coqui-TTS und MMS-Fallback zurueck.
+### `POST /synthesize`
 
-## Architektur & Funktionsweise
-1. **Modellwahl:**
-   - Zuerst wird versucht, ein Coqui-TTS-Modell für die gewünschte Sprache zu laden.
-   - Falls nicht verfügbar, wird automatisch HuggingFace MMS-TTS mit dem passenden ISO-639-3 Sprachcode verwendet.
-   - Die Synthese erfolgt immer lokal, keine Daten werden an externe APIs gesendet.
-2. **Caching:**
-   - Geladene Modelle werden im Speicher gehalten, um die Performance zu optimieren.
-3. **Fallback-Handling:**
-   - Falls kein Modell verfügbar ist, wird ein klarer Fehler mit Status 503 zurückgegeben.
-
-## Installation & Betrieb
-### Mit Docker
-```bash
-docker build -t tts-service .
-docker run -p 8000:8000 tts-service
+```json
+{
+  "text": "Your appointment is on March 15 at 9:30.",
+  "lang": "en",
+  "session_id": "optional, seeds the MMS voices"
+}
 ```
 
-### Lokal mit venv
+Returns a WAV file with the headers `X-TTS-Model` (the voice that spoke),
+`X-TTS-Language` and `X-TTS-Fallback` (always `false`; there is no fallback
+engine). `tts_text` is accepted and ignored: voices read their own script.
+
+| Status | Meaning |
+|---|---|
+| 400 | Empty text, unknown language, or text with nothing the voice can pronounce |
+| 503 | The voice for this language failed to load at startup |
+| 500 | Synthesis failed |
+
+- `GET /health`: per-language voice state (`engine`, `voice`, `loaded`, `device`, `error`), `status: degraded` when any voice failed to load.
+- `GET /metrics`: Prometheus metrics.
+- `GET /supported-languages`: the language codes in `voices.py`.
+
+## Running
+
+All voices load onto the GPU at startup. A voice that does not get the CUDA
+execution provider fails to load rather than running on the CPU unnoticed.
+Set `TTS_DEVICE=cpu` to run the image on a machine without a GPU.
+At most `TTS_MAX_CONCURRENT_SYNTHESES` (default 1) syntheses run on the GPU at
+once; further requests wait, which bounds the VRAM the service needs.
+Keep it at 1 unless the card has room and only Piper voices are busy: the MMS
+voices seed through `torch.manual_seed`, which is process-wide, so concurrent
+Amharic or Tigrinya requests race on the seed. Values below 1, and a
+`TTS_DEVICE` other than `cpu`, `cuda` or `cuda:<n>`, stop the service at
+startup.
+
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app:app --reload
+docker build -f services/tts/Dockerfile -t tts-service .
+docker run --gpus all -p 8000:8000 tts-service
+docker run -e TTS_DEVICE=cpu -p 8000:8000 tts-service   # no GPU
 ```
 
-## Testen
+Tests run from the repository root without any model installed:
+
 ```bash
-pytest tests/
+PYTHONPATH=. pytest services/tts/tests
 ```
 
-## Erweiterung
-- Weitere Sprachen können einfach ergänzt werden, sofern ein passendes Modell auf HuggingFace verfügbar ist.
-- Die Modellkonfiguration erfolgt in `app.py`.
+## Changing a voice
 
-## Hinweise
-- Für HuggingFace MMS-TTS werden die ISO-639-3 Codes verwendet (z. B. `ara` für Arabisch).
-- Bei privaten/gated Modellen ist ggf. ein HuggingFace-Token nötig (`huggingface-cli login`).
+Edit the entry in `voices.py` with the new revision and the SHA-256 of each
+file, then rebuild the image. `piper-tts` is pinned separately in
+`requirements-piper.txt` and installed with `--no-deps`, because it requires the
+CPU build of onnxruntime, which would overwrite `onnxruntime-gpu`.

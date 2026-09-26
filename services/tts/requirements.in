@@ -2,14 +2,19 @@ fastapi
 uvicorn
 prometheus_client
 torch
+# piper-tts is installed from requirements-piper.txt with --no-deps, because
+# it requires the CPU onnxruntime, which would overwrite the GPU build. Its
+# other declared dependency is listed here by hand.
+onnxruntime-gpu==1.30.0
+pathvalidate>=3,<4
 soundfile
 numpy>=2.5.3
-# Ceiling, not a preference. transformers 5.17.0 added an unconditional
-# `output.to(dtype=self.model.dtype)` to the text-to-audio pipeline
-# (pipelines/text_to_audio.py:197). For a tokenizer-backed model such as
-# VITS that `output` is a BatchEncoding, whose `.to()` takes no dtype, so
-# every synthesis raises TypeError. 5.16.1 is the last release without the
-# line. Raise the ceiling only once a release fixes it upstream.
+# Ceiling kept until a newer release is verified with the MMS voices. It was
+# set because 5.17.0 broke the text-to-audio pipeline for VITS
+# (pipelines/text_to_audio.py:197, BatchEncoding.to() takes no dtype). The
+# service no longer uses that pipeline; mms_engine.py loads VitsModel and the
+# tokenizer directly. Raising the ceiling means synthesizing am and ti on the
+# new release first, not waiting for the pipeline fix.
 transformers>=5.16.1,<5.17.0
 httpx==0.28.1
 pytest==9.0.3

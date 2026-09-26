@@ -73,8 +73,6 @@ services:
       dockerfile: services/tts/Dockerfile
     expose:
       - "8000"
-    volumes:
-      - ./models:/models
     deploy:
       resources:
         reservations:
