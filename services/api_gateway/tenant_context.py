@@ -1,18 +1,20 @@
 """Trusted Studio tenant context for tenant-bound gateway operations."""
 
 import json
-import re
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Annotated, Any, Mapping
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 
-from .auth import require_ssf_user
+from .auth import AuthenticatedPrincipal, require_ssf_user
+from .auth_rejections import (
+    AuthRejectionReason,
+    auth_correlation_id,
+    record_auth_rejection,
+    rejection_response,
+)
 
-_TENANT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-_AUTHORIZATION_REVISION_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
-_LEGACY_CLAIM_NAMES = frozenset({"tenant_id", "studio_instance_id"})
 _SELECTOR_NAMES = frozenset(
     {
         "studio_instance_id",
@@ -34,40 +36,42 @@ class StudioTenantContext:
     authorization_revision: str
 
 
-def studio_tenant_context_from_claims(
-    claims: Mapping[str, Any],
+def studio_tenant_context_from_principal(
+    principal: AuthenticatedPrincipal,
 ) -> StudioTenantContext:
-    """Build a tenant context from validated claims or fail closed."""
-    if _LEGACY_CLAIM_NAMES.intersection(claims):
-        raise _invalid_tenant_claim()
+    """Build a tenant context from the authenticated principal or fail closed.
 
-    tenant_id = claims.get("studio_tenant_id")
-    if not isinstance(tenant_id, str) or not _TENANT_ID_PATTERN.fullmatch(tenant_id):
-        raise _invalid_tenant_claim()
-
-    authorization_revision = claims.get("ssf_authorization_revision")
-    if not isinstance(authorization_revision, str) or not _AUTHORIZATION_REVISION_PATTERN.fullmatch(
-        authorization_revision
-    ):
-        raise _invalid_tenant_claim()
-
+    The principal's tenant is the directory entry whose realm issued the token;
+    its tenant ID and revision were validated before the principal was built.
+    """
+    if principal.carries_legacy_tenant_claim:
+        raise rejection_response(AuthRejectionReason.LEGACY_TENANT_CLAIM)
     return StudioTenantContext(
-        tenant_id=tenant_id,
-        authorization_revision=authorization_revision,
+        tenant_id=principal.tenant_id,
+        authorization_revision=principal.authorization_revision,
     )
 
 
 async def require_studio_tenant_context(
     request: Request,
-    claims: Annotated[dict[str, Any], Depends(require_ssf_user)],
+    principal: Annotated[AuthenticatedPrincipal, Depends(require_ssf_user)],
 ) -> StudioTenantContext:
-    """Derive the tenant from signed claims and reject request-side selectors."""
+    """Take the tenant from the authenticated principal and reject request-side selectors."""
     if _request_has_tenant_selector(request, await _json_body(request)):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Tenant selectors are not accepted outside the bearer token",
         )
-    return studio_tenant_context_from_claims(claims)
+    try:
+        return studio_tenant_context_from_principal(principal)
+    except HTTPException:
+        record_auth_rejection(
+            request,
+            AuthRejectionReason.LEGACY_TENANT_CLAIM,
+            correlation_id=auth_correlation_id(request),
+            tenant_id=principal.tenant_id,
+        )
+        raise
 
 
 def _request_has_tenant_selector(request: Request, body: object) -> bool:
@@ -110,11 +114,3 @@ async def _json_body(request: Request) -> object:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The JSON request body must be valid",
         ) from None
-
-
-def _invalid_tenant_claim() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="A single valid studio_tenant_id claim is required",
-        headers={"WWW-Authenticate": "Bearer"},
-    )

@@ -6,9 +6,16 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Mapping
+from pathlib import Path
 from typing import NamedTuple
 
 import httpx
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
+from ssf_auth_contract import has_realm_role, revision_state, unverified_claims  # noqa: E402
+
+_REQUIRED_ROLE = "ssf-user"
+_STALE_REVISION = "studio_runtime_authorization_mismatch"
 
 
 class SmokeSettings(NamedTuple):
@@ -39,6 +46,26 @@ class SmokeFailure(RuntimeError):
     pass
 
 
+def token_precondition_failure(label: str, token: str) -> str | None:
+    """Name what a token lacks for the gateway, without revealing any value.
+
+    The signature is not checked; the gateway does that. This only turns a
+    token that can never pass into a precise message instead of a generic
+    session-creation failure (#363).
+    """
+    claims = unverified_claims(token)
+    if claims is None:
+        return f"{label} token is not a JWT"
+    state = revision_state(claims)
+    if state == "missing":
+        return f"{label} token lacks ssf_authorization_revision"
+    if state == "malformed":
+        return f"{label} token has a malformed ssf_authorization_revision"
+    if not has_realm_role(claims, _REQUIRED_ROLE):
+        return f"{label} token lacks the {_REQUIRED_ROLE} realm role"
+    return None
+
+
 def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}", "X-Correlation-Id": "tenant-smoke"}
 
@@ -52,10 +79,20 @@ def _request(
         raise SmokeFailure("Smoke request failed") from None
 
 
-def _create_session(client: httpx.Client, token: str) -> str:
+def _detail(response: httpx.Response) -> object:
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    return body.get("detail") if isinstance(body, dict) else None
+
+
+def _create_session(client: httpx.Client, token: str, label: str) -> str:
     response = _request(client, "POST", "/api/admin/session/create", token=token)
+    if response.status_code == 502 and _detail(response) == _STALE_REVISION:
+        raise SmokeFailure(f"{label} token carries a stale ssf_authorization_revision")
     if response.status_code != 201:
-        raise SmokeFailure("Session creation failed")
+        raise SmokeFailure(f"{label} session creation failed with HTTP {response.status_code}")
     session_id = response.json().get("session_id")
     if not isinstance(session_id, str) or not session_id:
         raise SmokeFailure("Session creation returned an invalid response")
@@ -97,14 +134,22 @@ def _terminate(client: httpx.Client, token: str, session_id: str) -> None:
 def run_smoke(
     settings: SmokeSettings, *, transport: httpx.BaseTransport | None = None
 ) -> None:
+    for label, token in (
+        ("Tenant A", settings.tenant_a_token),
+        ("Tenant B", settings.tenant_b_token),
+    ):
+        failure = token_precondition_failure(label, token)
+        if failure:
+            raise SmokeFailure(failure)
+
     created: list[tuple[str, str]] = []
     with httpx.Client(
         base_url=settings.base_url, timeout=20, transport=transport
     ) as client:
         try:
-            session_a = _create_session(client, settings.tenant_a_token)
+            session_a = _create_session(client, settings.tenant_a_token, "Tenant A")
             created.append((settings.tenant_a_token, session_a))
-            session_b = _create_session(client, settings.tenant_b_token)
+            session_b = _create_session(client, settings.tenant_b_token, "Tenant B")
             created.append((settings.tenant_b_token, session_b))
 
             _assert_own_session(client, settings.tenant_a_token, session_a)
@@ -129,7 +174,11 @@ def run_smoke(
 def main() -> int:
     try:
         run_smoke(SmokeSettings.from_environment())
-    except (SmokeFailure, ValueError):
+    except SmokeFailure as failure:
+        # Every SmokeFailure message is fixed text naming no credential or claim value.
+        print(f"Tenant isolation smoke failed: {failure}", file=sys.stderr)
+        return 1
+    except ValueError:
         print("Tenant isolation smoke failed", file=sys.stderr)
         return 1
     return 0

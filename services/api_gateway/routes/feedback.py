@@ -6,9 +6,10 @@ docs/architecture/sva-studio-control-plane.md, which keeps customers with SSF
 session tokens outside Studio IAM.
 
 The read routes are the opposite. They serve Studio staff, so they take the
-tenant from the signed `studio_tenant_id` claim through
-require_studio_tenant_context, which also rejects any tenant selector supplied
-by the request. No handler may read across tenants on a caller's say-so.
+tenant from the authenticated principal through require_studio_tenant_context:
+the directory tenant whose realm issued the token. That dependency also rejects
+any tenant selector supplied by the request. No handler may read across tenants
+on a caller's say-so.
 
 No handler here may put `submission.improvements` into a response or a log.
 The single exception is the detail route, which exists to disclose it to an
@@ -26,7 +27,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
-from ..auth import require_ssf_user
+from ..auth import AuthenticatedPrincipal, require_ssf_user
 from ..feedback.models import (
     FeedbackAcceptedResponse,
     FeedbackSubmissionRequest,
@@ -157,7 +158,7 @@ def get_feedback_read_service(request: Request):
 )
 async def list_feedback(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
-    claims: Annotated[dict, Depends(require_ssf_user)],
+    principal: Annotated[AuthenticatedPrincipal, Depends(require_ssf_user)],
     service: Annotated[FeedbackReadService, Depends(get_feedback_read_service)],
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -165,7 +166,7 @@ async def list_feedback(
     try:
         summaries = await service.list_for_tenant(
             tenant_id=context.tenant_id,
-            accessed_by=_operator(claims),
+            accessed_by=_operator(principal),
             limit=limit,
             offset=offset,
         )
@@ -176,10 +177,9 @@ async def list_feedback(
     )
 
 
-def _operator(claims: dict) -> str:
-    """Who the audit row names. `sub` is the only claim guaranteed present."""
-    subject = claims.get("sub")
-    return subject if isinstance(subject, str) and subject else "unknown"
+def _operator(principal: AuthenticatedPrincipal) -> str:
+    """Who the audit row names: the token subject, or "unknown" without one."""
+    return principal.subject or "unknown"
 
 
 class FeedbackDetailResponse(FeedbackSummaryResponse):
@@ -199,14 +199,14 @@ class FeedbackDetailResponse(FeedbackSummaryResponse):
 async def read_feedback(
     feedback_id: UUID,
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
-    claims: Annotated[dict, Depends(require_ssf_user)],
+    principal: Annotated[AuthenticatedPrincipal, Depends(require_ssf_user)],
     service: Annotated[FeedbackReadService, Depends(get_feedback_read_service)],
 ) -> FeedbackDetailResponse:
     try:
         detail = await service.read_for_tenant(
             feedback_id=feedback_id,
             tenant_id=context.tenant_id,
-            accessed_by=_operator(claims),
+            accessed_by=_operator(principal),
         )
     except FeedbackNotFound:
         raise HTTPException(

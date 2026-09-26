@@ -18,6 +18,7 @@ from services.api_gateway.app import app
 from services.api_gateway.routes import session as session_routes
 from services.api_gateway.session_manager import ClientType, Session, SessionManager
 from services.api_gateway.websocket_monitor import WebSocketMonitor
+from tests.auth_helpers import principal
 
 
 @pytest.fixture
@@ -353,18 +354,35 @@ async def test_terminated_polling_client_cannot_send_recover_or_read_status():
     assert not client.messages
 
 
-def test_customer_polling_principal_cannot_cross_tenants(monkeypatch):
+@pytest.mark.parametrize(
+    ("session_tenant", "principal_tenant"),
+    [("tenant-a", "tenant-b"), ("tenant-b", "tenant-a")],
+)
+def test_customer_polling_principal_cannot_cross_tenants(
+    monkeypatch, session_tenant, principal_tenant
+):
     store = polling.TenantPollingStore()
     client = store.activate(
-        polling.TenantSessionKey("tenant-a", "SESSION1"), ClientType.CUSTOMER
+        polling.TenantSessionKey(session_tenant, "SESSION1"), ClientType.CUSTOMER
     )
     monkeypatch.setattr(polling, "polling_store", store)
+    other_tenant = principal(principal_tenant)
     with pytest.raises(HTTPException) as unauthorized:
-        polling.require_customer_polling_key(
-            "SESSION1", client.polling_id, {"studio_tenant_id": "tenant-b"}
-        )
+        polling.require_customer_polling_key("SESSION1", client.polling_id, other_tenant)
     assert unauthorized.value.status_code == 404
     assert unauthorized.value.detail == "Polling client not found"
+
+
+@pytest.mark.parametrize("tenant_id", ["tenant-a", "tenant-b"])
+def test_customer_polling_principal_of_the_same_tenant_is_accepted(monkeypatch, tenant_id):
+    store = polling.TenantPollingStore()
+    key = polling.TenantSessionKey(tenant_id, "SESSION1")
+    client = store.activate(key, ClientType.CUSTOMER)
+    monkeypatch.setattr(polling, "polling_store", store)
+    assert (
+        polling.require_customer_polling_key("SESSION1", client.polling_id, principal(tenant_id))
+        == key
+    )
 
 
 async def test_websocket_missing_session_keeps_close_code_and_reason():

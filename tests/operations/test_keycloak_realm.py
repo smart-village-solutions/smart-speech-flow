@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.script_helpers import load_contract
+
 
 DEVELOPMENT_REALM_PATH = Path("deploy/production/keycloak/ssf-realm.json")
 DEVELOPMENT_COMPOSE_PATH = Path("docker-compose.yml")
@@ -55,29 +57,155 @@ def test_keycloak_build_context_excludes_local_secret_files():
     assert {".env", ".env.*", "deploy/production/production.env"} <= ignored_paths
 
 
-def test_development_realm_provisions_a_secretless_public_pkce_client():
-    realm = json.loads(DEVELOPMENT_REALM_PATH.read_text())
+def _realm():
+    return json.loads(DEVELOPMENT_REALM_PATH.read_text())
+
+
+def _client(realm):
+    return next(client for client in realm["clients"] if client["clientId"] == "ssf-frontend")
+
+
+def _drop_mappers(value):
+    """Remove every mapper that emits `value` as a claim or an audience."""
+
+    def mutate(realm):
+        client = _client(realm)
+        client["protocolMappers"] = [
+            mapper
+            for mapper in client["protocolMappers"]
+            if value
+            not in (
+                mapper["config"].get("claim.name"),
+                mapper["config"].get("included.client.audience"),
+            )
+        ]
+
+    return mutate
+
+
+def _add_tenant_id_mapper(realm):
+    _client(realm)["protocolMappers"].append(
+        {
+            "name": "studio-studio-tenant-id",
+            "protocolMapper": "oidc-usermodel-attribute-mapper",
+            "config": {"claim.name": "studio_tenant_id", "access.token.claim": "true"},
+        }
+    )
+
+
+def test_realm_artifact_satisfies_the_gateway_contract():
+    realm = _realm()
 
     assert realm["realm"] == "ssf"
-    client = next(client for client in realm["clients"] if client["clientId"] == "ssf-frontend")
-    assert client["publicClient"] is True
-    assert "secret" not in client
-    assert client["standardFlowEnabled"] is True
-    assert client["implicitFlowEnabled"] is False
-    assert client["directAccessGrantsEnabled"] is False
-    assert client["attributes"]["pkce.code.challenge.method"] == "S256"
-    assert client["redirectUris"] == [
-        "https://translate.smart-village.solutions/",
-        "https://translate.smart-village.solutions/login",
+    assert load_contract().missing_realm_elements(realm) == []
+    assert "users" not in realm
+    assert "translate.smart-village.solutions" not in json.dumps(realm)
+    assert _client(realm)["redirectUris"] == ["https://dialog.kassel.de/login/*"]
+    assert _client(realm)["webOrigins"] == ["https://dialog.kassel.de"]
+
+
+def _profile(realm):
+    component = realm["components"]["org.keycloak.userprofile.UserProfileProvider"][0]
+    return json.loads(component["config"]["kc.user.profile.config"][0])
+
+
+def _set_profile(realm, profile):
+    component = realm["components"]["org.keycloak.userprofile.UserProfileProvider"][0]
+    component["config"]["kc.user.profile.config"] = [json.dumps(profile)]
+
+
+def _revision_permissions(realm, permissions):
+    profile = _profile(realm)
+    for attribute in profile["attributes"]:
+        if attribute["name"] == "ssf_authorization_revision":
+            attribute["permissions"] = permissions
+    _set_profile(realm, profile)
+
+
+def _drop_revision_attribute(realm):
+    profile = _profile(realm)
+    profile["attributes"] = [
+        a for a in profile["attributes"] if a["name"] != "ssf_authorization_revision"
     ]
-    assert client["webOrigins"] == ["https://translate.smart-village.solutions"]
-    assert any(
-        mapper["protocolMapper"] == "oidc-audience-mapper"
-        and mapper["config"]["included.client.audience"] == "ssf-frontend"
-        and mapper["config"]["access.token.claim"] == "true"
-        for mapper in client["protocolMappers"]
-    )
-    assert {role["name"] for role in realm["roles"]["realm"]} >= {"ssf-user"}
+    _set_profile(realm, profile)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda realm: realm.pop("components"),
+        _drop_revision_attribute,
+        lambda realm: _revision_permissions(realm, {"view": ["admin"], "edit": ["admin", "user"]}),
+        lambda realm: _revision_permissions(realm, {"view": ["admin", "user"], "edit": ["admin"]}),
+    ],
+)
+def test_the_revision_attribute_must_be_declared_and_admin_only(mutate):
+    """Keycloak 26 drops an undeclared attribute; a user-editable one lets users self-authorize."""
+    realm = _realm()
+    mutate(realm)
+    assert load_contract().missing_realm_elements(realm) == ["revision-attribute-admin-only"]
+
+
+@pytest.mark.parametrize(
+    ("element", "mutate"),
+    [
+        ("public-pkce-client", lambda realm: _client(realm).update(publicClient=False)),
+        ("public-pkce-client", lambda realm: _client(realm).update(secret="x")),
+        (
+            "public-pkce-client",
+            lambda realm: _client(realm)["attributes"].pop("pkce.code.challenge.method"),
+        ),
+        ("public-pkce-client", lambda realm: _client(realm).update(implicitFlowEnabled=True)),
+        (
+            "public-pkce-client",
+            lambda realm: _client(realm).update(directAccessGrantsEnabled=True),
+        ),
+        ("public-pkce-client", lambda realm: _client(realm).update(standardFlowEnabled=False)),
+        (
+            "login-redirects",
+            lambda realm: _client(realm).update(redirectUris=["https://dialog.kassel.de/*"]),
+        ),
+        (
+            "login-redirects",
+            lambda realm: _client(realm).update(redirectUris=["http://dialog.kassel.de/login/*"]),
+        ),
+        ("login-redirects", lambda realm: _client(realm).update(redirectUris=[])),
+        ("audience-mapper", _drop_mappers("ssf-frontend")),
+        ("revision-mapper", _drop_mappers("ssf_authorization_revision")),
+        ("ssf-user-role", lambda realm: realm["roles"].update(realm=[])),
+        ("no-tenant-id-mapper", _add_tenant_id_mapper),
+    ],
+)
+def test_the_contract_names_each_broken_element(element, mutate):
+    realm = _realm()
+    mutate(realm)
+    assert load_contract().missing_realm_elements(realm) == [element]
+
+
+@pytest.mark.parametrize(
+    ("value", "element"),
+    [("ssf_authorization_revision", "revision-mapper"), ("ssf-frontend", "audience-mapper")],
+)
+def test_a_mapper_that_skips_the_access_token_does_not_count(value, element):
+    realm = _realm()
+    for mapper in _client(realm)["protocolMappers"]:
+        if value in (
+            mapper["config"].get("claim.name"),
+            mapper["config"].get("included.client.audience"),
+        ):
+            mapper["config"]["access.token.claim"] = "false"
+    assert load_contract().missing_realm_elements(realm) == [element]
+
+
+def test_a_missing_client_fails_every_client_element():
+    realm = _realm()
+    realm["clients"] = []
+    assert load_contract().missing_realm_elements(realm) == [
+        "public-pkce-client",
+        "login-redirects",
+        "audience-mapper",
+        "revision-mapper",
+    ]
 
 
 @pytest.mark.integration

@@ -10,13 +10,14 @@ from prometheus_client import CollectorRegistry
 from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.quality_telemetry import QualityTelemetry, TelemetryMode
+from tests.auth_helpers import principal
 
 _PROBE_URL = "/api/admin/telemetry/probe"
 
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
-    app.dependency_overrides[require_ssf_user] = lambda: {"sub": "test-admin"}
+    app.dependency_overrides[require_ssf_user] = lambda: principal()
     previous = getattr(app.state, "quality_telemetry", None)
     yield TestClient(app)
     app.dependency_overrides.clear()

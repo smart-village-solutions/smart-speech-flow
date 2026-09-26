@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 import pytest
@@ -8,58 +9,34 @@ from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.tenant_context import (
     StudioTenantContext,
     require_studio_tenant_context,
-    studio_tenant_context_from_claims,
+    studio_tenant_context_from_principal,
 )
+from tests.auth_helpers import REVISION, principal
 
-REVISION = f"sha256:{'a' * 64}"
+AUTH_LOGGER = "services.api_gateway.auth_rejections"
 
 
-def test_canonical_validated_claim_creates_one_internal_tenant_context() -> None:
-    context = studio_tenant_context_from_claims(
-        {
-            "sub": "user-1",
-            "studio_tenant_id": "tenant-kassel",
-            "ssf_authorization_revision": REVISION,
-        }
-    )
+def test_principal_creates_one_internal_tenant_context() -> None:
+    context = studio_tenant_context_from_principal(principal("tenant-kassel", "user-1"))
 
     assert context == StudioTenantContext(
         tenant_id="tenant-kassel", authorization_revision=REVISION
     )
 
 
-@pytest.mark.parametrize(
-    "claims",
-    [
-        {},
-        {"studio_tenant_id": ""},
-        {"studio_tenant_id": "tenant kassel"},
-        {"studio_tenant_id": ["tenant-kassel"]},
-        {"tenant_id": "tenant-kassel"},
-        {"studio_instance_id": "tenant-kassel"},
-        {"studio_tenant_id": "tenant-kassel", "tenant_id": "tenant-berlin"},
-        {"studio_tenant_id": "tenant-kassel"},
-        {"studio_tenant_id": "tenant-kassel", "ssf_authorization_revision": ""},
-        {
-            "studio_tenant_id": "tenant-kassel",
-            "ssf_authorization_revision": "sha256:UPPERCASE",
-        },
-    ],
-)
-def test_missing_malformed_or_legacy_claims_fail_closed(claims: dict[str, Any]) -> None:
+def test_a_legacy_tenant_claim_fails_closed() -> None:
+    legacy = principal("tenant-kassel", carries_legacy_tenant_claim=True)
     with pytest.raises(HTTPException) as error:
-        studio_tenant_context_from_claims(claims)
+        studio_tenant_context_from_principal(legacy)
 
     assert error.value.status_code == 401
 
 
-def _tenant_test_client() -> TestClient:
+def _tenant_test_client(*, carries_legacy_tenant_claim: bool = False) -> TestClient:
     app = FastAPI()
-    app.dependency_overrides[require_ssf_user] = lambda: {
-        "sub": "user-1",
-        "studio_tenant_id": "tenant-kassel",
-        "ssf_authorization_revision": REVISION,
-    }
+    app.dependency_overrides[require_ssf_user] = lambda: principal(
+        "tenant-kassel", "user-1", carries_legacy_tenant_claim=carries_legacy_tenant_claim
+    )
 
     @app.api_route("/tenant-operation", methods=["GET", "POST"])
     @app.get("/tenant-operation/{studio_tenant_id}")
@@ -71,11 +48,28 @@ def _tenant_test_client() -> TestClient:
     return TestClient(app)
 
 
-def test_dependency_uses_only_the_validated_claim() -> None:
+def test_dependency_uses_only_the_authenticated_principal() -> None:
     response = _tenant_test_client().get("/tenant-operation")
 
     assert response.status_code == 200
     assert response.json() == {"tenant_id": "tenant-kassel"}
+
+
+def test_dependency_rejects_and_logs_a_legacy_tenant_claim(caplog) -> None:
+    caplog.set_level(logging.WARNING, logger=AUTH_LOGGER)
+
+    response = _tenant_test_client(carries_legacy_tenant_claim=True).get(
+        "/tenant-operation", headers={"X-Correlation-Id": "corr-legacy"}
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "A valid bearer token is required"}
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+    assert [
+        (record.reason, record.correlation_id)
+        for record in caplog.records
+        if record.name == AUTH_LOGGER
+    ] == [("legacy_tenant_claim", "corr-legacy")]
 
 
 def test_dependency_rejects_path_tenant_selectors() -> None:

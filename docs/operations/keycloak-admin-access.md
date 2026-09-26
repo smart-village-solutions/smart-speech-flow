@@ -14,7 +14,8 @@ After a release that touches authentication, verify that a user with `ssf-user`
 can log in at `/login` and make an administrative request, that a user without
 that role receives 403, that a request without a bearer token receives 401 even
 when it carries `X-SSF-Legacy-Access`, and that the QR join route remains
-available without a Keycloak login.
+available without a Keycloak login. When login succeeds but administrative
+requests fail, follow `runbooks/tenant-auth-verification.md`.
 
 ## Local Studio Runtime Configuration mock
 

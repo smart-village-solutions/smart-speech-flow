@@ -104,6 +104,19 @@ def _build_studio_login_directory_service() -> StudioLoginDirectoryService:
         ) from None
 
 
+def studio_login_directory_service() -> StudioLoginDirectoryService:
+    """Provide the singleton service, raising the domain error when unconfigured.
+
+    For callers that classify failures themselves, such as authentication,
+    which must log and count a misconfigured directory instead of letting an
+    HTTP 503 escape unrecorded.
+
+    Raises:
+        StudioLoginDirectoryConfigurationError: the environment is incomplete.
+    """
+    return _build_studio_login_directory_service()
+
+
 def get_studio_login_directory_service() -> StudioLoginDirectoryService:
     """Provide the singleton service or a neutral dependency-boundary failure."""
     try:

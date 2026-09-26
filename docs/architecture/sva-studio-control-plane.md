@@ -229,9 +229,9 @@ are tenant-isolated, by different mechanisms, because they sit on opposite
 sides of the trust boundary above.
 
 **Reading.** `GET /api/feedback` and `GET /api/feedback/{feedback_id}` resolve
-the tenant through `require_studio_tenant_context`, which reads the signed
-`studio_tenant_id` claim and rejects any tenant selector supplied by the
-request. The gateway connects as `ssf_feedback_reader`, a `NOBYPASSRLS` role,
+the tenant through `require_studio_tenant_context`, which takes it from the
+login-directory entry whose realm issued the validated token and rejects any
+tenant selector supplied by the request. The gateway connects as `ssf_feedback_reader`, a `NOBYPASSRLS` role,
 so the row-level security policy in `001_feedback.sql` filters every read
 inside PostgreSQL rather than in application code. A record belonging to
 another tenant is invisible, not merely unselected.

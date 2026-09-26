@@ -5,8 +5,10 @@
 `GET /api/login/tenants` is an anonymous, read-only facade over Studio's
 validated login directory. Studio is the source of truth for ready tenant
 realms. The gateway uses one trusted `KEYCLOAK_BASE_URL`, admits only issuers
-derived from current directory entries, and binds a validated token to its
-signed `studio_tenant_id` and `ssf_authorization_revision` claims.
+derived from current directory entries, and takes the tenant from the entry
+whose realm issued the validated token. It requires the signed
+`ssf_authorization_revision` claim and the `ssf-user` role; a `studio_tenant_id`
+claim is not required, and one naming another tenant is rejected (#363).
 
 The tenant-login production rollout requires these settings:
 
@@ -56,9 +58,10 @@ following:
 1. Confirm the Studio directory returns at least two ready tenant entries.
 2. Confirm every listed realm has the common public client, PKCE S256, the
    exact application origin and `/login/*` redirects, the configured audience
-   and role, and signed tenant-ID and authorization-revision claims. For the
-   frontend's Account settings link, the realm's `account-console` client must
-   be enabled and every administrator must hold `default-roles-<realm>` (or
+   and role, and the signed authorization-revision claim
+   (`deploy/production/keycloak/README.md`). For the frontend's Account
+   settings link, the realm's `account-console` client must be enabled and
+   every administrator must hold `default-roles-<realm>` (or
    `account`/`manage-account`); users imported from JSON with an explicit
    `realmRoles` list do not get it automatically.
 3. Complete the separate OpenSpec change `add-multi-tenant-operations` and pass

@@ -20,8 +20,7 @@ from services.api_gateway.tenant_context import (
     StudioTenantContext,
     require_studio_tenant_context,
 )
-
-REVISION = f"sha256:{'a' * 64}"
+from tests.auth_helpers import REVISION, principal
 
 
 def _test_runtime_configuration() -> RuntimeConfiguration:
@@ -125,11 +124,7 @@ def bypass_admin_auth_for_legacy_route_tests(request):
 
     context = StudioTenantContext("tenant-test", REVISION)
     configuration = _test_runtime_configuration()
-    app.dependency_overrides[require_ssf_user] = lambda: {
-        "sub": "test-admin",
-        "studio_tenant_id": context.tenant_id,
-        "ssf_authorization_revision": REVISION,
-    }
+    app.dependency_overrides[require_ssf_user] = lambda: principal(context.tenant_id)
     app.dependency_overrides[require_studio_tenant_context] = lambda: context
     app.dependency_overrides[require_validated_runtime_configuration] = lambda: (
         ValidatedRuntimeConfiguration(context, configuration, "test-correlation")

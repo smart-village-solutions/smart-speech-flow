@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from fastapi import Depends, HTTPException, Request, status
 
+from .correlation_id import is_valid_correlation_id
 from .studio_runtime_client import (
     RuntimeConfiguration,
     StudioRuntimeClient,
@@ -168,11 +169,7 @@ def correlation_id_from_request(request: Request) -> str:
     correlation_id = request.headers.get("X-Correlation-Id")
     if correlation_id is None:
         return str(uuid4())
-    if (
-        not correlation_id
-        or len(correlation_id) > 128
-        or any(ord(character) < 32 or ord(character) > 126 for character in correlation_id)
-    ):
+    if not is_valid_correlation_id(correlation_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A valid X-Correlation-Id is required when supplied",

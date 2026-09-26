@@ -9,9 +9,9 @@ conversations until every item below is complete:
 2. Studio has provisioned every listed realm with the common public
    `ssf-frontend` client, PKCE S256, the exact application origin and
    `/login/*` redirects, the `ssf-frontend` audience, the `ssf-user` role, and
-   the signed `studio_tenant_id` and `ssf_authorization_revision` claims. The
-   user menu's Account settings link also needs the realm's built-in
-   `account-console` client enabled and every administrator holding
+   the signed `ssf_authorization_revision` claim. The user menu's Account
+   settings link also needs the realm's built-in `account-console` client
+   enabled and every administrator holding
    `default-roles-<realm>` (or the `account` client's `manage-account` role
    directly). Keycloak grants that default role to users created through the
    admin console or admin API, but not to users imported from JSON with an

@@ -37,7 +37,9 @@ flows.
 The local `ssf` realm selects this theme during import. Production tenant realms
 are owned by Studio and are not imported by this Compose project. When creating
 or updating such a realm, select `kasseldialog` as its **Login theme** under
-**Realm settings → Themes** before making the realm available to users.
+**Realm settings → Themes** before making the realm available to users. What
+such a realm must provide for SSF is stated in
+`deploy/production/keycloak/README.md`.
 
 Realm import does not update an existing local `ssf` realm. After rebuilding
 the Keycloak image, operators of an already initialized development stack must

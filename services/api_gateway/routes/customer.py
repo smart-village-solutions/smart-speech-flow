@@ -8,13 +8,13 @@ import logging
 from datetime import datetime, timezone
 from hashlib import sha256
 from types import TracebackType
-from typing import Annotated, Any, Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from ..audio_storage import AudioVariant
-from ..auth import optional_ssf_user
+from ..auth import AuthenticatedPrincipal, optional_ssf_user
 from ..consent_resolution import resolve_consent
 from ..conversation_service import conversation_service
 from ..log_safety import safe_language_code, sanitize_log_value
@@ -184,7 +184,7 @@ async def _read_activation_configuration(
 async def activate_session(
     request: ActivateSessionRequest,
     http_request: Request,
-    principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
+    principal: Annotated[AuthenticatedPrincipal | None, Depends(optional_ssf_user)],
 ) -> ActivateSessionResponse:
     """
     Aktiviert eine Session für Customer-Teilnahme

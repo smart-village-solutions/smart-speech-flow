@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import hmac
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 
-from .auth import optional_ssf_user
+from .auth import AuthenticatedPrincipal, optional_ssf_user
 from .log_safety import safe_closed_value
 from .session_manager import session_manager
 from .session_pseudonym import session_ref
@@ -63,7 +63,7 @@ def require_admin_session_key(
 
 def require_customer_session_key(
     session_id: str,
-    principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
+    principal: Annotated[AuthenticatedPrincipal | None, Depends(optional_ssf_user)],
 ) -> TenantSessionKey:
     """Resolve a public capability and constrain any supplied authenticated user."""
     try:
@@ -72,9 +72,7 @@ def require_customer_session_key(
         raise _not_found() from None
     if key is None:
         raise _not_found()
-    if principal is not None:
-        tenant_id = principal.get("studio_tenant_id")
-        if not isinstance(tenant_id, str) or not hmac.compare_digest(tenant_id, key.tenant_id):
-            log_tenant_access_denied(key, outcome="principal_scope_mismatch")
-            raise _not_found()
+    if principal is not None and not hmac.compare_digest(principal.tenant_id, key.tenant_id):
+        log_tenant_access_denied(key, outcome="principal_scope_mismatch")
+        raise _not_found()
     return key
