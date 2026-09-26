@@ -68,7 +68,7 @@ services:
             count: all
             capabilities:
             - gpu
-    image: ssf-backend-tts:prod-35c4b2f
+    image: ssf-backend-tts:prod-c09e9ad
     restart: unless-stopped
     pull_policy: never
   api_gateway:
