@@ -171,6 +171,8 @@ def test_ethiopic_thousands_are_one_number(lang, text, expected):
         ("am", "3.5 ኪሎ", "ሶስት ነጥብ አምስት ኪሎ"),
         ("am", "0,25", "ዜሮ ነጥብ ሁለት አምስት"),
         ("ti", "3,5 ኪሎ", "ሰለስተ ነጥቢ ሓሙሽተ ኪሎ"),
+        ("am", "ዋጋው 3.5.", "ዋጋው ሶስት ነጥብ አምስት."),
+        ("am", "1.2.3", "አንድ ሁለት ሶስት"),
     ],
 )
 def test_ethiopic_decimals_are_read_with_a_point_word(lang, text, expected):

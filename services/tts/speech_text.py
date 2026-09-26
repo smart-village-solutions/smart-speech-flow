@@ -192,12 +192,14 @@ def _german_ordinal(day: int, suffix: str) -> str:
 def _spell_ethiopic_numbers(text: str, lang: str) -> str:
     point = _ETHIOPIC[lang]["point"]
 
-    def decimal(match: re.Match[str]) -> str:
-        fraction = " ".join(_spell_ethiopic(digit, lang) for digit in match[2])
-        return f"{_spell_ethiopic(match[1], lang)} {point} {fraction}"
+    def spell(match: re.Match[str]) -> str:
+        parts = re.split(r"[.,]", match.group())
+        if len(parts) == 2:
+            fraction = " ".join(_spell_ethiopic(digit, lang) for digit in parts[1])
+            return f"{_spell_ethiopic(parts[0], lang)} {point} {fraction}"
+        return " ".join(_spell_ethiopic(part, lang) for part in parts)
 
-    text = re.sub(r"(?<![\d.,])(\d++)[.,](\d++)(?![.,])", decimal, text)
-    return re.sub(r"\d+", lambda match: _spell_ethiopic(match.group(), lang), text)
+    return re.sub(r"\d+(?:[.,]\d+)*", spell, text)
 
 
 def _spell_ethiopic(digits: str, lang: str) -> str:
