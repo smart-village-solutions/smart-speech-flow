@@ -34,6 +34,18 @@ Disabling an account prevents new login. Already issued access tokens are
 validated locally by the gateway and can remain usable until their short
 expiry; this change does not provide instant revocation or token introspection.
 
+## 27 September 2026 gateway promotion
+
+The compatible gateway consumer is running as `prod-4447d3c`, built from
+source revision `4447d3cf86a53e1e49574a54ed901dddf7669e87` with image ID
+`sha256:da2b30f5dbba52a9a501eb3bd49935cf7b61b4950fd486ebf4466de878ca7768`.
+The production health check passed, the public login directory listed two
+realms, and unauthenticated admin-history and feedback reads returned 401.
+The prior `prod-74cb49a` image remains the rollback target. These checks do
+not replace the protected fresh-token two-realm acceptance in Studio #1350;
+no approved test tokens were available during this promotion. Studio must
+continue emitting legacy claims until the consumer migration is verified.
+
 ## Local Studio Runtime Configuration mock
 
 The `studio-mock` service is an opt-in contract-testing dependency for the
