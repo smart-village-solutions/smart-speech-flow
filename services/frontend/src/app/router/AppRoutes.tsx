@@ -108,14 +108,14 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
   if (status === 'error') return <p role="alert">{t('admin.tenantLogin.unavailable')}</p>;
   if (status !== 'authenticated') return null;
 
-  const accountUrl = getAccountConsoleUrl();
+  const accountUrl = getAccountConsoleUrl() ?? undefined;
 
   if (sessionId === null) {
     return (
       <AdminDashboardScreen
         onEnterSession={setSessionId}
         onSignOut={out}
-        accountUrl={accountUrl ?? undefined}
+        accountUrl={accountUrl}
         studioUrl={studioUrl ?? undefined}
       />
     );
@@ -126,7 +126,7 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
       sessionId={sessionId}
       onLeave={leave}
       onSignOut={out}
-      accountUrl={accountUrl ?? undefined}
+      accountUrl={accountUrl}
       studioUrl={studioUrl ?? undefined}
     />
   );
