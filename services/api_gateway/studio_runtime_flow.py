@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hmac
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -61,7 +60,7 @@ class StudioRuntimeFlow:
         context: StudioTenantContext,
         correlation_id: str,
     ) -> ValidatedRuntimeConfiguration:
-        """Return a configuration only when tenant and revision both match."""
+        """Return a configuration only when its tenant matches the verified realm."""
         try:
             configuration = await self._client.fetch(context.tenant_id, correlation_id)
         except (StudioRuntimeClientError, StudioTokenError) as error:
@@ -69,12 +68,6 @@ class StudioRuntimeFlow:
 
         if configuration.tenant.id != context.tenant_id:
             raise StudioRuntimeFlowError("studio_runtime_tenant_mismatch", retryable=False)
-        if not hmac.compare_digest(
-            configuration.authorization_revision,
-            context.authorization_revision,
-        ):
-            raise StudioRuntimeFlowError("studio_runtime_authorization_mismatch", retryable=False)
-
         return ValidatedRuntimeConfiguration(
             context=context,
             configuration=configuration,

@@ -4,7 +4,7 @@ import pytest
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from services.api_gateway.auth import require_ssf_user
+from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM, require_ssf_user
 from services.api_gateway.tenant_context import (
     StudioTenantContext,
     require_studio_tenant_context,
@@ -18,14 +18,12 @@ def test_canonical_validated_claim_creates_one_internal_tenant_context() -> None
     context = studio_tenant_context_from_claims(
         {
             "sub": "user-1",
-            "studio_tenant_id": "tenant-kassel",
-            "ssf_authorization_revision": REVISION,
+            VERIFIED_TENANT_ID_CLAIM: "tenant-kassel",
+            "studio_tenant_id": "tenant-fulda",
         }
     )
 
-    assert context == StudioTenantContext(
-        tenant_id="tenant-kassel", authorization_revision=REVISION
-    )
+    assert context == StudioTenantContext(tenant_id="tenant-kassel")
 
 
 @pytest.mark.parametrize(
@@ -37,13 +35,9 @@ def test_canonical_validated_claim_creates_one_internal_tenant_context() -> None
         {"studio_tenant_id": ["tenant-kassel"]},
         {"tenant_id": "tenant-kassel"},
         {"studio_instance_id": "tenant-kassel"},
-        {"studio_tenant_id": "tenant-kassel", "tenant_id": "tenant-berlin"},
-        {"studio_tenant_id": "tenant-kassel"},
-        {"studio_tenant_id": "tenant-kassel", "ssf_authorization_revision": ""},
-        {
-            "studio_tenant_id": "tenant-kassel",
-            "ssf_authorization_revision": "sha256:UPPERCASE",
-        },
+        {VERIFIED_TENANT_ID_CLAIM: ""},
+        {VERIFIED_TENANT_ID_CLAIM: "tenant kassel"},
+        {VERIFIED_TENANT_ID_CLAIM: ["tenant-kassel"]},
     ],
 )
 def test_missing_malformed_or_legacy_claims_fail_closed(claims: dict[str, Any]) -> None:
@@ -57,8 +51,7 @@ def _tenant_test_client() -> TestClient:
     app = FastAPI()
     app.dependency_overrides[require_ssf_user] = lambda: {
         "sub": "user-1",
-        "studio_tenant_id": "tenant-kassel",
-        "ssf_authorization_revision": REVISION,
+        VERIFIED_TENANT_ID_CLAIM: "tenant-kassel",
     }
 
     @app.api_route("/tenant-operation", methods=["GET", "POST"])
@@ -104,9 +97,7 @@ def test_dependency_rejects_browser_controlled_tenant_selectors(
     request_kwargs: dict[str, Any],
 ) -> None:
     client = _tenant_test_client()
-    method = (
-        client.post if {"json", "content"}.intersection(request_kwargs) else client.get
-    )
+    method = client.post if {"json", "content"}.intersection(request_kwargs) else client.get
 
     response = method("/tenant-operation", **request_kwargs)
 

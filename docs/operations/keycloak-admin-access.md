@@ -1,8 +1,18 @@
 # Administrative access
 
-`/login` is the only administrative entry point. Staff choose their
-organisation there and sign in through that tenant's Keycloak realm; Studio
-provisions the realms, the `ssf-user` role and the staff accounts.
+`/login` is the administrative entry point. Staff choose their organisation
+there and sign in through that tenant's Keycloak realm. For conversation
+access, the gateway validates the token signature, RS256 algorithm, expiry,
+audience, non-empty subject, and issuer against exactly one admitted Studio
+login-directory entry. It derives the tenant from that entry; it does not
+require `ssf-user`, `studio_tenant_id`, `ssf_authorization_revision`,
+`ssf_permissions`, or `ssf_roles` in the user token. Legacy claims, if present,
+cannot select another tenant.
+
+Feedback-reading endpoints and the telemetry probe retain a separate
+`ssf-user` role check. Runtime configuration is still fetched for the derived
+tenant, and its tenant ID must match; the token's old authorization revision
+is no longer compared with the runtime configuration revision.
 
 The temporary `/admin` password entry and the `X-SSF-Legacy-Access` header were
 removed in #216. `/admin` now returns the normal not-found page, and the gateway
@@ -10,11 +20,19 @@ ignores the header. `SSF_ENABLE_LEGACY_ADMIN_ACCESS`,
 `SSF_LEGACY_ADMIN_ACCESS_CODE` and `FRONTEND_DEMO_PASSWORD` are no longer read
 and can be deleted from existing environment files.
 
-After a release that touches authentication, verify that a user with `ssf-user`
-can log in at `/login` and make an administrative request, that a user without
-that role receives 403, that a request without a bearer token receives 401 even
-when it carries `X-SSF-Legacy-Access`, and that the QR join route remains
-available without a Keycloak login.
+After release, verify fresh attribute-free user tokens from two admitted realms
+can each create, read, and terminate only their own conversations over HTTP,
+polling, and WebSocket. Confirm an unadmitted realm, invalid token, or
+cross-tenant session access is denied, and an attribute-free user cannot read
+feedback or emit a telemetry probe. A request without a bearer token still
+receives 401 even when it carries `X-SSF-Legacy-Access`; the QR join route
+remains available without a Keycloak login. Deploy this gateway consumer
+before removing the legacy claims and roles from token production. Do not
+close the rollout issues based on CI alone; record the live two-realm checks.
+
+Disabling an account prevents new login. Already issued access tokens are
+validated locally by the gateway and can remain usable until their short
+expiry; this change does not provide instant revocation or token introspection.
 
 ## Local Studio Runtime Configuration mock
 
