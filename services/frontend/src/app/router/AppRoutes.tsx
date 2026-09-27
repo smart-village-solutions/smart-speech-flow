@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
@@ -14,9 +14,10 @@ import { AdminSessionScreen } from '@/features/admin/AdminSessionScreen';
 import {
   logoutFromKeycloak,
   getAccountConsoleUrl,
-  getStudioUrlForSystemAdmin,
+  getStudioAdministrationUrl,
   requireKeycloakLogin,
   subscribeToKeycloakExpiration,
+  subscribeToKeycloakAuthorization,
 } from '@/app/auth/keycloak';
 import { TenantLoginScreen } from '@/features/login/TenantLoginScreen';
 
@@ -56,6 +57,11 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
     'loading'
   );
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const studioUrl = useSyncExternalStore(
+    subscribeToKeycloakAuthorization,
+    () => getStudioAdministrationUrl(tenantId),
+    () => null
+  );
   const navigate = useNavigate();
 
   useEffect(
@@ -102,7 +108,6 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
   if (status === 'error') return <p role="alert">{t('admin.tenantLogin.unavailable')}</p>;
   if (status !== 'authenticated') return null;
 
-  const studioUrl = getStudioUrlForSystemAdmin();
   const accountUrl = getAccountConsoleUrl();
 
   if (sessionId === null) {

@@ -9,9 +9,10 @@ import { AppRoutes } from '@/app/router/AppRoutes';
 vi.mock('@/app/auth/keycloak', () => ({
   requireKeycloakLogin: vi.fn().mockResolvedValue(true),
   getAdminAccessToken: vi.fn().mockResolvedValue('tenant-token'),
-  getStudioUrlForSystemAdmin: vi.fn().mockReturnValue(null),
+  getStudioAdministrationUrl: vi.fn().mockReturnValue(null),
   getAccountConsoleUrl: vi.fn().mockReturnValue(null),
   logoutFromKeycloak: vi.fn().mockResolvedValue(undefined),
+  subscribeToKeycloakAuthorization: () => () => {},
   subscribeToKeycloakExpiration: () => () => {},
 }));
 
