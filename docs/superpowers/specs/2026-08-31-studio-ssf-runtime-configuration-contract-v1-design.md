@@ -42,7 +42,7 @@ the following signed claims in addition to standard OIDC claims:
   "sub": "keycloak-user-id",
   "studio_tenant_id": "01J...",
   "ssf_roles": ["user"],
-  "ssf_permissions": ["ssf.sessions.create"],
+  "ssf_permissions": ["ssf.sessions.create", "ssf.sessions.read", "ssf.sessions.terminate", "ssf.conversations.participate"],
   "preferred_username": "erika",
   "name": "Erika Muster",
   "locale": "de-DE"
@@ -50,8 +50,8 @@ the following signed claims in addition to standard OIDC claims:
 ```
 
 `ssf_permissions` are authoritative for server-side authorization.
-`ssf_roles` are for classification, navigation, and audit. The initial
-operational permission catalogue is:
+`ssf_roles` are for classification, navigation, and audit. Every active tenant account automatically receives the following minimum
+conversation permissions, regardless of optional roles or administrative grants:
 
 - `ssf.sessions.create`
 - `ssf.sessions.read`
@@ -61,8 +61,11 @@ operational permission catalogue is:
 `studio_tenant_id` is the only accepted tenant claim. SSF maps it to its
 internal `tenant_id`; legacy `tenant_id` and `studio_instance_id` claim aliases
 are rejected. The token roles are `system_admin`, `tenant_admin`, and `user`. A
-`tenant_admin` has no operational SSF conversation permissions unless it also
-has `user` and the corresponding permissions. A `system_admin` has no
+`tenant_admin` receives the same conversation baseline as every other tenant
+user. Studio projects `user` for every active tenant account and additionally
+`tenant_admin` for tenant administrators. No manual operational role assignment
+is required. Configuration administration, feedback reads, and technical
+operations remain separate from this minimum right. A `system_admin` has no
 `tenant_id` and MUST NOT access tenant conversations or tenant data; tenant
 configuration and inspection remain Studio responsibilities.
 

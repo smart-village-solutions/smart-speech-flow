@@ -16,7 +16,10 @@ _PROBE_URL = "/api/admin/telemetry/probe"
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
-    app.dependency_overrides[require_ssf_user] = lambda: {"sub": "test-admin"}
+    app.dependency_overrides[require_ssf_user] = lambda: {
+        "realm_access": {"roles": ["ssf-user"]},
+        "sub": "test-admin",
+    }
     previous = getattr(app.state, "quality_telemetry", None)
     yield TestClient(app)
     app.dependency_overrides.clear()

@@ -2,7 +2,9 @@
 
 `/login` is the only administrative entry point. Staff choose their
 organisation there and sign in through that tenant's Keycloak realm; Studio
-provisions the realms, the `ssf-user` role and the staff accounts.
+provisions the realms, staff accounts and automatic conversation permissions.
+Every active tenant account receives the conversation baseline, including
+accounts without roles and tenant administrators.
 
 The temporary `/admin` password entry and the `X-SSF-Legacy-Access` header were
 removed in #216. `/admin` now returns the normal not-found page, and the gateway
@@ -10,11 +12,20 @@ ignores the header. `SSF_ENABLE_LEGACY_ADMIN_ACCESS`,
 `SSF_LEGACY_ADMIN_ACCESS_CODE` and `FRONTEND_DEMO_PASSWORD` are no longer read
 and can be deleted from existing environment files.
 
-After a release that touches authentication, verify that a user with `ssf-user`
-can log in at `/login` and make an administrative request, that a user without
-that role receives 403, that a request without a bearer token receives 401 even
-when it carries `X-SSF-Legacy-Access`, and that the QR join route remains
-available without a Keycloak login.
+After a release that touches authentication, verify that roleless users and
+tenant administrators can log in at `/login` and create, read, participate in,
+and terminate conversations in their tenant. Their fresh tokens must contain
+all four baseline permissions documented in the
+[Studio control-plane contract](../architecture/sva-studio-control-plane.md#minimum-conversation-access).
+Tokens missing the baseline receive 403, even with the legacy `ssf-user` role.
+Feedback reads and the telemetry probe still require that additional role
+(configurable through `KEYCLOAK_REQUIRED_ROLE`). Requests without a bearer token
+receive 401 even when they carry `X-SSF-Legacy-Access`; the QR join route remains
+available without a Keycloak login. Test cross-tenant access separately.
+
+Deploy Studio first, reconcile the admitted tenants, and obtain fresh tokens
+before updating the gateway. This change extends the permission catalogue and
+therefore changes the tenant authorization revision.
 
 ## Local Studio Runtime Configuration mock
 

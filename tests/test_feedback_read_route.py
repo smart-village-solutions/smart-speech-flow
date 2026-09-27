@@ -62,6 +62,7 @@ def client_for():
         app.dependency_overrides.pop(require_studio_tenant_context, None)
         app.dependency_overrides[get_feedback_read_service] = lambda: service
         app.dependency_overrides[require_ssf_user] = lambda: {
+            "realm_access": {"roles": ["ssf-user"]},
             "sub": "operator-1",
             "studio_tenant_id": TENANT,
             "ssf_authorization_revision": REVISION,
@@ -166,6 +167,7 @@ def test_reading_is_refused_without_authentication(unauthenticated_client) -> No
 def test_reading_answers_503_when_the_read_role_is_unconfigured() -> None:
     """A deployment that never granted Studio read access still serves POST."""
     app.dependency_overrides[require_ssf_user] = lambda: {
+        "realm_access": {"roles": ["ssf-user"]},
         "sub": "operator-1",
         "studio_tenant_id": TENANT,
         "ssf_authorization_revision": REVISION,

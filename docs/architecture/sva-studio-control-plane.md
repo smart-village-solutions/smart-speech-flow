@@ -222,6 +222,28 @@ content. Studio will consume those data later through an internal SSF
 administration or reporting API rather than accessing SSF runtime databases
 directly.
 
+## Minimum conversation access
+
+Every active Studio account that belongs to an SSF tenant receives conversation
+access automatically, including users without optional roles and tenant
+administrators. Studio projects the fixed baseline `ssf.sessions.create`,
+`ssf.sessions.read`, `ssf.sessions.terminate`, and
+`ssf.conversations.participate` in `ssf_permissions`. These permissions are
+non-optional account rights, not a manually assigned operator role.
+
+The gateway requires a valid subject, admitted issuer, audience, signature,
+expiry, canonical tenant binding, authorization revision and the complete signed
+conversation baseline. The legacy `ssf-user` realm role does not grant or gate
+conversation access. Guest capabilities and tenant isolation remain unchanged.
+`KEYCLOAK_REQUIRED_ROLE` retains its existing additional restriction only for
+feedback reads and the telemetry probe; these are not conversation rights.
+
+Rollout must update Studio and reconcile each admitted tenant before enabling
+the gateway change. The extended permission catalogue changes the authorization
+revision; test with fresh tokens from both tenant realms after reconciliation.
+A token with only old configuration permissions or a legacy role is rejected.
+The existing maximum token lifetime still bounds stale account entitlements.
+
 ## Feedback Tenancy
 
 Feedback is the first SSF-owned data with a tenant column. Both of its halves

@@ -31,3 +31,26 @@ betreiben können, bevor der Regelbetrieb freigegeben wird.
 
 - **WHEN** zwei Organisationen für den Pilot provisioniert sind
 - **THEN** können beide ihre eigenen Gesprächsflüsse nutzen, ohne Daten oder Konfigurationen der anderen Organisation einzusehen
+
+### Requirement: Automatic minimum conversation access
+
+Every active regular account belonging to an admitted SSF tenant SHALL receive
+conversation access automatically. Studio SHALL project the complete baseline
+`ssf.sessions.create`, `ssf.sessions.read`, `ssf.sessions.terminate`, and
+`ssf.conversations.participate` without a manual role grant. Configuration
+administration, feedback reads, and technical operations SHALL remain separate.
+
+#### Scenario: Roleless tenant user starts using conversations
+
+- **WHEN** a valid tenant user token carries the projected baseline but no legacy `ssf-user` role
+- **THEN** SSF permits the existing conversation flow within that tenant
+
+#### Scenario: Tenant administrator uses the minimum right
+
+- **WHEN** an active tenant administrator signs in
+- **THEN** the account has the same automatic conversation baseline as every other tenant user
+
+#### Scenario: Invalid or cross-tenant access
+
+- **WHEN** the token is invalid, lacks the complete projected baseline, or targets another tenant's resources
+- **THEN** SSF rejects the request without a legacy-role fallback

@@ -10,7 +10,11 @@ from fastapi.testclient import TestClient
 from jwt.algorithms import RSAAlgorithm
 
 from services.api_gateway.app import app
-from services.api_gateway.auth import _key_cache, get_auth_login_directory_provider
+from services.api_gateway.auth import (
+    CONVERSATION_PERMISSIONS,
+    _key_cache,
+    get_auth_login_directory_provider,
+)
 from services.api_gateway.studio_login_directory import StudioLoginDirectoryService
 from services.api_gateway.studio_login_directory_client import (
     StudioLoginDirectory,
@@ -75,7 +79,7 @@ def access_token(signing_key, **overrides):
         "iss": KASSEL_ISSUER,
         "aud": AUDIENCE,
         "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
-        "realm_access": {"roles": ["ssf-user"]},
+        "ssf_permissions": sorted(CONVERSATION_PERMISSIONS),
         "studio_tenant_id": "tenant-kassel",
         "ssf_authorization_revision": REVISION,
     }
@@ -187,6 +191,9 @@ def test_unadmitted_issuers_are_rejected_without_oidc_network_access(
 @pytest.mark.parametrize(
     "overrides",
     [
+        {"sub": None},
+        {"sub": ""},
+        {"sub": " "},
         {"studio_tenant_id": "tenant-fulda"},
         {"studio_tenant_id": None},
         {"studio_tenant_id": ["tenant-kassel"]},
@@ -215,12 +222,52 @@ def test_non_rsa_jwk_fails_closed(monkeypatch, signing_key):
     assert request_with_token(access_token(signing_key)).status_code == 401
 
 
-@pytest.mark.parametrize("realm_access", [{"roles": []}, None, [], {"roles": "ssf-user"}])
-def test_missing_or_malformed_role_is_rejected(monkeypatch, signing_key, realm_access):
+@pytest.mark.parametrize("roles", [[], ["user"], ["tenant_admin"], ["tenant_admin", "user"]])
+def test_conversation_access_needs_no_optional_role(monkeypatch, signing_key, roles):
     mock_keycloak(monkeypatch, signing_key)
-    assert (
-        request_with_token(access_token(signing_key, realm_access=realm_access)).status_code == 403
+    assert request_with_token(access_token(signing_key, ssf_roles=roles)).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "permissions",
+    [
+        None,
+        [],
+        "ssf.sessions.read",
+        ["ssf.configuration.tenant.manage"],
+        [*sorted(CONVERSATION_PERMISSIONS), None],
+        *[
+            sorted(CONVERSATION_PERMISSIONS - {permission})
+            for permission in sorted(CONVERSATION_PERMISSIONS)
+        ],
+    ],
+)
+def test_legacy_role_cannot_replace_missing_or_malformed_baseline(
+    monkeypatch, signing_key, permissions
+):
+    mock_keycloak(monkeypatch, signing_key)
+    token = access_token(
+        signing_key, ssf_permissions=permissions, realm_access={"roles": ["ssf-user"]}
     )
+    assert request_with_token(token).status_code == 403
+
+
+@pytest.mark.parametrize(
+    "path, method",
+    [
+        ("/api/feedback", "get"),
+        ("/api/feedback/example", "get"),
+        ("/api/admin/telemetry/probe", "post"),
+    ],
+)
+def test_conversation_baseline_does_not_grant_operator_access(
+    monkeypatch, signing_key, path, method
+):
+    mock_keycloak(monkeypatch, signing_key)
+    response = getattr(client, method)(
+        path, headers={"Authorization": f"Bearer {access_token(signing_key)}"}
+    )
+    assert response.status_code == 403
 
 
 @pytest.mark.parametrize(

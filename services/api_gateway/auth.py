@@ -1,4 +1,4 @@
-"""Keycloak bearer-token validation for administrative API routes."""
+"""Tenant bearer validation and the automatic conversation baseline."""
 
 import json
 import os
@@ -26,6 +26,16 @@ from .studio_login_directory import (
 )
 from .studio_login_directory_client import StudioLoginDirectoryClientError
 from .studio_runtime_token import StudioTokenError
+
+# Studio projects this non-optional baseline for every active tenant account.
+CONVERSATION_PERMISSIONS = frozenset(
+    {
+        "ssf.sessions.create",
+        "ssf.sessions.read",
+        "ssf.sessions.terminate",
+        "ssf.conversations.participate",
+    }
+)
 
 _AUTHORIZATION_REVISION_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -121,7 +131,7 @@ async def require_ssf_user(
         Depends(get_auth_login_directory_provider),
     ],
 ) -> dict[str, Any]:
-    """Validate an administrative bearer token and return its claims."""
+    """Validate the Studio-projected minimum rights of an authenticated tenant user."""
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise _unauthorized()
@@ -169,7 +179,7 @@ async def require_ssf_user(
             algorithms=["RS256"],
             audience=settings.audience,
             issuer=issuer,
-            options={"require": ["exp", "iss", "aud"]},
+            options={"require": ["exp", "iss", "aud", "sub"]},
         )
     except (
         InvalidKeyError,
@@ -183,18 +193,40 @@ async def require_ssf_user(
 
     revision = claims.get("ssf_authorization_revision")
     if (
-        claims.get("studio_tenant_id") != matched_tenant.id
+        not isinstance(claims.get("sub"), str)
+        or not claims["sub"].strip()
+        or claims.get("studio_tenant_id") != matched_tenant.id
         or not isinstance(revision, str)
         or not _AUTHORIZATION_REVISION_PATTERN.fullmatch(revision)
     ):
         raise _unauthorized()
 
-    realm_access = claims.get("realm_access")
-    roles = realm_access.get("roles") if isinstance(realm_access, dict) else None
-    if not isinstance(roles, list) or settings.required_role not in roles:
+    permissions = claims.get("ssf_permissions")
+    if (
+        not isinstance(permissions, list)
+        or not all(isinstance(permission, str) for permission in permissions)
+        or not CONVERSATION_PERMISSIONS.issubset(permissions)
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="The bearer token lacks the required role",
+            detail="The bearer token lacks the conversation baseline",
+        )
+    return claims
+
+
+async def require_ssf_operator(
+    claims: Annotated[dict[str, Any], Depends(require_ssf_user)],
+) -> dict[str, Any]:
+    """Preserve the existing additional gate for feedback reads and telemetry."""
+    realm_access = claims.get("realm_access")
+    roles = realm_access.get("roles") if isinstance(realm_access, dict) else None
+    if (
+        not isinstance(roles, list)
+        or KeycloakSettings.from_environment().required_role not in roles
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The bearer token lacks the required operator role",
         )
     return claims
 
