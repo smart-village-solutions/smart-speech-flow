@@ -54,8 +54,8 @@ engine). `tts_text` is accepted and ignored: voices read their own script.
 | 503 | The voice for this language failed to load at startup |
 | 500 | Synthesis failed |
 
-- `GET /health`: per-language voice state (`engine`, `voice`, `loaded`, `device`, `error`), `status: degraded` when any voice failed to load.
-- `GET /metrics`: Prometheus metrics.
+- `GET /health`: per-language voice state (`engine`, `voice`, `loaded`, `device`, `error`), `status: degraded` when any voice failed to load, and `vram`: the process's VRAM now, the budget, whether it is within it, and what each voice added while loading.
+- `GET /metrics`: Prometheus metrics, among them `tts_voice_loaded{lang,engine}`, `tts_voice_vram_bytes{lang}`, `tts_process_vram_bytes` (NaN when NVML cannot tell) and `tts_vram_budget_bytes`.
 - `GET /supported-languages`: the language codes in `voices.py`.
 
 ## Running
@@ -70,6 +70,22 @@ voices seed through `torch.manual_seed`, which is process-wide, so concurrent
 Amharic or Tigrinya requests race on the seed. Values below 1, and a
 `TTS_DEVICE` other than `cpu`, `cuda` or `cuda:<n>`, stop the service at
 startup.
+
+Voices are never loaded after startup and never evicted: there is one per
+language, so the set cannot grow, and a cold load would hold up a
+conversation for seconds. The service instead reads its own VRAM from NVML
+and compares it with `TTS_VRAM_BUDGET_MIB` (default 2048). On the production
+card the ten voices hold 1238 MiB after loading and 1464 MiB once each has
+spoken, flat from then on; a synthesis briefly adds a few hundred. Going over
+the budget does not change `status`, because every voice still works.
+Five minutes of readings over it log a warning (and an info line once back
+under), and twenty minutes fire the `TTSVRAMOverBudget` alert; a synthesis in
+flight lifts single readings for well under a second and counts for neither.
+On a GPU, a process NVML cannot report is unknown (`null` in `/health`, NaN on
+`/metrics`) rather than 0, and 30 minutes of that fire `TTSVRAMUnknown`. With
+`TTS_DEVICE=cpu` the process holds no VRAM, reads 0 and NVML is not asked.
+The first voice's load cost also carries the CUDA context.
+A budget below 1 stops the service at startup.
 
 ```bash
 docker build -f services/tts/Dockerfile -t tts-service .

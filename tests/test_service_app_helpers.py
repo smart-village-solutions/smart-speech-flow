@@ -761,10 +761,12 @@ def test_tts_helper_functions_cover_responses_and_loading(tts_app, monkeypatch):
         return FakeTTSSpeaker(device)
 
     monkeypatch.setattr(tts_app, "_load_speaker", load)
-    speakers, errors = tts_app.load_speakers("cpu")
-    assert len(speakers) == 9
-    assert "fa" not in speakers
-    assert errors == {"fa": "RuntimeError: corrupt voice file"}
+    vram = tts_app.VramBudget(tts_app.ProcessVram(None, pid=1), 1, on_gpu=False)
+    loaded = tts_app.load_speakers("cpu", vram)
+    assert len(loaded.speakers) == 9
+    assert "fa" not in loaded.speakers
+    assert loaded.errors == {"fa": "RuntimeError: corrupt voice file"}
+    assert loaded.vram_bytes == {lang: 0 for lang in loaded.speakers}
 
     debug_info = tts_app._build_debug_info("Hallo", "de")
     assert debug_info["input"] == {"text": "Hallo", "lang": "de"}

@@ -71,9 +71,7 @@ COPY --from=voices /opt/tts-voices /opt/tts-voices
 COPY services/tts/requirements.txt ./requirements.txt
 COPY services/__init__.py ./services/__init__.py
 COPY services/gpu_metrics.py services/resource_metrics.py ./services/
-COPY services/tts/__init__.py services/tts/app.py services/tts/speech_text.py \
-     services/tts/voices.py services/tts/piper_engine.py services/tts/mms_engine.py \
-     ./services/tts/
+COPY services/tts/*.py ./services/tts/
 
 RUN printf '%s%s\n' \
     'pip==25.1.1 --hash=sha256:' \

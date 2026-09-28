@@ -66,6 +66,21 @@ class FakeSpeaker:
         return np.array([0.1, -0.1, 0.0, 0.2], dtype=np.float32), 22050
 
 
+class FakeNvml:
+    """NVML as a container sees it, with a stranger's process to be ignored."""
+
+    def __init__(self, pid):
+        self.pid = pid
+        self.held = 0
+        self.nvmlInit = lambda: None
+        self.nvmlDeviceGetCount = lambda: 1
+        self.nvmlDeviceGetHandleByIndex = lambda index: index
+        self.nvmlDeviceGetComputeRunningProcesses = lambda _handle: [
+            types.SimpleNamespace(pid=self.pid, usedGpuMemory=self.held),
+            types.SimpleNamespace(pid=self.pid + 1, usedGpuMemory=8 * 1024**3),
+        ]
+
+
 @pytest.fixture
 def failing_langs():
     return set()
@@ -77,14 +92,33 @@ def speakers():
 
 
 @pytest.fixture
-def client(monkeypatch, speakers, failing_langs):
+def nvml():
+    return None
+
+
+@pytest.fixture
+def load_counts():
+    return {}
+
+
+@pytest.fixture
+def voice_costs_mib():
+    return {}
+
+
+@pytest.fixture
+def client(monkeypatch, speakers, failing_langs, nvml, load_counts, voice_costs_mib):
     from services.tts import app as tts_app
 
     def load(voice, device):
+        load_counts[voice.lang] = load_counts.get(voice.lang, 0) + 1
         if voice.lang in failing_langs:
             raise RuntimeError(f"{voice.lang} voice file is corrupt")
+        if nvml is not None:
+            nvml.held += voice_costs_mib.get(voice.lang, 0) * 1024 * 1024
         return speakers.setdefault(voice.lang, FakeSpeaker())
 
+    monkeypatch.setattr(tts_app, "pynvml", nvml)
     monkeypatch.setattr(tts_app, "_load_speaker", load)
     with TestClient(tts_app.app) as test_client:
         yield test_client
