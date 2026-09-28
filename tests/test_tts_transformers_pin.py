@@ -1,15 +1,16 @@
-"""The TTS image must not ship transformers 5.17.0.
+"""The TTS image stays below transformers 5.17.0 until a newer one is verified.
 
 5.17.0 added an unconditional ``output.to(dtype=self.model.dtype)`` to the
-text-to-audio pipeline (``transformers/pipelines/text_to_audio.py:197``). For a
-tokenizer-backed model such as VITS that ``output`` is a ``BatchEncoding``,
-whose ``.to()`` accepts no ``dtype``, so every synthesis raises ``TypeError``
-and the service answers 500. A Dependabot bump (``fc25372``) took the floor to
-5.17.0 and the next production deploy lost TTS entirely.
+text-to-audio pipeline (``transformers/pipelines/text_to_audio.py:197``), which
+broke every VITS synthesis and took TTS down after a Dependabot bump
+(``fc25372``). The service no longer calls that pipeline: ``mms_engine.py``
+loads ``VitsModel`` directly for Amharic and Tigrinya. The ceiling now guards
+against an unverified upgrade of the library those two voices run on; lift it
+together with a synthesis check of both on the new release.
 
 This guard reads the lock rather than the source pin: the lock is what the
 Dockerfile installs, and a bump that edits only ``requirements.in`` would
-otherwise pass while the image still carried the broken release.
+otherwise pass while the image still carried the new release.
 """
 
 from __future__ import annotations
@@ -39,9 +40,8 @@ def test_locked_transformers_predates_the_text_to_audio_regression():
 
     assert _version_tuple(locked) < BROKEN_VERSION, (
         f"services/tts pins transformers {locked}, which is 5.17.0 or newer. "
-        "That release breaks every VITS synthesis with "
-        "\"BatchEncoding.to() got an unexpected keyword argument 'dtype'\". "
-        "Raise the ceiling in requirements.in only once a release fixes it."
+        "Verify Amharic and Tigrinya synthesis (services/tts/mms_engine.py) on "
+        "that release before raising the ceiling in requirements.in."
     )
 
 

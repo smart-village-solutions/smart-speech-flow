@@ -211,6 +211,4 @@ def test_tenant_selectors_outside_the_token_are_refused(
     response = client.request(method, path, **request_options)
 
     assert response.status_code == 400
-    assert response.json() == {
-        "detail": "Tenant selectors are not accepted outside the bearer token"
-    }
+    assert response.json() == {"detail": "Tenant selectors are not accepted in requests"}

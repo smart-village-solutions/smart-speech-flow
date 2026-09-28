@@ -27,6 +27,7 @@ from ..studio_runtime_flow import (
     runtime_flow_from_environment,
 )
 from ..studio_runtime_token import StudioTokenError
+from ..tenant_context import reject_request_tenant_selectors
 from ..tenant_session import TenantSessionKey
 from ..websocket import WebSocketManager, get_websocket_manager
 
@@ -34,7 +35,11 @@ from ..websocket import WebSocketManager, get_websocket_manager
 logger = logging.getLogger(__name__)
 
 # Router setup
-router = APIRouter(prefix="/api/customer", tags=["customer"])
+router = APIRouter(
+    prefix="/api/customer",
+    tags=["customer"],
+    dependencies=[Depends(reject_request_tenant_selectors)],
+)
 
 _SESSION_NOT_FOUND = "Session not found"
 CUSTOMER_ROUTE_RESPONSES = {

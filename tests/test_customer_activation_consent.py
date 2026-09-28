@@ -54,9 +54,9 @@ def studio(monkeypatch: pytest.MonkeyPatch) -> _FakeStudio:
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client(request: pytest.FixtureRequest) -> TestClient:
     session_manager.reset(clear_persistence=True)
-    return TestClient(app)
+    return TestClient(app, client=(request.node.nodeid, 50000))
 
 
 def _create_pending(client: TestClient):
@@ -214,3 +214,83 @@ def test_activation_never_routes_through_the_policy_gate(
         session_manager.get_session(key).consent_status
         is ConsentStatus.POLICY_DISABLED
     )
+
+@pytest.mark.parametrize("authenticated", [False, True], ids=["guest", "user"])
+@pytest.mark.parametrize("selector_source", ["body", "nested_body", "query", "header", "cookie"])
+def test_activation_rejects_tenant_selectors_before_mutation(
+    pending_session, client, studio, monkeypatch, authenticated, selector_source
+):
+    from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
+
+    session_id, key = pending_session
+    principal = {VERIFIED_TENANT_ID_CLAIM: key.tenant_id} if authenticated else None
+    monkeypatch.setitem(app.dependency_overrides, optional_ssf_user, lambda: principal)
+    payload = {"session_id": session_id, "customer_language": "en"}
+    options = {}
+    if selector_source == "body":
+        payload["tenant_id"] = "other-tenant"
+    elif selector_source == "nested_body":
+        payload["extra"] = [{"studio_tenant_id": "other-tenant"}]
+    elif selector_source == "query":
+        options["params"] = {"tenantId": "other-tenant"}
+    elif selector_source == "header":
+        options["headers"] = {"X-Studio-Tenant-Id": "other-tenant"}
+    else:
+        client.cookies.set("studio_tenant_id", "other-tenant")
+
+    response = client.post("/api/customer/session/activate", json=payload, **options)
+
+    assert response.status_code == 400
+    assert session_manager.get_session(key).status.value == "pending"
+    assert session_manager.get_session(key).customer_language is None
+    assert studio.calls == 0
+
+
+@pytest.mark.parametrize("actor", [None, "tenant-test", "other-tenant"])
+def test_activation_preserves_guest_and_authenticated_tenant_access(
+    pending_session, client, studio, monkeypatch, actor
+):
+    from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
+
+    session_id, key = pending_session
+    principal = {VERIFIED_TENANT_ID_CLAIM: actor} if actor else None
+    monkeypatch.setitem(app.dependency_overrides, optional_ssf_user, lambda: principal)
+
+    response = client.post(
+        "/api/customer/session/activate",
+        json={"session_id": session_id, "customer_language": "en"},
+    )
+
+    assert response.status_code == (404 if actor == "other-tenant" else 200)
+    assert session_manager.get_session(key).status.value == (
+        "pending" if actor == "other-tenant" else "active"
+    )
+
+
+@pytest.mark.parametrize("authenticated", [False, True], ids=["guest", "user"])
+@pytest.mark.parametrize(
+    ("method", "suffix"),
+    [
+        ("GET", ""),
+        ("GET", "/messages"),
+        ("POST", "/message"),
+        ("GET", "/audio/missing/original.wav"),
+    ],
+)
+def test_customer_session_routes_reject_query_tenant_selectors(
+    pending_session, client, monkeypatch, authenticated, method, suffix
+):
+    from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
+
+    session_id, key = pending_session
+    principal = {VERIFIED_TENANT_ID_CLAIM: key.tenant_id} if authenticated else None
+    monkeypatch.setitem(app.dependency_overrides, optional_ssf_user, lambda: principal)
+
+    response = client.request(
+        method,
+        f"/api/customer/session/{session_id}{suffix}",
+        params={"tenant_id": "other-tenant"},
+    )
+
+    assert response.status_code == 400
+    assert session_manager.get_session(key).status.value == "pending"
