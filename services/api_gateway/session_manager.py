@@ -31,6 +31,7 @@ from typing import (
 
 from .consent import ConsentStatus
 from .quality_telemetry import SessionLifecyclePhase, SessionTerminationReason
+from .realtime_protocol import Frame, timeout_warning_frame
 from .session_pseudonym import MISSING_TENANT_REFERENCE, SessionPseudonymizer, tenant_ref
 from .session_store import MemoryTenantSessionStore, TenantSessionStore
 from .tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
@@ -467,7 +468,7 @@ class SessionSockets[KeyT_in](Protocol):
 
     async def handle_session_termination(self, session_id: KeyT_in, reason: str) -> None: ...
 
-    async def broadcast_to_session(self, session_id: KeyT_in, message: Dict[str, Any]) -> None: ...
+    async def broadcast_to_session(self, session_id: KeyT_in, message: Frame) -> None: ...
 
 
 class SessionRegistry(Protocol[KeyT_contra]):
@@ -1137,14 +1138,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
     async def _send_timeout_warning(self, session: Session) -> None:
         """Timeout-Warning an alle WebSocket-Clients der Session senden"""
         if self.websocket_manager:
-            remaining_minutes = session.timeout_warning_minutes
-            warning_message = {
-                "type": "timeout_warning",
-                "session_id": session.id,
-                "message": f"Session wird in {remaining_minutes} Minuten aufgrund von Inaktivität beendet.",
-                "remaining_minutes": remaining_minutes,
-                "timestamp": utc_now().isoformat(),
-            }
+            warning_message = timeout_warning_frame(session.id, session.timeout_warning_minutes)
 
             await self.websocket_manager.broadcast_to_session(session.key, warning_message)
             session.timeout_warning_sent = True

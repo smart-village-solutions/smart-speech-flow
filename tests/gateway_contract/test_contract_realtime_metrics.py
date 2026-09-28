@@ -238,3 +238,10 @@ def test_metrics_exposes_the_realtime_series_by_name_and_label(client, conversat
         else:
             observed = labels.get(family, set())
         assert observed == expected, family
+
+
+def test_metrics_serves_the_monitor_as_initialized(client):
+    # The ssf-overview dashboard reads this gauge to tell a running monitor from none.
+    text = client.get("/metrics").text
+
+    assert re.search(r"^websocket_monitor_initialized 1\.0$", text, re.MULTILINE)

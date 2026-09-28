@@ -22,7 +22,7 @@ from tests.realtime_sessions import TENANT, open_session, tenant_session_manager
 
 def _register(manager: ws.WebSocketManager, key: TenantSessionKey, client_type: ws.ClientType):
     """Register a live connection the way connect_websocket does."""
-    connection_id = manager._build_connection_id(key, client_type)
+    connection_id = manager.registry.build_connection_id(key, client_type)
     socket = Mock()
     socket.send_json = AsyncMock()
     connection = ws.WebSocketConnection(
@@ -84,7 +84,7 @@ class TestTheExclusionUsesTheRegisteredId:
             if connection is session["customer"]
         )
 
-        assert manager._registered_connection_id(session["customer"]) == registered
+        assert manager.registry.registered_connection_id(session["customer"]) == registered
 
     def test_an_unregistered_connection_has_no_id(self, session):
         stranger = ws.WebSocketConnection(
@@ -97,4 +97,4 @@ class TestTheExclusionUsesTheRegisteredId:
             key=TenantSessionKey(TENANT, "session-1"),
         )
 
-        assert session["manager"]._registered_connection_id(stranger) is None
+        assert session["manager"].registry.registered_connection_id(stranger) is None
