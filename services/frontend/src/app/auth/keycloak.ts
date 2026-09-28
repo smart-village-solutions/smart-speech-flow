@@ -14,6 +14,18 @@ interface ActiveKeycloakSession {
 let active: ActiveKeycloakSession | null = null;
 let expired = false;
 const expirationListeners = new Set<() => void>();
+const authorizationListeners = new Set<() => void>();
+
+export function subscribeToKeycloakAuthorization(listener: () => void): () => void {
+  authorizationListeners.add(listener);
+  return () => {
+    authorizationListeners.delete(listener);
+  };
+}
+
+function notifyAuthorizationChanged(): void {
+  for (const listener of authorizationListeners) listener();
+}
 
 export function subscribeToKeycloakExpiration(listener: () => void): () => void {
   expirationListeners.add(listener);
@@ -35,6 +47,7 @@ function clearSession(session: ActiveKeycloakSession): void {
   // clearToken otherwise starts another login when init used login-required.
   session.client.loginRequired = false;
   session.client.clearToken();
+  notifyAuthorizationChanged();
 }
 
 function tenantCallback(tenantId: string): string {
@@ -63,6 +76,9 @@ export async function requireKeycloakLogin(
     active.studioUrl = tenant.studioUrl;
   }
   const session = active;
+  session.client.onAuthRefreshSuccess = () => {
+    if (active === session) notifyAuthorizationChanged();
+  };
   if (session.initialized) return session.client.authenticated === true;
   session.initialization ??= session.client.init({
     onLoad: 'login-required',
@@ -77,6 +93,7 @@ export async function requireKeycloakLogin(
     }
     session.initialized = true;
     expired = false;
+    notifyAuthorizationChanged();
     return authenticated;
   } catch (error) {
     clearSession(session);
@@ -92,11 +109,16 @@ function authenticatedSession(): ActiveKeycloakSession | null {
   return active;
 }
 
-/** Returns the selected tenant's public Studio URL only to system administrators. */
-export function getStudioUrlForSystemAdmin(): string | null {
+/** Navigation hint only; Studio enforces its own authorization on arrival. */
+export function getStudioAdministrationUrl(tenantId: string): string | null {
   const session = authenticatedSession();
-  if (session === null) return null;
-  return session.client.realmAccess?.roles?.includes('system_admin') === true
+  if (session === null || session.tenantId !== tenantId) return null;
+  const claims = session.client.tokenParsed;
+  const permissions: unknown = claims?.ssf_permissions;
+  return claims?.studio_tenant_id === tenantId &&
+    Array.isArray(permissions) &&
+    permissions.every((permission: unknown) => typeof permission === 'string') &&
+    permissions.includes('ssf.configuration.tenant.manage')
     ? (session.studioUrl ?? null)
     : null;
 }
@@ -137,6 +159,7 @@ export async function logoutFromKeycloak(): Promise<void> {
   const session = active;
   active = null;
   expired = false;
+  notifyAuthorizationChanged();
   if (session !== null) {
     try {
       await session.client.logout({ redirectUri: `${window.location.origin}/login` });
