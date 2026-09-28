@@ -125,6 +125,19 @@ describe('AdminUserMenu', () => {
     );
   });
 
+  it('lets keyboard users open the menu and focus the named Studio link', async () => {
+    renderWithProviders(
+      <AdminUserMenu onSignOut={vi.fn()} studioUrl="https://smartcity.dialog.kassel.de/" />,
+      { locale: 'de' }
+    );
+    const user = userEvent.setup();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Benutzerkonto' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    await user.tab();
+    expect(screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })).toHaveFocus();
+  });
+
   it('does not show the Studio link when it is not supplied', async () => {
     renderWithProviders(<AdminUserMenu onSignOut={vi.fn()} />, { locale: 'de' });
     await open();

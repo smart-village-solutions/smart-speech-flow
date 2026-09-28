@@ -27,6 +27,18 @@ Es stellt drei zentrale Nutzungspfade bereit:
 - `/login` - organisation chooser for staff
 - `/login/:tenantId` - Keycloak login and staff dashboard for one organisation
 
+## Studio administration navigation
+
+The authenticated tenant menu shows **Organisation verwalten** only when the
+current Keycloak access token contains `ssf.configuration.tenant.manage` in its
+`ssf_permissions` array and `studio_tenant_id` matches the selected tenant.
+Realm roles (including `system_admin`) and configuration read access do not
+satisfy this check. The link uses only `studioUrl` from the validated public
+tenant directory; missing destinations produce no link and invalid entries are
+rejected by the existing directory mapper. No credentials are added to the URL.
+Token refresh and tenant/session changes re-evaluate visibility. This navigation
+hint does not grant conversation permissions or replace Studio authorization.
+
 ## API-Bezug
 
 Das Frontend spricht gegen das API Gateway und nutzt insbesondere:
