@@ -4,6 +4,30 @@
 
 Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für mehrsprachige Kommunikation zwischen Verwaltungsmitarbeitern und Bürgern. Das System ermöglicht bidirektionale Sprachkommunikation mit automatischer Übersetzung in Echtzeit.
 
+### Conversation language and Studio display text
+
+`GET /api/languages/supported` supplies conversation and pipeline languages.
+Studio runtime configuration supplies reviewed display variants through
+`localization.defaultLocale` and `localization.locales`. The internal Gateway
+resolver in `services/api_gateway/display_text_fallback.py` uses a selected
+conversation language to choose display text; it never changes that language.
+The existing language picker and Studio V1 contract are unchanged.
+
+For each explicitly supported text field, a present matching Studio variant
+wins. If it is missing, SSF translates the German Studio value, then the
+English Studio value, then a limited SSF-owned English display default. An
+unsupported language or translation failure returns the selected safe source
+for that field. The English default is only a display fallback for a missing
+variant in an otherwise valid Studio response; it does not replace a value
+Studio supplies. If conversation-content storage is disabled, the storage
+question is absent.
+
+HTML fields are sanitized and only their text nodes are translated; plain-text
+fields bypass HTML parsing. New Studio fields must be registered explicitly
+with their text kind and English default. Locale matching uses language tags
+and does not require a fixed SSF language table. No UI currently consumes this
+resolver and it has no public endpoint.
+
 ## 🎯 Zielgruppen
 - **Admin-Benutzer:** Deutschsprachige Verwaltungsmitarbeiter
 - **Client-Benutzer:** Mehrsprachige Bürger und Kunden

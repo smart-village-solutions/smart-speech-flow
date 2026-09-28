@@ -141,9 +141,12 @@ class FakeResponse:
 
 
 class RecordingSpeech:
-    def __init__(self, *, fail: bool = False, invalid: bool = False) -> None:
+    def __init__(
+        self, *, fail: bool = False, invalid: bool = False, injected: bool = False
+    ) -> None:
         self.fail = fail
         self.invalid = invalid
+        self.injected = injected
         self.calls: list[dict[str, object]] = []
 
     def translate(self, payload: dict[str, object]) -> FakeResponse:
@@ -154,6 +157,8 @@ class RecordingSpeech:
         assert isinstance(texts, list)
         if self.invalid:
             return FakeResponse([" "])
+        if self.injected:
+            return FakeResponse(["<img src=x onerror=evil()>" for _ in texts])
         return FakeResponse([f"translated:{text}" for text in texts])
 
 
@@ -269,3 +274,11 @@ def test_unsafe_only_html_never_resolves_to_empty_text() -> None:
     resolved = resolve_display_texts(config, "de", RecordingSpeech())
 
     assert resolved["guestExplanationHtml"] == "&lt;script&gt;unsafe()&lt;/script&gt;"
+
+
+def test_generated_markup_is_displayed_as_text_not_executed() -> None:
+    config = make_config([("de-DE", {"guestExplanationHtml": "<p>German</p>"})])
+
+    resolved = resolve_display_texts(config, "sw", RecordingSpeech(injected=True))
+
+    assert resolved["guestExplanationHtml"] == ("<p>&lt;img src=x onerror=evil()&gt;</p>")
