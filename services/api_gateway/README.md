@@ -5,8 +5,9 @@
 `GET /api/login/tenants` is an anonymous, read-only facade over Studio's
 validated login directory. Studio is the source of truth for ready tenant
 realms. The gateway uses one trusted `KEYCLOAK_BASE_URL`, admits only issuers
-derived from current directory entries, and binds a validated token to its
-signed `studio_tenant_id` and `ssf_authorization_revision` claims.
+derived from current directory entries, and binds a validated token to the
+unique tenant identified by its verified issuer. Legacy user-token tenant and
+authorization-revision claims are not conversation admission criteria.
 
 The tenant-login production rollout requires these settings:
 
@@ -25,9 +26,11 @@ SSF_CONTENT_RETENTION_HOURS=24
 ```
 
 `STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS` bounds one live policy read and
-must be greater than 0 and at most 30. `SSF_CONTENT_RETENTION_HOURS` is how
-long consented conversation content is kept; `0` disables automatic deletion so
-an operator removes it by hand. Neither ever retains content a guest declined
+must be greater than 0 and at most 30. `KEYCLOAK_REQUIRED_ROLE` guards
+feedback reads and the telemetry probe, not conversation admission.
+`SSF_CONTENT_RETENTION_HOURS` controls how long consented conversation content
+is kept; `0` disables automatic deletion so an operator removes it by hand.
+Neither ever retains content a guest declined
 or a tenant policy disabled: that is removed when the conversation ends, and at
 the latest when the session passes `SSF_SESSION_MAX_HOURS`.
 
@@ -55,17 +58,19 @@ following:
 
 1. Confirm the Studio directory returns at least two ready tenant entries.
 2. Confirm every listed realm has the common public client, PKCE S256, the
-   exact application origin and `/login/*` redirects, the configured audience
-   and role, and signed tenant-ID and authorization-revision claims. For the
-   frontend's Account settings link, the realm's `account-console` client must
-   be enabled and every administrator must hold `default-roles-<realm>` (or
+   exact application origin and `/login/*` redirects, and the configured
+   audience. Regular users need no legacy SSF role or claims for conversations.
+   For the frontend's Account settings link, the realm's built-in
+   `account-console` client must be enabled and every administrator must hold
+   `default-roles-<realm>` (or
    `account`/`manage-account`); users imported from JSON with an explicit
    `realmRoles` list do not get it automatically.
 3. Complete the separate OpenSpec change `add-multi-tenant-operations` and pass
    its isolation tests for session creation, history, lookup, termination,
    messages, audio, and customer joins. This is an independent release gate,
    not part of the tenant-login-directory implementation.
-4. Manually verify login, existing SSO, logout, unknown-tenant handling, a
+4. Manually verify fresh attribute-free tokens in two admitted realms, login,
+   existing SSO, logout, unknown-tenant handling, a
    Studio outage after cache expiry, and cross-tenant negative paths in the
    deployed environment.
 

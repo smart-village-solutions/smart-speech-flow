@@ -8,7 +8,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, status
 
-from .auth import optional_ssf_user
+from .auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
 from .log_safety import safe_closed_value
 from .session_manager import session_manager
 from .session_pseudonym import session_ref
@@ -73,7 +73,7 @@ def require_customer_session_key(
     if key is None:
         raise _not_found()
     if principal is not None:
-        tenant_id = principal.get("studio_tenant_id")
+        tenant_id = principal.get(VERIFIED_TENANT_ID_CLAIM)
         if not isinstance(tenant_id, str) or not hmac.compare_digest(tenant_id, key.tenant_id):
             log_tenant_access_denied(key, outcome="principal_scope_mismatch")
             raise _not_found()

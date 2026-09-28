@@ -2,29 +2,29 @@
 
 ### Requirement: Tenant-bound runtime authorization gate
 
-For an authenticated tenant-bound runtime operation, SSF SHALL derive both
-`tenant_id` and `authorization_revision` only from the fully validated Studio
-user token, fetch the configuration through the existing V1 client, and return
-it only when its `tenant.id` and `authorizationRevision` match that trusted
-context.
+For an authenticated tenant-bound runtime operation, SSF SHALL derive
+`tenant_id` from the fully validated token issuer and unique Studio login
+directory entry, fetch the configuration through the existing V1 client, and
+return it only when its `tenant.id` matches that trusted tenant. Runtime
+authorization and configuration revisions remain service-contract metadata,
+not user-token admission criteria.
 
-#### Scenario: Matching tenant and authorization revision
+#### Scenario: Matching tenant
 
-- **WHEN** a validated token contains a valid `studio_tenant_id` and
-  `ssf_authorization_revision` and Studio returns matching V1 configuration
+- **WHEN** a valid user token maps to a tenant and Studio returns matching V1
+  configuration
 - **THEN** SSF returns one validated runtime configuration bound to that tenant
 
-#### Scenario: Missing or mismatching authorization revision
+#### Scenario: Legacy user revision is absent or stale
 
-- **WHEN** the token has no valid `ssf_authorization_revision` or Studio
-  returns a different `authorizationRevision`
-- **THEN** SSF rejects the runtime operation
-- **AND THEN** it does not produce fallback configuration
+- **WHEN** the token has no `ssf_authorization_revision` or its value differs
+  from Studio's runtime `authorizationRevision`
+- **THEN** that user-token field does not block a matching-tenant configuration
 
 #### Scenario: Cross-tenant response
 
 - **WHEN** Studio returns a configuration whose `tenant.id` differs from the
-  trusted token tenant
+  issuer-derived tenant
 - **THEN** SSF rejects the runtime operation
 - **AND THEN** it does not apply the returned configuration
 
