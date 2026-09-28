@@ -1,4 +1,7 @@
 {
+  "app": {
+    "name": "KasselDIALOG"
+  },
   "header": {
     "back": "Back",
     "home": "Home",
@@ -20,11 +23,11 @@
     "retry": "Try again"
   },
   "consent": {
-    "intro": "Smart Speech Flow is an automatic real-time language translation service designed to support conversations between people who speak different languages. The service runs exclusively on a dedicated private server.",
+    "intro": "$t(app.name) is an automatic real-time language translation service designed to support conversations between people who speak different languages. The service runs exclusively on a dedicated private server.",
     "howTo": "To start recording, tap the microphone button. You will then have 20 seconds to speak your input. You can also end the recording earlier with another tap. Alternatively, you can use the text input instead.",
     "retention": "By default, audio and transcription data are processed only during the active session and are not retained afterwards. Once the conversation ends, the data is discarded automatically. You can report issues or share ideas for improvement at any time using the in-app feedback function.",
-    "optIn": "If you would like to help us improve Smart Speech Flow, you have the option to allow your conversation data to be stored for up to 180 days. This data may be used solely for analysis and quality improvement purposes within the Smart Speech Flow project.",
-    "checkbox": "I agree to the storage of my conversation data for up to 180 days for the purpose of improving Smart Speech Flow.",
+    "optIn": "If you would like to help us improve $t(app.name), you have the option to allow your conversation data to be stored for up to 180 days. This data may be used solely for analysis and quality improvement purposes within the $t(app.name) project.",
+    "checkbox": "I agree to the storage of my conversation data for up to 180 days for the purpose of improving $t(app.name).",
     "getStarted": "Get started"
   },
   "conversation": {
@@ -59,18 +62,18 @@
     },
     "nps": {
       "label": "Recommendation",
-      "question": "How likely are you to recommend Smart Speech Flow to a colleague?",
+      "question": "How likely are you to recommend $t(app.name) to a colleague?",
       "low": "Not at all likely",
       "high": "Extremely likely",
       "option": "Score {{score}}"
     },
     "improvements": {
       "label": "Improvement ideas",
-      "question": "What would make Smart Speech Flow even better?",
+      "question": "What would make $t(app.name) even better?",
       "placeholder": "Your ideas, feature requests, or anything that bothered you…"
     },
     "notice": {
-      "purpose": "Your answers are used only to improve Smart Speech Flow.",
+      "purpose": "Your answers are used only to improve $t(app.name).",
       "retention": "We keep feedback for twelve months and delete it automatically after that.",
       "withdrawal": "You can have your feedback withdrawn at any time — just ask a member of staff."
     },
@@ -80,7 +83,7 @@
     "retry": "Send again",
     "failed": "Your feedback could not be sent. Your answers have been kept.",
     "thanksTitle": "Thank you!",
-    "thanksBody": "Your feedback helps us improve Smart Speech Flow for everyone."
+    "thanksBody": "Your feedback helps us improve $t(app.name) for everyone."
   },
   "errors": {
     "network": "No connection to the server.",
@@ -108,10 +111,10 @@
     },
     "dashboard": {
       "welcome": {
-        "ssf": "Welcome to Smart Speech Flow",
-        "kassel": "Welcome to KasselDIALOG"
+        "ssf": "Welcome to $t(app.name)",
+        "kassel": "Welcome to $t(app.name)"
       },
-      "intro": "Smart Speech Flow provides a virtual real-time interpreter. Start a new conversation to speak with someone in another language straight away — no waiting and no prior setup.",
+      "intro": "$t(app.name) provides a virtual real-time interpreter. Start a new conversation to speak with someone in another language straight away — no waiting and no prior setup.",
       "newSession": "Start a new conversation"
     },
     "load": {

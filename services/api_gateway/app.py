@@ -21,6 +21,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CollectorRegistry
 
+from .branding import DISPLAY_NAME
 from .client_origin import configured_client_origin
 from .dependencies import GatewayDependencies, build_gateway_dependencies
 from .gateway_metrics import GatewayMetrics
@@ -931,7 +932,7 @@ GATEWAY_DESCRIPTION = """
 def create_app() -> FastAPI:
     """Build one gateway app. Its lifespan builds the app's own dependency container."""
     app = FastAPI(
-        title="Smart Speech Flow API Gateway",
+        title=f"{DISPLAY_NAME} API Gateway",
         description=GATEWAY_DESCRIPTION,
         version="1.1.0",
         lifespan=lifespan,

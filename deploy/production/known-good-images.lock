@@ -1,8 +1,7 @@
 # Updated from the running production containers on 2026-09-22 for
 # asr and translation; on 2026-09-23 for vllm; frontend built on the
-# host from merged main at a4ff7d1 on 2026-09-28
-# for tenant-bound Studio navigation (#436); api_gateway built on the
-# host from merged main at 8c40820 on 2026-09-28 for the gateway boundary refactor (#228);
+# host from the KasselDIALOG branding branch on 2026-09-28;
+# api_gateway was built from the same branch on 2026-09-28;
 # on 2026-09-28 for tts, built on the host from main at a19258f for the
 # VRAM budget (#224);
 # the Keycloak theme image was built and verified on 2026-09-13; remaining
@@ -10,11 +9,11 @@
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
-api_gateway	sha256:8d0f355a02595dc4d318485b92c9945564c862c6fb56c1039b5349e1f682bd67	ssf-backend-api_gateway:prod-8c40820
+api_gateway	sha256:7abe1b561fdb7e34c22d7c04d8ede0a85470acf7aa7a297bc07c5a389d42dc0f	ssf-backend-api_gateway:prod-kasseldialog-20260928-r2
 asr	sha256:abff6ae86a6d06eb20b7f147739bf0e4560cb1c41ef5d8d1b4d443c7e8510da6	ssf-backend-asr:prod-35c4b2f
 translation	sha256:7095a8c1192cf194013d0130fd0957010b2899e62c4a21464cc5f74ffc9d2dad	ssf-backend-translation:prod-35c4b2f
 tts	sha256:a51b74d82815761d04c6aec457b493f19e5e680a27fe4930473e9c28f9bbacf3	ssf-backend-tts:prod-a19258f
-frontend	sha256:793b1844d5915728e88c371baa5c63742ab5af62de92eb2146efa375e7fd8037	ssf-backend-frontend:prod-a4ff7d1
+frontend	sha256:237032513164ee28e7108cb7d479cb8cd73325026048bcdf9b131e0000037df1	ssf-backend-frontend:prod-kasseldialog-20260928-r2
 frontend-archive	sha256:5fe65474631a5f74c4ea81a5881ade417809f9c5905b593c6cc2d2699e50686d	ssf-backend-frontend-archive:prod-e409a06
 keycloak	sha256:b9222cecb936372df1fa7154f30306f48277c4ee3acec47d5f487ca225160b20	ssf-keycloak:prod-59c954c
 traefik	sha256:76de233753150da70cde36a5d845c231d408a041b6fcf5a36f924c1322bd98fd	traefik@sha256:ca0f90490fe3091f5f4e582a28638652edb3b26b4d7a1d9ee621ce88fb2bff86

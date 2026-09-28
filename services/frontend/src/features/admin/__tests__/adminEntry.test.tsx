@@ -40,7 +40,7 @@ describe('the admin entry', () => {
   // of the admin UI, not a link back into it.
   it('leaves the admin UI for the access-code screen from the dashboard', async () => {
     renderAdmin();
-    await screen.findByText('Willkommen bei Smart Speech Flow');
+    await screen.findByText('Willkommen bei KasselDIALOG');
 
     await userEvent.click(screen.getByRole('button', { name: 'Start' }));
 
@@ -62,7 +62,7 @@ describe('the admin entry', () => {
 
   it('keeps the chosen theme across navigation within the admin session', async () => {
     renderAdmin();
-    await screen.findByText('Willkommen bei Smart Speech Flow');
+    await screen.findByText('Willkommen bei KasselDIALOG');
     expect(document.documentElement.classList.contains('dark')).toBe(true);
 
     await userEvent.click(screen.getByRole('button', { name: 'Design wechseln' }));

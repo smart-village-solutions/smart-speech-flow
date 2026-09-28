@@ -1,7 +1,10 @@
+from html import escape
+
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
 from services.api_gateway.app import SERVICE_URLS
+from services.api_gateway.branding import DISPLAY_NAME
 from services.api_gateway.utils.health_utils import get_health_status_html
 
 router = APIRouter()
@@ -10,9 +13,10 @@ router = APIRouter()
 @router.get("/", response_class=HTMLResponse)
 def index():
     health_html = get_health_status_html(SERVICE_URLS)
+    display_name = escape(DISPLAY_NAME)
     html = f"""
     <html>
-    <head><title>Smart Speech Flow API Gateway</title>
+    <head><title>{display_name} API Gateway</title>
     <script>
     async function uploadExample(fname, sourceLang, targetLang) {{
         const formData = new FormData();
@@ -36,7 +40,7 @@ def index():
     </script>
     </head>
     <body>
-    <h1>Smart Speech Flow API Gateway</h1>
+    <h1>{display_name} API Gateway</h1>
         <h2>Health-Status</h2>
         <ul>{health_html}</ul>
         <h2>WAV-Datei hochladen</h2>

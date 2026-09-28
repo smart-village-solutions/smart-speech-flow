@@ -20,6 +20,7 @@ describe('I18nProvider', () => {
   it('renders in the locale it is given', () => {
     renderAt('en');
     expect(screen.getByText('Choose your language')).toBeInTheDocument();
+    expect(document.title).toBe('KasselDIALOG');
   });
 
   it('follows the locale when it changes', () => {

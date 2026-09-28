@@ -51,7 +51,7 @@ describe('ConsentScreen', () => {
     renderWithProviders(tree(), { route });
 
     expect(
-      screen.getByText(/Smart Speech Flow is an automatic real-time/).parentElement?.parentElement
+      screen.getByText(/KasselDIALOG is an automatic real-time/).parentElement?.parentElement
         ?.parentElement
     ).toHaveClass('pt-content-top');
   });

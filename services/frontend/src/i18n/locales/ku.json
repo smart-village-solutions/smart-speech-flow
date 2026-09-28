@@ -1,4 +1,7 @@
 {
+  "app": {
+    "name": "KasselDIALOG"
+  },
   "header": {
     "back": "Vegere",
     "home": "Destpêk",
@@ -20,11 +23,11 @@
     "retry": "Dîsa biceribîne"
   },
   "consent": {
-    "intro": "Smart Speech Flow xizmeteke wergerandinê ya otomatîk û demdemî ye ku ji bo piştgiriya axaftinên di navbera kesên bi zimanên cuda diaxivin hatiye çêkirin. Xizmet tenê li ser serverek taybet a veqetandî dixebite.",
+    "intro": "$t(app.name) xizmeteke wergerandinê ya otomatîk û demdemî ye ku ji bo piştgiriya axaftinên di navbera kesên bi zimanên cuda diaxivin hatiye çêkirin. Xizmet tenê li ser serverek taybet a veqetandî dixebite.",
     "howTo": "Ji bo destpêkirina tomarkirinê, li bişkoka mîkrofonê bitikîne. Paşê 20 çirke wextê te heye ku biaxivî. Bi tikandineke din tu dikarî tomarkirinê zûtir biqedînî. Wekî din, tu dikarî têketina nivîsê bi kar bînî.",
     "retention": "Ji xwe, daneyên deng û nivîsandinê tenê di dema danişîna çalak de tên pêvajokirin û paşê nayên hilanîn. Piştî ku axaftin diqede, dane bixweber tên jêbirin. Tu dikarî her dem bi fonksiyona nêrînan a di sepanê de kêşeyan ragihînî an pêşniyarên baştirkirinê parve bikî.",
-    "optIn": "Heke tu bixwazî alîkariya me bikî ku Smart Speech Flow baştir bibe, tu dikarî destûrê bidî ku daneyên axaftina te heta 180 rojan bên hilanîn. Ev dane tenê ji bo analîz û baştirkirina kalîteyê di çarçoveya projeya Smart Speech Flow de tên bikaranîn.",
-    "checkbox": "Ez razî me ku daneyên axaftina min ji bo baştirkirina Smart Speech Flow heta 180 rojan bên hilanîn.",
+    "optIn": "Heke tu bixwazî alîkariya me bikî ku $t(app.name) baştir bibe, tu dikarî destûrê bidî ku daneyên axaftina te heta 180 rojan bên hilanîn. Ev dane tenê ji bo analîz û baştirkirina kalîteyê di çarçoveya projeya $t(app.name) de tên bikaranîn.",
+    "checkbox": "Ez razî me ku daneyên axaftina min ji bo baştirkirina $t(app.name) heta 180 rojan bên hilanîn.",
     "getStarted": "Dest pê bike"
   },
   "conversation": {
@@ -59,18 +62,18 @@
     },
     "nps": {
       "label": "Pêşniyar",
-      "question": "Îhtîmal çiqas e ku tu Smart Speech Flow ji hevkarekî re pêşniyar bikî?",
+      "question": "Îhtîmal çiqas e ku tu $t(app.name) ji hevkarekî re pêşniyar bikî?",
       "low": "Qet ne muhtemel",
       "high": "Pir muhtemel",
       "option": "Puan {{score}}"
     },
     "improvements": {
       "label": "Pêşniyarên baştirkirinê",
-      "question": "Çi dê Smart Speech Flow hê baştir bike?",
+      "question": "Çi dê $t(app.name) hê baştir bike?",
       "placeholder": "Ramanên te, daxwazên te, an her tiştê ku te aciz kir…"
     },
     "notice": {
-      "purpose": "Bersivên te tenê ji bo baştirkirina Smart Speech Flow tên bikaranîn.",
+      "purpose": "Bersivên te tenê ji bo baştirkirina $t(app.name) tên bikaranîn.",
       "retention": "Em nêrînan diwanzdeh mehan hildidin û paşê bixweber jê dibin.",
       "withdrawal": "Tu dikarî her dem nêrîna xwe vekişînî – ji bo vê xwe bigihîne karmendên li cihî."
     },
@@ -80,7 +83,7 @@
     "retry": "Dîsa bişîne",
     "failed": "Nêrîna te nehat şandin. Tiştên ku te nivîsîne mane.",
     "thanksTitle": "Spas dikin!",
-    "thanksBody": "Nêrîna te alî me dike ku em Smart Speech Flow ji bo her kesî baştir bikin."
+    "thanksBody": "Nêrîna te alî me dike ku em $t(app.name) ji bo her kesî baştir bikin."
   },
   "errors": {
     "network": "Girêdan bi serverê re tune.",

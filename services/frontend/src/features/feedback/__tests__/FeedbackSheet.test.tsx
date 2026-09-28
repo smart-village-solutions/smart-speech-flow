@@ -123,7 +123,7 @@ describe('FeedbackSheet', () => {
     open();
 
     expect(
-      screen.getByText('Your answers are used only to improve Smart Speech Flow.')
+      screen.getByText('Your answers are used only to improve KasselDIALOG.')
     ).toBeInTheDocument();
     expect(
       screen.getByText(

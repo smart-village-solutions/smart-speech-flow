@@ -28,7 +28,8 @@ export function I18nProvider({ children, locale = 'de' }: Readonly<I18nProviderP
     const root = document.documentElement;
     root.lang = locale;
     root.dir = directionFor(locale);
-  }, [locale]);
+    document.title = instance.getFixedT(locale)('app.name');
+  }, [instance, locale]);
 
   return <I18nextProvider i18n={instance}>{children}</I18nextProvider>;
 }
