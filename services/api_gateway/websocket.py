@@ -42,6 +42,7 @@ from .realtime_registry import ConnectionRegistry
 from .realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from .session_access import require_customer_session_key
 from .session_manager import ClientType, SessionRegistry, SessionStatus, TenantSessionManager
+from .tenant_context import reject_request_tenant_selectors
 from .tenant_session import TenantSessionKey
 from .websocket_monitor import DisconnectReason, WebSocketMonitor
 
@@ -612,7 +613,7 @@ WebSocketManagerDependency = Annotated[
 SessionManagerDependency = Annotated[TenantSessionManager, Depends(get_session_manager)]
 
 
-@router.websocket("/ws/admin/{session_id}")
+@router.websocket("/ws/admin/{session_id}", dependencies=[Depends(reject_request_tenant_selectors)])
 async def admin_websocket_endpoint(
     websocket: WebSocket,
     session_id: str,
@@ -633,7 +634,9 @@ async def admin_websocket_endpoint(
     await websocket_endpoint(websocket, key, ClientType.ADMIN, manager, sessions, origin)
 
 
-@router.websocket("/ws/customer/{session_id}")
+@router.websocket(
+    "/ws/customer/{session_id}", dependencies=[Depends(reject_request_tenant_selectors)]
+)
 async def customer_websocket_endpoint(
     websocket: WebSocket,
     session_id: str,

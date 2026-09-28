@@ -1,5 +1,7 @@
 """Role and session binding for the polling fallback."""
 
+from collections import deque
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -130,3 +132,74 @@ def test_stale_admin_poll_request_releases_presence_before_refresh(
     assert response.json() == {"detail": "Polling client not found"}
     assert polling_id not in polling_store.clients
     assert session_manager.get_session(key).admin_connection_count == 0
+
+
+@pytest.mark.parametrize("authenticated", [False, True], ids=["guest", "user"])
+@pytest.mark.parametrize("selector_source", ["query", "body", "header", "cookie"])
+@pytest.mark.parametrize(
+    "operation", ["activate", "poll", "send", "status", "recover", "disconnect"]
+)
+def test_customer_polling_rejects_tenant_selectors_without_side_effects(
+    request, monkeypatch, session_manager, polling_store, authenticated, selector_source, operation
+) -> None:
+    from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
+
+    session_manager.reset(clear_persistence=True)
+    polling_store.clients.clear()
+    client = TestClient(app, client=(request.node.nodeid, 50000))
+    session_id = client.post("/api/admin/session/create").json()["session_id"]
+    base = f"/api/customer/session/{session_id}/polling"
+    polling_id = client.post(base + "/activate").json()["polling_id"]
+    stored = polling_store.clients[polling_id]
+    principal = {VERIFIED_TENANT_ID_CLAIM: stored.key.tenant_id} if authenticated else None
+    monkeypatch.setitem(app.dependency_overrides, optional_ssf_user, lambda: principal)
+    methods = {
+        "activate": "POST",
+        "poll": "GET",
+        "send": "POST",
+        "status": "GET",
+        "recover": "POST",
+        "disconnect": "DELETE",
+    }
+    suffix = "" if operation in {"poll", "disconnect"} else "/" + operation
+    path = base + "/activate" if operation == "activate" else base + "/" + polling_id + suffix
+    payload = {"type": "test_probe", "content": {}}
+    options = {"json": payload}
+    if selector_source == "query":
+        options["params"] = {"tenant_id": "other-tenant"}
+    elif selector_source == "body":
+        payload["content"] = {"tenant_id": "other-tenant"}
+    elif selector_source == "header":
+        options["headers"] = {"X-Tenant-Id": "other-tenant"}
+    else:
+        client.cookies.set("studio_tenant_id", "other-tenant")
+
+    response = client.request(methods[operation], path, **options)
+
+    assert response.status_code == 400
+    assert list(polling_store.clients) == [polling_id]
+    assert stored.messages == deque()
+    assert session_manager.get_session(stored.key).customer_connection_count == 1
+
+
+@pytest.mark.parametrize("actor", [None, "tenant-test", "other-tenant"])
+def test_customer_polling_preserves_guest_and_authenticated_tenant_access(
+    request, monkeypatch, session_manager, polling_store, actor
+):
+    from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
+
+    session_manager.reset(clear_persistence=True)
+    polling_store.clients.clear()
+    client = TestClient(app, client=(request.node.nodeid, 50000))
+    session_id = client.post("/api/admin/session/create").json()["session_id"]
+    base = f"/api/customer/session/{session_id}/polling"
+    polling_id = client.post(base + "/activate").json()["polling_id"]
+    principal = {VERIFIED_TENANT_ID_CLAIM: actor} if actor else None
+    monkeypatch.setitem(app.dependency_overrides, optional_ssf_user, lambda: principal)
+
+    status = client.get(base + "/" + polling_id + "/status")
+    activation = client.post(base + "/activate")
+
+    expected = 404 if actor == "other-tenant" else 200
+    assert status.status_code == expected
+    assert activation.status_code == expected

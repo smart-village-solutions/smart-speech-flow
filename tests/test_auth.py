@@ -145,6 +145,51 @@ def test_admin_endpoints_reject_requests_without_a_bearer_token():
     assert client.get("/api/admin/session/history").status_code == 401
 
 
+@pytest.mark.parametrize("issuer", [KASSEL_ISSUER, FULDA_ISSUER])
+def test_attribute_free_tenant_user_can_access_conversations(monkeypatch, signing_key, issuer):
+    mock_keycloak(monkeypatch, signing_key)
+    token = access_token(
+        signing_key,
+        iss=issuer,
+        realm_access=None,
+        studio_tenant_id=None,
+        ssf_authorization_revision=None,
+    )
+    assert request_with_token(token).status_code == 200
+
+
+def test_legacy_claims_cannot_select_a_different_tenant(monkeypatch, signing_key):
+    mock_keycloak(monkeypatch, signing_key)
+    token = access_token(
+        signing_key,
+        studio_tenant_id="tenant-fulda",
+        ssf_authorization_revision="invalid",
+        tenant_id="tenant-fulda",
+        realm_access=None,
+    )
+    assert request_with_token(token).status_code == 200
+
+
+@pytest.mark.parametrize("path", ["/api/feedback", "/api/admin/telemetry/probe"])
+def test_attribute_free_user_cannot_access_privileged_operations(monkeypatch, signing_key, path):
+    mock_keycloak(monkeypatch, signing_key)
+    token = access_token(
+        signing_key,
+        realm_access=None,
+        studio_tenant_id=None,
+        ssf_authorization_revision=None,
+    )
+    method = client.post if path.endswith("probe") else client.get
+    response = method(path, headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize("subject", [None, "", "   ", ["operator"]])
+def test_missing_or_invalid_subject_is_rejected(monkeypatch, signing_key, subject):
+    mock_keycloak(monkeypatch, signing_key)
+    assert request_with_token(access_token(signing_key, sub=subject)).status_code == 401
+
+
 @pytest.mark.parametrize(
     "issuer, tenant_id",
     [
@@ -186,19 +231,12 @@ def test_unadmitted_issuers_are_rejected_without_oidc_network_access(
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"studio_tenant_id": "tenant-fulda"},
-        {"studio_tenant_id": None},
-        {"studio_tenant_id": ["tenant-kassel"]},
-        {"ssf_authorization_revision": None},
-        {"ssf_authorization_revision": f"sha256:{'A' * 64}"},
-        {"ssf_authorization_revision": f"sha256:{'a' * 64}\n"},
-        {"ssf_authorization_revision": [REVISION]},
         {"aud": "other-app"},
         {"exp": datetime.now(timezone.utc) - timedelta(minutes=1)},
         {"exp": None},
     ],
 )
-def test_signed_claims_must_be_valid_and_bound_to_the_realm(monkeypatch, signing_key, overrides):
+def test_signed_standard_claims_must_be_valid(monkeypatch, signing_key, overrides):
     mock_keycloak(monkeypatch, signing_key)
     assert request_with_token(access_token(signing_key, **overrides)).status_code == 401
 
@@ -215,10 +253,12 @@ def test_non_rsa_jwk_fails_closed(monkeypatch, signing_key):
 
 
 @pytest.mark.parametrize("realm_access", [{"roles": []}, None, [], {"roles": "ssf-user"}])
-def test_missing_or_malformed_role_is_rejected(monkeypatch, signing_key, realm_access):
+def test_missing_or_malformed_role_does_not_block_conversations(
+    monkeypatch, signing_key, realm_access
+):
     mock_keycloak(monkeypatch, signing_key)
     assert (
-        request_with_token(access_token(signing_key, realm_access=realm_access)).status_code == 403
+        request_with_token(access_token(signing_key, realm_access=realm_access)).status_code == 200
     )
 
 
@@ -293,13 +333,17 @@ def test_tenant_dependency_receives_verified_claims_from_async_auth(
     ):
         return {
             "tenant_id": context.tenant_id,
-            "revision": context.authorization_revision,
         }
 
-    token = access_token(signing_key, iss=FULDA_ISSUER, studio_tenant_id="tenant-fulda")
+    token = access_token(
+        signing_key,
+        iss=FULDA_ISSUER,
+        studio_tenant_id="tenant-kassel",
+        _ssf_verified_tenant_id="tenant-kassel",
+    )
     response = TestClient(tenant_app).get("/tenant", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
-    assert response.json() == {"tenant_id": "tenant-fulda", "revision": REVISION}
+    assert response.json() == {"tenant_id": "tenant-fulda"}
 
 
 # An environment file from before #216 may still set the retired variables.

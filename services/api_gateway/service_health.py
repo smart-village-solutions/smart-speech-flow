@@ -113,7 +113,7 @@ class ServiceHealthManager:
         # GPU Thresholds (Percent)
         self.GPU_WARNING_THRESHOLD = 75.0
         self.GPU_CRITICAL_THRESHOLD = 90.0
-        self.GPU_MEMORY_WARNING_THRESHOLD = 80.0
+        self.GPU_MEMORY_WARNING_THRESHOLD = 94.0
         self.GPU_MEMORY_CRITICAL_THRESHOLD = 95.0
 
     def _setup_default_services(self):

@@ -2,7 +2,6 @@
 
 import json
 import os
-import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -27,7 +26,7 @@ from .studio_login_directory import (
 from .studio_login_directory_client import StudioLoginDirectoryClientError
 from .studio_runtime_token import StudioTokenError
 
-_AUTHORIZATION_REVISION_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+VERIFIED_TENANT_ID_CLAIM = "_ssf_verified_tenant_id"
 
 
 @dataclass(frozen=True)
@@ -129,7 +128,7 @@ async def require_ssf_user(
     ],
     key_cache: Annotated[OidcKeyCache, Depends(get_oidc_key_cache)],
 ) -> dict[str, Any]:
-    """Validate an administrative bearer token and return its claims."""
+    """Validate a tenant user's bearer token and attach the issuer-derived tenant."""
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
     if scheme.lower() != "bearer" or not token:
         raise _unauthorized()
@@ -155,11 +154,10 @@ async def require_ssf_user(
             detail="The login directory is temporarily unavailable",
         ) from None
 
-    matched_tenant = next(
-        (tenant for tenant in directory.tenants if settings.issuer_for(tenant.realm) == issuer),
-        None,
-    )
-    if matched_tenant is None:
+    matched_tenants = [
+        tenant for tenant in directory.tenants if settings.issuer_for(tenant.realm) == issuer
+    ]
+    if len(matched_tenants) != 1:
         raise _unauthorized()
 
     try:
@@ -189,17 +187,25 @@ async def require_ssf_user(
     ):
         raise _unauthorized() from None
 
-    revision = claims.get("ssf_authorization_revision")
-    if (
-        claims.get("studio_tenant_id") != matched_tenant.id
-        or not isinstance(revision, str)
-        or not _AUTHORIZATION_REVISION_PATTERN.fullmatch(revision)
-    ):
+    subject = claims.get("sub")
+    if not isinstance(subject, str) or not subject.strip():
         raise _unauthorized()
+    # Always overwrite a same-named JWT claim; only the verified issuer and
+    # admitted login directory may establish tenant identity.
+    claims[VERIFIED_TENANT_ID_CLAIM] = matched_tenants[0].id
+    return claims
 
+
+async def require_ssf_privileged_user(
+    claims: Annotated[dict[str, Any], Depends(require_ssf_user)],
+) -> dict[str, Any]:
+    """Keep operational and feedback-read privileges separate from conversation access."""
     realm_access = claims.get("realm_access")
     roles = realm_access.get("roles") if isinstance(realm_access, dict) else None
-    if not isinstance(roles, list) or settings.required_role not in roles:
+    if (
+        not isinstance(roles, list)
+        or KeycloakSettings.from_environment().required_role not in roles
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The bearer token lacks the required role",

@@ -14,16 +14,18 @@ and intentionally has no data-restore path.
   `30`, `5`, and `8`.
 - ClickHouse migration `005_tenant_reference.sql` has been applied before
   quality telemetry is enabled.
-- Studio returns at least two production tenants, and each corresponding
-  Keycloak realm issues a token containing the correct `studio_tenant_id`,
-  audience, and required role.
+- Studio returns at least two production tenants with unique Keycloak realms.
+  Each realm issues a valid token with the gateway audience and non-empty
+  subject; legacy tenant, revision, and role claims are not required for
+  conversation access.
 - The two test tokens are held only in shell environment variables and are not
   pasted into commands, logs, tickets, or chat.
 
 ## Cutover
 
 1. Record the previous immutable gateway and frontend image tags for rollback.
-2. Validate the Studio directory and Keycloak claims for both test tenants.
+2. Validate the Studio directory and fresh attribute-free Keycloak tokens for
+   both test tenants.
 3. From the repository root, load the production Compose helper and stop only
    the public conversation workloads:
 

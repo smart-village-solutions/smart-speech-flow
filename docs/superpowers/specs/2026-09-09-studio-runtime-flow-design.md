@@ -1,5 +1,11 @@
 # Studio tenant-bound runtime flow design
 
+> Historical implementation design. The conversation-admission and
+> user-token revision checks below were superseded on 2026-09-27 by
+> [realm-derived conversation access](../../operations/keycloak-admin-access.md)
+> and OpenSpec `update-realm-derived-conversation-access`. Runtime response
+> revisions remain valid service-contract fields.
+
 ## Context
 
 Issue #298 integrates the Studio Runtime Configuration V1 consumer boundary in
