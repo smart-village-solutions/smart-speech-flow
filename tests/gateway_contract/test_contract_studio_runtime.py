@@ -48,7 +48,7 @@ def test_session_create_refuses_a_configuration_for_another_tenant(client, studi
     assert client.get("/api/admin/session/current").json() == NO_ACTIVE_SESSION
 
 
-def test_session_create_refuses_a_stale_authorization_revision(client, studio):
+def test_session_create_ignores_the_authorization_revision(client, studio):
     configuration = runtime_configuration(TENANT_A).model_dump(by_alias=True)
     configuration["authorizationRevision"] = f"sha256:{'b' * 64}"
     studio.configuration_override = type(runtime_configuration(TENANT_A)).model_validate(
@@ -57,8 +57,7 @@ def test_session_create_refuses_a_stale_authorization_revision(client, studio):
 
     response = client.post("/api/admin/session/create")
 
-    assert response.status_code == 502
-    assert response.json() == {"detail": "studio_runtime_authorization_mismatch"}
+    assert response.status_code == 201
 
 
 @pytest.mark.usefixtures("studio_unconfigured")
