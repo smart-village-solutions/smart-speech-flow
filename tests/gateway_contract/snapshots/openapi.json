@@ -1,0 +1,2906 @@
+{
+  "components": {
+    "schemas": {
+      "ActivateSessionRequest": {
+        "example": {
+          "customer_language": "en",
+          "session_id": "ABC12345"
+        },
+        "properties": {
+          "customer_language": {
+            "description": "Customer's preferred language code (e.g. 'en', 'de', 'ar')",
+            "title": "Customer Language",
+            "type": "string"
+          },
+          "data_retention_consent": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The guest's answer to the conversation-content storage question. Absent is not an answer and does not grant consent.",
+            "title": "Data Retention Consent"
+          },
+          "session_id": {
+            "description": "Session ID to activate",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "customer_language"
+        ],
+        "title": "ActivateSessionRequest",
+        "type": "object"
+      },
+      "ActivateSessionResponse": {
+        "properties": {
+          "customer_language": {
+            "description": "Customer language that was set",
+            "title": "Customer Language",
+            "type": "string"
+          },
+          "message": {
+            "description": "Success message",
+            "title": "Message",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Activated session ID",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "description": "New session status (should be 'active')",
+            "title": "Status",
+            "type": "string"
+          },
+          "timestamp": {
+            "description": "Activation timestamp",
+            "title": "Timestamp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "status",
+          "customer_language",
+          "message",
+          "timestamp"
+        ],
+        "title": "ActivateSessionResponse",
+        "type": "object"
+      },
+      "AdminPollingActivation": {
+        "properties": {
+          "ticket": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Ticket",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket"
+        ],
+        "title": "AdminPollingActivation",
+        "type": "object"
+      },
+      "AudioVariant": {
+        "enum": [
+          "original",
+          "translated"
+        ],
+        "title": "AudioVariant",
+        "type": "string"
+      },
+      "Body_pipeline_pipeline_post": {
+        "properties": {
+          "debug": {
+            "title": "Debug",
+            "type": "string"
+          },
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "source_lang": {
+            "title": "Source Lang",
+            "type": "string"
+          },
+          "target_lang": {
+            "title": "Target Lang",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "source_lang",
+          "target_lang"
+        ],
+        "title": "Body_pipeline_pipeline_post",
+        "type": "object"
+      },
+      "Body_upload_upload_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "source_lang": {
+            "title": "Source Lang",
+            "type": "string"
+          },
+          "target_lang": {
+            "title": "Target Lang",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "source_lang",
+          "target_lang"
+        ],
+        "title": "Body_upload_upload_post",
+        "type": "object"
+      },
+      "FeedbackAcceptedResponse": {
+        "description": "The opaque confirmation identifier.",
+        "properties": {
+          "feedback_id": {
+            "format": "uuid",
+            "title": "Feedback Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "feedback_id"
+        ],
+        "title": "FeedbackAcceptedResponse",
+        "type": "object"
+      },
+      "FeedbackDetailResponse": {
+        "description": "A listed record plus the text it was hiding. Audited on every read.",
+        "properties": {
+          "analytics_state": {
+            "title": "Analytics State",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "feedback_id": {
+            "format": "uuid",
+            "title": "Feedback Id",
+            "type": "string"
+          },
+          "form_version": {
+            "title": "Form Version",
+            "type": "string"
+          },
+          "has_improvements": {
+            "title": "Has Improvements",
+            "type": "boolean"
+          },
+          "improvements": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Improvements"
+          },
+          "net_promoter_score": {
+            "title": "Net Promoter Score",
+            "type": "integer"
+          },
+          "performance": {
+            "title": "Performance",
+            "type": "integer"
+          },
+          "session_ref": {
+            "title": "Session Ref",
+            "type": "string"
+          },
+          "translation_quality": {
+            "title": "Translation Quality",
+            "type": "integer"
+          },
+          "usability": {
+            "title": "Usability",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "feedback_id",
+          "session_ref",
+          "translation_quality",
+          "performance",
+          "usability",
+          "net_promoter_score",
+          "has_improvements",
+          "form_version",
+          "analytics_state",
+          "created_at",
+          "expires_at",
+          "improvements"
+        ],
+        "title": "FeedbackDetailResponse",
+        "type": "object"
+      },
+      "FeedbackListResponse": {
+        "description": "One page of a tenant's feedback.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FeedbackSummaryResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "FeedbackListResponse",
+        "type": "object"
+      },
+      "FeedbackSubmissionRequest": {
+        "additionalProperties": false,
+        "description": "What the browser may send. Everything analytical is server-owned.\n\n`improvements` carries NO validation constraint, and that is deliberate.\nPydantic attaches the offending value to every error it raises -- `input`\nin `errors()`, and a truncated fragment in `str(...)` -- and FastAPI copies\n`errors()` straight into the 422 response body. Any constraint here,\nbuilt-in or hand-rolled, therefore publishes the free text on violation.\nLength is enforced in FeedbackService instead, where the error we raise is\nthe error the caller sees.",
+        "properties": {
+          "form_version": {
+            "default": "v1",
+            "maxLength": 32,
+            "title": "Form Version",
+            "type": "string"
+          },
+          "improvements": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Improvements"
+          },
+          "net_promoter_score": {
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Net Promoter Score",
+            "type": "integer"
+          },
+          "performance": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Performance",
+            "type": "integer"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "translation_quality": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Translation Quality",
+            "type": "integer"
+          },
+          "usability": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Usability",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "translation_quality",
+          "performance",
+          "usability",
+          "net_promoter_score"
+        ],
+        "title": "FeedbackSubmissionRequest",
+        "type": "object"
+      },
+      "FeedbackSummaryResponse": {
+        "description": "A listed record. Carries no free text, only whether any exists.",
+        "properties": {
+          "analytics_state": {
+            "title": "Analytics State",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "feedback_id": {
+            "format": "uuid",
+            "title": "Feedback Id",
+            "type": "string"
+          },
+          "form_version": {
+            "title": "Form Version",
+            "type": "string"
+          },
+          "has_improvements": {
+            "title": "Has Improvements",
+            "type": "boolean"
+          },
+          "net_promoter_score": {
+            "title": "Net Promoter Score",
+            "type": "integer"
+          },
+          "performance": {
+            "title": "Performance",
+            "type": "integer"
+          },
+          "session_ref": {
+            "title": "Session Ref",
+            "type": "string"
+          },
+          "translation_quality": {
+            "title": "Translation Quality",
+            "type": "integer"
+          },
+          "usability": {
+            "title": "Usability",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "feedback_id",
+          "session_ref",
+          "translation_quality",
+          "performance",
+          "usability",
+          "net_promoter_score",
+          "has_improvements",
+          "form_version",
+          "analytics_state",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "FeedbackSummaryResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LoginTenantDirectoryResponse": {
+        "description": "The public tenant chooser response.",
+        "properties": {
+          "tenants": {
+            "items": {
+              "$ref": "#/components/schemas/LoginTenantResponse"
+            },
+            "title": "Tenants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tenants"
+        ],
+        "title": "LoginTenantDirectoryResponse",
+        "type": "object"
+      },
+      "LoginTenantResponse": {
+        "description": "The browser-safe fields needed to start one tenant's login flow.",
+        "properties": {
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "realm": {
+            "title": "Realm",
+            "type": "string"
+          },
+          "studioUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Studiourl"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "realm"
+        ],
+        "title": "LoginTenantResponse",
+        "type": "object"
+      },
+      "PollingMessage": {
+        "properties": {
+          "content": {
+            "additionalProperties": true,
+            "title": "Content",
+            "type": "object"
+          },
+          "type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "content"
+        ],
+        "title": "PollingMessage",
+        "type": "object"
+      },
+      "RealtimeTicketRequest": {
+        "properties": {
+          "transport": {
+            "enum": [
+              "websocket",
+              "polling"
+            ],
+            "title": "Transport",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transport"
+        ],
+        "title": "RealtimeTicketRequest",
+        "type": "object"
+      },
+      "RealtimeTicketResponse": {
+        "properties": {
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "ticket": {
+            "title": "Ticket",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket",
+          "expires_at"
+        ],
+        "title": "RealtimeTicketResponse",
+        "type": "object"
+      },
+      "SessionCreateResponse": {
+        "properties": {
+          "client_url": {
+            "description": "URL for client to join session",
+            "title": "Client Url",
+            "type": "string"
+          },
+          "created_at": {
+            "description": "Session creation timestamp",
+            "title": "Created At",
+            "type": "string"
+          },
+          "message": {
+            "description": "Success message",
+            "title": "Message",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Unique session identifier",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "description": "Session status",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "client_url",
+          "status",
+          "created_at",
+          "message"
+        ],
+        "title": "SessionCreateResponse",
+        "type": "object"
+      },
+      "SessionHistoryResponse": {
+        "properties": {
+          "active_sessions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Active Sessions",
+            "type": "array"
+          },
+          "sessions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
+          "total_count": {
+            "title": "Total Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sessions",
+          "total_count"
+        ],
+        "title": "SessionHistoryResponse",
+        "type": "object"
+      },
+      "SessionStatusResponse": {
+        "properties": {
+          "admin_connected": {
+            "title": "Admin Connected",
+            "type": "boolean"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "customer_connected": {
+            "title": "Customer Connected",
+            "type": "boolean"
+          },
+          "customer_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Language"
+          },
+          "message_count": {
+            "title": "Message Count",
+            "type": "integer"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "terminated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminated At"
+          },
+          "termination_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Termination Reason"
+          },
+          "timeout_at": {
+            "title": "Timeout At",
+            "type": "string"
+          },
+          "warning_at": {
+            "title": "Warning At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "status",
+          "admin_connected",
+          "customer_connected",
+          "message_count",
+          "created_at",
+          "warning_at",
+          "timeout_at"
+        ],
+        "title": "SessionStatusResponse",
+        "type": "object"
+      },
+      "TelemetryProbeResponse": {
+        "properties": {
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Generated probe event id, or null when disabled",
+            "title": "Event Id"
+          },
+          "mode": {
+            "description": "Effective telemetry mode",
+            "title": "Mode",
+            "type": "string"
+          },
+          "outcome": {
+            "description": "What actually happened: emitted, export_failed, dropped_disallowed, or disabled. An event_id without outcome=emitted will never appear in quality_events.",
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "outcome"
+        ],
+        "title": "TelemetryProbeResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "\n    Echtzeit-Sprachverarbeitung und Übersetzung mit WebSocket-Unterstützung.\n\n    ## Session Workflow\n\n    1. **Admin** erstellt Session via `/api/admin/session/create`\n    2. **Customer** aktiviert Session via `/api/customer/session/activate`\n    3. Beide beziehen ein kurzlebiges Realtime-Ticket und verbinden sich über\n       ihren rollenspezifischen WebSocket-Endpunkt\n    4. Nachrichten werden bidirektional übersetzt und zugestellt\n\n    ## Connection Types\n\n    - `admin`: Deutschsprachiger Mitarbeiter (administrative staff member)\n    - `customer`: Mehrsprachiger Kunde/Bürger (multilingual end-user/citizen)\n\n    ## WebSocket Architecture\n\n    Das System verwendet einen zentralen **WebSocketManager** als Singleton:\n    - Eine Instanz verwaltet alle Verbindungen\n    - Dependency Injection via `get_websocket_manager()`\n    - Differenzierte Broadcasts (Admin ≠ Customer Nachricht)\n    - Prometheus Metrics für Monitoring\n    ",
+    "title": "Smart Speech Flow API Gateway",
+    "version": "1.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "index__get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Index"
+      }
+    },
+    "/api/admin/circuit-breakers/reset-all": {
+      "post": {
+        "description": "Manueller Reset aller Circuit Breaker (Admin Only)\n\nReturns:\n    Reset Status aller Circuit Breaker",
+        "operationId": "reset_all_circuit_breakers_api_admin_circuit_breakers_reset_all_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reset All Circuit Breakers Api Admin Circuit Breakers Reset All Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "description": "Circuit breaker reset failed"
+          }
+        },
+        "summary": "Reset All Circuit Breakers",
+        "tags": [
+          "circuit-breaker"
+        ]
+      }
+    },
+    "/api/admin/circuit-breakers/{service_name}/reset": {
+      "post": {
+        "description": "Manueller Circuit Breaker Reset (Admin Only)\n\nArgs:\n    service_name: Name des Services\n\nReturns:\n    Reset Status",
+        "operationId": "reset_circuit_breaker_api_admin_circuit_breakers__service_name__reset_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_name",
+            "required": true,
+            "schema": {
+              "title": "Service Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reset Circuit Breaker Api Admin Circuit Breakers  Service Name  Reset Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid service name"
+          },
+          "404": {
+            "description": "Service or circuit breaker not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Circuit breaker health operation failed"
+          }
+        },
+        "summary": "Reset Circuit Breaker",
+        "tags": [
+          "circuit-breaker"
+        ]
+      }
+    },
+    "/api/admin/realtime/connections": {
+      "get": {
+        "operationId": "list_tenant_realtime_connections_api_admin_realtime_connections_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Tenant Realtime Connections Api Admin Realtime Connections Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Tenant Realtime Connections",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/session/create": {
+      "post": {
+        "description": "Erstellt eine neue Admin-Session. Vorherige aktive Sessions werden standardmäßig aus Datenschutzgründen beendet.",
+        "operationId": "create_admin_session_api_admin_session_create_post",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "description": "Session creation failed"
+          }
+        },
+        "summary": "Neue Admin-Session erstellen",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/session/current": {
+      "get": {
+        "description": "Gibt Details der aktuell aktiven Admin-Session zurück. Optional kann eine Session-ID angegeben werden.",
+        "operationId": "get_current_session_api_admin_session_current_get",
+        "parameters": [
+          {
+            "description": "Spezifische Session-ID, die geladen werden soll.",
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Spezifische Session-ID, die geladen werden soll.",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Admin session operation failed"
+          }
+        },
+        "summary": "Aktuelle Admin-Session abrufen",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/session/history": {
+      "get": {
+        "description": "Gibt eine Liste der vergangenen Sessions und aktuelle Session zurück",
+        "operationId": "get_session_history_api_admin_session_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionHistoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Session history lookup failed"
+          }
+        },
+        "summary": "Session-Historie abrufen",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/audio/{message_id}/{variant}.wav": {
+      "get": {
+        "operationId": "get_admin_audio_api_admin_session__session_id__audio__message_id___variant__wav_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "variant",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AudioVariant"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Admin session operation failed"
+          }
+        },
+        "summary": "Get Admin Audio",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/message": {
+      "post": {
+        "operationId": "send_admin_message_api_admin_session__session_id__message_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Admin session operation failed"
+          }
+        },
+        "summary": "Process an admin message",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/messages": {
+      "get": {
+        "operationId": "get_admin_messages_api_admin_session__session_id__messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Admin Messages Api Admin Session  Session Id  Messages Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Admin session operation failed"
+          }
+        },
+        "summary": "Get Admin Messages",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/polling/activate": {
+      "post": {
+        "operationId": "activate_admin_polling_api_admin_session__session_id__polling_activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPollingActivation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Activate Admin Polling Api Admin Session  Session Id  Polling Activate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Session not found or realtime ticket rejected"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "Realtime ticket service unavailable"
+          }
+        },
+        "summary": "Activate Admin Polling",
+        "tags": [
+          "websocket-polling-fallback",
+          "realtime-polling"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/polling/{polling_id}": {
+      "delete": {
+        "operationId": "admin_disconnect_api_admin_session__session_id__polling__polling_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "polling_id",
+            "required": true,
+            "schema": {
+              "title": "Polling Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Admin Disconnect Api Admin Session  Session Id  Polling  Polling Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Disconnect",
+        "tags": [
+          "websocket-polling-fallback",
+          "realtime-polling"
+        ]
+      },
+      "get": {
+        "operationId": "admin_poll_api_admin_session__session_id__polling__polling_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "polling_id",
+            "required": true,
+            "schema": {
+              "title": "Polling Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timeout",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 60,
+              "minimum": 0,
+              "title": "Timeout",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Poll Api Admin Session  Session Id  Polling  Polling Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Poll",
+        "tags": [
+          "websocket-polling-fallback",
+          "realtime-polling"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/polling/{polling_id}/recover": {
+      "post": {
+        "operationId": "admin_recover_api_admin_session__session_id__polling__polling_id__recover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "polling_id",
+            "required": true,
+            "schema": {
+              "title": "Polling Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Admin Recover Api Admin Session  Session Id  Polling  Polling Id  Recover Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Recover",
+        "tags": [
+          "websocket-polling-fallback",
+          "realtime-polling"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/polling/{polling_id}/send": {
+      "post": {
+        "operationId": "admin_send_api_admin_session__session_id__polling__polling_id__send_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "polling_id",
+            "required": true,
+            "schema": {
+              "title": "Polling Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PollingMessage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Admin Send Api Admin Session  Session Id  Polling  Polling Id  Send Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Send",
+        "tags": [
+          "websocket-polling-fallback",
+          "realtime-polling"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/polling/{polling_id}/status": {
+      "get": {
+        "operationId": "admin_polling_status_api_admin_session__session_id__polling__polling_id__status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "polling_id",
+            "required": true,
+            "schema": {
+              "title": "Polling Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Polling Status Api Admin Session  Session Id  Polling  Polling Id  Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Polling Status",
+        "tags": [
+          "websocket-polling-fallback",
+          "realtime-polling"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/realtime-ticket": {
+      "post": {
+        "operationId": "issue_realtime_ticket_api_admin_session__session_id__realtime_ticket_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RealtimeTicketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RealtimeTicketResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "Ticket store unavailable"
+          }
+        },
+        "summary": "Issue Realtime Ticket",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/realtime/connections": {
+      "get": {
+        "operationId": "list_session_realtime_connections_api_admin_session__session_id__realtime_connections_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Session Realtime Connections Api Admin Session  Session Id  Realtime Connections Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Admin session operation failed"
+          }
+        },
+        "summary": "List Session Realtime Connections",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/status": {
+      "get": {
+        "description": "Gibt detaillierte Informationen über eine spezifische Session zurück",
+        "operationId": "get_session_status_api_admin_session__session_id__status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Admin session operation failed"
+          }
+        },
+        "summary": "Session-Status abrufen",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/session/{session_id}/terminate": {
+      "delete": {
+        "description": "Beendet eine spezifische Session manuell mit graceful cleanup",
+        "operationId": "terminate_session_api_admin_session__session_id__terminate_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Admin session operation failed"
+          }
+        },
+        "summary": "Session manuell beenden",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/telemetry/probe": {
+      "post": {
+        "description": "Emit a single allowlisted probe event. Never fails on telemetry error.",
+        "operationId": "emit_telemetry_probe_api_admin_telemetry_probe_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetryProbeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "500": {
+            "description": "Admin session operation failed"
+          }
+        },
+        "summary": "Emit one quality telemetry probe event",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/customer/languages/supported": {
+      "get": {
+        "description": "Liste aller verfügbaren Sprachen für die Session-Aktivierung",
+        "operationId": "get_supported_languages_for_customers_api_customer_languages_supported_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Supported Languages For Customers Api Customer Languages Supported Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "description": "Supported language lookup failed"
+          }
+        },
+        "summary": "Unterstützte Sprachen für Kunden abrufen",
+        "tags": [
+          "customer",
+          "customer"
+        ]
+      }
+    },
+    "/api/customer/session/activate": {
+      "post": {
+        "description": "Übernimmt eine Session vom pending in den active Status. Idempotent - kann mehrmals aufgerufen werden.",
+        "operationId": "activate_session_api_customer_session_activate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivateSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivateSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid customer session request"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Customer session operation failed"
+          }
+        },
+        "summary": "Aktiviert eine pending Session für den Kunden",
+        "tags": [
+          "customer",
+          "customer"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}": {
+      "get": {
+        "description": "Ermöglicht Kunden zu prüfen ob eine Session bereit ist",
+        "operationId": "get_customer_session_status_api_customer_session__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Customer Session Status Api Customer Session  Session Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid customer session request"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Customer session operation failed"
+          }
+        },
+        "summary": "Session-Status für Kunden abrufen",
+        "tags": [
+          "customer",
+          "customer"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/audio/{message_id}/{variant}.wav": {
+      "get": {
+        "operationId": "get_customer_audio_api_customer_session__session_id__audio__message_id___variant__wav_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "title": "Message Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "variant",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AudioVariant"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid customer session request"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Customer session operation failed"
+          }
+        },
+        "summary": "Get Customer Audio",
+        "tags": [
+          "customer",
+          "customer"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/message": {
+      "post": {
+        "operationId": "send_customer_message_api_customer_session__session_id__message_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid customer session request"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Customer session operation failed"
+          }
+        },
+        "summary": "Process a customer message",
+        "tags": [
+          "customer",
+          "customer"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/messages": {
+      "get": {
+        "operationId": "get_customer_messages_api_customer_session__session_id__messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Customer Messages Api Customer Session  Session Id  Messages Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid customer session request"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Customer session operation failed"
+          }
+        },
+        "summary": "Get Customer Messages",
+        "tags": [
+          "customer",
+          "customer"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/polling/activate": {
+      "post": {
+        "operationId": "activate_customer_polling_api_customer_session__session_id__polling_activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Activate Customer Polling Api Customer Session  Session Id  Polling Activate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Activate Customer Polling",
+        "tags": [
+          "websocket-polling-fallback",
+          "realtime-polling"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/polling/{polling_id}": {
+      "delete": {
+        "operationId": "customer_disconnect_api_customer_session__session_id__polling__polling_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "polling_id",
+            "required": true,
+            "schema": {
+              "title": "Polling Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Customer Disconnect Api Customer Session  Session Id  Polling  Polling Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Customer Disconnect",
+        "tags": [
+          "websocket-polling-fallback",
+          "realtime-polling"
+        ]
+      },
+      "get": {
+        "operationId": "customer_poll_api_customer_session__session_id__polling__polling_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "polling_id",
+            "required": true,
+            "schema": {
+              "title": "Polling Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timeout",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 60,
+              "minimum": 0,
+              "title": "Timeout",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Customer Poll Api Customer Session  Session Id  Polling  Polling Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Customer Poll",
+        "tags": [
+          "websocket-polling-fallback",
+          "realtime-polling"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/polling/{polling_id}/recover": {
+      "post": {
+        "operationId": "customer_recover_api_customer_session__session_id__polling__polling_id__recover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "polling_id",
+            "required": true,
+            "schema": {
+              "title": "Polling Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Customer Recover Api Customer Session  Session Id  Polling  Polling Id  Recover Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Customer Recover",
+        "tags": [
+          "websocket-polling-fallback",
+          "realtime-polling"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/polling/{polling_id}/send": {
+      "post": {
+        "operationId": "customer_send_api_customer_session__session_id__polling__polling_id__send_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "polling_id",
+            "required": true,
+            "schema": {
+              "title": "Polling Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PollingMessage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Customer Send Api Customer Session  Session Id  Polling  Polling Id  Send Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Customer Send",
+        "tags": [
+          "websocket-polling-fallback",
+          "realtime-polling"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/polling/{polling_id}/status": {
+      "get": {
+        "operationId": "customer_polling_status_api_customer_session__session_id__polling__polling_id__status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "polling_id",
+            "required": true,
+            "schema": {
+              "title": "Polling Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Customer Polling Status Api Customer Session  Session Id  Polling  Polling Id  Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Customer Polling Status",
+        "tags": [
+          "websocket-polling-fallback",
+          "realtime-polling"
+        ]
+      }
+    },
+    "/api/feedback": {
+      "get": {
+        "operationId": "list_feedback_api_feedback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List this tenant's feedback submissions",
+        "tags": [
+          "feedback",
+          "feedback"
+        ]
+      },
+      "post": {
+        "operationId": "submit_feedback_api_feedback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackSubmissionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackAcceptedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit voluntary feedback for a session",
+        "tags": [
+          "feedback",
+          "feedback"
+        ]
+      }
+    },
+    "/api/feedback/{feedback_id}": {
+      "get": {
+        "operationId": "read_feedback_api_feedback__feedback_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "feedback_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Feedback Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read one feedback submission, including its free text",
+        "tags": [
+          "feedback",
+          "feedback"
+        ]
+      }
+    },
+    "/api/health/circuit-breakers": {
+      "get": {
+        "description": "Status aller Circuit Breaker\n\nReturns:\n    Circuit Breaker Status für alle Services",
+        "operationId": "get_circuit_breakers_status_api_health_circuit_breakers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Circuit Breakers Status Api Health Circuit Breakers Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "description": "Circuit breaker status lookup failed"
+          }
+        },
+        "summary": "Get Circuit Breakers Status",
+        "tags": [
+          "circuit-breaker"
+        ]
+      }
+    },
+    "/api/health/degradation": {
+      "get": {
+        "description": "Graceful Degradation Status\n\nReturns:\n    Cache Status, Service Mode, Fallback Information",
+        "operationId": "get_degradation_status_api_health_degradation_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Degradation Status Api Health Degradation Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "description": "Degradation status lookup failed"
+          }
+        },
+        "summary": "Get Degradation Status",
+        "tags": [
+          "circuit-breaker"
+        ]
+      }
+    },
+    "/api/health/services": {
+      "get": {
+        "description": "Gesamter Health Status aller Services\n\nReturns:\n    Service Health Overview mit Circuit Breaker Status",
+        "operationId": "get_services_health_api_health_services_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Services Health Api Health Services Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "description": "Health status lookup failed"
+          }
+        },
+        "summary": "Get Services Health",
+        "tags": [
+          "circuit-breaker"
+        ]
+      }
+    },
+    "/api/health/services/{service_name}": {
+      "get": {
+        "description": "Health Status für einzelnen Service\n\nArgs:\n    service_name: Name des Services (asr, translation, tts)\n\nReturns:\n    Detaillierter Service Health Status",
+        "operationId": "get_service_health_api_health_services__service_name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_name",
+            "required": true,
+            "schema": {
+              "title": "Service Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Service Health Api Health Services  Service Name  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid service name"
+          },
+          "404": {
+            "description": "Service or circuit breaker not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Circuit breaker health operation failed"
+          }
+        },
+        "summary": "Get Service Health",
+        "tags": [
+          "circuit-breaker"
+        ]
+      }
+    },
+    "/api/health/summary": {
+      "get": {
+        "description": "Kompakte Health Summary für Dashboard\n\nReturns:\n    Übersicht über Service Health, Circuit Breaker und Cache",
+        "operationId": "get_health_summary_api_health_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Health Summary Api Health Summary Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "description": "Health summary generation failed"
+          }
+        },
+        "summary": "Get Health Summary",
+        "tags": [
+          "circuit-breaker"
+        ]
+      }
+    },
+    "/api/languages/supported": {
+      "get": {
+        "description": "Verfügbare Sprachen für Frontends",
+        "operationId": "get_supported_languages_api_languages_supported_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Supported Languages Api Languages Supported Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Supported Languages",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/login/tenants": {
+      "get": {
+        "description": "Return only validated fields that are safe for an anonymous browser.",
+        "operationId": "list_login_tenants_api_login_tenants_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginTenantDirectoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Login Tenants",
+        "tags": [
+          "login"
+        ]
+      }
+    },
+    "/api/websocket/monitoring/health": {
+      "get": {
+        "description": "WebSocket system health check endpoint\nReturns current health status and key metrics",
+        "operationId": "websocket_health_check_api_websocket_monitoring_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Websocket Health Check",
+        "tags": [
+          "websocket-monitoring",
+          "WebSocket Monitoring"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/languages": {
+      "get": {
+        "description": "Expose supported languages without the /api prefix for the public site.",
+        "operationId": "list_supported_languages_languages_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Supported Languages Languages Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List supported languages",
+        "tags": [
+          "public"
+        ]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "description": "Kombinierte Prometheus-Metriken für Gateway und WebSocket-Monitoring",
+        "operationId": "metrics_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Metrics"
+      }
+    },
+    "/pipeline": {
+      "post": {
+        "operationId": "pipeline_pipeline_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_pipeline_pipeline_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pipeline"
+      }
+    },
+    "/upload": {
+      "post": {
+        "operationId": "upload_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload"
+      }
+    }
+  }
+}
