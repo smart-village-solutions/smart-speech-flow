@@ -14,6 +14,17 @@ import pytest
 
 APP = Path(__file__).resolve().parents[1] / "services" / "api_gateway" / "app.py"
 SOURCE = APP.read_text(encoding="utf-8")
+DEPENDENCIES = APP.with_name("dependencies.py").read_text(encoding="utf-8")
+
+
+def _function_source(name: str) -> str:
+    tree = ast.parse(SOURCE)
+    [function] = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name
+    ]
+    return ast.get_source_segment(SOURCE, function) or ""
 
 
 def _function_names() -> set[str]:
@@ -30,16 +41,19 @@ class TestTheTaskExists:
         assert "feedback_maintenance_task" in _function_names()
 
     def test_the_task_is_started_by_the_lifespan(self):
-        assert "asyncio.create_task(feedback_maintenance_task(app.state))" in SOURCE
+        started = _function_source("_start_background_tasks")
+        assert "asyncio.create_task(feedback_maintenance_task(dependencies))" in started
+        assert "tasks = _start_background_tasks(" in _function_source("lifespan")
 
     def test_the_task_is_cancelled_at_shutdown(self):
         """An uncancelled task keeps the loop alive past the stop grace."""
-        assert "feedback_maintenance_bg_task.cancel()" in SOURCE
+        assert "_shut_down(app, dependencies, tasks," in _function_source("lifespan")
+        assert "for task in tasks:\n        task.cancel()" in _function_source("_shut_down")
 
     def test_the_task_is_awaited_in_the_shutdown_gather(self):
-        gather = SOURCE[SOURCE.index("task_results = await asyncio.gather(") :]
-        gather = gather[: gather.index(")")]
-        assert "feedback_maintenance_bg_task" in gather
+        assert "await asyncio.gather(*tasks, return_exceptions=True)" in _function_source(
+            "_shut_down"
+        )
 
 
 class TestBothPassesAreDriven:
@@ -58,7 +72,7 @@ class TestItDegradesLikeTheRestOfFeedback:
         """`feedback_maintenance` stays None when the database is unreachable,
         exactly as `feedback_service` does, so the task idles instead of
         raising every interval."""
-        assert "app.state.feedback_maintenance = None" in SOURCE
+        assert "feedback_maintenance: Any = None" in DEPENDENCIES
 
     def test_the_task_body_guards_on_the_maintenance_object(self):
         task = SOURCE[SOURCE.index("async def feedback_maintenance_task") :]
@@ -84,4 +98,4 @@ class TestMaintenanceConnectsAsItsOwnRole:
 
     def test_a_missing_maintenance_dsn_leaves_submissions_working(self):
         """Collecting feedback matters more than reconciling it."""
-        assert "app.state.feedback_maintenance = None" in SOURCE
+        assert "feedback_maintenance: Any = None" in DEPENDENCIES

@@ -762,7 +762,7 @@ class TestEndToEndOverTheWire:
         }
 
         async with lifespan(app):
-            assert app.state.pipeline_admission.config.max_concurrent == 1
+            assert app.state.dependencies.pipeline_admission.config.max_concurrent == 1
 
             session_id = await make_active_session(live_manager)
             url = f"/api/admin/session/{session_id.session_id}/message"
@@ -1004,7 +1004,7 @@ class TestLifespanOwnership:
         from services.api_gateway.app import app
 
         with TestClient(app):
-            admission = app.state.pipeline_admission
+            admission = app.state.dependencies.pipeline_admission
             assert isinstance(admission, PipelineAdmission)
             # Not >= 1: 0 is the documented kill switch, and this test must not
             # fail for an operator who has set it.

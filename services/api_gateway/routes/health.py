@@ -1,9 +1,12 @@
 import requests
+from fastapi import APIRouter
 
-from services.api_gateway.app import SERVICE_URLS, app
+from services.api_gateway.app import SERVICE_URLS
+
+router = APIRouter()
 
 
-@app.get("/health")
+@router.get("/health")
 def health():
     status = {}
     for name, url in SERVICE_URLS.items():

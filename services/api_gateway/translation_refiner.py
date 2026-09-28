@@ -199,6 +199,7 @@ class RefinementOutcome:
     skipped_reason: Optional[str] = None
 
 
+# Adapter until PR5 (#228), with the refiner that owns it.
 _CANDIDATE_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="refinement-shadow")
 
 
@@ -756,6 +757,7 @@ def describe_refinement(refiner: BaseTranslationRefiner) -> str:
     )
 
 
+# Adapter until PR5 (#228): the container refers to this instance.
 translation_refiner: BaseTranslationRefiner = get_translation_refiner()
 
 __all__ = [

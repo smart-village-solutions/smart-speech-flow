@@ -82,7 +82,7 @@ def _quality_telemetry(request: Request) -> Any:
     replace whatever the request was actually about to return.
     """
     try:
-        return request.app.state.quality_telemetry
+        return request.app.state.dependencies.quality_telemetry
     except Exception:
         return None
 

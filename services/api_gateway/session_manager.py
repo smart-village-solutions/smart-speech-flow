@@ -16,7 +16,9 @@ import uuid
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 if TYPE_CHECKING:
+    from .realtime_ticket import RealtimeTicketStore
     from .websocket import WebSocketManager
+    from .websocket_polling_routes import TenantPollingStore
 
 from dataclasses import dataclass, field, fields, replace
 from datetime import datetime, timedelta, timezone
@@ -379,6 +381,8 @@ def _mark_translated_audio_gone(metadata: Optional[Dict[str, Any]]) -> None:
 
 class SessionManager:
     quality_telemetry: Optional[Any] = None
+    realtime_tickets: Optional["RealtimeTicketStore"] = None
+    polling_store: Optional["TenantPollingStore"] = None
 
     def __init__(
         self,
@@ -408,6 +412,15 @@ class SessionManager:
         mirrors how `translation_refiner` receives the same emitter.
         """
         self.quality_telemetry = telemetry
+
+    def attach_realtime(
+        self,
+        tickets: Optional["RealtimeTicketStore"],
+        polling: Optional["TenantPollingStore"],
+    ) -> None:
+        """Bound by the app's container; termination revokes and notifies through these."""
+        self.realtime_tickets = tickets
+        self.polling_store = polling
 
     def _emit_lifecycle(
         self,
@@ -697,18 +710,18 @@ class SessionManager:
             # Cleanup is deliberately idempotent and also runs for a terminal
             # session. If notification/socket cleanup was interrupted after the
             # Redis commit, a retry can still revoke capabilities and finish it.
-            from .realtime_ticket import RealtimeTicketUnavailable, realtime_ticket_store
+            from .realtime_ticket import RealtimeTicketUnavailable
 
-            try:
-                realtime_ticket_store.revoke(session_id)
-            except RealtimeTicketUnavailable:
-                logger.error(
-                    "realtime_ticket_revocation_unavailable",
-                    extra={"tenant_ref": session_id.tenant_ref},
-                )
-            from .websocket_polling_routes import polling_store
-
-            polling_store.terminate(session_id, reason)
+            if self.realtime_tickets is not None:
+                try:
+                    self.realtime_tickets.revoke(session_id)
+                except RealtimeTicketUnavailable:
+                    logger.error(
+                        "realtime_ticket_revocation_unavailable",
+                        extra={"tenant_ref": session_id.tenant_ref},
+                    )
+            if self.polling_store is not None:
+                self.polling_store.terminate(session_id, reason)
             await self._send_termination_notifications(session_id, reason)
             await self._cleanup_websocket_connections(session_id)
             return
@@ -1473,9 +1486,9 @@ class SessionManager:
                 )
 
     def _prune_polling_presence(self) -> None:
-        from .websocket_polling_routes import polling_store
-
-        for client in polling_store.prune():
+        if self.polling_store is None:
+            return
+        for client in self.polling_store.prune():
             try:
                 if client.client_type is ClientType.ADMIN:
                     self.admin_disconnected(client.key)
@@ -1539,5 +1552,5 @@ class SessionManager:
             await self.websocket_manager.send_to_client(session_id, client_type, response)
 
 
-# Globale Instanz
+# Globale Instanz. Adapter until PR4 (#228), which rebuilds it per app behind the legacy adapter.
 session_manager = SessionManager(store=MemoryTenantSessionStore())

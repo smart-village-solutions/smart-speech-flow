@@ -9,7 +9,7 @@ from fastapi import HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
 from .audio_storage import AudioVariant, audio_path, scope_pipeline_audio_urls, scoped_audio_url
-from .session_manager import ClientType, SessionStatus, session_manager
+from .session_manager import ClientType, SessionManager, SessionStatus
 from .tenant_session import TenantSessionKey
 
 if TYPE_CHECKING:
@@ -19,6 +19,9 @@ if TYPE_CHECKING:
 
 class ConversationService:
     """Apply the server-assigned role before entering the shared pipeline."""
+
+    def __init__(self, sessions: SessionManager) -> None:
+        self._sessions = sessions
 
     async def process(
         self,
@@ -54,7 +57,7 @@ class ConversationService:
         return await process_audio_input(key, sender, request, time.perf_counter(), manager)
 
     def messages(self, key: TenantSessionKey, role: ClientType) -> list[dict[str, object]]:
-        session = session_manager.get_session(key)
+        session = self._sessions.get_session(key)
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
         # Availability comes from the markers the writer recorded; settlement clears them
@@ -92,7 +95,7 @@ class ConversationService:
         message_id: str,
         variant: AudioVariant,
     ) -> Response:
-        session = session_manager.get_session(key)
+        session = self._sessions.get_session(key)
         if session is None or session.status is SessionStatus.TERMINATED:
             raise HTTPException(status_code=404, detail="Session not found")
         message = next(
@@ -105,6 +108,3 @@ class ConversationService:
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Audio file not found")
         return FileResponse(path, media_type="audio/wav")
-
-
-conversation_service = ConversationService()

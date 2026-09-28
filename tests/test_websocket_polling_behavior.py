@@ -54,16 +54,15 @@ def test_polling_store_rejects_unknown_or_cross_tenant_client():
 
 
 @pytest.mark.asyncio
-async def test_polling_send_queues_and_broadcasts_only_inside_tenant(monkeypatch):
+async def test_polling_send_queues_and_broadcasts_only_inside_tenant():
     store = TenantPollingStore()
     key = TenantSessionKey("tenant-a", "SESSION1")
     sender = store.activate(key, ClientType.CUSTOMER)
     receiver = store.activate(key, ClientType.ADMIN)
     other_tenant = store.activate(TenantSessionKey("tenant-b", "SESSION1"), ClientType.ADMIN)
     manager = AsyncMock()
-    monkeypatch.setattr("services.api_gateway.websocket_polling_routes.polling_store", store)
-
     response = await _send(
+        store,
         sender,
         PollingMessage(type="message", content={"text": "hello"}),
         manager,
@@ -85,9 +84,7 @@ async def test_polling_send_queues_and_broadcasts_only_inside_tenant(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_polling_overflow_accepts_current_message_and_is_not_retryable(
-    monkeypatch,
-):
+async def test_polling_overflow_accepts_current_message_and_is_not_retryable():
     store = TenantPollingStore()
     key = TenantSessionKey("tenant-a", "SESSION1")
     sender = store.activate(key, ClientType.CUSTOMER)
@@ -95,9 +92,8 @@ async def test_polling_overflow_accepts_current_message_and_is_not_retryable(
     for index in range(POLLING_QUEUE_SIZE):
         receiver.messages.append({"type": "old", "index": index})
     manager = AsyncMock()
-    monkeypatch.setattr("services.api_gateway.websocket_polling_routes.polling_store", store)
-
     response = await _send(
+        store,
         sender,
         PollingMessage(type="message", content={"text": "newest"}),
         manager,

@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 from services.api_gateway import audio_storage
 from services.api_gateway.audio_storage import AudioVariant, audio_path, save_audio
-from services.api_gateway.conversation_service import conversation_service
+from services.api_gateway.conversation_service import ConversationService
 from services.api_gateway.session_manager import ClientType, SessionManager, SessionMessage
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
@@ -18,10 +18,8 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture
-def manager(monkeypatch: pytest.MonkeyPatch) -> SessionManager:
-    manager = SessionManager(store=MemoryTenantSessionStore())
-    monkeypatch.setattr("services.api_gateway.conversation_service.session_manager", manager)
-    return manager
+def manager() -> SessionManager:
+    return SessionManager(store=MemoryTenantSessionStore())
 
 
 @pytest.fixture
@@ -55,14 +53,16 @@ def _audio_message(
     )
 
 
-def _list_without_filesystem(key: TenantSessionKey, role: ClientType) -> list[dict[str, object]]:
+def _list_without_filesystem(
+    manager: SessionManager, key: TenantSessionKey, role: ClientType
+) -> list[dict[str, object]]:
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise OSError("listing messages must not touch the filesystem")
 
     with pytest.MonkeyPatch.context() as patch:
         for name in ("is_file", "exists", "stat"):
             patch.setattr(Path, name, refuse)
-        return conversation_service.messages(key, role)
+        return ConversationService(manager).messages(key, role)
 
 
 def _save_both(key: TenantSessionKey, audio_dir: Path) -> None:
@@ -76,7 +76,7 @@ async def test_listing_advertises_recorded_audio_without_a_filesystem_stat(
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     manager.add_message(session.key, _audio_message())
 
-    [item] = _list_without_filesystem(session.key, ClientType.ADMIN)
+    [item] = _list_without_filesystem(manager, session.key, ClientType.ADMIN)
 
     base = f"/api/admin/session/{session.id}/audio/m1"
     assert item["audio_url"] == f"{base}/translated.wav"
@@ -93,7 +93,7 @@ async def test_listing_advertises_no_audio_for_a_message_without_markers(
     message.pipeline_metadata = None
     manager.add_message(session.key, message)
 
-    [item] = _list_without_filesystem(session.key, ClientType.CUSTOMER)
+    [item] = _list_without_filesystem(manager, session.key, ClientType.CUSTOMER)
 
     assert "audio_url" not in item
     assert "original_audio_url" not in item
@@ -115,7 +115,7 @@ async def test_settled_refused_audio_is_not_advertised_even_if_its_file_survives
     [retained] = manager.get_session(session.key).messages
     assert retained.translated_audio_available is False
     assert retained.original_audio_url is None
-    [item] = conversation_service.messages(session.key, ClientType.ADMIN)
+    [item] = ConversationService(manager).messages(session.key, ClientType.ADMIN)
     assert "audio_url" not in item
     assert "original_audio_url" not in item
     assert "audio_url" not in repr(item.get("pipeline_metadata"))
@@ -133,7 +133,7 @@ async def test_the_content_sweep_clears_the_markers_it_settles(
 
     manager.sweep_expired_content(past_lifetime)
 
-    [item] = _list_without_filesystem(session.key, ClientType.ADMIN)
+    [item] = _list_without_filesystem(manager, session.key, ClientType.ADMIN)
     assert "audio_url" not in item
     assert "original_audio_url" not in item
     assert "audio_url" not in repr(item.get("pipeline_metadata"))
@@ -146,6 +146,6 @@ async def test_serving_audio_still_checks_that_the_file_exists(
     manager.add_message(session.key, _audio_message())
 
     with pytest.raises(HTTPException) as missing:
-        conversation_service.audio(session.key, "m1", AudioVariant.TRANSLATED)
+        ConversationService(manager).audio(session.key, "m1", AudioVariant.TRANSLATED)
 
     assert missing.value.status_code == 404

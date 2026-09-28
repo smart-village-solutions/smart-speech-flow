@@ -6,11 +6,11 @@ import asyncio
 import os
 import time
 from collections.abc import Callable
-from functools import lru_cache
-from typing import Protocol
+from typing import Annotated, Protocol
 
-from fastapi import HTTPException, status
+from fastapi import Depends, HTTPException, status
 
+from .dependencies import get_login_directory
 from .studio_login_directory_client import StudioLoginDirectory, StudioLoginDirectoryClient
 from .studio_runtime_token import StudioRuntimeTokenProvider, StudioTokenConfig, StudioTokenError
 
@@ -79,9 +79,8 @@ class StudioLoginDirectoryService:
         return directory
 
 
-@lru_cache(maxsize=1)
 def _build_studio_login_directory_service() -> StudioLoginDirectoryService:
-    """Construct the process-local service from explicit environment settings."""
+    """Construct the service from explicit environment settings."""
     base_url = os.getenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", "").strip()
     try:
         cache_seconds = float(os.getenv("STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS", "60"))
@@ -104,12 +103,25 @@ def _build_studio_login_directory_service() -> StudioLoginDirectoryService:
         ) from None
 
 
-def get_studio_login_directory_service() -> StudioLoginDirectoryService:
-    """Provide the singleton service or a neutral dependency-boundary failure."""
+def login_directory_from_environment() -> StudioLoginDirectoryService | None:
+    """The app's directory service, or None when Studio is not configured.
+
+    Built once per app, so its cache and single-flight refresh are shared by
+    that app's requests and by nothing else.
+    """
     try:
         return _build_studio_login_directory_service()
     except StudioLoginDirectoryConfigurationError:
+        return None
+
+
+def get_studio_login_directory_service(
+    directory: Annotated[StudioLoginDirectoryService | None, Depends(get_login_directory)],
+) -> StudioLoginDirectoryService:
+    """Provide the app's service or a neutral dependency-boundary failure."""
+    if directory is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The login directory is temporarily unavailable",
-        ) from None
+        )
+    return directory

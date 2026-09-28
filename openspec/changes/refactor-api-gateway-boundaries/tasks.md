@@ -1,9 +1,11 @@
 ## 1. Characterization and Composition Root
 
 - [x] 1.1 Characterize current tenant-scoped admin/customer REST, Studio-runtime failure, consent/persistence, pipeline-metadata, realtime-ticket, polling, and lifespan contracts.
-- [ ] 1.2 Define dependency ownership and no-new-global rules, including provider override patterns for tests.
-- [ ] 1.3 Introduce a lifespan-owned `GatewayDependencies` container and dependency providers without changing public behavior.
-- [ ] 1.4 Migrate existing app-state collaborators and global adapters incrementally; add tests that isolated app instances do not share injected dependencies.
+- [x] 1.2 Define dependency ownership and no-new-global rules, including provider override patterns for tests.
+- [x] 1.3 Introduce a lifespan-owned `GatewayDependencies` container and dependency providers without changing public behavior.
+- [x] 1.4 Migrate existing app-state collaborators and global adapters incrementally; add tests that isolated app instances do not share injected dependencies.
+  - `session_manager`, the runtime policy gate, `circuit_breaker_client`, `service_health_manager`, `graceful_degradation_manager`, `fallback_manager`, `translation_refiner`, the WebSocket monitor, the Prometheus registry and metric objects, and `auth._key_cache` remain adapters; design.md names the PR that removes each.
+  - #347 §4's "`tenant_persistence.py` no longer reassigns module globals" is complete for the ticket store. For the session store it completes in PR4.
 
 ## 2. Session, Message, and Pipeline Boundaries
 

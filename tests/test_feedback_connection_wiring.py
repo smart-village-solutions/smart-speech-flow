@@ -327,9 +327,9 @@ class TestTheLifespanWiresTheAppItWasGiven:
             monkeypatch.delenv(variable, raising=False)
 
         async with gateway.lifespan(original):
-            assert original.state.feedback_service is None
-            assert original.state.feedback_maintenance is None
-            assert original.state.feedback_read_service is None
+            assert original.state.dependencies.feedback_service is None
+            assert original.state.dependencies.feedback_maintenance is None
+            assert original.state.dependencies.feedback_read_service is None
 
     async def test_each_path_wires_the_state_it_was_given(self, wired_reader, monkeypatch) -> None:
         """With no DSN set, the helpers return before touching any state.

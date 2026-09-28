@@ -11,10 +11,10 @@ import logging
 import pytest
 
 from services.api_gateway.websocket_fallback import (
-    FallbackConfig,
-    FallbackReason,
     POLLING_MAX_CLIENTS_PER_SESSION_CLIENT_TYPE,
     POLLING_QUEUE_MAX_MESSAGES,
+    FallbackConfig,
+    FallbackReason,
     WebSocketFallbackManager,
 )
 
@@ -33,9 +33,7 @@ async def polling_client():
     return manager, polling_id
 
 
-def _dropped(
-    manager: WebSocketFallbackManager, client_type: str = "customer"
-) -> float:
+def _dropped(manager: WebSocketFallbackManager, client_type: str = "customer") -> float:
     return manager.messages_dropped.labels(client_type=client_type)._value.get()
 
 
@@ -48,10 +46,7 @@ class TestTheBoundIsStillEnforced:
                 polling_id, {"type": "translation", "seq": index}
             )
 
-        assert (
-            len(manager.polling_clients[polling_id].message_queue)
-            == POLLING_QUEUE_MAX_MESSAGES
-        )
+        assert len(manager.polling_clients[polling_id].message_queue) == POLLING_QUEUE_MAX_MESSAGES
 
 
 class TestOverflowIsVisible:
@@ -70,9 +65,7 @@ class TestOverflowIsVisible:
         manager, polling_id = polling_client
         before = _dropped(manager)
 
-        manager.send_message_to_polling_client(
-            polling_id, {"type": "translation", "seq": 0}
-        )
+        manager.send_message_to_polling_client(polling_id, {"type": "translation", "seq": 0})
 
         assert _dropped(manager) == before
 
@@ -80,15 +73,10 @@ class TestOverflowIsVisible:
         manager, polling_id = polling_client
 
         for index in range(POLLING_QUEUE_MAX_MESSAGES):
-            assert (
-                manager.send_message_to_polling_client(polling_id, {"seq": index})
-                is True
-            )
+            assert manager.send_message_to_polling_client(polling_id, {"seq": index}) is True
 
         assert (
-            manager.send_message_to_polling_client(
-                polling_id, {"seq": POLLING_QUEUE_MAX_MESSAGES}
-            )
+            manager.send_message_to_polling_client(polling_id, {"seq": POLLING_QUEUE_MAX_MESSAGES})
             is False
         )
 
@@ -104,9 +92,10 @@ class TestTheCounterSurvivesTheRegistryBoundary:
     """
 
     async def test_a_real_drop_reaches_the_metrics_endpoint(self):
-        import services.api_gateway.app  # noqa: F401  binds the gateway registry
+        from services.api_gateway.app import app
         from services.api_gateway.routes.metrics import metrics
         from services.api_gateway.websocket_fallback import fallback_manager
+        from services.api_gateway.websocket_monitor import get_websocket_monitor
 
         polling_id = await fallback_manager.activate_polling_fallback(
             "session-metrics", "customer", None, FallbackReason.NETWORK_ERROR
@@ -116,7 +105,8 @@ class TestTheCounterSurvivesTheRegistryBoundary:
                 fallback_manager.send_message_to_polling_client(
                     polling_id, {"type": "translation", "seq": index}
                 )
-            body = metrics().body.decode("utf-8")
+            registry = app.state.prometheus_registry
+            body = metrics(registry, get_websocket_monitor()).body.decode("utf-8")
         finally:
             fallback_manager.deactivate_polling_fallback(polling_id)
 
@@ -127,9 +117,7 @@ class TestTheCounterSurvivesTheRegistryBoundary:
         sample = next(
             line
             for line in body.splitlines()
-            if line.startswith(
-                'websocket_polling_messages_dropped_total{client_type="customer"}'
-            )
+            if line.startswith('websocket_polling_messages_dropped_total{client_type="customer"}')
         )
         assert float(sample.rsplit(" ", 1)[1]) > 0
 
@@ -159,16 +147,12 @@ class TestTheOverflowWarningIsSafeToLog:
     """The dropped message's `type` is an unconstrained client string (CWE-117),
     and a log line about a lost message must not leak who lost it."""
 
-    def test_it_names_the_sanitized_type_and_no_identifiers(
-        self, polling_client, caplog
-    ):
+    def test_it_names_the_sanitized_type_and_no_identifiers(self, polling_client, caplog):
         manager, polling_id = polling_client
         session_id = manager.polling_clients[polling_id].session_id
         forged = "translation\nWARNING: admin session terminated"
 
-        with caplog.at_level(
-            logging.WARNING, logger="services.api_gateway.websocket_fallback"
-        ):
+        with caplog.at_level(logging.WARNING, logger="services.api_gateway.websocket_fallback"):
             for _ in range(POLLING_QUEUE_MAX_MESSAGES + 1):
                 manager.send_message_to_polling_client(polling_id, {"type": forged})
 
@@ -197,10 +181,7 @@ class TestThePollingClientMapIsBounded:
                 "session-1", "customer", None, FallbackReason.NETWORK_ERROR
             )
 
-        assert (
-            len(manager.polling_clients)
-            == POLLING_MAX_CLIENTS_PER_SESSION_CLIENT_TYPE
-        )
+        assert len(manager.polling_clients) == POLLING_MAX_CLIENTS_PER_SESSION_CLIENT_TYPE
         assert (
             len(manager.session_polling_clients["session-1"])
             == POLLING_MAX_CLIENTS_PER_SESSION_CLIENT_TYPE
@@ -244,9 +225,7 @@ class TestTheDropLogDoesNotFlood:
     subsequent message. One WARNING per drop meant a line per translation for
     up to half an hour, for exactly the client this code exists to report."""
 
-    def test_a_saturated_queue_warns_once_not_per_message(
-        self, polling_client, caplog
-    ):
+    def test_a_saturated_queue_warns_once_not_per_message(self, polling_client, caplog):
         manager, polling_id = polling_client
 
         with caplog.at_level(logging.WARNING):
@@ -273,9 +252,7 @@ class TestTheDropLogDoesNotFlood:
 
         assert _dropped(manager) - before == 200
 
-    def test_a_client_that_recovers_and_saturates_again_warns_again(
-        self, polling_client, caplog
-    ):
+    def test_a_client_that_recovers_and_saturates_again_warns_again(self, polling_client, caplog):
         manager, polling_id = polling_client
 
         with caplog.at_level(logging.WARNING):

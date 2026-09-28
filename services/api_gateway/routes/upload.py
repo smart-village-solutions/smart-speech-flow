@@ -1,15 +1,15 @@
 import logging
 from html import escape
 
-from fastapi import File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
-from services.api_gateway.app import app
 from services.api_gateway.log_safety import safe_language_code, sanitize_log_value
 from services.api_gateway.pipeline_admission import PipelineBusyError, run_pipeline
 from services.api_gateway.pipeline_logic import process_wav
 
 logger = logging.getLogger("api_gateway")
+router = APIRouter()
 
 
 def _safe_text_preview(value: object) -> str:
@@ -19,7 +19,7 @@ def _safe_text_preview(value: object) -> str:
     return escape(text[:200])
 
 
-@app.post("/upload")
+@router.post("/upload")
 async def upload(
     request: Request,
     file: UploadFile = File(...),
@@ -28,7 +28,7 @@ async def upload(
 ):
     from base64 import b64encode
 
-    requests_total = app.requests_total if hasattr(app, "requests_total") else None
+    requests_total = getattr(request.app, "requests_total", None)
     if requests_total:
         requests_total.inc()
     logger.info(

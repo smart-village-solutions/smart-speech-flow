@@ -715,5 +715,5 @@ class ServiceHealthManager:
         return summary
 
 
-# Globale Service Health Manager Instanz
+# Globale Service Health Manager Instanz. Adapter until PR5 (#228).
 service_health_manager = ServiceHealthManager()

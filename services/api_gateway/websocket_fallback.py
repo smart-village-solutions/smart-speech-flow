@@ -779,5 +779,5 @@ class WebSocketFallbackManager:
                 logger.exception("Polling cleanup task failed")
 
 
-# Global Fallback Manager Instance
+# Global Fallback Manager Instance. Adapter until PR6 (#228).
 fallback_manager = WebSocketFallbackManager()

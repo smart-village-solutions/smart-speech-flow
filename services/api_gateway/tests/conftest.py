@@ -9,6 +9,7 @@ from services.api_gateway.studio_runtime_flow import (
     require_validated_runtime_configuration,
 )
 from services.api_gateway.tenant_context import StudioTenantContext, require_studio_tenant_context
+from tests.gateway_container import installed_gateway_dependencies
 
 REVISION = f"sha256:{'a' * 64}"
 
@@ -39,6 +40,13 @@ def _configuration() -> RuntimeConfiguration:
             "conversationContentStorage": {"mode": "ask"},
         }
     )
+
+
+@pytest.fixture(autouse=True)
+def gateway_dependencies():
+    """A fresh dependency container on the shared app, which these suites drive without its lifespan."""
+    with installed_gateway_dependencies(app) as dependencies:
+        yield dependencies
 
 
 @pytest.fixture(autouse=True)

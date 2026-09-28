@@ -370,7 +370,8 @@ def get_pipeline_admission(request: Any) -> Optional[PipelineAdmission]:
     """
     app = getattr(request, "app", None)
     state = getattr(app, "state", None)
-    candidate = getattr(state, "pipeline_admission", None)
+    dependencies = getattr(state, "dependencies", None)
+    candidate = getattr(dependencies, "pipeline_admission", None)
     return candidate if isinstance(candidate, PipelineAdmission) else None
 
 

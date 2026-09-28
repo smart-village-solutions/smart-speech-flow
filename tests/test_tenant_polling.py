@@ -7,10 +7,14 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.session_manager import session_manager
-from services.api_gateway.websocket_polling_routes import polling_store
 
 
-def test_polling_id_is_bound_to_its_server_assigned_role_and_session() -> None:
+@pytest.fixture
+def polling_store(gateway_dependencies):
+    return gateway_dependencies.polling_store
+
+
+def test_polling_id_is_bound_to_its_server_assigned_role_and_session(polling_store) -> None:
     session_manager.reset(clear_persistence=True)
     polling_store.clients.clear()
     client = TestClient(app)
@@ -32,7 +36,7 @@ def test_polling_id_is_bound_to_its_server_assigned_role_and_session() -> None:
     assert wrong_session.status_code == 404
 
 
-def test_customer_polling_activation_resolves_public_capability() -> None:
+def test_customer_polling_activation_resolves_public_capability(polling_store) -> None:
     session_manager.reset(clear_persistence=True)
     polling_store.clients.clear()
     client = TestClient(app)
@@ -56,7 +60,7 @@ def test_generic_client_controlled_polling_routes_are_absent() -> None:
     assert "/api/customer/session/{session_id}/polling/activate" in paths
 
 
-def test_ticket_issued_before_termination_cannot_activate_polling() -> None:
+def test_ticket_issued_before_termination_cannot_activate_polling(polling_store) -> None:
     session_manager.reset(clear_persistence=True)
     polling_store.clients.clear()
     client = TestClient(app)
@@ -76,7 +80,7 @@ def test_ticket_issued_before_termination_cannot_activate_polling() -> None:
     assert activation.status_code == 404
 
 
-def test_existing_customer_poll_receives_termination_then_is_removed() -> None:
+def test_existing_customer_poll_receives_termination_then_is_removed(polling_store) -> None:
     session_manager.reset(clear_persistence=True)
     polling_store.clients.clear()
     client = TestClient(app)
@@ -93,7 +97,7 @@ def test_existing_customer_poll_receives_termination_then_is_removed() -> None:
 
 
 def test_stale_admin_poll_request_releases_presence_before_refresh(
-    monkeypatch,
+    monkeypatch, polling_store
 ) -> None:
     """An abandoned polling client cannot revive itself after the idle deadline."""
     now = [0.0]
@@ -115,14 +119,13 @@ def test_stale_admin_poll_request_releases_presence_before_refresh(
     assert session_manager.get_session(key).admin_connection_count == 1
 
     now[0] = 121.0
-    response = client.get(
-        f"/api/admin/session/{session_id}/polling/{polling_id}/status"
-    )
+    response = client.get(f"/api/admin/session/{session_id}/polling/{polling_id}/status")
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Polling client not found"}
     assert polling_id not in polling_store.clients
     assert session_manager.get_session(key).admin_connection_count == 0
+
 
 @pytest.mark.parametrize("authenticated", [False, True], ids=["guest", "user"])
 @pytest.mark.parametrize("selector_source", ["query", "body", "header", "cookie"])
@@ -130,7 +133,7 @@ def test_stale_admin_poll_request_releases_presence_before_refresh(
     "operation", ["activate", "poll", "send", "status", "recover", "disconnect"]
 )
 def test_customer_polling_rejects_tenant_selectors_without_side_effects(
-    request, monkeypatch, authenticated, selector_source, operation
+    request, monkeypatch, polling_store, authenticated, selector_source, operation
 ) -> None:
     from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
 
@@ -173,7 +176,9 @@ def test_customer_polling_rejects_tenant_selectors_without_side_effects(
 
 
 @pytest.mark.parametrize("actor", [None, "tenant-test", "other-tenant"])
-def test_customer_polling_preserves_guest_and_authenticated_tenant_access(request, monkeypatch, actor):
+def test_customer_polling_preserves_guest_and_authenticated_tenant_access(
+    request, monkeypatch, polling_store, actor
+):
     from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
 
     session_manager.reset(clear_persistence=True)

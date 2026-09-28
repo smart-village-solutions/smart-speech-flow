@@ -186,6 +186,3 @@ class MemoryRealtimeTicketBackend:
         stored = self.values.get(key)
         if stored is not None and stored[1] <= self.clock():
             self.values.pop(key, None)
-
-
-realtime_ticket_store = RealtimeTicketStore(MemoryRealtimeTicketBackend())

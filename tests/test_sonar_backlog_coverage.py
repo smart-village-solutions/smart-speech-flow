@@ -76,7 +76,7 @@ def test_app_cors_setup_uses_localhost_helpers_in_development(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "development")
     monkeypatch.setenv("DEVELOPMENT_CORS_ORIGINS", "https://example.test,http://devbox:3000")
 
-    app_module.setup_cors_for_websockets()
+    app_module.setup_cors_for_websockets(app_module.app)
 
     allow_origins = captured["kwargs"]["allow_origins"]
     assert "https://example.test" in allow_origins
@@ -392,6 +392,7 @@ async def test_legacy_pipeline_route_returns_success_and_error_payloads(monkeypa
             return b"wav-bytes"
 
     request = SimpleNamespace(
+        app=SimpleNamespace(),
         query_params={},
         headers={"origin": "https://translate.smart-village.solutions"},
     )

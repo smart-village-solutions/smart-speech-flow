@@ -18,7 +18,6 @@ from enum import Enum
 from typing import Final, TypedDict, Unpack
 from uuid import UUID, uuid4
 
-from fastapi import Request
 from prometheus_client import CollectorRegistry, Counter
 
 from .session_pseudonym import MISSING_TENANT_REFERENCE
@@ -1064,8 +1063,3 @@ class QualityTelemetry:
     @property
     def mode(self) -> TelemetryMode:
         return self._mode
-
-
-def get_quality_telemetry(request: Request) -> "QualityTelemetry":
-    """FastAPI provider, following the app.state pattern used across app.py."""
-    return request.app.state.quality_telemetry

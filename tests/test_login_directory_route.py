@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import services.api_gateway.studio_login_directory as directory_module
+from services.api_gateway.dependencies import get_login_directory
 from services.api_gateway.routes import login
 from services.api_gateway.studio_login_directory import (
     StudioLoginDirectoryConfigurationError,
@@ -168,6 +169,9 @@ def test_dependency_factory_converts_configuration_failures_to_neutral_503(
     monkeypatch.setattr(directory_module, "_build_studio_login_directory_service", fail_to_build)
     app = FastAPI()
     app.include_router(login.router)
+    app.dependency_overrides[get_login_directory] = (
+        directory_module.login_directory_from_environment
+    )
 
     response = TestClient(app, raise_server_exceptions=False).get("/api/login/tenants")
 

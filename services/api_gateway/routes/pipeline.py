@@ -3,9 +3,8 @@ import json
 import logging
 from typing import Dict, Optional
 
-from fastapi import File, Form, Request, Response, UploadFile
+from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 
-from services.api_gateway.app import app
 from services.api_gateway.pipeline_admission import PipelineBusyError, run_pipeline
 from services.api_gateway.pipeline_logic import process_wav
 
@@ -15,7 +14,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # This old implementation has been replaced by the new one with audio validation
 
 
-@app.post("/pipeline")
+router = APIRouter()
+
+
+@router.post("/pipeline")
 async def pipeline(
     request: Request,
     file: UploadFile = File(...),
@@ -23,7 +25,7 @@ async def pipeline(
     target_lang: str = Form(...),
     debug: str = Form(None),
 ) -> Response:
-    requests_total = app.requests_total if hasattr(app, "requests_total") else None
+    requests_total = getattr(request.app, "requests_total", None)
     if requests_total:
         requests_total.inc()
     debug_query = request.query_params.get("debug", None)

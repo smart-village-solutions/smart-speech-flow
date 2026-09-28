@@ -67,7 +67,7 @@ def request_with(admission: Optional[Any] = None) -> Mock:
     wants and what any route reached before lifespan startup gets.
     """
     request = Mock()
-    request.app.state.pipeline_admission = admission
+    request.app.state.dependencies.pipeline_admission = admission
     return request
 
 

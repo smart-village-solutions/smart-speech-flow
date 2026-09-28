@@ -56,5 +56,5 @@ class CircuitBreakerServiceClient:
         logger.info("🛑 Circuit Breaker Health Monitoring gestoppt")
 
 
-# Globale Circuit Breaker Service Client Instanz
+# Globale Circuit Breaker Service Client Instanz. Adapter until PR5 (#228).
 circuit_breaker_client = CircuitBreakerServiceClient()
