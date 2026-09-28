@@ -581,6 +581,7 @@ async def _create_session_message_with_fallback(
         audio_bytes,
         source_lang,
         target_lang,
+        sessions=sessions,
     )
 
 

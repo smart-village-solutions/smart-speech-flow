@@ -64,6 +64,7 @@ def _patch_pipeline(monkeypatch, session_manager):
         audio_bytes,
         source_lang: str,
         target_lang: str,
+        **_kwargs,
     ) -> SessionMessage:
         message = SessionMessage(
             id=str(uuid.uuid4()),
