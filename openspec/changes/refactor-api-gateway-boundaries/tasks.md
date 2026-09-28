@@ -4,7 +4,7 @@
 - [x] 1.2 Define dependency ownership and no-new-global rules, including provider override patterns for tests.
 - [x] 1.3 Introduce a lifespan-owned `GatewayDependencies` container and dependency providers without changing public behavior.
 - [x] 1.4 Migrate existing app-state collaborators and global adapters incrementally; add tests that isolated app instances do not share injected dependencies.
-  - `fallback_manager`, the WebSocket monitor, the Prometheus registry and metric objects, and `auth._key_cache` remain adapters; design.md names the PR that removes each. PR4a moved the session manager, the runtime policy gate and the session pseudonymizer into the container; PR5a moved the service health manager, its breakers and degradation manager, the circuit breaker client and the translation refiner.
+  - `fallback_manager` is the one adapter left; nothing reaches it, and PR7b deletes its module. PR4a moved the session manager, the runtime policy gate and the session pseudonymizer into the container; PR5a moved the service health manager, its breakers and degradation manager, the circuit breaker client and the translation refiner; PR6b the WebSocket monitor. PR7a moved the last process-wide state into each app: `create_app()` builds the Prometheus registry and every metric object (`GatewayMetrics`) and the rate limits (`RateLimits`), and `build_gateway_dependencies` the OIDC key cache. No gateway module rebinds a global. `tests/test_gateway_app_isolation.py` shows two apps share none of them.
   - #347 §4's "`tenant_persistence.py` no longer reassigns module globals" is complete: it verifies and returns the Redis connection, and `build_gateway_dependencies` builds both stores on it.
 
 ## 2. Session, Message, and Pipeline Boundaries

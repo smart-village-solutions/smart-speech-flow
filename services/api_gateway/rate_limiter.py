@@ -8,10 +8,10 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Deque, Dict, Optional, Tuple
+from typing import Any, Deque, Dict, Optional, Tuple
 
 from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
 
 
@@ -27,9 +27,6 @@ class RateLimitConfig:
     global_window_seconds: int = int(os.getenv("GLOBAL_RATE_WINDOW_SECONDS", "60"))
     message_limit: int = int(os.getenv("MESSAGE_RATE_LIMIT", "12"))
     message_window_seconds: int = int(os.getenv("MESSAGE_RATE_WINDOW_SECONDS", "10"))
-
-
-LATEST_RATE_LIMIT_MIDDLEWARE = None  # type: Optional["RateLimitMiddleware"]
 
 
 class RateLimiter:
@@ -68,11 +65,14 @@ class RateLimiter:
             self._requests.clear()
 
 
-class RateLimitMiddleware(BaseHTTPMiddleware):
-    """FastAPI middleware that enforces rate limits for API requests."""
+class RateLimits:
+    """One app's limits and the sliding windows that enforce them.
 
-    def __init__(self, app, config: Optional[RateLimitConfig] = None) -> None:
-        super().__init__(app)
+    create_app() builds one, keeps it at app.state.rate_limits and hands it to
+    that app's middleware, so two apps never count into the same window.
+    """
+
+    def __init__(self, config: Optional[RateLimitConfig] = None) -> None:
         self.config = config or RateLimitConfig()
         self.global_limiter = RateLimiter(
             self.config.global_limit,
@@ -82,20 +82,23 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             self.config.message_limit,
             self.config.message_window_seconds,
         )
-        # expose middleware for runtime adjustments (tests, admin tooling)
-        state = getattr(app, "state", None)
-        if state is not None:
-            setattr(state, "rate_limit_middleware", self)
 
-        global LATEST_RATE_LIMIT_MIDDLEWARE
-        LATEST_RATE_LIMIT_MIDDLEWARE = self
+    async def reset(self) -> None:
+        await self.message_limiter.reset()
+        await self.global_limiter.reset()
 
-    async def dispatch(self, request: Request, call_next) -> Response:
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """FastAPI middleware that enforces rate limits for API requests."""
+
+    def __init__(self, app: Any, *, limits: RateLimits) -> None:
+        super().__init__(app)
+        self.config = limits.config
+        self.global_limiter = limits.global_limiter
+        self.message_limiter = limits.message_limiter
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         """Apply rate limiting before the request reaches the endpoint."""
-        global LATEST_RATE_LIMIT_MIDDLEWARE
-        if LATEST_RATE_LIMIT_MIDDLEWARE is not self:
-            LATEST_RATE_LIMIT_MIDDLEWARE = self
-
         session_key = self._session_message_key(request)
         if session_key:
             allowed, retry_after = await self.message_limiter.check(session_key)

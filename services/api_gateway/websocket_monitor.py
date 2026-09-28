@@ -128,10 +128,10 @@ class ConnectionMetrics:
 class WebSocketMetrics:
     """The realtime Prometheus series, registered once on one registry.
 
-    A series can be registered only once per registry, while every app builds
-    its own monitor, so the gateway builds this once per process on the
-    registry /metrics serves (app.py, an adapter until PR7 of #228) and every
-    app's monitor counts into it. The names and labels are queried by
+    A series can be registered only once per registry, while every lifespan
+    builds its own monitor, so create_app() builds this once per app on the
+    registry that app's /metrics serves (`GatewayMetrics`), and each of the
+    app's monitors counts into it. The names and labels are queried by
     monitoring/alert_rules.yml and the Grafana dashboards.
     """
 
@@ -285,7 +285,7 @@ class WebSocketMetrics:
 class WebSocketMonitor:
     """One app's view of its WebSocket connections: live records, history and sessions.
 
-    `build_gateway_dependencies` builds one per app, with the process-wide
+    `build_gateway_dependencies` builds one per app, with the app's realtime
     series and the pseudonymizer the app's session manager also uses, so a
     session's log lines correlate across both.
     """

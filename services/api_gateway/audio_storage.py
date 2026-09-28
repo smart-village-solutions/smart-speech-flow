@@ -18,6 +18,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
+from prometheus_client import CollectorRegistry, Counter, Gauge
+
 from .log_safety import sanitize_log_value
 from .tenant_session import TenantSessionKey
 
@@ -29,29 +31,41 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-# Prometheus metrics. Adapters until PR7 (#228).
-try:
-    from prometheus_client import Counter, Gauge
+class AudioStorageMetrics:
+    """The audio store's series: disk usage, file counts and files cleanup deleted.
 
-    # Disk usage metrics
-    audio_storage_disk_usage_bytes = Gauge(
-        "audio_storage_disk_usage_bytes",
-        "Total disk usage in bytes for audio storage",
-        ["directory"],
-    )
+    create_app() builds one per app on a registry of its own. /metrics does not
+    serve it, as it never served the process default these used to live on, so
+    the audio alerts in monitoring/alert_rules.yml still have no data. Serving
+    them changes what production alerts on, which is a change of its own.
+    """
 
-    audio_files_total = Gauge("audio_files_total", "Total number of audio files", ["directory"])
+    def __init__(self, registry: CollectorRegistry) -> None:
+        self.disk_usage_bytes = Gauge(
+            "audio_storage_disk_usage_bytes",
+            "Total disk usage in bytes for audio storage",
+            ["directory"],
+            registry=registry,
+        )
+        self.files = Gauge(
+            "audio_files_total", "Total number of audio files", ["directory"], registry=registry
+        )
+        self.cleanup_deleted_files = Counter(
+            "audio_cleanup_deleted_files_total",
+            "Total number of audio files deleted by cleanup job",
+            ["directory"],
+            registry=registry,
+        )
 
-    audio_cleanup_deleted_files_total = Counter(
-        "audio_cleanup_deleted_files_total",
-        "Total number of audio files deleted by cleanup job",
-        ["directory"],
-    )
+    def record_cleanup(self, stats: dict) -> None:
+        self.cleanup_deleted_files.labels(directory="original").inc(stats["deleted_original"])
+        self.cleanup_deleted_files.labels(directory="translated").inc(stats["deleted_translated"])
 
-    PROMETHEUS_AVAILABLE = True
-except ImportError:
-    PROMETHEUS_AVAILABLE = False
-    logger.warning("Prometheus client not available - metrics disabled")
+    def record_disk_usage(self, stats: dict) -> None:
+        self.disk_usage_bytes.labels(directory="original").set(stats["original_bytes"])
+        self.disk_usage_bytes.labels(directory="translated").set(stats["translated_bytes"])
+        self.files.labels(directory="original").set(stats["original_files"])
+        self.files.labels(directory="translated").set(stats["translated_files"])
 
 
 def _configured_base_dir() -> Path:
@@ -240,7 +254,7 @@ def _managed_v2_audio_files(
             logger.warning("Skipped unsafe audio storage entry")
 
 
-def ensure_directories():
+def ensure_directories() -> None:
     """Ensure audio storage directories exist."""
     ORIGINAL_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     TRANSLATED_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
@@ -418,15 +432,6 @@ def cleanup_old_audio_files(*, base_dir: Path) -> dict:
     stats["total_deleted"] = stats["deleted_original"] + stats["deleted_translated"]
     logger.info("Audio cleanup completed: %s", sanitize_log_value(stats))
 
-    # Update Prometheus metrics
-    if PROMETHEUS_AVAILABLE:
-        audio_cleanup_deleted_files_total.labels(directory="original").inc(
-            stats["deleted_original"]
-        )
-        audio_cleanup_deleted_files_total.labels(directory="translated").inc(
-            stats["deleted_translated"]
-        )
-
     return stats
 
 
@@ -461,13 +466,6 @@ def get_disk_usage(*, base_dir: Path) -> dict:
     stats["total_bytes"] = stats["original_bytes"] + stats["translated_bytes"]
     stats["total_files"] = stats["original_files"] + stats["translated_files"]
 
-    # Update Prometheus metrics
-    if PROMETHEUS_AVAILABLE:
-        audio_storage_disk_usage_bytes.labels(directory="original").set(stats["original_bytes"])
-        audio_storage_disk_usage_bytes.labels(directory="translated").set(stats["translated_bytes"])
-        audio_files_total.labels(directory="original").set(stats["original_files"])
-        audio_files_total.labels(directory="translated").set(stats["translated_files"])
-
     return stats
 
 
@@ -479,13 +477,15 @@ class AudioStore:
     every write, read and deletion of that app uses the same directory.
     """
 
-    def __init__(self, base_dir: Path) -> None:
+    def __init__(self, base_dir: Path, metrics: AudioStorageMetrics | None = None) -> None:
         self.base_dir = base_dir
+        # Without its app's series, as when a test builds a store, it counts into its own.
+        self.metrics = metrics if metrics is not None else AudioStorageMetrics(CollectorRegistry())
 
     @classmethod
-    def from_environment(cls) -> "AudioStore":
+    def from_environment(cls, metrics: AudioStorageMetrics | None = None) -> "AudioStore":
         """A store under SSF_AUDIO_BASE_DIR as it is set now, not at import."""
-        return cls(_configured_base_dir())
+        return cls(_configured_base_dir(), metrics)
 
     def path(self, key: TenantSessionKey, message_id: str, variant: AudioVariant) -> Path:
         return audio_path(key, message_id, variant, base_dir=self.base_dir)
@@ -499,7 +499,11 @@ class AudioStore:
         return delete_message_audio(key, message_id, variant, base_dir=self.base_dir)
 
     def cleanup_expired(self) -> dict:
-        return cleanup_old_audio_files(base_dir=self.base_dir)
+        stats = cleanup_old_audio_files(base_dir=self.base_dir)
+        self.metrics.record_cleanup(stats)
+        return stats
 
     def disk_usage(self) -> dict:
-        return get_disk_usage(base_dir=self.base_dir)
+        stats = get_disk_usage(base_dir=self.base_dir)
+        self.metrics.record_disk_usage(stats)
+        return stats

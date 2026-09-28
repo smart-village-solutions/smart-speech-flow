@@ -420,22 +420,17 @@ class TestPrometheusMetrics:
     def test_metrics_available_after_cleanup(self, sample_audio):
         """Test that Prometheus metrics are updated after cleanup"""
 
-        from services.api_gateway.audio_storage import (
-            PROMETHEUS_AVAILABLE,
-            audio_cleanup_deleted_files_total,
-        )
-
-        if not PROMETHEUS_AVAILABLE:
-            pytest.skip("Prometheus client not available")
+        store = AudioStore.from_environment()
+        deleted = store.metrics.cleanup_deleted_files.labels(directory="original")
 
         # Get initial metric value
-        initial_count = audio_cleanup_deleted_files_total.labels(directory="original")._value._value
+        initial_count = deleted._value._value
 
         # Run cleanup
-        AudioStore.from_environment().cleanup_expired()
+        store.cleanup_expired()
 
         # Metric should still exist (value may be same if no files deleted)
-        current_count = audio_cleanup_deleted_files_total.labels(directory="original")._value._value
+        current_count = deleted._value._value
         assert current_count >= initial_count
 
         # Test disk usage metrics

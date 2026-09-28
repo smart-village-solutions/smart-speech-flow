@@ -19,14 +19,14 @@ from typing import TYPE_CHECKING, Any, AsyncIterator
 # === Standard- und Third-Party-Module ===
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from prometheus_client import CollectorRegistry, Counter
+from prometheus_client import CollectorRegistry
 
 from .client_origin import configured_client_origin
 from .dependencies import GatewayDependencies, build_gateway_dependencies
+from .gateway_metrics import GatewayMetrics
 from .pipeline_admission import PipelineAdmission, PipelineAdmissionConfig, PipelineAdmissionMetrics
-from .rate_limiter import RateLimitMiddleware
+from .rate_limiter import RateLimitMiddleware, RateLimits
 from .refinement_metrics import RefinementMetrics
-from .websocket_monitor import WebSocketMetrics
 
 if TYPE_CHECKING:
     from .audio_storage import AudioStore
@@ -518,14 +518,16 @@ def _build_dependencies(
     pipeline: "_PipelineCollaborators",
 ) -> GatewayDependencies:
     _announce("Building gateway dependencies...")
+    metrics: GatewayMetrics = app.state.gateway_metrics
     dependencies = build_gateway_dependencies(
         prometheus_registry=app.state.prometheus_registry,
         redis=persistence.redis if persistence is not None else None,
         redis_namespace=persistence.namespace if persistence is not None else "ssf",
         studio_runtime_flow=runtime_flow,
         runtime_policy=runtime_policy,
-        polling_messages_dropped=polling_messages_dropped,
-        websocket_metrics=app.state.websocket_metrics,
+        polling_messages_dropped=metrics.polling_messages_dropped,
+        websocket_metrics=metrics.websocket,
+        audio_storage_metrics=metrics.audio_storage,
         translation_refiner=pipeline.refiner,
         pipeline_admission=pipeline.admission,
         quality_telemetry=pipeline.quality_telemetry,
@@ -535,14 +537,14 @@ def _build_dependencies(
     return dependencies
 
 
-def _build_pipeline_admission() -> PipelineAdmission:
+def _build_pipeline_admission(metrics: PipelineAdmissionMetrics) -> PipelineAdmission:
     """Bounded admission for GPU pipeline work (#191).
 
     Owned by the lifespan so the semaphore belongs to this running app rather
     than to import time.
     """
     admission_config = PipelineAdmissionConfig()
-    admission = PipelineAdmission(admission_config, metrics=pipeline_admission_metrics)
+    admission = PipelineAdmission(admission_config, metrics=metrics)
     _announce(
         "Pipeline admission ready "
         f"(max_concurrent={admission_config.max_concurrent}, "
@@ -610,19 +612,23 @@ class _PipelineCollaborators:
 
 
 def _build_pipeline_collaborators(
-    registry: CollectorRegistry, refiner: "BaseTranslationRefiner"
+    registry: CollectorRegistry,
+    admission_metrics: PipelineAdmissionMetrics,
+    refiner: "BaseTranslationRefiner",
 ) -> _PipelineCollaborators:
     """What the container hands the conversation service and the pipeline routes.
 
     Built before the container, which injects them.
     """
-    admission = _build_pipeline_admission()
+    admission = _build_pipeline_admission(admission_metrics)
     telemetry_mode, quality_telemetry, exporter = _build_quality_telemetry(registry)
     return _PipelineCollaborators(refiner, admission, telemetry_mode, quality_telemetry, exporter)
 
 
 async def _attach_quality_telemetry(
-    dependencies: GatewayDependencies, telemetry_mode: "TelemetryMode"
+    dependencies: GatewayDependencies,
+    telemetry_mode: "TelemetryMode",
+    refinement_metrics: RefinementMetrics,
 ) -> None:
     """Connect this app's refiner and session manager to its telemetry."""
     from .translation_refiner import describe_refinement
@@ -759,8 +765,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from .tenant_persistence import configure_tenant_persistence
 
     tenant_persistence = configure_tenant_persistence()
+    metrics: GatewayMetrics = app.state.gateway_metrics
     runtime_flow, runtime_policy = _build_runtime_policy(app.state.prometheus_registry)
-    pipeline = _build_pipeline_collaborators(app.state.prometheus_registry, refiner)
+    pipeline = _build_pipeline_collaborators(
+        app.state.prometheus_registry, metrics.pipeline_admission, refiner
+    )
 
     dependencies = _build_dependencies(
         app, tenant_persistence, runtime_flow, runtime_policy, pipeline
@@ -769,7 +778,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Before any request, socket or background task can see this app's sessions.
         dependencies.session_manager.rehydrate_tenant_sessions()
     app.state.dependencies = dependencies
-    await _attach_quality_telemetry(dependencies, pipeline.telemetry_mode)
+    await _attach_quality_telemetry(dependencies, pipeline.telemetry_mode, metrics.refinement)
 
     # Feedback persistence (#302). Deliberately non-fatal: the gateway serves
     # the whole conversation pipeline, and an unreachable feedback database
@@ -791,24 +800,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield None
     finally:
         await _shut_down(app, dependencies, tasks, tenant_persistence)
-
-
-# === Monitoring Setup (BEFORE any module imports) ===
-# Eigene Registry erstellen um doppelte Registrierung zu vermeiden.
-# Adapters until PR7 (#228): one registry and one set of series per process, shared by
-# every app create_app() builds, because a series may be registered only once
-# per registry while the components counting into it are rebuilt per lifespan.
-registry = CollectorRegistry()
-requests_total = Counter("gateway_requests_total", "Total API Gateway requests", registry=registry)
-requests_total.inc(0)
-pipeline_admission_metrics = PipelineAdmissionMetrics(registry)
-refinement_metrics = RefinementMetrics(registry)
-# Every app's WebSocket monitor counts into these; the monitor itself is per app.
-websocket_metrics = WebSocketMetrics(registry)
-
-from .websocket_polling_routes import polling_dropped_counter
-
-polling_messages_dropped = polling_dropped_counter(registry)
 
 
 # === CORS Middleware ===
@@ -874,7 +865,7 @@ def setup_cors_for_websockets(app: FastAPI) -> None:
     )
 
 
-# === Module Imports (AFTER monitoring setup) ===
+# === Module Imports ===
 from . import websocket, websocket_monitoring_routes, websocket_polling_routes
 from .routes import admin, circuit_breaker, customer, feedback, login, session
 from .routes.health import router as health_router
@@ -945,14 +936,16 @@ def create_app() -> FastAPI:
         version="1.1.0",
         lifespan=lifespan,
     )
-    app.state.prometheus_registry = registry
-    app.state.websocket_metrics = websocket_metrics
-    app.state.gateway_requests_total = requests_total
-    setattr(app, "requests_total", requests_total)
+    # This app's registry and series; every lifespan of the app reuses them.
+    metrics = GatewayMetrics.build()
+    app.state.gateway_metrics = metrics
+    app.state.prometheus_registry = metrics.registry
+    setattr(app, "requests_total", metrics.requests_total)
     app.state.dependencies = None
 
     setup_cors_for_websockets(app)
-    app.add_middleware(RateLimitMiddleware)
+    app.state.rate_limits = RateLimits()
+    app.add_middleware(RateLimitMiddleware, limits=app.state.rate_limits)
     _include_routes(app)
     return app
 

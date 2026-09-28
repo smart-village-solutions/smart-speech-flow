@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.rate_limiter import RateLimitConfig
-from services.api_gateway import rate_limiter
 from services.api_gateway.session_manager import (
     ClientType,
     SessionMessage,
@@ -28,10 +27,7 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 @pytest.fixture(autouse=True)
 def reset_session_manager(session_manager) -> None:
     session_manager.reset(clear_persistence=True)
-    middleware = rate_limiter.LATEST_RATE_LIMIT_MIDDLEWARE
-    if middleware is not None:
-        asyncio.run(middleware.message_limiter.reset())
-        asyncio.run(middleware.global_limiter.reset())
+    asyncio.run(app.state.rate_limits.reset())
     yield
     session_manager.reset(clear_persistence=True)
 

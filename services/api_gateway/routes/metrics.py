@@ -14,7 +14,7 @@ def metrics(
 ):
     """Kombinierte Prometheus-Metriken für Gateway und WebSocket-Monitoring"""
     try:
-        # The WebSocket series live on this registry too (app.websocket_metrics).
+        # The WebSocket series live on this registry too (GatewayMetrics.websocket).
         return Response(generate_latest(registry), media_type=TEXT_PLAIN_MEDIA_TYPE)
     except Exception:
         # Absoluter Fallback
