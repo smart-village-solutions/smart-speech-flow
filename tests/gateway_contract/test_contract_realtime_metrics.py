@@ -43,7 +43,6 @@ EXPECTED_FAMILIES = {
     "websocket_messages_received_total": {"client_type"},
     "websocket_messages_sent_total": {"client_type"},
     "websocket_monitor_initialized": set(),
-    "websocket_polling_messages_dropped_total": {"client_type"},
     "websocket_sessions_with_connections": set(),
     # An Info series is exposed with an "_info" suffix.
     "websocket_system_info_info": {"version", "monitoring_enabled", "max_connections_per_session"},
@@ -51,14 +50,12 @@ EXPECTED_FAMILIES = {
 }
 
 # Nothing on the realtime surface can make these count: no caller records a
-# received message, a socket error needs a send that fails mid-broadcast, and
-# the legacy fallback queue is unreachable from a tenant connection. Their
-# label names are read from the collector the registry holds instead.
+# received message, and a socket error needs a send that fails mid-broadcast.
+# Their label names are read from the collector the registry holds instead.
 NEVER_SAMPLED = {
     "websocket_errors_total",
     "websocket_broadcast_messages_failed_total",
     "websocket_messages_received_total",
-    "websocket_polling_messages_dropped_total",
 }
 
 _SAMPLE_SUFFIXES = ("_bucket", "_count", "_sum", "_created")

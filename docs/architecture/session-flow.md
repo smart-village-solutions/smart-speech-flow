@@ -5,19 +5,19 @@ This document summarizes the actual session logic implemented in the backend so 
 ## 1. Admin session creation
 
 - Endpoint: `POST /api/admin/session/create`
-- Effect: creates a new pending session with an auto generated 8-char ID.
+- Effect: creates a new pending session with an auto generated 8-char ID, under the tenant of the admin's signed token.
 - Response includes the session ID and a shareable join URL.
-- Existing sessions remain active; multiple concurrent sessions are possible.
+- By default a tenant has one active session at a time: creating a session ends that tenant's previous one. `SSF_ALLOW_PARALLEL_SESSIONS=true` allows parallel sessions.
 
 ## 2. Pending state
 
 - New sessions start with status `pending`.
 - They become `active` when the customer joins; there is no automatic transition.
-- Frontend should poll `GET /api/admin/session/current?session_id=…` or `GET /api/session/{id}` (when available) to observe status.
+- Frontend should poll `GET /api/admin/session/current?session_id=…` or `GET /api/admin/session/{session_id}/status` to observe status.
 
 ## 3. Customer activation
 
-- ✅ **NEW:** REST endpoint `POST /api/customer/session/activate` is now available.
+- REST endpoint: `POST /api/customer/session/activate`.
 - No automatic transition happens when a customer opens a WebSocket connection or sends a message.
 - Customer activation workflow:
   1. Customer scans QR code and selects language
@@ -27,31 +27,32 @@ This document summarizes the actual session logic implemented in the backend so 
 
 ## 4. Active state & messaging
 
-- `POST /api/session/{session_id}/message` works only while the session status is `active`; otherwise the request fails with `SESSION_NOT_ACTIVE`.
+- `POST /api/admin/session/{session_id}/message` and `POST /api/customer/session/{session_id}/message` work only while the session status is `active`; otherwise the request fails with `SESSION_NOT_ACTIVE`.
 - Audio payloads use multipart/form-data, text payloads use application/json.
-- Once accepted, the message is stored and `WebSocketManager.broadcast_with_differentiated_content` pushes sender/receiver views.
+- Once accepted, `ConversationService` stores the message and its differentiated broadcast pushes the sender and receiver views to the session's sockets and pollers.
 
 ## 5. WebSocket behaviour
 
-- Primary endpoint: `ws://…/ws/{session_id}/{client_type}` (no `/api` prefix) defined in `services/api_gateway/websocket.py`.
-- The legacy `/api/ws/…` endpoint that lives in `routes/session.py` is a heartbeat stub and does **not** integrate with the WebSocket manager.
+- Endpoints: `ws://…/ws/admin/{session_id}?ticket=…` and `ws://…/ws/customer/{session_id}` (no `/api` prefix), defined in `services/api_gateway/websocket.py`.
+- The admin socket needs a single-use ticket from `POST /api/admin/session/{session_id}/realtime-ticket`.
 - Connecting does **not** activate the session; it merely registers the socket so broadcasts can reach the client once the session is active.
-- WebSocket stats/polling helpers live under `/api/websocket/*` (see `websocket.py`).
+- A client that cannot keep a socket open uses the polling fallback below `/api/{admin|customer}/session/{session_id}/polling`. See `websocket-architecture.md`.
 
 ## 6. Termination
 
 - Sessions can transition to `terminated` via:
   - Admin endpoint `DELETE /api/admin/session/{session_id}/terminate`.
-  - Automatic timeout (SessionManager's inactivity timer).
-  - Manual cleanup via `terminate_all_active_sessions` helper.
+  - Automatic timeout: the lifespan's session-timeout task ends a session after the admin's reconnect grace or at its maximum lifetime.
+  - A new admin session for the same tenant, unless parallel sessions are allowed.
 - Terminated sessions show status `terminated`; re-connecting WebSockets should be prevented.
 
 ## 7. Fetching session info
 
 - Admin endpoints:
   - `GET /api/admin/session/current?session_id=…` – returns status/details for a specific session.
+  - `GET /api/admin/session/{session_id}/status` – the session's status.
   - `GET /api/admin/session/history` – lists terminated sessions and active sessions.
-- General endpoint: `GET /api/session/{session_id}` – returns session data (status, participants).
+- Customer endpoint: `GET /api/customer/session/{session_id}` – returns the session's status, language and connection state.
 
 ## 8. Frontend responsibilities
 
@@ -62,9 +63,9 @@ This document summarizes the actual session logic implemented in the backend so 
 
 ### Customer Frontend:
 - After language selection, call `POST /api/customer/session/activate` to activate the session
-- Use `GET /api/customer/session/{id}/status` to check session state
+- Use `GET /api/customer/session/{id}` to check session state
 - Only allow sending messages once `can_send_messages` is `true`
 
 ### Both Frontends:
-- Connect sockets to `/ws/{session_id}/{client_type}` for realtime updates and handle disconnects/termination events
+- Connect sockets to `/ws/admin/{session_id}` or `/ws/customer/{session_id}` for realtime updates and handle disconnects/termination events
 - Handle `SESSION_NOT_ACTIVE` errors gracefully if they occur

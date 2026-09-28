@@ -2,7 +2,7 @@ import importlib
 import json
 import os
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 
 import pytest
 
@@ -303,61 +303,6 @@ def test_process_text_pipeline_covers_tts_error_and_success_paths(monkeypatch):
     assert success_result["audio_bytes"] == b"WAV"
     assert success_result["debug"]["steps"][-1]["model"] == "tts_models/tr/common-voice/glow-tts"
     assert success_result["debug"]["steps"][-1]["language"] == "tr"
-
-
-@pytest.mark.asyncio
-async def test_routes_session_activity_helper_and_endpoint(monkeypatch):
-    session_routes = importlib.import_module("services.api_gateway.routes.session")
-
-    connection_one = SimpleNamespace(current_polling_interval=5)
-    connection_two = SimpleNamespace(current_polling_interval=15)
-    manager = SimpleNamespace(
-        session_connections={"session-1": {"a": connection_one, "b": connection_two}},
-        client_status=SimpleNamespace(
-            adaptive_polling=SimpleNamespace(
-                update_client_status=Mock(side_effect=[10, 15]),
-                get_battery_optimization_tips=Mock(side_effect=[["tip-a"], ["tip-b"]]),
-            ),
-            send_polling_interval_update=AsyncMock(),
-        ),
-        get_session_connections=Mock(return_value=[{"id": "a"}, {"id": "b"}]),
-    )
-    activity = session_routes.ClientActivityUpdate(
-        is_mobile=True,
-        tab_active=False,
-        battery_level=0.2,
-        network_quality="slow",
-    )
-
-    new_intervals, tips = await session_routes._apply_activity_update_to_session_connections(
-        manager, "session-1", activity
-    )
-    assert new_intervals == [10, 15]
-    assert sorted(tips) == ["tip-a", "tip-b"]
-    manager.client_status.send_polling_interval_update.assert_awaited_once_with(
-        connection_one, 10, reason="client_activity_update"
-    )
-
-    active_session = SimpleNamespace(
-        status=session_routes.SessionStatus.ACTIVE,
-        id="session-1",
-    )
-    update_activity = Mock()
-    sessions = SimpleNamespace(
-        get_session=lambda session_id: active_session,
-        update_session_activity=update_activity,
-    )
-    manager.client_status.adaptive_polling.update_client_status = Mock(side_effect=[10, 15])
-    manager.client_status.adaptive_polling.get_battery_optimization_tips = Mock(
-        side_effect=[["tip-a"], ["tip-b"]]
-    )
-    manager.client_status.send_polling_interval_update = AsyncMock()
-
-    response = await session_routes.update_client_activity("session-1", activity, manager, sessions)
-    assert response.status == "success"
-    assert response.new_polling_interval == 12
-    assert sorted(response.optimization_tips) == ["tip-a", "tip-b"]
-    update_activity.assert_called_once_with("session-1")
 
 
 def test_translation_refiner_default_endpoint_and_enabled_configuration():

@@ -78,11 +78,12 @@ Pinned by `test_contract_heartbeat.py` and `test_contract_realtime_metrics.py` (
 - A socket that stops answering gets a `connection_status` frame (`disconnecting`,
   `heartbeat_timeout`), then close 1001 with reason `heartbeat_timeout`; its peer gets
   `client_left` with the same reason, and one `heartbeat_timeout` disconnect is counted.
-- `websocket_messages_received_total`, `websocket_errors_total`,
-  `websocket_broadcast_messages_failed_total` and `websocket_polling_messages_dropped_total`
-  are exposed but nothing on the realtime surface makes them count: no caller records a
-  received message, the other two need a send that fails mid-broadcast, and the last is the
-  unwired fallback's. The test reads their label names from the registry.
+- `websocket_messages_received_total`, `websocket_errors_total` and
+  `websocket_broadcast_messages_failed_total` are exposed but nothing on the realtime surface
+  makes them count: no caller records a received message, and the other two need a send that
+  fails mid-broadcast. The test reads their label names from the registry.
+  `websocket_polling_messages_dropped_total`, the unwired fallback's, was among them until PR7b
+  removed it.
 - The Info series `websocket_system_info` is exposed as `websocket_system_info_info`.
 
 Surprising, but pinned by `test_contract_audio.py` as they behave (found in PR5b). Changing
@@ -124,9 +125,9 @@ Pinned by `test_contract_websocket.py` and `test_contract_realtime_metrics.py` (
 - The admin WebSocket closes with 4404 `Session not found` when the session behind a valid ticket no longer exists, before the origin check. No HTTP request reaches that state; the `lapse_sessions` fixture drops the sessions without terminating them, as a lapsed Redis record would.
 - `/metrics` serves `websocket_monitor_initialized` with the value 1.
 
-Found in PR6c, not changed:
+Found in PR6c, fixed in PR7b:
 
-- If the heartbeat never timed out a silent socket, `test_contract_heartbeat.py::test_a_silent_socket_is_closed_and_its_peer_told` would loop on pings forever instead of failing. The unit tests on the heartbeat fail at once; the contract test only times the job out.
+- If the heartbeat never timed out a silent socket, `test_contract_heartbeat.py::test_a_silent_socket_is_closed_and_its_peer_told` would loop on pings forever instead of failing. The unit tests on the heartbeat fail at once; the contract test only timed the job out. Since PR7b each read ends at the answer to a malformed frame, and the test fails with `no client_left frame within 10.0 seconds` (shown by disabling the timeout check in `Heartbeat.check_timeouts`; before, the same mutation ran until killed).
 
 ## Accepted divergences
 Changes a later slice made on purpose, where the output differs from what came before.
@@ -170,6 +171,7 @@ Changes a later slice made on purpose, where the output differs from what came b
   other's breakers. `/api/health/circuit-breakers` and the reset routes now list this app's
   breakers instead of every breaker the factory ever built; in production both are the same
   three. Each lifespan starts and stops its own health polling and aiohttp session.
+  PR7b deleted the factory, which nothing in production used after this.
 - A malformed `LLM_REFINEMENT_*` setting refuses startup in the lifespan instead of at
   import (PR5a): `import services.api_gateway.app` succeeds and uvicorn reports that the
   application startup failed. The refiner is still the first thing built, so the gateway
@@ -202,6 +204,13 @@ Changes a later slice made on purpose, where the output differs from what came b
   the registry `/metrics` serves.
 
 ## Inventory for PR7 (task 4.2)
+
+Done in PR7b. Every item below that was still present was searched for again (code, tests,
+docs, scripts, compose files, Dockerfiles, CI workflows) and deleted, with the tests that only
+exercised it; the lists record what each item was and who consumed it. `app.routes` (55
+routes, both WebSocket routes included) and `app.openapi()` are identical to `9f05640`, and
+`/metrics` loses only `websocket_polling_messages_dropped_total`. Kept on purpose, below:
+`LegacySessionManager`, and two items found during the cleanup.
 
 Code with no production caller, found while moving the audio adapters (PR5b) and left
 unchanged. `tests/test_audio_processing_boundary.py` walks every module reachable from
@@ -240,7 +249,7 @@ both WebSocket routes included) and `app.openapi()` are identical:
   reached. Consumers: tests only, removed with them.
 - `app.py`: `websocket_fallback_task` and the `fallback_manager` import and registry binding.
 
-Still unregistered after PR 6b, for PR7:
+Still unregistered after PR 6b, deleted in PR7b:
 
 - `websocket.py`: `get_websocket_stats` and `websocket_connection_test`.
 - `websocket_fallback.py`, all of it. Nothing in the gateway imports it; its suites
@@ -252,7 +261,7 @@ Still unregistered after PR 6b, for PR7:
   is on the mypy ignore list and no route reaches it. Since PR6c it reaches the adaptive polling
   through `WebSocketManager.client_status`.
 
-Found while splitting the realtime manager (PR6c), left unchanged:
+Found while splitting the realtime manager (PR6c), deleted in PR7b:
 
 - `WebSocketManager`: `max_reconnect_attempts`, `base_reconnect_delay` and
   `_calculate_reconnect_delay`, which nothing outside `tests/test_websocket_manager.py` uses.
@@ -263,4 +272,34 @@ Found while splitting the realtime manager (PR6c), left unchanged:
   `get_websocket_stats`.
 - `tests/test_translation_refiner.py` reloads `translation_refiner` and leaves it reloaded, the
   pattern `tests/test_sonar_backlog_coverage.py` now undoes. No test fails in either file order
-  today.
+  today. Fixed in PR7b: the file restores the module after each test, as that one does.
+
+Also deleted in PR7b, with no production consumer:
+
+- `CircuitBreakerFactory` (`circuit_breaker.py`), unused in production since PR5a, and the root
+  `conftest.py` fixture and `tests/test_circuit_breaker_test_isolation.py` that existed only for
+  its process-wide registry.
+- `TenantSessionManager.heartbeat_received`, a no-op since PR 6b that only tests called.
+- `websocket_polling_messages_dropped_total` in `WebSocketMetrics`: nothing counted into it once
+  the fallback was unwired, and no file in `monitoring/` queries it.
+
+Kept on purpose:
+
+- `LegacySessionManager`, by the decision in design.md: it stays behind the adapter so it can be
+  removed later in one step. Its remaining consumers are tests; no gateway module imports it.
+- `LegacySessionManager.heartbeat_received`, as part of that adapter, which moved unchanged.
+
+Found in PR7b, not changed (outside the inventory):
+
+- `ConnectionRegistry.connection_stats` is write-only in production now that
+  `WebSocketManager.get_connection_stats`, its one reader, is gone. The heartbeat's unit tests
+  read `heartbeat_timeouts` from it to observe a timeout.
+- `WebSocketMonitor.get_connection_stats` has no production caller; two tests read it.
+- The two `real_system` tests in `tests/test_pipeline_metadata_integration.py` failed before any
+  request: they patched `pipeline_logic.ASR_URL` and `TRANSLATION_URL`, which moved to
+  `speech_services.py` in PR5a (`8e0d520`), and called `process_wav` without the `speech`,
+  `refiner` and `validator` it requires since then. CI never runs them. Fixed in a PR7b
+  follow-up: they build the per-app speech services, and pass against local stubs (task 4.4).
+- `tests/integration/test_websocket_integration.py` collects no tests. It is a script against a
+  live gateway on `localhost:8000` that drives `/api/websocket/polling/*` and
+  `/api/websocket/monitoring/stats` and `/connections`, none of which is registered (#348).

@@ -134,20 +134,6 @@ async def test_admin_reconnect_cancels_grace_warning(
 
 
 @pytest.mark.asyncio
-async def test_heartbeat_does_not_change_business_or_timeout_state(
-    manager: TenantSessionManager, clock: Clock
-) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    before = session.last_activity
-    clock.advance(minutes=10)
-
-    await manager.heartbeat_received(session.key, ClientType.ADMIN)
-
-    assert session.last_activity == before
-    assert session.admin_disconnected_at == session.created_at
-
-
-@pytest.mark.asyncio
 async def test_pending_session_without_admin_connection_expires_from_creation(
     manager: TenantSessionManager, clock: Clock
 ) -> None:

@@ -264,15 +264,6 @@ class WebSocketMetrics:
             }
         )
 
-        # Counted only by the legacy polling fallback (websocket_fallback.py), which
-        # nothing registered reaches any more; kept exposed until PR7 deletes it.
-        self.polling_messages_dropped = Counter(
-            "websocket_polling_messages_dropped_total",
-            "Messages discarded because a polling client's queue was full",
-            ["client_type"],
-            registry=registry,
-        )
-
         # The ssf-overview dashboard's "monitor initialised" panel reads this.
         self.monitor_initialized = Gauge(
             "websocket_monitor_initialized",

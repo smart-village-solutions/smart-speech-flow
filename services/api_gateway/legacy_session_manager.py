@@ -1,9 +1,8 @@
 """The str-keyed legacy session path, kept behind a compatibility adapter (#228).
 
 No running gateway reaches it: every app builds a `TenantSessionManager`. It
-stays until the cutover decision the OpenSpec design records, and only the
-unregistered services/api_gateway/session.py and tests construct it.
-tests/test_gateway_dependency_ownership.py fails if another gateway module
+stays until a recorded cutover decision removes it, and only tests construct
+it. tests/test_gateway_dependency_ownership.py fails if a gateway module
 imports it.
 """
 

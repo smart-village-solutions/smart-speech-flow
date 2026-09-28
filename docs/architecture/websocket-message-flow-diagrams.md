@@ -1,5 +1,9 @@
 # WebSocket Message Flow - Sequence Diagrams
 
+> **Historical.** This records the WebSocket manager as it was on 2025-11-05.
+> The gateway no longer has a module-level `WebSocketManager`: each app's
+> lifespan builds its own. See [websocket-architecture.md](websocket-architecture.md).
+
 ## 1. Current State (Broken) - Message Flow
 
 ```mermaid

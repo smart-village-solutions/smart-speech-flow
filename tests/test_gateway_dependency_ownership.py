@@ -3,8 +3,8 @@
 A gateway collaborator is built by its app's lifespan and reached through a
 provider in services/api_gateway/dependencies.py, so a test can replace it per
 app. A module-level instance, or an lru_cache on a zero-argument function, is
-a process-wide singleton no test can replace that way. The ones that remain
-are listed below with the PR that removes them. The list only shrinks.
+a process-wide singleton no test can replace that way. The one that remains
+is listed below with the reason it is permanent. The list only shrinks.
 
 A call counts as a construction when its name is CapWords (a class), a
 factory (build_, create_, make_, init_, initialize_, get_), or a `Class.from_*`
@@ -25,16 +25,14 @@ VALUE_TYPES = frozenset({"APIRouter", "Field", "Path", "TypeVar", "TypedDict"})
 
 ALLOWLIST = {
     ("app.py", "app"): "permanent: the ASGI entry point uvicorn and the Dockerfile target",
-    # Unwired in PR 6b: nothing imports websocket_fallback.py; PR7 deletes the module.
-    ("websocket_fallback.py", "fallback_manager"): "adapter until PR7",
 }
 
 # Module globals still rebound through a `global` statement. Only shrinks.
 GLOBAL_REBINDING_ALLOWLIST: dict[tuple[str, str], str] = {}
 
-# The str-keyed compatibility adapter, and the unregistered legacy route
-# module that still needs it (#230). No other gateway module may import it.
-LEGACY_SESSION_IMPORTERS = frozenset({"legacy_session_manager.py", "session.py"})
+# The str-keyed compatibility adapter's only consumers are its tests; no
+# gateway module may import it.
+LEGACY_SESSION_IMPORTERS: frozenset[str] = frozenset()
 
 _FACTORY = re.compile(r"^(build|create|make|init|initialize|get)_")
 
@@ -163,7 +161,7 @@ def test_every_allowlisted_adapter_still_exists() -> None:
 
 def test_every_allowlist_entry_names_its_end() -> None:
     for entry, reason in {**ALLOWLIST, **GLOBAL_REBINDING_ALLOWLIST}.items():
-        assert re.fullmatch(r"adapter until PR[4-7]|permanent: .+", reason), entry
+        assert re.fullmatch(r"permanent: .+", reason), entry
 
 
 def test_no_zero_argument_cached_factories() -> None:

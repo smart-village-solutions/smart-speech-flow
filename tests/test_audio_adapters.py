@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from services.api_gateway import app as app_module
 from services.api_gateway.app import app, audio_cleanup_task
 from services.api_gateway.audio_processing import AudioValidationResult
-from services.api_gateway.audio_storage import AUDIO_BASE_DIR, AudioStore, AudioVariant
+from services.api_gateway.audio_storage import AudioStore, AudioVariant
 from services.api_gateway.service_health import ServiceHealthManager
 from services.api_gateway.tenant_session import TenantSessionKey
 from tests.gateway_contract.contract_support import wav_bytes
@@ -165,8 +165,10 @@ def test_a_running_app_keeps_audio_in_the_directory_it_started_with(
     for variable in STUDIO_ENVIRONMENT:
         monkeypatch.delenv(variable, raising=False)
     monkeypatch.delenv("REDIS_URL", raising=False)
+    # What a read at import would have found.
+    imported_dir = AudioStore.from_environment().base_dir
     monkeypatch.setenv("SSF_AUDIO_BASE_DIR", str(tmp_path))
-    assert AUDIO_BASE_DIR != tmp_path
+    assert imported_dir != tmp_path
     # Health polls that reach nothing would open the breakers mid-test.
     monkeypatch.setattr(
         ServiceHealthManager,
@@ -197,7 +199,7 @@ def test_a_running_app_keeps_audio_in_the_directory_it_started_with(
         }
         assert (stored[AudioVariant.ORIGINAL] / f"{message_id}.wav").read_bytes() == recording
         assert (stored[AudioVariant.TRANSLATED] / f"{message_id}.wav").read_bytes() == TTS_AUDIO
-        assert not (AUDIO_BASE_DIR / "v2" / key.tenant_ref / session_id).exists()
+        assert not (imported_dir / "v2" / key.tenant_ref / session_id).exists()
         served = client.get(f"/api/admin/session/{session_id}/audio/{message_id}/translated.wav")
         assert served.content == TTS_AUDIO
 

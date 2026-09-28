@@ -15,7 +15,6 @@ from services.api_gateway.realtime_connection import WebSocketConnection
 from services.api_gateway.realtime_protocol import ConnectionState, MessageType
 from services.api_gateway.session_manager import ClientType
 from services.api_gateway.websocket import WebSocketManager
-from services.api_gateway.routes.session import ClientActivityUpdate
 from services.api_gateway.tenant_session import TenantSessionKey
 from tests.realtime_sessions import open_session, tenant_session_manager, websocket_monitor
 
@@ -279,47 +278,6 @@ class TestWebSocketMobileOptimization:
             client_type=ClientType.CUSTOMER,
             client_info=client_info
         )
-
-
-class TestClientActivityAPI:
-    """Tests für Client-Activity-Update API"""
-
-    def test_client_activity_update_model(self):
-        """Test: ClientActivityUpdate Pydantic-Model Validation"""
-        # Valid update
-        update = ClientActivityUpdate(
-            is_mobile=True,
-            tab_active=False,
-            battery_level=0.75,
-            is_charging=True,
-            network_quality="good",
-            connection_type="wifi"
-        )
-
-        assert update.is_mobile is True
-        assert update.tab_active is False
-        assert update.battery_level == 0.75
-        assert update.network_quality == "good"
-
-    def test_battery_level_validation(self):
-        """Test: Battery-Level-Validation (0.0-1.0)"""
-        # Valid range
-        update = ClientActivityUpdate(battery_level=0.5)
-        assert update.battery_level == 0.5
-
-        # Invalid range (should be clamped or raise error)
-        with pytest.raises(ValueError):
-            ClientActivityUpdate(battery_level=1.5)
-
-        with pytest.raises(ValueError):
-            ClientActivityUpdate(battery_level=-0.1)
-
-    def test_optional_fields(self):
-        """Test: Alle Felder sind optional"""
-        update = ClientActivityUpdate()
-        assert update.is_mobile is None
-        assert update.tab_active is None
-        assert update.battery_level is None
 
 
 # Integration Tests würden hier folgen...

@@ -1,5 +1,9 @@
 # WebSocket Architecture Analysis
 
+> **Historical.** This records the WebSocket manager as it was on 2025-11-05.
+> The gateway no longer has a module-level `WebSocketManager`: each app's
+> lifespan builds its own. See [websocket-architecture.md](websocket-architecture.md).
+
 ## Date: 2025-11-05
 
 ## 1. WebSocketManager Instantiation Points

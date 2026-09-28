@@ -60,10 +60,8 @@ def test_a_valid_submission_is_created(client_for) -> None:
 
 
 def test_the_route_is_registered_on_the_application() -> None:
-    """A route can exist in a module and never be mounted.
-
-    api_gateway/session.py is dead code for exactly that reason, so this
-    asserts against the generated schema rather than the import.
+    """A route can exist in a module and never be mounted, so this asserts
+    against the generated schema rather than the import.
     """
     assert "/api/feedback" in app.openapi()["paths"]
     assert "post" in app.openapi()["paths"]["/api/feedback"]

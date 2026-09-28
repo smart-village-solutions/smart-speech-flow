@@ -2,9 +2,7 @@
 
 The monitor keys its active-connection map by this id, so a collision makes one
 socket's metrics describe the other's — and the connection KPIs (R1-R4) divide
-by those counts. The polling fallback has the same defect with worse
-consequences: its id keys a dict of message queues, so a collision discards a
-whole queue.
+by those counts.
 """
 
 import time
@@ -15,11 +13,6 @@ from services.api_gateway.realtime_registry import ConnectionRegistry
 from services.api_gateway.session_manager import ClientType
 from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket import WebSocketManager
-from services.api_gateway.websocket_fallback import (
-    FallbackConfig,
-    FallbackReason,
-    WebSocketFallbackManager,
-)
 from tests.realtime_sessions import TENANT, open_session, tenant_session_manager, websocket_monitor
 
 SESSION_A = TenantSessionKey(TENANT, "session-a")
@@ -78,32 +71,3 @@ class TestTheEndpointItselfBuildsUniqueIds:
             assert len(manager.session_connections[key]) == 2
         finally:
             await manager.stop_heartbeat_system()
-
-
-class TestThePollingFallbackKeepsBothQueues:
-    """A polling id keys a message queue; a collision loses one of them whole.
-
-    _evaluate_connection_error runs per connection inside the broadcast loop,
-    so one failed broadcast to a session with two same-type connections
-    activated the fallback twice in the same instant.
-    """
-
-    async def test_two_activations_in_one_instant_do_not_overwrite_each_other(self):
-        manager = WebSocketFallbackManager(
-            FallbackConfig(enable_jitter=False, enable_user_notifications=False)
-        )
-
-        first = await manager.activate_polling_fallback(
-            "session-a", "customer", None, FallbackReason.NETWORK_ERROR
-        )
-        second = await manager.activate_polling_fallback(
-            "session-a", "customer", None, FallbackReason.NETWORK_ERROR
-        )
-
-        assert first != second
-        assert len(manager.polling_clients) == 2
-
-        manager.send_message_to_polling_client(first, {"type": "translation"})
-
-        assert len(manager.polling_clients[first].message_queue) == 1
-        assert len(manager.polling_clients[second].message_queue) == 0

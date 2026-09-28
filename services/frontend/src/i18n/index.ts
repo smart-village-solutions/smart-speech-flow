@@ -12,8 +12,9 @@ import tr from './locales/tr.json';
 import uk from './locales/uk.json';
 
 /**
- * Every language the gateway offers (`api_gateway/session.py:48`) has a
- * catalogue, so a customer never lands on a screen in someone else's language.
+ * Every language the gateway offers (`SUPPORTED_LANGUAGES` in
+ * `api_gateway/message_models.py`) has a catalogue, so a customer never lands
+ * on a screen in someone else's language.
  * They are bundled rather than fetched: all ten are 13.6 KB gzipped together,
  * and loading them on demand would leave the UI in the previous language for
  * the length of a round trip.

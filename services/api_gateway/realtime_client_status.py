@@ -33,9 +33,6 @@ class AdaptivePollingManager:
         "offline_mode": 120,  # Sehr selten für Offline-Detection
     }
 
-    def __init__(self) -> None:
-        self.client_profiles: Dict[str, Dict[str, Any]] = {}
-
     def get_optimal_interval(self, connection: WebSocketConnection) -> int:
         """
         Berechnet optimales Polling-Intervall basierend auf Client-Status

@@ -155,7 +155,8 @@ See [Browser Test Matrix](AUDIO_RECORDING_BROWSER_TEST.md) for coverage.
 - **Summary:** [Test Summary](AUDIO_RECORDING_TEST_SUMMARY.md)
 
 ### WebSocket Communication
-- **Unit Tests:** `test_websocket_manager.py`, `test_websocket_fallback.py`
+- **Unit Tests:** `test_websocket_manager.py`, `test_realtime_collaborators.py`, `test_tenant_polling.py`
+- **Contract:** `tests/gateway_contract/test_contract_websocket.py` and the other realtime contract files
 - **Integration:** `tests/integration/test_websocket_integration.py`
 - **Load Tests:** `tests/load/test_websocket_load_performance.py`
 
