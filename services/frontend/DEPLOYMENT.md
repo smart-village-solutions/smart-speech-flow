@@ -8,9 +8,12 @@ conversations until every item below is complete:
 1. The Studio login directory returns at least two ready tenant entries.
 2. Studio has provisioned every listed realm with the common public
    `ssf-frontend` client, PKCE S256, the exact application origin and
-   `/login/*` redirects, the `ssf-frontend` audience, the `ssf-user` role, and
-   the signed `studio_tenant_id` and `ssf_authorization_revision` claims. The
-   user menu's Account settings link also needs the realm's built-in
+   `/login/*` redirects and the `ssf-frontend` audience. A regular active user
+   needs no `ssf-user` role or SSF-specific user claims for conversation access;
+   the gateway derives the tenant from the verified issuer and the unique
+   Studio directory entry. Studio may continue producing legacy claims during
+   migration, but their absence or staleness must not block conversations.
+   The user menu's Account settings link also needs the realm's built-in
    `account-console` client enabled and every administrator holding
    `default-roles-<realm>` (or the `account` client's `manage-account` role
    directly). Keycloak grants that default role to users created through the
@@ -22,9 +25,11 @@ conversations until every item below is complete:
    termination, messages, audio, and customer joins. The login-directory work
    establishes identity context only; it does not prove conversation storage
    isolation.
-4. Operators have manually verified login, reuse of an existing SSO session,
-   logout, an unknown tenant route, a Studio outage, and cross-tenant negative
-   access paths in the deployed environment.
+4. Operators have manually verified fresh attribute-free tokens in two realms,
+   login, reuse of an existing SSO session, logout, an unknown tenant route, a
+   Studio outage, and cross-tenant negative access paths in the deployed
+   environment. Record the deployed gateway revision or digest; CI alone is
+   not production acceptance.
 
 The canonical production Compose file deliberately retains its legacy
 single-realm configuration while it pins legacy gateway or frontend images.
@@ -62,6 +67,11 @@ docker build \
 - Run cross-tenant negative checks from `add-multi-tenant-operations` and
   confirm one tenant cannot create, read, update, terminate, or join another
   tenant's conversations or access its messages and audio.
+- Verify a regular user without `ssf-user` or the old SSF claims can create,
+  read, participate in and terminate a conversation, but receives 403 on
+  feedback reads and telemetry probes. Disable that account and confirm new
+  login is denied; already issued locally validated access tokens may remain
+  usable until their short expiry, so do not claim instant revocation.
 
 ## ✅ Production-Ready Checklist
 

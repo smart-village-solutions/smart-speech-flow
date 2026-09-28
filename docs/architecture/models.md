@@ -18,29 +18,29 @@
   - **Details:** Es werden `M2M100ForConditionalGeneration` und `M2M100Tokenizer` aus der `transformers`-Bibliothek importiert. Das Modell wird über `M2M100ForConditionalGeneration.from_pretrained(MODEL_NAME, ...)` geladen.
 
 
-## **3. Coqui-TTS** (TTS Service)
-- **Beschreibung:** Ein Open-Source-Framework für Text-zu-Sprache (TTS) mit einer Vielzahl vortrainierter Modelle.
-- **Lizenz:** Mozilla Public License 2.0
-- **Link:** [https://github.com/coqui-ai/TTS](https://github.com/coqui-ai/TTS)
-- **Verwendung im Code:**
-  - **Datei:** `services/tts/app.py`
-  - **Details:** Wird primär für die Sprachsynthese versucht zu laden und zu nutzen. Ein Fallback-Handling ist integriert.
-- **Genutzte Modelle pro Sprache:**
-  - **Deutsch:** [`tts_models/de/thorsten/vits`](https://github.com/coqui-ai/TTS/blob/main/tts_models/de/thorsten/vits)
-  - **Englisch:** [`tts_models/en/ljspeech/vits`](https://github.com/coqui-ai/TTS/blob/main/tts_models/en/ljspeech/vits)
-  - **Türkisch:** [`tts_models/tr/common-voice/glow-tts`](https://github.com/coqui-ai/TTS/blob/main/tts_models/tr/common-voice/glow-tts)
-  - **Persisch:** `tts_models/fa/custom/glow-tts` (Custom, ggf. interner Link)
-  - **Ukrainisch:** [`tts_models/uk/mai/vits`](https://github.com/coqui-ai/TTS/blob/main/tts_models/uk/mai/vits)
+## **3. Piper** (TTS Service)
+- **Description:** VITS voices exported to ONNX, with espeak-ng as the phonemizer. Runs on the GPU through `onnxruntime-gpu` (CUDA execution provider).
+- **Licence:** `piper-tts` is GPL-3.0-or-later; each voice carries its own licence (below).
+- **Link:** [https://github.com/OHF-Voice/piper1-gpl](https://github.com/OHF-Voice/piper1-gpl), voices from [`rhasspy/piper-voices`](https://huggingface.co/rhasspy/piper-voices)
+- **Used in:** `services/tts/piper_engine.py`; the voice per language and its pinned files are in `services/tts/voices.py`. The files are baked into the image at build time.
+- **Voices:**
+  - **German:** `de_DE-thorsten-high` (CC0)
+  - **English:** `en_US-ljspeech-high` (public domain)
+  - **Turkish:** `tr_TR-dfki-medium` (CC BY-NC-SA 4.0)
+  - **Russian:** `ru_RU-denis-medium` (CC0)
+  - **Ukrainian:** `uk_UA-tetiana-high` (Apache 2.0)
+  - **Arabic:** `ar_JO-kareem-medium` (licence not stated upstream)
+  - **Persian:** `fa_IR-gyro-medium` (licence not stated upstream)
+  - **Kurdish (Kurmanji):** `ku_TR-berfin_renas-medium` (CC BY-NC 4.0)
 
-## **4. HuggingFace MMS-TTS** (TTS Service, Fallback)
-- **Beschreibung:** Multilingual Massive Speech (MMS) TTS von Meta/HuggingFace, das Text-zu-Sprache für über 100 Sprachen bietet.
-- **Lizenz:** Apache 2.0
+## **4. Meta MMS-TTS** (TTS Service)
+- **Description:** Massively Multilingual Speech TTS from Meta, used for the two languages Piper has no voice for.
+- **Licence:** CC-BY-NC 4.0
 - **Link:** [https://huggingface.co/facebook/mms-tts](https://huggingface.co/facebook/mms-tts)
-- **Verwendung im Code:**
-  - **Datei:** `services/tts/app.py`
-  - **Details:** Dient als Fallback, falls Coqui-TTS fehlschlägt. Es wird die Modell-ID `facebook/mms-tts-{hf_code}` verwendet und der Ladevorgang wird geloggt.
-- **Genutzte Modelle pro Sprache:**
-  - Die Modellquelle ist für alle Sprachen identisch, die Modell-ID variiert je nach Sprachcode, z. B.:
-    - **Arabisch:** [`facebook/mms-tts-ara`](https://huggingface.co/facebook/mms-tts-ara)
-    - **Russisch:** [`facebook/mms-tts-rus`](https://huggingface.co/facebook/mms-tts-rus)
-    - **Amharisch:** [`facebook/mms-tts-amh`](https://huggingface.co/facebook/mms-tts-amh)
+- **Used in:** `services/tts/mms_engine.py`, loaded as `VitsModel` on the GPU.
+- **Voices:**
+  - **Amharic:** [`facebook/mms-tts-amh`](https://huggingface.co/facebook/mms-tts-amh)
+  - **Tigrinya:** [`facebook/mms-tts-tir`](https://huggingface.co/facebook/mms-tts-tir)
+
+MMS was trained on text without digits, so `services/tts/speech_text.py` spells
+numbers out for these two languages before synthesis.

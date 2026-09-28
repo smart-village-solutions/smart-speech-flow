@@ -130,15 +130,12 @@ async def test_compares_the_tenant_id_in_constant_time(monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
-async def test_rejects_configuration_with_a_different_authorization_revision() -> None:
+async def test_accepts_configuration_when_the_old_user_revision_differs() -> None:
     flow = StudioRuntimeFlow(StubRuntimeClient(_configuration("tenant-kassel", OTHER_REVISION)))
 
     context = _context()
-    with pytest.raises(StudioRuntimeFlowError) as caught:
-        await flow.resolve(context, "correlation-1")
-
-    assert caught.value.code == "studio_runtime_authorization_mismatch"
-    assert caught.value.retryable is False
+    result = await flow.resolve(context, "correlation-1")
+    assert result.configuration.authorization_revision == OTHER_REVISION
 
 
 @pytest.mark.asyncio
@@ -222,7 +219,7 @@ async def test_mock_backed_flow_accepts_only_the_matching_tenant_revision() -> N
 
 
 @pytest.mark.asyncio
-async def test_mock_backed_flow_rejects_a_token_revision_that_does_not_match() -> None:
+async def test_mock_backed_flow_ignores_a_token_revision_that_does_not_match() -> None:
     async def service_token() -> str:
         return "studio-mock-authorized-token"
 
@@ -235,13 +232,8 @@ async def test_mock_backed_flow_rejects_a_token_revision_that_does_not_match() -
     )
 
     context = StudioTenantContext("tenant-kassel", OTHER_REVISION)
-    with pytest.raises(StudioRuntimeFlowError) as caught:
-        await flow.resolve(
-            context,
-            "mock-flow-correlation",
-        )
-
-    assert caught.value.code == "studio_runtime_authorization_mismatch"
+    result = await flow.resolve(context, "mock-flow-correlation")
+    assert result.configuration.tenant.id == "tenant-kassel"
 
 
 class StubRuntimeFlow:
@@ -268,8 +260,7 @@ def _dependency_client(runtime_flow: StubRuntimeFlow | StudioRuntimeFlow) -> Tes
     app = FastAPI()
     app.dependency_overrides[require_ssf_user] = lambda: {
         "sub": "user-1",
-        "studio_tenant_id": "tenant-kassel",
-        "ssf_authorization_revision": REVISION,
+        "_ssf_verified_tenant_id": "tenant-kassel",
     }
     app.dependency_overrides[get_studio_runtime_flow] = lambda: runtime_flow
 
@@ -297,7 +288,7 @@ def test_dependency_forwards_valid_correlation_id() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"tenant_id": "tenant-kassel", "correlation_id": "request-123"}
-    assert flow.requests == [(context, "request-123")]
+    assert flow.requests == [(StudioTenantContext("tenant-kassel"), "request-123")]
 
 
 def test_dependency_generates_correlation_id_when_absent() -> None:
@@ -311,7 +302,7 @@ def test_dependency_generates_correlation_id_when_absent() -> None:
     assert response.status_code == 200
     correlation_id = response.json()["correlation_id"]
     assert len(correlation_id) == 36
-    assert flow.requests == [(context, correlation_id)]
+    assert flow.requests == [(StudioTenantContext("tenant-kassel"), correlation_id)]
 
 
 def test_dependency_returns_safe_error_without_fallback() -> None:
