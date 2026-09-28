@@ -761,11 +761,12 @@ def test_tts_helper_functions_cover_responses_and_loading(tts_app, monkeypatch):
         return FakeTTSSpeaker(device)
 
     monkeypatch.setattr(tts_app, "_load_speaker", load)
-    loaded = tts_app.load_speakers("cpu", tts_app.ProcessVram(None, pid=1))
+    vram = tts_app.VramBudget(tts_app.ProcessVram(None, pid=1), 1, on_gpu=False)
+    loaded = tts_app.load_speakers("cpu", vram)
     assert len(loaded.speakers) == 9
     assert "fa" not in loaded.speakers
     assert loaded.errors == {"fa": "RuntimeError: corrupt voice file"}
-    assert loaded.vram_bytes == {}
+    assert loaded.vram_bytes == {lang: 0 for lang in loaded.speakers}
 
     debug_info = tts_app._build_debug_info("Hallo", "de")
     assert debug_info["input"] == {"text": "Hallo", "lang": "de"}
@@ -793,7 +794,7 @@ def test_tts_health_and_support_endpoints(tts_app, monkeypatch):
     assert health["loaded_models"]["de"] is True
     assert health["voices"]["de"]["device"] == "cuda"
     assert "ar" in tts_app.supported_languages()["languages"]
-    assert tts_app.metrics(tts_request(tts_app, {})).body == b"metrics"
+    assert tts_app.metrics().body == b"metrics"
 
 
 @pytest.mark.asyncio

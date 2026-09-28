@@ -67,26 +67,8 @@ def test_over_budget_is_reported_without_failing_health(monkeypatch, request, ca
     data = request.getfixturevalue("client").get("/health").json()
     assert data["vram"]["within_budget"] is False
     assert data["status"] == "ok"
-    assert [r.getMessage() for r in caplog.records if r.levelname == "WARNING"] == [
-        "TTS holds 500 MiB of VRAM, over its 400 MiB budget"
-    ]
-
-
-def test_crossing_the_budget_is_logged_once_each_way(client, nvml, caplog):
-    caplog.set_level("INFO", logger="services.tts.app")
-    nvml.held += 2000 * MIB
-    client.get("/health")
-    client.get("/metrics")
-    client.get("/health")
-    nvml.held -= 2000 * MIB
-    client.get("/health")
-    client.get("/health")
-
-    messages = [(r.levelname, r.getMessage()) for r in caplog.records if "budget" in r.getMessage()]
-    assert messages == [
-        ("WARNING", "TTS holds 2500 MiB of VRAM, over its 2048 MiB budget"),
-        ("INFO", "TTS holds 500 MiB of VRAM, back within its 2048 MiB budget"),
-    ]
+    # One reading is not a lasting crossing; the budget log waits five minutes.
+    assert [r for r in caplog.records if r.levelname == "WARNING"] == []
 
 
 @pytest.mark.parametrize("nvml", [FakeNvml(os.getpid() + 1000)])
@@ -96,6 +78,18 @@ def test_a_gpu_process_nvml_does_not_list_is_unknown_not_empty(client, nvml):
     assert vram["within_budget"] is None
     assert vram["voice_load_bytes"] == {}
     assert math.isnan(_metric(client.get("/metrics").text, "tts_process_vram_bytes"))
+
+
+@pytest.mark.parametrize("nvml", [None])
+def test_on_cpu_without_nvml_nothing_is_held(monkeypatch, request, nvml):
+    """Unknown here would fire TTSVRAMUnknown forever on a CPU host."""
+    monkeypatch.setenv("TTS_DEVICE", "cpu")
+    test_client = request.getfixturevalue("client")
+    vram = test_client.get("/health").json()["vram"]
+    assert vram["process_bytes"] == 0
+    assert vram["within_budget"] is True
+    assert vram["voice_load_bytes"] == {lang: 0 for lang in LANGS}
+    assert _metric(test_client.get("/metrics").text, "tts_process_vram_bytes") == 0
 
 
 @pytest.mark.parametrize("nvml", [FakeNvml(os.getpid() + 1000)])
@@ -132,3 +126,4 @@ def test_metrics_expose_occupancy_footprint_and_budget(client, failing_langs):
     assert _metric(text, "tts_voice_vram_bytes", lang="fa") is None
     assert _metric(text, "tts_process_vram_bytes") == 500 * MIB
     assert _metric(text, "tts_vram_budget_bytes") == 2048 * MIB
+    assert "CUDA context" in re.search(r"^# HELP tts_voice_vram_bytes (.*)$", text, re.M)[1]

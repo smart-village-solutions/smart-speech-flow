@@ -7,9 +7,13 @@ substitute: they miss onnxruntime's CUDA arenas and the CUDA context.
 """
 
 import logging
-from typing import Any
+import threading
+import time
+from typing import Any, Callable, Dict
 
 logger = logging.getLogger(__name__)
+
+MIB = 1024 * 1024
 
 
 class ProcessVram:
@@ -47,3 +51,71 @@ class ProcessVram:
         if None in held:
             return None
         return sum(held)
+
+
+class VramBudget:
+    """The process's VRAM held against TTS_VRAM_BUDGET_MIB.
+
+    On the CPU the process holds nothing by construction, so NVML is not
+    asked: a CPU host without NVML must not read as unknown and fire
+    TTSVRAMUnknown. A crossing is logged the way TTSVRAMOverBudget sees it,
+    only once every reading for five minutes has been over: a synthesis in
+    flight lifts single readings for well under a second.
+    """
+
+    SUSTAIN_SECONDS = 300.0
+
+    def __init__(
+        self,
+        vram: Any,
+        budget_bytes: int,
+        *,
+        on_gpu: bool,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.budget_bytes = budget_bytes
+        self.voice_bytes: Dict[str, int] = {}
+        self.voices_loaded = False
+        self._vram = vram
+        self._on_gpu = on_gpu
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._over_since: float | None = None
+        self._warned = False
+
+    def read(self, *, expect_context: bool) -> int | None:
+        if not self._on_gpu:
+            return 0
+        return self._vram.read(expect_context=expect_context)
+
+    def usage(self) -> Dict[str, Any]:
+        """Read the VRAM now, compare it with the budget, log a lasting crossing."""
+        held = self.read(expect_context=self.voices_loaded)
+        if held is not None:
+            self._observe(held)
+        return {
+            "process_bytes": held,
+            "budget_bytes": self.budget_bytes,
+            "within_budget": None if held is None else held <= self.budget_bytes,
+            "voice_load_bytes": dict(self.voice_bytes),
+        }
+
+    def _observe(self, held: int) -> None:
+        budget_mib = self.budget_bytes // MIB
+        with self._lock:
+            if held <= self.budget_bytes:
+                self._over_since = None
+                if self._warned:
+                    self._warned = False
+                    logger.info(
+                        "TTS is back within its %d MiB VRAM budget: %d MiB", budget_mib, held // MIB
+                    )
+            elif self._over_since is None:
+                self._over_since = self._clock()
+            elif not self._warned and self._clock() - self._over_since >= self.SUSTAIN_SECONDS:
+                self._warned = True
+                logger.warning(
+                    "TTS has held over its %d MiB VRAM budget for 5 minutes: %d MiB",
+                    budget_mib,
+                    held // MIB,
+                )

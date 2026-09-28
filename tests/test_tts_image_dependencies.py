@@ -9,10 +9,13 @@ the lock by hand.
 
 from __future__ import annotations
 
+import ast
 import re
+import sys
 from pathlib import Path
 
-TTS = Path(__file__).resolve().parents[1] / "services" / "tts"
+ROOT = Path(__file__).resolve().parents[1]
+TTS = ROOT / "services" / "tts"
 PIPER_DEPENDENCIES_BESIDES_ONNXRUNTIME = {"pathvalidate", "numpy"}
 
 
@@ -52,47 +55,81 @@ def test_the_image_bakes_the_voices_in_and_runs_the_package():
     assert "RUN python3 -m services.tts.fetch_voices" in dockerfile
     assert "TTS_VOICE_DIR=/opt/tts-voices" in dockerfile
     assert '"services.tts.app:app"' in dockerfile
-    for module in _modules_the_app_imports():
-        assert f"services/tts/{module}" in dockerfile
 
 
-def _modules_the_app_imports() -> set[str]:
-    """app.py and every services.tts module it reaches, as file names.
+def _runtime_stage() -> str:
+    dockerfile = (TTS / "Dockerfile").read_text()
+    return dockerfile[dockerfile.rindex("\nFROM ") :]
 
-    The Dockerfile copies modules by name, so one missing from the list only
-    fails when the container starts.
-    """
-    found: set[str] = set()
-    pending = ["app"]
+
+def test_the_image_copies_every_service_module_by_glob():
+    """Copying the modules by name let a new one build fine and crash at import."""
+    assert "COPY services/tts/*.py ./services/tts/" in _runtime_stage()
+
+
+def _services_imports(path: Path) -> set[Path]:
+    """Files of the services.* modules a file imports, in any syntactic form."""
+    package = path.relative_to(ROOT).parent.parts
+    dotted: set[str] = set()
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            dotted |= {alias.name for alias in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            base = ".".join(package[: len(package) - node.level + 1]) if node.level else ""
+            module = ".".join(part for part in (base, node.module or "") if part)
+            dotted |= {module} | {f"{module}.{alias.name}" for alias in node.names}
+    files = {
+        ROOT / f"{name.replace('.', '/')}.py" for name in dotted if name.startswith("services")
+    }
+    return {file for file in files if file.is_file()}
+
+
+def _modules_outside_the_glob() -> set[str]:
+    """services.* files the TTS modules reach that services/tts/*.py does not cover."""
+    seen: set[Path] = set()
+    pending = [path for path in TTS.glob("*.py")]
     while pending:
-        module = pending.pop()
-        if f"{module}.py" in found:
-            continue
-        found.add(f"{module}.py")
-        pending += _tts_imports((TTS / f"{module}.py").read_text())
-    return found
+        path = pending.pop()
+        if path not in seen:
+            seen.add(path)
+            pending += _services_imports(path)
+    return {path.relative_to(ROOT).as_posix() for path in seen if path.parent != TTS}
 
 
-# [ \t]*, not \s*: with MULTILINE, \s* also spans newlines and is super-linear.
-_MODULE_IMPORT = re.compile(
-    r"^[ \t]*(?:from (?:services\.tts\.|\.)(\w+) import|import services\.tts\.(\w+))",
-    re.MULTILINE,
-)
-_PACKAGE_IMPORT = re.compile(r"^[ \t]*from (?:services\.tts|\.) import ([\w ,]+)", re.MULTILINE)
+def test_the_image_copies_the_shared_modules_the_service_imports():
+    runtime = _runtime_stage()
+    assert _modules_outside_the_glob() == {
+        "services/gpu_metrics.py",
+        "services/resource_metrics.py",
+    }
+    for module in _modules_outside_the_glob():
+        assert module in runtime
 
 
-def _tts_imports(source: str) -> set[str]:
-    """Names of the services.tts modules a source file imports, in any form."""
-    modules = {first or second for first, second in _MODULE_IMPORT.findall(source)}
-    for names in _PACKAGE_IMPORT.findall(source):
-        modules |= {name.split()[0] for name in names.split(",") if name.strip()}
-    return modules
-
-
-def test_the_import_walk_reaches_every_engine():
-    assert {"vram.py", "piper_engine.py", "mms_engine.py", "speech_text.py"} <= (
-        _modules_the_app_imports()
+def test_the_import_reader_understands_every_import_form(tmp_path, monkeypatch):
+    package = tmp_path / "services" / "tts"
+    package.mkdir(parents=True)
+    for name in ("vram", "voices", "speech_text", "piper_engine", "mms_engine"):
+        (package / f"{name}.py").write_text("")
+    (tmp_path / "services" / "gpu_metrics.py").write_text("")
+    probe = package / "probe.py"
+    probe.write_text(
+        "from services.tts.vram import ProcessVram\n"
+        "from services.tts import (\n    voices,\n    speech_text as text,\n)\n"
+        "import services.tts.piper_engine\n"
+        "from .mms_engine import MmsSpeaker\n"
+        "from ..gpu_metrics import collect_gpu_metrics\n"
+        "import numpy\n"
     )
+    monkeypatch.setattr(sys.modules[__name__], "ROOT", tmp_path)
+    assert {p.relative_to(tmp_path).as_posix() for p in _services_imports(probe)} == {
+        "services/tts/vram.py",
+        "services/tts/voices.py",
+        "services/tts/speech_text.py",
+        "services/tts/piper_engine.py",
+        "services/tts/mms_engine.py",
+        "services/gpu_metrics.py",
+    }
 
 
 def test_the_voices_stage_does_not_depend_on_the_python_requirements():
@@ -101,22 +138,3 @@ def test_the_voices_stage_does_not_depend_on_the_python_requirements():
     stage = re.search(r"^FROM (\S+) AS voices$", dockerfile, re.MULTILINE)
     assert stage, "no voices stage"
     assert stage.group(1) == "ubuntu:24.04"
-
-
-def test_the_import_walk_recognises_every_import_form():
-    source = (
-        "from services.tts.vram import ProcessVram\n"
-        "    from services.tts import voices, speech_text as text\n"
-        "import services.tts.piper_engine\n"
-        "from .mms_engine import MmsSpeaker\n"
-        "from . import fetch_voices\n"
-        "from services.gpu_metrics import collect_gpu_metrics\n"
-    )
-    assert _tts_imports(source) == {
-        "vram",
-        "voices",
-        "speech_text",
-        "piper_engine",
-        "mms_engine",
-        "fetch_voices",
-    }
