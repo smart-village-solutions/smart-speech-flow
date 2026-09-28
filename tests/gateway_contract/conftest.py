@@ -19,7 +19,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
-from services.api_gateway.auth import optional_ssf_user, require_ssf_user
+from services.api_gateway.auth import (
+    VERIFIED_TENANT_ID_CLAIM,
+    optional_ssf_user,
+    require_ssf_user,
+)
 from services.api_gateway.dependencies import GatewayDependencies
 from services.api_gateway.studio_runtime_client import RuntimeConfiguration
 from services.api_gateway.studio_runtime_flow import (
@@ -66,7 +70,7 @@ class SignedIdentity:
         self.customer_claims = (
             None
             if tenant_id is None
-            else {"studio_tenant_id": tenant_id, "ssf_authorization_revision": REVISION}
+            else {"sub": f"operator-{tenant_id}", VERIFIED_TENANT_ID_CLAIM: tenant_id}
         )
 
     def unauthenticated(self) -> None:
@@ -90,8 +94,7 @@ class SignedIdentity:
     def claims(self) -> dict[str, str]:
         return {
             "sub": f"operator-{self.tenant_id}",
-            "studio_tenant_id": self.tenant_id,
-            "ssf_authorization_revision": REVISION,
+            VERIFIED_TENANT_ID_CLAIM: self.tenant_id,
         }
 
     def context(self) -> StudioTenantContext:

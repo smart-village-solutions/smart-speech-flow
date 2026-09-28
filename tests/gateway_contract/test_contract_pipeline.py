@@ -185,10 +185,6 @@ def test_a_pending_session_does_not_accept_messages(conversations, speech_servic
             "UNSUPPORTED_CONTENT_TYPE",
         ),
         (
-            {"content": b"{not json", "headers": {"Content-Type": "application/json"}},
-            "INVALID_JSON",
-        ),
-        (
             {"json": {"text": "x" * 501, "source_lang": "en", "target_lang": "de"}},
             "VALIDATION_ERROR",
         ),
@@ -208,4 +204,18 @@ def test_malformed_customer_messages_are_client_errors(
 
     assert response.status_code == 400
     assert _error(response)["error_code"] == error_code
+    assert speech_services.calls == []
+
+
+def test_malformed_customer_json_is_refused_by_the_tenant_selector_check(
+    client, active_session, speech_services
+):
+    response = client.post(
+        f"/api/customer/session/{active_session}/message",
+        content=b"{not json",
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "The JSON request body must be valid"}
     assert speech_services.calls == []

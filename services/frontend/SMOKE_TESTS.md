@@ -50,11 +50,13 @@ the customer. Keep the browser console (F12) open on both.
 
 1. Follow "Admin login", or open `https://dialog.kassel.de/login`.
 2. The organisation list appears in alphabetical order. Pick one.
-3. Sign in with a Keycloak account that has the `ssf-user` role.
+3. Sign in with an active regular Keycloak account in an admitted tenant realm;
+   it need not have `ssf-user` or legacy SSF claims.
 4. The dashboard shows "Start a new conversation" (Neues Gespräch starten),
    the system load card and "Past conversations" (Vergangene Gespräche).
 
-A user without `ssf-user` must not reach the dashboard.
+A user without `ssf-user` can reach the conversation dashboard, but must not
+gain feedback-reading or telemetry-probe privileges.
 
 ### 3. Start a conversation
 
