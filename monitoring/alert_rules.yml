@@ -184,6 +184,24 @@ groups:
           summary: TTS service is unhealthy.
           description: The tts_health_status gauge has been 0 for more than 2 minutes. Verify TTS model caches and GPU utilisation.
 
+      # TTS loads every voice at startup and never loads or evicts one later
+      # (#224), so its VRAM should stay flat. Sustained growth past the budget
+      # is memory the other models on the shared card cannot get. A warning,
+      # not TTSServiceDown: every voice still speaks.
+      - alert: TTSVRAMOverBudget
+        expr: tts_process_vram_bytes > tts_vram_budget_bytes
+        for: 15m
+        labels:
+          severity: warning
+          service: tts
+        annotations:
+          summary: TTS holds more VRAM than its budget.
+          description: >-
+            tts_process_vram_bytes has been above tts_vram_budget_bytes
+            (TTS_VRAM_BUDGET_MIB) for 15 minutes. The "vram" block of the TTS
+            /health response shows what each voice cost to load. Restarting
+            the tts container returns it to its resident footprint.
+
       - alert: TranslationLatencyHigh
         expr: histogram_quantile(0.95, sum(rate(translation_request_latency_seconds_bucket[5m])) by (le)) > 3
         for: 5m

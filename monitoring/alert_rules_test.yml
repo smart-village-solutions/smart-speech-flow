@@ -112,3 +112,46 @@ tests:
                 Translation refinement is unavailable; raw translations still
                 succeed without refinement.
               runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/service-down-alerts.md"
+
+  # TTSVRAMOverBudget: sustained growth past the budget fires after `for: 15m`.
+  - interval: 1m
+    input_series:
+      - series: 'tts_process_vram_bytes{job="tts",instance="tts:8000"}'
+        values: "1300000000+0x5 2200000000+0x30"
+      - series: 'tts_vram_budget_bytes{job="tts",instance="tts:8000"}'
+        values: "2147483648+0x35"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: TTSVRAMOverBudget
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: TTSVRAMOverBudget
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tts
+              job: tts
+              instance: tts:8000
+            exp_annotations:
+              summary: TTS holds more VRAM than its budget.
+              description: >-
+                tts_process_vram_bytes has been above tts_vram_budget_bytes
+                (TTS_VRAM_BUDGET_MIB) for 15 minutes. The "vram" block of the TTS
+                /health response shows what each voice cost to load. Restarting
+                the tts container returns it to its resident footprint.
+
+  # A synthesis peak above the budget that settles again must not fire, and
+  # NaN (NVML could not tell) never compares greater.
+  - interval: 1m
+    input_series:
+      - series: 'tts_process_vram_bytes{job="tts",instance="tts:8000"}'
+        values: "1300000000 2200000000+0x9 1300000000+0x10 NaN+0x15"
+      - series: 'tts_vram_budget_bytes{job="tts",instance="tts:8000"}'
+        values: "2147483648+0x36"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: TTSVRAMOverBudget
+        exp_alerts: []
+      - eval_time: 36m
+        alertname: TTSVRAMOverBudget
+        exp_alerts: []
