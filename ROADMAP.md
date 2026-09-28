@@ -43,6 +43,23 @@ language coverage.
 
 ## Delivery risks and dependencies
 
+### Tenant conversation access decision (27 September 2026)
+
+For WP-015, [SSF #438](https://github.com/smart-village-solutions/smart-speech-flow/issues/438)
+supersedes the old user-claim and `ssf-user` prerequisites for baseline
+conversation access. The compatible SSF gateway derives the tenant from a
+verified Keycloak issuer and a unique Studio login-directory entry; feedback
+reading, telemetry, configuration and runtime tenant readiness remain
+separately protected. The related tracking and acceptance issues are
+[SSF #363](https://github.com/smart-village-solutions/smart-speech-flow/issues/363),
+[Studio #1480](https://github.com/smart-village-solutions/sva-studio/issues/1480)
+and [Studio #1350](https://github.com/smart-village-solutions/sva-studio/issues/1350).
+The consumer must deploy before any Studio producer removal. All three
+acceptance issues remain open until a fresh, attribute-free two-realm flow and
+cross-tenant denial are verified against the deployed gateway and its revision
+or digest is recorded. This operational update does not change WP-015's
+strategic priority or the September snapshot's reported status.
+
 - WP-005 blocks WP-006 and WP-020; its GitHub evidence currently contains
   conflicting `Done` and `Planned` statuses.
 - WP-022 depends on the completed conversation flow plus WP-005, WP-007, and

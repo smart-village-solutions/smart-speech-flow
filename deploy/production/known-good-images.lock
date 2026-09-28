@@ -1,15 +1,18 @@
 # Updated from the running production containers on 2026-09-22 for
-# asr, translation and tts; on 2026-09-23 for vllm; on 2026-09-24 for
-# api_gateway and frontend, both built on the host from main at bb3037f;
+# asr and translation; on 2026-09-23 for vllm; on 2026-09-24 for
+# frontend built on the host from main at bb3037f; api_gateway built on the
+# host from merged main at 7bfd53a on 2026-09-28 for selector rejection (#441);
+# on 2026-09-28 for tts, built on the host from main at a19258f for the
+# VRAM budget (#224);
 # the Keycloak theme image was built and verified on 2026-09-13; remaining
 # entries were captured on 2026-09-01 or later.
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
-api_gateway	sha256:f09df947514178399a096b51f9ebfc64229e4bca23f6b5cc661292cbe1852536	ssf-backend-api_gateway:prod-bb3037f
+api_gateway	sha256:20bbdb14f0d241c933f81fbd0100965b5012058f4d6690499fc87f2208fb18f4	ssf-backend-api_gateway:prod-7bfd53a
 asr	sha256:abff6ae86a6d06eb20b7f147739bf0e4560cb1c41ef5d8d1b4d443c7e8510da6	ssf-backend-asr:prod-35c4b2f
 translation	sha256:7095a8c1192cf194013d0130fd0957010b2899e62c4a21464cc5f74ffc9d2dad	ssf-backend-translation:prod-35c4b2f
-tts	sha256:b3baa334539aa270752dfedfeefde80b372c4a62e4092baa132cfe52483dcddc	ssf-backend-tts:prod-35c4b2f
+tts	sha256:a51b74d82815761d04c6aec457b493f19e5e680a27fe4930473e9c28f9bbacf3	ssf-backend-tts:prod-a19258f
 frontend	sha256:02ea683624e313a3222a6f64b67f7998ffc6069f31ba5e109bfbed9ef2f1ee91	ssf-backend-frontend:prod-bb3037f
 frontend-archive	sha256:5fe65474631a5f74c4ea81a5881ade417809f9c5905b593c6cc2d2699e50686d	ssf-backend-frontend-archive:prod-e409a06
 keycloak	sha256:b9222cecb936372df1fa7154f30306f48277c4ee3acec47d5f487ca225160b20	ssf-keycloak:prod-59c954c

@@ -1,5 +1,10 @@
 # Change: Add Keycloak authentication for administrative access
 
+> Contract update (2026-09-27): the original role and user-claim prerequisites
+> for conversations below are superseded by
+> `update-realm-derived-conversation-access` (#438). Studio still owns realm
+> provisioning; separate operational privileges remain protected.
+
 Tracks: #204
 
 ## Why

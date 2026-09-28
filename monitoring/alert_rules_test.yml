@@ -112,3 +112,103 @@ tests:
                 Translation refinement is unavailable; raw translations still
                 succeed without refinement.
               runbook_url: "https://github.com/smart-village-solutions/smart-speech-flow/blob/main/docs/operations/runbooks/service-down-alerts.md"
+
+  # TTSVRAMOverBudget: every reading in a 5m window above the budget, for
+  # 15m. Growth from minute 6 fills its first window at 10m and fires at 25m;
+  # the checks stay clear of that edge.
+  - interval: 1m
+    input_series:
+      - series: 'tts_process_vram_bytes{job="tts",instance="tts:8000"}'
+        values: "1500000000+0x5 2200000000+0x35"
+      - series: 'tts_vram_budget_bytes{job="tts",instance="tts:8000"}'
+        values: "2147483648+0x40"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: TTSVRAMOverBudget
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: TTSVRAMOverBudget
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tts
+              job: tts
+              instance: tts:8000
+            exp_annotations:
+              summary: TTS holds more VRAM than its budget.
+              description: >-
+                tts_process_vram_bytes has stayed above tts_vram_budget_bytes
+                (TTS_VRAM_BUDGET_MIB) for 20 minutes. The "vram" block of the TTS
+                /health response shows what each voice cost to load. Restarting
+                the tts container returns it to its resident footprint.
+      - eval_time: 30m
+        alertname: TTSVRAMUnknown
+        exp_alerts: []
+
+  # NVML failing now and then must not reset the pending window: NaN
+  # samples are skipped, so the over-budget readings between them still fire.
+  - interval: 1m
+    input_series:
+      - series: 'tts_process_vram_bytes{job="tts",instance="tts:8000"}'
+        values: "NaN 2200000000 2200000000 NaN 2200000000 2200000000 NaN 2200000000 2200000000 NaN 2200000000 2200000000 NaN 2200000000 2200000000 NaN 2200000000 2200000000 NaN 2200000000 2200000000 NaN 2200000000 2200000000 NaN 2200000000 2200000000 NaN 2200000000 2200000000 NaN 2200000000 2200000000 NaN 2200000000 2200000000 NaN 2200000000 2200000000 NaN 2200000000"
+      - series: 'tts_vram_budget_bytes{job="tts",instance="tts:8000"}'
+        values: "2147483648+0x40"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: TTSVRAMOverBudget
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tts
+              job: tts
+              instance: tts:8000
+            exp_annotations:
+              summary: TTS holds more VRAM than its budget.
+              description: >-
+                tts_process_vram_bytes has stayed above tts_vram_budget_bytes
+                (TTS_VRAM_BUDGET_MIB) for 20 minutes. The "vram" block of the TTS
+                /health response shows what each voice cost to load. Restarting
+                the tts container returns it to its resident footprint.
+
+  # Synthesis peaks above the budget, however often, never fill a window.
+  - interval: 1m
+    input_series:
+      - series: 'tts_process_vram_bytes{job="tts",instance="tts:8000"}'
+        values: "2200000000 1500000000 1500000000 1500000000 2200000000 1500000000 1500000000 1500000000 2200000000 1500000000 1500000000 1500000000 2200000000 1500000000 1500000000 1500000000 2200000000 1500000000 1500000000 1500000000 2200000000 1500000000 1500000000 1500000000 2200000000 1500000000 1500000000 1500000000 2200000000 1500000000 1500000000 1500000000 2200000000 1500000000 1500000000 1500000000 2200000000 1500000000 1500000000 1500000000 2200000000"
+      - series: 'tts_vram_budget_bytes{job="tts",instance="tts:8000"}'
+        values: "2147483648+0x40"
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: TTSVRAMOverBudget
+        exp_alerts: []
+
+  # TTSVRAMUnknown: NVML has not reported the process for 30m, so the
+  # over-budget alert is blind.
+  - interval: 1m
+    input_series:
+      - series: 'tts_process_vram_bytes{job="tts",instance="tts:8000"}'
+        values: "NaN+0x40"
+      - series: 'tts_vram_budget_bytes{job="tts",instance="tts:8000"}'
+        values: "2147483648+0x40"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: TTSVRAMUnknown
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: TTSVRAMUnknown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tts
+              job: tts
+              instance: tts:8000
+            exp_annotations:
+              summary: TTS cannot read its own VRAM.
+              description: >-
+                tts_process_vram_bytes has been NaN for 30 minutes: NVML does
+                not report the TTS process, so TTSVRAMOverBudget cannot fire.
+                Check inside the tts container that NVML's compute-process
+                list shows the server under its container PID.
+      - eval_time: 35m
+        alertname: TTSVRAMOverBudget
+        exp_alerts: []
