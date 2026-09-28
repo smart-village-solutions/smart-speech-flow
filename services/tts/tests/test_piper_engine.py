@@ -1,0 +1,197 @@
+import json
+import sys
+import types
+
+import numpy as np
+import pytest
+
+from services.tts import piper_engine
+from services.tts.speech_text import UnspeakableTextError
+
+
+class FakeSession:
+    def __init__(self, path, sess_options=None, providers=None):
+        self.path, self.providers = path, providers
+        self.runs = []
+
+    def get_providers(self):
+        return FakeOrt.active_providers
+
+    def run(self, output_names, input_feed, run_options=None):
+        self.runs.append(run_options)
+        return ["audio"]
+
+
+class FakeRunOptions:
+    def __init__(self):
+        self.entries = {}
+
+    def add_run_config_entry(self, key, value):
+        self.entries[key] = value
+
+
+class FakeOrt(types.ModuleType):
+    active_providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    InferenceSession = FakeSession
+    SessionOptions = object
+    RunOptions = FakeRunOptions
+
+
+class FakeChunk:
+    def __init__(self, samples):
+        self.audio_float_array = np.array(samples, dtype=np.float32)
+
+
+class FakeVoice:
+    def __init__(self, session, config):
+        self.session, self.config = session, config
+        self.tashkeel_diacritizier = None
+        self.chunks = [FakeChunk([0.1, 0.2]), FakeChunk([0.3])]
+
+    def synthesize(self, text):
+        return iter(self.chunks)
+
+
+class FakeConfig:
+    def __init__(self, espeak_voice, sample_rate):
+        self.espeak_voice, self.sample_rate = espeak_voice, sample_rate
+
+    @staticmethod
+    def from_dict(data):
+        return FakeConfig(data["espeak"]["voice"], data["audio"]["sample_rate"])
+
+
+@pytest.fixture
+def tashkeel(monkeypatch):
+    monkeypatch.setattr(
+        FakeOrt, "active_providers", ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    )
+    tashkeel = types.ModuleType("piper.tashkeel")
+    tashkeel.InferenceSession = None
+
+    class Diacritizer:
+        def __init__(self):
+            self.session = tashkeel.InferenceSession("tashkeel/model.onnx")
+
+    tashkeel.TashkeelDiacritizer = Diacritizer
+    piper = types.ModuleType("piper")
+    piper.PiperVoice = FakeVoice
+    piper.tashkeel = tashkeel
+    config = types.ModuleType("piper.config")
+    config.PiperConfig = FakeConfig
+    monkeypatch.setitem(sys.modules, "onnxruntime", FakeOrt("onnxruntime"))
+    monkeypatch.setitem(sys.modules, "piper", piper)
+    monkeypatch.setitem(sys.modules, "piper.config", config)
+    monkeypatch.setitem(sys.modules, "piper.tashkeel", tashkeel)
+    return tashkeel
+
+
+def _voice_dir(tmp_path, espeak_voice="de"):
+    (tmp_path / "model.onnx").write_bytes(b"onnx")
+    (tmp_path / "model.onnx.json").write_text(
+        json.dumps({"espeak": {"voice": espeak_voice}, "audio": {"sample_rate": 22050}})
+    )
+    return tmp_path
+
+
+def test_cuda_sessions_use_heuristic_conv_search_and_a_tight_arena():
+    ((name, options),) = piper_engine.providers_for("cuda")
+    assert name == "CUDAExecutionProvider"
+    assert options["cudnn_conv_algo_search"] == "HEURISTIC"
+    assert options["arena_extend_strategy"] == "kSameAsRequested"
+
+
+def test_a_voice_that_did_not_get_cuda_refuses_to_load(tashkeel, tmp_path, monkeypatch):
+    monkeypatch.setattr(FakeOrt, "active_providers", ["CPUExecutionProvider"])
+    voice_dir = _voice_dir(tmp_path)
+    with pytest.raises(piper_engine.VoiceUnavailableError, match="CPUExecutionProvider"):
+        piper_engine.load_piper_speaker(voice_dir, "cuda")
+
+
+def test_cpu_device_is_allowed_to_run_on_cpu(tashkeel, tmp_path, monkeypatch):
+    monkeypatch.setattr(FakeOrt, "active_providers", ["CPUExecutionProvider"])
+    speaker = piper_engine.load_piper_speaker(_voice_dir(tmp_path), "cpu")
+    assert speaker.device == "cpu"
+
+
+def test_synthesis_concatenates_sentence_chunks(tashkeel, tmp_path):
+    speaker = piper_engine.load_piper_speaker(_voice_dir(tmp_path), "cuda")
+    audio, rate = speaker.synthesize("Hallo. Welt.", 1)
+    assert rate == 22050
+    assert audio.tolist() == pytest.approx([0.1, 0.2, 0.3])
+
+
+def test_text_that_yields_no_audio_is_unspeakable(tashkeel, tmp_path):
+    speaker = piper_engine.load_piper_speaker(_voice_dir(tmp_path), "cuda")
+    speaker._voice.chunks = []
+    with pytest.raises(UnspeakableTextError):
+        speaker.synthesize("…", 1)
+
+
+def test_non_arabic_voices_leave_the_diacritizer_alone(tashkeel, tmp_path):
+    speaker = piper_engine.load_piper_speaker(_voice_dir(tmp_path, "de"), "cuda")
+    assert speaker._voice.tashkeel_diacritizier is None
+
+
+def test_arabic_diacritizer_gets_explicit_providers(tashkeel, tmp_path):
+    speaker = piper_engine.load_piper_speaker(_voice_dir(tmp_path, "ar"), "cuda")
+    diacritizer_session = speaker._voice.tashkeel_diacritizier.session
+    assert diacritizer_session.providers == piper_engine.providers_for("cuda")
+    assert tashkeel.InferenceSession is None
+
+
+def test_cuda_runs_hand_unused_arena_memory_back(tashkeel, tmp_path):
+    session = piper_engine.create_session(_voice_dir(tmp_path) / "model.onnx", "cuda")
+
+    assert session.run(None, {"input": 1}) == ["audio"]
+
+    (run_options,) = session.runs
+    assert run_options.entries == {"memory.enable_memory_arena_shrinkage": "gpu:0"}
+    assert session.get_providers()[0] == "CUDAExecutionProvider"
+
+
+def test_cpu_runs_are_left_alone(tashkeel, tmp_path, monkeypatch):
+    monkeypatch.setattr(FakeOrt, "active_providers", ["CPUExecutionProvider"])
+    session = piper_engine.create_session(_voice_dir(tmp_path) / "model.onnx", "cpu")
+
+    session.run(None, {"input": 1})
+
+    assert session.runs == [None]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("cpu", ("cpu", 0)),
+        ("cuda", ("cuda", 0)),
+        ("cuda:1", ("cuda", 1)),
+        (" CUDA:0 ", ("cuda", 0)),
+    ],
+)
+def test_device_values_are_parsed(value, expected):
+    assert piper_engine.parse_device(value) == expected
+
+
+@pytest.mark.parametrize("value", ["gpu", "cuda:", "cuda:x", "cuda:-1", "", "cpu:0"])
+def test_unknown_device_values_are_refused(value):
+    with pytest.raises(ValueError, match="TTS_DEVICE"):
+        piper_engine.parse_device(value)
+
+
+def test_a_cuda_index_selects_the_card_and_its_arena():
+    ((name, options),) = piper_engine.providers_for("cuda:1")
+    assert name == "CUDAExecutionProvider"
+    assert options["device_id"] == 1
+
+
+def test_cuda_with_an_index_still_refuses_a_cpu_session(tashkeel, tmp_path, monkeypatch):
+    monkeypatch.setattr(FakeOrt, "active_providers", ["CPUExecutionProvider"])
+    voice_dir = _voice_dir(tmp_path)
+    with pytest.raises(piper_engine.VoiceUnavailableError, match="CPUExecutionProvider"):
+        piper_engine.load_piper_speaker(voice_dir, "cuda:0")
+
+
+def test_the_arena_of_the_selected_card_is_shrunk(tashkeel, tmp_path):
+    session = piper_engine.create_session(_voice_dir(tmp_path) / "model.onnx", "cuda:1")
+    session.run(None, {})
+    assert session.runs[0].entries == {"memory.enable_memory_arena_shrinkage": "gpu:1"}

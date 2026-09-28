@@ -86,22 +86,21 @@ not replace Keycloak authentication.
 
 ### Requirement: Studio-provisioned tenant identity baseline
 
-The system SHALL authorize administrative access only for users in a listed
-tenant realm with the realm role `ssf-user`, expected audience, signed
-`studio_tenant_id`, and signed `ssf_authorization_revision`; Studio SHALL own
-the tenant realm and identity lifecycle.
+The system SHALL authorize conversation access for active regular users with a
+valid token from a listed tenant realm and the expected audience, without
+requiring `ssf-user`, `studio_tenant_id`, or `ssf_authorization_revision`.
+Studio SHALL own the tenant realm and identity lifecycle.
 
 #### Scenario: Operator grants staff access
 
-- **WHEN** Studio completes tenant provisioning and assigns `ssf-user` to an
-  administrative user
-- **THEN** that user can authenticate and obtain a token containing the
-  required audience, role, tenant ID, and authorization revision
+- **WHEN** Studio admits a tenant realm and an active regular user authenticates
+- **THEN** that user can obtain a token with the required audience and access
+  only that tenant's conversations
 
 #### Scenario: Tenant is not ready
 
-- **WHEN** the realm, public client, claims, roles, or SSF tenant baseline is
-  incomplete or the tenant is suspended
+- **WHEN** the realm, public client, or tenant runtime baseline is incomplete
+  or the tenant is suspended
 - **THEN** Studio omits that tenant from the login directory
 
 ### Requirement: Gateway enforcement of administrative authorization
@@ -109,28 +108,29 @@ the tenant realm and identity lifecycle.
 The API gateway SHALL require a valid bearer token issued by a tenant realm in
 the currently validated Studio directory for every endpoint under
 `/api/admin/**`, and SHALL validate its signature, issuer, audience, expiry,
-`ssf-user` role, and matching signed Studio tenant context before processing the
-request.
+and non-empty subject. It SHALL derive the tenant from the verified issuer's unique
+directory entry before processing a conversation request. Non-conversation
+administrative privileges SHALL remain separately authorized.
 
 #### Scenario: Request has no usable credentials
 
 - **WHEN** a request to `/api/admin/**` has no bearer token, an expired token,
   an invalid signature, a stale or unexpected issuer, an unexpected audience,
-  or a tenant claim that does not match the issuer realm
+  or an issuer without a unique directory tenant
 - **THEN** the gateway returns HTTP 401
 - **AND THEN** it does not invoke the administrative operation
 
-#### Scenario: Authenticated user lacks staff role
+#### Scenario: Authenticated user lacks legacy staff role
 
-- **WHEN** a request to `/api/admin/**` has a valid token without `ssf-user`
-- **THEN** the gateway returns HTTP 403
-- **AND THEN** it does not invoke the administrative operation
+- **WHEN** a conversation request has a valid token without `ssf-user`
+- **THEN** the gateway permits tenant-scoped conversation operations but
+  denies separately privileged operations
 
-#### Scenario: Authorized staff request
+#### Scenario: Authorized conversation request
 
-- **WHEN** a request to `/api/admin/**` has a valid token containing
-  `ssf-user`
-- **THEN** the gateway processes the requested administrative operation
+- **WHEN** a request to a conversation endpoint has a valid token from an
+  admitted tenant realm
+- **THEN** the gateway processes the request within that tenant
 
 ### Requirement: Token handling and logout
 

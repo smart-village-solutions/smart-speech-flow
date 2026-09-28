@@ -1,5 +1,10 @@
 # Change: Add the signed Studio tenant context
 
+> Contract update (2026-09-27): the claim-derived tenant requirement below is
+> superseded for conversation access by
+> `update-realm-derived-conversation-access` (#438). The verified issuer and
+> unique Studio directory entry now establish the tenant.
+
 ## Why
 
 Tenant-bound SSF operations need one server-side tenant identity derived from

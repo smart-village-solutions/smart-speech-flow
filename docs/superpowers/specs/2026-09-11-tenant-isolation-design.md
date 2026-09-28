@@ -1,5 +1,11 @@
 # Tenant-Isolated Conversation Operations Design
 
+> Historical implementation design. The tenant-isolation mechanics remain
+> applicable, but the user-token claim and revision prerequisites below were
+> superseded by OpenSpec `update-realm-derived-conversation-access` on
+> 2026-09-27. Current access rules are in
+> [administrative access](../../operations/keycloak-admin-access.md).
+
 ## Context
 
 The Studio-backed tenant login directory establishes a trustworthy tenant
