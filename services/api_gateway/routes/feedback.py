@@ -6,7 +6,7 @@ docs/architecture/sva-studio-control-plane.md, which keeps customers with SSF
 session tokens outside Studio IAM.
 
 The read routes are the opposite. They serve Studio staff, so they take the
-tenant from the signed `studio_tenant_id` claim through
+tenant from the verified issuer through
 require_studio_tenant_context, which also rejects any tenant selector supplied
 by the request. No handler may read across tenants on a caller's say-so.
 
@@ -26,7 +26,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
-from ..auth import require_ssf_user
+from ..auth import require_ssf_privileged_user
 from ..feedback.models import (
     FeedbackAcceptedResponse,
     FeedbackSubmissionRequest,
@@ -157,7 +157,7 @@ def get_feedback_read_service(request: Request):
 )
 async def list_feedback(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
-    claims: Annotated[dict, Depends(require_ssf_user)],
+    claims: Annotated[dict, Depends(require_ssf_privileged_user)],
     service: Annotated[FeedbackReadService, Depends(get_feedback_read_service)],
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -199,7 +199,7 @@ class FeedbackDetailResponse(FeedbackSummaryResponse):
 async def read_feedback(
     feedback_id: UUID,
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
-    claims: Annotated[dict, Depends(require_ssf_user)],
+    claims: Annotated[dict, Depends(require_ssf_privileged_user)],
     service: Annotated[FeedbackReadService, Depends(get_feedback_read_service)],
 ) -> FeedbackDetailResponse:
     try:

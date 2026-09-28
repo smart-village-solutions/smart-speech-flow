@@ -107,11 +107,12 @@ admin dashboard, and any legacy session. Set it to the `tenant.id` of the
 Studio tenant that should receive that feedback, exactly as Studio issues it.
 
 The Studio read endpoints (Step 9) only return rows whose tenant matches the
-`studio_tenant_id` in the operator's token — PostgreSQL's policy enforces that,
-not the application. So a value no Studio tenant carries hides that feedback
+verified token issuer's unique Studio login-directory entry. The gateway sets
+that trusted tenant scope, and PostgreSQL's row-level policy enforces it for
+each read. A value no Studio tenant carries therefore hides that feedback
 from every operator, with nothing in any log to say why. Leaving it unset gives
 the fallback `default`, which no Studio tenant is called, and does exactly
-that. Take the id from the tenant's token or from Studio, not from its display
+that. Take the id from Studio, not a legacy token claim or its display
 name. Step 9 has a check that catches a mismatch.
 
 `deploy/production/production.env.example` documents all of them with the same
@@ -372,8 +373,9 @@ Two authenticated endpoints let Studio read what was submitted:
 | `GET /api/feedback` | one page of the caller's tenant: ratings, dates, form version, analytics state, and `has_improvements` — never the text itself |
 | `GET /api/feedback/{feedback_id}` | one record including its decrypted free text |
 
-Both take the tenant from the signed `studio_tenant_id` claim in the bearer
-token. A tenant supplied by the request — query string, header, cookie or body
+Both take the tenant from the verified bearer token issuer and its unique
+Studio login-directory entry. The read routes additionally require the
+`ssf-user` role. A tenant supplied by the request — query string, header, cookie or body
 — is rejected with `400`, so an operator cannot widen their own scope. A record
 belonging to another tenant answers `404`, identical to one that does not
 exist, so the endpoint cannot be used to discover which ids are real elsewhere.
