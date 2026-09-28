@@ -1,5 +1,11 @@
 # Studio--SSF Runtime Configuration Contract V1
 
+> Historical design note: user-token `studio_tenant_id` is no longer the
+> conversation tenant source. Since 2026-09-27 the gateway derives it from
+> the verified issuer and unique Studio login-directory entry, as documented
+> in [administrative access](../../operations/keycloak-admin-access.md).
+> Runtime V1 tenant headers and response revisions remain unchanged.
+
 ## Status and purpose
 
 This is the implementation-ready revision of the Studio--SSF runtime

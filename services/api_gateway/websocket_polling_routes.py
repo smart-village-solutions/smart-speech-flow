@@ -16,14 +16,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from prometheus_client import CollectorRegistry, Counter
 from pydantic import BaseModel, Field
 
-from .auth import optional_ssf_user
+from .auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
 from .realtime_ticket import RealtimeTicketUnavailable, realtime_ticket_store
 from .session_access import require_admin_session_key, require_customer_session_key
 from .session_manager import ClientType
+from .tenant_context import reject_request_tenant_selectors
 from .tenant_session import TenantSessionKey
 from .websocket import WebSocketManager, get_websocket_manager
 
-router = APIRouter(tags=["realtime-polling"])
+router = APIRouter(
+    tags=["realtime-polling"], dependencies=[Depends(reject_request_tenant_selectors)]
+)
 logger = logging.getLogger(__name__)
 MAX_POLLING_CLIENTS = 1000
 MAX_POLLING_CLIENTS_PER_ROLE = 10
@@ -284,7 +287,7 @@ def require_customer_polling_key(
     ):
         raise HTTPException(status_code=404, detail=_POLLING_CLIENT_NOT_FOUND)
     if principal is not None:
-        tenant_id = principal.get("studio_tenant_id")
+        tenant_id = principal.get(VERIFIED_TENANT_ID_CLAIM)
         if not isinstance(tenant_id, str) or not hmac.compare_digest(
             tenant_id, client.key.tenant_id
         ):

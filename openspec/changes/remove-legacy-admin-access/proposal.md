@@ -1,5 +1,9 @@
 # Change: Remove the temporary legacy administrative access
 
+> Contract update (2026-09-27): the original `ssf-user` conversation gate
+> below is superseded by `update-realm-derived-conversation-access` (#438).
+> Removal of the insecure legacy password/header path remains in force.
+
 Tracks: #216
 
 ## Why
