@@ -4,7 +4,7 @@ Test zur Sicherstellung, dass alle 10 unterstützten Sprachen funktionieren
 
 import pytest
 import os
-from services.api_gateway.routes.session import SUPPORTED_LANGUAGES
+from services.api_gateway.message_models import SUPPORTED_LANGUAGES
 
 # Liste aller unterstützten Sprachen
 ALL_SUPPORTED_LANGUAGES = list(SUPPORTED_LANGUAGES.keys())

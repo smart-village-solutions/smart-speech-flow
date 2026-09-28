@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.audio_storage import AudioVariant, scope_pipeline_audio_urls
-from services.api_gateway.routes.session import (
+from services.api_gateway.message_processing import (
     broadcast_message_to_session,
     transform_pipeline_metadata,
 )
@@ -66,7 +66,7 @@ def test_message_route_uses_server_assigned_role(
     )
 
     assert response.status_code == 200
-    key, sender, _request, _manager = process.await_args.args
+    key, sender, _request = process.await_args.args
     assert key.tenant_id == "tenant-test"
     assert key.session_id == session_id
     assert sender is expected_role
@@ -291,7 +291,7 @@ def test_audio_storage_reports_availability_without_persisting_a_role_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from services.api_gateway import audio_storage
-    from services.api_gateway.routes import session as session_routes
+    from services.api_gateway import message_processing
 
     stored: list[tuple[AudioVariant, bytes]] = []
     monkeypatch.setattr(
@@ -300,7 +300,7 @@ def test_audio_storage_reports_availability_without_persisting_a_role_url(
         lambda _key, _message_id, variant, data: stored.append((variant, data)),
     )
 
-    available = session_routes._store_audio_artifacts(
+    available = message_processing._store_audio_artifacts(
         TenantSessionKey("tenant-a", "ABC12345"),
         ClientType.ADMIN,
         "message-1",
@@ -316,7 +316,7 @@ async def test_created_message_persists_translated_audio_without_retaining_bytes
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from services.api_gateway import audio_storage
-    from services.api_gateway.routes import session as session_routes
+    from services.api_gateway import message_processing
 
     manager = TenantSessionManager(store=MemoryTenantSessionStore())
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
@@ -327,7 +327,7 @@ async def test_created_message_persists_translated_audio_without_retaining_bytes
         lambda key, message_id, variant, data: stored.append((key, message_id, variant, data)),
     )
 
-    message = await session_routes.create_session_message(
+    message = await message_processing.create_session_message(
         session_id=session.key,
         client_type=ClientType.ADMIN,
         original_text="Hallo",
@@ -398,7 +398,7 @@ def test_openapi_exposes_only_role_specific_message_and_audio_routes() -> None:
 async def test_text_processing_ignores_a_spoofed_client_role(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from services.api_gateway.routes import session as session_routes
+    from services.api_gateway import message_processing
 
     manager = TenantSessionManager(store=MemoryTenantSessionStore())
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
@@ -406,7 +406,7 @@ async def test_text_processing_ignores_a_spoofed_client_role(
     session.customer_language = "en"
     manager.store.save(session)
     monkeypatch.setattr(
-        session_routes,
+        message_processing,
         "run_pipeline",
         AsyncMock(
             return_value={
@@ -429,7 +429,7 @@ async def test_text_processing_ignores_a_spoofed_client_role(
         "client_type": "customer",
     }
 
-    await session_routes.process_text_input(
+    await message_processing.process_text_input(
         session.key,
         ClientType.ADMIN,
         request,

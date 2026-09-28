@@ -8,7 +8,7 @@ from prometheus_client import CollectorRegistry
 
 from services.api_gateway import audio_storage
 from services.api_gateway.consent import ConsentStatus
-from services.api_gateway.routes import session as session_routes
+from services.api_gateway import message_processing
 from services.api_gateway.runtime_policy import (
     PolicyDecision,
     PolicyReason,
@@ -57,7 +57,7 @@ async def test_refusal_log_contains_no_conversation_content(
     session_manager.runtime_policy = gate
 
     with caplog.at_level(logging.DEBUG):
-        message = await session_routes.create_session_message(
+        message = await message_processing.create_session_message(
             session.key,
             ClientType.CUSTOMER,
             secret_original,

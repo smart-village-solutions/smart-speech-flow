@@ -13,6 +13,7 @@ from services.api_gateway.realtime_ticket import (
     RealtimeTicketStore,
 )
 from services.api_gateway.routes import admin, customer
+from services.api_gateway.session_lifecycle import SessionLifecycleService
 from services.api_gateway.studio_login_directory_client import DirectoryTransport
 from services.api_gateway.tenant_session import TenantSessionKey
 
@@ -181,23 +182,24 @@ async def test_feedback_maintenance_failure_is_reported_and_next_pass_runs(
 
 
 @pytest.mark.parametrize(
-    "handler",
+    ("handler", "collaborator"),
     [
-        pytest.param(admin.terminate_session, id="terminate"),
-        pytest.param(admin.get_session_status, id="status"),
+        pytest.param(admin.terminate_session, SessionLifecycleService, id="terminate"),
+        pytest.param(admin.get_session_status, lambda sessions: sessions, id="status"),
     ],
 )
 @pytest.mark.asyncio
 async def test_admin_session_routes_return_not_found_after_session_disappears(
     session_manager,
     handler,
+    collaborator,
 ) -> None:
     """Admin session operations must preserve the public 404 race contract."""
     session_id = "MISSING1"
     key = TenantSessionKey("tenant-test", session_id)
 
     with pytest.raises(HTTPException) as caught:
-        await handler(session_id, key, session_manager)
+        await handler(session_id, key, collaborator(session_manager))
 
     assert caught.value.status_code == 404
     assert caught.value.detail == "Session not found"
@@ -236,7 +238,9 @@ async def test_customer_activation_returns_not_found_after_session_disappears(
     )
 
     with pytest.raises(HTTPException) as caught:
-        await customer.activate_session(activation, request, None, session_manager, None)
+        await customer.activate_session(
+            activation, request, None, session_manager, None, SessionLifecycleService(session_manager)
+        )
 
     assert caught.value.status_code == 404
     assert caught.value.detail == "Session not found"

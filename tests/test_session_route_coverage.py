@@ -7,6 +7,7 @@ from fastapi import Request
 
 from services.api_gateway.app import app
 from services.api_gateway.routes import customer
+from services.api_gateway.session_lifecycle import SessionLifecycleService
 from services.api_gateway.session_manager import (
     ClientType,
     Session,
@@ -100,7 +101,9 @@ async def test_customer_activation_uses_the_resolved_capability_key(
         customer_language="ar",
     )
 
-    activation = await customer.activate_session(request, _http_request(), None, manager, None)
+    activation = await customer.activate_session(
+        request, _http_request(), None, manager, None, SessionLifecycleService(manager)
+    )
     status = await customer.get_customer_session_status(session.id, session.key, manager)
 
     assert activation.status == "active"

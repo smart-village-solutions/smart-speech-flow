@@ -7,7 +7,9 @@ import pytest
 from fastapi import HTTPException, Request
 
 from services.api_gateway import app as app_module
+from services.api_gateway import session_lifecycle
 from services.api_gateway.routes import admin, customer
+from services.api_gateway.session_lifecycle import SessionLifecycleService
 from services.api_gateway.session_manager import SessionStatus
 from services.api_gateway.tenant_context import StudioTenantContext
 from services.api_gateway.tenant_session import TenantSessionKey
@@ -39,7 +41,7 @@ async def test_admin_history_redacts_internal_exception_from_response(
 
     with caplog.at_level(logging.ERROR, logger=admin.logger.name):
         with pytest.raises(HTTPException) as raised:
-            await admin.get_session_history(context, session_manager)
+            await admin.get_session_history(context, SessionLifecycleService(session_manager))
 
     assert raised.value.status_code == 500
     assert raised.value.detail == "Session history lookup failed"
@@ -66,7 +68,12 @@ def test_customer_exception_log_keeps_traceback_without_sensitive_message(
 
     with caplog.at_level(logging.ERROR, logger=customer.logger.name):
         activation = customer.activate_session(
-            request, _http_request(), None, session_manager, None
+            request,
+            _http_request(),
+            None,
+            session_manager,
+            None,
+            SessionLifecycleService(session_manager),
         )
         with pytest.raises(HTTPException) as raised:
             asyncio.run(activation)
@@ -102,9 +109,16 @@ def test_unsupported_customer_language_warning_omits_tainted_value(
         customer_language=language,
     )
 
-    with caplog.at_level(logging.WARNING, logger=customer.logger.name):
+    with caplog.at_level(logging.WARNING, logger=session_lifecycle.logger.name):
         response = asyncio.run(
-            customer.activate_session(request, _http_request(), None, session_manager, None)
+            customer.activate_session(
+                request,
+                _http_request(),
+                None,
+                session_manager,
+                None,
+                SessionLifecycleService(session_manager),
+            )
         )
 
     assert response.customer_language == language

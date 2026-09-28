@@ -173,7 +173,7 @@ class TestAudioPipelineIntegration:
         }
 
         # Import transform function
-        from services.api_gateway.routes.session import transform_pipeline_metadata
+        from services.api_gateway.message_processing import transform_pipeline_metadata
 
         # Transform
         metadata = transform_pipeline_metadata(
@@ -278,7 +278,7 @@ class TestTextPipelineIntegration:
         }
 
         # Import transform function
-        from services.api_gateway.routes.session import transform_pipeline_metadata
+        from services.api_gateway.message_processing import transform_pipeline_metadata
 
         # Transform (no original audio URL for text input)
         metadata = transform_pipeline_metadata(

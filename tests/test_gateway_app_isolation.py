@@ -24,6 +24,7 @@ CONTAINER_BUILT = (
     "polling_store",
     "websocket_manager",
     "conversation_service",
+    "session_lifecycle",
     "studio_runtime_flow",
     "login_directory",
     "pipeline_admission",

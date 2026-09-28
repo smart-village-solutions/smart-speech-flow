@@ -600,18 +600,18 @@ class TestSystemBusyResponse:
     async def test_audio_path_returns_503_system_busy(self, session_manager):
         from fastapi import HTTPException
 
-        from services.api_gateway.routes import session as session_routes
+        from services.api_gateway import message_processing
 
         session_id = await make_active_session(session_manager)
         admission = _admission(1)
 
         with (
-            patch.object(session_routes, "process_wav", return_value=dict(PIPELINE_SUCCESS)),
+            patch.object(message_processing, "process_wav", return_value=dict(PIPELINE_SUCCESS)),
         ):
             async with _Saturated(admission):
                 request = audio_request(admission)
                 with pytest.raises(HTTPException) as excinfo:
-                    await session_routes.process_audio_input(
+                    await message_processing.process_audio_input(
                         session_id, ClientType.ADMIN, request, 0.0, sessions=session_manager
                     )
 
@@ -624,14 +624,14 @@ class TestSystemBusyResponse:
     async def test_text_path_returns_503_system_busy(self, session_manager):
         from fastapi import HTTPException
 
-        from services.api_gateway.routes import session as session_routes
+        from services.api_gateway import message_processing
 
         session_id = await make_active_session(session_manager)
         admission = _admission(1)
 
         with (
             patch.object(
-                session_routes,
+                message_processing,
                 "process_text_pipeline",
                 return_value=dict(TEXT_PIPELINE_SUCCESS),
             ),
@@ -639,7 +639,7 @@ class TestSystemBusyResponse:
             async with _Saturated(admission):
                 request = text_request(admission)
                 with pytest.raises(HTTPException) as excinfo:
-                    await session_routes.process_text_input(
+                    await message_processing.process_text_input(
                         session_id, ClientType.ADMIN, request, 0.0, sessions=session_manager
                     )
 
@@ -653,14 +653,14 @@ class TestSystemBusyResponse:
         """A client reading the body must not retry sooner than the header allows."""
         from fastapi import HTTPException
 
-        from services.api_gateway.routes import session as session_routes
+        from services.api_gateway import message_processing
 
         session_id = await make_active_session(session_manager)
         admission = _admission(1, wait=0.2)
 
         with (
             patch.object(
-                session_routes,
+                message_processing,
                 "process_text_pipeline",
                 return_value=dict(TEXT_PIPELINE_SUCCESS),
             ),
@@ -668,7 +668,7 @@ class TestSystemBusyResponse:
             async with _Saturated(admission):
                 request = text_request(admission)
                 with pytest.raises(HTTPException) as excinfo:
-                    await session_routes.process_text_input(
+                    await message_processing.process_text_input(
                         session_id, ClientType.ADMIN, request, 0.0, sessions=session_manager
                     )
 
@@ -683,14 +683,14 @@ class TestSystemBusyResponse:
         """send_unified_message catches broad Exceptions; SYSTEM_BUSY must survive."""
         from fastapi import HTTPException
 
-        from services.api_gateway.routes import session as session_routes
+        from services.api_gateway import message_processing
 
         session_id = await make_active_session(session_manager)
         admission = _admission(1)
 
         with (
             patch.object(
-                session_routes,
+                message_processing,
                 "process_text_pipeline",
                 return_value=dict(TEXT_PIPELINE_SUCCESS),
             ),
@@ -698,7 +698,7 @@ class TestSystemBusyResponse:
             async with _Saturated(admission):
                 request = text_request(admission)
                 with pytest.raises(HTTPException) as excinfo:
-                    await session_routes.send_unified_message(
+                    await message_processing.send_unified_message(
                         session_id, ClientType.ADMIN, request, sessions=session_manager
                     )
 
@@ -707,22 +707,22 @@ class TestSystemBusyResponse:
 
     @pytest.mark.asyncio
     async def test_slot_is_released_so_the_next_message_succeeds(self, session_manager):
-        from services.api_gateway.routes import session as session_routes
+        from services.api_gateway import message_processing
 
         session_id = await make_active_session(session_manager)
         admission = _admission(1)
 
         with (
             patch.object(
-                session_routes,
+                message_processing,
                 "process_text_pipeline",
                 return_value=dict(TEXT_PIPELINE_SUCCESS),
             ),
         ):
-            first = await session_routes.process_text_input(
+            first = await message_processing.process_text_input(
                 session_id, ClientType.ADMIN, text_request(admission), 0.0, sessions=session_manager
             )
-            second = await session_routes.process_text_input(
+            second = await message_processing.process_text_input(
                 session_id, ClientType.ADMIN, text_request(admission), 0.0, sessions=session_manager
             )
 
@@ -737,7 +737,7 @@ class TestEndToEndOverTheWire:
     @pytest.mark.asyncio
     async def test_saturated_gateway_answers_503_with_retry_after(self, monkeypatch):
         from services.api_gateway.app import app, lifespan
-        from services.api_gateway.routes import session as session_routes
+        from services.api_gateway import message_processing
 
         monkeypatch.setenv("MAX_CONCURRENT_PIPELINES", "1")
         monkeypatch.setenv("PIPELINE_QUEUE_WAIT_SECONDS", "0.1")
@@ -764,7 +764,7 @@ class TestEndToEndOverTheWire:
             session_id = await make_active_session(live_manager)
             url = f"/api/admin/session/{session_id.session_id}/message"
 
-            with patch.object(session_routes, "process_text_pipeline", new=blocking_text):
+            with patch.object(message_processing, "process_text_pipeline", new=blocking_text):
                 transport = httpx.ASGITransport(app=app)
                 async with httpx.AsyncClient(
                     transport=transport, base_url="http://gateway.test"
@@ -864,7 +864,7 @@ class TestUpstreamSaturationStaysRetryable:
     async def test_audio_route_reports_503_not_500(self, session_manager):
         from fastapi import HTTPException
 
-        from services.api_gateway.routes import session as session_routes
+        from services.api_gateway import message_processing
 
         session_id = await make_active_session(session_manager)
         busy_result = {
@@ -876,11 +876,11 @@ class TestUpstreamSaturationStaysRetryable:
         }
 
         with (
-            patch.object(session_routes, "process_wav", return_value=busy_result),
+            patch.object(message_processing, "process_wav", return_value=busy_result),
         ):
             request = audio_request()
             with pytest.raises(HTTPException) as excinfo:
-                await session_routes.process_audio_input(
+                await message_processing.process_audio_input(
                     session_id, ClientType.ADMIN, request, 0.0, sessions=session_manager
                 )
 
@@ -893,7 +893,7 @@ class TestUpstreamSaturationStaysRetryable:
     async def test_text_route_reports_503_not_400(self, session_manager):
         from fastapi import HTTPException
 
-        from services.api_gateway.routes import session as session_routes
+        from services.api_gateway import message_processing
 
         session_id = await make_active_session(session_manager)
         busy_result = {
@@ -905,11 +905,11 @@ class TestUpstreamSaturationStaysRetryable:
         }
 
         with (
-            patch.object(session_routes, "process_text_pipeline", return_value=busy_result),
+            patch.object(message_processing, "process_text_pipeline", return_value=busy_result),
         ):
             request = text_request()
             with pytest.raises(HTTPException) as excinfo:
-                await session_routes.process_text_input(
+                await message_processing.process_text_input(
                     session_id, ClientType.ADMIN, request, 0.0, sessions=session_manager
                 )
 
@@ -923,17 +923,17 @@ class TestUpstreamSaturationStaysRetryable:
         """The marker must not swallow the existing contract for real failures."""
         from fastapi import HTTPException
 
-        from services.api_gateway.routes import session as session_routes
+        from services.api_gateway import message_processing
 
         session_id = await make_active_session(session_manager)
         failed = {"error": True, "error_msg": "TTS-Fehler: boom", "debug": {}}
 
         with (
-            patch.object(session_routes, "process_wav", return_value=failed),
+            patch.object(message_processing, "process_wav", return_value=failed),
         ):
             request = audio_request()
             with pytest.raises(HTTPException) as excinfo:
-                await session_routes.process_audio_input(
+                await message_processing.process_audio_input(
                     session_id, ClientType.ADMIN, request, 0.0, sessions=session_manager
                 )
 

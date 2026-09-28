@@ -144,11 +144,11 @@ class TestE2EMetadataPresence:
         with open(original_path, 'wb') as f:
             f.write(audio_data)
 
-        # Create a message with pipeline metadata (simulating routes/session.py behavior)
+        # Create a message with pipeline metadata (simulating message_processing.py behavior)
         pipeline_result = await mock_pipeline['wav'](audio_data, "en", "de")
 
         # Transform debug_info to pipeline_metadata format
-        from services.api_gateway.routes.session import transform_pipeline_metadata
+        from services.api_gateway.message_processing import transform_pipeline_metadata
         pipeline_metadata = transform_pipeline_metadata(
             pipeline_result.get("debug_info", {}),
             source_lang="en",
@@ -206,7 +206,7 @@ class TestE2EPipelineSteps:
 
         pipeline_result = await mock_pipeline['wav'](audio_data, "en", "de")
 
-        from services.api_gateway.routes.session import transform_pipeline_metadata
+        from services.api_gateway.message_processing import transform_pipeline_metadata
         pipeline_metadata = transform_pipeline_metadata(
             pipeline_result.get("debug_info", {}),
             source_lang="en",
@@ -241,7 +241,7 @@ class TestE2ETimestamps:
         audio_data = b"fake_wav_data"
         pipeline_result = await mock_pipeline['wav'](audio_data, "en", "de")
 
-        from services.api_gateway.routes.session import transform_pipeline_metadata
+        from services.api_gateway.message_processing import transform_pipeline_metadata
         pipeline_metadata = transform_pipeline_metadata(
             pipeline_result.get("debug_info", {}),
             source_lang="en",
@@ -268,7 +268,7 @@ class TestE2EDuration:
         audio_data = b"fake_wav_data"
         pipeline_result = await mock_pipeline['wav'](audio_data, "en", "de")
 
-        from services.api_gateway.routes.session import transform_pipeline_metadata
+        from services.api_gateway.message_processing import transform_pipeline_metadata
         pipeline_metadata = transform_pipeline_metadata(
             pipeline_result.get("debug_info", {}),
             source_lang="en",
@@ -310,7 +310,7 @@ class TestE2EOriginalAudio:
 
         pipeline_result = await mock_pipeline['wav'](audio_data, "en", "de")
 
-        from services.api_gateway.routes.session import transform_pipeline_metadata
+        from services.api_gateway.message_processing import transform_pipeline_metadata
         pipeline_metadata = transform_pipeline_metadata(
             pipeline_result.get("debug_info", {}),
             source_lang="en",
@@ -396,7 +396,7 @@ class TestE2ETextPipeline:
         # Process text
         pipeline_result = await mock_pipeline['text']("Hello world", "en", "de")
 
-        from services.api_gateway.routes.session import transform_pipeline_metadata
+        from services.api_gateway.message_processing import transform_pipeline_metadata
         pipeline_metadata = transform_pipeline_metadata(
             pipeline_result.get("debug_info", {}),
             source_lang="en",

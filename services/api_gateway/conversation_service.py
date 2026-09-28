@@ -1,4 +1,9 @@
-"""Trusted, tenant-scoped entry point for conversation message processing."""
+"""Trusted, tenant-scoped entry point for conversation message processing.
+
+Routes reach message processing only through this service, and the service
+imports nothing from routes/: the dependency points from transport to
+application, never back (#347 §2).
+"""
 
 from __future__ import annotations
 
@@ -9,55 +14,61 @@ from fastapi import HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
 from .audio_storage import AudioVariant, audio_path, scope_pipeline_audio_urls, scoped_audio_url
+from .message_processing import process_audio_input, process_text_input, send_unified_message
 from .session_manager import ClientType, SessionStatus, TenantSessionManager
 from .tenant_session import TenantSessionKey
 
 if TYPE_CHECKING:
-    from .routes.session import MessageResponse
+    from .message_models import MessageResponse
     from .websocket import WebSocketManager
 
 
 class ConversationService:
-    """Apply the server-assigned role before entering the shared pipeline."""
+    """Apply the server-assigned role before entering the shared pipeline.
 
-    def __init__(self, sessions: TenantSessionManager) -> None:
+    `build_gateway_dependencies` hands it the app's session manager and
+    WebSocket manager. Without a WebSocket manager a processed message reaches
+    no live connection, which is what unit tests that build one directly want.
+    """
+
+    def __init__(
+        self,
+        sessions: TenantSessionManager,
+        *,
+        websocket_manager: WebSocketManager | None = None,
+    ) -> None:
         self._sessions = sessions
+        self._websocket_manager = websocket_manager
 
     async def process(
-        self,
-        key: TenantSessionKey,
-        sender: ClientType,
-        request: Request,
-        manager: WebSocketManager | None = None,
+        self, key: TenantSessionKey, sender: ClientType, request: Request
     ) -> MessageResponse:
-        from .routes.session import send_unified_message
-
-        return await send_unified_message(key, sender, request, manager, sessions=self._sessions)
+        return await send_unified_message(
+            key, sender, request, self._websocket_manager, sessions=self._sessions
+        )
 
     async def process_text(
-        self,
-        key: TenantSessionKey,
-        sender: ClientType,
-        request: Request,
-        manager: WebSocketManager | None = None,
+        self, key: TenantSessionKey, sender: ClientType, request: Request
     ) -> MessageResponse:
-        from .routes.session import process_text_input
-
         return await process_text_input(
-            key, sender, request, time.perf_counter(), manager, sessions=self._sessions
+            key,
+            sender,
+            request,
+            time.perf_counter(),
+            self._websocket_manager,
+            sessions=self._sessions,
         )
 
     async def process_audio(
-        self,
-        key: TenantSessionKey,
-        sender: ClientType,
-        request: Request,
-        manager: WebSocketManager | None = None,
+        self, key: TenantSessionKey, sender: ClientType, request: Request
     ) -> MessageResponse:
-        from .routes.session import process_audio_input
-
         return await process_audio_input(
-            key, sender, request, time.perf_counter(), manager, sessions=self._sessions
+            key,
+            sender,
+            request,
+            time.perf_counter(),
+            self._websocket_manager,
+            sessions=self._sessions,
         )
 
     def messages(self, key: TenantSessionKey, role: ClientType) -> list[dict[str, object]]:

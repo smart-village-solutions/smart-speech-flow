@@ -13,7 +13,7 @@ import pytest
 
 from services.api_gateway import audio_storage
 from services.api_gateway.consent import ConsentStatus
-from services.api_gateway.routes import session as session_routes
+from services.api_gateway import message_processing
 from services.api_gateway.session_manager import ClientType
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
@@ -44,8 +44,8 @@ async def test_a_failed_translated_audio_write_still_delivers_the_message(
 ):
     key = await _session(session_manager)
 
-    with caplog.at_level(logging.ERROR, logger=session_routes.logger.name):
-        message = await session_routes.create_session_message(
+    with caplog.at_level(logging.ERROR, logger=message_processing.logger.name):
+        message = await message_processing.create_session_message(
             key,
             ClientType.CUSTOMER,
             "hallo",
@@ -69,8 +69,8 @@ async def test_a_failed_translated_audio_write_still_delivers_the_message(
 def test_a_failed_original_audio_write_is_reported_not_swallowed(refusing_audio_storage, caplog):
     key = TenantSessionKey("tenant-test", "audio-failure-session")
 
-    with caplog.at_level(logging.ERROR, logger=session_routes.logger.name):
-        available = session_routes._store_audio_artifacts(
+    with caplog.at_level(logging.ERROR, logger=message_processing.logger.name):
+        available = message_processing._store_audio_artifacts(
             key, ClientType.CUSTOMER, "message-id", b"audio-bytes"
         )
 
@@ -90,8 +90,8 @@ def test_the_failure_log_carries_a_traceback_without_the_exception_text(
     """
     key = TenantSessionKey("tenant-test", "audio-failure-session")
 
-    with caplog.at_level(logging.ERROR, logger=session_routes.logger.name):
-        session_routes._store_audio_artifacts(
+    with caplog.at_level(logging.ERROR, logger=message_processing.logger.name):
+        message_processing._store_audio_artifacts(
             key, ClientType.CUSTOMER, "message-id", b"audio-bytes"
         )
 
