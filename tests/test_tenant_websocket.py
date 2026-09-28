@@ -95,13 +95,13 @@ def test_admin_websocket_rejects_invalid_ticket_before_accept() -> None:
 
 
 @pytest.fixture
-def customer_websocket_client(gateway_dependencies):
+def customer_websocket_client(gateway_dependencies, request: pytest.FixtureRequest):
     from services.api_gateway.session_manager import session_manager
 
     original_overrides = app.dependency_overrides.copy()
     session_manager.reset(clear_persistence=True)
     session_manager.register_websocket_manager(gateway_dependencies.websocket_manager)
-    client = TestClient(app)
+    client = TestClient(app, client=(request.node.nodeid, 50000))
     try:
         created = client.post("/api/admin/session/create")
         assert created.status_code == 201
@@ -375,3 +375,67 @@ async def test_legacy_fallback_log_never_contains_the_public_session_id(
 
     assert session_id not in caplog.text
     assert _safe_identifier(session_id) in caplog.text
+
+
+@pytest.mark.parametrize("role", ["admin", "customer"])
+@pytest.mark.parametrize("selector_source", ["query", "header", "cookie"])
+def test_websocket_rejects_tenant_selectors_before_ticket_or_presence_mutation(
+    customer_websocket_client, role, selector_source
+) -> None:
+    from services.api_gateway.session_manager import session_manager
+
+    client, session_id = customer_websocket_client
+    query = {}
+    if role == "admin":
+        query["ticket"] = client.post(
+            f"/api/admin/session/{session_id}/realtime-ticket",
+            json={"transport": "websocket"},
+        ).json()["ticket"]
+    headers = {"Origin": ALLOWED_ORIGIN}
+    if selector_source == "query":
+        query["tenant_id"] = "other-tenant"
+    elif selector_source == "header":
+        headers["X-Studio-Tenant-Id"] = "other-tenant"
+    else:
+        client.cookies.set("studio_tenant_id", "other-tenant")
+
+    with pytest.raises(WebSocketDisconnect) as closed:
+        with client.websocket_connect(f"/ws/{role}/{session_id}", params=query, headers=headers):
+            pass
+
+    assert closed.value.code == 1008
+    key = session_manager.resolve_customer_session(session_id)
+    session = session_manager.get_session(key)
+    assert session.admin_connection_count == 0
+    assert session.customer_connection_count == 0
+
+    # Reuse the same ticket after dropping the selector: denial must not consume it.
+    query.pop("tenant_id", None)
+    headers.pop("X-Studio-Tenant-Id", None)
+    client.cookies.clear()
+    with client.websocket_connect(f"/ws/{role}/{session_id}", params=query, headers=headers) as ws:
+        assert ws.receive_json()["type"] == "connection_ack"
+
+
+@pytest.mark.parametrize("actor", ["tenant-test", "other-tenant"])
+def test_customer_websocket_preserves_verified_tenant_access(
+    customer_websocket_client, monkeypatch, actor
+) -> None:
+    from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM
+
+    client, session_id = customer_websocket_client
+    monkeypatch.setitem(
+        app.dependency_overrides,
+        optional_ssf_user,
+        lambda: {VERIFIED_TENANT_ID_CLAIM: actor},
+    )
+    path = f"/ws/customer/{session_id}"
+    headers = {"Origin": ALLOWED_ORIGIN, "Authorization": "Bearer verified-test-principal"}
+    if actor == "other-tenant":
+        with pytest.raises(WebSocketDenialResponse) as denied:
+            with client.websocket_connect(path, headers=headers):
+                pass
+        assert denied.value.status_code == 404
+    else:
+        with client.websocket_connect(path, headers=headers) as ws:
+            assert ws.receive_json()["type"] == "connection_ack"

@@ -1,5 +1,9 @@
 # Change: Integrate the tenant-bound Studio runtime flow
 
+> Contract update (2026-09-27): the user-token authorization-revision gate
+> below is superseded by `update-realm-derived-conversation-access` (#438).
+> Runtime response revision fields and the exact tenant-ID match remain.
+
 ## Why
 
 SSF has the separate tenant-context, service-token, and Runtime Configuration
