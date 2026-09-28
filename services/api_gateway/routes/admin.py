@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from ..audio_storage import AudioVariant
-from ..auth import require_ssf_user
+from ..auth import require_ssf_privileged_user, require_ssf_user
 from ..conversation_service import ConversationService
 from ..dependencies import (
     get_conversation_service,
@@ -536,6 +536,7 @@ class TelemetryProbeResponse(BaseModel):
     "/telemetry/probe",
     responses=ADMIN_ROUTE_RESPONSES,
     summary="Emit one quality telemetry probe event",
+    dependencies=[Depends(require_ssf_privileged_user)],
 )
 async def emit_telemetry_probe(
     telemetry: Annotated[QualityTelemetry, Depends(get_quality_telemetry)],

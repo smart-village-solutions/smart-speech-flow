@@ -43,14 +43,15 @@ Authorization Code Flow with PKCE S256.
 The API gateway SHALL require a valid bearer token issued by a tenant realm in
 the currently validated Studio directory for every endpoint under
 `/api/admin/**`, and SHALL validate its signature, issuer, audience, expiry,
-`ssf-user` role, and matching signed Studio tenant context before processing the
-request.
+and non-empty subject. It SHALL derive the tenant from the verified issuer's
+unique directory entry for conversation requests. Feedback reading and
+telemetry probing SHALL retain separate role checks.
 
 #### Scenario: Request has no usable credentials
 
 - **WHEN** a request to `/api/admin/**` has no bearer token, an expired token,
   an invalid signature, a stale or unexpected issuer, an unexpected audience,
-  or a tenant claim that does not match the issuer realm
+  or an issuer without a unique directory tenant
 - **THEN** the gateway returns HTTP 401
 - **AND THEN** it does not invoke the administrative operation
 
@@ -62,17 +63,16 @@ request.
 - **THEN** the gateway returns HTTP 401
 - **AND THEN** it does not invoke the administrative operation
 
-#### Scenario: Authenticated user lacks staff role
+#### Scenario: Authenticated user lacks legacy staff role
 
-- **WHEN** a request to `/api/admin/**` has a valid token without `ssf-user`
-- **THEN** the gateway returns HTTP 403
-- **AND THEN** it does not invoke the administrative operation
+- **WHEN** a conversation request has a valid token without `ssf-user`
+- **THEN** tenant-scoped conversation operations remain available, while
+  separately privileged operations return HTTP 403
 
-#### Scenario: Authorized staff request
+#### Scenario: Authorized conversation request
 
-- **WHEN** a request to `/api/admin/**` has a valid token containing
-  `ssf-user`
-- **THEN** the gateway processes the requested administrative operation
+- **WHEN** a conversation request has a valid token from an admitted realm
+- **THEN** the gateway processes it within the issuer-derived tenant
 
 ## REMOVED Requirements
 

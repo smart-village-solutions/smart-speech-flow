@@ -51,3 +51,5 @@ letsencrypt/
 *.log
 # Audio Storage (24h retention, auto-cleanup)
 data/audio/
+# Grafana's /var/lib/grafana, written back into the tree as root
+monitoring/grafana/

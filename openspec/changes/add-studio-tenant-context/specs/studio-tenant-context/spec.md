@@ -1,38 +1,36 @@
 ## ADDED Requirements
 
-### Requirement: Signed Studio tenant context
+### Requirement: Verified realm-derived Studio tenant context
 
 For tenant-bound authenticated operations, the SSF gateway SHALL create
-exactly one immutable internal `tenant_id` context from the canonical
-`studio_tenant_id` claim of a fully validated Studio-issued user token.
+exactly one immutable internal `tenant_id` context from the fully validated
+user token issuer and its unique Studio login-directory entry.
 
-#### Scenario: Canonical tenant claim is valid
+#### Scenario: Admitted issuer is valid
 
-- **WHEN** a validated user token contains one well-formed `studio_tenant_id`
-- **THEN** the gateway creates a tenant context with the same value as its
-  internal `tenant_id`
+- **WHEN** a validated user token's issuer maps to exactly one admitted tenant
+- **THEN** the gateway creates a tenant context using that directory tenant ID
 
-#### Scenario: Canonical tenant claim is absent or malformed
+#### Scenario: Legacy tenant claim is absent or malformed
 
-- **WHEN** a validated user token has no `studio_tenant_id` or its value is not
-  a supported tenant identifier
-- **THEN** the gateway rejects the tenant-bound operation
+- **WHEN** an otherwise valid token has no `studio_tenant_id` or carries an
+  absent, stale, or malformed legacy tenant claim
+- **THEN** that field does not change the issuer-derived tenant or admission
 
-#### Scenario: Legacy or conflicting tenant claim is present
+#### Scenario: Issuer mapping is unknown or ambiguous
 
-- **WHEN** a validated user token contains a legacy tenant-claim alias, with or
-  without the canonical claim
+- **WHEN** the token issuer maps to zero or multiple directory tenants
 - **THEN** the gateway rejects the tenant-bound operation
 
 ### Requirement: Browser tenant selectors are rejected
 
 The SSF gateway SHALL reject tenant selectors supplied by a browser through
 query parameters, JSON request bodies, request headers, or cookies on an
-operation that derives a signed Studio tenant context.
+operation that derives a verified realm-based Studio tenant context.
 
 #### Scenario: Request includes a browser-controlled tenant selector
 
 - **WHEN** an authenticated request includes a tenant selector outside the
   validated token
 - **THEN** the gateway rejects the request
-- **AND THEN** it does not replace the signed tenant context
+- **AND THEN** it does not replace the issuer-derived tenant context
