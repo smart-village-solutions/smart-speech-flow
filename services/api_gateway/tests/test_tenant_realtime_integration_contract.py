@@ -6,13 +6,15 @@ from fastapi.testclient import TestClient
 from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.dependencies import GatewayDependencies
-from services.api_gateway.session_manager import session_manager
+from services.api_gateway.session_manager import TenantSessionManager
 
 REVISION = f"sha256:{'a' * 64}"
 
 
 def test_admin_can_observe_only_its_session_realtime_connection(
-    monkeypatch: pytest.MonkeyPatch, gateway_dependencies: GatewayDependencies
+    monkeypatch: pytest.MonkeyPatch,
+    gateway_dependencies: GatewayDependencies,
+    session_manager: TenantSessionManager,
 ) -> None:
     """The supported admin API exposes connections only inside its tenant session."""
     original_session_manager = session_manager.websocket_manager

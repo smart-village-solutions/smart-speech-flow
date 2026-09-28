@@ -9,7 +9,7 @@ from services.api_gateway import audio_storage
 from services.api_gateway.audio_storage import AudioVariant, audio_path, save_audio
 from services.api_gateway.session_manager import (
     ClientType,
-    SessionManager,
+    TenantSessionManager,
     SessionMessage,
 )
 from services.api_gateway.session_store import (
@@ -35,8 +35,8 @@ def audio_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def manager() -> SessionManager:
-    return SessionManager(store=MemoryTenantSessionStore())
+def manager() -> TenantSessionManager:
+    return TenantSessionManager(store=MemoryTenantSessionStore())
 
 
 def _message(message_id: str, *, record: bool, original: bool, translated: bool):

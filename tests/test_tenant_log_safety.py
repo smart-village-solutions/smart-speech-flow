@@ -4,8 +4,8 @@ from hashlib import sha256
 import pytest
 
 from services.api_gateway.session_access import log_tenant_access_denied
-from services.api_gateway.session_manager import SessionManager
-from services.api_gateway.session_pseudonym import session_ref
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_pseudonym import SessionPseudonymizer
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import (
     RuntimeConfigurationSnapshot,
@@ -14,13 +14,14 @@ from services.api_gateway.tenant_session import (
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
+PSEUDONYMIZER = SessionPseudonymizer(key=b"tenant-log-safety-test")
 
 
 def test_cross_tenant_denial_log_contains_only_pseudonymous_references(caplog):
     key = TenantSessionKey("secret-tenant", "ABC12345")
 
     with caplog.at_level(logging.INFO):
-        log_tenant_access_denied(key, outcome="not_found")
+        log_tenant_access_denied(key, outcome="not_found", pseudonymizer=PSEUDONYMIZER)
 
     assert "secret-tenant" not in caplog.text
     assert "ABC12345" not in caplog.text
@@ -32,7 +33,9 @@ def test_security_log_rejects_unbounded_outcomes(caplog):
     key = TenantSessionKey("secret-tenant", "ABC12345")
 
     with caplog.at_level(logging.INFO):
-        log_tenant_access_denied(key, outcome="private details from the caller")
+        log_tenant_access_denied(
+            key, outcome="private details from the caller", pseudonymizer=PSEUDONYMIZER
+        )
 
     assert "private details from the caller" not in caplog.text
     assert "invalid" in caplog.text
@@ -43,7 +46,7 @@ async def test_customer_activation_logs_only_pseudonymous_session_scope(
     caplog: pytest.LogCaptureFixture,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    manager = SessionManager(
+    manager = TenantSessionManager(
         store=MemoryTenantSessionStore(),
         session_id_factory=lambda: "JOIN1234",
     )
@@ -58,5 +61,5 @@ async def test_customer_activation_logs_only_pseudonymous_session_scope(
     assert "secret-tenant" not in output
     assert "JOIN1234" not in output
     assert sha256(b"secret-tenant").hexdigest()[:12] in caplog.text
-    assert session_ref("JOIN1234") in caplog.text
+    assert manager.pseudonymizer.reference("JOIN1234") in caplog.text
     assert "tenant_session_activation" in caplog.text

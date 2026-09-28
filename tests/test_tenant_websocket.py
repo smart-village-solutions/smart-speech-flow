@@ -17,7 +17,7 @@ from services.api_gateway.auth import optional_ssf_user
 from services.api_gateway.routes.admin import list_tenant_realtime_connections
 from services.api_gateway.session_manager import (
     ClientType,
-    SessionManager,
+    TenantSessionManager,
     SessionStatus,
 )
 from services.api_gateway.session_store import MemoryTenantSessionStore
@@ -63,7 +63,7 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.mark.asyncio
-async def test_same_public_id_in_two_tenants_never_cross_broadcast() -> None:
+async def test_same_public_id_in_two_tenants_never_cross_broadcast(session_manager) -> None:
     session_manager = _PresenceManager()
     socket_manager = WebSocketManager(session_manager)
     socket_manager.start_heartbeat_system = AsyncMock()
@@ -95,9 +95,9 @@ def test_admin_websocket_rejects_invalid_ticket_before_accept() -> None:
 
 
 @pytest.fixture
-def customer_websocket_client(gateway_dependencies, request: pytest.FixtureRequest):
-    from services.api_gateway.session_manager import session_manager
-
+def customer_websocket_client(
+    session_manager, gateway_dependencies, request: pytest.FixtureRequest
+):
     original_overrides = app.dependency_overrides.copy()
     session_manager.reset(clear_persistence=True)
     session_manager.register_websocket_manager(gateway_dependencies.websocket_manager)
@@ -190,7 +190,7 @@ def test_production_uvicorn_access_log_is_disabled_for_capability_urls() -> None
 
 @pytest.mark.asyncio
 async def test_connection_is_not_registered_if_session_terminates_during_accept() -> None:
-    manager = SessionManager(store=MemoryTenantSessionStore())
+    manager = TenantSessionManager(store=MemoryTenantSessionStore())
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     sockets = WebSocketManager(manager)
     sockets.start_heartbeat_system = AsyncMock()
@@ -218,7 +218,7 @@ async def test_connection_is_not_registered_if_session_terminates_during_accept(
 
 @pytest.mark.asyncio
 async def test_inbound_message_is_not_dispatched_after_termination_starts() -> None:
-    manager = SessionManager(store=MemoryTenantSessionStore())
+    manager = TenantSessionManager(store=MemoryTenantSessionStore())
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     sockets = WebSocketManager(manager)
     sockets.start_heartbeat_system = AsyncMock()
@@ -282,7 +282,7 @@ async def test_polling_overflow_reports_current_delivery_and_historical_eviction
 
 
 @pytest.mark.asyncio
-async def test_termination_cleans_only_the_addressed_tenant() -> None:
+async def test_termination_cleans_only_the_addressed_tenant(session_manager) -> None:
     session_manager = _PresenceManager()
     socket_manager = WebSocketManager(session_manager)
     socket_manager.start_heartbeat_system = AsyncMock()
@@ -300,7 +300,7 @@ async def test_termination_cleans_only_the_addressed_tenant() -> None:
 
 
 @pytest.mark.asyncio
-async def test_admin_connection_listing_is_filtered_by_token_tenant() -> None:
+async def test_admin_connection_listing_is_filtered_by_token_tenant(session_manager) -> None:
     session_manager = _PresenceManager()
     socket_manager = WebSocketManager(session_manager)
     socket_manager.start_heartbeat_system = AsyncMock()
@@ -380,10 +380,8 @@ async def test_legacy_fallback_log_never_contains_the_public_session_id(
 @pytest.mark.parametrize("role", ["admin", "customer"])
 @pytest.mark.parametrize("selector_source", ["query", "header", "cookie"])
 def test_websocket_rejects_tenant_selectors_before_ticket_or_presence_mutation(
-    customer_websocket_client, role, selector_source
+    session_manager, customer_websocket_client, role, selector_source
 ) -> None:
-    from services.api_gateway.session_manager import session_manager
-
     client, session_id = customer_websocket_client
     query = {}
     if role == "admin":

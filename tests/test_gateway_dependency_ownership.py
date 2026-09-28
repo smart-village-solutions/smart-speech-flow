@@ -37,11 +37,20 @@ ALLOWLIST = {
     ("circuit_breaker_client.py", "circuit_breaker_client"): "adapter until PR5",
     ("graceful_degradation.py", "graceful_degradation_manager"): "adapter until PR5",
     ("service_health.py", "service_health_manager"): "adapter until PR5",
-    ("session_manager.py", "session_manager"): "adapter until PR4",
     ("translation_refiner.py", "_CANDIDATE_EXECUTOR"): "adapter until PR5",
     ("translation_refiner.py", "translation_refiner"): "adapter until PR5",
     ("websocket_fallback.py", "fallback_manager"): "adapter until PR6",
 }
+
+# Module globals still rebound through a `global` statement. Only shrinks.
+GLOBAL_REBINDING_ALLOWLIST = {
+    ("rate_limiter.py", "LATEST_RATE_LIMIT_MIDDLEWARE"): "adapter until PR7",
+    ("websocket_monitor.py", "websocket_monitor"): "adapter until PR6",
+}
+
+# The str-keyed compatibility adapter, and the unregistered legacy route
+# module that still needs it (#230). No other gateway module may import it.
+LEGACY_SESSION_IMPORTERS = frozenset({"legacy_session_manager.py", "session.py"})
 
 _FACTORY = re.compile(r"^(build|create|make|init|initialize|get)_")
 
@@ -114,6 +123,31 @@ def zero_argument_cached_factories(source: str) -> set[str]:
     return found
 
 
+def rebound_globals(source: str) -> set[str]:
+    return {
+        name
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Global)
+        for name in node.names
+    }
+
+
+def imports_legacy_session_manager(source: str) -> bool:
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom):
+            if (node.module or "").endswith("legacy_session_manager"):
+                return True
+            if any(
+                alias.name in {"legacy_session_manager", "LegacySessionManager"}
+                for alias in node.names
+            ):
+                return True
+        elif isinstance(node, ast.Import):
+            if any(alias.name.endswith("legacy_session_manager") for alias in node.names):
+                return True
+    return False
+
+
 def _gateway_sources() -> dict[str, str]:
     return {
         path.relative_to(GATEWAY).as_posix(): path.read_text(encoding="utf-8")
@@ -144,7 +178,7 @@ def test_every_allowlisted_adapter_still_exists() -> None:
 
 
 def test_every_allowlist_entry_names_its_end() -> None:
-    for entry, reason in ALLOWLIST.items():
+    for entry, reason in {**ALLOWLIST, **GLOBAL_REBINDING_ALLOWLIST}.items():
         assert re.fullmatch(r"adapter until PR[4-7]|permanent: .+", reason), entry
 
 
@@ -157,6 +191,32 @@ def test_no_zero_argument_cached_factories() -> None:
     assert not cached, (
         "A cached zero-argument factory is a singleton no test can replace per app; "
         f"build the service in the container instead: {sorted(cached)}"
+    )
+
+
+def test_no_new_global_rebinding() -> None:
+    rebound = {
+        (module, name)
+        for module, source in _gateway_sources().items()
+        for name in rebound_globals(source)
+    }
+    assert rebound == GLOBAL_REBINDING_ALLOWLIST.keys(), (
+        "Hold the collaborator in the container instead of rebinding a module global; "
+        "delete the allowlist entry once its global is gone. "
+        f"Unexpected: {sorted(rebound - GLOBAL_REBINDING_ALLOWLIST.keys())}, "
+        f"stale: {sorted(GLOBAL_REBINDING_ALLOWLIST.keys() - rebound)}"
+    )
+
+
+def test_only_the_legacy_adapter_reaches_the_legacy_session_manager() -> None:
+    importers = {
+        module
+        for module, source in _gateway_sources().items()
+        if imports_legacy_session_manager(source)
+    }
+    assert importers <= LEGACY_SESSION_IMPORTERS, (
+        "Production code depends on TenantSessionManager; LegacySessionManager is "
+        f"the compatibility adapter only: {sorted(importers - LEGACY_SESSION_IMPORTERS)}"
     )
 
 
@@ -185,3 +245,13 @@ def keyed(tenant):
 """
     assert module_level_constructions(source) == {"store", "service", "client", "left", "right"}
     assert zero_argument_cached_factories(source) == {"factory"}
+    assert rebound_globals("def bind(gate):\n    global _GATE\n    _GATE = gate\n") == {"_GATE"}
+    for legacy_import in (
+        "from .legacy_session_manager import LegacySessionManager",
+        "from services.api_gateway.legacy_session_manager import LegacySessionManager",
+        "from . import legacy_session_manager",
+        "import services.api_gateway.legacy_session_manager",
+        "if TYPE_CHECKING:\n    from .legacy_session_manager import LegacySessionManager",
+    ):
+        assert imports_legacy_session_manager(legacy_import), legacy_import
+    assert not imports_legacy_session_manager("from .session_manager import TenantSessionManager")

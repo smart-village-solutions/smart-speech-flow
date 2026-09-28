@@ -25,10 +25,9 @@ from services.api_gateway.realtime_ticket import (
 )
 from services.api_gateway.session_manager import (
     ClientType,
-    SessionManager,
     SessionMessage,
     SessionStatus,
-    session_manager,
+    TenantSessionManager,
 )
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.studio_runtime_client import RuntimeConfiguration
@@ -112,6 +111,11 @@ class TwoTenantSystem:
         self.resources: dict[str, TenantResource] = {}
         self.polling_ids: dict[str, str] = {}
 
+    @property
+    def sessions(self) -> TenantSessionManager:
+        """The session manager the running app's lifespan built."""
+        return app.state.dependencies.session_manager
+
     def claims(self) -> dict[str, str]:
         return {
             "sub": f"operator-{self.actor}",
@@ -137,7 +141,7 @@ class TwoTenantSystem:
         session_id = body["session_id"]
         message_id = f"message-{tenant_id}"
         key = TenantSessionKey(tenant_id, session_id)
-        session_manager.add_message(
+        self.sessions.add_message(
             key,
             SessionMessage(
                 id=message_id,
@@ -263,11 +267,10 @@ class TwoTenantSystem:
 def two_tenant_system():
     """Two tenants on one running app.
 
-    The lifespan builds a fresh ticket store, polling store and WebSocket
-    manager for the app, so only the shared session manager needs resetting.
+    The lifespan builds a fresh session manager, ticket store, polling store
+    and WebSocket manager for the app, so every test starts empty.
     """
     original_overrides = app.dependency_overrides.copy()
-    session_manager.reset(clear_persistence=True)
     address = next(_CLIENT_ADDRESSES)
     with TestClient(
         app,
@@ -285,7 +288,6 @@ def two_tenant_system():
         yield system
     app.dependency_overrides.clear()
     app.dependency_overrides.update(original_overrides)
-    session_manager.reset(clear_persistence=True)
 
 
 @pytest.mark.parametrize("operation", PROTECTED_OPERATIONS)
@@ -375,7 +377,7 @@ def test_each_tenant_session_keeps_its_creation_time_runtime_snapshot(
     two_tenant_system,
 ) -> None:
     snapshots = {
-        tenant_id: session_manager.get_session(
+        tenant_id: two_tenant_system.sessions.get_session(
             TenantSessionKey(tenant_id, resource.session_id)
         ).runtime_configuration
         for tenant_id, resource in two_tenant_system.resources.items()
@@ -401,7 +403,7 @@ class Clock:
 async def test_presence_grace_warning_and_absolute_lifetime_boundaries() -> None:
     clock = Clock()
     identifiers = iter(["GRACE001", "MAXIMUM1"])
-    manager = SessionManager(
+    manager = TenantSessionManager(
         store=MemoryTenantSessionStore(),
         clock=clock,
         session_id_factory=lambda: next(identifiers),

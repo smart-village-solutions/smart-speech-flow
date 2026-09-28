@@ -309,18 +309,18 @@ async def test_routes_session_activity_helper_and_endpoint(monkeypatch):
         status=session_routes.SessionStatus.ACTIVE,
         id="session-1",
     )
-    monkeypatch.setattr(
-        session_routes.session_manager, "get_session", lambda session_id: active_session
-    )
     update_activity = Mock()
-    monkeypatch.setattr(session_routes.session_manager, "update_session_activity", update_activity)
+    sessions = SimpleNamespace(
+        get_session=lambda session_id: active_session,
+        update_session_activity=update_activity,
+    )
     manager.adaptive_polling.update_client_status = Mock(side_effect=[10, 15])
     manager.adaptive_polling.get_battery_optimization_tips = Mock(
         side_effect=[["tip-a"], ["tip-b"]]
     )
     manager._send_polling_interval_update = AsyncMock()
 
-    response = await session_routes.update_client_activity("session-1", activity, manager)
+    response = await session_routes.update_client_activity("session-1", activity, manager, sessions)
     assert response.status == "success"
     assert response.new_polling_interval == 12
     assert sorted(response.optimization_tips) == ["tip-a", "tip-b"]

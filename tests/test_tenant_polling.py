@@ -6,7 +6,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
-from services.api_gateway.session_manager import session_manager
 
 
 @pytest.fixture
@@ -14,7 +13,9 @@ def polling_store(gateway_dependencies):
     return gateway_dependencies.polling_store
 
 
-def test_polling_id_is_bound_to_its_server_assigned_role_and_session(polling_store) -> None:
+def test_polling_id_is_bound_to_its_server_assigned_role_and_session(
+    session_manager, polling_store
+) -> None:
     session_manager.reset(clear_persistence=True)
     polling_store.clients.clear()
     client = TestClient(app)
@@ -36,7 +37,9 @@ def test_polling_id_is_bound_to_its_server_assigned_role_and_session(polling_sto
     assert wrong_session.status_code == 404
 
 
-def test_customer_polling_activation_resolves_public_capability(polling_store) -> None:
+def test_customer_polling_activation_resolves_public_capability(
+    session_manager, polling_store
+) -> None:
     session_manager.reset(clear_persistence=True)
     polling_store.clients.clear()
     client = TestClient(app)
@@ -60,7 +63,9 @@ def test_generic_client_controlled_polling_routes_are_absent() -> None:
     assert "/api/customer/session/{session_id}/polling/activate" in paths
 
 
-def test_ticket_issued_before_termination_cannot_activate_polling(polling_store) -> None:
+def test_ticket_issued_before_termination_cannot_activate_polling(
+    session_manager, polling_store
+) -> None:
     session_manager.reset(clear_persistence=True)
     polling_store.clients.clear()
     client = TestClient(app)
@@ -80,7 +85,9 @@ def test_ticket_issued_before_termination_cannot_activate_polling(polling_store)
     assert activation.status_code == 404
 
 
-def test_existing_customer_poll_receives_termination_then_is_removed(polling_store) -> None:
+def test_existing_customer_poll_receives_termination_then_is_removed(
+    session_manager, polling_store
+) -> None:
     session_manager.reset(clear_persistence=True)
     polling_store.clients.clear()
     client = TestClient(app)
@@ -97,7 +104,7 @@ def test_existing_customer_poll_receives_termination_then_is_removed(polling_sto
 
 
 def test_stale_admin_poll_request_releases_presence_before_refresh(
-    monkeypatch, polling_store
+    monkeypatch, polling_store, session_manager
 ) -> None:
     """An abandoned polling client cannot revive itself after the idle deadline."""
     now = [0.0]
@@ -133,7 +140,7 @@ def test_stale_admin_poll_request_releases_presence_before_refresh(
     "operation", ["activate", "poll", "send", "status", "recover", "disconnect"]
 )
 def test_customer_polling_rejects_tenant_selectors_without_side_effects(
-    request, monkeypatch, polling_store, authenticated, selector_source, operation
+    request, monkeypatch, session_manager, polling_store, authenticated, selector_source, operation
 ) -> None:
     from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
 
@@ -177,7 +184,7 @@ def test_customer_polling_rejects_tenant_selectors_without_side_effects(
 
 @pytest.mark.parametrize("actor", [None, "tenant-test", "other-tenant"])
 def test_customer_polling_preserves_guest_and_authenticated_tenant_access(
-    request, monkeypatch, polling_store, actor
+    request, monkeypatch, session_manager, polling_store, actor
 ):
     from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
 

@@ -116,7 +116,6 @@ module = [
     "services.api_gateway.routes.upload",
     "services.api_gateway.service_health",
     "services.api_gateway.session",
-    "services.api_gateway.session_manager",
     "services.api_gateway.session_store",
     "services.api_gateway.studio_login_directory_client",
     "services.api_gateway.studio_runtime_client",

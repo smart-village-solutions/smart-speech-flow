@@ -16,13 +16,15 @@ from services.api_gateway import websocket
 from services.api_gateway import websocket_polling_routes as polling
 from services.api_gateway.app import app
 from services.api_gateway.routes import session as session_routes
-from services.api_gateway.session_manager import ClientType, Session, SessionManager
+from services.api_gateway.legacy_session_manager import LegacySessionManager
+from services.api_gateway.session_manager import ClientType, Session, TenantSessionManager
+from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.websocket_monitor import WebSocketMonitor
 
 
 @pytest.fixture
-def polling_client():
-    session_routes.session_manager.reset(clear_persistence=True)
+def polling_client(session_manager):
+    session_manager.reset(clear_persistence=True)
     yield TestClient(app)
 
 
@@ -82,7 +84,7 @@ def test_polling_timeout_openapi_and_request_contract(polling_client, gateway_de
     assert response.status_code == 200
     assert response.json() == {"status": "disconnected"}
     assert polling_client.get(path + "/status").status_code == 404
-    session = session_routes.session_manager.get_session(stored.key)
+    session = gateway_dependencies.session_manager.get_session(stored.key)
     assert (session.admin_connection_count, session.customer_connection_count) == (0, 0)
 
 
@@ -151,11 +153,11 @@ async def test_legacy_echo_endpoint_keeps_callback_arguments():
 async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch):
     now = [0.0]
     store = polling.TenantPollingStore(clock=lambda: now[0])
-    sessions = SessionManager()
+    sessions = TenantSessionManager(store=MemoryTenantSessionStore())
     expired_key = polling.TenantSessionKey("tenant-a", "EXPIRED1")
     live_key = polling.TenantSessionKey("tenant-a", "CURRENT1")
     for key in (expired_key, live_key):
-        sessions.sessions[key] = Session(id=key.session_id, tenant_id=key.tenant_id)
+        sessions.store.create(Session(id=key.session_id, tenant_id=key.tenant_id))
     store.activate(expired_key, ClientType.ADMIN)
     store.activate(expired_key, ClientType.CUSTOMER)
     sessions.admin_connected(expired_key)
@@ -198,9 +200,9 @@ async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch
 @pytest.fixture
 def polling_http_state():
     store = polling.TenantPollingStore()
-    sessions = SessionManager()
+    sessions = TenantSessionManager(store=MemoryTenantSessionStore())
     key = polling.TenantSessionKey("tenant-a", "SESSION1")
-    sessions.sessions[key] = Session(id=key.session_id, tenant_id=key.tenant_id)
+    sessions.store.create(Session(id=key.session_id, tenant_id=key.tenant_id))
     manager = websocket.WebSocketManager(sessions)
     endpoint_app = FastAPI()
     endpoint_app.include_router(polling.router)
@@ -327,7 +329,7 @@ async def test_terminated_polling_client_cannot_send_recover_or_read_status():
         ClientType.ADMIN,
         terminated=True,
     )
-    manager = websocket.WebSocketManager(SessionManager())
+    manager = websocket.WebSocketManager(TenantSessionManager(store=MemoryTenantSessionStore()))
     message = polling.PollingMessage(type="message", content={"text": "private"})
     with pytest.raises(HTTPException) as sent:
         await polling._send(polling.TenantPollingStore(), client, message, manager)
@@ -357,7 +359,7 @@ def test_customer_polling_principal_cannot_cross_tenants():
 
 
 async def test_websocket_missing_session_keeps_close_code_and_reason():
-    manager = websocket.WebSocketManager(SessionManager())
+    manager = websocket.WebSocketManager(TenantSessionManager(store=MemoryTenantSessionStore()))
     incoming = asyncio.Queue()
     outgoing = asyncio.Queue()
     socket = WebSocket({"type": "websocket"}, receive=incoming.get, send=outgoing.put)
@@ -377,8 +379,9 @@ async def test_websocket_missing_session_keeps_close_code_and_reason():
 
 
 async def test_websocket_registration_race_keeps_close_code_and_reason(monkeypatch):
-    sessions = SessionManager()
+    sessions = TenantSessionManager(store=MemoryTenantSessionStore())
     key = polling.TenantSessionKey("tenant-a", "SESSION1")
+    # Cached only, so dropping it from the cache makes it unavailable.
     sessions.sessions[key] = Session(id="SESSION1", tenant_id="tenant-a")
     manager = websocket.WebSocketManager(sessions)
     register = sessions.add_websocket_connection
@@ -417,24 +420,23 @@ def test_monitor_callback_arguments_preserve_metrics_and_redact_payloads(caplog)
 
 
 async def test_unregistered_session_helpers_remain_awaitable(monkeypatch, tmp_path):
-    manager = SessionManager()
+    manager = LegacySessionManager()
     manager.sessions["SESSION1"] = Session(id="SESSION1")
-    monkeypatch.setattr(session_routes, "session_manager", manager)
-    assert await session_routes.get_session_messages("SESSION1") == {
+    assert await session_routes.get_session_messages("SESSION1", manager) == {
         "session_id": "SESSION1",
         "messages": [],
     }
     with pytest.raises(HTTPException) as missing:
-        await session_routes.get_session_messages("MISSING")
+        await session_routes.get_session_messages("MISSING", manager)
     assert missing.value.status_code == 404
     manager.sessions["SESSION1"].messages.append(
         SimpleNamespace(id="message-1", audio_base64="aGVsbG8=")
     )
-    audio = await session_routes.get_message_audio("message-1")
+    audio = await session_routes.get_message_audio("message-1", manager)
     assert audio.body == b"hello"
     assert audio.media_type == "audio/wav"
     with pytest.raises(HTTPException) as missing:
-        await session_routes.get_message_audio("missing")
+        await session_routes.get_message_audio("missing", manager)
     assert missing.value.status_code == 404
 
     monkeypatch.setattr(
@@ -455,7 +457,7 @@ async def test_unregistered_session_helpers_remain_awaitable(monkeypatch, tmp_pa
 
 
 async def test_websocket_query_helpers_remain_awaitable():
-    manager = websocket.WebSocketManager(SessionManager())
+    manager = websocket.WebSocketManager(LegacySessionManager())
     assert await websocket.get_websocket_stats(manager) == manager.get_connection_stats()
     assert await websocket.get_session_connections("SESSION1", manager) == {
         "session_id": "SESSION1",

@@ -7,7 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 from services.api_gateway.routes import session as session_routes
-from services.api_gateway.session_manager import ClientType, SessionManager, SessionStatus
+from services.api_gateway.session_manager import ClientType, TenantSessionManager, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
@@ -17,12 +17,11 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 @pytest.fixture
 async def active_session(monkeypatch: pytest.MonkeyPatch):
-    manager = SessionManager(store=MemoryTenantSessionStore())
+    manager = TenantSessionManager(store=MemoryTenantSessionStore())
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
     manager.store.save(session)
-    monkeypatch.setattr(session_routes, "session_manager", manager)
     return manager, session
 
 
@@ -52,7 +51,7 @@ def test_text_request_rejects_invalid_content(text: str) -> None:
 async def test_unified_message_dispatches_json_with_trusted_role(
     active_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _manager, session = active_session
+    manager, session = active_session
     expected = session_routes.MessageResponse(
         status="success",
         message_id="message-1",
@@ -76,6 +75,7 @@ async def test_unified_message_dispatches_json_with_trusted_role(
         ClientType.ADMIN,
         request,
         None,
+        sessions=manager,
     )
 
     assert result == expected
@@ -84,7 +84,7 @@ async def test_unified_message_dispatches_json_with_trusted_role(
 
 @pytest.mark.asyncio
 async def test_unified_message_rejects_unsupported_content_type(active_session) -> None:
-    _manager, session = active_session
+    manager, session = active_session
     request = AsyncMock()
     request.headers = {"content-type": "text/plain"}
 
@@ -94,6 +94,7 @@ async def test_unified_message_rejects_unsupported_content_type(active_session) 
             ClientType.ADMIN,
             request,
             None,
+            sessions=manager,
         )
 
     assert caught.value.status_code == 400
@@ -106,7 +107,7 @@ async def test_unified_message_redacts_unexpected_exception_from_response_and_ou
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _manager, session = active_session
+    manager, session = active_session
     request = AsyncMock()
     request.headers = {"content-type": "application/json"}
     secret = "private-upstream-exception"
@@ -122,6 +123,7 @@ async def test_unified_message_redacts_unexpected_exception_from_response_and_ou
             ClientType.ADMIN,
             request,
             None,
+            sessions=manager,
         )
 
     captured = capsys.readouterr()
@@ -133,7 +135,7 @@ async def test_unified_message_redacts_unexpected_exception_from_response_and_ou
 
 @pytest.mark.asyncio
 async def test_audio_pipeline_requires_only_file_and_languages(active_session) -> None:
-    _manager, session = active_session
+    manager, session = active_session
     request = AsyncMock()
     # A real mapping: an AsyncMock would hand the route a coroutine where the
     # correlation header should be.
@@ -146,6 +148,7 @@ async def test_audio_pipeline_requires_only_file_and_languages(active_session) -
             ClientType.ADMIN,
             request,
             0.0,
+            sessions=manager,
         )
 
     assert caught.value.status_code == 400
@@ -166,6 +169,7 @@ async def test_create_message_persists_under_the_complete_tenant_key(
         None,
         "en",
         "de",
+        sessions=manager,
     )
 
     stored = manager.get_session(session.key)

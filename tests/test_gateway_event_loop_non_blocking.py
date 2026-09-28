@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from services.api_gateway.session_manager import ClientType, SessionManager
+from services.api_gateway.session_manager import ClientType, TenantSessionManager
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from tests.pipeline_helpers import (
     PIPELINE_SUCCESS,
@@ -28,7 +28,7 @@ BLOCK_SECONDS = 0.4
 
 @pytest.fixture
 def session_manager():
-    return SessionManager(store=MemoryTenantSessionStore())
+    return TenantSessionManager(store=MemoryTenantSessionStore())
 
 
 class _ThreadRecorder:
@@ -55,11 +55,10 @@ class TestPipelineRunsOffTheEventLoop:
         loop_thread_id = threading.get_ident()
 
         with (
-            patch.object(session_routes, "session_manager", session_manager),
             patch.object(session_routes, "process_wav", new=recorder),
         ):
             await session_routes.process_audio_input(
-                session_id, ClientType.ADMIN, audio_request(), 0.0
+                session_id, ClientType.ADMIN, audio_request(), 0.0, sessions=session_manager
             )
 
         assert recorder.thread_ids, "process_wav was never called"
@@ -77,11 +76,10 @@ class TestPipelineRunsOffTheEventLoop:
         loop_thread_id = threading.get_ident()
 
         with (
-            patch.object(session_routes, "session_manager", session_manager),
             patch.object(session_routes, "process_text_pipeline", new=recorder),
         ):
             await session_routes.process_text_input(
-                session_id, ClientType.ADMIN, text_request(), 0.0
+                session_id, ClientType.ADMIN, text_request(), 0.0, sessions=session_manager
             )
 
         assert recorder.thread_ids, "process_text_pipeline was never called"
@@ -146,16 +144,15 @@ class TestConcurrentProgress:
             return dict(PIPELINE_SUCCESS)
 
         with (
-            patch.object(session_routes, "session_manager", session_manager),
             patch.object(session_routes, "process_wav", new=rendezvous),
         ):
             results = await asyncio.wait_for(
                 asyncio.gather(
                     session_routes.process_audio_input(
-                        first, ClientType.ADMIN, audio_request(), 0.0
+                        first, ClientType.ADMIN, audio_request(), 0.0, sessions=session_manager
                     ),
                     session_routes.process_audio_input(
-                        second, ClientType.ADMIN, audio_request(), 0.0
+                        second, ClientType.ADMIN, audio_request(), 0.0, sessions=session_manager
                     ),
                 ),
                 timeout=SAFETY_TIMEOUT,
@@ -206,7 +203,6 @@ class TestEventLoopResponsiveness:
         entered = threading.Event()
 
         with (
-            patch.object(session_routes, "session_manager", session_manager),
             patch.object(
                 session_routes,
                 "process_wav",
@@ -215,7 +211,7 @@ class TestEventLoopResponsiveness:
         ):
             ticks = await self._count_ticks_during(
                 session_routes.process_audio_input(
-                    session_id, ClientType.ADMIN, audio_request(), 0.0
+                    session_id, ClientType.ADMIN, audio_request(), 0.0, sessions=session_manager
                 ),
                 entered,
             )
@@ -236,7 +232,6 @@ class TestEventLoopResponsiveness:
         entered = threading.Event()
 
         with (
-            patch.object(session_routes, "session_manager", session_manager),
             patch.object(
                 session_routes,
                 "process_text_pipeline",
@@ -245,7 +240,7 @@ class TestEventLoopResponsiveness:
         ):
             ticks = await self._count_ticks_during(
                 session_routes.process_text_input(
-                    session_id, ClientType.ADMIN, text_request(), 0.0
+                    session_id, ClientType.ADMIN, text_request(), 0.0, sessions=session_manager
                 ),
                 entered,
             )

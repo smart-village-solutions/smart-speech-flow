@@ -8,7 +8,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from services.api_gateway.session_manager import ClientType, SessionManager, SessionStatus
+from services.api_gateway.legacy_session_manager import LegacySessionManager
+from services.api_gateway.session_manager import ClientType, SessionStatus
 from services.api_gateway.websocket import (
     ConnectionState,
     WebSocketConnection,
@@ -38,7 +39,7 @@ class _Monitor:
 
 @pytest.mark.asyncio
 async def test_no_connection_broadcast_uses_redacted_warning(caplog):
-    manager = WebSocketManager(SessionManager())
+    manager = WebSocketManager(LegacySessionManager())
 
     with caplog.at_level(logging.WARNING):
         result = await manager.broadcast_with_differentiated_content(
@@ -55,7 +56,7 @@ async def test_no_connection_broadcast_uses_redacted_warning(caplog):
 
 @pytest.mark.asyncio
 async def test_heartbeat_monitor_logs_unexpected_failure(monkeypatch, caplog):
-    manager = WebSocketManager(SessionManager())
+    manager = WebSocketManager(LegacySessionManager())
 
     async def fail_sleep(_delay):
         raise RuntimeError("scheduler unavailable")
@@ -70,7 +71,7 @@ async def test_heartbeat_monitor_logs_unexpected_failure(monkeypatch, caplog):
 
 @pytest.mark.asyncio
 async def test_fallback_evaluation_failure_is_logged(monkeypatch, caplog):
-    manager = WebSocketManager(SessionManager())
+    manager = WebSocketManager(LegacySessionManager())
     connection = WebSocketConnection(
         websocket=Mock(),
         client_type=ClientType.ADMIN,

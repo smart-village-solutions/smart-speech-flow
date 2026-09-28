@@ -15,7 +15,6 @@ from services.api_gateway.session_manager import (
     ClientType,
     SessionMessage,
     SessionStatus,
-    session_manager,
 )
 from services.api_gateway.session_store import (
     RedisTenantSessionStore,
@@ -152,14 +151,16 @@ class PersistentFakeRedis:
         return 1
 
 
-@pytest.fixture(autouse=True)
-def _clean_global_memory_state(gateway_dependencies):
-    sockets = gateway_dependencies.websocket_manager
-    session_manager.reset(clear_persistence=True)
-    session_manager.register_websocket_manager(sockets)
-    yield
-    session_manager.reset(clear_persistence=True)
-    session_manager.register_websocket_manager(sockets)
+def _clock_every_manager(monkeypatch: pytest.MonkeyPatch, clock) -> None:
+    """Each lifespan builds its own session manager; give every one this clock."""
+    import services.api_gateway.session_manager as sessions_module
+
+    real = sessions_module.TenantSessionManager
+    monkeypatch.setattr(
+        sessions_module,
+        "TenantSessionManager",
+        lambda **kwargs: real(clock=clock, **kwargs),
+    )
 
 
 @pytest.mark.asyncio
@@ -180,6 +181,7 @@ async def test_production_startup_uses_shared_redis_and_survives_restart(
 
     async with lifespan(app):
         dependencies = app.state.dependencies
+        session_manager = dependencies.session_manager
         assert isinstance(session_manager.store, RedisTenantSessionStore)
         assert session_manager.store.redis is redis
         assert dependencies.realtime_tickets.redis is redis
@@ -189,6 +191,7 @@ async def test_production_startup_uses_shared_redis_and_survives_restart(
 
     async with lifespan(app):
         dependencies = app.state.dependencies
+        session_manager = dependencies.session_manager
         assert session_manager.websocket_manager is dependencies.websocket_manager
         realtime_ticket_store = dependencies.realtime_tickets
         restored = session_manager.get_session(session.key)
@@ -254,6 +257,7 @@ async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
 
     async with lifespan(app):
         dependencies = app.state.dependencies
+        session_manager = dependencies.session_manager
         realtime_ticket_store = dependencies.realtime_tickets
         polling = dependencies.polling_store
         monkeypatch.setattr(polling, "clock", lambda: 0.0)
@@ -335,12 +339,14 @@ async def test_restart_rehydrates_active_session_for_same_tenant_replacement(
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
     monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
-    monkeypatch.setattr(session_manager, "allow_parallel_sessions", False)
+    monkeypatch.setenv("SSF_ALLOW_PARALLEL_SESSIONS", "false")
 
     async with lifespan(app):
+        session_manager = app.state.dependencies.session_manager
         first = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
 
     async with lifespan(app):
+        session_manager = app.state.dependencies.session_manager
         assert session_manager.active_admin_sessions == {"tenant-a": {first.id}}
         second = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
 
@@ -363,9 +369,10 @@ async def test_restart_terminates_sessions_whose_persisted_deadline_expired(
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
     monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
-    monkeypatch.setattr(session_manager, "clock", lambda: now)
+    _clock_every_manager(monkeypatch, lambda: now)
 
     async with lifespan(app):
+        session_manager = app.state.dependencies.session_manager
         session = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
         if expired_by == "absolute_lifetime":
             session_manager.admin_connected(session.key)
@@ -376,6 +383,7 @@ async def test_restart_terminates_sessions_whose_persisted_deadline_expired(
     )
 
     async with lifespan(app):
+        session_manager = app.state.dependencies.session_manager
         restored = session_manager.get_session(session.key)
         assert restored is not None
         assert restored.status is SessionStatus.TERMINATED
@@ -395,15 +403,17 @@ async def test_restart_clears_stale_transport_presence_and_starts_admin_grace(
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
     monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
-    monkeypatch.setattr(session_manager, "clock", lambda: now)
+    _clock_every_manager(monkeypatch, lambda: now)
 
     async with lifespan(app):
+        session_manager = app.state.dependencies.session_manager
         session = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
         session_manager.admin_connected(session.key)
         session_manager.customer_connected(session.key)
 
     now += timedelta(minutes=5)
     async with lifespan(app):
+        session_manager = app.state.dependencies.session_manager
         restored = session_manager.get_session(session.key)
         assert restored is not None
         assert restored.admin_connected is False

@@ -28,6 +28,7 @@ from .refinement_metrics import RefinementMetrics
 
 if TYPE_CHECKING:
     from .quality_telemetry import TelemetryMode
+    from .runtime_policy import RuntimePolicyGate
     from .studio_runtime_flow import StudioRuntimeFlow
     from .tenant_persistence import TenantPersistenceBinding
 
@@ -231,6 +232,7 @@ async def _connect_feedback_request_path(state: Any, dsn: str, sessions: Any) ->
         ),
         session_manager=sessions,
         telemetry=state.quality_telemetry,
+        pseudonymizer=state.pseudonymizer,
     )
     sys.stderr.write("Feedback persistence ready\n")
     return True
@@ -338,6 +340,7 @@ async def _connect_feedback_maintenance(state: Any, dsn: str) -> bool:
         repository=repository,
         telemetry=state.quality_telemetry,
         metrics=FeedbackMaintenanceMetrics(state.prometheus_registry),
+        pseudonymizer=state.pseudonymizer,
     )
     sys.stderr.write("Feedback maintenance ready\n")
     return True
@@ -488,14 +491,16 @@ def _announce(line: str) -> None:
     sys.stderr.flush()
 
 
-def _bind_runtime_policy(registry: CollectorRegistry) -> "StudioRuntimeFlow | None":
-    """Bind the persistence gate and return the Studio flow it was built on.
+def _build_runtime_policy(
+    registry: CollectorRegistry,
+) -> "tuple[StudioRuntimeFlow | None, RuntimePolicyGate | None]":
+    """The Studio flow and the persistence gate built on it.
 
-    An unbound gate refuses every write, so a failure to build one is a safe
-    state, not a startup error. Studio credentials are absent in local
-    development and CI.
+    No gate refuses every write, so a failure to build one is a safe state,
+    not a startup error. Studio credentials are absent in local development
+    and CI.
     """
-    from .runtime_policy import RuntimePolicyGate, bind_runtime_policy
+    from .runtime_policy import RuntimePolicyGate
     from .runtime_policy_metrics import RuntimePolicyMetrics
     from .studio_runtime_flow import StudioRuntimeFlowError, runtime_flow_from_environment
 
@@ -503,28 +508,27 @@ def _bind_runtime_policy(registry: CollectorRegistry) -> "StudioRuntimeFlow | No
         runtime_flow = runtime_flow_from_environment()
     except StudioRuntimeFlowError as error:
         sys.stderr.write(f"Runtime policy gate unbound ({error.code}); persistence refused\n")
-        bind_runtime_policy(None)
-        runtime_flow = None
-    else:
-        bind_runtime_policy(
-            RuntimePolicyGate(runtime_flow.client, metrics=RuntimePolicyMetrics(registry))
-        )
-        sys.stderr.write("Runtime policy gate ready\n")
+        sys.stderr.flush()
+        return None, None
+    gate = RuntimePolicyGate(runtime_flow.client, metrics=RuntimePolicyMetrics(registry))
+    sys.stderr.write("Runtime policy gate ready\n")
     sys.stderr.flush()
-    return runtime_flow
+    return runtime_flow, gate
 
 
 def _build_dependencies(
     app: FastAPI,
     persistence: "TenantPersistenceBinding | None",
     runtime_flow: "StudioRuntimeFlow | None",
+    runtime_policy: "RuntimePolicyGate | None",
 ) -> GatewayDependencies:
     _announce("Building gateway dependencies...")
     dependencies = build_gateway_dependencies(
         prometheus_registry=app.state.prometheus_registry,
-        ticket_backend=persistence.redis if persistence is not None else None,
-        ticket_namespace=persistence.namespace if persistence is not None else "ssf",
+        redis=persistence.redis if persistence is not None else None,
+        redis_namespace=persistence.namespace if persistence is not None else "ssf",
         studio_runtime_flow=runtime_flow,
+        runtime_policy=runtime_policy,
         polling_messages_dropped=polling_messages_dropped,
     )
     _announce(f"WebSocketManager ready (ID: {id(dependencies.websocket_manager)})")
@@ -598,7 +602,7 @@ def _wire_quality_telemetry(dependencies: GatewayDependencies) -> "TelemetryMode
 async def _attach_quality_telemetry(
     dependencies: GatewayDependencies, telemetry_mode: "TelemetryMode"
 ) -> None:
-    """Connect the import-time refiner and session manager to this app's telemetry."""
+    """Connect the import-time refiner and this app's session manager to its telemetry."""
     from .translation_refiner import describe_refinement
 
     refiner = dependencies.translation_refiner
@@ -675,8 +679,6 @@ async def _shut_down(
     tasks: list[asyncio.Task[None]],
     persistence: "TenantPersistenceBinding | None",
 ) -> None:
-    from .runtime_policy import bind_runtime_policy
-
     for task in tasks:
         task.cancel()
 
@@ -695,11 +697,10 @@ async def _shut_down(
     dependencies.translation_refiner.attach_quality_telemetry(None)
     dependencies.session_manager.attach_quality_telemetry(None)
     dependencies.translation_refiner.attach_refinement_metrics(None)
-    if dependencies.session_manager.realtime_tickets is dependencies.realtime_tickets:
-        dependencies.session_manager.attach_realtime(None, None)
+    # A handler still holding the manager after shutdown persists nothing.
+    dependencies.session_manager.runtime_policy = None
     if persistence is not None:
         persistence.close()
-    bind_runtime_policy(None)
     telemetry_exporter_at_exit = dependencies.quality_telemetry_exporter
     dependencies.quality_telemetry_exporter = None
     if telemetry_exporter_at_exit is not None:
@@ -724,14 +725,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # The v2 session record, tenant indexes, join tombstone, and single-use
     # realtime ticket must share one verified Redis connection in production.
-    # This happens before any WebSocket manager or background task can observe
-    # process-local tenant state.
     from .tenant_persistence import configure_tenant_persistence
 
     tenant_persistence = configure_tenant_persistence()
-    runtime_flow = _bind_runtime_policy(app.state.prometheus_registry)
+    runtime_flow, runtime_policy = _build_runtime_policy(app.state.prometheus_registry)
 
-    dependencies = _build_dependencies(app, tenant_persistence, runtime_flow)
+    dependencies = _build_dependencies(app, tenant_persistence, runtime_flow, runtime_policy)
+    if tenant_persistence is not None:
+        # Before any request, socket or background task can see this app's sessions.
+        dependencies.session_manager.rehydrate_tenant_sessions()
     app.state.dependencies = dependencies
     dependencies.pipeline_admission = _build_pipeline_admission()
     telemetry_mode = _wire_quality_telemetry(dependencies)

@@ -5,7 +5,8 @@ Tests für Session-Timeout-Management
 
 import pytest
 from datetime import datetime, timedelta
-from services.api_gateway.session_manager import SessionManager, Session, SessionStatus, ClientType
+from services.api_gateway.legacy_session_manager import LegacySessionManager
+from services.api_gateway.session_manager import Session, SessionStatus, ClientType
 
 
 class TestSessionTimeoutManagement:
@@ -13,7 +14,7 @@ class TestSessionTimeoutManagement:
 
     def setup_method(self):
         """Test-Setup - frische SessionManager-Instanz"""
-        self.session_manager = SessionManager()
+        self.session_manager = LegacySessionManager()
         self.session_manager.reset(clear_persistence=True)
 
     def test_session_activity_update(self):

@@ -13,7 +13,6 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.quality_telemetry import TelemetryMode
-from services.api_gateway.session_manager import session_manager
 from services.api_gateway.translation_refiner import translation_refiner
 
 
@@ -171,13 +170,13 @@ def test_the_refiner_is_released_when_the_lifespan_ends(
 def test_the_session_manager_is_given_the_telemetry_the_lifespan_built(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Same problem as the refiner, one layer over: SessionManager is a
-    process-wide singleton with no request behind it, so nothing hands it an
-    emitter unless the lifespan does."""
+    """Same problem as the refiner, one layer over: the session manager has no
+    request behind it, so nothing hands it an emitter unless the lifespan does."""
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
 
     with TestClient(app):
-        assert session_manager.quality_telemetry is app.state.dependencies.quality_telemetry
+        dependencies = app.state.dependencies
+        assert dependencies.session_manager.quality_telemetry is dependencies.quality_telemetry
 
 
 def test_the_session_manager_is_released_when_the_lifespan_ends(
@@ -186,7 +185,7 @@ def test_the_session_manager_is_released_when_the_lifespan_ends(
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
 
     with TestClient(app):
-        pass
+        session_manager = app.state.dependencies.session_manager
 
     assert session_manager.quality_telemetry is None
 

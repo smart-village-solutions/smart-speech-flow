@@ -11,7 +11,9 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 import services.api_gateway.websocket as websocket_module
-from services.api_gateway.session_manager import ClientType, SessionManager
+from services.api_gateway.legacy_session_manager import LegacySessionManager
+from services.api_gateway.session_manager import ClientType
+from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 # WebSocket-Manager und Dependencies
 from services.api_gateway.websocket import (
@@ -78,7 +80,7 @@ class MockMonitor:
 @pytest.fixture
 def session_manager():
     """Session-Manager für Tests"""
-    return SessionManager()
+    return LegacySessionManager()
 
 
 @pytest.fixture
@@ -280,7 +282,11 @@ class TestWebSocketManager:
 
         # Singleton-Zustand ist geteilt
         mock_ws = MockWebSocket()
-        session_id = "SINGLETON_TEST"
+        revision = f"sha256:{'a' * 64}"
+        session = await gateway_dependencies.session_manager.create_admin_session(
+            "tenant-test", RuntimeConfigurationSnapshot(revision, revision, "{}")
+        )
+        session_id = session.key
 
         conn_id = await manager1.connect_websocket(mock_ws, session_id, ClientType.ADMIN)
 

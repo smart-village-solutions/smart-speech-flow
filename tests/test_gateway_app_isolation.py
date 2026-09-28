@@ -19,6 +19,7 @@ from services.api_gateway.studio_login_directory_client import StudioLoginDirect
 REVISION = f"sha256:{'a' * 64}"
 
 CONTAINER_BUILT = (
+    "session_manager",
     "realtime_tickets",
     "polling_store",
     "websocket_manager",
@@ -33,7 +34,7 @@ CONTAINER_BUILT = (
 # "Dependency ownership" table of the OpenSpec design replaces each of them.
 ADAPTERS = (
     "prometheus_registry",
-    "session_manager",
+    "pseudonymizer",
     "circuit_breaker_client",
     "websocket_monitor",
     "fallback_manager",
@@ -99,6 +100,23 @@ def test_two_running_apps_hold_distinct_collaborators() -> None:
         _assert_owned_separately(_built(first), _built(second))
         for name in ADAPTERS:
             assert getattr(first, name) is getattr(second, name), name
+
+
+@pytest.mark.usefixtures("configured_process")
+def test_each_apps_session_manager_is_wired_to_that_apps_collaborators() -> None:
+    first_app, second_app = create_app(), create_app()
+
+    with TestClient(first_app), TestClient(second_app):
+        gates = []
+        for dependencies in (first_app.state.dependencies, second_app.state.dependencies):
+            sessions = dependencies.session_manager
+            assert sessions.realtime_tickets is dependencies.realtime_tickets
+            assert sessions.polling_store is dependencies.polling_store
+            assert sessions.websocket_manager is dependencies.websocket_manager
+            assert sessions.pseudonymizer is dependencies.pseudonymizer
+            assert sessions.runtime_policy is not None
+            gates.append(sessions.runtime_policy)
+        assert gates[0] is not gates[1]
 
 
 @pytest.mark.usefixtures("configured_process")

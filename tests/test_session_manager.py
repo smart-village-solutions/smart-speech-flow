@@ -8,8 +8,8 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime
 
+from services.api_gateway.legacy_session_manager import LegacySessionManager
 from services.api_gateway.session_manager import (
-    SessionManager,
     Session,
     SessionStatus,
     ClientType
@@ -19,7 +19,7 @@ from services.api_gateway.session_manager import (
 @pytest.fixture
 def session_manager():
     """Fresh SessionManager instance für jeden Test"""
-    manager = SessionManager()
+    manager = LegacySessionManager()
     manager.allow_parallel_sessions = False
     manager.reset(clear_persistence=True)
     return manager

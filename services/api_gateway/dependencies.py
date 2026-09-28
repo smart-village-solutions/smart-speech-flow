@@ -23,7 +23,9 @@ if TYPE_CHECKING:
     from .pipeline_admission import PipelineAdmission
     from .quality_telemetry import QualityTelemetry
     from .realtime_ticket import RealtimeTicketStore
-    from .session_manager import SessionManager
+    from .runtime_policy import RuntimePolicyGate
+    from .session_manager import TenantSessionManager
+    from .session_pseudonym import SessionPseudonymizer
     from .studio_login_directory import StudioLoginDirectoryService
     from .studio_runtime_flow import StudioRuntimeFlow
     from .translation_refiner import BaseTranslationRefiner
@@ -42,7 +44,8 @@ class GatewayDependencies:
     """Every request-facing collaborator of one gateway app instance."""
 
     prometheus_registry: CollectorRegistry
-    session_manager: SessionManager
+    pseudonymizer: SessionPseudonymizer
+    session_manager: TenantSessionManager
     realtime_tickets: RealtimeTicketStore
     polling_store: TenantPollingStore
     websocket_manager: WebSocketManager
@@ -70,24 +73,27 @@ class GatewayDependencies:
 def build_gateway_dependencies(
     *,
     prometheus_registry: CollectorRegistry,
-    ticket_backend: Any = None,
-    ticket_namespace: str = "ssf",
+    redis: Any = None,
+    redis_namespace: str = "ssf",
     studio_runtime_flow: StudioRuntimeFlow | None = None,
+    runtime_policy: RuntimePolicyGate | None = None,
     polling_messages_dropped: Counter | None = None,
 ) -> GatewayDependencies:
     """Construct one app's collaborators.
 
-    `ticket_backend` is the verified Redis client in production; without one
-    the tickets live in process memory, as local development always has.
-    `studio_runtime_flow` comes from the lifespan, which builds it earlier to
-    bind the persistence gate; None means Studio is unconfigured.
+    `redis` is the verified connection in production, shared by the session
+    store and the realtime tickets; without one both live in process memory,
+    as local development always has. `studio_runtime_flow` and the persistence
+    gate built on it come from the lifespan; None means Studio is unconfigured,
+    and a None gate refuses every write of conversation content.
     """
     # Imported here: every module below imports its provider from this one.
     from .auth import _key_cache
     from .circuit_breaker_client import circuit_breaker_client
     from .conversation_service import ConversationService
     from .realtime_ticket import MemoryRealtimeTicketBackend, RealtimeTicketStore
-    from .session_manager import session_manager
+    from .session_manager import TenantSessionManager
+    from .session_store import MemoryTenantSessionStore, RedisTenantSessionStore
     from .studio_login_directory import login_directory_from_environment
     from .translation_refiner import translation_refiner
     from .websocket import WebSocketManager
@@ -96,13 +102,28 @@ def build_gateway_dependencies(
     from .websocket_polling_routes import TenantPollingStore
 
     realtime_tickets = RealtimeTicketStore(
-        ticket_backend if ticket_backend is not None else MemoryRealtimeTicketBackend(),
-        namespace=ticket_namespace,
+        redis if redis is not None else MemoryRealtimeTicketBackend(),
+        namespace=redis_namespace,
     )
     polling_store = TenantPollingStore(messages_dropped=polling_messages_dropped)
-    session_manager.attach_realtime(realtime_tickets, polling_store)
+    websocket_monitor = get_websocket_monitor()
+    # The monitor's, while it is a process-wide adapter: with no configured key
+    # every pseudonymizer draws its own, and the two would stop correlating.
+    pseudonymizer = websocket_monitor.pseudonymizer
+    session_manager = TenantSessionManager(
+        store=(
+            RedisTenantSessionStore(redis, namespace=redis_namespace)
+            if redis is not None
+            else MemoryTenantSessionStore()
+        ),
+        realtime_tickets=realtime_tickets,
+        polling_store=polling_store,
+        runtime_policy=runtime_policy,
+        pseudonymizer=pseudonymizer,
+    )
     return GatewayDependencies(
         prometheus_registry=prometheus_registry,
+        pseudonymizer=pseudonymizer,
         session_manager=session_manager,
         realtime_tickets=realtime_tickets,
         polling_store=polling_store,
@@ -111,7 +132,7 @@ def build_gateway_dependencies(
         studio_runtime_flow=studio_runtime_flow,
         login_directory=login_directory_from_environment(),
         circuit_breaker_client=circuit_breaker_client,
-        websocket_monitor=get_websocket_monitor(),
+        websocket_monitor=websocket_monitor,
         fallback_manager=fallback_manager,
         translation_refiner=translation_refiner,
         oidc_key_cache=_key_cache,
@@ -132,7 +153,7 @@ def optional_container(connection: Any) -> GatewayDependencies | None:
     return container if isinstance(container, GatewayDependencies) else None
 
 
-def get_session_manager(connection: HTTPConnection) -> SessionManager:
+def get_session_manager(connection: HTTPConnection) -> TenantSessionManager:
     return _container(connection).session_manager
 
 

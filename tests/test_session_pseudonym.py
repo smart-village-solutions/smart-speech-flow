@@ -16,11 +16,19 @@ from services.api_gateway.session_pseudonym import (
     MISSING_REFERENCE,
     SESSION_KEY_ENV,
     SessionPseudonymizer,
-    feedback_ref,
-    session_ref,
 )
 
 OPAQUE_REF = re.compile(r"\A[0-9a-f]{16,64}\Z")
+# What build_gateway_dependencies gives each app.
+PSEUDONYMIZER = SessionPseudonymizer.from_environment()
+
+
+def session_ref(value):
+    return PSEUDONYMIZER.reference(value)
+
+
+def feedback_ref(value):
+    return PSEUDONYMIZER.feedback_reference(value)
 
 
 class TestShape:
@@ -123,7 +131,7 @@ class TestKeyResolution:
         assert one_process.reference("42") != another_process.reference("42")
 
 
-class TestModuleLevelHelper:
+class TestTheAppPseudonymizer:
     def test_the_helper_is_stable_within_a_process(self):
         first = session_ref("42")
         second = session_ref("42")

@@ -7,7 +7,6 @@ first, emit second. Reorder the two calls and one of them fails.
 
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
@@ -27,6 +26,7 @@ from services.api_gateway.feedback.service import (
 )
 from services.api_gateway.feedback.tenant import ConfiguredTenantResolver
 from services.api_gateway.quality_telemetry import ProbeOutcome, ProbeResult
+from services.api_gateway.session_pseudonym import SessionPseudonymizer
 
 FIXED_NOW = datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc)
 
@@ -79,8 +79,8 @@ class FakeSessionManager:
     def __init__(self, known: bool = True) -> None:
         self._known = known
 
-    def get_session(self, session_id):
-        return SimpleNamespace(id=session_id) if self._known else None
+    def has_unscoped_session(self, session_id):
+        return self._known
 
     def resolve_customer_session(self, session_id):
         return None
@@ -96,6 +96,7 @@ def _service(**overrides):
         tenant_resolver=ConfiguredTenantResolver(tenant_id="tenant-a"),
         session_manager=FakeSessionManager(),
         telemetry=FakeTelemetry(),
+        pseudonymizer=SessionPseudonymizer(key=b"feedback-service-test"),
     )
     parts.update(overrides)
     return FeedbackService(clock=lambda: FIXED_NOW, **parts), parts
@@ -408,7 +409,6 @@ class TestTheRealTelemetrySeam:
         from prometheus_client import CollectorRegistry
 
         from services.api_gateway.quality_telemetry import QualityTelemetry, TelemetryMode
-        from services.api_gateway.session_pseudonym import feedback_ref
 
         exported: list = []
         telemetry = QualityTelemetry(
@@ -418,12 +418,13 @@ class TestTheRealTelemetrySeam:
             ),
             registry=CollectorRegistry(),
         )
-        service, _ = _service(telemetry=telemetry)
+        service, parts = _service(telemetry=telemetry)
 
         feedback_id = await service.submit(_request())
 
         attributes = exported[0][1]
-        assert attributes["ssf.quality.feedback_ref"] == feedback_ref(feedback_id)
+        feedback_ref = parts["pseudonymizer"].feedback_reference(feedback_id)
+        assert attributes["ssf.quality.feedback_ref"] == feedback_ref
         assert str(feedback_id) not in str(attributes)
 
     async def test_it_emits_the_tenant_reference_not_the_tenant_id(self) -> None:
@@ -482,12 +483,12 @@ class TestTenantBoundSessions:
     """
 
     async def test_a_tenant_bound_session_is_known(self) -> None:
-        from services.api_gateway.session_manager import SessionManager
+        from services.api_gateway.session_manager import TenantSessionManager
         from services.api_gateway.session_store import MemoryTenantSessionStore
         from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
         revision = f"sha256:{'a' * 64}"
-        manager = SessionManager(
+        manager = TenantSessionManager(
             store=MemoryTenantSessionStore(),
             session_id_factory=lambda: "TENANT01",
         )
@@ -502,10 +503,10 @@ class TestTenantBoundSessions:
 
     async def test_an_id_no_session_has_is_still_unknown(self) -> None:
         """The fix must not pass by accepting every id."""
-        from services.api_gateway.session_manager import SessionManager
+        from services.api_gateway.session_manager import TenantSessionManager
         from services.api_gateway.session_store import MemoryTenantSessionStore
 
-        manager = SessionManager(store=MemoryTenantSessionStore())
+        manager = TenantSessionManager(store=MemoryTenantSessionStore())
         service, _ = _service(session_manager=manager)
         request = _request(session_id="NOSUCH99")
 
@@ -514,12 +515,12 @@ class TestTenantBoundSessions:
 
     async def test_the_submission_is_stored_under_the_sessions_tenant(self) -> None:
         from services.api_gateway.feedback.tenant import SessionTenantResolver
-        from services.api_gateway.session_manager import SessionManager
+        from services.api_gateway.session_manager import TenantSessionManager
         from services.api_gateway.session_store import MemoryTenantSessionStore
         from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
         revision = f"sha256:{'a' * 64}"
-        manager = SessionManager(
+        manager = TenantSessionManager(
             store=MemoryTenantSessionStore(), session_id_factory=lambda: "KASSEL01"
         )
         session = await manager.create_admin_session(
@@ -572,11 +573,11 @@ class TestFeedbackJustAfterTheConversationEnds:
             self.current += timedelta(**delta)
 
     async def _ended_session(self, clock):
-        from services.api_gateway.session_manager import SessionManager
+        from services.api_gateway.session_manager import TenantSessionManager
         from services.api_gateway.session_store import MemoryTenantSessionStore
         from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
-        manager = SessionManager(
+        manager = TenantSessionManager(
             store=MemoryTenantSessionStore(),
             clock=clock,
             session_id_factory=lambda: "KASSEL01",
@@ -695,10 +696,10 @@ class TestAnIdNoSessionCouldCarry:
             return None
 
     def _service(self):
-        from services.api_gateway.session_manager import SessionManager
+        from services.api_gateway.session_manager import TenantSessionManager
         from services.api_gateway.session_store import RedisTenantSessionStore
 
-        manager = SessionManager(store=RedisTenantSessionStore(self.EmptyRedis()))
+        manager = TenantSessionManager(store=RedisTenantSessionStore(self.EmptyRedis()))
         service, _parts = _service(session_manager=manager)
         return service
 

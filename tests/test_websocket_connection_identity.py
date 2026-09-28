@@ -10,7 +10,7 @@ whole queue.
 import time
 from unittest.mock import AsyncMock, Mock
 
-from services.api_gateway.session_manager import SessionManager
+from services.api_gateway.legacy_session_manager import LegacySessionManager
 from services.api_gateway.websocket import ClientType, WebSocketManager
 from services.api_gateway.websocket_fallback import (
     FallbackConfig,
@@ -56,7 +56,7 @@ class TestTheEndpointItselfBuildsUniqueIds:
     """
 
     async def test_two_connections_for_one_session_get_different_ids(self):
-        manager = WebSocketManager(SessionManager())
+        manager = WebSocketManager(LegacySessionManager())
 
         first = await manager.connect_websocket(
             _websocket(), "session-a", ClientType.CUSTOMER
@@ -102,7 +102,7 @@ class TestThePollingFallbackKeepsBothQueues:
         assert len(manager.polling_clients[second].message_queue) == 0
 
     async def test_the_manager_level_fallback_id_is_unique_too(self):
-        manager = WebSocketManager(SessionManager())
+        manager = WebSocketManager(LegacySessionManager())
 
         first = await manager.enable_polling_fallback("session-a", ClientType.CUSTOMER)
         second = await manager.enable_polling_fallback("session-a", ClientType.CUSTOMER)

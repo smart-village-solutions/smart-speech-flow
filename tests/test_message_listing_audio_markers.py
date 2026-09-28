@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from services.api_gateway import audio_storage
 from services.api_gateway.audio_storage import AudioVariant, audio_path, save_audio
 from services.api_gateway.conversation_service import ConversationService
-from services.api_gateway.session_manager import ClientType, SessionManager, SessionMessage
+from services.api_gateway.session_manager import ClientType, TenantSessionManager, SessionMessage
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
@@ -18,8 +18,8 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture
-def manager() -> SessionManager:
-    return SessionManager(store=MemoryTenantSessionStore())
+def manager() -> TenantSessionManager:
+    return TenantSessionManager(store=MemoryTenantSessionStore())
 
 
 @pytest.fixture
@@ -54,7 +54,7 @@ def _audio_message(
 
 
 def _list_without_filesystem(
-    manager: SessionManager, key: TenantSessionKey, role: ClientType
+    manager: TenantSessionManager, key: TenantSessionKey, role: ClientType
 ) -> list[dict[str, object]]:
     def refuse(*_args: object, **_kwargs: object) -> None:
         raise OSError("listing messages must not touch the filesystem")
@@ -71,7 +71,7 @@ def _save_both(key: TenantSessionKey, audio_dir: Path) -> None:
 
 
 async def test_listing_advertises_recorded_audio_without_a_filesystem_stat(
-    manager: SessionManager, audio_dir: Path
+    manager: TenantSessionManager, audio_dir: Path
 ) -> None:
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     manager.add_message(session.key, _audio_message())
@@ -84,7 +84,7 @@ async def test_listing_advertises_recorded_audio_without_a_filesystem_stat(
 
 
 async def test_listing_advertises_no_audio_for_a_message_without_markers(
-    manager: SessionManager, audio_dir: Path
+    manager: TenantSessionManager, audio_dir: Path
 ) -> None:
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     message = _audio_message()
@@ -100,7 +100,7 @@ async def test_listing_advertises_no_audio_for_a_message_without_markers(
 
 
 async def test_settled_refused_audio_is_not_advertised_even_if_its_file_survives(
-    manager: SessionManager, audio_dir: Path, monkeypatch: pytest.MonkeyPatch
+    manager: TenantSessionManager, audio_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A failed unlink after settlement must not bring the refused audio back into view."""
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
@@ -122,7 +122,7 @@ async def test_settled_refused_audio_is_not_advertised_even_if_its_file_survives
 
 
 async def test_the_content_sweep_clears_the_markers_it_settles(
-    manager: SessionManager, audio_dir: Path, monkeypatch: pytest.MonkeyPatch
+    manager: TenantSessionManager, audio_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
@@ -140,7 +140,7 @@ async def test_the_content_sweep_clears_the_markers_it_settles(
 
 
 async def test_serving_audio_still_checks_that_the_file_exists(
-    manager: SessionManager, audio_dir: Path
+    manager: TenantSessionManager, audio_dir: Path
 ) -> None:
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     manager.add_message(session.key, _audio_message())
