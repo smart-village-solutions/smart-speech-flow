@@ -303,7 +303,7 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 One lifespan-owned composition root builds the gateway's collaborators; the
 full description, with the port and adapter tables, is in
 `services/api_gateway/README.md`, and the ownership table and its decisions in
-`openspec/changes/refactor-api-gateway-boundaries/design.md`.
+`openspec/changes/archive/2026-09-28-refactor-api-gateway-boundaries/design.md`.
 
 - **Composition root:** `create_app()` (`app.py`) builds one app with its
   Prometheus registry and metric objects (`GatewayMetrics`) and its rate limits
