@@ -4,7 +4,7 @@ Each app instance owns one `GatewayDependencies`, built by its lifespan and
 kept at `app.state.dependencies`. Route handlers reach a collaborator only
 through the provider below, so a test replaces it per app with
 `app.dependency_overrides` instead of mutating module state. See "Dependency
-ownership" in openspec/changes/refactor-api-gateway-boundaries/design.md.
+ownership" in openspec/changes/archive/2026-09-28-refactor-api-gateway-boundaries/design.md.
 """
 
 from __future__ import annotations
