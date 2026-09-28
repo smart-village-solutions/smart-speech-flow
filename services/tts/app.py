@@ -2,7 +2,10 @@
 
 Every voice is loaded once at startup (see voices.py); a voice that fails to
 load degrades /health and answers 503 for its language instead of silently
-falling back to another engine.
+falling back to another engine. Nothing is loaded later and nothing is
+evicted: the set is one voice per language, and a cold load mid-conversation
+would stall a speaker for seconds. What the set costs in VRAM is measured and
+held against TTS_VRAM_BUDGET_MIB instead (#224).
 """
 
 import asyncio
@@ -14,7 +17,7 @@ import time
 import traceback
 import zlib
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List
+from typing import Any, Dict, List, NamedTuple
 
 import numpy as np
 import soundfile as sf
@@ -38,6 +41,7 @@ from services.tts.speech_text import (
     split_for_synthesis,
 )
 from services.tts.voices import VOICES, Voice, voice_dir
+from services.tts.vram import ProcessVram
 
 try:
     import psutil
@@ -59,8 +63,24 @@ SYNTHESIS_ERROR_RESPONSES = {
     503: {"description": "TTS model unavailable"},
 }
 
+MIB = 1024 * 1024
+
 requests_total = Counter("tts_requests_total", "Total TTS requests")
 health_status = Gauge("tts_health_status", "Health status of TTS service")
+voice_loaded = Gauge("tts_voice_loaded", "1 while a language's voice is loaded", ["lang", "engine"])
+voice_vram_bytes = Gauge(
+    "tts_voice_vram_bytes", "VRAM the TTS process gained while loading a voice", ["lang"]
+)
+process_vram_bytes = Gauge(
+    "tts_process_vram_bytes", "VRAM held by the TTS process on all cards, NaN if unknown"
+)
+vram_budget_bytes = Gauge("tts_vram_budget_bytes", "TTS_VRAM_BUDGET_MIB in bytes")
+
+
+class LoadedVoices(NamedTuple):
+    speakers: Dict[str, Any]
+    errors: Dict[str, str]
+    vram_bytes: Dict[str, int]
 
 
 def _load_speaker(voice: Voice, device: str) -> Any:
@@ -69,16 +89,24 @@ def _load_speaker(voice: Voice, device: str) -> Any:
     return MmsSpeaker(voice_dir(voice), device)
 
 
-def load_speakers(device: str) -> tuple[Dict[str, Any], Dict[str, str]]:
-    speakers: Dict[str, Any] = {}
-    errors: Dict[str, str] = {}
+def load_speakers(device: str, vram: ProcessVram) -> LoadedVoices:
+    """Load every voice in turn, noting what each added to this process's VRAM.
+
+    The first voice's figure includes the CUDA context.
+    """
+    loaded = LoadedVoices({}, {}, {})
     for lang, voice in VOICES.items():
+        before = vram.read()
         try:
-            speakers[lang] = _load_speaker(voice, device)
+            loaded.speakers[lang] = _load_speaker(voice, device)
         except Exception as exc:
             logger.exception("TTS voice %s (%s) failed to load", lang, voice.name)
-            errors[lang] = f"{type(exc).__name__}: {exc}"
-    return speakers, errors
+            loaded.errors[lang] = f"{type(exc).__name__}: {exc}"
+            continue
+        after = vram.read()
+        if before is not None and after is not None:
+            loaded.vram_bytes[lang] = max(after - before, 0)
+    return loaded
 
 
 def _configured_device() -> str:
@@ -86,13 +114,20 @@ def _configured_device() -> str:
     return "cpu" if kind == "cpu" else f"cuda:{index}"
 
 
-def _configured_synthesis_slots() -> int:
-    raw = os.environ.get("TTS_MAX_CONCURRENT_SYNTHESES", "1")
+def _positive_int_setting(name: str, default: str) -> int:
+    raw = os.environ.get(name, default)
     if not raw.strip().isdigit() or int(raw) < 1:
-        raise ValueError(
-            f"TTS_MAX_CONCURRENT_SYNTHESES must be a whole number of at least 1, not {raw!r}"
-        )
+        raise ValueError(f"{name} must be a whole number of at least 1, not {raw!r}")
     return int(raw)
+
+
+def _publish_voice_metrics(loaded: LoadedVoices, budget: int) -> None:
+    voice_vram_bytes.clear()
+    for lang, voice in VOICES.items():
+        voice_loaded.labels(lang=lang, engine=voice.engine).set(int(lang in loaded.speakers))
+    for lang, held in loaded.vram_bytes.items():
+        voice_vram_bytes.labels(lang=lang).set(held)
+    vram_budget_bytes.set(budget)
 
 
 @asynccontextmanager
@@ -102,9 +137,26 @@ async def lifespan(app: FastAPI):
     # shared with ASR, translation and vLLM. On the production card two long
     # requests at once already ran out of memory; one at a time peaked at
     # 1722 MiB. At ~0.1 s per Piper request the queue is cheap.
-    slots = _configured_synthesis_slots()
-    app.state.speakers, app.state.load_errors = await asyncio.to_thread(load_speakers, device)
+    slots = _positive_int_setting("TTS_MAX_CONCURRENT_SYNTHESES", "1")
+    # On the production card the ten voices hold 1238 MiB after loading and
+    # 1464 MiB once each has spoken, flat from then on. A live reading can
+    # also catch a synthesis in flight, which peaked at 2024 MiB.
+    budget = _positive_int_setting("TTS_VRAM_BUDGET_MIB", "2048") * MIB
+    vram = ProcessVram(pynvml, os.getpid())
+    loaded = await asyncio.to_thread(load_speakers, device, vram)
+    app.state.speakers, app.state.load_errors = loaded.speakers, loaded.errors
+    app.state.voice_vram_bytes = loaded.vram_bytes
+    app.state.process_vram = vram
+    app.state.vram_budget_bytes = budget
     app.state.synthesis_slots = asyncio.Semaphore(slots)
+    _publish_voice_metrics(loaded, budget)
+    usage = _vram_usage(app.state)
+    if usage["within_budget"] is False:
+        logger.warning(
+            "TTS holds %d MiB of VRAM after loading, over its %d MiB budget",
+            usage["process_bytes"] // MIB,
+            budget // MIB,
+        )
     yield
 
 
@@ -209,6 +261,20 @@ def _update_duration(debug_info: Dict[str, Any], start: float) -> None:
     debug_info["duration"] = round(time.perf_counter() - start, 3)
 
 
+def _vram_usage(state: Any) -> Dict[str, Any]:
+    """Read this process's VRAM now and compare it with the budget."""
+    vram = getattr(state, "process_vram", None)
+    held = vram.read() if vram is not None else None
+    budget = getattr(state, "vram_budget_bytes", None)
+    process_vram_bytes.set(float("nan") if held is None else held)
+    return {
+        "process_bytes": held,
+        "budget_bytes": budget,
+        "within_budget": None if held is None or budget is None else held <= budget,
+        "voice_load_bytes": dict(getattr(state, "voice_vram_bytes", {})),
+    }
+
+
 def _voice_states(request: Request) -> Dict[str, Dict[str, Any]]:
     speakers = getattr(request.app.state, "speakers", {})
     errors = getattr(request.app.state, "load_errors", {})
@@ -244,6 +310,9 @@ def health(request: Request):
         "gpu_error": "; ".join(gpu_errors) if gpu_errors else None,
         "voices": voices,
         "loaded_models": {lang: entry["loaded"] for lang, entry in voices.items()},
+        # Over budget is a warning, not "degraded": every voice still works,
+        # and tts_health_status 0 would page as TTSServiceDown.
+        "vram": _vram_usage(request.app.state),
         "resources": resources,
         "autoscaling": _derive_auto_scaling_signal(resources),
     }
@@ -255,7 +324,8 @@ def supported_languages():
 
 
 @app.get("/metrics")
-def metrics():
+def metrics(request: Request):
+    _vram_usage(request.app.state)
     return Response(generate_latest(), media_type="text/plain")
 
 

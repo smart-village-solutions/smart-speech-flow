@@ -44,7 +44,9 @@ def test_supported_languages_are_the_voice_table(client):
     }
 
 
-@pytest.mark.parametrize("variable", ["TTS_DEVICE", "TTS_MAX_CONCURRENT_SYNTHESES"])
+@pytest.mark.parametrize(
+    "variable", ["TTS_DEVICE", "TTS_MAX_CONCURRENT_SYNTHESES", "TTS_VRAM_BUDGET_MIB"]
+)
 @pytest.mark.parametrize("value", ["gpu", "0", "-1", "x"])
 def test_invalid_settings_stop_the_service_from_starting(monkeypatch, variable, value):
     from fastapi.testclient import TestClient

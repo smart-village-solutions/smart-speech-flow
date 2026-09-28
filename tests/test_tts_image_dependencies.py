@@ -52,8 +52,32 @@ def test_the_image_bakes_the_voices_in_and_runs_the_package():
     assert "RUN python3 -m services.tts.fetch_voices" in dockerfile
     assert "TTS_VOICE_DIR=/opt/tts-voices" in dockerfile
     assert '"services.tts.app:app"' in dockerfile
-    for module in ("speech_text.py", "voices.py", "piper_engine.py", "mms_engine.py", "app.py"):
+    for module in _modules_the_app_imports():
         assert f"services/tts/{module}" in dockerfile
+
+
+def _modules_the_app_imports() -> set[str]:
+    """app.py and every services.tts module it reaches, as file names.
+
+    The Dockerfile copies modules by name, so one missing from the list only
+    fails when the container starts.
+    """
+    found: set[str] = set()
+    pending = ["app"]
+    while pending:
+        module = pending.pop()
+        if f"{module}.py" in found:
+            continue
+        found.add(f"{module}.py")
+        source = (TTS / f"{module}.py").read_text()
+        pending += re.findall(r"^\s*from services\.tts\.(\w+) import", source, re.MULTILINE)
+    return found
+
+
+def test_the_import_walk_reaches_every_engine():
+    assert {"vram.py", "piper_engine.py", "mms_engine.py", "speech_text.py"} <= (
+        _modules_the_app_imports()
+    )
 
 
 def test_the_voices_stage_does_not_depend_on_the_python_requirements():
