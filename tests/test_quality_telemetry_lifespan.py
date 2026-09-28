@@ -13,7 +13,6 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.quality_telemetry import TelemetryMode
-from services.api_gateway.translation_refiner import translation_refiner
 
 
 def _batch_threads() -> list[str]:
@@ -145,13 +144,15 @@ def test_a_failing_telemetry_shutdown_is_reported_and_teardown_continues(
 def test_the_shadow_refiner_is_given_the_telemetry_the_lifespan_built(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The refiner is a module-level singleton created at import time, while
-    telemetry is built per lifespan -- so the two only meet if the lifespan
-    says so. Without this the refinement event silently never fires."""
+    """The refiner is built before the telemetry and handed to the container
+    separately, so the two only meet if the lifespan says so. Without this the
+    refinement event silently never fires."""
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
 
     with TestClient(app):
-        assert translation_refiner.quality_telemetry is app.state.dependencies.quality_telemetry
+        dependencies = app.state.dependencies
+        refiner = dependencies.speech_pipeline.refiner
+        assert refiner.quality_telemetry is dependencies.quality_telemetry
 
 
 def test_the_refiner_is_released_when_the_lifespan_ends(
@@ -162,9 +163,9 @@ def test_the_refiner_is_released_when_the_lifespan_ends(
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "enabled")
 
     with TestClient(app):
-        pass
+        refiner = app.state.dependencies.speech_pipeline.refiner
 
-    assert translation_refiner.quality_telemetry is None
+    assert refiner.quality_telemetry is None
 
 
 def test_the_session_manager_is_given_the_telemetry_the_lifespan_built(

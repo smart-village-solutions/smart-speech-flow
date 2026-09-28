@@ -12,6 +12,7 @@ from services.api_gateway.pipeline_logic import (
     validate_text_input, normalize_text, detect_spam, detect_harmful_content,
     process_text_pipeline
 )
+from tests.pipeline_helpers import pipeline_collaborators
 
 
 class TestTextValidation:
@@ -251,7 +252,9 @@ class TestTextPipelinePerformance:
         mock_post.side_effect = [mock_translation_response, mock_tts_response]
 
         # Text-Pipeline ausführen
-        result = process_text_pipeline("Hello world", "en", "de", debug=True)
+        result = process_text_pipeline(
+            "Hello world", "en", "de", debug=True, **pipeline_collaborators()
+        )
 
         assert result["error"] is False
         assert result["asr_text"] == "Hello world"  # Original text as ASR result
@@ -288,7 +291,7 @@ class TestTextPipelinePerformance:
 
             mock_post.side_effect = [mock_translation, mock_tts]
 
-            result = process_text_pipeline(text, "en", "de", debug=True)
+            result = process_text_pipeline(text, "en", "de", debug=True, **pipeline_collaborators())
 
         processing_time = time.perf_counter() - start_time
 
@@ -305,7 +308,9 @@ class TestTextPipelinePerformance:
         # Text, der Validation nicht besteht
         text = "A" * 501  # Too long
 
-        result = process_text_pipeline(text, "en", "de", debug=True, validate_text=True)
+        result = process_text_pipeline(
+            text, "en", "de", debug=True, validate_text=True, **pipeline_collaborators()
+        )
 
         assert result["error"] is True
         assert "Text validation failed" in result["error_msg"]
@@ -339,7 +344,9 @@ class TestTextPipelineIntegration:
 
         mock_post.side_effect = [mock_translation_response, mock_tts_response]
 
-        result = process_text_pipeline("Hello world", "en", "de", debug=True, validate_text=True)
+        result = process_text_pipeline(
+            "Hello world", "en", "de", debug=True, validate_text=True, **pipeline_collaborators()
+        )
 
         assert result["error"] is False
 
@@ -363,7 +370,9 @@ class TestTextPipelineIntegration:
 
             mock_post.side_effect = [mock_translation, mock_tts]
 
-            result = process_text_pipeline("Hello", "en", "de", validate_text=False)
+            result = process_text_pipeline(
+                "Hello", "en", "de", validate_text=False, **pipeline_collaborators()
+            )
 
             # Should not have validation step
             if "debug" in result and "steps" in result["debug"]:

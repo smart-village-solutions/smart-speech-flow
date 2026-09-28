@@ -5,13 +5,19 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from services.api_gateway.circuit_breaker_client import circuit_breaker_client
+from services.api_gateway.circuit_breaker_client import CircuitBreakerServiceClient
 from services.api_gateway.dependencies import get_circuit_breaker_client
 from services.api_gateway.routes import circuit_breaker
+from services.api_gateway.service_health import ServiceHealthManager
 
 
 @pytest.fixture
-def client():
+def circuit_breaker_client():
+    return CircuitBreakerServiceClient(ServiceHealthManager())
+
+
+@pytest.fixture
+def client(circuit_breaker_client):
     app = FastAPI()
     app.include_router(circuit_breaker.router, prefix="/api")
     app.dependency_overrides[get_circuit_breaker_client] = lambda: circuit_breaker_client
@@ -25,7 +31,7 @@ def _circuit(state="closed", health_status=None):
     return circuit
 
 
-def test_services_health_returns_monitoring_timestamp(client, monkeypatch):
+def test_services_health_returns_monitoring_timestamp(client, circuit_breaker_client, monkeypatch):
     health_status = {
         "monitoring_info": {"last_check": "2026-07-20T10:00:00Z"},
         "overall_healthy": True,
@@ -46,7 +52,9 @@ def test_services_health_returns_monitoring_timestamp(client, monkeypatch):
     }
 
 
-def test_services_health_converts_client_failure_to_server_error(client, monkeypatch):
+def test_services_health_converts_client_failure_to_server_error(
+    client, circuit_breaker_client, monkeypatch
+):
     monkeypatch.setattr(
         circuit_breaker_client,
         "get_health_status",
@@ -59,7 +67,9 @@ def test_services_health_converts_client_failure_to_server_error(client, monkeyp
     assert response.json()["detail"] == "Health status check failed: upstream unavailable"
 
 
-def test_single_service_health_validates_name_and_handles_missing_service(client, monkeypatch):
+def test_single_service_health_validates_name_and_handles_missing_service(
+    client, circuit_breaker_client, monkeypatch
+):
     invalid_response = client.get("/api/health/services/unknown")
     assert invalid_response.status_code == 400
     assert "Valid services: asr, translation, tts" in invalid_response.json()["detail"]
@@ -75,7 +85,9 @@ def test_single_service_health_validates_name_and_handles_missing_service(client
     assert missing_response.json()["detail"] == "Service 'asr' not found or not registered"
 
 
-def test_single_service_health_returns_status_and_wraps_client_error(client, monkeypatch):
+def test_single_service_health_returns_status_and_wraps_client_error(
+    client, circuit_breaker_client, monkeypatch
+):
     monkeypatch.setattr(
         circuit_breaker_client,
         "get_service_status",
@@ -98,9 +110,11 @@ def test_single_service_health_returns_status_and_wraps_client_error(client, mon
     assert error_response.json()["detail"] == "Service health check failed: monitor failed"
 
 
-def test_circuit_breaker_status_lists_each_circuit_and_handles_factory_error(client, monkeypatch):
+def test_circuit_breaker_status_lists_each_circuit_and_handles_factory_error(
+    client, circuit_breaker_client, monkeypatch
+):
     circuits = {"asr": _circuit("open"), "tts": _circuit("closed")}
-    monkeypatch.setattr(circuit_breaker.CircuitBreakerFactory, "get_all_circuits", lambda: circuits)
+    monkeypatch.setattr(circuit_breaker_client, "circuit_breakers", lambda: circuits)
 
     success_response = client.get("/api/health/circuit-breakers")
 
@@ -112,8 +126,8 @@ def test_circuit_breaker_status_lists_each_circuit_and_handles_factory_error(cli
     }
 
     monkeypatch.setattr(
-        circuit_breaker.CircuitBreakerFactory,
-        "get_all_circuits",
+        circuit_breaker_client,
+        "circuit_breakers",
         MagicMock(side_effect=RuntimeError("registry failed")),
     )
     error_response = client.get("/api/health/circuit-breakers")
@@ -122,7 +136,9 @@ def test_circuit_breaker_status_lists_each_circuit_and_handles_factory_error(cli
     assert error_response.json()["detail"] == "Circuit breaker status check failed: registry failed"
 
 
-def test_degradation_status_returns_client_data_and_wraps_errors(client, monkeypatch):
+def test_degradation_status_returns_client_data_and_wraps_errors(
+    client, circuit_breaker_client, monkeypatch
+):
     monkeypatch.setattr(
         circuit_breaker_client,
         "get_degradation_status",
@@ -146,14 +162,16 @@ def test_degradation_status_returns_client_data_and_wraps_errors(client, monkeyp
     )
 
 
-def test_reset_one_circuit_validates_service_and_returns_state_transition(client, monkeypatch):
+def test_reset_one_circuit_validates_service_and_returns_state_transition(
+    client, circuit_breaker_client, monkeypatch
+):
     invalid_response = client.post("/api/admin/circuit-breakers/invalid/reset")
     assert invalid_response.status_code == 400
 
     asr_circuit = _circuit("open")
     monkeypatch.setattr(
-        circuit_breaker.CircuitBreakerFactory,
-        "get_all_circuits",
+        circuit_breaker_client,
+        "circuit_breakers",
         lambda: {"asr": asr_circuit},
     )
     success_response = client.post("/api/admin/circuit-breakers/asr/reset")
@@ -167,9 +185,9 @@ def test_reset_one_circuit_validates_service_and_returns_state_transition(client
     assert missing_response.status_code == 404
 
 
-def test_reset_all_circuits_and_wraps_reset_failure(client, monkeypatch):
+def test_reset_all_circuits_and_wraps_reset_failure(client, circuit_breaker_client, monkeypatch):
     circuits = {"asr": _circuit("open"), "translation": _circuit("half_open")}
-    monkeypatch.setattr(circuit_breaker.CircuitBreakerFactory, "get_all_circuits", lambda: circuits)
+    monkeypatch.setattr(circuit_breaker_client, "circuit_breakers", lambda: circuits)
 
     success_response = client.post("/api/admin/circuit-breakers/reset-all")
 
@@ -186,7 +204,9 @@ def test_reset_all_circuits_and_wraps_reset_failure(client, monkeypatch):
     assert error_response.json()["detail"] == "Circuit breakers reset failed: reset failed"
 
 
-def test_health_summary_aggregates_alerts_and_wraps_failures(client, monkeypatch):
+def test_health_summary_aggregates_alerts_and_wraps_failures(
+    client, circuit_breaker_client, monkeypatch
+):
     health_status = {
         "overall_healthy": False,
         "summary": {"total": 3},
@@ -207,8 +227,8 @@ def test_health_summary_aggregates_alerts_and_wraps_failures(client, monkeypatch
         AsyncMock(return_value={"current_mode": "fallback"}),
     )
     monkeypatch.setattr(
-        circuit_breaker.CircuitBreakerFactory,
-        "get_all_circuits",
+        circuit_breaker_client,
+        "circuit_breakers",
         lambda: {"asr": _circuit("open"), "tts": _circuit("half_open")},
     )
 

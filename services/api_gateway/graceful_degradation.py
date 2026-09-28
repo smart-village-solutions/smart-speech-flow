@@ -106,7 +106,3 @@ class GracefulDegradationManager:
             "current_mode": self.current_mode.value,
             "mode_history": self.mode_history[-10:],  # Letzte 10 Mode Changes
         }
-
-
-# Globale Graceful Degradation Manager Instanz. Adapter until PR5 (#228).
-graceful_degradation_manager = GracefulDegradationManager()

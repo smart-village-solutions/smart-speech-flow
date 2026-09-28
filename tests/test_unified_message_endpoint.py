@@ -10,6 +10,7 @@ from services.api_gateway import message_models, message_processing
 from services.api_gateway.session_manager import ClientType, TenantSessionManager, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
+from tests.pipeline_helpers import speech_pipeline
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
@@ -76,6 +77,7 @@ async def test_unified_message_dispatches_json_with_trusted_role(
         request,
         None,
         sessions=manager,
+        pipeline=speech_pipeline(),
     )
 
     assert result == expected
@@ -95,6 +97,7 @@ async def test_unified_message_rejects_unsupported_content_type(active_session) 
             request,
             None,
             sessions=manager,
+            pipeline=speech_pipeline(),
         )
 
     assert caught.value.status_code == 400
@@ -124,6 +127,7 @@ async def test_unified_message_redacts_unexpected_exception_from_response_and_ou
             request,
             None,
             sessions=manager,
+            pipeline=speech_pipeline(),
         )
 
     captured = capsys.readouterr()
@@ -149,6 +153,7 @@ async def test_audio_pipeline_requires_only_file_and_languages(active_session) -
             request,
             0.0,
             sessions=manager,
+            pipeline=speech_pipeline(),
         )
 
     assert caught.value.status_code == 400

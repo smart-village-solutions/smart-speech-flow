@@ -25,6 +25,7 @@ from services.api_gateway.tenant_session import (
     RuntimeConfigurationSnapshot,
     TenantSessionKey,
 )
+from tests.pipeline_helpers import speech_pipeline
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
@@ -435,6 +436,7 @@ async def test_text_processing_ignores_a_spoofed_client_role(
         request,
         0.0,
         sessions=manager,
+        pipeline=speech_pipeline(),
     )
 
     assert manager.get_session(session.key).messages[-1].sender is ClientType.ADMIN

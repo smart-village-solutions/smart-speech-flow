@@ -23,6 +23,7 @@ from services.api_gateway.pipeline_logic import (
     _validate_and_normalize_text,
 )
 from services.api_gateway.quality_telemetry import PipelineStage, QualityErrorCode
+from tests.pipeline_helpers import pipeline_collaborators
 
 
 def create_test_wav(
@@ -408,7 +409,9 @@ class TestProcessWavIntegration:
         # Valid audio
         audio_bytes = create_test_wav(duration_seconds=3.0)
 
-        result = process_wav(audio_bytes, "en", "de", debug=True, validate_audio=True)
+        result = process_wav(
+            audio_bytes, "en", "de", debug=True, validate_audio=True, **pipeline_collaborators()
+        )
 
         # Check that result was successful (no error field or error=False)
         assert result.get("error", False) is False
@@ -438,7 +441,9 @@ class TestProcessWavIntegration:
             channels=4,  # Unsupported channel layout
         )
 
-        result = process_wav(audio_bytes, "en", "de", debug=True, validate_audio=True)
+        result = process_wav(
+            audio_bytes, "en", "de", debug=True, validate_audio=True, **pipeline_collaborators()
+        )
 
         # Check that validation failed
         assert result.get("error", False) is True
@@ -474,7 +479,9 @@ class TestProcessWavIntegration:
             # Even invalid audio should proceed if validation is disabled
             audio_bytes = b"invalid audio"
 
-            result = process_wav(audio_bytes, "en", "de", validate_audio=False)
+            result = process_wav(
+                audio_bytes, "en", "de", validate_audio=False, **pipeline_collaborators()
+            )
 
             # Should not have validation step
             if "debug" in result and "steps" in result["debug"]:

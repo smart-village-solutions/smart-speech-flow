@@ -1,12 +1,17 @@
 import base64
 import json
 import logging
-from typing import Dict, Optional
+from typing import Annotated, Dict, Optional
 
-from fastapi import APIRouter, File, Form, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
 
-from services.api_gateway.pipeline_admission import PipelineBusyError, run_pipeline
-from services.api_gateway.pipeline_logic import process_wav
+from services.api_gateway.dependencies import get_pipeline_admission, get_speech_pipeline
+from services.api_gateway.pipeline_admission import (
+    PipelineAdmission,
+    PipelineBusyError,
+    run_pipeline,
+)
+from services.api_gateway.pipeline_logic import SpeechPipeline, process_wav
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -20,6 +25,8 @@ router = APIRouter()
 @router.post("/pipeline")
 async def pipeline(
     request: Request,
+    pipeline: Annotated[SpeechPipeline, Depends(get_speech_pipeline)],
+    admission: Annotated[Optional[PipelineAdmission], Depends(get_pipeline_admission)],
     file: UploadFile = File(...),
     source_lang: str = Form(...),
     target_lang: str = Form(...),
@@ -69,13 +76,15 @@ async def pipeline(
 
     try:
         result = await run_pipeline(
-            request,
+            admission,
             process_wav,
             file_bytes,
             source_lang,
             target_lang,
             debug=debug_active,
             validate_audio=True,
+            speech=pipeline.speech,
+            refiner=pipeline.refiner,
         )
     except PipelineBusyError as busy:
         logger.info("Frontend-Response: SYSTEM_BUSY, pipeline at capacity")

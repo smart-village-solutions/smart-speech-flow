@@ -360,24 +360,15 @@ class PipelineAdmission:
             self._metrics.in_flight.dec()
 
 
-def get_pipeline_admission(request: Any) -> Optional[PipelineAdmission]:
-    """The running app's admission component, or ``None`` when there isn't one.
+async def run_pipeline[T](
+    admission: Optional[PipelineAdmission], func: Callable[..., T], /, *args: Any, **kwargs: Any
+) -> T:
+    """Runs a pipeline function under the app's bound, unbounded if there is none.
 
-    The isinstance check is load-bearing: handlers are also driven by mock
-    requests in tests, where attribute access invents a truthy object rather
-    than raising. Falling through to unbounded work is the right answer there
-    and for any route reached before lifespan startup.
+    ``admission`` is the gate the caller was built with. None means no lifespan
+    built one, as in a test that builds the container or the handler's
+    collaborators itself.
     """
-    app = getattr(request, "app", None)
-    state = getattr(app, "state", None)
-    dependencies = getattr(state, "dependencies", None)
-    candidate = getattr(dependencies, "pipeline_admission", None)
-    return candidate if isinstance(candidate, PipelineAdmission) else None
-
-
-async def run_pipeline[T](request: Any, func: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
-    """Runs a pipeline function under the app's bound, unbounded if there is none."""
-    admission = get_pipeline_admission(request)
     if admission is None:
         return await asyncio.to_thread(func, *args, **kwargs)
 

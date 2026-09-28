@@ -1,12 +1,18 @@
 import logging
 from html import escape
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 
+from services.api_gateway.dependencies import get_pipeline_admission, get_speech_pipeline
 from services.api_gateway.log_safety import safe_language_code, sanitize_log_value
-from services.api_gateway.pipeline_admission import PipelineBusyError, run_pipeline
-from services.api_gateway.pipeline_logic import process_wav
+from services.api_gateway.pipeline_admission import (
+    PipelineAdmission,
+    PipelineBusyError,
+    run_pipeline,
+)
+from services.api_gateway.pipeline_logic import SpeechPipeline, process_wav
 
 logger = logging.getLogger("api_gateway")
 router = APIRouter()
@@ -22,6 +28,8 @@ def _safe_text_preview(value: object) -> str:
 @router.post("/upload")
 async def upload(
     request: Request,
+    pipeline: Annotated[SpeechPipeline, Depends(get_speech_pipeline)],
+    admission: Annotated[Optional[PipelineAdmission], Depends(get_pipeline_admission)],
     file: UploadFile = File(...),
     source_lang: str = Form(...),
     target_lang: str = Form(...),
@@ -43,7 +51,15 @@ async def upload(
         )
     file_bytes = await file.read()
     try:
-        result = await run_pipeline(request, process_wav, file_bytes, source_lang, target_lang)
+        result = await run_pipeline(
+            admission,
+            process_wav,
+            file_bytes,
+            source_lang,
+            target_lang,
+            speech=pipeline.speech,
+            refiner=pipeline.refiner,
+        )
     except PipelineBusyError as busy:
         logger.info("Upload rejected: pipeline at capacity")
         return HTMLResponse(

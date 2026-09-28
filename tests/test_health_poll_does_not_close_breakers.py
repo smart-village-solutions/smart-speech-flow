@@ -21,13 +21,24 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from services.api_gateway.circuit_breaker import CircuitState
-from services.api_gateway.graceful_degradation import ServiceMode, graceful_degradation_manager
-from services.api_gateway.service_health import service_health_manager
+from services.api_gateway.graceful_degradation import ServiceMode
+from services.api_gateway.service_health import ServiceHealthManager
 
 SERVICE = "asr"
 
 
-def _breaker():
+@pytest.fixture
+def service_health_manager():
+    """One app's health manager, as build_gateway_dependencies builds it."""
+    return ServiceHealthManager()
+
+
+@pytest.fixture
+def graceful_degradation_manager(service_health_manager):
+    return service_health_manager.degradation
+
+
+def _breaker(service_health_manager):
     return service_health_manager.circuit_breakers[SERVICE]
 
 
@@ -38,7 +49,7 @@ def _open_on_inference(breaker) -> None:
     assert breaker.state is CircuitState.OPEN
 
 
-async def _poll_once(payload=None):
+async def _poll_once(service_health_manager, payload=None):
     endpoint = service_health_manager.services[SERVICE]
     reply = payload if payload is not None else {"status_code": 200, "response_time": 0.01}
     with patch.object(
@@ -47,7 +58,7 @@ async def _poll_once(payload=None):
         await service_health_manager._check_service_health(SERVICE, endpoint)
 
 
-async def _wait_for_mode(expected: ServiceMode) -> None:
+async def _wait_for_mode(graceful_degradation_manager, expected: ServiceMode) -> None:
     for _ in range(10):
         if graceful_degradation_manager.current_mode is expected:
             return
@@ -56,31 +67,33 @@ async def _wait_for_mode(expected: ServiceMode) -> None:
 
 
 class TestASuccessfulPingProvesNothing:
-    async def test_pings_never_close_a_breaker_the_pipeline_opened(self):
-        breaker = _breaker()
+    async def test_pings_never_close_a_breaker_the_pipeline_opened(self, service_health_manager):
+        breaker = _breaker(service_health_manager)
         _open_on_inference(breaker)
         breaker.next_attempt_time = 0  # the recovery window has elapsed
 
         for _ in range(breaker.config.success_threshold + 3):
-            await _poll_once()
+            await _poll_once(service_health_manager)
 
         assert breaker.state is CircuitState.OPEN, (
             "health pings reclosed a breaker that inference opened; "
             "the poll is vouching for work it never did"
         )
 
-    async def test_a_ping_still_reports_the_service_reachable(self):
+    async def test_a_ping_still_reports_the_service_reachable(self, service_health_manager):
         """The two facts are separate and both are worth showing."""
-        breaker = _breaker()
+        breaker = _breaker(service_health_manager)
         _open_on_inference(breaker)
 
-        await _poll_once()
+        await _poll_once(service_health_manager)
 
         assert service_health_manager.service_status[SERVICE].is_healthy is True
         assert breaker.state is CircuitState.OPEN
 
-    async def test_a_later_failed_ping_does_not_make_inference_failure_health_recoverable(self):
-        breaker = _breaker()
+    async def test_a_later_failed_ping_does_not_make_inference_failure_health_recoverable(
+        self, service_health_manager
+    ):
+        breaker = _breaker(service_health_manager)
         endpoint = service_health_manager.services[SERVICE]
         _open_on_inference(breaker)
 
@@ -93,12 +106,14 @@ class TestASuccessfulPingProvesNothing:
 
         breaker.next_attempt_time = 0
         for _ in range(breaker.config.success_threshold):
-            await _poll_once()
+            await _poll_once(service_health_manager)
 
         assert breaker.state is CircuitState.OPEN
 
-    async def test_an_async_inference_failure_does_not_make_health_recovery_eligible(self):
-        breaker = _breaker()
+    async def test_an_async_inference_failure_does_not_make_health_recovery_eligible(
+        self, service_health_manager
+    ):
+        breaker = _breaker(service_health_manager)
         endpoint = service_health_manager.services[SERVICE]
 
         with patch.object(
@@ -119,22 +134,22 @@ class TestASuccessfulPingProvesNothing:
 
         breaker.next_attempt_time = 0
         for _ in range(breaker.config.success_threshold):
-            await _poll_once()
+            await _poll_once(service_health_manager)
 
         assert breaker.state is CircuitState.OPEN
 
-    async def test_a_successful_ping_records_no_traffic(self):
-        breaker = _breaker()
+    async def test_a_successful_ping_records_no_traffic(self, service_health_manager):
+        breaker = _breaker(service_health_manager)
 
-        await _poll_once()
+        await _poll_once(service_health_manager)
 
         assert breaker.health.total_requests == 0
 
 
 class TestAFailedPingIsRealEvidence:
-    async def test_failed_pings_open_the_breaker(self):
+    async def test_failed_pings_open_the_breaker(self, service_health_manager):
         """A service that cannot answer /health cannot serve inference either."""
-        breaker = _breaker()
+        breaker = _breaker(service_health_manager)
         endpoint = service_health_manager.services[SERVICE]
 
         with patch.object(
@@ -148,9 +163,11 @@ class TestAFailedPingIsRealEvidence:
         assert breaker.state is CircuitState.OPEN
         assert service_health_manager.service_status[SERVICE].is_healthy is False
 
-    async def test_successful_pings_close_a_breaker_opened_by_health_checks(self):
+    async def test_successful_pings_close_a_breaker_opened_by_health_checks(
+        self, service_health_manager
+    ):
         """A startup outage must not keep a recovered service unavailable forever."""
-        breaker = _breaker()
+        breaker = _breaker(service_health_manager)
         endpoint = service_health_manager.services[SERVICE]
 
         with patch.object(
@@ -165,13 +182,15 @@ class TestAFailedPingIsRealEvidence:
         breaker.next_attempt_time = 0
 
         for _ in range(breaker.config.success_threshold):
-            await _poll_once()
+            await _poll_once(service_health_manager)
 
         assert breaker.state is CircuitState.CLOSED
 
-    async def test_an_inflight_inference_probe_blocks_health_from_closing_the_breaker(self):
+    async def test_an_inflight_inference_probe_blocks_health_from_closing_the_breaker(
+        self, service_health_manager
+    ):
         """A health poll cannot outrun a half-open inference probe that later fails."""
-        breaker = _breaker()
+        breaker = _breaker(service_health_manager)
         endpoint = service_health_manager.services[SERVICE]
 
         with patch.object(
@@ -206,9 +225,11 @@ class TestAFailedPingIsRealEvidence:
 
         assert breaker.state is CircuitState.OPEN
 
-    async def test_an_abandoned_inference_probe_does_not_strand_health_recovery(self):
+    async def test_an_abandoned_inference_probe_does_not_strand_health_recovery(
+        self, service_health_manager
+    ):
         """A timed-out half-open probe is retried as a fresh health recovery window."""
-        breaker = _breaker()
+        breaker = _breaker(service_health_manager)
         endpoint = service_health_manager.services[SERVICE]
 
         with patch.object(
@@ -236,9 +257,11 @@ class TestAFailedPingIsRealEvidence:
 
         assert breaker.state is CircuitState.CLOSED
 
-    async def test_a_late_inference_probe_result_cannot_mutate_a_newer_recovery(self):
+    async def test_a_late_inference_probe_result_cannot_mutate_a_newer_recovery(
+        self, service_health_manager
+    ):
         """An expired probe outcome belongs to its original recovery window only."""
-        breaker = _breaker()
+        breaker = _breaker(service_health_manager)
         endpoint = service_health_manager.services[SERVICE]
 
         with patch.object(
@@ -279,8 +302,10 @@ class TestAFailedPingIsRealEvidence:
         assert breaker.state is CircuitState.CLOSED
         assert breaker.failure_count == 0
 
-    async def test_health_recovery_restores_the_green_degradation_mode(self):
-        breaker = _breaker()
+    async def test_health_recovery_restores_the_green_degradation_mode(
+        self, service_health_manager, graceful_degradation_manager
+    ):
+        breaker = _breaker(service_health_manager)
         breaker.bind_loop()
         endpoint = service_health_manager.services[SERVICE]
 
@@ -292,27 +317,23 @@ class TestAFailedPingIsRealEvidence:
             for _ in range(breaker.config.failure_threshold):
                 await service_health_manager._check_service_health(SERVICE, endpoint)
 
-        await _wait_for_mode(ServiceMode.DEGRADED)
+        await _wait_for_mode(graceful_degradation_manager, ServiceMode.DEGRADED)
 
         breaker.next_attempt_time = 0
         for _ in range(breaker.config.success_threshold):
-            await _poll_once()
+            await _poll_once(service_health_manager)
 
-        await _wait_for_mode(ServiceMode.FULL)
+        await _wait_for_mode(graceful_degradation_manager, ServiceMode.FULL)
 
 
 class TestHalfOpenIsNotFullService:
     """A breaker mid-probe has not verified anything yet."""
 
-    @pytest.fixture(autouse=True)
-    def restore_mode(self):
-        yield
-        graceful_degradation_manager.current_mode = ServiceMode.FULL
-        graceful_degradation_manager.mode_history.clear()
-
-    async def test_a_half_open_breaker_does_not_report_full_service(self):
+    async def test_a_half_open_breaker_does_not_report_full_service(
+        self, service_health_manager, graceful_degradation_manager
+    ):
         """Through the real callback, not a reimplementation of its mapping."""
-        breaker = _breaker()
+        breaker = _breaker(service_health_manager)
         _open_on_inference(breaker)
         breaker.next_attempt_time = 0
         with breaker.guard():

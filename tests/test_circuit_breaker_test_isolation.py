@@ -1,10 +1,11 @@
-"""The breakers are singletons, so one test's failures must not reach the next.
+"""The factory's breakers are singletons, so one test's failures must not reach the next.
 
-These two tests are deliberately order-dependent: the first leaves a breaker
-OPEN through the same factory the gateway uses, and the second asserts it
-arrived closed. Without the autouse fixture in the root ``conftest.py`` the
-second fails, and it fails only when run after the first -- which is exactly
-the shape of bug the fixture exists to prevent.
+These tests are deliberately order-dependent in pairs: the first leaves a
+breaker OPEN through CircuitBreakerFactory, and the second asserts it arrived
+closed. Without the autouse fixture in the root ``conftest.py`` the second
+fails, and it fails only when run after the first -- which is exactly the
+shape of bug the fixture exists to prevent. The gateway's own breakers are
+built per app instead, which tests/test_gateway_app_isolation.py covers.
 
 The order is declaration order, which is what pytest gives us: no test
 randomiser is installed, and ``pytest.ini`` sets ``--strict-markers``, so an
@@ -18,10 +19,6 @@ from services.api_gateway.circuit_breaker import (
     CircuitBreakerConfig,
     CircuitBreakerFactory,
     CircuitState,
-)
-from services.api_gateway.graceful_degradation import (
-    ServiceMode,
-    graceful_degradation_manager,
 )
 
 SHARED_NAME = "isolation-probe"
@@ -52,24 +49,6 @@ def test_the_next_test_gets_a_closed_breaker():
     )
     assert breaker.failure_count == 0
     assert breaker.health.total_requests == 0
-
-
-def test_a_first_test_can_leave_the_degradation_mode_dirty():
-    """Breaker transitions now move this singleton too, via #219's callback."""
-    graceful_degradation_manager.apply_service_states(
-        {"asr": True, "translation": True, "tts": False}
-    )
-
-    assert graceful_degradation_manager.current_mode is ServiceMode.DEGRADED
-    assert graceful_degradation_manager.mode_history
-
-
-def test_the_next_test_gets_a_clean_degradation_mode():
-    assert graceful_degradation_manager.current_mode is ServiceMode.FULL, (
-        "a previous test's outage leaked into this one; the autouse "
-        "reset_circuit_breakers fixture is not resetting the degradation manager"
-    )
-    assert graceful_degradation_manager.mode_history == []
 
 
 def test_a_first_test_can_leave_a_closed_loop_bound():

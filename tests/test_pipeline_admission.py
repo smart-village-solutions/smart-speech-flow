@@ -30,6 +30,7 @@ from tests.pipeline_helpers import (
     make_active_session,
     pipeline_route,
     request_with,
+    speech_pipeline,
     text_request,
     upload_file,
     upload_route,
@@ -567,30 +568,25 @@ class TestMetrics:
 
 
 class TestRunPipelineHelper:
-    """The handlers must degrade to unbounded rather than fail on a mock request."""
+    """A caller built without an admission gate runs unbounded rather than failing."""
 
     @pytest.mark.asyncio
-    async def test_runs_unbounded_when_state_has_no_admission(self):
-        assert await run_pipeline(Mock(), lambda: "ran") == "ran"
-
-    @pytest.mark.asyncio
-    async def test_runs_unbounded_when_request_has_no_app(self):
-        assert await run_pipeline(object(), lambda: "ran") == "ran"
+    async def test_runs_unbounded_without_an_admission_gate(self):
+        assert await run_pipeline(None, lambda: "ran") == "ran"
 
     @pytest.mark.asyncio
     async def test_passes_arguments_through(self):
-        result = await run_pipeline(Mock(), lambda a, b, c=None: (a, b, c), 1, 2, c=3)
+        result = await run_pipeline(None, lambda a, b, c=None: (a, b, c), 1, 2, c=3)
 
         assert result == (1, 2, 3)
 
     @pytest.mark.asyncio
-    async def test_enforces_when_a_real_component_is_present(self):
+    async def test_enforces_the_gate_it_is_given(self):
         admission = _admission(1)
-        request = request_with(admission)
 
         async with _Saturated(admission):
             with pytest.raises(PipelineBusyError):
-                await run_pipeline(request, _noop)
+                await run_pipeline(admission, _noop)
 
 
 class TestSystemBusyResponse:
@@ -609,10 +605,16 @@ class TestSystemBusyResponse:
             patch.object(message_processing, "process_wav", return_value=dict(PIPELINE_SUCCESS)),
         ):
             async with _Saturated(admission):
-                request = audio_request(admission)
+                request = audio_request()
                 with pytest.raises(HTTPException) as excinfo:
                     await message_processing.process_audio_input(
-                        session_id, ClientType.ADMIN, request, 0.0, sessions=session_manager
+                        session_id,
+                        ClientType.ADMIN,
+                        request,
+                        0.0,
+                        sessions=session_manager,
+                        pipeline=speech_pipeline(),
+                        admission=admission,
                     )
 
         error = excinfo.value
@@ -637,10 +639,16 @@ class TestSystemBusyResponse:
             ),
         ):
             async with _Saturated(admission):
-                request = text_request(admission)
+                request = text_request()
                 with pytest.raises(HTTPException) as excinfo:
                     await message_processing.process_text_input(
-                        session_id, ClientType.ADMIN, request, 0.0, sessions=session_manager
+                        session_id,
+                        ClientType.ADMIN,
+                        request,
+                        0.0,
+                        sessions=session_manager,
+                        pipeline=speech_pipeline(),
+                        admission=admission,
                     )
 
         error = excinfo.value
@@ -666,10 +674,16 @@ class TestSystemBusyResponse:
             ),
         ):
             async with _Saturated(admission):
-                request = text_request(admission)
+                request = text_request()
                 with pytest.raises(HTTPException) as excinfo:
                     await message_processing.process_text_input(
-                        session_id, ClientType.ADMIN, request, 0.0, sessions=session_manager
+                        session_id,
+                        ClientType.ADMIN,
+                        request,
+                        0.0,
+                        sessions=session_manager,
+                        pipeline=speech_pipeline(),
+                        admission=admission,
                     )
 
         error = excinfo.value
@@ -696,10 +710,15 @@ class TestSystemBusyResponse:
             ),
         ):
             async with _Saturated(admission):
-                request = text_request(admission)
+                request = text_request()
                 with pytest.raises(HTTPException) as excinfo:
                     await message_processing.send_unified_message(
-                        session_id, ClientType.ADMIN, request, sessions=session_manager
+                        session_id,
+                        ClientType.ADMIN,
+                        request,
+                        sessions=session_manager,
+                        pipeline=speech_pipeline(),
+                        admission=admission,
                     )
 
         assert excinfo.value.status_code == 503
@@ -720,10 +739,22 @@ class TestSystemBusyResponse:
             ),
         ):
             first = await message_processing.process_text_input(
-                session_id, ClientType.ADMIN, text_request(admission), 0.0, sessions=session_manager
+                session_id,
+                ClientType.ADMIN,
+                text_request(),
+                0.0,
+                sessions=session_manager,
+                pipeline=speech_pipeline(),
+                admission=admission,
             )
             second = await message_processing.process_text_input(
-                session_id, ClientType.ADMIN, text_request(admission), 0.0, sessions=session_manager
+                session_id,
+                ClientType.ADMIN,
+                text_request(),
+                0.0,
+                sessions=session_manager,
+                pipeline=speech_pipeline(),
+                admission=admission,
             )
 
         assert first.status == "success"
@@ -881,7 +912,12 @@ class TestUpstreamSaturationStaysRetryable:
             request = audio_request()
             with pytest.raises(HTTPException) as excinfo:
                 await message_processing.process_audio_input(
-                    session_id, ClientType.ADMIN, request, 0.0, sessions=session_manager
+                    session_id,
+                    ClientType.ADMIN,
+                    request,
+                    0.0,
+                    sessions=session_manager,
+                    pipeline=speech_pipeline(),
                 )
 
         error = excinfo.value
@@ -910,7 +946,12 @@ class TestUpstreamSaturationStaysRetryable:
             request = text_request()
             with pytest.raises(HTTPException) as excinfo:
                 await message_processing.process_text_input(
-                    session_id, ClientType.ADMIN, request, 0.0, sessions=session_manager
+                    session_id,
+                    ClientType.ADMIN,
+                    request,
+                    0.0,
+                    sessions=session_manager,
+                    pipeline=speech_pipeline(),
                 )
 
         error = excinfo.value
@@ -934,7 +975,12 @@ class TestUpstreamSaturationStaysRetryable:
             request = audio_request()
             with pytest.raises(HTTPException) as excinfo:
                 await message_processing.process_audio_input(
-                    session_id, ClientType.ADMIN, request, 0.0, sessions=session_manager
+                    session_id,
+                    ClientType.ADMIN,
+                    request,
+                    0.0,
+                    sessions=session_manager,
+                    pipeline=speech_pipeline(),
                 )
 
         assert excinfo.value.status_code == 500
@@ -951,7 +997,9 @@ class TestLegacyRoutesAreGated:
         with patch.object(upload_route, "process_wav", return_value=dict(PIPELINE_SUCCESS)):
             async with _Saturated(admission):
                 response = await upload_route.upload(
-                    request=request_with(admission),
+                    request=request_with(),
+                    pipeline=speech_pipeline(),
+                    admission=admission,
                     file=upload_file(),
                     source_lang="de",
                     target_lang="en",
@@ -967,7 +1015,9 @@ class TestLegacyRoutesAreGated:
         with patch.object(pipeline_route, "process_wav", return_value=dict(PIPELINE_SUCCESS)):
             async with _Saturated(admission):
                 response = await pipeline_route.pipeline(
-                    request=legacy_pipeline_request(admission),
+                    request=legacy_pipeline_request(),
+                    pipeline=speech_pipeline(),
+                    admission=admission,
                     file=upload_file(),
                     source_lang="de",
                     target_lang="en",

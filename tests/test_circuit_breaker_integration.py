@@ -623,7 +623,7 @@ class TestCircuitBreakerServiceClientRealSystem:
         Health checks have their own session in service_health; this object is
         now only a reader over the managers.
         """
-        client = CircuitBreakerServiceClient()
+        client = CircuitBreakerServiceClient(ServiceHealthManager())
 
         health_status = await client.get_health_status()
 

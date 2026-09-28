@@ -20,31 +20,49 @@ from .tenant_session import TenantSessionKey
 
 if TYPE_CHECKING:
     from .message_models import MessageResponse
+    from .pipeline_admission import PipelineAdmission
+    from .pipeline_logic import SpeechPipeline
+    from .quality_telemetry import QualityTelemetry
     from .websocket import WebSocketManager
 
 
 class ConversationService:
     """Apply the server-assigned role before entering the shared pipeline.
 
-    `build_gateway_dependencies` hands it the app's session manager and
-    WebSocket manager. Without a WebSocket manager a processed message reaches
-    no live connection, which is what unit tests that build one directly want.
+    `build_gateway_dependencies` hands it the app's session manager, speech
+    pipeline, admission gate, quality telemetry and WebSocket manager. Without
+    a WebSocket manager a processed message reaches no live connection, without
+    an admission gate the pipeline runs unbounded, and without telemetry no row
+    is emitted: what unit tests that build one directly want.
     """
 
     def __init__(
         self,
         sessions: TenantSessionManager,
         *,
+        pipeline: SpeechPipeline,
+        admission: PipelineAdmission | None = None,
+        quality_telemetry: QualityTelemetry | None = None,
         websocket_manager: WebSocketManager | None = None,
     ) -> None:
         self._sessions = sessions
+        self._pipeline = pipeline
+        self._admission = admission
+        self._quality_telemetry = quality_telemetry
         self._websocket_manager = websocket_manager
 
     async def process(
         self, key: TenantSessionKey, sender: ClientType, request: Request
     ) -> MessageResponse:
         return await send_unified_message(
-            key, sender, request, self._websocket_manager, sessions=self._sessions
+            key,
+            sender,
+            request,
+            self._websocket_manager,
+            sessions=self._sessions,
+            pipeline=self._pipeline,
+            admission=self._admission,
+            telemetry=self._quality_telemetry,
         )
 
     async def process_text(
@@ -57,6 +75,8 @@ class ConversationService:
             time.perf_counter(),
             self._websocket_manager,
             sessions=self._sessions,
+            pipeline=self._pipeline,
+            admission=self._admission,
         )
 
     async def process_audio(
@@ -69,6 +89,8 @@ class ConversationService:
             time.perf_counter(),
             self._websocket_manager,
             sessions=self._sessions,
+            pipeline=self._pipeline,
+            admission=self._admission,
         )
 
     def messages(self, key: TenantSessionKey, role: ClientType) -> list[dict[str, object]]:

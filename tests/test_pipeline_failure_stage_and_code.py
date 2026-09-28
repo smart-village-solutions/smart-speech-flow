@@ -18,6 +18,7 @@ from services.api_gateway.pipeline_logic import (
     process_wav,
 )
 from services.api_gateway.quality_telemetry import PipelineStage, QualityErrorCode
+from tests.pipeline_helpers import pipeline_collaborators
 
 AUDIO_WAV_MIME = "audio/wav"
 
@@ -66,7 +67,7 @@ class TestAudioPipelineStageAndCode:
     def test_a_failed_asr_names_the_asr_stage(self, mock_post):
         mock_post.side_effect = [_failing(500), _ok_translation(), _ok_tts()]
 
-        result = process_wav(b"audio", "en", "de", validate_audio=False)
+        result = process_wav(b"audio", "en", "de", validate_audio=False, **pipeline_collaborators())
 
         assert _stage(result) == PipelineStage.ASR.value
         assert _code(result) == QualityErrorCode.UPSTREAM_ERROR.value
@@ -75,7 +76,7 @@ class TestAudioPipelineStageAndCode:
     def test_a_shed_asr_load_is_upstream_busy_not_a_generic_error(self, mock_post):
         mock_post.side_effect = [_failing(503), _ok_translation(), _ok_tts()]
 
-        result = process_wav(b"audio", "en", "de", validate_audio=False)
+        result = process_wav(b"audio", "en", "de", validate_audio=False, **pipeline_collaborators())
 
         assert _stage(result) == PipelineStage.ASR.value
         assert _code(result) == QualityErrorCode.UPSTREAM_BUSY.value
@@ -84,7 +85,7 @@ class TestAudioPipelineStageAndCode:
     def test_a_failed_translation_names_the_translation_stage(self, mock_post):
         mock_post.side_effect = [_ok_asr(), _failing(500), _ok_tts()]
 
-        result = process_wav(b"audio", "en", "de", validate_audio=False)
+        result = process_wav(b"audio", "en", "de", validate_audio=False, **pipeline_collaborators())
 
         assert _stage(result) == PipelineStage.TRANSLATION.value
         assert _code(result) == QualityErrorCode.UPSTREAM_ERROR.value
@@ -93,7 +94,7 @@ class TestAudioPipelineStageAndCode:
     def test_a_failed_tts_names_the_tts_stage(self, mock_post):
         mock_post.side_effect = [_ok_asr(), _ok_translation(), _failing(500)]
 
-        result = process_wav(b"audio", "en", "de", validate_audio=False)
+        result = process_wav(b"audio", "en", "de", validate_audio=False, **pipeline_collaborators())
 
         assert _stage(result) == PipelineStage.TTS.value
         assert _code(result) == QualityErrorCode.UPSTREAM_ERROR.value
@@ -104,7 +105,7 @@ class TestAudioPipelineStageAndCode:
         # attribute an ASR outage to whichever stage happened to run last.
         mock_post.side_effect = exceptions.ConnectionError("no route to host")
 
-        result = process_wav(b"audio", "en", "de", validate_audio=False)
+        result = process_wav(b"audio", "en", "de", validate_audio=False, **pipeline_collaborators())
 
         assert _stage(result) == PipelineStage.UNKNOWN.value
         assert _code(result) == QualityErrorCode.UPSTREAM_UNREACHABLE.value
@@ -113,7 +114,7 @@ class TestAudioPipelineStageAndCode:
     def test_a_successful_run_records_no_failure(self, mock_post):
         mock_post.side_effect = [_ok_asr(), _ok_translation(), _ok_tts()]
 
-        result = process_wav(b"audio", "en", "de", validate_audio=False)
+        result = process_wav(b"audio", "en", "de", validate_audio=False, **pipeline_collaborators())
 
         assert result.get("error") is not True
         assert _stage(result) == PipelineStage.NONE.value
@@ -125,7 +126,7 @@ class TestTextPipelineStageAndCode:
     def test_a_failed_translation_names_the_translation_stage(self, mock_post):
         mock_post.side_effect = [_failing(500), _ok_tts()]
 
-        result = process_text_pipeline("hello", "en", "de")
+        result = process_text_pipeline("hello", "en", "de", **pipeline_collaborators())
 
         assert _stage(result) == PipelineStage.TRANSLATION.value
         assert _code(result) == QualityErrorCode.UPSTREAM_ERROR.value
@@ -134,7 +135,7 @@ class TestTextPipelineStageAndCode:
     def test_a_failed_tts_names_the_tts_stage(self, mock_post):
         mock_post.side_effect = [_ok_translation(), _failing(500)]
 
-        result = process_text_pipeline("hello", "en", "de")
+        result = process_text_pipeline("hello", "en", "de", **pipeline_collaborators())
 
         assert _stage(result) == PipelineStage.TTS.value
         assert _code(result) == QualityErrorCode.UPSTREAM_ERROR.value
@@ -143,7 +144,7 @@ class TestTextPipelineStageAndCode:
     def test_rejected_text_names_the_validation_stage(self, mock_post):
         mock_post.side_effect = [_ok_translation(), _ok_tts()]
 
-        result = process_text_pipeline("", "en", "de")
+        result = process_text_pipeline("", "en", "de", **pipeline_collaborators())
 
         assert result["error"] is True
         assert _stage(result) == PipelineStage.VALIDATION.value
@@ -153,7 +154,7 @@ class TestTextPipelineStageAndCode:
     def test_harmful_text_is_content_rejected_not_a_shape_problem(self, mock_post):
         mock_post.side_effect = [_ok_translation(), _ok_tts()]
 
-        result = process_text_pipeline("how to bomb making", "en", "de")
+        result = process_text_pipeline("how to bomb making", "en", "de", **pipeline_collaborators())
 
         assert result["error"] is True
         assert _stage(result) == PipelineStage.VALIDATION.value
@@ -163,7 +164,7 @@ class TestTextPipelineStageAndCode:
     def test_a_successful_run_records_no_failure(self, mock_post):
         mock_post.side_effect = [_ok_translation(), _ok_tts()]
 
-        result = process_text_pipeline("hello", "en", "de")
+        result = process_text_pipeline("hello", "en", "de", **pipeline_collaborators())
 
         assert result.get("error") is not True
         assert _stage(result) == PipelineStage.NONE.value
@@ -193,7 +194,7 @@ class TestATwoHundredThatIsNotAudioIsStillAFailure:
     def test_the_text_path_calls_it_a_malformed_response(self, mock_post):
         mock_post.side_effect = [_ok_translation(), self._tts_200_with_a_json_body()]
 
-        result = process_text_pipeline("hello", "en", "de")
+        result = process_text_pipeline("hello", "en", "de", **pipeline_collaborators())
 
         assert result["error"] is True
         assert _stage(result) == PipelineStage.TTS.value
@@ -207,7 +208,7 @@ class TestATwoHundredThatIsNotAudioIsStillAFailure:
             self._tts_200_with_a_json_body(),
         ]
 
-        result = process_wav(b"audio", "en", "de", validate_audio=False)
+        result = process_wav(b"audio", "en", "de", validate_audio=False, **pipeline_collaborators())
 
         assert result["error"] is True
         assert _stage(result) == PipelineStage.TTS.value
@@ -218,7 +219,7 @@ class TestATwoHundredThatIsNotAudioIsStillAFailure:
         """The invariant behind both cases above, stated once."""
         mock_post.side_effect = [_ok_translation(), self._tts_200_with_a_json_body()]
 
-        result = process_text_pipeline("hello", "en", "de")
+        result = process_text_pipeline("hello", "en", "de", **pipeline_collaborators())
 
         assert _code(result) != QualityErrorCode.NONE.value
 
@@ -227,7 +228,7 @@ class TestATwoHundredThatIsNotAudioIsStillAFailure:
         """The malformed fallback must not swallow a 503 or a 500."""
         mock_post.side_effect = [_ok_translation(), _failing(503)]
 
-        result = process_text_pipeline("hello", "en", "de")
+        result = process_text_pipeline("hello", "en", "de", **pipeline_collaborators())
 
         assert _code(result) == QualityErrorCode.UPSTREAM_BUSY.value
 
@@ -239,10 +240,15 @@ class TestEveryExitIsTyped:
         "invoke",
         [
             pytest.param(
-                lambda: process_wav(b"audio", "en", "de", validate_audio=False),
+                lambda: process_wav(
+                    b"audio", "en", "de", validate_audio=False, **pipeline_collaborators()
+                ),
                 id="audio",
             ),
-            pytest.param(lambda: process_text_pipeline("hello", "en", "de"), id="text"),
+            pytest.param(
+                lambda: process_text_pipeline("hello", "en", "de", **pipeline_collaborators()),
+                id="text",
+            ),
         ],
     )
     @patch("services.api_gateway.pipeline_logic.requests.post")

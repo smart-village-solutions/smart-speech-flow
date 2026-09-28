@@ -13,11 +13,12 @@ module is for without reconstructing which halves are live.
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway import graceful_degradation
 from services.api_gateway.app import app
-from services.api_gateway.graceful_degradation import ServiceMode, graceful_degradation_manager
+from services.api_gateway.graceful_degradation import GracefulDegradationManager, ServiceMode
 
 RETIRED_NAMES = [
     # Fallback machinery: reachable only from handle_service_failure.
@@ -43,8 +44,13 @@ RETIRED_NAMES = [
 RETIRED_TYPES = ["CacheEntry", "FallbackConfig", "FallbackStrategy"]
 
 
+@pytest.fixture
+def graceful_degradation_manager():
+    return GracefulDegradationManager()
+
+
 class TestTheDeadPathsAreGone:
-    def test_no_retired_member_remains(self):
+    def test_no_retired_member_remains(self, graceful_degradation_manager):
         present = [name for name in RETIRED_NAMES if hasattr(graceful_degradation_manager, name)]
         assert present == [], f"still reachable: {present}"
 
@@ -54,7 +60,7 @@ class TestTheDeadPathsAreGone:
 
 
 class TestWhatSurvives:
-    def test_the_mode_still_tracks_and_recovers(self):
+    def test_the_mode_still_tracks_and_recovers(self, graceful_degradation_manager):
         graceful_degradation_manager.apply_service_states(
             {"asr": True, "translation": True, "tts": False}
         )
@@ -65,7 +71,7 @@ class TestWhatSurvives:
         )
         assert graceful_degradation_manager.current_mode is ServiceMode.FULL
 
-    def test_the_status_payload_keeps_only_fields_it_can_fill(self):
+    def test_the_status_payload_keeps_only_fields_it_can_fill(self, graceful_degradation_manager):
         status = graceful_degradation_manager.get_degradation_status()
 
         assert set(status) == {

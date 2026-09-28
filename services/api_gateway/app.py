@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
 # === Standard- und Third-Party-Module ===
@@ -27,10 +28,11 @@ from .rate_limiter import RateLimitMiddleware
 from .refinement_metrics import RefinementMetrics
 
 if TYPE_CHECKING:
-    from .quality_telemetry import TelemetryMode
+    from .quality_telemetry import QualityTelemetry, TelemetryMode
     from .runtime_policy import RuntimePolicyGate
     from .studio_runtime_flow import StudioRuntimeFlow
     from .tenant_persistence import TenantPersistenceBinding
+    from .translation_refiner import BaseTranslationRefiner
 
 # === Service-URLs für die Orchestrierung ===
 # Je nach Umgebung werden interne Docker- oder lokale URLs verwendet
@@ -521,6 +523,7 @@ def _build_dependencies(
     persistence: "TenantPersistenceBinding | None",
     runtime_flow: "StudioRuntimeFlow | None",
     runtime_policy: "RuntimePolicyGate | None",
+    pipeline: "_PipelineCollaborators",
 ) -> GatewayDependencies:
     _announce("Building gateway dependencies...")
     dependencies = build_gateway_dependencies(
@@ -530,6 +533,10 @@ def _build_dependencies(
         studio_runtime_flow=runtime_flow,
         runtime_policy=runtime_policy,
         polling_messages_dropped=polling_messages_dropped,
+        translation_refiner=pipeline.refiner,
+        pipeline_admission=pipeline.admission,
+        quality_telemetry=pipeline.quality_telemetry,
+        quality_telemetry_exporter=pipeline.quality_telemetry_exporter,
     )
     _announce(f"WebSocketManager ready (ID: {id(dependencies.websocket_manager)})")
     return dependencies
@@ -551,7 +558,10 @@ def _build_pipeline_admission() -> PipelineAdmission:
     return admission
 
 
-def _wire_quality_telemetry(dependencies: GatewayDependencies) -> "TelemetryMode":
+def _build_quality_telemetry(
+    registry: CollectorRegistry,
+) -> "tuple[TelemetryMode, QualityTelemetry, Any]":
+    """The telemetry mode, the emitter and its exporter, which is None unless it exports."""
     from .quality_telemetry import QualityTelemetry, TelemetryMode, discard_event
     from .quality_telemetry_otlp import build_otlp_exporter
 
@@ -572,7 +582,7 @@ def _wire_quality_telemetry(dependencies: GatewayDependencies) -> "TelemetryMode
         quality_telemetry = QualityTelemetry(
             mode=telemetry_mode,
             exporter=telemetry_exporter or discard_event,
-            registry=dependencies.prometheus_registry,
+            registry=registry,
         )
     except Exception as e:
         # OTLPLogExporter parses OTEL_EXPORTER_OTLP_TIMEOUT and _COMPRESSION
@@ -594,18 +604,37 @@ def _wire_quality_telemetry(dependencies: GatewayDependencies) -> "TelemetryMode
             registry=CollectorRegistry(),
         )
 
-    dependencies.quality_telemetry_exporter = telemetry_exporter
-    dependencies.quality_telemetry = quality_telemetry
-    return telemetry_mode
+    return telemetry_mode, quality_telemetry, telemetry_exporter
+
+
+@dataclass(slots=True)
+class _PipelineCollaborators:
+    refiner: "BaseTranslationRefiner"
+    admission: PipelineAdmission
+    telemetry_mode: "TelemetryMode"
+    quality_telemetry: "QualityTelemetry"
+    quality_telemetry_exporter: Any
+
+
+def _build_pipeline_collaborators(
+    registry: CollectorRegistry, refiner: "BaseTranslationRefiner"
+) -> _PipelineCollaborators:
+    """What the container hands the conversation service and the pipeline routes.
+
+    Built before the container, which injects them.
+    """
+    admission = _build_pipeline_admission()
+    telemetry_mode, quality_telemetry, exporter = _build_quality_telemetry(registry)
+    return _PipelineCollaborators(refiner, admission, telemetry_mode, quality_telemetry, exporter)
 
 
 async def _attach_quality_telemetry(
     dependencies: GatewayDependencies, telemetry_mode: "TelemetryMode"
 ) -> None:
-    """Connect the import-time refiner and this app's session manager to its telemetry."""
+    """Connect this app's refiner and session manager to its telemetry."""
     from .translation_refiner import describe_refinement
 
-    refiner = dependencies.translation_refiner
+    refiner = dependencies.speech_pipeline.refiner
     sessions = dependencies.session_manager
     refiner.attach_quality_telemetry(dependencies.quality_telemetry)
     sessions.attach_quality_telemetry(dependencies.quality_telemetry)
@@ -694,9 +723,11 @@ async def _shut_down(
 
     # Released before the provider is shut down: a holder still using this
     # would emit into a provider that no longer has an export thread.
-    dependencies.translation_refiner.attach_quality_telemetry(None)
+    refiner = dependencies.speech_pipeline.refiner
+    refiner.attach_quality_telemetry(None)
     dependencies.session_manager.attach_quality_telemetry(None)
-    dependencies.translation_refiner.attach_refinement_metrics(None)
+    refiner.attach_refinement_metrics(None)
+    refiner.shutdown()
     # A handler still holding the manager after shutdown persists nothing.
     dependencies.session_manager.runtime_policy = None
     if persistence is not None:
@@ -723,21 +754,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _announce("API GATEWAY STARTUP")
     _announce("=" * 80)
 
+    # First, as when it ran at import: a malformed LLM_REFINEMENT_* setting
+    # raises here and refuses startup before anything connects.
+    from .translation_refiner import get_translation_refiner
+
+    refiner = get_translation_refiner()
+
     # The v2 session record, tenant indexes, join tombstone, and single-use
     # realtime ticket must share one verified Redis connection in production.
     from .tenant_persistence import configure_tenant_persistence
 
     tenant_persistence = configure_tenant_persistence()
     runtime_flow, runtime_policy = _build_runtime_policy(app.state.prometheus_registry)
+    pipeline = _build_pipeline_collaborators(app.state.prometheus_registry, refiner)
 
-    dependencies = _build_dependencies(app, tenant_persistence, runtime_flow, runtime_policy)
+    dependencies = _build_dependencies(
+        app, tenant_persistence, runtime_flow, runtime_policy, pipeline
+    )
     if tenant_persistence is not None:
         # Before any request, socket or background task can see this app's sessions.
         dependencies.session_manager.rehydrate_tenant_sessions()
     app.state.dependencies = dependencies
-    dependencies.pipeline_admission = _build_pipeline_admission()
-    telemetry_mode = _wire_quality_telemetry(dependencies)
-    await _attach_quality_telemetry(dependencies, telemetry_mode)
+    await _attach_quality_telemetry(dependencies, pipeline.telemetry_mode)
 
     # Feedback persistence (#302). Deliberately non-fatal: the gateway serves
     # the whole conversation pipeline, and an unreachable feedback database

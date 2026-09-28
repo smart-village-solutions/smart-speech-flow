@@ -10,6 +10,7 @@ from services.api_gateway.session_manager import (
     SessionMessage,
 )
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
+from tests.pipeline_helpers import speech_pipeline
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
@@ -42,7 +43,7 @@ async def test_history_response_has_no_authorization_field(
     granted_session_with_message,
 ):
     key, role = granted_session_with_message
-    items = ConversationService(session_manager).messages(key, role)
+    items = ConversationService(session_manager, pipeline=speech_pipeline()).messages(key, role)
     assert items
     for item in items:
         assert "record_authorized" not in item
