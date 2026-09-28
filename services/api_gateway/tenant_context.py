@@ -6,7 +6,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Annotated, Any, Mapping
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, WebSocketException, status
+from starlette.requests import HTTPConnection
 
 from .auth import VERIFIED_TENANT_ID_CLAIM, require_ssf_user
 
@@ -48,15 +49,26 @@ async def require_studio_tenant_context(
     claims: Annotated[dict[str, Any], Depends(require_ssf_user)],
 ) -> StudioTenantContext:
     """Derive the tenant from the verified issuer and reject request-side selectors."""
-    if _request_has_tenant_selector(request, await _json_body(request)):
+    await reject_request_tenant_selectors(request)
+    return studio_tenant_context_from_claims(claims)
+
+
+async def reject_request_tenant_selectors(connection: HTTPConnection) -> None:
+    """Reject caller-selected tenancy before HTTP or WebSocket operations."""
+    body = await _json_body(connection) if isinstance(connection, Request) else None
+    if _request_has_tenant_selector(connection, body):
+        if connection.scope["type"] == "websocket":
+            raise WebSocketException(
+                code=status.WS_1008_POLICY_VIOLATION,
+                reason="Tenant selectors are not accepted in requests",
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Tenant selectors are not accepted in requests",
         )
-    return studio_tenant_context_from_claims(claims)
 
 
-def _request_has_tenant_selector(request: Request, body: object) -> bool:
+def _request_has_tenant_selector(request: HTTPConnection, body: object) -> bool:
     if _has_selector_name(request.path_params.keys()):
         return True
     if _has_selector_name(request.query_params.keys()):

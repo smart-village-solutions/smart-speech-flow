@@ -9,6 +9,15 @@ derived from current directory entries, and binds a validated token to the
 unique tenant identified by its verified issuer. Legacy user-token tenant and
 authorization-revision claims are not conversation admission criteria.
 
+Conversation HTTP and polling routes reject request-side tenant selectors
+with HTTP 400, including query parameters, headers, cookies and JSON fields
+(including nested fields). Both WebSocket handshakes reject selectors in query
+parameters, headers or cookies before accepting a connection or consuming an
+admin ticket (policy violation, code 1008). Anonymous customers still join via
+the existing session capability; a supplied bearer token must belong to that
+session's verified tenant. WebSocket tickets remain bound to their issuing
+tenant, session and transport.
+
 The tenant-login production rollout requires these settings:
 
 ```text
