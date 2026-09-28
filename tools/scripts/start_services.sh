@@ -18,8 +18,16 @@ set -e
 # Translation
 (cd services/translation && source .venv/bin/activate && pip install --break-system-packages -r requirements.txt && uvicorn app:app --host 0.0.0.0 --port 8102 &)
 
-# TTS
-(cd services/tts && source .venv/bin/activate && pip install --break-system-packages -r requirements.txt && uvicorn app:app --host 0.0.0.0 --port 8103 &)
+# TTS: piper-tts is installed without its dependencies (see requirements-piper.txt),
+# and the pinned voices are fetched once into TTS_VOICE_DIR. Set TTS_DEVICE=cpu
+# on a machine without a GPU.
+export TTS_VOICE_DIR="${TTS_VOICE_DIR:-$HOME/.cache/ssf-tts-voices}"
+export TTS_DEVICE="${TTS_DEVICE:-cuda}"
+(cd services/tts && source .venv/bin/activate \
+	&& pip install --break-system-packages -r requirements.txt \
+	&& pip install --break-system-packages --no-deps -r requirements-piper.txt \
+	&& (cd ../.. && python -m services.tts.fetch_voices) \
+	&& PYTHONPATH=../.. uvicorn app:app --host 0.0.0.0 --port 8103 &)
 
 # API-Gateway
 (cd services/api_gateway && source .venv/bin/activate && pip install --break-system-packages -r requirements.txt && PYTHONPATH=../.. uvicorn app:app --host 0.0.0.0 --port 8100 &)

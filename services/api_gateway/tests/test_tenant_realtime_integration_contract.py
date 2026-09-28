@@ -27,8 +27,7 @@ def test_admin_can_observe_only_its_session_realtime_connection(
             require_ssf_user,
             lambda: {
                 "sub": "operator-tenant-test",
-                "studio_tenant_id": "tenant-test",
-                "ssf_authorization_revision": REVISION,
+                "_ssf_verified_tenant_id": "tenant-test",
             },
         )
 
