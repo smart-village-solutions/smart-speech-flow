@@ -32,13 +32,18 @@ from ..session_lifecycle import (
 )
 from ..session_manager import ClientType, SessionStatus, TenantSessionManager
 from ..studio_runtime_flow import StudioRuntimeFlow, correlation_id_from_request
+from ..tenant_context import reject_request_tenant_selectors
 from ..tenant_session import TenantSessionKey
 
 # Logger setup
 logger = logging.getLogger(__name__)
 
 # Router setup
-router = APIRouter(prefix="/api/customer", tags=["customer"])
+router = APIRouter(
+    prefix="/api/customer",
+    tags=["customer"],
+    dependencies=[Depends(reject_request_tenant_selectors)],
+)
 
 _SESSION_NOT_FOUND = "Session not found"
 CUSTOMER_ROUTE_RESPONSES = {

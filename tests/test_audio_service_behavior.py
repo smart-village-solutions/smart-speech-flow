@@ -18,8 +18,8 @@ from test_service_app_helpers import (
     build_soundfile_stub,
     build_torch_stub,
     build_transformers_stub,
-    build_tts_stub,
     load_module,
+    tts_request,
 )
 
 
@@ -68,7 +68,6 @@ def translation_service(monkeypatch):
 
 @pytest.fixture
 def tts_service(monkeypatch):
-    tts_pkg, tts_api = build_tts_stub()
     fastapi_stub, responses_stub = build_fastapi_stub()
     return load_module(
         monkeypatch,
@@ -78,8 +77,6 @@ def tts_service(monkeypatch):
             "torch": build_torch_stub(),
             "transformers": build_transformers_stub(),
             "soundfile": build_soundfile_stub(),
-            "TTS": tts_pkg,
-            "TTS.api": tts_api,
             "fastapi": fastapi_stub,
             "fastapi.responses": responses_stub,
             "prometheus_client": build_prometheus_stub(),
@@ -190,15 +187,15 @@ async def test_translation_returns_debug_response_when_generation_fails(translat
 
 
 @pytest.mark.asyncio
-async def test_tts_returns_structured_error_when_renderer_fails(tts_service, monkeypatch):
-    monkeypatch.setattr(tts_service, "get_tts_model", lambda _: object())
+async def test_tts_returns_structured_error_when_the_voice_fails(tts_service):
+    class BrokenSpeaker:
+        device = "cuda"
 
-    async def fail_renderer(*_args):
-        raise RuntimeError("audio renderer failed")
+        def synthesize(self, text, seed):
+            raise RuntimeError("audio renderer failed")
 
-    monkeypatch.setattr(tts_service, "_render_audio_bytes", fail_renderer)
     response = await tts_service.synthesize(
-        build_request({"text": "Hallo", "lang": "de", "debug": True})
+        tts_request(tts_service, {"text": "Hallo", "lang": "de", "debug": True}, {"de": BrokenSpeaker()})
     )
 
     assert response.status_code == 500

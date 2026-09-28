@@ -1,5 +1,11 @@
 # Tenant Login Directory and Multi-Realm Staff Authentication
 
+> Historical implementation design. Its claim and role prerequisites for
+> conversation access were superseded on 2026-09-27 by
+> [realm-derived conversation access](../../operations/keycloak-admin-access.md)
+> and OpenSpec `update-realm-derived-conversation-access`. The issuer-directory
+> tenant boundary and separate operational privileges remain in force.
+
 ## Context
 
 Smart Speech Flow (SSF) has one public frontend at
