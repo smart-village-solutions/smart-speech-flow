@@ -6,20 +6,27 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 import { AppRoutes } from '@/app/router/AppRoutes';
 import {
   getAccountConsoleUrl,
-  getStudioUrlForSystemAdmin,
+  getStudioAdministrationUrl,
   requireKeycloakLogin,
   logoutFromKeycloak,
 } from '@/app/auth/keycloak';
 import type { AdminSession } from '@/domain/admin/admin.types';
 
-const { expirationListeners } = vi.hoisted(() => ({ expirationListeners: new Set<() => void>() }));
+const { expirationListeners, authorizationListeners } = vi.hoisted(() => ({
+  expirationListeners: new Set<() => void>(),
+  authorizationListeners: new Set<() => void>(),
+}));
 
 vi.mock('@/app/auth/keycloak', () => ({
   requireKeycloakLogin: vi.fn(),
   logoutFromKeycloak: vi.fn(),
-  getStudioUrlForSystemAdmin: vi.fn(),
+  getStudioAdministrationUrl: vi.fn(),
   getAccountConsoleUrl: vi.fn(),
   getAdminAccessToken: vi.fn().mockResolvedValue('tenant-token'),
+  subscribeToKeycloakAuthorization: (listener: () => void) => {
+    authorizationListeners.add(listener);
+    return () => authorizationListeners.delete(listener);
+  },
   subscribeToKeycloakExpiration: (listener: () => void) => {
     expirationListeners.add(listener);
     return () => expirationListeners.delete(listener);
@@ -40,7 +47,7 @@ describe('tenant login routes', () => {
   beforeEach(() => {
     vi.mocked(requireKeycloakLogin).mockReset().mockResolvedValue(true);
     vi.mocked(logoutFromKeycloak).mockReset().mockResolvedValue(undefined);
-    vi.mocked(getStudioUrlForSystemAdmin).mockReset().mockReturnValue(null);
+    vi.mocked(getStudioAdministrationUrl).mockReset().mockReturnValue(null);
     vi.mocked(getAccountConsoleUrl).mockReset().mockReturnValue(null);
     sessionStorage.clear();
   });
@@ -69,8 +76,8 @@ describe('tenant login routes', () => {
     expect(screen.getByLabelText('Location')).toHaveTextContent('/login/tenant-kassel');
   });
 
-  it('shows the selected tenant Studio link only for a system administrator', async () => {
-    vi.mocked(getStudioUrlForSystemAdmin).mockReturnValue('https://smartcity.dialog.kassel.de/');
+  it('shows the selected tenant Studio link when the tenant manage permission is available', async () => {
+    vi.mocked(getStudioAdministrationUrl).mockReturnValue('https://smartcity.dialog.kassel.de/');
     renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
 
     await screen.findByRole('button', { name: 'Neues Gespräch starten' });
@@ -79,6 +86,27 @@ describe('tenant login routes', () => {
       'href',
       'https://smartcity.dialog.kassel.de/'
     );
+  });
+
+  it('removes the Studio link when refreshed permissions no longer allow it', async () => {
+    vi.mocked(getStudioAdministrationUrl).mockReturnValue('https://smartcity.dialog.kassel.de/');
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
+    await userEvent.click(screen.getByRole('button', { name: 'Benutzerkonto' }));
+    expect(screen.getByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })).toBeInTheDocument();
+    vi.mocked(getStudioAdministrationUrl).mockReturnValue(null);
+    act(() => { for (const listener of authorizationListeners) listener(); });
+    expect(screen.queryByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })).not.toBeInTheDocument();
+    expect(getStudioAdministrationUrl).toHaveBeenCalledWith('tenant-kassel');
+  });
+
+  it('keeps the Studio link hidden during unresolved authentication', async () => {
+    vi.mocked(getStudioAdministrationUrl).mockReturnValue('https://smartcity.dialog.kassel.de/');
+    vi.mocked(requireKeycloakLogin).mockImplementation(() => new Promise(() => {}));
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel', locale: 'de' });
+    await waitFor(() => expect(requireKeycloakLogin).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'Benutzerkonto' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Organisation verwalten (öffnet in neuem Tab)' })).not.toBeInTheDocument();
   });
 
   it('links the signed-in tenant user to their Keycloak account console', async () => {
