@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping, Protocol
@@ -255,7 +256,10 @@ class StudioRuntimeClient:
                 raise StudioRuntimeClientError(
                     "studio_runtime_response_invalid", retryable=False, status=200
                 ) from None
-            if configuration.tenant.id != tenant_id:
+            # Studio's tenant id is not guaranteed ASCII, and compare_digest raises on non-ASCII str.
+            if not hmac.compare_digest(
+                configuration.tenant.id.encode("utf-8"), tenant_id.encode("utf-8")
+            ):
                 raise StudioRuntimeClientError(
                     "studio_runtime_tenant_mismatch", retryable=False, status=200
                 )

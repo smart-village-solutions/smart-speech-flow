@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -66,7 +67,11 @@ class StudioRuntimeFlow:
         except (StudioRuntimeClientError, StudioTokenError) as error:
             raise StudioRuntimeFlowError(error.code, retryable=error.retryable) from None
 
-        if configuration.tenant.id != context.tenant_id:
+        # Studio's tenant id is not guaranteed ASCII, and compare_digest raises on non-ASCII str.
+        if not hmac.compare_digest(
+            configuration.tenant.id.encode("utf-8"),
+            context.tenant_id.encode("utf-8"),
+        ):
             raise StudioRuntimeFlowError("studio_runtime_tenant_mismatch", retryable=False)
         return ValidatedRuntimeConfiguration(
             context=context,

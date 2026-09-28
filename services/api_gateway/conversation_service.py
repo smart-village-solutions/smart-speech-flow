@@ -57,10 +57,12 @@ class ConversationService:
         session = session_manager.get_session(key)
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
+        # Availability comes from the markers the writer recorded; settlement clears them
+        # when it removes audio. `audio()` alone checks the disk, as it serves the file.
         result: list[dict[str, object]] = []
         for message in session.messages:
             item = message.to_dict()
-            if audio_path(key, message.id, AudioVariant.TRANSLATED).is_file():
+            if message.translated_audio_available:
                 item["audio_url"] = scoped_audio_url(
                     key, role.value, message.id, AudioVariant.TRANSLATED
                 )
@@ -72,7 +74,7 @@ class ConversationService:
             has_original_audio = bool(message.original_audio_url) or (
                 isinstance(pipeline_input, dict) and pipeline_input.get("type") == "audio"
             )
-            if has_original_audio and audio_path(key, message.id, AudioVariant.ORIGINAL).is_file():
+            if has_original_audio:
                 item["original_audio_url"] = scoped_audio_url(
                     key, role.value, message.id, AudioVariant.ORIGINAL
                 )
