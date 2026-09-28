@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.session_lifecycle import (
     SessionLifecycleService,
@@ -42,7 +43,10 @@ class _FailingFetcher:
 
 @pytest.fixture
 def sessions() -> TenantSessionManager:
-    return TenantSessionManager(store=MemoryTenantSessionStore())
+    return TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
 
 
 async def _pending(sessions: TenantSessionManager) -> TenantSessionKey:

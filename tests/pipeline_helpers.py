@@ -10,6 +10,7 @@ import importlib
 from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, Mock
 
+from services.api_gateway.audio_processing import WavAudioValidator
 from services.api_gateway.pipeline_logic import SpeechPipeline
 from services.api_gateway.service_health import ServiceHealthManager
 from services.api_gateway.session_manager import SessionStatus
@@ -66,6 +67,7 @@ def speech_pipeline(
     return SpeechPipeline(
         speech=HttpSpeechServices(health.circuit_breakers),
         refiner=refiner if refiner is not None else NoOpTranslationRefiner(),
+        validator=WavAudioValidator(),
     )
 
 
@@ -73,9 +75,18 @@ def pipeline_collaborators(
     health: Optional[ServiceHealthManager] = None,
     refiner: Optional[BaseTranslationRefiner] = None,
 ) -> Dict[str, Any]:
-    """The keyword arguments process_wav and process_text_pipeline take."""
+    """The keyword arguments process_text_pipeline takes."""
     pipeline = speech_pipeline(health, refiner)
     return {"speech": pipeline.speech, "refiner": pipeline.refiner}
+
+
+def wav_collaborators(
+    health: Optional[ServiceHealthManager] = None,
+    refiner: Optional[BaseTranslationRefiner] = None,
+) -> Dict[str, Any]:
+    """The keyword arguments process_wav takes."""
+    pipeline = speech_pipeline(health, refiner)
+    return {"speech": pipeline.speech, "refiner": pipeline.refiner, "validator": pipeline.validator}
 
 
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")

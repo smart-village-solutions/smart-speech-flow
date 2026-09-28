@@ -21,9 +21,9 @@ from services.api_gateway.legacy_session_manager import LegacySessionManager
 from services.api_gateway.session_manager import SessionMessage
 from services.api_gateway.pipeline_logic import process_wav, process_text_pipeline
 from services.api_gateway.audio_storage import (
+    AudioStore,
     save_original_audio,
     get_audio_file_path,
-    cleanup_old_audio_files,
 )
 
 pytestmark = pytest.mark.integration
@@ -404,7 +404,7 @@ class TestAudioCleanupIntegration:
         assert filepath is not None
 
         # Run cleanup (with default 24h retention)
-        stats = cleanup_old_audio_files()
+        stats = AudioStore.from_environment().cleanup_expired()
 
         # File should NOT be deleted (too recent)
         assert filepath.exists()
@@ -423,7 +423,6 @@ class TestPrometheusMetrics:
         from services.api_gateway.audio_storage import (
             PROMETHEUS_AVAILABLE,
             audio_cleanup_deleted_files_total,
-            get_disk_usage,
         )
 
         if not PROMETHEUS_AVAILABLE:
@@ -433,14 +432,14 @@ class TestPrometheusMetrics:
         initial_count = audio_cleanup_deleted_files_total.labels(directory="original")._value._value
 
         # Run cleanup
-        cleanup_old_audio_files()
+        AudioStore.from_environment().cleanup_expired()
 
         # Metric should still exist (value may be same if no files deleted)
         current_count = audio_cleanup_deleted_files_total.labels(directory="original")._value._value
         assert current_count >= initial_count
 
         # Test disk usage metrics
-        disk_stats = get_disk_usage()
+        disk_stats = AudioStore.from_environment().disk_usage()
 
         # Metrics should be updated (gauges are set, not incremented)
         # No specific assertion on values, just verify it doesn't crash

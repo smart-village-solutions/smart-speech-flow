@@ -53,9 +53,15 @@ except ImportError:
     PROMETHEUS_AVAILABLE = False
     logger.warning("Prometheus client not available - metrics disabled")
 
-# Storage paths
-# Default remains /data/audio for local/Docker parity, but CI can override it.
-AUDIO_BASE_DIR = Path(os.environ.get("SSF_AUDIO_BASE_DIR", "/data/audio"))
+
+def _configured_base_dir() -> Path:
+    # Default remains /data/audio for local/Docker parity, but CI can override it.
+    return Path(os.environ.get("SSF_AUDIO_BASE_DIR", "/data/audio"))
+
+
+# Read once at import, for the legacy functions below only. The v2 functions
+# take their directory from an `AudioStore`.
+AUDIO_BASE_DIR = _configured_base_dir()
 ORIGINAL_AUDIO_DIR = AUDIO_BASE_DIR / "original"
 TRANSLATED_AUDIO_DIR = AUDIO_BASE_DIR / "translated"
 
@@ -104,7 +110,7 @@ def audio_path(
     message_id: str,
     variant: AudioVariant,
     *,
-    base_dir: Path = AUDIO_BASE_DIR,
+    base_dir: Path,
 ) -> Path:
     """Return a v2 path without exposing the raw tenant identifier."""
     safe_message_id = _storage_identifier(message_id)
@@ -118,7 +124,7 @@ def delete_message_audio(
     message_id: str,
     variant: AudioVariant,
     *,
-    base_dir: Path = AUDIO_BASE_DIR,
+    base_dir: Path,
 ) -> bool:
     """Delete one message's audio file, reporting whether it existed.
 
@@ -126,7 +132,7 @@ def delete_message_audio(
         key: The tenant-scoped session the message belongs to.
         message_id: The message whose artefact is being removed.
         variant: Which of the two artefacts to remove.
-        base_dir: The storage root, overridden in tests.
+        base_dir: The storage root.
 
     Returns:
         True when a file was removed, False when there was nothing to remove
@@ -149,7 +155,7 @@ def save_audio(
     variant: AudioVariant,
     data: bytes,
     *,
-    base_dir: Path = AUDIO_BASE_DIR,
+    base_dir: Path,
 ) -> Path:
     """Persist one audio artifact below its tenant and session scope."""
     if not data:
@@ -363,7 +369,7 @@ def get_audio_file_path(filename: str) -> Optional[Path]:
     return None
 
 
-def cleanup_old_audio_files(*, base_dir: Path = AUDIO_BASE_DIR) -> dict:
+def cleanup_old_audio_files(*, base_dir: Path) -> dict:
     """
     Delete audio files older than the configured retention.
 
@@ -424,7 +430,7 @@ def cleanup_old_audio_files(*, base_dir: Path = AUDIO_BASE_DIR) -> dict:
     return stats
 
 
-def get_disk_usage(*, base_dir: Path = AUDIO_BASE_DIR) -> dict:
+def get_disk_usage(*, base_dir: Path) -> dict:
     """
     Get disk usage statistics for audio storage.
 
@@ -463,3 +469,37 @@ def get_disk_usage(*, base_dir: Path = AUDIO_BASE_DIR) -> dict:
         audio_files_total.labels(directory="translated").set(stats["translated_files"])
 
     return stats
+
+
+class AudioStore:
+    """One app's v2 audio files, below the directory it was built with.
+
+    `build_gateway_dependencies` builds one per app and hands it to the
+    conversation service, the session manager and the retention cleanup, so
+    every write, read and deletion of that app uses the same directory.
+    """
+
+    def __init__(self, base_dir: Path) -> None:
+        self.base_dir = base_dir
+
+    @classmethod
+    def from_environment(cls) -> "AudioStore":
+        """A store under SSF_AUDIO_BASE_DIR as it is set now, not at import."""
+        return cls(_configured_base_dir())
+
+    def path(self, key: TenantSessionKey, message_id: str, variant: AudioVariant) -> Path:
+        return audio_path(key, message_id, variant, base_dir=self.base_dir)
+
+    def save(
+        self, key: TenantSessionKey, message_id: str, variant: AudioVariant, data: bytes
+    ) -> Path:
+        return save_audio(key, message_id, variant, data, base_dir=self.base_dir)
+
+    def delete(self, key: TenantSessionKey, message_id: str, variant: AudioVariant) -> bool:
+        return delete_message_audio(key, message_id, variant, base_dir=self.base_dir)
+
+    def cleanup_expired(self) -> dict:
+        return cleanup_old_audio_files(base_dir=self.base_dir)
+
+    def disk_usage(self) -> dict:
+        return get_disk_usage(base_dir=self.base_dir)

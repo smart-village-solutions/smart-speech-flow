@@ -61,7 +61,6 @@ def _patch_pipeline(monkeypatch, session_manager):
         client_type: ClientType,
         original_text: str,
         translated_text: str,
-        audio_bytes,
         source_lang: str,
         target_lang: str,
         **_kwargs,

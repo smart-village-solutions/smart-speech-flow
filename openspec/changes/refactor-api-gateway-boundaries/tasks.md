@@ -20,11 +20,14 @@
   - Message processing (PR4b): `message_models.py` and `message_processing.py`, entered only through `ConversationService`; nothing outside `routes/` imports from `routes/` (`tests/test_gateway_import_direction.py`).
   - Session lifecycle (PR4b): `SessionLifecycleService` in `session_lifecycle.py`; the admin create, current, terminate and history handlers and the customer activation handler map its results onto HTTP.
   - `routes/session.py` still holds the unregistered leftovers; task 4.2 inventories them for PR7.
-- [ ] 2.4 Extract speech HTTP, validation/conversion, and audio-storage adapters behind typed ports; preserve pipeline metadata and failure mapping.
+- [x] 2.4 Extract speech HTTP, validation/conversion, and audio-storage adapters behind typed ports; preserve pipeline metadata and failure mapping.
   - Speech HTTP (PR5a): the `SpeechServices` port and its `HttpSpeechServices` adapter in `speech_services.py`, built per app with its breakers; the pipeline, the conversation service and the `/pipeline` and `/upload` routes receive it and the refiner explicitly. `test_contract_speech_failures.py` pins the failure mapping.
-  - Still open: audio validation, conversion and storage (PR5b).
+  - Audio validation and conversion (PR5b): moved unchanged into `audio_processing.py`, the only production module that imports `audioop` (`tests/test_audio_processing_boundary.py`); the `AudioValidator` port and its `WavAudioValidator` adapter ride on `SpeechPipeline`, and the message path, `POST /pipeline` and `POST /upload` validate with that one object (`tests/test_audio_adapters.py`).
+  - Audio storage (PR5b): `AudioStore`, built per app by `build_gateway_dependencies` from `SSF_AUDIO_BASE_DIR` as it runs, is injected into `ConversationService`, `TenantSessionManager` and `audio_cleanup_task`; the v2 storage functions no longer default to the directory read at import. The suites that patched `audio_storage.save_audio`, `delete_message_audio` or `conversation_service.audio_path` build their service or manager with a recording, refusing or undeletable store instead.
+  - Public behaviour unchanged: `test_contract_audio.py` passes unchanged at `1d1b42e` and after the change, and the OpenAPI snapshot is untouched.
 - [ ] 2.5 Add parity, lifecycle, cross-tenant, persistence, and pipeline contract coverage.
   - Speech failures (PR5a): `test_contract_speech_failures.py` pins each stage's failure, open breakers and refinement outcomes on both message paths. Open: the text path's and `/pipeline`'s failure statuses are left unpinned on purpose (characterization.md), and half-open probing is unit-tested only.
+  - Audio (PR5b): `test_contract_audio.py` pins the validator's refusals (non-WAV, too short, oversized) on the admin and customer message routes, `POST /pipeline` and `POST /upload`, with their error codes, messages, details and the `Audio_Validation` step; the check order against the language checks; 44.1 kHz stereo converted to 16 kHz mono 16-bit before ASR on all three routes; and the v2 file layout under `SSF_AUDIO_BASE_DIR`, served byte for byte to both roles.
 
 ## 3. Realtime, Polling, and Monitoring Boundaries
 

@@ -28,6 +28,7 @@ from .rate_limiter import RateLimitMiddleware
 from .refinement_metrics import RefinementMetrics
 
 if TYPE_CHECKING:
+    from .audio_storage import AudioStore
     from .quality_telemetry import QualityTelemetry, TelemetryMode
     from .runtime_policy import RuntimePolicyGate
     from .studio_runtime_flow import StudioRuntimeFlow
@@ -122,9 +123,8 @@ async def circuit_breaker_monitor(circuit_breaker_client: Any) -> None:
         print(f"❌ Circuit Breaker Monitor Startup Fehler: {e}")
 
 
-async def audio_cleanup_task(session_manager: Any) -> None:
+async def audio_cleanup_task(session_manager: Any, audio_store: "AudioStore") -> None:
     """Background Task für automatisches Löschen alter Inhalte (Retention)"""
-    from .audio_storage import cleanup_old_audio_files, get_disk_usage
     from .session_manager import utc_now
 
     try:
@@ -136,7 +136,7 @@ async def audio_cleanup_task(session_manager: Any) -> None:
                 await asyncio.sleep(3600)  # 1 Stunde warten
 
                 # Cleanup durchführen
-                stats = cleanup_old_audio_files()
+                stats = audio_store.cleanup_expired()
                 print(f"🧹 Audio-Cleanup abgeschlossen: {stats['total_deleted']} Dateien gelöscht")
 
                 # Transcripts expire on the same pass. Audio alone would keep
@@ -149,7 +149,7 @@ async def audio_cleanup_task(session_manager: Any) -> None:
                 )
 
                 # Disk Usage loggen
-                disk_stats = get_disk_usage()
+                disk_stats = audio_store.disk_usage()
                 total_mb = disk_stats["total_bytes"] / (1024 * 1024)
                 print(f"💾 Audio Storage: {disk_stats['total_files']} Dateien, {total_mb:.2f} MB")
 
@@ -677,7 +677,7 @@ def _start_background_tasks(
             websocket_monitor_task(dependencies.websocket_monitor, dependencies.websocket_manager)
         ),
         asyncio.create_task(websocket_fallback_task(dependencies.fallback_manager)),
-        asyncio.create_task(audio_cleanup_task(sessions)),
+        asyncio.create_task(audio_cleanup_task(sessions, dependencies.audio_store)),
         asyncio.create_task(feedback_maintenance_task(dependencies)),
         asyncio.create_task(
             feedback_connect_task(dependencies, feedback_dsn, maintenance_dsn, sessions, read_dsn)

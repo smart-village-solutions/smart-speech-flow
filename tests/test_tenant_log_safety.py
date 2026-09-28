@@ -3,6 +3,7 @@ from hashlib import sha256
 
 import pytest
 
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.session_access import log_tenant_access_denied
 from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_pseudonym import SessionPseudonymizer
@@ -49,6 +50,7 @@ async def test_customer_activation_logs_only_pseudonymous_session_scope(
     manager = TenantSessionManager(
         store=MemoryTenantSessionStore(),
         session_id_factory=lambda: "JOIN1234",
+        audio_store=AudioStore.from_environment(),
     )
     session = await manager.create_admin_session("secret-tenant", SNAPSHOT)
     capsys.readouterr()

@@ -18,7 +18,7 @@ from services.api_gateway.circuit_breaker import CircuitState
 from services.api_gateway.pipeline_logic import UPSTREAM_BUSY_ERROR_CODE
 from services.api_gateway.quality_telemetry import PipelineStage, QualityErrorCode
 from services.api_gateway.service_health import ServiceHealthManager
-from tests.pipeline_helpers import pipeline_collaborators
+from tests.pipeline_helpers import pipeline_collaborators, wav_collaborators
 
 WAV_HEADER = b"RIFF" + b"\x00" * 40
 
@@ -37,6 +37,11 @@ def breaker_for(health):
 @pytest.fixture
 def pipeline(health):
     return pipeline_collaborators(health)
+
+
+@pytest.fixture
+def wav_pipeline(health):
+    return wav_collaborators(health)
 
 
 def _open(breaker_for, service: str) -> None:
@@ -73,12 +78,12 @@ def _ok_tts():
 
 
 class TestAudioPipeline:
-    def test_an_open_asr_breaker_fails_the_asr_stage(self, breaker_for, pipeline):
+    def test_an_open_asr_breaker_fails_the_asr_stage(self, breaker_for, wav_pipeline):
         _open(breaker_for, "asr")
 
         with patch.object(pipeline_logic.requests, "post") as post:
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **pipeline
+                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
             )
 
         post.assert_not_called(), "a request was sent although the circuit was open"
@@ -86,23 +91,23 @@ class TestAudioPipeline:
         assert result["debug"]["failed_stage"] == PipelineStage.ASR.value
         assert result["debug"]["error_code"] == QualityErrorCode.UPSTREAM_CIRCUIT_OPEN.value
 
-    def test_the_caller_is_told_to_retry(self, breaker_for, pipeline):
+    def test_the_caller_is_told_to_retry(self, breaker_for, wav_pipeline):
         _open(breaker_for, "asr")
 
         with patch.object(pipeline_logic.requests, "post"):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **pipeline
+                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
             )
 
         assert result["error_code"] == UPSTREAM_BUSY_ERROR_CODE
         assert result["retry_after_seconds"] >= 1
 
-    def test_an_open_translation_breaker_keeps_the_transcript(self, breaker_for, pipeline):
+    def test_an_open_translation_breaker_keeps_the_transcript(self, breaker_for, wav_pipeline):
         _open(breaker_for, "translation")
 
         with patch.object(pipeline_logic.requests, "post", return_value=_ok_asr()):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **pipeline
+                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
             )
 
         assert result["error"] is True
@@ -110,13 +115,13 @@ class TestAudioPipeline:
         assert result["asr_text"] == "guten tag", "the work already done was discarded"
         assert result["translation_text"] is None
 
-    def test_an_open_tts_breaker_keeps_transcript_and_translation(self, breaker_for, pipeline):
+    def test_an_open_tts_breaker_keeps_transcript_and_translation(self, breaker_for, wav_pipeline):
         _open(breaker_for, "tts")
         replies = [_ok_asr(), _ok_translation()]
 
         with patch.object(pipeline_logic.requests, "post", side_effect=replies):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **pipeline
+                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
             )
 
         assert result["debug"]["failed_stage"] == PipelineStage.TTS.value
@@ -124,13 +129,13 @@ class TestAudioPipeline:
         assert result["translation_text"] == "good day"
         assert result["audio_bytes"] is None
 
-    def test_the_blocked_stage_is_visible_in_the_debug_trail(self, breaker_for, pipeline):
+    def test_the_blocked_stage_is_visible_in_the_debug_trail(self, breaker_for, wav_pipeline):
         """A stage that silently vanishes is worse than one recorded as skipped."""
         _open(breaker_for, "asr")
 
         with patch.object(pipeline_logic.requests, "post"):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **pipeline
+                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
             )
 
         steps = result["debug"]["steps"]
@@ -165,14 +170,14 @@ class TestTextPipeline:
 
 
 class TestTheHappyPathIsUnchanged:
-    def test_a_closed_circuit_runs_the_whole_pipeline(self, pipeline):
+    def test_a_closed_circuit_runs_the_whole_pipeline(self, wav_pipeline):
         with patch.object(
             pipeline_logic.requests,
             "post",
             side_effect=[_ok_asr(), _ok_translation(), _ok_tts()],
         ):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **pipeline
+                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
             )
 
         assert result["error"] is False
@@ -180,7 +185,7 @@ class TestTheHappyPathIsUnchanged:
         assert result["translation_text"] == "good day"
         assert result["audio_bytes"] == b"RIFFaudio"
 
-    def test_a_successful_run_is_recorded_against_every_breaker(self, breaker_for, pipeline):
+    def test_a_successful_run_is_recorded_against_every_breaker(self, breaker_for, wav_pipeline):
         """This is the whole point of #219: the numbers come from real traffic."""
         before = {
             name: breaker_for(name).health.successful_requests
@@ -192,7 +197,7 @@ class TestTheHappyPathIsUnchanged:
             "post",
             side_effect=[_ok_asr(), _ok_translation(), _ok_tts()],
         ):
-            pipeline_logic.process_wav(WAV_HEADER, "de", "en", validate_audio=False, **pipeline)
+            pipeline_logic.process_wav(WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline)
 
         for name in ("asr", "translation", "tts"):
             assert (
@@ -201,7 +206,7 @@ class TestTheHappyPathIsUnchanged:
 
     @pytest.mark.parametrize("failing_status", [500, 502])
     def test_an_upstream_error_still_produces_its_own_result(
-        self, breaker_for, pipeline, failing_status
+        self, breaker_for, wav_pipeline, failing_status
     ):
         """The breaker records it, but the existing classification is unchanged."""
         with patch.object(
@@ -210,7 +215,7 @@ class TestTheHappyPathIsUnchanged:
             return_value=Reply({"detail": "upstream exploded"}, status_code=failing_status),
         ):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **pipeline
+                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
             )
 
         assert result["error"] is True
@@ -229,7 +234,7 @@ class TestTheBreakerAgreesWithThePipeline:
     failed.
     """
 
-    def test_a_tts_200_with_a_json_body_is_recorded_as_a_failure(self, breaker_for, pipeline):
+    def test_a_tts_200_with_a_json_body_is_recorded_as_a_failure(self, breaker_for, wav_pipeline):
         replies = [
             _ok_asr(),
             _ok_translation(),
@@ -242,7 +247,7 @@ class TestTheBreakerAgreesWithThePipeline:
 
         with patch.object(pipeline_logic.requests, "post", side_effect=replies):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **pipeline
+                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
             )
 
         assert result["error"] is True
@@ -250,12 +255,12 @@ class TestTheBreakerAgreesWithThePipeline:
         assert breaker_for("tts").health.failed_requests == 1, "the breaker called it a success"
         assert breaker_for("tts").health.successful_requests == 0
 
-    def test_a_real_audio_reply_is_still_a_success(self, breaker_for, pipeline):
+    def test_a_real_audio_reply_is_still_a_success(self, breaker_for, wav_pipeline):
         replies = [_ok_asr(), _ok_translation(), _ok_tts()]
 
         with patch.object(pipeline_logic.requests, "post", side_effect=replies):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **pipeline
+                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
             )
 
         assert result["error"] is False

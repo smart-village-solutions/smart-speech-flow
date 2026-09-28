@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
-from .audio_storage import AudioVariant, audio_path, scope_pipeline_audio_urls, scoped_audio_url
+from .audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
 from .message_processing import process_audio_input, process_text_input, send_unified_message
 from .session_manager import ClientType, SessionStatus, TenantSessionManager
 from .tenant_session import TenantSessionKey
@@ -30,10 +30,11 @@ class ConversationService:
     """Apply the server-assigned role before entering the shared pipeline.
 
     `build_gateway_dependencies` hands it the app's session manager, speech
-    pipeline, admission gate, quality telemetry and WebSocket manager. Without
-    a WebSocket manager a processed message reaches no live connection, without
-    an admission gate the pipeline runs unbounded, and without telemetry no row
-    is emitted: what unit tests that build one directly want.
+    pipeline, audio store, admission gate, quality telemetry and WebSocket
+    manager. Without a WebSocket manager a processed message reaches no live
+    connection, without an admission gate the pipeline runs unbounded, and
+    without telemetry no row is emitted: what unit tests that build one
+    directly want.
     """
 
     def __init__(
@@ -41,12 +42,14 @@ class ConversationService:
         sessions: TenantSessionManager,
         *,
         pipeline: SpeechPipeline,
+        audio_store: AudioStore,
         admission: PipelineAdmission | None = None,
         quality_telemetry: QualityTelemetry | None = None,
         websocket_manager: WebSocketManager | None = None,
     ) -> None:
         self._sessions = sessions
         self._pipeline = pipeline
+        self._audio_store = audio_store
         self._admission = admission
         self._quality_telemetry = quality_telemetry
         self._websocket_manager = websocket_manager
@@ -61,6 +64,7 @@ class ConversationService:
             self._websocket_manager,
             sessions=self._sessions,
             pipeline=self._pipeline,
+            audio_store=self._audio_store,
             admission=self._admission,
             telemetry=self._quality_telemetry,
         )
@@ -76,6 +80,7 @@ class ConversationService:
             self._websocket_manager,
             sessions=self._sessions,
             pipeline=self._pipeline,
+            audio_store=self._audio_store,
             admission=self._admission,
         )
 
@@ -90,6 +95,7 @@ class ConversationService:
             self._websocket_manager,
             sessions=self._sessions,
             pipeline=self._pipeline,
+            audio_store=self._audio_store,
             admission=self._admission,
         )
 
@@ -141,7 +147,7 @@ class ConversationService:
         )
         if message is None:
             raise HTTPException(status_code=404, detail="Audio file not found")
-        path = audio_path(key, message_id, variant)
+        path = self._audio_store.path(key, message_id, variant)
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Audio file not found")
         return FileResponse(path, media_type="audio/wav")

@@ -6,8 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi import HTTPException
 
-from services.api_gateway import audio_storage
-from services.api_gateway.audio_storage import AudioVariant, audio_path, save_audio
+from services.api_gateway.audio_storage import AudioStore, AudioVariant
 from services.api_gateway.conversation_service import ConversationService
 from services.api_gateway.session_manager import ClientType, TenantSessionManager, SessionMessage
 from services.api_gateway.session_store import MemoryTenantSessionStore
@@ -18,19 +17,27 @@ REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
-@pytest.fixture
-def manager() -> TenantSessionManager:
-    return TenantSessionManager(store=MemoryTenantSessionStore())
+class UndeletableAudioStore(AudioStore):
+    """Every removal fails, as an unlink refused by the filesystem does."""
+
+    def delete(self, *_args: object, **_kwargs: object) -> bool:
+        return False
 
 
 @pytest.fixture
-def audio_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """Point every audio path the gateway derives at this test's directory."""
-    monkeypatch.setattr(
-        "services.api_gateway.conversation_service.audio_path",
-        lambda key, message_id, variant: audio_path(key, message_id, variant, base_dir=tmp_path),
+def audio_store(tmp_path: Path) -> AudioStore:
+    return AudioStore(tmp_path)
+
+
+@pytest.fixture
+def manager(audio_store: AudioStore) -> TenantSessionManager:
+    return TenantSessionManager(store=MemoryTenantSessionStore(), audio_store=audio_store)
+
+
+def _conversations(manager: TenantSessionManager) -> ConversationService:
+    return ConversationService(
+        manager, pipeline=speech_pipeline(), audio_store=manager.audio_store
     )
-    return tmp_path
 
 
 def _audio_message(
@@ -63,16 +70,16 @@ def _list_without_filesystem(
     with pytest.MonkeyPatch.context() as patch:
         for name in ("is_file", "exists", "stat"):
             patch.setattr(Path, name, refuse)
-        return ConversationService(manager, pipeline=speech_pipeline()).messages(key, role)
+        return _conversations(manager).messages(key, role)
 
 
-def _save_both(key: TenantSessionKey, audio_dir: Path) -> None:
+def _save_both(key: TenantSessionKey, audio_store: AudioStore) -> None:
     for variant in AudioVariant:
-        save_audio(key, "m1", variant, b"wav", base_dir=audio_dir)
+        audio_store.save(key, "m1", variant, b"wav")
 
 
 async def test_listing_advertises_recorded_audio_without_a_filesystem_stat(
-    manager: TenantSessionManager, audio_dir: Path
+    manager: TenantSessionManager, audio_store: AudioStore
 ) -> None:
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     manager.add_message(session.key, _audio_message())
@@ -85,7 +92,7 @@ async def test_listing_advertises_recorded_audio_without_a_filesystem_stat(
 
 
 async def test_listing_advertises_no_audio_for_a_message_without_markers(
-    manager: TenantSessionManager, audio_dir: Path
+    manager: TenantSessionManager, audio_store: AudioStore
 ) -> None:
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     message = _audio_message()
@@ -101,31 +108,31 @@ async def test_listing_advertises_no_audio_for_a_message_without_markers(
 
 
 async def test_settled_refused_audio_is_not_advertised_even_if_its_file_survives(
-    manager: TenantSessionManager, audio_dir: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     """A failed unlink after settlement must not bring the refused audio back into view."""
+    audio_store = UndeletableAudioStore(tmp_path)
+    manager = TenantSessionManager(store=MemoryTenantSessionStore(), audio_store=audio_store)
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     manager.add_message(
         session.key, _audio_message(original_authorized=False, translated_authorized=False)
     )
-    _save_both(session.key, audio_dir)
-    monkeypatch.setattr(audio_storage, "delete_message_audio", lambda *_args, **_kwargs: False)
+    _save_both(session.key, audio_store)
 
     await manager.terminate_session(session.key, reason="test")
 
+    assert audio_store.path(session.key, "m1", AudioVariant.TRANSLATED).is_file()
     [retained] = manager.get_session(session.key).messages
     assert retained.translated_audio_available is False
     assert retained.original_audio_url is None
-    [item] = ConversationService(manager, pipeline=speech_pipeline()).messages(
-        session.key, ClientType.ADMIN
-    )
+    [item] = _conversations(manager).messages(session.key, ClientType.ADMIN)
     assert "audio_url" not in item
     assert "original_audio_url" not in item
     assert "audio_url" not in repr(item.get("pipeline_metadata"))
 
 
 async def test_the_content_sweep_clears_the_markers_it_settles(
-    manager: TenantSessionManager, audio_dir: Path, monkeypatch: pytest.MonkeyPatch
+    manager: TenantSessionManager, audio_store: AudioStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
@@ -143,14 +150,12 @@ async def test_the_content_sweep_clears_the_markers_it_settles(
 
 
 async def test_serving_audio_still_checks_that_the_file_exists(
-    manager: TenantSessionManager, audio_dir: Path
+    manager: TenantSessionManager, audio_store: AudioStore
 ) -> None:
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     manager.add_message(session.key, _audio_message())
 
     with pytest.raises(HTTPException) as missing:
-        ConversationService(manager, pipeline=speech_pipeline()).audio(
-            session.key, "m1", AudioVariant.TRANSLATED
-        )
+        _conversations(manager).audio(session.key, "m1", AudioVariant.TRANSLATED)
 
     assert missing.value.status_code == 404

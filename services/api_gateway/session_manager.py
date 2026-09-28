@@ -36,6 +36,7 @@ from .session_store import MemoryTenantSessionStore, TenantSessionStore
 from .tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
 if TYPE_CHECKING:
+    from .audio_storage import AudioStore
     from .realtime_ticket import RealtimeTicketStore
     from .runtime_policy import RuntimePolicyGate
     from .websocket import WebSocketManager
@@ -452,14 +453,6 @@ def _remove_refused_original_audio(message: SessionMessage, doomed: list[tuple[s
     return False
 
 
-def _delete_settled_audio(key: TenantSessionKey, doomed: list[tuple[str, Any]]) -> None:
-    """Delete the artefacts a settled record no longer accounts for."""
-    from .audio_storage import delete_message_audio
-
-    for message_id, variant in doomed:
-        delete_message_audio(key, message_id, variant)
-
-
 KeyT = TypeVar("KeyT")
 KeyT_contra = TypeVar("KeyT_contra", contravariant=True)
 
@@ -540,6 +533,14 @@ class SessionManagerBase(Generic[KeyT]):
         Called only when something actually changed: a sweep that rewrote every
         session on every pass would turn an hourly maintenance task into
         continuous write amplification against Redis.
+        """
+        raise NotImplementedError
+
+    def _delete_settled_audio(self, key: TenantSessionKey, doomed: list[tuple[str, Any]]) -> None:
+        """Delete the artefacts a settled record no longer accounts for.
+
+        Only a tenant session yields any, so only `TenantSessionManager` has an
+        audio store to delete them from.
         """
         raise NotImplementedError
 
@@ -626,7 +627,7 @@ class SessionManagerBase(Generic[KeyT]):
         # `Session.key` raises without a tenant, and a legacy
         # session never yields artefacts to delete anyway.
         if session.tenant_id is not None and doomed_audio:
-            _delete_settled_audio(session.key, doomed_audio)
+            self._delete_settled_audio(session.key, doomed_audio)
         return refused_delta, expired_delta
 
     def get_sessions_requiring_timeout_check(self) -> List[Session]:
@@ -642,14 +643,15 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
     """Tenant-scoped sessions behind a `TenantSessionStore`.
 
     Each gateway app builds one in `build_gateway_dependencies`, with the
-    app's store, realtime tickets, polling store, persistence gate and
-    pseudonymizer.
+    app's store, audio store, realtime tickets, polling store, persistence
+    gate and pseudonymizer.
     """
 
     def __init__(
         self,
         *,
         store: TenantSessionStore,
+        audio_store: AudioStore,
         realtime_tickets: Optional[RealtimeTicketStore] = None,
         polling_store: Optional[TenantPollingStore] = None,
         runtime_policy: Optional[RuntimePolicyGate] = None,
@@ -659,6 +661,8 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
     ) -> None:
         super().__init__(clock=clock, pseudonymizer=pseudonymizer)
         self.store = store
+        # Where settlement and the content sweep delete refused audio.
+        self.audio_store = audio_store
         self.realtime_tickets = realtime_tickets
         self.polling_store = polling_store
         # None refuses every write of conversation content.
@@ -673,6 +677,10 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         self.sessions = {}
         self.active_admin_sessions = {}
         self.websocket_manager = None
+
+    def _delete_settled_audio(self, key: TenantSessionKey, doomed: list[tuple[str, Any]]) -> None:
+        for message_id, variant in doomed:
+            self.audio_store.delete(key, message_id, variant)
 
     def rehydrate_tenant_sessions(self) -> None:
         """Restore active v2 sessions and discard process-local presence.
@@ -825,7 +833,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         if committed_terminal is None:
             committed_terminal = terminal_session
         if payload_committed and doomed_audio:
-            _delete_settled_audio(session_id, doomed_audio)
+            self._delete_settled_audio(session_id, doomed_audio)
 
         # Preserve references held by handlers while replacing every
         # cached field with Redis' canonical terminal snapshot. This

@@ -85,6 +85,7 @@ async def pipeline(
             validate_audio=True,
             speech=pipeline.speech,
             refiner=pipeline.refiner,
+            validator=pipeline.validator,
         )
     except PipelineBusyError as busy:
         logger.info("Frontend-Response: SYSTEM_BUSY, pipeline at capacity")

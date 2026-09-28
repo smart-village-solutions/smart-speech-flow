@@ -280,7 +280,7 @@ class TestAudioStorage:
 
     def test_cleanup_old_audio_files(self):
         """Test audio cleanup job"""
-        from services.api_gateway.audio_storage import cleanup_old_audio_files, save_original_audio
+        from services.api_gateway.audio_storage import AudioStore, save_original_audio
         import time
 
         # Save test file
@@ -289,7 +289,7 @@ class TestAudioStorage:
         save_original_audio(message_id, audio_base64)
 
         # Cleanup (may delete old files, but not the recent one)
-        stats = cleanup_old_audio_files()
+        stats = AudioStore.from_environment().cleanup_expired()
         # The recent file we just created should not be deleted
         # But old files from previous tests might be cleaned up
         assert stats["errors"] == 0  # No errors during cleanup
@@ -305,9 +305,9 @@ class TestAudioStorage:
 
     def test_get_disk_usage(self):
         """Test disk usage statistics"""
-        from services.api_gateway.audio_storage import get_disk_usage
+        from services.api_gateway.audio_storage import AudioStore
 
-        stats = get_disk_usage()
+        stats = AudioStore.from_environment().disk_usage()
         assert "total_bytes" in stats
         assert "original_bytes" in stats
         assert "translated_bytes" in stats

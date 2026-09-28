@@ -12,6 +12,7 @@ import pytest
 from fastapi import HTTPException
 from prometheus_client import CollectorRegistry
 
+from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.quality_telemetry import (
     InputMode,
     MessageDirection,
@@ -35,7 +36,10 @@ UPSTREAM_DETAIL = "HTTPConnectionPool(host='asr', port=8001): Max retries exceed
 
 @pytest.fixture
 def manager():
-    return TenantSessionManager(store=MemoryTenantSessionStore())
+    return TenantSessionManager(
+        store=MemoryTenantSessionStore(),
+        audio_store=AudioStore.from_environment(),
+    )
 
 
 class _CapturingExporter:
@@ -135,6 +139,7 @@ async def _send(manager, telemetry, *, content_type, pipeline_result):
             sessions=manager,
             pipeline=speech_pipeline(),
             telemetry=telemetry,
+            audio_store=AudioStore.from_environment(),
         )
 
 
@@ -229,6 +234,7 @@ class TestOneRowPerMessage:
                 sessions=manager,
                 pipeline=speech_pipeline(),
                 telemetry=_telemetry(exporter),
+                audio_store=AudioStore.from_environment(),
             )
 
         assert excinfo.value.status_code == 404
@@ -248,6 +254,7 @@ class TestOneRowPerMessage:
                 sessions=manager,
                 pipeline=speech_pipeline(),
                 telemetry=_telemetry(exporter),
+                audio_store=AudioStore.from_environment(),
             )
 
         assert exporter.messages == []
@@ -291,6 +298,7 @@ class TestNoContentLeavesTheGateway:
                 sessions=manager,
                 pipeline=speech_pipeline(),
                 telemetry=_telemetry(exporter),
+                audio_store=AudioStore.from_environment(),
             )
 
         assert session_id not in exporter.messages[0].values()
@@ -356,6 +364,7 @@ class TestTelemetryNeverChangesTheOutcome:
                 sessions=manager,
                 pipeline=speech_pipeline(),
                 telemetry=None,
+                audio_store=AudioStore.from_environment(),
             )
 
         assert response.status == "success"

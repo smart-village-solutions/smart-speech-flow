@@ -5,12 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from services.api_gateway import audio_storage
 from services.api_gateway.audio_storage import (
+    AudioStore,
     AudioVariant,
-    audio_path,
     retention_hours,
-    save_audio,
 )
 from services.api_gateway.session_manager import (
     ClientType,
@@ -51,19 +49,13 @@ def test_invalid_values_fall_back_to_the_default(monkeypatch, raw):
 
 
 @pytest.fixture
-def audio_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    real_delete = audio_storage.delete_message_audio
-
-    def delete(key, message_id, variant, *, base_dir=None):
-        return real_delete(key, message_id, variant, base_dir=tmp_path)
-
-    monkeypatch.setattr(audio_storage, "delete_message_audio", delete)
-    return tmp_path
+def audio_store(tmp_path: Path) -> AudioStore:
+    return AudioStore(tmp_path)
 
 
 @pytest.fixture
-def manager() -> TenantSessionManager:
-    return TenantSessionManager(store=MemoryTenantSessionStore())
+def manager(audio_store: AudioStore) -> TenantSessionManager:
+    return TenantSessionManager(store=MemoryTenantSessionStore(), audio_store=audio_store)
 
 
 async def _session_aged(manager, *, age: timedelta, authorized: bool):
@@ -89,7 +81,7 @@ async def _session_aged(manager, *, age: timedelta, authorized: bool):
 
 
 async def test_authorised_text_expires_at_the_retention_boundary(
-    manager, audio_dir, monkeypatch
+    manager, audio_store, monkeypatch
 ):
     monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
     key = await _session_aged(manager, age=timedelta(hours=25), authorized=True)
@@ -98,7 +90,7 @@ async def test_authorised_text_expires_at_the_retention_boundary(
 
 
 async def test_authorised_text_survives_inside_the_retention_window(
-    manager, audio_dir, monkeypatch
+    manager, audio_store, monkeypatch
 ):
     monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
     key = await _session_aged(manager, age=timedelta(hours=2), authorized=True)
@@ -107,7 +99,7 @@ async def test_authorised_text_survives_inside_the_retention_window(
 
 
 async def test_authorised_text_survives_when_deletion_is_disabled(
-    manager, audio_dir, monkeypatch
+    manager, audio_store, monkeypatch
 ):
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
     key = await _session_aged(manager, age=timedelta(days=30), authorized=True)
@@ -116,7 +108,7 @@ async def test_authorised_text_survives_when_deletion_is_disabled(
 
 
 async def test_refused_content_in_an_abandoned_session_is_removed(
-    manager, audio_dir, monkeypatch
+    manager, audio_store, monkeypatch
 ):
     # Disabling automatic deletion must not retain refused content.
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
@@ -126,7 +118,7 @@ async def test_refused_content_in_an_abandoned_session_is_removed(
 
 
 async def test_refused_content_survives_inside_the_session_lifetime(
-    manager, audio_dir, monkeypatch
+    manager, audio_store, monkeypatch
 ):
     # Removal belongs to termination; the sweep is the net for what never ends.
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
@@ -159,12 +151,12 @@ class _LifecycleEnforcingStore(MemoryTenantSessionStore):
 
 
 @pytest.fixture
-def strict_manager() -> TenantSessionManager:
-    return TenantSessionManager(store=_LifecycleEnforcingStore())
+def strict_manager(audio_store: AudioStore) -> TenantSessionManager:
+    return TenantSessionManager(store=_LifecycleEnforcingStore(), audio_store=audio_store)
 
 
 async def test_one_terminated_session_does_not_abort_the_whole_sweep(
-    strict_manager, audio_dir, monkeypatch
+    strict_manager, audio_store, monkeypatch
 ):
     monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
     terminated = await _session_aged(
@@ -182,7 +174,7 @@ async def test_one_terminated_session_does_not_abort_the_whole_sweep(
 
 
 async def test_the_sweep_leaves_terminated_records_untouched(
-    strict_manager, audio_dir, monkeypatch
+    strict_manager, audio_store, monkeypatch
 ):
     # A terminated record is immutable in the store. Pruning it in memory only
     # would drift from Redis and resurrect on the next load.
@@ -198,7 +190,7 @@ async def test_the_sweep_leaves_terminated_records_untouched(
 
 
 async def test_an_audio_only_removal_is_persisted(
-    strict_manager, audio_dir, monkeypatch
+    strict_manager, audio_store, monkeypatch
 ):
     # The message count is unchanged, so a count-based dirty check would keep
     # `translated_audio_available: true` in the store for a file that is gone.
@@ -234,7 +226,7 @@ async def test_an_audio_only_removal_is_persisted(
     assert stored.messages[0].translated_audio_available is False
 
 
-async def test_a_legacy_session_sweeps_without_logging_a_failure(audio_dir, monkeypatch, caplog):
+async def test_a_legacy_session_sweeps_without_logging_a_failure(monkeypatch, caplog):
     """`Session.key` raises without a tenant, and the sweep read it blindly.
 
     The prune commits first, so the ValueError is pure noise -- but it is
@@ -273,7 +265,7 @@ async def test_a_legacy_session_sweeps_without_logging_a_failure(audio_dir, monk
 
 
 async def test_a_failed_sweep_write_retries_on_the_next_pass(
-    strict_manager, audio_dir, monkeypatch
+    strict_manager, audio_store, monkeypatch
 ):
     """A sweep that prunes before committing strands the files it meant to drop.
 
@@ -299,7 +291,7 @@ async def test_a_failed_sweep_write_retries_on_the_next_pass(
             record_authorized=False,
         ),
     )
-    save_audio(session.key, "m1", AudioVariant.TRANSLATED, b"wav", base_dir=audio_dir)
+    audio_store.save(session.key, "m1", AudioVariant.TRANSLATED, b"wav")
 
     failed = {"count": 0}
     real_save = strict_manager.store.save
@@ -315,12 +307,8 @@ async def test_a_failed_sweep_write_retries_on_the_next_pass(
     strict_manager.sweep_expired_content(NOW)
     # The write failed, so nothing may have been removed yet.
     assert len(strict_manager.store.load(session.key).messages) == 1
-    assert audio_path(
-        session.key, "m1", AudioVariant.TRANSLATED, base_dir=audio_dir
-    ).exists()
+    assert audio_store.path(session.key, "m1", AudioVariant.TRANSLATED).exists()
 
     strict_manager.sweep_expired_content(NOW)
     assert strict_manager.store.load(session.key).messages == []
-    assert not audio_path(
-        session.key, "m1", AudioVariant.TRANSLATED, base_dir=audio_dir
-    ).exists()
+    assert not audio_store.path(session.key, "m1", AudioVariant.TRANSLATED).exists()
