@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { readConfig } from '@/app/config/env';
 
 describe('Keycloak configuration', () => {
+  it('uses the Kassel visual brand by default', () => {
+    expect(readConfig({}).brand).toBe('kassel');
+    expect(readConfig({ VITE_BRAND: 'ssf' }).brand).toBe('ssf');
+  });
   it('uses a shared origin and client without a fixed realm', () => {
     const config = readConfig({
       VITE_KEYCLOAK_URL: 'https://auth.dialog.kassel.de/',

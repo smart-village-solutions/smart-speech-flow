@@ -19,7 +19,7 @@ const envSchema = z.object({
   VITE_API_BASE_URL: z.string().default(''),
   /** Empty means "derive from window.location". */
   VITE_WS_BASE_URL: z.string().default(''),
-  VITE_BRAND: z.enum(['ssf', 'kassel']).default('ssf'),
+  VITE_BRAND: z.enum(['ssf', 'kassel']).default('kassel'),
   VITE_KEYCLOAK_URL: z
     .string()
     .refine(isHttpOrigin, 'Expected an HTTP(S) origin')

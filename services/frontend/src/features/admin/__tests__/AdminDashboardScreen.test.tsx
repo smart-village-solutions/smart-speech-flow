@@ -10,7 +10,7 @@ describe('AdminDashboardScreen', () => {
   it('positions the dashboard below the header with the shared content offset', async () => {
     renderWithProviders(<AdminDashboardScreen onEnterSession={noop} onSignOut={noop} />);
 
-    expect((await screen.findByText('Willkommen bei Smart Speech Flow')).closest('div[class*="pt-"]'))
+    expect((await screen.findByText('Willkommen bei KasselDIALOG')).closest('div[class*="pt-"]'))
       .toHaveClass('pt-content-top');
   });
 
@@ -18,7 +18,7 @@ describe('AdminDashboardScreen', () => {
     renderWithProviders(<AdminDashboardScreen onEnterSession={noop} onSignOut={noop} />, {
       brand: 'ssf',
     });
-    expect(await screen.findByText('Willkommen bei Smart Speech Flow')).toBeInTheDocument();
+    expect(await screen.findByText('Willkommen bei KasselDIALOG')).toBeInTheDocument();
   });
 
   it('welcomes the Kassel tenant', async () => {

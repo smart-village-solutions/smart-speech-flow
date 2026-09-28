@@ -8,6 +8,7 @@ import { TenantLoginScreen } from '@/features/login/TenantLoginScreen';
 function renderScreen(list: () => Promise<LoginTenant[]>) {
   return renderWithProviders(<TenantLoginScreen />, {
     locale: 'de',
+    brand: 'kassel',
     services: { loginTenant: { list } },
   });
 }
@@ -84,7 +85,7 @@ describe('TenantLoginScreen', () => {
     renderScreen(async () => []);
 
     expect(screen.getByRole('banner')).toHaveClass('bg-white');
-    expect(screen.getByRole('img', { name: 'Smart Speech Flow' })).toHaveAttribute(
+    expect(screen.getByRole('img', { name: 'KasselDIALOG' })).toHaveAttribute(
       'src',
       '/assets/Logo.png'
     );

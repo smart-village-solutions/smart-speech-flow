@@ -741,7 +741,7 @@
   },
   "info": {
     "description": "\n    Echtzeit-Sprachverarbeitung und Übersetzung mit WebSocket-Unterstützung.\n\n    ## Session Workflow\n\n    1. **Admin** erstellt Session via `/api/admin/session/create`\n    2. **Customer** aktiviert Session via `/api/customer/session/activate`\n    3. Beide beziehen ein kurzlebiges Realtime-Ticket und verbinden sich über\n       ihren rollenspezifischen WebSocket-Endpunkt\n    4. Nachrichten werden bidirektional übersetzt und zugestellt\n\n    ## Connection Types\n\n    - `admin`: Deutschsprachiger Mitarbeiter (administrative staff member)\n    - `customer`: Mehrsprachiger Kunde/Bürger (multilingual end-user/citizen)\n\n    ## WebSocket Architecture\n\n    Das System verwendet einen zentralen **WebSocketManager** als Singleton:\n    - Eine Instanz verwaltet alle Verbindungen\n    - Dependency Injection via `get_websocket_manager()`\n    - Differenzierte Broadcasts (Admin ≠ Customer Nachricht)\n    - Prometheus Metrics für Monitoring\n    ",
-    "title": "Smart Speech Flow API Gateway",
+    "title": "KasselDIALOG API Gateway",
     "version": "1.1.0"
   },
   "openapi": "3.1.0",

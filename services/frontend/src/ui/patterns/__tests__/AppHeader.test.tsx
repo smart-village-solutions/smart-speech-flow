@@ -4,9 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { AppHeader } from '@/ui/patterns/AppHeader';
 
-function setup() {
+function setup(brand: 'ssf' | 'kassel' = 'kassel') {
   const handlers = { onBack: vi.fn(), onHome: vi.fn(), onFeedback: vi.fn() };
-  renderWithProviders(<AppHeader {...handlers} />);
+  renderWithProviders(<AppHeader {...handlers} />, { brand });
   return handlers;
 }
 
@@ -36,12 +36,19 @@ describe('AppHeader', () => {
   it('renders the fixed logo in a white 180px header', () => {
     setup();
 
-    const logo = screen.getByRole('img', { name: 'Smart Speech Flow' });
+    const logo = screen.getByRole('img', { name: 'KasselDIALOG' });
     expect(logo).toHaveAttribute('src', '/assets/Logo.png');
     expect(logo).toHaveClass('w-full');
 
     const header = screen.getByRole('banner');
     expect(header).toHaveClass('bg-white', 'shadow-[0_2px_6px_rgba(0,0,0,0.08)]');
     expect(header.firstElementChild).toHaveClass('h-[180px]', 'content-start');
+  });
+
+  it('uses the catalogue name instead of a Kassel image for another brand', () => {
+    setup('ssf');
+
+    expect(screen.getByText('KasselDIALOG')).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'KasselDIALOG' })).not.toBeInTheDocument();
   });
 });

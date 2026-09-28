@@ -22,6 +22,27 @@ function read(catalogue: Record<string, unknown>, key: string): unknown {
 const byName = (a: string, b: string) => a.localeCompare(b);
 
 describe('translation catalogues', () => {
+  it('uses the deployment name in customer and admin copy', () => {
+    for (const locale of SUPPORTED_UI_LOCALES) {
+      const instance = createI18n(locale);
+      expect(instance.t('app.name')).toBe('KasselDIALOG');
+      expect(instance.t('consent.intro')).toContain('KasselDIALOG');
+      expect(instance.t('feedback.nps.question')).toContain('KasselDIALOG');
+      expect(instance.t('feedback.thanksBody')).toContain('KasselDIALOG');
+      if (locale === 'de' || locale === 'en') {
+        expect(instance.t('admin.dashboard.intro')).toContain('KasselDIALOG');
+      }
+    }
+  });
+
+  it('updates branded copy when a deployment changes its catalogue name', () => {
+    const instance = createI18n('de');
+    instance.addResource('de', 'translation', 'app.name', 'FuldaDIALOG');
+
+    expect(instance.t('consent.intro')).toContain('FuldaDIALOG');
+    expect(instance.t('feedback.nps.question')).toContain('FuldaDIALOG');
+    expect(instance.t('admin.dashboard.welcome.kassel')).toBe('Willkommen bei FuldaDIALOG');
+  });
   // Customer keys must exist in all ten locales. The admin namespace is
   // German and English only and has its own parity test below.
   const customerKeys = (catalogue: Record<string, unknown>) =>

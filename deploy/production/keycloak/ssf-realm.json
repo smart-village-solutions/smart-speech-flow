@@ -1,7 +1,7 @@
 {
   "realm": "ssf",
   "enabled": true,
-  "displayName": "Smart Speech Flow",
+  "displayName": "KasselDIALOG",
   "loginTheme": "kasseldialog",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
@@ -10,14 +10,14 @@
     "realm": [
       {
         "name": "ssf-user",
-        "description": "Administrative access to Smart Speech Flow"
+        "description": "Administrative access to KasselDIALOG"
       }
     ]
   },
   "clients": [
     {
       "clientId": "ssf-frontend",
-      "name": "Smart Speech Flow Frontend",
+      "name": "KasselDIALOG Frontend",
       "enabled": true,
       "publicClient": true,
       "protocol": "openid-connect",

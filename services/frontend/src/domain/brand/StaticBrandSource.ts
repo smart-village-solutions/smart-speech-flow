@@ -3,8 +3,8 @@ import type { BrandSource } from './brand.port';
 import type { BrandDefinition } from './brand.types';
 
 const BRANDS: BrandDefinition[] = [
-  { id: 'ssf', displayName: 'Smart Speech Flow' },
-  { id: 'kassel', displayName: 'Kassel Dialog' },
+  { id: 'ssf' },
+  { id: 'kassel' },
 ];
 
 export function createStaticBrandSource(defaultBrand: BrandId): BrandSource {

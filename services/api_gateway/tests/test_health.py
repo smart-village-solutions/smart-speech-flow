@@ -8,4 +8,4 @@ client = TestClient(app)
 def test_index():
     response = client.get("/")
     assert response.status_code == 200
-    assert "Smart Speech Flow API Gateway" in response.text
+    assert "<title>KasselDIALOG API Gateway</title>" in response.text

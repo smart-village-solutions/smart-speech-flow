@@ -22,11 +22,11 @@ function tree() {
 
 describe('AccessCodeScreen', () => {
   it('uses the shared fixed header above the start-page content', () => {
-    renderWithProviders(tree());
+    renderWithProviders(tree(), { brand: 'kassel' });
 
     const header = screen.getByRole('banner');
     expect(header).toHaveClass('bg-white');
-    expect(screen.getByRole('img', { name: 'Smart Speech Flow' })).toHaveAttribute(
+    expect(screen.getByRole('img', { name: 'KasselDIALOG' })).toHaveAttribute(
       'src',
       '/assets/Logo.png'
     );

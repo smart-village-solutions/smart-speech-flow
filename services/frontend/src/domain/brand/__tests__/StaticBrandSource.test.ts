@@ -4,8 +4,8 @@ import { createStaticBrandSource } from '@/domain/brand/StaticBrandSource';
 describe('createStaticBrandSource', () => {
   it('lists both brands', () => {
     expect(createStaticBrandSource('ssf').list()).toEqual([
-      { id: 'ssf', displayName: 'Smart Speech Flow' },
-      { id: 'kassel', displayName: 'Kassel Dialog' },
+      { id: 'ssf' },
+      { id: 'kassel' },
     ]);
   });
 

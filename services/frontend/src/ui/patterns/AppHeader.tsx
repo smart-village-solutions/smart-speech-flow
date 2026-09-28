@@ -3,6 +3,7 @@ import { ArrowLeft, Home, Lightbulb, Moon, Sun } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { IconButton } from '@/ui/primitives/IconButton';
 import { useTheme } from '@/app/providers/theme';
+import { useBrand } from '@/app/providers/brand';
 
 interface AppHeaderProps {
   onBack: () => void;
@@ -22,6 +23,7 @@ export function AppHeader({
   trailing,
 }: Readonly<AppHeaderProps>) {
   const { t } = useTranslation();
+  const { brand } = useBrand();
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -57,11 +59,17 @@ export function AppHeader({
         </div>
 
         <div className="order-1 flex h-[108px] w-full flex-none justify-center md:order-2 md:h-full md:flex-1">
-          <img
-            src="/assets/Logo.png"
-            alt="Smart Speech Flow"
-            className="h-full w-full object-contain"
-          />
+          {brand === 'kassel' ? (
+            <img
+              src="/assets/Logo.png"
+              alt={t('app.name')}
+              className="h-full w-full object-contain"
+            />
+          ) : (
+            <span className="self-center text-center text-3xl font-semibold text-black">
+              {t('app.name')}
+            </span>
+          )}
         </div>
 
         <div className="order-3 flex flex-1 items-center justify-end gap-6 md:flex-none">

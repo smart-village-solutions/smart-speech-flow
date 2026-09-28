@@ -1,4 +1,7 @@
 {
+  "app": {
+    "name": "KasselDIALOG"
+  },
   "header": {
     "back": "Geri",
     "home": "Başlangıç",
@@ -20,11 +23,11 @@
     "retry": "Tekrar deneyin"
   },
   "consent": {
-    "intro": "Smart Speech Flow, farklı diller konuşan kişiler arasındaki görüşmeleri desteklemek için tasarlanmış otomatik bir gerçek zamanlı çeviri hizmetidir. Hizmet yalnızca ayrılmış, özel bir sunucuda çalışır.",
+    "intro": "$t(app.name), farklı diller konuşan kişiler arasındaki görüşmeleri desteklemek için tasarlanmış otomatik bir gerçek zamanlı çeviri hizmetidir. Hizmet yalnızca ayrılmış, özel bir sunucuda çalışır.",
     "howTo": "Kaydı başlatmak için mikrofon düğmesine dokunun. Konuşmak için 20 saniyeniz olacak. Bir kez daha dokunarak kaydı daha erken sonlandırabilirsiniz. Alternatif olarak metin girişini kullanabilirsiniz.",
     "retention": "Varsayılan olarak ses ve yazıya dökme verileri yalnızca etkin oturum sırasında işlenir ve sonrasında saklanmaz. Görüşme sona erdiğinde veriler otomatik olarak silinir. Uygulama içindeki geri bildirim işlevini kullanarak istediğiniz zaman sorun bildirebilir veya iyileştirme önerileri paylaşabilirsiniz.",
-    "optIn": "Smart Speech Flow'u geliştirmemize yardımcı olmak isterseniz, görüşme verilerinizin 180 güne kadar saklanmasına izin verebilirsiniz. Bu veriler yalnızca Smart Speech Flow projesi kapsamında analiz ve kalite iyileştirme amacıyla kullanılır.",
-    "checkbox": "Smart Speech Flow'un geliştirilmesi amacıyla görüşme verilerimin 180 güne kadar saklanmasını kabul ediyorum.",
+    "optIn": "$t(app.name)'u geliştirmemize yardımcı olmak isterseniz, görüşme verilerinizin 180 güne kadar saklanmasına izin verebilirsiniz. Bu veriler yalnızca $t(app.name) projesi kapsamında analiz ve kalite iyileştirme amacıyla kullanılır.",
+    "checkbox": "$t(app.name)'un geliştirilmesi amacıyla görüşme verilerimin 180 güne kadar saklanmasını kabul ediyorum.",
     "getStarted": "Başlayın"
   },
   "conversation": {
@@ -59,18 +62,18 @@
     },
     "nps": {
       "label": "Tavsiye",
-      "question": "Smart Speech Flow'u bir meslektaşınıza tavsiye etme olasılığınız nedir?",
+      "question": "$t(app.name)'u bir meslektaşınıza tavsiye etme olasılığınız nedir?",
       "low": "Hiç olası değil",
       "high": "Son derece olası",
       "option": "Puan {{score}}"
     },
     "improvements": {
       "label": "İyileştirme önerileri",
-      "question": "Smart Speech Flow'u daha da iyi yapacak şey ne olurdu?",
+      "question": "$t(app.name)'u daha da iyi yapacak şey ne olurdu?",
       "placeholder": "Fikirleriniz, istekleriniz veya sizi rahatsız eden her şey…"
     },
     "notice": {
-      "purpose": "Yanıtlarınız yalnızca Smart Speech Flow'u geliştirmek için kullanılır.",
+      "purpose": "Yanıtlarınız yalnızca $t(app.name)'u geliştirmek için kullanılır.",
       "retention": "Geri bildirimi on iki ay saklıyor ve bu sürenin sonunda otomatik olarak siliyoruz.",
       "withdrawal": "Geri bildiriminizi dilediğiniz zaman geri çektirebilirsiniz; bunun için görevlilere başvurun."
     },
@@ -80,7 +83,7 @@
     "retry": "Tekrar gönder",
     "failed": "Geri bildiriminiz gönderilemedi. Yanıtlarınız korundu.",
     "thanksTitle": "Teşekkür ederiz!",
-    "thanksBody": "Geri bildiriminiz Smart Speech Flow'u herkes için geliştirmemize yardımcı oluyor."
+    "thanksBody": "Geri bildiriminiz $t(app.name)'u herkes için geliştirmemize yardımcı oluyor."
   },
   "errors": {
     "network": "Sunucuya bağlanılamıyor.",

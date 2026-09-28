@@ -1,5 +1,15 @@
 # Smart Speech Flow Frontend
 
+## Deployment display name
+
+Set `app.name` in every `src/i18n/locales/*.json` catalogue for the deployment.
+Customer and staff copy, accessible logo names, and the browser title use this
+value. The initial HTML title is taken from `de.json` when Vite builds the app.
+The Kassel deployment uses `KasselDIALOG`. The gateway uses `SSF_DISPLAY_NAME`
+for its landing page and API title; set it to the same name on another server.
+For a different visual brand, build the frontend image with
+`--build-arg VITE_BRAND=ssf`; its header displays the catalogue name as text.
+
 ## Beschreibung
 
 Das Frontend ist eine React-, TypeScript- und Vite-Anwendung fuer die sessionbasierte Nutzung von Smart Speech Flow.
