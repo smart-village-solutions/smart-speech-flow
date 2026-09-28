@@ -36,7 +36,6 @@ async def test_lifespan_reports_a_background_task_failure_during_shutdown(
     monkeypatch.setattr(gateway, "circuit_breaker_monitor", second_failure)
     for task_name in (
         "websocket_monitor_task",
-        "websocket_fallback_task",
         "audio_cleanup_task",
         "feedback_maintenance_task",
         "feedback_connect_task",

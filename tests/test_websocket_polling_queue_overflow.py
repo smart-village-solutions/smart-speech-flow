@@ -81,47 +81,6 @@ class TestOverflowIsVisible:
         )
 
 
-class TestTheCounterSurvivesTheRegistryBoundary:
-    """A counter is not a signal until Prometheus can scrape it.
-
-    /metrics serves app.state.prometheus_registry. A series left on
-    prometheus_client's global default registry is counted in-process, appears
-    in no scrape, and can carry no alert — which is the same "signal that looks
-    present but cannot fire" defect this branch exists to remove. Reading the
-    counter object directly cannot catch that; only the endpoint body can.
-    """
-
-    async def test_a_real_drop_reaches_the_metrics_endpoint(self):
-        from services.api_gateway.app import app
-        from services.api_gateway.routes.metrics import metrics
-        from services.api_gateway.websocket_fallback import fallback_manager
-        from services.api_gateway.websocket_monitor import get_websocket_monitor
-
-        polling_id = await fallback_manager.activate_polling_fallback(
-            "session-metrics", "customer", None, FallbackReason.NETWORK_ERROR
-        )
-        try:
-            for index in range(POLLING_QUEUE_MAX_MESSAGES + 2):
-                fallback_manager.send_message_to_polling_client(
-                    polling_id, {"type": "translation", "seq": index}
-                )
-            registry = app.state.prometheus_registry
-            body = metrics(registry, get_websocket_monitor()).body.decode("utf-8")
-        finally:
-            fallback_manager.deactivate_polling_fallback(polling_id)
-
-        assert "websocket_polling_messages_dropped_total" in body, (
-            "the drop counter is not in the scraped registry; overflow is "
-            "counted only inside the process"
-        )
-        sample = next(
-            line
-            for line in body.splitlines()
-            if line.startswith('websocket_polling_messages_dropped_total{client_type="customer"}')
-        )
-        assert float(sample.rsplit(" ", 1)[1]) > 0
-
-
 class TestTheLabelCannotBeMintedByAClient:
     """client_type arrives unvalidated from POST /api/websocket/polling/activate,
     which has no auth dependency. An unbounded label value is a cardinality

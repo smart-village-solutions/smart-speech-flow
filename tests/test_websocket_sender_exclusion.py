@@ -16,40 +16,37 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from services.api_gateway import websocket as ws
-from services.api_gateway.legacy_session_manager import LegacySessionManager
+from services.api_gateway.tenant_session import TenantSessionKey
+from tests.realtime_sessions import TENANT, open_session, tenant_session_manager
 
 
-@pytest.fixture(autouse=True)
-def _silent_monitor(monkeypatch):
-    """broadcast_to_session reports every send to the monitor."""
-    monkeypatch.setattr(ws, "get_websocket_monitor", lambda: Mock())
-
-
-def _register(manager: ws.WebSocketManager, session_id: str, client_type: ws.ClientType):
+def _register(manager: ws.WebSocketManager, key: TenantSessionKey, client_type: ws.ClientType):
     """Register a live connection the way connect_websocket does."""
-    connection_id = manager._build_connection_id(session_id, client_type)
+    connection_id = manager._build_connection_id(key, client_type)
     socket = Mock()
     socket.send_json = AsyncMock()
     connection = ws.WebSocketConnection(
         websocket=socket,
         client_type=client_type,
-        session_id=session_id,
+        session_id=key.session_id,
         connected_at=datetime.now(timezone.utc),
         last_heartbeat=datetime.now(timezone.utc),
         state=ws.ConnectionState.CONNECTED,
+        key=key,
     )
-    manager.session_connections.setdefault(session_id, {})[connection_id] = connection
+    manager.session_connections.setdefault(key, {})[connection_id] = connection
     manager.all_connections[connection_id] = connection
     return connection_id, connection, socket
 
 
 @pytest.fixture
 def session():
-    manager = ws.WebSocketManager(LegacySessionManager())
-    _, admin, admin_socket = _register(manager, "session-1", ws.ClientType.ADMIN)
-    _, customer, customer_socket = _register(
-        manager, "session-1", ws.ClientType.CUSTOMER
-    )
+    sessions = tenant_session_manager()
+    key = open_session(sessions, "session-1")
+    # broadcast_to_session reports every send to the monitor.
+    manager = ws.WebSocketManager(sessions, monitor=Mock())
+    _, admin, admin_socket = _register(manager, key, ws.ClientType.ADMIN)
+    _, customer, customer_socket = _register(manager, key, ws.ClientType.CUSTOMER)
     return {
         "manager": manager,
         "admin": admin,
@@ -97,6 +94,7 @@ class TestTheExclusionUsesTheRegisteredId:
             connected_at=datetime.now(timezone.utc),
             last_heartbeat=datetime.now(timezone.utc),
             state=ws.ConnectionState.CONNECTED,
+            key=TenantSessionKey(TENANT, "session-1"),
         )
 
         assert session["manager"]._registered_connection_id(stranger) is None

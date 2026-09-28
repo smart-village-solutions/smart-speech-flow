@@ -46,6 +46,7 @@ from services.api_gateway.tenant_session import (
 )
 from services.api_gateway.websocket import WebSocketManager
 from services.api_gateway.websocket_polling_routes import TenantPollingStore
+from tests.realtime_sessions import websocket_monitor
 
 REVISION = f"sha256:{'a' * 64}"
 _CLIENT_ADDRESSES = itertools.count(1)
@@ -465,7 +466,7 @@ async def test_malformed_same_id_registries_and_cleanup_remain_tenant_isolated()
 
     key_a = TenantSessionKey("tenant-a", "DUPL1234")
     key_b = TenantSessionKey("tenant-b", "DUPL1234")
-    sockets = WebSocketManager(Presence())
+    sockets = WebSocketManager(Presence(), monitor=websocket_monitor())
     sockets.start_heartbeat_system = AsyncMock()
     socket_a = AsyncMock()
     socket_b = AsyncMock()

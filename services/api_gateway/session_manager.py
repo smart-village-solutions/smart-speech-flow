@@ -457,12 +457,25 @@ KeyT = TypeVar("KeyT")
 KeyT_contra = TypeVar("KeyT_contra", contravariant=True)
 
 
-class SessionRegistry(Protocol[KeyT_contra]):
-    """What the WebSocket manager needs from either session manager.
+class SessionSockets[KeyT_in](Protocol):
+    """What a session manager calls on the realtime side of its app.
 
-    Generic in the key rather than widened to `Any`: `TenantSessionManager`
-    is a `SessionRegistry[TenantSessionKey]` and `LegacySessionManager` a
-    `SessionRegistry[str]`, so neither accepts the other's identifiers.
+    `WebSocketManager` is a `SessionSockets[TenantSessionKey]`. The legacy
+    adapter's `SessionSockets[str]` is satisfied only by test doubles now.
+    The key is inferred contravariant: it appears only as a parameter.
+    """
+
+    async def handle_session_termination(self, session_id: KeyT_in, reason: str) -> None: ...
+
+    async def broadcast_to_session(self, session_id: KeyT_in, message: Dict[str, Any]) -> None: ...
+
+
+class SessionRegistry(Protocol[KeyT_contra]):
+    """What the WebSocket manager needs from a session manager.
+
+    Generic in the key rather than widened to `Any`. The WebSocket manager
+    takes a `SessionRegistry[TenantSessionKey]`, which `TenantSessionManager`
+    is; `LegacySessionManager` is only a `SessionRegistry[str]`.
     """
 
     def register_websocket_manager(self, manager: WebSocketManager) -> None: ...
@@ -493,13 +506,13 @@ class SessionManagerBase(Generic[KeyT]):
         self.clock = clock
         self.pseudonymizer = pseudonymizer or SessionPseudonymizer.from_environment()
         self.sessions: Dict[KeyT, Session] = {}
-        self.websocket_manager: Optional[WebSocketManager] = None
+        self.websocket_manager: Optional[SessionSockets[KeyT]] = None
 
     def attach_quality_telemetry(self, telemetry: Optional[Any]) -> None:
         """Wired by the gateway's lifespan; None detaches it on teardown."""
         self.quality_telemetry = telemetry
 
-    def register_websocket_manager(self, manager: WebSocketManager) -> None:
+    def register_websocket_manager(self, manager: SessionSockets[KeyT]) -> None:
         """WebSocketManager-Referenz für bidirektionale Cleanup-Prozesse registrieren."""
         self.websocket_manager = manager
 
@@ -1140,15 +1153,9 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
     async def heartbeat_received(
         self, session_id: TenantSessionKey, client_type: ClientType
     ) -> None:
-        """Heartbeat von Client empfangen und beantworten"""
-        if self.websocket_manager:
-            response = {
-                "type": "heartbeat_response",
-                "session_id": session_id.session_id,
-                "client_type": client_type.value,
-                "timestamp": utc_now().isoformat(),
-            }
-            # WebSocketManager has no send_to_client; no production path calls this.
-            await self.websocket_manager.send_to_client(  # type: ignore[attr-defined]
-                session_id, client_type, response
-            )
+        """A heartbeat changes no business or timeout state of a tenant session.
+
+        The WebSocket manager answers pings and tracks liveness itself; the
+        reconnect grace runs on admin presence, not on heartbeats.
+        """
+        await asyncio.sleep(0)

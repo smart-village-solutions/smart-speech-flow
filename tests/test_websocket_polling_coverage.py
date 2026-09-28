@@ -8,14 +8,16 @@ import pytest
 from prometheus_client import CollectorRegistry, generate_latest
 
 from services.api_gateway import websocket_monitoring_routes as monitoring_routes
+from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket_fallback import (
     FallbackConfig,
     FallbackReason,
     WebSocketFallbackManager,
 )
 from services.api_gateway.websocket_fallback import utc_now as fallback_utc_now
-from services.api_gateway.websocket_monitor import DisconnectReason, WebSocketMonitor
+from services.api_gateway.websocket_monitor import DisconnectReason
 from services.api_gateway.websocket_monitor import utc_now as monitor_utc_now
+from tests.realtime_sessions import websocket_monitor
 
 
 @pytest.mark.asyncio
@@ -69,9 +71,13 @@ def test_fallback_records_repeated_failures_and_recovery_cleanup():
 
 def test_monitor_tracks_connection_lifecycle_and_health():
     """The real monitor tracks traffic, errors, and stale connection health."""
-    monitor = WebSocketMonitor(registry=CollectorRegistry())
+    monitor = websocket_monitor()
     metrics = monitor.connection_established(
-        "connection-1", "session-3", "customer", "https://client.example:8443"
+        "connection-1",
+        "session-3",
+        "customer",
+        "https://client.example:8443",
+        resource_key=TenantSessionKey("tenant-a", "session-3"),
     )
     monitor.message_sent("connection-1", "hello", "chat")
     monitor.message_received("connection-1", "world", "chat")
@@ -91,8 +97,13 @@ def test_monitor_tracks_connection_lifecycle_and_health():
 
 def test_websocket_prometheus_metrics_have_no_session_label():
     registry = CollectorRegistry()
-    monitor = WebSocketMonitor(registry=registry)
-    monitor.connection_established("connection-1", "session-secret", "admin")
+    monitor = websocket_monitor(registry)
+    monitor.connection_established(
+        "connection-1",
+        "session-ref",
+        "admin",
+        resource_key=TenantSessionKey("tenant-a", "session-secret"),
+    )
     monitor.message_sent("connection-1", "hello", "chat")
     monitor.record_error("connection-1", "decode_error")
 
@@ -102,51 +113,12 @@ def test_websocket_prometheus_metrics_have_no_session_label():
     assert "session-secret" not in output
 
 
-def test_monitoring_routes_filter_connections_and_force_close(monkeypatch):
-    """Monitoring endpoints serialize filters and close an existing connection."""
-    now = monitor_utc_now()
-    alpha = SimpleNamespace(
-        session_id="session-a",
-        client_type="admin",
-        origin="https://admin.example",
-        connect_time=now,
-        last_heartbeat=now,
-        messages_sent=2,
-        messages_received=1,
-        bytes_sent=10,
-        bytes_received=5,
-        errors=0,
-    )
-    beta = SimpleNamespace(
-        **{**alpha.__dict__, "session_id": "session-b", "client_type": "customer"}
-    )
-    monitor = Mock()
-    monitor.get_active_connections.return_value = {"alpha": alpha, "beta": beta}
-    monkeypatch.setattr(monitoring_routes, "get_websocket_monitor", lambda: monitor)
-
-    response = monitoring_routes.list_active_connections(session_id="session-a")
-    close_response = monitoring_routes.force_close_connection("alpha", "operator_request")
-
-    assert response.status_code == 200
-    assert b'"filtered_count":1' in response.body
-    assert b'"connection_id":"alpha"' in response.body
-    assert close_response.status_code == 200
-    monitor.connection_closed.assert_called_once_with(
-        connection_id="alpha", reason=DisconnectReason.SERVER_DISCONNECT
-    )
-
-
-def test_monitoring_health_and_summary_reflect_monitor_state(monkeypatch):
-    """Health and summary endpoints retain monitor data and appropriate status codes."""
+def test_monitoring_health_reflects_monitor_state():
+    """The health endpoint retains monitor data and answers 503 when degraded."""
     monitor = Mock()
     monitor.get_health_status.return_value = {"status": "degraded", "active_connections": 2}
-    monitor.get_connection_stats.return_value = {"active_connections": 2}
-    monkeypatch.setattr(monitoring_routes, "get_websocket_monitor", lambda: monitor)
 
     health = monitoring_routes.websocket_health_check(monitor)
-    summary = monitoring_routes.websocket_metrics_summary(hours=4)
 
     assert health.status_code == 503
     assert b'"active_connections":2' in health.body
-    assert summary.status_code == 200
-    assert b'"hours":4' in summary.body

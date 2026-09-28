@@ -43,7 +43,7 @@ Existing app-state services migrate into the container without behavioral change
 | Runtime policy gate | lifespan (`_build_runtime_policy`), handed to `build_gateway_dependencies`, which gives it to the session manager; shutdown clears it there | none; message persistence reads `TenantSessionManager.runtime_policy` | container |
 | Realtime ticket store (`RealtimeTicketStore`) | `build_gateway_dependencies`, over a `RedisRealtimeTicketBackend` wrapping the lifespan's verified Redis client, with its namespace, or a `MemoryRealtimeTicketBackend` without `REDIS_URL` | `get_realtime_ticket_store` | container |
 | Polling store | `build_gateway_dependencies` | `get_polling_store` | container |
-| WebSocket manager | `build_gateway_dependencies` | `get_websocket_manager` | container |
+| WebSocket manager | `build_gateway_dependencies`, with this app's session manager, polling store and WebSocket monitor. It starts its heartbeat task with the first socket; the lifespan stops it at shutdown | `get_websocket_manager` | container |
 | Conversation service (`ConversationService`) | `build_gateway_dependencies`, with this app's session manager, speech pipeline, audio store, pipeline admission, quality telemetry and WebSocket manager | `get_conversation_service` | container |
 | Session lifecycle service (`SessionLifecycleService`) | `build_gateway_dependencies`, with this app's session manager | `get_session_lifecycle` | container |
 | Studio runtime flow | lifespan (`runtime_flow_from_environment`), which also binds the persistence gate with it | `get_studio_runtime_flow`; `None` when Studio is unconfigured | container |
@@ -57,10 +57,10 @@ Existing app-state services migrate into the container without behavioral change
 | Audio validator (`WavAudioValidator`) | `build_gateway_dependencies` | none; `SpeechPipeline.validator` | container |
 | Audio store (`AudioStore`) | `build_gateway_dependencies` (`AudioStore.from_environment()`, which reads `SSF_AUDIO_BASE_DIR` as it runs) | none; the conversation service and the session manager by constructor, `audio_cleanup_task` from the lifespan's container | container |
 | Translation refiner and its candidate executor | lifespan (`get_translation_refiner`), first, so a malformed `LLM_REFINEMENT_*` setting refuses startup before anything connects. The shadow-compare refiner owns its executor, and the lifespan shuts it down | none; `SpeechPipeline.refiner`, to which the lifespan attaches telemetry and metrics | container |
-| `fallback_manager` | module instance | none; its background task reads the container | adapter until PR6 |
-| WebSocket monitor (`websocket_monitor.websocket_monitor`) | `initialize_websocket_monitor` in `app.py`, rebinding the module global | `get_connection_monitor` | adapter until PR6 |
-| Session pseudonymizer | the WebSocket monitor (`SessionPseudonymizer.from_environment`); `build_gateway_dependencies` takes the monitor's | none; injected into the session manager, the feedback service and feedback maintenance, and read by the session access guards through the manager | shared with the WebSocket monitor until PR6 |
-| Prometheus registry and metric objects | `app.py` and `audio_storage.py` at import, attached by `create_app()` | `get_prometheus_registry` | adapter until PR7 |
+| `fallback_manager` | module instance in `websocket_fallback.py`, which nothing imports since PR6b | none | unwired; PR7 deletes the module |
+| WebSocket monitor (`WebSocketMonitor`) | `build_gateway_dependencies`, with this app's pseudonymizer, counting into the process-wide `WebSocketMetrics` | `get_connection_monitor`, for `/api/websocket/monitoring/health`; the WebSocket manager by constructor | container |
+| Session pseudonymizer | `build_gateway_dependencies` (`SessionPseudonymizer.from_environment()`) | none; injected into the session manager, the WebSocket monitor, the feedback service and feedback maintenance, and read by the session access guards through the manager | container |
+| Prometheus registry and metric objects, including the realtime series (`WebSocketMetrics`) | `app.py` and `audio_storage.py` at import, attached by `create_app()` (`app.state.prometheus_registry`, `app.state.websocket_metrics`) | `get_prometheus_registry` | adapter until PR7 |
 | OIDC key cache (`auth._key_cache`) | module instance | `get_oidc_key_cache` | adapter until PR7 |
 | Latest rate-limit middleware (`rate_limiter.LATEST_RATE_LIMIT_MIDDLEWARE`) | the middleware, rebinding the module global when it is built | none | adapter until PR7 |
 
@@ -71,7 +71,7 @@ Rules:
 - A provider takes only the `HTTPConnection`, so it serves HTTP and WebSocket routes alike and adds nothing to the OpenAPI document.
 - Route handlers reach collaborators only through `Depends(provider)`.
 - Tests replace a collaborator with `app.dependency_overrides[provider]`, or build their own app with `create_app()` and run its lifespan. Suites that drive the shared app without its lifespan get a fresh container per test from `tests/conftest.py`. Tests do not mutate module state.
-- `tests/test_gateway_dependency_ownership.py` enforces the first two rules and lists every remaining adapter with the PR that removes it. Its second list names the module globals still rebound through a `global` statement (the WebSocket monitor global, `LATEST_RATE_LIMIT_MIDDLEWARE`). Both lists only shrink.
+- `tests/test_gateway_dependency_ownership.py` enforces the first two rules and lists every remaining adapter with the PR that removes it. Its second list names the module globals still rebound through a `global` statement (`LATEST_RATE_LIMIT_MIDDLEWARE`). Both lists only shrink.
 - Until the PR named in the table, two apps in one process share the remaining adapters. Each app owns its session manager, so termination revokes that app's tickets and notifies that app's pollers and sockets.
 
 ### Decision: Preserve tenant-aware state
@@ -92,7 +92,8 @@ This isolates the legacy path; it does not approve deleting it. Removal still ne
 
 No single Protocol covers both managers. Their key types differ, so every key-taking method on such a Protocol would need `Any` or a `Union`. Where a consumer does serve both, it gets a Protocol limited to what it calls:
 
-- `SessionRegistry[KeyT]` in `session_manager.py`, generic in the key, for the WebSocket manager: `register_websocket_manager`, `get_session`, `add_websocket_connection`, `remove_websocket_connection`. `TenantSessionManager` is a `SessionRegistry[TenantSessionKey]` and `LegacySessionManager` a `SessionRegistry[str]`. The WebSocket manager takes `SessionRegistry[Any]` because its own session identifiers are still untyped; PR6 narrows it with the realtime boundary.
+- `SessionRegistry[KeyT]` in `session_manager.py`, generic in the key, for the WebSocket manager: `register_websocket_manager`, `get_session`, `add_websocket_connection`, `remove_websocket_connection`. `TenantSessionManager` is a `SessionRegistry[TenantSessionKey]` and `LegacySessionManager` a `SessionRegistry[str]`. The WebSocket manager takes a `SessionRegistry[TenantSessionKey]` since PR6b, so it no longer accepts the legacy manager.
+- `SessionSockets[KeyT]`, the other direction: what a session manager calls on its app's sockets, `handle_session_termination` and `broadcast_to_session`. `WebSocketManager` is a `SessionSockets[TenantSessionKey]`; the legacy manager's `SessionSockets[str]` is met only by test doubles.
 - `FeedbackSessions` in `feedback/service.py`: `resolve_customer_session`, `resolve_ended_session` and `has_unscoped_session`, all keyed by the bare id a browser sends. A tenant session is never stored under a bare id, so `TenantSessionManager.has_unscoped_session` is always false.
 
 ### Decision: Separate transport responsibilities
@@ -135,6 +136,18 @@ Route adapters call application services; application services depend on typed p
 - `RealtimeTicketStore` takes the backend instead of `redis: Any`. The hashed keys, the payload, the `hmac` comparisons, the revocation check and the mapping of any backend exception to `RealtimeTicketUnavailable` are unchanged. `build_gateway_dependencies` wraps the verified Redis client in the adapter.
 - `tests/integration/test_realtime_ticket_redis.py` runs the store and the adapter against a real Redis, with a decoding and a bytes client: single use, one winner among twenty concurrent consumers, expiry, the spent mismatches, revocation and its refreshed lifetime, and the key layout and payload. It passed unchanged before the port existed. It skips unless `SSF_TEST_REDIS_URL` is set, and CI has no Redis, so CI skips it. `tests/test_realtime_ticket.py` holds the memory adapter to the same contract cases, and unit-tests the Redis adapter's commands against a recording client.
 - `realtime_ticket` stays on the mypy ignore list. Its remaining findings are in the payload validation, which this slice leaves as it is.
+
+#### Realtime ownership (PR6b)
+
+- `WebSocketMetrics` (`websocket_monitor.py`) holds every realtime Prometheus series, `websocket_monitor_initialized` included, and `websocket_polling_messages_dropped_total`, which nothing counts since the fallback is unwired but which stays exposed until PR7. A series registers once per registry, so `app.py` builds it once on the module registry, as it does the other process-wide series, and `create_app()` puts it on `app.state.websocket_metrics`. Names, labels and help texts are unchanged; `tests/gateway_contract/test_contract_realtime_metrics.py` drives a real app and pins the families and label names `/metrics` exposes, and every series `monitoring/alert_rules.yml` and the Grafana dashboards query.
+- `WebSocketMonitor` is per app: connection records, history and the session index. `build_gateway_dependencies` builds it with the lifespan's `WebSocketMetrics` and this app's pseudonymizer, which it also builds and hands to the session manager, the feedback service and maintenance. Without the metrics argument, as when a test builds a container, the monitor counts into a registry of its own. The module global, `initialize_websocket_monitor` and `get_websocket_monitor` are gone.
+- `WebSocketManager(session_manager, polling_store, *, monitor)` takes a `SessionRegistry[TenantSessionKey]`, and every public method that names a session takes a `TenantSessionKey`. `WebSocketConnection.key` is required. The branches only a `str`-keyed session reached are gone: the legacy polling methods (`enable_polling_fallback`, `get_polling_messages`) and the `fallback_manager` evaluation after a failed send, which returned early for every tenant connection.
+- `fallback_manager` is unwired: no import or registry binding in `app.py`, no container field, no `websocket_fallback_task`. `websocket_fallback.py` stays until PR7 deletes it.
+- The WebSocket endpoints and the polling routes read the session manager through `get_session_manager`; the polling routes that only look up a poller no longer depend on the WebSocket manager at all. Neither change reaches the OpenAPI document, because providers take only the connection.
+- The heartbeat task starts with the first socket, so it is not among the lifespan's background tasks. Shutdown now stops it after those tasks; before, it outlived the lifespan (`tests/test_realtime_heartbeat_shutdown.py`).
+- `TenantSessionManager.heartbeat_received` no longer calls `send_to_client`, which `WebSocketManager` never had. A heartbeat changes no tenant session state, as before; the legacy manager's method is unchanged.
+- `websocket.py`, `websocket_monitor.py` and `websocket_polling_routes.py` are off the mypy ignore list. The polling `send` route keeps its `dict[str, str]` response model, which refuses an overflow's partial body with 500 (characterization.md), under a one-line `type: ignore[return-value]`.
+- Left for PR6c: splitting `WebSocketManager` into registry, dispatcher and heartbeat collaborators, and typed frame models.
 
 ### Decision: Four delivery slices
 

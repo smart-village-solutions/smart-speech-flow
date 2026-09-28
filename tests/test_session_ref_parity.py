@@ -34,11 +34,6 @@ async def test_the_manager_and_the_monitor_agree_on_a_session_ref_without_a_key(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     monkeypatch.delenv(SESSION_KEY_ENV, raising=False)
-    monkeypatch.setattr(
-        monitor_module,
-        "websocket_monitor",
-        monitor_module.WebSocketMonitor(registry=CollectorRegistry()),
-    )
     dependencies = build_gateway_dependencies(
         prometheus_registry=CollectorRegistry(), translation_refiner=NoOpTranslationRefiner()
     )
