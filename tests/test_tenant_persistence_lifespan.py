@@ -11,6 +11,7 @@ import pytest
 from starlette.websockets import WebSocketState
 
 from services.api_gateway.app import app, lifespan
+from services.api_gateway.realtime_ticket import RedisRealtimeTicketBackend
 from services.api_gateway.session_manager import (
     ClientType,
     SessionMessage,
@@ -184,7 +185,8 @@ async def test_production_startup_uses_shared_redis_and_survives_restart(
         session_manager = dependencies.session_manager
         assert isinstance(session_manager.store, RedisTenantSessionStore)
         assert session_manager.store.redis is redis
-        assert dependencies.realtime_tickets.redis is redis
+        assert isinstance(dependencies.realtime_tickets.backend, RedisRealtimeTicketBackend)
+        assert dependencies.realtime_tickets.backend.redis is redis
         assert session_manager.websocket_manager is dependencies.websocket_manager
         session = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
         issued = dependencies.realtime_tickets.issue(session.key, "websocket")

@@ -7,11 +7,6 @@ import pytest
 from fastapi import HTTPException, Request
 
 import services.api_gateway.app as gateway
-from services.api_gateway.realtime_ticket import (
-    CONSUME_TICKET_LUA,
-    MemoryRealtimeTicketBackend,
-    RealtimeTicketStore,
-)
 from services.api_gateway.routes import admin, customer
 from services.api_gateway.session_lifecycle import SessionLifecycleService
 from services.api_gateway.studio_login_directory_client import DirectoryTransport
@@ -60,30 +55,6 @@ async def test_lifespan_reports_a_background_task_failure_during_shutdown(
         "Background task shutdown error: first background task failed",
         "Background task shutdown error: second background task failed",
     ]
-
-
-@pytest.mark.parametrize(
-    ("script", "number_of_keys"),
-    [
-        pytest.param("return nil", 1, id="unexpected-script"),
-        pytest.param(CONSUME_TICKET_LUA, 2, id="unexpected-key-count"),
-    ],
-)
-def test_memory_ticket_backend_rejects_invalid_eval_without_consuming_ticket(
-    script: str, number_of_keys: int
-) -> None:
-    """A rejected Redis contract must leave the single-use ticket available."""
-    backend = MemoryRealtimeTicketBackend()
-    store = RealtimeTicketStore(backend)
-    session_key = TenantSessionKey("tenant-test", "ABC12345")
-    issued = store.issue(session_key, "websocket")
-    stored_ticket_key = next(iter(backend.values))
-
-    with pytest.raises(ValueError, match="unsupported realtime ticket script"):
-        backend.eval(script, number_of_keys, stored_ticket_key)
-
-    assert store.consume(issued.ticket, session_key, "websocket") is True
-    assert store.consume(issued.ticket, session_key, "websocket") is False
 
 
 @pytest.mark.asyncio

@@ -81,6 +81,19 @@ one changes a contract test and needs its own issue.
   or not `debug=true` was sent. The record also carries host CPU and RAM figures, which are
   not pinned.
 
+Pinned against a real Redis by `test_realtime_ticket_redis.py` (found in PR6a):
+
+- A transport, session or tenant mismatch refuses the ticket and spends it: the consume
+  deletes the key before the scope is compared.
+- `revoke()` writes a marker that also refuses tickets issued after it, for as long as the
+  marker lives. `issue()` itself still succeeds for a revoked session. Whether the route should
+  refuse to issue for a terminated session stays unpinned (above).
+- A repeat `revoke()` restarts the marker's eight-hour lifetime.
+- The revocation marker's key carries the tenant as unpadded base64url:
+  `<namespace>:v2:tenant:<base64url(tenant)>:session:<id>:realtime-revoked`, value `1`.
+- Production's Redis client decodes replies; the adapter also decodes a bytes reply, and the
+  file runs every adapter case with both kinds of client.
+
 ## Accepted divergences
 Changes a later slice made on purpose, where the output differs from what came before.
 
