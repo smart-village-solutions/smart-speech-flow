@@ -9,6 +9,8 @@ const { construct, clients } = vi.hoisted(() => ({
     authenticated: boolean;
     token?: string;
     realmAccess?: { roles?: string[] };
+    tokenParsed?: Record<string, unknown>;
+    onAuthRefreshSuccess?: () => void;
     loginRequired: boolean;
     init: ReturnType<typeof vi.fn>;
     updateToken: ReturnType<typeof vi.fn>;
@@ -68,16 +70,91 @@ describe('tenant Keycloak session', () => {
     });
   });
 
-  it('returns the Studio URL only when the signed-in user is a system administrator', async () => {
+  it('shows the configured Studio URL with the tenant manage permission and no admin role', async () => {
     const auth = await import('../keycloak');
     await auth.requireKeycloakLogin(config, {
       ...kassel,
       studioUrl: 'https://smartcity.dialog.kassel.de/',
     });
+    clients[0].tokenParsed = {
+      studio_tenant_id: kassel.id,
+      ssf_permissions: ['ssf.configuration.tenant.manage'],
+    };
+    expect(auth.getStudioAdministrationUrl(kassel.id)).toBe('https://smartcity.dialog.kassel.de/');
+  });
 
-    expect(auth.getStudioUrlForSystemAdmin()).toBeNull();
+  it('does not treat the system administrator role as a manage permission', async () => {
+    const auth = await import('../keycloak');
+    await auth.requireKeycloakLogin(config, {
+      ...kassel,
+      studioUrl: 'https://smartcity.dialog.kassel.de/',
+    });
     clients[0].realmAccess = { roles: ['ssf-user', 'system_admin'] };
-    expect(auth.getStudioUrlForSystemAdmin()).toBe('https://smartcity.dialog.kassel.de/');
+    expect(auth.getStudioAdministrationUrl(kassel.id)).toBeNull();
+  });
+
+  it.each([
+    ['unresolved claims', undefined],
+    ['missing permissions', { studio_tenant_id: kassel.id }],
+    ['read permission only', { studio_tenant_id: kassel.id, ssf_permissions: ['ssf.configuration.tenant.read'] }],
+    ['a role only', { studio_tenant_id: kassel.id, ssf_roles: ['tenant_admin'] }],
+    ['another tenant', { studio_tenant_id: fulda.id, ssf_permissions: ['ssf.configuration.tenant.manage'] }],
+    ['no tenant', { ssf_permissions: ['ssf.configuration.tenant.manage'] }],
+    ['a scalar permission', { studio_tenant_id: kassel.id, ssf_permissions: 'ssf.configuration.tenant.manage' }],
+    ['a malformed permission list', { studio_tenant_id: kassel.id, ssf_permissions: [null, 'ssf.configuration.tenant.manage'] }],
+  ])('hides administration for %s', async (_reason, claims) => {
+    const auth = await import('../keycloak');
+    await auth.requireKeycloakLogin(config, { ...kassel, studioUrl: 'https://smartcity.dialog.kassel.de/' });
+    clients[0].tokenParsed = claims;
+    expect(auth.getStudioAdministrationUrl(kassel.id)).toBeNull();
+  });
+
+  it('hides administration until authentication resolves and after logout', async () => {
+    const auth = await import('../keycloak');
+    expect(auth.getStudioAdministrationUrl(kassel.id)).toBeNull();
+    const pending = auth.requireKeycloakLogin(config, { ...kassel, studioUrl: 'https://smartcity.dialog.kassel.de/' });
+    clients[0].tokenParsed = { studio_tenant_id: kassel.id, ssf_permissions: ['ssf.configuration.tenant.manage'] };
+    expect(auth.getStudioAdministrationUrl(kassel.id)).toBeNull();
+    await pending;
+    expect(auth.getStudioAdministrationUrl(kassel.id)).toBe('https://smartcity.dialog.kassel.de/');
+    clients[0].authenticated = false;
+    expect(auth.getStudioAdministrationUrl(kassel.id)).toBeNull();
+    clients[0].authenticated = true;
+    await auth.logoutFromKeycloak();
+    expect(auth.getStudioAdministrationUrl(kassel.id)).toBeNull();
+  });
+
+  it('uses only the current tenant destination and never guesses a missing URL', async () => {
+    const auth = await import('../keycloak');
+    await auth.requireKeycloakLogin(config, { ...kassel, studioUrl: 'https://smartcity.dialog.kassel.de/' });
+    clients[0].tokenParsed = { studio_tenant_id: kassel.id, ssf_permissions: ['ssf.configuration.tenant.manage'] };
+    expect(auth.getStudioAdministrationUrl(fulda.id)).toBeNull();
+    await auth.requireKeycloakLogin(config, fulda);
+    expect(auth.getStudioAdministrationUrl(kassel.id)).toBeNull();
+    clients[1].tokenParsed = { studio_tenant_id: fulda.id, ssf_permissions: ['ssf.configuration.tenant.manage'] };
+    expect(auth.getStudioAdministrationUrl(fulda.id)).toBeNull();
+    await auth.requireKeycloakLogin(config, { ...fulda, studioUrl: 'https://fulda.dialog.kassel.de/' });
+    expect(auth.getStudioAdministrationUrl(fulda.id)).toBe('https://fulda.dialog.kassel.de/');
+  });
+
+  it('notifies navigation after refreshed permissions and removes it on refresh failure', async () => {
+    const auth = await import('../keycloak');
+    await auth.requireKeycloakLogin(config, { ...kassel, studioUrl: 'https://smartcity.dialog.kassel.de/' });
+    clients[0].tokenParsed = { studio_tenant_id: kassel.id, ssf_permissions: ['ssf.configuration.tenant.manage'] };
+    const destinations: Array<string | null> = [];
+    const unsubscribe = auth.subscribeToKeycloakAuthorization(() => {
+      destinations.push(auth.getStudioAdministrationUrl(kassel.id));
+    });
+    clients[0].tokenParsed.ssf_permissions = [];
+    clients[0].onAuthRefreshSuccess?.();
+    expect(destinations).toEqual([null]);
+    clients[0].tokenParsed.ssf_permissions = ['ssf.configuration.tenant.manage'];
+    clients[0].onAuthRefreshSuccess?.();
+    expect(destinations.at(-1)).toBe('https://smartcity.dialog.kassel.de/');
+    clients[0].updateToken.mockRejectedValue(new Error('expired'));
+    await expect(auth.getAdminAccessToken()).rejects.toThrow('Keycloak session expired');
+    expect(destinations.at(-1)).toBeNull();
+    unsubscribe();
   });
 
   it('offers no account console before a tenant session is authenticated', async () => {
