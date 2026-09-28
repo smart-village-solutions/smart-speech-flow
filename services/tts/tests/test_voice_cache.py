@@ -62,11 +62,48 @@ def test_health_reports_what_each_voice_cost_to_load(client):
     assert vram["within_budget"] is True
 
 
-def test_over_budget_is_reported_without_failing_health(monkeypatch, request):
+def test_over_budget_is_reported_without_failing_health(monkeypatch, request, caplog):
     monkeypatch.setenv("TTS_VRAM_BUDGET_MIB", "400")
     data = request.getfixturevalue("client").get("/health").json()
     assert data["vram"]["within_budget"] is False
     assert data["status"] == "ok"
+    assert [r.getMessage() for r in caplog.records if r.levelname == "WARNING"] == [
+        "TTS holds 500 MiB of VRAM, over its 400 MiB budget"
+    ]
+
+
+def test_crossing_the_budget_is_logged_once_each_way(client, nvml, caplog):
+    caplog.set_level("INFO", logger="services.tts.app")
+    nvml.held += 2000 * MIB
+    client.get("/health")
+    client.get("/metrics")
+    client.get("/health")
+    nvml.held -= 2000 * MIB
+    client.get("/health")
+    client.get("/health")
+
+    messages = [(r.levelname, r.getMessage()) for r in caplog.records if "budget" in r.getMessage()]
+    assert messages == [
+        ("WARNING", "TTS holds 2500 MiB of VRAM, over its 2048 MiB budget"),
+        ("INFO", "TTS holds 500 MiB of VRAM, back within its 2048 MiB budget"),
+    ]
+
+
+@pytest.mark.parametrize("nvml", [FakeNvml(os.getpid() + 1000)])
+def test_a_gpu_process_nvml_does_not_list_is_unknown_not_empty(client, nvml):
+    vram = client.get("/health").json()["vram"]
+    assert vram["process_bytes"] is None
+    assert vram["within_budget"] is None
+    assert vram["voice_load_bytes"] == {}
+    assert math.isnan(_metric(client.get("/metrics").text, "tts_process_vram_bytes"))
+
+
+@pytest.mark.parametrize("nvml", [FakeNvml(os.getpid() + 1000)])
+def test_on_cpu_an_unlisted_process_holds_nothing(monkeypatch, request, nvml):
+    monkeypatch.setenv("TTS_DEVICE", "cpu")
+    vram = request.getfixturevalue("client").get("/health").json()["vram"]
+    assert vram["process_bytes"] == 0
+    assert vram["within_budget"] is True
 
 
 def test_growth_after_startup_is_seen_live(client, nvml):

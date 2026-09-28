@@ -187,9 +187,11 @@ groups:
       # TTS loads every voice at startup and never loads or evicts one later
       # (#224), so its VRAM should stay flat. Sustained growth past the budget
       # is memory the other models on the shared card cannot get. A warning,
-      # not TTSServiceDown: every voice still speaks.
+      # not TTSServiceDown: every voice still speaks. min_over_time needs a
+      # whole 5m window above the budget, so a synthesis in flight never
+      # counts, and it skips the NaN an NVML hiccup leaves.
       - alert: TTSVRAMOverBudget
-        expr: tts_process_vram_bytes > tts_vram_budget_bytes
+        expr: min_over_time(tts_process_vram_bytes[5m]) > tts_vram_budget_bytes
         for: 15m
         labels:
           severity: warning
@@ -197,10 +199,26 @@ groups:
         annotations:
           summary: TTS holds more VRAM than its budget.
           description: >-
-            tts_process_vram_bytes has been above tts_vram_budget_bytes
-            (TTS_VRAM_BUDGET_MIB) for 15 minutes. The "vram" block of the TTS
+            tts_process_vram_bytes has stayed above tts_vram_budget_bytes
+            (TTS_VRAM_BUDGET_MIB) for 20 minutes. The "vram" block of the TTS
             /health response shows what each voice cost to load. Restarting
             the tts container returns it to its resident footprint.
+
+      # NaN never compares greater, so while the reading is unknown the
+      # budget alert above is blind. NaN != NaN is the only test for NaN.
+      - alert: TTSVRAMUnknown
+        expr: tts_process_vram_bytes != tts_process_vram_bytes
+        for: 30m
+        labels:
+          severity: warning
+          service: tts
+        annotations:
+          summary: TTS cannot read its own VRAM.
+          description: >-
+            tts_process_vram_bytes has been NaN for 30 minutes: NVML does
+            not report the TTS process, so TTSVRAMOverBudget cannot fire.
+            Check inside the tts container that NVML's compute-process
+            list shows the server under its container PID.
 
       - alert: TranslationLatencyHigh
         expr: histogram_quantile(0.95, sum(rate(translation_request_latency_seconds_bucket[5m])) by (le)) > 3

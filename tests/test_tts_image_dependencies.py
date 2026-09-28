@@ -69,9 +69,24 @@ def _modules_the_app_imports() -> set[str]:
         if f"{module}.py" in found:
             continue
         found.add(f"{module}.py")
-        source = (TTS / f"{module}.py").read_text()
-        pending += re.findall(r"^\s*from services\.tts\.(\w+) import", source, re.MULTILINE)
+        pending += _tts_imports((TTS / f"{module}.py").read_text())
     return found
+
+
+# [ \t]*, not \s*: with MULTILINE, \s* also spans newlines and is super-linear.
+_MODULE_IMPORT = re.compile(
+    r"^[ \t]*(?:from (?:services\.tts\.|\.)(\w+) import|import services\.tts\.(\w+))",
+    re.MULTILINE,
+)
+_PACKAGE_IMPORT = re.compile(r"^[ \t]*from (?:services\.tts|\.) import ([\w ,]+)", re.MULTILINE)
+
+
+def _tts_imports(source: str) -> set[str]:
+    """Names of the services.tts modules a source file imports, in any form."""
+    modules = {first or second for first, second in _MODULE_IMPORT.findall(source)}
+    for names in _PACKAGE_IMPORT.findall(source):
+        modules |= {name.split()[0] for name in names.split(",") if name.strip()}
+    return modules
 
 
 def test_the_import_walk_reaches_every_engine():
@@ -86,3 +101,22 @@ def test_the_voices_stage_does_not_depend_on_the_python_requirements():
     stage = re.search(r"^FROM (\S+) AS voices$", dockerfile, re.MULTILINE)
     assert stage, "no voices stage"
     assert stage.group(1) == "ubuntu:24.04"
+
+
+def test_the_import_walk_recognises_every_import_form():
+    source = (
+        "from services.tts.vram import ProcessVram\n"
+        "    from services.tts import voices, speech_text as text\n"
+        "import services.tts.piper_engine\n"
+        "from .mms_engine import MmsSpeaker\n"
+        "from . import fetch_voices\n"
+        "from services.gpu_metrics import collect_gpu_metrics\n"
+    )
+    assert _tts_imports(source) == {
+        "vram",
+        "voices",
+        "speech_text",
+        "piper_engine",
+        "mms_engine",
+        "fetch_voices",
+    }

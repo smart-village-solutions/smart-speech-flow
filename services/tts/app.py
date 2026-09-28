@@ -94,16 +94,17 @@ def load_speakers(device: str, vram: ProcessVram) -> LoadedVoices:
 
     The first voice's figure includes the CUDA context.
     """
+    on_gpu = device != "cpu"
     loaded = LoadedVoices({}, {}, {})
     for lang, voice in VOICES.items():
-        before = vram.read()
+        before = vram.read(expect_context=on_gpu and bool(loaded.speakers))
         try:
             loaded.speakers[lang] = _load_speaker(voice, device)
         except Exception as exc:
             logger.exception("TTS voice %s (%s) failed to load", lang, voice.name)
             loaded.errors[lang] = f"{type(exc).__name__}: {exc}"
             continue
-        after = vram.read()
+        after = vram.read(expect_context=on_gpu)
         if before is not None and after is not None:
             loaded.vram_bytes[lang] = max(after - before, 0)
     return loaded
@@ -140,23 +141,19 @@ async def lifespan(app: FastAPI):
     slots = _positive_int_setting("TTS_MAX_CONCURRENT_SYNTHESES", "1")
     # On the production card the ten voices hold 1238 MiB after loading and
     # 1464 MiB once each has spoken, flat from then on. A live reading can
-    # also catch a synthesis in flight, which peaked at 2024 MiB.
+    # also catch a synthesis in flight: 1722 MiB at the peak above.
     budget = _positive_int_setting("TTS_VRAM_BUDGET_MIB", "2048") * MIB
     vram = ProcessVram(pynvml, os.getpid())
     loaded = await asyncio.to_thread(load_speakers, device, vram)
     app.state.speakers, app.state.load_errors = loaded.speakers, loaded.errors
     app.state.voice_vram_bytes = loaded.vram_bytes
     app.state.process_vram = vram
+    app.state.vram_on_gpu = device != "cpu"
     app.state.vram_budget_bytes = budget
+    app.state.vram_over_budget = False
     app.state.synthesis_slots = asyncio.Semaphore(slots)
     _publish_voice_metrics(loaded, budget)
-    usage = _vram_usage(app.state)
-    if usage["within_budget"] is False:
-        logger.warning(
-            "TTS holds %d MiB of VRAM after loading, over its %d MiB budget",
-            usage["process_bytes"] // MIB,
-            budget // MIB,
-        )
+    _vram_usage(app.state)
     yield
 
 
@@ -264,15 +261,34 @@ def _update_duration(debug_info: Dict[str, Any], start: float) -> None:
 def _vram_usage(state: Any) -> Dict[str, Any]:
     """Read this process's VRAM now and compare it with the budget."""
     vram = getattr(state, "process_vram", None)
-    held = vram.read() if vram is not None else None
+    expect_context = getattr(state, "vram_on_gpu", False) and bool(getattr(state, "speakers", {}))
+    held = vram.read(expect_context=expect_context) if vram is not None else None
     budget = getattr(state, "vram_budget_bytes", None)
     process_vram_bytes.set(float("nan") if held is None else held)
+    within = None if held is None or budget is None else held <= budget
+    if within is not None:
+        _log_budget_crossing(state, held, budget, within)
     return {
         "process_bytes": held,
         "budget_bytes": budget,
-        "within_budget": None if held is None or budget is None else held <= budget,
+        "within_budget": within,
         "voice_load_bytes": dict(getattr(state, "voice_vram_bytes", {})),
     }
+
+
+def _log_budget_crossing(state: Any, held: int, budget: int, within: bool) -> None:
+    over = not within
+    if over == getattr(state, "vram_over_budget", False):
+        return
+    state.vram_over_budget = over
+    if within:
+        logger.info(
+            "TTS holds %d MiB of VRAM, back within its %d MiB budget", held // MIB, budget // MIB
+        )
+    else:
+        logger.warning(
+            "TTS holds %d MiB of VRAM, over its %d MiB budget", held // MIB, budget // MIB
+        )
 
 
 def _voice_states(request: Request) -> Dict[str, Dict[str, Any]]:

@@ -18,8 +18,13 @@ class ProcessVram:
         self._pid = pid
         self._initialised = False
 
-    def read(self) -> int | None:
-        """Bytes this process holds on all cards, or None when NVML cannot tell."""
+    def read(self, *, expect_context: bool = False) -> int | None:
+        """Bytes this process holds on all cards, or None when NVML cannot tell.
+
+        A process with no CUDA context is not listed at all, which means it
+        holds nothing. Once it must hold one, not being listed means NVML is
+        reporting PIDs from another namespace, and 0 would be a lie.
+        """
         if self._nvml is None:
             return None
         try:
@@ -37,6 +42,8 @@ class ProcessVram:
         except Exception as exc:  # no NVML failure may break /health or /metrics
             logger.debug("NVML could not report this process's VRAM: %s", exc)
             return None
+        if not held:
+            return None if expect_context else 0
         if None in held:
             return None
         return sum(held)

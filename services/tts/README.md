@@ -77,8 +77,11 @@ conversation for seconds. The service instead reads its own VRAM from NVML
 and compares it with `TTS_VRAM_BUDGET_MIB` (default 2048). On the production
 card the ten voices hold 1238 MiB after loading and 1464 MiB once each has
 spoken, flat from then on; a synthesis briefly adds a few hundred. Going over
-the budget does not change `status`, because every voice still works; it
-logs a warning and, after 15 minutes, fires the `TTSVRAMOverBudget` alert.
+the budget does not change `status`, because every voice still works.
+Crossing it logs a warning (and an info line on the way back), and staying
+over it for 20 minutes fires the `TTSVRAMOverBudget` alert. When NVML cannot
+report the process, the reading is unknown (`null` in `/health`, NaN on
+`/metrics`) rather than 0, and 30 minutes of that fire `TTSVRAMUnknown`.
 A budget below 1 stops the service at startup.
 
 ```bash

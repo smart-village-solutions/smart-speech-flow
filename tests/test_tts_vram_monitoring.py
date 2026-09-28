@@ -34,9 +34,16 @@ def _overview_exprs():
     }
 
 
-def test_vram_budget_alert_compares_the_process_with_its_budget():
+def test_vram_budget_alert_needs_a_whole_window_above_the_budget():
+    """min_over_time skips NaN and ignores a synthesis peak shorter than the window."""
     rule = _alert_rules()["TTSVRAMOverBudget"]
-    assert rule["expr"] == "tts_process_vram_bytes > tts_vram_budget_bytes"
+    assert rule["expr"] == "min_over_time(tts_process_vram_bytes[5m]) > tts_vram_budget_bytes"
+    assert rule["labels"]["severity"] == "warning"
+
+
+def test_a_vram_reading_that_stays_unknown_is_alerted():
+    rule = _alert_rules()["TTSVRAMUnknown"]
+    assert rule["expr"] == "tts_process_vram_bytes != tts_process_vram_bytes"
     assert rule["labels"]["severity"] == "warning"
 
 

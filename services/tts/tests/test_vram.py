@@ -52,3 +52,12 @@ def test_unknown_when_nvml_cannot_start():
 
 def test_unknown_when_the_driver_does_not_report_per_process_memory():
     assert ProcessVram(_Nvml([[(7, None)]]), pid=7).read() is None
+
+
+def test_unknown_when_a_process_that_must_hold_a_context_is_not_listed():
+    """NVML reporting host PIDs would otherwise read as "holds nothing"."""
+    assert ProcessVram(_Nvml([[(8, 9000 * MIB)]]), pid=7).read(expect_context=True) is None
+
+
+def test_a_listed_process_is_read_whether_or_not_a_context_is_expected():
+    assert ProcessVram(_Nvml([[(7, 20 * MIB)]]), pid=7).read(expect_context=True) == 20 * MIB
