@@ -110,14 +110,22 @@ class Gateway:
             headers=self._auth(token),
         )
 
-    async def realtime_ticket(self, token: str, session_id: str) -> httpx.Response:
+    async def realtime_ticket(
+        self, token: str, session_id: str, transport: str = "websocket"
+    ) -> httpx.Response:
         return await self._http.post(
-            f"/api/admin/session/{session_id}/realtime-ticket", headers=self._auth(token)
+            f"/api/admin/session/{session_id}/realtime-ticket",
+            headers=self._auth(token),
+            json={"transport": transport},
         )
 
-    async def admin_polling(self, token: str, session_id: str) -> httpx.Response:
+    async def admin_polling(
+        self, token: str, session_id: str, ticket: str = "none"
+    ) -> httpx.Response:
         return await self._http.post(
-            f"/api/admin/session/{session_id}/polling/activate", headers=self._auth(token)
+            f"/api/admin/session/{session_id}/polling/activate",
+            headers=self._auth(token),
+            json={"ticket": ticket},
         )
 
     async def admin_send(

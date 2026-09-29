@@ -111,7 +111,7 @@ class FakeGateway:
             return _json(404, {"detail": "Audio file not found"})
         return httpx.Response(200, content=b"RIFF")
 
-    async def realtime_ticket(self, token, session_id) -> httpx.Response:
+    async def realtime_ticket(self, token, session_id, transport="websocket") -> httpx.Response:
         session = self._own(token, session_id)
         if session is None:
             return _not_found()
@@ -119,7 +119,7 @@ class FakeGateway:
         session.tickets.add(ticket)
         return _json(200, {"ticket": ticket, "expires_at": "later"})
 
-    async def admin_polling(self, token, session_id) -> httpx.Response:
+    async def admin_polling(self, token, session_id, ticket="none") -> httpx.Response:
         return _not_found() if self._own(token, session_id) is None else _json(200, {})
 
     async def admin_send(self, token, session_id, text, source, target, *, extra=None):

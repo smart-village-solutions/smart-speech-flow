@@ -137,3 +137,17 @@ async def test_a_closed_connection_becomes_socket_rejected(monkeypatch):
             await socket.recv()
         with pytest.raises(SocketRejected):
             await socket.send("{}")
+
+
+async def test_ticket_and_polling_carry_the_bodies_the_gateway_validates():
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={})
+
+    gateway, _ = _gateway(handler)
+    await gateway.realtime_ticket("tok", "S1")
+    await gateway.admin_polling("tok", "S1", ticket="t-1")
+
+    assert bodies == [{"transport": "websocket"}, {"ticket": "t-1"}]
