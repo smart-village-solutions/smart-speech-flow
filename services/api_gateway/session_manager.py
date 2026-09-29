@@ -781,14 +781,13 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
     ) -> None:
         """End one admin's pending or active sessions in a tenant.
 
-        Reads the store rather than the in-memory cache, which is empty after a
-        restart, so an admin's earlier session is still found then.
+        Reads the store, as ``get_active_session`` does, so the session an admin
+        is told about and the one a new session ends come from the same source.
         """
         keys = [
             session.key
-            for session in self.store.list_for_tenant(tenant_id)
-            if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
-            and _same_owner(session.owner_ref, owner_ref)
+            for session in self._live_sessions(tenant_id)
+            if _same_owner(session.owner_ref, owner_ref)
         ]
         for key in keys:
             await self.terminate_session(key, reason)
@@ -1047,14 +1046,14 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         """Aktive Admin-Session eines Mandanten abrufen.
 
         Wenn eine Session-ID übergeben wird, wird genau diese Session zurückgegeben,
-        sofern sie noch nicht beendet wurde. Ohne Session-ID wird die zuletzt erstellte
-        aktive Session geliefert, solange diese eindeutig ist.
+        sofern sie noch nicht beendet wurde. Ohne Session-ID wird die aktive Session
+        geliefert, solange sie eindeutig ist; ``for_owner`` beschränkt das auf die
+        Sessions einer Administratorin (#473).
         """
         candidates = [
             session
-            for session in self.store.list_for_tenant(tenant_id)
-            if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
-            and (session_id is None or session.id == session_id)
+            for session in self._live_sessions(tenant_id)
+            if (session_id is None or session.id == session_id)
             and (for_owner is None or _same_owner(session.owner_ref, for_owner))
         ]
         if not candidates:
@@ -1066,8 +1065,11 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
 
     def get_active_sessions(self, *, tenant_id: str) -> List[Dict[str, Any]]:
         """Alle aktiven oder ausstehende Sessions zurückgeben."""
+        return [session.to_public_dict() for session in self._live_sessions(tenant_id)]
+
+    def _live_sessions(self, tenant_id: str) -> List[Session]:
         return [
-            session.to_public_dict()
+            session
             for session in self.store.list_for_tenant(tenant_id)
             if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
         ]

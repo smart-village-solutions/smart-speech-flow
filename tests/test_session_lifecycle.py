@@ -16,6 +16,7 @@ from services.api_gateway.session_manager import SessionStatus, TenantSessionMan
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.studio_runtime_client import StudioRuntimeClientError
 from services.api_gateway.studio_runtime_flow import StudioRuntimeFlow
+from services.api_gateway.tenant_context import admin_ref
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 from tests.gateway_contract.contract_support import runtime_configuration
 
@@ -140,13 +141,22 @@ async def test_create_replaces_only_the_same_tenants_active_session(
     sessions: TenantSessionManager,
 ) -> None:
     lifecycle = SessionLifecycleService(sessions)
-    first = await lifecycle.create("tenant-a", runtime_configuration("tenant-a"))
-    other = await lifecycle.create("tenant-b", runtime_configuration("tenant-b"))
-    second = await lifecycle.create("tenant-a", runtime_configuration("tenant-a"))
+    tenant_a_admin = admin_ref("tenant-a", "admin-subject")
+    first = await lifecycle.create(
+        "tenant-a", runtime_configuration("tenant-a"), owner_ref=tenant_a_admin
+    )
+    other = await lifecycle.create(
+        "tenant-b",
+        runtime_configuration("tenant-b"),
+        owner_ref=admin_ref("tenant-b", "admin-subject"),
+    )
+    second = await lifecycle.create(
+        "tenant-a", runtime_configuration("tenant-a"), owner_ref=tenant_a_admin
+    )
 
     assert sessions.get_session(first.key).status is SessionStatus.TERMINATED
     assert sessions.get_session(other.key).status is SessionStatus.PENDING
-    assert lifecycle.current("tenant-a", None).id == second.id
+    assert lifecycle.current("tenant-a", None, owner_ref=tenant_a_admin).id == second.id
 
 
 @pytest.mark.parametrize(

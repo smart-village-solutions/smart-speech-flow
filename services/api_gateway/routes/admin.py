@@ -254,7 +254,7 @@ def get_client_base_url() -> str:
     "/session/create",
     status_code=status.HTTP_201_CREATED,
     summary="Neue Admin-Session erstellen",
-    description="Erstellt eine neue Admin-Session. Vorherige aktive Sessions werden standardmäßig aus Datenschutzgründen beendet.",
+    description="Erstellt eine neue Admin-Session. Die vorherige aktive Session derselben Administratorin wird standardmäßig aus Datenschutzgründen beendet; Sessions anderer Admins des Mandanten bleiben bestehen.",
     responses={500: {"description": "Session creation failed"}},
 )
 async def create_admin_session(
@@ -269,7 +269,7 @@ async def create_admin_session(
     Erstellt eine neue Admin-Session
 
     - Generiert neue Session-UUID
-    - Beendet standardmäßig ältere aktive Sessions
+    - Beendet standardmäßig die ältere aktive Session derselben Administratorin
     - Erstellt Client-URL mit embedded Session-ID
     - Sendet WebSocket-Notifications an betroffene Clients
 
@@ -314,7 +314,7 @@ async def create_admin_session(
 @router.get(
     "/session/current",
     summary="Aktuelle Admin-Session abrufen",
-    description="Gibt Details der aktuell aktiven Admin-Session zurück. Optional kann eine Session-ID angegeben werden.",
+    description="Gibt Details der aktiven Admin-Session der anfragenden Administratorin zurück. Optional kann eine Session-ID des Mandanten angegeben werden.",
     responses=ADMIN_ROUTE_RESPONSES,
 )
 async def get_current_session(

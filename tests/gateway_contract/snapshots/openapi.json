@@ -871,7 +871,7 @@
     },
     "/api/admin/session/create": {
       "post": {
-        "description": "Erstellt eine neue Admin-Session. Vorherige aktive Sessions werden standardmäßig aus Datenschutzgründen beendet.",
+        "description": "Erstellt eine neue Admin-Session. Die vorherige aktive Session derselben Administratorin wird standardmäßig aus Datenschutzgründen beendet; Sessions anderer Admins des Mandanten bleiben bestehen.",
         "operationId": "create_admin_session_api_admin_session_create_post",
         "responses": {
           "201": {
@@ -897,7 +897,7 @@
     },
     "/api/admin/session/current": {
       "get": {
-        "description": "Gibt Details der aktuell aktiven Admin-Session zurück. Optional kann eine Session-ID angegeben werden.",
+        "description": "Gibt Details der aktiven Admin-Session der anfragenden Administratorin zurück. Optional kann eine Session-ID des Mandanten angegeben werden.",
         "operationId": "get_current_session_api_admin_session_current_get",
         "parameters": [
           {

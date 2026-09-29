@@ -79,7 +79,7 @@ class SessionLifecycleService:
         tenant_id: str,
         configuration: RuntimeConfiguration,
         *,
-        owner_ref: Optional[str] = None,
+        owner_ref: str,
     ) -> Session:
         """A new admin session on the frozen configuration; it ends the owner's previous one."""
         return await self._sessions.create_admin_session(
@@ -88,9 +88,7 @@ class SessionLifecycleService:
             owner_ref=owner_ref,
         )
 
-    def current(
-        self, tenant_id: str, session_id: Optional[str], *, owner_ref: Optional[str] = None
-    ) -> Session:
+    def current(self, tenant_id: str, session_id: Optional[str], *, owner_ref: str) -> Session:
         """The admin's active session, or the named one while it is not terminated.
 
         A named session is found for any admin of the tenant; without a name only
