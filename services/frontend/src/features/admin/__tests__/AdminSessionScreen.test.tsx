@@ -35,10 +35,10 @@ const history = () =>
             sender: 'customer',
             original_text: 'مرحبا',
             translated_text: 'Guten Tag',
-            audio_base64: null,
             source_lang: 'ar',
             target_lang: 'de',
             timestamp: '2026-08-26T10:00:30+00:00',
+            translated_audio_available: false,
           },
         ],
       })

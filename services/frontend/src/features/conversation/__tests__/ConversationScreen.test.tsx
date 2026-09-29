@@ -1,5 +1,6 @@
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
 import { FLIGHT_MS } from '@/features/conversation/useSendFlight';
 import { createFakeAudioPlayer } from '@/test/fakeAudioPlayer';
@@ -10,6 +11,7 @@ import type {
 } from '@/core/realtime/realtime.port';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { server } from '@/test/setup';
 import { ConversationScreen } from '@/features/conversation/ConversationScreen';
 import type { SendResult } from '@/domain/message/message.types';
 
@@ -467,5 +469,56 @@ describe('ConversationScreen', () => {
     });
 
     expect(await screen.findAllByText('hello')).toHaveLength(1);
+  });
+
+  // Through the real repository and mapper: a stub service hands the screen
+  // ready-made messages and could not see the history shape drift.
+  it('keeps the play control on a live message after a reconnect refetches it', async () => {
+    const playControl = /^(Play|Pause)$/;
+    const wire = fakeTransport();
+    let fetches = 0;
+    server.use(
+      http.get('*/api/customer/session/:id/messages', ({ params }) => {
+        fetches += 1;
+        return HttpResponse.json({
+          session_id: params.id,
+          messages:
+            fetches === 1
+              ? []
+              : [
+                  {
+                    id: 'm9',
+                    sender: 'admin',
+                    original_text: 'Guten Tag',
+                    translated_text: 'Good day',
+                    source_lang: 'de',
+                    target_lang: 'en',
+                    timestamp: '2026-08-24T10:00:00+00:00',
+                    translated_audio_available: true,
+                    audio_url: '/api/customer/session/A1B2C3D4/audio/m9/translated.wav',
+                  },
+                ],
+        });
+      })
+    );
+
+    renderWithProviders(tree(), {
+      route,
+      player: createFakeAudioPlayer().port,
+      services: { createRealtime: () => wire.transport },
+    });
+
+    await screen.findByRole('button', { name: 'Record' });
+    await wire.status('connected');
+    await wire.receive(peerAudioEvent);
+    // The arrival autoplays, so its control may read either way.
+    expect(screen.getByRole('button', { name: playControl })).toBeInTheDocument();
+
+    await wire.status('disconnected');
+    await wire.status('connected');
+
+    await waitFor(() => expect(fetches).toBe(2));
+    expect(await screen.findByText('Good day')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: playControl })).toBeInTheDocument();
   });
 });

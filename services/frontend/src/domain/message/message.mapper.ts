@@ -6,11 +6,12 @@ export interface MessageDto {
   sender: 'admin' | 'customer';
   original_text: string;
   translated_text: string;
-  audio_base64: string | null;
   source_lang: string;
   target_lang: string;
   timestamp: string;
-  audio_url?: string | null;
+  translated_audio_available: boolean;
+  /** Present only when the gateway stored the synthesised clip. */
+  audio_url?: string;
 }
 
 export interface MessageHistoryDto {
@@ -54,10 +55,7 @@ export function historyToChatMessages(
       id: message.id,
       origin: isOwn ? 'self' : 'peer',
       text: isOwn ? message.original_text : message.translated_text,
-      audioUrl:
-        !isOwn && message.audio_base64 && message.audio_url
-          ? resolveAudioUrl(message.audio_url)
-          : null,
+      audioUrl: !isOwn && message.audio_url ? resolveAudioUrl(message.audio_url) : null,
       sourceLanguage: message.source_lang,
       targetLanguage: message.target_lang,
       timestamp: message.timestamp,
