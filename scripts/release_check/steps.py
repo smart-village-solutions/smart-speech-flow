@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 import httpx
 
 from .evidence import Evidence
-from .gateway import SocketRejected
+from .gateway import SocketRejectedError
 
 Step = Callable[[], Awaitable[tuple[bool, str]]]
 
@@ -20,7 +20,7 @@ _EXPECTED_FAILURES = (
     ValueError,
     KeyError,
     TimeoutError,
-    SocketRejected,
+    SocketRejectedError,
 )
 
 

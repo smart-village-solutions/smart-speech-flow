@@ -6,7 +6,7 @@ import pytest
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
 from scripts.release_check import gateway as gateway_module
-from scripts.release_check.gateway import Gateway, SocketRejected, websocket_connect
+from scripts.release_check.gateway import Gateway, SocketRejectedError, websocket_connect
 
 
 def _gateway(handler):
@@ -113,7 +113,7 @@ async def test_a_refused_handshake_becomes_socket_rejected(monkeypatch):
 
     monkeypatch.setattr(gateway_module, "_open_websocket", refuse)
 
-    with pytest.raises(SocketRejected):
+    with pytest.raises(SocketRejectedError):
         async with websocket_connect("wss://api.example/ws/customer/S1", "https://app.example"):
             pass
 
@@ -137,9 +137,9 @@ async def test_a_closed_connection_becomes_socket_rejected(monkeypatch):
     async with websocket_connect(
         "wss://api.example/ws/customer/S1", "https://app.example"
     ) as socket:
-        with pytest.raises(SocketRejected):
+        with pytest.raises(SocketRejectedError):
             await socket.recv()
-        with pytest.raises(SocketRejected):
+        with pytest.raises(SocketRejectedError):
             await socket.send("{}")
 
 

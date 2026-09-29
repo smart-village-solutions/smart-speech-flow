@@ -17,7 +17,7 @@ import httpx
 
 from .config import Tenant
 from .evidence import Evidence, session_ref
-from .gateway import Gateway, Socket, SocketRejected
+from .gateway import Gateway, Socket, SocketRejectedError
 from .steps import run_step
 
 ADMIN_LANGUAGE = "de"
@@ -101,7 +101,7 @@ async def socket_refused(context: AbstractAsyncContextManager[Socket]) -> Outcom
     try:
         async with context as socket:
             frame = await next_frame(socket, _is_ack, ACK_TIMEOUT)
-    except SocketRejected as rejected:
+    except SocketRejectedError as rejected:
         return True, f"rejected ({rejected})"
     return frame is None, "accepted" if frame else "no acknowledgement"
 

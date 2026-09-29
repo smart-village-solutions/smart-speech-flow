@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from scripts.release_check.gateway import SocketRejected
+from scripts.release_check.gateway import SocketRejectedError
 
 SELECTORS = ("tenant_id", "x-tenant-id")
 SELECTOR_REFUSAL = {"detail": "Tenant selectors are not accepted in requests"}
@@ -199,16 +199,16 @@ class FakeGateway:
         session = self.sessions.get(session_id)
         owns_ticket = session is not None and ticket in session.tickets
         if session is None or (not owns_ticket and not self.accept_foreign_ticket):
-            raise SocketRejected("closed 4404")
+            raise SocketRejectedError("closed 4404")
         session.admin = self._connected()
         yield session.admin
 
     @asynccontextmanager
     async def customer_socket(self, session_id, *, query=""):
         if "tenant_id" in query and not self.accept_selectors:
-            raise SocketRejected("closed 1008")
+            raise SocketRejectedError("closed 1008")
         session = self.sessions.get(session_id)
         if session is None:
-            raise SocketRejected("closed 4404")
+            raise SocketRejectedError("closed 4404")
         session.guest = self._connected()
         yield session.guest

@@ -1,7 +1,7 @@
 """Thin calls to the SSF gateway, one per route the release check uses.
 
 No assertions live here. Whatever the WebSocket library raises when a server
-refuses or closes a socket surfaces as SocketRejected, so the checks and their
+refuses or closes a socket surfaces as SocketRejectedError, so the checks and their
 test fakes share one failure type.
 """
 
@@ -20,7 +20,7 @@ from websockets.typing import Origin
 OPEN_TIMEOUT_SECONDS = 10
 
 
-class SocketRejected(Exception):
+class SocketRejectedError(Exception):
     """The server refused the WebSocket or closed it."""
 
 
@@ -33,8 +33,8 @@ class Socket(Protocol):
 Connect = Callable[[str, str], AbstractAsyncContextManager[Socket]]
 
 
-def _closed(closed: ConnectionClosed) -> SocketRejected:
-    return SocketRejected(f"closed {closed.rcvd.code if closed.rcvd else ''}".strip())
+def _closed(closed: ConnectionClosed) -> SocketRejectedError:
+    return SocketRejectedError(f"closed {closed.rcvd.code if closed.rcvd else ''}".strip())
 
 
 class _Adapter:
@@ -62,7 +62,7 @@ async def websocket_connect(url: str, origin: str) -> AsyncIterator[Socket]:
             url, origin=Origin(origin), open_timeout=OPEN_TIMEOUT_SECONDS
         )
     except (InvalidHandshake, OSError, TimeoutError) as error:
-        raise SocketRejected(type(error).__name__) from None
+        raise SocketRejectedError(type(error).__name__) from None
     try:
         yield _Adapter(connection)
     finally:
