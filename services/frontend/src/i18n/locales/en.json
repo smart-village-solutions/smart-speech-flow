@@ -140,7 +140,7 @@
     },
     "confirm": {
       "title": "End the running conversation?",
-      "body": "Starting a new conversation ends the running conversation {{id}}, for privacy reasons.",
+      "body": "Starting a new conversation ends your running conversation {{id}}, for privacy reasons.",
       "confirm": "Start anyway",
       "cancel": "Cancel"
     },

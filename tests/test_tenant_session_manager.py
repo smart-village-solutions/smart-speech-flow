@@ -18,6 +18,7 @@ from services.api_gateway.session_store import (
     MemoryTenantSessionStore,
     SessionStoreConsistencyError,
 )
+from services.api_gateway.tenant_context import admin_ref
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 from services.api_gateway.websocket import WebSocketManager
 from services.api_gateway.websocket_polling_routes import TenantPollingStore
@@ -58,9 +59,11 @@ def manager(clock: Clock) -> TenantSessionManager:
 async def test_single_active_session_limit_is_per_tenant(
     manager: TenantSessionManager,
 ) -> None:
-    first_a = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    first_b = await manager.create_admin_session("tenant-b", SNAPSHOT)
-    second_a = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    owner_a = admin_ref("tenant-a", "admin-subject")
+    owner_b = admin_ref("tenant-b", "admin-subject")
+    first_a = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner_a)
+    first_b = await manager.create_admin_session("tenant-b", SNAPSHOT, owner_ref=owner_b)
+    second_a = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner_a)
 
     assert manager.get_session(first_a.key).status is SessionStatus.TERMINATED
     assert manager.get_session(first_b.key).status is SessionStatus.PENDING

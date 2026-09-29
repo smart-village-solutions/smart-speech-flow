@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { http, HttpResponse } from 'msw';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { installFakeClipboard } from '@/test/fakeClipboard';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { server } from '@/test/setup';
 import { AdminDashboardScreen } from '@/features/admin/AdminDashboardScreen';
 
 const noop = () => undefined;
@@ -48,6 +51,42 @@ describe('AdminDashboardScreen', () => {
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(screen.getByText(/AR000001/)).toBeInTheDocument();
+  });
+
+  // The history lists every admin of the tenant; only the admin's own session ends.
+  it("names the admin's own conversation, not a colleague's newer one", async () => {
+    server.use(
+      http.get('*/api/admin/session/current', () =>
+        HttpResponse.json({ session_id: 'DE000001', status: 'active' })
+      )
+    );
+    renderWithProviders(<AdminDashboardScreen onEnterSession={noop} onSignOut={noop} />, {
+      locale: 'de',
+    });
+    await screen.findByRole('button', { name: 'Gespräch AR000001 fortsetzen' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Neues Gespräch starten' }));
+
+    expect(await screen.findByRole('dialog')).toHaveTextContent('DE000001');
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('AR000001');
+  });
+
+  it("does not warn when only a colleague's conversation is live", async () => {
+    installFakeClipboard();
+    server.use(
+      http.get('*/api/admin/session/current', () =>
+        HttpResponse.json({ detail: 'Keine aktive Admin-Session gefunden' }, { status: 404 })
+      )
+    );
+    renderWithProviders(<AdminDashboardScreen onEnterSession={noop} onSignOut={noop} />, {
+      locale: 'de',
+    });
+    await screen.findByRole('button', { name: 'Gespräch AR000001 fortsetzen' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Neues Gespräch starten' }));
+
+    expect(await screen.findByText('Neues Gespräch')).toBeInTheDocument();
+    expect(screen.queryByText(/Laufendes Gespräch beenden/)).not.toBeInTheDocument();
   });
 
   it('shows the system load from the gateway', async () => {

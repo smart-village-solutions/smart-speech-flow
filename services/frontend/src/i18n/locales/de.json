@@ -140,7 +140,7 @@
     },
     "confirm": {
       "title": "Laufendes Gespräch beenden?",
-      "body": "Mit einem neuen Gespräch wird das laufende Gespräch {{id}} aus Datenschutzgründen beendet.",
+      "body": "Mit einem neuen Gespräch wird Ihr laufendes Gespräch {{id}} aus Datenschutzgründen beendet.",
       "confirm": "Trotzdem starten",
       "cancel": "Abbrechen"
     },

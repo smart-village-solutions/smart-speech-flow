@@ -8,7 +8,7 @@ verified token subject. Unless parallel sessions are explicitly enabled, creatin
 a session SHALL end only the pending or active sessions of the same admin in the
 same tenant, with the termination reason `new_session_created`. Sessions of other
 admins in the tenant SHALL remain untouched. A session stored without an owner
-SHALL NOT be ended by another admin's new session.
+belongs to no admin and SHALL NOT be ended by any new session.
 
 #### Scenario: Two admins of one tenant
 

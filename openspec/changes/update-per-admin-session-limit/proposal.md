@@ -15,13 +15,16 @@ may converse in parallel, each with one.
 - `GET /api/admin/session/current` without `session_id` returns the requesting
   admin's live conversation. With `session_id` it is unchanged.
 - The owner is persisted with the session and never appears in API responses.
+- The admin dashboard warns before a new conversation only about the admin's
+  own live conversation, read from `/current`, not the tenant's newest one.
 - `SSF_ALLOW_PARALLEL_SESSIONS=true` keeps disabling the limit altogether.
 
 ## Impact
 
 - Affected specs: `admin-session-ownership` (new)
 - Affected code: `services/api_gateway/tenant_context.py`, `session_manager.py`,
-  `session_lifecycle.py`, `routes/admin.py`
+  `session_lifecycle.py`, `routes/admin.py`; the admin dashboard in
+  `services/frontend/src/features/admin/`
 - Sessions stored before the change have no owner; no admin's new conversation
   ends them, and they expire on their normal lifetime.
 - Issue: #473; unblocks the #289 tester-release proof.

@@ -8,7 +8,7 @@ import { AdminInviteOverlay } from './AdminInviteOverlay';
 import { ADMIN_SESSIONS_KEY } from './useAdminSessions';
 
 interface AdminNewSessionButtonProps {
-  /** The one session that would be terminated by creating another, if any. */
+  /** The admin's own live session, which creating another would terminate, if any. */
   liveSessionId: string | null;
   onEnter: (sessionId: string) => void;
 }
@@ -35,7 +35,7 @@ export function AdminNewSessionButton({
     mutationFn: () => admin.createSession(),
     onSuccess: (created) => {
       setInvite(created);
-      // The gateway terminated whatever was live, so the list is now stale.
+      // The gateway ended the admin's previous session, so the list is now stale.
       void queryClient.invalidateQueries({ queryKey: ADMIN_SESSIONS_KEY });
     },
   });

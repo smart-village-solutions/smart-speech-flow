@@ -89,9 +89,11 @@ def _session_duration_ms(session: "Session") -> int:
     return max(0, int(elapsed * 1000))
 
 
+# An owner-less session belongs to nobody, so it matches no owner, not even
+# another owner-less request.
 def _same_owner(stored: Optional[str], requested: Optional[str]) -> bool:
     if stored is None or requested is None:
-        return stored is requested
+        return False
     return hmac.compare_digest(stored, requested)
 
 
@@ -788,19 +790,6 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             session.key
             for session in self._live_sessions(tenant_id)
             if _same_owner(session.owner_ref, owner_ref)
-        ]
-        for key in keys:
-            await self.terminate_session(key, reason)
-
-    async def terminate_all_active_sessions(
-        self, reason: str = "system_cleanup", *, tenant_id: str
-    ) -> None:
-        """Alle aktiven Sessions eines Mandanten beenden."""
-        keys = [
-            key
-            for key, session in tuple(self.sessions.items())
-            if hmac.compare_digest(key.tenant_id, tenant_id)
-            and session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
         ]
         for key in keys:
             await self.terminate_session(key, reason)

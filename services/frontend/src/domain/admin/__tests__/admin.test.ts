@@ -30,6 +30,30 @@ describe('admin repository', () => {
     );
     expect(body).toEqual({ transport: 'websocket' });
   });
+
+  it("reads the admin's own live session", async () => {
+    await expect(repository.ownLiveSessionId()).resolves.toBe('AR000001');
+  });
+
+  it('reads no own live session from a 404', async () => {
+    server.use(
+      http.get('http://api.test/api/admin/session/current', () =>
+        HttpResponse.json({ detail: 'Keine aktive Admin-Session gefunden' }, { status: 404 })
+      )
+    );
+
+    await expect(repository.ownLiveSessionId()).resolves.toBeNull();
+  });
+
+  it('reports any other failure of the own-session lookup', async () => {
+    server.use(
+      http.get('http://api.test/api/admin/session/current', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 })
+      )
+    );
+
+    await expect(repository.ownLiveSessionId()).rejects.toMatchObject({ kind: 'server' });
+  });
 });
 
 const row = (over: Partial<AdminSessionDto>): AdminSessionDto => ({

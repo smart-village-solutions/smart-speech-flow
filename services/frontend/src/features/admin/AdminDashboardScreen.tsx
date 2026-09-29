@@ -3,13 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useBrand } from '@/app/providers/brand';
 import { useFeedback } from '@/app/providers/feedback';
 import { useScreenLocale } from '@/app/providers/locale';
-import { isReenterable } from '@/domain/admin/admin.types';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
 import { AdminHeader } from '@/ui/patterns/AdminHeader';
 import { SystemLoadCard } from './SystemLoadCard';
 import { AdminNewSessionButton } from './AdminNewSessionButton';
 import { AdminSessionList } from './AdminSessionList';
-import { useAdminSessions } from './useAdminSessions';
+import { useAdminSessions, useOwnLiveSessionId } from './useAdminSessions';
 
 interface AdminDashboardScreenProps {
   onEnterSession: (sessionId: string) => void;
@@ -29,11 +28,8 @@ export function AdminDashboardScreen({
   const { openFeedback } = useFeedback();
   const navigate = useNavigate();
   const { data: sessions = [], isError } = useAdminSessions();
+  const { data: ownLiveSessionId = null } = useOwnLiveSessionId();
   useScreenLocale('de');
-
-  // The gateway allows one live session, so the first re-enterable row is the
-  // one creating another would terminate.
-  const live = sessions.find(isReenterable) ?? null;
 
   return (
     <ScreenShell>
@@ -58,7 +54,7 @@ export function AdminDashboardScreen({
           <SystemLoadCard />
         </div>
 
-        <AdminNewSessionButton liveSessionId={live?.id ?? null} onEnter={onEnterSession} />
+        <AdminNewSessionButton liveSessionId={ownLiveSessionId} onEnter={onEnterSession} />
 
         <AdminSessionList sessions={sessions} isError={isError} onEnter={onEnterSession} />
       </div>

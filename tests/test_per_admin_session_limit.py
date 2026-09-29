@@ -86,7 +86,15 @@ async def test_an_owner_less_legacy_session_is_not_ended_by_an_admin():
     assert _status(manager, legacy) is SessionStatus.PENDING
 
 
-# The in-memory cache is empty after a restart; the store is the source of truth.
+async def test_a_create_without_an_owner_ends_nothing():
+    manager = _manager()
+    legacy = await manager.create_admin_session("tenant-a", SNAPSHOT)
+
+    await manager.create_admin_session("tenant-a", SNAPSHOT)
+
+    assert _status(manager, legacy) is SessionStatus.PENDING
+
+
 async def test_the_rule_holds_across_a_gateway_restart():
     store = MemoryTenantSessionStore()
     before_restart = await _manager(store).create_admin_session(
@@ -168,3 +176,18 @@ def test_http_admins_each_keep_their_own_conversation(http_client: TestClient) -
     assert http_client.get("/api/admin/session/current").json()["session_id"] == bob
     _authenticate_as("alice-subject")
     assert http_client.get("/api/admin/session/current").json()["session_id"] == alice
+
+
+def test_http_history_never_carries_the_owner(http_client: TestClient) -> None:
+    _authenticate_as("alice-subject")
+    http_client.post("/api/admin/session/create")
+    http_client.post("/api/admin/session/create")
+
+    response = http_client.get("/api/admin/session/history")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["sessions"]) == 1
+    assert len(body["active_sessions"]) == 1
+    assert "owner_ref" not in response.text
+    assert admin_ref("tenant-a", "alice-subject") not in response.text

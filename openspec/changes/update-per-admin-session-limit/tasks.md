@@ -4,6 +4,7 @@
 - [x] 1.2 Store the owner on the session, persist it, keep it out of public output.
 - [x] 1.3 End only the creating admin's live sessions, reading the store.
 - [x] 1.4 Scope `/api/admin/session/current` to the requesting admin.
+- [x] 1.5 Warn in the admin dashboard only about the admin's own live session.
 
 ## 2. Verification
 

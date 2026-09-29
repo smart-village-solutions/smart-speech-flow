@@ -1,4 +1,5 @@
 import type { AxiosInstance } from 'axios';
+import { AppError } from '@/core/http/AppError';
 import { requirePathIdentifier } from '@/utils/identifiers';
 import { toAdminSessions, toCreatedSession } from './admin.mapper';
 import type { SessionCreateDto, SessionHistoryDto } from './admin.mapper';
@@ -11,9 +12,15 @@ interface RealtimeTicketDto {
   expires_at: string;
 }
 
+interface CurrentSessionDto {
+  session_id: string;
+}
+
 export interface AdminRepository {
   createSession(): Promise<CreatedSession>;
   listSessions(limit: number): Promise<AdminSession[]>;
+  /** The requesting admin's own live session, or null when they have none. */
+  ownLiveSessionId(): Promise<string | null>;
   terminateSession(sessionId: string): Promise<void>;
   issueRealtimeTicket(sessionId: string, transport: RealtimeTransportKind): Promise<string>;
 }
@@ -30,6 +37,19 @@ export function createAdminRepository(http: AxiosInstance): AdminRepository {
         params: { limit },
       });
       return toAdminSessions(response.data);
+    },
+
+    async ownLiveSessionId() {
+      try {
+        const response = await http.get<CurrentSessionDto>('/api/admin/session/current');
+        return response.data.session_id;
+      } catch (error) {
+        // 404 is the gateway's answer for "none of your own", not a failure.
+        if (error instanceof AppError && error.kind === 'notFound') {
+          return null;
+        }
+        throw error;
+      }
     },
 
     async terminateSession(sessionId) {
