@@ -8,19 +8,25 @@ happens. It never creates, changes or deletes an account.
 
 ## Before the run
 
-1. **No live conversations.** The gateway ends a tenant's other live
-   conversations when a new one starts (unless `SSF_ALLOW_PARALLEL_SESSIONS` is
-   set), so run the check only when nobody is using either tenant. The check
+1. **No live conversations.** Run the check only when nobody is using either
+   tenant, so its conversations and load never mix with real ones. The check
    verifies this itself and stops, creating nothing, if either tenant has a
-   live conversation.
+   live conversation. Each operator has at most one live conversation (#473),
+   so the test accounts could not end anyone else's in any case.
 2. **Storage mode.** In each tenant's SSF configuration in Studio, note the
    conversation-content storage mode (`ask` or `disabled`). Pass it as
    `SSF_RC_TENANT_{A,B}_STORAGE`.
-3. **Tester accounts.** In each tenant's Studio user management
-   (`https://<tenant>.dialog.kassel.de/`), create two regular users named
-   `ssf-release-check-<yyyymmdd>-<n>`. Give each a permanent password (not
-   temporary) and no required actions. They need no SSF role.
-4. Keep the passwords in your shell only. Do not write them to a file.
+3. **Tester accounts.** In the Keycloak admin console
+   (`https://auth.dialog.kassel.de/`), create two users in each tenant's realm,
+   named `ssf-release-check-<yyyymmdd>-<n>`. Studio's user management cannot
+   do this: it makes the email address the username and sets a password only
+   through an emailed link. For each user:
+   - fill in email, first and last name and turn on *Email verified*, so the
+     realm's user profile asks for nothing at the first login;
+   - under *Credentials*, set a password with *Temporary* off;
+   - leave *Required user actions* empty. They need no SSF role.
+4. Keep the passwords out of the shell history and out of the repository, for
+   example in a mode-0600 env file outside the checkout that you source.
 
 ## Run
 
@@ -77,15 +83,16 @@ belong to ended conversations but are not needed any more.
 
 ## After the run
 
-Delete the four `ssf-release-check-<yyyymmdd>-<n>` users in Studio, and
-confirm they no longer appear.
+Delete the four `ssf-release-check-<yyyymmdd>-<n>` users in the Keycloak admin
+console, and confirm they no longer appear in either realm. Delete the env file
+that held their passwords.
 
 ## Troubleshooting
 
 | Symptom | Cause |
 |---|---|
 | `A has no live conversations` fails | someone is using the tenant; wait until it is idle |
-| `A1 guest reads pending session` fails with 404 for one operator per tenant | the gateway allows one live conversation per tenant, so the second operator's session ended the first |
+| `A1 guest reads pending session` fails with 404 for one operator per tenant | the gateway predates #473 and allows one live conversation per tenant, so the second operator's session ended the first; deploy `main` 2383a2a or later |
 | `Keycloak requires an action from this user` | the user has a temporary password or another required action |
 | `Keycloak rejected the credentials` | wrong password, or the user is in the other tenant |
 | `… socket acknowledged` fails with `rejected` | the WebSocket origin is not allowed; `SSF_RC_FRONTEND_ORIGIN` must be the production frontend |
