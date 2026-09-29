@@ -202,6 +202,20 @@ def _message(sender: str, index: int) -> ConversationStep:
     return step
 
 
+async def _audio_live(
+    gateway: Gateway, conversation: Conversation, live: _Live, stack: AsyncExitStack
+) -> Outcome:
+    """Every message's translated audio can be fetched while the conversation runs."""
+    statuses = [
+        (
+            await gateway.admin_audio(conversation.token, conversation.require_session(), mid)
+        ).status_code
+        for mid in conversation.message_ids
+    ]
+    served = sum(status == 200 for status in statuses)
+    return served == len(statuses) > 0, f"{served}/{len(statuses)} served"
+
+
 STEPS: tuple[tuple[str, ConversationStep], ...] = (
     ("create session", _create),
     ("guest reads pending session", _guest_reads),
@@ -213,6 +227,7 @@ STEPS: tuple[tuple[str, ConversationStep], ...] = (
     ("guest message 1 delivered", _message("guest", 0)),
     ("admin message 2 delivered", _message("admin", 1)),
     ("guest message 2 delivered", _message("guest", 1)),
+    ("audio retrievable during conversation", _audio_live),
 )
 
 

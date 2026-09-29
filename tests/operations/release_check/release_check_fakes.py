@@ -67,6 +67,8 @@ class FakeGateway:
         self.fail_create_for: set[str] = set()
         self.ping_before_ack = False
         self.history_status = 200
+        self.serve_audio_after_termination = False
+        self.missing_live_audio = False
 
     def seed_live_session(self, tenant: str) -> None:
         """A real user's conversation that the check must not disturb."""
@@ -123,7 +125,10 @@ class FakeGateway:
         session = self._own(token, session_id)
         if session is None:
             return _not_found()
-        if message_id not in session.messages:
+        # The gateway serves no audio for an ended conversation, kept or not.
+        if session.status == "terminated" and not self.serve_audio_after_termination:
+            return _not_found()
+        if self.missing_live_audio or message_id not in session.messages:
             return _json(404, {"detail": "Audio file not found"})
         return httpx.Response(200, content=b"RIFF")
 

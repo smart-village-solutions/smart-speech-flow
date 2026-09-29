@@ -33,6 +33,7 @@ From the repository root, with the development environment installed:
     export SSF_RC_TENANT_B_ID=smart-city-labor SSF_RC_TENANT_B_LANGUAGE=tr SSF_RC_TENANT_B_STORAGE=ask
     export SSF_RC_TENANT_A_USER_1=… SSF_RC_TENANT_A_PASSWORD_1=…   # and _2, and tenant B
     export SSF_RC_REPORT=release-check-report.json                 # optional
+    export SSF_RC_MANIFEST=release-check-manifest.json             # for the audio check below
     python -m scripts.release_check
 
 The exit code is 0 only when every check passed. It is 2 for a configuration
@@ -49,10 +50,30 @@ id; sessions appear as 12-character hashes, as in the gateway logs.
 | `A1 login` … `B2 login` | Keycloak login through the real login form |
 | `A has no live conversations` | nobody is using the tenant, so the run cannot end a real conversation |
 | `A1 create session` … `guest message 2 delivered` | one full conversation; each message reaches the other participant over WebSocket |
+| `A1 audio retrievable during conversation` | every message's recording can be fetched while the conversation runs |
 | `A1 → B1 … is not found` | a foreign session looks exactly like a missing one |
 | `… selector … is rejected` | a request cannot choose its tenant |
-| `A1 keeps 4 messages`, `A2 keeps 0 messages`, `… audio … answers` | consent-gated retention after termination |
+| `A1 keeps 4 messages`, `A2 keeps 0 messages` | consent-gated retention of the conversation text after termination |
+| `A1 serves no audio after termination` | an ended conversation serves no recording to anyone, kept or not |
 | `… cleanup` | only when a conversation had not been terminated yet |
+
+## Retained audio (on the production host)
+
+An ended conversation serves no audio through the API, so whether recordings
+were kept is checked on disk. `SSF_RC_MANIFEST` holds each test conversation's
+session id; copy it to the production host, then from the repository root
+there:
+
+    source scripts/lib/production-common.sh
+    for row in $(jq -r '.conversations[] | "\(.label):\(.consent):\(.storage):\(.session_id)"' release-check-manifest.json); do
+      sid=${row##*:}
+      count=$(production_compose exec -T api_gateway sh -c "find /data/audio/v2 -path '*/$sid/translated/*.wav' -type f | wc -l")
+      echo "${row%:*} -> $count recordings"
+    done
+
+Expected: 4 for a conversation with consent `true` and storage `ask`, 0 for
+every other. Then delete the manifest on both machines; the ids it holds
+belong to ended conversations but are not needed any more.
 
 ## After the run
 

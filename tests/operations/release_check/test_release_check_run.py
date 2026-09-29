@@ -1,3 +1,6 @@
+import json
+import stat
+
 from scripts.release_check.__main__ import run
 from scripts.release_check.config import load_settings
 from scripts.release_check.evidence import Evidence
@@ -26,8 +29,8 @@ async def test_a_healthy_run_passes_and_keeps_only_consented_content():
     names = [check.name for check in evidence.checks]
     assert "A1 keeps 4 messages" in names
     assert "A2 keeps 0 messages" in names
-    assert "B1 audio 1 answers 200" in names
-    assert "B2 audio 1 answers 404" in names
+    assert "B1 audio retrievable during conversation" in names
+    assert "B2 serves no audio after termination" in names
 
 
 async def test_refused_content_that_survives_termination_fails():
@@ -106,3 +109,46 @@ async def test_an_idle_tenant_pair_passes_the_preflight():
 
     names = [check.name for check in evidence.checks if check.passed]
     assert {"A has no live conversations", "B has no live conversations"} <= set(names)
+
+
+async def test_audio_served_after_termination_fails():
+    gateway, evidence = FakeGateway(), Evidence()
+    gateway.serve_audio_after_termination = True
+
+    assert await run(_settings(), gateway, evidence, _login) is False
+    assert "A1 serves no audio after termination" in _failed(evidence)
+
+
+async def test_audio_missing_during_the_conversation_fails():
+    gateway, evidence = FakeGateway(), Evidence()
+    gateway.missing_live_audio = True
+
+    assert await run(_settings(), gateway, evidence, _login) is False
+    assert "A1 audio retrievable during conversation" in _failed(evidence)
+
+
+# The on-host audio retention check needs the session ids the report hides.
+async def test_the_manifest_is_owner_only_and_names_each_conversation(tmp_path):
+    gateway, evidence = FakeGateway(), Evidence()
+    manifest = tmp_path / "manifest.json"
+
+    await run(_settings(), gateway, evidence, _login, manifest=manifest)
+
+    assert stat.S_IMODE(manifest.stat().st_mode) == 0o600
+    entries = json.loads(manifest.read_text())["conversations"]
+    assert [(e["label"], e["consent"], e["storage"]) for e in entries] == [
+        ("A1", True, "ask"),
+        ("A2", False, "ask"),
+        ("B1", True, "ask"),
+        ("B2", False, "ask"),
+    ]
+    assert {e["session_id"] for e in entries} == set(gateway.sessions)
+    assert all(len(e["message_ids"]) == 4 for e in entries)
+
+
+async def test_no_manifest_is_written_unless_asked(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    await run(_settings(), FakeGateway(), Evidence(), _login)
+
+    assert list(tmp_path.iterdir()) == []

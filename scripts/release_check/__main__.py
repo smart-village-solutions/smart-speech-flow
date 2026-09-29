@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import json
 import os
 import sys
 from collections.abc import Awaitable, Callable
@@ -43,7 +44,31 @@ async def _log_in(
     return conversations
 
 
-async def run(settings: Settings, gateway: Gateway, evidence: Evidence, login: Login) -> bool:
+def _write_manifest(path: Path, conversations: list[Conversation]) -> None:
+    """Session ids for the on-host audio retention check; owner-readable only."""
+    entries = [
+        {
+            "label": conversation.label,
+            "consent": conversation.consent,
+            "storage": conversation.tenant.storage_mode,
+            "session_id": conversation.session_id,
+            "message_ids": conversation.message_ids,
+        }
+        for conversation in conversations
+    ]
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as manifest:
+        json.dump({"conversations": entries}, manifest, indent=2)
+
+
+async def run(
+    settings: Settings,
+    gateway: Gateway,
+    evidence: Evidence,
+    login: Login,
+    *,
+    manifest: Path | None = None,
+) -> bool:
     conversations = await _log_in(settings, evidence, login)
     if conversations is None or not await tenants_idle(gateway, evidence, conversations):
         return False
@@ -60,15 +85,18 @@ async def run(settings: Settings, gateway: Gateway, evidence: Evidence, login: L
         for conversation in conversations:
             if conversation.session_id:
                 evidence.add_secret(conversation.session_id)
+        if manifest is not None:
+            _write_manifest(manifest, conversations)
     return evidence.passed
 
 
-async def _run_live(settings: Settings, evidence: Evidence) -> bool:
+async def _run_live(settings: Settings, evidence: Evidence, manifest: Path | None) -> bool:
     async with httpx.AsyncClient(base_url=settings.api_base, timeout=60) as http:
         gateway = Gateway(
             http, websocket_connect, settings.websocket_base, settings.frontend_origin
         )
-        return await run(settings, gateway, evidence, functools.partial(access_token, settings))
+        login = functools.partial(access_token, settings)
+        return await run(settings, gateway, evidence, login, manifest=manifest)
 
 
 def main() -> int:
@@ -81,7 +109,9 @@ def main() -> int:
     guest_texts = (text for texts in GUEST_TEXTS.values() for text in texts)
     for secret in (*settings.secrets(), *ADMIN_TEXTS, *guest_texts):
         evidence.add_secret(secret)
-    passed = asyncio.run(_run_live(settings, evidence))
+    manifest_path = os.environ.get("SSF_RC_MANIFEST", "").strip()
+    manifest = Path(manifest_path) if manifest_path else None
+    passed = asyncio.run(_run_live(settings, evidence, manifest))
     print(evidence.to_markdown())
     report_path = os.environ.get("SSF_RC_REPORT", "").strip()
     if report_path:

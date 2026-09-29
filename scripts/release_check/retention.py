@@ -1,8 +1,9 @@
 """Termination, the consent-gated retention check, and unconditional cleanup.
 
-Refused content is removed at termination while the terminal record survives:
-a kept session answers its messages and audio, a refused one answers an empty
-list and 404s (services/api_gateway/session_manager.py, _settle_refused_content).
+Refused content is removed at termination while the terminal record survives,
+so a kept session still lists its messages and a refused one lists none
+(services/api_gateway/session_manager.py, _settle_refused_content). Audio is
+never served after termination, whether it was kept or not.
 """
 
 from __future__ import annotations
@@ -47,17 +48,27 @@ async def _verify_messages(
     await run_step(evidence, f"{conversation.label} keeps {expected} messages", step)
 
 
-async def _verify_audio(gateway: Gateway, evidence: Evidence, conversation: Conversation) -> None:
-    expected = 200 if _keeps_content(conversation) else 404
-    for number, message_id in enumerate(conversation.message_ids, start=1):
+async def _verify_no_audio(
+    gateway: Gateway, evidence: Evidence, conversation: Conversation
+) -> None:
+    """An ended conversation serves no audio, kept or not.
 
-        async def step(message_id: str = message_id) -> Outcome:
-            response = await gateway.admin_audio(
-                conversation.token, conversation.require_session(), message_id
-            )
-            return response.status_code == expected, f"HTTP {response.status_code}"
+    The gateway refuses every audio variant of a terminated session
+    (test_terminal_session_denies_all_admin_audio_variants), so whether audio was
+    retained is only visible on the server's disk; the runbook covers that.
+    """
 
-        await run_step(evidence, f"{conversation.label} audio {number} answers {expected}", step)
+    async def step() -> Outcome:
+        statuses = [
+            (
+                await gateway.admin_audio(conversation.token, conversation.require_session(), mid)
+            ).status_code
+            for mid in conversation.message_ids
+        ]
+        refused = sum(status == 404 for status in statuses)
+        return refused == len(statuses) > 0, f"{refused}/{len(statuses)} refused"
+
+    await run_step(evidence, f"{conversation.label} serves no audio after termination", step)
 
 
 async def terminate_and_verify(
@@ -68,7 +79,7 @@ async def terminate_and_verify(
             continue
         if await _terminate(gateway, evidence, conversation):
             await _verify_messages(gateway, evidence, conversation)
-            await _verify_audio(gateway, evidence, conversation)
+            await _verify_no_audio(gateway, evidence, conversation)
 
 
 async def clean_up(gateway: Gateway, evidence: Evidence, conversations: list[Conversation]) -> None:
