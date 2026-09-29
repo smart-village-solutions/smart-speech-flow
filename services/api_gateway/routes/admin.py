@@ -35,7 +35,11 @@ from ..studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
     require_validated_runtime_configuration,
 )
-from ..tenant_context import StudioTenantContext, require_studio_tenant_context
+from ..tenant_context import (
+    StudioTenantContext,
+    require_admin_ref,
+    require_studio_tenant_context,
+)
 from ..tenant_session import TenantSessionKey
 from ..websocket import WebSocketManager
 from ..websocket_polling_routes import TenantPollingStore
@@ -259,6 +263,7 @@ async def create_admin_session(
         Depends(require_validated_runtime_configuration),
     ],
     lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
+    owner_ref: Annotated[str, Depends(require_admin_ref)],
 ) -> SessionCreateResponse:
     """
     Erstellt eine neue Admin-Session
@@ -274,7 +279,9 @@ async def create_admin_session(
     try:
         logger.info("🚀 Admin-Session-Erstellung gestartet")
 
-        session = await lifecycle.create(runtime.context.tenant_id, runtime.configuration)
+        session = await lifecycle.create(
+            runtime.context.tenant_id, runtime.configuration, owner_ref=owner_ref
+        )
         session_id = session.id
 
         # Client-URL generieren
@@ -313,6 +320,7 @@ async def create_admin_session(
 async def get_current_session(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
     lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
+    owner_ref: Annotated[str, Depends(require_admin_ref)],
     session_id: Annotated[
         Optional[str],
         Query(description="Spezifische Session-ID, die geladen werden soll."),
@@ -325,7 +333,7 @@ async def get_current_session(
         SessionStatusResponse: Details der aktiven Session
     """
     try:
-        session = lifecycle.current(context.tenant_id, session_id)
+        session = lifecycle.current(context.tenant_id, session_id, owner_ref=owner_ref)
         return SessionStatusResponse(
             session_id=session.id,
             status=session.status.value,

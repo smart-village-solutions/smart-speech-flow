@@ -74,14 +74,27 @@ class SessionLifecycleService:
     def __init__(self, sessions: TenantSessionManager) -> None:
         self._sessions = sessions
 
-    async def create(self, tenant_id: str, configuration: RuntimeConfiguration) -> Session:
-        """A new admin session on the frozen configuration; the manager ends the previous one."""
+    async def create(
+        self,
+        tenant_id: str,
+        configuration: RuntimeConfiguration,
+        *,
+        owner_ref: Optional[str] = None,
+    ) -> Session:
+        """A new admin session on the frozen configuration; it ends the owner's previous one."""
         return await self._sessions.create_admin_session(
-            tenant_id, RuntimeConfigurationSnapshot.from_configuration(configuration)
+            tenant_id,
+            RuntimeConfigurationSnapshot.from_configuration(configuration),
+            owner_ref=owner_ref,
         )
 
-    def current(self, tenant_id: str, session_id: Optional[str]) -> Session:
-        """The tenant's active session, or the named one while it is not terminated.
+    def current(
+        self, tenant_id: str, session_id: Optional[str], *, owner_ref: Optional[str] = None
+    ) -> Session:
+        """The admin's active session, or the named one while it is not terminated.
+
+        A named session is found for any admin of the tenant; without a name only
+        the requesting admin's own session counts.
 
         Raises:
             NoActiveSessionError: nothing pending or active matches.
@@ -89,7 +102,9 @@ class SessionLifecycleService:
             ValueError: several sessions are active and none was named.
         """
         active_session_data = self._sessions.get_active_session(
-            session_id=session_id, tenant_id=tenant_id
+            session_id=session_id,
+            tenant_id=tenant_id,
+            for_owner=owner_ref if session_id is None else None,
         )
         if not active_session_data:
             raise NoActiveSessionError
