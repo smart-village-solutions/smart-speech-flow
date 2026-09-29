@@ -7,6 +7,8 @@ const sameOrigin = (url: string) => url;
 const gatewayOrigin = (url: string) => `https://ssf.example${url}`;
 
 describe('historyToChatMessages', () => {
+  // The gateway's own shape: `translated_audio_available` on every message,
+  // `audio_url` only where a clip was stored, and no inline audio at all.
   const dto = {
     session_id: 'A1B2C3D4',
     messages: [
@@ -15,10 +17,10 @@ describe('historyToChatMessages', () => {
         sender: 'customer' as const,
         original_text: 'I need a passport',
         translated_text: 'Ich brauche einen Reisepass',
-        audio_base64: 'AAAA',
         source_lang: 'en',
         target_lang: 'de',
         timestamp: '2026-08-21T10:00:00+00:00',
+        translated_audio_available: true,
         audio_url: '/api/customer/session/A1B2C3D4/audio/m1/translated.wav',
       },
       {
@@ -26,10 +28,10 @@ describe('historyToChatMessages', () => {
         sender: 'admin' as const,
         original_text: 'Haben Sie Ihren alten Pass dabei?',
         translated_text: 'Do you have your old passport with you?',
-        audio_base64: 'BBBB',
         source_lang: 'de',
         target_lang: 'en',
         timestamp: '2026-08-21T10:00:05+00:00',
+        translated_audio_available: true,
         audio_url: '/api/customer/session/A1B2C3D4/audio/m2/translated.wav',
       },
     ],
@@ -65,11 +67,13 @@ describe('historyToChatMessages', () => {
     });
   });
 
-  it('omits the audio URL when the agent message has no synthesised audio', () => {
+  it('omits the audio URL when the agent message has no stored audio', () => {
     const [incoming] = historyToChatMessages(
       {
         session_id: 'A1B2C3D4',
-        messages: [{ ...dto.messages[1], audio_base64: null }],
+        messages: [
+          { ...dto.messages[1], translated_audio_available: false, audio_url: undefined },
+        ],
       },
       sameOrigin,
       'customer'
@@ -98,10 +102,10 @@ describe('historyToChatMessages', () => {
             sender: 'admin' as const,
             original_text: 'Guten Tag',
             translated_text: '\u0645\u0631\u062d\u0628\u0627',
-            audio_base64: null,
             source_lang: 'de',
             target_lang: 'ar',
             timestamp: '2026-08-26T10:00:00+00:00',
+            translated_audio_available: true,
             audio_url: '/api/admin/session/A1B2C3D4/audio/m1/translated.wav',
           },
           {
@@ -109,10 +113,10 @@ describe('historyToChatMessages', () => {
             sender: 'customer' as const,
             original_text: '\u0645\u0631\u062d\u0628\u0627',
             translated_text: 'Guten Tag',
-            audio_base64: 'AAAA',
             source_lang: 'ar',
             target_lang: 'de',
             timestamp: '2026-08-26T10:01:00+00:00',
+            translated_audio_available: true,
             audio_url: '/api/admin/session/A1B2C3D4/audio/m2/translated.wav',
           },
         ],

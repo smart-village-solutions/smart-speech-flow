@@ -1,5 +1,6 @@
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { http, HttpResponse } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
 import { FLIGHT_MS } from '@/features/conversation/useSendFlight';
 import { createFakeAudioPlayer } from '@/test/fakeAudioPlayer';
@@ -10,6 +11,7 @@ import type {
 } from '@/core/realtime/realtime.port';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { server } from '@/test/setup';
 import { ConversationScreen } from '@/features/conversation/ConversationScreen';
 import type { SendResult } from '@/domain/message/message.types';
 
@@ -67,6 +69,46 @@ const peerAudioEvent = {
   audio_url: '/api/customer/session/A1B2C3D4/audio/m9/translated.wav',
   timestamp: '2026-08-24T10:00:00+00:00',
 };
+
+/** `peerAudioEvent` as the gateway's history endpoint returns the same message. */
+const gatewayCopyOfPeerAudioEvent = {
+  id: peerAudioEvent.message_id,
+  sender: 'admin',
+  original_text: 'Guten Tag, wie kann ich helfen?',
+  translated_text: peerAudioEvent.text,
+  source_lang: peerAudioEvent.source_lang,
+  target_lang: peerAudioEvent.target_lang,
+  timestamp: peerAudioEvent.timestamp,
+  translated_audio_available: true,
+  audio_url: peerAudioEvent.audio_url,
+};
+
+const missedWhileDown = {
+  id: 'm10',
+  sender: 'admin',
+  original_text: 'Bitte warten Sie kurz.',
+  translated_text: 'Please wait a moment.',
+  source_lang: 'de',
+  target_lang: 'en',
+  timestamp: '2026-08-24T10:00:30+00:00',
+  translated_audio_available: false,
+};
+
+function serveHistory(messages: () => object[]) {
+  server.use(
+    http.get('*/api/customer/session/:id/messages', ({ params }) =>
+      HttpResponse.json({ session_id: params.id, messages: messages() })
+    )
+  );
+}
+
+async function bubbleContaining(text: string): Promise<HTMLElement> {
+  const bubble = (await screen.findByText(text)).closest<HTMLElement>('[data-bubble]');
+  if (bubble === null) {
+    throw new Error(`no bubble holds "${text}"`);
+  }
+  return bubble;
+}
 
 describe('ConversationScreen', () => {
   it('starts the customer chat stack below the shared header', async () => {
@@ -467,5 +509,50 @@ describe('ConversationScreen', () => {
     });
 
     expect(await screen.findAllByText('hello')).toHaveLength(1);
+  });
+
+  // Through the real repository and mapper: a stub service hands the screen
+  // ready-made messages and could not see the history shape drift.
+  it('shows the play control on a message loaded from history when the screen opens', async () => {
+    serveHistory(() => [gatewayCopyOfPeerAudioEvent]);
+
+    renderWithProviders(tree(), { route, player: createFakeAudioPlayer().port });
+
+    const bubble = await bubbleContaining(peerAudioEvent.text);
+    expect(within(bubble).getByRole('button', { name: 'Play' })).toBeInTheDocument();
+  });
+
+  it('keeps the play control on a live message after a reconnect refetches it', async () => {
+    const wire = fakeTransport();
+    let fetches = 0;
+    serveHistory(() => {
+      fetches += 1;
+      return fetches === 1 ? [] : [gatewayCopyOfPeerAudioEvent, missedWhileDown];
+    });
+
+    renderWithProviders(tree(), {
+      route,
+      player: createFakeAudioPlayer().port,
+      services: { createRealtime: () => wire.transport },
+    });
+
+    await screen.findByRole('button', { name: 'Record' });
+    await wire.status('connected');
+    await wire.receive(peerAudioEvent);
+    // The arrival autoplays, so its control may read either way.
+    const playControl = /^(Play|Pause)$/;
+    expect(
+      within(await bubbleContaining(peerAudioEvent.text)).getByRole('button', { name: playControl })
+    ).toBeInTheDocument();
+
+    await wire.status('disconnected');
+    await wire.status('connected');
+
+    // The missed message appears only once the refetched list has replaced the live one.
+    expect(await screen.findByText(missedWhileDown.translated_text)).toBeInTheDocument();
+    expect(screen.getAllByText(peerAudioEvent.text)).toHaveLength(1);
+    expect(
+      within(await bubbleContaining(peerAudioEvent.text)).getByRole('button', { name: playControl })
+    ).toBeInTheDocument();
   });
 });

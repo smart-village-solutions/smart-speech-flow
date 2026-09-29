@@ -90,10 +90,10 @@ describe('message repository', () => {
               sender: 'admin',
               original_text: 'de text',
               translated_text: 'en text',
-              audio_base64: 'AAAA',
               source_lang: 'de',
               target_lang: 'en',
               timestamp: '2026-08-21T10:00:00+00:00',
+              translated_audio_available: true,
               audio_url:
                 '/api/customer/session/A1B2C3D4/audio/m1/translated.wav',
             },
