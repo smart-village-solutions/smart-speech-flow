@@ -1,5 +1,6 @@
 """Trusted Studio tenant context for tenant-bound gateway operations."""
 
+import hashlib
 import json
 import re
 from collections.abc import Iterable
@@ -43,6 +44,26 @@ async def require_studio_tenant_context(
     """Derive the tenant from the verified issuer and reject request-side selectors."""
     await reject_request_tenant_selectors(request)
     return studio_tenant_context_from_claims(claims)
+
+
+def admin_ref(tenant_id: str, subject: str) -> str:
+    """The admin who owns a session, without storing the account identifier.
+
+    Comparing owners needs only equality, so a hash of the issuer-derived tenant
+    and the verified subject is enough, and keeps the subject out of session
+    records. It is a pseudonym, not a secret: anyone holding a subject can
+    recompute it. It is unkeyed on purpose, because a key that changed with a
+    restart would orphan every live session from its admin.
+    """
+    return hashlib.sha256(f"{tenant_id}\x1f{subject}".encode("utf-8")).hexdigest()[:32]
+
+
+async def require_admin_ref(
+    claims: Annotated[dict[str, Any], Depends(require_ssf_user)],
+    context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
+) -> str:
+    """The requesting admin's owner reference; ``require_ssf_user`` guarantees ``sub``."""
+    return admin_ref(context.tenant_id, claims["sub"])
 
 
 async def reject_request_tenant_selectors(connection: HTTPConnection) -> None:

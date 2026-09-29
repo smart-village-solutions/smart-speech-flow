@@ -23,6 +23,7 @@ from services.api_gateway.session_store import (
     join_key,
 )
 from services.api_gateway.session_store import session_key as persisted_session_key
+from services.api_gateway.tenant_context import admin_ref
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 REVISION = f"sha256:{'a' * 64}"
@@ -342,15 +343,16 @@ async def test_restart_rehydrates_active_session_for_same_tenant_replacement(
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
     monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
     monkeypatch.setenv("SSF_ALLOW_PARALLEL_SESSIONS", "false")
+    owner = admin_ref("tenant-a", "admin-subject")
 
     async with lifespan(app):
         session_manager = app.state.dependencies.session_manager
-        first = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
+        first = await session_manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner)
 
     async with lifespan(app):
         session_manager = app.state.dependencies.session_manager
         assert session_manager.active_admin_sessions == {"tenant-a": {first.id}}
-        second = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
+        second = await session_manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner)
 
         assert session_manager.get_session(first.key).status is SessionStatus.TERMINATED
         assert session_manager.get_session(second.key).status is SessionStatus.PENDING

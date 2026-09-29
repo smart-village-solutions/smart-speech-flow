@@ -89,6 +89,14 @@ def _session_duration_ms(session: "Session") -> int:
     return max(0, int(elapsed * 1000))
 
 
+# An owner-less session belongs to nobody, so it matches no owner, not even
+# another owner-less request.
+def _same_owner(stored: Optional[str], requested: Optional[str]) -> bool:
+    if stored is None or requested is None:
+        return False
+    return hmac.compare_digest(stored, requested)
+
+
 def _minutes_since(dt: datetime) -> float:
     """Return minutes since ``dt`` while tolerating legacy naive timestamps."""
     return (utc_now() - _ensure_utc(dt)).total_seconds() / 60
@@ -196,6 +204,9 @@ class Session:
     admin_connected: bool = False
     customer_connected: bool = False
     termination_reason: Optional[str] = None
+    # The creating admin (tenant_context.admin_ref). None for sessions stored
+    # before owners existed; such a session is never another admin's.
+    owner_ref: Optional[str] = None
 
     # ✨ Timeout Management Features
     last_activity: datetime = field(default_factory=utc_now)
@@ -256,6 +267,7 @@ class Session:
             "admin_connected": self.admin_connected,
             "customer_connected": self.customer_connected,
             "termination_reason": self.termination_reason,
+            "owner_ref": self.owner_ref,
             "last_activity": self.last_activity.isoformat(),
             "timeout_warning_sent": self.timeout_warning_sent,
             "session_timeout_minutes": self.session_timeout_minutes,
@@ -287,6 +299,7 @@ class Session:
         data = self.to_dict()
         data.pop("tenant_id", None)
         data.pop("runtime_configuration", None)
+        data.pop("owner_ref", None)
         return data
 
     def update_activity(self) -> None:
@@ -339,6 +352,7 @@ class Session:
             admin_connected=data.get("admin_connected", False),
             customer_connected=data.get("customer_connected", False),
             termination_reason=data.get("termination_reason"),
+            owner_ref=data.get("owner_ref"),
             last_activity=_ensure_utc(datetime.fromisoformat(last_activity_raw)),
             timeout_warning_sent=data.get("timeout_warning_sent", False),
             session_timeout_minutes=data.get("session_timeout_minutes", 30),
@@ -726,17 +740,19 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         self,
         tenant_id: str,
         runtime_configuration: RuntimeConfigurationSnapshot,
+        *,
+        owner_ref: Optional[str] = None,
     ) -> Session:
         """Neue Admin-Session erstellen.
 
-        Standardmäßig wird aus Datenschutzgründen genau eine aktive Admin-Session
-        je Mandant gleichzeitig erlaubt. Das bisherige Parallelverhalten kann
-        explizit über ``SSF_ALLOW_PARALLEL_SESSIONS=true`` reaktiviert werden.
+        Standardmäßig hat jede Administratorin genau eine aktive Session: eine
+        neue beendet nur die eigene vorherige, nicht die anderer Admins desselben
+        Mandanten (#473). ``SSF_ALLOW_PARALLEL_SESSIONS=true`` hebt auch das auf.
         """
         await asyncio.sleep(0)
         if not self.allow_parallel_sessions:
-            await self.terminate_all_active_sessions(
-                reason="new_session_created", tenant_id=tenant_id
+            await self.terminate_owner_sessions(
+                reason="new_session_created", tenant_id=tenant_id, owner_ref=owner_ref
             )
         for _attempt in range(32):
             created_at = self.clock()
@@ -753,6 +769,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
                 ),
                 timeout_warning_minutes=_positive_env_int("SSF_SESSION_TIMEOUT_WARNING_MINUTES", 5),
                 maximum_lifetime_hours=_positive_env_int("SSF_SESSION_MAX_HOURS", 8),
+                owner_ref=owner_ref,
             )
             if self.store.create(session):
                 self.sessions[session.key] = session
@@ -761,15 +778,18 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
                 return session
         raise RuntimeError("could not allocate a globally unique session id")
 
-    async def terminate_all_active_sessions(
-        self, reason: str = "system_cleanup", *, tenant_id: str
+    async def terminate_owner_sessions(
+        self, reason: str, *, tenant_id: str, owner_ref: Optional[str]
     ) -> None:
-        """Alle aktiven Sessions eines Mandanten beenden."""
+        """End one admin's pending or active sessions in a tenant.
+
+        Reads the store, as ``get_active_session`` does, so the session an admin
+        is told about and the one a new session ends come from the same source.
+        """
         keys = [
-            key
-            for key, session in tuple(self.sessions.items())
-            if hmac.compare_digest(key.tenant_id, tenant_id)
-            and session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
+            session.key
+            for session in self._live_sessions(tenant_id)
+            if _same_owner(session.owner_ref, owner_ref)
         ]
         for key in keys:
             await self.terminate_session(key, reason)
@@ -1010,18 +1030,20 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         session_id: Optional[str] = None,
         *,
         tenant_id: str,
+        for_owner: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Aktive Admin-Session eines Mandanten abrufen.
 
         Wenn eine Session-ID übergeben wird, wird genau diese Session zurückgegeben,
-        sofern sie noch nicht beendet wurde. Ohne Session-ID wird die zuletzt erstellte
-        aktive Session geliefert, solange diese eindeutig ist.
+        sofern sie noch nicht beendet wurde. Ohne Session-ID wird die aktive Session
+        geliefert, solange sie eindeutig ist; ``for_owner`` beschränkt das auf die
+        Sessions einer Administratorin (#473).
         """
         candidates = [
             session
-            for session in self.store.list_for_tenant(tenant_id)
-            if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
-            and (session_id is None or session.id == session_id)
+            for session in self._live_sessions(tenant_id)
+            if (session_id is None or session.id == session_id)
+            and (for_owner is None or _same_owner(session.owner_ref, for_owner))
         ]
         if not candidates:
             return None
@@ -1032,8 +1054,11 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
 
     def get_active_sessions(self, *, tenant_id: str) -> List[Dict[str, Any]]:
         """Alle aktiven oder ausstehende Sessions zurückgeben."""
+        return [session.to_public_dict() for session in self._live_sessions(tenant_id)]
+
+    def _live_sessions(self, tenant_id: str) -> List[Session]:
         return [
-            session.to_public_dict()
+            session
             for session in self.store.list_for_tenant(tenant_id)
             if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
         ]

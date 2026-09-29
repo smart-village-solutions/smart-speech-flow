@@ -165,9 +165,9 @@ class TestTheReasonSurvivesTheCallOperatorsActuallyMake:
 
 
 class TestASessionTerminationIsNotAFailure:
-    """terminate_all_active_sessions(reason="new_session_created") runs on every
-    new session. Recording those as CONNECTION_ERROR feeds routine traffic into
-    a critical alert."""
+    """terminate_owner_sessions(reason="new_session_created") runs whenever an
+    admin starts another session. Recording those as CONNECTION_ERROR feeds
+    routine traffic into a critical alert."""
 
     @pytest.mark.parametrize(
         "reason,expected",

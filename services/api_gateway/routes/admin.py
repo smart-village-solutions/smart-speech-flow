@@ -35,7 +35,11 @@ from ..studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
     require_validated_runtime_configuration,
 )
-from ..tenant_context import StudioTenantContext, require_studio_tenant_context
+from ..tenant_context import (
+    StudioTenantContext,
+    require_admin_ref,
+    require_studio_tenant_context,
+)
 from ..tenant_session import TenantSessionKey
 from ..websocket import WebSocketManager
 from ..websocket_polling_routes import TenantPollingStore
@@ -250,7 +254,7 @@ def get_client_base_url() -> str:
     "/session/create",
     status_code=status.HTTP_201_CREATED,
     summary="Neue Admin-Session erstellen",
-    description="Erstellt eine neue Admin-Session. Vorherige aktive Sessions werden standardmäßig aus Datenschutzgründen beendet.",
+    description="Erstellt eine neue Admin-Session. Die vorherige aktive Session derselben Administratorin wird standardmäßig aus Datenschutzgründen beendet; Sessions anderer Admins des Mandanten bleiben bestehen.",
     responses={500: {"description": "Session creation failed"}},
 )
 async def create_admin_session(
@@ -259,12 +263,13 @@ async def create_admin_session(
         Depends(require_validated_runtime_configuration),
     ],
     lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
+    owner_ref: Annotated[str, Depends(require_admin_ref)],
 ) -> SessionCreateResponse:
     """
     Erstellt eine neue Admin-Session
 
     - Generiert neue Session-UUID
-    - Beendet standardmäßig ältere aktive Sessions
+    - Beendet standardmäßig die ältere aktive Session derselben Administratorin
     - Erstellt Client-URL mit embedded Session-ID
     - Sendet WebSocket-Notifications an betroffene Clients
 
@@ -274,7 +279,9 @@ async def create_admin_session(
     try:
         logger.info("🚀 Admin-Session-Erstellung gestartet")
 
-        session = await lifecycle.create(runtime.context.tenant_id, runtime.configuration)
+        session = await lifecycle.create(
+            runtime.context.tenant_id, runtime.configuration, owner_ref=owner_ref
+        )
         session_id = session.id
 
         # Client-URL generieren
@@ -307,12 +314,13 @@ async def create_admin_session(
 @router.get(
     "/session/current",
     summary="Aktuelle Admin-Session abrufen",
-    description="Gibt Details der aktuell aktiven Admin-Session zurück. Optional kann eine Session-ID angegeben werden.",
+    description="Gibt Details der aktiven Admin-Session der anfragenden Administratorin zurück. Optional kann eine Session-ID des Mandanten angegeben werden.",
     responses=ADMIN_ROUTE_RESPONSES,
 )
 async def get_current_session(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
     lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
+    owner_ref: Annotated[str, Depends(require_admin_ref)],
     session_id: Annotated[
         Optional[str],
         Query(description="Spezifische Session-ID, die geladen werden soll."),
@@ -325,7 +333,7 @@ async def get_current_session(
         SessionStatusResponse: Details der aktiven Session
     """
     try:
-        session = lifecycle.current(context.tenant_id, session_id)
+        session = lifecycle.current(context.tenant_id, session_id, owner_ref=owner_ref)
         return SessionStatusResponse(
             session_id=session.id,
             status=session.status.value,

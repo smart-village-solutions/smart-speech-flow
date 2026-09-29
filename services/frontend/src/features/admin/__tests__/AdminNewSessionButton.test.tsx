@@ -39,8 +39,8 @@ describe('AdminNewSessionButton', () => {
     expect(screen.queryByText(/Laufendes Gespräch beenden/)).not.toBeInTheDocument();
   });
 
-  // Decision 5 and 9: the gateway terminates the live session on create, so the
-  // UI must say so first rather than discover it afterwards.
+  // Decision 5 and 9: the gateway terminates the admin's live session on create,
+  // so the UI must say so first rather than discover it afterwards.
   it('warns before ending a running session, naming it', async () => {
     const creates = countCreates();
     renderButton('AR000001');

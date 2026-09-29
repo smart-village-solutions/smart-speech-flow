@@ -92,9 +92,10 @@ _WIRE_ALIASES = {
     # violation -- it must not land in PROTOCOL_ERROR either.
     "manual_termination": DisconnectReason.SERVER_DISCONNECT,
     "manual_admin_termination": DisconnectReason.SERVER_DISCONNECT,
-    # terminate_all_active_sessions' default, and a member of the closed
-    # SessionTerminationReason enum. Maintenance is a deliberate server-side
-    # action; without this an operator's cleanup pages critical.
+    # A member of the closed SessionTerminationReason enum, and the legacy
+    # manager's terminate_all_active_sessions default. Maintenance is a
+    # deliberate server-side action; without this an operator's cleanup pages
+    # critical.
     "system_cleanup": DisconnectReason.SERVER_DISCONNECT,
     # _get_termination_message's inactivity reason -- the same event as
     # session_timeout, spelled differently by the caller.

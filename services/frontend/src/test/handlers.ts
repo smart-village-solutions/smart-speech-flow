@@ -82,6 +82,23 @@ export const handlers = [
     })
   ),
 
+  // The requesting admin's own live session: the live row of the history above.
+  http.get('*/api/admin/session/current', () =>
+    HttpResponse.json({
+      session_id: 'AR000001',
+      status: 'active',
+      customer_language: 'ar',
+      admin_connected: true,
+      customer_connected: true,
+      message_count: 3,
+      created_at: '2026-08-26T11:20:00+00:00',
+      terminated_at: null,
+      termination_reason: null,
+      warning_at: '2026-08-26T19:15:00+00:00',
+      timeout_at: '2026-08-26T19:20:00+00:00',
+    })
+  ),
+
   http.delete('*/api/admin/session/:id/terminate', ({ params }) =>
     HttpResponse.json({
       message: `Session ${String(params.id)} erfolgreich beendet`,

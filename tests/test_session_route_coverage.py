@@ -17,6 +17,7 @@ from services.api_gateway.session_manager import (
     SessionStatus,
 )
 from services.api_gateway.session_store import MemoryTenantSessionStore
+from services.api_gateway.tenant_context import admin_ref
 from services.api_gateway.tenant_session import (
     RuntimeConfigurationSnapshot,
     TenantSessionKey,
@@ -76,9 +77,12 @@ def test_session_round_trip_keeps_scope_message_and_timeout_state() -> None:
 async def test_manager_replaces_only_the_same_tenants_active_session(
     manager: TenantSessionManager,
 ) -> None:
-    first = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    other = await manager.create_admin_session("tenant-b", SNAPSHOT)
-    second = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    owner_a = admin_ref("tenant-a", "admin-subject")
+    first = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner_a)
+    other = await manager.create_admin_session(
+        "tenant-b", SNAPSHOT, owner_ref=admin_ref("tenant-b", "admin-subject")
+    )
+    second = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner_a)
 
     assert manager.get_session(first.key).status is SessionStatus.TERMINATED
     assert manager.get_session(other.key).status is SessionStatus.PENDING
