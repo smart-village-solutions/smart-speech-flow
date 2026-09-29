@@ -8,12 +8,20 @@ from collections.abc import Awaitable, Callable
 import httpx
 
 from .evidence import Evidence
+from .gateway import SocketRejected
 
 Step = Callable[[], Awaitable[tuple[bool, str]]]
 
 # A failed network call is a failed check, not a crashed run: the remaining
 # checks and the cleanup must still happen.
-_EXPECTED_FAILURES = (httpx.HTTPError, OSError, ValueError, KeyError, TimeoutError)
+_EXPECTED_FAILURES = (
+    httpx.HTTPError,
+    OSError,
+    ValueError,
+    KeyError,
+    TimeoutError,
+    SocketRejected,
+)
 
 
 async def run_step(evidence: Evidence, name: str, step: Step) -> bool:
