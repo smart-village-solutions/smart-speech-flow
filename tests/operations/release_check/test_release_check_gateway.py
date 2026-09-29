@@ -36,6 +36,7 @@ async def test_admin_calls_carry_the_bearer_token_and_the_right_route():
     await gateway.realtime_ticket("tok", "S1")
     await gateway.admin_polling("tok", "S1")
     await gateway.terminate("tok", "S1")
+    await gateway.session_history("tok")
 
     assert seen == [
         ("POST", "/api/admin/session/create", "Bearer tok"),
@@ -45,6 +46,7 @@ async def test_admin_calls_carry_the_bearer_token_and_the_right_route():
         ("POST", "/api/admin/session/S1/realtime-ticket", "Bearer tok"),
         ("POST", "/api/admin/session/S1/polling/activate", "Bearer tok"),
         ("DELETE", "/api/admin/session/S1/terminate", "Bearer tok"),
+        ("GET", "/api/admin/session/history", "Bearer tok"),
     ]
 
 

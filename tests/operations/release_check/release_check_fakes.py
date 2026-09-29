@@ -66,6 +66,22 @@ class FakeGateway:
         self.keep_refused_content = False
         self.fail_create_for: set[str] = set()
         self.ping_before_ack = False
+        self.history_status = 200
+
+    def seed_live_session(self, tenant: str) -> None:
+        """A real user's conversation that the check must not disturb."""
+        self.sessions[f"real-{tenant}"] = FakeSession(tenant=tenant, status="active")
+
+    async def session_history(self, token: str) -> httpx.Response:
+        if self.history_status != 200:
+            return _json(self.history_status, {"detail": "unavailable"})
+        tenant = self._tenant(token)
+        live = [
+            {"id": session_id}
+            for session_id, session in self.sessions.items()
+            if session.tenant == tenant and session.status in ("pending", "active")
+        ]
+        return _json(200, {"sessions": [], "total_count": 0, "active_sessions": live})
 
     @staticmethod
     def _tenant(token: str) -> str:

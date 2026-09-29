@@ -16,6 +16,7 @@ from .evidence import Evidence
 from .gateway import Gateway, websocket_connect
 from .isolation import check_isolation
 from .login import LoginError, access_token
+from .preflight import tenants_idle
 from .retention import clean_up, terminate_and_verify
 from .scenario import ADMIN_TEXTS, GUEST_TEXTS, Conversation, run_conversation
 
@@ -44,7 +45,7 @@ async def _log_in(
 
 async def run(settings: Settings, gateway: Gateway, evidence: Evidence, login: Login) -> bool:
     conversations = await _log_in(settings, evidence, login)
-    if conversations is None:
+    if conversations is None or not await tenants_idle(gateway, evidence, conversations):
         return False
     try:
         await asyncio.gather(*(run_conversation(gateway, evidence, c) for c in conversations))

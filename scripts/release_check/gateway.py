@@ -148,6 +148,9 @@ class Gateway:
             f"/api/admin/session/{session_id}/terminate", headers=self._auth(token)
         )
 
+    async def session_history(self, token: str) -> httpx.Response:
+        return await self._http.get("/api/admin/session/history", headers=self._auth(token))
+
     async def customer_session(
         self, session_id: str, *, params: dict[str, str] | None = None
     ) -> httpx.Response:

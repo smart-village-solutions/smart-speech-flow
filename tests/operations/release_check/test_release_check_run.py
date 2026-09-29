@@ -76,3 +76,33 @@ async def test_the_report_carries_no_token_password_or_session_id():
 
     for forbidden in ("token-A1", "secret-A1", *gateway.sessions):
         assert forbidden not in rendered
+
+
+# Production allows one live conversation per tenant: creating a session ends
+# the tenant's others. The check must never end a real user's conversation.
+async def test_a_live_conversation_in_either_tenant_stops_the_run_before_anything_is_created():
+    gateway, evidence = FakeGateway(), Evidence()
+    gateway.seed_live_session("B")
+
+    assert await run(_settings(), gateway, evidence, _login) is False
+    assert list(gateway.sessions) == ["real-B"]
+    assert gateway.terminated == []
+    assert "B has no live conversations" in _failed(evidence)
+
+
+async def test_an_unreadable_history_stops_the_run():
+    gateway, evidence = FakeGateway(), Evidence()
+    gateway.history_status = 503
+
+    assert await run(_settings(), gateway, evidence, _login) is False
+    assert gateway.sessions == {}
+    assert "A has no live conversations" in _failed(evidence)
+
+
+async def test_an_idle_tenant_pair_passes_the_preflight():
+    gateway, evidence = FakeGateway(), Evidence()
+
+    await run(_settings(), gateway, evidence, _login)
+
+    names = [check.name for check in evidence.checks if check.passed]
+    assert {"A has no live conversations", "B has no live conversations"} <= set(names)
