@@ -10,4 +10,4 @@
 
 - [x] 2.1 Focused tests, each proven to fail when its rule is removed.
 - [x] 2.2 Full suite on a merge with `origin/main`; tenant-isolation matrix.
-- [ ] 2.3 Deploy to production and verify with the #289 release check.
+- [x] 2.3 Deploy to production and verify with the #289 release check.
