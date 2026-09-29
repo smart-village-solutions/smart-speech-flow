@@ -73,6 +73,8 @@ async def next_frame(
                 frame = json.loads(await socket.recv())
             except ValueError:
                 continue
+            if not isinstance(frame, dict):
+                continue
             if frame.get("type") == "heartbeat_ping":
                 pong = {"type": "heartbeat_pong", "ping_id": frame.get("ping_id")}
                 await socket.send(json.dumps(pong))
@@ -214,7 +216,9 @@ STEPS: tuple[tuple[str, ConversationStep], ...] = (
 )
 
 
-async def run_conversation(gateway: Gateway, evidence: Evidence, conversation: Conversation) -> None:
+async def run_conversation(
+    gateway: Gateway, evidence: Evidence, conversation: Conversation
+) -> None:
     live = _Live()
     async with AsyncExitStack() as stack:
         for name, step in STEPS:

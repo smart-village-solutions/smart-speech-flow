@@ -59,7 +59,9 @@ def _loopback_cookies(client: httpx.AsyncClient, url: str) -> dict[str, str]:
     host = parts.hostname or ""
     if parts.scheme != "http" or not (host in LOOPBACK_HOSTS or host.endswith(".localhost")):
         return {}
-    pairs = [f"{cookie.name}={cookie.value}" for cookie in client.cookies.jar if cookie.domain == host]
+    pairs = [
+        f"{cookie.name}={cookie.value}" for cookie in client.cookies.jar if cookie.domain == host
+    ]
     return {"Cookie": "; ".join(pairs)} if pairs else {}
 
 
@@ -89,7 +91,7 @@ def _code_from(response: httpx.Response, redirect_uri: str, state: str) -> str:
             raise LoginError("Keycloak returned a mismatched state")
         if "code" not in query:
             raise LoginError(f"Keycloak refused the login: {query.get('error', ['unknown'])[0]}")
-        return query["code"][0]
+        return str(query["code"][0])
     if _form_action(response.text, str(response.url), AUTHENTICATE_ACTION):
         raise LoginError("Keycloak rejected the credentials")
     if _form_action(response.text, str(response.url), REQUIRED_ACTION):

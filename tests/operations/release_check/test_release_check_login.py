@@ -53,7 +53,9 @@ class FakeKeycloak:
             cookie = "KC_RESTART=restart; Path=/realms/realm-a/; Secure; HttpOnly"
             return httpx.Response(200, text=_page(AUTHENTICATE), headers={"set-cookie": cookie})
         if path.endswith("/login-actions/authenticate"):
-            if self.require_cookie and "KC_RESTART=restart" not in request.headers.get("cookie", ""):
+            if self.require_cookie and "KC_RESTART=restart" not in request.headers.get(
+                "cookie", ""
+            ):
                 return httpx.Response(400, text="<html><p>We are sorry...</p></html>")
             self.submitted = parse_qs(request.content.decode())
             return self._submit()

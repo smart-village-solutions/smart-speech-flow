@@ -134,7 +134,9 @@ async def test_a_closed_connection_becomes_socket_rejected(monkeypatch):
 
     monkeypatch.setattr(gateway_module, "_open_websocket", open_closed)
 
-    async with websocket_connect("wss://api.example/ws/customer/S1", "https://app.example") as socket:
+    async with websocket_connect(
+        "wss://api.example/ws/customer/S1", "https://app.example"
+    ) as socket:
         with pytest.raises(SocketRejected):
             await socket.recv()
         with pytest.raises(SocketRejected):
