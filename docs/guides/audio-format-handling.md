@@ -189,8 +189,8 @@ export default {
 
 The gateway validates every recording through one `AudioValidator` per app
 (`services/api_gateway/audio_processing.py`). `build_gateway_dependencies`
-builds a `WavAudioValidator`, and the message routes, `POST /pipeline` and
-`POST /upload` all validate with it. Accepting another format means a second
+builds a `WavAudioValidator`, and the message routes validate with it.
+Accepting another format means a second
 adapter for the same port that converts to WAV first, then hands the result to
 the WAV validator:
 

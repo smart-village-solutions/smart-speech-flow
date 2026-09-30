@@ -101,14 +101,6 @@ Falls Probleme auftreten:
    - Suche nach AudioRecorderWithWAVConversion-Logs
    - Prüfe auf Fehler bei `convertToWAV()`
 
-### Test-Script
-
-Für automatisierte Backend-Tests:
-```bash
-cd /root/projects/ssf-backend
-python scripts/test_audio_recording_e2e.py
-```
-
 ## Nächste Schritte
 
 - [ ] Manuelle Browser-Tests durchführen mit echter Sprache

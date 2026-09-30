@@ -159,7 +159,7 @@ When adding new documentation:
 ## 🔗 External Resources
 
 - [Main README](../README.md) - Project overview and quick start
-- [OpenAPI Specification](openapi.yaml) - REST API documentation
+- [OpenAPI snapshot](../tests/gateway_contract/snapshots/openapi.json) - REST API document generated from the running gateway
 - [Repository](https://github.com/smart-village-solutions/smart-speech-flow) - Source code
 
 ## 📮 Questions?

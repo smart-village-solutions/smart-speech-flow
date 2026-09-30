@@ -68,12 +68,7 @@ Resolve a failed check before changing containers. Do not use a bare
 ### Erste API-Anfrage
 
 ```bash
-# Legacy/Low-Level Pipeline testen: Deutsch -> Englisch
-curl -F "file=@examples/audio/sample.wav" \
-     -F "source_lang=de" \
-     -F "target_lang=en" \
-     http://localhost:8000/pipeline \
-     --output translated.wav
+curl http://localhost:8000/health
 ```
 
 ### Empfohlener Einstieg fuer Frontends
@@ -189,12 +184,8 @@ Der aktuelle Haupt-Workflow fuer Admin/Customer-Kommunikation ist sessionbasiert
 - **Port:** 8000
 - **Funktion:** Zentrales REST-API für alle Sprachdienste
 - **Primaere Endpunkte:** Session- und Messaging-API unter `/api/*`
-- **Legacy/Low-Level Endpunkte:** `/pipeline` (POST), `/upload` (POST), `/health` (GET), `/metrics` (GET)
+- **Operations endpoints:** `/health` (GET), `/metrics` (GET)
 - **Session-Workflow:** Admin erstellt Session, Customer aktiviert sie, Nachrichten laufen ueber den Unified Message Endpoint
-- **Beispiel fuer End-to-End Pipeline:**
-   ```bash
-   curl -F "file=@sample.wav" -F "source_lang=de" -F "target_lang=en" http://localhost:8000/pipeline --output output.wav
-   ```
 
 ### 5. Session Store (Redis)
 - **Port:** 6379 (intern via Docker-Netzwerk)
@@ -238,7 +229,6 @@ Der aktuelle Haupt-Workflow fuer Admin/Customer-Kommunikation ist sessionbasiert
 | API-Gateway    | `/api/session/{id}/message` | POST | Unified Message Endpoint fuer Text und Audio |
 | API-Gateway    | `/api/session/{id}/messages` | GET | Nachrichtenhistorie einer Session |
 | API-Gateway    | `/api/languages/supported` | GET | Unterstuetzte Frontend-Sprachen |
-| API-Gateway    | `/pipeline`      | POST    | Legacy/Low-Level End-to-End-Pipeline |
 | API-Gateway    | `/health`        | GET     | Status der angebundenen Services   |
 | API-Gateway    | `/metrics`       | GET     | Monitoring                         |
 
@@ -387,87 +377,6 @@ Der ASR-Service akzeptiert nicht nur WAV-Dateien, sondern auch weitere Audioform
 - **Weitere gängige Formate**
 
 Die Format-Erkennung erfolgt automatisch beim Upload. Die Rückgabe erfolgt immer als WAV-Datei (synthetisierte Sprache).
-
-**Beispiel für MP3-Upload:**
-```bash
-curl -F "file=@sample.mp3" -F "source_lang=de" -F "target_lang=en" http://localhost:8000/pipeline --output output.wav
-```
-
-## 🌐 Integration Frontend: Spracheingabe und Ausgabe
-
-### 1. Spracheingabe und Datei-Upload
-
-Das Frontend muss beim Upload einer Audiodatei die Ausgangs- und Zielsprache als Formularfelder mitsenden:
-
-```html
-<form action="/upload" method="post" enctype="multipart/form-data">
-  <input type="file" name="file" accept=".wav,.mp3,.ogg,.flac" required>
-  <select name="source_lang" required>
-    <option value="de">Deutsch</option>
-    <option value="en">Englisch</option>
-    <!-- weitere Sprachen ... -->
-  </select>
-  <select name="target_lang" required>
-    <option value="en">Englisch</option>
-    <option value="de">Deutsch</option>
-    <!-- weitere Sprachen ... -->
-  </select>
-  <button type="submit">Senden</button>
-</form>
-```
-
-**JavaScript-Alternative:**
-```js
-const formData = new FormData();
-formData.append('file', fileInput.files[0]);
-formData.append('source_lang', sourceLangSelect.value);
-formData.append('target_lang', targetLangSelect.value);
-
-fetch('/upload', {
-  method: 'POST',
-  body: formData
-});
-```
-
-### 2. Backend-Response: Ergebnisstruktur
-
-Nach erfolgreichem Upload liefert das Backend eine HTML-Seite mit:
-- **Transkription:** Originalsprache (z.B. Deutsch)
-- **Übersetzung:** Zielsprache (z.B. Englisch)
-- **Download-Link:** für die synthetisierte WAV-Datei
-- **Audio-Player:** zur direkten Wiedergabe
-
-```html
-<p>Transkription: Hallo Welt</p>
-<p>Übersetzung: Hello world</p>
-<a href="data:audio/wav;base64,..." download="output.wav">WAV herunterladen</a>
-<audio controls src="data:audio/wav;base64,..."></audio>
-```
-
-### 3. API-Endpunkt für externe Clients
-
-Für reine API-Nutzung kann der `/pipeline`-Endpunkt genutzt werden:
-
-```js
-fetch('/pipeline', {
-  method: 'POST',
-  body: formData
-})
-.then(res => res.blob())
-.then(blob => {
-  // WAV-Datei speichern oder abspielen
-});
-```
-
-### 4. Fehlerbehandlung
-
-Falls die Sprachparameter fehlen oder ungültig sind, liefert das Backend eine Fehlermeldung als HTML. Das Frontend sollte diese anzeigen und den Nutzer zur Auswahl der Sprachen auffordern.
-
-**Wichtige Hinweise für das Frontend:**
-- Immer beide Sprachparameter mitsenden (`source_lang`, `target_lang`)
-- Ergebnis enthält Originaltext, Übersetzung und Audio (WAV, base64)
-- Fehler werden als HTML zurückgegeben
-- Das Formularfeld muss `file` heißen
 
 ## 🤖 Modellübersicht
 
