@@ -120,9 +120,6 @@ capability or a bearer token of the same tenant.
   `/api/admin/circuit-breakers/*`, `POST /api/admin/telemetry/probe` and
   `GET /api/websocket/monitoring/health`.
 - Language lists: `GET /api/languages/supported` and its alias `GET /languages`.
-- Direct pipeline: `POST /pipeline` and `POST /upload` run ASR, translation and
-  TTS on one upload outside any session. They are for service tests and
-  technical integrations, not the frontend workflow.
 
 `tests/gateway_contract/snapshots/openapi.json` is the complete, pinned
 OpenAPI document.
@@ -158,8 +155,7 @@ container, so it serves HTTP and WebSocket routes alike and adds nothing to the
 OpenAPI document: `get_session_manager`, `get_realtime_ticket_store`,
 `get_polling_store`, `get_websocket_manager`, `get_conversation_service`,
 `get_session_lifecycle`, `get_studio_runtime_flow`, `get_login_directory`,
-`get_circuit_breaker_client`, `get_speech_pipeline`, `get_pipeline_admission`,
-`get_connection_monitor`, `get_prometheus_registry`, `get_oidc_key_cache` and
+`get_circuit_breaker_client`, `get_connection_monitor`, `get_prometheus_registry`, `get_oidc_key_cache` and
 `get_quality_telemetry`. A test replaces one with
 `app.dependency_overrides[provider]`, or builds its own app with
 `create_app()` and runs its lifespan.

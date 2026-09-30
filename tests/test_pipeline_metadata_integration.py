@@ -93,18 +93,20 @@ class TestAudioPipelineIntegration:
 
         # Decode base64 to bytes for process_wav
         audio_bytes = base64.b64decode(sample_audio_base64)
+        # The message route validates and converts before the pipeline runs.
+        validation = WavAudioValidator().validate(audio_bytes, normalize=True)
+        assert validation.is_valid, validation.error_message
+        validated_bytes = validation.processed_audio or audio_bytes
 
         # Real integration test - calls actual ASR/Translation/TTS services
         result = await asyncio.to_thread(
             lambda: process_wav(
-                file_bytes=audio_bytes,
+                file_bytes=validated_bytes,
                 source_lang="en",
                 target_lang="de",
                 debug=True,
-                validate_audio=True,  # Use real audio from examples/
                 speech=speech,
                 refiner=NoOpTranslationRefiner(),
-                validator=WavAudioValidator(),
             )
         )
 

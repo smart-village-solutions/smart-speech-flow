@@ -73,7 +73,6 @@ RUN printf '%s%s\n' \
 
 COPY services/api_gateway/ /app/services/api_gateway/
 COPY services/__init__.py /app/services/__init__.py
-COPY examples/ /app/examples/
 
 ENV PYTHONPATH=/app
 USER app

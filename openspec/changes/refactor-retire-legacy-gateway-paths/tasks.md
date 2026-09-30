@@ -4,10 +4,10 @@
 - [x] 1.3 Production Compose render unchanged; fresh-clone `docker compose build` evidence recorded
 
 ## 2. Legacy routes (PR 2)
-- [ ] 2.1 Delete `/pipeline`, `/upload`, `GET /` and the legacy-only audio-validation branch
-- [ ] 2.2 Remove import-time `logging.basicConfig`
-- [ ] 2.3 Delete scripts, tools and docs that target unregistered routes
-- [ ] 2.4 Consumer search recorded; contract, tenant-matrix and realtime suites green
+- [x] 2.1 Delete `/pipeline`, `/upload`, `GET /` and the legacy-only audio-validation branch
+- [x] 2.2 Remove import-time `logging.basicConfig`
+- [x] 2.3 Delete scripts, tools and docs that target unregistered routes
+- [x] 2.4 Consumer search recorded; contract, tenant-matrix and realtime suites green
 
 ## 3. One pipeline tail (PR 3)
 - [ ] 3.1 Characterization tests for both modes

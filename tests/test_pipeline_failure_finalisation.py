@@ -52,7 +52,7 @@ class TestAudioPipelineAsrFailure:
         mock_post.side_effect = [asr, _ok_translation(), _ok_tts()]
 
         result = process_wav(
-            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+            b"not-really-audio", "en", "de", **wav_collaborators()
         )
 
         assert result["error"] is True
@@ -69,7 +69,7 @@ class TestAudioPipelineAsrFailure:
         mock_post.side_effect = [asr, _ok_translation(), _ok_tts()]
 
         result = process_wav(
-            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+            b"not-really-audio", "en", "de", **wav_collaborators()
         )
 
         assert result["error"] is True
@@ -84,7 +84,7 @@ class TestAudioPipelineAsrFailure:
         mock_post.side_effect = [asr, _ok_translation(), _ok_tts()]
 
         result = process_wav(
-            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+            b"not-really-audio", "en", "de", **wav_collaborators()
         )
 
         assert result["error"] is True
@@ -95,7 +95,7 @@ class TestAudioPipelineAsrFailure:
         mock_post.side_effect = OSError("connection reset by peer")
 
         result = process_wav(
-            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+            b"not-really-audio", "en", "de", **wav_collaborators()
         )
 
         assert result["error"] is True
@@ -127,7 +127,7 @@ class TestFailureFinalisation:
         mock_post.side_effect = [asr, _ok_translation(), _ok_tts()]
 
         result = process_wav(
-            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+            b"not-really-audio", "en", "de", **wav_collaborators()
         )
 
         assert result["error"] is True
@@ -176,9 +176,9 @@ class TestSingleClockRead:
 
 
 class TestTheExceptionPathDoesNotLeakInternals:
-    """The audio route serialises error_msg and debug straight to the browser
-    (routes/pipeline.py), so a raw requests exception there discloses the
-    internal service hostname and port."""
+    """error_msg and debug can reach the browser in a response, so a raw
+    requests exception there would disclose the internal service hostname and
+    port."""
 
     @staticmethod
     def _transport_error() -> Exception:
@@ -193,7 +193,7 @@ class TestTheExceptionPathDoesNotLeakInternals:
         mock_post.side_effect = self._transport_error()
 
         result = process_wav(
-            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+            b"not-really-audio", "en", "de", **wav_collaborators()
         )
 
         rendered = f"{result['error_msg']} {result['debug']}"
@@ -206,7 +206,7 @@ class TestTheExceptionPathDoesNotLeakInternals:
         mock_post.side_effect = self._transport_error()
 
         result = process_wav(
-            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+            b"not-really-audio", "en", "de", **wav_collaborators()
         )
 
         assert result["debug"]["error_code"] == "upstream_unreachable"
@@ -216,7 +216,7 @@ class TestTheExceptionPathDoesNotLeakInternals:
         mock_post.side_effect = TimeoutError("read timed out")
 
         result = process_wav(
-            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+            b"not-really-audio", "en", "de", **wav_collaborators()
         )
 
         assert result["debug"]["error_code"] == "upstream_timeout"
@@ -236,7 +236,7 @@ class TestTheExceptionPathKeepsWhatItAlreadyHas:
         mock_post.side_effect = [asr, translation, OSError("connection reset")]
 
         result = process_wav(
-            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+            b"not-really-audio", "en", "de", **wav_collaborators()
         )
 
         assert result["error"] is True
@@ -249,7 +249,7 @@ class TestTheExceptionPathKeepsWhatItAlreadyHas:
         mock_post.side_effect = OSError("connection reset")
 
         result = process_wav(
-            b"not-really-audio", "en", "de", validate_audio=False, **wav_collaborators()
+            b"not-really-audio", "en", "de", **wav_collaborators()
         )
 
         assert result["asr_text"] is None

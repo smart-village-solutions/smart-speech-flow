@@ -158,7 +158,7 @@ See the [Testing Guide](testing/TESTING_GUIDE.md) for test categories, fixtures,
 
 ### Contract and Compatibility
 
-The [OpenAPI specification](openapi.yaml) is the source of truth for REST schemas, response fields, and status codes. Keep it aligned with the running implementation and update contract tests whenever an API contract changes.
+The pinned OpenAPI document, [`tests/gateway_contract/snapshots/openapi.json`](../tests/gateway_contract/snapshots/openapi.json), is the source of truth for REST schemas, response fields, and status codes. It is generated from the running app, and `tests/gateway_contract/test_contract_openapi_snapshot.py` fails when the two drift; regenerate it with `SSF_UPDATE_OPENAPI_SNAPSHOT=1` whenever an API contract changes on purpose.
 
 Preserve established endpoints, field names, event types, and response semantics unless a change has been discussed, documented, and communicated to affected consumers. Use `customer` for the end user and reserve `client` for technical HTTP or WebSocket clients. Consult the [API conventions](guides/api-conventions.md) before introducing new terminology or public fields.
 
@@ -324,7 +324,7 @@ See the [conversation quality KPI catalog](operations/conversation-quality-kpis.
 
 Documentation is part of the change, not post-release cleanup. Update the documentation in the same pull request whenever behaviour, interfaces, configuration, operations, or developer workflow changes.
 
-- Keep the [OpenAPI specification](openapi.yaml) and API examples aligned with externally observable REST contracts.
+- Regenerate the [OpenAPI snapshot](../tests/gateway_contract/snapshots/openapi.json) and keep API examples aligned with externally observable REST contracts.
 - Update WebSocket event, session-flow, and frontend-integration documentation when client-visible real-time behaviour changes.
 - Update `.env.example`, deployment guidance, and runbooks when configuration, secrets, dependencies, monitoring, or recovery procedures change.
 - Record durable architectural decisions, alternatives, and consequences in an ADR when a change establishes or alters a long-lived technical direction.

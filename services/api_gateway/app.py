@@ -25,6 +25,7 @@ from .branding import DISPLAY_NAME
 from .client_origin import configured_client_origin
 from .dependencies import GatewayDependencies, build_gateway_dependencies
 from .gateway_metrics import GatewayMetrics
+from .logging_setup import configure_logging
 from .pipeline_admission import PipelineAdmission, PipelineAdmissionConfig, PipelineAdmissionMetrics
 from .rate_limiter import RateLimitMiddleware, RateLimits
 from .refinement_metrics import RefinementMetrics
@@ -617,7 +618,7 @@ def _build_pipeline_collaborators(
     admission_metrics: PipelineAdmissionMetrics,
     refiner: "BaseTranslationRefiner",
 ) -> _PipelineCollaborators:
-    """What the container hands the conversation service and the pipeline routes.
+    """What the container hands the conversation service.
 
     Built before the container, which injects them.
     """
@@ -870,10 +871,7 @@ def setup_cors_for_websockets(app: FastAPI) -> None:
 from . import websocket, websocket_monitoring_routes, websocket_polling_routes
 from .routes import admin, circuit_breaker, customer, feedback, login, session
 from .routes.health import router as health_router
-from .routes.index import router as index_router
 from .routes.metrics import metrics
-from .routes.pipeline import router as pipeline_router
-from .routes.upload import router as upload_router
 
 
 async def list_supported_languages() -> Any:
@@ -883,9 +881,6 @@ async def list_supported_languages() -> Any:
 
 def _include_routes(app: FastAPI) -> None:
     app.include_router(health_router)
-    app.include_router(index_router)
-    app.include_router(pipeline_router)
-    app.include_router(upload_router)
     app.include_router(session.router, prefix="/api", tags=["sessions"])
     app.include_router(login.router)
     app.include_router(admin.router, tags=["admin"])
@@ -931,6 +926,7 @@ GATEWAY_DESCRIPTION = """
 
 def create_app() -> FastAPI:
     """Build one gateway app. Its lifespan builds the app's own dependency container."""
+    configure_logging()
     app = FastAPI(
         title=f"{DISPLAY_NAME} API Gateway",
         description=GATEWAY_DESCRIPTION,
@@ -941,7 +937,6 @@ def create_app() -> FastAPI:
     metrics = GatewayMetrics.build()
     app.state.gateway_metrics = metrics
     app.state.prometheus_registry = metrics.registry
-    setattr(app, "requests_total", metrics.requests_total)
     app.state.dependencies = None
 
     setup_cors_for_websockets(app)

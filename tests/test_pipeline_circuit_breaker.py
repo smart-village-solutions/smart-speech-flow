@@ -83,7 +83,7 @@ class TestAudioPipeline:
 
         with patch.object(pipeline_logic.requests, "post") as post:
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
+                WAV_HEADER, "de", "en", **wav_pipeline
             )
 
         post.assert_not_called(), "a request was sent although the circuit was open"
@@ -96,7 +96,7 @@ class TestAudioPipeline:
 
         with patch.object(pipeline_logic.requests, "post"):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
+                WAV_HEADER, "de", "en", **wav_pipeline
             )
 
         assert result["error_code"] == UPSTREAM_BUSY_ERROR_CODE
@@ -107,7 +107,7 @@ class TestAudioPipeline:
 
         with patch.object(pipeline_logic.requests, "post", return_value=_ok_asr()):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
+                WAV_HEADER, "de", "en", **wav_pipeline
             )
 
         assert result["error"] is True
@@ -121,7 +121,7 @@ class TestAudioPipeline:
 
         with patch.object(pipeline_logic.requests, "post", side_effect=replies):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
+                WAV_HEADER, "de", "en", **wav_pipeline
             )
 
         assert result["debug"]["failed_stage"] == PipelineStage.TTS.value
@@ -135,7 +135,7 @@ class TestAudioPipeline:
 
         with patch.object(pipeline_logic.requests, "post"):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
+                WAV_HEADER, "de", "en", **wav_pipeline
             )
 
         steps = result["debug"]["steps"]
@@ -177,7 +177,7 @@ class TestTheHappyPathIsUnchanged:
             side_effect=[_ok_asr(), _ok_translation(), _ok_tts()],
         ):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
+                WAV_HEADER, "de", "en", **wav_pipeline
             )
 
         assert result["error"] is False
@@ -197,7 +197,7 @@ class TestTheHappyPathIsUnchanged:
             "post",
             side_effect=[_ok_asr(), _ok_translation(), _ok_tts()],
         ):
-            pipeline_logic.process_wav(WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline)
+            pipeline_logic.process_wav(WAV_HEADER, "de", "en", **wav_pipeline)
 
         for name in ("asr", "translation", "tts"):
             assert (
@@ -215,7 +215,7 @@ class TestTheHappyPathIsUnchanged:
             return_value=Reply({"detail": "upstream exploded"}, status_code=failing_status),
         ):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
+                WAV_HEADER, "de", "en", **wav_pipeline
             )
 
         assert result["error"] is True
@@ -247,7 +247,7 @@ class TestTheBreakerAgreesWithThePipeline:
 
         with patch.object(pipeline_logic.requests, "post", side_effect=replies):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
+                WAV_HEADER, "de", "en", **wav_pipeline
             )
 
         assert result["error"] is True
@@ -260,7 +260,7 @@ class TestTheBreakerAgreesWithThePipeline:
 
         with patch.object(pipeline_logic.requests, "post", side_effect=replies):
             result = pipeline_logic.process_wav(
-                WAV_HEADER, "de", "en", validate_audio=False, **wav_pipeline
+                WAV_HEADER, "de", "en", **wav_pipeline
             )
 
         assert result["error"] is False

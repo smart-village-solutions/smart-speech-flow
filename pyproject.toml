@@ -102,9 +102,7 @@ module = [
     "services.api_gateway.routes.customer",
     "services.api_gateway.routes.feedback",
     "services.api_gateway.routes.health",
-    "services.api_gateway.routes.index",
     "services.api_gateway.routes.metrics",
-    "services.api_gateway.routes.upload",
     "services.api_gateway.service_health",
     "services.api_gateway.session_store",
     "services.api_gateway.tenant_persistence",
@@ -112,10 +110,7 @@ module = [
     "services.api_gateway.tests.test_admin",
     "services.api_gateway.tests.test_customer",
     "services.api_gateway.tests.test_endpoints",
-    "services.api_gateway.tests.test_health",
     "services.api_gateway.tests.test_metrics",
-    "services.api_gateway.tests.test_pipeline",
-    "services.api_gateway.utils.health_utils",
     "services.api_gateway.websocket_monitoring_routes",
 ]
 ignore_errors = true

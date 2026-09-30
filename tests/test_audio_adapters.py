@@ -141,19 +141,6 @@ def test_the_message_path_reports_the_apps_validator_refusal(client, speech, gat
     assert speech.transcribed == []
 
 
-@pytest.mark.parametrize("path", ["/pipeline", "/upload"])
-def test_the_pipeline_routes_run_the_apps_validator(client, speech, gateway_dependencies, path):
-    validator = StubValidator(accept=True)
-    gateway_dependencies.speech_pipeline.validator = validator
-    recording = wav_bytes()
-
-    response = _send_audio(client, path, recording)
-
-    assert response.status_code == 200, response.text
-    assert validator.calls == [(recording, True)]
-    assert speech.transcribed == [b"VALIDATED"]
-
-
 def test_a_running_app_keeps_audio_in_the_directory_it_started_with(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, speech
 ):

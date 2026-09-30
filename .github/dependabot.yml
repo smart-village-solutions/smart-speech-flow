@@ -92,21 +92,6 @@ updates:
       - "python"
 
   - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "05:35"
-      timezone: "Europe/Berlin"
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-    labels:
-      - "dependencies"
-      - "npm"
-
-  - package-ecosystem: "npm"
     directory: "/services/frontend"
     schedule:
       interval: "weekly"

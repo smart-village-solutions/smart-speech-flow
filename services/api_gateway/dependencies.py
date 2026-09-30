@@ -248,14 +248,6 @@ def get_circuit_breaker_client(connection: HTTPConnection) -> CircuitBreakerServ
     return _container(connection).circuit_breaker_client
 
 
-def get_speech_pipeline(connection: HTTPConnection) -> SpeechPipeline:
-    return _container(connection).speech_pipeline
-
-
-def get_pipeline_admission(connection: HTTPConnection) -> PipelineAdmission | None:
-    return _container(connection).pipeline_admission
-
-
 def get_connection_monitor(connection: HTTPConnection) -> WebSocketMonitor:
     return _container(connection).websocket_monitor
 

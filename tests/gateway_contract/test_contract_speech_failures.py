@@ -1,13 +1,11 @@
 """How speech-service failures, open circuit breakers and refinement reach the client.
 
 The speech services and the refiner are answered at their HTTP boundary. Only
-public routes are driven: the message routes, the legacy /pipeline and /upload
-routes, and the /api/health and /api/admin/circuit-breakers routes.
+public routes are driven: the message routes, and the /api/health and
+/api/admin/circuit-breakers routes.
 """
 
 from __future__ import annotations
-
-import base64
 
 import pytest
 import requests
@@ -435,58 +433,3 @@ def test_without_refinement_the_tts_text_is_spoken_and_no_step_is_recorded(
     assert names == ["translation", "tts"]
     [tts_request] = speech_services.sent_to("tts")
     assert tts_request["json"]["tts_text"] == "Guten Tag."
-
-
-def _post_pipeline(client):
-    return client.post(
-        "/pipeline",
-        files={"file": ("speech.wav", wav_bytes(), "audio/wav")},
-        data={"source_lang": "de", "target_lang": "en"},
-    )
-
-
-def test_the_pipeline_route_answers_with_all_three_stages(client, speech_services):
-    response = _post_pipeline(client)
-
-    assert response.status_code == 200
-    body = response.json()
-    assert set(body) == {"success", "originalText", "translatedText", "audioBase64", "debug"}
-    assert (body["success"], body["originalText"], body["translatedText"]) == (
-        True,
-        "Guten Tag",
-        "Good day",
-    )
-    assert base64.b64decode(body["audioBase64"])[:4] == b"RIFF"
-    assert [step["step"] for step in body["debug"]["steps"]] == [
-        "Audio_Validation",
-        "ASR",
-        "Translation",
-        "TTS",
-    ]
-    assert (body["debug"]["failed_stage"], body["debug"]["error_code"]) == ("none", "none")
-    assert speech_services.calls == ["asr", "translation", "tts"]
-
-
-def test_the_pipeline_route_runs_the_refiner(client, refinement):
-    response = _post_pipeline(client)
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["translatedText"] == "Good day, refined"
-    assert "LLM_Refinement" in [step["step"] for step in body["debug"]["steps"]]
-    assert refinement.calls == ["asr", "translation", "refinement", "tts"]
-
-
-def test_the_upload_route_renders_the_result(client, speech_services):
-    response = client.post(
-        "/upload",
-        files={"file": ("speech.wav", wav_bytes(), "audio/wav")},
-        data={"source_lang": "de", "target_lang": "en"},
-    )
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/html")
-    assert "Transkription: Guten Tag" in response.text
-    assert "Übersetzung: Good day" in response.text
-    assert "data:audio/wav;base64," in response.text
-    assert speech_services.calls == ["asr", "translation", "tts"]

@@ -315,25 +315,6 @@ def tts_app(monkeypatch):
     )
 
 
-@pytest.fixture
-def upload_module(monkeypatch):
-    fastapi_stub, responses_stub = build_fastapi_stub()
-    pipeline_module = types.ModuleType("services.api_gateway.pipeline_logic")
-    pipeline_module.process_wav = lambda file_bytes, source_lang, target_lang, **_: {}
-    pipeline_module.SpeechPipeline = object
-
-    return load_module(
-        monkeypatch,
-        "services.api_gateway.routes.upload",
-        "services/api_gateway/routes/upload.py",
-        {
-            "fastapi": fastapi_stub,
-            "fastapi.responses": responses_stub,
-            "services.api_gateway.pipeline_logic": pipeline_module,
-        },
-    )
-
-
 def test_asr_helpers_build_debug_payloads(asr_app, monkeypatch):
     asr_app.psutil = SimpleNamespace(
         cpu_percent=lambda: 12.5,
@@ -854,63 +835,6 @@ def test_websocket_monitor_utc_and_overdue_heartbeat_health():
     assert health["active_connections"] == 2
     assert health["stale_connections"] >= 1
     assert monitor._extract_domain("https://example.com:443") == "example.com"
-
-
-@pytest.mark.asyncio
-async def test_upload_route_escapes_html_and_handles_success(upload_module, monkeypatch):
-    class FakeAppCounter:
-        def __init__(self):
-            self.calls = 0
-
-        def inc(self):
-            self.calls += 1
-
-    counter = FakeAppCounter()
-
-    monkeypatch.setattr(
-        upload_module,
-        "process_wav",
-        lambda file_bytes, source_lang, target_lang, **_: {
-            "error": True,
-            "error_msg": "<script>alert(1)</script>",
-            "asr_text": "<b>roher text</b>",
-            "translation_text": None,
-            "audio_bytes": b"",
-        },
-    )
-    # No admission gate, so the route runs unbounded — this test is about HTML
-    # escaping, not capacity.
-    request = SimpleNamespace(app=SimpleNamespace(requests_total=counter))
-    pipeline = SimpleNamespace(speech=None, refiner=None, validator=None)
-    error_response = await upload_module.upload(
-        request, pipeline, None, FakeUploadFile(b"audio"), "de", "en"
-    )
-    assert error_response.status_code == 400
-    assert b"&lt;script&gt;alert(1)&lt;/script&gt;" in error_response.body
-    assert b"Keine Ausgabe verfuegbar." in error_response.body
-
-    monkeypatch.setattr(
-        upload_module,
-        "process_wav",
-        lambda file_bytes, source_lang, target_lang, **_: {
-            "error": False,
-            "asr_text": "<b>Hallo</b>",
-            "translation_text": "<i>Hello</i>",
-            "audio_bytes": b"wav",
-        },
-    )
-    success_response = await upload_module.upload(
-        request,
-        pipeline,
-        None,
-        FakeUploadFile(b"audio"),
-        "<de>",
-        "<en>",
-    )
-    assert success_response.status_code == 200
-    assert b"&lt;b&gt;Hallo&lt;/b&gt;" in success_response.body
-    assert b"&lt;de&gt;" in success_response.body
-    assert counter.calls == 2
 
 
 def test_asr_module_imports_with_real_fastapi(monkeypatch):

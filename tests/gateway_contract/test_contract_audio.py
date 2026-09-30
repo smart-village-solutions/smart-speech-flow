@@ -1,4 +1,4 @@
-"""Audio validation, conversion and storage, as the message, /pipeline and /upload routes see them."""
+"""Audio validation, conversion and storage, as the message routes see them."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import math
 import os
 import struct
 import wave
-from html import escape
 from pathlib import Path
 
 import pytest
@@ -108,14 +107,6 @@ def _send_audio(client, session_id: str, body: bytes, role: str = "admin", sourc
     )
 
 
-def _post_file(client, path: str, body: bytes):
-    return client.post(
-        path,
-        files={"file": ("speech.wav", body, "audio/wav")},
-        data={"source_lang": "de", "target_lang": "en"},
-    )
-
-
 @pytest.mark.parametrize("kind", list(INVALID_INPUTS))
 @pytest.mark.parametrize(("role", "source"), [("admin", "de"), ("customer", "en")])
 def test_invalid_audio_messages_are_refused_before_the_pipeline(
@@ -187,95 +178,6 @@ def test_a_44k_stereo_message_reaches_asr_as_16k_mono(client, active_session, sp
     # the client sees no validation step in the metadata.
     steps = response.json()["pipeline_metadata"]["steps"]
     assert [step["name"] for step in steps] == ["asr", "translation", "tts"]
-
-
-@pytest.mark.parametrize("kind", list(INVALID_INPUTS))
-def test_pipeline_route_reports_invalid_audio_as_its_validation_step(client, speech_services, kind):
-    body, error_code, error_message, validation_details = INVALID_INPUTS[kind]
-
-    response = _post_file(client, "/pipeline", body)
-
-    assert response.status_code == 400
-    payload = response.json()
-    assert set(payload) == {"success", "error", "debug"}
-    assert payload["success"] is False
-    assert payload["error"] == f"Audio validation failed: {error_message}"
-    debug = payload["debug"]
-    assert (debug["failed_stage"], debug["error_code"]) == ("validation", "audio_validation_failed")
-    assert debug["frontend_input"] == {
-        "source_lang": "de",
-        "target_lang": "en",
-        "file_size": len(body),
-    }
-    [step] = debug["steps"]
-    assert set(step) == {"step", "input", "output", "error", "duration", "details"}
-    assert (step["step"], step["input"], step["output"], step["error"]) == (
-        "Audio_Validation",
-        {"file_size": len(body)},
-        False,
-        error_message,
-    )
-    details = dict(step["details"])
-    assert isinstance(details.pop("validation_time_ms"), int)
-    assert details == {
-        "normalization_applied": False,
-        "spec_conversion_applied": False,
-        "error_code": error_code,
-        "error_details": validation_details,
-    }
-    assert speech_services.calls == []
-
-
-@pytest.mark.parametrize("kind", list(INVALID_INPUTS))
-def test_upload_route_reports_invalid_audio_as_a_page(client, speech_services, kind):
-    _body, _code, error_message, _details = INVALID_INPUTS[kind]
-
-    response = _post_file(client, "/upload", INVALID_INPUTS[kind][0])
-
-    assert response.status_code == 400
-    assert response.headers["content-type"] == "text/html; charset=utf-8"
-    assert f"<p>{escape(f'Audio validation failed: {error_message}')}</p>" in response.text
-    assert "<p>Transkription: Keine Ausgabe verfuegbar.</p>" in response.text
-    assert speech_services.calls == []
-
-
-def test_pipeline_route_converts_44k_stereo_and_reports_the_validation_step(
-    client, speech_services
-):
-    recording = stereo_44k()
-
-    response = _post_file(client, "/pipeline", recording)
-
-    assert response.status_code == 200, response.text
-    [asr_request] = speech_services.sent_to("asr")
-    sent = asr_request["files"]["file"][1]
-    assert wav_format(sent) == (16000, 1, 16, 8000)
-    step = response.json()["debug"]["steps"][0]
-    assert (step["step"], step["input"], step["output"], step["error"]) == (
-        "Audio_Validation",
-        {"file_size": len(recording)},
-        True,
-        None,
-    )
-    details = dict(step["details"])
-    assert isinstance(details.pop("validation_time_ms"), int)
-    assert details == {
-        "normalization_applied": True,
-        "spec_conversion_applied": True,
-        "duration_seconds": 0.5,
-        "sample_rate": 16000,
-        "bit_depth": 16,
-        "channels": 1,
-        "processed_file_size": len(sent),
-    }
-
-
-def test_upload_route_converts_44k_stereo(client, speech_services):
-    response = _post_file(client, "/upload", stereo_44k())
-
-    assert response.status_code == 200, response.text
-    [asr_request] = speech_services.sent_to("asr")
-    assert wav_format(asr_request["files"]["file"][1]) == (16000, 1, 16, 8000)
 
 
 def test_message_audio_is_stored_in_the_v2_layout_and_served_byte_for_byte(

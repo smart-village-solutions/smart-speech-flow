@@ -192,8 +192,6 @@ Upload-Zeit:        < 200ms (Gigabit-Netzwerk)
 # Unit Tests
 pytest tests/test_cross_browser_audio.py -v
 
-# E2E Test
-python scripts/test_audio_recording_e2e.py
 
 # Code-Quality
 npm run lint

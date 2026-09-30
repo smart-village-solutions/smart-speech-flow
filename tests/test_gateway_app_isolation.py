@@ -269,20 +269,33 @@ def test_two_apps_share_no_registry_or_series() -> None:
 
 
 @pytest.mark.usefixtures("configured_process")
-def test_one_apps_metrics_do_not_show_anothers_counts() -> None:
+def test_one_apps_metrics_do_not_show_anothers_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+    from services.api_gateway import message_processing
+    from services.api_gateway.app import app as shared_app
+    from tests.pipeline_helpers import TEXT_PIPELINE_SUCCESS
+
     first_app, second_app = create_app(), create_app()
+    first_app.dependency_overrides.update(shared_app.dependency_overrides)
+    monkeypatch.setattr(
+        message_processing, "process_text_pipeline", lambda *_a, **_k: dict(TEXT_PIPELINE_SUCCESS)
+    )
+    family = "gateway_pipeline_queue_wait_seconds_count "
 
     with TestClient(first_app) as first, TestClient(second_app) as second:
-        # Counted before the upload is validated, so no speech service is reached.
-        refused = first.post(
-            "/pipeline",
-            files={"file": ("speech.wav", b"not a wav", "audio/wav")},
-            data={"source_lang": "de", "target_lang": "en"},
+        session_id = first.post("/api/admin/session/create").json()["session_id"]
+        activated = first.post(
+            "/api/customer/session/activate",
+            json={"session_id": session_id, "customer_language": "en"},
         )
-        assert refused.status_code != 200
+        assert activated.status_code == 200, activated.text
+        sent = first.post(
+            f"/api/admin/session/{session_id}/message",
+            json={"text": "Guten Tag", "source_lang": "de", "target_lang": "en"},
+        )
+        assert sent.status_code == 200, sent.text
 
-        assert _count_on_metrics(first, "gateway_requests_total ") == "gateway_requests_total 1.0"
-        assert _count_on_metrics(second, "gateway_requests_total ") == "gateway_requests_total 0.0"
+        assert _count_on_metrics(first, family) == family + "1.0"
+        assert _count_on_metrics(second, family) == family + "0.0"
 
 
 def _sample(metric: Counter | Gauge, directory: str) -> float | None:

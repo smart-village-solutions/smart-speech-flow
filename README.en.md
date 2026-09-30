@@ -77,7 +77,7 @@ ssh -N \
 `<gpu-host>` is the GPU server that runs the model containers; its address
 comes from the deployment inventory, not from this repository.
 
-The gateway is the public integration boundary. Clients should use the session and messaging endpoints under `/api/*`; `/pipeline` and `/upload` remain low-level/legacy endpoints.
+The gateway is the public integration boundary. Clients use the session and messaging endpoints under `/api/*`.
 
 ## Session workflow
 
@@ -88,16 +88,6 @@ The gateway is the public integration boundary. Clients should use the session a
 5. Real-time clients connect to `WS /ws/{session_id}/{client_type}`.
 
 For concrete REST and WebSocket payloads, use [the English developer guide](docs/DEVELOPER_GUIDE.en.md).
-
-## Example pipeline request
-
-```bash
-curl -F "file=@examples/audio/sample.wav" \
-  -F "source_lang=de" \
-  -F "target_lang=en" \
-  http://localhost:8000/pipeline \
-  --output translated.wav
-```
 
 ## Configuration
 
