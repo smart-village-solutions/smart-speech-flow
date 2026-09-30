@@ -35,6 +35,7 @@ this repository does not contain.
   websocket); `services/asr`, `services/translation` and `services/tts` error
   handling; the frontend `core/http` layer; tests and docs.
 - Delivered as five PRs that reference #230. Only the last one closes it.
+- Supersedes the development half of `disable-archive-acme-router`: its design and task 1.2 keep `frontend-archive` in development Compose, which this change removes. Its production requirement is unchanged.
 - Out of scope:
   - a single error envelope (#226)
   - packaging (#225, #229)

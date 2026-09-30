@@ -25,12 +25,12 @@ Audio and text messages SHALL pass through one shared translation, refinement an
 
 ### Requirement: Unhandled-error policy
 
-The gateway SHALL answer an unhandled HTTP exception with a JSON 500 that carries CORS headers, and SHALL log it without the exception message. A broad exception handler SHALL exist only where it implements a fallback, a boundary guard or bookkeeping before re-raising.
+The gateway SHALL answer an unhandled HTTP exception with a JSON 500 that carries CORS headers, and SHALL log its stack frames and exception type without the exception message. A broad exception handler SHALL exist only where it implements a fallback, a boundary guard or bookkeeping before re-raising.
 
 #### Scenario: Unhandled exception in a route
 
 - **WHEN** a route raises an unexpected exception before its response starts
-- **THEN** the client receives `500 {"detail": "Internal server error"}` with CORS headers, and the log carries the traceback but not the exception message
+- **THEN** the client receives `500 {"detail": "Internal server error"}` with CORS headers, and the log carries the stack frames and the original exception type but not the exception message
 
 #### Scenario: New broad handler
 

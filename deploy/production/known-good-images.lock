@@ -5,6 +5,8 @@
 # VRAM budget (#224);
 # the Keycloak theme image was built and verified on 2026-09-13; remaining
 # entries were captured on 2026-09-01 or later.
+# The frontend-archive row was removed on 2026-09-30: retired from
+# production in #360 and from development Compose in #480.
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
