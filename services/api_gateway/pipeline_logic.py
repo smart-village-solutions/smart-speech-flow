@@ -4,7 +4,7 @@ import time
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import psutil
 import requests
@@ -19,10 +19,6 @@ from .quality_telemetry import (
 )
 from .speech_services import AUDIO_WAV_MIME, SpeechServices
 from .translation_refiner import BaseTranslationRefiner, RefinementOutcome
-
-if TYPE_CHECKING:
-    from .audio_processing import AudioValidationResult
-
 
 # Marks a pipeline failure the client may usefully retry, so the routes can
 # answer 503 with a Retry-After instead of a permanent-looking error.
@@ -234,11 +230,6 @@ def _circuit_open_result(
     503 with a ``Retry-After`` through ``_raise_if_upstream_busy``. The
     telemetry code stays distinct, because a breaker we opened and a service
     politely shedding load are different operational events.
-
-    ``POST /pipeline`` does not do that translation -- it maps every
-    ``result["error"]`` to a 400 and reads neither field, so a transient
-    refusal looks permanent there. That behaviour predates this change and is
-    tracked separately; the fields are on the result either way.
 
     The work already done is preserved: a transcript that cost six seconds of
     GPU time should not vanish because the next stage was unreachable.
@@ -556,85 +547,6 @@ def _append_tts_debug_step(
     debug_info["steps"].append(tts_step)
 
 
-def _append_audio_validation_step(
-    debug_info: Dict[str, Any],
-    *,
-    original_file_size: int,
-    validation_result: "AudioValidationResult",
-    processed_file_size: int,
-    start_validation: float,
-) -> None:
-    validation_step = {
-        "step": "Audio_Validation",
-        "input": {"file_size": original_file_size},
-        "output": validation_result.is_valid,
-        "error": (None if validation_result.is_valid else validation_result.error_message),
-        "duration": round(time.perf_counter() - start_validation, 3),
-        "details": {
-            "validation_time_ms": validation_result.validation_time_ms,
-            "normalization_applied": validation_result.normalization_applied,
-            "spec_conversion_applied": validation_result.spec_conversion_applied,
-        },
-    }
-
-    if validation_result.is_valid:
-        validation_step["details"].update(
-            {
-                "duration_seconds": validation_result.duration_seconds,
-                "sample_rate": validation_result.sample_rate,
-                "bit_depth": validation_result.bit_depth,
-                "channels": validation_result.channels,
-                "processed_file_size": processed_file_size,
-            }
-        )
-    else:
-        validation_step["details"]["error_code"] = validation_result.error_code
-        validation_step["details"]["error_details"] = validation_result.details
-
-    debug_info["steps"].append(validation_step)
-
-
-def _apply_audio_validation(
-    file_bytes: bytes,
-    *,
-    validator: AudioValidator,
-    debug_info: Dict[str, Any],
-    start_total: float,
-) -> Tuple[Optional[bytes], Optional[Dict[str, Any]]]:
-    start_validation = time.perf_counter()
-    original_file_size = len(file_bytes)
-    validation_result = validator.validate(file_bytes, normalize=True)
-    processed_bytes = (
-        validation_result.processed_audio
-        if validation_result.is_valid and validation_result.processed_audio
-        else file_bytes
-    )
-
-    _append_audio_validation_step(
-        debug_info,
-        original_file_size=original_file_size,
-        validation_result=validation_result,
-        processed_file_size=len(processed_bytes),
-        start_validation=start_validation,
-    )
-
-    if validation_result.is_valid:
-        return processed_bytes, None
-
-    error_message = f"Audio validation failed: {validation_result.error_message}"
-    return None, _pipeline_error_result(
-        debug_info=debug_info,
-        start_total=start_total,
-        error_message=error_message,
-        failed_stage=PipelineStage.VALIDATION,
-        error_code=QualityErrorCode.AUDIO_VALIDATION_FAILED,
-        asr_text=None,
-        translation_text=None,
-        audio_bytes=None,
-        validation_result=validation_result,
-    )
-
-
 def _finalize_pipeline_success(debug_info: Dict[str, Any], start_total: float) -> None:
     _record_pipeline_duration(debug_info, start_total)
     # Written on success too, so a consumer reads the same two keys on every
@@ -849,10 +761,9 @@ def detect_harmful_content(text: str) -> bool:
 class SpeechPipeline:
     """What process_wav and process_text_pipeline call out to, for one app.
 
-    Built by build_gateway_dependencies. The conversation service and the
-    /pipeline and /upload routes hold this one object and pass its parts to
-    the pipeline functions, so every entry point runs with the same speech
-    services, refiner and audio validator.
+    Built by build_gateway_dependencies. The conversation service holds this
+    one object and passes its parts to the pipeline functions, so every message
+    runs with the same speech services, refiner and audio validator.
     """
 
     speech: SpeechServices
@@ -994,8 +905,8 @@ def process_text_pipeline(
         )
 
     except Exception as e:
-        # routes/pipeline.py serialises error_msg and debug straight to the
-        # browser, and a requests exception carries the internal service
+        # error_msg and debug can reach the browser in a response, and a
+        # requests exception carries the internal service
         # hostname and port. The detail goes to the server log; the client gets
         # the stable taxonomy code.
         code = classify_exception(e)
@@ -1017,24 +928,20 @@ def process_wav(
     source_lang,
     target_lang,
     debug=False,
-    validate_audio=True,
     *,
     speech: SpeechServices,
     refiner: BaseTranslationRefiner,
-    validator: AudioValidator,
 ):
     """
-    Enhanced WAV processing with optional audio validation
+    Run ASR, translation, refinement and TTS on already-validated WAV bytes.
 
     Args:
         file_bytes: Raw audio file bytes
         source_lang: Source language code
         target_lang: Target language code
         debug: Enable debug information
-        validate_audio: Enable comprehensive audio validation
         speech: The app's speech services
         refiner: The app's translation refiner
-        validator: The app's audio validator, used when validate_audio is set
 
     Returns:
         Dict with processing results including validation info
@@ -1055,18 +962,6 @@ def process_wav(
     translation_text: Optional[str] = None
 
     try:
-        # Audio Validation Step (if enabled)
-        if validate_audio:
-            validated_bytes, validation_failure = _apply_audio_validation(
-                file_bytes,
-                validator=validator,
-                debug_info=debug_info,
-                start_total=start_total,
-            )
-            if validation_failure is not None:
-                return validation_failure
-            file_bytes = validated_bytes
-
         # ASR
         start_asr = time.perf_counter()
         asr_started_at = utc_now()
@@ -1235,8 +1130,8 @@ def process_wav(
         )
 
     except Exception as e:
-        # routes/pipeline.py serialises error_msg and debug straight to the
-        # browser, and a requests exception carries the internal service
+        # error_msg and debug can reach the browser in a response, and a
+        # requests exception carries the internal service
         # hostname and port. The detail goes to the server log; the client gets
         # the stable taxonomy code.
         code = classify_exception(e)

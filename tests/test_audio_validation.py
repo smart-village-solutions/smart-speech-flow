@@ -215,6 +215,15 @@ class TestAudioValidation:
         # Should fail at WAV format validation
         assert result.error_code in ["INVALID_WAV_FORMAT", "VALIDATION_ERROR"]
 
+    def test_a_four_channel_44k_recording_fails_conversion(self):
+        audio = create_test_wav(duration_seconds=2.0, sample_rate=44100, channels=4)
+
+        result = validate_audio_input(audio)
+
+        assert result.is_valid is False
+        assert result.error_code == "INVALID_AUDIO_SPECS"
+        assert "automatic conversion failed" in result.error_message.lower()
+
 
 class TestAudioNormalization:
     """Tests für Audio-Normalisierung"""
@@ -383,87 +392,8 @@ class TestAudioValidationPerformance:
 class TestProcessWavIntegration:
     """Tests für Integration mit process_wav"""
 
-    @patch("services.api_gateway.pipeline_logic.requests.post")
-    def test_process_wav_with_validation_enabled(self, mock_post):
-        """Test: process_wav mit aktivierter Validation"""
-        # Mock ASR response
-        mock_asr_response = Mock()
-        mock_asr_response.json.return_value = {"text": "Hello world"}
-        mock_asr_response.status_code = 200
-
-        # Mock Translation response
-        mock_translation_response = Mock()
-        mock_translation_response.json.return_value = {"translations": "Hallo Welt"}
-        mock_translation_response.status_code = 200
-
-        # Mock TTS response
-        mock_tts_response = Mock()
-        mock_tts_response.content = b"fake_audio_output"
-        mock_tts_response.status_code = 200
-        mock_tts_response.headers = {"content-type": "audio/wav"}
-
-        mock_post.side_effect = [
-            mock_asr_response,
-            mock_translation_response,
-            mock_tts_response,
-        ]
-
-        # Valid audio
-        audio_bytes = create_test_wav(duration_seconds=3.0)
-
-        result = process_wav(
-            audio_bytes, "en", "de", debug=True, validate_audio=True, **wav_collaborators()
-        )
-
-        # Check that result was successful (no error field or error=False)
-        assert result.get("error", False) is False
-
-        # Check for debug info (can be 'debug' or 'debug_info')
-        debug_key = "debug" if "debug" in result else "debug_info"
-        assert "Audio_Validation" in [
-            step.get("step", step.get("name")) for step in result[debug_key]["steps"]
-        ]
-
-        # Find validation step
-        validation_step = next(
-            step
-            for step in result[debug_key]["steps"]
-            if step.get("step") == "Audio_Validation"
-            or step.get("name") == "Audio_Validation"
-        )
-        assert validation_step["output"] is True  # Validation passed
-        assert validation_step.get("error") is None
-
-    def test_process_wav_with_validation_failure(self):
-        """Test: process_wav mit Validation-Fehler"""
-        # Invalid audio (wrong sample rate)
-        audio_bytes = create_test_wav(
-            duration_seconds=2.0,
-            sample_rate=44100,
-            channels=4,  # Unsupported channel layout
-        )
-
-        result = process_wav(
-            audio_bytes, "en", "de", debug=True, validate_audio=True, **wav_collaborators()
-        )
-
-        # Check that validation failed
-        assert result.get("error", False) is True
-        assert "Audio validation failed" in result.get("error_msg", "")
-        assert result.get("validation_result") is not None
-        assert result["validation_result"].error_code == "INVALID_AUDIO_SPECS"
-        assert (
-            "automatic conversion failed"
-            in result["validation_result"].error_message.lower()
-        )
-
-        # Should not proceed to ASR/Translation/TTS
-        assert result["asr_text"] is None
-        assert result["translation_text"] is None
-        assert result["audio_bytes"] is None
-
-    def test_process_wav_validation_disabled(self):
-        """Test: process_wav mit deaktivierter Validation"""
+    def test_process_wav_adds_no_audio_validation_step(self):
+        """process_wav gets validated bytes; it never adds a validation step."""
         with patch("services.api_gateway.pipeline_logic.requests.post") as mock_post:
             # Mock successful responses
             mock_asr = Mock()
@@ -478,12 +408,9 @@ class TestProcessWavIntegration:
 
             mock_post.side_effect = [mock_asr, mock_translation, mock_tts]
 
-            # Even invalid audio should proceed if validation is disabled
             audio_bytes = b"invalid audio"
 
-            result = process_wav(
-                audio_bytes, "en", "de", validate_audio=False, **wav_collaborators()
-            )
+            result = process_wav(audio_bytes, "en", "de", **wav_collaborators())
 
             # Should not have validation step
             if "debug" in result and "steps" in result["debug"]:

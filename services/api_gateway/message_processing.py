@@ -764,10 +764,8 @@ async def process_audio_input(
             processed_file_bytes,
             source_lang,
             target_lang,
-            validate_audio=False,
             speech=pipeline.speech,
             refiner=pipeline.refiner,
-            validator=pipeline.validator,
         )
     except PipelineBusyError as busy:
         raise _system_busy_error(busy) from busy

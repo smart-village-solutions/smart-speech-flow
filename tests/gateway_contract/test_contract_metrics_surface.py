@@ -5,8 +5,8 @@ label, and a changed help text or type is what an operator reading the scrape
 sees. None of that fails anything else when it drifts, so the whole surface is
 pinned here after driving a production-shaped app: Studio configured, feedback
 maintenance connected, two sockets, a poller, a text and an audio message,
-POST /pipeline, a rate-limited message and one pass of the audio store's
-cleanup and disk usage.
+a rate-limited message and one pass of the audio store's cleanup and disk
+usage.
 
 The "_created" gauge prometheus_client adds beside a counter or histogram is
 left out: it is derived from its family, and a labelled family only grows one
@@ -420,14 +420,7 @@ def _drive_the_realtime_and_message_paths(client, conversations, dependencies) -
         admin.close()
 
 
-def _drive_the_pipeline_and_the_rate_limit(client, conversations) -> None:
-    piped = client.post(
-        "/pipeline",
-        files={"file": ("speech.wav", wav_bytes(), "audio/wav")},
-        data={"source_lang": "de", "target_lang": "en"},
-    )
-    assert piped.status_code == 200, piped.text
-
+def _drive_the_rate_limit(conversations) -> None:
     limited_session = conversations.create()
     conversations.activate(limited_session, "en")
     statuses = [conversations.send_text(limited_session).status_code for _ in range(13)]
@@ -441,7 +434,7 @@ def test_metrics_exposes_exactly_the_pinned_families(client, conversations, gate
         assert dependencies.feedback_maintenance is not None
         assert dependencies.session_manager.runtime_policy is not None
         _drive_the_realtime_and_message_paths(client, conversations, dependencies)
-        _drive_the_pipeline_and_the_rate_limit(client, conversations)
+        _drive_the_rate_limit(conversations)
         dependencies.audio_store.cleanup_expired()
         dependencies.audio_store.disk_usage()
         response = client.get("/metrics")

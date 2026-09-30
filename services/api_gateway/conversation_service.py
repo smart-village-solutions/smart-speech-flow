@@ -7,14 +7,13 @@ application, never back (#347 §2).
 
 from __future__ import annotations
 
-import time
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
 from .audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
-from .message_processing import process_audio_input, process_text_input, send_unified_message
+from .message_processing import send_unified_message
 from .session_manager import ClientType, SessionStatus, TenantSessionManager
 from .tenant_session import TenantSessionKey
 
@@ -67,36 +66,6 @@ class ConversationService:
             audio_store=self._audio_store,
             admission=self._admission,
             telemetry=self._quality_telemetry,
-        )
-
-    async def process_text(
-        self, key: TenantSessionKey, sender: ClientType, request: Request
-    ) -> MessageResponse:
-        return await process_text_input(
-            key,
-            sender,
-            request,
-            time.perf_counter(),
-            self._websocket_manager,
-            sessions=self._sessions,
-            pipeline=self._pipeline,
-            audio_store=self._audio_store,
-            admission=self._admission,
-        )
-
-    async def process_audio(
-        self, key: TenantSessionKey, sender: ClientType, request: Request
-    ) -> MessageResponse:
-        return await process_audio_input(
-            key,
-            sender,
-            request,
-            time.perf_counter(),
-            self._websocket_manager,
-            sessions=self._sessions,
-            pipeline=self._pipeline,
-            audio_store=self._audio_store,
-            admission=self._admission,
         )
 
     def messages(self, key: TenantSessionKey, role: ClientType) -> list[dict[str, object]]:

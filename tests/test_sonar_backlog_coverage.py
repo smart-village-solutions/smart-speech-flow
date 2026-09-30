@@ -1,12 +1,11 @@
 import importlib
-import json
 import os
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
-from tests.pipeline_helpers import pipeline_collaborators, speech_pipeline
+from tests.pipeline_helpers import pipeline_collaborators
 
 # Module namespaces as they were before this test reloaded them.
 _RELOADED: dict[str, dict[str, object]] = {}
@@ -355,68 +354,6 @@ async def test_websocket_origin_prefixes_allow_localhost_in_development(monkeypa
     assert await websocket.validate_websocket_origin(None) is True
     monkeypatch.setenv("ENVIRONMENT", "production")
     assert await websocket.validate_websocket_origin(None) is False
-
-
-@pytest.mark.asyncio
-async def test_legacy_pipeline_route_returns_success_and_error_payloads(monkeypatch):
-    pipeline_route = importlib.import_module("services.api_gateway.routes.pipeline")
-
-    class UploadStub:
-        async def read(self):
-            return b"wav-bytes"
-
-    request = SimpleNamespace(
-        app=SimpleNamespace(),
-        query_params={},
-        headers={"origin": "https://translate.smart-village.solutions"},
-    )
-
-    monkeypatch.setattr(
-        pipeline_route,
-        "process_wav",
-        lambda *args, **kwargs: {
-            "error": False,
-            "asr_text": "hello",
-            "translation_text": "hallo",
-            "audio_bytes": b"audio",
-            "debug": {"ok": True},
-        },
-    )
-    success = await pipeline_route.pipeline(
-        request=request,
-        pipeline=speech_pipeline(),
-        admission=None,
-        file=UploadStub(),
-        source_lang="en",
-        target_lang="de",
-        debug="true",
-    )
-    success_payload = json.loads(success.body)
-    assert success.status_code == 200
-    assert success_payload["success"] is True
-    assert success_payload["audioBase64"] is not None
-
-    monkeypatch.setattr(
-        pipeline_route,
-        "process_wav",
-        lambda *args, **kwargs: {
-            "error": True,
-            "error_msg": "bad audio",
-            "debug": {"ok": False},
-        },
-    )
-    failure = await pipeline_route.pipeline(
-        request=request,
-        pipeline=speech_pipeline(),
-        admission=None,
-        file=UploadStub(),
-        source_lang="en",
-        target_lang="de",
-    )
-    failure_payload = json.loads(failure.body)
-    assert failure.status_code == 400
-    assert failure_payload["success"] is False
-    assert failure_payload["error"] == "bad audio"
 
 
 def test_primary_refinement_status_distinguishes_skip_from_success():

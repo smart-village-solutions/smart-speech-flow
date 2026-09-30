@@ -1,6 +1,6 @@
 """Shared fixtures for the gateway pipeline suites (#189 non-blocking, #191 bound).
 
-Both suites drive the same four handlers with the same fake requests. Keeping the
+Both suites drive the same two message handlers with the same fake requests. Keeping the
 builders here stops the two files from drifting apart as the handlers change.
 
 Not named ``test_*``, so pytest does not collect it.
@@ -25,9 +25,7 @@ from services.api_gateway.translation_refiner import (
 )
 
 # routes/__init__.py re-exports the endpoint functions under their module names,
-# so `routes.upload` is the handler rather than the module. Import by path.
-upload_route = importlib.import_module("services.api_gateway.routes.upload")
-pipeline_route = importlib.import_module("services.api_gateway.routes.pipeline")
+# so `routes.health` is the handler rather than the module. Import by path.
 health_route = importlib.import_module("services.api_gateway.routes.health")
 
 AUDIO_BYTES = b"RIFF" + b"fake_wav_audio_data" + b"\x00" * 100
@@ -86,7 +84,7 @@ def wav_collaborators(
 ) -> Dict[str, Any]:
     """The keyword arguments process_wav takes."""
     pipeline = speech_pipeline(health, refiner)
-    return {"speech": pipeline.speech, "refiner": pipeline.refiner, "validator": pipeline.validator}
+    return {"speech": pipeline.speech, "refiner": pipeline.refiner}
 
 
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
@@ -144,10 +142,3 @@ def upload_file() -> Mock:
     handle.read = AsyncMock(return_value=AUDIO_BYTES)
     return handle
 
-
-def legacy_pipeline_request() -> Mock:
-    """The /pipeline handler also reads query params and origin headers."""
-    request = request_with()
-    request.query_params = {}
-    request.headers = {}
-    return request

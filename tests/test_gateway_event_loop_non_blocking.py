@@ -13,14 +13,9 @@ from tests.pipeline_helpers import (
     SAFETY_TIMEOUT,
     TEXT_PIPELINE_SUCCESS,
     audio_request,
-    legacy_pipeline_request,
     make_active_session,
-    pipeline_route,
-    request_with,
     speech_pipeline,
     text_request,
-    upload_file,
-    upload_route,
 )
 
 # Long enough that a blocked loop is unmistakable, short enough to keep the
@@ -103,47 +98,6 @@ class TestPipelineRunsOffTheEventLoop:
         assert (
             recorder.thread_ids[0] != loop_thread_id
         ), "process_text_pipeline ran on the event loop thread"
-
-    @pytest.mark.asyncio
-    async def test_legacy_upload_route_runs_off_event_loop(self):
-        recorder = _ThreadRecorder(PIPELINE_SUCCESS)
-        loop_thread_id = threading.get_ident()
-
-        with patch.object(upload_route, "process_wav", new=recorder):
-            await upload_route.upload(
-                request=request_with(),
-                pipeline=speech_pipeline(),
-                admission=None,
-                file=upload_file(),
-                source_lang="de",
-                target_lang="en",
-            )
-
-        assert recorder.thread_ids, "process_wav was never called"
-        assert (
-            recorder.thread_ids[0] != loop_thread_id
-        ), "the /upload route ran the pipeline on the event loop thread"
-
-    @pytest.mark.asyncio
-    async def test_legacy_pipeline_route_runs_off_event_loop(self):
-        recorder = _ThreadRecorder(PIPELINE_SUCCESS)
-        loop_thread_id = threading.get_ident()
-
-        with patch.object(pipeline_route, "process_wav", new=recorder):
-            await pipeline_route.pipeline(
-                request=legacy_pipeline_request(),
-                pipeline=speech_pipeline(),
-                admission=None,
-                file=upload_file(),
-                source_lang="de",
-                target_lang="en",
-                debug=None,
-            )
-
-        assert recorder.thread_ids, "process_wav was never called"
-        assert (
-            recorder.thread_ids[0] != loop_thread_id
-        ), "the /pipeline route ran the pipeline on the event loop thread"
 
 
 class TestConcurrentProgress:

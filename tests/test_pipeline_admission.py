@@ -27,14 +27,9 @@ from tests.pipeline_helpers import (
     TEXT_PIPELINE_SUCCESS,
     audio_request,
     health_route,
-    legacy_pipeline_request,
     make_active_session,
-    pipeline_route,
-    request_with,
     speech_pipeline,
     text_request,
-    upload_file,
-    upload_route,
 )
 
 # Short enough to keep the suite fast; every assertion below is about ordering
@@ -541,8 +536,8 @@ class TestMetrics:
         """The histogram sample and the advice in the body come from one clock read.
 
         Two separate ``perf_counter()`` calls make the metric and the response
-        body disagree about the same request, which is what docs/openapi.yaml
-        documents ``waited_seconds`` against.
+        body disagree about the same request, and clients read ``waited_seconds``
+        against that metric.
         """
         metrics = _metrics()
         admission = _admission(1, metrics=metrics)
@@ -998,48 +993,6 @@ class TestUpstreamSaturationStaysRetryable:
 
         assert excinfo.value.status_code == 500
         assert excinfo.value.detail["error_code"] == "PIPELINE_ERROR"
-
-
-class TestLegacyRoutesAreGated:
-    """All four GPU call sites are bounded, not just the unified endpoint."""
-
-    @pytest.mark.asyncio
-    async def test_upload_route_reports_busy(self):
-        admission = _admission(1)
-
-        with patch.object(upload_route, "process_wav", return_value=dict(PIPELINE_SUCCESS)):
-            async with _Saturated(admission):
-                response = await upload_route.upload(
-                    request=request_with(),
-                    pipeline=speech_pipeline(),
-                    admission=admission,
-                    file=upload_file(),
-                    source_lang="de",
-                    target_lang="en",
-                )
-
-        assert response.status_code == 503
-        assert response.headers["Retry-After"] == "1"
-
-    @pytest.mark.asyncio
-    async def test_pipeline_route_reports_busy(self):
-        admission = _admission(1)
-
-        with patch.object(pipeline_route, "process_wav", return_value=dict(PIPELINE_SUCCESS)):
-            async with _Saturated(admission):
-                response = await pipeline_route.pipeline(
-                    request=legacy_pipeline_request(),
-                    pipeline=speech_pipeline(),
-                    admission=admission,
-                    file=upload_file(),
-                    source_lang="de",
-                    target_lang="en",
-                    debug=None,
-                )
-
-        assert response.status_code == 503
-        assert response.headers["Retry-After"] == "1"
-        assert b"SYSTEM_BUSY" in response.body
 
 
 class TestNonPipelineTrafficIsUnaffected:
