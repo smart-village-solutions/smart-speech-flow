@@ -15,7 +15,7 @@ docker compose up -d traefik redis ollama api_gateway asr translation tts fronte
 curl http://localhost:8000/health
 ```
 
-The gateway is available at `http://localhost:8000`. The compose file also defines `frontend-archive`, whose build context is the sibling directory `../ssf-frontend`. Obtain that repository before running the unrestricted `docker compose up -d` command.
+The gateway is available at `http://localhost:8000`. Every image in `docker-compose.yml` builds from this repository alone; copy `.env.example` to `.env` first (see Configuration).
 
 ## Development prerequisites
 

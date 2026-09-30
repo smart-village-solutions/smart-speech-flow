@@ -5,6 +5,8 @@
 # VRAM budget (#224);
 # the Keycloak theme image was built and verified on 2026-09-13; remaining
 # entries were captured on 2026-09-01 or later.
+# The frontend-archive row was removed on 2026-09-30: retired from
+# production in #360 and from development Compose in #480.
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
@@ -13,7 +15,6 @@ asr	sha256:abff6ae86a6d06eb20b7f147739bf0e4560cb1c41ef5d8d1b4d443c7e8510da6	ssf-
 translation	sha256:7095a8c1192cf194013d0130fd0957010b2899e62c4a21464cc5f74ffc9d2dad	ssf-backend-translation:prod-35c4b2f
 tts	sha256:a51b74d82815761d04c6aec457b493f19e5e680a27fe4930473e9c28f9bbacf3	ssf-backend-tts:prod-a19258f
 frontend	sha256:6c470e968b471505fc0c4fb5a549b4859d6df565f3a6967cec9a0e9c00efc3d3	ssf-backend-frontend:prod-2383a2a
-frontend-archive	sha256:5fe65474631a5f74c4ea81a5881ade417809f9c5905b593c6cc2d2699e50686d	ssf-backend-frontend-archive:prod-e409a06
 keycloak	sha256:b9222cecb936372df1fa7154f30306f48277c4ee3acec47d5f487ca225160b20	ssf-keycloak:prod-59c954c
 traefik	sha256:76de233753150da70cde36a5d845c231d408a041b6fcf5a36f924c1322bd98fd	traefik@sha256:ca0f90490fe3091f5f4e582a28638652edb3b26b4d7a1d9ee621ce88fb2bff86
 ollama	sha256:edd5fde06b3f61a0c2de426ea87ea0491101f3bfa3f27b2b997ef6f4624199b2	ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a

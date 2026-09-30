@@ -35,12 +35,13 @@ def test_production_traefik_watches_the_dynamic_configuration_directory() -> Non
     assert "../../traefik/dynamic:/etc/traefik/dynamic:ro" in traefik["volumes"]
 
 
-def test_production_retires_the_archive_frontend_but_development_keeps_it() -> None:
+def test_no_compose_file_defines_the_retired_archive_frontend() -> None:
     production = yaml.safe_load(PRODUCTION_COMPOSE_PATH.read_text(encoding="utf-8"))
     development = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
 
-    assert "frontend-archive" not in production["services"]
-    assert "frontend-archive" in development["services"]
+    for compose in (production, development):
+        assert "frontend-archive" not in compose["services"]
+        assert "translate-archive" not in yaml.safe_dump(compose)
 
 
 def test_dynamic_provider_preserves_existing_security_boundaries() -> None:
