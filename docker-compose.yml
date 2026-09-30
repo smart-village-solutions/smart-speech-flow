@@ -451,19 +451,6 @@ services:
       - "traefik.http.routers.keycloak.tls.certresolver=le"
       - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
 
-  frontend-archive:
-    build:
-      context: ../ssf-frontend
-      dockerfile: Dockerfile
-    ports:
-      - "5173:5173"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.frontend-archive.rule=Host(`translate-archive.smart-village.solutions`)"
-      - "traefik.http.routers.frontend-archive.entrypoints=websecure"
-      - "traefik.http.routers.frontend-archive.tls.certresolver=le"
-    restart: always
-
   frontend:
     build:
       context: ./services/frontend
