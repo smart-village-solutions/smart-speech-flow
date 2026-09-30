@@ -111,6 +111,5 @@ Der produktive Einstiegspunkt ist:
 
 ## Hinweise
 
-- Die Anwendung ist auf die sessionbasierte API abgestimmt, nicht auf direkte Nutzung von `/pipeline`.
 - Fuer die Customer-Reise ist die Aktivierung ueber `POST /api/customer/session/activate` ein notwendiger Schritt vor dem Nachrichtenaustausch.
 - Die Frontend-Domain und die API-/WebSocket-Basis-URLs sollten in Deployment und lokaler Entwicklung konsistent gesetzt sein.

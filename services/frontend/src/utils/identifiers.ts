@@ -17,10 +17,6 @@ export function requirePathIdentifier(value: string, kind: PathIdentifierKind): 
   return encodeURIComponent(value);
 }
 
-export function sessionPath(sessionId: string): string {
-  return `/api/session/${requirePathIdentifier(sessionId, 'session')}`;
-}
-
 export function buildWebSocketUrl(
   baseUrl: string,
   sessionId: string,

@@ -2,8 +2,8 @@ import type { SessionInfoDto } from '@/domain/session/session.mapper';
 import type { AdminSession, AdminSessionStatus, CreatedSession } from './admin.types';
 
 /**
- * A history row is `Session.to_dict()` — the same payload `GET /api/session/{id}`
- * returns, plus the termination fields. Both arrays of the history response use
+ * A history row is `Session.to_dict()` — the same payload the admin session status and
+ * history endpoints return, plus the termination fields. Both arrays of the history response use
  * this shape.
  */
 export interface AdminSessionDto extends SessionInfoDto {
