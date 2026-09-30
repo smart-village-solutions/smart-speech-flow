@@ -34,7 +34,7 @@ docker compose up -d traefik redis ollama api_gateway asr translation tts
 curl http://localhost:8000/health
 ```
 
-The Compose definition also contains a containerised `frontend` and the optional `frontend-archive` service, which uses `../ssf-frontend` as its build context. Use the local Vite workflow above for frontend development; the containerised frontend is configured for deployment routing rather than as the default local development entry point.
+The Compose definition also contains a containerised `frontend`. Use the local Vite workflow above for frontend development; the containerised frontend is configured for deployment routing rather than as the default local development entry point.
 
 ### Local Python Development
 
