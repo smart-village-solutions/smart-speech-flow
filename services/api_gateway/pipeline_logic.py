@@ -23,8 +23,6 @@ from .translation_refiner import BaseTranslationRefiner, RefinementOutcome
 if TYPE_CHECKING:
     from .audio_processing import AudioValidationResult
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
 
 # Marks a pipeline failure the client may usefully retry, so the routes can
 # answer 503 with a Retry-After instead of a permanent-looking error.

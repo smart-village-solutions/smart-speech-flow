@@ -25,6 +25,7 @@ from .branding import DISPLAY_NAME
 from .client_origin import configured_client_origin
 from .dependencies import GatewayDependencies, build_gateway_dependencies
 from .gateway_metrics import GatewayMetrics
+from .logging_setup import configure_logging
 from .pipeline_admission import PipelineAdmission, PipelineAdmissionConfig, PipelineAdmissionMetrics
 from .rate_limiter import RateLimitMiddleware, RateLimits
 from .refinement_metrics import RefinementMetrics
@@ -931,6 +932,7 @@ GATEWAY_DESCRIPTION = """
 
 def create_app() -> FastAPI:
     """Build one gateway app. Its lifespan builds the app's own dependency container."""
+    configure_logging()
     app = FastAPI(
         title=f"{DISPLAY_NAME} API Gateway",
         description=GATEWAY_DESCRIPTION,
