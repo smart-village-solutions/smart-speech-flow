@@ -78,7 +78,7 @@ def test_translate_empty_text():
 
 
 def test_translate_refuses_a_body_that_is_not_a_json_object():
-    for body in (b"[]", b"null", b'"Hallo"', b"{not json"):
+    for body in (b"[]", b"null", b'"Hallo"', b"{not json", b"[" * 100_000):
         response = client.post(
             "/translate", content=body, headers={"content-type": "application/json"}
         )

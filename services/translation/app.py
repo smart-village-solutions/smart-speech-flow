@@ -703,7 +703,7 @@ async def _read_json_object(request: Request, debug_info: Dict[str, Any]) -> Dic
     """The body as a JSON object, or 400: debug is not known before the body is read."""
     try:
         payload = await request.json()
-    except ValueError:  # JSONDecodeError and UnicodeDecodeError
+    except (ValueError, RecursionError):  # undecodable, or nested too deeply
         payload = None
     if not isinstance(payload, dict):
         errors_total.inc()

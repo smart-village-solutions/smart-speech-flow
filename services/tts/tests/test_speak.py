@@ -104,7 +104,9 @@ def test_a_request_without_text_is_a_400_not_hallo_welt(client, speakers):
 
 
 @pytest.mark.parametrize(
-    "body", [b"[]", b"null", b'"Hallo"', b"{not json"], ids=["list", "null", "string", "broken"]
+    "body",
+    [b"[]", b"null", b'"Hallo"', b"{not json", b"[" * 100_000],
+    ids=["list", "null", "string", "broken", "deeply-nested"],
 )
 def test_a_body_that_is_not_a_json_object_is_a_400(client, speakers, body):
     response = client.post(

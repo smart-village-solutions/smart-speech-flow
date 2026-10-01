@@ -13,6 +13,7 @@ from fastapi import HTTPException, Request, UploadFile
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile as StarletteUploadFile
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.requests import ClientDisconnect
 
 from .audio_processing import AudioValidator
 from .audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
@@ -269,9 +270,10 @@ def _validate_supported_languages(source_lang: str, target_lang: str) -> None:
 async def _parse_audio_form(request: Request) -> tuple[Any, Any, Any]:
     try:
         form = await request.form()
-    except (StarletteHTTPException, ValueError):
+    except (StarletteHTTPException, ValueError, ClientDisconnect):
         # Starlette refuses some bodies with its own HTTPException, the parent of
         # FastAPI's, and lets python-multipart's parse errors (ValueErrors) escape.
+        # A client that drops mid-body is its own error too, not a server fault.
         raise HTTPException(
             status_code=400,
             detail=create_error_response("INVALID_FORM_DATA", "Malformed form data", {}),
@@ -513,8 +515,9 @@ async def _parse_text_request(request: Request) -> TextMessageRequest:
                 }
             ),
         )
-    except (ValueError, RecursionError) as e:
-        # JSONDecodeError and UnicodeDecodeError are ValueErrors; deep nesting recurses.
+    except (ValueError, RecursionError, ClientDisconnect) as e:
+        # JSONDecodeError and UnicodeDecodeError are ValueErrors; deep nesting recurses;
+        # a client that drops mid-body is its own error, not a server fault.
         logger.exception("❌ Failed to parse JSON", exc_info=redacted_exception_info(e))
         raise HTTPException(
             status_code=400,

@@ -342,7 +342,7 @@ async def synthesize(request: Request):
     requests_total.inc()
     try:
         data = await request.json()
-    except ValueError:  # JSONDecodeError and UnicodeDecodeError
+    except (ValueError, RecursionError):  # undecodable, or nested too deeply
         data = None
     if not isinstance(data, dict):
         return _error_response(
