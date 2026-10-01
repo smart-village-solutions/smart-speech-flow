@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException, Request
 
 import services.api_gateway.app as gateway
+import services.api_gateway.feedback.wiring as wiring
 from services.api_gateway.routes import admin, customer
 from services.api_gateway.session_lifecycle import SessionLifecycleService
 from services.api_gateway.studio_login_directory_client import DirectoryTransport
@@ -91,12 +92,12 @@ async def test_feedback_connection_failure_is_reported_and_retried(
             raise RuntimeError("database unavailable")
         return True
 
-    monkeypatch.setattr(gateway.asyncio, "sleep", record_delay)
-    monkeypatch.setattr(gateway, "_wire_feedback", wire_feedback)
+    monkeypatch.setattr(wiring.asyncio, "sleep", record_delay)
+    monkeypatch.setattr(wiring, "_wire_feedback", wire_feedback)
 
     state = SimpleNamespace()
     sessions = object()
-    await gateway.feedback_connect_task(
+    await wiring.feedback_connect_task(
         state,
         "postgresql://request",
         "postgresql://maintenance",
@@ -138,12 +139,12 @@ async def test_feedback_maintenance_failure_is_reported_and_next_pass_runs(
         if sleep_calls == 3:
             raise asyncio.CancelledError
 
-    monkeypatch.setattr(gateway.asyncio, "sleep", run_two_passes)
+    monkeypatch.setattr(wiring.asyncio, "sleep", run_two_passes)
     maintenance = RecoveringMaintenance()
     state = SimpleNamespace(feedback_maintenance=maintenance)
 
     with pytest.raises(asyncio.CancelledError):
-        await gateway.feedback_maintenance_task(state)
+        await wiring.feedback_maintenance_task(state)
 
     assert maintenance.reconciliation_attempts == 2
     assert capsys.readouterr().out.splitlines() == [

@@ -15,6 +15,8 @@ import pytest
 APP = Path(__file__).resolve().parents[1] / "services" / "api_gateway" / "app.py"
 SOURCE = APP.read_text(encoding="utf-8")
 DEPENDENCIES = APP.with_name("dependencies.py").read_text(encoding="utf-8")
+# The task is defined here; app.py's lifespan starts and stops it.
+WIRING_SOURCE = (APP.parent / "feedback" / "wiring.py").read_text(encoding="utf-8")
 
 
 def _function_source(name: str) -> str:
@@ -27,8 +29,8 @@ def _function_source(name: str) -> str:
     return ast.get_source_segment(SOURCE, function) or ""
 
 
-def _function_names() -> set[str]:
-    tree = ast.parse(SOURCE)
+def _function_names(source: str) -> set[str]:
+    tree = ast.parse(source)
     return {
         node.name
         for node in ast.walk(tree)
@@ -38,7 +40,7 @@ def _function_names() -> set[str]:
 
 class TestTheTaskExists:
     def test_a_maintenance_task_is_defined(self):
-        assert "feedback_maintenance_task" in _function_names()
+        assert "feedback_maintenance_task" in _function_names(WIRING_SOURCE)
 
     def test_the_task_is_started_by_the_lifespan(self):
         started = _function_source("_start_background_tasks")
@@ -59,12 +61,12 @@ class TestTheTaskExists:
 class TestBothPassesAreDriven:
     @pytest.mark.parametrize("call", ["reconcile_once()", "expire_once()"])
     def test_the_pass_is_invoked(self, call):
-        assert call in SOURCE
+        assert call in WIRING_SOURCE
 
     def test_retention_runs_on_its_own_slower_schedule(self):
         """Reconciliation is cheap and wants to be prompt; deletion is neither."""
-        assert "FEEDBACK_RECONCILIATION_INTERVAL_SECONDS" in SOURCE
-        assert "FEEDBACK_RETENTION_INTERVAL_SECONDS" in SOURCE
+        assert "FEEDBACK_RECONCILIATION_INTERVAL_SECONDS" in WIRING_SOURCE
+        assert "FEEDBACK_RETENTION_INTERVAL_SECONDS" in WIRING_SOURCE
 
 
 class TestItDegradesLikeTheRestOfFeedback:
@@ -75,7 +77,7 @@ class TestItDegradesLikeTheRestOfFeedback:
         assert "feedback_maintenance: Any = None" in DEPENDENCIES
 
     def test_the_task_body_guards_on_the_maintenance_object(self):
-        task = SOURCE[SOURCE.index("async def feedback_maintenance_task") :]
+        task = WIRING_SOURCE[WIRING_SOURCE.index("async def feedback_maintenance_task") :]
         task = task[: task.index("\nasync def ", 10)] if "\nasync def " in task[10:] else task
         assert "is None" in task
 
@@ -91,10 +93,10 @@ class TestMaintenanceConnectsAsItsOwnRole:
     """
 
     def test_the_maintenance_dsn_is_read_from_its_own_variable(self):
-        assert "SSF_FEEDBACK_MAINTENANCE_DATABASE_URL" in SOURCE
+        assert "SSF_FEEDBACK_MAINTENANCE_DATABASE_URL" in WIRING_SOURCE
 
     def test_the_maintenance_pool_is_closed_at_shutdown(self):
-        assert "feedback_maintenance_repository" in SOURCE
+        assert "feedback_maintenance_repository" in WIRING_SOURCE
 
     def test_a_missing_maintenance_dsn_leaves_submissions_working(self):
         """Collecting feedback matters more than reconciling it."""
