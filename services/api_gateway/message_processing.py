@@ -714,6 +714,70 @@ async def send_unified_message(
         recorder.emit(telemetry)
 
 
+async def _complete_message(
+    *,
+    key: TenantSessionKey,
+    client_type: ClientType,
+    result: Dict[str, Any],
+    source_lang: str,
+    target_lang: str,
+    original_text: str,
+    original_audio: Optional[bytes],
+    pipeline_type: str,
+    manager: Optional[WebSocketManager],
+    correlation_id: str,
+    sessions: TenantSessionManager,
+    audio_store: AudioStore,
+    start_time: float,
+) -> MessageResponse:
+    """Store, record and answer a message the pipeline produced, for either mode."""
+    message_id = str(uuid.uuid4())
+    original_audio_available = (
+        _store_audio_artifacts(
+            key, client_type, message_id, original_audio, audio_store=audio_store
+        )
+        if original_audio is not None
+        else False
+    )
+    pipeline_metadata = transform_pipeline_metadata(
+        result.get("debug"),
+        source_lang,
+        target_lang,
+        message_id=message_id,
+        original_audio_available=original_audio_available,
+    )
+    translated_audio_available = _store_translated_audio(
+        key, message_id, result.get("audio_bytes"), audio_store=audio_store
+    )
+    message = await create_session_message(
+        session_id=key,
+        client_type=client_type,
+        original_text=original_text,
+        translated_text=result.get("translation_text", ""),
+        source_lang=source_lang,
+        target_lang=target_lang,
+        manager=manager,
+        pipeline_metadata=pipeline_metadata,
+        # Internal availability marker only. Role-scoped URLs are built at
+        # HTTP/WebSocket response boundaries and are never persisted.
+        original_audio_url="available" if original_audio_available else None,
+        message_id=message_id,
+        correlation_id=correlation_id,
+        sessions=sessions,
+        translated_audio_available=translated_audio_available,
+    )
+    return _build_message_response(
+        message=message,
+        key=key,
+        source_lang=source_lang,
+        target_lang=target_lang,
+        pipeline_type=pipeline_type,
+        pipeline_metadata=pipeline_metadata,
+        start_time=start_time,
+        sender=client_type,
+    )
+
+
 async def process_audio_input(
     key: TenantSessionKey,
     client_type: ClientType,
@@ -784,50 +848,20 @@ async def process_audio_input(
             ),
         )
 
-    message_id = str(uuid.uuid4())
-    audio_bytes = result.get("audio_bytes")
-    original_audio_available = _store_audio_artifacts(
-        key, client_type, message_id, file_bytes, audio_store=audio_store
-    )
-
-    pipeline_metadata = transform_pipeline_metadata(
-        result.get("debug"),
-        source_lang,
-        target_lang,
-        message_id=message_id,
-        original_audio_available=original_audio_available,
-    )
-
-    translated_audio_available = _store_translated_audio(
-        key, message_id, audio_bytes, audio_store=audio_store
-    )
-    message = await create_session_message(
-        session_id=key,
+    return await _complete_message(
+        key=key,
         client_type=client_type,
-        original_text=result.get("asr_text", ""),
-        translated_text=result.get("translation_text", ""),
+        result=result,
         source_lang=source_lang,
         target_lang=target_lang,
+        original_text=result.get("asr_text", ""),
+        original_audio=file_bytes,
+        pipeline_type="audio",
         manager=manager,
-        pipeline_metadata=pipeline_metadata,
-        # Internal availability marker only. Role-scoped URLs are built at
-        # HTTP/WebSocket response boundaries and are never persisted.
-        original_audio_url="available" if original_audio_available else None,
-        message_id=message_id,
         correlation_id=correlation_id,
         sessions=sessions,
-        translated_audio_available=translated_audio_available,
-    )
-    message.id = message_id
-    return _build_message_response(
-        message=message,
-        key=key,
-        source_lang=source_lang,
-        target_lang=target_lang,
-        pipeline_type="audio",
-        pipeline_metadata=pipeline_metadata,
+        audio_store=audio_store,
         start_time=start_time,
-        sender=client_type,
     )
 
 
@@ -924,49 +958,20 @@ async def process_text_input(
             ),
         )
 
-    translated_text = pipeline_result.get("translation_text", "")
-    audio_bytes = pipeline_result.get("audio_bytes")
-
-    # Generate message_id upfront for use in pipeline_metadata
-    message_id = str(uuid.uuid4())
-
-    # Transform pipeline metadata to match spec format
-    pipeline_metadata = transform_pipeline_metadata(
-        pipeline_result.get("debug"),
-        text_request.source_lang,
-        text_request.target_lang,
-        original_audio_url=None,  # Text pipeline has no audio input
-        message_id=message_id,  # Pass message_id for audio URL
-    )
-
-    translated_audio_available = _store_translated_audio(
-        key, message_id, audio_bytes, audio_store=audio_store
-    )
-    message = await create_session_message(
-        session_id=key,
+    return await _complete_message(
+        key=key,
         client_type=client_type,
-        original_text=pipeline_result.get("asr_text", text_request.text),
-        translated_text=translated_text,
+        result=pipeline_result,
         source_lang=text_request.source_lang,
         target_lang=text_request.target_lang,
+        original_text=pipeline_result.get("asr_text", text_request.text),
+        original_audio=None,
+        pipeline_type="text",
         manager=manager,
-        pipeline_metadata=pipeline_metadata,
-        original_audio_url=None,
-        message_id=message_id,
         correlation_id=correlation_id,
         sessions=sessions,
-        translated_audio_available=translated_audio_available,
-    )
-
-    return _build_message_response(
-        message=message,
-        key=key,
-        source_lang=text_request.source_lang,
-        target_lang=text_request.target_lang,
-        pipeline_type="text",
-        pipeline_metadata=pipeline_metadata,
+        audio_store=audio_store,
         start_time=start_time,
-        sender=client_type,
     )
 
 
