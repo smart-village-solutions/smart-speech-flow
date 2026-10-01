@@ -503,13 +503,9 @@ async def test_asr_transcribe_fallback_and_success_paths(asr_app, monkeypatch):
     request = build_request(query_params={"debug": "true"})
 
     asr_app.model_loaded = False
+    upload = FakeUploadFile(b"audio-bytes")
     with pytest.raises(StubHTTPError) as no_model:
-        await asr_app.transcribe(
-            file=FakeUploadFile(b"audio-bytes"),
-            request=request,
-            lang="de",
-            debug="true",
-        )
+        await asr_app.transcribe(file=upload, request=request, lang="de", debug="true")
     assert no_model.value.status_code == 500
 
     tmp_input = tempfile.NamedTemporaryFile(delete=False)
@@ -571,13 +567,10 @@ async def test_asr_transcribe_invalid_language_and_runtime_error(asr_app, monkey
     monkeypatch.setattr(asr_app, "_persist_upload_to_temp", lambda file_obj: tmp_input.name)
     monkeypatch.setattr(asr_app, "normalize_to_wav16k", lambda path: tmp_output.name)
 
+    upload = FakeUploadFile(b"wav-data")
+    request = build_request(query_params={"debug": "true"})
     with pytest.raises(StubHTTPError) as failed:
-        await asr_app.transcribe(
-            file=FakeUploadFile(b"wav-data"),
-            request=build_request(query_params={"debug": "true"}),
-            lang="de",
-            debug="true",
-        )
+        await asr_app.transcribe(file=upload, request=request, lang="de", debug="true")
 
     # A failed transcription is an error, never a transcript the gateway would
     # translate and speak; the exception text stays in the server log.

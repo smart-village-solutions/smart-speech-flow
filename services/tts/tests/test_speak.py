@@ -78,15 +78,22 @@ def test_a_voice_that_failed_to_load_answers_503(client, failing_langs):
     assert client.post("/synthesize", json={"text": "Hallo", "lang": "de"}).status_code == 200
 
 
-def test_synthesis_failure_is_a_500(client, speakers):
+def test_synthesis_failure_is_a_500(client, speakers, caplog):
+    # Built at runtime: a traceback quotes source lines, so a literal would be found there.
+    message = " ".join(["cuda", "gone"])
+
     def explode(text, seed):
-        raise RuntimeError("cuda gone")
+        raise RuntimeError(message)
 
     speakers["de"].synthesize = explode
     response = client.post("/synthesize", json={"text": "Hallo", "lang": "de", "debug": True})
     assert response.status_code == 500
     assert response.json()["error"] == "TTS fehlgeschlagen"
     assert "cuda gone" not in response.text
+    # Logged with its frames and type, never its message.
+    assert "TTS synthesis failed (RuntimeError)" in caplog.text
+    assert "in explode" in caplog.text
+    assert "cuda gone" not in caplog.text
 
 
 def test_a_request_without_text_is_a_400_not_hallo_welt(client, speakers):

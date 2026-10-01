@@ -159,9 +159,10 @@ def test_a_bug_in_a_backend_is_not_disguised_as_an_outage() -> None:
             raise KeyError("bug")
 
     store = RealtimeTicketStore(Buggy())
+    key = TenantSessionKey("tenant-a", "ABC12345")
 
     with pytest.raises(KeyError):
-        store.issue(TenantSessionKey("tenant-a", "ABC12345"), "websocket")
+        store.issue(key, "websocket")
 
 
 def test_memory_consume_is_single_use(backend: MemoryRealtimeTicketBackend) -> None:

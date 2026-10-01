@@ -212,8 +212,6 @@ async def activate_session(
         )
     except TenantConflictError as conflict:
         raise HTTPException(status_code=409, detail=conflict.code) from None
-    except HTTPException:
-        raise
 
 
 @router.get(

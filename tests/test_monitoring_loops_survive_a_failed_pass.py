@@ -34,8 +34,10 @@ def test_the_heartbeat_keeps_running_after_a_failed_pass(monkeypatch):
     heartbeat.check_timeouts = AsyncMock()
     monkeypatch.setattr(realtime_heartbeat.asyncio, "sleep", _sleep_cancelling_on_call(3))
 
+    loop = heartbeat.monitor_loop()
+
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(heartbeat.monitor_loop())
+        asyncio.run(loop)
 
     assert heartbeat.send_pings.await_count == 2
 
@@ -46,7 +48,9 @@ def test_health_polling_keeps_running_after_a_failed_pass(monkeypatch):
     manager._check_all_services = AsyncMock(side_effect=[RuntimeError("one bad pass"), None, None])
     monkeypatch.setattr(service_health.asyncio, "sleep", _sleep_cancelling_on_call(3))
 
+    loop = manager._health_check_loop()
+
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(manager._health_check_loop())
+        asyncio.run(loop)
 
     assert manager._check_all_services.await_count == 3

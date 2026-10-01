@@ -212,7 +212,12 @@ async def transcribe(
         debug_info["output"] = text
     except Exception as e:
         # Answering with a stand-in text made the gateway translate and speak it.
-        logger.error("Transcription failed (%s)", type(e).__name__)
+        logger.exception(
+            "Transcription failed (%s)",
+            type(e).__name__,
+            # Frames only, as for every other failure this service logs.
+            exc_info=(RuntimeError, RuntimeError("Exception details redacted"), e.__traceback__),
+        )
         raise HTTPException(status_code=500, detail="Transcription failed") from None
     finally:
         if os.path.exists(tmp_path):

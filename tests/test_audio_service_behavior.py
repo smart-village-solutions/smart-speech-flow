@@ -120,11 +120,11 @@ async def test_asr_without_a_model_answers_500_instead_of_inventing_a_transcript
     """Not 503: the gateway reads every upstream 503 as busy and tells the user to retry,
     but a missing model is a setup fault that a retry cannot fix (#230)."""
     asr_service.model_loaded = False
+    upload = FakeUploadFile(b"audio")
+    request = build_request(query_params={"debug": "true"})
 
     with pytest.raises(StubHTTPError) as raised:
-        await asr_service.transcribe(
-            FakeUploadFile(b"audio"), build_request(query_params={"debug": "true"}), lang="de"
-        )
+        await asr_service.transcribe(upload, request, lang="de")
 
     assert raised.value.status_code == 500
     assert raised.value.detail == "ASR model not loaded"

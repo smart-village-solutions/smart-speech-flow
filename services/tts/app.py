@@ -389,7 +389,12 @@ async def synthesize(request: Request):
     except Exception as exc:
         # The endpoint's boundary: the exception text and its traceback stay in the
         # server log as a type name, never in the response.
-        logger.error("TTS synthesis failed (%s)", type(exc).__name__)
+        logger.exception(
+            "TTS synthesis failed (%s)",
+            type(exc).__name__,
+            # Frames only: the message could carry the text being spoken.
+            exc_info=(RuntimeError, RuntimeError("Exception details redacted"), exc.__traceback__),
+        )
         debug_info["error_type"] = type(exc).__name__
         return fail(500, "TTS fehlgeschlagen")
 

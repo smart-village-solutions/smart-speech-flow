@@ -853,7 +853,12 @@ async def translate(request: Request):
     except Exception as e:
         # The endpoint's boundary: count it, and answer without the exception text.
         errors_total.inc()
-        logger.error("Translation failed (%s)", type(e).__name__)
+        logger.exception(
+            "Translation failed (%s)",
+            type(e).__name__,
+            # Frames only: the message could carry the text being translated.
+            exc_info=(RuntimeError, RuntimeError("Exception details redacted"), e.__traceback__),
+        )
         debug_info["duration"] = round(time.perf_counter() - start, 3)
         try:
             _raise_http_error(debug_active, debug_info, 500, "Translation failed")
