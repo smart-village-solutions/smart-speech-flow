@@ -47,7 +47,7 @@ RUN python3 -m pip download \
 
 # Standard library only, so it neither waits for nor is invalidated by the
 # wheel build, and needs no CUDA.
-FROM ubuntu:24.04 AS voices
+FROM ubuntu:26.04 AS voices
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates python3 \
