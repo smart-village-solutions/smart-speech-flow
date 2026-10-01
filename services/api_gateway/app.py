@@ -45,7 +45,6 @@ from .refinement_metrics import RefinementMetrics
 from .unhandled_errors import UnhandledErrorMiddleware
 
 if TYPE_CHECKING:
-    pass
     from .quality_telemetry import QualityTelemetry
     from .quality_telemetry_schema import TelemetryMode
     from .runtime_policy import RuntimePolicyGate
