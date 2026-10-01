@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from services.api_gateway.app import app
 from services.api_gateway.rate_limiter import RateLimitConfig
 from services.api_gateway.session_models import ClientType, SessionMessage, SessionStatus
+from services.api_gateway.tenant_context import admin_ref
 from services.api_gateway import message_processing
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
@@ -29,7 +30,11 @@ def reset_session_manager(session_manager) -> None:
 
 
 def _register_active_session(session_manager) -> str:
-    session = asyncio.run(session_manager.create_admin_session("tenant-test", SNAPSHOT))
+    session = asyncio.run(
+        session_manager.create_admin_session(
+            "tenant-test", SNAPSHOT, owner_ref=admin_ref("tenant-test", "test-admin")
+        )
+    )
     session.customer_language = "en"
     session.status = SessionStatus.ACTIVE
     session_manager.store.save(session)

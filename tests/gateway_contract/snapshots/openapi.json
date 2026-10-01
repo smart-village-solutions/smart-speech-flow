@@ -777,6 +777,7 @@
     },
     "/api/admin/realtime/connections": {
       "get": {
+        "description": "Connections of the requesting admin's own sessions; colleagues' are omitted.",
         "operationId": "list_tenant_realtime_connections_api_admin_realtime_connections_get",
         "responses": {
           "200": {
@@ -827,7 +828,7 @@
     },
     "/api/admin/session/current": {
       "get": {
-        "description": "Gibt Details der aktiven Admin-Session der anfragenden Administratorin zurück. Optional kann eine Session-ID des Mandanten angegeben werden.",
+        "description": "The requesting admin's active session. With `session_id`, that one of the admin's own sessions; a colleague's session answers 404 like an unknown id.",
         "operationId": "get_current_session_api_admin_session_current_get",
         "parameters": [
           {
@@ -886,7 +887,7 @@
     },
     "/api/admin/session/history": {
       "get": {
-        "description": "Gibt eine Liste der vergangenen Sessions und aktuelle Session zurück",
+        "description": "The requesting admin's ended and live sessions; colleagues' sessions are not listed.",
         "operationId": "get_session_history_api_admin_session_history_get",
         "parameters": [
           {

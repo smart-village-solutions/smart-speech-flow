@@ -13,11 +13,11 @@ from .dependencies import get_session_manager
 from .log_safety import safe_closed_value
 from .session_manager import TenantSessionManager
 from .session_pseudonym import SessionPseudonymizer
-from .tenant_context import StudioTenantContext, require_studio_tenant_context
+from .tenant_context import StudioTenantContext, require_admin_ref, require_studio_tenant_context
 from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
-_DENIAL_OUTCOMES = frozenset({"not_found", "principal_scope_mismatch"})
+_DENIAL_OUTCOMES = frozenset({"not_found", "owner_mismatch", "principal_scope_mismatch"})
 
 
 def log_tenant_access_denied(
@@ -53,14 +53,25 @@ def require_admin_session_key(
         Depends(require_studio_tenant_context),
     ],
     sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
+    owner_ref: Annotated[str, Depends(require_admin_ref)],
 ) -> TenantSessionKey:
-    """Resolve an admin resource strictly inside its authenticated tenant."""
+    """Resolve an admin resource inside its tenant, for the admin who created it.
+
+    A colleague's session, and one stored without an owner, answer exactly as an
+    unknown id does, so the response never confirms that it exists (#476).
+    """
     try:
         key = TenantSessionKey(context.tenant_id, session_id)
     except ValueError:
         raise _not_found() from None
-    if sessions.get_session(key) is None:
+    session = sessions.get_session(key)
+    if session is None:
         log_tenant_access_denied(key, outcome="not_found", pseudonymizer=sessions.pseudonymizer)
+        raise _not_found()
+    if not session.is_owned_by(owner_ref):
+        log_tenant_access_denied(
+            key, outcome="owner_mismatch", pseudonymizer=sessions.pseudonymizer
+        )
         raise _not_found()
     return key
 

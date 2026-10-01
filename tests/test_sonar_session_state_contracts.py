@@ -16,11 +16,13 @@ from services.api_gateway.session_store import (
     session_key,
     tenant_active_sessions_key,
 )
+from services.api_gateway.tenant_context import admin_ref
 from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket_polling_routes import TenantPollingStore
 from tests.test_tenant_session_store import RecordingRedis, make_session
 
 NOW = datetime(2026, 9, 20, 12, tzinfo=timezone.utc)
+OWNER = admin_ref("tenant-a", "admin-subject")
 
 
 class IndexedRedis(RecordingRedis):
@@ -137,21 +139,22 @@ def test_tenant_active_lookup_rejects_ambiguity_and_excludes_other_tenants():
     second = make_session("tenant-a", "SESSION2")
     foreign = make_session("tenant-b", "SESSION3")
     for session in (first, second, foreign):
+        session.owner_ref = OWNER
         assert store.create(session)
 
     with pytest.raises(ValueError) as failure:
-        manager.get_active_session(tenant_id="tenant-a")
+        manager.get_active_session(tenant_id="tenant-a", owner_ref=OWNER)
 
     assert str(failure.value) == (
         "Mehrere aktive Sessions vorhanden; explizite session_id erforderlich"
     )
-    selected = manager.get_active_session("SESSION2", tenant_id="tenant-a")
+    selected = manager.get_active_session("SESSION2", tenant_id="tenant-a", owner_ref=OWNER)
     assert selected["id"] == "SESSION2"
     assert "tenant_id" not in selected
     assert "runtime_configuration" not in selected
-    assert manager.get_active_session("SESSION3", tenant_id="tenant-a") is None
+    assert manager.get_active_session("SESSION3", tenant_id="tenant-a", owner_ref=OWNER) is None
     first.status = second.status = SessionStatus.TERMINATED
-    assert manager.get_active_session(tenant_id="tenant-a") is None
+    assert manager.get_active_session(tenant_id="tenant-a", owner_ref=OWNER) is None
     # A tenant manager without a store cannot be built any more.
     audio_store = AudioStore.from_environment()
     with pytest.raises(TypeError):

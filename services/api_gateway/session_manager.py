@@ -36,7 +36,6 @@ from .session_models import (
     _ensure_utc,
     _env_flag,
     _positive_env_int,
-    _same_owner,
     _session_duration_ms,
     _settle_refused_content,
     utc_now,
@@ -378,7 +377,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         keys = [
             session.key
             for session in self._live_sessions(tenant_id)
-            if _same_owner(session.owner_ref, owner_ref)
+            if session.is_owned_by(owner_ref)
         ]
         for key in keys:
             await self.terminate_session(key, reason)
@@ -619,20 +618,17 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         session_id: Optional[str] = None,
         *,
         tenant_id: str,
-        for_owner: Optional[str] = None,
+        owner_ref: str,
     ) -> Optional[Dict[str, Any]]:
-        """Aktive Admin-Session eines Mandanten abrufen.
+        """The admin's live session: the named one, or the only one when none is named.
 
-        Wenn eine Session-ID übergeben wird, wird genau diese Session zurückgegeben,
-        sofern sie noch nicht beendet wurde. Ohne Session-ID wird die aktive Session
-        geliefert, solange sie eindeutig ist; ``for_owner`` beschränkt das auf die
-        Sessions einer Administratorin (#473).
+        Only sessions ``owner_ref`` created count (#473, #476); there is no lookup
+        across a tenant's admins.
         """
         candidates = [
             session
             for session in self._live_sessions(tenant_id)
-            if (session_id is None or session.id == session_id)
-            and (for_owner is None or _same_owner(session.owner_ref, for_owner))
+            if (session_id is None or session.id == session_id) and session.is_owned_by(owner_ref)
         ]
         if not candidates:
             return None
@@ -641,9 +637,13 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         candidates.sort(key=lambda item: item.created_at, reverse=True)
         return candidates[0].to_public_dict()
 
-    def get_active_sessions(self, *, tenant_id: str) -> List[Dict[str, Any]]:
-        """Alle aktiven oder ausstehende Sessions zurückgeben."""
-        return [session.to_public_dict() for session in self._live_sessions(tenant_id)]
+    def get_active_sessions(self, *, tenant_id: str, owner_ref: str) -> List[Dict[str, Any]]:
+        """The admin's pending or active sessions; colleagues' and owner-less ones are omitted."""
+        return [
+            session.to_public_dict()
+            for session in self._live_sessions(tenant_id)
+            if session.is_owned_by(owner_ref)
+        ]
 
     def _live_sessions(self, tenant_id: str) -> List[Session]:
         return [
@@ -652,12 +652,14 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
         ]
 
-    def get_session_history(self, limit: int = 10, *, tenant_id: str) -> List[Dict[str, Any]]:
-        """Vergangene Sessions für Admin-Dashboard"""
+    def get_session_history(
+        self, limit: int = 10, *, tenant_id: str, owner_ref: str
+    ) -> List[Dict[str, Any]]:
+        """The admin's ended sessions, newest first; ``limit`` counts only those."""
         terminated_sessions = [
             session.to_public_dict()
             for session in self.store.list_for_tenant(tenant_id)
-            if session.status == SessionStatus.TERMINATED
+            if session.status == SessionStatus.TERMINATED and session.is_owned_by(owner_ref)
         ]
         terminated_sessions.sort(key=lambda item: item.get("terminated_at", ""), reverse=True)
         return terminated_sessions[:limit]

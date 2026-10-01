@@ -41,7 +41,9 @@ async def test_admin_history_leaves_an_unexpected_error_to_the_unhandled_error_n
 
     with caplog.at_level(logging.ERROR, logger=admin.logger.name):
         with pytest.raises(SensitiveRouteError):
-            await admin.get_session_history(context, SessionLifecycleService(session_manager))
+            await admin.get_session_history(
+                context, SessionLifecycleService(session_manager), "owner-ref"
+            )
 
     # The route neither reshapes nor logs it: the unhandled-error middleware answers
     # the JSON 500 and the redacted log (tests/test_unhandled_error_middleware.py).

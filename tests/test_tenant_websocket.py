@@ -49,6 +49,7 @@ class _PresenceManager:
         return SimpleNamespace(
             status=SessionStatus.ACTIVE,
             customer_language=None,
+            is_owned_by=lambda _owner_ref: True,
         )
 
 
@@ -311,7 +312,11 @@ async def test_admin_connection_listing_is_filtered_by_token_tenant(session_mana
     )
 
     response = await list_tenant_realtime_connections(
-        StudioTenantContext("tenant-a", REVISION), socket_manager, TenantPollingStore()
+        StudioTenantContext("tenant-a", REVISION),
+        "owner-ref",
+        session_manager,
+        socket_manager,
+        TenantPollingStore(),
     )
 
     assert response["count"] == 1

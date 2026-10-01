@@ -136,12 +136,14 @@ async def test_current_is_the_requesting_admins_own_conversation():
         lifecycle.current("tenant-a", None, owner_ref=admin_ref("tenant-a", "carol-subject"))
 
 
-async def test_a_named_session_is_still_found_for_any_admin_of_the_tenant():
+async def test_a_named_session_is_found_only_for_its_owner():
     manager = _manager()
     lifecycle = SessionLifecycleService(manager)
     alice = await lifecycle.create("tenant-a", runtime_configuration("tenant-a"), owner_ref=ALICE)
 
-    assert lifecycle.current("tenant-a", alice.id, owner_ref=BOB).id == alice.id
+    assert lifecycle.current("tenant-a", alice.id, owner_ref=ALICE).id == alice.id
+    with pytest.raises(NoActiveSessionError):
+        lifecycle.current("tenant-a", alice.id, owner_ref=BOB)
 
 
 @pytest.fixture
