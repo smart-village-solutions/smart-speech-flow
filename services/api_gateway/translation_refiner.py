@@ -11,13 +11,8 @@ from urllib.parse import urlparse
 import requests
 from requests import Response, exceptions
 
-from .quality_telemetry import (
-    QualityErrorCode,
-    RefinementOutcomeCode,
-    RefinerRole,
-    classify_exception,
-    classify_upstream_status,
-)
+from .quality_telemetry import classify_exception, classify_upstream_status
+from .quality_telemetry_schema import QualityErrorCode, RefinementOutcomeCode, RefinerRole
 
 logger = logging.getLogger(__name__)
 

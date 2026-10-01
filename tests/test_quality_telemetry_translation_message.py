@@ -12,23 +12,8 @@ from uuid import uuid4
 import pytest
 from prometheus_client import CollectorRegistry
 
-from services.api_gateway.quality_telemetry import (
-    ALLOWED_ATTRIBUTES,
-    ALLOWED_ATTRIBUTE_KEYS,
-    AttributeKind,
-    InputMode,
-    MessageDirection,
-    PipelineStage,
-    ProbeOutcome,
-    QualityErrorCode,
-    QualityEventType,
-    QualityTelemetry,
-    TelemetryMode,
-    TerminalOutcome,
-    TranslationMessageEvent,
-    discard_event,
-    to_otlp_attributes,
-)
+from services.api_gateway.quality_telemetry import QualityTelemetry, discard_event
+from services.api_gateway.quality_telemetry_schema import ALLOWED_ATTRIBUTES, ALLOWED_ATTRIBUTE_KEYS, AttributeKind, InputMode, MessageDirection, PipelineStage, ProbeOutcome, QualityErrorCode, QualityEventType, TelemetryMode, TerminalOutcome, TranslationMessageEvent, to_otlp_attributes
 
 REFERENCE = "a" * 32
 TENANT_REFERENCE = "b" * 12

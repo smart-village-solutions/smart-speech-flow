@@ -16,24 +16,8 @@ from uuid import uuid4
 
 import pytest
 
-from services.api_gateway.quality_telemetry import (
-    ALLOWED_ATTRIBUTE_KEYS,
-    ALLOWED_ATTRIBUTES,
-    SCHEMA_VERSION,
-    AttributeKind,
-    DisallowedTelemetryValue,
-    PipelineStage,
-    QualityErrorCode,
-    QualityEventType,
-    RefinementAttemptEvent,
-    RefinementOutcomeCode,
-    RefinerRole,
-    TelemetryMode,
-    classify_exception,
-    classify_upstream_status,
-    enforce_value_shapes,
-    to_otlp_attributes,
-)
+from services.api_gateway.quality_telemetry import classify_exception, classify_upstream_status
+from services.api_gateway.quality_telemetry_schema import ALLOWED_ATTRIBUTE_KEYS, ALLOWED_ATTRIBUTES, SCHEMA_VERSION, AttributeKind, DisallowedTelemetryValue, PipelineStage, QualityErrorCode, QualityEventType, RefinementAttemptEvent, RefinementOutcomeCode, RefinerRole, TelemetryMode, enforce_value_shapes, to_otlp_attributes
 
 REFINEMENT_KEYS = {
     "ssf.quality.refiner_role",

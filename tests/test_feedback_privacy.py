@@ -62,7 +62,7 @@ class RecordingTelemetry:
         self.calls: list = []
 
     def emit_feedback_submitted(self, **kwargs):
-        from services.api_gateway.quality_telemetry import ProbeOutcome, ProbeResult
+        from services.api_gateway.quality_telemetry_schema import ProbeOutcome, ProbeResult
 
         self.calls.append(kwargs)
         return ProbeResult(ProbeOutcome.EMITTED, kwargs.get("event_id"))

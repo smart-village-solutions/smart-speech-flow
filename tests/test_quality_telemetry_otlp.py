@@ -9,7 +9,7 @@ import pytest
 from opentelemetry.sdk._logs.export import LogExporter, LogExportResult
 
 import services.api_gateway.quality_telemetry_otlp as module
-from services.api_gateway.quality_telemetry import DisallowedTelemetryAttribute
+from services.api_gateway.quality_telemetry_schema import DisallowedTelemetryAttribute
 from services.api_gateway.quality_telemetry_otlp import build_otlp_exporter
 
 ROOT = pathlib.Path(__file__).parents[1]

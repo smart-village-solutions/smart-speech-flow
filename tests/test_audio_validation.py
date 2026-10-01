@@ -21,7 +21,7 @@ from services.api_gateway.audio_processing import (
 )
 from services.api_gateway.pipeline_logic import process_wav, _validate_and_normalize_text
 from services.api_gateway.pipeline_results import _pipeline_error_result
-from services.api_gateway.quality_telemetry import PipelineStage, QualityErrorCode
+from services.api_gateway.quality_telemetry_schema import PipelineStage, QualityErrorCode
 from tests.pipeline_helpers import wav_collaborators
 
 

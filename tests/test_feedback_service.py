@@ -26,7 +26,7 @@ from services.api_gateway.feedback.service import (
     UnknownSession,
 )
 from services.api_gateway.feedback.tenant import ConfiguredTenantResolver
-from services.api_gateway.quality_telemetry import ProbeOutcome, ProbeResult
+from services.api_gateway.quality_telemetry_schema import ProbeOutcome, ProbeResult
 from services.api_gateway.session_pseudonym import SessionPseudonymizer
 
 FIXED_NOW = datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc)
@@ -386,7 +386,8 @@ class TestTheRealTelemetrySeam:
     async def test_a_submission_reaches_the_real_emitter(self) -> None:
         from prometheus_client import CollectorRegistry
 
-        from services.api_gateway.quality_telemetry import QualityTelemetry, TelemetryMode
+        from services.api_gateway.quality_telemetry import QualityTelemetry
+        from services.api_gateway.quality_telemetry_schema import TelemetryMode
 
         exported: list = []
         telemetry = QualityTelemetry(
@@ -409,7 +410,8 @@ class TestTheRealTelemetrySeam:
         """A raw feedback id in ClickHouse would join the two stores directly."""
         from prometheus_client import CollectorRegistry
 
-        from services.api_gateway.quality_telemetry import QualityTelemetry, TelemetryMode
+        from services.api_gateway.quality_telemetry import QualityTelemetry
+        from services.api_gateway.quality_telemetry_schema import TelemetryMode
 
         exported: list = []
         telemetry = QualityTelemetry(
@@ -437,7 +439,8 @@ class TestTheRealTelemetrySeam:
         """
         from prometheus_client import CollectorRegistry
 
-        from services.api_gateway.quality_telemetry import QualityTelemetry, TelemetryMode
+        from services.api_gateway.quality_telemetry import QualityTelemetry
+        from services.api_gateway.quality_telemetry_schema import TelemetryMode
         from services.api_gateway.session_pseudonym import tenant_ref
 
         exported: list = []

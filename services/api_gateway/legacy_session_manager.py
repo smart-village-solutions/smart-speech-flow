@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from .quality_telemetry import SessionLifecyclePhase, SessionTerminationReason
+from .quality_telemetry_schema import SessionLifecyclePhase, SessionTerminationReason
 from .session_manager import SessionManagerBase
 from .session_models import ClientType, Session, SessionMessage, SessionStatus, utc_now
 from .session_pseudonym import SessionPseudonymizer

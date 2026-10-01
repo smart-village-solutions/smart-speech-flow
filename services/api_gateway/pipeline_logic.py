@@ -18,12 +18,8 @@ from .pipeline_results import (
     _upstream_error_message,
     utc_now,
 )
-from .quality_telemetry import (
-    PipelineStage,
-    QualityErrorCode,
-    classify_exception,
-    classify_upstream_status,
-)
+from .quality_telemetry import classify_exception, classify_upstream_status
+from .quality_telemetry_schema import PipelineStage, QualityErrorCode
 from .speech_services import AUDIO_WAV_MIME, SpeechServices
 from .text_validation import TextValidationResult, validate_text_input
 from .translation_refiner import BaseTranslationRefiner, RefinementOutcome

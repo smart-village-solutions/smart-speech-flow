@@ -12,7 +12,7 @@ from unittest.mock import Mock
 import pytest
 from requests import exceptions
 
-from services.api_gateway.quality_telemetry import QualityErrorCode
+from services.api_gateway.quality_telemetry_schema import QualityErrorCode
 from services.api_gateway.translation_refiner import OllamaTranslationRefiner
 
 

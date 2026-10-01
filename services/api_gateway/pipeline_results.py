@@ -7,7 +7,8 @@ from typing import Any, Dict, Optional
 import psutil
 
 from .circuit_breaker import CircuitBreakerOpenError
-from .quality_telemetry import PipelineStage, QualityErrorCode, classify_upstream_status
+from .quality_telemetry import classify_upstream_status
+from .quality_telemetry_schema import PipelineStage, QualityErrorCode
 
 # Marks a pipeline failure the client may usefully retry, so the routes can
 # answer 503 with a Retry-After instead of a permanent-looking error.

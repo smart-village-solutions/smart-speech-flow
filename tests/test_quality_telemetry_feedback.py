@@ -19,18 +19,8 @@ from uuid import uuid4
 import pytest
 from prometheus_client import CollectorRegistry
 
-from services.api_gateway.quality_telemetry import (
-    ALLOWED_ATTRIBUTE_KEYS,
-    ALLOWED_ATTRIBUTES,
-    AttributeKind,
-    FeedbackSubmittedEvent,
-    ProbeOutcome,
-    QualityEventType,
-    QualityTelemetry,
-    TelemetryMode,
-    discard_event,
-    to_otlp_attributes,
-)
+from services.api_gateway.quality_telemetry import QualityTelemetry, discard_event
+from services.api_gateway.quality_telemetry_schema import ALLOWED_ATTRIBUTE_KEYS, ALLOWED_ATTRIBUTES, AttributeKind, FeedbackSubmittedEvent, ProbeOutcome, QualityEventType, TelemetryMode, to_otlp_attributes
 from services.api_gateway.session_pseudonym import MISSING_TENANT_REFERENCE
 
 ROOT = Path(__file__).parents[1]

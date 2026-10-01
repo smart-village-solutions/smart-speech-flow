@@ -9,7 +9,8 @@ from prometheus_client import CollectorRegistry
 
 from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
-from services.api_gateway.quality_telemetry import QualityTelemetry, TelemetryMode
+from services.api_gateway.quality_telemetry import QualityTelemetry
+from services.api_gateway.quality_telemetry_schema import TelemetryMode
 
 _PROBE_URL = "/api/admin/telemetry/probe"
 

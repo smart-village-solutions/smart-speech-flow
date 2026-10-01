@@ -46,7 +46,8 @@ from .unhandled_errors import UnhandledErrorMiddleware
 
 if TYPE_CHECKING:
     pass
-    from .quality_telemetry import QualityTelemetry, TelemetryMode
+    from .quality_telemetry import QualityTelemetry
+    from .quality_telemetry_schema import TelemetryMode
     from .runtime_policy import RuntimePolicyGate
     from .studio_runtime_flow import StudioRuntimeFlow
     from .tenant_persistence import TenantPersistenceBinding
@@ -178,8 +179,9 @@ def _build_quality_telemetry(
     registry: CollectorRegistry,
 ) -> "tuple[TelemetryMode, QualityTelemetry, Any]":
     """The telemetry mode, the emitter and its exporter, which is None unless it exports."""
-    from .quality_telemetry import QualityTelemetry, TelemetryMode, discard_event
+    from .quality_telemetry import QualityTelemetry, discard_event
     from .quality_telemetry_otlp import build_otlp_exporter
+    from .quality_telemetry_schema import TelemetryMode
 
     telemetry_mode = TelemetryMode.parse(os.environ.get("SSF_QUALITY_TELEMETRY_MODE"))
     # Built only when it will be used: the SDK provider runs a worker thread.

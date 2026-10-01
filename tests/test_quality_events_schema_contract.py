@@ -16,11 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from services.api_gateway.quality_telemetry import (
-    ALLOWED_ATTRIBUTES,
-    ALLOWED_ATTRIBUTE_KEYS,
-    AttributeKind,
-)
+from services.api_gateway.quality_telemetry_schema import ALLOWED_ATTRIBUTES, ALLOWED_ATTRIBUTE_KEYS, AttributeKind
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "deploy" / "clickhouse" / "migrations"

@@ -15,14 +15,8 @@ import pytest
 
 from prometheus_client import CollectorRegistry
 
-from services.api_gateway.quality_telemetry import (
-    ProbeOutcome,
-    QualityErrorCode,
-    QualityTelemetry,
-    RefinerRole,
-    RefinementOutcomeCode,
-    TelemetryMode,
-)
+from services.api_gateway.quality_telemetry import QualityTelemetry
+from services.api_gateway.quality_telemetry_schema import ProbeOutcome, QualityErrorCode, RefinerRole, RefinementOutcomeCode, TelemetryMode
 from services.api_gateway.translation_refiner import (
     RefinementOutcome,
     ShadowComparisonRefiner,

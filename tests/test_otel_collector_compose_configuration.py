@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from services.api_gateway.quality_telemetry import ALLOWED_ATTRIBUTE_KEYS
+from services.api_gateway.quality_telemetry_schema import ALLOWED_ATTRIBUTE_KEYS
 
 # Encoded here rather than written out, so no base64 blob that looks like a real
 # key is committed next to the name of one. Secret scanners cannot tell a fake

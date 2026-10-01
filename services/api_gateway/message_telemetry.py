@@ -18,7 +18,7 @@ import logging
 import time
 from typing import Any, Final, Mapping, Optional
 
-from .quality_telemetry import (
+from .quality_telemetry_schema import (
     InputMode,
     MessageDirection,
     PipelineStage,

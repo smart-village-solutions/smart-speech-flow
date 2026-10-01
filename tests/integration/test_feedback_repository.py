@@ -402,7 +402,8 @@ async def test_a_full_reconciliation_pass_recovers_a_pending_row(repository) -> 
         FeedbackMaintenance,
         FeedbackMaintenanceMetrics,
     )
-    from services.api_gateway.quality_telemetry import QualityTelemetry, TelemetryMode
+    from services.api_gateway.quality_telemetry import QualityTelemetry
+    from services.api_gateway.quality_telemetry_schema import TelemetryMode
     from services.api_gateway.session_pseudonym import SessionPseudonymizer
 
     record = _record()

@@ -11,18 +11,9 @@ from uuid import UUID, uuid4
 import pytest
 
 import services.api_gateway.quality_telemetry as contract
+import services.api_gateway.quality_telemetry_schema as schema
 import services.api_gateway.quality_telemetry_otlp as adapter
-from services.api_gateway.quality_telemetry import (
-    ALLOWED_ATTRIBUTES,
-    ALLOWED_ATTRIBUTE_KEYS,
-    SCHEMA_VERSION,
-    AttributeKind,
-    DisallowedTelemetryAttribute,
-    QualityProbeEvent,
-    TelemetryMode,
-    enforce_allowlist,
-    to_otlp_attributes,
-)
+from services.api_gateway.quality_telemetry_schema import ALLOWED_ATTRIBUTES, ALLOWED_ATTRIBUTE_KEYS, SCHEMA_VERSION, AttributeKind, DisallowedTelemetryAttribute, QualityProbeEvent, TelemetryMode, enforce_allowlist, to_otlp_attributes
 
 # Annotations that would let the pipeline's debug_info -- source text,
 # transcripts, raw errors -- reach a telemetry emitter.
@@ -106,7 +97,9 @@ def test_the_acl_check_accepts_the_shipped_contract() -> None:
     assert _offending_parameters({"export": export}, __name__) == []
 
 
-@pytest.mark.parametrize("module", [contract, adapter], ids=["contract", "adapter"])
+@pytest.mark.parametrize(
+    "module", [contract, schema, adapter], ids=["contract", "schema", "adapter"]
+)
 def test_no_telemetry_entry_point_accepts_an_unbounded_mapping(module) -> None:
     """The ACL: pipeline structures must never be passable into telemetry."""
     assert _offending_parameters(vars(module), module.__name__) == []
@@ -261,7 +254,7 @@ def test_the_naming_tripwire_rejects_a_content_bearing_key(content_key: str) -> 
 
 def test_no_attribute_may_be_declared_as_free_text() -> None:
     """The structural guarantee behind the naming tripwire."""
-    assert not [k for k in dir(contract.AttributeKind) if k in ("TEXT", "FREEFORM")]
+    assert not [k for k in dir(schema.AttributeKind) if k in ("TEXT", "FREEFORM")]
 
 
 @pytest.mark.parametrize(

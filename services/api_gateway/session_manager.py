@@ -26,7 +26,7 @@ from typing import (
     TypeVar,
 )
 
-from .quality_telemetry import SessionLifecyclePhase, SessionTerminationReason
+from .quality_telemetry_schema import SessionLifecyclePhase, SessionTerminationReason
 from .realtime_protocol import Frame, timeout_warning_frame
 from .session_models import (
     ClientType,

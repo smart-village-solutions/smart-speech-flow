@@ -13,16 +13,8 @@ from fastapi import HTTPException
 from prometheus_client import CollectorRegistry
 
 from services.api_gateway.audio_storage import AudioStore
-from services.api_gateway.quality_telemetry import (
-    InputMode,
-    MessageDirection,
-    PipelineStage,
-    QualityErrorCode,
-    QualityTelemetry,
-    TelemetryMode,
-    TerminalOutcome,
-    discard_event,
-)
+from services.api_gateway.quality_telemetry import QualityTelemetry, discard_event
+from services.api_gateway.quality_telemetry_schema import InputMode, MessageDirection, PipelineStage, QualityErrorCode, TelemetryMode, TerminalOutcome
 from services.api_gateway import message_processing
 from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_models import ClientType

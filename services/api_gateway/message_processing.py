@@ -34,7 +34,8 @@ from .pipeline_results import (
     NO_SPEECH_ERROR_CODE,
     UPSTREAM_BUSY_ERROR_CODE,
 )
-from .quality_telemetry import InputMode, QualityTelemetry
+from .quality_telemetry import QualityTelemetry
+from .quality_telemetry_schema import InputMode
 from .session_manager import TenantSessionManager
 from .session_models import ClientType, SessionMessage, SessionStatus
 from .tenant_session import TenantSessionKey

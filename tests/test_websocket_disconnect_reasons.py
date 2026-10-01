@@ -256,7 +256,7 @@ class TestNormalSessionEndDoesNotPageWebSocketConnectionFailures:
         action. A new member of SessionTerminationReason now fails here
         instead.
         """
-        from services.api_gateway.quality_telemetry import SessionTerminationReason
+        from services.api_gateway.quality_telemetry_schema import SessionTerminationReason
 
         excluded = _excluded_disconnect_reasons()
         offenders = {}

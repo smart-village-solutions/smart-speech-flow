@@ -18,7 +18,7 @@ from services.api_gateway.pipeline_admission import (
     _SlotClaim,
     run_pipeline,
 )
-from services.api_gateway.quality_telemetry import PipelineStage, QualityErrorCode
+from services.api_gateway.quality_telemetry_schema import PipelineStage, QualityErrorCode
 from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_models import ClientType
 from services.api_gateway.session_store import MemoryTenantSessionStore

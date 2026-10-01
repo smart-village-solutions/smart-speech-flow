@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
-from services.api_gateway.quality_telemetry import TelemetryMode
+from services.api_gateway.quality_telemetry_schema import TelemetryMode
 
 
 def _batch_threads() -> list[str]:
