@@ -9,4 +9,4 @@
 
 - [x] 2.1 Two-admin tests for each route, each proven to fail when its rule is removed.
 - [x] 2.2 Full suite on a merge with `origin/main`; contract suite; tenant-isolation matrix.
-- [ ] 2.3 Deploy to production and verify the two-admin denial there with the release check.
+- [x] 2.3 Deploy to production and verify the two-admin denial there with the release check.
