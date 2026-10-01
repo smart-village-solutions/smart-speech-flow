@@ -503,14 +503,14 @@ async def test_asr_transcribe_fallback_and_success_paths(asr_app, monkeypatch):
     request = build_request(query_params={"debug": "true"})
 
     asr_app.model_loaded = False
-    fallback_response = await asr_app.transcribe(
-        file=FakeUploadFile(b"audio-bytes"),
-        request=request,
-        lang="de",
-        debug="true",
-    )
-    assert fallback_response["fallback"] is True
-    assert fallback_response["text"] == "Hallo Welt"
+    with pytest.raises(StubHTTPError) as no_model:
+        await asr_app.transcribe(
+            file=FakeUploadFile(b"audio-bytes"),
+            request=request,
+            lang="de",
+            debug="true",
+        )
+    assert no_model.value.status_code == 500
 
     tmp_input = tempfile.NamedTemporaryFile(delete=False)
     tmp_input.close()
@@ -571,16 +571,18 @@ async def test_asr_transcribe_invalid_language_and_runtime_error(asr_app, monkey
     monkeypatch.setattr(asr_app, "_persist_upload_to_temp", lambda file_obj: tmp_input.name)
     monkeypatch.setattr(asr_app, "normalize_to_wav16k", lambda path: tmp_output.name)
 
-    response = await asr_app.transcribe(
-        file=FakeUploadFile(b"wav-data"),
-        request=build_request(query_params={"debug": "true"}),
-        lang="de",
-        debug="true",
-    )
+    with pytest.raises(StubHTTPError) as failed:
+        await asr_app.transcribe(
+            file=FakeUploadFile(b"wav-data"),
+            request=build_request(query_params={"debug": "true"}),
+            lang="de",
+            debug="true",
+        )
 
-    assert response["text"] == "Fehler bei der Transkription"
-    assert response["fallback"] is False
-    assert response["debug"]["error"] == "boom"
+    # A failed transcription is an error, never a transcript the gateway would
+    # translate and speak; the exception text stays in the server log.
+    assert failed.value.status_code == 500
+    assert failed.value.detail == "Transcription failed"
     assert not os.path.exists(tmp_input.name)
     assert not os.path.exists(tmp_output.name)
 
