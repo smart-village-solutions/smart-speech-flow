@@ -27,4 +27,4 @@
 - [x] 5.2 WebSocket frame dispatch table
 
 ## 6. Release
-- [ ] 6.1 Deployed; legacy routes return 404 in production; release check passes
+- [x] 6.1 Deployed; legacy routes return 404 in production; release check passes
