@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from services.api_gateway.message_processing import validate_session_languages
+from services.api_gateway.message_requests import validate_session_languages
 from services.api_gateway.session_manager import ClientType
 
 SESSION = SimpleNamespace(id="S1", customer_language="en", admin_language="de")

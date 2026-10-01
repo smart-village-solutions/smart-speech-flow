@@ -13,6 +13,7 @@ import pytest
 from services.api_gateway.audio_storage import AudioStore, AudioVariant
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway import message_processing
+from services.api_gateway import message_requests
 from services.api_gateway.runtime_policy import PolicyDecision, PolicyReason
 from services.api_gateway.session_manager import ClientType
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
@@ -91,7 +92,7 @@ async def test_declined_session_still_gets_playable_audio(session_manager, audio
     session_manager.runtime_policy = _RefusingGate()
     key = await _session_with_consent(session_manager, ConsentStatus.DECLINED)
 
-    available = message_processing._store_translated_audio(
+    available = message_requests._store_translated_audio(
         key, "m1", b"audio-bytes", audio_store=audio_store
     )
     message = await message_processing.create_session_message(

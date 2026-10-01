@@ -87,7 +87,7 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
         "LegacySessionManager._send_termination_notifications",
     ): ["boundary"],
     # no original-audio URL rather than a failed message
-    ("services/api_gateway/message_processing.py", "_store_audio_artifacts"): ["fallback"],
+    ("services/api_gateway/message_requests.py", "_store_audio_artifacts"): ["fallback"],
     # records the telemetry failure and session, then re-raises
     ("services/api_gateway/message_processing.py", "send_unified_message"): ["bookkeeping-reraise"],
     # a stored message is not failed by its broadcast or its authorization write-back
@@ -96,7 +96,7 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
         "fallback",
     ],
     # no reply audio rather than a failed message
-    ("services/api_gateway/message_processing.py", "_store_translated_audio"): ["fallback"],
+    ("services/api_gateway/message_requests.py", "_store_translated_audio"): ["fallback"],
     # telemetry must never reach the caller
     ("services/api_gateway/message_telemetry.py", "MessageTelemetryRecorder.emit"): ["boundary"],
     # the raw body when an error reply is not JSON
