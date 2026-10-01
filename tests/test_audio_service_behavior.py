@@ -9,12 +9,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from test_service_app_helpers import (
     FakeUploadFile,
-    build_request,
+    StubHTTPError,
     build_fastapi_stub,
     build_prometheus_stub,
+    build_request,
     build_soundfile_stub,
     build_torch_stub,
     build_transformers_stub,
@@ -116,20 +116,24 @@ def test_audio_storage_separates_files_and_cleans_only_expired_audio(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_asr_returns_debuggable_fallback_when_model_is_unavailable(asr_service):
+async def test_asr_without_a_model_answers_500_instead_of_inventing_a_transcript(asr_service):
+    """Not 503: the gateway reads every upstream 503 as busy and tells the user to retry,
+    but a missing model is a setup fault that a retry cannot fix (#230)."""
     asr_service.model_loaded = False
+    upload = FakeUploadFile(b"audio")
+    request = build_request(query_params={"debug": "true"})
 
-    response = await asr_service.transcribe(
-        FakeUploadFile(b"audio"), build_request(query_params={"debug": "true"}), lang="de"
-    )
+    with pytest.raises(StubHTTPError) as raised:
+        await asr_service.transcribe(upload, request, lang="de")
 
-    assert response["text"] == "Hallo Welt"
-    assert response["fallback"] is True
-    assert response["debug"]["error"] == "ASR-Modell nicht geladen"
+    assert raised.value.status_code == 500
+    assert raised.value.detail == "ASR model not loaded"
 
 
 @pytest.mark.asyncio
-async def test_translation_returns_debug_response_when_generation_fails(translation_service, monkeypatch):
+async def test_translation_returns_debug_response_when_generation_fails(
+    translation_service, monkeypatch
+):
     translation_service.model_loaded = True
     translation_service.m2m_model = object()
     translation_service.m2m_tokenizer = SimpleNamespace(lang_code_to_id={"de": 0, "en": 1})
@@ -141,14 +145,13 @@ async def test_translation_returns_debug_response_when_generation_fails(translat
     )
 
     response = await translation_service.translate(
-        build_request(
-            {"text": "Hallo", "source_lang": "de", "target_lang": "en", "debug": True}
-        )
+        build_request({"text": "Hallo", "source_lang": "de", "target_lang": "en", "debug": True})
     )
 
     assert response.status_code == 500
     assert b'"translations":null' in response.body
-    assert b"Translation failed: backend unavailable" in response.body
+    assert b"Translation failed" in response.body
+    assert b"backend unavailable" not in response.body
 
 
 @pytest.mark.asyncio
@@ -160,9 +163,12 @@ async def test_tts_returns_structured_error_when_the_voice_fails(tts_service):
             raise RuntimeError("audio renderer failed")
 
     response = await tts_service.synthesize(
-        tts_request(tts_service, {"text": "Hallo", "lang": "de", "debug": True}, {"de": BrokenSpeaker()})
+        tts_request(
+            tts_service, {"text": "Hallo", "lang": "de", "debug": True}, {"de": BrokenSpeaker()}
+        )
     )
 
     assert response.status_code == 500
     assert b'"fallback":false' in response.body
-    assert b"TTS fehlgeschlagen: audio renderer failed" in response.body
+    assert b"TTS fehlgeschlagen" in response.body
+    assert b"audio renderer failed" not in response.body

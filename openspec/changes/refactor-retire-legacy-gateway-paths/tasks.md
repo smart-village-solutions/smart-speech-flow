@@ -17,10 +17,10 @@
 - [x] 3.5 Translation service stops computing `tts_text`
 
 ## 4. Exception policy (PR 4)
-- [ ] 4.1 Unhandled-error middleware inside CORS
-- [ ] 4.2 Reshape-only handlers removed; the rest narrowed
-- [ ] 4.3 ASR, TTS and loop-guard defects fixed
-- [ ] 4.4 Broad-handler inventory guard
+- [x] 4.1 Unhandled-error middleware inside CORS
+- [x] 4.2 Reshape-only handlers removed; the rest narrowed
+- [x] 4.3 ASR, TTS and loop-guard defects fixed
+- [x] 4.4 Broad-handler inventory guard
 
 ## 5. Module split (PR 5)
 - [ ] 5.1 Split modules under the 800-line budget; module-size guard

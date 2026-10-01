@@ -9,6 +9,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
+import redis
 
 from services.api_gateway.realtime_ticket import (
     CONSUME_TICKET_LUA,
@@ -122,6 +123,46 @@ def test_a_backend_failure_is_reported_as_unavailable() -> None:
         store.consume("any-ticket", key, "websocket")
     with pytest.raises(RealtimeTicketUnavailable):
         store.revoke(key)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [redis.exceptions.ConnectionError("down"), ValueError("corrupt payload")],
+    ids=["redis", "corrupt"],
+)
+def test_a_redis_failure_or_corrupt_payload_is_unavailable(failure) -> None:
+    class Failing:
+        def put_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool:
+            raise failure
+
+        def put(self, key: str, value: str, ttl_seconds: int) -> None:
+            raise failure
+
+        def consume(self, key: str) -> str | None:
+            raise failure
+
+        def get(self, key: str) -> str | None:
+            raise failure
+
+    store = RealtimeTicketStore(Failing())
+    key = TenantSessionKey("tenant-a", "ABC12345")
+
+    with pytest.raises(RealtimeTicketUnavailable):
+        store.issue(key, "websocket")
+    with pytest.raises(RealtimeTicketUnavailable):
+        store.consume("any-ticket", key, "websocket")
+
+
+def test_a_bug_in_a_backend_is_not_disguised_as_an_outage() -> None:
+    class Buggy:
+        def put_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool:
+            raise KeyError("bug")
+
+    store = RealtimeTicketStore(Buggy())
+    key = TenantSessionKey("tenant-a", "ABC12345")
+
+    with pytest.raises(KeyError):
+        store.issue(key, "websocket")
 
 
 def test_memory_consume_is_single_use(backend: MemoryRealtimeTicketBackend) -> None:

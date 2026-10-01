@@ -94,3 +94,19 @@ def test_cutover_refuses_symlinked_audio_targets(fake_redis, tmp_path):
 
     with pytest.raises(ValueError, match="symlink"):
         cutover(fake_redis, audio_root, apply=False, confirmed=False)
+
+
+def test_a_refused_cutover_names_the_error_type_but_not_its_message(monkeypatch, capsys):
+    import redis
+
+    from services.api_gateway import tenant_cutover
+
+    def unreachable(*_args, **_kwargs):
+        raise redis.exceptions.ConnectionError("redis://user:hunter2@redis:6379/0 refused")
+
+    monkeypatch.setattr(redis.Redis, "from_url", unreachable)
+
+    assert tenant_cutover.main(["--dry-run"]) == 2
+    output = capsys.readouterr().out
+    assert "Cutover refused (ConnectionError)" in output
+    assert "hunter2" not in output

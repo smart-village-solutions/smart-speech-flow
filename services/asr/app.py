@@ -32,10 +32,12 @@ def normalize_to_wav16k(in_path):
     cmd += [out_path]
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    except Exception as e:
+    except (subprocess.CalledProcessError, OSError):
+        # OSError: no ffmpeg binary. The command line names temporary paths, so the
+        # error carries none of it.
         if os.path.exists(out_path):
             os.remove(out_path)
-        raise RuntimeError(f"ffmpeg-Normalisierung fehlgeschlagen: {e}")
+        raise RuntimeError("ffmpeg normalisation failed") from None
     return out_path
 
 
@@ -45,6 +47,7 @@ def _persist_upload_to_temp(file_obj) -> str:
         return tmp.name
 
 
+import logging
 import os
 import shutil
 import tempfile
@@ -78,11 +81,15 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     pynvml = None
 
+logger = logging.getLogger(__name__)
+
 _nvml_initialized = False
 ASR_MODEL_NAME = "large-v3-turbo"
 TRANSCRIBE_ERROR_RESPONSES = {
     400: {"description": "Invalid transcription request"},
-    503: {"description": "ASR model unavailable"},
+    # Not 503: the gateway reads a 503 as load and tells the user to retry, but a
+    # missing model is a setup fault that a retry cannot fix.
+    500: {"description": "ASR model not loaded, or transcription failed"},
 }
 
 
@@ -132,12 +139,16 @@ health_status = Gauge("asr_health_status", "Health status of ASR service")
 
 def _load_asr_model():
     if not whisper:
+        logger.error("ASR model unavailable: whisper is not installed")
         return None
     try:
         return whisper.load_model(
             ASR_MODEL_NAME, device="cuda" if torch.cuda.is_available() else "cpu"
         )
     except Exception:
+        # The service still starts, so /health can report it degraded; /transcribe
+        # then answers 500 rather than a transcript.
+        logger.exception("ASR model %s failed to load", ASR_MODEL_NAME)
         return None
 
 
@@ -190,9 +201,7 @@ async def transcribe(
         debug_info["duration"] = round(time.perf_counter() - start, 3)
         raise HTTPException(status_code=400, detail=f"Unsupported language code: {lang}")
     if not model_loaded:
-        debug_info["error"] = "ASR-Modell nicht geladen"
-        debug_info["duration"] = round(time.perf_counter() - start, 3)
-        return _build_asr_response("Hallo Welt", True, debug_active, debug_info)
+        raise HTTPException(status_code=500, detail="ASR model not loaded")
     # Speichere die Audiodatei temporär
     tmp_path = await asyncio.to_thread(_persist_upload_to_temp, file.file)
     norm_path = None
@@ -202,8 +211,14 @@ async def transcribe(
         text = result.get("text", "")
         debug_info["output"] = text
     except Exception as e:
-        text = "Fehler bei der Transkription"
-        debug_info["error"] = str(e)
+        # Answering with a stand-in text made the gateway translate and speak it.
+        logger.exception(
+            "Transcription failed (%s)",
+            type(e).__name__,
+            # Frames only, as for every other failure this service logs.
+            exc_info=(RuntimeError, RuntimeError("Exception details redacted"), e.__traceback__),
+        )
+        raise HTTPException(status_code=500, detail="Transcription failed") from None
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)

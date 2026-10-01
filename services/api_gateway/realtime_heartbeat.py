@@ -82,14 +82,16 @@ class Heartbeat:
         try:
             while True:
                 await asyncio.sleep(self.interval)
-                await self.send_pings()
-                await self.check_timeouts()
+                try:
+                    await self.send_pings()
+                    await self.check_timeouts()
+                except Exception:
+                    # One failed pass must not end heartbeats for every connection.
+                    logger.exception("Heartbeat pass failed")
 
         except asyncio.CancelledError:
             logger.info("💓 Heartbeat-Monitor gestoppt")
             raise
-        except Exception:
-            logger.exception("Heartbeat monitor failed")
 
     async def send_pings(self) -> None:
         """

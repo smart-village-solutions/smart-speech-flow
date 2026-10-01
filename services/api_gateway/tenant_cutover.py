@@ -9,6 +9,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+try:
+    from redis.exceptions import RedisError
+except ImportError:  # pragma: no cover - the CLI then refuses on its own import
+
+    class RedisError(Exception):  # type: ignore[no-redef]
+        pass
+
+
 LEGACY_EXACT_KEYS: Final[tuple[str, ...]] = (
     "{namespace}:sessions",
     "{namespace}:session:active_admin",
@@ -134,8 +142,10 @@ def main(argv: list[str] | None = None) -> int:
             confirmed=args.confirm_empty_production,
             namespace=os.environ.get("REDIS_NAMESPACE", "ssf"),
         )
-    except Exception:
-        print("Cutover refused")
+    except (ImportError, ValueError, OSError, RedisError) as error:
+        # The type tells an operator a connection failure from an allowlist refusal;
+        # the message could carry the Redis URL, so it stays out.
+        print(f"Cutover refused ({type(error).__name__})")
         return 2
 
     mode = "applied" if args.apply else "dry-run"

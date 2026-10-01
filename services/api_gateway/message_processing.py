@@ -7,17 +7,18 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
-from types import TracebackType
 from typing import Any, Dict, Final, Mapping, Optional
 
 from fastapi import HTTPException, Request, UploadFile
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile as StarletteUploadFile
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.requests import ClientDisconnect
 
 from .audio_processing import AudioValidator
 from .audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
 from .consent import ConsentStatus
-from .log_safety import sanitize_log_value
+from .log_safety import redacted_exception_info, sanitize_log_value
 from .message_models import (
     SUPPORTED_LANGUAGES,
     MessageResponse,
@@ -56,19 +57,6 @@ def _nothing_delivered() -> BroadcastResult:
         failed_sends=0,
         session_has_connections=False,
         errors=[],
-    )
-
-
-_REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
-
-
-def _redacted_exception_info(
-    error: Exception,
-) -> tuple[type[BaseException], BaseException, Optional[TracebackType]]:
-    return (
-        RuntimeError,
-        RuntimeError(_REDACTED_EXCEPTION_MESSAGE),
-        error.__traceback__,
     )
 
 
@@ -280,7 +268,16 @@ def _validate_supported_languages(source_lang: str, target_lang: str) -> None:
 
 
 async def _parse_audio_form(request: Request) -> tuple[Any, Any, Any]:
-    form = await request.form()
+    try:
+        form = await request.form()
+    except (StarletteHTTPException, ValueError, ClientDisconnect):
+        # Starlette refuses some bodies with its own HTTPException, the parent of
+        # FastAPI's, and lets python-multipart's parse errors (ValueErrors) escape.
+        # A client that drops mid-body is its own error too, not a server fault.
+        raise HTTPException(
+            status_code=400,
+            detail=create_error_response("INVALID_FORM_DATA", "Malformed form data", {}),
+        ) from None
     required_fields = ["file", "source_lang", "target_lang"]
     missing_fields = [field for field in required_fields if field not in form]
     if missing_fields:
@@ -439,7 +436,7 @@ def _store_audio_artifacts(
         logger.exception(
             "⚠️ Failed to save original audio: %s",
             type(e).__name__,
-            exc_info=_redacted_exception_info(e),
+            exc_info=redacted_exception_info(e),
         )
 
     return original_audio_available
@@ -464,7 +461,7 @@ def _store_translated_audio(
         logger.exception(
             "⚠️ Failed to save translated audio: %s",
             type(error).__name__,
-            exc_info=_redacted_exception_info(error),
+            exc_info=redacted_exception_info(error),
         )
         return False
     return True
@@ -518,13 +515,20 @@ async def _parse_text_request(request: Request) -> TextMessageRequest:
                 }
             ),
         )
-    except Exception as e:
-        logger.exception("❌ Failed to parse JSON", exc_info=_redacted_exception_info(e))
+    except (ValueError, RecursionError, ClientDisconnect) as e:
+        # JSONDecodeError and UnicodeDecodeError are ValueErrors; deep nesting recurses;
+        # a client that drops mid-body is its own error, not a server fault.
+        logger.exception("❌ Failed to parse JSON", exc_info=redacted_exception_info(e))
         raise HTTPException(
             status_code=400,
             detail=create_error_response("INVALID_JSON", "Invalid JSON", {}),
         )
 
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=400,
+            detail=create_error_response("INVALID_JSON", "Invalid JSON", {}),
+        )
     try:
         return TextMessageRequest(**body)
     except ValidationError as e:
@@ -696,24 +700,15 @@ async def send_unified_message(
         _log_session_event("⚠️ HTTPException in send_unified_message", session_id)
         raise
     except Exception as e:
+        # The unhandled-error middleware answers and logs it; this row must still
+        # say the message failed, and the log must still name the session.
         _log_session_event(
             "💥 Unexpected error in send_unified_message",
             session_id,
             error_type=type(e).__name__,
         )
-        logger.exception(
-            "Unexpected message processing failure",
-            exc_info=_redacted_exception_info(e),
-        )
         recorder.record_http_failure(500)
-        raise HTTPException(
-            status_code=500,
-            detail=create_error_response(
-                "PROCESSING_ERROR",
-                "Message processing failed",
-                {},
-            ),
-        )
+        raise
     finally:
         recorder.emit(telemetry)
 
@@ -1062,7 +1057,7 @@ async def create_session_message(
     except Exception as e:
         logger.exception(
             "❌ WebSocket-Broadcasting-Fehler",
-            exc_info=_redacted_exception_info(e),
+            exc_info=redacted_exception_info(e),
         )
         # WebSocket-Fehler sollen den HTTP-Request nicht zum Absturz bringen
 

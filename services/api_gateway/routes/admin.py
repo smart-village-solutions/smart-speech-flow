@@ -6,7 +6,6 @@ Admin-Routes für Session-Management.
 import logging
 from datetime import datetime, timezone
 from hashlib import sha256
-from types import TracebackType
 from typing import Annotated, Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -56,17 +55,6 @@ ADMIN_ROUTE_RESPONSES = {
     404: {"description": _SESSION_NOT_FOUND},
     500: {"description": "Admin session operation failed"},
 }
-_REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
-
-
-def _redacted_exception_info(
-    error: Exception,
-) -> tuple[type[BaseException], BaseException, Optional[TracebackType]]:
-    return (
-        RuntimeError,
-        RuntimeError(_REDACTED_EXCEPTION_MESSAGE),
-        error.__traceback__,
-    )
 
 
 # Request/Response Models
@@ -277,39 +265,28 @@ async def create_admin_session(
     Returns:
         SessionCreateResponse: Session-Details und Client-URL
     """
-    try:
-        logger.info("🚀 Admin-Session-Erstellung gestartet")
+    logger.info("🚀 Admin-Session-Erstellung gestartet")
 
-        session = await lifecycle.create(
-            runtime.context.tenant_id, runtime.configuration, owner_ref=owner_ref
-        )
-        session_id = session.id
+    session = await lifecycle.create(
+        runtime.context.tenant_id, runtime.configuration, owner_ref=owner_ref
+    )
+    session_id = session.id
 
-        # Client-URL generieren
-        client_base_url = get_client_base_url()
-        client_url = f"{client_base_url}/join/{session_id}"
+    # Client-URL generieren
+    client_base_url = get_client_base_url()
+    client_url = f"{client_base_url}/join/{session_id}"
 
-        logger.info(
-            "✅ Admin-Session erfolgreich erstellt | %s",
-            sanitize_log_value({"session_ref": _safe_session_ref(session_id)}),
-        )
-        return SessionCreateResponse(
-            session_id=session_id,
-            client_url=client_url,
-            status=session.status.value,
-            created_at=session.created_at.isoformat(),
-            message=f"Session {session_id} erfolgreich erstellt. Verwende diese Session-ID für den Verbindungsaufbau.",
-        )
-
-    except Exception as e:
-        logger.exception(
-            "❌ Fehler bei Admin-Session-Erstellung",
-            exc_info=_redacted_exception_info(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session creation failed",
-        )
+    logger.info(
+        "✅ Admin-Session erfolgreich erstellt | %s",
+        sanitize_log_value({"session_ref": _safe_session_ref(session_id)}),
+    )
+    return SessionCreateResponse(
+        session_id=session_id,
+        client_url=client_url,
+        status=session.status.value,
+        created_at=session.created_at.isoformat(),
+        message=f"Session {session_id} erfolgreich erstellt. Verwende diese Session-ID für den Verbindungsaufbau.",
+    )
 
 
 @router.get(
@@ -368,15 +345,6 @@ async def get_current_session(
             status_code=status.HTTP_409_CONFLICT,
             detail="Multiple active sessions require an explicit session_id",
         )
-    except Exception as e:
-        logger.exception(
-            "❌ Fehler beim Abrufen der aktuellen Session",
-            exc_info=_redacted_exception_info(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Current session lookup failed",
-        )
 
 
 @router.delete(
@@ -426,15 +394,6 @@ async def terminate_session(
 
     except SessionNotFoundError:
         raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
-    except Exception as e:
-        logger.exception(
-            "❌ Fehler beim Beenden der Session",
-            exc_info=_redacted_exception_info(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session termination failed",
-        )
 
 
 @router.get(
@@ -457,21 +416,10 @@ async def get_session_history(
     Returns:
         SessionHistoryResponse: Historie und aktuelle Session
     """
-    try:
-        history, active_sessions = lifecycle.history(context.tenant_id, limit)
-        return SessionHistoryResponse(
-            sessions=history, total_count=len(history), active_sessions=active_sessions
-        )
-
-    except Exception as e:
-        logger.exception(
-            "❌ Fehler beim Abrufen der Session-Historie",
-            exc_info=_redacted_exception_info(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session history lookup failed",
-        )
+    history, active_sessions = lifecycle.history(context.tenant_id, limit)
+    return SessionHistoryResponse(
+        sessions=history, total_count=len(history), active_sessions=active_sessions
+    )
 
 
 @router.get(
@@ -494,36 +442,23 @@ async def get_session_status(
     Returns:
         SessionStatusResponse: Detaillierte Session-Informationen
     """
-    try:
-        session = sessions.get_session(key)
-        if session is None:
-            raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
+    session = sessions.get_session(key)
+    if session is None:
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
 
-        return SessionStatusResponse(
-            session_id=session_id,
-            status=session.status.value,
-            customer_language=session.customer_language,
-            admin_connected=session.admin_connected,
-            customer_connected=session.customer_connected,
-            message_count=len(session.messages),
-            created_at=session.created_at.isoformat(),
-            terminated_at=(session.terminated_at.isoformat() if session.terminated_at else None),
-            termination_reason=session.termination_reason,
-            warning_at=session.warning_at().isoformat(),
-            timeout_at=session.next_timeout_at().isoformat(),
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(
-            "❌ Fehler beim Abrufen des Session-Status",
-            exc_info=_redacted_exception_info(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session status lookup failed",
-        )
+    return SessionStatusResponse(
+        session_id=session_id,
+        status=session.status.value,
+        customer_language=session.customer_language,
+        admin_connected=session.admin_connected,
+        customer_connected=session.customer_connected,
+        message_count=len(session.messages),
+        created_at=session.created_at.isoformat(),
+        terminated_at=(session.terminated_at.isoformat() if session.terminated_at else None),
+        termination_reason=session.termination_reason,
+        warning_at=session.warning_at().isoformat(),
+        timeout_at=session.next_timeout_at().isoformat(),
+    )
 
 
 class TelemetryProbeResponse(BaseModel):

@@ -13,6 +13,18 @@ from typing import Any, Callable, Literal, Protocol
 from .session_manager import utc_now
 from .tenant_session import TenantSessionKey
 
+try:
+    from redis.exceptions import RedisError
+except ImportError:  # pragma: no cover - redis optional for tests
+
+    class RedisError(Exception):  # type: ignore[no-redef]
+        pass
+
+
+# What a ticket backend can fail with: Redis itself, the socket under it, and a
+# stored payload that no longer decodes. Each becomes RealtimeTicketUnavailable.
+_BACKEND_FAILURES = (RedisError, OSError, ValueError)
+
 RealtimeTransportKind = Literal["websocket", "polling"]
 
 CONSUME_TICKET_LUA = """
@@ -78,7 +90,7 @@ class RealtimeTicketStore:
         """Invalidate every outstanding ticket for one terminal session."""
         try:
             self.backend.put(self._revoked_key(key), "1", 8 * 60 * 60)
-        except Exception as error:
+        except _BACKEND_FAILURES as error:
             raise RealtimeTicketUnavailable() from error
 
     def issue(
@@ -107,7 +119,7 @@ class RealtimeTicketStore:
                         ticket=ticket,
                         expires_at=self.clock() + timedelta(seconds=ttl_seconds),
                     )
-        except Exception as error:
+        except _BACKEND_FAILURES as error:
             raise RealtimeTicketUnavailable() from error
         raise RealtimeTicketUnavailable()
 
@@ -136,7 +148,7 @@ class RealtimeTicketStore:
         try:
             raw_payload = self.backend.consume(self._key(raw_ticket))
             payload = json.loads(raw_payload) if raw_payload is not None else None
-        except Exception as error:
+        except _BACKEND_FAILURES as error:
             raise RealtimeTicketUnavailable() from error
         if not isinstance(payload, dict):
             return None
@@ -162,7 +174,7 @@ class RealtimeTicketStore:
         try:
             if self.backend.get(self._revoked_key(resolved)) is not None:
                 return None
-        except Exception as error:
+        except _BACKEND_FAILURES as error:
             raise RealtimeTicketUnavailable() from error
         return resolved
 

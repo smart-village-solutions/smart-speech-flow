@@ -7,7 +7,6 @@ Ermöglicht Kunden das Beitreten und Aktivieren von Sessions
 import logging
 from datetime import datetime, timezone
 from hashlib import sha256
-from types import TracebackType
 from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -52,17 +51,6 @@ CUSTOMER_ROUTE_RESPONSES = {
     404: {"description": _SESSION_NOT_FOUND},
     500: {"description": "Customer session operation failed"},
 }
-_REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
-
-
-def _redacted_exception_info(
-    error: Exception,
-) -> tuple[type[BaseException], BaseException, Optional[TracebackType]]:
-    return (
-        RuntimeError,
-        RuntimeError(_REDACTED_EXCEPTION_MESSAGE),
-        error.__traceback__,
-    )
 
 
 # Request/Response Models
@@ -224,17 +212,6 @@ async def activate_session(
         )
     except TenantConflictError as conflict:
         raise HTTPException(status_code=409, detail=conflict.code) from None
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(
-            "❌ Unerwarteter Fehler bei Session-Aktivierung",
-            exc_info=_redacted_exception_info(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session activation failed",
-        )
 
 
 @router.get(
@@ -253,35 +230,22 @@ async def get_customer_session_status(
 
     Weniger Details als die Admin-Variante, fokussiert auf Customer-Bedürfnisse
     """
-    try:
-        session = sessions.get_session(key)
-        if session is None:
-            raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
+    session = sessions.get_session(key)
+    if session is None:
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
 
-        return {
-            "session_id": session_id,
-            "status": session.status.value,
-            "customer_language": session.customer_language,
-            "admin_connected": session.admin_connected,
-            "customer_connected": session.customer_connected,
-            "is_active": session.status == SessionStatus.ACTIVE,
-            "can_send_messages": session.status == SessionStatus.ACTIVE,
-            "created_at": session.created_at.isoformat(),
-            "warning_at": session.warning_at().isoformat(),
-            "timeout_at": session.next_timeout_at().isoformat(),
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(
-            "❌ Fehler beim Abrufen des Customer-Session-Status",
-            exc_info=_redacted_exception_info(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session status lookup failed",
-        )
+    return {
+        "session_id": session_id,
+        "status": session.status.value,
+        "customer_language": session.customer_language,
+        "admin_connected": session.admin_connected,
+        "customer_connected": session.customer_connected,
+        "is_active": session.status == SessionStatus.ACTIVE,
+        "can_send_messages": session.status == SessionStatus.ACTIVE,
+        "created_at": session.created_at.isoformat(),
+        "warning_at": session.warning_at().isoformat(),
+        "timeout_at": session.next_timeout_at().isoformat(),
+    }
 
 
 @router.get(

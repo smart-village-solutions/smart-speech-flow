@@ -111,7 +111,7 @@ async def test_unified_message_rejects_unsupported_content_type(active_session) 
 
 
 @pytest.mark.asyncio
-async def test_unified_message_redacts_unexpected_exception_from_response_and_output(
+async def test_unified_message_leaves_an_unexpected_error_to_the_net_and_logs_no_message(
     active_session,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -126,7 +126,7 @@ async def test_unified_message_redacts_unexpected_exception_from_response_and_ou
         AsyncMock(side_effect=RuntimeError(secret)),
     )
 
-    with pytest.raises(HTTPException) as caught:
+    with pytest.raises(RuntimeError):
         await message_processing.send_unified_message(
             session.key,
             ClientType.ADMIN,
@@ -137,10 +137,9 @@ async def test_unified_message_redacts_unexpected_exception_from_response_and_ou
             audio_store=AudioStore.from_environment(),
         )
 
+    # The unhandled-error middleware answers the JSON 500 and logs it redacted; the
+    # route's own session log line names only the error type.
     captured = capsys.readouterr()
-    assert caught.value.status_code == 500
-    assert caught.value.detail["error_message"] == "Message processing failed"
-    assert secret not in repr(caught.value.detail)
     assert secret not in captured.out + captured.err
 
 

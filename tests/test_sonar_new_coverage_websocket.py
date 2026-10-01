@@ -1,5 +1,6 @@
 """Behavioral coverage for Sonar remediation paths in WebSocket services."""
 
+import asyncio
 import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -47,18 +48,27 @@ async def test_no_connection_broadcast_uses_redacted_warning(caplog):
 
 
 @pytest.mark.asyncio
-async def test_heartbeat_monitor_logs_unexpected_failure(monkeypatch, caplog):
+async def test_heartbeat_monitor_logs_a_failed_pass_and_keeps_going(monkeypatch, caplog):
     manager = WebSocketManager(tenant_session_manager(), monitor=websocket_monitor())
+    sleeps = 0
 
-    async def fail_sleep(_delay):
-        raise RuntimeError("scheduler unavailable")
+    async def sleep(_delay):
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps == 3:
+            raise asyncio.CancelledError  # how the lifespan stops it
 
-    monkeypatch.setattr("services.api_gateway.realtime_heartbeat.asyncio.sleep", fail_sleep)
+    async def failing_pings():
+        raise RuntimeError("send failed")
+
+    monkeypatch.setattr("services.api_gateway.realtime_heartbeat.asyncio.sleep", sleep)
+    monkeypatch.setattr(manager.heartbeat, "send_pings", failing_pings)
 
     with caplog.at_level(logging.ERROR):
-        await manager.heartbeat.monitor_loop()
+        with pytest.raises(asyncio.CancelledError):
+            await manager.heartbeat.monitor_loop()
 
-    assert "Heartbeat monitor failed" in caplog.messages
+    assert caplog.messages.count("Heartbeat pass failed") == 2
 
 
 @pytest.mark.asyncio

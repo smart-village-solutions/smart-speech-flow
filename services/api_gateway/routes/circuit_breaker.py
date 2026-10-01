@@ -14,8 +14,7 @@ Version: 1.0
 """
 
 import logging
-from types import TracebackType
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -31,18 +30,7 @@ CIRCUIT_BREAKER_ROUTE_RESPONSES = {
     404: {"description": "Service or circuit breaker not found"},
     500: {"description": "Circuit breaker health operation failed"},
 }
-_REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
 CircuitBreakerClient = Annotated[CircuitBreakerServiceClient, Depends(get_circuit_breaker_client)]
-
-
-def _redacted_exception_info(
-    error: Exception,
-) -> tuple[type[BaseException], BaseException, Optional[TracebackType]]:
-    return (
-        RuntimeError,
-        RuntimeError(_REDACTED_EXCEPTION_MESSAGE),
-        error.__traceback__,
-    )
 
 
 @router.get(
@@ -56,19 +44,12 @@ async def get_services_health(circuit_breaker_client: CircuitBreakerClient) -> D
     Returns:
         Service Health Overview mit Circuit Breaker Status
     """
-    try:
-        health_status = await circuit_breaker_client.get_health_status()
-        return {
-            "status": "success",
-            "data": health_status,
-            "timestamp": health_status.get("monitoring_info", {}).get("last_check"),
-        }
-    except Exception as e:
-        logger.exception("❌ Health Status Error", exc_info=_redacted_exception_info(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Health status check failed: {str(e)}",
-        )
+    health_status = await circuit_breaker_client.get_health_status()
+    return {
+        "status": "success",
+        "data": health_status,
+        "timestamp": health_status.get("monitoring_info", {}).get("last_check"),
+    }
 
 
 @router.get(
@@ -93,28 +74,19 @@ async def get_service_health(
             detail=f"Unknown service: {service_name}. Valid services: asr, translation, tts",
         )
 
-    try:
-        service_status = await circuit_breaker_client.get_service_status(service_name)
+    service_status = await circuit_breaker_client.get_service_status(service_name)
 
-        if service_status is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Service '{service_name}' not found or not registered",
-            )
-
-        return {
-            "status": "success",
-            "service_name": service_name,
-            "data": service_status,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("❌ Service Health Error", exc_info=_redacted_exception_info(e))
+    if service_status is None:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Service health check failed: {str(e)}",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Service '{service_name}' not found or not registered",
         )
+
+    return {
+        "status": "success",
+        "service_name": service_name,
+        "data": service_status,
+    }
 
 
 @router.get(
@@ -130,24 +102,17 @@ async def get_circuit_breakers_status(
     Returns:
         Circuit Breaker Status für alle Services
     """
-    try:
-        circuits = circuit_breaker_client.circuit_breakers()
+    circuits = circuit_breaker_client.circuit_breakers()
 
-        circuit_status = {}
-        for name, circuit in circuits.items():
-            circuit_status[name] = circuit.get_health_status()
+    circuit_status = {}
+    for name, circuit in circuits.items():
+        circuit_status[name] = circuit.get_health_status()
 
-        return {
-            "status": "success",
-            "total_circuits": len(circuits),
-            "circuits": circuit_status,
-        }
-    except Exception as e:
-        logger.exception("❌ Circuit Breaker Status Error", exc_info=_redacted_exception_info(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Circuit breaker status check failed: {str(e)}",
-        )
+    return {
+        "status": "success",
+        "total_circuits": len(circuits),
+        "circuits": circuit_status,
+    }
 
 
 @router.get(
@@ -161,16 +126,9 @@ async def get_degradation_status(circuit_breaker_client: CircuitBreakerClient) -
     Returns:
         Cache Status, Service Mode, Fallback Information
     """
-    try:
-        degradation_status = await circuit_breaker_client.get_degradation_status()
+    degradation_status = await circuit_breaker_client.get_degradation_status()
 
-        return {"status": "success", "data": degradation_status}
-    except Exception as e:
-        logger.exception("❌ Degradation Status Error", exc_info=_redacted_exception_info(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Degradation status check failed: {str(e)}",
-        )
+    return {"status": "success", "data": degradation_status}
 
 
 @router.post(
@@ -195,40 +153,28 @@ async def reset_circuit_breaker(
             detail=f"Unknown service: {service_name}. Valid services: asr, translation, tts",
         )
 
-    try:
-        circuits = circuit_breaker_client.circuit_breakers()
+    circuits = circuit_breaker_client.circuit_breakers()
 
-        if service_name not in circuits:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Circuit breaker for service '{service_name}' not found",
-            )
-
-        # Manual Reset
-        circuit = circuits[service_name]
-        old_state = circuit.state
-        circuit.reset()
-
-        logger.warning(
-            f"⚠️ Manual Circuit Breaker Reset: {service_name} ({old_state.value} → CLOSED)"
-        )
-
-        return {
-            "status": "success",
-            "message": f"Circuit breaker for '{service_name}' has been reset",
-            "service_name": service_name,
-            "old_state": old_state.value,
-            "new_state": "closed",
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("❌ Circuit Breaker Reset Error", exc_info=_redacted_exception_info(e))
+    if service_name not in circuits:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Circuit breaker reset failed: {str(e)}",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Circuit breaker for service '{service_name}' not found",
         )
+
+    # Manual Reset
+    circuit = circuits[service_name]
+    old_state = circuit.state
+    circuit.reset()
+
+    logger.warning(f"⚠️ Manual Circuit Breaker Reset: {service_name} ({old_state.value} → CLOSED)")
+
+    return {
+        "status": "success",
+        "message": f"Circuit breaker for '{service_name}' has been reset",
+        "service_name": service_name,
+        "old_state": old_state.value,
+        "new_state": "closed",
+    }
 
 
 @router.post(
@@ -244,33 +190,22 @@ async def reset_all_circuit_breakers(
     Returns:
         Reset Status aller Circuit Breaker
     """
-    try:
-        circuits = circuit_breaker_client.circuit_breakers()
+    circuits = circuit_breaker_client.circuit_breakers()
 
-        reset_results = {}
-        for name, circuit in circuits.items():
-            old_state = circuit.state
-            circuit.reset()
-            reset_results[name] = {"old_state": old_state.value, "new_state": "closed"}
+    reset_results = {}
+    for name, circuit in circuits.items():
+        old_state = circuit.state
+        circuit.reset()
+        reset_results[name] = {"old_state": old_state.value, "new_state": "closed"}
 
-        logger.warning(f"⚠️ Manual Reset ALL Circuit Breakers: {list(circuits.keys())}")
+    logger.warning(f"⚠️ Manual Reset ALL Circuit Breakers: {list(circuits.keys())}")
 
-        return {
-            "status": "success",
-            "message": f"All {len(circuits)} circuit breakers have been reset",
-            "total_reset": len(circuits),
-            "results": reset_results,
-        }
-
-    except Exception as e:
-        logger.exception(
-            "❌ All Circuit Breakers Reset Error",
-            exc_info=_redacted_exception_info(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Circuit breakers reset failed: {str(e)}",
-        )
+    return {
+        "status": "success",
+        "message": f"All {len(circuits)} circuit breakers have been reset",
+        "total_reset": len(circuits),
+        "results": reset_results,
+    }
 
 
 @router.get(
@@ -284,49 +219,41 @@ async def get_health_summary(circuit_breaker_client: CircuitBreakerClient) -> Di
     Returns:
         Übersicht über Service Health, Circuit Breaker und Cache
     """
-    try:
-        # Service Health
-        health_status = await circuit_breaker_client.get_health_status()
-        summary = health_status.get("summary", {})
-        gpu_summary = health_status.get("gpu_summary", {})
+    # Service Health
+    health_status = await circuit_breaker_client.get_health_status()
+    summary = health_status.get("summary", {})
+    gpu_summary = health_status.get("gpu_summary", {})
 
-        # Circuit Breaker States
-        circuits = circuit_breaker_client.circuit_breakers()
-        circuit_states = {name: circuit.state.value for name, circuit in circuits.items()}
+    # Circuit Breaker States
+    circuits = circuit_breaker_client.circuit_breakers()
+    circuit_states = {name: circuit.state.value for name, circuit in circuits.items()}
 
-        # Degradation Info
-        degradation_status = await circuit_breaker_client.get_degradation_status()
+    # Degradation Info
+    degradation_status = await circuit_breaker_client.get_degradation_status()
 
-        gpu_overview = {
-            "devices_reporting": gpu_summary.get("devices_reporting", 0),
-            "services_reporting": gpu_summary.get("services_reporting", 0),
-            "critical_devices": gpu_summary.get("critical_devices", 0),
-            "warning_devices": gpu_summary.get("warning_devices", 0),
-            "scale_up_recommendations": gpu_summary.get("scale_up_recommendations", 0),
-            "recommended_action": gpu_summary.get("recommended_action", "steady"),
-        }
+    gpu_overview = {
+        "devices_reporting": gpu_summary.get("devices_reporting", 0),
+        "services_reporting": gpu_summary.get("services_reporting", 0),
+        "critical_devices": gpu_summary.get("critical_devices", 0),
+        "warning_devices": gpu_summary.get("warning_devices", 0),
+        "scale_up_recommendations": gpu_summary.get("scale_up_recommendations", 0),
+        "recommended_action": gpu_summary.get("recommended_action", "steady"),
+    }
 
-        return {
-            "status": "success",
-            "overall_healthy": health_status.get("overall_healthy", False),
-            "summary": {
-                "services": summary,
-                "circuit_states": circuit_states,
-                "service_mode": degradation_status.get("current_mode", "unknown"),
-                "gpu": gpu_overview,
-            },
-            "gpu_summary": gpu_summary,
-            "alerts": _generate_health_alerts(
-                health_status, circuit_states, degradation_status, gpu_summary
-            ),
-        }
-
-    except Exception as e:
-        logger.exception("❌ Health Summary Error", exc_info=_redacted_exception_info(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Health summary generation failed: {str(e)}",
-        )
+    return {
+        "status": "success",
+        "overall_healthy": health_status.get("overall_healthy", False),
+        "summary": {
+            "services": summary,
+            "circuit_states": circuit_states,
+            "service_mode": degradation_status.get("current_mode", "unknown"),
+            "gpu": gpu_overview,
+        },
+        "gpu_summary": gpu_summary,
+        "alerts": _generate_health_alerts(
+            health_status, circuit_states, degradation_status, gpu_summary
+        ),
+    }
 
 
 def _generate_health_alerts(

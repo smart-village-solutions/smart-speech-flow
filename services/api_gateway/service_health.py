@@ -217,13 +217,16 @@ class ServiceHealthManager:
         """Kontinuierliche Health Check Loop"""
         try:
             while self.is_monitoring:
-                await self._check_all_services()
+                try:
+                    await self._check_all_services()
+                except Exception:
+                    # One failed pass must not end polling; the sleep still runs, so
+                    # a pass that keeps failing cannot spin.
+                    logger.exception("Health check pass failed")
                 await asyncio.sleep(self.check_interval)
         except asyncio.CancelledError:
             logger.info("🔄 Health Check Loop beendet")
             raise
-        except Exception:
-            logger.exception("Health check loop failed")
 
     async def _check_all_services(self):
         """Überprüft Health Status aller Services"""

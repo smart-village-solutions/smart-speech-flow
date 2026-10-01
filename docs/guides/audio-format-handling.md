@@ -2,7 +2,7 @@
 
 ## 🎯 **Das Problem**
 
-Der Fehler `"Invalid WAV format: file does not start with RIFF id"` tritt auf, weil:
+The gateway answers `400 INVALID_WAV_FORMAT` (`"Invalid WAV format"`) because:
 
 1. **Browser MediaRecorder** generiert oft **WebM/Opus**, **MP4/AAC** oder andere Formate
 2. **SSF Backend** erwartet derzeit nur **WAV-Format** (16kHz, 16-bit, Mono)

@@ -28,16 +28,23 @@ async def test_state_change_callback_failure_does_not_break_circuit_transition(
 
 @pytest.mark.asyncio
 async def test_health_monitoring_loop_logs_unexpected_check_failure(monkeypatch, caplog):
-    """The background monitor contains a failed health-check iteration."""
+    """A failed health-check pass is logged, and the next pass still runs."""
     manager = service_health.ServiceHealthManager()
     manager.is_monitoring = True
+    manager.check_interval = 0
+    passes = 0
 
-    async def failing_check():
-        raise RuntimeError("health request failed")
+    async def failing_then_stopping_check():
+        nonlocal passes
+        passes += 1
+        if passes == 1:
+            raise RuntimeError("health request failed")
+        manager.is_monitoring = False
 
-    monkeypatch.setattr(manager, "_check_all_services", failing_check)
+    monkeypatch.setattr(manager, "_check_all_services", failing_then_stopping_check)
 
     with caplog.at_level(logging.ERROR, logger=service_health.__name__):
         await manager._health_check_loop()
 
-    assert "Health check loop failed" in caplog.text
+    assert "Health check pass failed" in caplog.text
+    assert passes == 2

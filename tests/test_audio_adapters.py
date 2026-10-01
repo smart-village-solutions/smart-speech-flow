@@ -212,7 +212,7 @@ def test_the_cleanup_task_removes_expired_audio_from_its_store(
     async def one_pass(seconds: float) -> None:
         sleeps.append(seconds)
         if len(sleeps) > 1:
-            raise RuntimeError("stop after one pass")
+            raise asyncio.CancelledError  # how the lifespan stops it
 
     class Sessions:
         def sweep_expired_content(self, _now: Any) -> dict[str, int]:
@@ -220,7 +220,9 @@ def test_the_cleanup_task_removes_expired_audio_from_its_store(
 
     # Its own loop: `asyncio.sleep` is patched for the whole module while this runs.
     monkeypatch.setattr(app_module.asyncio, "sleep", one_pass)
-    asyncio.run(audio_cleanup_task(Sessions(), store))
+    task = audio_cleanup_task(Sessions(), store)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(task)
 
     assert not expired.exists()
     assert fresh.exists()

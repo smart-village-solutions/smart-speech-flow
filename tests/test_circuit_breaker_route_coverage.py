@@ -9,6 +9,7 @@ from services.api_gateway.circuit_breaker_client import CircuitBreakerServiceCli
 from services.api_gateway.dependencies import get_circuit_breaker_client
 from services.api_gateway.routes import circuit_breaker
 from services.api_gateway.service_health import ServiceHealthManager
+from services.api_gateway.unhandled_errors import UnhandledErrorMiddleware
 
 
 @pytest.fixture
@@ -19,9 +20,11 @@ def circuit_breaker_client():
 @pytest.fixture
 def client(circuit_breaker_client):
     app = FastAPI()
+    # The gateway's net, as create_app installs it: these routes no longer catch.
+    app.add_middleware(UnhandledErrorMiddleware)
     app.include_router(circuit_breaker.router, prefix="/api")
     app.dependency_overrides[get_circuit_breaker_client] = lambda: circuit_breaker_client
-    return TestClient(app)
+    return TestClient(app, raise_server_exceptions=False)
 
 
 def _circuit(state="closed", health_status=None):
@@ -64,7 +67,8 @@ def test_services_health_converts_client_failure_to_server_error(
     response = client.get("/api/health/services")
 
     assert response.status_code == 500
-    assert response.json()["detail"] == "Health status check failed: upstream unavailable"
+    assert response.json() == {"detail": "Internal server error"}
+    assert "upstream unavailable" not in response.text
 
 
 def test_single_service_health_validates_name_and_handles_missing_service(
@@ -107,7 +111,8 @@ def test_single_service_health_returns_status_and_wraps_client_error(
     error_response = client.get("/api/health/services/tts")
 
     assert error_response.status_code == 500
-    assert error_response.json()["detail"] == "Service health check failed: monitor failed"
+    assert error_response.json() == {"detail": "Internal server error"}
+    assert "monitor failed" not in error_response.text
 
 
 def test_circuit_breaker_status_lists_each_circuit_and_handles_factory_error(
@@ -133,7 +138,8 @@ def test_circuit_breaker_status_lists_each_circuit_and_handles_factory_error(
     error_response = client.get("/api/health/circuit-breakers")
 
     assert error_response.status_code == 500
-    assert error_response.json()["detail"] == "Circuit breaker status check failed: registry failed"
+    assert error_response.json() == {"detail": "Internal server error"}
+    assert "registry failed" not in error_response.text
 
 
 def test_degradation_status_returns_client_data_and_wraps_errors(
@@ -157,9 +163,8 @@ def test_degradation_status_returns_client_data_and_wraps_errors(
     error_response = client.get("/api/health/degradation")
 
     assert error_response.status_code == 500
-    assert error_response.json()["detail"] == (
-        "Degradation status check failed: degradation unavailable"
-    )
+    assert error_response.json() == {"detail": "Internal server error"}
+    assert "degradation unavailable" not in error_response.text
 
 
 def test_reset_one_circuit_validates_service_and_returns_state_transition(
@@ -201,7 +206,8 @@ def test_reset_all_circuits_and_wraps_reset_failure(client, circuit_breaker_clie
     error_response = client.post("/api/admin/circuit-breakers/reset-all")
 
     assert error_response.status_code == 500
-    assert error_response.json()["detail"] == "Circuit breakers reset failed: reset failed"
+    assert error_response.json() == {"detail": "Internal server error"}
+    assert "reset failed" not in error_response.text
 
 
 def test_health_summary_aggregates_alerts_and_wraps_failures(
@@ -253,6 +259,5 @@ def test_health_summary_aggregates_alerts_and_wraps_failures(
     error_response = client.get("/api/health/summary")
 
     assert error_response.status_code == 500
-    assert error_response.json()["detail"] == (
-        "Health summary generation failed: summary unavailable"
-    )
+    assert error_response.json() == {"detail": "Internal server error"}
+    assert "summary unavailable" not in error_response.text

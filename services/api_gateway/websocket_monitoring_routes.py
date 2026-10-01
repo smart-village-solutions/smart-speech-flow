@@ -24,30 +24,20 @@ def utc_now_iso() -> str:
 
 
 @router.get("/health")
-def websocket_health_check(
+async def websocket_health_check(
     monitor: Annotated[WebSocketMonitor, Depends(get_connection_monitor)],
 ):
     """
     WebSocket system health check endpoint
     Returns current health status and key metrics
     """
-    try:
-        health_status = monitor.get_health_status()
+    health_status = monitor.get_health_status()
 
-        return JSONResponse(
-            status_code=200 if health_status["status"] == "healthy" else 503,
-            content={
-                "status": "success",
-                "data": health_status,
-                "timestamp": utc_now_iso(),
-            },
-        )
-    except Exception:
-        return JSONResponse(
-            status_code=500,
-            content={
-                "status": "error",
-                "message": "Health check failed",
-                "timestamp": utc_now_iso(),
-            },
-        )
+    return JSONResponse(
+        status_code=200 if health_status["status"] == "healthy" else 503,
+        content={
+            "status": "success",
+            "data": health_status,
+            "timestamp": utc_now_iso(),
+        },
+    )

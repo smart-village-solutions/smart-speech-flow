@@ -9,8 +9,13 @@ from typing import Any
 
 try:
     from redis import Redis
+    from redis.exceptions import RedisError
 except ImportError:  # pragma: no cover - exercised only in stripped deployments
     Redis = None  # type: ignore[assignment]
+
+    class RedisError(Exception):  # type: ignore[no-redef]
+        pass
+
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +71,9 @@ def configure_tenant_persistence() -> TenantPersistenceBinding | None:
             socket_timeout=5,
         )
         redis.ping()
-    except Exception:
+    except (RedisError, OSError, ValueError):
+        # ValueError: from_url refusing a malformed URL. `from None` keeps the URL,
+        # which can carry credentials, out of the startup log.
         raise TenantPersistenceUnavailable("tenant persistence connection unavailable") from None
 
     logger.info("tenant_redis_persistence_ready")

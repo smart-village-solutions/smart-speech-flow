@@ -8,6 +8,7 @@ reach it through the `AudioValidator` port.
 import audioop
 import io
 import logging
+import struct
 import time
 import wave
 from dataclasses import dataclass
@@ -111,12 +112,13 @@ def _read_wav_properties(
             duration_seconds = frames / sample_rate if sample_rate > 0 else 0
             bit_depth = sample_width * 8
         return channels, bit_depth, sample_rate, duration_seconds
-    except Exception as exc:
+    except (wave.Error, EOFError, struct.error):
+        # The parser's own wording stays out of the client's answer.
         return _build_audio_validation_failure(
             start_time=start_time,
             error_code="INVALID_WAV_FORMAT",
-            error_message=f"Invalid WAV format: {str(exc)}",
-            details={"wav_error": str(exc)},
+            error_message="Invalid WAV format",
+            details={},
         )
 
 
@@ -166,7 +168,7 @@ def _convert_audio_if_needed(
             specs.REQUIRED_CHANNELS,
         )
         conversion_applied = True
-    except Exception as exc:
+    except (ValueError, audioop.error, wave.Error, EOFError, struct.error) as exc:
         conversion_error = str(exc)
 
     return (
@@ -229,12 +231,9 @@ def _normalize_audio_if_requested(
     if not normalize:
         return audio_bytes, False
 
-    try:
-        normalized_bytes = normalize_audio(audio_bytes, sample_rate, bit_depth, channels)
-        if normalized_bytes != audio_bytes:
-            return normalized_bytes, True
-    except Exception as exc:
-        logging.warning(f"Audio normalization failed: {exc}")
+    normalized_bytes = normalize_audio(audio_bytes, sample_rate, bit_depth, channels)
+    if normalized_bytes != audio_bytes:
+        return normalized_bytes, True
 
     return audio_bytes, False
 
@@ -262,105 +261,95 @@ def validate_audio_input(audio_bytes: bytes, normalize: bool = True) -> AudioVal
     start_time = time.perf_counter()
     specs = AudioSpecs()
 
-    try:
-        # Step 1: File size validation
-        file_size_bytes = len(audio_bytes)
-        max_size_bytes = int(specs.MAX_FILE_SIZE_MB * 1024 * 1024)
+    # Step 1: File size validation
+    file_size_bytes = len(audio_bytes)
+    max_size_bytes = int(specs.MAX_FILE_SIZE_MB * 1024 * 1024)
 
-        if file_size_bytes > max_size_bytes:
-            return build_file_too_large_result(
-                file_size_bytes=file_size_bytes,
-                max_size_bytes=max_size_bytes,
-                specs=specs,
-                start_time=start_time,
-            )
-
-        wav_properties = _read_wav_properties(audio_bytes, start_time)
-        if isinstance(wav_properties, AudioValidationResult):
-            return wav_properties
-        channels, bit_depth, sample_rate, duration_seconds = wav_properties
-
-        (
-            audio_bytes,
-            sample_rate,
-            bit_depth,
-            channels,
-            duration_seconds,
-            conversion_attempted,
-            conversion_applied,
-            conversion_error,
-        ) = _convert_audio_if_needed(
-            audio_bytes,
-            sample_rate=sample_rate,
-            bit_depth=bit_depth,
-            channels=channels,
-            duration_seconds=duration_seconds,
-            specs=specs,
-        )
-        file_size_bytes = len(audio_bytes)
-
-        validation_errors = _collect_audio_validation_errors(
-            sample_rate=sample_rate,
-            bit_depth=bit_depth,
-            channels=channels,
-            duration_seconds=duration_seconds,
-            specs=specs,
-            conversion_attempted=conversion_attempted,
-            conversion_applied=conversion_applied,
-            conversion_error=conversion_error,
-        )
-        if validation_errors:
-            return AudioValidationResult(
-                is_valid=False,
-                error_code="INVALID_AUDIO_SPECS",
-                error_message=f"Audio specifications invalid: {'; '.join(validation_errors)}",
-                details={
-                    "current_specs": {
-                        "sample_rate": sample_rate,
-                        "bit_depth": bit_depth,
-                        "channels": channels,
-                        "duration_seconds": duration_seconds,
-                    },
-                    "required_specs": {
-                        "sample_rate": specs.REQUIRED_SAMPLE_RATE,
-                        "bit_depth": specs.REQUIRED_BIT_DEPTH,
-                        "channels": specs.REQUIRED_CHANNELS,
-                        "min_duration": specs.MIN_DURATION_SECONDS,
-                        "max_duration": specs.MAX_DURATION_SECONDS,
-                    },
-                },
-                validation_time_ms=_validation_time_ms(start_time),
-            )
-
-        audio_bytes, normalization_applied = _normalize_audio_if_requested(
-            audio_bytes,
-            sample_rate=sample_rate,
-            bit_depth=bit_depth,
-            channels=channels,
-            normalize=normalize,
-        )
-
-        return AudioValidationResult(
-            is_valid=True,
-            duration_seconds=duration_seconds,
+    if file_size_bytes > max_size_bytes:
+        return build_file_too_large_result(
             file_size_bytes=file_size_bytes,
-            sample_rate=sample_rate,
-            bit_depth=bit_depth,
-            channels=channels,
-            validation_time_ms=_validation_time_ms(start_time),
-            normalization_applied=normalization_applied,
-            spec_conversion_applied=conversion_applied,
-            processed_audio=audio_bytes,
+            max_size_bytes=max_size_bytes,
+            specs=specs,
+            start_time=start_time,
         )
 
-    except Exception as e:
+    wav_properties = _read_wav_properties(audio_bytes, start_time)
+    if isinstance(wav_properties, AudioValidationResult):
+        return wav_properties
+    channels, bit_depth, sample_rate, duration_seconds = wav_properties
+
+    (
+        audio_bytes,
+        sample_rate,
+        bit_depth,
+        channels,
+        duration_seconds,
+        conversion_attempted,
+        conversion_applied,
+        conversion_error,
+    ) = _convert_audio_if_needed(
+        audio_bytes,
+        sample_rate=sample_rate,
+        bit_depth=bit_depth,
+        channels=channels,
+        duration_seconds=duration_seconds,
+        specs=specs,
+    )
+    file_size_bytes = len(audio_bytes)
+
+    validation_errors = _collect_audio_validation_errors(
+        sample_rate=sample_rate,
+        bit_depth=bit_depth,
+        channels=channels,
+        duration_seconds=duration_seconds,
+        specs=specs,
+        conversion_attempted=conversion_attempted,
+        conversion_applied=conversion_applied,
+        conversion_error=conversion_error,
+    )
+    if validation_errors:
         return AudioValidationResult(
             is_valid=False,
-            error_code="VALIDATION_ERROR",
-            error_message=f"Audio validation failed: {str(e)}",
-            details={"exception": str(e)},
+            error_code="INVALID_AUDIO_SPECS",
+            error_message=f"Audio specifications invalid: {'; '.join(validation_errors)}",
+            details={
+                "current_specs": {
+                    "sample_rate": sample_rate,
+                    "bit_depth": bit_depth,
+                    "channels": channels,
+                    "duration_seconds": duration_seconds,
+                },
+                "required_specs": {
+                    "sample_rate": specs.REQUIRED_SAMPLE_RATE,
+                    "bit_depth": specs.REQUIRED_BIT_DEPTH,
+                    "channels": specs.REQUIRED_CHANNELS,
+                    "min_duration": specs.MIN_DURATION_SECONDS,
+                    "max_duration": specs.MAX_DURATION_SECONDS,
+                },
+            },
             validation_time_ms=_validation_time_ms(start_time),
         )
+
+    audio_bytes, normalization_applied = _normalize_audio_if_requested(
+        audio_bytes,
+        sample_rate=sample_rate,
+        bit_depth=bit_depth,
+        channels=channels,
+        normalize=normalize,
+    )
+
+    return AudioValidationResult(
+        is_valid=True,
+        duration_seconds=duration_seconds,
+        file_size_bytes=file_size_bytes,
+        sample_rate=sample_rate,
+        bit_depth=bit_depth,
+        channels=channels,
+        validation_time_ms=_validation_time_ms(start_time),
+        normalization_applied=normalization_applied,
+        spec_conversion_applied=conversion_applied,
+        processed_audio=audio_bytes,
+    )
 
 
 def normalize_audio(audio_bytes: bytes, sample_rate: int, bit_depth: int, channels: int) -> bytes:

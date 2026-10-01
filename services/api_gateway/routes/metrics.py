@@ -13,9 +13,5 @@ def metrics(
     registry: Annotated[CollectorRegistry, Depends(get_prometheus_registry)],
 ):
     """Kombinierte Prometheus-Metriken für Gateway und WebSocket-Monitoring"""
-    try:
-        # The WebSocket series live on this registry too (GatewayMetrics.websocket).
-        return Response(generate_latest(registry), media_type=TEXT_PLAIN_MEDIA_TYPE)
-    except Exception:
-        # Absoluter Fallback
-        return Response("# Fehler beim Generieren der Metriken\n", media_type=TEXT_PLAIN_MEDIA_TYPE)
+    # The WebSocket series live on this registry too (GatewayMetrics.websocket).
+    return Response(generate_latest(registry), media_type=TEXT_PLAIN_MEDIA_TYPE)
