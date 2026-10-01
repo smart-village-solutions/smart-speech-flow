@@ -91,6 +91,7 @@
     "notFound": "Bulunamadı.",
     "validation": "Bu istek işlenemedi.",
     "server": "Bizim tarafımızda bir sorun oluştu.",
+    "noSpeech": "Hiçbir şey anlaşılamadı. Lütfen tekrar deneyin.",
     "unknown": "Bir şeyler ters gitti."
   }
 }

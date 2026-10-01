@@ -2,13 +2,13 @@ import { AxiosError, AxiosHeaders } from 'axios';
 import { describe, expect, it } from 'vitest';
 import { AppError, toAppError } from '@/core/http/AppError';
 
-function axiosErrorWithStatus(status: number): AxiosError {
+function axiosErrorWithStatus(status: number, data: unknown = {}): AxiosError {
   const error = new AxiosError('boom', 'ERR_BAD_RESPONSE');
   error.config = { headers: new AxiosHeaders({ 'X-Correlation-Id': 'cid-1' }) };
   error.response = {
     status,
     statusText: '',
-    data: {},
+    data,
     headers: {},
     config: error.config,
   };
@@ -29,6 +29,55 @@ describe('toAppError', () => {
 
   it('maps 5xx to server', () => {
     expect(toAppError(axiosErrorWithStatus(503)).kind).toBe('server');
+  });
+
+  it('reads a 422 that names NO_SPEECH_RECOGNIZED as noSpeech', () => {
+    const result = toAppError(
+      axiosErrorWithStatus(422, {
+        detail: {
+          status: 'error',
+          error_code: 'NO_SPEECH_RECOGNIZED',
+          error_message: 'No speech was recognised in the recording.',
+          details: {},
+          timestamp: '2026-10-01T00:00:00Z',
+        },
+      })
+    );
+
+    expect(result.kind).toBe('noSpeech');
+    expect(result.serverCode).toBe('NO_SPEECH_RECOGNIZED');
+    expect(result.userMessageKey).toBe('errors.noSpeech');
+    expect(result.retryable).toBe(false);
+  });
+
+  it('keeps a FastAPI field-validation 422 as validation', () => {
+    // FastAPI answers 422 for invalid request fields on the same route, so
+    // the status alone never means "no speech".
+    const result = toAppError(
+      axiosErrorWithStatus(422, {
+        detail: [{ loc: ['body', 'text'], msg: 'too short', type: 'string_too_short' }],
+      })
+    );
+
+    expect(result.kind).toBe('validation');
+    expect(result.serverCode).toBeUndefined();
+  });
+
+  it('keeps an unknown or inherited-looking code as validation', () => {
+    for (const code of ['SOMETHING_ELSE', 'constructor', 'toString']) {
+      const result = toAppError(axiosErrorWithStatus(422, { detail: { error_code: code } }));
+
+      expect(result.kind).toBe('validation');
+      expect(result.serverCode).toBe(code);
+    }
+  });
+
+  it('keeps a 5xx as server whatever code it carries', () => {
+    const result = toAppError(
+      axiosErrorWithStatus(500, { detail: { error_code: 'NO_SPEECH_RECOGNIZED' } })
+    );
+
+    expect(result.kind).toBe('server');
   });
 
   it('maps a response-less axios error to network', () => {

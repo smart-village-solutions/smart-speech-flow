@@ -91,6 +91,7 @@
     "notFound": "That was not found.",
     "validation": "That request could not be processed.",
     "server": "Something went wrong on our side.",
+    "noSpeech": "Nothing was recognised. Please try again.",
     "unknown": "Something went wrong."
   },
   "admin": {
