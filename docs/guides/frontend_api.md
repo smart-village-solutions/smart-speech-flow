@@ -407,7 +407,9 @@ class WebSocketClient {
 - Ungültige Session: `404` mit `detail`-Payload.
 - Fehlende Felder: `400` mit `error_code` und `details`. Beispiel bei Multipart: `"MISSING_FIELDS"`.
 - Audiofehler (z. B. nicht unterstütztes Format): `400` mit `AUDIO_VALIDATION_FAILED`.
-- Allgemeine Fehler: `500` mit `PROCESSING_ERROR`.
+- Fehlerhafter Request-Body: `400` mit `INVALID_FORM_DATA` (Multipart) oder `INVALID_JSON` (kein JSON-Objekt).
+- Aufnahme ohne erkannte Sprache: `422` mit `NO_SPEECH_RECOGNIZED`.
+- Unerwartete Fehler: `500` mit `{"detail": "Internal server error"}`, ohne `error_code`.
 
 Das Frontend sollte Fehlermeldungen aus `detail` anzeigen und Nutzer*innen entsprechend informieren (z. B. Session nicht verfügbar, Audio zu kurz/lang, Sprache nicht unterstützt).
 
