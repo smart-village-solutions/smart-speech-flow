@@ -66,7 +66,7 @@ describe('ConversationScreen when a recording held no speech', () => {
     );
 
     await userEvent.click(await screen.findByRole('button', { name: 'Record' }));
-    await act(async () => {
+    act(() => {
       mocks.capturedConfig?.onDataAvailable(new Blob(['wav']));
     });
 
