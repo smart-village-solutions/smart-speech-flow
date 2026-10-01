@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import Request
 
-from services.api_gateway import app as app_module
+from services.api_gateway import service_urls
 from services.api_gateway import session_lifecycle
 from services.api_gateway.routes import admin, customer
 from services.api_gateway.session_lifecycle import SessionLifecycleService
@@ -126,8 +126,8 @@ def test_unsupported_customer_language_warning_omits_tainted_value(
 
 
 def test_health_path_constant_preserves_service_health_urls():
-    assert app_module.HEALTH_PATH == "/health"
+    assert service_urls.HEALTH_PATH == "/health"
     assert all(
-        service_url.endswith(app_module.HEALTH_PATH)
-        for service_url in app_module.SERVICE_URLS.values()
+        service_url.endswith(service_urls.HEALTH_PATH)
+        for service_url in service_urls.SERVICE_URLS.values()
     )

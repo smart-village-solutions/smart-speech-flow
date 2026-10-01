@@ -45,32 +45,33 @@ def reload_module(module_path: str, env: dict[str, str | None]):
                 os.environ[key] = value
 
 
-def test_app_module_builds_service_urls_for_docker_and_local():
-    app_module = reload_module(
-        "services.api_gateway.app",
+def test_service_urls_are_built_for_docker_and_local():
+    service_urls = reload_module(
+        "services.api_gateway.service_urls",
         {
             "DOCKER_COMPOSE": "1",
             "SERVICE_SCHEME": "http",
             "LOCAL_SERVICE_SCHEME": None,
         },
     )
-    assert app_module.SERVICE_URLS["ASR"] == "http://asr:8000/health"
-    assert app_module._build_service_url("asr", 8000, "/transcribe", scheme="http") == (
+    assert service_urls.SERVICE_URLS["ASR"] == "http://asr:8000/health"
+    assert service_urls._build_service_url("asr", 8000, "/transcribe", scheme="http") == (
         "http://asr:8000/transcribe"
     )
+    app_module = importlib.import_module("services.api_gateway.app")
     assert app_module._localhost_origin(3000, secure=True) == "https://localhost:3000"
 
-    app_module = reload_module(
-        "services.api_gateway.app",
+    service_urls = reload_module(
+        "services.api_gateway.service_urls",
         {
             "DOCKER_COMPOSE": "0",
             "SERVICE_SCHEME": "http",
             "LOCAL_SERVICE_SCHEME": "https",
         },
     )
-    assert app_module.SERVICE_URLS["TTS"] == "https://localhost:8003/health"
+    assert service_urls.SERVICE_URLS["TTS"] == "https://localhost:8003/health"
     assert (
-        app_module._build_service_url("localhost", 8003, "/synthesize", scheme="https")
+        service_urls._build_service_url("localhost", 8003, "/synthesize", scheme="https")
         == "https://localhost:8003/synthesize"
     )
 

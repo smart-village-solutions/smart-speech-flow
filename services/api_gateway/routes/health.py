@@ -2,7 +2,7 @@ import requests
 from fastapi import APIRouter
 from requests import RequestException
 
-from services.api_gateway.app import SERVICE_URLS
+from services.api_gateway.service_urls import SERVICE_URLS
 
 router = APIRouter()
 
