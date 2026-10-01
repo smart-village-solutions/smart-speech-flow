@@ -15,7 +15,7 @@ from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway import message_delivery
 from services.api_gateway import message_requests
-from services.api_gateway.session_manager import ClientType
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
 REVISION = f"sha256:{'a' * 64}"

@@ -10,7 +10,7 @@ from services.api_gateway import service_urls
 from services.api_gateway import session_lifecycle
 from services.api_gateway.routes import admin, customer
 from services.api_gateway.session_lifecycle import SessionLifecycleService
-from services.api_gateway.session_manager import SessionStatus
+from services.api_gateway.session_models import SessionStatus
 from services.api_gateway.tenant_context import StudioTenantContext
 from services.api_gateway.tenant_session import TenantSessionKey
 

@@ -14,7 +14,8 @@ from typing import Any, Optional
 
 from .consent_resolution import resolve_consent
 from .log_safety import sanitize_log_value
-from .session_manager import Session, SessionStatus, TenantSessionManager
+from .session_manager import TenantSessionManager
+from .session_models import Session, SessionStatus
 from .studio_runtime_client import RuntimeConfiguration, StudioRuntimeClientError
 from .studio_runtime_flow import StudioRuntimeFlow
 from .studio_runtime_token import StudioTokenError

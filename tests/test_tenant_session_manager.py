@@ -9,11 +9,8 @@ import pytest
 from starlette.websockets import WebSocketState
 
 from services.api_gateway.audio_storage import AudioStore
-from services.api_gateway.session_manager import (
-    ClientType,
-    TenantSessionManager,
-    SessionStatus,
-)
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType, SessionStatus
 from services.api_gateway.session_store import (
     MemoryTenantSessionStore,
     SessionStoreConsistencyError,

@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from services.api_gateway.realtime_protocol import ConnectionState, MessageType
-from services.api_gateway.session_manager import ClientType
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
 # WebSocket-Manager und Dependencies

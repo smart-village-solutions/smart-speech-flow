@@ -30,7 +30,8 @@ from ..quality_telemetry import QualityTelemetry
 from ..realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from ..session_access import require_admin_session_key
 from ..session_lifecycle import NoActiveSessionError, SessionLifecycleService, SessionNotFoundError
-from ..session_manager import ClientType, TenantSessionManager
+from ..session_manager import TenantSessionManager
+from ..session_models import ClientType
 from ..studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
     require_validated_runtime_configuration,

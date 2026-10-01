@@ -12,7 +12,8 @@ from services.api_gateway import message_processing
 from services.api_gateway import message_delivery
 from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.dependencies import build_gateway_dependencies
-from services.api_gateway.session_manager import ClientType, SessionStatus, TenantSessionManager
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 from services.api_gateway.translation_refiner import NoOpTranslationRefiner

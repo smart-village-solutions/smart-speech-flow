@@ -12,7 +12,7 @@ import pytest
 from fastapi import WebSocketDisconnect
 
 from services.api_gateway import websocket as ws
-from services.api_gateway.session_manager import ClientType, SessionStatus
+from services.api_gateway.session_models import ClientType, SessionStatus
 from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket_monitor import DisconnectReason
 

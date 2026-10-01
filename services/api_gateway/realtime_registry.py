@@ -6,7 +6,7 @@ from typing import Dict, Optional
 from uuid import uuid4
 
 from .realtime_connection import WebSocketConnection, safe_identifier
-from .session_manager import ClientType
+from .session_models import ClientType
 from .tenant_session import TenantSessionKey
 
 

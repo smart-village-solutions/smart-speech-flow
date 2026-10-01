@@ -19,7 +19,8 @@ from services.api_gateway.pipeline_admission import (
     run_pipeline,
 )
 from services.api_gateway.quality_telemetry import PipelineStage, QualityErrorCode
-from services.api_gateway.session_manager import ClientType, TenantSessionManager
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from tests.pipeline_helpers import (
     PIPELINE_SUCCESS,

@@ -21,7 +21,8 @@ from services.api_gateway.quality_telemetry import (
     discard_event,
 )
 from services.api_gateway.legacy_session_manager import LegacySessionManager
-from services.api_gateway.session_manager import SessionStatus, TenantSessionManager
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 

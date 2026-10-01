@@ -24,12 +24,8 @@ from services.api_gateway.realtime_ticket import (
     MemoryRealtimeTicketBackend,
     RealtimeTicketStore,
 )
-from services.api_gateway.session_manager import (
-    ClientType,
-    SessionMessage,
-    SessionStatus,
-    TenantSessionManager,
-)
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType, SessionMessage, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.studio_runtime_client import RuntimeConfiguration
 from services.api_gateway.studio_runtime_flow import (

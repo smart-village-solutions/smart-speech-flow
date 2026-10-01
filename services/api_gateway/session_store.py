@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from .tenant_session import TenantSessionKey
 
 if TYPE_CHECKING:
-    from .session_manager import Session
+    from .session_models import Session
 
 
 logger = logging.getLogger(__name__)
@@ -335,7 +335,7 @@ class RedisTenantSessionStore:
         if raw_session is None:
             return None
         try:
-            from .session_manager import Session
+            from .session_models import Session
 
             session = Session.from_dict(json.loads(raw_session))
         except (KeyError, TypeError, ValueError):
@@ -415,7 +415,7 @@ class RedisTenantSessionStore:
         record_key = active_key.removesuffix(":active-admin")
         raw_session = self.redis.get(f"{record_key}:session:{session_id}")
         try:
-            from .session_manager import Session
+            from .session_models import Session
 
             session = Session.from_dict(json.loads(raw_session))
             key = session.key

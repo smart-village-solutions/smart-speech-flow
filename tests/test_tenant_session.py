@@ -4,7 +4,7 @@ from hashlib import sha256
 
 import pytest
 
-from services.api_gateway.session_manager import Session
+from services.api_gateway.session_models import Session
 from services.api_gateway.studio_runtime_client import RuntimeConfiguration
 from services.api_gateway.tenant_session import (
     RuntimeConfigurationSnapshot,

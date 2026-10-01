@@ -26,7 +26,8 @@ from .dependencies import (
 from .realtime_protocol import Frame, polled_envelope_frame, polled_session_terminated_frame
 from .realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from .session_access import require_admin_session_key, require_customer_session_key
-from .session_manager import ClientType, TenantSessionManager
+from .session_manager import TenantSessionManager
+from .session_models import ClientType
 from .tenant_context import reject_request_tenant_selectors
 from .tenant_session import TenantSessionKey
 from .websocket import WebSocketManager

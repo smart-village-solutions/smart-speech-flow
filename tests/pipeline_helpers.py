@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, Mock
 from services.api_gateway.audio_processing import WavAudioValidator
 from services.api_gateway.pipeline_logic import SpeechPipeline
 from services.api_gateway.service_health import ServiceHealthManager
-from services.api_gateway.session_manager import SessionStatus
+from services.api_gateway.session_models import SessionStatus
 from services.api_gateway.speech_services import HttpSpeechServices
 from services.api_gateway.tenant_session import (
     RuntimeConfigurationSnapshot,

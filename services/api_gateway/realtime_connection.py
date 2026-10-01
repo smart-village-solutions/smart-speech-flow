@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 from fastapi import WebSocket
 
 from .realtime_protocol import ConnectionState
-from .session_manager import ClientType
+from .session_models import ClientType
 from .tenant_session import TenantSessionKey
 
 

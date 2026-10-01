@@ -13,12 +13,8 @@ from services.api_gateway.app import app
 from services.api_gateway.audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls
 from services.api_gateway.message_processing import transform_pipeline_metadata
 from services.api_gateway.message_delivery import broadcast_message_to_session
-from services.api_gateway.session_manager import (
-    ClientType,
-    TenantSessionManager,
-    SessionMessage,
-    SessionStatus,
-)
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType, SessionMessage, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import (
     RuntimeConfigurationSnapshot,

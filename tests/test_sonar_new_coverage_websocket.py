@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from services.api_gateway.session_manager import ClientType, SessionStatus
+from services.api_gateway.session_models import ClientType, SessionStatus
 from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket import (
     WebSocketManager,

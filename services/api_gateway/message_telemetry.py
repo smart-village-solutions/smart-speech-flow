@@ -25,7 +25,7 @@ from .quality_telemetry import (
     QualityErrorCode,
     TerminalOutcome,
 )
-from .session_manager import ClientType
+from .session_models import ClientType
 from .session_pseudonym import MISSING_TENANT_REFERENCE, SessionPseudonymizer
 from .tenant_session import TenantSessionKey
 

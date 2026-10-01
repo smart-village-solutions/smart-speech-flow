@@ -6,11 +6,8 @@ from pathlib import Path
 import pytest
 
 from services.api_gateway.audio_storage import AudioStore, AudioVariant
-from services.api_gateway.session_manager import (
-    ClientType,
-    TenantSessionManager,
-    SessionMessage,
-)
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType, SessionMessage
 from services.api_gateway.session_store import (
     MemoryTenantSessionStore,
     SessionStoreConsistencyError,

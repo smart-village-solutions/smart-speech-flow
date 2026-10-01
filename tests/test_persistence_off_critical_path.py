@@ -15,7 +15,7 @@ from services.api_gateway.consent import ConsentStatus
 from services.api_gateway import message_delivery
 from services.api_gateway import message_requests
 from services.api_gateway.runtime_policy import PolicyDecision, PolicyReason
-from services.api_gateway.session_manager import ClientType
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 REVISION = f"sha256:{'a' * 64}"

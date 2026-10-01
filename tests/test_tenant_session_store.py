@@ -6,12 +6,7 @@ import json
 from dataclasses import replace
 from datetime import datetime, timezone
 
-from services.api_gateway.session_manager import (
-    ClientType,
-    Session,
-    SessionMessage,
-    SessionStatus,
-)
+from services.api_gateway.session_models import ClientType, Session, SessionMessage, SessionStatus
 from services.api_gateway.tenant_session import (
     RuntimeConfigurationSnapshot,
     TenantSessionKey,

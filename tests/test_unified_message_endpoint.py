@@ -8,7 +8,8 @@ from fastapi import HTTPException
 
 from services.api_gateway import message_delivery, message_models, message_processing
 from services.api_gateway.audio_storage import AudioStore
-from services.api_gateway.session_manager import ClientType, TenantSessionManager, SessionStatus
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 from tests.pipeline_helpers import speech_pipeline

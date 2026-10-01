@@ -19,7 +19,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from pathlib import Path
 
 from services.api_gateway.legacy_session_manager import LegacySessionManager
-from services.api_gateway.session_manager import SessionMessage
+from services.api_gateway.session_models import SessionMessage
 from services.api_gateway.audio_storage import cleanup_old_audio_files
 
 
@@ -155,7 +155,7 @@ class TestE2EMetadataPresence:
             target_lang="de"
         )
 
-        from services.api_gateway.session_manager import ClientType
+        from services.api_gateway.session_models import ClientType
         message = SessionMessage(
             id=message_id,
             sender=ClientType.CUSTOMER,
@@ -317,7 +317,7 @@ class TestE2EOriginalAudio:
             target_lang="de"
         )
 
-        from services.api_gateway.session_manager import ClientType
+        from services.api_gateway.session_models import ClientType
         message = SessionMessage(
             id=message_id,
             sender=ClientType.CUSTOMER,
@@ -416,7 +416,7 @@ class TestE2ETextPipeline:
 
         for expected_step in expected_steps:
             assert expected_step in actual_step_names        # Create message (text input has no original_audio_url)
-        from services.api_gateway.session_manager import ClientType
+        from services.api_gateway.session_models import ClientType
         message = SessionMessage(
             id="msg-text-001",
             sender=ClientType.CUSTOMER,

@@ -14,7 +14,8 @@ from .message_requests import _log_session_event, _safe_identifier
 from .persistence_authorization import authorize_message_artifacts
 from .realtime_dispatch import BroadcastResult
 from .realtime_protocol import receiver_message_frame, sender_confirmation_frame
-from .session_manager import ClientType, SessionMessage, TenantSessionManager
+from .session_manager import TenantSessionManager
+from .session_models import ClientType, SessionMessage
 from .tenant_session import TenantSessionKey
 from .websocket import WebSocketManager
 

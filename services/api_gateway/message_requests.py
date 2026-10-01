@@ -17,7 +17,7 @@ from .audio_processing import AudioValidator
 from .audio_storage import AudioStore, AudioVariant
 from .log_safety import redacted_exception_info, sanitize_log_value
 from .message_models import SUPPORTED_LANGUAGES, TextMessageRequest, create_error_response
-from .session_manager import ClientType
+from .session_models import ClientType
 from .studio_runtime_flow import correlation_id_from_request
 from .tenant_session import TenantSessionKey
 

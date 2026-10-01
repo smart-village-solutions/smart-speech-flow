@@ -41,7 +41,7 @@ async def circuit_breaker_monitor(circuit_breaker_client: Any) -> None:
 
 async def audio_cleanup_task(session_manager: Any, audio_store: "AudioStore") -> None:
     """Background Task für automatisches Löschen alter Inhalte (Retention)"""
-    from .session_manager import utc_now
+    from .session_models import utc_now
 
     print("🧹 Audio-Cleanup-Service gestartet (läuft stündlich)")
 

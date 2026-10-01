@@ -9,11 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime
 
 from services.api_gateway.legacy_session_manager import LegacySessionManager
-from services.api_gateway.session_manager import (
-    Session,
-    SessionStatus,
-    ClientType
-)
+from services.api_gateway.session_models import Session, SessionStatus, ClientType
 
 
 @pytest.fixture

@@ -6,7 +6,7 @@ Testet Audio Storage, Pipeline Metadata Collection und WebSocket Broadcasting
 import pytest
 from datetime import datetime
 from unittest.mock import Mock, patch, MagicMock
-from services.api_gateway.session_manager import SessionMessage, ClientType
+from services.api_gateway.session_models import SessionMessage, ClientType
 from services.api_gateway.message_processing import transform_pipeline_metadata
 
 

@@ -13,7 +13,7 @@ from services.api_gateway.runtime_policy import (
     RuntimePolicyGate,
 )
 from services.api_gateway.runtime_policy_metrics import RuntimePolicyMetrics
-from services.api_gateway.session_manager import ClientType
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 from tests.runtime_policy_helpers import RecordingClient, configuration
 

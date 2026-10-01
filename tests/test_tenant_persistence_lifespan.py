@@ -12,11 +12,7 @@ from starlette.websockets import WebSocketState
 
 from services.api_gateway.app import app, lifespan
 from services.api_gateway.realtime_ticket import RedisRealtimeTicketBackend
-from services.api_gateway.session_manager import (
-    ClientType,
-    SessionMessage,
-    SessionStatus,
-)
+from services.api_gateway.session_models import ClientType, SessionMessage, SessionStatus
 from services.api_gateway.session_store import (
     RedisTenantSessionStore,
     SessionStoreConsistencyError,

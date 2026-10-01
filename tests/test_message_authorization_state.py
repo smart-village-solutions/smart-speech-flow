@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from services.api_gateway.session_manager import ClientType, SessionMessage
+from services.api_gateway.session_models import ClientType, SessionMessage
 
 
 def _message(**overrides) -> SessionMessage:

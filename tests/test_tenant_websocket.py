@@ -14,11 +14,8 @@ from services.api_gateway.app import app
 from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.auth import optional_ssf_user
 from services.api_gateway.routes.admin import list_tenant_realtime_connections
-from services.api_gateway.session_manager import (
-    ClientType,
-    TenantSessionManager,
-    SessionStatus,
-)
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_context import StudioTenantContext
 from services.api_gateway.tenant_session import (

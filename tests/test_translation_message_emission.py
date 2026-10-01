@@ -24,7 +24,8 @@ from services.api_gateway.quality_telemetry import (
     discard_event,
 )
 from services.api_gateway import message_processing
-from services.api_gateway.session_manager import ClientType, TenantSessionManager
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import TenantSessionKey
 from tests.pipeline_helpers import AUDIO_BYTES, make_active_session, speech_pipeline

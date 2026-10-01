@@ -17,7 +17,7 @@ from services.api_gateway.quality_telemetry import (
     QualityErrorCode,
     TerminalOutcome,
 )
-from services.api_gateway.session_manager import ClientType
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.session_pseudonym import SessionPseudonymizer
 from services.api_gateway.tenant_session import TenantSessionKey
 

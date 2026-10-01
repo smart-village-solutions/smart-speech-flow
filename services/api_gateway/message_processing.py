@@ -35,7 +35,8 @@ from .pipeline_results import (
     UPSTREAM_BUSY_ERROR_CODE,
 )
 from .quality_telemetry import InputMode, QualityTelemetry
-from .session_manager import ClientType, SessionMessage, SessionStatus, TenantSessionManager
+from .session_manager import TenantSessionManager
+from .session_models import ClientType, SessionMessage, SessionStatus
 from .tenant_session import TenantSessionKey
 from .websocket import WebSocketManager
 

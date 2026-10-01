@@ -10,12 +10,9 @@ from services.api_gateway.audio_storage import (
     AudioVariant,
     retention_hours,
 )
-from services.api_gateway.session_manager import (
-    ClientType,
-    TenantSessionManager,
-    SessionMessage,
-)
-from services.api_gateway.session_manager import SessionStatus
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType, SessionMessage
+from services.api_gateway.session_models import SessionStatus
 from services.api_gateway.session_store import (
     MemoryTenantSessionStore,
     SessionStoreConsistencyError,
@@ -236,7 +233,7 @@ async def test_a_legacy_session_sweeps_without_logging_a_failure(monkeypatch, ca
     import logging
 
     from services.api_gateway.legacy_session_manager import LegacySessionManager
-    from services.api_gateway.session_manager import Session
+    from services.api_gateway.session_models import Session
 
     monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
     legacy = Session(id="LEGACY01")

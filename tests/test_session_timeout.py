@@ -6,7 +6,7 @@ Tests für Session-Timeout-Management
 import pytest
 from datetime import datetime, timedelta
 from services.api_gateway.legacy_session_manager import LegacySessionManager
-from services.api_gateway.session_manager import Session, SessionStatus, ClientType
+from services.api_gateway.session_models import Session, SessionStatus, ClientType
 
 
 class TestSessionTimeoutManagement:
@@ -94,7 +94,7 @@ class TestSessionTimeoutManagement:
 
     def test_session_activity_on_message(self):
         """Test: Session-Aktivität wird bei neuen Nachrichten aktualisiert"""
-        from services.api_gateway.session_manager import SessionMessage
+        from services.api_gateway.session_models import SessionMessage
 
         # Session erstellen
         session_id = "TEST123"
