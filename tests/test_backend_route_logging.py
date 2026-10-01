@@ -4,7 +4,7 @@ import traceback
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException, Request
+from fastapi import Request
 
 from services.api_gateway import app as app_module
 from services.api_gateway import session_lifecycle
@@ -25,7 +25,7 @@ def _http_request() -> Request:
 
 
 @pytest.mark.asyncio
-async def test_admin_history_redacts_internal_exception_from_response(
+async def test_admin_history_leaves_an_unexpected_error_to_the_unhandled_error_net(
     session_manager, monkeypatch, caplog
 ):
     exception_text = "private-history-exception"
@@ -40,15 +40,15 @@ async def test_admin_history_redacts_internal_exception_from_response(
     )
 
     with caplog.at_level(logging.ERROR, logger=admin.logger.name):
-        with pytest.raises(HTTPException) as raised:
+        with pytest.raises(SensitiveRouteError):
             await admin.get_session_history(context, SessionLifecycleService(session_manager))
 
-    assert raised.value.status_code == 500
-    assert raised.value.detail == "Session history lookup failed"
+    # The route neither reshapes nor logs it: the unhandled-error middleware answers
+    # the JSON 500 and the redacted log (tests/test_unhandled_error_middleware.py).
     assert exception_text not in caplog.text
 
 
-def test_customer_exception_log_keeps_traceback_without_sensitive_message(
+def test_customer_activation_leaves_an_unexpected_error_to_the_unhandled_error_net(
     session_manager, monkeypatch, caplog
 ):
     session_id = "private-session-id"
@@ -75,17 +75,13 @@ def test_customer_exception_log_keeps_traceback_without_sensitive_message(
             None,
             SessionLifecycleService(session_manager),
         )
-        with pytest.raises(HTTPException) as raised:
+        with pytest.raises(SensitiveRouteError) as raised:
             asyncio.run(activation)
 
-    assert raised.value.status_code == 500
-    exception_records = [record for record in caplog.records if record.exc_info]
-    assert len(exception_records) == 1
-    record = exception_records[0]
-    assert record.exc_info[2] is not None
     assert any(
-        frame.name == "fail_session_lookup" for frame in traceback.extract_tb(record.exc_info[2])
+        frame.name == "fail_session_lookup" for frame in traceback.extract_tb(raised.tb)
     )
+    assert [record for record in caplog.records if record.exc_info] == []
     assert session_id not in caplog.text
     assert language not in caplog.text
     assert exception_text not in caplog.text

@@ -682,24 +682,15 @@ async def send_unified_message(
         _log_session_event("⚠️ HTTPException in send_unified_message", session_id)
         raise
     except Exception as e:
+        # The unhandled-error middleware answers and logs it; this row must still
+        # say the message failed, and the log must still name the session.
         _log_session_event(
             "💥 Unexpected error in send_unified_message",
             session_id,
             error_type=type(e).__name__,
         )
-        logger.exception(
-            "Unexpected message processing failure",
-            exc_info=redacted_exception_info(e),
-        )
         recorder.record_http_failure(500)
-        raise HTTPException(
-            status_code=500,
-            detail=create_error_response(
-                "PROCESSING_ERROR",
-                "Message processing failed",
-                {},
-            ),
-        )
+        raise
     finally:
         recorder.emit(telemetry)
 

@@ -21,7 +21,7 @@ from ..dependencies import (
     get_session_manager,
     get_studio_runtime_flow,
 )
-from ..log_safety import redacted_exception_info, safe_language_code
+from ..log_safety import safe_language_code
 from ..message_models import MESSAGE_VALIDATION_RESPONSE
 from ..session_access import require_customer_session_key
 from ..session_lifecycle import (
@@ -214,15 +214,6 @@ async def activate_session(
         raise HTTPException(status_code=409, detail=conflict.code) from None
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(
-            "❌ Unerwarteter Fehler bei Session-Aktivierung",
-            exc_info=redacted_exception_info(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session activation failed",
-        )
 
 
 @router.get(
@@ -241,35 +232,22 @@ async def get_customer_session_status(
 
     Weniger Details als die Admin-Variante, fokussiert auf Customer-Bedürfnisse
     """
-    try:
-        session = sessions.get_session(key)
-        if session is None:
-            raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
+    session = sessions.get_session(key)
+    if session is None:
+        raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
 
-        return {
-            "session_id": session_id,
-            "status": session.status.value,
-            "customer_language": session.customer_language,
-            "admin_connected": session.admin_connected,
-            "customer_connected": session.customer_connected,
-            "is_active": session.status == SessionStatus.ACTIVE,
-            "can_send_messages": session.status == SessionStatus.ACTIVE,
-            "created_at": session.created_at.isoformat(),
-            "warning_at": session.warning_at().isoformat(),
-            "timeout_at": session.next_timeout_at().isoformat(),
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(
-            "❌ Fehler beim Abrufen des Customer-Session-Status",
-            exc_info=redacted_exception_info(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Session status lookup failed",
-        )
+    return {
+        "session_id": session_id,
+        "status": session.status.value,
+        "customer_language": session.customer_language,
+        "admin_connected": session.admin_connected,
+        "customer_connected": session.customer_connected,
+        "is_active": session.status == SessionStatus.ACTIVE,
+        "can_send_messages": session.status == SessionStatus.ACTIVE,
+        "created_at": session.created_at.isoformat(),
+        "warning_at": session.warning_at().isoformat(),
+        "timeout_at": session.next_timeout_at().isoformat(),
+    }
 
 
 @router.get(

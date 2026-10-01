@@ -1,5 +1,6 @@
 """Behavioral coverage for the WebSocket monitoring APIs."""
 
+import asyncio
 from datetime import timedelta
 from unittest.mock import Mock
 
@@ -61,7 +62,7 @@ def test_monitoring_health_reflects_monitor_state():
     monitor = Mock()
     monitor.get_health_status.return_value = {"status": "degraded", "active_connections": 2}
 
-    health = monitoring_routes.websocket_health_check(monitor)
+    health = asyncio.run(monitoring_routes.websocket_health_check(monitor))
 
     assert health.status_code == 503
     assert b'"active_connections":2' in health.body
