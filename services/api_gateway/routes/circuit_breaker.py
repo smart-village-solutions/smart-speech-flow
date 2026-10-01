@@ -14,13 +14,13 @@ Version: 1.0
 """
 
 import logging
-from types import TracebackType
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..circuit_breaker_client import CircuitBreakerServiceClient
 from ..dependencies import get_circuit_breaker_client
+from ..log_safety import redacted_exception_info
 
 logger = logging.getLogger(__name__)
 
@@ -31,18 +31,7 @@ CIRCUIT_BREAKER_ROUTE_RESPONSES = {
     404: {"description": "Service or circuit breaker not found"},
     500: {"description": "Circuit breaker health operation failed"},
 }
-_REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
 CircuitBreakerClient = Annotated[CircuitBreakerServiceClient, Depends(get_circuit_breaker_client)]
-
-
-def _redacted_exception_info(
-    error: Exception,
-) -> tuple[type[BaseException], BaseException, Optional[TracebackType]]:
-    return (
-        RuntimeError,
-        RuntimeError(_REDACTED_EXCEPTION_MESSAGE),
-        error.__traceback__,
-    )
 
 
 @router.get(
@@ -64,7 +53,7 @@ async def get_services_health(circuit_breaker_client: CircuitBreakerClient) -> D
             "timestamp": health_status.get("monitoring_info", {}).get("last_check"),
         }
     except Exception as e:
-        logger.exception("❌ Health Status Error", exc_info=_redacted_exception_info(e))
+        logger.exception("❌ Health Status Error", exc_info=redacted_exception_info(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Health status check failed: {str(e)}",
@@ -110,7 +99,7 @@ async def get_service_health(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("❌ Service Health Error", exc_info=_redacted_exception_info(e))
+        logger.exception("❌ Service Health Error", exc_info=redacted_exception_info(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Service health check failed: {str(e)}",
@@ -143,7 +132,7 @@ async def get_circuit_breakers_status(
             "circuits": circuit_status,
         }
     except Exception as e:
-        logger.exception("❌ Circuit Breaker Status Error", exc_info=_redacted_exception_info(e))
+        logger.exception("❌ Circuit Breaker Status Error", exc_info=redacted_exception_info(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Circuit breaker status check failed: {str(e)}",
@@ -166,7 +155,7 @@ async def get_degradation_status(circuit_breaker_client: CircuitBreakerClient) -
 
         return {"status": "success", "data": degradation_status}
     except Exception as e:
-        logger.exception("❌ Degradation Status Error", exc_info=_redacted_exception_info(e))
+        logger.exception("❌ Degradation Status Error", exc_info=redacted_exception_info(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Degradation status check failed: {str(e)}",
@@ -224,7 +213,7 @@ async def reset_circuit_breaker(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("❌ Circuit Breaker Reset Error", exc_info=_redacted_exception_info(e))
+        logger.exception("❌ Circuit Breaker Reset Error", exc_info=redacted_exception_info(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Circuit breaker reset failed: {str(e)}",
@@ -265,7 +254,7 @@ async def reset_all_circuit_breakers(
     except Exception as e:
         logger.exception(
             "❌ All Circuit Breakers Reset Error",
-            exc_info=_redacted_exception_info(e),
+            exc_info=redacted_exception_info(e),
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -322,7 +311,7 @@ async def get_health_summary(circuit_breaker_client: CircuitBreakerClient) -> Di
         }
 
     except Exception as e:
-        logger.exception("❌ Health Summary Error", exc_info=_redacted_exception_info(e))
+        logger.exception("❌ Health Summary Error", exc_info=redacted_exception_info(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Health summary generation failed: {str(e)}",

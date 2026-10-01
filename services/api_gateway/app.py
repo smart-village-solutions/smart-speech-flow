@@ -29,6 +29,7 @@ from .logging_setup import configure_logging
 from .pipeline_admission import PipelineAdmission, PipelineAdmissionConfig, PipelineAdmissionMetrics
 from .rate_limiter import RateLimitMiddleware, RateLimits
 from .refinement_metrics import RefinementMetrics
+from .unhandled_errors import UnhandledErrorMiddleware
 
 if TYPE_CHECKING:
     from .audio_storage import AudioStore
@@ -939,6 +940,9 @@ def create_app() -> FastAPI:
     app.state.prometheus_registry = metrics.registry
     app.state.dependencies = None
 
+    # The last middleware added is the outermost, so adding this one before CORS puts
+    # it inside CORS: a crash still answers with CORS headers.
+    app.add_middleware(UnhandledErrorMiddleware)
     setup_cors_for_websockets(app)
     app.state.rate_limits = RateLimits()
     app.add_middleware(RateLimitMiddleware, limits=app.state.rate_limits)

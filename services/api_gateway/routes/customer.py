@@ -7,7 +7,6 @@ Ermöglicht Kunden das Beitreten und Aktivieren von Sessions
 import logging
 from datetime import datetime, timezone
 from hashlib import sha256
-from types import TracebackType
 from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -22,7 +21,7 @@ from ..dependencies import (
     get_session_manager,
     get_studio_runtime_flow,
 )
-from ..log_safety import safe_language_code
+from ..log_safety import redacted_exception_info, safe_language_code
 from ..message_models import MESSAGE_VALIDATION_RESPONSE
 from ..session_access import require_customer_session_key
 from ..session_lifecycle import (
@@ -52,17 +51,6 @@ CUSTOMER_ROUTE_RESPONSES = {
     404: {"description": _SESSION_NOT_FOUND},
     500: {"description": "Customer session operation failed"},
 }
-_REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
-
-
-def _redacted_exception_info(
-    error: Exception,
-) -> tuple[type[BaseException], BaseException, Optional[TracebackType]]:
-    return (
-        RuntimeError,
-        RuntimeError(_REDACTED_EXCEPTION_MESSAGE),
-        error.__traceback__,
-    )
 
 
 # Request/Response Models
@@ -229,7 +217,7 @@ async def activate_session(
     except Exception as e:
         logger.exception(
             "❌ Unerwarteter Fehler bei Session-Aktivierung",
-            exc_info=_redacted_exception_info(e),
+            exc_info=redacted_exception_info(e),
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -276,7 +264,7 @@ async def get_customer_session_status(
     except Exception as e:
         logger.exception(
             "❌ Fehler beim Abrufen des Customer-Session-Status",
-            exc_info=_redacted_exception_info(e),
+            exc_info=redacted_exception_info(e),
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

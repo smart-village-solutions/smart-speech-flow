@@ -92,7 +92,7 @@ def test_a_failed_original_audio_write_is_reported_not_swallowed(refusing_audio_
 def test_the_failure_log_carries_a_traceback_without_the_exception_text(
     refusing_audio_storage, caplog
 ):
-    """`_redacted_exception_info` keeps the stack and replaces the message.
+    """`redacted_exception_info` keeps the stack and replaces the message.
 
     The traceback is what makes the cause findable; the exception's own text
     is what could carry a path or a payload into the log, so it is swapped for

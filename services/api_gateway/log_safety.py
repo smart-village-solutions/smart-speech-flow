@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from types import TracebackType
+from typing import Any, Optional
 
 _SAFE_LANGUAGE_CODE = re.compile(r"^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8}){0,2}$")
 
@@ -53,3 +54,17 @@ def safe_language_code(value: Any) -> str:
 def safe_closed_value(value: Any, allowed: frozenset[str], *, fallback: str = "invalid") -> str:
     """Keep an operational field fixed-cardinality and free of caller text."""
     return value if isinstance(value, str) and value in allowed else fallback
+
+
+_REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
+
+
+class RedactedServerError(Exception):
+    """An unhandled error with its message removed; the traceback is the original's."""
+
+
+def redacted_exception_info(
+    error: BaseException,
+) -> tuple[type[BaseException], BaseException, Optional[TracebackType]]:
+    """`exc_info` for logging an error without its message, which may carry user content."""
+    return (RuntimeError, RuntimeError(_REDACTED_EXCEPTION_MESSAGE), error.__traceback__)

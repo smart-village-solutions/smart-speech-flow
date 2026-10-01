@@ -7,7 +7,6 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
-from types import TracebackType
 from typing import Any, Dict, Final, Mapping, Optional
 
 from fastapi import HTTPException, Request, UploadFile
@@ -17,7 +16,7 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from .audio_processing import AudioValidator
 from .audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
 from .consent import ConsentStatus
-from .log_safety import sanitize_log_value
+from .log_safety import redacted_exception_info, sanitize_log_value
 from .message_models import (
     SUPPORTED_LANGUAGES,
     MessageResponse,
@@ -56,19 +55,6 @@ def _nothing_delivered() -> BroadcastResult:
         failed_sends=0,
         session_has_connections=False,
         errors=[],
-    )
-
-
-_REDACTED_EXCEPTION_MESSAGE = "Exception details redacted"
-
-
-def _redacted_exception_info(
-    error: Exception,
-) -> tuple[type[BaseException], BaseException, Optional[TracebackType]]:
-    return (
-        RuntimeError,
-        RuntimeError(_REDACTED_EXCEPTION_MESSAGE),
-        error.__traceback__,
     )
 
 
@@ -439,7 +425,7 @@ def _store_audio_artifacts(
         logger.exception(
             "⚠️ Failed to save original audio: %s",
             type(e).__name__,
-            exc_info=_redacted_exception_info(e),
+            exc_info=redacted_exception_info(e),
         )
 
     return original_audio_available
@@ -464,7 +450,7 @@ def _store_translated_audio(
         logger.exception(
             "⚠️ Failed to save translated audio: %s",
             type(error).__name__,
-            exc_info=_redacted_exception_info(error),
+            exc_info=redacted_exception_info(error),
         )
         return False
     return True
@@ -519,7 +505,7 @@ async def _parse_text_request(request: Request) -> TextMessageRequest:
             ),
         )
     except Exception as e:
-        logger.exception("❌ Failed to parse JSON", exc_info=_redacted_exception_info(e))
+        logger.exception("❌ Failed to parse JSON", exc_info=redacted_exception_info(e))
         raise HTTPException(
             status_code=400,
             detail=create_error_response("INVALID_JSON", "Invalid JSON", {}),
@@ -703,7 +689,7 @@ async def send_unified_message(
         )
         logger.exception(
             "Unexpected message processing failure",
-            exc_info=_redacted_exception_info(e),
+            exc_info=redacted_exception_info(e),
         )
         recorder.record_http_failure(500)
         raise HTTPException(
@@ -1062,7 +1048,7 @@ async def create_session_message(
     except Exception as e:
         logger.exception(
             "❌ WebSocket-Broadcasting-Fehler",
-            exc_info=_redacted_exception_info(e),
+            exc_info=redacted_exception_info(e),
         )
         # WebSocket-Fehler sollen den HTTP-Request nicht zum Absturz bringen
 
