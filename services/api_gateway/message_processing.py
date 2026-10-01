@@ -30,6 +30,7 @@ from .persistence_authorization import authorize_message_artifacts
 from .pipeline_admission import PipelineAdmission, PipelineBusyError, run_pipeline
 from .pipeline_logic import (
     DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS,
+    NO_SPEECH_ERROR_CODE,
     UPSTREAM_BUSY_ERROR_CODE,
     SpeechPipeline,
     process_text_pipeline,
@@ -383,6 +384,22 @@ def _raise_if_upstream_busy(result: Dict[str, Any]) -> None:
             },
         ),
         headers={"Retry-After": str(retry_after)},
+    )
+
+
+def _raise_if_no_speech(result: Dict[str, Any]) -> None:
+    """A recording in which ASR heard nothing is the speaker's to repeat (422).
+
+    Same envelope as every other failure on this endpoint. The code, not the
+    status, identifies it: FastAPI answers 422 for invalid fields too.
+    """
+    if result.get("error_code") != NO_SPEECH_ERROR_CODE:
+        return
+    raise HTTPException(
+        status_code=422,
+        detail=create_error_response(
+            NO_SPEECH_ERROR_CODE, "No speech was recognised in the recording.", {}
+        ),
     )
 
 
@@ -826,6 +843,7 @@ async def process_audio_input(
 
     if result.get("error", False):
         _raise_if_upstream_busy(result)
+        _raise_if_no_speech(result)
         raise HTTPException(
             status_code=500,
             detail=create_error_response(

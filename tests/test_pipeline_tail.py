@@ -154,3 +154,18 @@ def test_both_modes_seed_tts_with_the_session(mode):
     [call] = speech.tts_calls
     assert call["payload"]["session_id"] == "s-1"
     assert call["timeout"] == 45
+
+
+@pytest.mark.parametrize("transcript", ["", "  ", None])
+def test_no_speech_stops_before_translation(transcript):
+    speech = FakeSpeech()
+    speech.asr_text = transcript
+
+    result = process_wav(b"RIFF-wav", "de", "en", speech=speech, refiner=_recording_refiner())
+
+    assert speech.calls == ["asr"]
+    assert result["error"] is True
+    assert result["error_code"] == "NO_SPEECH_RECOGNIZED"
+    assert result["debug"]["failed_stage"] == "asr"
+    assert result["debug"]["error_code"] == "no_speech_recognized"
+    assert [step["name"] for step in result["debug"]["steps"]] == ["asr"]

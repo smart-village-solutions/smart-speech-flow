@@ -129,3 +129,13 @@ def create_error_response(
         details=details,
         timestamp=iso_utc_now(),
     ).model_dump()
+
+
+# The message routes' 422: FastAPI's own field validation, or a recording in
+# which ASR heard nothing. The schema reference keeps FastAPI's validation body.
+MESSAGE_VALIDATION_RESPONSE: Dict[str, Any] = {
+    "description": "Validation Error, or NO_SPEECH_RECOGNIZED when a recording holds no speech",
+    "content": {
+        "application/json": {"schema": {"$ref": "#/components/schemas/HTTPValidationError"}}
+    },
+}

@@ -137,3 +137,32 @@ def test_a_failed_text_stage_answers_400_text_pipeline_error(
     assert detail["details"]["error_code"] == "upstream_error"
     assert [step["step"] for step in detail["details"]["steps"]] == steps
     assert _history(client, active_session) == []
+
+
+@pytest.mark.parametrize("transcript", ["", "   ", "\n\t"], ids=["empty", "spaces", "newline"])
+def test_a_recording_with_no_speech_answers_422_and_stores_nothing(
+    client, conversations, active_session, speech_services, transcript
+):
+    speech_services.asr_text = transcript
+
+    response = _send(client, conversations, active_session, "audio")
+
+    assert response.status_code == 422
+    detail = _error(response)
+    assert detail["status"] == "error"
+    assert detail["error_code"] == "NO_SPEECH_RECOGNIZED"
+    assert detail["details"] == {}
+    assert speech_services.calls == ["asr"]
+    assert _history(client, active_session) == []
+
+
+def test_a_transcript_with_any_character_is_translated(
+    client, conversations, active_session, speech_services
+):
+    speech_services.asr_text = "."
+
+    response = _send(client, conversations, active_session, "audio")
+
+    assert response.status_code == 200
+    assert response.json()["original_text"] == "."
+    assert speech_services.calls == ["asr", "translation", "tts"]

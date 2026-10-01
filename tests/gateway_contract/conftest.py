@@ -349,6 +349,7 @@ class SpeechServices:
         self.calls: list[str] = []
         self.requests: list[tuple[str, dict[str, Any]]] = []
         self.failures: dict[str, _SpeechResponse | Exception] = {}
+        self.asr_text = "Guten Tag"
         self.refined_text = "Good day, refined"
         self.tts_text: str | None = None
 
@@ -381,7 +382,7 @@ class SpeechServices:
         if failure is not None:
             return failure
         if service == "asr":
-            return _SpeechResponse(200, payload={"text": "Guten Tag", "debug": {"model": "asr"}})
+            return _SpeechResponse(200, payload={"text": self.asr_text, "debug": {"model": "asr"}})
         if service == "translation":
             payload = {"translations": "Good day"}
             if self.tts_text is not None:

@@ -26,6 +26,7 @@ from ..dependencies import (
     get_websocket_manager,
 )
 from ..log_safety import sanitize_log_value
+from ..message_models import MESSAGE_VALIDATION_RESPONSE
 from ..quality_telemetry import QualityTelemetry
 from ..realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from ..session_access import require_admin_session_key
@@ -195,7 +196,7 @@ async def issue_realtime_ticket(
 @router.post(
     "/session/{session_id}/message",
     summary="Process an admin message",
-    responses=ADMIN_ROUTE_RESPONSES,
+    responses={**ADMIN_ROUTE_RESPONSES, 422: MESSAGE_VALIDATION_RESPONSE},
 )
 async def send_admin_message(
     session_id: str,

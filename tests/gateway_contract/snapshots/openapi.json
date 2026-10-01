@@ -1030,7 +1030,7 @@
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Validation Error, or NO_SPEECH_RECOGNIZED when a recording holds no speech"
           },
           "500": {
             "description": "Admin session operation failed"
@@ -1927,7 +1927,7 @@
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Validation Error, or NO_SPEECH_RECOGNIZED when a recording holds no speech"
           },
           "500": {
             "description": "Customer session operation failed"

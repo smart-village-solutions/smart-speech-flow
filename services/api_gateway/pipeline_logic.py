@@ -25,6 +25,9 @@ from .translation_refiner import BaseTranslationRefiner, RefinementOutcome
 UPSTREAM_BUSY_ERROR_CODE = "SYSTEM_BUSY"
 # Only used when a shedding service sent no parseable Retry-After of its own.
 DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS = 5
+# Marks a recording in which ASR heard nothing, so the message route can answer
+# 422 instead of translating an empty string.
+NO_SPEECH_ERROR_CODE = "NO_SPEECH_RECOGNIZED"
 
 
 def utc_now() -> datetime:
@@ -679,6 +682,19 @@ def _transcribe(
             "duration_ms": duration_ms,
         }
     )
+    if not (run.source_text or "").strip():
+        result = _pipeline_error_result(
+            debug_info=run.debug_info,
+            start_total=run.start_total,
+            error_message="ASR-Fehler: no speech recognised",
+            failed_stage=PipelineStage.ASR,
+            error_code=QualityErrorCode.NO_SPEECH_RECOGNIZED,
+            asr_text=run.source_text,
+            translation_text=None,
+            audio_bytes=None,
+        )
+        result["error_code"] = NO_SPEECH_ERROR_CODE
+        return result
     return None
 
 
