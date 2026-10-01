@@ -721,105 +721,95 @@ def validate_text_input(text: str, enable_content_filtering: bool = True) -> Tex
     start_time = time.perf_counter()
     specs = TextSpecs()
 
-    try:
-        # Step 1: Basic validation
-        if not isinstance(text, str):
-            return TextValidationResult(
-                is_valid=False,
-                error_code="INVALID_TYPE",
-                error_message="Input must be a string",
-                validation_time_ms=int((time.perf_counter() - start_time) * 1000),
-            )
-
-        # Step 2: Length validation
-        text_length = len(text)
-        if text_length < specs.MIN_LENGTH:
-            return TextValidationResult(
-                is_valid=False,
-                error_code="TEXT_TOO_SHORT",
-                error_message=f"Text too short: {text_length} characters. Minimum: {specs.MIN_LENGTH}",
-                details={"length": text_length, "min_length": specs.MIN_LENGTH},
-                length=text_length,
-                validation_time_ms=int((time.perf_counter() - start_time) * 1000),
-            )
-
-        if text_length > specs.MAX_LENGTH:
-            return TextValidationResult(
-                is_valid=False,
-                error_code="TEXT_TOO_LONG",
-                error_message=f"Text too long: {text_length} characters. Maximum: {specs.MAX_LENGTH}",
-                details={"length": text_length, "max_length": specs.MAX_LENGTH},
-                length=text_length,
-                validation_time_ms=int((time.perf_counter() - start_time) * 1000),
-            )
-
-        # Step 3: Encoding validation
-        try:
-            text.encode("utf-8")
-            encoding = "utf-8"
-        except UnicodeEncodeError:
-            return TextValidationResult(
-                is_valid=False,
-                error_code="INVALID_ENCODING",
-                error_message="Text contains invalid UTF-8 characters",
-                details={"encoding_error": "utf-8 encoding failed"},
-                length=text_length,
-                validation_time_ms=int((time.perf_counter() - start_time) * 1000),
-            )
-
-        # Step 4: Text normalization
-        normalized_text = normalize_text(text)
-
-        # Step 5: Content filtering (always detect, optionally block)
-        contains_spam = detect_spam(normalized_text)
-        contains_harmful_content = detect_harmful_content(normalized_text)
-
-        if enable_content_filtering:
-            if contains_spam:
-                return TextValidationResult(
-                    is_valid=False,
-                    error_code="SPAM_DETECTED",
-                    error_message="Text appears to be spam",
-                    details={"spam_patterns": "multiple repetitive patterns detected"},
-                    length=text_length,
-                    encoding=encoding,
-                    contains_spam=True,
-                    normalized_text=normalized_text,
-                    validation_time_ms=int((time.perf_counter() - start_time) * 1000),
-                )
-
-            if contains_harmful_content:
-                return TextValidationResult(
-                    is_valid=False,
-                    error_code="HARMFUL_CONTENT",
-                    error_message="Text contains potentially harmful content",
-                    details={"content_filter": "harmful patterns detected"},
-                    length=text_length,
-                    encoding=encoding,
-                    contains_harmful_content=True,
-                    normalized_text=normalized_text,
-                    validation_time_ms=int((time.perf_counter() - start_time) * 1000),
-                )
-
-        # Step 6: Success
-        return TextValidationResult(
-            is_valid=True,
-            length=text_length,
-            encoding=encoding,
-            contains_spam=contains_spam,
-            contains_harmful_content=contains_harmful_content,
-            normalized_text=normalized_text,
-            validation_time_ms=int((time.perf_counter() - start_time) * 1000),
-        )
-
-    except Exception as e:
+    # Step 1: Basic validation
+    if not isinstance(text, str):
         return TextValidationResult(
             is_valid=False,
-            error_code="VALIDATION_ERROR",
-            error_message=f"Text validation failed: {str(e)}",
-            details={"exception": str(e)},
+            error_code="INVALID_TYPE",
+            error_message="Input must be a string",
             validation_time_ms=int((time.perf_counter() - start_time) * 1000),
         )
+
+    # Step 2: Length validation
+    text_length = len(text)
+    if text_length < specs.MIN_LENGTH:
+        return TextValidationResult(
+            is_valid=False,
+            error_code="TEXT_TOO_SHORT",
+            error_message=f"Text too short: {text_length} characters. Minimum: {specs.MIN_LENGTH}",
+            details={"length": text_length, "min_length": specs.MIN_LENGTH},
+            length=text_length,
+            validation_time_ms=int((time.perf_counter() - start_time) * 1000),
+        )
+
+    if text_length > specs.MAX_LENGTH:
+        return TextValidationResult(
+            is_valid=False,
+            error_code="TEXT_TOO_LONG",
+            error_message=f"Text too long: {text_length} characters. Maximum: {specs.MAX_LENGTH}",
+            details={"length": text_length, "max_length": specs.MAX_LENGTH},
+            length=text_length,
+            validation_time_ms=int((time.perf_counter() - start_time) * 1000),
+        )
+
+    # Step 3: Encoding validation
+    try:
+        text.encode("utf-8")
+        encoding = "utf-8"
+    except UnicodeEncodeError:
+        return TextValidationResult(
+            is_valid=False,
+            error_code="INVALID_ENCODING",
+            error_message="Text contains invalid UTF-8 characters",
+            details={"encoding_error": "utf-8 encoding failed"},
+            length=text_length,
+            validation_time_ms=int((time.perf_counter() - start_time) * 1000),
+        )
+
+    # Step 4: Text normalization
+    normalized_text = normalize_text(text)
+
+    # Step 5: Content filtering (always detect, optionally block)
+    contains_spam = detect_spam(normalized_text)
+    contains_harmful_content = detect_harmful_content(normalized_text)
+
+    if enable_content_filtering:
+        if contains_spam:
+            return TextValidationResult(
+                is_valid=False,
+                error_code="SPAM_DETECTED",
+                error_message="Text appears to be spam",
+                details={"spam_patterns": "multiple repetitive patterns detected"},
+                length=text_length,
+                encoding=encoding,
+                contains_spam=True,
+                normalized_text=normalized_text,
+                validation_time_ms=int((time.perf_counter() - start_time) * 1000),
+            )
+
+        if contains_harmful_content:
+            return TextValidationResult(
+                is_valid=False,
+                error_code="HARMFUL_CONTENT",
+                error_message="Text contains potentially harmful content",
+                details={"content_filter": "harmful patterns detected"},
+                length=text_length,
+                encoding=encoding,
+                contains_harmful_content=True,
+                normalized_text=normalized_text,
+                validation_time_ms=int((time.perf_counter() - start_time) * 1000),
+            )
+
+    # Step 6: Success
+    return TextValidationResult(
+        is_valid=True,
+        length=text_length,
+        encoding=encoding,
+        contains_spam=contains_spam,
+        contains_harmful_content=contains_harmful_content,
+        normalized_text=normalized_text,
+        validation_time_ms=int((time.perf_counter() - start_time) * 1000),
+    )
 
 
 def normalize_text(text: str) -> str:

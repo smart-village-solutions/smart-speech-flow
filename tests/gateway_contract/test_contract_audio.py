@@ -34,8 +34,8 @@ INVALID_INPUTS = {
     "not_wav": (
         NOT_WAV,
         "INVALID_WAV_FORMAT",
-        "Invalid WAV format: file does not start with RIFF id",
-        {"wav_error": "file does not start with RIFF id"},
+        "Invalid WAV format",
+        {},
     ),
     "too_short": (
         TOO_SHORT,

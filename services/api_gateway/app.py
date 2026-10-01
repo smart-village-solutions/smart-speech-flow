@@ -96,11 +96,8 @@ async def websocket_monitor_task(monitor: Any, manager: Any) -> None:
     """Background Task für WebSocket-Monitoring und Cleanup"""
     await asyncio.sleep(1)  # Kurz warten bis Startup abgeschlossen
 
-    try:
-        print("🚀 WebSocket-Monitoring gestartet")
-        await monitor.periodic_cleanup(lambda: manager.all_connections.keys())
-    except Exception as e:
-        print(f"⚠️ Fehler im WebSocket-Monitor: {e}")
+    print("🚀 WebSocket-Monitoring gestartet")
+    await monitor.periodic_cleanup(lambda: manager.all_connections.keys())
 
 
 async def circuit_breaker_monitor(circuit_breaker_client: Any) -> None:
@@ -111,48 +108,42 @@ async def circuit_breaker_monitor(circuit_breaker_client: Any) -> None:
     #219. ServiceHealthManager owns its own polling task, so there is nothing
     left for this one to do after starting it.
     """
-    try:
-        await circuit_breaker_client.start_health_monitoring()
-        print("🚀 Circuit Breaker Health Monitoring gestartet")
-    except Exception as e:
-        print(f"❌ Circuit Breaker Monitor Startup Fehler: {e}")
+    await circuit_breaker_client.start_health_monitoring()
+    print("🚀 Circuit Breaker Health Monitoring gestartet")
 
 
 async def audio_cleanup_task(session_manager: Any, audio_store: "AudioStore") -> None:
     """Background Task für automatisches Löschen alter Inhalte (Retention)"""
     from .session_manager import utc_now
 
-    try:
-        print("🧹 Audio-Cleanup-Service gestartet (läuft stündlich)")
+    print("🧹 Audio-Cleanup-Service gestartet (läuft stündlich)")
 
-        while True:
-            try:
-                # Stündliche Cleanup-Routine
-                await asyncio.sleep(3600)  # 1 Stunde warten
+    while True:
+        try:
+            # Stündliche Cleanup-Routine
+            await asyncio.sleep(3600)  # 1 Stunde warten
 
-                # Cleanup durchführen
-                stats = audio_store.cleanup_expired()
-                print(f"🧹 Audio-Cleanup abgeschlossen: {stats['total_deleted']} Dateien gelöscht")
+            # Cleanup durchführen
+            stats = audio_store.cleanup_expired()
+            print(f"🧹 Audio-Cleanup abgeschlossen: {stats['total_deleted']} Dateien gelöscht")
 
-                # Transcripts expire on the same pass. Audio alone would keep
-                # the weaker half of the promise.
-                content = session_manager.sweep_expired_content(utc_now())
-                print(
-                    "🧹 Content-Sweep abgeschlossen: "
-                    f"{content['refused_removed']} abgelehnt, "
-                    f"{content['expired_removed']} abgelaufen"
-                )
+            # Transcripts expire on the same pass. Audio alone would keep
+            # the weaker half of the promise.
+            content = session_manager.sweep_expired_content(utc_now())
+            print(
+                "🧹 Content-Sweep abgeschlossen: "
+                f"{content['refused_removed']} abgelehnt, "
+                f"{content['expired_removed']} abgelaufen"
+            )
 
-                # Disk Usage loggen
-                disk_stats = audio_store.disk_usage()
-                total_mb = disk_stats["total_bytes"] / (1024 * 1024)
-                print(f"💾 Audio Storage: {disk_stats['total_files']} Dateien, {total_mb:.2f} MB")
+            # Disk Usage loggen
+            disk_stats = audio_store.disk_usage()
+            total_mb = disk_stats["total_bytes"] / (1024 * 1024)
+            print(f"💾 Audio Storage: {disk_stats['total_files']} Dateien, {total_mb:.2f} MB")
 
-            except Exception as e:
-                print(f"⚠️ Fehler im Audio-Cleanup-Task: {e}")
-                await asyncio.sleep(3600)
-    except Exception as e:
-        print(f"❌ Audio-Cleanup-Task Startup Fehler: {e}")
+        except Exception as e:
+            # One failed pass must not end retention; the next pass is an hour away.
+            print(f"⚠️ Fehler im Audio-Cleanup-Task: {type(e).__name__}")
 
 
 FEEDBACK_RECONCILIATION_INTERVAL_SECONDS = 300

@@ -493,8 +493,9 @@ def test_service_apps_collect_gpu_metrics_and_metrics_route_fallbacks(
         "generate_latest",
         lambda registry: (_ for _ in ()).throw(RuntimeError("broken")),
     )
-    fallback_response = metrics_route.metrics("main-registry")
-    assert fallback_response.body == b"# Fehler beim Generieren der Metriken\n"
+    # No placeholder 200: a failing exporter is a 500, so Prometheus marks the scrape down.
+    with pytest.raises(RuntimeError, match="broken"):
+        metrics_route.metrics("main-registry")
 
 
 @pytest.mark.asyncio

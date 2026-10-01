@@ -513,7 +513,8 @@ async def _parse_text_request(request: Request) -> TextMessageRequest:
                 }
             ),
         )
-    except Exception as e:
+    except (ValueError, RecursionError) as e:
+        # JSONDecodeError and UnicodeDecodeError are ValueErrors; deep nesting recurses.
         logger.exception("❌ Failed to parse JSON", exc_info=redacted_exception_info(e))
         raise HTTPException(
             status_code=400,

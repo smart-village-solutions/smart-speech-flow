@@ -202,8 +202,9 @@ class TestAudioValidation:
 
         assert result.is_valid is False
         assert result.error_code == "INVALID_WAV_FORMAT"
-        assert "invalid wav format" in result.error_message.lower()
-        assert "wav_error" in result.details
+        # The parser's own wording ("file does not start with RIFF id") stays out.
+        assert result.error_message == "Invalid WAV format"
+        assert result.details == {}
 
     def test_empty_file_rejection(self):
         """Test: Leere Datei wird abgelehnt"""
