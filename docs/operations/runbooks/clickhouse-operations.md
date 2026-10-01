@@ -197,7 +197,7 @@ a store with no free-text kind.
 "messages per session" and "sessions that carried no message" computable
 without a join key the pipeline would otherwise have to invent.
 
-`ALLOWED_ATTRIBUTES` in `services/api_gateway/quality_telemetry.py` is the
+`ALLOWED_ATTRIBUTES` in `services/api_gateway/quality_telemetry_schema.py` is the
 single manifest. It declares a *value shape* per key, not just a key, and there
 is deliberately no free-text kind to declare — so an `error_code` carrying a
 raw upstream message is rejected as firmly as an unknown key would be. Widening
