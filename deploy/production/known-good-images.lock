@@ -1,8 +1,6 @@
-# Updated from the running production containers on 2026-09-22 for
-# asr and translation; on 2026-09-23 for vllm; frontend and api_gateway
-# built on the host from merged main 2383a2a on 2026-09-29;
-# on 2026-09-28 for tts, built on the host from main at a19258f for the
-# VRAM budget (#224);
+# Updated on 2026-10-01 for api_gateway, asr, translation, tts and
+# frontend, built on the host from merged main 42b69b7 (#230);
+# on 2026-09-23 for vllm;
 # the Keycloak theme image was built and verified on 2026-09-13; remaining
 # entries were captured on 2026-09-01 or later.
 # The frontend-archive row was removed on 2026-09-30: retired from
@@ -10,11 +8,11 @@
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
-api_gateway	sha256:88ae896c4798d79f49a80b280215495a0e2fb9025f0301b09b37cf0664021740	ssf-backend-api_gateway:prod-2383a2a
-asr	sha256:abff6ae86a6d06eb20b7f147739bf0e4560cb1c41ef5d8d1b4d443c7e8510da6	ssf-backend-asr:prod-35c4b2f
-translation	sha256:7095a8c1192cf194013d0130fd0957010b2899e62c4a21464cc5f74ffc9d2dad	ssf-backend-translation:prod-35c4b2f
-tts	sha256:a51b74d82815761d04c6aec457b493f19e5e680a27fe4930473e9c28f9bbacf3	ssf-backend-tts:prod-a19258f
-frontend	sha256:6c470e968b471505fc0c4fb5a549b4859d6df565f3a6967cec9a0e9c00efc3d3	ssf-backend-frontend:prod-2383a2a
+api_gateway	sha256:cbb5d38d40816fcd9915ec70ce70ebd6329cc1d65abb8da98f5f4b5a6c4b7cdb	ssf-backend-api_gateway:prod-42b69b7
+asr	sha256:a87eebfbbdba2328736002b2bf6d88783246545e270d5d572198cc2a302a7b08	ssf-backend-asr:prod-42b69b7
+translation	sha256:da56f999edd1d42dc65eb7bd73b7bee7c98c8060e9cdfca5ee4f542a640dbff1	ssf-backend-translation:prod-42b69b7
+tts	sha256:86de96cb8bb8c19e59a7da73611d02e539fe07f555b2eb8b954d2fd980276550	ssf-backend-tts:prod-42b69b7
+frontend	sha256:c2acab043db27a092f423592aebb9ef65a1a6da3d96c0ce43c483e25d5ea1810	ssf-backend-frontend:prod-42b69b7
 keycloak	sha256:b9222cecb936372df1fa7154f30306f48277c4ee3acec47d5f487ca225160b20	ssf-keycloak:prod-59c954c
 traefik	sha256:76de233753150da70cde36a5d845c231d408a041b6fcf5a36f924c1322bd98fd	traefik@sha256:ca0f90490fe3091f5f4e582a28638652edb3b26b4d7a1d9ee621ce88fb2bff86
 ollama	sha256:edd5fde06b3f61a0c2de426ea87ea0491101f3bfa3f27b2b997ef6f4624199b2	ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a
