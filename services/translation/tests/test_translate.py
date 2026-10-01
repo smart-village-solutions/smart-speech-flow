@@ -14,6 +14,8 @@ def test_translate_success():
     assert response.status_code == 200
     data = response.json()
     assert "translations" in data
+    # TTS reads only the translation; nothing consumes a romanisation (#230).
+    assert "tts_text" not in data
     assert isinstance(data["translations"], str) or isinstance(data["translations"], list)
     if isinstance(data["translations"], str):
         assert len(data["translations"]) > 0
