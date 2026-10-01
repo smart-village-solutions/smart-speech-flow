@@ -91,7 +91,7 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     # records the telemetry failure and session, then re-raises
     ("services/api_gateway/message_processing.py", "send_unified_message"): ["bookkeeping-reraise"],
     # a stored message is not failed by its broadcast or its authorization write-back
-    ("services/api_gateway/message_processing.py", "create_session_message"): [
+    ("services/api_gateway/message_delivery.py", "create_session_message"): [
         "boundary",
         "fallback",
     ],

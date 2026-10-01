@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from services.api_gateway import message_models, message_processing
+from services.api_gateway import message_delivery, message_models, message_processing
 from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.session_manager import ClientType, TenantSessionManager, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
@@ -173,7 +173,7 @@ async def test_create_message_persists_under_the_complete_tenant_key(
 ) -> None:
     manager, session = active_session
 
-    message = await message_processing.create_session_message(
+    message = await message_delivery.create_session_message(
         session.key,
         ClientType.CUSTOMER,
         "Hello",

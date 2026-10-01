@@ -9,6 +9,7 @@ import pytest
 from prometheus_client import CollectorRegistry
 
 from services.api_gateway import message_processing
+from services.api_gateway import message_delivery
 from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.dependencies import build_gateway_dependencies
 from services.api_gateway.session_manager import ClientType, SessionStatus, TenantSessionManager
@@ -98,11 +99,11 @@ async def test_a_failed_broadcast_is_logged_as_a_failure_not_as_a_crash(
         errors=["closed"],
     )
     monkeypatch.setattr(
-        message_processing, "broadcast_message_to_session", AsyncMock(return_value=failed)
+        message_delivery, "broadcast_message_to_session", AsyncMock(return_value=failed)
     )
 
-    with caplog.at_level(logging.ERROR, logger=message_processing.logger.name):
-        await message_processing.create_session_message(
+    with caplog.at_level(logging.ERROR, logger=message_delivery.logger.name):
+        await message_delivery.create_session_message(
             session_id=key,
             client_type=ClientType.ADMIN,
             original_text="Hallo",

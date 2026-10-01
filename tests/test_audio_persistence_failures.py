@@ -13,7 +13,7 @@ import pytest
 
 from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.consent import ConsentStatus
-from services.api_gateway import message_processing
+from services.api_gateway import message_delivery
 from services.api_gateway import message_requests
 from services.api_gateway.session_manager import ClientType
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
@@ -51,7 +51,7 @@ async def test_a_failed_translated_audio_write_still_delivers_the_message(
         available = message_requests._store_translated_audio(
             key, "message-id", b"audio-bytes", audio_store=refusing_audio_storage
         )
-        message = await message_processing.create_session_message(
+        message = await message_delivery.create_session_message(
             key,
             ClientType.CUSTOMER,
             "hallo",
