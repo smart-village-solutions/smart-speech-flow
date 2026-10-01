@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import time
-import traceback
 import zlib
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, NamedTuple
@@ -341,10 +340,17 @@ async def _synthesize_in_chunks(
 async def synthesize(request: Request):
     start = time.perf_counter()
     requests_total.inc()
-    data = await request.json()
+    try:
+        data = await request.json()
+    except ValueError:  # JSONDecodeError and UnicodeDecodeError
+        data = None
+    if not isinstance(data, dict):
+        return _error_response(
+            False, {}, 400, fallback=False, error="Request body must be a JSON object"
+        )
     # tts_text is the translation service's romanization. Voices read their
     # own script, and the MMS tokenizers romanize Ethiopic themselves.
-    text = data.get("text", "Hallo Welt")
+    text = data.get("text")
     lang = data.get("lang", "de")
     debug_active = (
         str(data.get("debug", "false")).lower() == "true"
@@ -381,8 +387,11 @@ async def synthesize(request: Request):
             speaker, spoken, seed, request.app.state.synthesis_slots
         )
     except Exception as exc:
-        debug_info["traceback"] = traceback.format_exc()
-        return fail(500, f"TTS fehlgeschlagen: {exc}")
+        # The endpoint's boundary: the exception text and its traceback stay in the
+        # server log as a type name, never in the response.
+        logger.error("TTS synthesis failed (%s)", type(exc).__name__)
+        debug_info["error_type"] = type(exc).__name__
+        return fail(500, "TTS fehlgeschlagen")
 
     if spoken_audio is None:
         return fail(

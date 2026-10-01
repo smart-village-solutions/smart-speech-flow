@@ -150,7 +150,8 @@ async def test_translation_returns_debug_response_when_generation_fails(
 
     assert response.status_code == 500
     assert b'"translations":null' in response.body
-    assert b"Translation failed: backend unavailable" in response.body
+    assert b"Translation failed" in response.body
+    assert b"backend unavailable" not in response.body
 
 
 @pytest.mark.asyncio
@@ -169,4 +170,5 @@ async def test_tts_returns_structured_error_when_the_voice_fails(tts_service):
 
     assert response.status_code == 500
     assert b'"fallback":false' in response.body
-    assert b"TTS fehlgeschlagen: audio renderer failed" in response.body
+    assert b"TTS fehlgeschlagen" in response.body
+    assert b"audio renderer failed" not in response.body

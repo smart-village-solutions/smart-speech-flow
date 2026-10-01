@@ -83,9 +83,30 @@ def test_synthesis_failure_is_a_500(client, speakers):
         raise RuntimeError("cuda gone")
 
     speakers["de"].synthesize = explode
-    response = client.post("/synthesize", json={"text": "Hallo", "lang": "de"})
+    response = client.post("/synthesize", json={"text": "Hallo", "lang": "de", "debug": True})
     assert response.status_code == 500
-    assert "cuda gone" in response.json()["error"]
+    assert response.json()["error"] == "TTS fehlgeschlagen"
+    assert "cuda gone" not in response.text
+
+
+def test_a_request_without_text_is_a_400_not_hallo_welt(client, speakers):
+    response = client.post("/synthesize", json={"lang": "de"})
+
+    assert response.status_code == 400
+    assert speakers["de"].calls == []
+
+
+@pytest.mark.parametrize(
+    "body", [b"[]", b"null", b'"Hallo"', b"{not json"], ids=["list", "null", "string", "broken"]
+)
+def test_a_body_that_is_not_a_json_object_is_a_400(client, speakers, body):
+    response = client.post(
+        "/synthesize", content=body, headers={"content-type": "application/json"}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["fallback"] is False
+    assert speakers["de"].calls == []
 
 
 def test_session_id_seeds_the_voice(client, speakers):

@@ -653,7 +653,8 @@ def _generate_single(
     # Metriken: generierte Tokens schätzen
     try:
         tokens_generated_total.inc(int(outputs.shape[-1]))
-    except Exception:
+    except AttributeError:
+        # Only a stand-in model returns something without a shape.
         pass
 
     return m2m_tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
@@ -696,6 +697,18 @@ def languages():
 @app.get("/metrics")
 def metrics():
     return Response(generate_latest(), media_type="text/plain; version=0.0.4; charset=utf-8")
+
+
+async def _read_json_object(request: Request, debug_info: Dict[str, Any]) -> Dict[str, Any]:
+    """The body as a JSON object, or 400: debug is not known before the body is read."""
+    try:
+        payload = await request.json()
+    except ValueError:  # JSONDecodeError and UnicodeDecodeError
+        payload = None
+    if not isinstance(payload, dict):
+        errors_total.inc()
+        _raise_http_error(False, debug_info, 400, "Invalid JSON payload")
+    return payload
 
 
 def _parse_translation_payload(
@@ -757,10 +770,7 @@ def _build_translation_response(
     debug_info["output"] = translations
     debug_info["duration"] = round(elapsed, 3)
     debug_info["error"] = None
-    try:
-        request_latency.observe(elapsed)
-    except Exception:
-        pass
+    request_latency.observe(elapsed)
     response = {
         "model": MODEL_NAME,
         "device": str(device),
@@ -787,15 +797,8 @@ async def translate(request: Request):
         "model": MODEL_NAME,
         "system": _get_system_stats(),
     }
-    try:
-        payload = await request.json()
-        debug_active, payload = _parse_translation_payload(payload, request)
-    except Exception:
-        errors_total.inc()
-        try:
-            _raise_http_error(debug_active, debug_info, 400, "Invalid JSON payload")
-        except _DebugResponse as exc:
-            return exc.response
+    payload = await _read_json_object(request, debug_info)
+    debug_active, payload = _parse_translation_payload(payload, request)
 
     text_in = payload.get("text")
     source_lang = payload.get("source_lang")
@@ -848,10 +851,12 @@ async def translate(request: Request):
             return debug_response.response
         raise
     except Exception as e:
+        # The endpoint's boundary: count it, and answer without the exception text.
         errors_total.inc()
+        logger.error("Translation failed (%s)", type(e).__name__)
         debug_info["duration"] = round(time.perf_counter() - start, 3)
         try:
-            _raise_http_error(debug_active, debug_info, 500, f"Translation failed: {e}")
+            _raise_http_error(debug_active, debug_info, 500, "Translation failed")
         except _DebugResponse as exc:
             return exc.response
         raise

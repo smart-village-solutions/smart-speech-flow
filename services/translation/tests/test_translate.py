@@ -75,3 +75,11 @@ def test_translate_empty_text():
         "/translate", json={"text": "", "source_lang": "de", "target_lang": "en"}
     )
     assert response.status_code in (400, 422)
+
+
+def test_translate_refuses_a_body_that_is_not_a_json_object():
+    for body in (b"[]", b"null", b'"Hallo"', b"{not json"):
+        response = client.post(
+            "/translate", content=body, headers={"content-type": "application/json"}
+        )
+        assert response.status_code == 400, body
