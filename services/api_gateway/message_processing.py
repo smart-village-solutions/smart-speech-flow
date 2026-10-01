@@ -12,6 +12,7 @@ from typing import Any, Dict, Final, Mapping, Optional
 from fastapi import HTTPException, Request, UploadFile
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile as StarletteUploadFile
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .audio_processing import AudioValidator
 from .audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
@@ -266,7 +267,15 @@ def _validate_supported_languages(source_lang: str, target_lang: str) -> None:
 
 
 async def _parse_audio_form(request: Request) -> tuple[Any, Any, Any]:
-    form = await request.form()
+    try:
+        form = await request.form()
+    except (StarletteHTTPException, ValueError):
+        # Starlette refuses some bodies with its own HTTPException, the parent of
+        # FastAPI's, and lets python-multipart's parse errors (ValueErrors) escape.
+        raise HTTPException(
+            status_code=400,
+            detail=create_error_response("INVALID_FORM_DATA", "Malformed form data", {}),
+        ) from None
     required_fields = ["file", "source_lang", "target_lang"]
     missing_fields = [field for field in required_fields if field not in form]
     if missing_fields:
@@ -511,6 +520,11 @@ async def _parse_text_request(request: Request) -> TextMessageRequest:
             detail=create_error_response("INVALID_JSON", "Invalid JSON", {}),
         )
 
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=400,
+            detail=create_error_response("INVALID_JSON", "Invalid JSON", {}),
+        )
     try:
         return TextMessageRequest(**body)
     except ValidationError as e:
