@@ -612,7 +612,6 @@ def test_translation_helper_functions_cover_debug_and_chunking(translation_app, 
     outputs = translation_app._translate_texts(["kurz", "eins. zwei. drei."], "de", "en", {})
     assert outputs[0] == "de->en:kurz"
     assert outputs[1].startswith("de->en:")
-    assert translation_app._maybe_uromanize(["Hallo"], False) is None
 
 
 def test_translation_validation_and_response_helpers(translation_app):

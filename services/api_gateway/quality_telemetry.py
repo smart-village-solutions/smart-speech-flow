@@ -67,6 +67,8 @@ class QualityErrorCode(str, Enum):
     # stopped calling.
     UPSTREAM_CIRCUIT_OPEN = "upstream_circuit_open"
     AUDIO_VALIDATION_FAILED = "audio_validation_failed"
+    # ASR answered, but with nothing but whitespace. Not an upstream fault.
+    NO_SPEECH_RECOGNIZED = "no_speech_recognized"
     TEXT_VALIDATION_FAILED = "text_validation_failed"
     CONTENT_REJECTED = "content_rejected"
     REFINEMENT_OVERLOADED = "refinement_overloaded"

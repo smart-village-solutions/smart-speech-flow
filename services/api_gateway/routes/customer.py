@@ -23,6 +23,7 @@ from ..dependencies import (
     get_studio_runtime_flow,
 )
 from ..log_safety import safe_language_code
+from ..message_models import MESSAGE_VALIDATION_RESPONSE
 from ..session_access import require_customer_session_key
 from ..session_lifecycle import (
     SessionLifecycleService,
@@ -100,7 +101,7 @@ class ErrorResponse(BaseModel):
 @router.post(
     "/session/{session_id}/message",
     summary="Process a customer message",
-    responses=CUSTOMER_ROUTE_RESPONSES,
+    responses={**CUSTOMER_ROUTE_RESPONSES, 422: MESSAGE_VALIDATION_RESPONSE},
 )
 async def send_customer_message(
     session_id: str,

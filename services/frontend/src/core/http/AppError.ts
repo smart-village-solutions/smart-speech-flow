@@ -6,6 +6,7 @@ export type AppErrorKind =
   | 'notFound'
   | 'validation'
   | 'server'
+  | 'noSpeech'
   | 'unknown';
 
 /**
@@ -28,6 +29,7 @@ const KIND_IS_RETRYABLE: Record<AppErrorKind, boolean> = {
   notFound: false,
   validation: false,
   server: true,
+  noSpeech: false,
   unknown: true,
 };
 
@@ -37,12 +39,19 @@ const KIND_MESSAGE_KEYS: Record<AppErrorKind, string> = {
   notFound: 'errors.notFound',
   validation: 'errors.validation',
   server: 'errors.server',
+  noSpeech: 'errors.noSpeech',
   unknown: 'errors.unknown',
 };
+
+/** Server error codes that name a kind of their own; matched only on a 4xx. */
+const KIND_BY_SERVER_CODE: ReadonlyMap<string, AppErrorKind> = new Map([
+  ['NO_SPEECH_RECOGNIZED', 'noSpeech'],
+]);
 
 interface AppErrorOptions {
   status?: number;
   correlationId?: string;
+  serverCode?: string;
   cause?: unknown;
 }
 
@@ -67,6 +76,7 @@ export class AppError extends Error {
   readonly retryable: boolean;
   readonly status?: number;
   readonly correlationId?: string;
+  readonly serverCode?: string;
 
   constructor(kind: AppErrorKind, options: AppErrorOptions = {}) {
     super(`AppError(${kind})`, { cause: options.cause });
@@ -76,7 +86,21 @@ export class AppError extends Error {
     this.retryable = isRetryable(kind, options.status);
     this.status = options.status;
     this.correlationId = options.correlationId;
+    this.serverCode = options.serverCode;
   }
+}
+
+/** The gateway's `detail.error_code`, when `detail` is its error envelope. */
+function serverErrorCode(data: unknown): string | undefined {
+  if (typeof data !== 'object' || data === null) {
+    return undefined;
+  }
+  const detail = (data as { detail?: unknown }).detail;
+  if (typeof detail !== 'object' || detail === null || Array.isArray(detail)) {
+    return undefined;
+  }
+  const code = (detail as { error_code?: unknown }).error_code;
+  return typeof code === 'string' ? code : undefined;
 }
 
 export function toAppError(error: unknown): AppError {
@@ -106,7 +130,9 @@ export function toAppError(error: unknown): AppError {
   }
 
   if (status >= 400 && status < 500) {
-    return new AppError('validation', { status, correlationId, cause: error });
+    const serverCode = serverErrorCode(error.response.data);
+    const kind = KIND_BY_SERVER_CODE.get(serverCode ?? '') ?? 'validation';
+    return new AppError(kind, { status, correlationId, serverCode, cause: error });
   }
 
   return new AppError('server', { status, correlationId, cause: error });

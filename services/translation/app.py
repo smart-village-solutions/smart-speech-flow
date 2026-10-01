@@ -620,16 +620,6 @@ def _busy_response(
     return debug_response
 
 
-def _maybe_uromanize(outputs: List[str], expect_list: bool) -> str | List[str] | None:
-    try:
-        from uroman import uromanize
-
-        romanized = [uromanize(output) for output in outputs]
-        return romanized if expect_list else romanized[0]
-    except ImportError:
-        return None
-
-
 def _generate_single(
     text: str, source_lang: str, target_lang: str, gen_overrides: Dict[str, Any]
 ) -> str:
@@ -780,7 +770,6 @@ def _build_translation_response(
         "count": len(outputs),
         "elapsed_seconds": round(elapsed, 3),
         "translations": translations,
-        "tts_text": _maybe_uromanize(outputs, expect_list),
     }
     if debug_active:
         response["debug"] = debug_info

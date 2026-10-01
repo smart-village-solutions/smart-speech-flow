@@ -6,8 +6,9 @@ import hashlib
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from types import TracebackType
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Final, Mapping, Optional
 
 from fastapi import HTTPException, Request, UploadFile
 from pydantic import ValidationError
@@ -29,6 +30,7 @@ from .persistence_authorization import authorize_message_artifacts
 from .pipeline_admission import PipelineAdmission, PipelineBusyError, run_pipeline
 from .pipeline_logic import (
     DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS,
+    NO_SPEECH_ERROR_CODE,
     UPSTREAM_BUSY_ERROR_CODE,
     SpeechPipeline,
     process_text_pipeline,
@@ -82,19 +84,43 @@ def _log_session_event(message: str, session_id: Optional[str], **extra: Any) ->
     logger.info("%s | %s", message, safe_extra)
 
 
+@dataclass(frozen=True)
+class _LanguageRule:
+    """Which session languages one sender must use, and how a mismatch is worded."""
+
+    source_attribute: str
+    source_message: str
+    target_attribute: str
+    target_message: str
+
+
+_LANGUAGE_RULES: Final[Mapping[ClientType, _LanguageRule]] = {
+    ClientType.CUSTOMER: _LanguageRule(
+        "customer_language",
+        "Customer must send messages in session language '{expected}', not '{actual}'",
+        "admin_language",
+        "Customer messages must be translated to admin language '{expected}', not '{actual}'",
+    ),
+    ClientType.ADMIN: _LanguageRule(
+        "admin_language",
+        "Admin must send messages in admin language '{expected}', not '{actual}'",
+        "customer_language",
+        "Admin messages must be translated to customer language '{expected}', not '{actual}'",
+    ),
+}
+
+
 def validate_session_languages(
     session: Any,
     source_lang: str,
     target_lang: str,
     client_type: ClientType,
 ) -> None:
-    """Validate that message languages match session configuration.
+    """Refuse a message whose languages do not match the session (400).
 
-    Expected language pairs:
-    - Customer → Admin: customer_language → admin_language (de)
-    - Admin → Customer: admin_language (de) → customer_language
-
-    Raises HTTPException if languages don't match.
+    Customer → admin: customer_language → admin_language.
+    Admin → customer: admin_language → customer_language.
+    The source is checked first.
     """
     _log_session_event(
         "🔍 Validating languages",
@@ -103,65 +129,27 @@ def validate_session_languages(
         source_lang=source_lang,
         target_lang=target_lang,
     )
-
-    def create_error_response(error_type: str, message: str, details: Dict) -> Dict:
-        return {"error": message, "error_type": error_type, "details": details}
-
-    if client_type == ClientType.CUSTOMER:
-        # Customer sends in their language, expects translation to German
-        if source_lang != session.customer_language:
+    rule = _LANGUAGE_RULES.get(client_type)
+    if rule is None:
+        return
+    checks = (
+        ("source", rule.source_attribute, rule.source_message, source_lang),
+        ("target", rule.target_attribute, rule.target_message, target_lang),
+    )
+    for side, attribute, message, actual in checks:
+        expected = getattr(session, attribute)
+        if actual != expected:
             raise HTTPException(
                 status_code=400,
-                detail=create_error_response(
-                    "INVALID_SOURCE_LANGUAGE",
-                    f"Customer must send messages in session language '{session.customer_language}', not '{source_lang}'",
-                    {
-                        "expected_source_lang": session.customer_language,
-                        "actual_source_lang": source_lang,
+                detail={
+                    "error": message.format(expected=expected, actual=actual),
+                    "error_type": f"INVALID_{side.upper()}_LANGUAGE",
+                    "details": {
+                        f"expected_{side}_lang": expected,
+                        f"actual_{side}_lang": actual,
                         "session_id": session.id,
                     },
-                ),
-            )
-        if target_lang != session.admin_language:
-            raise HTTPException(
-                status_code=400,
-                detail=create_error_response(
-                    "INVALID_TARGET_LANGUAGE",
-                    f"Customer messages must be translated to admin language '{session.admin_language}', not '{target_lang}'",
-                    {
-                        "expected_target_lang": session.admin_language,
-                        "actual_target_lang": target_lang,
-                        "session_id": session.id,
-                    },
-                ),
-            )
-    elif client_type == ClientType.ADMIN:
-        # Admin sends in German, expects translation to customer language
-        if source_lang != session.admin_language:
-            raise HTTPException(
-                status_code=400,
-                detail=create_error_response(
-                    "INVALID_SOURCE_LANGUAGE",
-                    f"Admin must send messages in admin language '{session.admin_language}', not '{source_lang}'",
-                    {
-                        "expected_source_lang": session.admin_language,
-                        "actual_source_lang": source_lang,
-                        "session_id": session.id,
-                    },
-                ),
-            )
-        if target_lang != session.customer_language:
-            raise HTTPException(
-                status_code=400,
-                detail=create_error_response(
-                    "INVALID_TARGET_LANGUAGE",
-                    f"Admin messages must be translated to customer language '{session.customer_language}', not '{target_lang}'",
-                    {
-                        "expected_target_lang": session.customer_language,
-                        "actual_target_lang": target_lang,
-                        "session_id": session.id,
-                    },
-                ),
+                },
             )
 
 
@@ -396,6 +384,22 @@ def _raise_if_upstream_busy(result: Dict[str, Any]) -> None:
             },
         ),
         headers={"Retry-After": str(retry_after)},
+    )
+
+
+def _raise_if_no_speech(result: Dict[str, Any]) -> None:
+    """A recording in which ASR heard nothing is the speaker's to repeat (422).
+
+    Same envelope as every other failure on this endpoint. The code, not the
+    status, identifies it: FastAPI answers 422 for invalid fields too.
+    """
+    if result.get("error_code") != NO_SPEECH_ERROR_CODE:
+        return
+    raise HTTPException(
+        status_code=422,
+        detail=create_error_response(
+            NO_SPEECH_ERROR_CODE, "No speech was recognised in the recording.", {}
+        ),
     )
 
 
@@ -714,6 +718,70 @@ async def send_unified_message(
         recorder.emit(telemetry)
 
 
+async def _complete_message(
+    *,
+    key: TenantSessionKey,
+    client_type: ClientType,
+    result: Dict[str, Any],
+    source_lang: str,
+    target_lang: str,
+    original_text: str,
+    original_audio: Optional[bytes],
+    pipeline_type: str,
+    manager: Optional[WebSocketManager],
+    correlation_id: str,
+    sessions: TenantSessionManager,
+    audio_store: AudioStore,
+    start_time: float,
+) -> MessageResponse:
+    """Store, record and answer a message the pipeline produced, for either mode."""
+    message_id = str(uuid.uuid4())
+    original_audio_available = (
+        _store_audio_artifacts(
+            key, client_type, message_id, original_audio, audio_store=audio_store
+        )
+        if original_audio is not None
+        else False
+    )
+    pipeline_metadata = transform_pipeline_metadata(
+        result.get("debug"),
+        source_lang,
+        target_lang,
+        message_id=message_id,
+        original_audio_available=original_audio_available,
+    )
+    translated_audio_available = _store_translated_audio(
+        key, message_id, result.get("audio_bytes"), audio_store=audio_store
+    )
+    message = await create_session_message(
+        session_id=key,
+        client_type=client_type,
+        original_text=original_text,
+        translated_text=result.get("translation_text", ""),
+        source_lang=source_lang,
+        target_lang=target_lang,
+        manager=manager,
+        pipeline_metadata=pipeline_metadata,
+        # Internal availability marker only. Role-scoped URLs are built at
+        # HTTP/WebSocket response boundaries and are never persisted.
+        original_audio_url="available" if original_audio_available else None,
+        message_id=message_id,
+        correlation_id=correlation_id,
+        sessions=sessions,
+        translated_audio_available=translated_audio_available,
+    )
+    return _build_message_response(
+        message=message,
+        key=key,
+        source_lang=source_lang,
+        target_lang=target_lang,
+        pipeline_type=pipeline_type,
+        pipeline_metadata=pipeline_metadata,
+        start_time=start_time,
+        sender=client_type,
+    )
+
+
 async def process_audio_input(
     key: TenantSessionKey,
     client_type: ClientType,
@@ -764,6 +832,7 @@ async def process_audio_input(
             processed_file_bytes,
             source_lang,
             target_lang,
+            session_id=key.session_id,
             speech=pipeline.speech,
             refiner=pipeline.refiner,
         )
@@ -774,6 +843,7 @@ async def process_audio_input(
 
     if result.get("error", False):
         _raise_if_upstream_busy(result)
+        _raise_if_no_speech(result)
         raise HTTPException(
             status_code=500,
             detail=create_error_response(
@@ -783,50 +853,20 @@ async def process_audio_input(
             ),
         )
 
-    message_id = str(uuid.uuid4())
-    audio_bytes = result.get("audio_bytes")
-    original_audio_available = _store_audio_artifacts(
-        key, client_type, message_id, file_bytes, audio_store=audio_store
-    )
-
-    pipeline_metadata = transform_pipeline_metadata(
-        result.get("debug"),
-        source_lang,
-        target_lang,
-        message_id=message_id,
-        original_audio_available=original_audio_available,
-    )
-
-    translated_audio_available = _store_translated_audio(
-        key, message_id, audio_bytes, audio_store=audio_store
-    )
-    message = await create_session_message(
-        session_id=key,
+    return await _complete_message(
+        key=key,
         client_type=client_type,
-        original_text=result.get("asr_text", ""),
-        translated_text=result.get("translation_text", ""),
+        result=result,
         source_lang=source_lang,
         target_lang=target_lang,
+        original_text=result.get("asr_text", ""),
+        original_audio=file_bytes,
+        pipeline_type="audio",
         manager=manager,
-        pipeline_metadata=pipeline_metadata,
-        # Internal availability marker only. Role-scoped URLs are built at
-        # HTTP/WebSocket response boundaries and are never persisted.
-        original_audio_url="available" if original_audio_available else None,
-        message_id=message_id,
         correlation_id=correlation_id,
         sessions=sessions,
-        translated_audio_available=translated_audio_available,
-    )
-    message.id = message_id
-    return _build_message_response(
-        message=message,
-        key=key,
-        source_lang=source_lang,
-        target_lang=target_lang,
-        pipeline_type="audio",
-        pipeline_metadata=pipeline_metadata,
+        audio_store=audio_store,
         start_time=start_time,
-        sender=client_type,
     )
 
 
@@ -923,49 +963,20 @@ async def process_text_input(
             ),
         )
 
-    translated_text = pipeline_result.get("translation_text", "")
-    audio_bytes = pipeline_result.get("audio_bytes")
-
-    # Generate message_id upfront for use in pipeline_metadata
-    message_id = str(uuid.uuid4())
-
-    # Transform pipeline metadata to match spec format
-    pipeline_metadata = transform_pipeline_metadata(
-        pipeline_result.get("debug"),
-        text_request.source_lang,
-        text_request.target_lang,
-        original_audio_url=None,  # Text pipeline has no audio input
-        message_id=message_id,  # Pass message_id for audio URL
-    )
-
-    translated_audio_available = _store_translated_audio(
-        key, message_id, audio_bytes, audio_store=audio_store
-    )
-    message = await create_session_message(
-        session_id=key,
+    return await _complete_message(
+        key=key,
         client_type=client_type,
-        original_text=pipeline_result.get("asr_text", text_request.text),
-        translated_text=translated_text,
+        result=pipeline_result,
         source_lang=text_request.source_lang,
         target_lang=text_request.target_lang,
+        original_text=pipeline_result.get("asr_text", text_request.text),
+        original_audio=None,
+        pipeline_type="text",
         manager=manager,
-        pipeline_metadata=pipeline_metadata,
-        original_audio_url=None,
-        message_id=message_id,
         correlation_id=correlation_id,
         sessions=sessions,
-        translated_audio_available=translated_audio_available,
-    )
-
-    return _build_message_response(
-        message=message,
-        key=key,
-        source_lang=text_request.source_lang,
-        target_lang=text_request.target_lang,
-        pipeline_type="text",
-        pipeline_metadata=pipeline_metadata,
+        audio_store=audio_store,
         start_time=start_time,
-        sender=client_type,
     )
 
 

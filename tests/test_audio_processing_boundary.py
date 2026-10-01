@@ -76,3 +76,14 @@ def test_only_the_audio_processing_adapter_imports_audioop() -> None:
 
     assert f"{PACKAGE}.pipeline_logic" in modules, "the walk must reach the pipeline"
     assert importers == {f"{PACKAGE}.audio_processing"}
+
+
+def test_process_wav_takes_no_audio_validation_switch() -> None:
+    """The message route validates before admission; the pipeline never does (#230)."""
+    import inspect
+
+    from services.api_gateway.pipeline_logic import process_wav
+
+    parameters = set(inspect.signature(process_wav).parameters)
+
+    assert not parameters & {"validate_audio", "validator"}

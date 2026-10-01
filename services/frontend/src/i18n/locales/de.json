@@ -91,6 +91,7 @@
     "notFound": "Nicht gefunden.",
     "validation": "Diese Anfrage konnte nicht verarbeitet werden.",
     "server": "Auf unserer Seite ist etwas schiefgelaufen.",
+    "noSpeech": "Es wurde nichts erkannt. Bitte erneut versuchen.",
     "unknown": "Etwas ist schiefgelaufen."
   },
   "admin": {

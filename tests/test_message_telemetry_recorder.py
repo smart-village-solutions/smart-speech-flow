@@ -187,6 +187,24 @@ class TestPipelineResult:
         assert emitted["failed_stage"] is PipelineStage.TTS
         assert emitted["error_code"] is QualityErrorCode.UPSTREAM_TIMEOUT
 
+    def test_no_speech_is_recorded_as_an_asr_failure_with_its_own_code(self):
+        recorder = _armed()
+        recorder.record_pipeline_result(
+            {
+                "error": True,
+                "debug": _debug(
+                    failed_stage=PipelineStage.ASR.value,
+                    error_code=QualityErrorCode.NO_SPEECH_RECOGNIZED.value,
+                ),
+            }
+        )
+
+        emitted = _emit(recorder)
+
+        assert emitted["terminal_outcome"] is TerminalOutcome.FAILURE
+        assert emitted["failed_stage"] is PipelineStage.ASR
+        assert emitted["error_code"] is QualityErrorCode.NO_SPEECH_RECOGNIZED
+
     def test_an_unrecognised_stage_or_code_becomes_unknown_not_a_crash(self):
         recorder = _armed()
         recorder.record_pipeline_result(
