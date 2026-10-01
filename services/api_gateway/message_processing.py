@@ -29,13 +29,11 @@ from .message_models import (
 from .message_telemetry import MessageTelemetryRecorder
 from .persistence_authorization import authorize_message_artifacts
 from .pipeline_admission import PipelineAdmission, PipelineBusyError, run_pipeline
-from .pipeline_logic import (
+from .pipeline_logic import SpeechPipeline, process_text_pipeline, process_wav
+from .pipeline_results import (
     DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS,
     NO_SPEECH_ERROR_CODE,
     UPSTREAM_BUSY_ERROR_CODE,
-    SpeechPipeline,
-    process_text_pipeline,
-    process_wav,
 )
 from .quality_telemetry import InputMode, QualityTelemetry
 from .realtime_dispatch import BroadcastResult

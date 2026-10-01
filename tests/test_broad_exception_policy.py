@@ -100,7 +100,7 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     # telemetry must never reach the caller
     ("services/api_gateway/message_telemetry.py", "MessageTelemetryRecorder.emit"): ["boundary"],
     # the raw body when an error reply is not JSON
-    ("services/api_gateway/pipeline_logic.py", "_upstream_error_message"): ["fallback"],
+    ("services/api_gateway/pipeline_results.py", "_upstream_error_message"): ["fallback"],
     # the raw body when an error reply is not JSON
     ("services/api_gateway/pipeline_logic.py", "_tts_error_message"): ["fallback"],
     # the worker-thread edge: any stage error becomes a classified result
