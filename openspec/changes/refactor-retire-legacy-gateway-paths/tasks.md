@@ -10,11 +10,11 @@
 - [x] 2.4 Consumer search recorded; contract, tenant-matrix and realtime suites green
 
 ## 3. One pipeline tail (PR 3)
-- [ ] 3.1 Characterization tests for both modes
-- [ ] 3.2 Shared translation → refinement → TTS tail; drift resolved
-- [ ] 3.3 Shared message completion; table-driven session-language validation
-- [ ] 3.4 Empty transcript answers 422 `NO_SPEECH_RECOGNIZED`; frontend message
-- [ ] 3.5 Translation service stops computing `tts_text`
+- [x] 3.1 Characterization tests for both modes
+- [x] 3.2 Shared translation → refinement → TTS tail; drift resolved
+- [x] 3.3 Shared message completion; table-driven session-language validation
+- [x] 3.4 Empty transcript answers 422 `NO_SPEECH_RECOGNIZED`; frontend message
+- [x] 3.5 Translation service stops computing `tts_text`
 
 ## 4. Exception policy (PR 4)
 - [ ] 4.1 Unhandled-error middleware inside CORS
