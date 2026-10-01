@@ -51,7 +51,7 @@ class TextSpecs:
     MIN_LENGTH: int = 1  # Minimum 1 character
     ALLOWED_ENCODINGS: Optional[List[str]] = None  # UTF-8 primary
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.ALLOWED_ENCODINGS is None:
             self.ALLOWED_ENCODINGS = ["utf-8"]
 
@@ -701,7 +701,9 @@ def _transcribe(
 # === Text Validation and Processing ===
 
 
-def validate_text_input(text: str, enable_content_filtering: bool = True) -> TextValidationResult:
+def validate_text_input(
+    text: object, enable_content_filtering: bool = True
+) -> TextValidationResult:
     """
     Comprehensive text validation and content filtering
 
@@ -712,7 +714,7 @@ def validate_text_input(text: str, enable_content_filtering: bool = True) -> Tex
     - Harmful content filtering
 
     Args:
-        text: Input text to validate
+        text: Input to validate; anything but a string is refused as INVALID_TYPE
         enable_content_filtering: Whether to apply content filtering
 
     Returns:
