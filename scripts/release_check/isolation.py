@@ -1,7 +1,8 @@
-"""Cross-tenant denials, run while every session is still live.
+"""Cross-tenant and colleague denials, run while every session is still live.
 
-A foreign session must look exactly like a missing one: the same neutral 404
-on every route. A tenant selector in any request part must be refused.
+A foreign session, whether another tenant's or a colleague's in the same tenant
+(#476), must look exactly like a missing one: the same neutral 404 on every
+route. A tenant selector in any request part must be refused.
 """
 
 from __future__ import annotations
@@ -128,12 +129,25 @@ def _selector_checks(
     }
 
 
-async def check_isolation(
+async def _mutual_denials(
     gateway: Gateway, evidence: Evidence, first: Conversation, second: Conversation
 ) -> None:
     for actor, target in ((first, second), (second, first)):
         await _foreign_routes(gateway, evidence, actor, target)
         await _foreign_socket(gateway, evidence, actor, target)
         await _target_unaffected(gateway, evidence, target)
+
+
+async def check_colleague_denial(
+    gateway: Gateway, evidence: Evidence, first: Conversation, second: Conversation
+) -> None:
+    """Two admins of one tenant: neither can reach the other's session."""
+    await _mutual_denials(gateway, evidence, first, second)
+
+
+async def check_isolation(
+    gateway: Gateway, evidence: Evidence, first: Conversation, second: Conversation
+) -> None:
+    await _mutual_denials(gateway, evidence, first, second)
     for name, check in _selector_checks(gateway, first, second).items():
         await run_step(evidence, f"{first.label} {name}", check)

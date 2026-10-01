@@ -1,10 +1,11 @@
-"""Refuse to start while either tenant has a live conversation.
+"""Refuse to start while any tester account has a live conversation.
 
-Production allows one live conversation per tenant: creating a session ends the
-tenant's others (services/api_gateway/session_manager.py, unless
-SSF_ALLOW_PARALLEL_SESSIONS is set). A run against a busy tenant would end a
-real user's conversation, so the check reads each tenant's live sessions first
-and fails closed when it cannot.
+Production allows one live conversation per admin: creating a session ends the
+same admin's earlier one and nobody else's (#473), and the session history lists
+only the requesting admin's sessions (#476). So the check can neither end nor see
+a real user's conversation; what it guards is a tester session left live by an
+earlier run, which a new run would end mid-way. Each tester sees only their own
+sessions, so every tester's history is read, failing closed when one cannot be.
 """
 
 from __future__ import annotations
@@ -20,8 +21,6 @@ async def tenants_idle(
 ) -> bool:
     idle = True
     for conversation in conversations:
-        if conversation.index != 1:
-            continue
 
         async def step(conversation: Conversation = conversation) -> Outcome:
             response = await gateway.session_history(conversation.token)
@@ -30,6 +29,6 @@ async def tenants_idle(
             live = len(response.json().get("active_sessions", []))
             return live == 0, f"{live} live"
 
-        name = f"{conversation.tenant.label} has no live conversations"
+        name = f"{conversation.label} has no live conversation"
         idle = await run_step(evidence, name, step) and idle
     return idle
