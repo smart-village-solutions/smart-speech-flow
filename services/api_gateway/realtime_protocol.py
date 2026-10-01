@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    from .session_manager import ClientType
+    from .session_models import ClientType
 
 # A frame as the transports send it: any builder's TypedDict, or a relayed envelope.
 Frame = Mapping[str, Any]

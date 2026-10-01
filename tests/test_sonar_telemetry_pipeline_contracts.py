@@ -8,6 +8,7 @@ from prometheus_client import CollectorRegistry
 
 from services.api_gateway import pipeline_admission
 from services.api_gateway import quality_telemetry as quality
+from services.api_gateway import quality_telemetry_schema as schema
 from services.api_gateway.feedback.crypto import FeedbackCipher, MissingEncryptionKey
 from services.api_gateway.feedback.tenant import (
     ConfiguredTenantResolver,
@@ -74,27 +75,27 @@ def test_invalid_references_preserve_rejection_message(factory, field, message):
 
 @pytest.mark.parametrize("value", ["made_up", "SUCCESS", "success\n", ""])
 def test_closed_enum_rejects_unknown_values(value):
-    with pytest.raises(quality.DisallowedTelemetryValue):
-        quality.enforce_value_shapes({"ssf.quality.terminal_outcome": value})
+    with pytest.raises(schema.DisallowedTelemetryValue):
+        schema.enforce_value_shapes({"ssf.quality.terminal_outcome": value})
 
 
 @pytest.mark.parametrize("value", ["١٢٣", "１２３", "12\n", "+12", "1.2"])
 def test_numeric_attributes_remain_ascii_and_anchored(value):
-    with pytest.raises(quality.DisallowedTelemetryValue):
-        quality.enforce_value_shapes({"ssf.quality.total_duration_ms": value})
+    with pytest.raises(schema.DisallowedTelemetryValue):
+        schema.enforce_value_shapes({"ssf.quality.total_duration_ms": value})
 
 
 def _message_arguments():
     return dict(
         session_ref="a" * 32,
         tenant_ref="b" * 12,
-        direction=quality.MessageDirection.CUSTOMER_TO_ADMIN,
-        input_mode=quality.InputMode.AUDIO,
+        direction=schema.MessageDirection.CUSTOMER_TO_ADMIN,
+        input_mode=schema.InputMode.AUDIO,
         source_lang="de",
         target_lang="en",
-        terminal_outcome=quality.TerminalOutcome.SUCCESS,
-        failed_stage=quality.PipelineStage.NONE,
-        error_code=quality.QualityErrorCode.NONE,
+        terminal_outcome=schema.TerminalOutcome.SUCCESS,
+        failed_stage=schema.PipelineStage.NONE,
+        error_code=schema.QualityErrorCode.NONE,
         total_duration_ms=42,
         asr_duration_ms=10,
         translation_duration_ms=20,
@@ -103,7 +104,7 @@ def _message_arguments():
     )
 
 
-def _telemetry(exports, mode=quality.TelemetryMode.ENABLED):
+def _telemetry(exports, mode=schema.TelemetryMode.ENABLED):
     def export(name, attributes, emitted_at):
         exports.append((name, attributes))
 
@@ -115,7 +116,7 @@ def _telemetry(exports, mode=quality.TelemetryMode.ENABLED):
 def test_translation_keyword_call_preserves_exported_taxonomy():
     exports = []
     result = _telemetry(exports).emit_translation_message(**_message_arguments())
-    assert result.outcome is quality.ProbeOutcome.EMITTED
+    assert result.outcome is schema.ProbeOutcome.EMITTED
     assert len(exports) == 1
     name, attributes = exports[0]
     assert name == "translation_message"
@@ -154,12 +155,12 @@ def test_translation_invalid_duration_is_dropped_without_export(field, caplog):
     arguments = _message_arguments()
     arguments[field] = "not a duration"
     result = _telemetry(exports).emit_translation_message(**arguments)
-    assert result.outcome is quality.ProbeOutcome.DROPPED_DISALLOWED
+    assert result.outcome is schema.ProbeOutcome.DROPPED_DISALLOWED
     assert exports == []
     assert "Quality telemetry event rejected before export" in caplog.messages
 
 
-@pytest.mark.parametrize("mode", list(quality.TelemetryMode))
+@pytest.mark.parametrize("mode", list(schema.TelemetryMode))
 @pytest.mark.parametrize("invalid_call", ["missing", "unexpected"])
 def test_translation_duration_keywords_are_checked_even_when_disabled(
     mode, invalid_call

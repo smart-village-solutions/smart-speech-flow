@@ -12,9 +12,10 @@ import pytest
 
 from services.api_gateway.audio_storage import AudioStore, AudioVariant
 from services.api_gateway.consent import ConsentStatus
-from services.api_gateway import message_processing
+from services.api_gateway import message_delivery
+from services.api_gateway import message_requests
 from services.api_gateway.runtime_policy import PolicyDecision, PolicyReason
-from services.api_gateway.session_manager import ClientType
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 REVISION = f"sha256:{'a' * 64}"
@@ -58,12 +59,12 @@ async def test_broadcast_precedes_every_policy_read(session_manager, monkeypatch
 
         return _Result()
 
-    monkeypatch.setattr(message_processing, "broadcast_message_to_session", _broadcast)
+    monkeypatch.setattr(message_delivery, "broadcast_message_to_session", _broadcast)
     session_manager.runtime_policy = _BlockingGate()
     key = await _session_with_consent(session_manager, ConsentStatus.GRANTED)
 
     task = asyncio.create_task(
-        message_processing.create_session_message(
+        message_delivery.create_session_message(
             key,
             ClientType.CUSTOMER,
             "hallo",
@@ -91,10 +92,10 @@ async def test_declined_session_still_gets_playable_audio(session_manager, audio
     session_manager.runtime_policy = _RefusingGate()
     key = await _session_with_consent(session_manager, ConsentStatus.DECLINED)
 
-    available = message_processing._store_translated_audio(
+    available = message_requests._store_translated_audio(
         key, "m1", b"audio-bytes", audio_store=audio_store
     )
-    message = await message_processing.create_session_message(
+    message = await message_delivery.create_session_message(
         key,
         ClientType.CUSTOMER,
         "hallo",
@@ -144,7 +145,7 @@ async def test_a_terminated_session_does_not_fail_a_delivered_message(
         session_manager, "record_message_authorization", _refuse
     )
 
-    message = await message_processing.create_session_message(
+    message = await message_delivery.create_session_message(
         key,
         ClientType.CUSTOMER,
         "hallo",
@@ -168,7 +169,7 @@ async def test_the_production_default_refuses_when_no_gate_is_bound(session_mana
     session_manager.runtime_policy = None
     key = await _session_with_consent(session_manager, ConsentStatus.GRANTED)
 
-    message = await message_processing.create_session_message(
+    message = await message_delivery.create_session_message(
         key,
         ClientType.CUSTOMER,
         "hallo",

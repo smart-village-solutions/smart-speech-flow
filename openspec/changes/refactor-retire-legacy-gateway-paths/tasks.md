@@ -23,8 +23,8 @@
 - [x] 4.4 Broad-handler inventory guard
 
 ## 5. Module split (PR 5)
-- [ ] 5.1 Split modules under the 800-line budget; module-size guard
-- [ ] 5.2 WebSocket frame dispatch table
+- [x] 5.1 Split modules under the 800-line budget; module-size guard
+- [x] 5.2 WebSocket frame dispatch table
 
 ## 6. Release
 - [ ] 6.1 Deployed; legacy routes return 404 in production; release check passes

@@ -12,7 +12,8 @@ from typing import Any
 from prometheus_client import CollectorRegistry
 
 from services.api_gateway.audio_storage import AudioStore
-from services.api_gateway.session_manager import Session, SessionStatus, TenantSessionManager
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import Session, SessionStatus
 from services.api_gateway.session_pseudonym import SessionPseudonymizer
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey

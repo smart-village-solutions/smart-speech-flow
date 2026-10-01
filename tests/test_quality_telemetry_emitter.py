@@ -8,12 +8,8 @@ from uuid import UUID
 import pytest
 from prometheus_client import CollectorRegistry
 
-from services.api_gateway.quality_telemetry import (
-    DisallowedTelemetryAttribute,
-    ProbeOutcome,
-    QualityTelemetry,
-    TelemetryMode,
-)
+from services.api_gateway.quality_telemetry import QualityTelemetry
+from services.api_gateway.quality_telemetry_schema import DisallowedTelemetryAttribute, ProbeOutcome, TelemetryMode
 
 _EVENT_TYPE = "telemetry_probe"
 _COUNTER = "ssf_quality_telemetry_events_total"

@@ -35,7 +35,7 @@ from typing import Any, Callable
 
 from prometheus_client import CollectorRegistry, Counter, Gauge
 
-from ..quality_telemetry import ProbeOutcome
+from ..quality_telemetry_schema import ProbeOutcome
 from ..session_pseudonym import SessionPseudonymizer, tenant_ref
 from .models import AnalyticsState
 from .repository import FeedbackRepository, ReconciliationLockUnavailable, RetentionLockUnavailable

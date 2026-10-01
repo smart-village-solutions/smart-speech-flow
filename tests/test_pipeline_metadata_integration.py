@@ -19,7 +19,7 @@ from typing import Dict, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from services.api_gateway.legacy_session_manager import LegacySessionManager
-from services.api_gateway.session_manager import SessionMessage
+from services.api_gateway.session_models import SessionMessage
 from services.api_gateway.pipeline_logic import process_wav, process_text_pipeline
 from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.audio_processing import WavAudioValidator
@@ -308,7 +308,7 @@ class TestSessionMessageIntegration:
         """Test that SessionMessage correctly serializes with metadata"""
 
         from datetime import datetime
-        from services.api_gateway.session_manager import ClientType
+        from services.api_gateway.session_models import ClientType
 
         metadata = {
             "input": {"type": "audio", "audio_url": "/api/audio/input_test.wav", "source_lang": "de"},

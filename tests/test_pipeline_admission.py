@@ -18,8 +18,9 @@ from services.api_gateway.pipeline_admission import (
     _SlotClaim,
     run_pipeline,
 )
-from services.api_gateway.quality_telemetry import PipelineStage, QualityErrorCode
-from services.api_gateway.session_manager import ClientType, TenantSessionManager
+from services.api_gateway.quality_telemetry_schema import PipelineStage, QualityErrorCode
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from tests.pipeline_helpers import (
     PIPELINE_SUCCESS,
@@ -844,9 +845,9 @@ class TestUpstreamSaturationStaysRetryable:
         return response
 
     def test_pipeline_result_marks_an_upstream_503(self):
-        from services.api_gateway import pipeline_logic
+        from services.api_gateway import pipeline_results
 
-        result = pipeline_logic._pipeline_error_result(
+        result = pipeline_results._pipeline_error_result(
             debug_info={"steps": []},
             start_total=time.perf_counter(),
             error_message="Translation-Fehler: at capacity",
@@ -863,9 +864,9 @@ class TestUpstreamSaturationStaysRetryable:
         assert result["retry_after_seconds"] == 25
 
     def test_other_upstream_failures_are_not_marked_retryable(self):
-        from services.api_gateway import pipeline_logic
+        from services.api_gateway import pipeline_results
 
-        result = pipeline_logic._pipeline_error_result(
+        result = pipeline_results._pipeline_error_result(
             debug_info={"steps": []},
             start_total=time.perf_counter(),
             error_message="Translation-Fehler: boom",
@@ -880,9 +881,9 @@ class TestUpstreamSaturationStaysRetryable:
         assert "error_code" not in result
 
     def test_unparseable_retry_after_falls_back_to_a_usable_delay(self):
-        from services.api_gateway import pipeline_logic
+        from services.api_gateway import pipeline_results
 
-        result = pipeline_logic._pipeline_error_result(
+        result = pipeline_results._pipeline_error_result(
             debug_info={"steps": []},
             start_total=time.perf_counter(),
             error_message="Translation-Fehler: at capacity",

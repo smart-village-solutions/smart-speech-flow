@@ -12,7 +12,7 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import ClientDisconnect
 
-from services.api_gateway import message_processing
+from services.api_gateway import message_requests
 
 
 def _request_failing_with(error: Exception) -> Mock:
@@ -27,7 +27,7 @@ async def test_a_disconnect_while_sending_json_is_a_400():
     request = _request_failing_with(ClientDisconnect())
 
     with pytest.raises(HTTPException) as raised:
-        await message_processing._parse_text_request(request)
+        await message_requests._parse_text_request(request)
 
     assert raised.value.status_code == 400
     assert raised.value.detail["error_code"] == "INVALID_JSON"
@@ -38,7 +38,7 @@ async def test_a_disconnect_while_sending_a_form_is_a_400():
     request = _request_failing_with(ClientDisconnect())
 
     with pytest.raises(HTTPException) as raised:
-        await message_processing._parse_audio_form(request)
+        await message_requests._parse_audio_form(request)
 
     assert raised.value.status_code == 400
     assert raised.value.detail["error_code"] == "INVALID_FORM_DATA"

@@ -15,8 +15,8 @@ import pytest
 
 from services.api_gateway import pipeline_logic
 from services.api_gateway.circuit_breaker import CircuitState
-from services.api_gateway.pipeline_logic import UPSTREAM_BUSY_ERROR_CODE
-from services.api_gateway.quality_telemetry import PipelineStage, QualityErrorCode
+from services.api_gateway.pipeline_results import UPSTREAM_BUSY_ERROR_CODE
+from services.api_gateway.quality_telemetry_schema import PipelineStage, QualityErrorCode
 from services.api_gateway.service_health import ServiceHealthManager
 from tests.pipeline_helpers import pipeline_collaborators, wav_collaborators
 

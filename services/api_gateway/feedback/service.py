@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Final, Optional, Protocol
 from uuid import UUID, uuid4
 
-from ..quality_telemetry import ProbeOutcome
+from ..quality_telemetry_schema import ProbeOutcome
 from ..session_pseudonym import MISSING_REFERENCE, SessionPseudonymizer, tenant_ref
 from ..tenant_session import TenantSessionKey
 from .models import (

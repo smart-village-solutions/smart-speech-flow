@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from services.api_gateway.quality_telemetry import ALLOWED_ATTRIBUTE_KEYS
+from services.api_gateway.quality_telemetry_schema import ALLOWED_ATTRIBUTE_KEYS
 
 pytestmark = pytest.mark.integration
 

@@ -14,7 +14,7 @@ from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.resources import Resource
 
-from .quality_telemetry import enforce_allowlist, enforce_value_shapes
+from .quality_telemetry_schema import enforce_allowlist, enforce_value_shapes
 
 _NANOS_PER_SECOND = 1_000_000_000
 

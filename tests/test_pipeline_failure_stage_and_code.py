@@ -17,7 +17,7 @@ from services.api_gateway.pipeline_logic import (
     process_text_pipeline,
     process_wav,
 )
-from services.api_gateway.quality_telemetry import PipelineStage, QualityErrorCode
+from services.api_gateway.quality_telemetry_schema import PipelineStage, QualityErrorCode
 from tests.pipeline_helpers import pipeline_collaborators, wav_collaborators
 
 AUDIO_WAV_MIME = "audio/wav"

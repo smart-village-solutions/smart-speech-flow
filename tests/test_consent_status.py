@@ -1,7 +1,7 @@
 """The consent status is server-side session state and defaults to pending."""
 
 from services.api_gateway.consent import ConsentStatus
-from services.api_gateway.session_manager import Session
+from services.api_gateway.session_models import Session
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 REVISION = "sha256:" + "a" * 64

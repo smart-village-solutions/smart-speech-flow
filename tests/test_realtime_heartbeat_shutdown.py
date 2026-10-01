@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from services.api_gateway.app import create_app, lifespan
-from services.api_gateway.session_manager import ClientType
+from services.api_gateway.session_models import ClientType
 from tests.realtime_sessions import SNAPSHOT, TENANT
 
 

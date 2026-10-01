@@ -10,7 +10,7 @@ from services.api_gateway.realtime_dispatch import BroadcastDispatcher
 from services.api_gateway.realtime_heartbeat import Heartbeat
 from services.api_gateway.realtime_protocol import ConnectionState
 from services.api_gateway.realtime_registry import ConnectionRegistry
-from services.api_gateway.session_manager import ClientType
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket import WebSocketManager
 from services.api_gateway.websocket_monitor import DisconnectReason

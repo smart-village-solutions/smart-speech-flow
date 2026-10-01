@@ -30,7 +30,8 @@ from ..session_lifecycle import (
     SessionTerminatedError,
     TenantConflictError,
 )
-from ..session_manager import ClientType, SessionStatus, TenantSessionManager
+from ..session_manager import TenantSessionManager
+from ..session_models import ClientType, SessionStatus
 from ..studio_runtime_flow import StudioRuntimeFlow, correlation_id_from_request
 from ..tenant_context import reject_request_tenant_selectors
 from ..tenant_session import TenantSessionKey

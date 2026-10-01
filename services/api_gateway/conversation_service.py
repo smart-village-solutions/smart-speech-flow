@@ -14,7 +14,8 @@ from fastapi.responses import FileResponse
 
 from .audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
 from .message_processing import send_unified_message
-from .session_manager import ClientType, SessionStatus, TenantSessionManager
+from .session_manager import TenantSessionManager
+from .session_models import ClientType, SessionStatus
 from .tenant_session import TenantSessionKey
 
 if TYPE_CHECKING:

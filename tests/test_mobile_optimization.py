@@ -13,7 +13,7 @@ from unittest.mock import Mock, AsyncMock
 from services.api_gateway.realtime_client_status import AdaptivePollingManager
 from services.api_gateway.realtime_connection import WebSocketConnection
 from services.api_gateway.realtime_protocol import ConnectionState, MessageType
-from services.api_gateway.session_manager import ClientType
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.websocket import WebSocketManager
 from services.api_gateway.tenant_session import TenantSessionKey
 from tests.realtime_sessions import open_session, tenant_session_manager, websocket_monitor

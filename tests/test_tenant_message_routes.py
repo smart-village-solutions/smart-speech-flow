@@ -11,16 +11,10 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls
-from services.api_gateway.message_processing import (
-    broadcast_message_to_session,
-    transform_pipeline_metadata,
-)
-from services.api_gateway.session_manager import (
-    ClientType,
-    TenantSessionManager,
-    SessionMessage,
-    SessionStatus,
-)
+from services.api_gateway.message_processing import transform_pipeline_metadata
+from services.api_gateway.message_delivery import broadcast_message_to_session
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType, SessionMessage, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import (
     RuntimeConfigurationSnapshot,
@@ -289,12 +283,12 @@ class RecordingAudioStore(AudioStore):
 
 
 def test_audio_storage_reports_availability_without_persisting_a_role_url() -> None:
-    from services.api_gateway import message_processing
+    from services.api_gateway import message_requests
 
     store = RecordingAudioStore()
     key = TenantSessionKey("tenant-a", "ABC12345")
 
-    available = message_processing._store_audio_artifacts(
+    available = message_requests._store_audio_artifacts(
         key,
         ClientType.ADMIN,
         "message-1",
@@ -308,16 +302,17 @@ def test_audio_storage_reports_availability_without_persisting_a_role_url() -> N
 
 @pytest.mark.asyncio
 async def test_created_message_persists_translated_audio_without_retaining_bytes() -> None:
-    from services.api_gateway import message_processing
+    from services.api_gateway import message_delivery
+    from services.api_gateway import message_requests
 
     store = RecordingAudioStore()
     manager = TenantSessionManager(store=MemoryTenantSessionStore(), audio_store=store)
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
 
-    available = message_processing._store_translated_audio(
+    available = message_requests._store_translated_audio(
         session.key, "message-1", b"translated", audio_store=store
     )
-    message = await message_processing.create_session_message(
+    message = await message_delivery.create_session_message(
         session_id=session.key,
         client_type=ClientType.ADMIN,
         original_text="Hallo",

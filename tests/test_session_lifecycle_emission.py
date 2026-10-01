@@ -13,15 +13,11 @@ import pytest
 from prometheus_client import CollectorRegistry
 
 from services.api_gateway.audio_storage import AudioStore
-from services.api_gateway.quality_telemetry import (
-    QualityTelemetry,
-    SessionLifecyclePhase,
-    SessionTerminationReason,
-    TelemetryMode,
-    discard_event,
-)
+from services.api_gateway.quality_telemetry import QualityTelemetry, discard_event
+from services.api_gateway.quality_telemetry_schema import SessionLifecyclePhase, SessionTerminationReason, TelemetryMode
 from services.api_gateway.legacy_session_manager import LegacySessionManager
-from services.api_gateway.session_manager import SessionStatus, TenantSessionManager
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 

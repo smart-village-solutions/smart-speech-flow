@@ -12,7 +12,8 @@ from services.api_gateway.session_lifecycle import (
     SessionTerminatedError,
     TenantConflictError,
 )
-from services.api_gateway.session_manager import SessionStatus, TenantSessionManager
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.studio_runtime_client import StudioRuntimeClientError
 from services.api_gateway.studio_runtime_flow import StudioRuntimeFlow

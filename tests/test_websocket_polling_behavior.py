@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 
-from services.api_gateway.session_manager import ClientType
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket_polling_routes import (
     POLLING_QUEUE_SIZE,

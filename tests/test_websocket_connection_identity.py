@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, Mock
 
 from services.api_gateway.realtime_connection import safe_identifier
 from services.api_gateway.realtime_registry import ConnectionRegistry
-from services.api_gateway.session_manager import ClientType
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket import WebSocketManager
 from tests.realtime_sessions import TENANT, open_session, tenant_session_manager, websocket_monitor

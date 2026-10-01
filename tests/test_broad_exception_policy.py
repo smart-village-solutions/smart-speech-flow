@@ -28,19 +28,19 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     # records the breaker failure, then re-raises
     ("services/api_gateway/ai_service_client.py", "call_ai_service"): ["bookkeeping-reraise"],
     # one failed timeout pass must not end the monitor
-    ("services/api_gateway/app.py", "session_timeout_monitor"): ["boundary"],
+    ("services/api_gateway/background_tasks.py", "session_timeout_monitor"): ["boundary"],
     # one failed retention pass must not end retention
-    ("services/api_gateway/app.py", "audio_cleanup_task"): ["boundary"],
+    ("services/api_gateway/background_tasks.py", "audio_cleanup_task"): ["boundary"],
     # feedback stays off (503) and is retried
-    ("services/api_gateway/app.py", "_connect_feedback_request_path"): ["fallback"],
+    ("services/api_gateway/feedback/wiring.py", "_connect_feedback_request_path"): ["fallback"],
     # Studio feedback reads stay off (503) and are retried
-    ("services/api_gateway/app.py", "_connect_feedback_read_path"): ["fallback"],
+    ("services/api_gateway/feedback/wiring.py", "_connect_feedback_read_path"): ["fallback"],
     # maintenance stays off and is retried
-    ("services/api_gateway/app.py", "_connect_feedback_maintenance"): ["fallback"],
+    ("services/api_gateway/feedback/wiring.py", "_connect_feedback_maintenance"): ["fallback"],
     # the connect retry loop survives any one attempt
-    ("services/api_gateway/app.py", "feedback_connect_task"): ["boundary"],
+    ("services/api_gateway/feedback/wiring.py", "feedback_connect_task"): ["boundary"],
     # the maintenance loop survives any one pass
-    ("services/api_gateway/app.py", "feedback_maintenance_task"): ["boundary"],
+    ("services/api_gateway/feedback/wiring.py", "feedback_maintenance_task"): ["boundary"],
     # a daemon-thread target hands its failure back to the loop
     ("services/api_gateway/app.py", "_shutdown_quality_telemetry.run"): ["boundary"],
     # telemetry off rather than no gateway
@@ -87,20 +87,20 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
         "LegacySessionManager._send_termination_notifications",
     ): ["boundary"],
     # no original-audio URL rather than a failed message
-    ("services/api_gateway/message_processing.py", "_store_audio_artifacts"): ["fallback"],
+    ("services/api_gateway/message_requests.py", "_store_audio_artifacts"): ["fallback"],
     # records the telemetry failure and session, then re-raises
     ("services/api_gateway/message_processing.py", "send_unified_message"): ["bookkeeping-reraise"],
     # a stored message is not failed by its broadcast or its authorization write-back
-    ("services/api_gateway/message_processing.py", "create_session_message"): [
+    ("services/api_gateway/message_delivery.py", "create_session_message"): [
         "boundary",
         "fallback",
     ],
     # no reply audio rather than a failed message
-    ("services/api_gateway/message_processing.py", "_store_translated_audio"): ["fallback"],
+    ("services/api_gateway/message_requests.py", "_store_translated_audio"): ["fallback"],
     # telemetry must never reach the caller
     ("services/api_gateway/message_telemetry.py", "MessageTelemetryRecorder.emit"): ["boundary"],
     # the raw body when an error reply is not JSON
-    ("services/api_gateway/pipeline_logic.py", "_upstream_error_message"): ["fallback"],
+    ("services/api_gateway/pipeline_results.py", "_upstream_error_message"): ["fallback"],
     # the raw body when an error reply is not JSON
     ("services/api_gateway/pipeline_logic.py", "_tts_error_message"): ["fallback"],
     # the worker-thread edge: any stage error becomes a classified result

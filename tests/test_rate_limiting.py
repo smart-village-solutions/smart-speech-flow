@@ -11,11 +11,7 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.rate_limiter import RateLimitConfig
-from services.api_gateway.session_manager import (
-    ClientType,
-    SessionMessage,
-    SessionStatus,
-)
+from services.api_gateway.session_models import ClientType, SessionMessage, SessionStatus
 from services.api_gateway import message_processing
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 

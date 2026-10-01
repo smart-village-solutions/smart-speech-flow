@@ -11,7 +11,8 @@ from services.api_gateway.app import app
 from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.session_lifecycle import NoActiveSessionError, SessionLifecycleService
-from services.api_gateway.session_manager import Session, SessionStatus, TenantSessionManager
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import Session, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.studio_runtime_flow import (
     ValidatedRuntimeConfiguration,

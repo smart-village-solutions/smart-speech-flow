@@ -6,11 +6,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from services.api_gateway.audio_storage import AudioStore
-from services.api_gateway.session_manager import (
-    ClientType,
-    TenantSessionManager,
-    SessionStatus,
-)
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType, SessionStatus
 from services.api_gateway.session_store import (
     MemoryTenantSessionStore,
     RedisTenantSessionStore,
@@ -187,7 +184,7 @@ async def test_unknown_expired_polling_client_does_not_prevent_customer_disconne
 
 
 def test_sweep_preserves_snapshot_when_store_adds_session_during_write(monkeypatch):
-    from services.api_gateway.session_manager import SessionMessage
+    from services.api_gateway.session_models import SessionMessage
 
     store = MemoryTenantSessionStore()
     manager = TenantSessionManager(store=store, audio_store=AudioStore.from_environment())

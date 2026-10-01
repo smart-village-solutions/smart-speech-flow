@@ -29,7 +29,7 @@ from services.api_gateway.feedback.repository import (
     ReconciliationLockUnavailable,
     RetentionLockUnavailable,
 )
-from services.api_gateway.quality_telemetry import ProbeOutcome, ProbeResult
+from services.api_gateway.quality_telemetry_schema import ProbeOutcome, ProbeResult
 from services.api_gateway.session_pseudonym import SessionPseudonymizer, tenant_ref
 
 NOW = datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc)

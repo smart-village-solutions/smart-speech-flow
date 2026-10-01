@@ -6,10 +6,7 @@ import pytest
 
 from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.conversation_service import ConversationService
-from services.api_gateway.session_manager import (
-    ClientType,
-    SessionMessage,
-)
+from services.api_gateway.session_models import ClientType, SessionMessage
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 from tests.pipeline_helpers import speech_pipeline
 

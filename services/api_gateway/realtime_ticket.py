@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Any, Callable, Literal, Protocol
 
-from .session_manager import utc_now
+from .session_models import utc_now
 from .tenant_session import TenantSessionKey
 
 try:

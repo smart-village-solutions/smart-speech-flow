@@ -15,7 +15,8 @@ from services.api_gateway import websocket
 from services.api_gateway import websocket_polling_routes as polling
 from services.api_gateway.app import app
 from services.api_gateway.audio_storage import AudioStore
-from services.api_gateway.session_manager import ClientType, Session, TenantSessionManager
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType, Session
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from tests.realtime_sessions import websocket_monitor
 

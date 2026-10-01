@@ -13,12 +13,8 @@ from unittest.mock import Mock, patch
 import pytest
 from requests import exceptions
 
-from services.api_gateway.pipeline_logic import (
-    UPSTREAM_BUSY_ERROR_CODE,
-    _finalize_pipeline_success,
-    _mark_pipeline_failure,
-    process_wav,
-)
+from services.api_gateway.pipeline_logic import process_wav
+from services.api_gateway.pipeline_results import UPSTREAM_BUSY_ERROR_CODE, _finalize_pipeline_success, _mark_pipeline_failure
 from tests.pipeline_helpers import wav_collaborators
 
 AUDIO_WAV_MIME = "audio/wav"

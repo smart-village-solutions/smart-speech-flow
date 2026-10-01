@@ -18,14 +18,14 @@ import logging
 import time
 from typing import Any, Final, Mapping, Optional
 
-from .quality_telemetry import (
+from .quality_telemetry_schema import (
     InputMode,
     MessageDirection,
     PipelineStage,
     QualityErrorCode,
     TerminalOutcome,
 )
-from .session_manager import ClientType
+from .session_models import ClientType
 from .session_pseudonym import MISSING_TENANT_REFERENCE, SessionPseudonymizer
 from .tenant_session import TenantSessionKey
 

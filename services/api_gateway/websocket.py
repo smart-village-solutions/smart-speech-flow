@@ -12,7 +12,7 @@ import asyncio
 import logging
 import os
 import re
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, WebSocket, WebSocketDisconnect
@@ -41,7 +41,8 @@ from .realtime_protocol import (
 from .realtime_registry import ConnectionRegistry
 from .realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from .session_access import require_customer_session_key
-from .session_manager import ClientType, SessionRegistry, SessionStatus, TenantSessionManager
+from .session_manager import SessionRegistry, TenantSessionManager
+from .session_models import ClientType, SessionStatus
 from .tenant_context import reject_request_tenant_selectors
 from .tenant_session import TenantSessionKey
 from .websocket_monitor import DisconnectReason, WebSocketMonitor
@@ -52,6 +53,9 @@ if TYPE_CHECKING:
 # === Logging Setup ===
 logger = logging.getLogger(__name__)
 _SESSION_NOT_FOUND = "Session not found"
+
+# What every client frame handler receives: (connection_id, connection, frame).
+FrameHandler = Callable[[str, WebSocketConnection, Dict[str, Any]], Awaitable[None]]
 
 
 def _localhost_origin_prefixes() -> tuple[str, str]:
@@ -415,31 +419,40 @@ class WebSocketManager:
             return
 
         message_type = message.get("type")
-
-        if message_type == MessageType.HEARTBEAT_PONG.value:
-            await self.heartbeat.handle_pong(connection_id, connection, message)
-
-        elif message_type == MessageType.MESSAGE.value:
-            await self._handle_client_message(connection, message)
-
-        elif message_type == MessageType.TYPING_INDICATOR.value:
-            await self._handle_typing_indicator(connection, message)
-
-        # 📱 Mobile-Optimization Messages
-        elif message_type == MessageType.TAB_VISIBILITY_CHANGE.value:
-            await self.client_status.handle_tab_visibility_change(connection, message)
-
-        elif message_type == MessageType.BATTERY_STATUS_UPDATE.value:
-            await self.client_status.handle_battery_status_update(connection, message)
-
-        elif message_type == MessageType.NETWORK_STATUS_CHANGE.value:
-            await self.client_status.handle_network_status_change(connection, message)
-
-        else:
+        # A client can send any JSON as the type, a list included; only a string can
+        # name a handler.
+        handler = (
+            self._frame_handlers().get(message_type) if isinstance(message_type, str) else None
+        )
+        if handler is None:
             logger.warning(
                 "⚠️ Unbekannter Message-Type: %s",
                 sanitize_log_value(message_type),
             )
+            return
+        await handler(connection_id, connection, message)
+
+    def _frame_handlers(self) -> Mapping[str, FrameHandler]:
+        """One handler per client frame type, read at call time so a swapped part counts."""
+        client_status = self.client_status
+        return {
+            MessageType.HEARTBEAT_PONG.value: self.heartbeat.handle_pong,
+            MessageType.MESSAGE.value: lambda _id, connection, message: (
+                self._handle_client_message(connection, message)
+            ),
+            MessageType.TYPING_INDICATOR.value: lambda _id, connection, message: (
+                self._handle_typing_indicator(connection, message)
+            ),
+            MessageType.TAB_VISIBILITY_CHANGE.value: lambda _id, connection, message: (
+                client_status.handle_tab_visibility_change(connection, message)
+            ),
+            MessageType.BATTERY_STATUS_UPDATE.value: lambda _id, connection, message: (
+                client_status.handle_battery_status_update(connection, message)
+            ),
+            MessageType.NETWORK_STATUS_CHANGE.value: lambda _id, connection, message: (
+                client_status.handle_network_status_change(connection, message)
+            ),
+        }
 
     def get_session_connections(self, session_id: TenantSessionKey) -> List[Dict[str, Any]]:
         """

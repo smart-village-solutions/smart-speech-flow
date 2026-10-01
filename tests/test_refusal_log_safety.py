@@ -6,14 +6,14 @@ import pytest
 from prometheus_client import CollectorRegistry
 
 from services.api_gateway.consent import ConsentStatus
-from services.api_gateway import message_processing
+from services.api_gateway import message_delivery
 from services.api_gateway.runtime_policy import (
     PolicyDecision,
     PolicyReason,
     RuntimePolicyGate,
 )
 from services.api_gateway.runtime_policy_metrics import RuntimePolicyMetrics
-from services.api_gateway.session_manager import ClientType
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 from tests.runtime_policy_helpers import RecordingClient, configuration
 
@@ -44,7 +44,7 @@ async def test_refusal_log_contains_no_conversation_content(
     session_manager.runtime_policy = gate
 
     with caplog.at_level(logging.DEBUG):
-        message = await message_processing.create_session_message(
+        message = await message_delivery.create_session_message(
             session.key,
             ClientType.CUSTOMER,
             secret_original,

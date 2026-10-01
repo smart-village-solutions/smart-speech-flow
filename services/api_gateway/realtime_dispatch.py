@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, List, Optional
 from .realtime_connection import WebSocketConnection, safe_identifier
 from .realtime_protocol import ConnectionState, Frame
 from .realtime_registry import ConnectionRegistry
-from .session_manager import ClientType
+from .session_models import ClientType
 from .tenant_session import TenantSessionKey
 from .websocket_monitor import WebSocketMetrics, WebSocketMonitor
 

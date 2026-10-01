@@ -10,14 +10,8 @@ the request proceeds and emitted once, from the `finally` the route already has.
 import pytest
 
 from services.api_gateway.message_telemetry import MessageTelemetryRecorder
-from services.api_gateway.quality_telemetry import (
-    InputMode,
-    MessageDirection,
-    PipelineStage,
-    QualityErrorCode,
-    TerminalOutcome,
-)
-from services.api_gateway.session_manager import ClientType
+from services.api_gateway.quality_telemetry_schema import InputMode, MessageDirection, PipelineStage, QualityErrorCode, TerminalOutcome
+from services.api_gateway.session_models import ClientType
 from services.api_gateway.session_pseudonym import SessionPseudonymizer
 from services.api_gateway.tenant_session import TenantSessionKey
 
@@ -241,10 +235,8 @@ class TestPipelineResult:
         """
         from prometheus_client import CollectorRegistry
 
-        from services.api_gateway.quality_telemetry import (
-            QualityTelemetry,
-            TelemetryMode,
-        )
+        from services.api_gateway.quality_telemetry import QualityTelemetry
+        from services.api_gateway.quality_telemetry_schema import TelemetryMode
 
         exported = []
         telemetry = QualityTelemetry(

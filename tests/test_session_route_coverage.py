@@ -9,13 +9,8 @@ from services.api_gateway.app import app
 from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.routes import customer
 from services.api_gateway.session_lifecycle import SessionLifecycleService
-from services.api_gateway.session_manager import (
-    ClientType,
-    Session,
-    TenantSessionManager,
-    SessionMessage,
-    SessionStatus,
-)
+from services.api_gateway.session_manager import TenantSessionManager
+from services.api_gateway.session_models import ClientType, Session, SessionMessage, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_context import admin_ref
 from services.api_gateway.tenant_session import (
