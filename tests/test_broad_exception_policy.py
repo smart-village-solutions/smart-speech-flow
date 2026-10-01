@@ -28,9 +28,9 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     # records the breaker failure, then re-raises
     ("services/api_gateway/ai_service_client.py", "call_ai_service"): ["bookkeeping-reraise"],
     # one failed timeout pass must not end the monitor
-    ("services/api_gateway/app.py", "session_timeout_monitor"): ["boundary"],
+    ("services/api_gateway/background_tasks.py", "session_timeout_monitor"): ["boundary"],
     # one failed retention pass must not end retention
-    ("services/api_gateway/app.py", "audio_cleanup_task"): ["boundary"],
+    ("services/api_gateway/background_tasks.py", "audio_cleanup_task"): ["boundary"],
     # feedback stays off (503) and is retried
     ("services/api_gateway/app.py", "_connect_feedback_request_path"): ["fallback"],
     # Studio feedback reads stay off (503) and are retried

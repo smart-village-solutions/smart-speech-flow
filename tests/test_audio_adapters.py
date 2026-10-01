@@ -13,7 +13,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway import app as app_module
-from services.api_gateway.app import app, audio_cleanup_task
+from services.api_gateway import background_tasks
+from services.api_gateway.app import app
+from services.api_gateway.background_tasks import audio_cleanup_task
 from services.api_gateway.audio_processing import AudioValidationResult
 from services.api_gateway.audio_storage import AudioStore, AudioVariant
 from services.api_gateway.service_health import ServiceHealthManager
@@ -219,7 +221,7 @@ def test_the_cleanup_task_removes_expired_audio_from_its_store(
             return {"refused_removed": 0, "expired_removed": 0}
 
     # Its own loop: `asyncio.sleep` is patched for the whole module while this runs.
-    monkeypatch.setattr(app_module.asyncio, "sleep", one_pass)
+    monkeypatch.setattr(background_tasks.asyncio, "sleep", one_pass)
     task = audio_cleanup_task(Sessions(), store)
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(task)
