@@ -407,21 +407,7 @@ def test_a_skipped_target_language_is_never_sent_to_the_refiner(client, conversa
     assert step["refinement_comparison"]["primary_status"] == "skipped"
 
 
-@pytest.mark.parametrize(("refined", "spoken_tts_text"), [(True, None), (False, "Guten Tag.")])
-def test_a_changed_refinement_drops_the_translation_services_tts_text(
-    conversations, active_session, refinement, refined, spoken_tts_text
-):
-    refinement.tts_text = "Guten Tag."
-    if not refined:
-        refinement.refined_text = "Good day"
-
-    assert conversations.send_text(active_session).status_code == 200
-
-    [tts_request] = refinement.sent_to("tts")
-    assert tts_request["json"].get("tts_text") == spoken_tts_text
-
-
-def test_without_refinement_the_tts_text_is_spoken_and_no_step_is_recorded(
+def test_without_refinement_no_step_is_recorded(
     conversations, active_session, speech_services
 ):
     speech_services.tts_text = "Guten Tag."
@@ -432,4 +418,4 @@ def test_without_refinement_the_tts_text_is_spoken_and_no_step_is_recorded(
     names = [step["name"] for step in response.json()["pipeline_metadata"]["steps"]]
     assert names == ["translation", "tts"]
     [tts_request] = speech_services.sent_to("tts")
-    assert tts_request["json"]["tts_text"] == "Guten Tag."
+    assert "tts_text" not in tts_request["json"]

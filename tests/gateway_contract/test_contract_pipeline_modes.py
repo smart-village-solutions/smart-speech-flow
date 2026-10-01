@@ -57,23 +57,36 @@ def test_both_modes_send_translation_the_same_request(
     assert translation_request["json"] == TRANSLATION_PAYLOAD
 
 
-@pytest.mark.parametrize(
-    ("mode", "payload_keys", "timeout"),
-    [
-        ("audio", {"text", "lang", "debug"}, 45),
-        ("text", {"text", "lang", "session_id", "debug"}, 30),
-    ],
-)
-def test_each_mode_sends_tts_its_own_payload_and_timeout(
-    client, conversations, active_session, speech_services, mode, payload_keys, timeout
+@pytest.mark.parametrize("mode", ["audio", "text"])
+def test_both_modes_send_tts_the_same_request(
+    client, conversations, active_session, speech_services, mode
 ):
     assert _send(client, conversations, active_session, mode).status_code == 200
 
     [tts_request] = speech_services.sent_to("tts")
-    assert set(tts_request["json"]) == payload_keys
-    assert (tts_request["json"]["text"], tts_request["json"]["lang"]) == ("Good day", "en")
-    assert tts_request["json"].get("session_id") == (active_session if mode == "text" else None)
-    assert tts_request["timeout"] == timeout
+    assert tts_request["json"] == {
+        "text": "Good day",
+        "lang": "en",
+        "session_id": active_session,
+        "debug": "false",
+    }
+    assert tts_request["timeout"] == 45
+
+
+@pytest.mark.parametrize("mode", ["audio", "text"])
+@pytest.mark.parametrize("refined", [True, False])
+def test_the_translation_services_tts_text_never_reaches_tts(
+    client, conversations, active_session, refinement, mode, refined
+):
+    """TTS reads only `text`; an older translation image may still send `tts_text`."""
+    refinement.tts_text = "Guten Tag."
+    if not refined:
+        refinement.refined_text = "Good day"
+
+    assert _send(client, conversations, active_session, mode).status_code == 200
+
+    [tts_request] = refinement.sent_to("tts")
+    assert "tts_text" not in tts_request["json"]
 
 
 @pytest.mark.parametrize("mode", ["audio", "text"])

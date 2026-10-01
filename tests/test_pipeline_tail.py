@@ -139,3 +139,18 @@ def test_a_raising_tts_keeps_the_work_already_done(mode):
     assert result["error"] is True
     assert (result["asr_text"], result["translation_text"]) == ("Guten Tag", "Good day")
     assert result["debug"]["error_code"] == "upstream_timeout"
+
+
+@pytest.mark.parametrize("mode", ["audio", "text"])
+def test_both_modes_seed_tts_with_the_session(mode):
+    speech = FakeSpeech()
+    if mode == "audio":
+        process_wav(
+            b"RIFF-wav", "de", "en", speech=speech, refiner=_recording_refiner(), session_id="s-1"
+        )
+    else:
+        _run(mode, speech, _recording_refiner())
+
+    [call] = speech.tts_calls
+    assert call["payload"]["session_id"] == "s-1"
+    assert call["timeout"] == 45

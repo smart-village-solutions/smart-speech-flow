@@ -437,7 +437,6 @@ class _PipelineRun:
     start_total: float
     source_text: Optional[str] = None
     translation_text: Optional[str] = None
-    tts_text: Optional[str] = None
 
 
 def _start_run(
@@ -508,8 +507,6 @@ def _refine(run: _PipelineRun, refiner: BaseTranslationRefiner) -> None:
     )
     completed_at = utc_now()
     run.translation_text = outcome.text
-    if outcome.changed:
-        run.tts_text = None
     run.debug_info["steps"].append(
         {
             "step": "LLM_Refinement",
@@ -532,18 +529,21 @@ def _refine(run: _PipelineRun, refiner: BaseTranslationRefiner) -> None:
     )
 
 
+# One limit for both modes: TTS reads translated text whichever way the
+# message arrived.
+TTS_TIMEOUT_SECONDS = 45
+
+
 def _synthesize(run: _PipelineRun, speech: SpeechServices) -> TTSCall:
     start = time.perf_counter()
     started_at = utc_now()
-    payload: Dict[str, Any] = {"text": run.translation_text, "lang": run.target_lang}
-    # Per-mode differences, kept so this refactor changes no behaviour; #230's
-    # next commit removes all three.
-    if run.mode == "text":
-        payload["session_id"] = run.session_id
-    payload["debug"] = str(run.debug).lower()
-    if run.mode == "text" and run.tts_text:
-        payload["tts_text"] = run.tts_text
-    response = speech.synthesize(payload, timeout=30 if run.mode == "text" else 45)
+    payload = {
+        "text": run.translation_text,
+        "lang": run.target_lang,
+        "session_id": run.session_id,
+        "debug": str(run.debug).lower(),
+    }
+    response = speech.synthesize(payload, timeout=TTS_TIMEOUT_SECONDS)
     completed_at = utc_now()
     duration_ms = int((time.perf_counter() - start) * 1000)
     return response, duration_ms, started_at, completed_at, start
@@ -568,7 +568,6 @@ def _run_translation_tail(
             upstream_response=response,
         )
     run.translation_text = body.get("translations", "")
-    run.tts_text = body.get("tts_text")
 
     _refine(run, refiner)
 
@@ -958,6 +957,7 @@ def process_wav(
     *,
     speech: SpeechServices,
     refiner: BaseTranslationRefiner,
+    session_id: Optional[str] = None,
 ):
     """
     Run ASR, translation, refinement and TTS on already-validated WAV bytes.
@@ -969,6 +969,7 @@ def process_wav(
         debug: Enable debug information
         speech: The app's speech services
         refiner: The app's translation refiner
+        session_id: Session ID for the deterministic TTS seed
 
     Returns:
         Dict with processing results including validation info
@@ -977,7 +978,7 @@ def process_wav(
         "audio",
         source_lang,
         target_lang,
-        session_id=None,
+        session_id=session_id,
         debug=debug,
         input_size={"file_size": len(file_bytes)},
     )

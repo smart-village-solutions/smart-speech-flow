@@ -764,6 +764,7 @@ async def process_audio_input(
             processed_file_bytes,
             source_lang,
             target_lang,
+            session_id=key.session_id,
             speech=pipeline.speech,
             refiner=pipeline.refiner,
         )
