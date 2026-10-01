@@ -15,7 +15,7 @@ import httpx
 from .config import ConfigError, Operator, Settings, Tenant, load_settings
 from .evidence import Evidence
 from .gateway import Gateway, websocket_connect
-from .isolation import check_isolation
+from .isolation import check_colleague_denial, check_isolation
 from .login import LoginError, access_token
 from .preflight import tenants_idle
 from .retention import clean_up, terminate_and_verify
@@ -61,6 +61,22 @@ def _write_manifest(path: Path, conversations: list[Conversation]) -> None:
         json.dump({"conversations": entries}, manifest, indent=2)
 
 
+async def _check_denials(
+    gateway: Gateway, evidence: Evidence, conversations: list[Conversation]
+) -> None:
+    """A1 against B1 across tenants, then each tenant's two operators (#476)."""
+    pairs = (
+        (check_isolation, "isolation", conversations[0], conversations[2]),
+        (check_colleague_denial, "A colleague denial", conversations[0], conversations[1]),
+        (check_colleague_denial, "B colleague denial", conversations[2], conversations[3]),
+    )
+    for check, name, first, second in pairs:
+        if first.completed and second.completed:
+            await check(gateway, evidence, first, second)
+        else:
+            evidence.record(f"{name} skipped", False, "a conversation did not complete")
+
+
 async def run(
     settings: Settings,
     gateway: Gateway,
@@ -74,11 +90,7 @@ async def run(
         return False
     try:
         await asyncio.gather(*(run_conversation(gateway, evidence, c) for c in conversations))
-        first, second = conversations[0], conversations[2]
-        if first.completed and second.completed:
-            await check_isolation(gateway, evidence, first, second)
-        else:
-            evidence.record("isolation skipped", False, "a conversation did not complete")
+        await _check_denials(gateway, evidence, conversations)
         await terminate_and_verify(gateway, evidence, conversations)
     finally:
         await clean_up(gateway, evidence, conversations)

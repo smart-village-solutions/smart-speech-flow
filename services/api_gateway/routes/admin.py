@@ -126,14 +126,20 @@ def _connection_payload(
 @router.get("/realtime/connections")
 async def list_tenant_realtime_connections(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
+    owner_ref: Annotated[str, Depends(require_admin_ref)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
     manager: Annotated[WebSocketManager, Depends(get_websocket_manager)],
     polling_store: Annotated[TenantPollingStore, Depends(get_polling_store)],
 ) -> dict[str, object]:
+    """Connections of the requesting admin's own sessions; colleagues' are omitted."""
     connections: list[dict[str, Any]] = []
     keys = {key for key in manager.session_connections if isinstance(key, TenantSessionKey)}
     keys.update(client.key for client in polling_store.clients.values())
     for key in keys:
-        if key.tenant_id == context.tenant_id:
+        if key.tenant_id != context.tenant_id:
+            continue
+        session = sessions.get_session(key)
+        if session is not None and session.is_owned_by(owner_ref):
             connections.extend(_connection_payload(manager, polling_store, key))
     return {"connections": connections, "count": len(connections)}
 
@@ -293,7 +299,7 @@ async def create_admin_session(
 @router.get(
     "/session/current",
     summary="Aktuelle Admin-Session abrufen",
-    description="Gibt Details der aktiven Admin-Session der anfragenden Administratorin zurück. Optional kann eine Session-ID des Mandanten angegeben werden.",
+    description="The requesting admin's active session. With `session_id`, that one of the admin's own sessions; a colleague's session answers 404 like an unknown id.",
     responses=ADMIN_ROUTE_RESPONSES,
 )
 async def get_current_session(
@@ -400,12 +406,13 @@ async def terminate_session(
 @router.get(
     "/session/history",
     summary="Session-Historie abrufen",
-    description="Gibt eine Liste der vergangenen Sessions und aktuelle Session zurück",
+    description="The requesting admin's ended and live sessions; colleagues' sessions are not listed.",
     responses={500: {"description": "Session history lookup failed"}},
 )
 async def get_session_history(
     context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
     lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
+    owner_ref: Annotated[str, Depends(require_admin_ref)],
     limit: int = 10,
 ) -> SessionHistoryResponse:
     """
@@ -417,7 +424,7 @@ async def get_session_history(
     Returns:
         SessionHistoryResponse: Historie und aktuelle Session
     """
-    history, active_sessions = lifecycle.history(context.tenant_id, limit)
+    history, active_sessions = lifecycle.history(context.tenant_id, limit, owner_ref=owner_ref)
     return SessionHistoryResponse(
         sessions=history, total_count=len(history), active_sessions=active_sessions
     )

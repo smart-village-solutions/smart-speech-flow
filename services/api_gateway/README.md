@@ -104,7 +104,10 @@ capability or a bearer token of the same tenant.
   `GET /api/admin/session/history`, and below `/api/admin/session/{session_id}`:
   `status`, `terminate` (DELETE), `message` (POST), `messages`,
   `audio/{message_id}/{variant}.wav`, `realtime-ticket` (POST) and
-  `realtime/connections`; `GET /api/admin/realtime/connections` for the tenant.
+  `realtime/connections`; `GET /api/admin/realtime/connections` for the admin's
+  own sessions. Each of these serves only the admin who created the session; a
+  colleague's session, or one without an owner, answers `404` like an unknown id
+  (#476).
 - Customer sessions: `POST /api/customer/session/activate`,
   `GET /api/customer/session/{session_id}`, and below it `message` (POST),
   `messages` and `audio/{message_id}/{variant}.wav`;

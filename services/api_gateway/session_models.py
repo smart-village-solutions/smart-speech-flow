@@ -194,6 +194,10 @@ class Session:
             raise ValueError("session has no tenant scope")
         return TenantSessionKey(self.tenant_id, self.id)
 
+    def is_owned_by(self, owner_ref: Optional[str]) -> bool:
+        """Whether ``owner_ref`` created this session; an owner-less session is nobody's."""
+        return _same_owner(self.owner_ref, owner_ref)
+
     def next_timeout_at(self) -> datetime:
         absolute_deadline = self.created_at + timedelta(hours=self.maximum_lifetime_hours)
         if self.admin_connection_count > 0:

@@ -15,6 +15,7 @@ from services.api_gateway.pipeline_logic import SpeechPipeline
 from services.api_gateway.service_health import ServiceHealthManager
 from services.api_gateway.session_models import SessionStatus
 from services.api_gateway.speech_services import HttpSpeechServices
+from services.api_gateway.tenant_context import admin_ref
 from services.api_gateway.tenant_session import (
     RuntimeConfigurationSnapshot,
     TenantSessionKey,
@@ -96,7 +97,10 @@ async def make_active_session(manager) -> TenantSessionKey:
     Admin sends de -> en, which is what the request builders below produce; a
     mismatch trips validate_session_languages before the pipeline is reached.
     """
-    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    # Owned by the admin tests/conftest.py authenticates, so the admin routes serve it.
+    session = await manager.create_admin_session(
+        "tenant-test", SNAPSHOT, owner_ref=admin_ref("tenant-test", "test-admin")
+    )
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
     manager.store.save(session)

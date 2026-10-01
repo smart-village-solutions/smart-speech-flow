@@ -31,6 +31,8 @@ async def test_a_healthy_run_passes_and_keeps_only_consented_content():
     assert "A2 keeps 0 messages" in names
     assert "B1 audio retrievable during conversation" in names
     assert "B2 serves no audio after termination" in names
+    assert "A1 → A2 status is not found" in names
+    assert "B2 → B1 terminate is not found" in names
 
 
 async def test_refused_content_that_survives_termination_fails():
@@ -81,16 +83,27 @@ async def test_the_report_carries_no_token_password_or_session_id():
         assert forbidden not in rendered
 
 
-# Production allows one live conversation per tenant: creating a session ends
-# the tenant's others. The check must never end a real user's conversation.
-async def test_a_live_conversation_in_either_tenant_stops_the_run_before_anything_is_created():
+# A tester session left live by an earlier run would be ended by this one.
+async def test_a_testers_leftover_conversation_stops_the_run_before_anything_is_created():
     gateway, evidence = FakeGateway(), Evidence()
-    gateway.seed_live_session("B")
+    gateway.seed_live_session("B", owner="token-B2")
 
     assert await run(_settings(), gateway, evidence, _login) is False
     assert list(gateway.sessions) == ["real-B"]
     assert gateway.terminated == []
-    assert "B has no live conversations" in _failed(evidence)
+    assert _failed(evidence) == ["B2 has no live conversation"]
+
+
+# The gateway shows no admin a colleague's conversation (#476), and a run ends
+# only the testers' own (#473), so a real user's conversation neither stops the
+# run nor is touched by it.
+async def test_a_real_users_conversation_is_invisible_and_untouched():
+    gateway, evidence = FakeGateway(), Evidence()
+    gateway.seed_live_session("A")
+
+    assert await run(_settings(), gateway, evidence, _login) is True
+    assert gateway.sessions["real-A"].status == "active"
+    assert "real-A" not in gateway.terminated
 
 
 async def test_an_unreadable_history_stops_the_run():
@@ -99,7 +112,7 @@ async def test_an_unreadable_history_stops_the_run():
 
     assert await run(_settings(), gateway, evidence, _login) is False
     assert gateway.sessions == {}
-    assert "A has no live conversations" in _failed(evidence)
+    assert "A1 has no live conversation" in _failed(evidence)
 
 
 async def test_an_idle_tenant_pair_passes_the_preflight():
@@ -108,7 +121,7 @@ async def test_an_idle_tenant_pair_passes_the_preflight():
     await run(_settings(), gateway, evidence, _login)
 
     names = [check.name for check in evidence.checks if check.passed]
-    assert {"A has no live conversations", "B has no live conversations"} <= set(names)
+    assert {f"{label} has no live conversation" for label in ("A1", "A2", "B1", "B2")} <= set(names)
 
 
 async def test_audio_served_after_termination_fails():

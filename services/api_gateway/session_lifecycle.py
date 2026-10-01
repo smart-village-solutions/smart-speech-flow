@@ -92,8 +92,7 @@ class SessionLifecycleService:
     def current(self, tenant_id: str, session_id: Optional[str], *, owner_ref: str) -> Session:
         """The admin's active session, or the named one while it is not terminated.
 
-        A named session is found for any admin of the tenant; without a name only
-        the requesting admin's own session counts.
+        Named or not, only the requesting admin's own sessions count (#476).
 
         Raises:
             NoActiveSessionError: nothing pending or active matches.
@@ -103,7 +102,7 @@ class SessionLifecycleService:
         active_session_data = self._sessions.get_active_session(
             session_id=session_id,
             tenant_id=tenant_id,
-            for_owner=owner_ref if session_id is None else None,
+            owner_ref=owner_ref,
         )
         if not active_session_data:
             raise NoActiveSessionError
@@ -123,11 +122,15 @@ class SessionLifecycleService:
         return True
 
     def history(
-        self, tenant_id: str, limit: int
+        self, tenant_id: str, limit: int, *, owner_ref: str
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """The tenant's ended sessions, newest first, and its pending or active ones."""
-        history = self._sessions.get_session_history(limit=limit, tenant_id=tenant_id)
-        active_sessions = self._sessions.get_active_sessions(tenant_id=tenant_id)
+        """The admin's ended sessions, newest first, and their pending or active ones."""
+        history = self._sessions.get_session_history(
+            limit=limit, tenant_id=tenant_id, owner_ref=owner_ref
+        )
+        active_sessions = self._sessions.get_active_sessions(
+            tenant_id=tenant_id, owner_ref=owner_ref
+        )
         return history, active_sessions
 
     async def activate(

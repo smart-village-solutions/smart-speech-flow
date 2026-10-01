@@ -10,9 +10,21 @@ happens. It never creates, changes or deletes an account.
 
 1. **No live conversations.** Run the check only when nobody is using either
    tenant, so its conversations and load never mix with real ones. The check
-   verifies this itself and stops, creating nothing, if either tenant has a
-   live conversation. Each operator has at most one live conversation (#473),
-   so the test accounts could not end anyone else's in any case.
+   itself cannot see other admins' conversations, because each admin sees only
+   their own (#476), so confirm it on the host. This prints the id of every
+   tenant with a live conversation; neither `SSF_RC_TENANT_A_ID` nor
+   `SSF_RC_TENANT_B_ID` may appear (other tenants do not matter):
+
+       source scripts/lib/production-common.sh
+       production_compose exec -T redis redis-cli --scan --pattern '*:v2:tenant:*:active-admin' \
+         | python3 -c 'import base64, sys
+       for line in sys.stdin:
+           part = line.strip().split(":")[-2]
+           print(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)).decode())' | sort -u
+
+   The check stops, creating nothing, if a tester account still has a live
+   conversation from an earlier run. Each operator has at most one live
+   conversation (#473), so the test accounts cannot end anyone else's.
 2. **Storage mode.** In each tenant's SSF configuration in Studio, note the
    conversation-content storage mode (`ask` or `disabled`). Pass it as
    `SSF_RC_TENANT_{A,B}_STORAGE`.
@@ -54,10 +66,11 @@ id; sessions appear as 12-character hashes, as in the gateway logs.
 | Check group | Meaning |
 |---|---|
 | `A1 login` … `B2 login` | Keycloak login through the real login form |
-| `A has no live conversations` | nobody is using the tenant, so the run cannot end a real conversation |
+| `A1 has no live conversation` … `B2 has no live conversation` | no earlier run left a tester conversation live, so this run cannot end one mid-way |
 | `A1 create session` … `guest message 2 delivered` | one full conversation; each message reaches the other participant over WebSocket |
 | `A1 audio retrievable during conversation` | every message's recording can be fetched while the conversation runs |
-| `A1 → B1 … is not found` | a foreign session looks exactly like a missing one |
+| `A1 → B1 … is not found` | a foreign tenant's session looks exactly like a missing one |
+| `A1 → A2 … is not found`, `B1 → B2 … is not found` | a colleague's session in the same tenant looks exactly like a missing one (#476) |
 | `… selector … is rejected` | a request cannot choose its tenant |
 | `A1 keeps 4 messages`, `A2 keeps 0 messages` | consent-gated retention of the conversation text after termination |
 | `A1 serves no audio after termination` | an ended conversation serves no recording to anyone, kept or not |
@@ -91,7 +104,8 @@ that held their passwords.
 
 | Symptom | Cause |
 |---|---|
-| `A has no live conversations` fails | someone is using the tenant; wait until it is idle |
+| `A1 has no live conversation` fails | a tester conversation from an earlier run is still live; end it or wait for its timeout |
+| `A1 → A2 … is not found` fails | the gateway lets a colleague into another admin's session; it predates #476 or lost the owner check |
 | `A1 guest reads pending session` fails with 404 for one operator per tenant | the gateway predates #473 and allows one live conversation per tenant, so the second operator's session ended the first; deploy `main` 2383a2a or later |
 | `Keycloak requires an action from this user` | the user has a temporary password or another required action |
 | `Keycloak rejected the credentials` | wrong password, or the user is in the other tenant |

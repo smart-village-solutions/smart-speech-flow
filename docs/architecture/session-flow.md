@@ -43,15 +43,17 @@ This document summarizes the actual session logic implemented in the backend so 
 - Sessions can transition to `terminated` via:
   - Admin endpoint `DELETE /api/admin/session/{session_id}/terminate`.
   - Automatic timeout: the lifespan's session-timeout task ends a session after the admin's reconnect grace or at its maximum lifetime.
-  - A new admin session for the same tenant, unless parallel sessions are allowed.
+  - A new session by the same admin, unless parallel sessions are allowed (#473).
 - Terminated sessions show status `terminated`; re-connecting WebSockets should be prevented.
 
 ## 7. Fetching session info
 
-- Admin endpoints:
-  - `GET /api/admin/session/current?session_id=…` – returns status/details for a specific session.
+- Admin endpoints serve only the admin who created a session (#476). A colleague's
+  session, or one stored without an owner, answers `404 Session not found` like an
+  unknown id.
+  - `GET /api/admin/session/current?session_id=…` – returns status/details for one of the admin's own sessions.
   - `GET /api/admin/session/{session_id}/status` – the session's status.
-  - `GET /api/admin/session/history` – lists terminated sessions and active sessions.
+  - `GET /api/admin/session/history` – lists the admin's own terminated and active sessions.
 - Customer endpoint: `GET /api/customer/session/{session_id}` – returns the session's status, language and connection state.
 
 ## 8. Frontend responsibilities

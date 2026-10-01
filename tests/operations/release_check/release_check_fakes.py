@@ -1,8 +1,9 @@
 """An in-memory SSF gateway for the release-check tests, with failure knobs.
 
 A token names its tenant (`token-A1` belongs to tenant A), and a session
-belongs to the tenant whose token created it. Frames go to the other party's
-socket, as the real gateway broadcasts them.
+belongs to the tenant and the admin whose token created it: as on the real
+gateway, no other admin can see or use it (#476). Frames go to the other
+party's socket, as the real gateway broadcasts them.
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ class FakeSocket:
 @dataclass
 class FakeSession:
     tenant: str
+    owner: str = "real-user"
     status: str = "pending"
     consent: bool = False
     messages: list[str] = field(default_factory=list)
@@ -60,6 +62,7 @@ class FakeGateway:
         self.sessions: dict[str, FakeSession] = {}
         self.terminated: list[str] = []
         self.leak_cross_tenant = False
+        self.leak_to_colleague = False
         self.accept_selectors = False
         self.accept_foreign_ticket = False
         self.drop_delivery = False
@@ -70,9 +73,9 @@ class FakeGateway:
         self.serve_audio_after_termination = False
         self.missing_live_audio = False
 
-    def seed_live_session(self, tenant: str) -> None:
-        """A real user's conversation that the check must not disturb."""
-        self.sessions[f"real-{tenant}"] = FakeSession(tenant=tenant, status="active")
+    def seed_live_session(self, tenant: str, owner: str = "real-user") -> None:
+        """A live conversation: a real user's, or a tester's left by an earlier run."""
+        self.sessions[f"real-{tenant}"] = FakeSession(tenant=tenant, owner=owner, status="active")
 
     async def session_history(self, token: str) -> httpx.Response:
         if self.history_status != 200:
@@ -81,7 +84,9 @@ class FakeGateway:
         live = [
             {"id": session_id}
             for session_id, session in self.sessions.items()
-            if session.tenant == tenant and session.status in ("pending", "active")
+            if session.tenant == tenant
+            and session.owner == token
+            and session.status in ("pending", "active")
         ]
         return _json(200, {"sessions": [], "total_count": 0, "active_sessions": live})
 
@@ -93,7 +98,9 @@ class FakeGateway:
         session = self.sessions.get(session_id)
         if session is None:
             return None
-        if session.tenant != self._tenant(token) and not self.leak_cross_tenant:
+        if session.tenant != self._tenant(token):
+            return session if self.leak_cross_tenant else None
+        if session.owner != token and not self.leak_to_colleague:
             return None
         return session
 
@@ -106,7 +113,7 @@ class FakeGateway:
         if token in self.fail_create_for:
             return _json(500, {"detail": "boom"})
         session_id = f"S{len(self.sessions) + 1}{self._tenant(token)}"
-        self.sessions[session_id] = FakeSession(tenant=self._tenant(token))
+        self.sessions[session_id] = FakeSession(tenant=self._tenant(token), owner=token)
         return _json(201, {"session_id": session_id})
 
     async def status(self, token, session_id, *, params=None, headers=None) -> httpx.Response:
