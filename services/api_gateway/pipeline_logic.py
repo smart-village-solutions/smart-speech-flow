@@ -308,49 +308,6 @@ def _validate_and_normalize_text(
     )
 
 
-def _run_text_translation_step(
-    *,
-    processed_text: str,
-    source_lang: str,
-    target_lang: str,
-    debug: bool,
-    debug_info: Dict[str, Any],
-    speech: SpeechServices,
-) -> Tuple[requests.Response, Dict[str, Any], str, Optional[str]]:
-    start_translation = time.perf_counter()
-    translation_started_at = utc_now()
-    translation_payload = {
-        "text": processed_text,
-        "source_lang": source_lang,
-        "target_lang": target_lang,
-        "model": "m2m100_1.2B",
-        "debug": str(debug).lower(),
-    }
-
-    translation_resp = speech.translate(translation_payload)
-    translation_completed_at = utc_now()
-    translation_json = translation_resp.json()
-    translation_text = translation_json.get("translations", "")
-    tts_text = translation_json.get("tts_text")
-    translation_duration_ms = int((time.perf_counter() - start_translation) * 1000)
-
-    debug_info["steps"].append(
-        {
-            "step": "Translation",
-            "name": "translation",
-            "input": translation_payload,
-            "output": translation_text,
-            "error": translation_json.get("error"),
-            "duration": round(time.perf_counter() - start_translation, 3),
-            "started_at": translation_started_at.isoformat() + "Z",
-            "completed_at": translation_completed_at.isoformat() + "Z",
-            "duration_ms": translation_duration_ms,
-        }
-    )
-
-    return translation_resp, translation_json, translation_text, tts_text
-
-
 def _primary_refinement_status(outcome: RefinementOutcome) -> str:
     """The refinement stage's own status, for the pipeline debug/benchmark record.
 
@@ -365,102 +322,8 @@ def _primary_refinement_status(outcome: RefinementOutcome) -> str:
     return "success"
 
 
-def _apply_translation_refinement(
-    *,
-    processed_text: str,
-    translation_text: str,
-    source_lang: str,
-    target_lang: str,
-    debug_info: Dict[str, Any],
-    tts_text: Optional[str],
-    refiner: BaseTranslationRefiner,
-) -> Tuple[str, Optional[str]]:
-    refined_tts_text = tts_text
-    if not refiner.is_active:
-        return translation_text, refined_tts_text
-
-    refinement_started_at = utc_now()
-    outcome: RefinementOutcome = refiner.refine(
-        translation_text,
-        source_lang,
-        target_lang,
-        context={"original_text": processed_text, "pipeline": "text"},
-    )
-    refinement_completed_at = utc_now()
-    translation_text = outcome.text
-    if outcome.changed:
-        refined_tts_text = None
-
-    debug_info["steps"].append(
-        {
-            "step": "LLM_Refinement",
-            "name": "refinement",
-            "input": {"enabled": True, "changed": outcome.changed},
-            "output": translation_text,
-            "error": outcome.error,
-            "duration": round((outcome.latency_ms or 0.0) / 1000, 3),
-            "started_at": refinement_started_at.isoformat() + "Z",
-            "completed_at": refinement_completed_at.isoformat() + "Z",
-            "duration_ms": int(outcome.latency_ms or 0),
-            "model": outcome.model,
-            "refinement_comparison": {
-                "primary_model": outcome.model,
-                "primary_status": _primary_refinement_status(outcome),
-                "candidate_model": outcome.candidate_model,
-                "candidate_status": outcome.candidate_status,
-            },
-        }
-    )
-
-    return translation_text, refined_tts_text
-
-
 # (response, duration_ms, started_at, completed_at, perf_counter start)
 TTSCall = Tuple[requests.Response, int, datetime, datetime, float]
-
-
-def _run_text_tts_step(
-    *,
-    translation_text: str,
-    target_lang: str,
-    session_id: Optional[str],
-    debug: bool,
-    refined_tts_text: Optional[str],
-    speech: SpeechServices,
-) -> TTSCall:
-    start_tts = time.perf_counter()
-    tts_started_at = utc_now()
-    tts_payload = {
-        "text": translation_text,
-        "lang": target_lang,
-        "session_id": session_id,
-        "debug": str(debug).lower(),
-    }
-    if refined_tts_text:
-        tts_payload["tts_text"] = refined_tts_text
-
-    tts_resp = speech.synthesize(tts_payload, timeout=30)
-    tts_completed_at = utc_now()
-    tts_duration_ms = int((time.perf_counter() - start_tts) * 1000)
-    return tts_resp, tts_duration_ms, tts_started_at, tts_completed_at, start_tts
-
-
-def _run_wav_tts_step(
-    *, translation_text: str, target_lang: str, debug: bool, speech: SpeechServices
-) -> TTSCall:
-    start_tts = time.perf_counter()
-    tts_started_at = utc_now()
-    tts_resp = speech.synthesize(
-        {
-            "text": translation_text,
-            "lang": target_lang,
-            "debug": str(debug).lower(),
-        },
-        timeout=45,  # TTS kann auch länger dauern
-    )
-    tts_completed_at = utc_now()
-    tts_duration_ms = int((time.perf_counter() - start_tts) * 1000)
-    return tts_resp, tts_duration_ms, tts_started_at, tts_completed_at, start_tts
 
 
 def _tts_error_message(tts_resp: requests.Response) -> str:
@@ -477,7 +340,7 @@ def _finish_tts_stage(
     debug_info: Dict[str, Any],
     start_total: float,
     target_lang: str,
-    translation_text: str,
+    translation_text: Optional[str],
     asr_text: Optional[str],
 ) -> Optional[Dict[str, Any]]:
     """Record the TTS step; return the pipeline error result if synthesis failed."""
@@ -516,7 +379,7 @@ def _append_tts_debug_step(
     *,
     debug_info: Dict[str, Any],
     target_lang: str,
-    translation_text: str,
+    translation_text: Optional[str],
     error_msg: Optional[str],
     tts_duration_ms: int,
     tts_started_at: datetime,
@@ -554,6 +417,270 @@ def _finalize_pipeline_success(debug_info: Dict[str, Any], start_total: float) -
     debug_info["failed_stage"] = PipelineStage.NONE.value
     debug_info["error_code"] = QualityErrorCode.NONE.value
     debug_info["system"] = _collect_system_metrics()
+
+
+@dataclass
+class _PipelineRun:
+    """One message's way through the pipeline, for either input mode.
+
+    The mode's head (ASR, or text validation) and the shared tail record their
+    results here, so the one exception handler reports the work already done
+    whichever stage raised.
+    """
+
+    mode: str
+    source_lang: str
+    target_lang: str
+    session_id: Optional[str]
+    debug: bool
+    debug_info: Dict[str, Any]
+    start_total: float
+    source_text: Optional[str] = None
+    translation_text: Optional[str] = None
+    tts_text: Optional[str] = None
+
+
+def _start_run(
+    mode: str,
+    source_lang: str,
+    target_lang: str,
+    *,
+    session_id: Optional[str],
+    debug: bool,
+    input_size: Dict[str, int],
+) -> _PipelineRun:
+    started_at = utc_now()
+    debug_info: Dict[str, Any] = {
+        "frontend_input": {"source_lang": source_lang, "target_lang": target_lang, **input_size},
+        "steps": [],
+        "pipeline_started_at": started_at.isoformat() + "Z",
+    }
+    return _PipelineRun(
+        mode=mode,
+        source_lang=source_lang,
+        target_lang=target_lang,
+        session_id=session_id,
+        debug=debug,
+        debug_info=debug_info,
+        start_total=time.perf_counter(),
+    )
+
+
+def _translate(run: _PipelineRun, speech: SpeechServices) -> Tuple[Any, Dict[str, Any]]:
+    start = time.perf_counter()
+    started_at = utc_now()
+    payload = {
+        "text": run.source_text,
+        "source_lang": run.source_lang,
+        "target_lang": run.target_lang,
+        "model": "m2m100_1.2B",
+        "debug": str(run.debug).lower(),
+    }
+    response = speech.translate(payload)
+    completed_at = utc_now()
+    body = response.json()
+    duration_ms = int((time.perf_counter() - start) * 1000)
+    run.debug_info["steps"].append(
+        {
+            "step": "Translation",
+            "name": "translation",
+            "input": payload,
+            "output": body.get("translations", ""),
+            "error": body.get("error"),
+            "duration": round(time.perf_counter() - start, 3),
+            "started_at": started_at.isoformat() + "Z",
+            "completed_at": completed_at.isoformat() + "Z",
+            "duration_ms": duration_ms,
+        }
+    )
+    return response, body
+
+
+def _refine(run: _PipelineRun, refiner: BaseTranslationRefiner) -> None:
+    if not refiner.is_active:
+        return
+    started_at = utc_now()
+    outcome: RefinementOutcome = refiner.refine(
+        run.translation_text,
+        run.source_lang,
+        run.target_lang,
+        context={"original_text": run.source_text, "pipeline": run.mode},
+    )
+    completed_at = utc_now()
+    run.translation_text = outcome.text
+    if outcome.changed:
+        run.tts_text = None
+    run.debug_info["steps"].append(
+        {
+            "step": "LLM_Refinement",
+            "name": "refinement",
+            "input": {"enabled": True, "changed": outcome.changed},
+            "output": run.translation_text,
+            "error": outcome.error,
+            "duration": round((outcome.latency_ms or 0.0) / 1000, 3),
+            "started_at": started_at.isoformat() + "Z",
+            "completed_at": completed_at.isoformat() + "Z",
+            "duration_ms": int(outcome.latency_ms or 0),
+            "model": outcome.model,
+            "refinement_comparison": {
+                "primary_model": outcome.model,
+                "primary_status": _primary_refinement_status(outcome),
+                "candidate_model": outcome.candidate_model,
+                "candidate_status": outcome.candidate_status,
+            },
+        }
+    )
+
+
+def _synthesize(run: _PipelineRun, speech: SpeechServices) -> TTSCall:
+    start = time.perf_counter()
+    started_at = utc_now()
+    payload: Dict[str, Any] = {"text": run.translation_text, "lang": run.target_lang}
+    # Per-mode differences, kept so this refactor changes no behaviour; #230's
+    # next commit removes all three.
+    if run.mode == "text":
+        payload["session_id"] = run.session_id
+    payload["debug"] = str(run.debug).lower()
+    if run.mode == "text" and run.tts_text:
+        payload["tts_text"] = run.tts_text
+    response = speech.synthesize(payload, timeout=30 if run.mode == "text" else 45)
+    completed_at = utc_now()
+    duration_ms = int((time.perf_counter() - start) * 1000)
+    return response, duration_ms, started_at, completed_at, start
+
+
+def _run_translation_tail(
+    run: _PipelineRun, *, speech: SpeechServices, refiner: BaseTranslationRefiner
+) -> Dict[str, Any]:
+    """Translation, refinement and TTS: everything after the source text exists."""
+    response, body = _translate(run, speech)
+    if response.status_code != 200:
+        error_msg = body.get("detail") or str(body)
+        return _pipeline_error_result(
+            debug_info=run.debug_info,
+            start_total=run.start_total,
+            error_message=f"Translation-Fehler: {error_msg}",
+            failed_stage=PipelineStage.TRANSLATION,
+            error_code=classify_upstream_status(response.status_code),
+            asr_text=run.source_text,
+            translation_text=None,
+            audio_bytes=None,
+            upstream_response=response,
+        )
+    run.translation_text = body.get("translations", "")
+    run.tts_text = body.get("tts_text")
+
+    _refine(run, refiner)
+
+    tts_call = _synthesize(run, speech)
+    tts_failure = _finish_tts_stage(
+        tts_call,
+        debug_info=run.debug_info,
+        start_total=run.start_total,
+        target_lang=run.target_lang,
+        translation_text=run.translation_text,
+        asr_text=run.source_text,
+    )
+    if tts_failure:
+        return tts_failure
+
+    _finalize_pipeline_success(run.debug_info, run.start_total)
+    return {
+        "error": False,
+        "asr_text": run.source_text,
+        "translation_text": run.translation_text,
+        "audio_bytes": tts_call[0].content,
+        "debug": run.debug_info,
+    }
+
+
+def _pipeline_exception_result(error: Exception, run: _PipelineRun) -> Dict[str, Any]:
+    """The one place a stage that raised becomes a pipeline result, for both modes."""
+    if isinstance(error, CircuitBreakerOpenError):
+        # A known, transient condition with a known stage, not an
+        # unclassifiable pipeline error.
+        return _circuit_open_result(
+            error,
+            debug_info=run.debug_info,
+            start_total=run.start_total,
+            asr_text=run.source_text,
+            translation_text=run.translation_text,
+        )
+    # error_msg and debug can reach the browser in a response, and a requests
+    # exception carries the internal service hostname and port. The detail goes
+    # to the server log; the client gets the stable taxonomy code.
+    code = classify_exception(error)
+    logging.warning("Pipeline failed (%s)", code.value, exc_info=True)
+    return _pipeline_error_result(
+        debug_info=run.debug_info,
+        start_total=run.start_total,
+        error_message=f"Pipeline-Fehler: {code.value}",
+        failed_stage=PipelineStage.UNKNOWN,
+        error_code=code,
+        asr_text=run.source_text,
+        translation_text=run.translation_text,
+        audio_bytes=None,
+    )
+
+
+def _transcribe(
+    run: _PipelineRun, file_bytes: bytes, speech: SpeechServices
+) -> Optional[Dict[str, Any]]:
+    """Run ASR into ``run.source_text``; the failure result if ASR answered an error."""
+    start = time.perf_counter()
+    started_at = utc_now()
+    response = speech.transcribe(file_bytes, lang=run.source_lang, debug=run.debug)
+    completed_at = utc_now()
+    duration_ms = int((time.perf_counter() - start) * 1000)
+
+    # The status was never checked here, so a failed transcription became an
+    # empty string and went on to be "successfully" translated -- the audio
+    # path's failure rows went missing entirely. upstream_response keeps a
+    # 503 transient, exactly as the translation and TTS steps already do.
+    if response.status_code != 200:
+        error_msg = _upstream_error_message(response)
+        run.debug_info["steps"].append(
+            {
+                "step": "ASR",
+                "name": "asr",
+                "input": {"lang": run.source_lang},
+                "output": None,
+                "error": error_msg,
+                "duration": round(duration_ms / 1000, 3),
+                "started_at": started_at.isoformat() + "Z",
+                "completed_at": completed_at.isoformat() + "Z",
+                "duration_ms": duration_ms,
+            }
+        )
+        return _pipeline_error_result(
+            debug_info=run.debug_info,
+            start_total=run.start_total,
+            error_message=f"ASR-Fehler: {error_msg}",
+            failed_stage=PipelineStage.ASR,
+            error_code=classify_upstream_status(response.status_code),
+            asr_text=None,
+            translation_text=None,
+            audio_bytes=None,
+            upstream_response=response,
+        )
+
+    body = response.json()
+    run.source_text = body.get("text", "")
+    run.debug_info["steps"].append(
+        {
+            "step": "ASR",
+            "name": "asr",
+            "input": {"lang": run.source_lang},
+            "output": run.source_text,
+            "model": body.get("debug", {}).get("model"),
+            "error": body.get("error"),
+            "duration": round(time.perf_counter() - start, 3),
+            "started_at": started_at.isoformat() + "Z",
+            "completed_at": completed_at.isoformat() + "Z",
+            "duration_ms": duration_ms,
+        }
+    )
+    return None
 
 
 # === Text Validation and Processing ===
@@ -800,127 +927,27 @@ def process_text_pipeline(
     Returns:
         Processing result with translation and audio
     """
-    pipeline_start_time = utc_now()
-
-    debug_info = {
-        "frontend_input": {
-            "source_lang": source_lang,
-            "target_lang": target_lang,
-            "text_length": len(text),
-        },
-        "steps": [],
-        "pipeline_started_at": pipeline_start_time.isoformat() + "Z",
-    }
-    start_total = time.perf_counter()
-    processed_text: Optional[str] = None
-    translation_text: Optional[str] = None
-
+    run = _start_run(
+        "text",
+        source_lang,
+        target_lang,
+        session_id=session_id,
+        debug=debug,
+        input_size={"text_length": len(text)},
+    )
     try:
-        # Step 1: Text validation (if enabled)
         if validate_text:
             processed_text, validation_failure = _validate_and_normalize_text(
-                text, debug_info, start_total
+                text, run.debug_info, run.start_total
             )
             if validation_failure is not None:
                 return validation_failure
+            run.source_text = processed_text
         else:
-            processed_text = text
-
-        # Step 2: Translation (skip ASR entirely)
-        translation_resp, translation_json, translation_text, tts_text = _run_text_translation_step(
-            processed_text=processed_text,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            debug=debug,
-            debug_info=debug_info,
-            speech=speech,
-        )
-
-        # Translation error handling
-        if translation_resp.status_code != 200:
-            error_msg = translation_json.get("detail") or str(translation_json)
-            return _pipeline_error_result(
-                debug_info=debug_info,
-                start_total=start_total,
-                error_message=f"Translation-Fehler: {error_msg}",
-                failed_stage=PipelineStage.TRANSLATION,
-                error_code=classify_upstream_status(translation_resp.status_code),
-                asr_text=processed_text,  # Original text as "ASR" result
-                translation_text=None,
-                audio_bytes=None,
-                upstream_response=translation_resp,
-            )
-
-        # Optional LLM refinement
-        translation_text, refined_tts_text = _apply_translation_refinement(
-            processed_text=processed_text,
-            translation_text=translation_text,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            debug_info=debug_info,
-            tts_text=tts_text,
-            refiner=refiner,
-        )
-
-        # Step 3: TTS
-        tts_call = _run_text_tts_step(
-            translation_text=translation_text,
-            target_lang=target_lang,
-            session_id=session_id,
-            debug=debug,
-            refined_tts_text=refined_tts_text,
-            speech=speech,
-        )
-        tts_failure = _finish_tts_stage(
-            tts_call,
-            debug_info=debug_info,
-            start_total=start_total,
-            target_lang=target_lang,
-            translation_text=translation_text,
-            asr_text=processed_text,
-        )
-        if tts_failure:
-            return tts_failure
-
-        audio_bytes = tts_call[0].content
-        _finalize_pipeline_success(debug_info, start_total)
-
-        return {
-            "error": False,
-            "asr_text": processed_text,  # Original/normalized text as "ASR" result
-            "translation_text": translation_text,
-            "audio_bytes": audio_bytes,
-            "debug": debug_info,
-        }
-
-    except CircuitBreakerOpenError as e:
-        # Ahead of the generic handler on purpose: this is a known, transient
-        # condition with a known stage, not an unclassifiable pipeline error.
-        return _circuit_open_result(
-            e,
-            debug_info=debug_info,
-            start_total=start_total,
-            asr_text=processed_text,
-            translation_text=translation_text,
-        )
-
-    except Exception as e:
-        # error_msg and debug can reach the browser in a response, and a
-        # requests exception carries the internal service
-        # hostname and port. The detail goes to the server log; the client gets
-        # the stable taxonomy code.
-        code = classify_exception(e)
-        logging.warning("Pipeline failed (%s)", code.value, exc_info=True)
-        return _pipeline_error_result(
-            debug_info=debug_info,
-            start_total=start_total,
-            error_message=f"Pipeline-Fehler: {code.value}",
-            failed_stage=PipelineStage.UNKNOWN,
-            error_code=code,
-            asr_text=processed_text,
-            translation_text=translation_text,
-            audio_bytes=None,
-        )
+            run.source_text = text
+        return _run_translation_tail(run, speech=speech, refiner=refiner)
+    except Exception as error:
+        return _pipeline_exception_result(error, run)
 
 
 def process_wav(
@@ -946,203 +973,18 @@ def process_wav(
     Returns:
         Dict with processing results including validation info
     """
-    pipeline_start_time = utc_now()
-
-    debug_info = {
-        "frontend_input": {
-            "source_lang": source_lang,
-            "target_lang": target_lang,
-            "file_size": len(file_bytes),
-        },
-        "steps": [],
-        "pipeline_started_at": pipeline_start_time.isoformat() + "Z",
-    }
-    start_total = time.perf_counter()
-    asr_text: Optional[str] = None
-    translation_text: Optional[str] = None
-
+    run = _start_run(
+        "audio",
+        source_lang,
+        target_lang,
+        session_id=None,
+        debug=debug,
+        input_size={"file_size": len(file_bytes)},
+    )
     try:
-        # ASR
-        start_asr = time.perf_counter()
-        asr_started_at = utc_now()
-        asr_resp = speech.transcribe(file_bytes, lang=source_lang, debug=debug)
-        asr_completed_at = utc_now()
-        asr_duration_ms = int((time.perf_counter() - start_asr) * 1000)
-
-        # The status was never checked here, so a failed transcription became an
-        # empty string and went on to be "successfully" translated -- the audio
-        # path's failure rows went missing entirely. upstream_response keeps a
-        # 503 transient, exactly as the translation and TTS steps already do.
-        if asr_resp.status_code != 200:
-            error_msg = _upstream_error_message(asr_resp)
-            debug_info["steps"].append(
-                {
-                    "step": "ASR",
-                    "name": "asr",
-                    "input": {"lang": source_lang},
-                    "output": None,
-                    "error": error_msg,
-                    "duration": round(asr_duration_ms / 1000, 3),
-                    "started_at": asr_started_at.isoformat() + "Z",
-                    "completed_at": asr_completed_at.isoformat() + "Z",
-                    "duration_ms": asr_duration_ms,
-                }
-            )
-            return _pipeline_error_result(
-                debug_info=debug_info,
-                start_total=start_total,
-                error_message=f"ASR-Fehler: {error_msg}",
-                failed_stage=PipelineStage.ASR,
-                error_code=classify_upstream_status(asr_resp.status_code),
-                asr_text=None,
-                translation_text=None,
-                audio_bytes=None,
-                upstream_response=asr_resp,
-            )
-
-        asr_json = asr_resp.json()
-        asr_text = asr_json.get("text", "")
-
-        debug_info["steps"].append(
-            {
-                "step": "ASR",
-                "name": "asr",
-                "input": {"lang": source_lang},
-                "output": asr_text,
-                "model": asr_json.get("debug", {}).get("model"),
-                "error": asr_json.get("error"),
-                "duration": round(time.perf_counter() - start_asr, 3),
-                "started_at": asr_started_at.isoformat() + "Z",
-                "completed_at": asr_completed_at.isoformat() + "Z",
-                "duration_ms": asr_duration_ms,
-            }
-        )
-        # Translation
-        start_trans = time.perf_counter()
-        translation_started_at = utc_now()
-        translation_payload = {
-            "text": asr_text,
-            "source_lang": source_lang,
-            "target_lang": target_lang,
-            "model": "m2m100_1.2B",
-            "debug": str(debug).lower(),
-        }
-        translation_resp = speech.translate(translation_payload)
-        translation_completed_at = utc_now()
-        translation_json = translation_resp.json()
-        translation_text = translation_json.get("translations", "")
-        translation_duration_ms = int((time.perf_counter() - start_trans) * 1000)
-
-        debug_info["steps"].append(
-            {
-                "step": "Translation",
-                "name": "translation",
-                "input": translation_payload,
-                "output": translation_text,
-                "error": translation_json.get("error"),
-                "duration": round(time.perf_counter() - start_trans, 3),
-                "started_at": translation_started_at.isoformat() + "Z",
-                "completed_at": translation_completed_at.isoformat() + "Z",
-                "duration_ms": translation_duration_ms,
-            }
-        )
-        # Fehlerbehandlung
-        if translation_resp.status_code != 200:
-            error_msg = translation_json.get("detail") or str(translation_json)
-            return _pipeline_error_result(
-                debug_info=debug_info,
-                start_total=start_total,
-                error_message=f"Translation-Fehler: {error_msg}",
-                failed_stage=PipelineStage.TRANSLATION,
-                error_code=classify_upstream_status(translation_resp.status_code),
-                asr_text=asr_text,
-                translation_text=None,
-                audio_bytes=None,
-                upstream_response=translation_resp,
-            )
-        # Optional LLM refinement
-        if refiner.is_active:
-            refinement_started_at = utc_now()
-            outcome = refiner.refine(
-                translation_text,
-                source_lang,
-                target_lang,
-                context={"original_text": asr_text, "pipeline": "audio"},
-            )
-            refinement_completed_at = utc_now()
-            translation_text = outcome.text
-            refinement_duration_ms = outcome.latency_ms or 0
-
-            debug_info["steps"].append(
-                {
-                    "step": "LLM_Refinement",
-                    "name": "refinement",
-                    "input": {"enabled": True, "changed": outcome.changed},
-                    "output": translation_text,
-                    "error": outcome.error,
-                    "duration": round((outcome.latency_ms or 0.0) / 1000, 3),
-                    "started_at": refinement_started_at.isoformat() + "Z",
-                    "completed_at": refinement_completed_at.isoformat() + "Z",
-                    "duration_ms": int(refinement_duration_ms),
-                    "model": outcome.model,
-                    "refinement_comparison": {
-                        "primary_model": outcome.model,
-                        "primary_status": _primary_refinement_status(outcome),
-                        "candidate_model": outcome.candidate_model,
-                        "candidate_status": outcome.candidate_status,
-                    },
-                }
-            )
-        # TTS
-        tts_call = _run_wav_tts_step(
-            translation_text=translation_text, target_lang=target_lang, debug=debug, speech=speech
-        )
-        tts_failure = _finish_tts_stage(
-            tts_call,
-            debug_info=debug_info,
-            start_total=start_total,
-            target_lang=target_lang,
-            translation_text=translation_text,
-            asr_text=asr_text,
-        )
-        if tts_failure:
-            return tts_failure
-        audio_bytes = tts_call[0].content
-
-        _finalize_pipeline_success(debug_info, start_total)
-        return {
-            "error": False,
-            "asr_text": asr_text,
-            "translation_text": translation_text,
-            "audio_bytes": audio_bytes,
-            "debug": debug_info,
-        }
-
-    except CircuitBreakerOpenError as e:
-        # Ahead of the generic handler on purpose: this is a known, transient
-        # condition with a known stage, not an unclassifiable pipeline error.
-        return _circuit_open_result(
-            e,
-            debug_info=debug_info,
-            start_total=start_total,
-            asr_text=asr_text,
-            translation_text=translation_text,
-        )
-
-    except Exception as e:
-        # error_msg and debug can reach the browser in a response, and a
-        # requests exception carries the internal service
-        # hostname and port. The detail goes to the server log; the client gets
-        # the stable taxonomy code.
-        code = classify_exception(e)
-        logging.warning("Pipeline failed (%s)", code.value, exc_info=True)
-        return _pipeline_error_result(
-            debug_info=debug_info,
-            start_total=start_total,
-            error_message=f"Pipeline-Fehler: {code.value}",
-            failed_stage=PipelineStage.UNKNOWN,
-            error_code=code,
-            asr_text=asr_text,
-            translation_text=translation_text,
-            audio_bytes=None,
-        )
+        asr_failure = _transcribe(run, file_bytes, speech)
+        if asr_failure is not None:
+            return asr_failure
+        return _run_translation_tail(run, speech=speech, refiner=refiner)
+    except Exception as error:
+        return _pipeline_exception_result(error, run)

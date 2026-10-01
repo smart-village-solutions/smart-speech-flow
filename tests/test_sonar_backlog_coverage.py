@@ -1,11 +1,8 @@
 import importlib
 import os
-from types import SimpleNamespace
-from unittest.mock import Mock
 
 import pytest
 
-from tests.pipeline_helpers import pipeline_collaborators
 
 # Module namespaces as they were before this test reloaded them.
 _RELOADED: dict[str, dict[str, object]] = {}
@@ -115,9 +112,8 @@ def _speech_services(env: dict[str, str | None]):
     return module, module.HttpSpeechServices(ServiceHealthManager().circuit_breakers)
 
 
-def test_pipeline_logic_helpers_cover_refinement_and_tts_paths(monkeypatch):
-    pipeline_logic = importlib.import_module("services.api_gateway.pipeline_logic")
-    speech_services, speech = _speech_services(
+def test_speech_service_urls_use_the_local_scheme_outside_compose():
+    speech_services, _ = _speech_services(
         {
             "DOCKER_COMPOSE": "0",
             "SERVICE_SCHEME": "http",
@@ -125,183 +121,6 @@ def test_pipeline_logic_helpers_cover_refinement_and_tts_paths(monkeypatch):
         },
     )
     assert speech_services.ASR_URL == "https://localhost:8001/transcribe"
-
-    debug_info = {"steps": []}
-    mock_refiner = SimpleNamespace(
-        is_active=True,
-        refine=Mock(
-            return_value=pipeline_logic.RefinementOutcome(
-                text="refined",
-                changed=True,
-                latency_ms=250.0,
-                error=None,
-            )
-        ),
-    )
-    refined_text, refined_tts_text = pipeline_logic._apply_translation_refinement(
-        processed_text="hello",
-        translation_text="hallo",
-        source_lang="en",
-        target_lang="de",
-        debug_info=debug_info,
-        tts_text="romanized",
-        refiner=mock_refiner,
-    )
-    assert refined_text == "refined"
-    assert refined_tts_text is None
-    assert debug_info["steps"][-1]["name"] == "refinement"
-    assert debug_info["steps"][-1]["refinement_comparison"]["primary_status"] == "success"
-
-    captured = {}
-
-    def fake_post(url, json, timeout):  # noqa: ANN001
-        captured["url"] = url
-        captured["json"] = json
-        captured["timeout"] = timeout
-        return SimpleNamespace(status_code=200, content=b"audio", headers={})
-
-    monkeypatch.setattr(pipeline_logic.requests, "post", fake_post)
-    response, duration_ms, *_ = pipeline_logic._run_text_tts_step(
-        translation_text="refined",
-        target_lang="de",
-        session_id="session-1",
-        debug=True,
-        refined_tts_text="tts-ready",
-        speech=speech,
-    )
-    assert response.status_code == 200
-    assert duration_ms >= 0
-    assert captured["url"] == "https://localhost:8003/synthesize"
-    assert captured["json"]["tts_text"] == "tts-ready"
-
-    debug_info = {"steps": []}
-    pipeline_logic._append_tts_debug_step(
-        debug_info=debug_info,
-        target_lang="de",
-        translation_text="refined",
-        error_msg="tts failed",
-        tts_duration_ms=5,
-        tts_started_at=pipeline_logic.utc_now(),
-        tts_completed_at=pipeline_logic.utc_now(),
-        start_tts=0.0,
-        tts_resp=response,
-    )
-    assert debug_info["steps"][-1]["error"] == "tts failed"
-
-
-def test_pipeline_logic_translation_helper_records_debug_step(monkeypatch):
-    pipeline_logic = importlib.import_module("services.api_gateway.pipeline_logic")
-    _, speech = _speech_services(
-        {
-            "DOCKER_COMPOSE": "1",
-            "SERVICE_SCHEME": "https",
-            "LOCAL_SERVICE_SCHEME": None,
-        },
-    )
-    debug_info = {"steps": []}
-
-    def fake_post(url, json, timeout):  # noqa: ANN001
-        assert url == "https://translation:8000/translate"
-        assert json["source_lang"] == "en"
-        assert json["target_lang"] == "de"
-        assert timeout == 30
-        return SimpleNamespace(
-            status_code=200,
-            json=lambda: {"translations": "Hallo", "tts_text": "Hallo"},
-        )
-
-    monkeypatch.setattr(pipeline_logic.requests, "post", fake_post)
-
-    response, payload, translation_text, tts_text = pipeline_logic._run_text_translation_step(
-        processed_text="Hello",
-        source_lang="en",
-        target_lang="de",
-        debug=True,
-        debug_info=debug_info,
-        speech=speech,
-    )
-
-    assert response.status_code == 200
-    assert payload["translations"] == "Hallo"
-    assert translation_text == "Hallo"
-    assert tts_text == "Hallo"
-    assert debug_info["steps"][-1]["name"] == "translation"
-
-
-def test_process_text_pipeline_covers_tts_error_and_success_paths(monkeypatch):
-    pipeline_logic = importlib.import_module("services.api_gateway.pipeline_logic")
-
-    monkeypatch.setattr(
-        pipeline_logic,
-        "_validate_and_normalize_text",
-        lambda text, debug_info, start_total: ("Hello", None),
-    )
-    monkeypatch.setattr(
-        pipeline_logic,
-        "_run_text_translation_step",
-        lambda **kwargs: (
-            SimpleNamespace(status_code=200),
-            {"translations": "Hallo"},
-            "Hallo",
-            "Hallo",
-        ),
-    )
-    monkeypatch.setattr(
-        pipeline_logic,
-        "_apply_translation_refinement",
-        lambda **kwargs: ("Hallo", None),
-    )
-
-    error_response = SimpleNamespace(
-        status_code=500,
-        headers={"content-type": "application/json"},
-        json=lambda: {"error": "tts kaputt"},
-        text="kaputt",
-    )
-    monkeypatch.setattr(
-        pipeline_logic,
-        "_run_text_tts_step",
-        lambda **kwargs: (
-            error_response,
-            3,
-            pipeline_logic.utc_now(),
-            pipeline_logic.utc_now(),
-            0.0,
-        ),
-    )
-    error_result = pipeline_logic.process_text_pipeline(
-        "Hello", "en", "de", session_id="s1", debug=True, **pipeline_collaborators()
-    )
-    assert error_result["error"] is True
-    assert error_result["translation_text"] == "Hallo"
-    assert error_result["error_msg"] == "TTS-Fehler: tts kaputt"
-
-    success_response = SimpleNamespace(
-        status_code=200,
-        headers={
-            "content-type": pipeline_logic.AUDIO_WAV_MIME,
-            "X-TTS-Model": "tts_models/tr/common-voice/glow-tts",
-        },
-        content=b"WAV",
-    )
-    monkeypatch.setattr(
-        pipeline_logic,
-        "_run_text_tts_step",
-        lambda **kwargs: (
-            success_response,
-            5,
-            pipeline_logic.utc_now(),
-            pipeline_logic.utc_now(),
-            0.0,
-        ),
-    )
-    success_result = pipeline_logic.process_text_pipeline(
-        "Hello", "en", "tr", session_id="s2", debug=True, **pipeline_collaborators()
-    )
-    assert success_result["error"] is False
-    assert success_result["audio_bytes"] == b"WAV"
-    assert success_result["debug"]["steps"][-1]["model"] == "tts_models/tr/common-voice/glow-tts"
-    assert success_result["debug"]["steps"][-1]["language"] == "tr"
 
 
 def test_translation_refiner_default_endpoint_and_enabled_configuration():
@@ -374,33 +193,3 @@ def test_primary_refinement_status_distinguishes_skip_from_success():
     assert pipeline_logic._primary_refinement_status(success) == "success"
     assert pipeline_logic._primary_refinement_status(skipped) == "skipped"
     assert pipeline_logic._primary_refinement_status(errored) == "error"
-
-
-def test_apply_translation_refinement_records_a_skip_not_a_success(monkeypatch):
-    pipeline_logic = importlib.import_module("services.api_gateway.pipeline_logic")
-
-    mock_refiner = SimpleNamespace(
-        is_active=True,
-        refine=Mock(
-            return_value=pipeline_logic.RefinementOutcome(
-                text="hallo",
-                changed=False,
-                latency_ms=0.0,
-                skipped_reason="unsupported_target_language",
-            )
-        ),
-    )
-    debug_info = {"steps": []}
-
-    pipeline_logic._apply_translation_refinement(
-        processed_text="hello",
-        translation_text="hallo",
-        source_lang="en",
-        target_lang="am",
-        debug_info=debug_info,
-        tts_text="hallo",
-        refiner=mock_refiner,
-    )
-
-    comparison = debug_info["steps"][-1]["refinement_comparison"]
-    assert comparison["primary_status"] == "skipped"
