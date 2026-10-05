@@ -90,7 +90,10 @@ def test_keycloak_image_provides_the_kasseldialog_login_branding():
     try:
         theme_properties = _theme_file(image, "theme.properties")
         assert b"parent=keycloak" in theme_properties
-        assert b"styles=css/login.css" in theme_properties
+        assert b"styles=css/theme.css css/login.css" in theme_properties
+        assert _theme_file(image, "resources/css/theme.css") == (
+            Path("services/frontend/src/ui/styles/theme.css")
+        ).read_bytes()
         assert _theme_file(image, "resources/img/header-logo.png") == (
             FRONTEND_ASSETS / "Logo.png"
         ).read_bytes()

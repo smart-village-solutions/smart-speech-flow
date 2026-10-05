@@ -1,3 +1,6 @@
+/* Brand colours come from the frontend's theme.css, loaded first (theme.properties).
+   Its .dark block is inert here: nothing sets that class on the login page. */
+
 @font-face {
   font-family: 'Inter';
   src: url('../fonts/Inter-Variable.woff2') format('woff2');
@@ -12,7 +15,7 @@ body {
 
 html.login-pf,
 html.login-pf body {
-  background: #f4f4f5;
+  background: var(--surface-page);
   background-image: none;
 }
 
@@ -22,8 +25,8 @@ body {
   flex-direction: column;
   margin: 0;
   min-height: 100vh;
-  background: #f4f4f5;
-  color: #1a1a1a;
+  background: var(--surface-page);
+  color: var(--fg-strong);
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
@@ -31,8 +34,8 @@ body {
   box-sizing: border-box;
   width: 100%;
   min-height: 180px;
-  border-bottom: 1px solid rgb(0 0 0 / 0.08);
-  background: #fff;
+  border-bottom: 1px solid var(--border-header);
+  background: var(--surface-card);
   box-shadow: 0 2px 6px rgb(0 0 0 / 0.08);
 }
 
@@ -71,9 +74,9 @@ body {
 
 .card-pf,
 .pf-v5-c-login__main {
-  border: 1px solid rgb(0 0 0 / 0.1);
+  border: 1px solid var(--border-card);
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface-card);
   box-shadow: none;
 }
 
@@ -83,7 +86,7 @@ body {
 }
 
 #kc-content-wrapper {
-  color: #1a1a1a;
+  color: var(--fg-strong);
 }
 
 body::after {
@@ -102,13 +105,13 @@ body::after {
   width: 100%;
   min-height: 175px;
   margin-top: auto;
-  border-top: 1px solid rgb(0 0 0 / 0.08);
+  border-top: 1px solid var(--border-header);
   background:
     url('../img/footer-funding.png') calc(50% - var(--footer-logo-offset)) center /
       var(--footer-logo-width) auto no-repeat,
     url('../img/footer-city.png') calc(50% + var(--footer-logo-offset)) center /
       var(--footer-logo-width) auto no-repeat,
-    #fff;
+    var(--surface-card);
   box-shadow: 0 -2px 6px rgb(0 0 0 / 0.08);
   content: '';
 }
