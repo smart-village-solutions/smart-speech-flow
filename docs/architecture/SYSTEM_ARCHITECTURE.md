@@ -389,7 +389,6 @@ full description, with the port and adapter tables, is in
 
 **Processing-Module:**
 - text_chunking: Lange Texte intelligent aufteilen
-- romanization: uroman für TTS-Vorbereitung
 - quality_assessment: Übersetzungsqualität bewerten
 
 **API-Endpunkte (intern):**

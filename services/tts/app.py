@@ -348,8 +348,8 @@ async def synthesize(request: Request):
         return _error_response(
             False, {}, 400, fallback=False, error="Request body must be a JSON object"
         )
-    # tts_text is the translation service's romanization. Voices read their
-    # own script, and the MMS tokenizers romanize Ethiopic themselves.
+    # A tts_text from an older caller is ignored: voices read their own
+    # script, and the MMS engine romanizes Ethiopic itself.
     text = data.get("text")
     lang = data.get("lang", "de")
     debug_active = (
