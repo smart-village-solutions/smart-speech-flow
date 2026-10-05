@@ -6,7 +6,6 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated, Any
-from urllib.parse import urlsplit
 from uuid import uuid4
 
 import jwt
@@ -19,6 +18,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import HTTPConnection
 
 from .dependencies import get_login_directory, get_oidc_key_cache
+from .origin import parse_origin
 from .studio_login_directory import (
     StudioLoginDirectoryConfigurationError,
     StudioLoginDirectoryService,
@@ -40,25 +40,14 @@ class KeycloakSettings:
 
     @classmethod
     def from_environment(cls) -> "KeycloakSettings":
-        base_url = os.environ.get(
-            "KEYCLOAK_BASE_URL", "https://auth.kassel.smartspeechflow.de"
-        ).strip()
-        parsed = urlsplit(base_url)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.path not in {"", "/"}
-            or parsed.query
-            or parsed.fragment
-            or any(character.isspace() for character in base_url)
-        ):
+        base_url = parse_origin(
+            os.environ.get("KEYCLOAK_BASE_URL", "https://auth.kassel.smartspeechflow.de").strip(),
+            keep_default_port=True,
+        )
+        if base_url is None:
             raise ValueError("KEYCLOAK_BASE_URL must be an origin-only URL")
-        # Accessing port also rejects malformed or out-of-range port numbers.
-        _ = parsed.port
         return cls(
-            base_url=f"{parsed.scheme}://{parsed.netloc.lower()}",
+            base_url=base_url,
             audience=os.environ.get("KEYCLOAK_AUDIENCE", "ssf-frontend"),
             required_role=os.environ.get("KEYCLOAK_REQUIRED_ROLE", "ssf-user"),
         )

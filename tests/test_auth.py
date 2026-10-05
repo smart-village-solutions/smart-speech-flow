@@ -10,7 +10,11 @@ from fastapi.testclient import TestClient
 from jwt.algorithms import RSAAlgorithm
 
 from services.api_gateway.app import app
-from services.api_gateway.auth import OidcKeyCache, get_auth_login_directory_provider
+from services.api_gateway.auth import (
+    KeycloakSettings,
+    OidcKeyCache,
+    get_auth_login_directory_provider,
+)
 from services.api_gateway.dependencies import get_oidc_key_cache
 from services.api_gateway.studio_login_directory import StudioLoginDirectoryService
 from services.api_gateway.studio_login_directory_client import (
@@ -387,6 +391,15 @@ def test_non_origin_keycloak_base_url_is_rejected(monkeypatch, signing_key, base
     calls = mock_keycloak(monkeypatch, signing_key)
     assert request_with_token(access_token(signing_key)).status_code == 401
     assert calls == []
+
+
+def test_an_explicit_default_port_stays_in_the_issuer(monkeypatch):
+    """The issuer is compared verbatim with the token's `iss`, so the port must survive."""
+    monkeypatch.setenv("KEYCLOAK_BASE_URL", "https://Auth.Example.Test:443/")
+
+    settings = KeycloakSettings.from_environment()
+
+    assert settings.issuer_for("ssf") == "https://auth.example.test:443/realms/ssf"
 
 
 def test_base_url_trailing_slash_is_normalized(monkeypatch, signing_key):
