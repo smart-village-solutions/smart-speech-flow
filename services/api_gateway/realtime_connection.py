@@ -9,13 +9,10 @@ from typing import Any, Dict, Optional
 
 from fastapi import WebSocket
 
+from .clock import utc_now
 from .realtime_protocol import ConnectionState
 from .session_models import ClientType
 from .tenant_session import TenantSessionKey
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def ensure_utc(dt: datetime) -> datetime:

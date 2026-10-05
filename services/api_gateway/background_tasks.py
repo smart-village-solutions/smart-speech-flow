@@ -46,7 +46,7 @@ def _clean_audio(audio_store: "AudioStore") -> bool:
 
 
 async def _sweep_transcripts(session_manager: Any) -> bool:
-    from .session_models import utc_now
+    from .clock import utc_now
 
     content: dict[str, int] = await session_manager.sweep_expired_content(utc_now())
     print(

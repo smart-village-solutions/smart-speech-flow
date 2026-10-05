@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from .clock import utc_now
 from .consent import ConsentStatus
 from .tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
@@ -26,10 +27,6 @@ class SessionStatus(str, Enum):
     PENDING = "pending"  # Session erstellt, wartet auf Client
     ACTIVE = "active"  # Beide Teilnehmer verbunden
     TERMINATED = "terminated"  # Session beendet
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _ensure_utc(dt: datetime) -> datetime:

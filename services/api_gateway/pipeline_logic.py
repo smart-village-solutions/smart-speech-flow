@@ -8,6 +8,7 @@ import requests
 
 from .audio_processing import AudioValidator
 from .circuit_breaker import CircuitBreakerOpenError
+from .clock import utc_now
 from .pipeline_results import (
     NO_SPEECH_ERROR_CODE,
     _circuit_open_result,
@@ -16,7 +17,6 @@ from .pipeline_results import (
     _finalize_pipeline_success,
     _pipeline_error_result,
     _upstream_error_message,
-    utc_now,
 )
 from .quality_telemetry import classify_exception, classify_upstream_status
 from .quality_telemetry_schema import PipelineStage, QualityErrorCode

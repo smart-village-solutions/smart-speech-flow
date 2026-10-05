@@ -18,10 +18,11 @@ from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Header, WebSocket, WebSocketDisconnect
 
 from .client_origin import configured_client_origin
+from .clock import utc_now
 from .dependencies import get_realtime_ticket_store, get_session_manager, get_websocket_manager
 from .log_safety import sanitize_log_value
 from .realtime_client_status import AdaptivePollingManager, ClientStatusHandler
-from .realtime_connection import WebSocketConnection, safe_identifier, utc_now
+from .realtime_connection import WebSocketConnection, safe_identifier
 from .realtime_dispatch import BroadcastDispatcher, BroadcastResult
 from .realtime_heartbeat import Heartbeat
 from .realtime_protocol import (

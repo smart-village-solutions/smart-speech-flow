@@ -19,15 +19,12 @@ from typing import Any, Iterator, Optional
 
 from prometheus_client import CollectorRegistry, Counter, Gauge
 
+from .clock import utc_now
 from .log_safety import sanitize_log_value
 from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
 WAV_GLOB_PATTERN = "*.wav"
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 class AudioStorageMetrics:

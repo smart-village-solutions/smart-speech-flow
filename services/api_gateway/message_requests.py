@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Final, Mapping, Optional
@@ -15,7 +14,7 @@ from starlette.requests import ClientDisconnect
 
 from .audio_processing import AudioValidator
 from .audio_storage import AudioStore, AudioVariant
-from .log_safety import redacted_exception_info, sanitize_log_value
+from .log_safety import redacted_exception_info, safe_session_ref, sanitize_log_value
 from .message_models import SUPPORTED_LANGUAGES, TextMessageRequest, create_error_response
 from .session_models import ClientType
 from .studio_runtime_flow import correlation_id_from_request
@@ -24,14 +23,8 @@ from .tenant_session import TenantSessionKey
 logger = logging.getLogger(__name__)
 
 
-def _safe_identifier(value: Optional[str]) -> str:
-    if not value:
-        return "missing"
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
-
-
 def _log_session_event(message: str, session_id: Optional[str], **extra: Any) -> None:
-    safe_extra = {"session_ref": _safe_identifier(session_id)}
+    safe_extra = {"session_ref": safe_session_ref(session_id)}
     safe_extra.update(sanitize_log_value(extra))
     logger.info("%s | %s", message, safe_extra)
 

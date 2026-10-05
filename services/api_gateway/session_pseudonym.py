@@ -1,14 +1,14 @@
 """Keyed, one-way session references for telemetry.
 
-The gateway already reduces session ids to ``sha256(session_id)[:12]`` in four
-places before logging them. That is adequate for a log line and inadequate
+The gateway's log lines reduce session ids to ``sha256(session_id)[:12]`` via
+``log_safety.safe_session_ref``. That is adequate for a log line and inadequate
 here: session ids are 32-bit, so an unkeyed digest of one can be reversed by
 enumerating the input space, and telemetry rows live for 30 days in a store
 built to be joined and grouped. An HMAC keyed by a deployment secret closes
 that, because the id space cannot be enumerated without the key.
 
 Scope is deliberately narrow: this is the telemetry pipeline's pseudonymiser,
-not a replacement for the four logging helpers. Converging those is a separate
+not a replacement for the logging helper. Converging the two is a separate
 change, since it alters what appears in existing operational logs.
 """
 

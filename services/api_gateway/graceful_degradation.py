@@ -17,9 +17,10 @@ Datum: November 2025
 """
 
 import logging
-from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List
+
+from .clock import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,6 @@ logger = logging.getLogger(__name__)
 # because a derived mode moves on every recovery -- two entries per flap, on
 # a singleton in a process that stays up for weeks.
 MODE_HISTORY_LIMIT = 50
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 class ServiceMode(Enum):

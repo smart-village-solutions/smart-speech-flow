@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+from .clock import utc_now
 
 
 def iso_utc_now() -> str:

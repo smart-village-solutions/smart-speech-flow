@@ -25,6 +25,7 @@ from typing import (
     TypeVar,
 )
 
+from .clock import utc_now
 from .keyed_locks import KeyedLocks
 from .quality_telemetry_schema import SessionLifecyclePhase, SessionTerminationReason
 from .realtime_protocol import timeout_warning_frame
@@ -39,7 +40,6 @@ from .session_models import (
     _session_duration_ms,
     _settle_refused_content,
     _unprune_messages,
-    utc_now,
 )
 from .session_ports import SessionSockets
 from .session_pseudonym import MISSING_TENANT_REFERENCE, SessionPseudonymizer, tenant_ref

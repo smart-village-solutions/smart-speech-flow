@@ -21,19 +21,17 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
+
+from .clock import utc_now
 
 logger = logging.getLogger(__name__)
 
 # A transition that has already been applied to the state machine and still
 # needs announcing. Carried out of the lock so the callback never runs under it.
 Transition = Tuple["CircuitState", "CircuitState"]
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 class CircuitState(Enum):
