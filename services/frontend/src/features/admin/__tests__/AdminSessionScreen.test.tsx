@@ -1,12 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { server } from '@/test/setup';
 import { AdminSessionScreen } from '@/features/admin/AdminSessionScreen';
-
-afterEach(() => server.events.removeAllListeners());
 
 const arabicSession = () =>
   server.use(

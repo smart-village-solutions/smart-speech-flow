@@ -65,9 +65,11 @@ describe('LanguageSelectScreen', () => {
 
     renderWithProviders(tree(), { route });
 
-    expect(screen.getByRole('status', { name: 'Choose your language' })).toBeInTheDocument();
-
-    answer();
+    try {
+      expect(screen.getByRole('status', { name: 'Choose your language' })).toBeInTheDocument();
+    } finally {
+      answer();
+    }
     await waitForElementToBeRemoved(() =>
       screen.queryByRole('status', { name: 'Choose your language' })
     );

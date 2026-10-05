@@ -6,28 +6,28 @@ import { handlers } from './handlers';
 export const server = setupServer(...handlers);
 
 // A response that lands after its file's jsdom is torn down throws outside any
-// test ("ProgressEvent is not defined"), and only on a slow enough runner. A
-// request that outlives its test fails that test instead, on every machine.
+// test ("ProgressEvent is not defined"), and only on a slow enough runner. So a
+// test whose request handler has not returned yet fails, on every machine. The
+// delivery that follows the handler is all microtasks and cannot outlast the
+// file: Vitest only reaches teardown through a macrotask.
 const inFlight = new Map<string, string>();
 const track = ({ request, requestId }: { request: Request; requestId: string }) => {
   inFlight.set(requestId, `${request.method} ${new URL(request.url).pathname}`);
 };
-// A throwing handler and an unhandled request never emit request:end.
 const settle = ({ requestId }: { requestId: string }) => inFlight.delete(requestId);
+// Under onUnhandledRequest: 'error' an unhandled request never emits request:end,
+// and neither does a throwing handler.
+const SETTLED = ['request:end', 'request:unhandled', 'unhandledException'] as const;
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
-// Per test, because some files clear every listener with removeAllListeners().
+// Per test, so a file that clears every listener cannot switch the guard off.
 beforeEach(() => {
   server.events.on('request:start', track);
-  server.events.on('request:end', settle);
-  server.events.on('request:unhandled', settle);
-  server.events.on('unhandledException', settle);
+  for (const event of SETTLED) server.events.on(event, settle);
 });
 afterEach(() => {
   server.events.removeListener('request:start', track);
-  server.events.removeListener('request:end', settle);
-  server.events.removeListener('request:unhandled', settle);
-  server.events.removeListener('unhandledException', settle);
+  for (const event of SETTLED) server.events.removeListener(event, settle);
   server.resetHandlers();
   const pending = [...inFlight.values()];
   inFlight.clear();
