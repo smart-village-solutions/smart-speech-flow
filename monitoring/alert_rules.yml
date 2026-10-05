@@ -408,9 +408,9 @@ groups:
   # the host disk that ServerDiskUsageHigh watches.
   - name: ssf-audio-storage
     rules:
-      # Two missed hourly passes. The gauge reads 0 until a pass completes, so
-      # one that never completed is stale too; a gateway that is down has no
-      # series, which is APIGatewayScrapeDown's to report.
+      # Two missed hourly passes. Until a pass completes the gauge holds the
+      # gateway's start time, so one that never completed fires on the same
+      # clock. A gateway that is down has no series: APIGatewayScrapeDown's.
       - alert: AudioCleanupNotRunning
         expr: time() - max(audio_cleanup_last_run_timestamp_seconds) > 2.5 * 3600
         for: 1h
@@ -429,7 +429,7 @@ groups:
           component: audio-storage
         annotations:
           summary: The audio retention pass cannot delete expired recordings.
-          description: "{{ $value | printf \"%.0f\" }} expired audio files could not be deleted in the last two hours, so they outlive SSF_CONTENT_RETENTION_HOURS. The gateway log names the failure; a volume the gateway's user cannot write is the usual cause."
+          description: "{{ $value | printf \"%.0f\" }} failed deletions in the last two hours. Each hourly pass retries the same files, so this counts attempts, not files; the recordings outlive SSF_CONTENT_RETENTION_HOURS until it clears. The gateway log names the failure; an audio volume the gateway's user cannot write or read is the usual cause."
 
       - alert: AudioStorageDiskUsageHigh
         expr: sum(audio_storage_disk_usage_bytes) / 1024^3 > 8

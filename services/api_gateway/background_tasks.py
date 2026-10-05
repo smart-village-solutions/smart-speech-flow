@@ -1,7 +1,7 @@
 """The gateway's long-running loops: session timeouts, socket monitoring, health polling, retention."""
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from .audio_storage import AudioStore
@@ -39,34 +39,57 @@ async def circuit_breaker_monitor(circuit_breaker_client: Any) -> None:
     print("🚀 Circuit Breaker Health Monitoring gestartet")
 
 
-def run_retention_pass(session_manager: Any, audio_store: "AudioStore") -> None:
-    """Delete expired audio and transcripts, then record what the audio volume holds.
+def _clean_audio(audio_store: "AudioStore") -> bool:
+    stats = audio_store.cleanup_expired()
+    print(f"🧹 Audio-Cleanup abgeschlossen: {stats['total_deleted']} Dateien gelöscht")
+    return True
 
-    Never raises: the lifespan runs one before serving, where a broken audio
-    volume must not refuse startup, and the hourly loop must outlive any pass.
-    """
+
+def _sweep_transcripts(session_manager: Any) -> bool:
     from .session_models import utc_now
 
+    content: dict[str, int] = session_manager.sweep_expired_content(utc_now())
+    print(
+        "🧹 Content-Sweep abgeschlossen: "
+        f"{content['refused_removed']} abgelehnt, "
+        f"{content['expired_removed']} abgelaufen, "
+        f"{content['failed']} fehlgeschlagen"
+    )
+    return content["failed"] == 0
+
+
+def _measure_audio(audio_store: "AudioStore") -> bool:
+    disk_stats = audio_store.disk_usage()
+    total_mb = disk_stats["total_bytes"] / (1024 * 1024)
+    print(f"💾 Audio Storage: {disk_stats['total_files']} Dateien, {total_mb:.2f} MB")
+    return True
+
+
+async def _step(name: str, run: Callable[[], bool], *, off_loop: bool) -> bool:
+    """One step of the pass; its failure must cost neither the other steps nor the loop."""
     try:
-        stats = audio_store.cleanup_expired()
-        print(f"🧹 Audio-Cleanup abgeschlossen: {stats['total_deleted']} Dateien gelöscht")
-
-        # Transcripts expire on the same pass. Audio alone would keep
-        # the weaker half of the promise.
-        content = session_manager.sweep_expired_content(utc_now())
-        print(
-            "🧹 Content-Sweep abgeschlossen: "
-            f"{content['refused_removed']} abgelehnt, "
-            f"{content['expired_removed']} abgelaufen"
-        )
-
-        disk_stats = audio_store.disk_usage()
-        total_mb = disk_stats["total_bytes"] / (1024 * 1024)
-        print(f"💾 Audio Storage: {disk_stats['total_files']} Dateien, {total_mb:.2f} MB")
-        audio_store.metrics.record_pass_completed()
-
+        return await asyncio.to_thread(run) if off_loop else run()
     except Exception as e:
-        print(f"⚠️ Fehler im Audio-Cleanup-Task: {type(e).__name__}")
+        print(f"⚠️ Fehler im Audio-Cleanup-Task ({name}): {type(e).__name__}")
+        return False
+
+
+async def run_retention_pass(session_manager: Any, audio_store: "AudioStore") -> None:
+    """Delete expired audio and transcripts, then record what the audio volume holds.
+
+    Each step runs whatever the others did, so a broken session store cannot
+    blind the disk gauges. The pass counts as completed only when all three
+    succeed. The file walks run off the event loop; the transcript sweep stays
+    on it, because it changes session state the loop's handlers share.
+    Never raises: the lifespan runs one before serving.
+    """
+    cleaned = await _step("audio", lambda: _clean_audio(audio_store), off_loop=True)
+    # Transcripts expire on the same pass. Audio alone would keep the weaker
+    # half of the promise.
+    swept = await _step("transcripts", lambda: _sweep_transcripts(session_manager), off_loop=False)
+    measured = await _step("disk usage", lambda: _measure_audio(audio_store), off_loop=True)
+    if cleaned and swept and measured:
+        audio_store.metrics.record_pass_completed()
 
 
 async def audio_cleanup_task(session_manager: Any, audio_store: "AudioStore") -> None:
@@ -75,4 +98,4 @@ async def audio_cleanup_task(session_manager: Any, audio_store: "AudioStore") ->
 
     while True:
         await asyncio.sleep(3600)
-        run_retention_pass(session_manager, audio_store)
+        await run_retention_pass(session_manager, audio_store)

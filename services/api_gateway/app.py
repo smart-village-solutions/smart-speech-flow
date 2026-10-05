@@ -386,7 +386,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # The hourly loop's first pass would be an hour away: run one now, so
     # content that expired during downtime goes and the audio series have
     # data from the first scrape.
-    run_retention_pass(dependencies.session_manager, dependencies.audio_store)
+    await run_retention_pass(dependencies.session_manager, dependencies.audio_store)
     tasks = _start_background_tasks(dependencies, feedback_dsns)
     _announce("All background tasks started")
     _announce("=" * 80)

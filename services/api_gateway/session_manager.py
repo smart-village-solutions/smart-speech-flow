@@ -172,13 +172,15 @@ class SessionManagerBase(Generic[KeyT]):
             now: The moment to measure both ages against.
 
         Returns:
-            Counts of the messages removed by each rule.
+            Counts of the messages removed by each rule, and of the sessions
+            whose removal could not be saved and stays for the next pass.
         """
         from .audio_storage import retention_hours
 
         keep_for = retention_hours()
         refused_removed = 0
         expired_removed = 0
+        failed = 0
 
         # Persistence callbacks may change the cache while this pass runs.
         for session in self.sessions.copy().values():
@@ -197,11 +199,13 @@ class SessionManagerBase(Generic[KeyT]):
                     "content_sweep_failed",
                     extra={"session_ref": self.pseudonymizer.reference(session.id)},
                 )
+                failed += 1
                 continue
 
         return {
             "refused_removed": refused_removed,
             "expired_removed": expired_removed,
+            "failed": failed,
         }
 
     def _sweep_session_content(

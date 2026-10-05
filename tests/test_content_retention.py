@@ -309,3 +309,21 @@ async def test_a_failed_sweep_write_retries_on_the_next_pass(
     strict_manager.sweep_expired_content(NOW)
     assert strict_manager.store.load(session.key).messages == []
     assert not audio_store.path(session.key, "m1", AudioVariant.TRANSLATED).exists()
+
+
+async def test_a_session_the_sweep_could_not_save_is_reported(manager, audio_store, monkeypatch):
+    """The retention pass must not call itself complete over unsaved deletions."""
+    monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
+    key = await _session_aged(manager, age=timedelta(hours=25), authorized=True)
+
+    def unavailable(_session):
+        raise ConnectionError("redis unavailable")
+
+    monkeypatch.setattr(manager.store, "save", unavailable)
+
+    assert manager.sweep_expired_content(NOW) == {
+        "refused_removed": 0,
+        "expired_removed": 0,
+        "failed": 1,
+    }
+    assert len(manager.get_session(key).messages) == 1

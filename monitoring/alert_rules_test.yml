@@ -257,7 +257,8 @@ tests:
                 log for the hourly Audio-Cleanup line and for an error from the
                 pass.
 
-  # A pass that never completed: the gauge stays at its initial 0.
+  # A pass that never completed: the gauge keeps the gateway's start time,
+  # here 0, and the alert waits the same 2.5h + 1h as for a stalled pass.
   - interval: 1m
     input_series:
       - series: 'audio_cleanup_last_run_timestamp_seconds{job="api_gateway",instance="api_gateway:8000"}'
@@ -265,6 +266,9 @@ tests:
       - series: 'up{job="api_gateway",instance="api_gateway:8000"}'
         values: "1+0x299"
     alert_rule_test:
+      - eval_time: 205m
+        alertname: AudioCleanupNotRunning
+        exp_alerts: []
       - eval_time: 215m
         alertname: AudioCleanupNotRunning
         exp_alerts:
@@ -309,10 +313,11 @@ tests:
             exp_annotations:
               summary: The audio retention pass cannot delete expired recordings.
               description: >-
-                3 expired audio files could not be deleted in the last two
-                hours, so they outlive SSF_CONTENT_RETENTION_HOURS. The gateway
-                log names the failure; a volume the gateway's user cannot write
-                is the usual cause.
+                3 failed deletions in the last two hours. Each hourly pass
+                retries the same files, so this counts attempts, not files; the
+                recordings outlive SSF_CONTENT_RETENTION_HOURS until it clears.
+                The gateway log names the failure; an audio volume the gateway's
+                user cannot write or read is the usual cause.
 
   # A window whose first sample is already non-zero: increase() extrapolates
   # 3 failures to about 3.025, and the description still says 3.
@@ -330,10 +335,11 @@ tests:
             exp_annotations:
               summary: The audio retention pass cannot delete expired recordings.
               description: >-
-                3 expired audio files could not be deleted in the last two
-                hours, so they outlive SSF_CONTENT_RETENTION_HOURS. The gateway
-                log names the failure; a volume the gateway's user cannot write
-                is the usual cause.
+                3 failed deletions in the last two hours. Each hourly pass
+                retries the same files, so this counts attempts, not files; the
+                recordings outlive SSF_CONTENT_RETENTION_HOURS until it clears.
+                The gateway log names the failure; an audio volume the gateway's
+                user cannot write or read is the usual cause.
 
   # Neither directory alone is over 8 GiB; together they are.
   - interval: 1m

@@ -223,6 +223,7 @@ def test_sweep_preserves_snapshot_when_store_adds_session_during_write(monkeypat
     assert manager.sweep_expired_content(NOW) == {
         "refused_removed": 0,
         "expired_removed": 2,
+        "failed": 0,
     }
     assert first.messages == second.messages == []
     assert len(manager.sessions) == 3

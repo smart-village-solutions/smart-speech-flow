@@ -42,12 +42,12 @@ EXPECTED_SURFACE: dict[str, Family] = {
     ),
     "audio_cleanup_errors_total": (
         "counter",
-        "Expired audio files the cleanup job failed to delete",
+        "Failed deletions of expired audio, and audio directories cleanup could not read",
         frozenset(),
     ),
     "audio_cleanup_last_run_timestamp_seconds": (
         "gauge",
-        "Unix time the retention pass last completed",
+        "Unix time the retention pass last completed, or the gateway started if none has",
         frozenset(),
     ),
     "audio_files_total": ("gauge", "Total number of audio files", frozenset({"directory"})),

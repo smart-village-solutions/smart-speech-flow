@@ -8,6 +8,7 @@ Manages persistent storage of audio files with automatic cleanup.
 """
 
 import copy
+import fnmatch
 import logging
 import os
 import re
@@ -55,14 +56,16 @@ class AudioStorageMetrics:
         )
         self.cleanup_errors = Counter(
             "audio_cleanup_errors_total",
-            "Expired audio files the cleanup job failed to delete",
+            "Failed deletions of expired audio, and audio directories cleanup could not read",
             registry=registry,
         )
         self.cleanup_last_run = Gauge(
             "audio_cleanup_last_run_timestamp_seconds",
-            "Unix time the retention pass last completed",
+            "Unix time the retention pass last completed, or the gateway started if none has",
             registry=registry,
         )
+        # From start, not 0: the alert then waits its full window for a first pass.
+        self.cleanup_last_run.set_to_current_time()
         # Exposed from the first scrape, so increase() has a prior sample.
         for variant in AudioVariant:
             self.cleanup_deleted_files.labels(directory=variant.value).inc(0)
@@ -78,10 +81,11 @@ class AudioStorageMetrics:
         self.cleanup_last_run.set_to_current_time()
 
     def record_disk_usage(self, stats: dict) -> None:
-        self.disk_usage_bytes.labels(directory="original").set(stats["original_bytes"])
-        self.disk_usage_bytes.labels(directory="translated").set(stats["translated_bytes"])
-        self.files.labels(directory="original").set(stats["original_files"])
-        self.files.labels(directory="translated").set(stats["translated_files"])
+        for variant in AudioVariant:
+            self.disk_usage_bytes.labels(directory=variant.value).set(
+                stats[f"{variant.value}_bytes"]
+            )
+            self.files.labels(directory=variant.value).set(stats[f"{variant.value}_files"])
 
 
 def _configured_base_dir() -> Path:
@@ -235,33 +239,57 @@ def scope_pipeline_audio_urls(
     return scoped
 
 
+def _managed_variant(v2_root: Path, resolved_root: Path, filepath: Path) -> AudioVariant | None:
+    """The variant of a regular WAV file in the fixed v2 layout, or None for anything else."""
+    relative = filepath.relative_to(v2_root)
+    if len(relative.parts) != 4:
+        return None
+    _tenant_ref, session_id, variant_name, filename = relative.parts
+    if (
+        variant_name not in {variant.value for variant in AudioVariant}
+        or not _TENANT_REF.fullmatch(_tenant_ref)
+        or not _STORAGE_IDENTIFIER.fullmatch(session_id)
+        or not _STORAGE_IDENTIFIER.fullmatch(filename.removesuffix(".wav"))
+        or filepath.is_symlink()
+        or not filepath.is_file()
+        or not filepath.resolve().is_relative_to(resolved_root)
+    ):
+        return None
+    return AudioVariant(variant_name)
+
+
 def _managed_v2_audio_files(
-    base_dir: Path,
+    base_dir: Path, unreadable: list[OSError] | None = None
 ) -> Iterator[tuple[AudioVariant, Path]]:
-    """Yield only regular WAV files in the fixed v2 tenant/session layout."""
+    """Yield only regular WAV files in the fixed v2 tenant/session layout.
+
+    A directory that cannot be listed is appended to `unreadable` rather than
+    skipped in silence, as `Path.rglob` would: its files are neither deleted nor
+    counted, and only the caller knows whether that is a failure.
+    """
     v2_root = base_dir / "v2"
     if not v2_root.is_dir() or v2_root.is_symlink():
         return
     resolved_root = v2_root.resolve()
-    for filepath in v2_root.rglob(WAV_GLOB_PATTERN):
-        try:
-            relative = filepath.relative_to(v2_root)
-            if len(relative.parts) != 4:
+
+    def note(error: OSError) -> None:
+        # A directory removed mid-walk is a session's files going, not a fault.
+        if isinstance(error, FileNotFoundError):
+            return
+        logger.warning("Audio storage directory could not be read")
+        if unreadable is not None:
+            unreadable.append(error)
+
+    for directory, _subdirectories, filenames in os.walk(v2_root, onerror=note):
+        for filename in fnmatch.filter(filenames, WAV_GLOB_PATTERN):
+            filepath = Path(directory) / filename
+            try:
+                variant = _managed_variant(v2_root, resolved_root, filepath)
+            except (OSError, ValueError):
+                logger.warning("Skipped unsafe audio storage entry")
                 continue
-            _tenant_ref, session_id, variant_name, filename = relative.parts
-            if (
-                variant_name not in {variant.value for variant in AudioVariant}
-                or not _TENANT_REF.fullmatch(_tenant_ref)
-                or not _STORAGE_IDENTIFIER.fullmatch(session_id)
-                or not _STORAGE_IDENTIFIER.fullmatch(filename.removesuffix(".wav"))
-                or filepath.is_symlink()
-                or not filepath.is_file()
-                or not filepath.resolve().is_relative_to(resolved_root)
-            ):
-                continue
-            yield AudioVariant(variant_name), filepath
-        except (OSError, ValueError):
-            logger.warning("Skipped unsafe audio storage entry")
+            if variant is not None:
+                yield variant, filepath
 
 
 def cleanup_old_audio_files(*, base_dir: Path) -> dict:
@@ -296,7 +324,8 @@ def cleanup_old_audio_files(*, base_dir: Path) -> dict:
         sanitize_log_value(cutoff_time.isoformat()),
     )
 
-    for variant, filepath in _managed_v2_audio_files(base_dir):
+    unreadable: list[OSError] = []
+    for variant, filepath in _managed_v2_audio_files(base_dir, unreadable):
         try:
             file_mtime = datetime.fromtimestamp(filepath.stat().st_mtime, timezone.utc)
             if file_mtime < cutoff_time:
@@ -306,9 +335,13 @@ def cleanup_old_audio_files(*, base_dir: Path) -> dict:
                     "Deleted expired v2 audio",
                     extra={"variant": variant.value},
                 )
+        except FileNotFoundError:
+            # Deleted since the walk listed it, by termination or the sweep.
+            continue
         except Exception:
             logger.exception("Failed to delete expired v2 audio")
             stats["errors"] += 1
+    stats["errors"] += len(unreadable)
 
     stats["total_deleted"] = stats["deleted_original"] + stats["deleted_translated"]
     logger.info("Audio cleanup completed: %s", sanitize_log_value(stats))
@@ -341,6 +374,8 @@ def get_disk_usage(*, base_dir: Path) -> dict:
         try:
             stats[f"{variant.value}_bytes"] += filepath.stat().st_size
             stats[f"{variant.value}_files"] += 1
+        except FileNotFoundError:
+            continue
         except Exception:
             logger.exception("Failed to stat v2 audio")
 
