@@ -9,6 +9,7 @@ from services.api_gateway.studio_runtime_flow import (
     require_validated_runtime_configuration,
 )
 from services.api_gateway.tenant_context import StudioTenantContext, require_studio_tenant_context
+from tests.audio_base_dir import isolated_audio_base_dir  # noqa: F401 - autouse fixture
 from tests.gateway_container import installed_gateway_dependencies
 
 REVISION = f"sha256:{'a' * 64}"

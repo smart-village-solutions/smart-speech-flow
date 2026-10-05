@@ -30,7 +30,7 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     # one failed timeout pass must not end the monitor
     ("services/api_gateway/background_tasks.py", "session_timeout_monitor"): ["boundary"],
     # one failed retention pass must not end retention
-    ("services/api_gateway/background_tasks.py", "audio_cleanup_task"): ["boundary"],
+    ("services/api_gateway/background_tasks.py", "_step"): ["boundary"],
     # feedback stays off (503) and is retried
     ("services/api_gateway/feedback/wiring.py", "_connect_feedback_request_path"): ["fallback"],
     # Studio feedback reads stay off (503) and are retried

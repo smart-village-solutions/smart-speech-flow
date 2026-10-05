@@ -212,3 +212,156 @@ tests:
       - eval_time: 35m
         alertname: TTSVRAMOverBudget
         exp_alerts: []
+
+  # Audio retention (#426). The pass runs hourly and stamps
+  # audio_cleanup_last_run_timestamp_seconds, deleting nothing on a quiet
+  # deployment or with SSF_CONTENT_RETENTION_HOURS=0. Neither may alert.
+  - interval: 1m
+    input_series:
+      - series: 'audio_cleanup_last_run_timestamp_seconds{job="api_gateway",instance="api_gateway:8000"}'
+        values: "0+0x59 3600+0x59 7200+0x59 10800+0x59 14400+0x59"
+      - series: 'audio_cleanup_deleted_files_total{job="api_gateway",instance="api_gateway:8000",directory="original"}'
+        values: "0+0x299"
+      - series: 'audio_cleanup_errors_total{job="api_gateway",instance="api_gateway:8000"}'
+        values: "0+0x299"
+    alert_rule_test:
+      - eval_time: 299m
+        alertname: AudioCleanupNotRunning
+        exp_alerts: []
+      - eval_time: 299m
+        alertname: AudioCleanupErrors
+        exp_alerts: []
+
+  # The gateway is up but the pass stopped after its first run: stale for
+  # 2.5h, then the 1h hold.
+  - interval: 1m
+    input_series:
+      - series: 'audio_cleanup_last_run_timestamp_seconds{job="api_gateway",instance="api_gateway:8000"}'
+        values: "0+0x299"
+    alert_rule_test:
+      - eval_time: 205m
+        alertname: AudioCleanupNotRunning
+        exp_alerts: []
+      - eval_time: 215m
+        alertname: AudioCleanupNotRunning
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: audio-storage
+            exp_annotations:
+              summary: The audio retention pass has stopped reporting.
+              description: >-
+                No retention pass has completed for more than two and a half
+                hours, so recordings and transcripts past
+                SSF_CONTENT_RETENTION_HOURS may not be deleted. Check the gateway
+                log for the hourly Audio-Cleanup line and for an error from the
+                pass.
+
+  # A pass that never completed: the gauge keeps the gateway's start time,
+  # here 0, and the alert waits the same 2.5h + 1h as for a stalled pass.
+  - interval: 1m
+    input_series:
+      - series: 'audio_cleanup_last_run_timestamp_seconds{job="api_gateway",instance="api_gateway:8000"}'
+        values: "0+0x299"
+      - series: 'up{job="api_gateway",instance="api_gateway:8000"}'
+        values: "1+0x299"
+    alert_rule_test:
+      - eval_time: 205m
+        alertname: AudioCleanupNotRunning
+        exp_alerts: []
+      - eval_time: 215m
+        alertname: AudioCleanupNotRunning
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: audio-storage
+            exp_annotations:
+              summary: The audio retention pass has stopped reporting.
+              description: >-
+                No retention pass has completed for more than two and a half
+                hours, so recordings and transcripts past
+                SSF_CONTENT_RETENTION_HOURS may not be deleted. Check the gateway
+                log for the hourly Audio-Cleanup line and for an error from the
+                pass.
+
+  # The gateway is down: no audio series at all. APIGatewayScrapeDown reports
+  # that; this alert must not repeat it.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="api_gateway",instance="api_gateway:8000"}'
+        values: "0+0x299"
+    alert_rule_test:
+      - eval_time: 299m
+        alertname: AudioCleanupNotRunning
+        exp_alerts: []
+
+  # The pass runs but cannot delete: the root-owned audio volume.
+  - interval: 1m
+    input_series:
+      - series: 'audio_cleanup_errors_total{job="api_gateway",instance="api_gateway:8000"}'
+        values: "0+0x59 3+0x60"
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: AudioCleanupErrors
+        exp_alerts: []
+      - eval_time: 80m
+        alertname: AudioCleanupErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: audio-storage
+            exp_annotations:
+              summary: The audio retention pass cannot delete expired recordings.
+              description: >-
+                3 failed deletions in the last two hours. Each hourly pass
+                retries the same files, so this counts attempts, not files; the
+                recordings outlive SSF_CONTENT_RETENTION_HOURS until it clears.
+                The gateway log names the failure; an audio volume the gateway's
+                user cannot write or read is the usual cause.
+
+  # A window whose first sample is already non-zero: increase() extrapolates
+  # 3 failures to about 3.025, and the description still says 3.
+  - interval: 1m
+    input_series:
+      - series: 'audio_cleanup_errors_total{job="api_gateway",instance="api_gateway:8000"}'
+        values: "0+0x9 3+0x59 6+0x100"
+    alert_rule_test:
+      - eval_time: 140m
+        alertname: AudioCleanupErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: audio-storage
+            exp_annotations:
+              summary: The audio retention pass cannot delete expired recordings.
+              description: >-
+                3 failed deletions in the last two hours. Each hourly pass
+                retries the same files, so this counts attempts, not files; the
+                recordings outlive SSF_CONTENT_RETENTION_HOURS until it clears.
+                The gateway log names the failure; an audio volume the gateway's
+                user cannot write or read is the usual cause.
+
+  # Neither directory alone is over 8 GiB; together they are.
+  - interval: 1m
+    input_series:
+      - series: 'audio_storage_disk_usage_bytes{job="api_gateway",instance="api_gateway:8000",directory="original"}'
+        values: "5368709120+0x20"
+      - series: 'audio_storage_disk_usage_bytes{job="api_gateway",instance="api_gateway:8000",directory="translated"}'
+        values: "4294967296+0x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AudioStorageDiskUsageHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: audio-storage
+            exp_annotations:
+              summary: Stored audio exceeds 8 GiB.
+              description: >-
+                Stored audio totals 9 GiB. Retention should keep it well below
+                this, so check AudioCleanupNotRunning and AudioCleanupErrors and
+                the SSF_CONTENT_RETENTION_HOURS setting. ServerDiskUsageHigh
+                covers the disk itself.
+      - eval_time: 10m
+        alertname: AudioStorageDiskUsageCritical
+        exp_alerts: []

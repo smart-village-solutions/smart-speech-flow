@@ -218,7 +218,7 @@ def test_the_cleanup_task_removes_expired_audio_from_its_store(
 
     class Sessions:
         def sweep_expired_content(self, _now: Any) -> dict[str, int]:
-            return {"refused_removed": 0, "expired_removed": 0}
+            return {"refused_removed": 0, "expired_removed": 0, "failed": 0}
 
     # Its own loop: `asyncio.sleep` is patched for the whole module while this runs.
     monkeypatch.setattr(background_tasks.asyncio, "sleep", one_pass)
