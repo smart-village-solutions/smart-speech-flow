@@ -3,12 +3,15 @@
 import hashlib
 import json
 from copy import deepcopy
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from fastapi import FastAPI, Header, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+
+from services.api_gateway.studio_login_directory_client import StudioLoginDirectory
+from services.api_gateway.studio_runtime_client import RuntimeConfiguration
+from services.api_gateway.studio_v1 import StudioV1ErrorEnvelope
 
 app = FastAPI(title="Studio Runtime Configuration Mock")
 
@@ -36,177 +39,46 @@ DirectoryErrorCode = Literal[
 ]
 
 
-class RuntimeError(BaseModel):
-    """The nested error object defined by the Studio V1 contract."""
-
-    code: RuntimeErrorCode
-    message: str
-    retryable: bool
-    correlation_id: str = Field(alias="correlationId")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class RuntimeErrorEnvelope(BaseModel):
-    """The Studio V1 error envelope returned for every non-success response."""
-
-    contract_version: str = Field(alias="contractVersion")
-    error: RuntimeError
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class DirectoryError(BaseModel):
-    """The nested error object for the login-directory V1 contract."""
-
-    code: DirectoryErrorCode
-    message: str
-    retryable: bool
-    correlation_id: str = Field(alias="correlationId")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class DirectoryErrorEnvelope(BaseModel):
-    """The V1 error envelope returned by the login-directory endpoint."""
-
-    contract_version: str = Field(alias="contractVersion")
-    error: DirectoryError
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class TenantResponse(BaseModel):
-    """The tenant section of a V1 runtime configuration."""
-
-    id: str
-    display_name: str = Field(alias="displayName")
-    time_zone: str = Field(alias="timeZone")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class BrandingAssetResponse(BaseModel):
-    """An optional logo or icon asset in a V1 runtime configuration."""
-
-    url: str
-    alternative_text: str = Field(alias="alternativeText")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class BrandingResponse(BaseModel):
-    """The branding section of a V1 runtime configuration."""
-
-    logo: BrandingAssetResponse | None
-    icon: BrandingAssetResponse | None
-
-
-class LocaleResponse(BaseModel):
-    """A localized V1 runtime configuration entry."""
-
-    locale: str
-    authenticated_home_explanation_html: str = Field(alias="authenticatedHomeExplanationHtml")
-    guest_explanation_html: str = Field(alias="guestExplanationHtml")
-    conversation_content_storage_question_html: str | None = Field(
-        alias="conversationContentStorageQuestionHtml"
-    )
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class LocalizationResponse(BaseModel):
-    """The localization section of a V1 runtime configuration."""
-
-    default_locale: str = Field(alias="defaultLocale")
-    locales: list[LocaleResponse]
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class ConversationContentStorageResponse(BaseModel):
-    """The conversation-content storage policy section."""
-
-    mode: str
-
-
-class RuntimeConfigurationResponse(BaseModel):
-    """The successful Studio Runtime Configuration V1 response."""
-
-    contract_version: str = Field(alias="contractVersion")
-    configuration_revision: str = Field(alias="configurationRevision")
-    authorization_revision: str = Field(alias="authorizationRevision")
-    tenant: TenantResponse
-    branding: BrandingResponse
-    localization: LocalizationResponse
-    conversation_content_storage: ConversationContentStorageResponse = Field(
-        alias="conversationContentStorage"
-    )
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class AdminLoginTenantResponse(BaseModel):
-    """A public administrative tenant entry in the V1 login directory."""
-
-    id: str
-    display_name: str = Field(alias="displayName")
-    realm: str
-    studio_url: str | None = Field(default=None, alias="studioUrl")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class AdminLoginDirectoryResponse(BaseModel):
-    """The successful tenant-unbound Studio login-directory V1 response."""
-
-    contract_version: str = Field(alias="contractVersion")
-    directory_revision: str = Field(alias="directoryRevision")
-    tenants: list[AdminLoginTenantResponse]
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
 _ERROR_RESPONSES = {
     401: {
-        "model": RuntimeErrorEnvelope,
+        "model": StudioV1ErrorEnvelope,
         "description": "Service authentication failed.",
     },
     403: {
-        "model": RuntimeErrorEnvelope,
+        "model": StudioV1ErrorEnvelope,
         "description": "Service permission is missing.",
     },
     404: {
-        "model": RuntimeErrorEnvelope,
+        "model": StudioV1ErrorEnvelope,
         "description": "The tenant does not exist or the selector is malformed.",
     },
     409: {
-        "model": RuntimeErrorEnvelope,
+        "model": StudioV1ErrorEnvelope,
         "description": "The tenant or SSF plugin is not ready.",
     },
     503: {
-        "model": RuntimeErrorEnvelope,
+        "model": StudioV1ErrorEnvelope,
         "description": "Runtime configuration is unavailable.",
     },
 }
 
 _DIRECTORY_ERROR_RESPONSES = {
     401: {
-        "model": DirectoryErrorEnvelope,
+        "model": StudioV1ErrorEnvelope,
         "description": "Service authentication failed.",
     },
     403: {
-        "model": DirectoryErrorEnvelope,
+        "model": StudioV1ErrorEnvelope,
         "description": "Service permission is missing.",
     },
-    404: {"model": DirectoryErrorEnvelope, "description": "The request is malformed."},
+    404: {"model": StudioV1ErrorEnvelope, "description": "The request is malformed."},
     503: {
-        "model": DirectoryErrorEnvelope,
+        "model": StudioV1ErrorEnvelope,
         "description": "Login directory is unavailable.",
     },
 }
 
-_TENANT_CONFIGURATION_TEMPLATES: dict[str, dict[str, Any]] = {
+TENANT_CONFIGURATION_TEMPLATES: dict[str, dict[str, Any]] = {
     "tenant-kassel": {
         "contractVersion": _CONTRACT_VERSION,
         "tenant": {
@@ -277,7 +149,7 @@ def _revision(payload: dict[str, Any]) -> str:
 
 def _configuration_for(tenant_id: str) -> dict[str, Any]:
     """Return the effective configuration and its two deterministic revisions."""
-    configuration = deepcopy(_TENANT_CONFIGURATION_TEMPLATES[tenant_id])
+    configuration = deepcopy(TENANT_CONFIGURATION_TEMPLATES[tenant_id])
     authorization = {
         "tenantId": tenant_id,
         "permissions": ["ssf.runtime-configuration.read"],
@@ -299,7 +171,7 @@ def _login_directory() -> dict[str, Any]:
 
 def _error_response(
     status_code: int,
-    code: RuntimeErrorCode,
+    code: RuntimeErrorCode | DirectoryErrorCode,
     correlation_id: str,
     retryable: bool,
     message: str = _UNAVAILABLE_MESSAGE,
@@ -319,31 +191,9 @@ def _error_response(
     )
 
 
-def _directory_error_response(
-    status_code: int,
-    code: DirectoryErrorCode,
-    correlation_id: str,
-    retryable: bool,
-    message: str = _UNAVAILABLE_MESSAGE,
-) -> JSONResponse:
-    """Return a stable V1 error envelope for the tenant-unbound directory."""
-    return JSONResponse(
-        status_code=status_code,
-        content={
-            "contractVersion": _CONTRACT_VERSION,
-            "error": {
-                "code": code,
-                "message": message,
-                "retryable": retryable,
-                "correlationId": correlation_id,
-            },
-        },
-    )
-
-
 @app.get(
     "/internal/plugins/ssf/v1/runtime-configuration",
-    response_model=RuntimeConfigurationResponse,
+    response_model=RuntimeConfiguration,
     responses=_ERROR_RESPONSES,
 )
 def runtime_configuration(
@@ -385,14 +235,14 @@ def runtime_configuration(
         return _error_response(status_code, code, x_correlation_id, retryable)
     if x_mock_scenario == "unavailable":
         return _error_response(503, "runtime_configuration_unavailable", x_correlation_id, True)
-    if x_studio_tenant_id not in _TENANT_CONFIGURATION_TEMPLATES:
+    if x_studio_tenant_id not in TENANT_CONFIGURATION_TEMPLATES:
         return _error_response(404, "tenant_not_found", x_correlation_id, False)
     return _configuration_for(x_studio_tenant_id)
 
 
 @app.get(
     "/internal/plugins/ssf/v1/admin-login-tenants",
-    response_model=AdminLoginDirectoryResponse,
+    response_model=StudioLoginDirectory,
     responses=_DIRECTORY_ERROR_RESPONSES,
 )
 def admin_login_tenants(
@@ -406,14 +256,14 @@ def admin_login_tenants(
 ) -> dict[str, Any] | JSONResponse:
     """Return ready tenants for authorized, tenant-unbound service callers."""
     if authorization not in {_AUTHORIZED_TOKEN, _UNAUTHORIZED_TOKEN}:
-        return _directory_error_response(
+        return _error_response(
             401,
             "service_authentication_invalid",
             x_correlation_id or "unavailable",
             False,
         )
     if authorization == _UNAUTHORIZED_TOKEN:
-        return _directory_error_response(
+        return _error_response(
             403, "service_action_forbidden", x_correlation_id or "unavailable", False
         )
     if (
@@ -423,13 +273,9 @@ def admin_login_tenants(
         or x_tenant_id is not None
         or request.url.query
     ):
-        return _directory_error_response(
-            404, "tenant_not_found", x_correlation_id or "unavailable", False
-        )
+        return _error_response(404, "tenant_not_found", x_correlation_id or "unavailable", False)
     if x_mock_scenario == "unavailable":
-        return _directory_error_response(
-            503, "admin_login_directory_unavailable", x_correlation_id, True
-        )
+        return _error_response(503, "admin_login_directory_unavailable", x_correlation_id, True)
     return _login_directory()
 
 
@@ -455,6 +301,13 @@ def _custom_openapi() -> dict[str, Any]:
             if parameter["in"] == "header" and parameter["name"] in header_names:
                 parameter["required"] = True
                 parameter["schema"] = {"type": "string"}
+    # The shared envelope types `code` as a string; document what this mock emits.
+    emitted_codes = {
+        "/internal/plugins/ssf/v1/runtime-configuration": get_args(RuntimeErrorCode),
+        "/internal/plugins/ssf/v1/admin-login-tenants": get_args(DirectoryErrorCode),
+    }
+    for path, codes in emitted_codes.items():
+        schema["paths"][path]["get"]["x-error-codes"] = sorted(codes)
     app.openapi_schema = schema
     return app.openapi_schema
 

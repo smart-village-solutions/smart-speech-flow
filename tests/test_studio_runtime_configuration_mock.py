@@ -174,9 +174,9 @@ def test_openapi_documents_every_runtime_configuration_error() -> None:
     for status_code in ("401", "403", "404", "409", "503"):
         assert responses[status_code]["description"]
         assert responses[status_code]["content"]["application/json"]["schema"]["$ref"].endswith(
-            "RuntimeErrorEnvelope"
+            "StudioV1ErrorEnvelope"
         )
-    assert set(schema["components"]["schemas"]["RuntimeError"]["properties"]["code"]["enum"]) == {
+    assert set(schema["paths"][PATH]["get"]["x-error-codes"]) == {
         "service_authentication_invalid",
         "service_action_forbidden",
         "tenant_not_found",
@@ -205,17 +205,17 @@ def test_openapi_documents_required_v1_headers_and_success_contract() -> None:
         assert headers[header_name]["schema"] == {"type": "string"}
 
     success_schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
-    assert success_schema["$ref"].endswith("RuntimeConfigurationResponse")
-    response_definition = schema["components"]["schemas"]["RuntimeConfigurationResponse"]
+    assert success_schema["$ref"].endswith("/RuntimeConfiguration")
+    response_definition = schema["components"]["schemas"]["RuntimeConfiguration"]
     assert {"configurationRevision", "authorizationRevision", "localization"} <= set(
         response_definition["properties"]
     )
-    branding_definition = schema["components"]["schemas"]["BrandingResponse"]
+    branding_definition = schema["components"]["schemas"]["Branding"]
     logo_schema = branding_definition["properties"]["logo"]
     assert {item["$ref"] for item in logo_schema["anyOf"] if "$ref" in item} == {
-        "#/components/schemas/BrandingAssetResponse"
+        "#/components/schemas/MediaAsset"
     }
-    asset_definition = schema["components"]["schemas"]["BrandingAssetResponse"]
+    asset_definition = schema["components"]["schemas"]["MediaAsset"]
     assert {"url", "alternativeText"} <= set(asset_definition["properties"])
 
 
@@ -317,8 +317,8 @@ def test_openapi_documents_login_directory_contract_and_required_headers() -> No
         assert headers[header_name]["schema"] == {"type": "string"}
     assert "x-studio-tenant-id" not in headers
     success_schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
-    assert success_schema["$ref"].endswith("AdminLoginDirectoryResponse")
-    response_definition = schema["components"]["schemas"]["AdminLoginDirectoryResponse"]
+    assert success_schema["$ref"].endswith("/StudioLoginDirectory")
+    response_definition = schema["components"]["schemas"]["StudioLoginDirectory"]
     assert {"contractVersion", "directoryRevision", "tenants"} <= set(
         response_definition["properties"]
     )
