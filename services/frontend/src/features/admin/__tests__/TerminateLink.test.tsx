@@ -1,24 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { recordRequests } from '@/test/recordRequests';
 import { server } from '@/test/setup';
 import { TerminateLink } from '@/features/admin/TerminateLink';
 
 const LINK = 'Gespräch beenden';
 
-afterEach(() => server.events.removeAllListeners());
-
-const countDeletes = () => {
-  const calls: string[] = [];
-  server.events.on('request:start', ({ request }) => {
-    if (request.method === 'DELETE') {
-      calls.push(request.url);
-    }
-  });
-  return calls;
-};
+const countDeletes = () => recordRequests((request) => request.method === 'DELETE');
 
 describe('TerminateLink', () => {
   it('asks before ending anything', async () => {

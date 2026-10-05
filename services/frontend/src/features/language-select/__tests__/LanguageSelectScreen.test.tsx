@@ -1,5 +1,5 @@
-import { http, HttpResponse, delay } from 'msw';
-import { screen } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
+import { screen, waitForElementToBeRemoved } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { Route, Routes } from 'react-router-dom';
@@ -19,8 +19,9 @@ function tree() {
 const route = '/s/A1B2C3D4/language';
 
 describe('LanguageSelectScreen', () => {
-  it('positions content below the header with the shared content offset', () => {
+  it('positions content below the header with the shared content offset', async () => {
     renderWithProviders(tree(), { route });
+    await screen.findByRole('button', { name: /العربية/ });
 
     expect(
       screen.getByRole('heading', { name: 'Choose your language' }).parentElement?.parentElement
@@ -51,16 +52,27 @@ describe('LanguageSelectScreen', () => {
   });
 
   it('shows placeholder rows while the list loads', async () => {
+    let answer = () => {};
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
     server.use(
       http.get('*/api/languages/supported', async () => {
-        await delay(50);
+        await answered;
         return HttpResponse.json({ languages: {}, admin_default: 'de', popular: [] });
       })
     );
 
     renderWithProviders(tree(), { route });
 
-    expect(screen.getByRole('status', { name: 'Choose your language' })).toBeInTheDocument();
+    try {
+      expect(screen.getByRole('status', { name: 'Choose your language' })).toBeInTheDocument();
+    } finally {
+      answer();
+    }
+    await waitForElementToBeRemoved(() =>
+      screen.queryByRole('status', { name: 'Choose your language' })
+    );
   });
 
   it('offers a retry when the list cannot be loaded', async () => {

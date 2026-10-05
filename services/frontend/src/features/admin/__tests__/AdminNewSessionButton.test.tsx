@@ -1,25 +1,19 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { installFakeClipboard } from '@/test/fakeClipboard';
+import { recordRequests } from '@/test/recordRequests';
 import { server } from '@/test/setup';
 import { AdminNewSessionButton } from '@/features/admin/AdminNewSessionButton';
 
 const START = 'Neues Gespräch starten';
 
-afterEach(() => server.events.removeAllListeners());
-
-const countCreates = () => {
-  const calls: string[] = [];
-  server.events.on('request:start', ({ request }) => {
-    if (request.method === 'POST' && request.url.includes('/api/admin/session/create')) {
-      calls.push(request.url);
-    }
-  });
-  return calls;
-};
+const countCreates = () =>
+  recordRequests(
+    (request) => request.method === 'POST' && request.url.includes('/api/admin/session/create')
+  );
 
 const renderButton = (liveSessionId: string | null, onEnter = vi.fn()) => {
   renderWithProviders(<AdminNewSessionButton liveSessionId={liveSessionId} onEnter={onEnter} />, {
@@ -113,12 +107,7 @@ describe('AdminNewSessionButton', () => {
   // customer joins a conversation nobody is watching.
   it('terminates the session it created when the invite is cancelled', async () => {
     installFakeClipboard();
-    const deletes: string[] = [];
-    server.events.on('request:start', ({ request }) => {
-      if (request.method === 'DELETE') {
-        deletes.push(request.url);
-      }
-    });
+    const deletes = recordRequests((request) => request.method === 'DELETE');
     renderButton(null);
 
     await userEvent.click(await screen.findByRole('button', { name: START }));

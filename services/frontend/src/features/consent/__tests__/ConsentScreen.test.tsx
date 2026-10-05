@@ -47,8 +47,9 @@ const sessionFixture = {
 const route = '/s/A1B2C3D4/info/en';
 
 describe('ConsentScreen', () => {
-  it('positions content below the header with the shared content offset', () => {
+  it('positions content below the header with the shared content offset', async () => {
     renderWithProviders(tree(), { route });
+    await screen.findByRole('img', { name: 'English' });
 
     expect(
       screen.getByText(/KasselDIALOG is an automatic real-time/).parentElement?.parentElement
