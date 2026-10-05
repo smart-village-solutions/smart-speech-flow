@@ -1,4 +1,4 @@
-FROM nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04 AS wheel-builder
+FROM nvidia/cuda:13.4.2-cudnn-runtime-ubuntu24.04 AS wheel-builder
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends espeak-ng python3 python3-pip \
@@ -59,7 +59,7 @@ COPY services/__init__.py ./services/__init__.py
 COPY services/tts/__init__.py services/tts/voices.py services/tts/fetch_voices.py ./services/tts/
 RUN python3 -m services.tts.fetch_voices
 
-FROM nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04
+FROM nvidia/cuda:13.4.2-cudnn-runtime-ubuntu24.04
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl espeak-ng python3 python3-pip \
