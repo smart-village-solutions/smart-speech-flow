@@ -9,10 +9,10 @@ import pytest
 import services.api_gateway.studio_runtime_client as runtime_client_module
 from services.api_gateway.studio_runtime_client import (
     RUNTIME_PATH,
-    RuntimeHttpResponse,
     StudioRuntimeClient,
     StudioRuntimeClientError,
 )
+from services.api_gateway.studio_v1 import StudioV1HttpResponse
 
 REVISION = f"sha256:{'a' * 64}"
 
@@ -44,18 +44,18 @@ def valid_configuration() -> dict[str, Any]:
 
 
 class StubTransport:
-    def __init__(self, response: RuntimeHttpResponse) -> None:
+    def __init__(self, response: StudioV1HttpResponse) -> None:
         self.response = response
         self.calls: list[tuple[str, Mapping[str, str], float]] = []
 
     async def get(
         self, url: str, headers: Mapping[str, str], timeout_seconds: float
-    ) -> RuntimeHttpResponse:
+    ) -> StudioV1HttpResponse:
         self.calls.append((url, headers, timeout_seconds))
         return self.response
 
 
-def client(response: RuntimeHttpResponse) -> tuple[StudioRuntimeClient, StubTransport]:
+def client(response: StudioV1HttpResponse) -> tuple[StudioRuntimeClient, StubTransport]:
     transport = StubTransport(response)
 
     async def token_provider() -> str:
@@ -71,7 +71,7 @@ def client(response: RuntimeHttpResponse) -> tuple[StudioRuntimeClient, StubTran
 
 @pytest.mark.asyncio
 async def test_accepts_valid_response_and_sends_fixed_contract_request() -> None:
-    runtime_client, transport = client(RuntimeHttpResponse(200, valid_configuration()))
+    runtime_client, transport = client(StudioV1HttpResponse(200, valid_configuration()))
 
     configuration = await runtime_client.fetch("tenant-kassel", "correlation-1")
 
@@ -94,7 +94,7 @@ async def test_accepts_unknown_optional_v1_fields() -> None:
     payload = valid_configuration()
     payload["optionalExtension"] = {"enabled": True}
     payload["tenant"]["optionalTenantField"] = "value"
-    runtime_client, _ = client(RuntimeHttpResponse(200, payload))
+    runtime_client, _ = client(StudioV1HttpResponse(200, payload))
 
     configuration = await runtime_client.fetch("tenant-kassel", "correlation-1")
 
@@ -116,7 +116,7 @@ async def test_accepts_unknown_optional_v1_fields() -> None:
 async def test_rejects_invalid_known_contract_fields(mutate: Any) -> None:
     payload = valid_configuration()
     mutate(payload)
-    runtime_client, _ = client(RuntimeHttpResponse(200, payload))
+    runtime_client, _ = client(StudioV1HttpResponse(200, payload))
 
     with pytest.raises(StudioRuntimeClientError) as caught:
         await runtime_client.fetch("tenant-kassel", "correlation-1")
@@ -129,7 +129,7 @@ async def test_rejects_invalid_known_contract_fields(mutate: Any) -> None:
 async def test_rejects_tenant_mismatch() -> None:
     payload = valid_configuration()
     payload["tenant"]["id"] = "tenant-fulda"
-    runtime_client, _ = client(RuntimeHttpResponse(200, payload))
+    runtime_client, _ = client(StudioV1HttpResponse(200, payload))
 
     with pytest.raises(StudioRuntimeClientError) as caught:
         await runtime_client.fetch("tenant-kassel", "correlation-1")
@@ -159,7 +159,7 @@ async def test_preserves_stable_error_retryability(status: int, code: str, retry
             "correlationId": "correlation-1",
         },
     }
-    runtime_client, _ = client(RuntimeHttpResponse(status, payload))
+    runtime_client, _ = client(StudioV1HttpResponse(status, payload))
 
     with pytest.raises(StudioRuntimeClientError) as caught:
         await runtime_client.fetch("tenant-kassel", "correlation-1")
@@ -173,7 +173,7 @@ async def test_preserves_stable_error_retryability(status: int, code: str, retry
 async def test_rejects_a_non_ascii_studio_tenant_as_a_mismatch() -> None:
     payload = valid_configuration()
     payload["tenant"]["id"] = "tenant-kässel"
-    runtime_client, _ = client(RuntimeHttpResponse(200, payload))
+    runtime_client, _ = client(StudioV1HttpResponse(200, payload))
 
     with pytest.raises(StudioRuntimeClientError) as caught:
         await runtime_client.fetch("tenant-kassel", "correlation-1")
@@ -191,7 +191,7 @@ async def test_compares_the_tenant_id_in_constant_time(monkeypatch: pytest.Monke
         return compare_digest(left, right)
 
     monkeypatch.setattr(runtime_client_module.hmac, "compare_digest", recording_compare_digest)
-    runtime_client, _ = client(RuntimeHttpResponse(200, valid_configuration()))
+    runtime_client, _ = client(StudioV1HttpResponse(200, valid_configuration()))
 
     await runtime_client.fetch("tenant-kassel", "correlation-1")
 
@@ -200,9 +200,9 @@ async def test_compares_the_tenant_id_in_constant_time(monkeypatch: pytest.Monke
 
 @pytest.mark.asyncio
 async def test_rejects_invalid_error_envelope_and_unexpected_status() -> None:
-    invalid_error_client, _ = client(RuntimeHttpResponse(404, {"error": "tenant secret"}))
+    invalid_error_client, _ = client(StudioV1HttpResponse(404, {"error": "tenant secret"}))
     wrong_code_client, _ = client(
-        RuntimeHttpResponse(
+        StudioV1HttpResponse(
             400,
             {
                 "contractVersion": "1.0",
@@ -215,7 +215,7 @@ async def test_rejects_invalid_error_envelope_and_unexpected_status() -> None:
             },
         )
     )
-    unexpected_client, _ = client(RuntimeHttpResponse(502, {"secret": "do-not-expose"}))
+    unexpected_client, _ = client(StudioV1HttpResponse(502, {"secret": "do-not-expose"}))
 
     with pytest.raises(StudioRuntimeClientError) as invalid_error:
         await invalid_error_client.fetch("tenant-kassel", "correlation-1")
@@ -231,10 +231,22 @@ async def test_rejects_invalid_error_envelope_and_unexpected_status() -> None:
 
 
 @pytest.mark.asyncio
+async def test_rejects_a_non_json_body_with_its_status() -> None:
+    runtime_client, _ = client(StudioV1HttpResponse(502, None))
+
+    with pytest.raises(StudioRuntimeClientError) as caught:
+        await runtime_client.fetch("tenant-kassel", "correlation-1")
+
+    assert caught.value.code == "studio_runtime_response_invalid"
+    assert caught.value.status == 502
+    assert caught.value.retryable is False
+
+
+@pytest.mark.asyncio
 async def test_rejects_disabled_storage_with_non_null_question() -> None:
     payload = deepcopy(valid_configuration())
     payload["conversationContentStorage"]["mode"] = "disabled"
-    runtime_client, _ = client(RuntimeHttpResponse(200, payload))
+    runtime_client, _ = client(StudioV1HttpResponse(200, payload))
 
     with pytest.raises(StudioRuntimeClientError) as caught:
         await runtime_client.fetch("tenant-kassel", "correlation-1")
@@ -244,7 +256,7 @@ async def test_rejects_disabled_storage_with_non_null_question() -> None:
 
 @pytest.mark.asyncio
 async def test_rejects_header_control_characters_before_transport() -> None:
-    runtime_client, transport = client(RuntimeHttpResponse(200, valid_configuration()))
+    runtime_client, transport = client(StudioV1HttpResponse(200, valid_configuration()))
 
     with pytest.raises(ValueError):
         await runtime_client.fetch("tenant-kassel\r\nX-Forged: true", "correlation-1")
@@ -254,7 +266,7 @@ async def test_rejects_header_control_characters_before_transport() -> None:
 
 @pytest.mark.asyncio
 async def test_rejects_empty_service_token_before_transport() -> None:
-    transport = StubTransport(RuntimeHttpResponse(200, valid_configuration()))
+    transport = StubTransport(StudioV1HttpResponse(200, valid_configuration()))
 
     async def invalid_token_provider() -> str:
         return ""
@@ -273,7 +285,7 @@ async def test_rejects_empty_service_token_before_transport() -> None:
 
 @pytest.mark.asyncio
 async def test_rejects_service_token_with_header_control_characters_before_transport() -> None:
-    transport = StubTransport(RuntimeHttpResponse(200, valid_configuration()))
+    transport = StubTransport(StudioV1HttpResponse(200, valid_configuration()))
 
     async def invalid_token_provider() -> str:
         return "service-token\r\nX-Forged: true"
@@ -295,7 +307,7 @@ async def test_classifies_transport_timeout_as_retryable() -> None:
     class TimeoutTransport:
         async def get(
             self, url: str, headers: Mapping[str, str], timeout_seconds: float
-        ) -> RuntimeHttpResponse:
+        ) -> StudioV1HttpResponse:
             raise TimeoutError("transport details")
 
     async def token_provider() -> str:

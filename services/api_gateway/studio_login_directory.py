@@ -90,7 +90,7 @@ def _build_studio_login_directory_service() -> StudioLoginDirectoryService:
         token_provider = StudioRuntimeTokenProvider(StudioTokenConfig.from_env())
         client = StudioLoginDirectoryClient(
             base_url,
-            token_provider,
+            token_provider.get_token,
             timeout_seconds=timeout_seconds,
         )
         return StudioLoginDirectoryService(

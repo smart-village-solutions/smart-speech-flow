@@ -11,7 +11,7 @@ import services.api_gateway.app as gateway
 import services.api_gateway.feedback.wiring as wiring
 from services.api_gateway.routes import admin, customer
 from services.api_gateway.session_lifecycle import SessionLifecycleService
-from services.api_gateway.studio_login_directory_client import DirectoryTransport
+from services.api_gateway.studio_v1 import StudioV1Transport
 from services.api_gateway.tenant_session import TenantSessionKey
 
 
@@ -59,10 +59,10 @@ async def test_lifespan_reports_a_background_task_failure_during_shutdown(
 
 
 @pytest.mark.asyncio
-async def test_unimplemented_directory_transport_fails_explicitly() -> None:
+async def test_unimplemented_studio_transport_fails_explicitly() -> None:
     """An inherited protocol stub must not silently look like a response."""
 
-    class UnimplementedTransport(DirectoryTransport):
+    class UnimplementedTransport(StudioV1Transport):
         pass
 
     transport = UnimplementedTransport()
