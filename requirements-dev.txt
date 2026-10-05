@@ -150,6 +150,7 @@ packaging==26.2
     #   pytest
     #   safety
     #   safety-schemas
+    #   virtualenv
     #   wheel
 pathspec==1.1.1
     # via
@@ -290,7 +291,7 @@ urllib3==2.7.0
     # via
     #   requests
     #   types-requests
-virtualenv==21.7.9
+virtualenv==21.14.3
     # via
     #   -r requirements-dev.in
     #   pre-commit
