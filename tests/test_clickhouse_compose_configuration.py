@@ -1,58 +1,9 @@
 """Regression tests for the internal ClickHouse Compose security contract."""
 
-import base64
-import os
-import subprocess
-import tempfile
-from pathlib import Path
 
-import yaml
-
-# Encoded here rather than written out, so no base64 blob that looks like a real
-# key is committed next to the name of one. Secret scanners cannot tell a fake
-# from the real thing, and they are right not to try.
-TEST_ENCRYPTION_KEY = base64.b64encode(b"test-only-32-byte-key-for-units!").decode()
-
-ROOT = Path(__file__).parents[1]
-
-
-def _clickhouse_service() -> dict:
-    """Return the resolved ClickHouse service using isolated test credentials."""
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as env_file:
-        env_file.write("CLICKHOUSE_DB=ssf_analytics_test\n")
-        env_file.write("CLICKHOUSE_USER=ssf_telemetry_test\n")
-        env_file.write("CLICKHOUSE_PASSWORD=test-only-password\n")
-        env_file.write("KEYCLOAK_DB_NAME=keycloak_test\n")
-        env_file.write("KEYCLOAK_DB_USER=keycloak_test_user\n")
-        env_file.write("KEYCLOAK_DB_PASSWORD=test-only-db-password\n")
-        env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=bootstrap_admin\n")
-        env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=test-only-admin-password\n")
-        env_file.write("KEYCLOAK_HOSTNAME=auth.test.example\n")
-        env_file.write("SSF_POSTGRES_DB=ssf_test\n")
-        env_file.write("SSF_POSTGRES_USER=ssf_test_user\n")
-        env_file.write("SSF_POSTGRES_PASSWORD=test-only-db-password\n")
-        env_file.write("SSF_FEEDBACK_APP_PASSWORD=test-only-app-password\n")
-        env_file.write("SSF_FEEDBACK_MAINTENANCE_PASSWORD=test-only-maint-password\n")
-        env_file.write("SSF_FEEDBACK_READER_PASSWORD=test-only-reader-password\n")
-        env_file.write(f"SSF_FEEDBACK_ENCRYPTION_KEY={TEST_ENCRYPTION_KEY}\n")
-
-    try:
-        result = subprocess.run(
-            ["docker", "compose", "--env-file", env_file.name, "config"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    finally:
-        os.unlink(env_file.name)
-
-    return yaml.safe_load(result.stdout)["services"]["clickhouse"]
-
-
-def test_clickhouse_service_is_internal_and_persistent() -> None:
+def test_clickhouse_service_is_internal_and_persistent(rendered_development_compose: dict) -> None:
     """Fail if ClickHouse becomes public or loses durable storage."""
-    service = _clickhouse_service()
+    service = rendered_development_compose["services"]["clickhouse"]
 
     assert service["image"] == "clickhouse/clickhouse-server:26.3.17.110"
     assert service["restart"] == "always"
@@ -67,9 +18,9 @@ def test_clickhouse_service_is_internal_and_persistent() -> None:
     assert service.get("labels") is None
 
 
-def test_clickhouse_service_receives_required_credentials() -> None:
+def test_clickhouse_service_receives_required_credentials(rendered_development_compose: dict) -> None:
     """Fail if resolved ClickHouse credentials are omitted from the service."""
-    environment = _clickhouse_service()["environment"]
+    environment = rendered_development_compose["services"]["clickhouse"]["environment"]
 
     assert environment["CLICKHOUSE_PASSWORD"] == "test-only-password"
     assert environment["CLICKHOUSE_USER"] == "ssf_telemetry_test"

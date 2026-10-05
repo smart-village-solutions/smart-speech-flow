@@ -12,16 +12,15 @@ therefore no player in the UI.
 import re
 from pathlib import Path
 
-import yaml
+from tests.compose_documents import PRODUCTION_COMPOSE, load_compose
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = REPOSITORY_ROOT / "services" / "api_gateway" / "Dockerfile"
-PRODUCTION_COMPOSE = REPOSITORY_ROOT / "deploy" / "production" / "docker-compose.production.yml"
 
 
 def audio_mount_target() -> str:
     """Where production mounts the audio volume, e.g. ``/data/audio``."""
-    compose = yaml.safe_load(PRODUCTION_COMPOSE.read_text())
+    compose = load_compose(PRODUCTION_COMPOSE)
     targets = [
         entry.split(":", 1)[1]
         for entry in compose["services"]["api_gateway"]["volumes"]

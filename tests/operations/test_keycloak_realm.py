@@ -5,11 +5,11 @@ import tempfile
 from pathlib import Path
 
 import pytest
-import yaml
+
+from tests.compose_documents import DEVELOPMENT_COMPOSE, load_compose
 
 
 DEVELOPMENT_REALM_PATH = Path("deploy/production/keycloak/ssf-realm.json")
-DEVELOPMENT_COMPOSE_PATH = Path("docker-compose.yml")
 DOCKERIGNORE_PATH = Path(".dockerignore")
 KEYCLOAK_DOCKERFILE = Path("services/keycloak/Dockerfile")
 FRONTEND_ASSETS = Path("services/frontend/public/assets")
@@ -37,9 +37,7 @@ def _theme_file(image: str, relative_path: str) -> bytes:
 
 
 def test_development_compose_imports_only_the_local_realm_fixture():
-    keycloak = yaml.safe_load(DEVELOPMENT_COMPOSE_PATH.read_text())["services"][
-        "keycloak"
-    ]
+    keycloak = load_compose(DEVELOPMENT_COMPOSE)["services"]["keycloak"]
 
     assert keycloak["build"] == {"context": ".", "dockerfile": "services/keycloak/Dockerfile"}
     assert "--import-realm" in keycloak["command"]

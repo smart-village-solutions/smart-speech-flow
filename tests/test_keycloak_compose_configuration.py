@@ -1,60 +1,20 @@
 """Regression tests for the Keycloak Compose security contract."""
 
-import base64
-import os
-import subprocess
-import tempfile
 from pathlib import Path
 
-import yaml
-
-# Encoded here rather than written out, so no base64 blob that looks like a real
-# key is committed next to the name of one. Secret scanners cannot tell a fake
-# from the real thing, and they are right not to try.
-TEST_ENCRYPTION_KEY = base64.b64encode(b"test-only-32-byte-key-for-units!").decode()
 
 ROOT = Path(__file__).parents[1]
 KEYCLOAK_DOCKERFILE = ROOT / "services/keycloak/Dockerfile"
 
 
-def _keycloak_services() -> tuple[dict, dict]:
-    """Render Compose with isolated credentials and return Keycloak services."""
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as env_file:
-        env_file.write("CLICKHOUSE_DB=ssf_analytics_test\n")
-        env_file.write("CLICKHOUSE_USER=ssf_telemetry_test\n")
-        env_file.write("CLICKHOUSE_PASSWORD=test-only-password\n")
-        env_file.write("KEYCLOAK_DB_NAME=keycloak_test\n")
-        env_file.write("KEYCLOAK_DB_USER=keycloak_test_user\n")
-        env_file.write("KEYCLOAK_DB_PASSWORD=test-only-db-password\n")
-        env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=bootstrap_admin\n")
-        env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=test-only-admin-password\n")
-        env_file.write("KEYCLOAK_HOSTNAME=auth.test.example\n")
-        env_file.write("SSF_POSTGRES_DB=ssf_test\n")
-        env_file.write("SSF_POSTGRES_USER=ssf_test_user\n")
-        env_file.write("SSF_POSTGRES_PASSWORD=test-only-db-password\n")
-        env_file.write("SSF_FEEDBACK_APP_PASSWORD=test-only-app-password\n")
-        env_file.write("SSF_FEEDBACK_MAINTENANCE_PASSWORD=test-only-maint-password\n")
-        env_file.write("SSF_FEEDBACK_READER_PASSWORD=test-only-reader-password\n")
-        env_file.write(f"SSF_FEEDBACK_ENCRYPTION_KEY={TEST_ENCRYPTION_KEY}\n")
-
-    try:
-        result = subprocess.run(
-            ["docker", "compose", "--env-file", env_file.name, "config"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    finally:
-        os.unlink(env_file.name)
-
-    services = yaml.safe_load(result.stdout)["services"]
+def _keycloak_services(compose: dict) -> tuple[dict, dict]:
+    services = compose["services"]
     return services["keycloak"], services["keycloak-postgres"]
 
 
-def test_keycloak_is_public_only_through_traefik() -> None:
+def test_keycloak_is_public_only_through_traefik(rendered_development_compose: dict) -> None:
     """Fail if Keycloak loses its canonical TLS route or gets a host port."""
-    keycloak, _ = _keycloak_services()
+    keycloak, _ = _keycloak_services(rendered_development_compose)
 
     assert keycloak["image"] == "ssf-keycloak:26.7.2"
     assert keycloak["restart"] == "always"
@@ -66,9 +26,9 @@ def test_keycloak_is_public_only_through_traefik() -> None:
     assert keycloak["healthcheck"]
 
 
-def test_keycloak_postgres_is_private_persistent_and_credentialed() -> None:
+def test_keycloak_postgres_is_private_persistent_and_credentialed(rendered_development_compose: dict) -> None:
     """Fail if the identity database becomes public or loses durable state."""
-    keycloak, postgres = _keycloak_services()
+    keycloak, postgres = _keycloak_services(rendered_development_compose)
 
     assert postgres["image"] == "postgres:17.7-alpine"
     assert postgres["restart"] == "always"

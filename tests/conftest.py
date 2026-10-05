@@ -21,6 +21,12 @@ from services.api_gateway.tenant_context import (
     require_studio_tenant_context,
 )
 from tests.audio_base_dir import isolated_audio_base_dir  # noqa: F401 - autouse fixture
+from tests.compose_documents import (
+    DEVELOPMENT_COMPOSE,
+    PRODUCTION_COMPOSE,
+    load_compose,
+    render_development_compose,
+)
 from tests.gateway_container import installed_gateway_dependencies
 
 REVISION = f"sha256:{'a' * 64}"
@@ -152,6 +158,21 @@ def bypass_admin_auth_for_legacy_route_tests(request):
     app.dependency_overrides.pop(require_ssf_user, None)
     app.dependency_overrides.pop(require_studio_tenant_context, None)
     app.dependency_overrides.pop(require_validated_runtime_configuration, None)
+
+
+@pytest.fixture
+def development_compose() -> dict:
+    return load_compose(DEVELOPMENT_COMPOSE)
+
+
+@pytest.fixture
+def production_compose() -> dict:
+    return load_compose(PRODUCTION_COMPOSE)
+
+
+@pytest.fixture
+def rendered_development_compose() -> dict:
+    return render_development_compose()
 
 
 @pytest.fixture
