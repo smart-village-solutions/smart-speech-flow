@@ -2,6 +2,7 @@
 
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException, Request
@@ -205,7 +206,7 @@ async def test_customer_activation_returns_not_found_after_session_disappears(
     monkeypatch.setattr(
         customer,
         "require_customer_session_key",
-        lambda _session_id, _principal, _sessions: key,
+        AsyncMock(return_value=key),
     )
 
     with pytest.raises(HTTPException) as caught:

@@ -33,16 +33,16 @@ class IndexedRedis(RecordingRedis):
         self.active_key = active_key
         self.member = member
 
-    def scan_iter(self, *, match):
+    async def scan_iter(self, *, match):
         assert match == "ssf:v2:tenant:*:active-admin"
-        return iter([self.active_key])
+        yield self.active_key
 
-    def smembers(self, key):
+    async def smembers(self, key):
         return {self.member}
 
 
 @pytest.mark.parametrize("encoded", [False, True])
-def test_active_index_decodes_members_without_losing_tenant_scope(encoded):
+async def test_active_index_decodes_members_without_losing_tenant_scope(encoded):
     session = make_session("tenant-a", "SESSION1")
     active = tenant_active_sessions_key("ssf", "tenant-a")
     redis = IndexedRedis(
@@ -61,7 +61,7 @@ def test_active_index_decodes_members_without_losing_tenant_scope(encoded):
         ),
     )
 
-    loaded = store.list_active()
+    loaded = await store.list_active()
 
     assert [item.key for item in loaded] == [TenantSessionKey("tenant-a", "SESSION1")]
     assert loaded[0].status is SessionStatus.PENDING
@@ -79,7 +79,7 @@ def test_active_index_decodes_members_without_losing_tenant_scope(encoded):
         "terminated",
     ],
 )
-def test_active_index_rejects_corrupt_records_instead_of_rehydrating_them(corruption):
+async def test_active_index_rejects_corrupt_records_instead_of_rehydrating_them(corruption):
     session = make_session("tenant-a", "SESSION1")
     active = tenant_active_sessions_key("ssf", "tenant-a")
     redis = IndexedRedis(active, "SESSION1")
@@ -110,29 +110,29 @@ def test_active_index_rejects_corrupt_records_instead_of_rehydrating_them(corrup
     )
 
     with pytest.raises(SessionStoreConsistencyError) as failure:
-        store.list_active()
+        await store.list_active()
 
     assert str(failure.value) == "active session index does not match session"
     assert failure.value.__cause__ is None
 
 
 @pytest.mark.parametrize("raw", ["{", "{}", "[]", '{"active": "yes"}'])
-def test_malformed_join_cannot_resolve_a_customer_session(raw):
+async def test_malformed_join_cannot_resolve_a_customer_session(raw):
     redis = RecordingRedis()
     redis.set(join_key("ssf", "SESSION1"), raw)
 
-    assert RedisTenantSessionStore(redis).resolve_join("SESSION1") is None
+    assert await RedisTenantSessionStore(redis).resolve_join("SESSION1") is None
 
 
-def test_malformed_session_is_quarantined_instead_of_loaded():
+async def test_malformed_session_is_quarantined_instead_of_loaded():
     redis = RecordingRedis()
     key = TenantSessionKey("tenant-a", "SESSION1")
     redis.set(session_key("ssf", key), "{")
 
-    assert RedisTenantSessionStore(redis).load(key) is None
+    assert await RedisTenantSessionStore(redis).load(key) is None
 
 
-def test_tenant_active_lookup_rejects_ambiguity_and_excludes_other_tenants():
+async def test_tenant_active_lookup_rejects_ambiguity_and_excludes_other_tenants():
     store = MemoryTenantSessionStore()
     manager = TenantSessionManager(store=store, audio_store=AudioStore.from_environment())
     first = make_session("tenant-a", "SESSION1")
@@ -140,21 +140,21 @@ def test_tenant_active_lookup_rejects_ambiguity_and_excludes_other_tenants():
     foreign = make_session("tenant-b", "SESSION3")
     for session in (first, second, foreign):
         session.owner_ref = OWNER
-        assert store.create(session)
+        assert await store.create(session)
 
     with pytest.raises(ValueError) as failure:
-        manager.get_active_session(tenant_id="tenant-a", owner_ref=OWNER)
+        await manager.get_active_session(tenant_id="tenant-a", owner_ref=OWNER)
 
     assert str(failure.value) == (
         "Mehrere aktive Sessions vorhanden; explizite session_id erforderlich"
     )
-    selected = manager.get_active_session("SESSION2", tenant_id="tenant-a", owner_ref=OWNER)
+    selected = await manager.get_active_session("SESSION2", tenant_id="tenant-a", owner_ref=OWNER)
     assert selected["id"] == "SESSION2"
     assert "tenant_id" not in selected
     assert "runtime_configuration" not in selected
-    assert manager.get_active_session("SESSION3", tenant_id="tenant-a", owner_ref=OWNER) is None
+    assert await manager.get_active_session("SESSION3", tenant_id="tenant-a", owner_ref=OWNER) is None
     first.status = second.status = SessionStatus.TERMINATED
-    assert manager.get_active_session(tenant_id="tenant-a", owner_ref=OWNER) is None
+    assert await manager.get_active_session(tenant_id="tenant-a", owner_ref=OWNER) is None
     # A tenant manager without a store cannot be built any more.
     audio_store = AudioStore.from_environment()
     with pytest.raises(TypeError):
@@ -170,8 +170,8 @@ async def test_unknown_expired_polling_client_does_not_prevent_customer_disconne
     )
     session = make_session("tenant-a", "SESSION1")
     session.created_at = NOW
-    assert store.create(session)
-    manager.customer_connected(session.key)
+    assert await store.create(session)
+    await manager.customer_connected(session.key)
     tick = 0.0
     polling = TenantPollingStore(clock=lambda: tick)
     polling.activate(TenantSessionKey("tenant-a", "MISSING1"), ClientType.ADMIN)
@@ -186,7 +186,7 @@ async def test_unknown_expired_polling_client_does_not_prevent_customer_disconne
     assert session.status is SessionStatus.PENDING
 
 
-def test_sweep_preserves_snapshot_when_store_adds_session_during_write(monkeypatch):
+async def test_sweep_preserves_snapshot_when_store_adds_session_during_write(monkeypatch):
     from services.api_gateway.session_models import SessionMessage
 
     store = MemoryTenantSessionStore()
@@ -208,19 +208,19 @@ def test_sweep_preserves_snapshot_when_store_adds_session_during_write(monkeypat
                 record_authorized=True,
             )
         ]
-        assert store.create(session)
+        assert await store.create(session)
         manager.sessions[session.key] = session
     original_save = store.save
 
-    def save_and_add(session):
-        original_save(session)
+    async def save_and_add(session):
+        await original_save(session)
         added = make_session("tenant-c", "SESSION3")
         manager.sessions[added.key] = added
 
     monkeypatch.setattr(store, "save", save_and_add)
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "24")
 
-    assert manager.sweep_expired_content(NOW) == {
+    assert await manager.sweep_expired_content(NOW) == {
         "refused_removed": 0,
         "expired_removed": 2,
         "failed": 0,

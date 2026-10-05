@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -81,7 +81,7 @@ async def test_endpoint_returns_error_message_after_message_handler_failure(
         close=AsyncMock(),
     )
     sessions = SimpleNamespace(
-        get_session=Mock(return_value=SimpleNamespace(status=SessionStatus.ACTIVE))
+        get_session=AsyncMock(return_value=SimpleNamespace(status=SessionStatus.ACTIVE))
     )
     manager = SimpleNamespace(
         connect_websocket=AsyncMock(return_value="connection-1"),

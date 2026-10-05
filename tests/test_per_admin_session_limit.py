@@ -39,8 +39,8 @@ def _manager(store: MemoryTenantSessionStore | None = None) -> TenantSessionMana
     )
 
 
-def _status(manager: TenantSessionManager, session: Session) -> SessionStatus:
-    stored = manager.get_session(session.key)
+async def _status(manager: TenantSessionManager, session: Session) -> SessionStatus:
+    stored = await manager.get_session(session.key)
     assert stored is not None
     return stored.status
 
@@ -59,8 +59,8 @@ async def test_two_admins_of_one_tenant_converse_in_parallel():
     alice = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=ALICE)
     bob = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=BOB)
 
-    assert _status(manager, alice) is SessionStatus.PENDING
-    assert _status(manager, bob) is SessionStatus.PENDING
+    assert await _status(manager, alice) is SessionStatus.PENDING
+    assert await _status(manager, bob) is SessionStatus.PENDING
 
 
 async def test_an_admins_new_conversation_ends_only_their_own_previous_one():
@@ -70,12 +70,12 @@ async def test_an_admins_new_conversation_ends_only_their_own_previous_one():
 
     second = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=ALICE)
 
-    ended = manager.get_session(first.key)
+    ended = await manager.get_session(first.key)
     assert ended is not None
     assert ended.status is SessionStatus.TERMINATED
     assert ended.termination_reason == "new_session_created"
-    assert _status(manager, colleague) is SessionStatus.PENDING
-    assert _status(manager, second) is SessionStatus.PENDING
+    assert await _status(manager, colleague) is SessionStatus.PENDING
+    assert await _status(manager, second) is SessionStatus.PENDING
 
 
 async def test_an_owner_less_legacy_session_is_not_ended_by_an_admin():
@@ -84,7 +84,7 @@ async def test_an_owner_less_legacy_session_is_not_ended_by_an_admin():
 
     await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=ALICE)
 
-    assert _status(manager, legacy) is SessionStatus.PENDING
+    assert await _status(manager, legacy) is SessionStatus.PENDING
 
 
 async def test_a_create_without_an_owner_ends_nothing():
@@ -93,7 +93,7 @@ async def test_a_create_without_an_owner_ends_nothing():
 
     await manager.create_admin_session("tenant-a", SNAPSHOT)
 
-    assert _status(manager, legacy) is SessionStatus.PENDING
+    assert await _status(manager, legacy) is SessionStatus.PENDING
 
 
 async def test_the_rule_holds_across_a_gateway_restart():
@@ -105,7 +105,7 @@ async def test_the_rule_holds_across_a_gateway_restart():
     restarted = _manager(store)
     await restarted.create_admin_session("tenant-a", SNAPSHOT, owner_ref=ALICE)
 
-    assert _status(restarted, before_restart) is SessionStatus.TERMINATED
+    assert await _status(restarted, before_restart) is SessionStatus.TERMINATED
 
 
 def test_the_owner_survives_the_stored_representation():
@@ -130,10 +130,10 @@ async def test_current_is_the_requesting_admins_own_conversation():
     alice = await lifecycle.create("tenant-a", runtime_configuration("tenant-a"), owner_ref=ALICE)
     bob = await lifecycle.create("tenant-a", runtime_configuration("tenant-a"), owner_ref=BOB)
 
-    assert lifecycle.current("tenant-a", None, owner_ref=ALICE).id == alice.id
-    assert lifecycle.current("tenant-a", None, owner_ref=BOB).id == bob.id
+    assert (await lifecycle.current("tenant-a", None, owner_ref=ALICE)).id == alice.id
+    assert (await lifecycle.current("tenant-a", None, owner_ref=BOB)).id == bob.id
     with pytest.raises(NoActiveSessionError):
-        lifecycle.current("tenant-a", None, owner_ref=admin_ref("tenant-a", "carol-subject"))
+        await lifecycle.current("tenant-a", None, owner_ref=admin_ref("tenant-a", "carol-subject"))
 
 
 async def test_a_named_session_is_found_only_for_its_owner():
@@ -141,9 +141,9 @@ async def test_a_named_session_is_found_only_for_its_owner():
     lifecycle = SessionLifecycleService(manager)
     alice = await lifecycle.create("tenant-a", runtime_configuration("tenant-a"), owner_ref=ALICE)
 
-    assert lifecycle.current("tenant-a", alice.id, owner_ref=ALICE).id == alice.id
+    assert (await lifecycle.current("tenant-a", alice.id, owner_ref=ALICE)).id == alice.id
     with pytest.raises(NoActiveSessionError):
-        lifecycle.current("tenant-a", alice.id, owner_ref=BOB)
+        await lifecycle.current("tenant-a", alice.id, owner_ref=BOB)
 
 
 @pytest.fixture
@@ -165,7 +165,7 @@ def _authenticate_as(subject: str) -> None:
     )
 
 
-def test_http_admins_each_keep_their_own_conversation(http_client: TestClient) -> None:
+async def test_http_admins_each_keep_their_own_conversation(http_client: TestClient) -> None:
     manager = app.state.dependencies.session_manager
     _authenticate_as("alice-subject")
     alice = http_client.post("/api/admin/session/create").json()["session_id"]
@@ -173,7 +173,7 @@ def test_http_admins_each_keep_their_own_conversation(http_client: TestClient) -
     bob = http_client.post("/api/admin/session/create").json()["session_id"]
 
     for session_id in (alice, bob):
-        stored = manager.get_session(TenantSessionKey("tenant-a", session_id))
+        stored = await manager.get_session(TenantSessionKey("tenant-a", session_id))
         assert stored is not None
         assert stored.status is SessionStatus.PENDING
     assert http_client.get("/api/admin/session/current").json()["session_id"] == bob

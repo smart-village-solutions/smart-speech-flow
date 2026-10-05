@@ -8,9 +8,10 @@ from dataclasses import dataclass
 from typing import Any
 
 try:
-    from redis import Redis
+    from redis.asyncio import BlockingConnectionPool, Redis
     from redis.exceptions import RedisError
 except ImportError:  # pragma: no cover - exercised only in stripped deployments
+    BlockingConnectionPool = None  # type: ignore[assignment,misc]
     Redis = None  # type: ignore[assignment]
 
     class RedisError(Exception):  # type: ignore[no-redef]
@@ -18,6 +19,12 @@ except ImportError:  # pragma: no cover - exercised only in stripped deployments
 
 
 logger = logging.getLogger(__name__)
+
+# redis-py's async default pool raises the moment every connection is in use.
+# This one makes a command wait for a free connection instead, and no longer
+# than a command on the wire may take, so a stalled Redis fails both alike.
+_MAX_CONNECTIONS = 100
+_SOCKET_TIMEOUT_SECONDS = 5
 
 
 class TenantPersistenceUnavailable(RuntimeError):
@@ -31,10 +38,8 @@ class TenantPersistenceBinding:
     redis: Any
     namespace: str
 
-    def close(self) -> None:
-        close = getattr(self.redis, "close", None)
-        if callable(close):
-            close()
+    async def close(self) -> None:
+        await self.redis.aclose()
 
 
 def _redis_namespace() -> str:
@@ -44,7 +49,7 @@ def _redis_namespace() -> str:
     return namespace
 
 
-def configure_tenant_persistence() -> TenantPersistenceBinding | None:
+async def configure_tenant_persistence() -> TenantPersistenceBinding | None:
     """Verify the one Redis connection the v2 session and ticket stores share.
 
     Local processes without a configured Redis URL retain the explicit memory
@@ -59,21 +64,29 @@ def configure_tenant_persistence() -> TenantPersistenceBinding | None:
         if deployment == "production":
             raise TenantPersistenceUnavailable("tenant persistence configuration unavailable")
         return None
-    if Redis is None:
+    if Redis is None or BlockingConnectionPool is None:
         raise TenantPersistenceUnavailable("tenant persistence client unavailable")
 
     namespace = _redis_namespace()
     try:
-        redis = Redis.from_url(
+        pool = BlockingConnectionPool.from_url(
             redis_url,
             decode_responses=True,
-            socket_connect_timeout=5,
-            socket_timeout=5,
+            socket_connect_timeout=_SOCKET_TIMEOUT_SECONDS,
+            socket_timeout=_SOCKET_TIMEOUT_SECONDS,
+            max_connections=_MAX_CONNECTIONS,
+            timeout=_SOCKET_TIMEOUT_SECONDS,
         )
-        redis.ping()
+        # from_pool hands the pool to the client, so closing one closes both.
+        redis = Redis.from_pool(pool)
     except (RedisError, OSError, ValueError):
         # ValueError: from_url refusing a malformed URL. `from None` keeps the URL,
         # which can carry credentials, out of the startup log.
+        raise TenantPersistenceUnavailable("tenant persistence connection unavailable") from None
+    try:
+        await redis.ping()
+    except (RedisError, OSError, ValueError):
+        await redis.aclose()
         raise TenantPersistenceUnavailable("tenant persistence connection unavailable") from None
 
     logger.info("tenant_redis_persistence_ready")

@@ -28,7 +28,7 @@ def manager(monkeypatch) -> WebSocketManager:
     monkeypatch.setattr(
         manager.session_manager,
         "get_session",
-        lambda _key: SimpleNamespace(status=SessionStatus.ACTIVE),
+        AsyncMock(return_value=SimpleNamespace(status=SessionStatus.ACTIVE)),
     )
     monkeypatch.setattr(manager.heartbeat, "handle_pong", AsyncMock())
     monkeypatch.setattr(manager, "_handle_client_message", AsyncMock())

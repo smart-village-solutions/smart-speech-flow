@@ -46,9 +46,9 @@ def monitor(registry):
 
 
 @pytest.fixture
-def manager(monkeypatch, monitor):
+async def manager(monkeypatch, monitor):
     sessions = tenant_session_manager()
-    open_session(sessions, "session-1")
+    await open_session(sessions, "session-1")
     real = ws.WebSocketManager(sessions, monitor=monitor)
 
     async def no_heartbeat_loop():

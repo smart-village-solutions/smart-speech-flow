@@ -89,7 +89,9 @@ class SessionLifecycleService:
             owner_ref=owner_ref,
         )
 
-    def current(self, tenant_id: str, session_id: Optional[str], *, owner_ref: str) -> Session:
+    async def current(
+        self, tenant_id: str, session_id: Optional[str], *, owner_ref: str
+    ) -> Session:
         """The admin's active session, or the named one while it is not terminated.
 
         Named or not, only the requesting admin's own sessions count (#476).
@@ -99,21 +101,23 @@ class SessionLifecycleService:
             SessionNotFoundError: the match disappeared before it could be read.
             ValueError: several sessions are active and none was named.
         """
-        active_session_data = self._sessions.get_active_session(
+        active_session_data = await self._sessions.get_active_session(
             session_id=session_id,
             tenant_id=tenant_id,
             owner_ref=owner_ref,
         )
         if not active_session_data:
             raise NoActiveSessionError
-        session = self._sessions.get_session(TenantSessionKey(tenant_id, active_session_data["id"]))
+        session = await self._sessions.get_session(
+            TenantSessionKey(tenant_id, active_session_data["id"])
+        )
         if session is None:
             raise SessionNotFoundError
         return session
 
     async def terminate(self, key: TenantSessionKey) -> bool:
         """End the session; False when it had already ended, which changes nothing."""
-        session = self._sessions.get_session(key)
+        session = await self._sessions.get_session(key)
         if session is None:
             raise SessionNotFoundError
         if session.status == SessionStatus.TERMINATED:
@@ -121,14 +125,14 @@ class SessionLifecycleService:
         await self._sessions.terminate_session(key, "manual_admin_termination")
         return True
 
-    def history(
+    async def history(
         self, tenant_id: str, limit: int, *, owner_ref: str
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """The admin's ended sessions, newest first, and their pending or active ones."""
-        history = self._sessions.get_session_history(
+        history = await self._sessions.get_session_history(
             limit=limit, tenant_id=tenant_id, owner_ref=owner_ref
         )
-        active_sessions = self._sessions.get_active_sessions(
+        active_sessions = await self._sessions.get_active_sessions(
             tenant_id=tenant_id, owner_ref=owner_ref
         )
         return history, active_sessions
@@ -151,7 +155,7 @@ class SessionLifecycleService:
             SessionTerminatedError: the session has ended.
             TenantConflictError: Studio refuses the tenant any session.
         """
-        session = self._sessions.get_session(key)
+        session = await self._sessions.get_session(key)
         if session is None:
             raise SessionNotFoundError
 
@@ -211,7 +215,7 @@ class SessionLifecycleService:
             ),
         )
         await self._sessions.activate_session(key, customer_language)
-        updated = self._sessions.get_session(key)
+        updated = await self._sessions.get_session(key)
         if updated is None:
             raise RuntimeError("session disappeared during a language change")
         return Activation(session=updated, already_active=True)

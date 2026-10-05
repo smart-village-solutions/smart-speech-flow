@@ -74,10 +74,10 @@ class KnownSessions:
     def has_unscoped_session(self, session_id):
         return True
 
-    def resolve_customer_session(self, session_id):
+    async def resolve_customer_session(self, session_id):
         return None
 
-    def resolve_ended_session(self, session_id, *, within):
+    async def resolve_ended_session(self, session_id, *, within):
         return None
 
 

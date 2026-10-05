@@ -35,7 +35,7 @@ async def test_refusal_log_contains_no_conversation_content(
     session_manager.reset(clear_persistence=True)
     session = await session_manager.create_admin_session("tenant-test", SNAPSHOT)
     session.consent_status = ConsentStatus.DECLINED
-    session_manager.store.save(session)
+    await session_manager.store.save(session)
 
     gate = RuntimePolicyGate(
         RecordingClient(configuration(tenant_id="tenant-test", mode="ask")),

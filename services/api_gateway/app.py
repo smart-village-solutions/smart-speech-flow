@@ -62,6 +62,7 @@ def _localhost_origin(port: int, *, secure: bool = False) -> str:
 # Well inside Docker's 10s stop grace: telemetry is the least important thing
 # still holding the process open at teardown.
 QUALITY_TELEMETRY_SHUTDOWN_TIMEOUT_SECONDS = 2.0
+PRESENCE_RELEASE_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 
 
 async def _shutdown_quality_telemetry(exporter: Any, timeout_seconds: float) -> None:
@@ -322,7 +323,12 @@ async def _shut_down(
     # A handler still holding the manager after shutdown persists nothing.
     dependencies.session_manager.runtime_policy = None
     if persistence is not None:
-        persistence.close()
+        # A cancelled poll's shielded presence release may still be writing
+        # through this connection.
+        pending = tuple(dependencies.polling_store.release_tasks)
+        if pending:
+            await asyncio.wait(pending, timeout=PRESENCE_RELEASE_SHUTDOWN_TIMEOUT_SECONDS)
+        await persistence.close()
     telemetry_exporter_at_exit = dependencies.quality_telemetry_exporter
     dependencies.quality_telemetry_exporter = None
     if telemetry_exporter_at_exit is not None:
@@ -335,6 +341,46 @@ async def _shut_down(
     app.state.dependencies = None
 
     print("Shutdown complete", flush=True)
+
+
+async def _start_serving(
+    app: FastAPI,
+    refiner: "BaseTranslationRefiner",
+    tenant_persistence: "TenantPersistenceBinding | None",
+) -> tuple[GatewayDependencies, list[asyncio.Task[None]]]:
+    """Everything startup does once the tenant connection is verified."""
+    metrics: GatewayMetrics = app.state.gateway_metrics
+    runtime_flow, runtime_policy = _build_runtime_policy(app.state.prometheus_registry)
+    pipeline = _build_pipeline_collaborators(
+        app.state.prometheus_registry, metrics.pipeline_admission, refiner
+    )
+
+    dependencies = _build_dependencies(
+        app, tenant_persistence, runtime_flow, runtime_policy, pipeline
+    )
+    if tenant_persistence is not None:
+        # Before any request, socket or background task can see this app's sessions.
+        await dependencies.session_manager.rehydrate_tenant_sessions()
+    app.state.dependencies = dependencies
+    await _attach_quality_telemetry(dependencies, pipeline.telemetry_mode, metrics.refinement)
+
+    # Feedback persistence (#302). Deliberately non-fatal: the gateway serves
+    # the whole conversation pipeline, and an unreachable feedback database
+    # must cost submissions a retryable 503 rather than cost every customer
+    # their session. That is also why Compose starts this service without
+    # waiting for the database to be healthy -- which makes losing the race a
+    # normal first-deploy event, so feedback_connect_task keeps retrying.
+    feedback_dsns = _feedback_dsns()
+    feedback_dsn, maintenance_dsn, read_dsn = feedback_dsns
+    await _wire_feedback(
+        dependencies, feedback_dsn, maintenance_dsn, dependencies.session_manager, read_dsn
+    )
+
+    # The hourly loop's first pass would be an hour away: run one now, so
+    # content that expired during downtime goes and the audio series have
+    # data from the first scrape.
+    await run_retention_pass(dependencies.session_manager, dependencies.audio_store)
+    return dependencies, _start_background_tasks(dependencies, feedback_dsns)
 
 
 @asynccontextmanager
@@ -355,39 +401,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # realtime ticket must share one verified Redis connection in production.
     from .tenant_persistence import configure_tenant_persistence
 
-    tenant_persistence = configure_tenant_persistence()
-    metrics: GatewayMetrics = app.state.gateway_metrics
-    runtime_flow, runtime_policy = _build_runtime_policy(app.state.prometheus_registry)
-    pipeline = _build_pipeline_collaborators(
-        app.state.prometheus_registry, metrics.pipeline_admission, refiner
-    )
-
-    dependencies = _build_dependencies(
-        app, tenant_persistence, runtime_flow, runtime_policy, pipeline
-    )
-    if tenant_persistence is not None:
-        # Before any request, socket or background task can see this app's sessions.
-        dependencies.session_manager.rehydrate_tenant_sessions()
-    app.state.dependencies = dependencies
-    await _attach_quality_telemetry(dependencies, pipeline.telemetry_mode, metrics.refinement)
-
-    # Feedback persistence (#302). Deliberately non-fatal: the gateway serves
-    # the whole conversation pipeline, and an unreachable feedback database
-    # must cost submissions a retryable 503 rather than cost every customer
-    # their session. That is also why Compose starts this service without
-    # waiting for the database to be healthy -- which makes losing the race a
-    # normal first-deploy event, so feedback_connect_task keeps retrying.
-    feedback_dsns = _feedback_dsns()
-    feedback_dsn, maintenance_dsn, read_dsn = feedback_dsns
-    await _wire_feedback(
-        dependencies, feedback_dsn, maintenance_dsn, dependencies.session_manager, read_dsn
-    )
-
-    # The hourly loop's first pass would be an hour away: run one now, so
-    # content that expired during downtime goes and the audio series have
-    # data from the first scrape.
-    await run_retention_pass(dependencies.session_manager, dependencies.audio_store)
-    tasks = _start_background_tasks(dependencies, feedback_dsns)
+    tenant_persistence = await configure_tenant_persistence()
+    started = False
+    try:
+        dependencies, tasks = await _start_serving(app, refiner, tenant_persistence)
+        started = True
+    finally:
+        # A failed startup never reaches _shut_down, which would close it.
+        if not started and tenant_persistence is not None:
+            await tenant_persistence.close()
     _announce("All background tasks started")
     _announce("=" * 80)
 

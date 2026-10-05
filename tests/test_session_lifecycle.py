@@ -77,7 +77,7 @@ async def test_a_first_activation_reads_the_correlation_id_without_studio(
     with pytest.raises(_Unread):
         await SessionLifecycleService(sessions).activate(key, "en", True, None, _must_not_read)
 
-    session = sessions.get_session(key)
+    session = await sessions.get_session(key)
     assert session is not None
     assert session.status is SessionStatus.PENDING
 
@@ -98,7 +98,7 @@ async def test_a_tenant_conflict_refuses_activation(
 
     assert raised.value.code == code
     assert fetcher.correlation_ids == ["corr-1"]
-    session = sessions.get_session(key)
+    session = await sessions.get_session(key)
     assert session is not None
     assert session.status is SessionStatus.PENDING
 
@@ -155,9 +155,9 @@ async def test_create_replaces_only_the_same_tenants_active_session(
         "tenant-a", runtime_configuration("tenant-a"), owner_ref=tenant_a_admin
     )
 
-    assert sessions.get_session(first.key).status is SessionStatus.TERMINATED
-    assert sessions.get_session(other.key).status is SessionStatus.PENDING
-    assert lifecycle.current("tenant-a", None, owner_ref=tenant_a_admin).id == second.id
+    assert (await sessions.get_session(first.key)).status is SessionStatus.TERMINATED
+    assert (await sessions.get_session(other.key)).status is SessionStatus.PENDING
+    assert (await lifecycle.current("tenant-a", None, owner_ref=tenant_a_admin)).id == second.id
 
 
 @pytest.mark.parametrize(

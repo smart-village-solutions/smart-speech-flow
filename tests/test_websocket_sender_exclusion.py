@@ -40,9 +40,9 @@ def _register(manager: ws.WebSocketManager, key: TenantSessionKey, client_type: 
 
 
 @pytest.fixture
-def session():
+async def session():
     sessions = tenant_session_manager()
-    key = open_session(sessions, "session-1")
+    key = await open_session(sessions, "session-1")
     # broadcast_to_session reports every send to the monitor.
     manager = ws.WebSocketManager(sessions, monitor=Mock())
     _, admin, admin_socket = _register(manager, key, ws.ClientType.ADMIN)

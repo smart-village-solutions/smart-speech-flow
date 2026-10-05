@@ -74,9 +74,9 @@ class UnknownSession(LookupError):
 class FeedbackSessions(Protocol):
     """The lookups feedback needs, which both session managers provide."""
 
-    def resolve_customer_session(self, session_id: str) -> Optional[TenantSessionKey]: ...
+    async def resolve_customer_session(self, session_id: str) -> Optional[TenantSessionKey]: ...
 
-    def resolve_ended_session(
+    async def resolve_ended_session(
         self, session_id: str, *, within: timedelta
     ) -> Optional[TenantSessionKey]: ...
 
@@ -109,7 +109,7 @@ class FeedbackService:
 
     async def submit(self, request: FeedbackSubmissionRequest) -> UUID:
         text = self._validated_text(request.improvements)
-        reference, session_key = self._resolve_session(request.session_id)
+        reference, session_key = await self._resolve_session(request.session_id)
         tenant_id = await self._tenant_resolver.resolve(request.session_id, session_key)
 
         feedback_id = uuid4()
@@ -196,7 +196,7 @@ class FeedbackService:
         # that decrypts to nothing an authorised reader can act on.
         return improvements if improvements.strip() else None
 
-    def _resolve_session(self, session_id: str | None) -> tuple[str, TenantSessionKey | None]:
+    async def _resolve_session(self, session_id: str | None) -> tuple[str, TenantSessionKey | None]:
         """The submission's pseudonymous reference, and its key when it has one.
 
         Resolved once and handed to the tenant resolver, rather than resolved
@@ -215,9 +215,9 @@ class FeedbackService:
         if session_id is None:
             return MISSING_REFERENCE, None
         try:
-            key = self._session_manager.resolve_customer_session(session_id)
+            key = await self._session_manager.resolve_customer_session(session_id)
             if key is None and self._grace_window > timedelta(0):
-                key = self._session_manager.resolve_ended_session(
+                key = await self._session_manager.resolve_ended_session(
                     session_id, within=self._grace_window
                 )
         except ValueError:

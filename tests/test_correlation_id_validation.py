@@ -43,18 +43,18 @@ def client(session_manager) -> TestClient:
     return TestClient(app)
 
 
-def _pending(client: TestClient, session_manager):
+async def _pending(client: TestClient, session_manager):
     session_id = client.post("/api/admin/session/create").json()["session_id"]
-    key = session_manager.resolve_customer_session(session_id)
+    key = await session_manager.resolve_customer_session(session_id)
     assert key is not None
     return session_id, key
 
 
 @pytest.mark.parametrize("correlation_id", MALFORMED)
-def test_activation_refuses_a_malformed_correlation_id(
+async def test_activation_refuses_a_malformed_correlation_id(
     session_manager, client, studio, correlation_id
 ):
-    session_id, key = _pending(client, session_manager)
+    session_id, key = await _pending(client, session_manager)
     response = client.post(
         "/api/customer/session/activate",
         json={"session_id": session_id, "customer_language": "en"},
@@ -62,12 +62,12 @@ def test_activation_refuses_a_malformed_correlation_id(
     )
     assert response.status_code == 400
     # The session must not have been touched by a request that was refused.
-    assert session_manager.get_session(key).status.value == "pending"
+    assert (await session_manager.get_session(key)).status.value == "pending"
     assert studio.calls == 0
 
 
-def test_activation_accepts_a_well_formed_correlation_id(session_manager, client, studio):
-    session_id, key = _pending(client, session_manager)
+async def test_activation_accepts_a_well_formed_correlation_id(session_manager, client, studio):
+    session_id, key = await _pending(client, session_manager)
     response = client.post(
         "/api/customer/session/activate",
         json={
@@ -78,17 +78,17 @@ def test_activation_accepts_a_well_formed_correlation_id(session_manager, client
         headers={"X-Correlation-Id": "correlation-1"},
     )
     assert response.status_code == 200
-    assert session_manager.get_session(key).consent_status is ConsentStatus.GRANTED
+    assert (await session_manager.get_session(key)).consent_status is ConsentStatus.GRANTED
 
 
 @pytest.mark.parametrize("correlation_id", MALFORMED)
-def test_a_message_refuses_a_malformed_correlation_id(
+async def test_a_message_refuses_a_malformed_correlation_id(
     client, studio, correlation_id, session_manager
 ):
     # Not merely a 500 risk: an unvalidated header reaches the policy gate,
     # whose blanket `except Exception` turns it into a refusal to persist. That
     # would hand any client a silent switch for another guest's retention.
-    session_id, _key = _pending(client, session_manager)
+    session_id, _key = await _pending(client, session_manager)
     assert (
         client.post(
             "/api/customer/session/activate",

@@ -1,7 +1,7 @@
 """The gateway's long-running loops: session timeouts, socket monitoring, health polling, retention."""
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 if TYPE_CHECKING:
     from .audio_storage import AudioStore
@@ -45,10 +45,10 @@ def _clean_audio(audio_store: "AudioStore") -> bool:
     return True
 
 
-def _sweep_transcripts(session_manager: Any) -> bool:
+async def _sweep_transcripts(session_manager: Any) -> bool:
     from .session_models import utc_now
 
-    content: dict[str, int] = session_manager.sweep_expired_content(utc_now())
+    content: dict[str, int] = await session_manager.sweep_expired_content(utc_now())
     print(
         "🧹 Content-Sweep abgeschlossen: "
         f"{content['refused_removed']} abgelehnt, "
@@ -65,10 +65,10 @@ def _measure_audio(audio_store: "AudioStore") -> bool:
     return True
 
 
-async def _step(name: str, run: Callable[[], bool], *, off_loop: bool) -> bool:
+async def _step(name: str, run: Callable[[], Awaitable[bool]]) -> bool:
     """One step of the pass; its failure must cost neither the other steps nor the loop."""
     try:
-        return await asyncio.to_thread(run) if off_loop else run()
+        return await run()
     except Exception as e:
         print(f"⚠️ Fehler im Audio-Cleanup-Task ({name}): {type(e).__name__}")
         return False
@@ -80,14 +80,15 @@ async def run_retention_pass(session_manager: Any, audio_store: "AudioStore") ->
     Each step runs whatever the others did, so a broken session store cannot
     blind the disk gauges. The pass counts as completed only when all three
     succeed. The file walks run off the event loop; the transcript sweep stays
-    on it, because it changes session state the loop's handlers share.
-    Never raises: the lifespan runs one before serving.
+    on it, because it changes session state the loop's handlers share, and
+    yields to them at every session it saves. Never raises: the lifespan runs
+    one before serving.
     """
-    cleaned = await _step("audio", lambda: _clean_audio(audio_store), off_loop=True)
+    cleaned = await _step("audio", lambda: asyncio.to_thread(_clean_audio, audio_store))
     # Transcripts expire on the same pass. Audio alone would keep the weaker
     # half of the promise.
-    swept = await _step("transcripts", lambda: _sweep_transcripts(session_manager), off_loop=False)
-    measured = await _step("disk usage", lambda: _measure_audio(audio_store), off_loop=True)
+    swept = await _step("transcripts", lambda: _sweep_transcripts(session_manager))
+    measured = await _step("disk usage", lambda: asyncio.to_thread(_measure_audio, audio_store))
     if cleaned and swept and measured:
         audio_store.metrics.record_pass_completed()
 

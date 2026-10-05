@@ -27,7 +27,7 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 class PersistentFakeRedis:
-    """Small Redis contract shared by two real application lifespans."""
+    """Small redis.asyncio contract shared by two real application lifespans."""
 
     def __init__(self) -> None:
         self.values: dict[str, str] = {}
@@ -36,29 +36,33 @@ class PersistentFakeRedis:
         self.expiries: dict[str, int] = {}
         self.fail_after_next_termination = False
 
-    def ping(self) -> bool:
+    async def ping(self) -> bool:
         self.pings += 1
         return True
 
-    def close(self) -> None:
+    async def aclose(self) -> None:
         return None
 
-    def set(self, key, value, *, ex=None, nx=False):
+    async def set(self, key, value, *, ex=None, nx=False):
         if nx and key in self.values:
             return False
         self.values[key] = value
         return True
 
-    def get(self, key):
+    async def get(self, key):
         return self.values.get(key)
 
-    def smembers(self, key):
+    async def mget(self, *keys):
+        return [self.values.get(key) for key in keys]
+
+    async def smembers(self, key):
         return set(self.sets.get(key, set()))
 
-    def scan_iter(self, *, match):
-        return iter(key for key in self.sets if fnmatch(key, match))
+    async def scan_iter(self, *, match):
+        for key in [key for key in self.sets if fnmatch(key, match)]:
+            yield key
 
-    def eval(self, script, number_of_keys, *values):
+    async def eval(self, script, number_of_keys, *values):
         if number_of_keys == 1:
             key = values[0]
             return self.values.pop(key, None)
@@ -173,7 +177,7 @@ async def test_production_startup_uses_shared_redis_and_survives_restart(
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
     monkeypatch.setattr(
         persistence.Redis,
-        "from_url",
+        "from_pool",
         lambda *_args, **_kwargs: redis,
     )
 
@@ -186,19 +190,19 @@ async def test_production_startup_uses_shared_redis_and_survives_restart(
         assert dependencies.realtime_tickets.backend.redis is redis
         assert session_manager.websocket_manager is dependencies.websocket_manager
         session = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
-        issued = dependencies.realtime_tickets.issue(session.key, "websocket")
+        issued = await dependencies.realtime_tickets.issue(session.key, "websocket")
 
     async with lifespan(app):
         dependencies = app.state.dependencies
         session_manager = dependencies.session_manager
         assert session_manager.websocket_manager is dependencies.websocket_manager
         realtime_ticket_store = dependencies.realtime_tickets
-        restored = session_manager.get_session(session.key)
+        restored = await session_manager.get_session(session.key)
         assert restored is not None
         assert restored is not session
         assert json.loads(restored.runtime_configuration.canonical_json) == {}
-        assert realtime_ticket_store.consume(issued.ticket, session.key, "websocket") is True
-        assert realtime_ticket_store.consume(issued.ticket, session.key, "websocket") is False
+        assert await realtime_ticket_store.consume(issued.ticket, session.key, "websocket") is True
+        assert await realtime_ticket_store.consume(issued.ticket, session.key, "websocket") is False
 
     assert redis.pings == 2
 
@@ -225,15 +229,18 @@ async def test_configured_redis_connection_failure_aborts_startup(
     import services.api_gateway.tenant_persistence as persistence
 
     class BrokenRedis:
-        def ping(self):
+        async def ping(self):
             raise ConnectionError("private redis endpoint")
+
+        async def aclose(self) -> None:
+            return None
 
     monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
     monkeypatch.setattr(
         persistence.Redis,
-        "from_url",
+        "from_pool",
         lambda *_args, **_kwargs: BrokenRedis(),
     )
 
@@ -252,7 +259,7 @@ async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
     monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
-    monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: redis)
 
     async with lifespan(app):
         dependencies = app.state.dependencies
@@ -263,8 +270,8 @@ async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
         sockets = dependencies.websocket_manager
         monkeypatch.setattr(sockets, "start_heartbeat_system", AsyncMock())
         session = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
-        usable_after_failure = realtime_ticket_store.issue(session.key, "websocket")
-        revoked_after_retry = realtime_ticket_store.issue(session.key, "websocket")
+        usable_after_failure = await realtime_ticket_store.issue(session.key, "websocket")
+        revoked_after_retry = await realtime_ticket_store.issue(session.key, "websocket")
         polling_client = polling.activate(session.key, ClientType.CUSTOMER)
         websocket = AsyncMock()
         websocket.client_state = WebSocketState.CONNECTED
@@ -275,21 +282,21 @@ async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
             await session_manager.terminate_session(session.key)
 
         assert session.status is SessionStatus.PENDING
-        assert json.loads(redis.get(join_key("ssf", session.id)))["active"] is False
-        committed = json.loads(redis.get(persisted_session_key("ssf", session.key)))
-        committed_payload = redis.get(persisted_session_key("ssf", session.key))
+        assert json.loads(redis.values.get(join_key("ssf", session.id)))["active"] is False
+        committed = json.loads(redis.values.get(persisted_session_key("ssf", session.key)))
+        committed_payload = redis.values.get(persisted_session_key("ssf", session.key))
         assert committed["status"] == "terminated"
         assert polling_client.terminated is False
         assert session.key in sockets.session_connections
         assert (
-            realtime_ticket_store.consume(usable_after_failure.ticket, session.key, "websocket")
+            await realtime_ticket_store.consume(usable_after_failure.ticket, session.key, "websocket")
             is True
         )
 
         with pytest.raises(
             SessionStoreConsistencyError, match="session lifecycle does not permit save"
         ):
-            session_manager.admin_disconnected(session.key)
+            await session_manager.admin_disconnected(session.key)
 
         stale_message = SessionMessage(
             id="stale-after-terminal-commit",
@@ -304,10 +311,10 @@ async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
         with pytest.raises(
             SessionStoreConsistencyError, match="session lifecycle does not permit save"
         ):
-            session_manager.add_message(session.key, stale_message)
+            await session_manager.add_message(session.key, stale_message)
 
-        assert redis.get(persisted_session_key("ssf", session.key)) == committed_payload
-        assert json.loads(redis.get(join_key("ssf", session.id))) == {
+        assert redis.values.get(persisted_session_key("ssf", session.key)) == committed_payload
+        assert json.loads(redis.values.get(join_key("ssf", session.id))) == {
             "active": False,
             "session_id": session.id,
             "tenant_id": "tenant-a",
@@ -318,11 +325,11 @@ async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
         assert session.status is SessionStatus.TERMINATED
         assert session.terminated_at.isoformat() == committed["terminated_at"]
         assert session.messages == []
-        assert redis.get(persisted_session_key("ssf", session.key)) == committed_payload
+        assert redis.values.get(persisted_session_key("ssf", session.key)) == committed_payload
         assert polling_client.terminated is True
         assert session.key not in sockets.session_connections
         assert (
-            realtime_ticket_store.consume(revoked_after_retry.ticket, session.key, "websocket")
+            await realtime_ticket_store.consume(revoked_after_retry.ticket, session.key, "websocket")
             is False
         )
 
@@ -337,7 +344,7 @@ async def test_restart_rehydrates_active_session_for_same_tenant_replacement(
     monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
-    monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: redis)
     monkeypatch.setenv("SSF_ALLOW_PARALLEL_SESSIONS", "false")
     owner = admin_ref("tenant-a", "admin-subject")
 
@@ -350,8 +357,8 @@ async def test_restart_rehydrates_active_session_for_same_tenant_replacement(
         assert session_manager.active_admin_sessions == {"tenant-a": {first.id}}
         second = await session_manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner)
 
-        assert session_manager.get_session(first.key).status is SessionStatus.TERMINATED
-        assert session_manager.get_session(second.key).status is SessionStatus.PENDING
+        assert (await session_manager.get_session(first.key)).status is SessionStatus.TERMINATED
+        assert (await session_manager.get_session(second.key)).status is SessionStatus.PENDING
         assert session_manager.active_admin_sessions == {"tenant-a": {second.id}}
 
 
@@ -368,14 +375,14 @@ async def test_restart_terminates_sessions_whose_persisted_deadline_expired(
     monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
-    monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: redis)
     _clock_every_manager(monkeypatch, lambda: now)
 
     async with lifespan(app):
         session_manager = app.state.dependencies.session_manager
         session = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
         if expired_by == "absolute_lifetime":
-            session_manager.admin_connected(session.key)
+            await session_manager.admin_connected(session.key)
 
     now += timedelta(
         hours=8 if expired_by == "absolute_lifetime" else 0,
@@ -384,10 +391,10 @@ async def test_restart_terminates_sessions_whose_persisted_deadline_expired(
 
     async with lifespan(app):
         session_manager = app.state.dependencies.session_manager
-        restored = session_manager.get_session(session.key)
+        restored = await session_manager.get_session(session.key)
         assert restored is not None
         assert restored.status is SessionStatus.TERMINATED
-        assert session_manager.resolve_customer_session(session.id) is None
+        assert await session_manager.resolve_customer_session(session.id) is None
         assert session_manager.active_admin_sessions == {}
 
 
@@ -402,19 +409,19 @@ async def test_restart_clears_stale_transport_presence_and_starts_admin_grace(
     monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
-    monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: redis)
     _clock_every_manager(monkeypatch, lambda: now)
 
     async with lifespan(app):
         session_manager = app.state.dependencies.session_manager
         session = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
-        session_manager.admin_connected(session.key)
-        session_manager.customer_connected(session.key)
+        await session_manager.admin_connected(session.key)
+        await session_manager.customer_connected(session.key)
 
     now += timedelta(minutes=5)
     async with lifespan(app):
         session_manager = app.state.dependencies.session_manager
-        restored = session_manager.get_session(session.key)
+        restored = await session_manager.get_session(session.key)
         assert restored is not None
         assert restored.admin_connected is False
         assert restored.customer_connected is False
@@ -422,7 +429,161 @@ async def test_restart_clears_stale_transport_presence_and_starts_admin_grace(
         assert restored.customer_connection_count == 0
         assert restored.admin_disconnected_at == now
         assert restored.next_timeout_at() == now + timedelta(minutes=30)
-        persisted = session_manager.store.load(session.key)
+        persisted = await session_manager.store.load(session.key)
         assert persisted is not None
         assert persisted.admin_disconnected_at == now
         assert persisted.admin_connection_count == 0
+
+
+@pytest.mark.asyncio
+async def test_a_client_that_fails_its_ping_is_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    import services.api_gateway.tenant_persistence as persistence
+
+    closed: list[bool] = []
+
+    class UnreachableRedis:
+        async def ping(self):
+            raise ConnectionError("private redis endpoint")
+
+        async def aclose(self) -> None:
+            closed.append(True)
+
+    monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: UnreachableRedis())
+
+    with pytest.raises(persistence.TenantPersistenceUnavailable):
+        await persistence.configure_tenant_persistence()
+
+    assert closed == [True]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_rehydrate_closes_the_connection_before_startup_aborts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import services.api_gateway.session_manager as sessions_module
+    import services.api_gateway.tenant_persistence as persistence
+    from services.api_gateway.session_store import SessionStoreConsistencyError
+
+    redis = PersistentFakeRedis()
+    closed: list[bool] = []
+
+    async def record_close() -> None:
+        closed.append(True)
+
+    async def inconsistent_index(self) -> None:
+        raise SessionStoreConsistencyError("active session index does not match session")
+
+    redis.aclose = record_close
+    monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
+    monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: redis)
+    monkeypatch.setattr(
+        sessions_module.TenantSessionManager, "rehydrate_tenant_sessions", inconsistent_index
+    )
+
+    with pytest.raises(SessionStoreConsistencyError):
+        async with lifespan(app):
+            pass
+
+    assert closed == [True]
+
+
+@pytest.mark.asyncio
+async def test_shutdown_lets_pending_presence_releases_finish_before_closing_redis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    import services.api_gateway.tenant_persistence as persistence
+
+    redis = PersistentFakeRedis()
+    released: list[bool] = []
+    released_when_closed: list[bool] = []
+
+    async def record_close() -> None:
+        released_when_closed.append(bool(released))
+
+    async def slow_release() -> None:
+        await asyncio.sleep(0.05)
+        released.append(True)
+
+    redis.aclose = record_close
+    monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
+    monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: redis)
+
+    async with lifespan(app):
+        polling_store = app.state.dependencies.polling_store
+        task = asyncio.create_task(slow_release())
+        polling_store.release_tasks.add(task)
+        task.add_done_callback(polling_store.release_tasks.discard)
+
+    assert released_when_closed == [True]
+
+
+@pytest.mark.asyncio
+async def test_a_busy_pool_makes_commands_wait_rather_than_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The async default pool raises at once when every connection is busy.
+
+    The tenant pool blocks instead: a command waits up to the socket timeout
+    for a free connection, so a burst does not turn into 503s and failed saves.
+    """
+    from redis.asyncio import BlockingConnectionPool
+
+    import services.api_gateway.tenant_persistence as persistence
+
+    pools: list[object] = []
+    redis = PersistentFakeRedis()
+
+    def adopt(pool):
+        pools.append(pool)
+        return redis
+
+    monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
+    monkeypatch.setattr(persistence.Redis, "from_pool", adopt)
+
+    binding = await persistence.configure_tenant_persistence()
+
+    assert binding is not None
+    (pool,) = pools
+    assert isinstance(pool, BlockingConnectionPool)
+    assert pool.max_connections == 100
+    assert pool.timeout == 5
+    assert pool.connection_kwargs["socket_timeout"] == 5
+    assert pool.connection_kwargs["socket_connect_timeout"] == 5
+    assert pool.connection_kwargs["decode_responses"] is True
+
+
+@pytest.mark.asyncio
+async def test_any_failed_startup_step_closes_the_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import services.api_gateway.app as gateway
+    import services.api_gateway.tenant_persistence as persistence
+
+    redis = PersistentFakeRedis()
+    closed: list[bool] = []
+
+    async def record_close() -> None:
+        closed.append(True)
+
+    def background_tasks_fail(*_args):
+        raise RuntimeError("background tasks could not start")
+
+    redis.aclose = record_close
+    monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
+    monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: redis)
+    monkeypatch.setattr(gateway, "_start_background_tasks", background_tasks_fail)
+
+    with pytest.raises(RuntimeError):
+        async with lifespan(app):
+            pass
+
+    assert closed == [True]

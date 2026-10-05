@@ -22,12 +22,12 @@ from typing import (
     Generic,
     List,
     Optional,
-    Protocol,
     TypeVar,
 )
 
+from .keyed_locks import KeyedLocks
 from .quality_telemetry_schema import SessionLifecyclePhase, SessionTerminationReason
-from .realtime_protocol import Frame, timeout_warning_frame
+from .realtime_protocol import timeout_warning_frame
 from .session_models import (
     ClientType,
     Session,
@@ -38,60 +38,31 @@ from .session_models import (
     _positive_env_int,
     _session_duration_ms,
     _settle_refused_content,
+    _unprune_messages,
     utc_now,
 )
+from .session_ports import SessionSockets
 from .session_pseudonym import MISSING_TENANT_REFERENCE, SessionPseudonymizer, tenant_ref
-from .session_store import MemoryTenantSessionStore, TenantSessionStore
+from .session_store import (
+    MemoryTenantSessionStore,
+    SessionStoreConsistencyError,
+    TenantSessionStore,
+)
 from .tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
 if TYPE_CHECKING:
     from .audio_storage import AudioStore
     from .realtime_ticket import RealtimeTicketStore
     from .runtime_policy import RuntimePolicyGate
-    from .websocket import WebSocketManager
     from .websocket_polling_routes import TenantPollingStore
 
 logger = logging.getLogger(__name__)
 
 _SESSION_NOT_FOUND = "session not found"
+_SESSION_ENDED = "session lifecycle does not permit save"
 
 
 KeyT = TypeVar("KeyT")
-KeyT_contra = TypeVar("KeyT_contra", contravariant=True)
-
-
-class SessionSockets[KeyT_in](Protocol):
-    """What a session manager calls on the realtime side of its app.
-
-    `WebSocketManager` is a `SessionSockets[TenantSessionKey]`. The legacy
-    adapter's `SessionSockets[str]` is satisfied only by test doubles now.
-    The key is inferred contravariant: it appears only as a parameter.
-    """
-
-    async def handle_session_termination(self, session_id: KeyT_in, reason: str) -> None: ...
-
-    async def broadcast_to_session(self, session_id: KeyT_in, message: Frame) -> None: ...
-
-
-class SessionRegistry(Protocol[KeyT_contra]):
-    """What the WebSocket manager needs from a session manager.
-
-    Generic in the key rather than widened to `Any`. The WebSocket manager
-    takes a `SessionRegistry[TenantSessionKey]`, which `TenantSessionManager`
-    is; `LegacySessionManager` is only a `SessionRegistry[str]`.
-    """
-
-    def register_websocket_manager(self, manager: WebSocketManager) -> None: ...
-
-    def get_session(self, session_id: KeyT_contra) -> Optional[Session]: ...
-
-    async def add_websocket_connection(
-        self, session_id: KeyT_contra, client_type: ClientType, websocket: Any
-    ) -> None: ...
-
-    async def remove_websocket_connection(
-        self, session_id: KeyT_contra, client_type: ClientType
-    ) -> None: ...
 
 
 class SessionManagerBase(Generic[KeyT]):
@@ -143,7 +114,7 @@ class SessionManagerBase(Generic[KeyT]):
         except Exception:  # telemetry must never reach the caller
             logger.warning("Session quality telemetry failed", exc_info=True)
 
-    def _persist_swept_session(self, session: Session) -> None:
+    async def _persist_swept_session(self, session: Session) -> None:
         """Write back a session the sweep changed.
 
         Called only when something actually changed: a sweep that rewrote every
@@ -160,7 +131,7 @@ class SessionManagerBase(Generic[KeyT]):
         """
         raise NotImplementedError
 
-    def sweep_expired_content(self, now: datetime) -> Dict[str, int]:
+    async def sweep_expired_content(self, now: datetime) -> Dict[str, int]:
         """Remove refused content past session lifetime, and expired text.
 
         The two removals are deliberately different. Refused content goes at
@@ -191,7 +162,9 @@ class SessionManagerBase(Generic[KeyT]):
             if session.status is SessionStatus.TERMINATED:
                 continue
             try:
-                refused_delta, expired_delta = self._sweep_session_content(session, now, keep_for)
+                refused_delta, expired_delta = await self._sweep_session_content(
+                    session, now, keep_for
+                )
                 refused_removed += refused_delta
                 expired_removed += expired_delta
             except Exception:  # noqa: BLE001 - one session must not stop the pass
@@ -208,7 +181,7 @@ class SessionManagerBase(Generic[KeyT]):
             "failed": failed,
         }
 
-    def _sweep_session_content(
+    async def _sweep_session_content(
         self, session: Session, now: datetime, keep_for: int
     ) -> tuple[int, int]:
         # Settled on a copy, exactly as termination does. A failed
@@ -237,11 +210,16 @@ class SessionManagerBase(Generic[KeyT]):
             return 0, 0
 
         previous = session.messages
-        session.messages = working.messages
+        pruned = working.messages
+        kept = len(pruned)
+        session.messages = pruned
         try:
-            self._persist_swept_session(session)
+            await self._persist_swept_session(session)
         except Exception:
-            session.messages = previous
+            # A termination that committed meanwhile replaced the list with
+            # its settled record, which stands.
+            if session.messages is pruned:
+                session.messages = _unprune_messages(previous, pruned, kept)
             raise
 
         # `Session.key` raises without a tenant, and a legacy
@@ -289,6 +267,9 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         self.runtime_policy = runtime_policy
         self.session_id_factory = session_id_factory or (lambda: str(uuid.uuid4())[:8].upper())
         self.active_admin_sessions: Dict[str, set[str]] = {}
+        # Listing an admin's sessions and creating the next one await the
+        # store; without this, two concurrent creates both find none to end.
+        self._creation_locks: KeyedLocks[tuple[str, Optional[str]]] = KeyedLocks()
 
     def reset(self, *, clear_persistence: bool = False) -> None:
         """SessionManager Zustand auf Initialwerte zurücksetzen."""
@@ -302,7 +283,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         for message_id, variant in doomed:
             self.audio_store.delete(key, message_id, variant)
 
-    def rehydrate_tenant_sessions(self) -> None:
+    async def rehydrate_tenant_sessions(self) -> None:
         """Restore active v2 sessions and discard process-local presence.
 
         Redis connection counts describe sockets owned by the process that
@@ -311,7 +292,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         restart; an already disconnected administrator retains its original
         anchor so restarting cannot extend an expired session indefinitely.
         """
-        restored = self.store.list_active()
+        restored = await self.store.list_active()
         restarted_at = self.clock()
         for session in restored:
             stale_admin_presence = session.admin_connected or session.admin_connection_count > 0
@@ -324,7 +305,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
                 session.timeout_warning_sent = False
             elif session.admin_disconnected_at is None:
                 session.admin_disconnected_at = session.created_at
-            self.store.save(session)
+            await self.store.save(session)
             self.sessions[session.key] = session
             self.active_admin_sessions.setdefault(session.key.tenant_id, set()).add(session.id)
 
@@ -342,6 +323,15 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         Mandanten (#473). ``SSF_ALLOW_PARALLEL_SESSIONS=true`` hebt auch das auf.
         """
         await asyncio.sleep(0)
+        async with self._creation_locks.hold((tenant_id, owner_ref)):
+            return await self._replace_owner_session(tenant_id, runtime_configuration, owner_ref)
+
+    async def _replace_owner_session(
+        self,
+        tenant_id: str,
+        runtime_configuration: RuntimeConfigurationSnapshot,
+        owner_ref: Optional[str],
+    ) -> Session:
         if not self.allow_parallel_sessions:
             await self.terminate_owner_sessions(
                 reason="new_session_created", tenant_id=tenant_id, owner_ref=owner_ref
@@ -363,7 +353,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
                 maximum_lifetime_hours=_positive_env_int("SSF_SESSION_MAX_HOURS", 8),
                 owner_ref=owner_ref,
             )
-            if self.store.create(session):
+            if await self.store.create(session):
                 self.sessions[session.key] = session
                 self.active_admin_sessions.setdefault(tenant_id, set()).add(session.id)
                 self._emit_lifecycle(session, SessionLifecyclePhase.CREATED)
@@ -380,7 +370,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         """
         keys = [
             session.key
-            for session in self._live_sessions(tenant_id)
+            for session in await self._live_sessions(tenant_id)
             if session.is_owned_by(owner_ref)
         ]
         for key in keys:
@@ -390,12 +380,12 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         self, session_id: TenantSessionKey, reason: str = "manual_termination"
     ) -> None:
         """Einzelne Session beenden mit WebSocket-Notifications"""
-        session = self.get_session(session_id)
+        session = await self.get_session(session_id)
         if not session:
             return
 
         if session.status != SessionStatus.TERMINATED:
-            self._commit_tenant_termination(session_id, session, reason)
+            await self._commit_tenant_termination(session_id, session, reason)
 
         # Cleanup is deliberately idempotent and also runs for a terminal
         # session. If notification/socket cleanup was interrupted after the
@@ -404,7 +394,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
 
         if self.realtime_tickets is not None:
             try:
-                self.realtime_tickets.revoke(session_id)
+                await self.realtime_tickets.revoke(session_id)
             except RealtimeTicketUnavailable:
                 logger.error(
                     "realtime_ticket_revocation_unavailable",
@@ -417,7 +407,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         # The yield the socket-pool cleanup always took before returning.
         await asyncio.sleep(0)
 
-    def _commit_tenant_termination(
+    async def _commit_tenant_termination(
         self,
         session_id: TenantSessionKey,
         session: Session,
@@ -449,7 +439,11 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         # the caller retries, so anything deleted first would be lost
         # for a session that is still live.
         _, doomed_audio = _settle_refused_content(terminal_session)
-        committed_terminal: Optional[Session] = self.store.terminate(terminal_session)
+        committed_terminal: Optional[Session] = await self.store.terminate(terminal_session)
+        if session.status == SessionStatus.TERMINATED:
+            # A concurrent termination committed while this one awaited, and
+            # has already settled, cached and reported the record.
+            return
         # A store may accept the termination while keeping a terminal
         # record it already held, discarding the payload settled here.
         # Only delete artefacts when this payload is the committed one.
@@ -481,29 +475,43 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             SessionTerminationReason.classify(reason),
         )
 
-    def get_session(self, session_id: TenantSessionKey) -> Optional[Session]:
-        """Session abrufen"""
+    async def _save_live(self, session: Session, refusal: Exception) -> None:
+        """Save a change to a live session; raise `refusal` if it ended meanwhile.
+
+        The save can wait behind a termination of the same session, which
+        copies the terminal record onto this object. The store accepts that
+        unchanged record, so only the status shows that the change was lost.
+        """
+        await self.store.save(session)
+        if session.status == SessionStatus.TERMINATED:
+            raise refusal
+
+    async def get_session(self, session_id: TenantSessionKey) -> Optional[Session]:
+        """The cached session, loading it from the store on a miss."""
         session = self.sessions.get(session_id)
-        if session is None:
-            session = self.store.load(session_id)
-            if session is not None:
-                self.sessions[session_id] = session
-        return session
+        if session is not None:
+            return session
+        loaded = await self.store.load(session_id)
+        if loaded is None:
+            return None
+        # Another miss may have filled the cache while this load awaited; every
+        # handler must share that one object, or one of them mutates a copy.
+        return self.sessions.setdefault(session_id, loaded)
 
     def has_unscoped_session(self, session_id: str) -> bool:
         """Always False: a tenant session is reachable only through its key or join index."""
         return False
 
-    def resolve_customer_session(self, session_id: str) -> Optional[TenantSessionKey]:
-        key = self.store.resolve_join(session_id)
+    async def resolve_customer_session(self, session_id: str) -> Optional[TenantSessionKey]:
+        key = await self.store.resolve_join(session_id)
         if key is None:
             return None
-        session = self.get_session(key)
+        session = await self.get_session(key)
         if session is None or session.status == SessionStatus.TERMINATED:
             return None
         return key
 
-    def resolve_ended_session(
+    async def resolve_ended_session(
         self, session_id: str, *, within: timedelta
     ) -> Optional[TenantSessionKey]:
         """The key of a session that terminated no longer than ``within`` ago.
@@ -518,7 +526,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         conversation -- and takes the window from the caller rather than
         holding a policy of its own.
         """
-        resolved = self.store.resolve_ended_join(session_id)
+        resolved = await self.store.resolve_ended_join(session_id)
         if resolved is None:
             return None
         key, terminated_at = resolved
@@ -529,18 +537,18 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             return None
         return key
 
-    def admin_connected(self, key: TenantSessionKey) -> None:
-        session = self.get_session(key)
+    async def admin_connected(self, key: TenantSessionKey) -> None:
+        session = await self.get_session(key)
         if session is None or session.status == SessionStatus.TERMINATED:
             raise KeyError(_SESSION_NOT_FOUND)
         session.admin_connection_count += 1
         session.admin_connected = True
         session.admin_disconnected_at = None
         session.timeout_warning_sent = False
-        self.store.save(session)
+        await self._save_live(session, KeyError(_SESSION_NOT_FOUND))
 
-    def admin_disconnected(self, key: TenantSessionKey) -> None:
-        session = self.get_session(key)
+    async def admin_disconnected(self, key: TenantSessionKey) -> None:
+        session = await self.get_session(key)
         if session is None:
             raise KeyError(_SESSION_NOT_FOUND)
         if session.status == SessionStatus.TERMINATED:
@@ -549,40 +557,40 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         session.admin_connected = session.admin_connection_count > 0
         if session.admin_connection_count == 0:
             session.admin_disconnected_at = self.clock()
-        self.store.save(session)
+        await self.store.save(session)
 
-    def customer_connected(self, key: TenantSessionKey) -> None:
-        session = self.get_session(key)
+    async def customer_connected(self, key: TenantSessionKey) -> None:
+        session = await self.get_session(key)
         if session is None or session.status == SessionStatus.TERMINATED:
             raise KeyError(_SESSION_NOT_FOUND)
         session.customer_connection_count += 1
         session.customer_connected = True
-        self.store.save(session)
+        await self._save_live(session, KeyError(_SESSION_NOT_FOUND))
 
-    def customer_disconnected(self, key: TenantSessionKey) -> None:
-        session = self.get_session(key)
+    async def customer_disconnected(self, key: TenantSessionKey) -> None:
+        session = await self.get_session(key)
         if session is None:
             raise KeyError(_SESSION_NOT_FOUND)
         if session.status == SessionStatus.TERMINATED:
             return
         session.customer_connection_count = max(0, session.customer_connection_count - 1)
         session.customer_connected = session.customer_connection_count > 0
-        self.store.save(session)
+        await self.store.save(session)
 
-    def get_session_status(self, session_id: TenantSessionKey) -> Optional[SessionStatus]:
+    async def get_session_status(self, session_id: TenantSessionKey) -> Optional[SessionStatus]:
         """Session-Status abrufen"""
-        session = self.get_session(session_id)
+        session = await self.get_session(session_id)
         return session.status if session else None
 
-    def add_message(self, session_id: TenantSessionKey, message: SessionMessage) -> None:
+    async def add_message(self, session_id: TenantSessionKey, message: SessionMessage) -> None:
         """Nachricht zur Session hinzufügen"""
-        if session := self.get_session(session_id):
+        if session := await self.get_session(session_id):
             session.messages.append(message)
             # ✨ Session-Aktivität bei neuer Nachricht aktualisieren
             session.update_activity()
-            self.store.save(session)
+            await self._save_live(session, SessionStoreConsistencyError(_SESSION_ENDED))
 
-    def record_message_authorization(
+    async def record_message_authorization(
         self,
         session_id: TenantSessionKey,
         message_id: str,
@@ -600,7 +608,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             original_audio: Whether the guest's input audio may be retained.
             translated_audio: Whether the synthesised audio may be retained.
         """
-        session = self.get_session(session_id)
+        session = await self.get_session(session_id)
         if session is None:
             return
         for message in session.messages:
@@ -612,12 +620,12 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             break
         else:
             return
-        self.store.save(session)
+        await self._save_live(session, SessionStoreConsistencyError(_SESSION_ENDED))
 
-    def _persist_swept_session(self, session: Session) -> None:
-        self.store.save(session)
+    async def _persist_swept_session(self, session: Session) -> None:
+        await self.store.save(session)
 
-    def get_active_session(
+    async def get_active_session(
         self,
         session_id: Optional[str] = None,
         *,
@@ -631,7 +639,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         """
         candidates = [
             session
-            for session in self._live_sessions(tenant_id)
+            for session in await self._live_sessions(tenant_id)
             if (session_id is None or session.id == session_id) and session.is_owned_by(owner_ref)
         ]
         if not candidates:
@@ -641,28 +649,28 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         candidates.sort(key=lambda item: item.created_at, reverse=True)
         return candidates[0].to_public_dict()
 
-    def get_active_sessions(self, *, tenant_id: str, owner_ref: str) -> List[Dict[str, Any]]:
+    async def get_active_sessions(self, *, tenant_id: str, owner_ref: str) -> List[Dict[str, Any]]:
         """The admin's pending or active sessions; colleagues' and owner-less ones are omitted."""
         return [
             session.to_public_dict()
-            for session in self._live_sessions(tenant_id)
+            for session in await self._live_sessions(tenant_id)
             if session.is_owned_by(owner_ref)
         ]
 
-    def _live_sessions(self, tenant_id: str) -> List[Session]:
+    async def _live_sessions(self, tenant_id: str) -> List[Session]:
         return [
             session
-            for session in self.store.list_for_tenant(tenant_id)
+            for session in await self.store.list_for_tenant(tenant_id)
             if session.status in (SessionStatus.PENDING, SessionStatus.ACTIVE)
         ]
 
-    def get_session_history(
+    async def get_session_history(
         self, limit: int = 10, *, tenant_id: str, owner_ref: str
     ) -> List[Dict[str, Any]]:
         """The admin's ended sessions, newest first; ``limit`` counts only those."""
         terminated_sessions = [
             session.to_public_dict()
-            for session in self.store.list_for_tenant(tenant_id)
+            for session in await self.store.list_for_tenant(tenant_id)
             if session.status == SessionStatus.TERMINATED and session.is_owned_by(owner_ref)
         ]
         terminated_sessions.sort(key=lambda item: item.get("terminated_at", ""), reverse=True)
@@ -671,15 +679,14 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
     async def activate_session(self, session_id: TenantSessionKey, customer_language: str) -> None:
         """Session aktivieren wenn Customer beitritt oder Sprache ändern"""
         await asyncio.sleep(0)
-        session = self.get_session(session_id)
+        session = await self.get_session(session_id)
         if not session:
             raise ValueError(f"Session {session_id} nicht gefunden")
 
         # Erlaubt Aktivierung von PENDING → ACTIVE oder Sprachänderung in ACTIVE
+        ended = ValueError(f"Session {session_id} ist beendet und kann nicht mehr geändert werden")
         if session.status == SessionStatus.TERMINATED:
-            raise ValueError(
-                f"Session {session_id} ist beendet und kann nicht mehr geändert werden"
-            )
+            raise ended
 
         session.customer_language = customer_language
         # This method doubles as the language-update path, so the transition --
@@ -689,7 +696,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         if activated:
             session.status = SessionStatus.ACTIVE
         session.customer_connected = True
-        self.store.save(session)
+        await self._save_live(session, ended)
 
         if activated:
             self._emit_lifecycle(session, SessionLifecyclePhase.ACTIVATED)
@@ -706,9 +713,9 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         """WebSocket-Verbindung zur Session hinzufügen"""
         await asyncio.sleep(0)
         if client_type == ClientType.ADMIN:
-            self.admin_connected(session_id)
+            await self.admin_connected(session_id)
         else:
-            self.customer_connected(session_id)
+            await self.customer_connected(session_id)
         logger.info(
             "tenant_websocket_registered",
             extra={"tenant_ref": session_id.tenant_ref},
@@ -720,9 +727,9 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         """WebSocket-Verbindung von Session entfernen"""
         await asyncio.sleep(0)
         if client_type == ClientType.ADMIN:
-            self.admin_disconnected(session_id)
+            await self.admin_disconnected(session_id)
         else:
-            self.customer_disconnected(session_id)
+            await self.customer_disconnected(session_id)
         logger.info(
             "tenant_websocket_unregistered",
             extra={"tenant_ref": session_id.tenant_ref},
@@ -730,7 +737,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
 
     async def check_session_timeouts(self) -> None:
         """Alle Sessions auf Timeouts prüfen und entsprechende Aktionen durchführen"""
-        self._prune_polling_presence()
+        await self._prune_polling_presence()
 
         for session in tuple(self.sessions.values()):
             if session.status == SessionStatus.TERMINATED:
@@ -743,15 +750,15 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             if timeout_due:
                 await self.terminate_session(session.key, reason="session_timeout")
 
-    def _prune_polling_presence(self) -> None:
+    async def _prune_polling_presence(self) -> None:
         if self.polling_store is None:
             return
         for client in self.polling_store.prune():
             try:
                 if client.client_type is ClientType.ADMIN:
-                    self.admin_disconnected(client.key)
+                    await self.admin_disconnected(client.key)
                 else:
-                    self.customer_disconnected(client.key)
+                    await self.customer_disconnected(client.key)
             except KeyError:
                 pass
 
@@ -762,4 +769,4 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
 
             await self.websocket_manager.broadcast_to_session(session.key, warning_message)
             session.timeout_warning_sent = True
-            self.store.save(session)
+            await self.store.save(session)

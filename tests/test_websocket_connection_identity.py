@@ -59,7 +59,7 @@ class TestTheEndpointItselfBuildsUniqueIds:
 
     async def test_two_connections_for_one_session_get_different_ids(self):
         sessions = tenant_session_manager()
-        key = open_session(sessions, "session-a")
+        key = await open_session(sessions, "session-a")
         manager = WebSocketManager(sessions, monitor=websocket_monitor())
 
         first = await manager.connect_websocket(_websocket(), key, ClientType.CUSTOMER)

@@ -46,7 +46,7 @@ def _not_found() -> HTTPException:
     )
 
 
-def require_admin_session_key(
+async def require_admin_session_key(
     session_id: str,
     context: Annotated[
         StudioTenantContext,
@@ -64,7 +64,7 @@ def require_admin_session_key(
         key = TenantSessionKey(context.tenant_id, session_id)
     except ValueError:
         raise _not_found() from None
-    session = sessions.get_session(key)
+    session = await sessions.get_session(key)
     if session is None:
         log_tenant_access_denied(key, outcome="not_found", pseudonymizer=sessions.pseudonymizer)
         raise _not_found()
@@ -76,14 +76,14 @@ def require_admin_session_key(
     return key
 
 
-def require_customer_session_key(
+async def require_customer_session_key(
     session_id: str,
     principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
     sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
 ) -> TenantSessionKey:
     """Resolve a public capability and constrain any supplied authenticated user."""
     try:
-        key = sessions.resolve_customer_session(session_id)
+        key = await sessions.resolve_customer_session(session_id)
     except ValueError:
         raise _not_found() from None
     if key is None:

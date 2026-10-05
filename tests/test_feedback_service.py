@@ -83,10 +83,10 @@ class FakeSessionManager:
     def has_unscoped_session(self, session_id):
         return self._known
 
-    def resolve_customer_session(self, session_id):
+    async def resolve_customer_session(self, session_id):
         return None
 
-    def resolve_ended_session(self, session_id, *, within):
+    async def resolve_ended_session(self, session_id, *, within):
         return None
 
 
@@ -656,8 +656,8 @@ class TestFeedbackJustAfterTheConversationEnds:
 
         await service.submit(_request(session_id=session.id))
 
-        assert manager.resolve_customer_session(session.id) is None
-        assert manager.store.resolve_join(session.id) is None
+        assert await manager.resolve_customer_session(session.id) is None
+        assert await manager.store.resolve_join(session.id) is None
 
     async def test_a_zero_window_refuses_it_the_moment_it_ends(
         self, monkeypatch: pytest.MonkeyPatch
@@ -703,8 +703,11 @@ class TestAnIdNoSessionCouldCarry:
     """
 
     class EmptyRedis:
-        def get(self, key):
+        async def get(self, key):
             return None
+
+        async def mget(self, *keys):
+            return [None for _key in keys]
 
     def _service(self):
         from services.api_gateway.session_manager import TenantSessionManager

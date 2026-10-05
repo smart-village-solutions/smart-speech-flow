@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Protocol
 
+from .keyed_locks import KeyedLocks
 from .tenant_session import TenantSessionKey
 
 if TYPE_CHECKING:
@@ -85,30 +86,30 @@ class SessionStoreConsistencyError(RuntimeError):
 
 
 class TenantSessionStore(Protocol):
-    def create(self, session: Session) -> bool:
+    async def create(self, session: Session) -> bool:
         raise NotImplementedError
 
-    def save(self, session: Session) -> None:
+    async def save(self, session: Session) -> None:
         raise NotImplementedError
 
-    def load(self, key: TenantSessionKey) -> Session | None:
+    async def load(self, key: TenantSessionKey) -> Session | None:
         raise NotImplementedError
 
-    def resolve_join(self, session_id: str) -> TenantSessionKey | None:
+    async def resolve_join(self, session_id: str) -> TenantSessionKey | None:
         raise NotImplementedError
 
-    def resolve_ended_join(
+    async def resolve_ended_join(
         self, session_id: str
     ) -> tuple[TenantSessionKey, datetime | None] | None:
         raise NotImplementedError
 
-    def list_for_tenant(self, tenant_id: str) -> list[Session]:
+    async def list_for_tenant(self, tenant_id: str) -> list[Session]:
         raise NotImplementedError
 
-    def list_active(self) -> list[Session]:
+    async def list_active(self) -> list[Session]:
         raise NotImplementedError
 
-    def terminate(self, session: Session) -> Session:
+    async def terminate(self, session: Session) -> Session:
         raise NotImplementedError
 
 
@@ -175,7 +176,10 @@ def _same_key(left: TenantSessionKey, right: TenantSessionKey) -> bool:
 
 
 class MemoryTenantSessionStore:
-    """Process-local implementation with the same collision rules as Redis."""
+    """Process-local implementation with the same collision rules as Redis.
+
+    The coroutines never suspend, so each operation is atomic on the loop.
+    """
 
     def __init__(self) -> None:
         self._sessions: dict[TenantSessionKey, Session] = {}
@@ -187,14 +191,14 @@ class MemoryTenantSessionStore:
         self._joins.clear()
         self._expiries.clear()
 
-    def create(self, session: Session) -> bool:
+    async def create(self, session: Session) -> bool:
         if session.id in self._joins:
             return False
         self._sessions[session.key] = session
         self._joins[session.id] = (session.key, True)
         return True
 
-    def save(self, session: Session) -> None:
+    async def save(self, session: Session) -> None:
         if session.key not in self._sessions:
             raise SessionStoreConsistencyError("session does not exist")
         self._sessions[session.key] = session
@@ -208,7 +212,7 @@ class MemoryTenantSessionStore:
         expires_at = self._expiries.get(key)
         return expires_at is not None and datetime.now(timezone.utc) >= expires_at
 
-    def load(self, key: TenantSessionKey) -> Session | None:
+    async def load(self, key: TenantSessionKey) -> Session | None:
         if self._is_expired(key):
             return None
         session = self._sessions.get(key)
@@ -221,16 +225,16 @@ class MemoryTenantSessionStore:
             return None
         return session
 
-    def resolve_join(self, session_id: str) -> TenantSessionKey | None:
+    async def resolve_join(self, session_id: str) -> TenantSessionKey | None:
         join = self._joins.get(session_id)
         if join is None:
             return None
         key, active = join
-        if not active or self.load(key) is None:
+        if not active or await self.load(key) is None:
             return None
         return key
 
-    def resolve_ended_join(
+    async def resolve_ended_join(
         self, session_id: str
     ) -> tuple[TenantSessionKey, datetime | None] | None:
         """The key behind a revoked join, and when that session ended.
@@ -252,27 +256,28 @@ class MemoryTenantSessionStore:
         key, active = join
         if active:
             return None
-        session = self.load(key)
+        session = await self.load(key)
         if session is None or session.status.value != "terminated":
             return None
         return key, session.terminated_at
 
-    def list_for_tenant(self, tenant_id: str) -> list[Session]:
+    async def list_for_tenant(self, tenant_id: str) -> list[Session]:
         return [
             session
             for key in tuple(self._sessions)
             if hmac.compare_digest(key.tenant_id, tenant_id)
-            and (session := self.load(key)) is not None
+            and (session := await self.load(key)) is not None
         ]
 
-    def list_active(self) -> list[Session]:
+    async def list_active(self) -> list[Session]:
         return [
             session
             for key in tuple(self._sessions)
-            if (session := self.load(key)) is not None and session.status.value != "terminated"
+            if (session := await self.load(key)) is not None
+            and session.status.value != "terminated"
         ]
 
-    def terminate(self, session: Session) -> Session:
+    async def terminate(self, session: Session) -> Session:
         join = self._joins.get(session.id)
         if join is None or not _same_key(join[0], session.key):
             raise SessionStoreConsistencyError("join index does not match session")
@@ -296,42 +301,60 @@ class RedisTenantSessionStore:
     def __init__(self, redis: Any, *, namespace: str = "ssf") -> None:
         self.redis = redis
         self.namespace = namespace
+        # Two EVALs for one session can reach Redis on different pool
+        # connections in either order, and the older snapshot landing last
+        # would roll the record back. Writes to one session therefore run one
+        # at a time, in issue order, and build their payload inside the lock,
+        # so each carries the session as it is when the write runs.
+        self._write_locks: KeyedLocks[TenantSessionKey] = KeyedLocks()
 
-    def create(self, session: Session) -> bool:
+    async def create(self, session: Session) -> bool:
         key = session.key
-        result = self.redis.eval(
-            CREATE_SESSION_LUA,
-            4,
-            session_key(self.namespace, key),
-            tenant_sessions_key(self.namespace, key.tenant_id),
-            join_key(self.namespace, key.session_id),
-            tenant_active_sessions_key(self.namespace, key.tenant_id),
-            self._session_payload(session),
-            key.session_id,
-            _join_payload(key, active=True),
-        )
+        async with self._write_locks.hold(key):
+            result = await self.redis.eval(
+                CREATE_SESSION_LUA,
+                4,
+                session_key(self.namespace, key),
+                tenant_sessions_key(self.namespace, key.tenant_id),
+                join_key(self.namespace, key.session_id),
+                tenant_active_sessions_key(self.namespace, key.tenant_id),
+                self._session_payload(session),
+                key.session_id,
+                _join_payload(key, active=True),
+            )
         return result == 1
 
-    def save(self, session: Session) -> None:
+    async def save(self, session: Session) -> None:
         key = session.key
-        result = self.redis.eval(
-            SAVE_SESSION_LUA,
-            3,
-            session_key(self.namespace, key),
-            join_key(self.namespace, key.session_id),
-            tenant_active_sessions_key(self.namespace, key.tenant_id),
-            self._session_payload(session),
-            key.session_id,
-            key.tenant_id,
-            _join_payload(key, active=True),
-            _join_payload(key, active=False),
-        )
+        async with self._write_locks.hold(key):
+            result = await self.redis.eval(
+                SAVE_SESSION_LUA,
+                3,
+                session_key(self.namespace, key),
+                join_key(self.namespace, key.session_id),
+                tenant_active_sessions_key(self.namespace, key.tenant_id),
+                self._session_payload(session),
+                key.session_id,
+                key.tenant_id,
+                _join_payload(key, active=True),
+                _join_payload(key, active=False),
+            )
         if result != 1:
             raise SessionStoreConsistencyError("session lifecycle does not permit save")
 
-    def load(self, key: TenantSessionKey) -> Session | None:
-        raw_session = self.redis.get(session_key(self.namespace, key))
-        raw_join = self.redis.get(join_key(self.namespace, key.session_id))
+    async def load(self, key: TenantSessionKey) -> Session | None:
+        # One MGET, so a termination cannot commit between the two reads.
+        raw_session, raw_join = await self.redis.mget(*self._record_keys(key))
+        return self._verified(key, raw_session, raw_join)
+
+    def _record_keys(self, key: TenantSessionKey) -> tuple[str, str]:
+        return session_key(self.namespace, key), join_key(self.namespace, key.session_id)
+
+    @staticmethod
+    def _verified(
+        key: TenantSessionKey, raw_session: str | None, raw_join: str | None
+    ) -> Session | None:
+        """The record under `key`, or None when it is absent or disagrees with its join."""
         if raw_session is None:
             return None
         try:
@@ -359,34 +382,39 @@ class RedisTenantSessionStore:
             return None
         return session
 
-    def resolve_join(self, session_id: str) -> TenantSessionKey | None:
-        decoded = _decode_join(self.redis.get(join_key(self.namespace, session_id)))
+    async def resolve_join(self, session_id: str) -> TenantSessionKey | None:
+        decoded = _decode_join(await self.redis.get(join_key(self.namespace, session_id)))
         if decoded is None or not decoded[1]:
             return None
         key = decoded[0]
-        return key if self.load(key) is not None else None
+        return key if await self.load(key) is not None else None
 
-    def resolve_ended_join(
+    async def resolve_ended_join(
         self, session_id: str
     ) -> tuple[TenantSessionKey, datetime | None] | None:
-        decoded = _decode_join(self.redis.get(join_key(self.namespace, session_id)))
+        decoded = _decode_join(await self.redis.get(join_key(self.namespace, session_id)))
         if decoded is None or decoded[1]:
             return None
         key = decoded[0]
-        session = self.load(key)
+        session = await self.load(key)
         if session is None or session.status.value != "terminated":
             return None
         return key, session.terminated_at
 
-    def list_for_tenant(self, tenant_id: str) -> list[Session]:
-        sessions: list[Session] = []
-        for session_id in self.redis.smembers(tenant_sessions_key(self.namespace, tenant_id)):
-            key = TenantSessionKey(tenant_id, session_id)
-            if session := self.load(key):
-                sessions.append(session)
-        return sessions
+    async def list_for_tenant(self, tenant_id: str) -> list[Session]:
+        members = await self.redis.smembers(tenant_sessions_key(self.namespace, tenant_id))
+        keys = [TenantSessionKey(tenant_id, session_id) for session_id in members]
+        if not keys:
+            return []
+        # Every record and join in one MGET: one round trip, one snapshot.
+        raw = await self.redis.mget(*(name for key in keys for name in self._record_keys(key)))
+        return [
+            session
+            for index, key in enumerate(keys)
+            if (session := self._verified(key, raw[2 * index], raw[2 * index + 1])) is not None
+        ]
 
-    def list_active(self) -> list[Session]:
+    async def list_active(self) -> list[Session]:
         """Load the installation's active indexes only during startup.
 
         Request handlers continue to use the tenant-specific index. The global
@@ -396,24 +424,24 @@ class RedisTenantSessionStore:
 
         sessions: list[Session] = []
         pattern = f"{self.namespace}:v2:tenant:*:active-admin"
-        for raw_active_key in self.redis.scan_iter(match=pattern):
+        async for raw_active_key in self.redis.scan_iter(match=pattern):
             active_key = (
                 raw_active_key.decode("utf-8")
                 if isinstance(raw_active_key, bytes)
                 else raw_active_key
             )
-            for raw_session_id in self.redis.smembers(active_key):
+            for raw_session_id in await self.redis.smembers(active_key):
                 session_id = (
                     raw_session_id.decode("utf-8")
                     if isinstance(raw_session_id, bytes)
                     else raw_session_id
                 )
-                sessions.append(self._load_active_session(active_key, session_id))
+                sessions.append(await self._load_active_session(active_key, session_id))
         return sessions
 
-    def _load_active_session(self, active_key: str, session_id: str) -> Session:
+    async def _load_active_session(self, active_key: str, session_id: str) -> Session:
         record_key = active_key.removesuffix(":active-admin")
-        raw_session = self.redis.get(f"{record_key}:session:{session_id}")
+        raw_session = await self.redis.get(f"{record_key}:session:{session_id}")
         try:
             from .session_models import Session
 
@@ -427,30 +455,31 @@ class RedisTenantSessionStore:
             or session_key(self.namespace, key) != f"{record_key}:session:{session_id}"
         ):
             raise SessionStoreConsistencyError(_ACTIVE_SESSION_MISMATCH)
-        loaded = self.load(key)
+        loaded = await self.load(key)
         if loaded is None or loaded.status.value == "terminated":
             raise SessionStoreConsistencyError(_ACTIVE_SESSION_MISMATCH)
         return loaded
 
-    def terminate(self, session: Session) -> Session:
+    async def terminate(self, session: Session) -> Session:
         key = session.key
-        result = self.redis.eval(
-            TERMINATE_SESSION_LUA,
-            3,
-            session_key(self.namespace, key),
-            tenant_active_sessions_key(self.namespace, key.tenant_id),
-            join_key(self.namespace, key.session_id),
-            self._session_payload(session),
-            key.session_id,
-            _join_payload(key, active=True),
-            _join_payload(key, active=False),
-            key.tenant_id,
-            _content_retention_seconds(),
-        )
+        async with self._write_locks.hold(key):
+            result = await self.redis.eval(
+                TERMINATE_SESSION_LUA,
+                3,
+                session_key(self.namespace, key),
+                tenant_active_sessions_key(self.namespace, key.tenant_id),
+                join_key(self.namespace, key.session_id),
+                self._session_payload(session),
+                key.session_id,
+                _join_payload(key, active=True),
+                _join_payload(key, active=False),
+                key.tenant_id,
+                _content_retention_seconds(),
+            )
         if result == 1:
             return session
         if result == 2:
-            persisted = self.load(key)
+            persisted = await self.load(key)
             if persisted is not None and persisted.status.value == "terminated":
                 return persisted
         raise SessionStoreConsistencyError("join index does not match session")

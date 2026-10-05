@@ -76,7 +76,7 @@ async def test_admin_access_uses_only_the_authenticated_tenant(
 
     context = StudioTenantContext("tenant-a", REVISION)
     with pytest.raises(HTTPException) as caught:
-        require_admin_session_key(
+        await require_admin_session_key(
             session.id,
             context,
             manager,
@@ -98,7 +98,7 @@ async def test_customer_capability_allows_an_anonymous_request(
         RuntimeConfigurationSnapshot.from_configuration(_configuration("tenant-a")),
     )
 
-    assert require_customer_session_key(session.id, None, manager) == session.key
+    assert await require_customer_session_key(session.id, None, manager) == session.key
 
 
 @pytest.mark.asyncio
@@ -113,7 +113,7 @@ async def test_customer_bearer_must_match_capability_tenant(
     )
 
     with pytest.raises(HTTPException) as caught:
-        require_customer_session_key(
+        await require_customer_session_key(
             session.id,
             {
                 "studio_tenant_id": "tenant-a",
@@ -133,7 +133,7 @@ async def test_unknown_customer_capability_has_the_same_neutral_response(
     from services.api_gateway.session_access import require_customer_session_key
 
     with pytest.raises(HTTPException) as caught:
-        require_customer_session_key("UNKNOWN1", None, manager)
+        await require_customer_session_key("UNKNOWN1", None, manager)
 
     assert caught.value.status_code == 404
     assert caught.value.detail == "Session not found"
@@ -164,7 +164,7 @@ def _authenticate_as(tenant_id: str) -> None:
     )
 
 
-def test_http_create_freezes_each_tenants_own_runtime_configuration(
+async def test_http_create_freezes_each_tenants_own_runtime_configuration(
     http_client: TestClient,
 ) -> None:
     session_manager = app.state.dependencies.session_manager
@@ -176,10 +176,10 @@ def test_http_create_freezes_each_tenants_own_runtime_configuration(
 
     assert created_a.status_code == 201
     assert created_b.status_code == 201
-    session_a = session_manager.get_session(
+    session_a = await session_manager.get_session(
         TenantSessionKey("tenant-a", created_a.json()["session_id"])
     )
-    session_b = session_manager.get_session(
+    session_b = await session_manager.get_session(
         TenantSessionKey("tenant-b", created_b.json()["session_id"])
     )
     assert session_a is not None

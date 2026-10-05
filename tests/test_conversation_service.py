@@ -43,7 +43,7 @@ async def _active_session(sessions: TenantSessionManager) -> TenantSessionKey:
     session = await sessions.create_admin_session("tenant-a", SNAPSHOT)
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
-    sessions.store.save(session)
+    await sessions.store.save(session)
     return session.key
 
 
@@ -78,7 +78,7 @@ async def test_the_container_wires_its_own_socket_manager_into_the_service(
     assert response.status == "success"
     assert broadcast.await_args is not None
     assert broadcast.await_args.kwargs["session_id"] == key
-    assert [m.id for m in dependencies.session_manager.get_session(key).messages] == [
+    assert [m.id for m in (await dependencies.session_manager.get_session(key)).messages] == [
         response.message_id
     ]
 

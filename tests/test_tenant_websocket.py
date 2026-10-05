@@ -45,7 +45,7 @@ class _PresenceManager:
     async def remove_websocket_connection(self, *args) -> None:
         return None
 
-    def get_session(self, key):
+    async def get_session(self, key):
         return SimpleNamespace(
             status=SessionStatus.ACTIVE,
             customer_language=None,
@@ -210,7 +210,7 @@ async def test_connection_is_not_registered_if_session_terminates_during_accept(
     with pytest.raises(RuntimeError, match="Session unavailable"):
         await connecting
     assert session.key not in sockets.session_connections
-    assert manager.get_session(session.key).admin_connection_count == 0
+    assert (await manager.get_session(session.key)).admin_connection_count == 0
 
 
 @pytest.mark.asyncio
@@ -338,7 +338,7 @@ def test_monitor_keeps_duplicate_public_ids_in_separate_tenant_buckets() -> None
 
 @pytest.mark.parametrize("role", ["admin", "customer"])
 @pytest.mark.parametrize("selector_source", ["query", "header", "cookie"])
-def test_websocket_rejects_tenant_selectors_before_ticket_or_presence_mutation(
+async def test_websocket_rejects_tenant_selectors_before_ticket_or_presence_mutation(
     session_manager, customer_websocket_client, role, selector_source
 ) -> None:
     client, session_id = customer_websocket_client
@@ -361,8 +361,8 @@ def test_websocket_rejects_tenant_selectors_before_ticket_or_presence_mutation(
             pass
 
     assert closed.value.code == 1008
-    key = session_manager.resolve_customer_session(session_id)
-    session = session_manager.get_session(key)
+    key = await session_manager.resolve_customer_session(session_id)
+    session = await session_manager.get_session(key)
     assert session.admin_connection_count == 0
     assert session.customer_connection_count == 0
 

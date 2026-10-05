@@ -295,7 +295,7 @@ async def send_unified_message(
 
     # Session-Validation
     logger.debug("🔍 Validating session")
-    session = sessions.get_session(key)
+    session = await sessions.get_session(key)
     if not session:
         _log_session_event("❌ Session nicht gefunden", session_id)
         raise HTTPException(
@@ -490,7 +490,7 @@ async def process_audio_input(
     )
 
     # Validate languages match session configuration
-    session = sessions.get_session(key)
+    session = await sessions.get_session(key)
     if session:
         validate_session_languages(session, source_lang, target_lang, client_type)
 
@@ -590,7 +590,7 @@ async def process_text_input(
     _validate_supported_languages(text_request.source_lang, text_request.target_lang)
 
     # Validate languages match session configuration
-    session = sessions.get_session(key)
+    session = await sessions.get_session(key)
     logger.info(
         "🔎 Session lookup for text input | %s",
         sanitize_log_value(

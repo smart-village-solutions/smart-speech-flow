@@ -58,7 +58,7 @@ def manager(audio_store: AudioStore) -> TenantSessionManager:
 async def _session_aged(manager, *, age: timedelta, authorized: bool):
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     session.created_at = NOW - age
-    manager.add_message(
+    await manager.add_message(
         session.key,
         SessionMessage(
             id="m1",
@@ -82,8 +82,8 @@ async def test_authorised_text_expires_at_the_retention_boundary(
 ):
     monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
     key = await _session_aged(manager, age=timedelta(hours=25), authorized=True)
-    manager.sweep_expired_content(NOW)
-    assert manager.get_session(key).messages == []
+    await manager.sweep_expired_content(NOW)
+    assert (await manager.get_session(key)).messages == []
 
 
 async def test_authorised_text_survives_inside_the_retention_window(
@@ -91,8 +91,8 @@ async def test_authorised_text_survives_inside_the_retention_window(
 ):
     monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
     key = await _session_aged(manager, age=timedelta(hours=2), authorized=True)
-    manager.sweep_expired_content(NOW)
-    assert len(manager.get_session(key).messages) == 1
+    await manager.sweep_expired_content(NOW)
+    assert len((await manager.get_session(key)).messages) == 1
 
 
 async def test_authorised_text_survives_when_deletion_is_disabled(
@@ -100,8 +100,8 @@ async def test_authorised_text_survives_when_deletion_is_disabled(
 ):
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
     key = await _session_aged(manager, age=timedelta(days=30), authorized=True)
-    manager.sweep_expired_content(NOW)
-    assert len(manager.get_session(key).messages) == 1
+    await manager.sweep_expired_content(NOW)
+    assert len((await manager.get_session(key)).messages) == 1
 
 
 async def test_refused_content_in_an_abandoned_session_is_removed(
@@ -110,8 +110,8 @@ async def test_refused_content_in_an_abandoned_session_is_removed(
     # Disabling automatic deletion must not retain refused content.
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
     key = await _session_aged(manager, age=timedelta(hours=9), authorized=False)
-    manager.sweep_expired_content(NOW)
-    assert manager.get_session(key).messages == []
+    await manager.sweep_expired_content(NOW)
+    assert (await manager.get_session(key)).messages == []
 
 
 async def test_refused_content_survives_inside_the_session_lifetime(
@@ -120,8 +120,8 @@ async def test_refused_content_survives_inside_the_session_lifetime(
     # Removal belongs to termination; the sweep is the net for what never ends.
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
     key = await _session_aged(manager, age=timedelta(hours=2), authorized=False)
-    manager.sweep_expired_content(NOW)
-    assert len(manager.get_session(key).messages) == 1
+    await manager.sweep_expired_content(NOW)
+    assert len((await manager.get_session(key)).messages) == 1
 
 
 class _LifecycleEnforcingStore(MemoryTenantSessionStore):
@@ -137,14 +137,14 @@ class _LifecycleEnforcingStore(MemoryTenantSessionStore):
         super().__init__()
         self.saves: list = []
 
-    def save(self, session):
+    async def save(self, session):
         existing = self._sessions.get(session.key)
         if existing is not None and existing.status is SessionStatus.TERMINATED:
             raise SessionStoreConsistencyError(
                 "session lifecycle does not permit save"
             )
         self.saves.append(session.key)
-        super().save(session)
+        await super().save(session)
 
 
 @pytest.fixture
@@ -164,10 +164,10 @@ async def test_one_terminated_session_does_not_abort_the_whole_sweep(
         strict_manager, age=timedelta(hours=25), authorized=True
     )
 
-    strict_manager.sweep_expired_content(NOW)
+    await strict_manager.sweep_expired_content(NOW)
 
     # The live session is swept even though a terminated one came first.
-    assert strict_manager.get_session(live).messages == []
+    assert (await strict_manager.get_session(live)).messages == []
 
 
 async def test_the_sweep_leaves_terminated_records_untouched(
@@ -181,9 +181,9 @@ async def test_the_sweep_leaves_terminated_records_untouched(
     )
     await strict_manager.terminate_session(key, reason="test")
 
-    strict_manager.sweep_expired_content(NOW)
+    await strict_manager.sweep_expired_content(NOW)
 
-    assert len(strict_manager.store.load(key).messages) == 1
+    assert len((await strict_manager.store.load(key)).messages) == 1
 
 
 async def test_an_audio_only_removal_is_persisted(
@@ -194,7 +194,7 @@ async def test_an_audio_only_removal_is_persisted(
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
     session = await strict_manager.create_admin_session("tenant-test", SNAPSHOT)
     session.created_at = NOW - timedelta(hours=9)
-    strict_manager.add_message(
+    await strict_manager.add_message(
         session.key,
         SessionMessage(
             id="m1",
@@ -213,12 +213,12 @@ async def test_an_audio_only_removal_is_persisted(
     )
 
     strict_manager.store.saves.clear()
-    strict_manager.sweep_expired_content(NOW)
+    await strict_manager.sweep_expired_content(NOW)
 
     # `MemoryTenantSessionStore.load` returns the very object the sweep
     # mutated, so only a recorded write proves this survives a restart.
     assert session.key in strict_manager.store.saves
-    stored = strict_manager.store.load(session.key)
+    stored = await strict_manager.store.load(session.key)
     assert len(stored.messages) == 1
     assert stored.messages[0].translated_audio_available is False
 
@@ -255,7 +255,7 @@ async def test_a_legacy_session_sweeps_without_logging_a_failure(monkeypatch, ca
     manager.sessions[legacy.id] = legacy
 
     with caplog.at_level(logging.WARNING):
-        manager.sweep_expired_content(NOW)
+        await manager.sweep_expired_content(NOW)
 
     assert legacy.messages == []
     assert "content_sweep_failed" not in caplog.text
@@ -274,7 +274,7 @@ async def test_a_failed_sweep_write_retries_on_the_next_pass(
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
     session = await strict_manager.create_admin_session("tenant-test", SNAPSHOT)
     session.created_at = NOW - timedelta(hours=9)
-    strict_manager.add_message(
+    await strict_manager.add_message(
         session.key,
         SessionMessage(
             id="m1",
@@ -293,21 +293,21 @@ async def test_a_failed_sweep_write_retries_on_the_next_pass(
     failed = {"count": 0}
     real_save = strict_manager.store.save
 
-    def _flaky(sess):
+    async def _flaky(sess):
         if failed["count"] == 0:
             failed["count"] += 1
             raise SessionStoreConsistencyError("transient")
-        return real_save(sess)
+        return await real_save(sess)
 
     monkeypatch.setattr(strict_manager.store, "save", _flaky)
 
-    strict_manager.sweep_expired_content(NOW)
+    await strict_manager.sweep_expired_content(NOW)
     # The write failed, so nothing may have been removed yet.
-    assert len(strict_manager.store.load(session.key).messages) == 1
+    assert len((await strict_manager.store.load(session.key)).messages) == 1
     assert audio_store.path(session.key, "m1", AudioVariant.TRANSLATED).exists()
 
-    strict_manager.sweep_expired_content(NOW)
-    assert strict_manager.store.load(session.key).messages == []
+    await strict_manager.sweep_expired_content(NOW)
+    assert (await strict_manager.store.load(session.key)).messages == []
     assert not audio_store.path(session.key, "m1", AudioVariant.TRANSLATED).exists()
 
 
@@ -321,9 +321,9 @@ async def test_a_session_the_sweep_could_not_save_is_reported(manager, audio_sto
 
     monkeypatch.setattr(manager.store, "save", unavailable)
 
-    assert manager.sweep_expired_content(NOW) == {
+    assert await manager.sweep_expired_content(NOW) == {
         "refused_removed": 0,
         "expired_removed": 0,
         "failed": 1,
     }
-    assert len(manager.get_session(key).messages) == 1
+    assert len((await manager.get_session(key)).messages) == 1

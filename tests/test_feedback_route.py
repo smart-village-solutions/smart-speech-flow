@@ -202,8 +202,11 @@ def test_a_session_id_no_session_could_carry_answers_404(client_for) -> None:
     from services.api_gateway.session_store import RedisTenantSessionStore
 
     class EmptyRedis:
-        def get(self, key):
+        async def get(self, key):
             return None
+
+        async def mget(self, *keys):
+            return [None for _key in keys]
 
     service = FeedbackService(
         repository=None,

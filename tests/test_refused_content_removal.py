@@ -50,7 +50,7 @@ def _message(message_id: str, *, record: bool, original: bool, translated: bool)
 async def _session_with(manager, audio_store, messages):
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
     for message in messages:
-        manager.add_message(session.key, message)
+        await manager.add_message(session.key, message)
         for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
             audio_store.save(session.key, message.id, variant, b"wav")
     return session, session.key, manager
@@ -90,7 +90,7 @@ async def mixed_session_with_content(manager, audio_store):
 async def test_declined_session_retains_nothing(declined_session_with_content, audio_store):
     session, key, manager = declined_session_with_content
     await manager.terminate_session(key, reason="test")
-    assert manager.get_session(key).messages == []
+    assert (await manager.get_session(key)).messages == []
     for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
         assert not audio_store.path(key, "m1", variant).exists()
 
@@ -98,7 +98,7 @@ async def test_declined_session_retains_nothing(declined_session_with_content, a
 async def test_granted_session_retains_everything(granted_session_with_content, audio_store):
     session, key, manager = granted_session_with_content
     await manager.terminate_session(key, reason="test")
-    assert len(manager.get_session(key).messages) == 1
+    assert len((await manager.get_session(key)).messages) == 1
     for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
         assert audio_store.path(key, "m1", variant).exists()
 
@@ -108,7 +108,7 @@ async def test_mixed_session_retains_only_the_authorised(mixed_session_with_cont
     # refused; m3 refused outright.
     session, key, manager = mixed_session_with_content
     await manager.terminate_session(key, reason="test")
-    reloaded = manager.get_session(key)
+    reloaded = await manager.get_session(key)
     assert [m.id for m in reloaded.messages] == ["m1", "m2"]
     translated = AudioVariant.TRANSLATED
     assert audio_store.path(key, "m1", translated).exists()
@@ -129,7 +129,7 @@ async def test_a_retained_message_stops_advertising_removed_audio(
 ):
     session, key, manager = mixed_session_with_content
     await manager.terminate_session(key, reason="test")
-    retained = {m.id: m for m in manager.get_session(key).messages}
+    retained = {m.id: m for m in (await manager.get_session(key)).messages}
     # m2 keeps its record but lost its translated audio; still advertising it
     # would hand a listener an audio URL that 404s.
     assert retained["m2"].translated_audio_available is False
@@ -140,7 +140,7 @@ async def test_termination_is_idempotent(declined_session_with_content):
     session, key, manager = declined_session_with_content
     await manager.terminate_session(key, reason="test")
     await manager.terminate_session(key, reason="test")
-    assert manager.get_session(key).messages == []
+    assert (await manager.get_session(key)).messages == []
 
 
 async def test_a_retained_message_stops_advertising_removed_original_audio(
@@ -158,16 +158,16 @@ async def test_a_retained_message_stops_advertising_removed_original_audio(
     message = _message("m1", record=True, original=False, translated=True)
     message.original_audio_url = "available"
     message.pipeline_metadata = {"input": {"type": "audio"}}
-    manager.add_message(session.key, message)
+    await manager.add_message(session.key, message)
     for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
         audio_store.save(session.key, "m1", variant, b"wav")
 
     await manager.terminate_session(session.key, reason="test")
 
-    retained = manager.get_session(session.key).messages[0]
+    retained = (await manager.get_session(session.key)).messages[0]
     assert retained.original_audio_url is None
 
-    items = ConversationService(
+    items = await ConversationService(
         manager, pipeline=speech_pipeline(), audio_store=audio_store
     ).messages(
         session.key, ClientType.ADMIN
@@ -188,7 +188,7 @@ async def test_a_failed_termination_leaves_the_audio_in_place(manager, audio_sto
     doomed = _message("m1", record=True, original=False, translated=False)
     doomed.original_audio_url = "available"
     doomed.pipeline_metadata = {"input": {"type": "audio"}}
-    manager.add_message(session.key, doomed)
+    await manager.add_message(session.key, doomed)
     for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
         audio_store.save(session.key, "m1", variant, b"wav")
 
@@ -205,7 +205,7 @@ async def test_a_failed_termination_leaves_the_audio_in_place(manager, audio_sto
     # The live session still has the message it is still able to deliver, with
     # its audio references intact. `replace()` is a shallow copy, so settling
     # the terminal record must not reach back into the running conversation.
-    live = manager.get_session(session.key).messages
+    live = (await manager.get_session(session.key)).messages
     assert len(live) == 1
     assert live[0].translated_audio_available is True
     assert live[0].original_audio_url == "available"
@@ -228,16 +228,16 @@ async def test_refused_translated_audio_leaves_no_url_in_pipeline_metadata(
     message.pipeline_metadata = {
         "steps": [{"step": "TTS", "output": {"audio_available": True, "audio_url": "x.wav"}}]
     }
-    manager.add_message(session.key, message)
+    await manager.add_message(session.key, message)
     for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
         audio_store.save(session.key, "m1", variant, b"wav")
 
     await manager.terminate_session(session.key, reason="test")
 
-    item = ConversationService(
-        manager, pipeline=speech_pipeline(), audio_store=audio_store
-    ).messages(
-        session.key, ClientType.ADMIN
+    item = (
+        await ConversationService(
+            manager, pipeline=speech_pipeline(), audio_store=audio_store
+        ).messages(session.key, ClientType.ADMIN)
     )[0]
     emitted = repr(item.get("pipeline_metadata"))
     assert "audio_url" not in emitted
@@ -258,12 +258,12 @@ async def test_a_consented_text_message_keeps_its_metadata(manager, audio_store)
         "input": {"type": "text", "source_lang": "de"},
         "steps": [{"step": "TTS", "output": {"audio_available": True}}],
     }
-    manager.add_message(session.key, message)
+    await manager.add_message(session.key, message)
     audio_store.save(session.key, "m1", AudioVariant.TRANSLATED, b"wav")
 
     await manager.terminate_session(session.key, reason="test")
 
-    retained = manager.get_session(session.key).messages[0]
+    retained = (await manager.get_session(session.key)).messages[0]
     assert retained.pipeline_metadata["input"]["type"] == "text"
     assert retained.pipeline_metadata["steps"][0]["output"]["audio_available"] is True
 
@@ -277,11 +277,11 @@ async def test_a_message_without_tts_audio_keeps_its_negative_marker(manager, au
         "input": {"type": "audio"},
         "steps": [{"step": "TTS", "output": {"audio_available": False}}],
     }
-    manager.add_message(session.key, message)
+    await manager.add_message(session.key, message)
     audio_store.save(session.key, "m1", AudioVariant.ORIGINAL, b"wav")
 
     await manager.terminate_session(session.key, reason="test")
 
-    output = manager.get_session(session.key).messages[0].pipeline_metadata["steps"][0]
+    output = (await manager.get_session(session.key)).messages[0].pipeline_metadata["steps"][0]
     assert output["output"]["audio_available"] is False
     assert "audio_url" not in output["output"]

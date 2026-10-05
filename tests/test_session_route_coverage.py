@@ -79,9 +79,9 @@ async def test_manager_replaces_only_the_same_tenants_active_session(
     )
     second = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner_a)
 
-    assert manager.get_session(first.key).status is SessionStatus.TERMINATED
-    assert manager.get_session(other.key).status is SessionStatus.PENDING
-    assert manager.get_active_session(tenant_id="tenant-a", owner_ref=owner_a)["id"] == second.id
+    assert (await manager.get_session(first.key)).status is SessionStatus.TERMINATED
+    assert (await manager.get_session(other.key)).status is SessionStatus.PENDING
+    assert (await manager.get_active_session(tenant_id="tenant-a", owner_ref=owner_a))["id"] == second.id
 
 
 def test_openapi_omits_generic_session_management_routes() -> None:
