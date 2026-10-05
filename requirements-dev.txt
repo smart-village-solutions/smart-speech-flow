@@ -111,7 +111,7 @@ joblib==1.5.3
     # via nltk
 joserfc==1.7.4
     # via authlib
-librt==0.15.0
+librt==0.16.0
     # via mypy
 license-expression==30.4.4
     # via cyclonedx-python-lib
@@ -127,7 +127,7 @@ mdurl==0.1.2
     # via markdown-it-py
 msgpack==1.2.1
     # via cachecontrol
-mypy==2.3.1
+mypy==2.4.0
     # via -r requirements-dev.in
 mypy-extensions==1.1.0
     # via
