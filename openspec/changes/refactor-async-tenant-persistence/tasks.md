@@ -9,6 +9,7 @@
 - [x] 2.3 Access guards, routes, WebSocket, polling, message delivery, feedback, lifespan and retention pass await the manager
 - [x] 2.4 `load` reads record and join in one `MGET`; a pruned polling batch is released in full despite cancellation
 - [x] 2.5 Per-owner creation lock, single termination report, polling activation withdrawn on termination, batched tenant listing, shutdown drains presence releases, failed startup closes the client
+- [x] 2.6 A change that waited behind a termination fails as on an ended session; blocking connection pool; polling lock holds no Redis round trip; batch releases survive one failure and log
 
 ## 3. Evidence
 - [x] 3.1 Guard: no synchronous Redis client in production gateway modules, watched failing

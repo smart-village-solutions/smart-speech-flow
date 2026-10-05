@@ -11,6 +11,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 GATEWAY = Path(__file__).resolve().parents[1] / "services" / "api_gateway"
 
 EXEMPT = {
@@ -20,18 +22,55 @@ EXEMPT = {
     "legacy_session_manager.py",
 }
 
-SYNC_CLIENTS = {"Redis", "StrictRedis"}
+# Where redis-py exposes its synchronous client, and what it calls it there.
+SYNC_MODULES = {"redis", "redis.client"}
+SYNC_NAMES = {"Redis", "StrictRedis", "client"}
 
 
 def _sync_redis_imports(path: Path) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     found: list[str] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module == "redis":
-            found += [alias.name for alias in node.names if alias.name in SYNC_CLIENTS]
+        if isinstance(node, ast.ImportFrom) and node.module in SYNC_MODULES:
+            found += [
+                f"{node.module}.{alias.name}" for alias in node.names if alias.name in SYNC_NAMES
+            ]
         elif isinstance(node, ast.Import):
-            found += [alias.name for alias in node.names if alias.name == "redis"]
+            found += [alias.name for alias in node.names if alias.name in SYNC_MODULES]
     return found
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from redis import Redis",
+        "from redis import StrictRedis",
+        "from redis import client",
+        "from redis.client import Redis",
+        "import redis",
+        "import redis.client",
+    ],
+)
+def test_the_guard_recognises_each_way_to_import_the_sync_client(tmp_path, source) -> None:
+    module = tmp_path / "module.py"
+    module.write_text(source + "\n", encoding="utf-8")
+
+    assert _sync_redis_imports(module) != []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from redis.asyncio import Redis",
+        "import redis.asyncio",
+        "from redis.exceptions import RedisError",
+    ],
+)
+def test_the_guard_allows_the_async_client_and_the_exceptions(tmp_path, source) -> None:
+    module = tmp_path / "module.py"
+    module.write_text(source + "\n", encoding="utf-8")
+
+    assert _sync_redis_imports(module) == []
 
 
 def test_no_production_gateway_module_imports_the_sync_redis_client() -> None:

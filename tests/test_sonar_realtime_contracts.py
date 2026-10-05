@@ -513,3 +513,116 @@ async def test_an_activation_that_loses_a_race_with_termination_leaves_no_poller
 
 async def _true() -> bool:
     return True
+
+
+class StalledSaveStore(MemoryTenantSessionStore):
+    """Saves to one session stall until released, as a hung Redis round trip would."""
+
+    def __init__(self, stalled_session_id: str) -> None:
+        super().__init__()
+        self.stalled_session_id = stalled_session_id
+        self.release = asyncio.Event()
+
+    async def save(self, session):
+        if session.id == self.stalled_session_id:
+            await self.release.wait()
+        await super().save(session)
+
+
+async def test_a_stalled_presence_release_does_not_hold_up_other_pollers():
+    now = [0.0]
+    store = polling.TenantPollingStore(clock=lambda: now[0])
+    sessions = TenantSessionManager(
+        store=StalledSaveStore("STALLED1"), audio_store=AudioStore.from_environment()
+    )
+    stalled_key = polling.TenantSessionKey("tenant-a", "STALLED1")
+    other_key = polling.TenantSessionKey("tenant-b", "OTHER123")
+    for key in (stalled_key, other_key):
+        await sessions.store.create(Session(id=key.session_id, tenant_id=key.tenant_id))
+    store.activate(stalled_key, ClientType.ADMIN)
+    stalled_session = await sessions.get_session(stalled_key)
+    stalled_session.admin_connection_count = 1
+    now[0] = 121.0
+    first = store.activate(other_key, ClientType.ADMIN)
+    second = store.activate(other_key, ClientType.ADMIN)
+    status = next(
+        route.endpoint for route in polling.router.routes if route.name == "admin_polling_status"
+    )
+
+    def request(client):
+        return status(
+            session_id=other_key.session_id,
+            polling_id=client.polling_id,
+            key=other_key,
+            sessions=sessions,
+            polling_store=store,
+        )
+
+    releasing = asyncio.create_task(request(first))
+    await asyncio.sleep(0)
+
+    answered = await asyncio.wait_for(request(second), 1)
+
+    assert answered["polling_id"] == second.polling_id
+    sessions.store.release.set()
+    await asyncio.wait_for(releasing, 1)
+    assert stalled_session.admin_connection_count == 0
+
+
+class FailingSaveStore(MemoryTenantSessionStore):
+    """One session's saves fail as a dropped Redis connection would."""
+
+    def __init__(self, failing_session_id: str, error: Exception) -> None:
+        super().__init__()
+        self.failing_session_id = failing_session_id
+        self.error = error
+
+    async def save(self, session):
+        if session.id == self.failing_session_id:
+            raise self.error
+        await super().save(session)
+
+
+async def _expired_pair(sessions, store, now):
+    keys = [polling.TenantSessionKey("tenant-a", name) for name in ("BROKEN11", "HEALTHY1")]
+    for key in keys:
+        await sessions.store.create(Session(id=key.session_id, tenant_id=key.tenant_id))
+        store.activate(key, ClientType.ADMIN)
+        (await sessions.get_session(key)).admin_connection_count = 1
+    now[0] = 121.0
+    return keys
+
+
+async def test_one_failed_presence_release_does_not_strand_the_rest_of_the_batch(caplog):
+    now = [0.0]
+    store = polling.TenantPollingStore(clock=lambda: now[0])
+    sessions = TenantSessionManager(
+        store=FailingSaveStore("BROKEN11", ConnectionError("redis went away")),
+        audio_store=AudioStore.from_environment(),
+    )
+    _broken, healthy = await _expired_pair(sessions, store, now)
+
+    release = polling._release_stale_clients(store, sessions)
+    await release
+
+    assert (await sessions.get_session(healthy)).admin_connection_count == 0
+    assert "polling_presence_release_failed" in caplog.text
+    assert "ConnectionError" in caplog.text
+
+
+async def test_an_unexpected_release_error_is_logged_even_if_nobody_awaits_it(caplog):
+    now = [0.0]
+    store = polling.TenantPollingStore(clock=lambda: now[0])
+    sessions = TenantSessionManager(
+        store=FailingSaveStore("BROKEN11", RuntimeError("bug")),
+        audio_store=AudioStore.from_environment(),
+    )
+    await _expired_pair(sessions, store, now)
+
+    polling._release_stale_clients(store, sessions)
+    (task,) = store.release_tasks
+    with pytest.raises(RuntimeError):
+        await task
+    await asyncio.sleep(0)
+
+    assert "polling_presence_release_failed error_type=RuntimeError" in caplog.text

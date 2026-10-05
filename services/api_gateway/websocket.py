@@ -41,8 +41,9 @@ from .realtime_protocol import (
 from .realtime_registry import ConnectionRegistry
 from .realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from .session_access import require_customer_session_key
-from .session_manager import SessionRegistry, TenantSessionManager
+from .session_manager import TenantSessionManager
 from .session_models import ClientType, SessionStatus
+from .session_ports import SessionRegistry
 from .tenant_context import reject_request_tenant_selectors
 from .tenant_session import TenantSessionKey
 from .websocket_monitor import DisconnectReason, WebSocketMonitor

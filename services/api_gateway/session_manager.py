@@ -22,13 +22,12 @@ from typing import (
     Generic,
     List,
     Optional,
-    Protocol,
     TypeVar,
 )
 
 from .keyed_locks import KeyedLocks
 from .quality_telemetry_schema import SessionLifecyclePhase, SessionTerminationReason
-from .realtime_protocol import Frame, timeout_warning_frame
+from .realtime_protocol import timeout_warning_frame
 from .session_models import (
     ClientType,
     Session,
@@ -42,58 +41,28 @@ from .session_models import (
     _unprune_messages,
     utc_now,
 )
+from .session_ports import SessionSockets
 from .session_pseudonym import MISSING_TENANT_REFERENCE, SessionPseudonymizer, tenant_ref
-from .session_store import MemoryTenantSessionStore, TenantSessionStore
+from .session_store import (
+    MemoryTenantSessionStore,
+    SessionStoreConsistencyError,
+    TenantSessionStore,
+)
 from .tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
 
 if TYPE_CHECKING:
     from .audio_storage import AudioStore
     from .realtime_ticket import RealtimeTicketStore
     from .runtime_policy import RuntimePolicyGate
-    from .websocket import WebSocketManager
     from .websocket_polling_routes import TenantPollingStore
 
 logger = logging.getLogger(__name__)
 
 _SESSION_NOT_FOUND = "session not found"
+_SESSION_ENDED = "session lifecycle does not permit save"
 
 
 KeyT = TypeVar("KeyT")
-KeyT_contra = TypeVar("KeyT_contra", contravariant=True)
-
-
-class SessionSockets[KeyT_in](Protocol):
-    """What a session manager calls on the realtime side of its app.
-
-    `WebSocketManager` is a `SessionSockets[TenantSessionKey]`. The legacy
-    adapter's `SessionSockets[str]` is satisfied only by test doubles now.
-    The key is inferred contravariant: it appears only as a parameter.
-    """
-
-    async def handle_session_termination(self, session_id: KeyT_in, reason: str) -> None: ...
-
-    async def broadcast_to_session(self, session_id: KeyT_in, message: Frame) -> None: ...
-
-
-class SessionRegistry(Protocol[KeyT_contra]):
-    """What the WebSocket manager needs from a session manager.
-
-    Generic in the key rather than widened to `Any`. The WebSocket manager
-    takes a `SessionRegistry[TenantSessionKey]`, which `TenantSessionManager`
-    is. `LegacySessionManager` is none: its lookups stayed synchronous.
-    """
-
-    def register_websocket_manager(self, manager: WebSocketManager) -> None: ...
-
-    async def get_session(self, session_id: KeyT_contra) -> Optional[Session]: ...
-
-    async def add_websocket_connection(
-        self, session_id: KeyT_contra, client_type: ClientType, websocket: Any
-    ) -> None: ...
-
-    async def remove_websocket_connection(
-        self, session_id: KeyT_contra, client_type: ClientType
-    ) -> None: ...
 
 
 class SessionManagerBase(Generic[KeyT]):
@@ -506,6 +475,17 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             SessionTerminationReason.classify(reason),
         )
 
+    async def _save_live(self, session: Session, refusal: Exception) -> None:
+        """Save a change to a live session; raise `refusal` if it ended meanwhile.
+
+        The save can wait behind a termination of the same session, which
+        copies the terminal record onto this object. The store accepts that
+        unchanged record, so only the status shows that the change was lost.
+        """
+        await self.store.save(session)
+        if session.status == SessionStatus.TERMINATED:
+            raise refusal
+
     async def get_session(self, session_id: TenantSessionKey) -> Optional[Session]:
         """The cached session, loading it from the store on a miss."""
         session = self.sessions.get(session_id)
@@ -565,7 +545,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         session.admin_connected = True
         session.admin_disconnected_at = None
         session.timeout_warning_sent = False
-        await self.store.save(session)
+        await self._save_live(session, KeyError(_SESSION_NOT_FOUND))
 
     async def admin_disconnected(self, key: TenantSessionKey) -> None:
         session = await self.get_session(key)
@@ -585,7 +565,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             raise KeyError(_SESSION_NOT_FOUND)
         session.customer_connection_count += 1
         session.customer_connected = True
-        await self.store.save(session)
+        await self._save_live(session, KeyError(_SESSION_NOT_FOUND))
 
     async def customer_disconnected(self, key: TenantSessionKey) -> None:
         session = await self.get_session(key)
@@ -608,7 +588,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             session.messages.append(message)
             # ✨ Session-Aktivität bei neuer Nachricht aktualisieren
             session.update_activity()
-            await self.store.save(session)
+            await self._save_live(session, SessionStoreConsistencyError(_SESSION_ENDED))
 
     async def record_message_authorization(
         self,
@@ -640,7 +620,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             break
         else:
             return
-        await self.store.save(session)
+        await self._save_live(session, SessionStoreConsistencyError(_SESSION_ENDED))
 
     async def _persist_swept_session(self, session: Session) -> None:
         await self.store.save(session)
@@ -704,10 +684,9 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             raise ValueError(f"Session {session_id} nicht gefunden")
 
         # Erlaubt Aktivierung von PENDING → ACTIVE oder Sprachänderung in ACTIVE
+        ended = ValueError(f"Session {session_id} ist beendet und kann nicht mehr geändert werden")
         if session.status == SessionStatus.TERMINATED:
-            raise ValueError(
-                f"Session {session_id} ist beendet und kann nicht mehr geändert werden"
-            )
+            raise ended
 
         session.customer_language = customer_language
         # This method doubles as the language-update path, so the transition --
@@ -717,7 +696,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         if activated:
             session.status = SessionStatus.ACTIVE
         session.customer_connected = True
-        await self.store.save(session)
+        await self._save_live(session, ended)
 
         if activated:
             self._emit_lifecycle(session, SessionLifecyclePhase.ACTIVATED)

@@ -28,6 +28,7 @@ from .realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from .session_access import require_admin_session_key, require_customer_session_key
 from .session_manager import TenantSessionManager
 from .session_models import ClientType
+from .session_store import SessionStoreConsistencyError
 from .tenant_context import reject_request_tenant_selectors
 from .tenant_session import TenantSessionKey
 from .websocket import WebSocketManager
@@ -36,7 +37,17 @@ router = APIRouter(
     tags=["realtime-polling"], dependencies=[Depends(reject_request_tenant_selectors)]
 )
 SessionManagerDependency = Annotated[TenantSessionManager, Depends(get_session_manager)]
+try:
+    from redis.exceptions import RedisError
+except ImportError:  # pragma: no cover - redis optional for tests
+
+    class RedisError(Exception):  # type: ignore[no-redef]
+        pass
+
+
 logger = logging.getLogger(__name__)
+# What one presence release can fail with without stopping the rest of its batch.
+_RELEASE_FAILURES = (RedisError, OSError, SessionStoreConsistencyError)
 MAX_POLLING_CLIENTS = 1000
 MAX_POLLING_CLIENTS_PER_ROLE = 10
 POLLING_IDLE_SECONDS = 120
@@ -214,23 +225,24 @@ async def activate_admin_polling(
     polling_store: Annotated[TenantPollingStore, Depends(get_polling_store)],
     tickets: Annotated[RealtimeTicketStore, Depends(get_realtime_ticket_store)],
 ) -> dict[str, object]:
+    try:
+        accepted = await tickets.consume(request.ticket, key, "polling")
+    except RealtimeTicketUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Realtime ticket service unavailable",
+        ) from None
+    if not accepted:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = await sessions.get_session(key)
+    if session is None or session.status.value == "terminated":
+        raise HTTPException(status_code=404, detail="Session not found")
     async with polling_store.mutation_lock:
-        try:
-            accepted = await tickets.consume(request.ticket, key, "polling")
-        except RealtimeTicketUnavailable:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Realtime ticket service unavailable",
-            ) from None
-        if not accepted:
-            raise HTTPException(status_code=404, detail="Session not found")
-        session = await sessions.get_session(key)
-        if session is None or session.status.value == "terminated":
-            raise HTTPException(status_code=404, detail="Session not found")
-        await _release_stale_clients(polling_store, sessions)
+        release = _release_stale_clients(polling_store, sessions)
         client = polling_store.activate(key, ClientType.ADMIN)
-        await _record_presence(polling_store, client, sessions)
-        return _activation_response(client)
+    await _settled(release)
+    await _record_presence(polling_store, client, sessions)
+    return _activation_response(client)
 
 
 @router.post("/api/customer/session/{session_id}/polling/activate")
@@ -241,10 +253,11 @@ async def activate_customer_polling(
     polling_store: Annotated[TenantPollingStore, Depends(get_polling_store)],
 ) -> dict[str, object]:
     async with polling_store.mutation_lock:
-        await _release_stale_clients(polling_store, sessions)
+        release = _release_stale_clients(polling_store, sessions)
         client = polling_store.activate(key, ClientType.CUSTOMER)
-        await _record_presence(polling_store, client, sessions)
-        return _activation_response(client)
+    await _settled(release)
+    await _record_presence(polling_store, client, sessions)
+    return _activation_response(client)
 
 
 async def _record_presence(
@@ -267,12 +280,22 @@ async def _record_presence(
         raise HTTPException(status_code=404, detail="Session not found") from None
 
 
-async def _release_stale_clients(
+def _release_stale_clients(
     polling_store: TenantPollingStore, sessions: TenantSessionManager
-) -> None:
+) -> asyncio.Future[None] | None:
+    """Prune idle pollers and start releasing their presence.
+
+    Called under the store's mutation lock, which guards the store and holds
+    no Redis round trip: the caller awaits the returned release after leaving
+    the lock, so a slow save never stalls every tenant's pollers.
+    """
     expired = polling_store.prune()
-    if expired:
-        await _release_in_full(polling_store, expired, sessions)
+    return _release_in_full(polling_store, expired, sessions) if expired else None
+
+
+async def _settled(release: asyncio.Future[None] | None) -> None:
+    if release is not None:
+        await release
 
 
 def _release_in_full(
@@ -289,12 +312,32 @@ def _release_in_full(
     task = asyncio.create_task(_release_all(clients, sessions))
     polling_store.release_tasks.add(task)
     task.add_done_callback(polling_store.release_tasks.discard)
-    return asyncio.shield(task)
+    task.add_done_callback(_log_release_failure)
+    shielded = asyncio.shield(task)
+    # A request that returns early never awaits this; _log_release_failure
+    # has already reported any error, so asyncio need not report it again.
+    shielded.add_done_callback(lambda done: done.cancelled() or done.exception())
+    return shielded
+
+
+def _log_release_failure(task: asyncio.Task[None]) -> None:
+    # A cancelled request no longer awaits the shielded task, so its error would
+    # otherwise reach no one.
+    if not task.cancelled() and (error := task.exception()) is not None:
+        logger.error("polling_presence_release_failed error_type=%s", type(error).__name__)
 
 
 async def _release_all(clients: list[PollingClient], sessions: TenantSessionManager) -> None:
     for client in clients:
-        await _release_presence(client, sessions)
+        try:
+            await _release_presence(client, sessions)
+        except _RELEASE_FAILURES as error:
+            # One session's failed save must not strand the rest of the batch.
+            logger.warning(
+                "polling_presence_release_failed tenant_ref=%s error_type=%s",
+                client.key.tenant_ref,
+                type(error).__name__,
+            )
 
 
 async def _release_presence(client: PollingClient, sessions: TenantSessionManager) -> None:
@@ -315,8 +358,11 @@ async def _active_client(
     sessions: TenantSessionManager,
 ) -> PollingClient:
     """Release expired presence before accepting activity from a poller."""
-    await _release_stale_clients(polling_store, sessions)
-    return polling_store.require(polling_id, key, client_type)
+    async with polling_store.mutation_lock:
+        release = _release_stale_clients(polling_store, sessions)
+        client = polling_store.require(polling_id, key, client_type)
+    await _settled(release)
+    return client
 
 
 def require_customer_polling_key(
@@ -404,8 +450,12 @@ def _recover(client: PollingClient) -> dict[str, str]:
 async def _disconnect(
     polling_store: TenantPollingStore, client: PollingClient, sessions: TenantSessionManager
 ) -> dict[str, str]:
-    polling_store.remove(client)
-    await _release_in_full(polling_store, [client], sessions)
+    async with polling_store.mutation_lock:
+        if polling_store.clients.get(client.polling_id) is not client:
+            return {"status": "disconnected"}
+        polling_store.remove(client)
+        release = _release_in_full(polling_store, [client], sessions)
+    await release
     return {"status": "disconnected"}
 
 
@@ -424,13 +474,10 @@ def _register_role_routes(
         sessions: TenantSessionManager = Depends(get_session_manager),
         polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, object]:
-        async with polling_store.mutation_lock:
-            client = await _active_client(polling_store, polling_id, key, client_type, sessions)
+        client = await _active_client(polling_store, polling_id, key, client_type, sessions)
         response = await _poll(client, wait_seconds)
         if client.terminated:
-            async with polling_store.mutation_lock:
-                if polling_store.clients.get(polling_id) is client:
-                    await _disconnect(polling_store, client, sessions)
+            await _disconnect(polling_store, client, sessions)
         return response
 
     async def send(
@@ -442,8 +489,7 @@ def _register_role_routes(
         sessions: TenantSessionManager = Depends(get_session_manager),
         polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, str]:
-        async with polling_store.mutation_lock:
-            client = await _active_client(polling_store, polling_id, key, client_type, sessions)
+        client = await _active_client(polling_store, polling_id, key, client_type, sessions)
         # The response model stays dict[str, str], so an overflow's partial body is
         # still refused with 500; characterization.md leaves that to its own issue.
         return await _send(polling_store, client, message, manager)  # type: ignore[return-value]
@@ -455,10 +501,7 @@ def _register_role_routes(
         sessions: TenantSessionManager = Depends(get_session_manager),
         polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, object]:
-        async with polling_store.mutation_lock:
-            return _status(
-                await _active_client(polling_store, polling_id, key, client_type, sessions)
-            )
+        return _status(await _active_client(polling_store, polling_id, key, client_type, sessions))
 
     async def recover(
         session_id: str,
@@ -467,10 +510,7 @@ def _register_role_routes(
         sessions: TenantSessionManager = Depends(get_session_manager),
         polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, str]:
-        async with polling_store.mutation_lock:
-            return _recover(
-                await _active_client(polling_store, polling_id, key, client_type, sessions)
-            )
+        return _recover(await _active_client(polling_store, polling_id, key, client_type, sessions))
 
     async def disconnect(
         session_id: str,
@@ -479,9 +519,8 @@ def _register_role_routes(
         sessions: TenantSessionManager = Depends(get_session_manager),
         polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, str]:
-        async with polling_store.mutation_lock:
-            client = await _active_client(polling_store, polling_id, key, client_type, sessions)
-            return await _disconnect(polling_store, client, sessions)
+        client = await _active_client(polling_store, polling_id, key, client_type, sessions)
+        return await _disconnect(polling_store, client, sessions)
 
     router.add_api_route(base, poll, methods=["GET"], name=f"{prefix}_poll")
     router.add_api_route(base + "/send", send, methods=["POST"], name=f"{prefix}_send")

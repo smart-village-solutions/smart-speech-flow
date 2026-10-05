@@ -256,3 +256,27 @@ async def test_a_record_rewritten_under_another_tenant_is_quarantined(
 
     assert await store.load(session.key) is None
     assert await store.resolve_join(session.id) is None
+
+
+async def test_a_connect_waiting_behind_a_termination_is_refused(
+    store: RedisTenantSessionStore, tmp_path
+) -> None:
+    """The termination's EVAL is on the wire, holding the write lock, when the connect saves."""
+    from services.api_gateway.audio_storage import AudioStore
+    from services.api_gateway.session_manager import TenantSessionManager
+
+    manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
+    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+
+    terminated, connected = await asyncio.gather(
+        manager.terminate_session(session.key, "manual_admin_termination"),
+        manager.customer_connected(session.key),
+        return_exceptions=True,
+    )
+
+    assert terminated is None
+    assert isinstance(connected, KeyError)
+    persisted = await store.load(session.key)
+    assert persisted is not None
+    assert persisted.status is SessionStatus.TERMINATED
+    assert persisted.customer_connection_count == 0

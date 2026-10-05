@@ -14,6 +14,11 @@ The gateway SHALL reach the tenant session store and the realtime ticket store t
 - **WHEN** two handlers change the same session and both save it
 - **THEN** the store ends holding the session's latest state, never an older snapshot
 
+#### Scenario: Change racing a termination
+
+- **WHEN** a connection, activation or message for a session waits for its write while that session is terminated
+- **THEN** the change fails as it would on an already terminated session, and no participant joins or is told of success after the termination
+
 #### Scenario: Synchronous client reintroduced
 
 - **WHEN** a production gateway module imports the synchronous Redis client, other than the offline cutover CLI and the legacy session manager that no production path constructs

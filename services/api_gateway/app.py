@@ -343,25 +343,12 @@ async def _shut_down(
     print("Shutdown complete", flush=True)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Build this app's dependency container, run its background tasks, release both."""
-
-    _announce("=" * 80)
-    _announce("API GATEWAY STARTUP")
-    _announce("=" * 80)
-
-    # First, as when it ran at import: a malformed LLM_REFINEMENT_* setting
-    # raises here and refuses startup before anything connects.
-    from .translation_refiner import get_translation_refiner
-
-    refiner = get_translation_refiner()
-
-    # The v2 session record, tenant indexes, join tombstone, and single-use
-    # realtime ticket must share one verified Redis connection in production.
-    from .tenant_persistence import configure_tenant_persistence
-
-    tenant_persistence = await configure_tenant_persistence()
+async def _start_serving(
+    app: FastAPI,
+    refiner: "BaseTranslationRefiner",
+    tenant_persistence: "TenantPersistenceBinding | None",
+) -> tuple[GatewayDependencies, list[asyncio.Task[None]]]:
+    """Everything startup does once the tenant connection is verified."""
     metrics: GatewayMetrics = app.state.gateway_metrics
     runtime_flow, runtime_policy = _build_runtime_policy(app.state.prometheus_registry)
     pipeline = _build_pipeline_collaborators(
@@ -373,14 +360,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     if tenant_persistence is not None:
         # Before any request, socket or background task can see this app's sessions.
-        rehydrated = False
-        try:
-            await dependencies.session_manager.rehydrate_tenant_sessions()
-            rehydrated = True
-        finally:
-            # A failed rehydrate aborts startup, and _shut_down never runs.
-            if not rehydrated:
-                await tenant_persistence.close()
+        await dependencies.session_manager.rehydrate_tenant_sessions()
     app.state.dependencies = dependencies
     await _attach_quality_telemetry(dependencies, pipeline.telemetry_mode, metrics.refinement)
 
@@ -400,7 +380,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # content that expired during downtime goes and the audio series have
     # data from the first scrape.
     await run_retention_pass(dependencies.session_manager, dependencies.audio_store)
-    tasks = _start_background_tasks(dependencies, feedback_dsns)
+    return dependencies, _start_background_tasks(dependencies, feedback_dsns)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Build this app's dependency container, run its background tasks, release both."""
+
+    _announce("=" * 80)
+    _announce("API GATEWAY STARTUP")
+    _announce("=" * 80)
+
+    # First, as when it ran at import: a malformed LLM_REFINEMENT_* setting
+    # raises here and refuses startup before anything connects.
+    from .translation_refiner import get_translation_refiner
+
+    refiner = get_translation_refiner()
+
+    # The v2 session record, tenant indexes, join tombstone, and single-use
+    # realtime ticket must share one verified Redis connection in production.
+    from .tenant_persistence import configure_tenant_persistence
+
+    tenant_persistence = await configure_tenant_persistence()
+    started = False
+    try:
+        dependencies, tasks = await _start_serving(app, refiner, tenant_persistence)
+        started = True
+    finally:
+        # A failed startup never reaches _shut_down, which would close it.
+        if not started and tenant_persistence is not None:
+            await tenant_persistence.close()
     _announce("All background tasks started")
     _announce("=" * 80)
 

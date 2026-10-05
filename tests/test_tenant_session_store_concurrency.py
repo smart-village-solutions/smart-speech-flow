@@ -11,6 +11,7 @@ import asyncio
 import json
 from datetime import timedelta
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -20,11 +21,15 @@ from services.api_gateway.session_models import ClientType, Session, SessionMess
 from services.api_gateway.session_store import (
     MemoryTenantSessionStore,
     RedisTenantSessionStore,
+    SessionStoreConsistencyError,
     join_key,
     session_key,
     tenant_sessions_key,
 )
 from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from services.api_gateway.websocket import WebSocketManager
+from tests.realtime_sessions import websocket_monitor
+from tests.test_tenant_persistence_lifespan import PersistentFakeRedis
 
 REVISION = f"sha256:{'a' * 64}"
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
@@ -251,15 +256,36 @@ async def test_one_admins_concurrent_creates_leave_one_live_session(tmp_path: Pa
     assert len(manager._creation_locks) == 0
 
 
+class StalledCreateStore(SuspendingStore):
+    """One owner's create stalls in the store until released."""
+
+    def __init__(self, stalled_owner: str) -> None:
+        super().__init__()
+        self.stalled_owner = stalled_owner
+        self.release = asyncio.Event()
+
+    async def create(self, session: Session) -> bool:
+        if session.owner_ref == self.stalled_owner:
+            await self.release.wait()
+        return await super().create(session)
+
+
 async def test_different_admins_create_without_waiting_for_each_other(tmp_path: Path) -> None:
-    manager = TenantSessionManager(store=SuspendingStore(), audio_store=AudioStore(tmp_path))
-
-    first, second = await asyncio.gather(
-        manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref="owner-1"),
-        manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref="owner-2"),
+    store = StalledCreateStore("owner-1")
+    manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
+    stalled = asyncio.create_task(
+        manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref="owner-1")
     )
+    for _ in range(5):
+        await asyncio.sleep(0)
 
-    assert first.status is second.status
+    created = await asyncio.wait_for(
+        manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref="owner-2"), 1
+    )
+    store.release.set()
+    await stalled
+
+    assert created.owner_ref == "owner-2"
 
 
 async def test_a_failed_sweep_does_not_restore_content_onto_a_terminated_session(
@@ -351,3 +377,97 @@ async def test_a_tenant_listing_reads_every_record_in_one_round_trip() -> None:
 
     assert redis.round_trips == ["smembers", "mget"]
     assert sorted(session.id for session in listed) == [f"SESSION{index}" for index in range(1, 5)]
+
+
+class HeldTerminationRedis(PersistentFakeRedis):
+    """The Lua-faithful fake, holding a termination script until the test releases it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.release_termination = asyncio.Event()
+
+    async def eval(self, script, number_of_keys, *values):
+        if number_of_keys == 3 and str(values[1]).endswith(":active-admin"):
+            await self.release_termination.wait()
+        return await super().eval(script, number_of_keys, *values)
+
+
+def _message_now(message_id: str) -> SessionMessage:
+    return _message(message_id, age=timedelta(0))
+
+
+CHANGES_REFUSED_AFTER_TERMINATION = {
+    "admin_connected": (lambda manager, key: manager.admin_connected(key), KeyError),
+    "customer_connected": (lambda manager, key: manager.customer_connected(key), KeyError),
+    "activate_session": (lambda manager, key: manager.activate_session(key, "en"), ValueError),
+    "add_message": (
+        lambda manager, key: manager.add_message(key, _message_now("late")),
+        SessionStoreConsistencyError,
+    ),
+}
+
+
+@pytest.mark.parametrize("change", sorted(CHANGES_REFUSED_AFTER_TERMINATION))
+async def test_a_change_waiting_behind_a_termination_is_refused(
+    change: str, tmp_path: Path
+) -> None:
+    """The termination holds the write lock while the change waits for it.
+
+    The waiting save then carries the terminal record the termination copied
+    onto the cached session, which the store accepts unchanged, so the change
+    itself is lost. It must fail as the change would have failed had the
+    termination come first, not report success.
+    """
+    redis = HeldTerminationRedis()
+    store = RedisTenantSessionStore(redis)
+    manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
+    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    recorder = LifecycleRecorder()
+    manager.attach_quality_telemetry(recorder)
+    apply, refusal = CHANGES_REFUSED_AFTER_TERMINATION[change]
+
+    terminating = asyncio.create_task(manager.terminate_session(session.key, "manual"))
+    changing = asyncio.create_task(apply(manager, session.key))
+    for _ in range(10):
+        await asyncio.sleep(0)
+    entry = store._write_locks._entries[session.key]
+    assert entry.holders == 2, "the change must be waiting behind the termination"
+    redis.release_termination.set()
+
+    with pytest.raises(refusal):
+        await changing
+    await terminating
+
+    assert session.status.value == "terminated"
+    assert recorder.phases == ["SessionLifecyclePhase.TERMINATED"]
+    assert [message.id for message in session.messages] == []
+
+
+async def test_a_guest_socket_that_connects_behind_a_termination_is_closed(
+    tmp_path: Path,
+) -> None:
+    """The guest must not join the live set after the termination broadcast went out."""
+    redis = HeldTerminationRedis()
+    store = RedisTenantSessionStore(redis)
+    manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
+    sockets = WebSocketManager(manager, monitor=websocket_monitor())
+    sockets.start_heartbeat_system = AsyncMock()
+    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    await manager.activate_session(session.key, "en")
+    guest = AsyncMock()
+
+    terminating = asyncio.create_task(manager.terminate_session(session.key, "manual"))
+    connecting = asyncio.create_task(
+        sockets.connect_websocket(guest, session.key, ClientType.CUSTOMER)
+    )
+    for _ in range(10):
+        await asyncio.sleep(0)
+    assert store._write_locks._entries[session.key].holders == 2
+    redis.release_termination.set()
+
+    with pytest.raises(RuntimeError):
+        await connecting
+    await terminating
+
+    guest.close.assert_awaited_once_with(code=4404, reason="Session not found")
+    assert sockets.session_connections.get(session.key, {}) == {}

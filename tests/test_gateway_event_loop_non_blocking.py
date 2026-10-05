@@ -109,7 +109,7 @@ class TestConcurrentProgress:
         from services.api_gateway import message_processing
 
         first = await make_active_session(session_manager)
-        second = await make_active_session(session_manager)
+        second = await make_active_session(session_manager, admin="second-admin")
 
         # Trips only if both pipelines are inside the barrier at the same time.
         # Serialised execution breaks it instead, which fails the test.

@@ -177,7 +177,7 @@ async def test_production_startup_uses_shared_redis_and_survives_restart(
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
     monkeypatch.setattr(
         persistence.Redis,
-        "from_url",
+        "from_pool",
         lambda *_args, **_kwargs: redis,
     )
 
@@ -240,7 +240,7 @@ async def test_configured_redis_connection_failure_aborts_startup(
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
     monkeypatch.setattr(
         persistence.Redis,
-        "from_url",
+        "from_pool",
         lambda *_args, **_kwargs: BrokenRedis(),
     )
 
@@ -259,7 +259,7 @@ async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
     monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
-    monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: redis)
 
     async with lifespan(app):
         dependencies = app.state.dependencies
@@ -344,7 +344,7 @@ async def test_restart_rehydrates_active_session_for_same_tenant_replacement(
     monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
-    monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: redis)
     monkeypatch.setenv("SSF_ALLOW_PARALLEL_SESSIONS", "false")
     owner = admin_ref("tenant-a", "admin-subject")
 
@@ -375,7 +375,7 @@ async def test_restart_terminates_sessions_whose_persisted_deadline_expired(
     monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
-    monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: redis)
     _clock_every_manager(monkeypatch, lambda: now)
 
     async with lifespan(app):
@@ -409,7 +409,7 @@ async def test_restart_clears_stale_transport_presence_and_starts_admin_grace(
     monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
-    monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: redis)
     _clock_every_manager(monkeypatch, lambda: now)
 
     async with lifespan(app):
@@ -449,7 +449,7 @@ async def test_a_client_that_fails_its_ping_is_closed(monkeypatch: pytest.Monkey
             closed.append(True)
 
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
-    monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: UnreachableRedis())
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: UnreachableRedis())
 
     with pytest.raises(persistence.TenantPersistenceUnavailable):
         await persistence.configure_tenant_persistence()
@@ -478,7 +478,7 @@ async def test_a_failed_rehydrate_closes_the_connection_before_startup_aborts(
     monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
-    monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: redis)
     monkeypatch.setattr(
         sessions_module.TenantSessionManager, "rehydrate_tenant_sessions", inconsistent_index
     )
@@ -513,7 +513,7 @@ async def test_shutdown_lets_pending_presence_releases_finish_before_closing_red
     monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
     monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
-    monkeypatch.setattr(persistence.Redis, "from_url", lambda *_args, **_kwargs: redis)
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: redis)
 
     async with lifespan(app):
         polling_store = app.state.dependencies.polling_store
@@ -522,3 +522,68 @@ async def test_shutdown_lets_pending_presence_releases_finish_before_closing_red
         task.add_done_callback(polling_store.release_tasks.discard)
 
     assert released_when_closed == [True]
+
+
+@pytest.mark.asyncio
+async def test_a_busy_pool_makes_commands_wait_rather_than_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The async default pool raises at once when every connection is busy.
+
+    The tenant pool blocks instead: a command waits up to the socket timeout
+    for a free connection, so a burst does not turn into 503s and failed saves.
+    """
+    from redis.asyncio import BlockingConnectionPool
+
+    import services.api_gateway.tenant_persistence as persistence
+
+    pools: list[object] = []
+    redis = PersistentFakeRedis()
+
+    def adopt(pool):
+        pools.append(pool)
+        return redis
+
+    monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
+    monkeypatch.setattr(persistence.Redis, "from_pool", adopt)
+
+    binding = await persistence.configure_tenant_persistence()
+
+    assert binding is not None
+    (pool,) = pools
+    assert isinstance(pool, BlockingConnectionPool)
+    assert pool.max_connections == 100
+    assert pool.timeout == 5
+    assert pool.connection_kwargs["socket_timeout"] == 5
+    assert pool.connection_kwargs["socket_connect_timeout"] == 5
+    assert pool.connection_kwargs["decode_responses"] is True
+
+
+@pytest.mark.asyncio
+async def test_any_failed_startup_step_closes_the_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import services.api_gateway.app as gateway
+    import services.api_gateway.tenant_persistence as persistence
+
+    redis = PersistentFakeRedis()
+    closed: list[bool] = []
+
+    async def record_close() -> None:
+        closed.append(True)
+
+    def background_tasks_fail(*_args):
+        raise RuntimeError("background tasks could not start")
+
+    redis.aclose = record_close
+    monkeypatch.setenv("SSF_DEPLOYMENT_ENV", "production")
+    monkeypatch.setenv("REDIS_URL", "redis://tenant-state.example:6379/0")
+    monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
+    monkeypatch.setattr(persistence.Redis, "from_pool", lambda *_args, **_kwargs: redis)
+    monkeypatch.setattr(gateway, "_start_background_tasks", background_tasks_fail)
+
+    with pytest.raises(RuntimeError):
+        async with lifespan(app):
+            pass
+
+    assert closed == [True]

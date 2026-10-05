@@ -91,15 +91,17 @@ def wav_collaborators(
 SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
-async def make_active_session(manager) -> TenantSessionKey:
+async def make_active_session(manager, *, admin: str = "test-admin") -> TenantSessionKey:
     """An ACTIVE admin session whose customer speaks English.
 
     Admin sends de -> en, which is what the request builders below produce; a
     mismatch trips validate_session_languages before the pipeline is reached.
+    Each admin has one live session, so a second concurrent session needs a
+    second `admin`.
     """
     # Owned by the admin tests/conftest.py authenticates, so the admin routes serve it.
     session = await manager.create_admin_session(
-        "tenant-test", SNAPSHOT, owner_ref=admin_ref("tenant-test", "test-admin")
+        "tenant-test", SNAPSHOT, owner_ref=admin_ref("tenant-test", admin)
     )
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
