@@ -37,7 +37,7 @@ def test_polling_id_is_bound_to_its_server_assigned_role_and_session(
     assert wrong_session.status_code == 404
 
 
-def test_customer_polling_activation_resolves_public_capability(
+async def test_customer_polling_activation_resolves_public_capability(
     session_manager, polling_store
 ) -> None:
     session_manager.reset(clear_persistence=True)
@@ -52,7 +52,7 @@ def test_customer_polling_activation_resolves_public_capability(
     assert stored.key.session_id == session_id
     assert stored.key.tenant_id == "tenant-test"
     assert stored.client_type.value == "customer"
-    assert session_manager.get_session(stored.key).customer_connection_count == 1
+    assert (await session_manager.get_session(stored.key)).customer_connection_count == 1
 
 
 def test_generic_client_controlled_polling_routes_are_absent() -> None:
@@ -103,7 +103,7 @@ def test_existing_customer_poll_receives_termination_then_is_removed(
     assert polling_id not in polling_store.clients
 
 
-def test_stale_admin_poll_request_releases_presence_before_refresh(
+async def test_stale_admin_poll_request_releases_presence_before_refresh(
     monkeypatch, polling_store, session_manager
 ) -> None:
     """An abandoned polling client cannot revive itself after the idle deadline."""
@@ -123,7 +123,7 @@ def test_stale_admin_poll_request_releases_presence_before_refresh(
     ).json()
     polling_id = activated["polling_id"]
     key = polling_store.clients[polling_id].key
-    assert session_manager.get_session(key).admin_connection_count == 1
+    assert (await session_manager.get_session(key)).admin_connection_count == 1
 
     now[0] = 121.0
     response = client.get(f"/api/admin/session/{session_id}/polling/{polling_id}/status")
@@ -131,7 +131,7 @@ def test_stale_admin_poll_request_releases_presence_before_refresh(
     assert response.status_code == 404
     assert response.json() == {"detail": "Polling client not found"}
     assert polling_id not in polling_store.clients
-    assert session_manager.get_session(key).admin_connection_count == 0
+    assert (await session_manager.get_session(key)).admin_connection_count == 0
 
 
 @pytest.mark.parametrize("authenticated", [False, True], ids=["guest", "user"])
@@ -139,7 +139,7 @@ def test_stale_admin_poll_request_releases_presence_before_refresh(
 @pytest.mark.parametrize(
     "operation", ["activate", "poll", "send", "status", "recover", "disconnect"]
 )
-def test_customer_polling_rejects_tenant_selectors_without_side_effects(
+async def test_customer_polling_rejects_tenant_selectors_without_side_effects(
     request, monkeypatch, session_manager, polling_store, authenticated, selector_source, operation
 ) -> None:
     from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
@@ -179,7 +179,7 @@ def test_customer_polling_rejects_tenant_selectors_without_side_effects(
     assert response.status_code == 400
     assert list(polling_store.clients) == [polling_id]
     assert stored.messages == deque()
-    assert session_manager.get_session(stored.key).customer_connection_count == 1
+    assert (await session_manager.get_session(stored.key)).customer_connection_count == 1
 
 
 @pytest.mark.parametrize("actor", [None, "tenant-test", "other-tenant"])

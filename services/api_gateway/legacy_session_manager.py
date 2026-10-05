@@ -339,11 +339,11 @@ class LegacySessionManager(SessionManagerBase[str]):
     def has_unscoped_session(self, session_id: str) -> bool:
         return self.get_session(session_id) is not None
 
-    def resolve_customer_session(self, session_id: str) -> None:
+    async def resolve_customer_session(self, session_id: str) -> None:
         """No legacy session has a join index."""
         return None
 
-    def resolve_ended_session(self, session_id: str, *, within: timedelta) -> None:
+    async def resolve_ended_session(self, session_id: str, *, within: timedelta) -> None:
         """No legacy session leaves a tombstone."""
         return None
 
@@ -384,7 +384,7 @@ class LegacySessionManager(SessionManagerBase[str]):
             return
         self._persist_session(session)
 
-    def _persist_swept_session(self, session: Session) -> None:
+    async def _persist_swept_session(self, session: Session) -> None:
         if session.tenant_id is None:
             self._persist_session(session)
             return

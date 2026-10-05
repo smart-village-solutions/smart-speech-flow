@@ -55,8 +55,8 @@ def _create(client: TestClient, subject: str) -> str:
     return response.json()["session_id"]
 
 
-def _status(session_id: str) -> SessionStatus:
-    session = app.state.dependencies.session_manager.get_session(
+async def _status(session_id: str) -> SessionStatus:
+    session = await app.state.dependencies.session_manager.get_session(
         TenantSessionKey(TENANT, session_id)
     )
     assert session is not None
@@ -99,7 +99,7 @@ def _call(client: TestClient, method: str, path: str, body: dict[str, object] | 
     return client.request(method, path, json=body)
 
 
-def test_a_colleague_gets_the_unknown_session_404_on_every_session_route(client):
+async def test_a_colleague_gets_the_unknown_session_404_on_every_session_route(client):
     alice = _create(client, "alice-subject")
     _create(client, "bob-subject")
 
@@ -107,10 +107,10 @@ def test_a_colleague_gets_the_unknown_session_404_on_every_session_route(client)
         response = _call(client, method, path, body)
         assert (response.status_code, response.json()) == (404, NOT_FOUND), (method, path)
 
-    assert _status(alice) is SessionStatus.PENDING
+    assert await _status(alice) is SessionStatus.PENDING
 
 
-def test_the_owner_is_served_on_every_session_route(client):
+async def test_the_owner_is_served_on_every_session_route(client):
     alice = _create(client, "alice-subject")
     _create(client, "bob-subject")
     _as("alice-subject")
@@ -123,7 +123,7 @@ def test_the_owner_is_served_on_every_session_route(client):
         assert response.status_code == code, (method, path, response.text)
         assert response.json() != NOT_FOUND, (method, path)
 
-    assert _status(alice) is SessionStatus.TERMINATED
+    assert await _status(alice) is SessionStatus.TERMINATED
 
 
 def test_a_colleague_cannot_use_the_owners_polling_channel(client):
@@ -180,7 +180,7 @@ async def _owner_less_session() -> str:
     return session.id
 
 
-def test_a_session_without_an_owner_is_denied_to_every_admin(client):
+async def test_a_session_without_an_owner_is_denied_to_every_admin(client):
     legacy = client.portal.call(_owner_less_session)
     _create(client, "alice-subject")
 
@@ -188,7 +188,7 @@ def test_a_session_without_an_owner_is_denied_to_every_admin(client):
         response = _call(client, method, path, body)
         assert (response.status_code, response.json()) == (404, NOT_FOUND), (method, path)
 
-    assert _status(legacy) is SessionStatus.PENDING
+    assert await _status(legacy) is SessionStatus.PENDING
     history = client.get("/api/admin/session/history").json()
     listed = {row["id"] for row in history["sessions"] + history["active_sessions"]}
     assert legacy not in listed

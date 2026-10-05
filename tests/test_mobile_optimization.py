@@ -126,10 +126,11 @@ class TestAdaptivePollingManager:
 class TestWebSocketMobileOptimization:
     """Tests für WebSocket Mobile-Optimization Integration"""
 
-    def setup_method(self):
+    @pytest.fixture(autouse=True)
+    async def _open_session(self):
         """Test-Setup"""
         self.session_manager = tenant_session_manager()
-        self.session_key = open_session(self.session_manager, "TEST123")
+        self.session_key = await open_session(self.session_manager, "TEST123")
         self.websocket_manager = WebSocketManager(self.session_manager, monitor=websocket_monitor())
 
     @pytest.mark.asyncio

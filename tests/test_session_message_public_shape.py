@@ -18,7 +18,7 @@ SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 async def granted_session_with_message(session_manager):
     session_manager.reset(clear_persistence=True)
     session = await session_manager.create_admin_session("tenant-test", SNAPSHOT)
-    session_manager.add_message(
+    await session_manager.add_message(
         session.key,
         SessionMessage(
             id="m1",
@@ -41,7 +41,7 @@ async def test_history_response_has_no_authorization_field(
     granted_session_with_message,
 ):
     key, role = granted_session_with_message
-    items = ConversationService(
+    items = await ConversationService(
         session_manager,
         pipeline=speech_pipeline(),
         audio_store=AudioStore.from_environment(),

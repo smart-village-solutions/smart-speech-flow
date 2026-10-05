@@ -109,7 +109,7 @@ async def get_customer_messages(
 ) -> dict[str, object]:
     return {
         "session_id": session_id,
-        "messages": conversations.messages(key, ClientType.CUSTOMER),
+        "messages": await conversations.messages(key, ClientType.CUSTOMER),
     }
 
 
@@ -124,7 +124,7 @@ async def get_customer_audio(
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> Response:
-    return conversations.audio(key, message_id, variant)
+    return await conversations.audio(key, message_id, variant)
 
 
 def utc_now() -> datetime:
@@ -178,7 +178,7 @@ async def activate_session(
             safe_language_code(request.customer_language),
         )
 
-        key = require_customer_session_key(request.session_id, principal, sessions)
+        key = await require_customer_session_key(request.session_id, principal, sessions)
         activation = await lifecycle.activate(
             key,
             request.customer_language,
@@ -231,7 +231,7 @@ async def get_customer_session_status(
 
     Weniger Details als die Admin-Variante, fokussiert auf Customer-Bedürfnisse
     """
-    session = sessions.get_session(key)
+    session = await sessions.get_session(key)
     if session is None:
         raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
 

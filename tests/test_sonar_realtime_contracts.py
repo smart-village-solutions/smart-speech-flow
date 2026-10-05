@@ -28,7 +28,7 @@ def polling_client(session_manager):
 
 
 @pytest.mark.parametrize("role", ["admin", "customer"])
-def test_polling_timeout_openapi_and_request_contract(polling_client, gateway_dependencies, role):
+async def test_polling_timeout_openapi_and_request_contract(polling_client, gateway_dependencies, role):
     path = f"/api/{role}/session/{{session_id}}/polling/{{polling_id}}"
     query = [
         parameter
@@ -83,7 +83,7 @@ def test_polling_timeout_openapi_and_request_contract(polling_client, gateway_de
     assert response.status_code == 200
     assert response.json() == {"status": "disconnected"}
     assert polling_client.get(path + "/status").status_code == 404
-    session = gateway_dependencies.session_manager.get_session(stored.key)
+    session = await gateway_dependencies.session_manager.get_session(stored.key)
     assert (session.admin_connection_count, session.customer_connection_count) == (0, 0)
 
 
@@ -143,18 +143,18 @@ async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch
     expired_key = polling.TenantSessionKey("tenant-a", "EXPIRED1")
     live_key = polling.TenantSessionKey("tenant-a", "CURRENT1")
     for key in (expired_key, live_key):
-        sessions.store.create(Session(id=key.session_id, tenant_id=key.tenant_id))
+        await sessions.store.create(Session(id=key.session_id, tenant_id=key.tenant_id))
     store.activate(expired_key, ClientType.ADMIN)
     store.activate(expired_key, ClientType.CUSTOMER)
-    sessions.admin_connected(expired_key)
-    sessions.customer_connected(expired_key)
+    await sessions.admin_connected(expired_key)
+    await sessions.customer_connected(expired_key)
     now[0] = 121.0
     live_client = store.activate(live_key, ClientType.ADMIN)
     loop = asyncio.get_running_loop()
     release_admin = sessions.admin_disconnected
 
-    def release_and_cancel(key):
-        release_admin(key)
+    async def release_and_cancel(key):
+        await release_admin(key)
         loop.call_soon_threadsafe(request_task.cancel)
 
     monkeypatch.setattr(sessions, "admin_disconnected", release_and_cancel)
@@ -172,7 +172,7 @@ async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch
     with pytest.raises(asyncio.CancelledError):
         await request_task
 
-    expired_session = sessions.get_session(expired_key)
+    expired_session = await sessions.get_session(expired_key)
     assert list(store.clients) == [live_client.polling_id]
     assert [
         expired_session.admin_connection_count,
@@ -182,15 +182,60 @@ async def test_cancelled_poll_releases_every_pruned_clients_presence(monkeypatch
     assert not expired_session.customer_connected
 
 
+class YieldingSaveStore(MemoryTenantSessionStore):
+    """Suspends on every save, as a Redis round trip does (#428)."""
+
+    async def save(self, session):
+        await asyncio.sleep(0)
+        await super().save(session)
+
+
+async def test_a_cancelled_poll_releases_the_whole_batch_when_saves_suspend():
+    now = [0.0]
+    store = polling.TenantPollingStore(clock=lambda: now[0])
+    sessions = TenantSessionManager(
+        store=YieldingSaveStore(),
+        audio_store=AudioStore.from_environment(),
+    )
+    expired = [polling.TenantSessionKey("tenant-a", f"EXPIRED{index}") for index in range(3)]
+    live_key = polling.TenantSessionKey("tenant-a", "CURRENT1")
+    for key in (*expired, live_key):
+        await sessions.store.create(Session(id=key.session_id, tenant_id=key.tenant_id))
+    for key in expired:
+        store.activate(key, ClientType.ADMIN)
+        await sessions.admin_connected(key)
+    now[0] = 121.0
+    live_client = store.activate(live_key, ClientType.ADMIN)
+    endpoint = next(route.endpoint for route in polling.router.routes if route.name == "admin_poll")
+    request_task = asyncio.create_task(
+        endpoint(
+            session_id=live_key.session_id,
+            polling_id=live_client.polling_id,
+            key=live_key,
+            wait_seconds=60,
+            sessions=sessions,
+            polling_store=store,
+        )
+    )
+    await asyncio.sleep(0)
+    request_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await request_task
+    await asyncio.wait_for(asyncio.gather(*store.release_tasks), 1)
+
+    counts = [(await sessions.get_session(key)).admin_connection_count for key in expired]
+    assert counts == [0, 0, 0]
+
+
 @pytest.fixture
-def polling_http_state():
+async def polling_http_state():
     store = polling.TenantPollingStore()
     sessions = TenantSessionManager(
         store=MemoryTenantSessionStore(),
         audio_store=AudioStore.from_environment(),
     )
     key = polling.TenantSessionKey("tenant-a", "SESSION1")
-    sessions.store.create(Session(id=key.session_id, tenant_id=key.tenant_id))
+    await sessions.store.create(Session(id=key.session_id, tenant_id=key.tenant_id))
     manager = websocket.WebSocketManager(sessions, monitor=websocket_monitor())
     endpoint_app = FastAPI()
     endpoint_app.include_router(polling.router)
@@ -212,8 +257,8 @@ async def test_concurrent_http_deletes_release_a_pollers_presence_once(
     )
     removed = store.activate(key, ClientType.ADMIN)
     surviving = store.activate(key, ClientType.ADMIN)
-    sessions.admin_connected(key)
-    sessions.admin_connected(key)
+    await sessions.admin_connected(key)
+    await sessions.admin_connected(key)
 
     # If a handler moves to worker threads, expose both ownership claims before
     # either thread can delete. Event-loop handlers need no scheduling aid.
@@ -237,8 +282,8 @@ async def test_concurrent_http_deletes_release_a_pollers_presence_once(
 
     assert sorted(response.status_code for response in responses) == [200, 404]
     assert list(store.clients) == [surviving.polling_id]
-    assert sessions.get_session(key).admin_connection_count == 1
-    assert sessions.get_session(key).admin_connected
+    assert (await sessions.get_session(key)).admin_connection_count == 1
+    assert (await sessions.get_session(key)).admin_connected
 
 
 async def test_concurrent_http_activation_keeps_role_limit_and_presence(
@@ -253,7 +298,7 @@ async def test_concurrent_http_activation_keeps_role_limit_and_presence(
         responses = await asyncio.gather(client.post(path), client.post(path))
     assert sorted(response.status_code for response in responses) == [200, 429]
     assert len(polling_http_state.store.clients) == 1
-    session = polling_http_state.sessions.get_session(polling_http_state.key)
+    session = await polling_http_state.sessions.get_session(polling_http_state.key)
     assert session.customer_connection_count == 1
     assert session.customer_connected
 
@@ -268,8 +313,8 @@ async def test_terminated_long_poll_does_not_release_a_deleted_client_twice(
     )
     removed = store.activate(key, ClientType.ADMIN)
     surviving = store.activate(key, ClientType.ADMIN)
-    sessions.admin_connected(key)
-    sessions.admin_connected(key)
+    await sessions.admin_connected(key)
+    await sessions.admin_connected(key)
     waiting = asyncio.Event()
     resume_poll = asyncio.Event()
 
@@ -308,7 +353,7 @@ async def test_terminated_long_poll_does_not_release_a_deleted_client_twice(
         "message_count": 1,
     }
     assert list(store.clients) == [surviving.polling_id]
-    assert sessions.get_session(key).admin_connection_count == 1
+    assert (await sessions.get_session(key)).admin_connection_count == 1
 
 
 async def test_terminated_polling_client_cannot_send_recover_or_read_status():
@@ -424,3 +469,47 @@ def test_monitor_callback_arguments_preserve_metrics_and_redact_payloads(caplog)
     assert (metrics.messages_received, metrics.bytes_received) == (1, 5)
     assert metrics.errors == 1
     assert "private-" not in caplog.text
+
+
+@pytest.mark.parametrize("role", ["admin", "customer"])
+async def test_an_activation_that_loses_a_race_with_termination_leaves_no_poller(role):
+    """The session ends while the activation awaits; it must answer 404, not 500."""
+    store = polling.TenantPollingStore()
+    sessions = TenantSessionManager(
+        store=MemoryTenantSessionStore(), audio_store=AudioStore.from_environment()
+    )
+    key = polling.TenantSessionKey("tenant-a", "SESSION1")
+    await sessions.store.create(Session(id=key.session_id, tenant_id=key.tenant_id))
+    session = await sessions.get_session(key)
+    connect = sessions.admin_connected if role == "admin" else sessions.customer_connected
+
+    async def terminated_first(connecting_key):
+        await sessions.terminate_session(connecting_key, "manual_admin_termination")
+        await connect(connecting_key)
+
+    setattr(sessions, f"{role}_connected", terminated_first)
+    if role == "admin":
+        tickets = SimpleNamespace(consume=lambda *_args: _true())
+        call = polling.activate_admin_polling(
+            session_id=key.session_id,
+            request=polling.AdminPollingActivation(ticket="ticket"),
+            key=key,
+            sessions=sessions,
+            polling_store=store,
+            tickets=tickets,
+        )
+    else:
+        call = polling.activate_customer_polling(
+            session_id=key.session_id, key=key, sessions=sessions, polling_store=store
+        )
+
+    with pytest.raises(HTTPException) as refused:
+        await call
+
+    assert refused.value.status_code == 404
+    assert store.clients == {}
+    assert session.status.value == "terminated"
+
+
+async def _true() -> bool:
+    return True

@@ -28,7 +28,7 @@ class TestAdminRoutes:
         yield
         session_manager.reset(clear_persistence=True)
 
-    def test_create_admin_session_terminates_previous_active_session_by_default(
+    async def test_create_admin_session_terminates_previous_active_session_by_default(
         self, session_manager
     ):
         first_response = client.post("/api/admin/session/create")
@@ -48,10 +48,10 @@ class TestAdminRoutes:
 
         assert second_session_id != first_session_id
 
-        first_session = session_manager.get_session(
+        first_session = await session_manager.get_session(
             TenantSessionKey("tenant-test", first_session_id)
         )
-        second_session = session_manager.get_session(
+        second_session = await session_manager.get_session(
             TenantSessionKey("tenant-test", second_session_id)
         )
 

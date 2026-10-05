@@ -38,7 +38,7 @@ async def _session(session_manager) -> object:
     session_manager.reset(clear_persistence=True)
     session = await session_manager.create_admin_session("tenant-test", SNAPSHOT)
     session.consent_status = ConsentStatus.GRANTED
-    session_manager.store.save(session)
+    await session_manager.store.save(session)
     return session.key
 
 

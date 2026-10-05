@@ -218,7 +218,7 @@ def test_a_provider_override_stays_on_its_own_app(monkeypatch: pytest.MonkeyPatc
     assert untouched.dependency_overrides == {}
 
 
-def test_polling_records_presence_in_its_own_apps_sessions(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_polling_records_presence_in_its_own_apps_sessions(monkeypatch: pytest.MonkeyPatch) -> None:
     """A poller's presence lands in the session manager of the app it polled.
 
     Each app's session store is its own, so a route that reached another
@@ -241,8 +241,8 @@ def test_polling_records_presence_in_its_own_apps_sessions(monkeypatch: pytest.M
 
         for app, key in ((first_app, keys[0]), (second_app, keys[1])):
             sessions = app.state.dependencies.session_manager
-            assert sessions.get_session(key).customer_connection_count == 1
-        assert first_app.state.dependencies.session_manager.get_session(keys[1]) is None
+            assert (await sessions.get_session(key)).customer_connection_count == 1
+        assert await first_app.state.dependencies.session_manager.get_session(keys[1]) is None
 
 
 def _metric_objects(app: FastAPI) -> dict[str, object]:
@@ -307,7 +307,7 @@ def _sample(metric: Counter | Gauge, directory: str) -> float | None:
 
 
 @pytest.mark.usefixtures("configured_process")
-def test_each_apps_audio_store_counts_into_that_apps_metrics(
+async def test_each_apps_audio_store_counts_into_that_apps_metrics(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     import os

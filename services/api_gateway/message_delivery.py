@@ -34,9 +34,11 @@ def _nothing_delivered() -> BroadcastResult:
     )
 
 
-def _session_consent_status(key: TenantSessionKey, sessions: TenantSessionManager) -> ConsentStatus:
+async def _session_consent_status(
+    key: TenantSessionKey, sessions: TenantSessionManager
+) -> ConsentStatus:
     """The session's resolved consent, or `pending` when it cannot be read."""
-    session = sessions.get_session(key)
+    session = await sessions.get_session(key)
     if session is None:
         return ConsentStatus.PENDING
     return session.consent_status
@@ -84,7 +86,7 @@ async def create_session_message(
     )
 
     # Zur Session hinzufügen
-    sessions.add_message(session_id, message)
+    await sessions.add_message(session_id, message)
 
     # ✨ WebSocket Broadcasting mit differentiated content
     _log_session_event(
@@ -134,7 +136,7 @@ async def create_session_message(
     authorization = await authorize_message_artifacts(
         gate=sessions.runtime_policy,
         tenant_id=session_id.tenant_id,
-        consent_status=_session_consent_status(session_id, sessions),
+        consent_status=await _session_consent_status(session_id, sessions),
         correlation_id=correlation_id or str(uuid.uuid4()),
         has_original_audio=original_audio_url is not None,
         has_translated_audio=translated_audio_available,
@@ -143,7 +145,7 @@ async def create_session_message(
     message.original_audio_authorized = authorization.original_audio
     message.translated_audio_authorized = authorization.translated_audio
     try:
-        sessions.record_message_authorization(
+        await sessions.record_message_authorization(
             session_id,
             resolved_message_id,
             record=authorization.record,

@@ -13,7 +13,7 @@ from services.api_gateway.tenant_session import (
 REVISION = f"sha256:{'a' * 64}"
 
 
-def test_admin_issues_a_ticket_scoped_to_the_authenticated_session(
+async def test_admin_issues_a_ticket_scoped_to_the_authenticated_session(
     session_manager, gateway_dependencies
 ) -> None:
     session_manager.reset(clear_persistence=True)
@@ -30,7 +30,7 @@ def test_admin_issues_a_ticket_scoped_to_the_authenticated_session(
     assert body["ticket"]
     assert body["expires_at"]
     assert (
-        gateway_dependencies.realtime_tickets.consume(
+        await gateway_dependencies.realtime_tickets.consume(
             body["ticket"],
             TenantSessionKey("tenant-test", session_id),
             "websocket",

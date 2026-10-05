@@ -82,6 +82,8 @@ class TenantPollingStore:
     ) -> None:
         self.clients: dict[str, PollingClient] = {}
         self.mutation_lock = asyncio.Lock()
+        # Presence releases still running for a request that was cancelled.
+        self.release_tasks: set[asyncio.Task[None]] = set()
         self.clock = clock
         self.messages_dropped = messages_dropped or polling_dropped_counter(CollectorRegistry())
 
@@ -214,7 +216,7 @@ async def activate_admin_polling(
 ) -> dict[str, object]:
     async with polling_store.mutation_lock:
         try:
-            accepted = tickets.consume(request.ticket, key, "polling")
+            accepted = await tickets.consume(request.ticket, key, "polling")
         except RealtimeTicketUnavailable:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -222,12 +224,12 @@ async def activate_admin_polling(
             ) from None
         if not accepted:
             raise HTTPException(status_code=404, detail="Session not found")
-        session = sessions.get_session(key)
+        session = await sessions.get_session(key)
         if session is None or session.status.value == "terminated":
             raise HTTPException(status_code=404, detail="Session not found")
-        _release_stale_clients(polling_store, sessions)
+        await _release_stale_clients(polling_store, sessions)
         client = polling_store.activate(key, ClientType.ADMIN)
-        sessions.admin_connected(key)
+        await _record_presence(polling_store, client, sessions)
         return _activation_response(client)
 
 
@@ -239,31 +241,73 @@ async def activate_customer_polling(
     polling_store: Annotated[TenantPollingStore, Depends(get_polling_store)],
 ) -> dict[str, object]:
     async with polling_store.mutation_lock:
-        _release_stale_clients(polling_store, sessions)
+        await _release_stale_clients(polling_store, sessions)
         client = polling_store.activate(key, ClientType.CUSTOMER)
-        sessions.customer_connected(key)
+        await _record_presence(polling_store, client, sessions)
         return _activation_response(client)
 
 
-def _release_stale_clients(
+async def _record_presence(
+    polling_store: TenantPollingStore, client: PollingClient, sessions: TenantSessionManager
+) -> None:
+    """Count a new poller on its session, or withdraw it if the session has ended.
+
+    The activation awaits before it gets here, and a termination in that window
+    misses a poller not yet registered; it must not stay behind as an orphan.
+    """
+    connect = (
+        sessions.admin_connected
+        if client.client_type is ClientType.ADMIN
+        else sessions.customer_connected
+    )
+    try:
+        await connect(client.key)
+    except KeyError:
+        polling_store.remove(client)
+        raise HTTPException(status_code=404, detail="Session not found") from None
+
+
+async def _release_stale_clients(
     polling_store: TenantPollingStore, sessions: TenantSessionManager
 ) -> None:
-    """Release the entire pruned batch without a cancellation point."""
-    for client in polling_store.prune():
-        _release_presence(client, sessions)
+    expired = polling_store.prune()
+    if expired:
+        await _release_in_full(polling_store, expired, sessions)
 
 
-def _release_presence(client: PollingClient, sessions: TenantSessionManager) -> None:
+def _release_in_full(
+    polling_store: TenantPollingStore,
+    clients: list[PollingClient],
+    sessions: TenantSessionManager,
+) -> asyncio.Future[None]:
+    """Release presence for clients already removed from the store, however the request ends.
+
+    Each release awaits a session save. Cancelling the request part-way would
+    leave the remaining sessions counting pollers that no longer exist, so the
+    batch runs as its own task, shielded from the request's cancellation.
+    """
+    task = asyncio.create_task(_release_all(clients, sessions))
+    polling_store.release_tasks.add(task)
+    task.add_done_callback(polling_store.release_tasks.discard)
+    return asyncio.shield(task)
+
+
+async def _release_all(clients: list[PollingClient], sessions: TenantSessionManager) -> None:
+    for client in clients:
+        await _release_presence(client, sessions)
+
+
+async def _release_presence(client: PollingClient, sessions: TenantSessionManager) -> None:
     try:
         if client.client_type is ClientType.ADMIN:
-            sessions.admin_disconnected(client.key)
+            await sessions.admin_disconnected(client.key)
         else:
-            sessions.customer_disconnected(client.key)
+            await sessions.customer_disconnected(client.key)
     except KeyError:
         pass
 
 
-def _active_client(
+async def _active_client(
     polling_store: TenantPollingStore,
     polling_id: str,
     key: TenantSessionKey,
@@ -271,7 +315,7 @@ def _active_client(
     sessions: TenantSessionManager,
 ) -> PollingClient:
     """Release expired presence before accepting activity from a poller."""
-    _release_stale_clients(polling_store, sessions)
+    await _release_stale_clients(polling_store, sessions)
     return polling_store.require(polling_id, key, client_type)
 
 
@@ -357,11 +401,11 @@ def _recover(client: PollingClient) -> dict[str, str]:
     return {"status": "recovery_requested"}
 
 
-def _disconnect(
+async def _disconnect(
     polling_store: TenantPollingStore, client: PollingClient, sessions: TenantSessionManager
 ) -> dict[str, str]:
     polling_store.remove(client)
-    _release_presence(client, sessions)
+    await _release_in_full(polling_store, [client], sessions)
     return {"status": "disconnected"}
 
 
@@ -381,12 +425,12 @@ def _register_role_routes(
         polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, object]:
         async with polling_store.mutation_lock:
-            client = _active_client(polling_store, polling_id, key, client_type, sessions)
+            client = await _active_client(polling_store, polling_id, key, client_type, sessions)
         response = await _poll(client, wait_seconds)
         if client.terminated:
             async with polling_store.mutation_lock:
                 if polling_store.clients.get(polling_id) is client:
-                    _disconnect(polling_store, client, sessions)
+                    await _disconnect(polling_store, client, sessions)
         return response
 
     async def send(
@@ -399,7 +443,7 @@ def _register_role_routes(
         polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, str]:
         async with polling_store.mutation_lock:
-            client = _active_client(polling_store, polling_id, key, client_type, sessions)
+            client = await _active_client(polling_store, polling_id, key, client_type, sessions)
         # The response model stays dict[str, str], so an overflow's partial body is
         # still refused with 500; characterization.md leaves that to its own issue.
         return await _send(polling_store, client, message, manager)  # type: ignore[return-value]
@@ -412,7 +456,9 @@ def _register_role_routes(
         polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, object]:
         async with polling_store.mutation_lock:
-            return _status(_active_client(polling_store, polling_id, key, client_type, sessions))
+            return _status(
+                await _active_client(polling_store, polling_id, key, client_type, sessions)
+            )
 
     async def recover(
         session_id: str,
@@ -422,7 +468,9 @@ def _register_role_routes(
         polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, str]:
         async with polling_store.mutation_lock:
-            return _recover(_active_client(polling_store, polling_id, key, client_type, sessions))
+            return _recover(
+                await _active_client(polling_store, polling_id, key, client_type, sessions)
+            )
 
     async def disconnect(
         session_id: str,
@@ -432,8 +480,8 @@ def _register_role_routes(
         polling_store: TenantPollingStore = Depends(get_polling_store),
     ) -> dict[str, str]:
         async with polling_store.mutation_lock:
-            client = _active_client(polling_store, polling_id, key, client_type, sessions)
-            return _disconnect(polling_store, client, sessions)
+            client = await _active_client(polling_store, polling_id, key, client_type, sessions)
+            return await _disconnect(polling_store, client, sessions)
 
     router.add_api_route(base, poll, methods=["GET"], name=f"{prefix}_poll")
     router.add_api_route(base + "/send", send, methods=["POST"], name=f"{prefix}_send")

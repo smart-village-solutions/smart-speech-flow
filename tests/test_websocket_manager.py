@@ -103,7 +103,7 @@ class TestWebSocketManager:
 
     async def test_websocket_connection_creation(self, websocket_manager, mock_websocket):
         """Test: WebSocket-Verbindung erstellen"""
-        session_id = open_session(websocket_manager.session_manager, "TEST123")
+        session_id = await open_session(websocket_manager.session_manager, "TEST123")
         client_type = ClientType.ADMIN
 
         connection_id = await websocket_manager.connect_websocket(
@@ -128,8 +128,8 @@ class TestWebSocketManager:
 
     async def test_session_based_connection_pools(self, websocket_manager):
         """Test: Session-basierte Connection-Pools"""
-        session1_id = open_session(websocket_manager.session_manager, "SESSION1")
-        session2_id = open_session(websocket_manager.session_manager, "SESSION2")
+        session1_id = await open_session(websocket_manager.session_manager, "SESSION1")
+        session2_id = await open_session(websocket_manager.session_manager, "SESSION2")
 
         mock_ws1 = MockWebSocket()
         mock_ws2 = MockWebSocket()
@@ -155,7 +155,7 @@ class TestWebSocketManager:
 
     async def test_graceful_disconnect(self, websocket_manager, mock_websocket):
         """Test: Graceful WebSocket-Disconnect"""
-        session_id = open_session(websocket_manager.session_manager, "TEST123")
+        session_id = await open_session(websocket_manager.session_manager, "TEST123")
         connection_id = await websocket_manager.connect_websocket(
             mock_websocket, session_id, ClientType.ADMIN
         )
@@ -186,7 +186,7 @@ class TestWebSocketManager:
 
     async def test_session_termination_graceful_disconnect(self, websocket_manager):
         """Test: Graceful-Disconnect bei Session-Termination"""
-        session_id = open_session(websocket_manager.session_manager, "TEST123")
+        session_id = await open_session(websocket_manager.session_manager, "TEST123")
 
         # Mehrere Verbindungen zur Session
         mock_ws1 = MockWebSocket()
@@ -234,7 +234,7 @@ class TestWebSocketManager:
 
     async def test_heartbeat_ping_pong(self, websocket_manager, mock_websocket):
         """Test: Heartbeat-Ping/Pong-Mechanismus"""
-        session_id = open_session(websocket_manager.session_manager, "TEST123")
+        session_id = await open_session(websocket_manager.session_manager, "TEST123")
         connection_id = await websocket_manager.connect_websocket(
             mock_websocket, session_id, ClientType.ADMIN
         )
@@ -297,7 +297,7 @@ class TestWebSocketManager:
 
     async def test_heartbeat_timeout_detection(self, websocket_manager, mock_websocket):
         """Test: Heartbeat-Timeout-Erkennung"""
-        session_id = open_session(websocket_manager.session_manager, "TEST123")
+        session_id = await open_session(websocket_manager.session_manager, "TEST123")
         connection_id = await websocket_manager.connect_websocket(
             mock_websocket, session_id, ClientType.ADMIN
         )
@@ -317,7 +317,7 @@ class TestWebSocketManager:
 
     async def test_broadcast_to_session(self, websocket_manager):
         """Test: Broadcasting an Session-Teilnehmer"""
-        session_id = open_session(websocket_manager.session_manager, "TEST123")
+        session_id = await open_session(websocket_manager.session_manager, "TEST123")
 
         mock_ws1 = MockWebSocket()
         mock_ws2 = MockWebSocket()
@@ -348,7 +348,7 @@ class TestWebSocketManager:
         """A targeted broadcast must neither leak nor echo to an excluded client."""
         monitor = Mock()
         monkeypatch.setattr(websocket_manager, "monitor", monitor)
-        session_id = open_session(websocket_manager.session_manager, "TARGETED123")
+        session_id = await open_session(websocket_manager.session_manager, "TARGETED123")
         admin_socket = MockWebSocket()
         customer_socket = MockWebSocket()
 
@@ -381,7 +381,7 @@ class TestWebSocketManager:
         """A send failure must not prevent healthy session peers from receiving data."""
         monitor = Mock()
         monkeypatch.setattr(websocket_manager, "monitor", monitor)
-        session_id = open_session(websocket_manager.session_manager, "BROADCAST123")
+        session_id = await open_session(websocket_manager.session_manager, "BROADCAST123")
         failing_socket = MockWebSocket()
         healthy_socket = MockWebSocket()
 
@@ -402,7 +402,7 @@ class TestWebSocketManager:
 
     async def test_broadcast_with_differentiated_content_returns_status(self, websocket_manager):
         """Test: broadcast_with_differentiated_content gibt BroadcastResult zurück"""
-        session_id = open_session(websocket_manager.session_manager, "TEST_BROADCAST")
+        session_id = await open_session(websocket_manager.session_manager, "TEST_BROADCAST")
 
         # Zwei Verbindungen erstellen
         mock_ws_admin = MockWebSocket()
@@ -512,7 +512,7 @@ class TestWebSocketManager:
 
     async def test_differentiated_broadcasting(self, websocket_manager):
         """Test: Differentiated Broadcasting (Sender vs. Empfänger)"""
-        session_id = open_session(websocket_manager.session_manager, "TEST123")
+        session_id = await open_session(websocket_manager.session_manager, "TEST123")
 
         mock_admin_ws = MockWebSocket()
         mock_customer_ws = MockWebSocket()
@@ -546,7 +546,7 @@ class TestWebSocketManager:
     async def test_send_differentiated_message_uses_sender_and_receiver_payloads(
         self, websocket_manager
     ):
-        session_id = open_session(websocket_manager.session_manager, "TEST_HELPERS")
+        session_id = await open_session(websocket_manager.session_manager, "TEST_HELPERS")
         sender_ws = MockWebSocket()
         receiver_ws = MockWebSocket()
 
@@ -628,7 +628,7 @@ class TestWebSocketManager:
 
     async def test_connection_lifecycle_is_alive(self, websocket_manager, mock_websocket):
         """Test: Connection-Lifecycle und is_alive-Checks"""
-        session_id = open_session(websocket_manager.session_manager, "TEST123")
+        session_id = await open_session(websocket_manager.session_manager, "TEST123")
         connection_id = await websocket_manager.connect_websocket(
             mock_websocket, session_id, ClientType.ADMIN
         )
@@ -650,7 +650,7 @@ class TestWebSocketManager:
 
     async def test_error_handling_dead_connections(self, websocket_manager):
         """Test: Error-Handling für tote Verbindungen"""
-        session_id = open_session(websocket_manager.session_manager, "TEST123")
+        session_id = await open_session(websocket_manager.session_manager, "TEST123")
 
         # WebSocket mit Send-Fehler simulieren
         mock_ws_broken = Mock()
@@ -677,7 +677,7 @@ class TestWebSocketManager:
 
     async def test_client_join_leave_notifications(self, websocket_manager):
         """Test: Client-Join/Leave-Notifications"""
-        session_id = open_session(websocket_manager.session_manager, "TEST123")
+        session_id = await open_session(websocket_manager.session_manager, "TEST123")
 
         # Erste Verbindung (Admin)
         mock_admin_ws = MockWebSocket()
@@ -726,7 +726,7 @@ class TestWebSocketIntegration:
         await websocket_manager.connect_websocket(mock_websocket, session_id, ClientType.ADMIN)
 
         # Session sollte WebSocket-Connection haben
-        session = websocket_manager.session_manager.get_session(session_id)
+        session = await websocket_manager.session_manager.get_session(session_id)
         assert session.admin_connected is True
 
         # A tenant session counts its sockets instead of holding them.

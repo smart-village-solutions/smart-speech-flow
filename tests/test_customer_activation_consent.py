@@ -56,21 +56,21 @@ def client(session_manager, request: pytest.FixtureRequest) -> TestClient:
     return TestClient(app, client=(request.node.nodeid, 50000))
 
 
-def _create_pending(client: TestClient, session_manager):
+async def _create_pending(client: TestClient, session_manager):
     session_id = client.post("/api/admin/session/create").json()["session_id"]
-    key = session_manager.resolve_customer_session(session_id)
+    key = await session_manager.resolve_customer_session(session_id)
     assert key is not None
     return session_id, key
 
 
 @pytest.fixture
-def pending_session(client: TestClient, session_manager):
-    return _create_pending(client, session_manager)
+async def pending_session(client: TestClient, session_manager):
+    return await _create_pending(client, session_manager)
 
 
 @pytest.fixture
-def active_granted_session(session_manager, client: TestClient, studio: _FakeStudio):
-    session_id, key = _create_pending(client, session_manager)
+async def active_granted_session(session_manager, client: TestClient, studio: _FakeStudio):
+    session_id, key = await _create_pending(client, session_manager)
     studio.set_mode("ask")
     response = client.post(
         "/api/customer/session/activate",
@@ -81,11 +81,11 @@ def active_granted_session(session_manager, client: TestClient, studio: _FakeStu
         },
     )
     assert response.status_code == 200
-    assert session_manager.get_session(key).consent_status is ConsentStatus.GRANTED
+    assert (await session_manager.get_session(key)).consent_status is ConsentStatus.GRANTED
     return session_id, key
 
 
-def test_ask_mode_with_affirmative_answer_grants(session_manager, pending_session, client, studio):
+async def test_ask_mode_with_affirmative_answer_grants(session_manager, pending_session, client, studio):
     session_id, key = pending_session
     studio.set_mode("ask")
     response = client.post(
@@ -97,10 +97,10 @@ def test_ask_mode_with_affirmative_answer_grants(session_manager, pending_sessio
         },
     )
     assert response.status_code == 200
-    assert session_manager.get_session(key).consent_status is ConsentStatus.GRANTED
+    assert (await session_manager.get_session(key)).consent_status is ConsentStatus.GRANTED
 
 
-def test_absent_answer_declines(session_manager, pending_session, client, studio):
+async def test_absent_answer_declines(session_manager, pending_session, client, studio):
     session_id, key = pending_session
     studio.set_mode("ask")
     response = client.post(
@@ -108,10 +108,10 @@ def test_absent_answer_declines(session_manager, pending_session, client, studio
         json={"session_id": session_id, "customer_language": "en"},
     )
     assert response.status_code == 200
-    assert session_manager.get_session(key).consent_status is ConsentStatus.DECLINED
+    assert (await session_manager.get_session(key)).consent_status is ConsentStatus.DECLINED
 
 
-def test_disabled_mode_sets_policy_disabled(session_manager, pending_session, client, studio):
+async def test_disabled_mode_sets_policy_disabled(session_manager, pending_session, client, studio):
     session_id, key = pending_session
     studio.set_mode("disabled")
     client.post(
@@ -122,10 +122,10 @@ def test_disabled_mode_sets_policy_disabled(session_manager, pending_session, cl
             "data_retention_consent": True,
         },
     )
-    assert session_manager.get_session(key).consent_status is ConsentStatus.POLICY_DISABLED
+    assert (await session_manager.get_session(key)).consent_status is ConsentStatus.POLICY_DISABLED
 
 
-def test_failed_read_leaves_pending_and_still_activates(
+async def test_failed_read_leaves_pending_and_still_activates(
     session_manager, pending_session, client, studio
 ):
     session_id, key = pending_session
@@ -135,7 +135,7 @@ def test_failed_read_leaves_pending_and_still_activates(
         json={"session_id": session_id, "customer_language": "en"},
     )
     assert response.status_code == 200
-    session = session_manager.get_session(key)
+    session = await session_manager.get_session(key)
     assert session.status.value == "active"
     assert session.consent_status is ConsentStatus.PENDING
 
@@ -143,7 +143,7 @@ def test_failed_read_leaves_pending_and_still_activates(
 @pytest.mark.parametrize(
     "code", ["tenant_suspended", "ssf_plugin_inactive", "ssf_tenant_not_ready"]
 )
-def test_conflict_refuses_activation(session_manager, pending_session, client, studio, code):
+async def test_conflict_refuses_activation(session_manager, pending_session, client, studio, code):
     session_id, key = pending_session
     studio.fail(code, retryable=False)
     response = client.post(
@@ -151,12 +151,12 @@ def test_conflict_refuses_activation(session_manager, pending_session, client, s
         json={"session_id": session_id, "customer_language": "en"},
     )
     assert response.status_code == 409
-    session = session_manager.get_session(key)
+    session = await session_manager.get_session(key)
     assert session.status.value == "pending"
     assert session.consent_status is ConsentStatus.PENDING
 
 
-def test_language_change_does_not_re_resolve_consent(
+async def test_language_change_does_not_re_resolve_consent(
     session_manager, active_granted_session, client, studio
 ):
     session_id, key = active_granted_session
@@ -167,13 +167,13 @@ def test_language_change_does_not_re_resolve_consent(
         json={"session_id": session_id, "customer_language": "de"},
     )
     assert response.status_code == 200
-    session = session_manager.get_session(key)
+    session = await session_manager.get_session(key)
     assert session.customer_language == "de"
     assert session.consent_status is ConsentStatus.GRANTED
     assert studio.calls == 0
 
 
-def test_language_change_succeeds_while_tenant_unavailable(
+async def test_language_change_succeeds_while_tenant_unavailable(
     session_manager, active_granted_session, client, studio
 ):
     session_id, key = active_granted_session
@@ -183,10 +183,10 @@ def test_language_change_succeeds_while_tenant_unavailable(
         json={"session_id": session_id, "customer_language": "de"},
     )
     assert response.status_code == 200
-    assert session_manager.get_session(key).consent_status is ConsentStatus.GRANTED
+    assert (await session_manager.get_session(key)).consent_status is ConsentStatus.GRANTED
 
 
-def test_activation_never_routes_through_the_policy_gate(
+async def test_activation_never_routes_through_the_policy_gate(
     pending_session, client, studio, monkeypatch, session_manager
 ):
     # `RuntimePolicyGate.authorize` records discarded conversation content on
@@ -204,12 +204,12 @@ def test_activation_never_routes_through_the_policy_gate(
         json={"session_id": session_id, "customer_language": "en"},
     )
     assert response.status_code == 200
-    assert session_manager.get_session(key).consent_status is ConsentStatus.POLICY_DISABLED
+    assert (await session_manager.get_session(key)).consent_status is ConsentStatus.POLICY_DISABLED
 
 
 @pytest.mark.parametrize("authenticated", [False, True], ids=["guest", "user"])
 @pytest.mark.parametrize("selector_source", ["body", "nested_body", "query", "header", "cookie"])
-def test_activation_rejects_tenant_selectors_before_mutation(
+async def test_activation_rejects_tenant_selectors_before_mutation(
     session_manager, pending_session, client, studio, monkeypatch, authenticated, selector_source
 ):
     from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
@@ -233,13 +233,13 @@ def test_activation_rejects_tenant_selectors_before_mutation(
     response = client.post("/api/customer/session/activate", json=payload, **options)
 
     assert response.status_code == 400
-    assert session_manager.get_session(key).status.value == "pending"
-    assert session_manager.get_session(key).customer_language is None
+    assert (await session_manager.get_session(key)).status.value == "pending"
+    assert (await session_manager.get_session(key)).customer_language is None
     assert studio.calls == 0
 
 
 @pytest.mark.parametrize("actor", [None, "tenant-test", "other-tenant"])
-def test_activation_preserves_guest_and_authenticated_tenant_access(
+async def test_activation_preserves_guest_and_authenticated_tenant_access(
     session_manager, pending_session, client, studio, monkeypatch, actor
 ):
     from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
@@ -254,7 +254,7 @@ def test_activation_preserves_guest_and_authenticated_tenant_access(
     )
 
     assert response.status_code == (404 if actor == "other-tenant" else 200)
-    assert session_manager.get_session(key).status.value == (
+    assert (await session_manager.get_session(key)).status.value == (
         "pending" if actor == "other-tenant" else "active"
     )
 
@@ -269,7 +269,7 @@ def test_activation_preserves_guest_and_authenticated_tenant_access(
         ("GET", "/audio/missing/original.wav"),
     ],
 )
-def test_customer_session_routes_reject_query_tenant_selectors(
+async def test_customer_session_routes_reject_query_tenant_selectors(
     session_manager, pending_session, client, monkeypatch, authenticated, method, suffix
 ):
     from services.api_gateway.auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
@@ -285,4 +285,4 @@ def test_customer_session_routes_reject_query_tenant_selectors(
     )
 
     assert response.status_code == 400
-    assert session_manager.get_session(key).status.value == "pending"
+    assert (await session_manager.get_session(key)).status.value == "pending"

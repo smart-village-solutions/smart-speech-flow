@@ -56,13 +56,13 @@ class RealtimeTicketBackend(Protocol):
     use. `put` overwrites and restarts the lifetime, which revocation relies on.
     """
 
-    def put_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool: ...
+    async def put_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool: ...
 
-    def put(self, key: str, value: str, ttl_seconds: int) -> None: ...
+    async def put(self, key: str, value: str, ttl_seconds: int) -> None: ...
 
-    def consume(self, key: str) -> str | None: ...
+    async def consume(self, key: str) -> str | None: ...
 
-    def get(self, key: str) -> str | None: ...
+    async def get(self, key: str) -> str | None: ...
 
 
 class RealtimeTicketStore:
@@ -86,14 +86,14 @@ class RealtimeTicketStore:
             f"session:{key.session_id}:realtime-revoked"
         )
 
-    def revoke(self, key: TenantSessionKey) -> None:
+    async def revoke(self, key: TenantSessionKey) -> None:
         """Invalidate every outstanding ticket for one terminal session."""
         try:
-            self.backend.put(self._revoked_key(key), "1", 8 * 60 * 60)
+            await self.backend.put(self._revoked_key(key), "1", 8 * 60 * 60)
         except _BACKEND_FAILURES as error:
             raise RealtimeTicketUnavailable() from error
 
-    def issue(
+    async def issue(
         self,
         key: TenantSessionKey,
         transport: RealtimeTransportKind,
@@ -114,7 +114,7 @@ class RealtimeTicketStore:
         try:
             for _attempt in range(3):
                 ticket = secrets.token_urlsafe(32)
-                if self.backend.put_if_absent(self._key(ticket), payload, ttl_seconds):
+                if await self.backend.put_if_absent(self._key(ticket), payload, ttl_seconds):
                     return IssuedRealtimeTicket(
                         ticket=ticket,
                         expires_at=self.clock() + timedelta(seconds=ttl_seconds),
@@ -123,13 +123,13 @@ class RealtimeTicketStore:
             raise RealtimeTicketUnavailable() from error
         raise RealtimeTicketUnavailable()
 
-    def consume(
+    async def consume(
         self,
         raw_ticket: str,
         key: TenantSessionKey,
         transport: RealtimeTransportKind,
     ) -> bool:
-        resolved = self.consume_key(raw_ticket, key.session_id, transport)
+        resolved = await self.consume_key(raw_ticket, key.session_id, transport)
         return resolved is not None and all(
             hmac.compare_digest(left, right)
             for left, right in (
@@ -138,7 +138,7 @@ class RealtimeTicketStore:
             )
         )
 
-    def consume_key(
+    async def consume_key(
         self,
         raw_ticket: str,
         session_id: str,
@@ -146,7 +146,7 @@ class RealtimeTicketStore:
     ) -> TenantSessionKey | None:
         """Consume a ticket and recover its server-issued tenant scope."""
         try:
-            raw_payload = self.backend.consume(self._key(raw_ticket))
+            raw_payload = await self.backend.consume(self._key(raw_ticket))
             payload = json.loads(raw_payload) if raw_payload is not None else None
         except _BACKEND_FAILURES as error:
             raise RealtimeTicketUnavailable() from error
@@ -172,7 +172,7 @@ class RealtimeTicketStore:
         except ValueError:
             return None
         try:
-            if self.backend.get(self._revoked_key(resolved)) is not None:
+            if await self.backend.get(self._revoked_key(resolved)) is not None:
                 return None
         except _BACKEND_FAILURES as error:
             raise RealtimeTicketUnavailable() from error
@@ -189,42 +189,49 @@ class RedisRealtimeTicketBackend:
     def __init__(self, redis: Any) -> None:
         self.redis = redis
 
-    def put_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool:
-        return bool(self.redis.set(key, value, ex=ttl_seconds, nx=True))
+    async def put_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool:
+        return bool(await self.redis.set(key, value, ex=ttl_seconds, nx=True))
 
-    def put(self, key: str, value: str, ttl_seconds: int) -> None:
-        self.redis.set(key, value, ex=ttl_seconds, nx=False)
+    async def put(self, key: str, value: str, ttl_seconds: int) -> None:
+        await self.redis.set(key, value, ex=ttl_seconds, nx=False)
 
-    def consume(self, key: str) -> str | None:
-        return _decoded(self.redis.eval(CONSUME_TICKET_LUA, 1, key))
+    async def consume(self, key: str) -> str | None:
+        return _decoded(await self.redis.eval(CONSUME_TICKET_LUA, 1, key))
 
-    def get(self, key: str) -> str | None:
-        return _decoded(self.redis.get(key))
+    async def get(self, key: str) -> str | None:
+        return _decoded(await self.redis.get(key))
 
 
 class MemoryRealtimeTicketBackend:
-    """Process-local tickets for tests and local development without Redis."""
+    """Process-local tickets for tests and local development without Redis.
+
+    No method awaits, so each one runs to completion before another starts:
+    that is what makes `consume` single use here.
+    """
 
     def __init__(self, clock: Callable[[], datetime] = utc_now) -> None:
         self.clock = clock
         self.values: dict[str, tuple[str, datetime]] = {}
 
-    def put_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool:
+    async def put_if_absent(self, key: str, value: str, ttl_seconds: int) -> bool:
         self._expire(key)
         if key in self.values:
             return False
-        self.put(key, value, ttl_seconds)
+        self._put(key, value, ttl_seconds)
         return True
 
-    def put(self, key: str, value: str, ttl_seconds: int) -> None:
+    async def put(self, key: str, value: str, ttl_seconds: int) -> None:
+        self._put(key, value, ttl_seconds)
+
+    def _put(self, key: str, value: str, ttl_seconds: int) -> None:
         self.values[key] = (value, self.clock() + timedelta(seconds=ttl_seconds))
 
-    def consume(self, key: str) -> str | None:
+    async def consume(self, key: str) -> str | None:
         self._expire(key)
         stored = self.values.pop(key, None)
         return stored[0] if stored else None
 
-    def get(self, key: str) -> str | None:
+    async def get(self, key: str) -> str | None:
         self._expire(key)
         stored = self.values.get(key)
         return stored[0] if stored else None

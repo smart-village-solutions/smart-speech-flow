@@ -55,13 +55,13 @@ class _Sessions:
         self.failed = failed
         self.swept_on: threading.Thread | None = None
 
-    def sweep_expired_content(self, _now) -> dict:
+    async def sweep_expired_content(self, _now) -> dict:
         self.swept_on = threading.current_thread()
         return {"refused_removed": 0, "expired_removed": 0, "failed": self.failed}
 
 
 class _RaisingSweep:
-    def sweep_expired_content(self, _now) -> dict:
+    async def sweep_expired_content(self, _now) -> dict:
         raise RuntimeError("session store unavailable")
 
 

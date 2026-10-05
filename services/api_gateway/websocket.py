@@ -212,7 +212,7 @@ class WebSocketManager:
         """
         await websocket.accept()
 
-        session = self.session_manager.get_session(session_id)
+        session = await self.session_manager.get_session(session_id)
         if session is None or session.status == SessionStatus.TERMINATED:
             await websocket.close(code=4404, reason=_SESSION_NOT_FOUND)
             raise RuntimeError("Session unavailable")
@@ -413,7 +413,7 @@ class WebSocketManager:
 
         if connection.state is not ConnectionState.CONNECTED:
             return
-        session = self.session_manager.get_session(connection.key)
+        session = await self.session_manager.get_session(connection.key)
         if session is None or session.status == SessionStatus.TERMINATED:
             connection.state = ConnectionState.DISCONNECTING
             return
@@ -595,7 +595,7 @@ class WebSocketManager:
         # Include customer_language when customer joins
         customer_language = None
         if client_type == ClientType.CUSTOMER:
-            session = self.session_manager.get_session(session_id)
+            session = await self.session_manager.get_session(session_id)
             if session:
                 customer_language = session.customer_language
         join_message = client_joined_frame(
@@ -637,11 +637,11 @@ async def admin_websocket_endpoint(
     origin: Annotated[Optional[str], Header()] = None,
 ) -> None:
     try:
-        key = tickets.consume_key(ticket, session_id, "websocket")
+        key = await tickets.consume_key(ticket, session_id, "websocket")
     except RealtimeTicketUnavailable:
         await websocket.close(code=1013, reason="Realtime service unavailable")
         return
-    if key is None or sessions.get_session(key) is None:
+    if key is None or await sessions.get_session(key) is None:
         await websocket.close(code=4404, reason=_SESSION_NOT_FOUND)
         return
     await websocket_endpoint(websocket, key, ClientType.ADMIN, manager, sessions, origin)
@@ -683,7 +683,7 @@ async def websocket_endpoint(
         return
 
     # 2. Session validieren
-    session = sessions.get_session(key)
+    session = await sessions.get_session(key)
     if not session:
         await websocket.close(code=1003, reason=_SESSION_NOT_FOUND)
         return

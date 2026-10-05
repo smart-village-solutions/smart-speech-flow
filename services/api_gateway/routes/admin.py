@@ -138,7 +138,7 @@ async def list_tenant_realtime_connections(
     for key in keys:
         if key.tenant_id != context.tenant_id:
             continue
-        session = sessions.get_session(key)
+        session = await sessions.get_session(key)
         if session is not None and session.is_owned_by(owner_ref):
             connections.extend(_connection_payload(manager, polling_store, key))
     return {"connections": connections, "count": len(connections)}
@@ -176,7 +176,7 @@ async def issue_realtime_ticket(
     store: Annotated[RealtimeTicketStore, Depends(get_realtime_ticket_store)],
 ) -> RealtimeTicketResponse:
     try:
-        issued = store.issue(key, request.transport, ttl_seconds=60)
+        issued = await store.issue(key, request.transport, ttl_seconds=60)
     except RealtimeTicketUnavailable:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -210,7 +210,7 @@ async def get_admin_messages(
 ) -> dict[str, object]:
     return {
         "session_id": session_id,
-        "messages": conversations.messages(key, ClientType.ADMIN),
+        "messages": await conversations.messages(key, ClientType.ADMIN),
     }
 
 
@@ -225,7 +225,7 @@ async def get_admin_audio(
     key: Annotated[TenantSessionKey, Depends(require_admin_session_key)],
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> Response:
-    return conversations.audio(key, message_id, variant)
+    return await conversations.audio(key, message_id, variant)
 
 
 def utc_now() -> datetime:
@@ -318,7 +318,7 @@ async def get_current_session(
         SessionStatusResponse: Details der aktiven Session
     """
     try:
-        session = lifecycle.current(context.tenant_id, session_id, owner_ref=owner_ref)
+        session = await lifecycle.current(context.tenant_id, session_id, owner_ref=owner_ref)
         return SessionStatusResponse(
             session_id=session.id,
             status=session.status.value,
@@ -424,7 +424,9 @@ async def get_session_history(
     Returns:
         SessionHistoryResponse: Historie und aktuelle Session
     """
-    history, active_sessions = lifecycle.history(context.tenant_id, limit, owner_ref=owner_ref)
+    history, active_sessions = await lifecycle.history(
+        context.tenant_id, limit, owner_ref=owner_ref
+    )
     return SessionHistoryResponse(
         sessions=history, total_count=len(history), active_sessions=active_sessions
     )
@@ -450,7 +452,7 @@ async def get_session_status(
     Returns:
         SessionStatusResponse: Detaillierte Session-Informationen
     """
-    session = sessions.get_session(key)
+    session = await sessions.get_session(key)
     if session is None:
         raise HTTPException(status_code=404, detail=_SESSION_NOT_FOUND)
 

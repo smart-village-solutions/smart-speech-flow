@@ -139,7 +139,9 @@ class TwoTenantSystem:
         session_id = body["session_id"]
         message_id = f"message-{tenant_id}"
         key = TenantSessionKey(tenant_id, session_id)
-        self.sessions.add_message(
+        # On the app's own loop, where the lifespan built the manager.
+        self.client.portal.call(
+            self.sessions.add_message,
             key,
             SessionMessage(
                 id=message_id,
@@ -375,8 +377,9 @@ def test_each_tenant_session_keeps_its_creation_time_runtime_snapshot(
     two_tenant_system,
 ) -> None:
     snapshots = {
-        tenant_id: two_tenant_system.sessions.get_session(
-            TenantSessionKey(tenant_id, resource.session_id)
+        tenant_id: two_tenant_system.client.portal.call(
+            two_tenant_system.sessions.get_session,
+            TenantSessionKey(tenant_id, resource.session_id),
         ).runtime_configuration
         for tenant_id, resource in two_tenant_system.resources.items()
     }
@@ -409,8 +412,8 @@ async def test_presence_grace_warning_and_absolute_lifetime_boundaries() -> None
     )
     snapshot = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
     grace = await manager.create_admin_session("tenant-a", snapshot)
-    manager.admin_connected(grace.key)
-    manager.admin_disconnected(grace.key)
+    await manager.admin_connected(grace.key)
+    await manager.admin_disconnected(grace.key)
     clock.advance(minutes=25)
     assert grace.warning_due(clock()) is True
     assert grace.timeout_due(clock()) is False
@@ -418,7 +421,7 @@ async def test_presence_grace_warning_and_absolute_lifetime_boundaries() -> None
     assert grace.timeout_due(clock()) is True
 
     maximum = await manager.create_admin_session("tenant-b", snapshot)
-    manager.admin_connected(maximum.key)
+    await manager.admin_connected(maximum.key)
     clock.advance(hours=7, minutes=55)
     assert maximum.warning_due(clock()) is True
     assert maximum.timeout_due(clock()) is False
@@ -426,19 +429,19 @@ async def test_presence_grace_warning_and_absolute_lifetime_boundaries() -> None
     assert maximum.timeout_due(clock()) is True
 
 
-def test_admin_ticket_is_single_use_and_cannot_cross_same_id_tenants() -> None:
+async def test_admin_ticket_is_single_use_and_cannot_cross_same_id_tenants() -> None:
     backend = MemoryRealtimeTicketBackend()
     store = RealtimeTicketStore(backend)
     key_a = TenantSessionKey("tenant-a", "DUPL1234")
     key_b = TenantSessionKey("tenant-b", "DUPL1234")
-    ticket = store.issue(key_a, "websocket")
+    ticket = await store.issue(key_a, "websocket")
 
-    assert store.consume(ticket.ticket, key_b, "websocket") is False
-    assert store.consume(ticket.ticket, key_a, "websocket") is False
+    assert await store.consume(ticket.ticket, key_b, "websocket") is False
+    assert await store.consume(ticket.ticket, key_a, "websocket") is False
 
-    replay_ticket = store.issue(key_a, "websocket")
-    assert store.consume(replay_ticket.ticket, key_a, "websocket") is True
-    assert store.consume(replay_ticket.ticket, key_a, "websocket") is False
+    replay_ticket = await store.issue(key_a, "websocket")
+    assert await store.consume(replay_ticket.ticket, key_a, "websocket") is True
+    assert await store.consume(replay_ticket.ticket, key_a, "websocket") is False
 
 
 @pytest.mark.asyncio
@@ -453,7 +456,7 @@ async def test_malformed_same_id_registries_and_cleanup_remain_tenant_isolated()
         async def remove_websocket_connection(self, *_args):
             return None
 
-        def get_session(self, _key):
+        async def get_session(self, _key):
             return type(
                 "SessionState",
                 (),

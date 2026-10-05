@@ -62,7 +62,7 @@ def _audio_message(
     )
 
 
-def _list_without_filesystem(
+async def _list_without_filesystem(
     manager: TenantSessionManager, key: TenantSessionKey, role: ClientType
 ) -> list[dict[str, object]]:
     def refuse(*_args: object, **_kwargs: object) -> None:
@@ -71,7 +71,7 @@ def _list_without_filesystem(
     with pytest.MonkeyPatch.context() as patch:
         for name in ("is_file", "exists", "stat"):
             patch.setattr(Path, name, refuse)
-        return _conversations(manager).messages(key, role)
+        return await _conversations(manager).messages(key, role)
 
 
 def _save_both(key: TenantSessionKey, audio_store: AudioStore) -> None:
@@ -83,9 +83,9 @@ async def test_listing_advertises_recorded_audio_without_a_filesystem_stat(
     manager: TenantSessionManager, audio_store: AudioStore
 ) -> None:
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
-    manager.add_message(session.key, _audio_message())
+    await manager.add_message(session.key, _audio_message())
 
-    [item] = _list_without_filesystem(manager, session.key, ClientType.ADMIN)
+    [item] = await _list_without_filesystem(manager, session.key, ClientType.ADMIN)
 
     base = f"/api/admin/session/{session.id}/audio/m1"
     assert item["audio_url"] == f"{base}/translated.wav"
@@ -100,9 +100,9 @@ async def test_listing_advertises_no_audio_for_a_message_without_markers(
     message.translated_audio_available = False
     message.original_audio_url = None
     message.pipeline_metadata = None
-    manager.add_message(session.key, message)
+    await manager.add_message(session.key, message)
 
-    [item] = _list_without_filesystem(manager, session.key, ClientType.CUSTOMER)
+    [item] = await _list_without_filesystem(manager, session.key, ClientType.CUSTOMER)
 
     assert "audio_url" not in item
     assert "original_audio_url" not in item
@@ -115,7 +115,7 @@ async def test_settled_refused_audio_is_not_advertised_even_if_its_file_survives
     audio_store = UndeletableAudioStore(tmp_path)
     manager = TenantSessionManager(store=MemoryTenantSessionStore(), audio_store=audio_store)
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
-    manager.add_message(
+    await manager.add_message(
         session.key, _audio_message(original_authorized=False, translated_authorized=False)
     )
     _save_both(session.key, audio_store)
@@ -123,10 +123,10 @@ async def test_settled_refused_audio_is_not_advertised_even_if_its_file_survives
     await manager.terminate_session(session.key, reason="test")
 
     assert audio_store.path(session.key, "m1", AudioVariant.TRANSLATED).is_file()
-    [retained] = manager.get_session(session.key).messages
+    [retained] = (await manager.get_session(session.key)).messages
     assert retained.translated_audio_available is False
     assert retained.original_audio_url is None
-    [item] = _conversations(manager).messages(session.key, ClientType.ADMIN)
+    [item] = await _conversations(manager).messages(session.key, ClientType.ADMIN)
     assert "audio_url" not in item
     assert "original_audio_url" not in item
     assert "audio_url" not in repr(item.get("pipeline_metadata"))
@@ -137,14 +137,14 @@ async def test_the_content_sweep_clears_the_markers_it_settles(
 ) -> None:
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
-    manager.add_message(
+    await manager.add_message(
         session.key, _audio_message(original_authorized=False, translated_authorized=False)
     )
     past_lifetime = session.created_at + timedelta(hours=session.maximum_lifetime_hours)
 
-    manager.sweep_expired_content(past_lifetime)
+    await manager.sweep_expired_content(past_lifetime)
 
-    [item] = _list_without_filesystem(manager, session.key, ClientType.ADMIN)
+    [item] = await _list_without_filesystem(manager, session.key, ClientType.ADMIN)
     assert "audio_url" not in item
     assert "original_audio_url" not in item
     assert "audio_url" not in repr(item.get("pipeline_metadata"))
@@ -154,9 +154,9 @@ async def test_serving_audio_still_checks_that_the_file_exists(
     manager: TenantSessionManager, audio_store: AudioStore
 ) -> None:
     session = await manager.create_admin_session("tenant-test", SNAPSHOT)
-    manager.add_message(session.key, _audio_message())
+    await manager.add_message(session.key, _audio_message())
 
     with pytest.raises(HTTPException) as missing:
-        _conversations(manager).audio(session.key, "m1", AudioVariant.TRANSLATED)
+        await _conversations(manager).audio(session.key, "m1", AudioVariant.TRANSLATED)
 
     assert missing.value.status_code == 404

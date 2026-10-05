@@ -27,7 +27,7 @@ async def active_session(monkeypatch: pytest.MonkeyPatch):
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
-    manager.store.save(session)
+    await manager.store.save(session)
     return manager, session
 
 
@@ -185,6 +185,6 @@ async def test_create_message_persists_under_the_complete_tenant_key(
         translated_audio_available=False,
     )
 
-    stored = manager.get_session(session.key)
+    stored = await manager.get_session(session.key)
     assert stored.messages[-1] == message
     assert stored.messages[-1].sender is ClientType.CUSTOMER

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 try:
-    from redis import Redis
+    from redis.asyncio import Redis
     from redis.exceptions import RedisError
 except ImportError:  # pragma: no cover - exercised only in stripped deployments
     Redis = None  # type: ignore[assignment]
@@ -31,10 +31,8 @@ class TenantPersistenceBinding:
     redis: Any
     namespace: str
 
-    def close(self) -> None:
-        close = getattr(self.redis, "close", None)
-        if callable(close):
-            close()
+    async def close(self) -> None:
+        await self.redis.aclose()
 
 
 def _redis_namespace() -> str:
@@ -44,7 +42,7 @@ def _redis_namespace() -> str:
     return namespace
 
 
-def configure_tenant_persistence() -> TenantPersistenceBinding | None:
+async def configure_tenant_persistence() -> TenantPersistenceBinding | None:
     """Verify the one Redis connection the v2 session and ticket stores share.
 
     Local processes without a configured Redis URL retain the explicit memory
@@ -70,10 +68,14 @@ def configure_tenant_persistence() -> TenantPersistenceBinding | None:
             socket_connect_timeout=5,
             socket_timeout=5,
         )
-        redis.ping()
     except (RedisError, OSError, ValueError):
         # ValueError: from_url refusing a malformed URL. `from None` keeps the URL,
         # which can carry credentials, out of the startup log.
+        raise TenantPersistenceUnavailable("tenant persistence connection unavailable") from None
+    try:
+        await redis.ping()
+    except (RedisError, OSError, ValueError):
+        await redis.aclose()
         raise TenantPersistenceUnavailable("tenant persistence connection unavailable") from None
 
     logger.info("tenant_redis_persistence_ready")

@@ -84,7 +84,7 @@ class TestTheReasonSurvivesCleanup:
                 return None
 
         sessions = tenant_session_manager()
-        key = open_session(sessions, "s1")
+        key = await open_session(sessions, "s1")
         manager = ws.WebSocketManager(sessions, monitor=_Monitor())
         connection_id = manager.registry.build_connection_id(key, ws.ClientType.CUSTOMER)
         manager.all_connections[connection_id] = ws.WebSocketConnection(
@@ -118,11 +118,11 @@ class _RecordingMonitor:
         self.rejected.append(reason)
 
 
-def _manager_with_one_connection(monkeypatch, monitor: _RecordingMonitor):
+async def _manager_with_one_connection(monkeypatch, monitor: _RecordingMonitor):
     from services.api_gateway import websocket as ws
 
     sessions = tenant_session_manager()
-    key = open_session(sessions, "s1")
+    key = await open_session(sessions, "s1")
     manager = ws.WebSocketManager(sessions, monitor=monitor)
     connection_id = manager.registry.build_connection_id(key, ws.ClientType.CUSTOMER)
     socket = Mock()
@@ -149,7 +149,7 @@ class TestTheReasonSurvivesTheCallOperatorsActuallyMake:
 
     async def test_a_heartbeat_timeout_reaches_the_monitor(self, monkeypatch):
         monitor = _RecordingMonitor()
-        manager, connection_id = _manager_with_one_connection(monkeypatch, monitor)
+        manager, connection_id = await _manager_with_one_connection(monkeypatch, monitor)
 
         await manager.disconnect_websocket(connection_id, "heartbeat_timeout")
 
@@ -157,7 +157,7 @@ class TestTheReasonSurvivesTheCallOperatorsActuallyMake:
 
     async def test_the_default_is_still_a_clean_client_exit(self, monkeypatch):
         monitor = _RecordingMonitor()
-        manager, connection_id = _manager_with_one_connection(monkeypatch, monitor)
+        manager, connection_id = await _manager_with_one_connection(monkeypatch, monitor)
 
         await manager.disconnect_websocket(connection_id)
 
@@ -181,7 +181,7 @@ class TestASessionTerminationIsNotAFailure:
         self, monkeypatch, reason: str, expected: DisconnectReason
     ):
         monitor = _RecordingMonitor()
-        manager, _ = _manager_with_one_connection(monkeypatch, monitor)
+        manager, _ = await _manager_with_one_connection(monkeypatch, monitor)
 
         await manager.handle_session_termination(TenantSessionKey(TENANT, "s1"), reason)
 

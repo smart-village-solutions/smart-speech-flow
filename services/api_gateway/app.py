@@ -62,6 +62,7 @@ def _localhost_origin(port: int, *, secure: bool = False) -> str:
 # Well inside Docker's 10s stop grace: telemetry is the least important thing
 # still holding the process open at teardown.
 QUALITY_TELEMETRY_SHUTDOWN_TIMEOUT_SECONDS = 2.0
+PRESENCE_RELEASE_SHUTDOWN_TIMEOUT_SECONDS = 5.0
 
 
 async def _shutdown_quality_telemetry(exporter: Any, timeout_seconds: float) -> None:
@@ -322,7 +323,12 @@ async def _shut_down(
     # A handler still holding the manager after shutdown persists nothing.
     dependencies.session_manager.runtime_policy = None
     if persistence is not None:
-        persistence.close()
+        # A cancelled poll's shielded presence release may still be writing
+        # through this connection.
+        pending = tuple(dependencies.polling_store.release_tasks)
+        if pending:
+            await asyncio.wait(pending, timeout=PRESENCE_RELEASE_SHUTDOWN_TIMEOUT_SECONDS)
+        await persistence.close()
     telemetry_exporter_at_exit = dependencies.quality_telemetry_exporter
     dependencies.quality_telemetry_exporter = None
     if telemetry_exporter_at_exit is not None:
@@ -355,7 +361,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # realtime ticket must share one verified Redis connection in production.
     from .tenant_persistence import configure_tenant_persistence
 
-    tenant_persistence = configure_tenant_persistence()
+    tenant_persistence = await configure_tenant_persistence()
     metrics: GatewayMetrics = app.state.gateway_metrics
     runtime_flow, runtime_policy = _build_runtime_policy(app.state.prometheus_registry)
     pipeline = _build_pipeline_collaborators(
@@ -367,7 +373,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     if tenant_persistence is not None:
         # Before any request, socket or background task can see this app's sessions.
-        dependencies.session_manager.rehydrate_tenant_sessions()
+        rehydrated = False
+        try:
+            await dependencies.session_manager.rehydrate_tenant_sessions()
+            rehydrated = True
+        finally:
+            # A failed rehydrate aborts startup, and _shut_down never runs.
+            if not rehydrated:
+                await tenant_persistence.close()
     app.state.dependencies = dependencies
     await _attach_quality_telemetry(dependencies, pipeline.telemetry_mode, metrics.refinement)
 

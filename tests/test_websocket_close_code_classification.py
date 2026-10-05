@@ -78,7 +78,7 @@ class TestTheReasonReachesCleanup:
             status = SessionStatus.ACTIVE
 
         class _SessionManager:
-            def get_session(self, session_id):
+            async def get_session(self, session_id):
                 return _Session()
 
         class _Manager:

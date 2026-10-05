@@ -69,8 +69,8 @@ class ConversationService:
             telemetry=self._quality_telemetry,
         )
 
-    def messages(self, key: TenantSessionKey, role: ClientType) -> list[dict[str, object]]:
-        session = self._sessions.get_session(key)
+    async def messages(self, key: TenantSessionKey, role: ClientType) -> list[dict[str, object]]:
+        session = await self._sessions.get_session(key)
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
         # Availability comes from the markers the writer recorded; settlement clears them
@@ -102,13 +102,13 @@ class ConversationService:
             result.append(item)
         return result
 
-    def audio(
+    async def audio(
         self,
         key: TenantSessionKey,
         message_id: str,
         variant: AudioVariant,
     ) -> Response:
-        session = self._sessions.get_session(key)
+        session = await self._sessions.get_session(key)
         if session is None or session.status is SessionStatus.TERMINATED:
             raise HTTPException(status_code=404, detail="Session not found")
         message = next(

@@ -368,6 +368,24 @@ def _mark_translated_audio_gone(metadata: Optional[Dict[str, Any]]) -> None:
             output["audio_available"] = False
 
 
+def _unprune_messages(
+    previous: list[SessionMessage], pruned: list[SessionMessage], kept: int
+) -> list[SessionMessage]:
+    """The messages a failed sweep write restores.
+
+    The sweep swaps in a pruned list of copies and awaits its write. What
+    changed on that list meanwhile survives the rollback: messages appended
+    after its first `kept`, and the authorization recorded on a copy.
+    """
+    copies = {message.id: message for message in pruned[:kept]}
+    for message in previous:
+        if (copied := copies.get(message.id)) is not None:
+            message.record_authorized = copied.record_authorized
+            message.original_audio_authorized = copied.original_audio_authorized
+            message.translated_audio_authorized = copied.translated_audio_authorized
+    return previous + pruned[kept:]
+
+
 def _settle_refused_content(session: Session) -> tuple[bool, list[tuple[str, Any]]]:
     """Prune refused messages and report the audio files they leave behind.
 

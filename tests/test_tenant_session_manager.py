@@ -62,9 +62,9 @@ async def test_single_active_session_limit_is_per_tenant(
     first_b = await manager.create_admin_session("tenant-b", SNAPSHOT, owner_ref=owner_b)
     second_a = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner_a)
 
-    assert manager.get_session(first_a.key).status is SessionStatus.TERMINATED
-    assert manager.get_session(first_b.key).status is SessionStatus.PENDING
-    assert manager.get_session(second_a.key).status is SessionStatus.PENDING
+    assert (await manager.get_session(first_a.key)).status is SessionStatus.TERMINATED
+    assert (await manager.get_session(first_b.key)).status is SessionStatus.PENDING
+    assert (await manager.get_session(second_a.key)).status is SessionStatus.PENDING
     assert manager.active_admin_sessions == {
         "tenant-a": {second_a.id},
         "tenant-b": {first_b.id},
@@ -77,11 +77,11 @@ async def test_customer_resolution_uses_server_owned_join_index(
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
 
-    assert manager.resolve_customer_session(session.id) == session.key
+    assert await manager.resolve_customer_session(session.id) == session.key
 
     await manager.terminate_session(session.key, "manual_admin_termination")
 
-    assert manager.resolve_customer_session(session.id) is None
+    assert await manager.resolve_customer_session(session.id) is None
 
 
 @pytest.mark.asyncio
@@ -89,7 +89,7 @@ async def test_connected_admin_survives_silence_until_absolute_limit(
     manager: TenantSessionManager, clock: Clock
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    manager.admin_connected(session.key)
+    await manager.admin_connected(session.key)
 
     clock.advance(hours=7, minutes=55)
     assert session.warning_due(clock()) is True
@@ -104,9 +104,9 @@ async def test_customer_alone_does_not_cancel_admin_reconnect_grace(
     manager: TenantSessionManager, clock: Clock
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    manager.admin_connected(session.key)
-    manager.customer_connected(session.key)
-    manager.admin_disconnected(session.key)
+    await manager.admin_connected(session.key)
+    await manager.customer_connected(session.key)
+    await manager.admin_disconnected(session.key)
 
     clock.advance(minutes=25)
     assert session.warning_due(clock()) is True
@@ -121,12 +121,12 @@ async def test_admin_reconnect_cancels_grace_warning(
     manager: TenantSessionManager, clock: Clock
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    manager.admin_connected(session.key)
-    manager.admin_disconnected(session.key)
+    await manager.admin_connected(session.key)
+    await manager.admin_disconnected(session.key)
     clock.advance(minutes=25)
     session.timeout_warning_sent = True
 
-    manager.admin_connected(session.key)
+    await manager.admin_connected(session.key)
 
     assert session.admin_disconnected_at is None
     assert session.timeout_warning_sent is False
@@ -189,7 +189,7 @@ async def test_termination_persists_tombstone_before_socket_presence_cleanup(
 
     await manager.terminate_session(session.key)
 
-    stored = manager.get_session(session.key)
+    stored = await manager.get_session(session.key)
     assert stored is not None
     assert stored.status is SessionStatus.TERMINATED
     assert stored.admin_connection_count == 0
@@ -210,11 +210,11 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
             super().__init__()
             self.termination_attempts = 0
 
-        def terminate(self, session) -> None:
+        async def terminate(self, session) -> None:
             self.termination_attempts += 1
             if self.termination_attempts == 1:
                 raise SessionStoreConsistencyError("atomic Redis mutation failed")
-            super().terminate(session)
+            await super().terminate(session)
 
     store = FailOnceStore()
     manager = TenantSessionManager(
@@ -225,8 +225,8 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
     )
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     tickets = RealtimeTicketStore(MemoryRealtimeTicketBackend(clock=clock), clock=clock)
-    usable_after_failure = tickets.issue(session.key, "websocket")
-    revoked_after_success = tickets.issue(session.key, "websocket")
+    usable_after_failure = await tickets.issue(session.key, "websocket")
+    revoked_after_success = await tickets.issue(session.key, "websocket")
     polling = TenantPollingStore(clock=lambda: 0.0)
     polling_client = polling.activate(session.key, ClientType.CUSTOMER)
     manager.realtime_tickets = tickets
@@ -242,12 +242,12 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
         await manager.terminate_session(session.key, "manual_admin_termination")
 
     assert session.status is SessionStatus.PENDING
-    assert store.load(session.key) is session
-    assert store.load(session.key).status is SessionStatus.PENDING
+    assert await store.load(session.key) is session
+    assert (await store.load(session.key)).status is SessionStatus.PENDING
     assert manager.active_admin_sessions == {"tenant-a": {session.id}}
     assert polling_client.terminated is False
     assert session.key in sockets.session_connections
-    assert tickets.consume(usable_after_failure.ticket, session.key, "websocket") is True
+    assert await tickets.consume(usable_after_failure.ticket, session.key, "websocket") is True
 
     await manager.terminate_session(session.key, "manual_admin_termination")
 
@@ -256,7 +256,7 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
     assert manager.active_admin_sessions == {}
     assert polling_client.terminated is True
     assert session.key not in sockets.session_connections
-    assert tickets.consume(revoked_after_success.ticket, session.key, "websocket") is False
+    assert await tickets.consume(revoked_after_success.ticket, session.key, "websocket") is False
 
 
 @pytest.mark.asyncio
@@ -272,12 +272,12 @@ async def test_timeout_monitor_uses_tenant_deadlines_and_full_key(
 
     realtime.broadcast_to_session.assert_awaited_once()
     assert realtime.broadcast_to_session.await_args.args[0] == session.key
-    assert manager.get_session(session.key).status is SessionStatus.PENDING
+    assert (await manager.get_session(session.key)).status is SessionStatus.PENDING
 
     clock.advance(minutes=5)
     await manager.check_session_timeouts()
 
-    assert manager.get_session(session.key).status is SessionStatus.TERMINATED
+    assert (await manager.get_session(session.key)).status is SessionStatus.TERMINATED
 
 
 @pytest.mark.asyncio
@@ -285,12 +285,12 @@ async def test_connected_admin_is_not_terminated_at_legacy_30_minute_deadline(
     manager: TenantSessionManager, clock: Clock
 ) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
-    manager.admin_connected(session.key)
+    await manager.admin_connected(session.key)
     clock.advance(minutes=30)
 
     await manager.check_session_timeouts()
 
-    assert manager.get_session(session.key).status is SessionStatus.PENDING
+    assert (await manager.get_session(session.key)).status is SessionStatus.PENDING
 
 
 @pytest.mark.asyncio
@@ -301,13 +301,13 @@ async def test_timeout_monitor_releases_idle_polling_presence(
     manager.polling_store = polling_store
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     client = polling_store.activate(session.key, ClientType.ADMIN)
-    manager.admin_connected(session.key)
+    await manager.admin_connected(session.key)
     client.last_seen = 0
 
     await manager.check_session_timeouts()
 
     assert client.polling_id not in polling_store.clients
-    assert manager.get_session(session.key).admin_connection_count == 0
+    assert (await manager.get_session(session.key)).admin_connection_count == 0
 
 
 GRACE = timedelta(minutes=30)
@@ -325,13 +325,13 @@ async def test_a_session_that_just_ended_resolves_for_its_grace_window(
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     await manager.terminate_session(session.key, "manual_admin_termination")
 
-    assert manager.resolve_ended_session(session.id, within=GRACE) == session.key
+    assert await manager.resolve_ended_session(session.id, within=GRACE) == session.key
 
     clock.advance(minutes=30)
-    assert manager.resolve_ended_session(session.id, within=GRACE) == session.key
+    assert await manager.resolve_ended_session(session.id, within=GRACE) == session.key
 
     clock.advance(seconds=1)
-    assert manager.resolve_ended_session(session.id, within=GRACE) is None
+    assert await manager.resolve_ended_session(session.id, within=GRACE) is None
 
 
 @pytest.mark.asyncio
@@ -341,24 +341,24 @@ async def test_resolving_an_ended_session_grants_no_route_back_into_it(
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     await manager.terminate_session(session.key, "manual_admin_termination")
 
-    assert manager.resolve_ended_session(session.id, within=GRACE) == session.key
-    assert manager.resolve_customer_session(session.id) is None
-    assert manager.get_session(session.key).status is SessionStatus.TERMINATED
+    assert await manager.resolve_ended_session(session.id, within=GRACE) == session.key
+    assert await manager.resolve_customer_session(session.id) is None
+    assert (await manager.get_session(session.key)).status is SessionStatus.TERMINATED
 
 
 @pytest.mark.asyncio
 async def test_a_live_session_is_not_an_ended_one(manager: TenantSessionManager) -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
 
-    assert manager.resolve_customer_session(session.id) == session.key
-    assert manager.resolve_ended_session(session.id, within=GRACE) is None
+    assert await manager.resolve_customer_session(session.id) == session.key
+    assert await manager.resolve_ended_session(session.id, within=GRACE) is None
 
 
 @pytest.mark.asyncio
 async def test_an_unknown_id_never_resolves_as_ended(manager: TenantSessionManager) -> None:
     await manager.create_admin_session("tenant-a", SNAPSHOT)
 
-    assert manager.resolve_ended_session("NOSUCH99", within=GRACE) is None
+    assert await manager.resolve_ended_session("NOSUCH99", within=GRACE) is None
 
 
 @pytest.mark.asyncio
@@ -374,9 +374,9 @@ async def test_an_ended_session_without_a_termination_time_fails_closed(
     """
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     await manager.terminate_session(session.key, "manual_admin_termination")
-    manager.store.load(session.key).terminated_at = None
+    (await manager.store.load(session.key)).terminated_at = None
 
-    assert manager.resolve_ended_session(session.id, within=GRACE) is None
+    assert await manager.resolve_ended_session(session.id, within=GRACE) is None
 
 
 @pytest.mark.asyncio
@@ -397,4 +397,4 @@ async def test_the_window_survives_a_naive_clock() -> None:
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     await manager.terminate_session(session.key, "manual_admin_termination")
 
-    assert manager.resolve_ended_session(session.id, within=GRACE) == session.key
+    assert await manager.resolve_ended_session(session.id, within=GRACE) == session.key

@@ -36,7 +36,7 @@ def websocket_monitor(registry: CollectorRegistry | None = None) -> WebSocketMon
     return WebSocketMonitor(metrics, SessionPseudonymizer.from_environment())
 
 
-def open_session(
+async def open_session(
     sessions: TenantSessionManager,
     session_id: str = "SESSION1",
     tenant_id: str = TENANT,
@@ -45,6 +45,6 @@ def open_session(
     """An active session the manager can find, as activation leaves it."""
     fields.setdefault("status", SessionStatus.ACTIVE)
     session = Session(id=session_id, tenant_id=tenant_id, **fields)
-    assert sessions.store.create(session)
+    assert await sessions.store.create(session)
     sessions.sessions[session.key] = session
     return session.key

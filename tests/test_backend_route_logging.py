@@ -2,6 +2,7 @@ import asyncio
 import logging
 import traceback
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import Request
@@ -62,10 +63,10 @@ def test_customer_activation_leaves_an_unexpected_error_to_the_unhandled_error_n
     )
     key = TenantSessionKey("tenant-test", session_id)
 
-    def fail_session_lookup(_session_id):
+    async def fail_session_lookup(_session_id):
         raise SensitiveRouteError(exception_text)
 
-    monkeypatch.setattr(customer, "require_customer_session_key", lambda *_args: key)
+    monkeypatch.setattr(customer, "require_customer_session_key", AsyncMock(return_value=key))
     monkeypatch.setattr(session_manager, "get_session", fail_session_lookup)
 
     with caplog.at_level(logging.ERROR, logger=customer.logger.name):
@@ -95,8 +96,8 @@ def test_unsupported_customer_language_warning_omits_tainted_value(
     language = "tainted-language-value"
     session = SimpleNamespace(status=SessionStatus.PENDING)
     key = TenantSessionKey("tenant-test", "session-id")
-    monkeypatch.setattr(customer, "require_customer_session_key", lambda *_args: key)
-    monkeypatch.setattr(session_manager, "get_session", lambda _session_id: session)
+    monkeypatch.setattr(customer, "require_customer_session_key", AsyncMock(return_value=key))
+    monkeypatch.setattr(session_manager, "get_session", AsyncMock(return_value=session))
 
     async def activate_session(_session_id, _language):
         return None

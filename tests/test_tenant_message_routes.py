@@ -68,9 +68,9 @@ def test_message_route_uses_server_assigned_role(
     assert sender is expected_role
 
 
-def test_audio_lookup_requires_message_ownership(session_manager, client: TestClient) -> None:
+async def test_audio_lookup_requires_message_ownership(session_manager, client: TestClient) -> None:
     session_id = client.post("/api/admin/session/create").json()["session_id"]
-    other = asyncio.run(session_manager.create_admin_session("tenant-other", SNAPSHOT))
+    other = await session_manager.create_admin_session("tenant-other", SNAPSHOT)
     message = SessionMessage(
         id="other-message",
         sender=ClientType.CUSTOMER,
@@ -81,7 +81,7 @@ def test_audio_lookup_requires_message_ownership(session_manager, client: TestCl
         target_lang="de",
         timestamp=datetime.now(timezone.utc),
     )
-    session_manager.add_message(other.key, message)
+    await session_manager.add_message(other.key, message)
 
     response = client.get(f"/api/admin/session/{session_id}/audio/{message.id}/translated.wav")
 
@@ -89,14 +89,14 @@ def test_audio_lookup_requires_message_ownership(session_manager, client: TestCl
     assert response.json() == {"detail": "Audio file not found"}
 
 
-def test_translated_audio_is_unavailable_after_its_retained_file_is_gone(
+async def test_translated_audio_is_unavailable_after_its_retained_file_is_gone(
     session_manager,
     client: TestClient,
 ) -> None:
     session_id = client.post("/api/admin/session/create").json()["session_id"]
-    key = session_manager.resolve_customer_session(session_id)
+    key = await session_manager.resolve_customer_session(session_id)
     assert key is not None
-    session_manager.add_message(
+    await session_manager.add_message(
         key,
         SessionMessage(
             id="message-1",
@@ -201,14 +201,14 @@ async def test_live_audio_urls_are_scoped_to_each_receiving_role(
     assert "/api/audio/" not in repr(sent)
 
 
-def test_history_audio_urls_are_scoped_to_requesting_role(
+async def test_history_audio_urls_are_scoped_to_requesting_role(
     session_manager,
     client: TestClient,
 ) -> None:
     session_id = client.post("/api/admin/session/create").json()["session_id"]
-    key = session_manager.resolve_customer_session(session_id)
+    key = await session_manager.resolve_customer_session(session_id)
     assert key is not None
-    session_manager.add_message(
+    await session_manager.add_message(
         key,
         SessionMessage(
             id="message-1",
@@ -330,14 +330,14 @@ async def test_created_message_persists_translated_audio_without_retaining_bytes
 
 
 @pytest.mark.parametrize("variant", ["original", "translated"])
-def test_terminal_session_denies_all_admin_audio_variants(
+async def test_terminal_session_denies_all_admin_audio_variants(
     gateway_dependencies,
     session_manager,
     client: TestClient,
     variant: str,
 ) -> None:
     session_id = client.post("/api/admin/session/create").json()["session_id"]
-    key = session_manager.resolve_customer_session(session_id)
+    key = await session_manager.resolve_customer_session(session_id)
     assert key is not None
     message = SessionMessage(
         id="message-1",
@@ -349,11 +349,11 @@ def test_terminal_session_denies_all_admin_audio_variants(
         target_lang="de",
         timestamp=datetime.now(timezone.utc),
     )
-    session_manager.add_message(key, message)
+    await session_manager.add_message(key, message)
     original = gateway_dependencies.audio_store.save(
         key, "message-1", AudioVariant(variant), b"RIFForiginal"
     )
-    session = session_manager.get_session(key)
+    session = await session_manager.get_session(key)
     assert session is not None
     session.status = SessionStatus.TERMINATED
 
@@ -387,7 +387,7 @@ async def test_text_processing_ignores_a_spoofed_client_role(
     session = await manager.create_admin_session("tenant-a", SNAPSHOT)
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
-    manager.store.save(session)
+    await manager.store.save(session)
     monkeypatch.setattr(
         message_processing,
         "run_pipeline",
@@ -422,4 +422,4 @@ async def test_text_processing_ignores_a_spoofed_client_role(
         audio_store=manager.audio_store,
     )
 
-    assert manager.get_session(session.key).messages[-1].sender is ClientType.ADMIN
+    assert (await manager.get_session(session.key)).messages[-1].sender is ClientType.ADMIN

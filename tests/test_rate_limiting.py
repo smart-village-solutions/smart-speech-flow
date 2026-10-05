@@ -37,7 +37,7 @@ def _register_active_session(session_manager) -> str:
     )
     session.customer_language = "en"
     session.status = SessionStatus.ACTIVE
-    session_manager.store.save(session)
+    asyncio.run(session_manager.store.save(session))
     return session.id
 
 
@@ -72,7 +72,7 @@ def _patch_pipeline(monkeypatch, session_manager):
             target_lang=target_lang,
             timestamp=datetime.now(),
         )
-        session_manager.add_message(session_id, message)
+        await session_manager.add_message(session_id, message)
         return message
 
     monkeypatch.setattr(message_processing, "process_text_pipeline", fake_process_text_pipeline)

@@ -103,7 +103,7 @@ async def make_active_session(manager) -> TenantSessionKey:
     )
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
-    manager.store.save(session)
+    await manager.store.save(session)
     return session.key
 
 
