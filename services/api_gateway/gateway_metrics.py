@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from prometheus_client import CollectorRegistry, Counter
+from prometheus_client import CollectorRegistry, Counter, ProcessCollector
 
 from .audio_storage import AudioStorageMetrics
 from .pipeline_admission import PipelineAdmissionMetrics
@@ -38,6 +38,8 @@ class GatewayMetrics:
         )
         # Exposed from the first scrape, so increase() has a prior sample.
         requests_total.inc(0)
+        # The overview dashboard reads the gateway's memory and CPU from these.
+        ProcessCollector(registry=registry)
         return cls(
             registry=registry,
             requests_total=requests_total,
@@ -45,5 +47,5 @@ class GatewayMetrics:
             refinement=RefinementMetrics(registry),
             websocket=WebSocketMetrics(registry),
             polling_messages_dropped=polling_dropped_counter(registry),
-            audio_storage=AudioStorageMetrics(CollectorRegistry()),
+            audio_storage=AudioStorageMetrics(registry),
         )

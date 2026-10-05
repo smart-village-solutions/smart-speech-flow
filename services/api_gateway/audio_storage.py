@@ -30,12 +30,11 @@ def utc_now() -> datetime:
 
 
 class AudioStorageMetrics:
-    """The audio store's series: disk usage, file counts and files cleanup deleted.
+    """The audio store's series, on the registry /metrics serves (#426).
 
-    create_app() builds one per app on a registry of its own. /metrics does not
-    serve it, as it never served the process default these used to live on, so
-    the audio alerts in monitoring/alert_rules.yml still have no data. Serving
-    them changes what production alerts on, which is a change of its own.
+    The ssf-audio-storage alerts read when a retention pass last completed and
+    what it failed to delete, not how much it deleted: a quiet deployment, or
+    one with SSF_CONTENT_RETENTION_HOURS=0, deletes nothing on every healthy pass.
     """
 
     def __init__(self, registry: CollectorRegistry) -> None:
@@ -54,10 +53,29 @@ class AudioStorageMetrics:
             ["directory"],
             registry=registry,
         )
+        self.cleanup_errors = Counter(
+            "audio_cleanup_errors_total",
+            "Expired audio files the cleanup job failed to delete",
+            registry=registry,
+        )
+        self.cleanup_last_run = Gauge(
+            "audio_cleanup_last_run_timestamp_seconds",
+            "Unix time the retention pass last completed",
+            registry=registry,
+        )
+        # Exposed from the first scrape, so increase() has a prior sample.
+        for variant in AudioVariant:
+            self.cleanup_deleted_files.labels(directory=variant.value).inc(0)
 
     def record_cleanup(self, stats: dict) -> None:
-        self.cleanup_deleted_files.labels(directory="original").inc(stats["deleted_original"])
-        self.cleanup_deleted_files.labels(directory="translated").inc(stats["deleted_translated"])
+        for variant in AudioVariant:
+            self.cleanup_deleted_files.labels(directory=variant.value).inc(
+                stats[f"deleted_{variant.value}"]
+            )
+        self.cleanup_errors.inc(stats["errors"])
+
+    def record_pass_completed(self) -> None:
+        self.cleanup_last_run.set_to_current_time()
 
     def record_disk_usage(self, stats: dict) -> None:
         self.disk_usage_bytes.labels(directory="original").set(stats["original_bytes"])

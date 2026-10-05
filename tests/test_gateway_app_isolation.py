@@ -340,12 +340,13 @@ def test_each_apps_audio_store_counts_into_that_apps_metrics(
         assert _sample(counted.cleanup_deleted_files, "original") == 1.0
         assert _sample(counted.files, "original") == 1.0
         assert _sample(counted.disk_usage_bytes, "original") == 4.0
+        # Its own startup pass found nothing, so its series read zero, not one.
         for metric in (
             untouched.cleanup_deleted_files,
             untouched.files,
             untouched.disk_usage_bytes,
         ):
-            assert _sample(metric, "original") is None
+            assert _sample(metric, "original") == 0.0
 
 
 @pytest.mark.usefixtures("configured_process")

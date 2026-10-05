@@ -35,6 +35,27 @@ DASHBOARDS = sorted((REPOSITORY / "monitoring" / "grafana-dashboards").glob("*.j
 Family = tuple[str, str, frozenset[str]]
 
 EXPECTED_SURFACE: dict[str, Family] = {
+    "audio_cleanup_deleted_files_total": (
+        "counter",
+        "Total number of audio files deleted by cleanup job",
+        frozenset({"directory"}),
+    ),
+    "audio_cleanup_errors_total": (
+        "counter",
+        "Expired audio files the cleanup job failed to delete",
+        frozenset(),
+    ),
+    "audio_cleanup_last_run_timestamp_seconds": (
+        "gauge",
+        "Unix time the retention pass last completed",
+        frozenset(),
+    ),
+    "audio_files_total": ("gauge", "Total number of audio files", frozenset({"directory"})),
+    "audio_storage_disk_usage_bytes": (
+        "gauge",
+        "Total disk usage in bytes for audio storage",
+        frozenset({"directory"}),
+    ),
     "gateway_pipeline_in_flight": (
         "gauge",
         "Pipelines currently holding an admission slot",
@@ -51,6 +72,20 @@ EXPECTED_SURFACE: dict[str, Family] = {
         frozenset(),
     ),
     "gateway_requests_total": ("counter", "Total API Gateway requests", frozenset()),
+    "process_cpu_seconds_total": (
+        "counter",
+        "Total user and system CPU time spent in seconds.",
+        frozenset(),
+    ),
+    "process_max_fds": ("gauge", "Maximum number of open file descriptors.", frozenset()),
+    "process_open_fds": ("gauge", "Number of open file descriptors.", frozenset()),
+    "process_resident_memory_bytes": ("gauge", "Resident memory size in bytes.", frozenset()),
+    "process_start_time_seconds": (
+        "gauge",
+        "Start time of the process since unix epoch in seconds.",
+        frozenset(),
+    ),
+    "process_virtual_memory_bytes": ("gauge", "Virtual memory size in bytes.", frozenset()),
     "refinement_attempts_total": (
         "counter",
         "Refinement attempts by outcome and model",
@@ -200,20 +235,6 @@ EXPECTED_SURFACE: dict[str, Family] = {
     ),
 }
 
-# Queried by monitoring/ as gateway series, and not on the gateway's /metrics.
-# The audio store counts into a registry nothing serves, and the gateway's
-# registry has no process collector, so these alerts and panels have no data.
-# Serving them changes what production alerts on, which is its own change.
-KNOWN_UNSERVED = frozenset(
-    {
-        "audio_cleanup_deleted_files_total",
-        "audio_files_total",
-        "audio_storage_disk_usage_bytes",
-        "process_cpu_seconds_total",
-        "process_resident_memory_bytes",
-    }
-)
-
 # Series monitoring/ queries from the other scrape jobs in monitoring/prometheus.yml.
 OTHER_JOBS = re.compile(
     r"^(?:DCGM_|node_|container_|otelcol_|promtail_|vllm:|asr_|translation_|tts_|up$)"
@@ -311,14 +332,6 @@ def _surface(text: str, registry: Any) -> dict[str, Family]:
             label_names = set(registry._names_to_collectors[name]._labelnames)
         surface[name] = (kinds[name], documentation, frozenset(label_names))
     return surface
-
-
-def _sample_names(text: str) -> set[str]:
-    return {
-        re.split(r"[{ ]", line, maxsplit=1)[0]
-        for line in text.splitlines()
-        if line and not line.startswith("#")
-    }
 
 
 class _FeedbackMaintenancePool:
@@ -453,7 +466,6 @@ def test_metrics_exposes_exactly_the_pinned_families(client, conversations, gate
     }
     assert not changed, changed
     assert re.search(r"^websocket_monitor_initialized 1\.0$", response.text, re.MULTILINE)
-    assert not KNOWN_UNSERVED & (set(surface) | _sample_names(response.text))
 
 
 def test_every_gateway_series_monitoring_queries_is_pinned():
@@ -466,10 +478,7 @@ def test_every_gateway_series_monitoring_queries_is_pinned():
     gateway_series = {name for name in referenced if not OTHER_JOBS.match(name)}
 
     assert "websocket_monitor_initialized" in gateway_series
-    assert gateway_series - KNOWN_UNSERVED <= served, sorted(
-        gateway_series - KNOWN_UNSERVED - served
-    )
-    assert KNOWN_UNSERVED <= referenced, sorted(KNOWN_UNSERVED - referenced)
+    assert gateway_series <= served, sorted(gateway_series - served)
 
 
 _FRESH_PROCESS = """

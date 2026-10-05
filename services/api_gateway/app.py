@@ -24,6 +24,7 @@ from prometheus_client import CollectorRegistry
 from .background_tasks import (
     audio_cleanup_task,
     circuit_breaker_monitor,
+    run_retention_pass,
     session_timeout_monitor,
     websocket_monitor_task,
 )
@@ -382,6 +383,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         dependencies, feedback_dsn, maintenance_dsn, dependencies.session_manager, read_dsn
     )
 
+    # The hourly loop's first pass would be an hour away: run one now, so
+    # content that expired during downtime goes and the audio series have
+    # data from the first scrape.
+    run_retention_pass(dependencies.session_manager, dependencies.audio_store)
     tasks = _start_background_tasks(dependencies, feedback_dsns)
     _announce("All background tasks started")
     _announce("=" * 80)
