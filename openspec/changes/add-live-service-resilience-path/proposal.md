@@ -25,7 +25,7 @@ Two things stop the dead client from simply being wired in.
 (`circuit_breaker_client.py:31`) hardcodes `http://<service>:8000`, ignoring the
 `DOCKER_COMPOSE=0` mapping to `localhost:8001-8003` that `pipeline_logic.py:36`
 honours. It returns `translated_text` where the pipeline reads `translations`;
-it sends `voice_id` where the pipeline sends `session_id` and `tts_text`; it
+it sends `voice_id` where the pipeline sends `session_id`; it
 reads `audio_url` from JSON where the pipeline requires `audio/wav` bytes. And
 the breaker bounds each call with `CircuitBreakerConfig.timeout`, which
 `register_service` sets from the *health endpoint* budget — 8 to 10 seconds —
