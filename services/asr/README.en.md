@@ -29,6 +29,8 @@ Successful requests return JSON:
 }
 ```
 
+A recording without speech (silence, or a steady sound such as hum or fan noise) returns `"text": ""` without running Whisper, which would otherwise transcribe it as a courtesy phrase such as " Vielen Dank."; the gateway answers an empty transcript with 422 `NO_SPEECH_RECOGNIZED`.
+
 When the ASR model is unavailable, the service returns its fallback response with `fallback: true`. When `debug=true` is supplied as a form or query parameter, the response additionally contains a `debug` object. Invalid language codes return `400`.
 
 Validation errors use FastAPI's error payload format, for example:
