@@ -176,6 +176,7 @@ def test_another_tenants_session_is_not_found(client, conversations, identity, m
         ("POST", "/api/admin/session/{id}/realtime-ticket"),
         ("POST", "/api/admin/session/{id}/polling/activate"),
         ("GET", "/api/admin/realtime/connections"),
+        ("GET", "/api/admin/session/{id}/realtime/connections"),
     ],
 )
 def test_admin_routes_require_a_bearer_token(client, conversations, identity, method, path):

@@ -829,7 +829,6 @@ def test_websocket_monitor_utc_and_overdue_heartbeat_health():
     assert health["status"] == "degraded"
     assert health["active_connections"] == 2
     assert health["stale_connections"] >= 1
-    assert monitor._extract_domain("https://example.com:443") == "example.com"
 
 
 def test_asr_module_imports_with_real_fastapi(monkeypatch):

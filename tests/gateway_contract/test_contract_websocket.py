@@ -193,6 +193,20 @@ def test_tenant_connection_listing_shows_only_the_signed_tenant(client, conversa
     }
 
 
+def test_session_connection_listing_serves_the_owning_admin(client, conversations):
+    session_id = conversations.create(TENANT_A)
+
+    with _admin_socket(client, conversations, session_id) as socket:
+        socket.receive_json()
+        response = client.get(f"/api/admin/session/{session_id}/realtime/connections")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["session_id"], body["count"]) == (session_id, 1)
+    connection = body["connections"][0]
+    assert (connection["transport"], connection["client_type"]) == ("websocket", "admin")
+
+
 def test_session_connection_listing_is_scoped_to_the_signed_tenant(client, conversations, identity):
     session_id = conversations.create(TENANT_A)
 

@@ -331,7 +331,7 @@ def test_monitor_keeps_duplicate_public_ids_in_separate_tenant_buckets() -> None
     monitor.connection_established("connection-a", "safe-ref", "admin", resource_key=key_a)
     monitor.connection_established("connection-b", "safe-ref", "admin", resource_key=key_b)
 
-    assert monitor.get_connection_stats()["sessions_with_connections"] == 2
+    assert monitor.get_health_status()["sessions_with_connections"] == 2
     assert len(monitor.get_session_connections(key_a)) == 1
     assert len(monitor.get_session_connections(key_b)) == 1
 

@@ -38,8 +38,8 @@ pytest tests/ -v --ignore=tests/integration --ignore=tests/load
 # Tenant-owned audio route tests
 pytest tests/test_tenant_message_routes.py -v
 
-# WebSocket tests
-pytest tests/integration/test_websocket_integration.py -v
+# WebSocket and realtime contract tests
+pytest tests/gateway_contract/ -v -k "websocket or realtime or polling or heartbeat"
 
 # Real-system pipeline tests (require live ASR, Translation, and TTS services)
 pytest --run-real-system tests/test_pipeline_metadata_integration.py -v
@@ -82,7 +82,7 @@ Located in `tests/` root directory. Test individual components in isolation.
 Located in `tests/integration/`. Test component interactions and full workflows.
 
 **Examples:**
-- `test_websocket_integration.py` - WebSocket full flow
+- `test_tenant_isolation_matrix.py` - Cross-tenant denials across routes and sockets
 - `test_audio_validation_integration.py` - Audio pipeline integration
 - `test_text_pipeline_integration.py` - Text translation pipeline
 
@@ -156,8 +156,8 @@ See [Browser Test Matrix](AUDIO_RECORDING_BROWSER_TEST.md) for coverage.
 
 ### WebSocket Communication
 - **Unit Tests:** `test_websocket_manager.py`, `test_realtime_collaborators.py`, `test_tenant_polling.py`
-- **Contract:** `tests/gateway_contract/test_contract_websocket.py` and the other realtime contract files
-- **Integration:** `tests/integration/test_websocket_integration.py`
+- **Contract:** `tests/gateway_contract/test_contract_websocket.py`, `test_contract_realtime_monitoring.py` and the other realtime contract files
+- **Integration:** `tests/integration/test_tenant_isolation_matrix.py`, `tests/integration/test_realtime_ticket_redis.py`
 - **Load Tests:** `tests/load/test_websocket_load_performance.py`
 
 ### Session Management
