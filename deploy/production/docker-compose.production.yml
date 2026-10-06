@@ -68,7 +68,7 @@ services:
             count: all
             capabilities:
             - gpu
-    image: ssf-backend-tts:prod-42b69b7
+    image: ssf-backend-tts:prod-e2a4e45
     restart: unless-stopped
     pull_policy: never
   api_gateway:
@@ -199,7 +199,7 @@ services:
     - traefik.http.services.api_gateway.loadbalancer.passhostheader=true
     - traefik.http.middlewares.websocket-headers.headers.customrequestheaders.X-Forwarded-Proto=https
     restart: unless-stopped
-    image: ssf-backend-api_gateway:prod-676a4d8
+    image: ssf-backend-api_gateway:prod-e2a4e45
     pull_policy: never
   ollama:
     image: ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a
@@ -372,7 +372,7 @@ services:
       start_period: 20s
     pull_policy: never
   keycloak:
-    image: ssf-keycloak:prod-59c954c
+    image: ssf-keycloak:prod-e2a4e45
     command:
     - start
     - --optimized
