@@ -110,8 +110,10 @@ def test_the_response_model_serves_the_directory_unchanged() -> None:
 async def test_every_mock_runtime_error_is_one_the_client_accepts(
     token: str, scenario: str | None, tenant_id: str, code: str
 ) -> None:
+    runtime_client = _runtime(token, scenario)
+
     with pytest.raises(StudioRuntimeClientError) as caught:
-        await _runtime(token, scenario).fetch(tenant_id, "contract-correlation")
+        await runtime_client.fetch(tenant_id, "contract-correlation")
 
     assert caught.value.code == code
 
@@ -135,8 +137,10 @@ async def test_the_mock_directory_validates_in_the_directory_client() -> None:
 async def test_every_reachable_mock_directory_error_is_one_the_client_accepts(
     token: str, scenario: str | None, code: str
 ) -> None:
+    directory_client = _directory(token, scenario)
+
     with pytest.raises(StudioLoginDirectoryClientError) as caught:
-        await _directory(token, scenario).fetch("contract-correlation")
+        await directory_client.fetch("contract-correlation")
 
     assert caught.value.code == code
 

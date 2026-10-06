@@ -8,14 +8,12 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Mapping, Protocol, TypeVar
+from typing import Any, Awaitable, Callable, Mapping, Protocol
 
 import aiohttp
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .origin import parse_origin
-
-M = TypeVar("M", bound=BaseModel)
 
 
 class ContractModel(BaseModel):
@@ -68,15 +66,17 @@ class AiohttpStudioV1Transport:
         self, url: str, headers: Mapping[str, str], timeout_seconds: float
     ) -> StudioV1HttpResponse:
         timeout = aiohttp.ClientTimeout(total=timeout_seconds)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers) as response:
-                try:
-                    payload = await response.json()
-                except (aiohttp.ContentTypeError, ValueError):
-                    payload = None
-                if not isinstance(payload, Mapping):
-                    payload = None
-                return StudioV1HttpResponse(status=response.status, payload=payload)
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(url, headers=headers) as response,
+        ):
+            try:
+                payload = await response.json()
+            except (aiohttp.ContentTypeError, ValueError):
+                payload = None
+            if not isinstance(payload, Mapping):
+                payload = None
+            return StudioV1HttpResponse(status=response.status, payload=payload)
 
 
 def is_printable_ascii(value: object) -> bool:
@@ -131,7 +131,7 @@ class StudioV1Endpoint:
             raise self._error("token_invalid")
         return token
 
-    async def fetch_validated(
+    async def fetch_validated[M: BaseModel](
         self,
         headers: Mapping[str, str],
         model: type[M],
