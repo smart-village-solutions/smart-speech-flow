@@ -1,90 +1,115 @@
 # Smart Speech Flow Delivery Roadmap
 
-This roadmap provides strategic context for the 2026 delivery programme. The
-operational source of truth for work-package status is the GitHub Project and
-its repository snapshot in
-[`apps/project-report/src/data/project-status.json`](apps/project-report/src/data/project-status.json).
+This roadmap sets the immediate delivery order for reliable, accessible
+multilingual communication in public administration. [GitHub Project #7](https://github.com/orgs/smart-village-solutions/projects/7)
+is the operational status source; the [project report snapshot](apps/project-report/src/data/project-status.json)
+records reconciled work-package statuses. Approved decisions take precedence
+over individual Project cards, and unresolved conflicts do not change status.
 
-**Last reconciled:** 3 September 2026
+**Last reconciled:** 6 October 2026
 
-**Status source:** GitHub Project #7 (Smart Speech Flow Delivery)
+**Strategic priority classes:** unchanged
 
-**Scope:** Reliable, accessible multilingual communication for public-administration staff and citizens.
+**Schedule:** the August and September milestone dates have passed. The
+October regular-operation target remains a planning target, not a confirmed
+forecast or release approval.
 
 ## Current delivery position
 
-Milestones M1 to M3 are past their committed dates. M4 is due today. The
-delivery plan therefore prioritises work that removes blockers from the
-conversation flow, legal review, core-module maintainability, and required
-language coverage.
+The reconciled snapshot has 8 of 27 work packages `Done`, 2 in
+`Implementation`, and 17 `Planned`. WP-006 and WP-008 moved to `Done` because
+their primary GitHub Project items are uncontested and marked `Done`. These
+statuses describe the Project's delivery classification; a completed linked
+issue alone does not prove every work-package acceptance criterion.
 
-| Milestone | Committed date | Current position |
+| Milestone | Original date | Position on 6 October |
 | --- | --- | --- |
-| M1 — Foundations and UI prototype | 13 August 2026 | Four packages complete; legal review (WP-013) remains in implementation. |
-| M2 — Conversation and audio flow | 20 August 2026 | Conversation flow (WP-004) and accessible conversation surfaces (WP-019) are complete; WP-005 status is disputed (`Done` / `Planned`) pending #273, while required language profiles remain planned. |
-| M3 — Complete most refactoring | 27 August 2026 | Four packages remain planned; WP-022 status is disputed (`Done` / `Planned`) pending #273. |
-| M4 — Internal optimisation round | 3 September 2026 | Four packages remain planned. |
-| M5 — Complete internal optimisation | 10 September 2026 | Training, usage, and handover materials (WP-025) are in implementation; four packages remain planned. |
-| M6 — Public optimisation and rollout preparation | Mid-September 2026 | Planned; public optimisation (WP-011) needs attention. |
-| M7 — Regular operation | October 2026 | Planned. |
+| M1 — Foundations and UI prototype | 13 August | Four done; legal review WP-013 remains in implementation. |
+| M2 — Conversation and audio flow | 20 August | WP-004 and WP-019 done; WP-005 and WP-020 remain planned. |
+| M3 — Most refactoring | 27 August | WP-006 done; WP-007, WP-015, WP-021, and WP-022 planned. |
+| M4 — Internal optimisation | 3 September | WP-008 done; WP-014, WP-016, and WP-023 planned. |
+| M5 — Complete internal optimisation | 10 September | WP-025 in implementation; four other packages planned. |
+| M6 — Public optimisation and rollout preparation | Mid-September | WP-011 and WP-026 planned. |
+| M7 — Regular operation | October | WP-012 and WP-027 planned; no confirmed start date. |
 
 ## Immediate work order
 
-1. **WP-013 — Legal review:** obtain the commissioned review's concrete remit
-   and results, document obligations, and unblock WP-014 and WP-015.
-2. **WP-007 — Maintainable core modules:** prioritise the linked gateway
-   boundary work and resolve the related issues #225, #228, #229, and #230.
-3. **WP-020 — Required language and use profiles:** complete after WP-005
-   provides robust audio processing.
-4. **WP-006 — Status, error handling, and transparency:** resume after WP-005
-   and complete the resilience paths represented by issues #219 and #220.
-5. **WP-015 — Tenant model and data isolation:** prepare the design once
-   WP-013 provides the legal constraints; issue #232 tracks the work.
+1. **WP-013 — Legal review (owner not recorded; ready):** obtain the
+   commissioned review's scope, results, and obligations. Its Project card is
+   still `Implementation`, and it blocks WP-014 and WP-015. The original M1
+   deadline has passed.
+2. **WP-005 — Robust audio processing (owner not recorded; ready for
+   reassessment):** review malformed and oversized audio, pipeline failures,
+   network interruption, and end-to-end evidence against the package criteria.
+   [#219](https://github.com/smart-village-solutions/smart-speech-flow/issues/219)
+   has closed and its primary Project item says `Done`, but the documented
+   [#273 decision](https://github.com/smart-village-solutions/smart-speech-flow/issues/273#issuecomment-5774554018)
+   keeps the package `Planned` pending a full delivery review. Record a new
+   decision before changing its status; WP-020 depends on it.
+3. **WP-007 — Maintainable core modules (owners not assigned to remaining
+   issues; ready):** complete the open service-core
+   [#225](https://github.com/smart-village-solutions/smart-speech-flow/issues/225)
+   and shared-module
+   [#229](https://github.com/smart-village-solutions/smart-speech-flow/issues/229)
+   work. Gateway boundary and legacy-consolidation contributions are done
+   ([#228](https://github.com/smart-village-solutions/smart-speech-flow/issues/228),
+   [#230](https://github.com/smart-village-solutions/smart-speech-flow/issues/230),
+   [PR #530](https://github.com/smart-village-solutions/smart-speech-flow/pull/530)).
+   WP-021, WP-016, and WP-022 depend on this package.
+4. **WP-020 — Required language and use profiles (owner not recorded; blocked
+   by WP-005):** after the WP-005 decision, test German, English, Arabic,
+   Turkish, Italian, Persian, Russian, and Ukrainian and document the supported
+   profiles. Its Project card remains `Planned`.
+5. **WP-015 — Tenant model and data isolation (tracked by
+   [#232](https://github.com/smart-village-solutions/smart-speech-flow/issues/232),
+   assigned to Philipp Wilimzig; blocked by WP-013):** prepare the remaining
+   isolation and provisioning design against the legal findings. The baseline
+   two-realm conversation-access acceptance is complete
+   ([#438](https://github.com/smart-village-solutions/smart-speech-flow/issues/438));
+   that result does not complete the broader tenant model or WP-016.
 
-## Delivery risks and dependencies
+WP-021's versioned API contracts and documentation remain planned after
+WP-007 ([#226](https://github.com/smart-village-solutions/smart-speech-flow/issues/226),
+[#231](https://github.com/smart-village-solutions/smart-speech-flow/issues/231)).
+WP-025 training and handover materials remain in implementation. Related
+[#238](https://github.com/smart-village-solutions/smart-speech-flow/issues/238)
+is assigned to Philipp Wilimzig; external release still needs confirmed production,
+privacy, language, device, and support guidance.
 
-### Tenant conversation access decision (27 September 2026)
+## Decisions, conflicts, and rollout dependencies
 
-For WP-015, [SSF #438](https://github.com/smart-village-solutions/smart-speech-flow/issues/438)
-supersedes the old user-claim and `ssf-user` prerequisites for baseline
-conversation access. The compatible SSF gateway derives the tenant from a
-verified Keycloak issuer and a unique Studio login-directory entry; feedback
-reading, telemetry, configuration and runtime tenant readiness remain
-separately protected. The related tracking and acceptance issues are
-[SSF #363](https://github.com/smart-village-solutions/smart-speech-flow/issues/363),
-[Studio #1480](https://github.com/smart-village-solutions/sva-studio/issues/1480)
-and [Studio #1350](https://github.com/smart-village-solutions/sva-studio/issues/1350).
-The consumer must deploy before any Studio producer removal. All three
-acceptance issues remain open until a fresh, attribute-free two-realm flow and
-cross-tenant denial are verified against the deployed gateway and its revision
-or digest is recorded. This operational update does not change WP-015's
-strategic priority or the September snapshot's reported status.
-
-- WP-005 blocks WP-006 and WP-020; its GitHub evidence currently contains
-  conflicting `Done` and `Planned` statuses.
-- WP-022 depends on the completed conversation flow plus WP-005, WP-007, and
-  WP-016; its GitHub evidence also contains conflicting `Done` and `Planned`
-  statuses.
-- The plan preserves the current statuses of WP-005 and WP-022 until the
-  conflicts are decided in [decision issue #273](https://github.com/smart-village-solutions/smart-speech-flow/issues/273).
-  No strategic-priority class has changed.
-- The M1–M4 date slippage requires explicit delivery decisions before treating
-  later milestones as forecast commitments.
-
-## Recently completed delivery evidence
-
-- Pipeline admission control was deployed on 1 September 2026.
-- Keycloak infrastructure foundation was merged on 1 September 2026.
-- ClickHouse quality telemetry probe via OpenTelemetry was merged on
-  3 September 2026.
-
-These changes improve operational readiness, but they do not by themselves
-prove all acceptance criteria of the affected work packages.
+- The [WP-005/WP-022 decision](https://github.com/smart-village-solutions/smart-speech-flow/issues/273#issuecomment-5774554018)
+  remains authoritative. Both stay `Planned` pending review against their full
+  acceptance criteria. WP-022 still needs scale-out work in
+  [#227](https://github.com/smart-village-solutions/smart-speech-flow/issues/227),
+  load evidence for at least 250 concurrent accesses, and documented capacity
+  planning. Closed contributions do not establish package completion.
+- WP-010 has primary Project items at `Done` and `Implementation`. WP-023 has
+  completed security contributions while its linked documentation and
+  operational evidence remain open. Keep both `Planned` in the snapshot until
+  the owner resolves their full criteria and Project status in
+  [decision issue #538](https://github.com/smart-village-solutions/smart-speech-flow/issues/538).
+- The compatible tenant conversation gateway passed fresh, attribute-free
+  two-realm live acceptance on 28 September, including cross-tenant HTTP,
+  polling, and WebSocket denial
+  ([#438](https://github.com/smart-village-solutions/smart-speech-flow/issues/438)).
+  The operational admission decision does not establish complete tenant
+  provisioning, privacy evidence, or multi-organisation pilot readiness.
+- [PR #537](https://github.com/smart-village-solutions/smart-speech-flow/pull/537)
+  merged the tenant-safe WebSocket monitoring contract on 6 October;
+  [PR #533](https://github.com/smart-village-solutions/smart-speech-flow/pull/533)
+  records a production rollout earlier that day. A merge after that rollout
+  is not, by itself, deployment evidence for the later PR.
+- M5 pilot work, M6 public optimisation and rollout preparation, and M7
+  regular operation still depend on unfinished language, tenant, evidence,
+  and pilot packages. Delivery owners need to reforecast the passed milestone
+  dates before using them as commitments.
 
 ## Governance
 
-- GitHub Project #7 is the current delivery-status source.
-- OpenSpec changes record approved intended work and task progress.
-- The repository status snapshot supports the project report.
-- This roadmap provides prioritisation and context; it does not override
-  current GitHub evidence or approved project decisions.
+- GitHub Project #7 supplies current delivery classifications; documented
+  project decisions supersede individual card statuses.
+- OpenSpec records intended changes and task progress. It does not, by itself,
+  approve a rollout or complete a whole work package.
+- The project report snapshot preserves unresolved status conflicts until a
+  documented delivery decision resolves them.
