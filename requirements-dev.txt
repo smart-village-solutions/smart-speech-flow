@@ -47,7 +47,7 @@ click==8.4.2
     #   safety
 coverage[toml]==7.15.2
     # via pytest-cov
-cryptography==50.0.1
+cryptography==50.0.2
     # via
     #   -r requirements-dev.in
     #   authlib
