@@ -396,7 +396,7 @@ back after ~10s (two batch stages in series: the gateway SDK's 1s log batch
 delay, then the collector's 5s `batch` timeout, so ~6s worst case for a single
 event — ~10s is the safe wait):
 
-    curl -s -X POST https://ssf.smart-village.solutions/api/admin/telemetry/probe \
+    curl -s -X POST https://api.dialog.kassel.de/api/admin/telemetry/probe \
       -H "Authorization: Bearer <admin token>"
 
     $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT event_id, service_version, deployment_env, emitted_at_utc FROM quality_events FINAL ORDER BY emitted_at_utc DESC LIMIT 3"'

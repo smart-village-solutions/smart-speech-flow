@@ -54,7 +54,7 @@ class WebSocketClient {
   }
 
   connect() {
-    const wsUrl = `wss://ssf.smart-village.solutions/ws/${this.sessionId}/${this.connectionType}`;
+    const wsUrl = `wss://api.dialog.kassel.de/ws/${this.sessionId}/${this.connectionType}`;
 
     this.ws = new WebSocket(wsUrl);
 

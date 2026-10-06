@@ -7,7 +7,7 @@
 ### 1. WebSocket-Verbindungstest (Browser)
 ```javascript
 // In Browser-Konsole auf https://raven-source-75385470.figma.site:
-const ws = new WebSocket('wss://ssf.smart-village.solutions/ws/TEST123/customer');
+const ws = new WebSocket('wss://api.dialog.kassel.de/ws/TEST123/customer');
 ws.onopen = () => console.log('✅ WebSocket OK');
 ws.onerror = (e) => console.log('❌ WebSocket Error:', e);
 ws.onclose = (e) => console.log('WebSocket Closed:', e.code, e.reason);
@@ -16,7 +16,7 @@ ws.onclose = (e) => console.log('WebSocket Closed:', e.code, e.reason);
 ### 2. CORS-Test
 ```javascript
 // Teste API-CORS:
-fetch('https://ssf.smart-village.solutions/api/languages/supported')
+fetch('https://api.dialog.kassel.de/api/languages/supported')
   .then(r => console.log('✅ API CORS OK:', r.status))
   .catch(e => console.log('❌ API CORS Error:', e));
 ```
@@ -24,14 +24,14 @@ fetch('https://ssf.smart-village.solutions/api/languages/supported')
 ### 3. Session-Test
 ```javascript
 // Erstelle Session und teste WebSocket:
-fetch('https://ssf.smart-village.solutions/api/admin/session/create', {
+fetch('https://api.dialog.kassel.de/api/admin/session/create', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' }
 })
 .then(r => r.json())
 .then(data => {
   console.log('Session:', data.session_id);
-  const ws = new WebSocket(`wss://ssf.smart-village.solutions/ws/${data.session_id}/admin`);
+  const ws = new WebSocket(`wss://api.dialog.kassel.de/ws/${data.session_id}/admin`);
   ws.onopen = () => console.log('✅ Session WebSocket OK');
 });
 ```
@@ -46,7 +46,7 @@ fetch('https://ssf.smart-village.solutions/api/admin/session/create', {
 
 ## ✅ Produktionsstatus (4. Nov 2025)
 
-- **API Gateway:** ✅ Läuft in Docker mit Traefik auf ssf.smart-village.solutions
+- **API Gateway:** ✅ Läuft in Docker mit Traefik auf api.dialog.kassel.de
 - **SSL/TLS:** ✅ Automatisches HTTPS über Let's Encrypt
 - **CORS:** ✅ Figma-Domains konfiguriert (`*.figma.site`)
 - **WebSocket:** ✅ Endpunkt verfügbar (`/ws/`) mit WebSocket-Upgrade-Support

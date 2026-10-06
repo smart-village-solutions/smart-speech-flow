@@ -38,7 +38,7 @@ resolver and it has no public endpoint.
 | Komponente | Produktions-URL | Hinweise |
 |------------|-----------------|----------|
 | Frontend (Nginx) | `https://translate.smart-village.solutions` | React SPA (Nginx-Container) mit Admin-Startseite (`/admin`) und Client-Deeplinks (`/join/{sessionId}`). Statische Assets werden direkt ausgeliefert. |
-| REST & WebSocket API | `https://ssf.smart-village.solutions` | FastAPI-Gateway; WebSocket-Einstieg `wss://ssf.smart-village.solutions/ws/{sessionId}/{clientType}`. API-Endpunkte unter `/api/*`. |
+| REST & WebSocket API | `https://api.dialog.kassel.de` | FastAPI-Gateway; WebSocket-Einstieg `wss://api.dialog.kassel.de/ws/{sessionId}/{clientType}`. API-Endpunkte unter `/api/*`. During the hostname transition, `ssf.smart-village.solutions` remains an alias. |
 | Monitoring (Prometheus) | `https://prometheus-ssf.smart-village.solutions` | Read-Only Zugriff auf Prometheus UI und Metriken (`/graph`, `/alerts`). |
 | Monitoring (Grafana) | `https://grafana-ssf.smart-village.solutions` | Dashboard-Zugang; Standard-Credentials `admin`/`admin` (nach Erstlogin ändern). |
 | TLS & Routing | Traefik | Let's Encrypt Zertifikate für alle Domains, automatisches Routing basierend auf Host-Header. |
@@ -52,7 +52,7 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 
 ## 🔐 Backend-Validierung
 
-**Unified Endpoint Logic (`https://ssf.smart-village.solutions/api/session/{id}/message`):**
+**Unified Endpoint Logic (`https://api.dialog.kassel.de/api/session/{id}/message`):**
 - **Content-Type Detection:** Automatische Erkennung von Audio vs. Text
 - **Request-Schema-Validation:** Pydantic-Modelle für beide Input-Typen
 - **Pipeline-Routing:** Intelligente Weiterleitung basierend auf Input-Format
@@ -95,12 +95,12 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 - Voice & Text Interface: In Muttersprache sprechen/schreiben, deutsche Übersetzung hören, Chat-History
 
 **Kommunikation:**
-- HTTP REST API (`https://ssf.smart-village.solutions/api/*`) für Session-Management
-- WebSocket (`wss://ssf.smart-village.solutions/ws/{sessionId}/{clientType}`) für Echtzeit-Updates mit Polling-Fallback
+- HTTP REST API (`https://api.dialog.kassel.de/api/*`) für Session-Management
+- WebSocket (`wss://api.dialog.kassel.de/ws/{sessionId}/{clientType}`) für Echtzeit-Updates mit Polling-Fallback
 
 ### **Backend Layer**
 
-**API Gateway** *(Prod: `https://ssf.smart-village.solutions`, Dev: `http://localhost:8000`)* - Zentrale Orchestrierung
+**API Gateway** *(Prod: `https://api.dialog.kassel.de`, Dev: `http://localhost:8000`)* - Zentrale Orchestrierung
 - Session Management: UUID-basierte Session-Erstellung, Client-Sprachauswahl-Integration, Status-Tracking und Timeouts, WebSocket-Koordination
 - Unified Input Processing: Content-Type-basierte Audio/Text-Erkennung über einheitlichen `/message` Endpunkt
 - Pipeline Orchestration: Audio-Pipeline (ASR → Translation → TTS) oder Text-Pipeline (Translation → TTS), Request-Routing an Mikroservices, Error-Handling und Retry-Logic, Response-Aggregation
@@ -121,7 +121,7 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 
 ### **Infrastructure Layer**
 
-**Load Balancer (Traefik):** Terminiert TLS für `translate.smart-village.solutions` und `ssf.smart-village.solutions`, verwaltet Routing-Regeln und Health Checks.
+**Load Balancer (Traefik):** Terminiert TLS für `translate.smart-village.solutions` und `api.dialog.kassel.de`, verwaltet Routing-Regeln und Health Checks. During the hostname transition, `ssf.smart-village.solutions` also routes to the API gateway.
 
 **Container Orchestration (Docker Compose):** Service Discovery, GPU-Support (NVIDIA Runtime), Auto-Restart
 
@@ -140,14 +140,14 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 **Parallele Sessions:** Ein Admin kann mehrere aktive Sessions gleichzeitig betreuen; jede Session wird über ihre eigene Session-ID adressiert.
 
 **Workflow:**
-1. Admin Frontend sendet POST-Request an `https://ssf.smart-village.solutions/api/admin/session/create`.
+1. Admin Frontend sendet POST-Request an `https://api.dialog.kassel.de/api/admin/session/create`.
 2. Der Session Manager erstellt eine neue Session und ergänzt sie zum Satz aktiver Sessions (persistiert optional in Redis).
 3. Eine kurze Session-UUID wird generiert (z.B. 550E8400).
 4. Das Admin Frontend erhält die vollständige Client-URL mit eingebetteter Session-UUID.
 5. Die URL wird dem Kunden gezeigt oder geteilt.
 6. Der Client ruft die URL direkt auf (`/join/{session_id}`).
 7. Das Client Frontend lädt verfügbare Sprachen und zeigt die Sprachauswahl.
-8. Der Client wählt eine Sprache und sendet einen POST-Request an `https://ssf.smart-village.solutions/api/customer/session/activate`.
+8. Der Client wählt eine Sprache und sendet einen POST-Request an `https://api.dialog.kassel.de/api/customer/session/activate`.
 9. Die Session wird mit der gewählten Kundensprache aktiviert (Admin führt weiterhin Deutsch).
 10. Beide Clients erhalten eine Bestätigung: Session ist aktiv und bereit für Kommunikation.
 
@@ -159,7 +159,7 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 1. **Input-Optionen:** Benutzer (Admin oder Client) wählt zwischen:
    - **Audio-Aufnahme:** WebRTC/MediaRecorder (max. 20 Sekunden)
    - **Text-Eingabe:** Direkte Texteingabe über Eingabefeld
-2. **Einheitlicher Endpunkt:** Frontend sendet POST-Request an `https://ssf.smart-village.solutions/api/session/{id}/message`
+2. **Einheitlicher Endpunkt:** Frontend sendet POST-Request an `https://api.dialog.kassel.de/api/session/{id}/message`
    - **Audio-Input:** Multipart-Upload mit WAV-Datei + Metadaten
    - **Text-Input:** JSON mit Text-Inhalt + Input-Type-Flag
 3. **API Gateway Auto-Detection:** Content-Type-basierte Input-Erkennung
@@ -278,7 +278,7 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 
 ## ⚙️ Backend-Architektur
 
-### **API Gateway** *(Prod: `https://ssf.smart-village.solutions`, Dev: `http://localhost:8000`)*
+### **API Gateway** *(Prod: `https://api.dialog.kassel.de`, Dev: `http://localhost:8000`)*
 
 **Technologie-Stack:**
 - FastAPI + Uvicorn für moderne Python-API-Entwicklung
@@ -290,7 +290,7 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
 
 **API-Endpunkte:**
 
-**Unified Message Endpoint:** `POST https://ssf.smart-village.solutions/api/session/{session_id}/message`
+**Unified Message Endpoint:** `POST https://api.dialog.kassel.de/api/session/{session_id}/message`
 ```json
 // Audio-Input (multipart/form-data)
 {
@@ -315,7 +315,7 @@ Interne Service-Kommunikation erfolgt über das Docker-Netzwerk (`http://api_gat
   "session_id": "uuid",
   "original_text": "Hallo, wie kann ich helfen?",
   "translated_text": "Hello, how can I help?",
-  "audio_url": "https://ssf.smart-village.solutions/api/audio/uuid.wav",
+  "audio_url": "https://api.dialog.kassel.de/api/audio/uuid.wav",
   "input_type": "audio|text",
   "processing_time": 1.2,
   "timestamp": "2025-09-28T10:30:01Z"
@@ -547,7 +547,7 @@ full description, with the port and adapter tables, is in
 **Docker Compose Struktur:**
 - traefik: Load Balancer + SSL-Terminierung + Let's Encrypt
 - frontend: Unified React SPA (Nginx) → `translate.smart-village.solutions`
-- api_gateway: Session-Management + Pipeline-Orchestration → `ssf.smart-village.solutions`
+- api_gateway: Session-Management + Pipeline-Orchestration → `api.dialog.kassel.de`
 - asr: Speech-to-Text Service (intern)
 - translation: Text-to-Text Service (intern)
 - tts: Text-to-Speech Service (intern)

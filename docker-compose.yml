@@ -215,7 +215,7 @@ services:
     labels:
       - "traefik.enable=true"
       # Main HTTP router with WebSocket support
-      - "traefik.http.routers.api_gateway.rule=Host(`ssf.smart-village.solutions`)"
+      - "traefik.http.routers.api_gateway.rule=Host(`ssf.smart-village.solutions`) || Host(`api.dialog.kassel.de`)"
       - "traefik.http.routers.api_gateway.entrypoints=websecure"
       - "traefik.http.routers.api_gateway.tls.certresolver=le"
       - "traefik.http.services.api_gateway.loadbalancer.server.port=8000"
@@ -456,8 +456,8 @@ services:
       context: ./services/frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE_URL: https://ssf.smart-village.solutions
-        VITE_WS_BASE_URL: wss://ssf.smart-village.solutions
+        VITE_API_BASE_URL: https://api.dialog.kassel.de
+        VITE_WS_BASE_URL: wss://api.dialog.kassel.de
         VITE_KEYCLOAK_URL: https://auth.dialog.kassel.de
         VITE_KEYCLOAK_CLIENT_ID: ssf-frontend
     networks:

@@ -11,8 +11,8 @@ from tests.compose_documents import TEST_ENV
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_ROOT = REPOSITORY_ROOT / "services" / "frontend"
-API_BASE_URL = "https://ssf.smart-village.solutions"
-WS_BASE_URL = "wss://ssf.smart-village.solutions"
+API_BASE_URL = "https://api.dialog.kassel.de"
+WS_BASE_URL = "wss://api.dialog.kassel.de"
 
 
 def _docker_build(tag: str, *build_args: str) -> subprocess.CompletedProcess[str]:
@@ -78,8 +78,8 @@ def test_frontend_container_embeds_production_service_urls():
                 tag,
                 "-c",
                 (
-                    "grep -R -q 'https://ssf.smart-village.solutions' /usr/share/nginx/html/assets "
-                    "&& grep -R -q 'wss://ssf.smart-village.solutions' /usr/share/nginx/html/assets "
+                    "grep -R -q 'https://api.dialog.kassel.de' /usr/share/nginx/html/assets "
+                    "&& grep -R -q 'wss://api.dialog.kassel.de' /usr/share/nginx/html/assets "
                     "&& ! grep -R -q 'container-build-test-password' /usr/share/nginx/html/assets "
                     "&& ! grep -R -q 'localhost:8000' /usr/share/nginx/html/assets"
                 ),

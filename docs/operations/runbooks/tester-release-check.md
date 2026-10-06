@@ -44,7 +44,7 @@ happens. It never creates, changes or deletes an account.
 
 From the repository root, with the development environment installed:
 
-    export SSF_RC_API_BASE=https://ssf.smart-village.solutions
+    export SSF_RC_API_BASE=https://api.dialog.kassel.de
     export SSF_RC_KEYCLOAK_BASE=https://auth.dialog.kassel.de
     export SSF_RC_FRONTEND_ORIGIN=https://dialog.kassel.de
     export SSF_RC_TENANT_A_ID=tenant-kassel SSF_RC_TENANT_A_LANGUAGE=en SSF_RC_TENANT_A_STORAGE=ask

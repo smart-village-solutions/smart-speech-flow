@@ -81,7 +81,7 @@ Smart Speech Flow Backend ist ein containerisiertes Microservice-System für meh
 - **Format Support** - WAV, MP3, M4A mit automatischer Konvertierung
 
 ### Production Environment
-- **Public URLs**: Frontend (`translate.smart-village.solutions`), API (`ssf.smart-village.solutions`)
+- **Public URLs**: Frontend (`dialog.kassel.de`), API (`api.dialog.kassel.de`; temporary alias `ssf.smart-village.solutions`)
 - **GPU Hardware** - NVIDIA RTX 4000 SFF Ada Generation mit 20GB VRAM
 - **High Availability** - Circuit Breaker, Graceful Degradation, Auto-Recovery
 - **Monitoring Stack** - Prometheus/Grafana mit GPU-Metriken und Alerting
@@ -119,6 +119,6 @@ Smart Speech Flow Backend ist ein containerisiertes Microservice-System für meh
 - **SSD Storage** - Schneller Speicher für Modell-Caching und Temp-Files
 
 ### Network Dependencies
-- **Domain Names** - `translate.smart-village.solutions`, `ssf.smart-village.solutions`
+- **Domain Names** - `dialog.kassel.de`, `api.dialog.kassel.de`, temporary API alias `ssf.smart-village.solutions`
 - **Port Requirements** - 80/443 für Web, 8000-8003 für lokale bzw. interne Service-Kommunikation
 - **Internet Connectivity** - Für Modell-Downloads und Let's Encrypt

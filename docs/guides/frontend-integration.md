@@ -22,8 +22,9 @@ Dieses Dokument enthält **alles**, was das Frontend braucht, um mit dem Smart S
 
 ```javascript
 const CONFIG = {
-  API_BASE: 'https://ssf.smart-village.solutions',
-  WS_BASE: 'wss://ssf.smart-village.solutions',
+  API_BASE: 'https://api.dialog.kassel.de',
+  WS_BASE: 'wss://api.dialog.kassel.de',
+  // Temporary compatibility alias: https://ssf.smart-village.solutions
   // Alternative via Frontend-Proxy:
   WS_ALT: 'wss://translate.smart-village.solutions'
 };
@@ -167,7 +168,7 @@ class SmartSpeechFlowWebSocket {
   }
 
   connect() {
-    const wsUrl = `wss://ssf.smart-village.solutions/ws/${this.sessionId}/${this.connectionType}`;
+    const wsUrl = `wss://api.dialog.kassel.de/ws/${this.sessionId}/${this.connectionType}`;
 
     console.log(`🔌 Connecting to ${wsUrl}`);
     this.ws = new WebSocket(wsUrl);
@@ -613,7 +614,7 @@ await fetch('/api/customer/session/activate', {
 ### Test 1: WebSocket Verbindung
 
 ```javascript
-const ws = new WebSocket('wss://ssf.smart-village.solutions/ws/TEST123/admin');
+const ws = new WebSocket('wss://api.dialog.kassel.de/ws/TEST123/admin');
 
 ws.onopen = () => console.log('✅ Connected');
 ws.onmessage = (e) => {
@@ -632,7 +633,7 @@ ws.onclose = () => console.log('👋 Closed');
 ### Test 2: Nachricht senden
 
 ```javascript
-const response = await fetch('https://ssf.smart-village.solutions/api/session/TEST123/message', {
+const response = await fetch('https://api.dialog.kassel.de/api/session/TEST123/message', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -650,14 +651,14 @@ console.log(await response.json());
 
 ```javascript
 // Admin: Session erstellen
-const createResp = await fetch('https://ssf.smart-village.solutions/api/admin/session/create', {
+const createResp = await fetch('https://api.dialog.kassel.de/api/admin/session/create', {
   method: 'POST'
 });
 const session = await createResp.json();
 console.log('Session ID:', session.session_id);
 
 // Customer: Session aktivieren
-const activateResp = await fetch('https://ssf.smart-village.solutions/api/customer/session/activate', {
+const activateResp = await fetch('https://api.dialog.kassel.de/api/customer/session/activate', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -789,8 +790,8 @@ function Chat({ sessionId, userType }) {
 - `docs/deployment-websocket-reconnection.md` - Detailliertes Reconnection-Pattern
 
 **Wichtige URLs:**
-- API: `https://ssf.smart-village.solutions`
-- WebSocket: `wss://ssf.smart-village.solutions`
+- API: `https://api.dialog.kassel.de`
+- WebSocket: `wss://api.dialog.kassel.de`
 - Prometheus: `http://prometheus-ssf.smart-village.solutions`
 - Grafana: `http://grafana-ssf.smart-village.solutions`
 
