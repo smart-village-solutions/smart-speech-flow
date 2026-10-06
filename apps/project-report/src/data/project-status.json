@@ -1,8 +1,8 @@
 {
   "meta": {
-    "version": "1.6.0",
-    "updatedAt": "2026-09-03",
-    "source": "Generated snapshot of GitHub Project #7 (Smart Speech Flow Delivery). Roadmap structure and acceptance criteria originate from docs/local-notes/konzept.md and the architecture reviews of 20.08.2026."
+    "version": "1.6.1",
+    "updatedAt": "2026-10-06",
+    "source": "Reconciled snapshot of GitHub Project #7 (Smart Speech Flow Delivery) as of 2026-10-06. Documented delivery decisions take precedence over Project cards; unresolved same-precedence conflicts retain their previous status. Roadmap structure and acceptance criteria originate from docs/local-notes/konzept.md and the architecture reviews of 20.08.2026."
   },
   "statusModel": {
     "idea": 0,
@@ -271,7 +271,7 @@
           "area": "Produktverhalten und Monitoring",
           "priority": "must",
           "effortPt": 10,
-          "status": "planned",
+          "status": "done",
           "health": "on_track",
           "dependsOn": [
             "WP-004",
@@ -453,7 +453,7 @@
           "area": "Testautomatisierung",
           "priority": "must",
           "effortPt": 10,
-          "status": "planned",
+          "status": "done",
           "health": "on_track",
           "dependsOn": [
             "WP-004",
