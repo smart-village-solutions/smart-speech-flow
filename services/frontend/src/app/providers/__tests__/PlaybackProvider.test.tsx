@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { PlaybackProvider } from '@/app/providers/PlaybackProvider';
 import { usePlayback } from '@/app/providers/playback';
 import { createFakeAudioPlayer } from '@/test/fakeAudioPlayer';
+import { createFakeAudioOutput } from '@/test/fakeAudioOutput';
 import type { ClipLoader } from '@/core/audio/clips';
 
 function Probe() {
@@ -56,7 +57,11 @@ function passthroughClips(): ClipLoader {
 function setup(children: ReactNode = <Probe />, clips?: ClipLoader) {
   const player = createFakeAudioPlayer();
   render(
-    <PlaybackProvider player={player.port} clips={clips ?? passthroughClips()}>
+    <PlaybackProvider
+      player={player.port}
+      output={createFakeAudioOutput()}
+      clips={clips ?? passthroughClips()}
+    >
       {children}
     </PlaybackProvider>
   );
@@ -252,7 +257,11 @@ describe('PlaybackProvider', () => {
     const player = createFakeAudioPlayer();
     render(
       <StrictMode>
-        <PlaybackProvider player={player.port} clips={passthroughClips()}>
+        <PlaybackProvider
+          player={player.port}
+          output={createFakeAudioOutput()}
+          clips={passthroughClips()}
+        >
           <Probe />
         </PlaybackProvider>
       </StrictMode>
@@ -352,7 +361,11 @@ describe('PlaybackProvider', () => {
   it('stops playback when the provider unmounts', async () => {
     const player = createFakeAudioPlayer();
     const view = render(
-      <PlaybackProvider player={player.port} clips={passthroughClips()}>
+      <PlaybackProvider
+        player={player.port}
+        output={createFakeAudioOutput()}
+        clips={passthroughClips()}
+      >
         <Probe />
       </PlaybackProvider>
     );
@@ -480,5 +493,67 @@ describe('usePlayback', () => {
 
     expect(playing()).toBe('none');
     expect(paused()).toBe('no');
+  });
+});
+
+describe('PlaybackProvider gestures', () => {
+  it('unlocks the speaker on any tap or key, so later arrivals can sound', () => {
+    const output = createFakeAudioOutput();
+    render(
+      <PlaybackProvider
+        player={createFakeAudioPlayer().port}
+        output={output}
+        clips={passthroughClips()}
+      >
+        <Probe />
+      </PlaybackProvider>
+    );
+
+    for (const type of ['click', 'touchend', 'keydown']) {
+      document.body.dispatchEvent(new Event(type, { bubbles: true }));
+    }
+
+    expect(output.unlock).toHaveBeenCalledTimes(3);
+  });
+
+  it('unlocks before the tap reaches the control, so a tapped clip can sound', () => {
+    const output = createFakeAudioOutput();
+    const order: string[] = [];
+    output.unlock.mockImplementation(() => order.push('unlock'));
+    render(
+      <PlaybackProvider
+        player={createFakeAudioPlayer().port}
+        output={output}
+        clips={passthroughClips()}
+      >
+        <button type="button" onClick={() => order.push('control')}>
+          control
+        </button>
+      </PlaybackProvider>
+    );
+
+    screen
+      .getByRole('button', { name: 'control' })
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(order).toEqual(['unlock', 'control']);
+  });
+
+  it('stops listening for gestures once it unmounts', () => {
+    const output = createFakeAudioOutput();
+    const { unmount } = render(
+      <PlaybackProvider
+        player={createFakeAudioPlayer().port}
+        output={output}
+        clips={passthroughClips()}
+      >
+        <Probe />
+      </PlaybackProvider>
+    );
+
+    unmount();
+    document.body.dispatchEvent(new Event('click', { bubbles: true }));
+
+    expect(output.unlock).not.toHaveBeenCalled();
   });
 });

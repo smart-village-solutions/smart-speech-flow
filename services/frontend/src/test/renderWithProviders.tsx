@@ -18,6 +18,7 @@ import type { BrandId } from '@/app/config/env';
 import type { AudioPlayerPort } from '@/core/audio/player.port';
 import type { ClipLoader } from '@/core/audio/clips';
 import { WAVE_HEIGHTS } from '@/core/audio/waveform';
+import { createFakeAudioOutput } from './fakeAudioOutput';
 import { createFakeAudioPlayer } from './fakeAudioPlayer';
 import { createFakeRealtimeTransport } from './fakeRealtimeTransport';
 
@@ -28,7 +29,7 @@ interface Options {
   locale?: string;
   /** Override individual services with fakes; the rest are the real ones. */
   services?: Partial<Services>;
-  /** Drives playback assertions; jsdom implements no media element at all. */
+  /** Drives playback assertions; jsdom implements no Web Audio at all. */
   player?: AudioPlayerPort;
   /** Supplies waveform shapes; jsdom implements no Web Audio at all. */
   clips?: ClipLoader;
@@ -70,7 +71,11 @@ export function renderWithProviders(ui: ReactElement, options: Options = {}): Re
               <ThemeProvider initialTheme={theme}>
                 <BrandProvider source={createStaticBrandSource(brand)}>
                   <FeedbackProvider>
-                    <PlaybackProvider player={player} clips={clips}>
+                    <PlaybackProvider
+                      player={player}
+                      output={options.services?.audio ?? createFakeAudioOutput()}
+                      clips={clips}
+                    >
                       {ui}
                     </PlaybackProvider>
                   </FeedbackProvider>

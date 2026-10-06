@@ -126,6 +126,39 @@ describe('ConversationScreen audio while recording', () => {
     ]);
   });
 
+  // iOS lets a page that is sounding speech hold the audio session for
+  // playback; the microphone has to be asked for after that is let go.
+  it('silences a playing clip before the microphone is asked for', async () => {
+    const { player, wire } = setup();
+    let stoppedBeforeMicrophone: boolean | null = null;
+    mocks.startRecording.mockImplementation(async () => {
+      stoppedBeforeMicrophone = player.stop.mock.calls.length > 0;
+    });
+
+    await screen.findByRole('button', { name: 'Record' });
+    await wire.receive(peerAudioEvent);
+    await player.started();
+    player.stop.mockClear();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Record' }));
+
+    expect(stoppedBeforeMicrophone).toBe(true);
+  });
+
+  it('carries on playing when the microphone is refused', async () => {
+    const { player, wire } = setup();
+    mocks.startRecording.mockImplementation(async () => {
+      mocks.capturedConfig?.onError(new Error('NotAllowedError'));
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Record' }));
+    await wire.receive(peerAudioEvent);
+
+    expect(player.played).toEqual([
+      '/api/customer/session/A1B2C3D4/audio/m9/translated.wav',
+    ]);
+  });
+
   it('silences a clip already playing when recording starts, and replays it after', async () => {
     const { player, wire } = setup();
 

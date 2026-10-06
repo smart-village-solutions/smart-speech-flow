@@ -8,6 +8,8 @@ import { MIN_BAR_HEIGHT } from '@/core/audio/levels';
 import { createHttpClient } from '@/core/http/client';
 import { readConfig } from '@/app/config/env';
 import { getAdminAccessToken } from '@/app/auth/keycloak';
+import { createAudioOutput } from '@/core/audio/audio-output';
+import { asAudioContext, createFakeAudioContext } from '@/test/fakeAudioContext';
 
 vi.mock('@/app/auth/keycloak', () => ({ getAdminAccessToken: vi.fn() }));
 
@@ -156,7 +158,7 @@ describe('createBrowserClipLoader', () => {
       value: vi.fn().mockReturnValue('blob:authenticated-audio'),
     });
 
-    const loader = createBrowserClipLoader(http);
+    const loader = createBrowserClipLoader(http, createAudioOutput());
     const clip = await loader.load(
       'http://api.test/api/admin/session/A1B2C3D4/audio/m1/translated.wav'
     );
@@ -193,10 +195,40 @@ describe('createBrowserClipLoader', () => {
       value: vi.fn().mockReturnValue('blob:foreign-audio'),
     });
 
-    const loader = createBrowserClipLoader(http);
+    const loader = createBrowserClipLoader(http, createAudioOutput());
     await loader.load('http://foreign.test/api/admin/session/A1B2C3D4/audio/m1/translated.wav');
 
     expect(authorization).toBeUndefined();
     expect(getAdminAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('decodes through the shared audio output, not a context of its own', async () => {
+    const config = readConfig({ VITE_API_BASE_URL: 'http://api.test' });
+    const http = createHttpClient(config, () => 'en');
+    http.defaults.adapter = async (request) => ({
+      data: new ArrayBuffer(8),
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config: request,
+    });
+    const context = createFakeAudioContext();
+    context.decodeAudioData.mockResolvedValue({
+      duration: 1,
+      getChannelData: () => new Float32Array([0.5, -0.5]),
+    } as unknown as { duration: number });
+    const output = createAudioOutput({
+      createContext: () => asAudioContext(context),
+      session: null,
+    });
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn().mockReturnValue('blob:shared'),
+    });
+
+    const loader = createBrowserClipLoader(http, output);
+    await loader.load('http://api.test/clips/m1.wav');
+
+    expect(context.decodeAudioData).toHaveBeenCalledTimes(1);
   });
 });
