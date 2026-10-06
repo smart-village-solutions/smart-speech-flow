@@ -38,7 +38,7 @@ services:
             count: all
             capabilities:
             - gpu
-    image: ssf-backend-asr:prod-42b69b7
+    image: ssf-backend-asr:prod-8f3debe
     restart: unless-stopped
     pull_policy: never
   translation:
