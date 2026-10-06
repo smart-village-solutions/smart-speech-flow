@@ -2,29 +2,24 @@
 
 from __future__ import annotations
 
-import asyncio
 import hmac
 import re
-from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Mapping, Protocol
-from urllib.parse import urlsplit
+from typing import Awaitable, Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import aiohttp
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    HttpUrl,
-    ValidationError,
-    field_validator,
-    model_validator,
+from pydantic import Field, HttpUrl, field_validator, model_validator
+
+from .studio_v1 import (
+    ContractModel,
+    StudioV1ClientError,
+    StudioV1Endpoint,
+    StudioV1Transport,
+    require_printable_ascii,
 )
 
 RUNTIME_PATH = "/internal/plugins/ssf/v1/runtime-configuration"
 REVISION_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 LOCALE_PATTERN = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$")
-SUPPORTED_ERROR_STATUSES = {400, 401, 403, 404, 409, 503}
 EXPECTED_ERROR_CODES = {
     400: {"malformed_request"},
     401: {"service_authentication_invalid"},
@@ -33,12 +28,6 @@ EXPECTED_ERROR_CODES = {
     409: {"tenant_suspended", "ssf_plugin_inactive", "ssf_tenant_not_ready"},
     503: {"runtime_configuration_unavailable"},
 }
-
-
-class ContractModel(BaseModel):
-    """Validate known fields while accepting optional V1 extensions."""
-
-    model_config = ConfigDict(extra="allow", strict=True, populate_by_name=True)
 
 
 class MediaAsset(ContractModel):
@@ -139,62 +128,8 @@ class RuntimeConfiguration(ContractModel):
         return self
 
 
-class RuntimeErrorDetails(ContractModel):
-    code: str = Field(min_length=1)
-    message: str = Field(min_length=1, max_length=200)
-    retryable: bool
-    correlation_id: str = Field(alias="correlationId", min_length=1, max_length=128)
-
-
-class RuntimeErrorEnvelope(ContractModel):
-    contract_version: str = Field(alias="contractVersion", pattern="^1[.]0$")
-    error: RuntimeErrorDetails
-
-
-class StudioRuntimeClientError(RuntimeError):
+class StudioRuntimeClientError(StudioV1ClientError):
     """Safe failure surfaced by the Studio runtime client."""
-
-    def __init__(self, code: str, *, retryable: bool, status: int | None = None) -> None:
-        super().__init__(code)
-        self.code = code
-        self.retryable = retryable
-        self.status = status
-
-
-@dataclass(frozen=True)
-class RuntimeHttpResponse:
-    status: int
-    payload: Mapping[str, Any]
-
-
-class RuntimeTransport(Protocol):
-    async def get(  # noqa: E704
-        self, url: str, headers: Mapping[str, str], timeout_seconds: float
-    ) -> RuntimeHttpResponse: ...
-
-
-class AiohttpRuntimeTransport:
-    async def get(
-        self, url: str, headers: Mapping[str, str], timeout_seconds: float
-    ) -> RuntimeHttpResponse:
-        timeout = aiohttp.ClientTimeout(total=timeout_seconds)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers) as response:
-                try:
-                    payload = await response.json()
-                except (aiohttp.ContentTypeError, ValueError):
-                    raise StudioRuntimeClientError(
-                        "studio_runtime_response_invalid",
-                        retryable=False,
-                        status=response.status,
-                    ) from None
-                if not isinstance(payload, Mapping):
-                    raise StudioRuntimeClientError(
-                        "studio_runtime_response_invalid",
-                        retryable=False,
-                        status=response.status,
-                    )
-                return RuntimeHttpResponse(status=response.status, payload=payload)
 
 
 class StudioRuntimeClient:
@@ -205,100 +140,42 @@ class StudioRuntimeClient:
         base_url: str,
         token_provider: Callable[[], Awaitable[str]],
         *,
-        transport: RuntimeTransport | None = None,
+        transport: StudioV1Transport | None = None,
         timeout_seconds: float = 5.0,
     ) -> None:
-        parsed_url = urlsplit(base_url)
-        if (
-            parsed_url.scheme not in {"http", "https"}
-            or not parsed_url.netloc
-            or parsed_url.username is not None
-            or parsed_url.password is not None
-            or parsed_url.path not in {"", "/"}
-        ):
-            raise ValueError("base_url must be an HTTP origin")
-        if parsed_url.query or parsed_url.fragment:
-            raise ValueError("base_url must not contain a query or fragment")
-        if not 0 < timeout_seconds <= 30:
-            raise ValueError("timeout_seconds must be between 0 and 30")
-        self._url = f"{base_url.rstrip('/')}{RUNTIME_PATH}"
+        self._endpoint = StudioV1Endpoint(
+            base_url,
+            RUNTIME_PATH,
+            error_type=StudioRuntimeClientError,
+            code_prefix="studio_runtime",
+            transport=transport,
+            timeout_seconds=timeout_seconds,
+        )
         self._token_provider = token_provider
-        self._transport = transport or AiohttpRuntimeTransport()
-        self._timeout_seconds = timeout_seconds
 
     @property
     def timeout_seconds(self) -> float:
         """The per-read timeout this client was built with."""
-        return self._timeout_seconds
+        return self._endpoint.timeout_seconds
 
     async def fetch(self, tenant_id: str, correlation_id: str) -> RuntimeConfiguration:
-        _validate_request_context(tenant_id, correlation_id)
-
-        token = await self._token_provider()
-        if not token or any(ord(character) < 32 or ord(character) > 126 for character in token):
-            raise StudioRuntimeClientError("studio_runtime_token_invalid", retryable=False)
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "X-Studio-Tenant-Id": tenant_id,
-            "X-Correlation-Id": correlation_id,
-        }
-        try:
-            response = await self._transport.get(self._url, headers, self._timeout_seconds)
-        except StudioRuntimeClientError:
-            raise
-        except (TimeoutError, asyncio.TimeoutError, aiohttp.ClientError):
-            raise StudioRuntimeClientError("studio_runtime_network_error", retryable=True) from None
-
-        if response.status == 200:
-            try:
-                configuration = RuntimeConfiguration.model_validate(response.payload)
-            except ValidationError:
-                raise StudioRuntimeClientError(
-                    "studio_runtime_response_invalid", retryable=False, status=200
-                ) from None
-            # Studio's tenant id is not guaranteed ASCII, and compare_digest raises on non-ASCII str.
-            if not hmac.compare_digest(
-                configuration.tenant.id.encode("utf-8"), tenant_id.encode("utf-8")
-            ):
-                raise StudioRuntimeClientError(
-                    "studio_runtime_tenant_mismatch", retryable=False, status=200
-                )
-            return configuration
-
-        if response.status not in SUPPORTED_ERROR_STATUSES:
-            raise StudioRuntimeClientError(
-                "studio_runtime_unexpected_status",
-                retryable=response.status >= 500,
-                status=response.status,
-            )
-        try:
-            envelope = RuntimeErrorEnvelope.model_validate(response.payload)
-        except ValidationError:
-            raise StudioRuntimeClientError(
-                "studio_runtime_error_invalid", retryable=False, status=response.status
-            ) from None
-        expected_codes = EXPECTED_ERROR_CODES.get(response.status)
-        if expected_codes is not None and envelope.error.code not in expected_codes:
-            raise StudioRuntimeClientError(
-                "studio_runtime_error_invalid", retryable=False, status=response.status
-            )
-        raise StudioRuntimeClientError(
-            envelope.error.code,
-            retryable=envelope.error.retryable,
-            status=response.status,
+        require_printable_ascii(tenant_id, "tenant_id")
+        require_printable_ascii(correlation_id, "correlation_id")
+        token = await self._endpoint.bearer_token(self._token_provider)
+        configuration = await self._endpoint.fetch_validated(
+            {
+                "Authorization": f"Bearer {token}",
+                "X-Studio-Tenant-Id": tenant_id,
+                "X-Correlation-Id": correlation_id,
+            },
+            RuntimeConfiguration,
+            EXPECTED_ERROR_CODES,
         )
-
-
-def _validate_request_context(tenant_id: str, correlation_id: str) -> None:
-    if (
-        not tenant_id
-        or len(tenant_id) > 128
-        or any(ord(character) < 32 or ord(character) > 126 for character in tenant_id)
-    ):
-        raise ValueError("tenant_id must be printable ASCII with at most 128 characters")
-    if (
-        not correlation_id
-        or len(correlation_id) > 128
-        or any(ord(character) < 32 or ord(character) > 126 for character in correlation_id)
-    ):
-        raise ValueError("correlation_id must be printable ASCII with at most 128 characters")
+        # Studio's tenant id is not guaranteed ASCII, and compare_digest raises on non-ASCII str.
+        if not hmac.compare_digest(
+            configuration.tenant.id.encode("utf-8"), tenant_id.encode("utf-8")
+        ):
+            raise StudioRuntimeClientError(
+                "studio_runtime_tenant_mismatch", retryable=False, status=200
+            )
+        return configuration

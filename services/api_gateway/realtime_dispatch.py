@@ -6,7 +6,8 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional
 
-from .realtime_connection import WebSocketConnection, safe_identifier
+from .log_safety import safe_session_ref
+from .realtime_connection import WebSocketConnection
 from .realtime_protocol import ConnectionState, Frame
 from .realtime_registry import ConnectionRegistry
 from .session_models import ClientType
@@ -108,7 +109,7 @@ class BroadcastDispatcher:
 
         logger.debug(
             "websocket_broadcast session_ref=%s successful=%d failed=%d",
-            safe_identifier(session_id.session_id),
+            safe_session_ref(session_id.session_id),
             successful_sends,
             failed_sends,
         )
@@ -129,7 +130,7 @@ class BroadcastDispatcher:
             BroadcastResult with success status and detailed metrics
         """
         metrics = self.monitor.metrics
-        metric_session_id = safe_identifier(session_id.session_id)
+        metric_session_id = safe_session_ref(session_id.session_id)
         self.record_broadcast_attempt(metrics, metric_session_id, sender_type)
 
         errors: list[str] = []
@@ -238,7 +239,7 @@ class BroadcastDispatcher:
     ) -> None:
         logger.debug(
             "WebSocket broadcast attempted",
-            extra={"session_ref": safe_identifier(session_id)},
+            extra={"session_ref": safe_session_ref(session_id)},
         )
         metrics.broadcast_total.labels(sender_type=sender_type.value).inc()
 
@@ -247,7 +248,7 @@ class BroadcastDispatcher:
     ) -> BroadcastResult:
         logger.warning(
             "Broadcast attempted without active connections",
-            extra={"session_ref": safe_identifier(session_id)},
+            extra={"session_ref": safe_session_ref(session_id)},
         )
         metrics.broadcast_failure_total.labels(
             sender_type=sender_type.value,
@@ -293,14 +294,14 @@ class BroadcastDispatcher:
         if success:
             logger.info(
                 f"✅ Broadcast successful: {successful_sends}/{total_connections} delivered",
-                extra={"session_ref": safe_identifier(session_id)},
+                extra={"session_ref": safe_session_ref(session_id)},
             )
             metrics.broadcast_success_total.labels(sender_type=sender_type.value).inc()
         else:
             logger.warning(
                 f"⚠️ Broadcast partial/failed: {successful_sends} succeeded, "
                 f"{failed_sends} failed out of {total_connections}",
-                extra={"session_ref": safe_identifier(session_id)},
+                extra={"session_ref": safe_session_ref(session_id)},
             )
             metrics.broadcast_failure_total.labels(
                 sender_type=sender_type.value,

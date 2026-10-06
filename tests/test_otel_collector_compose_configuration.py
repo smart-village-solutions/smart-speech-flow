@@ -4,20 +4,13 @@ Assertions run against `docker compose config` — the resolved configuration a
 deploy actually gets — not against the compose file's text.
 """
 
-import base64
-import os
-import subprocess
-import tempfile
 from pathlib import Path
 
 import yaml
 
 from services.api_gateway.quality_telemetry_schema import ALLOWED_ATTRIBUTE_KEYS
+from tests.compose_documents import PRODUCTION_COMPOSE, load_compose, render_development_compose
 
-# Encoded here rather than written out, so no base64 blob that looks like a real
-# key is committed next to the name of one. Secret scanners cannot tell a fake
-# from the real thing, and they are right not to try.
-TEST_ENCRYPTION_KEY = base64.b64encode(b"test-only-32-byte-key-for-units!").decode()
 
 ROOT = Path(__file__).parents[1]
 COLLECTOR_CONFIG = ROOT / "monitoring" / "otel-collector-config.yaml"
@@ -34,43 +27,11 @@ ALLOWED_RESOURCE_KEYS = {
 
 
 def _services() -> dict:
-    # All nine variables are required: `docker compose config` fails outright if
-    # any interpolation is unsatisfied, including Keycloak's. Mirrors the pattern
-    # in tests/test_keycloak_compose_configuration.py.
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as env_file:
-        env_file.write("CLICKHOUSE_DB=ssf_analytics_test\n")
-        env_file.write("CLICKHOUSE_USER=ssf_telemetry_test\n")
-        env_file.write("CLICKHOUSE_PASSWORD=test-only-password\n")
-        env_file.write("KEYCLOAK_DB_NAME=keycloak_test\n")
-        env_file.write("KEYCLOAK_DB_USER=keycloak_test_user\n")
-        env_file.write("KEYCLOAK_DB_PASSWORD=test-only-db-password\n")
-        env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=bootstrap_admin\n")
-        env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=test-only-admin-password\n")
-        env_file.write("KEYCLOAK_HOSTNAME=auth.test.example\n")
-        env_file.write("SSF_POSTGRES_DB=ssf_test\n")
-        env_file.write("SSF_POSTGRES_USER=ssf_test_user\n")
-        env_file.write("SSF_POSTGRES_PASSWORD=test-only-db-password\n")
-        env_file.write("SSF_FEEDBACK_APP_PASSWORD=test-only-app-password\n")
-        env_file.write("SSF_FEEDBACK_MAINTENANCE_PASSWORD=test-only-maint-password\n")
-        env_file.write("SSF_FEEDBACK_READER_PASSWORD=test-only-reader-password\n")
-        env_file.write(f"SSF_FEEDBACK_ENCRYPTION_KEY={TEST_ENCRYPTION_KEY}\n")
-    try:
-        result = subprocess.run(
-            ["docker", "compose", "--env-file", env_file.name, "config"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    finally:
-        os.unlink(env_file.name)
-    return yaml.safe_load(result.stdout)["services"]
+    return render_development_compose()["services"]
 
 
 def _production() -> dict:
-    return yaml.safe_load(
-        (ROOT / "deploy" / "production" / "docker-compose.production.yml").read_text()
-    )["services"]
+    return load_compose(PRODUCTION_COMPOSE)["services"]
 
 
 def _production_env(service: str) -> dict:
@@ -237,9 +198,7 @@ def test_production_disables_the_probe_explicitly() -> None:
     Relying on the code's fallback would mean a future default flip silently
     enables it there.
     """
-    production = yaml.safe_load(
-        (ROOT / "deploy" / "production" / "docker-compose.production.yml").read_text()
-    )
+    production = load_compose(PRODUCTION_COMPOSE)
     env = dict(
         entry.split("=", 1)
         for entry in production["services"]["api_gateway"]["environment"]

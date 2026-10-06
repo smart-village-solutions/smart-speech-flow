@@ -9,7 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from .realtime_connection import WebSocketConnection, safe_identifier
+from .log_safety import safe_session_ref
+from .realtime_connection import WebSocketConnection
 from .realtime_protocol import battery_saver_frame, polling_interval_update_frame
 
 # The manager's own logger, so these log lines keep their logger name.
@@ -131,7 +132,7 @@ class ClientStatusHandler:
 
         logger.info(
             "websocket_tab_visibility_changed session_ref=%s",
-            safe_identifier(connection.session_id),
+            safe_session_ref(connection.session_id),
         )
 
     async def handle_battery_status_update(
@@ -161,7 +162,7 @@ class ClientStatusHandler:
 
         logger.info(
             "websocket_battery_status_changed session_ref=%s",
-            safe_identifier(connection.session_id),
+            safe_session_ref(connection.session_id),
         )
 
     async def handle_network_status_change(
@@ -185,7 +186,7 @@ class ClientStatusHandler:
 
         logger.info(
             "websocket_network_status_changed session_ref=%s",
-            safe_identifier(connection.session_id),
+            safe_session_ref(connection.session_id),
         )
 
     async def send_polling_interval_update(

@@ -8,7 +8,7 @@ by those counts.
 import time
 from unittest.mock import AsyncMock, Mock
 
-from services.api_gateway.realtime_connection import safe_identifier
+from services.api_gateway.log_safety import safe_session_ref
 from services.api_gateway.realtime_registry import ConnectionRegistry
 from services.api_gateway.session_models import ClientType
 from services.api_gateway.tenant_session import TenantSessionKey
@@ -45,7 +45,7 @@ def test_the_id_still_names_its_session_and_client_type():
     """
     connection_id = ConnectionRegistry.build_connection_id(SESSION_A, ClientType.CUSTOMER)
 
-    scope = f"{SESSION_A.tenant_ref}_{safe_identifier(SESSION_A.session_id)}"
+    scope = f"{SESSION_A.tenant_ref}_{safe_session_ref(SESSION_A.session_id)}"
     assert connection_id.startswith(f"{scope}_{ClientType.CUSTOMER.value}_")
     assert SESSION_A.session_id not in connection_id
 

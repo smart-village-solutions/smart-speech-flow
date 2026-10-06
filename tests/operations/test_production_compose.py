@@ -2,17 +2,15 @@ import re
 import sys
 from pathlib import Path
 
-import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from services.api_gateway import translation_refiner as refiner_module
+from tests.compose_documents import DEVELOPMENT_COMPOSE, PRODUCTION_COMPOSE, load_compose
 
-COMPOSE_PATH = Path("deploy/production/docker-compose.production.yml")
 ENV_EXAMPLE_PATH = Path("deploy/production/production.env.example")
-DEVELOPMENT_COMPOSE_PATH = Path("docker-compose.yml")
 
 # translation_refiner.py's get_translation_refiner() resolves
 # LLM_REFINEMENT_PRIMARY_MODEL before falling back to LLM_REFINEMENT_MODEL.
@@ -23,7 +21,7 @@ GATEWAY_MODEL_VARIABLE = "LLM_REFINEMENT_PRIMARY_MODEL"
 
 
 def load_production_compose():
-    return yaml.safe_load(COMPOSE_PATH.read_text())
+    return load_compose(PRODUCTION_COMPOSE)
 
 
 def test_production_compose_contains_the_running_workload():
@@ -97,8 +95,8 @@ def test_vllm_runs_in_default_production_deployments_after_backend_activation():
     Development stays profile-gated because it defaults to Ollama and may run
     on a CPU-only workstation.
     """
-    development = yaml.safe_load(DEVELOPMENT_COMPOSE_PATH.read_text())
-    production = yaml.safe_load(COMPOSE_PATH.read_text())
+    development = load_compose(DEVELOPMENT_COMPOSE)
+    production = load_compose(PRODUCTION_COMPOSE)
     assert development["services"]["vllm"]["profiles"] == ["vllm"]
     assert "profiles" not in production["services"]["vllm"]
 
@@ -133,8 +131,8 @@ def test_vllm_served_model_name_uses_the_same_variable_the_gateway_resolves_firs
     compose's own default nor translation_refiner.py's backend-aware default
     may drift alone."""
     gateway_default = refiner_module._default_refinement_model("vllm")
-    for path in (DEVELOPMENT_COMPOSE_PATH, COMPOSE_PATH):
-        compose = yaml.safe_load(path.read_text())
+    for path in (DEVELOPMENT_COMPOSE, PRODUCTION_COMPOSE):
+        compose = load_compose(path)
         environment = _environment_by_name(compose["services"]["api_gateway"])
         assert GATEWAY_MODEL_VARIABLE in environment, path
 
@@ -148,8 +146,8 @@ def test_skip_target_languages_default_is_reachable_with_an_explicitly_empty_val
     value, so the documented "empty refines everything" behaviour would be
     unreachable through compose. `${VAR-default}` (no colon) only substitutes
     when the variable is unset, so an empty value set by an operator survives."""
-    for path in (DEVELOPMENT_COMPOSE_PATH, COMPOSE_PATH):
-        compose = yaml.safe_load(path.read_text())
+    for path in (DEVELOPMENT_COMPOSE, PRODUCTION_COMPOSE):
+        compose = load_compose(path)
         environment = _environment_by_name(compose["services"]["api_gateway"])
         assert environment["LLM_REFINEMENT_SKIP_TARGET_LANGUAGES"] == (
             "${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,ti,ku,fa}"
@@ -163,8 +161,8 @@ def test_vllm_boots_the_measured_quantized_model_with_no_ram_offload():
     build at 0.58 unquantized was measured and rejected: negative room for
     KV cache. --cpu-offload-gb=0 must be explicit so the model never spills
     into system RAM."""
-    for path in (DEVELOPMENT_COMPOSE_PATH, COMPOSE_PATH):
-        compose = yaml.safe_load(path.read_text())
+    for path in (DEVELOPMENT_COMPOSE, PRODUCTION_COMPOSE):
+        compose = load_compose(path)
         command = compose["services"]["vllm"]["command"]
         assert "--model=${LLM_REFINEMENT_MODEL_REPO:-Qwen/Qwen3.5-4B}" in command, path
         assert "--quantization=${VLLM_QUANTIZATION:-fp8}" in command, path
@@ -177,8 +175,8 @@ def test_refinement_temperature_defaults_to_deterministic_output():
     sentence invented an instruction in two of three runs; at 0.0, three of
     three preserved the meaning exactly. This is a deliberate change for the
     Ollama path too, not just vllm."""
-    for path in (DEVELOPMENT_COMPOSE_PATH, COMPOSE_PATH):
-        compose = yaml.safe_load(path.read_text())
+    for path in (DEVELOPMENT_COMPOSE, PRODUCTION_COMPOSE):
+        compose = load_compose(path)
         environment = _environment_by_name(compose["services"]["api_gateway"])
         assert environment["LLM_REFINEMENT_TEMPERATURE"] == (
             "${LLM_REFINEMENT_TEMPERATURE:-0.0}"
@@ -190,7 +188,7 @@ def test_development_gateway_can_exercise_the_vllm_path():
     LLM_REFINEMENT_BACKEND, LLM_REFINEMENT_MAX_TOKENS or
     LLM_REFINEMENT_SKIP_TARGET_LANGUAGES, so it could never be pointed at
     the vllm backend the way production can."""
-    compose = yaml.safe_load(DEVELOPMENT_COMPOSE_PATH.read_text())
+    compose = load_compose(DEVELOPMENT_COMPOSE)
     environment = _environment_by_name(compose["services"]["api_gateway"])
     assert environment["LLM_REFINEMENT_BACKEND"] == "${LLM_REFINEMENT_BACKEND:-ollama}"
     assert environment["LLM_REFINEMENT_MAX_TOKENS"] == "${LLM_REFINEMENT_MAX_TOKENS:-256}"
@@ -301,7 +299,7 @@ def test_production_keycloak_does_not_import_the_development_realm():
 
 
 def test_frontend_build_receives_public_multi_realm_configuration():
-    compose = yaml.safe_load(DEVELOPMENT_COMPOSE_PATH.read_text())
+    compose = load_compose(DEVELOPMENT_COMPOSE)
     build_args = compose["services"]["frontend"]["build"]["args"]
 
     assert build_args["VITE_KEYCLOAK_URL"] == "https://auth.dialog.kassel.de"
@@ -333,8 +331,8 @@ def test_both_composes_admit_the_measured_number_of_concurrent_pipelines():
     """
     from services.api_gateway.pipeline_admission import DEFAULT_MAX_CONCURRENT_PIPELINES
 
-    for path in (DEVELOPMENT_COMPOSE_PATH, COMPOSE_PATH):
-        compose = yaml.safe_load(path.read_text())
+    for path in (DEVELOPMENT_COMPOSE, PRODUCTION_COMPOSE):
+        compose = load_compose(path)
         environment = _environment_by_name(compose["services"]["api_gateway"])
         assert environment["MAX_CONCURRENT_PIPELINES"] == (
             "${MAX_CONCURRENT_PIPELINES:-" f"{DEFAULT_MAX_CONCURRENT_PIPELINES}" "}"

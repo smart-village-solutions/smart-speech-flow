@@ -2,14 +2,13 @@
 
 from pathlib import Path
 
-import yaml
+from tests.compose_documents import DEVELOPMENT_COMPOSE, load_compose
 
 ROOT = Path(__file__).resolve().parents[1]
-COMPOSE_PATH = ROOT / "docker-compose.yml"
 
 
 def _build_targets() -> list[tuple[str, Path, Path]]:
-    compose = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
+    compose = load_compose(DEVELOPMENT_COMPOSE)
     targets = []
     for name, service in compose["services"].items():
         build = service.get("build")
@@ -17,7 +16,7 @@ def _build_targets() -> list[tuple[str, Path, Path]]:
             continue
         if isinstance(build, str):
             build = {"context": build}
-        context = (COMPOSE_PATH.parent / build.get("context", ".")).resolve()
+        context = (DEVELOPMENT_COMPOSE.parent / build.get("context", ".")).resolve()
         dockerfile = context / build.get("dockerfile", "Dockerfile")
         targets.append((name, context, dockerfile))
     return targets

@@ -4,6 +4,8 @@ from pathlib import Path
 
 import yaml
 
+from tests.compose_documents import DEVELOPMENT_COMPOSE, PRODUCTION_COMPOSE, load_compose
+
 ROOT = Path(__file__).resolve().parents[1]
 PROMTAIL = ROOT / "monitoring" / "promtail-config.yaml"
 LOKI = ROOT / "monitoring" / "loki-config.yaml"
@@ -30,11 +32,8 @@ def test_monitoring_log_feedback_is_prevented_and_observable() -> None:
     prometheus = yaml.safe_load(PROMETHEUS.read_text())
     scrape_jobs = {job["job_name"]: job for job in prometheus["scrape_configs"]}
     assert scrape_jobs["promtail"]["static_configs"][0]["targets"] == ["promtail:9080"]
-    for compose in (
-        ROOT / "docker-compose.yml",
-        ROOT / "deploy/production/docker-compose.production.yml",
-    ):
-        service = yaml.safe_load(compose.read_text())["services"]["promtail"]
+    for compose in (DEVELOPMENT_COMPOSE, PRODUCTION_COMPOSE):
+        service = load_compose(compose)["services"]["promtail"]
         assert "9080" in [str(port) for port in service["expose"]]
         assert "ports" not in service
 

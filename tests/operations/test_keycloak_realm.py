@@ -5,11 +5,11 @@ import tempfile
 from pathlib import Path
 
 import pytest
-import yaml
+
+from tests.compose_documents import DEVELOPMENT_COMPOSE, load_compose
 
 
 DEVELOPMENT_REALM_PATH = Path("deploy/production/keycloak/ssf-realm.json")
-DEVELOPMENT_COMPOSE_PATH = Path("docker-compose.yml")
 DOCKERIGNORE_PATH = Path(".dockerignore")
 KEYCLOAK_DOCKERFILE = Path("services/keycloak/Dockerfile")
 FRONTEND_ASSETS = Path("services/frontend/public/assets")
@@ -37,9 +37,7 @@ def _theme_file(image: str, relative_path: str) -> bytes:
 
 
 def test_development_compose_imports_only_the_local_realm_fixture():
-    keycloak = yaml.safe_load(DEVELOPMENT_COMPOSE_PATH.read_text())["services"][
-        "keycloak"
-    ]
+    keycloak = load_compose(DEVELOPMENT_COMPOSE)["services"]["keycloak"]
 
     assert keycloak["build"] == {"context": ".", "dockerfile": "services/keycloak/Dockerfile"}
     assert "--import-realm" in keycloak["command"]
@@ -92,7 +90,10 @@ def test_keycloak_image_provides_the_kasseldialog_login_branding():
     try:
         theme_properties = _theme_file(image, "theme.properties")
         assert b"parent=keycloak" in theme_properties
-        assert b"styles=css/login.css" in theme_properties
+        assert b"styles=css/theme.css css/login.css" in theme_properties
+        assert _theme_file(image, "resources/css/theme.css") == (
+            Path("services/frontend/src/ui/styles/theme.css")
+        ).read_bytes()
         assert _theme_file(image, "resources/img/header-logo.png") == (
             FRONTEND_ASSETS / "Logo.png"
         ).read_bytes()

@@ -6,19 +6,17 @@ they run in CI: a host port or a lost dependency would be found here rather than
 in production.
 """
 
-import base64
 import os
-import subprocess
-import tempfile
 from pathlib import Path
 
 import pytest
-import yaml
 
-# Encoded here rather than written out, so no base64 blob that looks like a real
-# key is committed next to the name of one. Secret scanners cannot tell a fake
-# from the real thing, and they are right not to try.
-TEST_ENCRYPTION_KEY = base64.b64encode(b"test-only-32-byte-key-for-units!").decode()
+from tests.compose_documents import (
+    DEVELOPMENT_COMPOSE,
+    PRODUCTION_COMPOSE,
+    render_development_compose,
+)
+
 
 ROOT = Path(__file__).parents[1]
 MIGRATION = ROOT / "deploy/postgres/migrations/001_feedback.sql"
@@ -26,40 +24,7 @@ APPLY_SCRIPT = ROOT / "deploy/postgres/apply.sh"
 
 
 def _render_services(**overrides: str) -> dict:
-    """Render Compose with isolated credentials and return every service."""
-    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".env") as env_file:
-        env_file.write("CLICKHOUSE_DB=ssf_analytics_test\n")
-        env_file.write("CLICKHOUSE_USER=ssf_telemetry_test\n")
-        env_file.write("CLICKHOUSE_PASSWORD=test-only-password\n")
-        env_file.write("KEYCLOAK_DB_NAME=keycloak_test\n")
-        env_file.write("KEYCLOAK_DB_USER=keycloak_test_user\n")
-        env_file.write("KEYCLOAK_DB_PASSWORD=test-only-db-password\n")
-        env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=bootstrap_admin\n")
-        env_file.write("KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=test-only-admin-password\n")
-        env_file.write("KEYCLOAK_HOSTNAME=auth.test.example\n")
-        env_file.write("SSF_POSTGRES_DB=ssf_test\n")
-        env_file.write("SSF_POSTGRES_USER=ssf_test_user\n")
-        env_file.write("SSF_POSTGRES_PASSWORD=test-only-db-password\n")
-        env_file.write("SSF_FEEDBACK_APP_PASSWORD=test-only-app-password\n")
-        env_file.write("SSF_FEEDBACK_MAINTENANCE_PASSWORD=test-only-maint-password\n")
-        env_file.write("SSF_FEEDBACK_READER_PASSWORD=test-only-reader-password\n")
-        env_file.write(f"SSF_FEEDBACK_ENCRYPTION_KEY={TEST_ENCRYPTION_KEY}\n")
-        for name, value in overrides.items():
-            env_file.write(f"{name}={value}\n")
-        rendered_env = env_file.name
-
-    try:
-        result = subprocess.run(
-            ["docker", "compose", "--env-file", rendered_env, "config"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    finally:
-        os.unlink(rendered_env)
-
-    return yaml.safe_load(result.stdout)["services"]
+    return render_development_compose(**overrides)["services"]
 
 
 def test_feedback_database_is_private_to_the_compose_network() -> None:
@@ -99,7 +64,7 @@ def test_the_database_reports_healthy_only_once_it_accepts_tcp() -> None:
 
 def test_the_encryption_key_has_no_default() -> None:
     """A defaulted key silently encrypts rows nobody can ever decrypt."""
-    compose = (ROOT / "docker-compose.yml").read_text()
+    compose = DEVELOPMENT_COMPOSE.read_text()
 
     assert "SSF_FEEDBACK_ENCRYPTION_KEY:?required" in compose
 
@@ -137,7 +102,7 @@ def test_the_apply_script_is_executable() -> None:
 
 def test_the_production_stack_ships_the_same_database() -> None:
     """A dev-only feedback store loses every production submission."""
-    production = (ROOT / "deploy/production/docker-compose.production.yml").read_text()
+    production = PRODUCTION_COMPOSE.read_text()
 
     assert "ssf-postgres:" in production
     assert "ssf-postgres-data" in production
@@ -273,7 +238,7 @@ def test_both_stacks_carry_the_feedback_grace_window(
     monkeypatch.delenv("SSF_FEEDBACK_GRACE_MINUTES", raising=False)
 
     environment = _render_services()["api_gateway"]["environment"]
-    production = (ROOT / "deploy/production/docker-compose.production.yml").read_text()
+    production = PRODUCTION_COMPOSE.read_text()
 
     assert environment["SSF_FEEDBACK_GRACE_MINUTES"] == "30"
     assert "SSF_FEEDBACK_GRACE_MINUTES=${SSF_FEEDBACK_GRACE_MINUTES:-30}" in production

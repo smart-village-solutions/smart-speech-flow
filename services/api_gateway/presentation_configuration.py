@@ -11,7 +11,8 @@ from typing import Any
 
 from pydantic import Field, model_validator
 
-from .studio_runtime_client import Branding, ContractModel, Localization, Tenant
+from .studio_runtime_client import Branding, Localization, Tenant
+from .studio_v1 import ContractModel
 
 
 class PresentationConfiguration(ContractModel):

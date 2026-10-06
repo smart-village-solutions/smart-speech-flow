@@ -8,12 +8,13 @@ import asyncio
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info
 
+from .clock import utc_now
 from .session_pseudonym import SessionPseudonymizer
 from .tenant_session import TenantSessionKey
 
@@ -22,10 +23,6 @@ logger = logging.getLogger(__name__)
 # The manager pings every 30 s and closes a socket after 60 s without a pong,
 # so a heartbeat is only overdue once it is older than that timeout.
 HEARTBEAT_STALE_AFTER_SECONDS = 60
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _resource_log_fields(

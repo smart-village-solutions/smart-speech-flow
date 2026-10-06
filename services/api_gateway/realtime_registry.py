@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Dict, Optional
 from uuid import uuid4
 
-from .realtime_connection import WebSocketConnection, safe_identifier
+from .log_safety import safe_session_ref
+from .realtime_connection import WebSocketConnection
 from .session_models import ClientType
 from .tenant_session import TenantSessionKey
 
@@ -40,7 +41,7 @@ class ConnectionRegistry:
         became the winner's. Reconnect storms are when that happens and when the
         connection KPIs matter most.
         """
-        scope = f"{session_id.tenant_ref}_{safe_identifier(session_id.session_id)}"
+        scope = f"{session_id.tenant_ref}_{safe_session_ref(session_id.session_id)}"
         return f"{scope}_{client_type.value}_{uuid4().hex[:12]}"
 
     def registered_connection_id(self, connection: WebSocketConnection) -> Optional[str]:

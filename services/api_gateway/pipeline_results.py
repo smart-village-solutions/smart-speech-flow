@@ -1,12 +1,12 @@
 """The pipeline's result shape: timing, failure classification and the error result."""
 
 import time
-from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import psutil
 
 from .circuit_breaker import CircuitBreakerOpenError
+from .clock import utc_now
 from .quality_telemetry import classify_upstream_status
 from .quality_telemetry_schema import PipelineStage, QualityErrorCode
 
@@ -18,10 +18,6 @@ DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS = 5
 # Marks a recording in which ASR heard nothing, so the message route can answer
 # 422 instead of translating an empty string.
 NO_SPEECH_ERROR_CODE = "NO_SPEECH_RECOGNIZED"
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _collect_system_metrics() -> Dict[str, float]:

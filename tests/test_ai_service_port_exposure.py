@@ -8,18 +8,16 @@ in the environment that matters.
 from pathlib import Path
 
 import pytest
-import yaml
+
+from tests.compose_documents import DEVELOPMENT_COMPOSE, PRODUCTION_COMPOSE, load_compose
 
 ROOT = Path(__file__).resolve().parents[1]
-COMPOSE_FILES = (
-    ROOT / "docker-compose.yml",
-    ROOT / "deploy" / "production" / "docker-compose.production.yml",
-)
+COMPOSE_FILES = (DEVELOPMENT_COMPOSE, PRODUCTION_COMPOSE)
 AI_SERVICES = ("asr", "translation", "tts")
 
 
 def _service(compose_path: Path, name: str) -> dict:
-    services = yaml.safe_load(compose_path.read_text())["services"]
+    services = load_compose(compose_path)["services"]
     assert name in services, f"{name} missing from {compose_path.name}"
     return services[name]
 

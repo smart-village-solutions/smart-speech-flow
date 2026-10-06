@@ -7,10 +7,10 @@ import uuid
 from typing import Any, Dict, Optional
 
 from .audio_storage import AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
+from .clock import utc_now
 from .consent import ConsentStatus
-from .log_safety import redacted_exception_info, sanitize_log_value
-from .message_models import utc_now
-from .message_requests import _log_session_event, _safe_identifier
+from .log_safety import redacted_exception_info, safe_session_ref, sanitize_log_value
+from .message_requests import _log_session_event
 from .persistence_authorization import authorize_message_artifacts
 from .realtime_dispatch import BroadcastResult
 from .realtime_protocol import receiver_message_frame, sender_confirmation_frame
@@ -115,7 +115,7 @@ async def create_session_message(
                 "❌ WebSocket-Broadcasting fehlgeschlagen | %s",
                 sanitize_log_value(
                     {
-                        "session_ref": _safe_identifier(session_id.session_id),
+                        "session_ref": safe_session_ref(session_id.session_id),
                         "successful_sends": result.successful_sends,
                         "failed_sends": result.failed_sends,
                         "total_connections": result.total_connections,
@@ -160,7 +160,7 @@ async def create_session_message(
         # content this loses is content nothing will retain.
         logger.warning(
             "persistence_authorization_not_recorded | %s",
-            sanitize_log_value({"session_ref": _safe_identifier(session_id.session_id)}),
+            sanitize_log_value({"session_ref": safe_session_ref(session_id.session_id)}),
         )
 
     return message

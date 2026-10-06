@@ -16,8 +16,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from services.api_gateway.audio_storage import AudioStore
+from services.api_gateway.clock import utc_now
 from services.api_gateway.session_manager import TenantSessionManager
-from services.api_gateway.session_models import ClientType, Session, SessionMessage, utc_now
+from services.api_gateway.session_models import ClientType, Session, SessionMessage
 from services.api_gateway.session_store import (
     MemoryTenantSessionStore,
     RedisTenantSessionStore,

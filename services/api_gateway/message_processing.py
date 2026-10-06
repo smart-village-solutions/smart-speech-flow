@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException, Request
 
 from .audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
-from .log_safety import sanitize_log_value
+from .log_safety import safe_session_ref, sanitize_log_value
 from .message_delivery import create_session_message
 from .message_models import MessageResponse, create_error_response
 from .message_requests import (
@@ -18,7 +18,6 @@ from .message_requests import (
     _log_session_event,
     _parse_audio_form,
     _parse_text_request,
-    _safe_identifier,
     _store_audio_artifacts,
     _store_translated_audio,
     _validate_audio_file_input,
@@ -595,7 +594,7 @@ async def process_text_input(
         "🔎 Session lookup for text input | %s",
         sanitize_log_value(
             {
-                "session_ref": _safe_identifier(session_id),
+                "session_ref": safe_session_ref(session_id),
                 "session_found": session is not None,
             }
         ),
@@ -610,7 +609,7 @@ async def process_text_input(
     else:
         logger.warning(
             "⚠️ Session not found for language validation - skipping check | %s",
-            sanitize_log_value({"session_ref": _safe_identifier(session_id)}),
+            sanitize_log_value({"session_ref": safe_session_ref(session_id)}),
         )
 
     # Text-Pipeline ausführen (ASR überspringen). Offloaded for the same reason

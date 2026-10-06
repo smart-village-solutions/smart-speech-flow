@@ -3,20 +3,16 @@ WebSocket Monitoring API Routes
 Provides comprehensive monitoring and health check endpoints for WebSocket infrastructure.
 """
 
-from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
+from .clock import utc_now
 from .dependencies import get_connection_monitor
 from .websocket_monitor import WebSocketMonitor
 
 router = APIRouter(prefix="/api/websocket/monitoring", tags=["WebSocket Monitoring"])
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def utc_now_iso() -> str:

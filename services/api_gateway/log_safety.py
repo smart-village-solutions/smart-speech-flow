@@ -5,6 +5,7 @@ Helpers to keep structured logging safe when values may contain user input.
 from __future__ import annotations
 
 import re
+from hashlib import sha256
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Optional
@@ -49,6 +50,17 @@ def safe_language_code(value: Any) -> str:
         return "invalid"
 
     return normalized[:32]
+
+
+def safe_session_ref(session_id: Optional[str]) -> str:
+    """A short, stable session handle for log lines.
+
+    Unkeyed, so enumerable: session ids are 32-bit. Anything stored or joined
+    beyond a log line belongs in `session_pseudonym` instead.
+    """
+    if not session_id:
+        return "missing"
+    return sha256(session_id.encode("utf-8")).hexdigest()[:12]
 
 
 def safe_closed_value(value: Any, allowed: frozenset[str], *, fallback: str = "invalid") -> str:

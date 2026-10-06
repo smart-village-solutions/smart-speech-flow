@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import WebSocket
 
+from .clock import utc_now
 from .realtime_protocol import ConnectionState
 from .session_models import ClientType
 from .tenant_session import TenantSessionKey
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def ensure_utc(dt: datetime) -> datetime:
@@ -23,10 +19,6 @@ def ensure_utc(dt: datetime) -> datetime:
         local_tz = datetime.now().astimezone().tzinfo or timezone.utc
         return dt.replace(tzinfo=local_tz).astimezone(timezone.utc)
     return dt.astimezone(timezone.utc)
-
-
-def safe_identifier(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
 
 
 @dataclass

@@ -3,19 +3,17 @@
 from pathlib import Path
 
 import pytest
-import yaml
+
+from tests.compose_documents import DEVELOPMENT_COMPOSE, PRODUCTION_COMPOSE, load_compose
 
 
 ROOT = Path(__file__).resolve().parents[1]
-COMPOSE_FILES = (
-    ROOT / "docker-compose.yml",
-    ROOT / "deploy" / "production" / "docker-compose.production.yml",
-)
+COMPOSE_FILES = (DEVELOPMENT_COMPOSE, PRODUCTION_COMPOSE)
 
 
 @pytest.mark.parametrize("compose_path", COMPOSE_FILES, ids=lambda path: path.name)
 def test_grafana_is_only_reachable_through_traefik(compose_path: Path) -> None:
-    service = yaml.safe_load(compose_path.read_text())["services"]["grafana"]
+    service = load_compose(compose_path)["services"]["grafana"]
 
     assert "ports" not in service
     labels = service.get("labels", [])

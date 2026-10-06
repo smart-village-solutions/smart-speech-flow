@@ -5,8 +5,6 @@ Ermöglicht Kunden das Beitreten und Aktivieren von Sessions
 """
 
 import logging
-from datetime import datetime, timezone
-from hashlib import sha256
 from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -14,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from ..audio_storage import AudioVariant
 from ..auth import optional_ssf_user
+from ..clock import utc_now
 from ..conversation_service import ConversationService
 from ..dependencies import (
     get_conversation_service,
@@ -21,7 +20,7 @@ from ..dependencies import (
     get_session_manager,
     get_studio_runtime_flow,
 )
-from ..log_safety import safe_language_code
+from ..log_safety import safe_language_code, safe_session_ref
 from ..message_models import MESSAGE_VALIDATION_RESPONSE
 from ..session_access import require_customer_session_key
 from ..session_lifecycle import (
@@ -127,16 +126,6 @@ async def get_customer_audio(
     return await conversations.audio(key, message_id, variant)
 
 
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _safe_session_ref(session_id: Optional[str]) -> str:
-    if not session_id:
-        return "missing"
-    return sha256(session_id.encode("utf-8")).hexdigest()[:12]
-
-
 @router.post(
     "/session/activate",
     status_code=status.HTTP_200_OK,
@@ -174,7 +163,7 @@ async def activate_session(
     try:
         logger.info(
             "🎯 Session-Aktivierung angefordert | session_ref=%s customer_language=%s",
-            _safe_session_ref(request.session_id),
+            safe_session_ref(request.session_id),
             safe_language_code(request.customer_language),
         )
 

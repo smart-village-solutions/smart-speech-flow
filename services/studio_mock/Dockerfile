@@ -64,6 +64,9 @@ RUN printf '%s%s\n' \
     && chown -R app:app /app
 
 COPY services/__init__.py /app/services/__init__.py
+# The mock serialises through the gateway's own contract models; the whole
+# package is copied so a new sibling import cannot break only the image.
+COPY services/api_gateway/ /app/services/api_gateway/
 COPY services/studio_mock/ /app/services/studio_mock/
 
 ENV PYTHONPATH=/app

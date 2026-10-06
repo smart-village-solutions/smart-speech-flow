@@ -1,6 +1,5 @@
 """Regression tests for frontend configuration embedded by the container build."""
 
-import base64
 import os
 import subprocess
 import uuid
@@ -8,10 +7,7 @@ from pathlib import Path
 
 import pytest
 
-# Encoded here rather than written out, so no base64 blob that looks like a real
-# key is committed next to the name of one. Secret scanners cannot tell a fake
-# from the real thing, and they are right not to try.
-TEST_ENCRYPTION_KEY = base64.b64encode(b"test-only-32-byte-key-for-units!").decode()
+from tests.compose_documents import TEST_ENV
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_ROOT = REPOSITORY_ROOT / "services" / "frontend"
@@ -31,25 +27,10 @@ def _compose_build(project_name: str) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     # Retired by #216; an old .env may still set it, and it must not reach the bundle.
     environment["FRONTEND_DEMO_PASSWORD"] = "container-build-test-password"
-    environment["CLICKHOUSE_DB"] = "ssf_analytics_test"
-    environment["CLICKHOUSE_USER"] = "ssf_telemetry_test"
-    environment["CLICKHOUSE_PASSWORD"] = "test-only-password"
-    environment["KEYCLOAK_DB_NAME"] = "keycloak_test"
-    environment["KEYCLOAK_DB_USER"] = "keycloak_test_user"
-    environment["KEYCLOAK_DB_PASSWORD"] = "test-only-db-password"
-    environment["KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME"] = "bootstrap_admin"
-    environment["KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD"] = "test-only-admin-password"
-    environment["KEYCLOAK_HOSTNAME"] = "auth.test.example"
     # Compose interpolates every service in the file, not just the one being
     # built, so each `:?required` variable anywhere in docker-compose.yml has
     # to be satisfied here or the build never starts.
-    environment["SSF_POSTGRES_DB"] = "ssf_test"
-    environment["SSF_POSTGRES_USER"] = "ssf_test_user"
-    environment["SSF_POSTGRES_PASSWORD"] = "test-only-db-password"
-    environment["SSF_FEEDBACK_APP_PASSWORD"] = "test-only-app-password"
-    environment["SSF_FEEDBACK_MAINTENANCE_PASSWORD"] = "test-only-maint-password"
-    environment["SSF_FEEDBACK_READER_PASSWORD"] = "test-only-reader-password"
-    environment["SSF_FEEDBACK_ENCRYPTION_KEY"] = TEST_ENCRYPTION_KEY
+    environment.update(TEST_ENV)
     return subprocess.run(
         [
             "docker",

@@ -19,12 +19,13 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import aiohttp
 
 from .circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitState
+from .clock import utc_now
 from .graceful_degradation import GracefulDegradationManager
 
 logger = logging.getLogger(__name__)
@@ -34,10 +35,6 @@ SERVICE_SCHEME = os.environ.get("SERVICE_SCHEME", "http")
 
 def _service_base_url(host: str, port: int = 8000) -> str:
     return f"{SERVICE_SCHEME}://{host}:{port}"
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 @dataclass

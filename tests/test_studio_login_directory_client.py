@@ -7,10 +7,10 @@ import pytest
 
 from services.api_gateway.studio_login_directory_client import (
     DIRECTORY_PATH,
-    DirectoryHttpResponse,
     StudioLoginDirectoryClient,
     StudioLoginDirectoryClientError,
 )
+from services.api_gateway.studio_v1 import StudioV1HttpResponse
 
 REVISION = f"sha256:{'a' * 64}"
 
@@ -36,25 +36,25 @@ class StubTokenProvider:
 
 
 class StubTransport:
-    def __init__(self, response: DirectoryHttpResponse) -> None:
+    def __init__(self, response: StudioV1HttpResponse) -> None:
         self.response = response
         self.calls: list[tuple[str, Mapping[str, str], float]] = []
 
     async def get(
         self, url: str, headers: Mapping[str, str], timeout_seconds: float
-    ) -> DirectoryHttpResponse:
+    ) -> StudioV1HttpResponse:
         self.calls.append((url, headers, timeout_seconds))
         return self.response
 
 
 def client(
-    response: DirectoryHttpResponse,
+    response: StudioV1HttpResponse,
 ) -> tuple[StudioLoginDirectoryClient, StubTransport]:
     transport = StubTransport(response)
     return (
         StudioLoginDirectoryClient(
             "https://studio.test",
-            StubTokenProvider(),
+            StubTokenProvider().get_token,
             transport=transport,
             timeout_seconds=2.0,
         ),
@@ -64,7 +64,7 @@ def client(
 
 @pytest.mark.asyncio
 async def test_accepts_valid_directory_and_sends_tenant_unbound_request() -> None:
-    directory_client, transport = client(DirectoryHttpResponse(200, valid_directory()))
+    directory_client, transport = client(StudioV1HttpResponse(200, valid_directory()))
 
     directory = await directory_client.fetch("correlation-1")
 
@@ -91,7 +91,7 @@ async def test_accepts_valid_directory_and_sends_tenant_unbound_request() -> Non
 async def test_accepts_an_empty_tenant_directory() -> None:
     payload = valid_directory()
     payload["tenants"] = []
-    directory_client, _ = client(DirectoryHttpResponse(200, payload))
+    directory_client, _ = client(StudioV1HttpResponse(200, payload))
 
     directory = await directory_client.fetch("correlation-1")
 
@@ -107,7 +107,7 @@ async def test_accepts_unknown_optional_v1_fields() -> None:
     tenant = tenants[0]
     assert isinstance(tenant, dict)
     tenant["optionalTenantField"] = "value"
-    directory_client, _ = client(DirectoryHttpResponse(200, payload))
+    directory_client, _ = client(StudioV1HttpResponse(200, payload))
 
     directory = await directory_client.fetch("correlation-1")
 
@@ -142,7 +142,7 @@ async def test_accepts_unknown_optional_v1_fields() -> None:
 async def test_rejects_invalid_known_directory_fields(mutate: Any) -> None:
     payload = valid_directory()
     mutate(payload)
-    directory_client, _ = client(DirectoryHttpResponse(200, payload))
+    directory_client, _ = client(StudioV1HttpResponse(200, payload))
 
     with pytest.raises(StudioLoginDirectoryClientError) as caught:
         await directory_client.fetch("correlation-1")
@@ -154,7 +154,7 @@ async def test_rejects_invalid_known_directory_fields(mutate: Any) -> None:
 
 @pytest.mark.asyncio
 async def test_rejects_a_non_object_success_payload() -> None:
-    directory_client, _ = client(DirectoryHttpResponse(200, ["Studio secret"]))  # type: ignore[arg-type]
+    directory_client, _ = client(StudioV1HttpResponse(200, ["Studio secret"]))  # type: ignore[arg-type]
 
     with pytest.raises(StudioLoginDirectoryClientError) as caught:
         await directory_client.fetch("correlation-1")
@@ -164,8 +164,33 @@ async def test_rejects_a_non_object_success_payload() -> None:
 
 
 @pytest.mark.asyncio
+async def test_rejects_a_non_json_body_with_its_status() -> None:
+    directory_client, _ = client(StudioV1HttpResponse(502, None))
+
+    with pytest.raises(StudioLoginDirectoryClientError) as caught:
+        await directory_client.fetch("correlation-1")
+
+    assert caught.value.code == "studio_login_directory_response_invalid"
+    assert caught.value.status == 502
+    assert caught.value.retryable is False
+
+
+@pytest.mark.asyncio
+async def test_accepts_any_awaitable_token_source() -> None:
+    async def token() -> str:
+        return "service-token"
+
+    transport = StubTransport(StudioV1HttpResponse(200, valid_directory()))
+    directory_client = StudioLoginDirectoryClient("https://studio.test", token, transport=transport)
+
+    await directory_client.fetch("correlation-1")
+
+    assert transport.calls[0][1]["Authorization"] == "Bearer service-token"
+
+
+@pytest.mark.asyncio
 async def test_rejects_correlation_id_control_characters_before_transport() -> None:
-    directory_client, transport = client(DirectoryHttpResponse(200, valid_directory()))
+    directory_client, transport = client(StudioV1HttpResponse(200, valid_directory()))
 
     with pytest.raises(ValueError):
         await directory_client.fetch("correlation-1\r\nX-Forged: true")
@@ -184,7 +209,7 @@ async def test_rejects_correlation_id_control_characters_before_transport() -> N
 )
 async def test_preserves_stable_error_retryability(status: int, code: str, retryable: bool) -> None:
     directory_client, _ = client(
-        DirectoryHttpResponse(
+        StudioV1HttpResponse(
             status,
             {
                 "contractVersion": "1.0",
@@ -210,9 +235,9 @@ async def test_preserves_stable_error_retryability(status: int, code: str, retry
 async def test_rejects_malformed_error_envelopes_and_unexpected_statuses_without_studio_content() -> (
     None
 ):
-    malformed_error_client, _ = client(DirectoryHttpResponse(401, {"error": "Studio secret"}))
+    malformed_error_client, _ = client(StudioV1HttpResponse(401, {"error": "Studio secret"}))
     wrong_error_code_client, _ = client(
-        DirectoryHttpResponse(
+        StudioV1HttpResponse(
             403,
             {
                 "contractVersion": "1.0",
@@ -225,7 +250,7 @@ async def test_rejects_malformed_error_envelopes_and_unexpected_statuses_without
             },
         )
     )
-    unexpected_status_client, _ = client(DirectoryHttpResponse(502, {"secret": "Studio secret"}))
+    unexpected_status_client, _ = client(StudioV1HttpResponse(502, {"secret": "Studio secret"}))
 
     with pytest.raises(StudioLoginDirectoryClientError) as malformed_error:
         await malformed_error_client.fetch("correlation-1")
@@ -251,9 +276,9 @@ async def test_rejects_invalid_service_token_before_transport() -> None:
         async def get_token(self) -> str:
             return "service-token\r\nX-Forged: true"
 
-    transport = StubTransport(DirectoryHttpResponse(200, valid_directory()))
+    transport = StubTransport(StudioV1HttpResponse(200, valid_directory()))
     directory_client = StudioLoginDirectoryClient(
-        "https://studio.test", InvalidTokenProvider(), transport=transport
+        "https://studio.test", InvalidTokenProvider().get_token, transport=transport
     )
 
     with pytest.raises(StudioLoginDirectoryClientError) as caught:
@@ -269,11 +294,11 @@ async def test_classifies_transport_timeout_as_retryable_network_error() -> None
     class TimeoutTransport:
         async def get(
             self, url: str, headers: Mapping[str, str], timeout_seconds: float
-        ) -> DirectoryHttpResponse:
+        ) -> StudioV1HttpResponse:
             raise TimeoutError("Studio secret")
 
     directory_client = StudioLoginDirectoryClient(
-        "https://studio.test", StubTokenProvider(), transport=TimeoutTransport()
+        "https://studio.test", StubTokenProvider().get_token, transport=TimeoutTransport()
     )
 
     with pytest.raises(StudioLoginDirectoryClientError) as caught:
@@ -285,7 +310,7 @@ async def test_classifies_transport_timeout_as_retryable_network_error() -> None
 
 
 def test_rejects_base_urls_that_could_change_the_fixed_directory_path() -> None:
-    token_provider = StubTokenProvider()
+    token_provider = StubTokenProvider().get_token
     with pytest.raises(ValueError, match="base_url must be an HTTP origin"):
         StudioLoginDirectoryClient("https://studio.test/prefix", token_provider)
     with pytest.raises(ValueError, match="base_url must be an HTTP origin"):

@@ -4,8 +4,6 @@ Admin-Routes für Session-Management.
 """
 
 import logging
-from datetime import datetime, timezone
-from hashlib import sha256
 from typing import Annotated, Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -14,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from ..audio_storage import AudioVariant
 from ..auth import require_ssf_privileged_user, require_ssf_user
+from ..clock import utc_now
 from ..conversation_service import ConversationService
 from ..dependencies import (
     get_conversation_service,
@@ -24,7 +23,7 @@ from ..dependencies import (
     get_session_manager,
     get_websocket_manager,
 )
-from ..log_safety import sanitize_log_value
+from ..log_safety import safe_session_ref, sanitize_log_value
 from ..message_models import MESSAGE_VALIDATION_RESPONSE
 from ..quality_telemetry import QualityTelemetry
 from ..realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
@@ -228,16 +227,6 @@ async def get_admin_audio(
     return await conversations.audio(key, message_id, variant)
 
 
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _safe_session_ref(session_id: Optional[str]) -> str:
-    if not session_id:
-        return "missing"
-    return sha256(session_id.encode("utf-8")).hexdigest()[:12]
-
-
 def get_client_base_url() -> str:
     """Client Frontend Base URL"""
     import os
@@ -285,7 +274,7 @@ async def create_admin_session(
 
     logger.info(
         "✅ Admin-Session erfolgreich erstellt | %s",
-        sanitize_log_value({"session_ref": _safe_session_ref(session_id)}),
+        sanitize_log_value({"session_ref": safe_session_ref(session_id)}),
     )
     return SessionCreateResponse(
         session_id=session_id,
@@ -387,7 +376,7 @@ async def terminate_session(
 
         logger.info(
             "✅ Session manuell beendet | %s",
-            sanitize_log_value({"session_ref": _safe_session_ref(session_id)}),
+            sanitize_log_value({"session_ref": safe_session_ref(session_id)}),
         )
 
         return JSONResponse(

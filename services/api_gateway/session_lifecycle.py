@@ -9,11 +9,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from hashlib import sha256
 from typing import Any, Optional
 
 from .consent_resolution import resolve_consent
-from .log_safety import sanitize_log_value
+from .log_safety import safe_session_ref, sanitize_log_value
 from .session_manager import TenantSessionManager
 from .session_models import Session, SessionStatus
 from .studio_runtime_client import RuntimeConfiguration, StudioRuntimeClientError
@@ -61,12 +60,6 @@ class TenantConflictError(Exception):
 class Activation:
     session: Session
     already_active: bool
-
-
-def _safe_session_ref(session_id: Optional[str]) -> str:
-    if not session_id:
-        return "missing"
-    return sha256(session_id.encode("utf-8")).hexdigest()[:12]
 
 
 class SessionLifecycleService:
@@ -162,7 +155,7 @@ class SessionLifecycleService:
         if session.status == SessionStatus.TERMINATED:
             logger.warning(
                 "❌ Session bereits beendet | %s",
-                sanitize_log_value({"session_ref": _safe_session_ref(key.session_id)}),
+                sanitize_log_value({"session_ref": safe_session_ref(key.session_id)}),
             )
             raise SessionTerminatedError
 
@@ -187,7 +180,7 @@ class SessionLifecycleService:
             "✅ Session erfolgreich aktiviert | %s",
             sanitize_log_value(
                 {
-                    "session_ref": _safe_session_ref(key.session_id),
+                    "session_ref": safe_session_ref(key.session_id),
                     "customer_language": _logged_language(customer_language),
                 }
             ),
@@ -200,7 +193,7 @@ class SessionLifecycleService:
         if session.customer_language == customer_language:
             logger.info(
                 "ℹ️ Session bereits aktiv - idempotente Antwort | %s",
-                sanitize_log_value({"session_ref": _safe_session_ref(key.session_id)}),
+                sanitize_log_value({"session_ref": safe_session_ref(key.session_id)}),
             )
             return Activation(session=session, already_active=True)
 
@@ -208,7 +201,7 @@ class SessionLifecycleService:
             "🔄 Sprache wird aktualisiert | %s",
             sanitize_log_value(
                 {
-                    "session_ref": _safe_session_ref(key.session_id),
+                    "session_ref": safe_session_ref(key.session_id),
                     "previous_language": _logged_language(session.customer_language),
                     "new_language": _logged_language(customer_language),
                 }

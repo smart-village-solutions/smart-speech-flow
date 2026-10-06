@@ -17,6 +17,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.compose_documents import load_compose
+
 ROOT = Path(__file__).resolve().parents[1]
 ALERTS = ROOT / "monitoring" / "alert_rules.yml"
 PROMETHEUS = ROOT / "monitoring" / "prometheus.yml"
@@ -54,7 +56,7 @@ class TestTheCollectorIsScrapeable:
     )
     def test_the_metrics_port_is_exposed_but_not_published(self, compose):
         """expose, never ports: the collector stays internal to the network."""
-        service = yaml.safe_load((ROOT / compose).read_text())["services"]["otel-collector"]
+        service = load_compose(ROOT / compose)["services"]["otel-collector"]
         assert "8888" in [str(p) for p in service["expose"]]
         assert "ports" not in service
 

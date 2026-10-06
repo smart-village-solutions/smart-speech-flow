@@ -7,7 +7,8 @@ import logging
 from datetime import timedelta
 from typing import Any, Dict, Optional, Protocol
 
-from .realtime_connection import WebSocketConnection, ensure_utc, utc_now
+from .clock import utc_now
+from .realtime_connection import WebSocketConnection, ensure_utc
 from .realtime_protocol import ConnectionState, heartbeat_ping_frame
 from .realtime_registry import ConnectionRegistry
 from .websocket_monitor import DisconnectReason, WebSocketMonitor

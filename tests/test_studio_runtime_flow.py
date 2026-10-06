@@ -15,7 +15,6 @@ from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.dependencies import get_studio_runtime_flow
 from services.api_gateway.studio_runtime_client import (
     RuntimeConfiguration,
-    RuntimeHttpResponse,
     StudioRuntimeClient,
     StudioRuntimeClientError,
 )
@@ -26,6 +25,7 @@ from services.api_gateway.studio_runtime_flow import (
     require_validated_runtime_configuration,
 )
 from services.api_gateway.studio_runtime_token import StudioTokenError
+from services.api_gateway.studio_v1 import StudioV1HttpResponse
 from services.api_gateway.tenant_context import StudioTenantContext
 from services.studio_mock.app import app as studio_mock_app
 
@@ -179,9 +179,9 @@ class MockStudioTransport:
         url: str,
         headers: Mapping[str, str],
         timeout_seconds: float,
-    ) -> RuntimeHttpResponse:
+    ) -> StudioV1HttpResponse:
         response = self.client.get(urlsplit(url).path, headers=dict(headers))
-        return RuntimeHttpResponse(status=response.status_code, payload=response.json())
+        return StudioV1HttpResponse(status=response.status_code, payload=response.json())
 
 
 def _mock_authorization_revision(tenant_id: str) -> str:

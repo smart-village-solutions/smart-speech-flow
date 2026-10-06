@@ -2,21 +2,19 @@ from pathlib import Path
 
 import yaml
 
+from tests.compose_documents import DEVELOPMENT_COMPOSE, PRODUCTION_COMPOSE, load_compose
+
 
 ROOT = Path(__file__).resolve().parents[1]
-COMPOSE_PATH = ROOT / "docker-compose.yml"
-PRODUCTION_COMPOSE_PATH = ROOT / "deploy" / "production" / "docker-compose.production.yml"
 BACKUP_SCRIPT_PATH = ROOT / "scripts" / "backup-production.sh"
 
 
 def _traefik() -> dict[str, object]:
-    compose = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
-    return compose["services"]["traefik"]
+    return load_compose(DEVELOPMENT_COMPOSE)["services"]["traefik"]
 
 
 def _production_traefik() -> dict[str, object]:
-    compose = yaml.safe_load(PRODUCTION_COMPOSE_PATH.read_text(encoding="utf-8"))
-    return compose["services"]["traefik"]
+    return load_compose(PRODUCTION_COMPOSE)["services"]["traefik"]
 
 
 def test_traefik_watches_the_dynamic_configuration_directory() -> None:
@@ -35,9 +33,11 @@ def test_production_traefik_watches_the_dynamic_configuration_directory() -> Non
     assert "../../traefik/dynamic:/etc/traefik/dynamic:ro" in traefik["volumes"]
 
 
-def test_no_compose_file_defines_the_retired_archive_frontend() -> None:
-    production = yaml.safe_load(PRODUCTION_COMPOSE_PATH.read_text(encoding="utf-8"))
-    development = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
+def test_no_compose_file_defines_the_retired_archive_frontend(
+    production_compose: dict, development_compose: dict
+) -> None:
+    production = production_compose
+    development = development_compose
 
     for compose in (production, development):
         assert "frontend-archive" not in compose["services"]

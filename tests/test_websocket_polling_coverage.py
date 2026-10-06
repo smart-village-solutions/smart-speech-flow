@@ -7,9 +7,9 @@ from unittest.mock import Mock
 from prometheus_client import CollectorRegistry, generate_latest
 
 from services.api_gateway import websocket_monitoring_routes as monitoring_routes
+from services.api_gateway.clock import utc_now as monitor_utc_now
 from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket_monitor import DisconnectReason
-from services.api_gateway.websocket_monitor import utc_now as monitor_utc_now
 from tests.realtime_sessions import websocket_monitor
 
 
