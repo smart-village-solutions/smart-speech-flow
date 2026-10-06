@@ -51,10 +51,8 @@ import logging
 import os
 import shutil
 import tempfile
-import wave
 from typing import Any, Dict
 
-import numpy as np
 import torch
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
@@ -93,41 +91,6 @@ TRANSCRIBE_ERROR_RESPONSES = {
     # missing model is a setup fault that a retry cannot fix.
     500: {"description": "ASR model not loaded, or transcription failed"},
 }
-# Whisper large-v3-turbo never predicts its no-speech token, not even for digital
-# silence, and answers silence and noise with " Vielen Dank." / " Thank you." (#498).
-# Only what cannot be speech is kept from it: nothing audible, or a level that never
-# moves (hum, hiss). On gateway-normalised clips the flattest speech measured, a 0.6 s
-# word at 0 dB SNR, moves 5.0 dB and white hiss 0.8 dB. Fluctuating noise (pink,
-# brown, a room) still reaches Whisper: by level alone it overlaps a short noisy word.
-SPEECH_FRAME_SECONDS = 0.03
-AUDIBLE_DBFS = -60.0
-MIN_AUDIBLE_SECONDS = 0.1
-MIN_LEVEL_MOVEMENT_DB = 3.0
-
-
-def _holds_speech(wav_path: str) -> bool:
-    """False only for a mono 16-bit WAV that is inaudible or holds one flat level.
-
-    A file this check cannot read counts as speech, so Whisper still decides.
-    """
-    try:
-        with wave.open(wav_path, "rb") as wav:
-            if wav.getnchannels() != 1 or wav.getsampwidth() != 2 or wav.getframerate() <= 0:
-                return True
-            rate = wav.getframerate()
-            pcm = wav.readframes(wav.getnframes())
-    except (wave.Error, EOFError):
-        return True
-    frame_len = max(1, int(rate * SPEECH_FRAME_SECONDS))
-    samples = np.frombuffer(pcm, dtype=np.int16, count=len(pcm) // 2)
-    count = len(samples) // frame_len
-    if count == 0:
-        return False
-    frames = samples[: count * frame_len].reshape(count, frame_len).astype(np.float32) / 32768
-    level_db = 20 * np.log10(np.maximum(np.sqrt(np.mean(np.square(frames), axis=1)), 1e-5))
-    audible_seconds = np.count_nonzero(level_db > AUDIBLE_DBFS) * frame_len / rate
-    movement_db = level_db.max() - np.percentile(level_db, 10)
-    return bool(audible_seconds >= MIN_AUDIBLE_SECONDS and movement_db >= MIN_LEVEL_MOVEMENT_DB)
 
 
 def _collect_gpu_metrics() -> Dict[str, Any]:
@@ -244,13 +207,8 @@ async def transcribe(
     norm_path = None
     try:
         norm_path = await asyncio.to_thread(normalize_to_wav16k, tmp_path)
-        if await asyncio.to_thread(_holds_speech, norm_path):
-            result = await asyncio.to_thread(model.transcribe, norm_path, language=lang)
-            text = result.get("text", "")
-        else:
-            # An empty transcript is what makes the gateway answer NO_SPEECH_RECOGNIZED.
-            logger.info("No speech in the recording; Whisper skipped")
-            text = ""
+        result = await asyncio.to_thread(model.transcribe, norm_path, language=lang)
+        text = result.get("text", "")
         debug_info["output"] = text
     except Exception as e:
         # Answering with a stand-in text made the gateway translate and speak it.
