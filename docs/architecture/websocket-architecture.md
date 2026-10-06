@@ -11,7 +11,8 @@ The public behaviour is pinned by `tests/gateway_contract/`:
 `test_contract_websocket.py`, `test_contract_realtime_frames.py`,
 `test_contract_heartbeat.py`, `test_contract_message_delivery.py`,
 `test_contract_polling.py`, `test_contract_realtime_tickets.py`,
-`test_contract_realtime_isolation.py` and `test_contract_realtime_metrics.py`.
+`test_contract_realtime_isolation.py`, `test_contract_realtime_metrics.py` and
+`test_contract_realtime_monitoring.py`.
 
 ## Ownership
 
@@ -119,17 +120,60 @@ denials.
 
 ## Monitoring
 
-`WebSocketMonitor` (`websocket_monitor.py`) keeps the app's connection records,
-history and session index, and serves `GET /api/websocket/monitoring/health`.
+`WebSocketMonitor` (`websocket_monitor.py`) keeps the app's live connection
+records and session index, and serves `GET /api/websocket/monitoring/health`.
 It counts into the app's `WebSocketMetrics`, on the registry `/metrics` serves:
 `websocket_connections_total`, `websocket_connections_active`,
 `websocket_disconnects_total`, `websocket_connection_duration_seconds`,
 `websocket_messages_sent_total`, `websocket_messages_received_total`,
 `websocket_message_size_bytes`, `websocket_errors_total`,
 `websocket_heartbeat_latency_seconds`, `websocket_sessions_with_connections`,
-`websocket_connections_per_session`, the broadcast counters,
-`websocket_monitor_initialized` and `websocket_system_info`. #348 decides the
-public, tenant-scoped monitoring surface.
+the broadcast counters, `websocket_monitor_initialized` and
+`websocket_system_info`. `websocket_connections_per_session` is registered and
+exposed but nothing observes it, so it stays empty.
+
+### Monitoring contract
+
+Connection metadata is tenant-scoped and owner-scoped; everything public is an
+aggregate (#348).
+
+| Endpoint | Access | Scope |
+| --- | --- | --- |
+| `GET /api/admin/realtime/connections` | Signed tenant bearer token | Connections of the requesting admin's own sessions in the signed tenant |
+| `GET /api/admin/session/{session_id}/realtime/connections` | Signed tenant bearer token, session owner | That session's connections; another tenant's or a colleague's session answers `404 Session not found` |
+| `GET /api/websocket/monitoring/health` | Public, no authentication | Aggregate counts for the gateway instance, all tenants together |
+| `GET /metrics` | Prometheus scrape | WebSocket families labelled only by client or sender type, direction and reason; no tenant or session label |
+
+Without a token both admin listings answer `401` with `WWW-Authenticate: Bearer`.
+The health endpoint is unauthenticated by decision (2026-09-30) and reports no
+identifier. There is no global connection listing or statistics endpoint:
+`/api/websocket/monitoring/stats` and `/connections` were removed with the
+tenant-isolation migration and answer `404`.
+
+Response bodies:
+
+- `GET /api/admin/realtime/connections`: `{"connections": [...], "count": n}`.
+- `GET /api/admin/session/{session_id}/realtime/connections`:
+  `{"session_id": ..., "connections": [...], "count": n}`.
+- A WebSocket row carries `transport: "websocket"`, `client_type`, `session_id`,
+  `connected_at`, `last_heartbeat`, `state`, `reconnect_count`, `is_mobile`,
+  `tab_active`, `battery_level`, `network_quality`, `current_polling_interval`,
+  `is_alive` and `client_info`. A polling row carries `transport: "polling"`,
+  `polling_id`, `session_id`, `client_type`, `queued_messages` and `terminated`.
+- `GET /api/websocket/monitoring/health`: `{"status": "success", "data": {...},
+  "timestamp": ...}`, where `data` holds exactly `status` (`healthy` or
+  `degraded`), `active_connections`, `healthy_connections`, `stale_connections`,
+  `sessions_with_connections`, `monitoring_active` and `last_check`. A
+  connection counts as healthy or stale only once it has answered a heartbeat,
+  so a socket that has not yet answered one appears in `active_connections`
+  alone. The route answers `200` while no connection is stale and `503` with
+  `data.status` `degraded` once one is; the top-level `status` reads `success`
+  in both cases.
+
+`test_contract_realtime_monitoring.py`, `test_contract_websocket.py`,
+`test_contract_admin_rest.py` and `test_contract_metrics_surface.py` pin this
+contract, including the cross-tenant denials;
+`tests/test_owner_scoped_session_access.py` pins the colleague denials.
 
 ## Troubleshooting
 

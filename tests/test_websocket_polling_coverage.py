@@ -36,7 +36,8 @@ def test_monitor_tracks_connection_lifecycle_and_health():
     assert closed.messages_sent == 1
     assert closed.messages_received == 1
     assert closed.errors == 1
-    assert monitor.get_connection_stats()["total_historical_connections"] == 1
+    assert monitor.get_health_status()["active_connections"] == 0
+    assert monitor.get_health_status()["sessions_with_connections"] == 0
 
 
 def test_websocket_prometheus_metrics_have_no_session_label():

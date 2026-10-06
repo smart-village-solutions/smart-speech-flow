@@ -121,7 +121,10 @@ capability or a bearer token of the same tenant.
   `GET /api/feedback`, `GET /api/feedback/{feedback_id}`.
 - Health and operations: `GET /health`, `GET /metrics`, `/api/health/*`,
   `/api/admin/circuit-breakers/*`, `POST /api/admin/telemetry/probe` and
-  `GET /api/websocket/monitoring/health`.
+  `GET /api/websocket/monitoring/health`, which is public and reports only
+  aggregate counts. Connection metadata is served only by the admin
+  `realtime/connections` routes above; see the monitoring contract in
+  `docs/architecture/websocket-architecture.md`.
 - Language lists: `GET /api/languages/supported` and its alias `GET /languages`.
 
 `tests/gateway_contract/snapshots/openapi.json` is the complete, pinned

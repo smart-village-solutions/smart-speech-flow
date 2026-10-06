@@ -188,8 +188,6 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
         "boundary",
         "boundary",
     ],
-    # "unknown" for an unparsable origin
-    ("services/api_gateway/websocket_monitor.py", "WebSocketMonitor._extract_domain"): ["fallback"],
     # one failed cleanup pass must not end the loop
     ("services/api_gateway/websocket_monitor.py", "WebSocketMonitor.periodic_cleanup"): [
         "boundary"

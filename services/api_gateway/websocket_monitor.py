@@ -272,7 +272,7 @@ class WebSocketMetrics:
 
 
 class WebSocketMonitor:
-    """One app's view of its WebSocket connections: live records, history and sessions.
+    """One app's view of its WebSocket connections: live records and sessions.
 
     `build_gateway_dependencies` builds one per app, with the app's realtime
     series and the pseudonymizer the app's session manager also uses, so a
@@ -283,12 +283,7 @@ class WebSocketMonitor:
         self.metrics = metrics
         self._pseudonymizer = pseudonymizer
         self._active_connections: Dict[str, ConnectionMetrics] = {}
-        self._connection_history: List[ConnectionMetrics] = []
         self._session_connections: Dict[TenantSessionKey, Set[str]] = defaultdict(set)
-
-        # Performance tracking
-        self._performance_samples: List[Dict[str, Any]] = []
-        self._max_history_size = 10000
 
     @property
     def pseudonymizer(self) -> SessionPseudonymizer:
@@ -351,10 +346,6 @@ class WebSocketMonitor:
         self.metrics.disconnects_total.labels(
             client_type=metrics.client_type, disconnect_reason=reason.value
         ).inc()
-
-        # Add to history
-        self._connection_history.append(metrics)
-        self._trim_history()
 
         logger.info(
             "websocket_connection_closed",
@@ -504,43 +495,6 @@ class WebSocketMonitor:
             if conn_id in self._active_connections
         ]
 
-    def get_connection_stats(self) -> Dict[str, Any]:
-        """Get comprehensive connection statistics"""
-        active_connections = list(self._active_connections.values())
-        by_client_type: Dict[str, int] = {}
-        by_session: Dict[TenantSessionKey, int] = {}
-
-        stats: Dict[str, Any] = {
-            "active_connections": len(active_connections),
-            "sessions_with_connections": len(self._session_connections),
-            "total_historical_connections": len(self._connection_history),
-            "connections_by_client_type": by_client_type,
-            "connections_by_session": by_session,
-            "average_connection_duration": 0,
-            "message_throughput": {"sent_per_second": 0, "received_per_second": 0},
-        }
-
-        # Group by client type
-        for metrics in active_connections:
-            client_type = metrics.client_type
-            by_client_type[client_type] = by_client_type.get(client_type, 0) + 1
-
-        # Group by session
-        for session_id, connection_ids in self._session_connections.items():
-            by_session[session_id] = len(connection_ids)
-
-        # Calculate average duration from history
-        if self._connection_history:
-            durations = [
-                conn.connection_duration
-                for conn in self._connection_history
-                if conn.connection_duration is not None
-            ]
-            if durations:
-                stats["average_connection_duration"] = sum(durations) / len(durations)
-
-        return stats
-
     def get_health_status(self) -> Dict[str, Any]:
         """Get WebSocket system health status"""
         now = utc_now()
@@ -564,29 +518,6 @@ class WebSocketMonitor:
             "monitoring_active": True,
             "last_check": now.isoformat(),
         }
-
-    def _extract_domain(self, origin: str) -> str:
-        """Extract domain from origin URL"""
-        try:
-            if "://" in origin:
-                domain = origin.split("://")[1]
-            else:
-                domain = origin
-
-            # Remove port if present
-            if ":" in domain:
-                domain = domain.split(":")[0]
-
-            return domain
-        except Exception:
-            return "unknown"
-
-    def _trim_history(self) -> None:
-        """Trim connection history to prevent memory growth"""
-        if len(self._connection_history) > self._max_history_size:
-            # Keep most recent entries
-            excess = len(self._connection_history) - self._max_history_size
-            self._connection_history = self._connection_history[excess:]
 
     def _purge_orphaned_records(self, live_connection_ids: Iterable[str]) -> List[str]:
         live = set(live_connection_ids)
