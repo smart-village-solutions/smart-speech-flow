@@ -148,9 +148,9 @@ httpx==0.28.1 \
     # via
     #   -r requirements.in
     #   huggingface-hub
-huggingface-hub==1.24.0 \
-    --hash=sha256:18431ff4daae0749aa9ba102fc952e314c98e1d30ebdec5319d85ca0a83e1ae5 \
-    --hash=sha256:6ed4120a84a6beec900640aa7e346bd766a6b7341e41526fef5dc8bd81fb7d59
+huggingface-hub==1.32.0 \
+    --hash=sha256:b0c7c80561969d9cdacdd55fce67ba9584cca0b9d4ea80957a3a5c1445fac5c8 \
+    --hash=sha256:ed70a45498abe86039df7c2f4e5f7575de524be908d3840e8f828d5525eafd6a
     # via
     #   tokenizers
     #   transformers
@@ -1063,9 +1063,9 @@ tqdm==4.69.0 \
     #   huggingface-hub
     #   sacremoses
     #   transformers
-transformers==5.17.0 \
-    --hash=sha256:78ec1ce21579b38dfb83950a0658cd119f87212a2fcfdff478096ce9d6c03801 \
-    --hash=sha256:a153be279169b55b92d8000bf4af294aed684503d091cca7804da2dd8a9de000
+transformers==5.18.0 \
+    --hash=sha256:d79e5a515a572ee3deb33eb0d578be47d91e70c75d54cf21bf6eede6edef14a9 \
+    --hash=sha256:d89c206e42e841af7cd314b3d2b21c03e977d819cdb4aef65ada048769a644df
     # via -r requirements.in
 triton==3.8.0 \
     --hash=sha256:1b84e7d512490ba529111260fa6f7cad8b254a6bb5fbdf41d5ef9a5e57f52d0a \
