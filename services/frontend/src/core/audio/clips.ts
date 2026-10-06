@@ -1,4 +1,5 @@
 import type { AxiosInstance } from 'axios';
+import type { AudioOutput } from './audio-output';
 import { BAR_COUNT } from './waveform';
 import { peaksFromSamples } from './levels';
 
@@ -83,25 +84,12 @@ export function createClipLoader(deps: ClipLoaderDeps): ClipLoader {
   };
 }
 
-/** The real thing: fetch, decode through Web Audio, keep the bytes as a blob. */
-export function createBrowserClipLoader(http: AxiosInstance): ClipLoader {
-  let context: AudioContext | null = null;
-
-  const audioContext = (): AudioContext => {
-    if (context === null) {
-      const browser = globalThis as unknown as {
-        AudioContext?: typeof AudioContext;
-        webkitAudioContext?: typeof AudioContext;
-      };
-      const Constructor = browser.AudioContext ?? browser.webkitAudioContext;
-      if (!Constructor) {
-        throw new Error('Web Audio is unavailable');
-      }
-      context = new Constructor();
-    }
-    return context;
-  };
-
+/**
+ * The real thing: fetch, decode through Web Audio, keep the bytes as a blob.
+ * Decodes on the shared output's context rather than opening one of its own;
+ * playback uses that same context, the one a gesture unlocks.
+ */
+export function createBrowserClipLoader(http: AxiosInstance, output: AudioOutput): ClipLoader {
   return createClipLoader({
     fetchBytes: async (url) => {
       const response = await http.get<ArrayBuffer>(url, {
@@ -113,7 +101,7 @@ export function createBrowserClipLoader(http: AxiosInstance): ClipLoader {
     // decodeAudioData detaches the buffer it is given, so it gets a copy —
     // otherwise the bytes would be gone before the blob could be made.
     decode: async (bytes) => {
-      const decoded = await audioContext().decodeAudioData(bytes.slice(0));
+      const decoded = await output.context().decodeAudioData(bytes.slice(0));
       return decoded.getChannelData(0);
     },
 

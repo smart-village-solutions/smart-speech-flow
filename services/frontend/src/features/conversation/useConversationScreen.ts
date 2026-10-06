@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import { usePlayback } from '@/app/providers/playback';
 import type { ClientRole } from '@/core/roles';
 import { useAudioRecorder } from '@/core/audio/useAudioRecorder';
@@ -55,8 +55,21 @@ export function useConversationScreen(sessionId: string, role: ClientRole) {
       void sendAudio(wav);
     },
     // Not a failed send: nothing left the device, so there is nothing to repeat.
-    onError: () => dispatch({ type: 'error/raised', errorKey: 'conversation.micDenied' }),
+    onError: () => {
+      playback.release();
+      dispatch({ type: 'error/raised', errorKey: 'conversation.micDenied' });
+    },
   });
+
+  // Playback is held before the microphone is asked for, not once it is open:
+  // a clip still sounding keeps the iOS audio session in playback, which can
+  // stop WebKit switching to play-and-record for the recording.
+  const startRecording = recorder.start;
+  const { hold } = playback;
+  const holdThenRecord = useCallback(() => {
+    hold();
+    return startRecording();
+  }, [hold, startRecording]);
 
   const isTyping = state.composer === 'typing';
   const isRecording = recorder.phase === 'recording';
@@ -69,7 +82,7 @@ export function useConversationScreen(sessionId: string, role: ClientRole) {
     ended: state.ended,
     isTyping,
     isRecording,
-    recorder,
+    recorder: { ...recorder, start: holdThenRecord },
     composerRef,
     bottom,
     dispatch,

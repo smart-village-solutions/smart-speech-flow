@@ -46,7 +46,9 @@ function LocalisedProviders({ children, config }: Readonly<Props>) {
           <ThemeProvider>
             <BrandProvider source={services.brand}>
               <FeedbackProvider>
-                <PlaybackProvider clips={services.clips}>{children}</PlaybackProvider>
+                <PlaybackProvider output={services.audio} clips={services.clips}>
+                  {children}
+                </PlaybackProvider>
               </FeedbackProvider>
             </BrandProvider>
           </ThemeProvider>
