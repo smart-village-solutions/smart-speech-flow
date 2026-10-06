@@ -174,7 +174,7 @@ Content-Type: application/json
 
 ## 5. Echtzeitkommunikation per WebSocket
 
-- Verbindungs-URL: `wss://ssf.smart-village.solutions/ws/{sessionId}/{clientType}` (empfohlen) oder `wss://translate.smart-village.solutions/ws/{sessionId}/{clientType}` (via Frontend-Reverse-Proxy)
+- Verbindungs-URL: `wss://api.dialog.kassel.de/ws/{sessionId}/{clientType}` (empfohlen) oder `wss://translate.smart-village.solutions/ws/{sessionId}/{clientType}` (via Frontend-Reverse-Proxy)
   - `clientType` = `admin` oder `customer`.
   - Bei ungültiger Session oder falschem Typ schließt der Server die Verbindung.
 
@@ -354,7 +354,7 @@ class WebSocketClient {
   async connect() {
     try {
       // WebSocket versuchen
-      const wsUrl = `wss://ssf.smart-village.solutions/ws/${this.sessionId}/${this.clientType}`;
+      const wsUrl = `wss://api.dialog.kassel.de/ws/${this.sessionId}/${this.clientType}`;
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onmessage = (event) => {
@@ -491,7 +491,7 @@ function getOriginalAudio(metadata: PipelineMetadata): string | null {
 const originalUrl = getOriginalAudio(message.pipeline_metadata);
 if (originalUrl) {
   // Zeige "Original anhören" Button
-  audioPlayer.src = `https://ssf.smart-village.solutions${originalUrl}`;
+  audioPlayer.src = `https://api.dialog.kassel.de${originalUrl}`;
 }
 ```
 

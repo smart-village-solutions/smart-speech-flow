@@ -1,8 +1,9 @@
 # Frontend Smoke Tests
 
 Run these after every frontend or gateway deployment. The production frontend
-is served at `https://dialog.kassel.de` and the API at
-`https://ssf.smart-village.solutions`.
+is served at `https://dialog.kassel.de`. During the hostname transition, the API
+is available at both `https://ssf.smart-village.solutions` and
+`https://api.dialog.kassel.de`.
 
 Staff screens are in German; each step names the English label with the German
 one in brackets. Customer screens follow the language the customer picks.
@@ -19,14 +20,15 @@ source scripts/lib/production-common.sh
 curl -sI https://dialog.kassel.de | head -1          # HTTP/2 200
 curl -s https://dialog.kassel.de/health              # healthy
 
-# Gateway language list
+# Gateway language list (new hostname and temporary legacy alias)
+curl -s https://api.dialog.kassel.de/api/languages/supported | jq '.languages | keys'
 curl -s https://ssf.smart-village.solutions/api/languages/supported | jq '.languages | keys'
 
 # Administrative API refuses anything but a bearer token (both print 401)
 curl -s -o /dev/null -w '%{http_code}\n' \
-  https://ssf.smart-village.solutions/api/admin/session/history
+  https://api.dialog.kassel.de/api/admin/session/history
 curl -s -o /dev/null -w '%{http_code}\n' -H 'X-SSF-Legacy-Access: any' \
-  https://ssf.smart-village.solutions/api/admin/session/history
+  https://api.dialog.kassel.de/api/admin/session/history
 
 # Containers
 production_compose ps frontend api_gateway

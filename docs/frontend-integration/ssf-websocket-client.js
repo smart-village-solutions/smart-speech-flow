@@ -36,7 +36,7 @@ class SSFWebSocketClient {
         this.options = {
             // Connection settings
             protocol: typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:',
-            host: options.host || 'ssf.smart-village.solutions',
+            host: options.host || 'api.dialog.kassel.de',
 
             // Reconnection settings
             reconnectAttempts: options.reconnectAttempts || 5,
@@ -85,7 +85,7 @@ class SSFWebSocketClient {
      * Test WebSocket connection compatibility before connecting
      * @returns {Promise<Object>} Compatibility test result
      */
-    static async testCompatibility(host = 'ssf.smart-village.solutions') {
+    static async testCompatibility(host = 'api.dialog.kassel.de') {
         try {
             const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'https:' : 'http:';
             const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';

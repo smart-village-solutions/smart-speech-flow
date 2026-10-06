@@ -65,8 +65,8 @@ Das Frontend spricht gegen das API Gateway und nutzt insbesondere:
 Die wichtigsten Umgebungsvariablen sind:
 
 ```env
-VITE_API_BASE_URL=https://ssf.smart-village.solutions
-VITE_WS_BASE_URL=wss://ssf.smart-village.solutions
+VITE_API_BASE_URL=https://api.dialog.kassel.de
+VITE_WS_BASE_URL=wss://api.dialog.kassel.de
 ```
 
 Im Docker-Betrieb werden diese Werte ueber `docker-compose.yml` gesetzt.

@@ -24,8 +24,8 @@ Vollständiger Leitfaden für die Integration externer Frontend-Anwendungen mit 
 
 ```javascript
 // Produktionsumgebung (empfohlen)
-const API_BASE = 'https://ssf.smart-village.solutions';
-const WS_BASE = 'wss://ssf.smart-village.solutions';
+const API_BASE = 'https://api.dialog.kassel.de';
+const WS_BASE = 'wss://api.dialog.kassel.de';
 
 // Alternative über Frontend-Proxy
 const API_BASE_ALT = 'https://translate.smart-village.solutions';
@@ -85,7 +85,7 @@ await client.connect();
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Traefik (SSL/TLS)                        │
-│          https://ssf.smart-village.solutions                │
+│          https://api.dialog.kassel.de                │
 └─────────────────────┬───────────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
@@ -259,7 +259,7 @@ class SSFWebSocketClient {
     this.sessionId = sessionId;
     this.clientType = clientType;
     this.options = {
-      baseUrl: options.baseUrl || 'https://ssf.smart-village.solutions',
+      baseUrl: options.baseUrl || 'https://api.dialog.kassel.de',
       enableFallback: options.enableFallback !== false,
       maxRetries: options.maxRetries || 3,
       pollingInterval: options.pollingInterval || 5000,
@@ -559,7 +559,7 @@ class SSFWebSocketClient {
 ```javascript
 // Client initialisieren
 const client = new SSFWebSocketClient('session-123', 'customer', {
-  baseUrl: 'https://ssf.smart-village.solutions',
+  baseUrl: 'https://api.dialog.kassel.de',
   enableFallback: true,
   debug: true,
   pollingInterval: 3000 // 3 Sekunden für schnellere Updates
@@ -619,7 +619,7 @@ const useSSFWebSocket = (sessionId, clientType, options = {}) => {
     if (!sessionId || !clientType) return;
 
     const ssfClient = new SSFWebSocketClient(sessionId, clientType, {
-      baseUrl: 'https://ssf.smart-village.solutions',
+      baseUrl: 'https://api.dialog.kassel.de',
       enableFallback: true,
       debug: process.env.NODE_ENV === 'development',
       ...options
@@ -712,7 +712,7 @@ function ChatComponent({ sessionId }) {
           <div key={index} className="message">
             <strong>{msg.sender}:</strong> {msg.text}
             {msg.audio_available && (
-              <audio controls src={`https://ssf.smart-village.solutions${msg.audio_url}`} />
+              <audio controls src={`https://api.dialog.kassel.de${msg.audio_url}`} />
             )}
           </div>
         ))}
@@ -738,7 +738,7 @@ export const useSSFWebSocket = (sessionId, clientType, options = {}) => {
     if (!sessionId.value || !clientType.value) return;
 
     const ssfClient = new SSFWebSocketClient(sessionId.value, clientType.value, {
-      baseUrl: 'https://ssf.smart-village.solutions',
+      baseUrl: 'https://api.dialog.kassel.de',
       enableFallback: true,
       debug: process.env.NODE_ENV === 'development',
       ...options
@@ -822,7 +822,7 @@ export const useSSFWebSocket = (sessionId, clientType, options = {}) => {
 // Erste Diagnose bei Problemen
 async function diagnoseConnection(origin = window.location.origin) {
   try {
-    const response = await fetch('https://ssf.smart-village.solutions/api/websocket/debug/connection-test', {
+    const response = await fetch('https://api.dialog.kassel.de/api/websocket/debug/connection-test', {
       headers: { 'Origin': origin }
     });
 
@@ -880,7 +880,7 @@ window.debugSSF = {
   },
 
   testWebSocket: (sessionId = 'TEST123') => {
-    const ws = new WebSocket(`wss://ssf.smart-village.solutions/ws/${sessionId}/customer`);
+    const ws = new WebSocket(`wss://api.dialog.kassel.de/ws/${sessionId}/customer`);
     ws.onopen = () => console.log('✅ WebSocket OK');
     ws.onerror = (e) => console.log('❌ WebSocket Error:', e);
     ws.onclose = (e) => console.log('WebSocket Closed:', e.code, e.reason);
@@ -920,7 +920,7 @@ async function testSessionWorkflow() {
   try {
     // 1. Admin-Session erstellen
     console.log('1️⃣ Erstelle Admin-Session...');
-    const createResponse = await fetch('https://ssf.smart-village.solutions/api/admin/session/create', {
+    const createResponse = await fetch('https://api.dialog.kassel.de/api/admin/session/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
@@ -934,13 +934,13 @@ async function testSessionWorkflow() {
 
     // 2. Session-Status prüfen
     console.log('2️⃣ Prüfe Session-Status...');
-    const statusResponse = await fetch(`https://ssf.smart-village.solutions/api/session/${sessionData.session_id}`);
+    const statusResponse = await fetch(`https://api.dialog.kassel.de/api/session/${sessionData.session_id}`);
     const status = await statusResponse.json();
     console.log('✅ Session-Status:', status);
 
     // 3. Customer-Aktivierung (optional)
     console.log('3️⃣ Aktiviere Customer-Session...');
-    const activateResponse = await fetch('https://ssf.smart-village.solutions/api/customer/session/activate', {
+    const activateResponse = await fetch('https://api.dialog.kassel.de/api/customer/session/activate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -993,8 +993,8 @@ const getSSFConfig = () => {
   // Produktionsumgebungen
   if (hostname.includes('smart-village.solutions')) {
     return {
-      apiBase: 'https://ssf.smart-village.solutions',
-      wsBase: 'wss://ssf.smart-village.solutions',
+      apiBase: 'https://api.dialog.kassel.de',
+      wsBase: 'wss://api.dialog.kassel.de',
       environment: 'production'
     };
   }
@@ -1002,8 +1002,8 @@ const getSSFConfig = () => {
   // Figma-Prototypen
   if (hostname.includes('figma.site')) {
     return {
-      apiBase: 'https://ssf.smart-village.solutions',
-      wsBase: 'wss://ssf.smart-village.solutions',
+      apiBase: 'https://api.dialog.kassel.de',
+      wsBase: 'wss://api.dialog.kassel.de',
       environment: 'figma'
     };
   }
@@ -1296,7 +1296,7 @@ class SSFIntegrationTest {
 
 // Tests ausführen
 const integrationTest = new SSFIntegrationTest({
-  apiBase: 'https://ssf.smart-village.solutions'
+  apiBase: 'https://api.dialog.kassel.de'
 });
 
 integrationTest.runAllTests().then(results => {

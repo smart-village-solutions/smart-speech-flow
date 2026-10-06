@@ -2,9 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { resolveApiUrl } from '@/core/http/url';
 
 describe('resolveApiUrl', () => {
-  // In production the SPA is served from translate.smart-village.solutions and
-  // the gateway from ssf.smart-village.solutions, so a gateway path left
-  // relative is fetched from the SPA origin, where no audio exists.
+  // In production the gateway has its own origin at api.dialog.kassel.de, so
+  // a gateway path left relative is fetched from the SPA origin, where no audio exists.
   it('puts a gateway path on the api origin', () => {
     expect(
       resolveApiUrl(

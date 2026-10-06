@@ -192,7 +192,7 @@ services:
         condition: service_started
     labels:
     - traefik.enable=true
-    - traefik.http.routers.api_gateway.rule=Host(`ssf.smart-village.solutions`)
+    - traefik.http.routers.api_gateway.rule=Host(`ssf.smart-village.solutions`) || Host(`api.dialog.kassel.de`)
     - traefik.http.routers.api_gateway.entrypoints=websecure
     - traefik.http.routers.api_gateway.tls.certresolver=le
     - traefik.http.services.api_gateway.loadbalancer.server.port=8000
@@ -421,7 +421,7 @@ services:
     - traefik.http.services.frontend.loadbalancer.server.port=8080
     - traefik.docker.network=ssf-backend_default
     restart: unless-stopped
-    image: ssf-backend-frontend:prod-682c142
+    image: ssf-backend-frontend:prod-api-dialog-20261006
     pull_policy: never
   prometheus:
     image: prom/prometheus@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996

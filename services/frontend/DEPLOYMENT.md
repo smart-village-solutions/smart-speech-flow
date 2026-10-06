@@ -42,8 +42,8 @@ client ID. These values are public browser configuration, not credentials:
 
 ```bash
 docker build \
-  --build-arg VITE_API_BASE_URL=https://ssf.smart-village.solutions \
-  --build-arg VITE_WS_BASE_URL=wss://ssf.smart-village.solutions \
+  --build-arg VITE_API_BASE_URL=https://api.dialog.kassel.de \
+  --build-arg VITE_WS_BASE_URL=wss://api.dialog.kassel.de \
   --build-arg VITE_KEYCLOAK_URL=https://auth.dialog.kassel.de \
   --build-arg VITE_KEYCLOAK_CLIENT_ID=ssf-frontend \
   -f services/frontend/Dockerfile \
@@ -140,8 +140,10 @@ Das Frontend ist konfiguriert für:
 ### 5. Backend Connectivity
 
 Frontend kommuniziert mit:
-- **API**: `https://ssf.smart-village.solutions/api/*`
-- **WebSocket**: `wss://ssf.smart-village.solutions/ws/*`
+- **API**: `https://api.dialog.kassel.de/api/*`; the legacy host remains
+  available at `https://ssf.smart-village.solutions/api/*` during the transition
+- **WebSocket**: `wss://api.dialog.kassel.de/ws/*`; the legacy host remains
+  available at `wss://ssf.smart-village.solutions/ws/*` during the transition
 
 Stelle sicher, dass Backend (api_gateway) läuft:
 ```bash
