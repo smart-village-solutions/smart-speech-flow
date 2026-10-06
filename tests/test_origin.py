@@ -55,3 +55,15 @@ def test_require_https_rejects_plain_http() -> None:
 def test_keep_default_port_preserves_an_explicit_port() -> None:
     assert parse_origin("https://Auth.Test:443", keep_default_port=True) == "https://auth.test:443"
     assert parse_origin("https://auth.test", keep_default_port=True) == "https://auth.test"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected", "keycloak"),
+    [
+        ("https://auth.test:0443", "https://auth.test", "https://auth.test:443"),
+        ("https://auth.test:", "https://auth.test", "https://auth.test"),
+    ],
+)
+def test_ports_are_rendered_from_their_number(value: str, expected: str, keycloak: str) -> None:
+    assert parse_origin(value) == expected
+    assert parse_origin(value, keep_default_port=True) == keycloak

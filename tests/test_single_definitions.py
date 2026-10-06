@@ -25,3 +25,13 @@ def test_helper_is_defined_once(name: str, home: str) -> None:
         if "tests" not in path.parts and pattern.search(path.read_text(encoding="utf-8"))
     )
     assert definitions == [home]
+
+
+def test_session_references_are_hashed_in_one_place() -> None:
+    """Copies of `safe_session_ref` hid under other names (`_safe_identifier`, `safe_identifier`)."""
+    hashing = sorted(
+        str(path.relative_to(GATEWAY))
+        for path in GATEWAY.rglob("*.py")
+        if "tests" not in path.parts and ".hexdigest()[:12]" in path.read_text(encoding="utf-8")
+    )
+    assert hashing == ["log_safety.py"]

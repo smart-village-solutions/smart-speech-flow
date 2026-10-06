@@ -6,6 +6,11 @@ frontend origin feeds CORS and WebSocket checks, while Keycloak and Studio are
 also reached over plain HTTP inside the local stack. `keep_default_port`: the
 Keycloak origin becomes the token issuer, which is compared verbatim, so an
 explicit `:443` must survive.
+
+Narrower than some of the old copies: Keycloak and Studio now also reject a
+`*` and whitespace, and a port is rendered from its number, so `:0443` becomes
+`:443` (or is dropped) and an empty `host:` port is dropped. None of these
+could have matched a token issuer or reached a server before.
 """
 
 from urllib.parse import urlsplit

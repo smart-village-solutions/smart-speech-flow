@@ -20,9 +20,9 @@ from fastapi import APIRouter, Depends, Header, WebSocket, WebSocketDisconnect
 from .client_origin import configured_client_origin
 from .clock import utc_now
 from .dependencies import get_realtime_ticket_store, get_session_manager, get_websocket_manager
-from .log_safety import sanitize_log_value
+from .log_safety import safe_session_ref, sanitize_log_value
 from .realtime_client_status import AdaptivePollingManager, ClientStatusHandler
-from .realtime_connection import WebSocketConnection, safe_identifier
+from .realtime_connection import WebSocketConnection
 from .realtime_dispatch import BroadcastDispatcher, BroadcastResult
 from .realtime_heartbeat import Heartbeat
 from .realtime_protocol import (
@@ -269,7 +269,7 @@ class WebSocketManager:
         origin = client_info.get("origin") if client_info else None
         self.monitor.connection_established(
             connection_id=connection_id,
-            session_id=safe_identifier(public_session_id),
+            session_id=safe_session_ref(public_session_id),
             client_type=client_type.value,
             origin=origin,
             resource_key=session_id,
@@ -288,7 +288,7 @@ class WebSocketManager:
         logger.info(
             "websocket_connected tenant_ref=%s session_ref=%s client_type=%s",
             session_id.tenant_ref,
-            safe_identifier(public_session_id),
+            safe_session_ref(public_session_id),
             client_type.value,
         )
 
@@ -349,7 +349,7 @@ class WebSocketManager:
         public_session_id = session_id.session_id
         logger.info(
             "websocket_session_terminating session_ref=%s connections=%d",
-            safe_identifier(public_session_id),
+            safe_session_ref(public_session_id),
             len(connections),
         )
 
@@ -368,7 +368,7 @@ class WebSocketManager:
 
         logger.info(
             "websocket_session_terminated session_ref=%s",
-            safe_identifier(public_session_id),
+            safe_session_ref(public_session_id),
         )
 
     async def broadcast_to_session(
