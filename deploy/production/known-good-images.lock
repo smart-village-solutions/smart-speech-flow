@@ -1,15 +1,16 @@
-# Updated on 2026-10-06 for frontend, built on the host from merged main
-# 682c142 (#532); on 2026-10-06 for api_gateway, tts and keycloak, built on
-# the host from merged main e2a4e45 (#426, #428, #432, #346); on 2026-10-01
-# for asr and translation, built on the host from merged main 42b69b7
-# (#230); on 2026-09-23 for vllm; remaining entries were captured on
-# 2026-09-01 or later.
+# Updated on 2026-10-06 for api_gateway, built on the host from merged main
+# 81f6e5f (#348); on 2026-10-06 for frontend, built on the host from merged
+# main 682c142 (#532); on 2026-10-06 for tts and keycloak, built on the host
+# from merged main e2a4e45 (#426, #428, #432, #346); on 2026-10-01 for asr
+# and translation, built on the host from merged main 42b69b7 (#230); on
+# 2026-09-23 for vllm; remaining entries were captured on 2026-09-01 or
+# later.
 # The frontend-archive row was removed on 2026-09-30: retired from
 # production in #360 and from development Compose in #480.
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
-api_gateway	sha256:c4da6aca5e14afc13a05e5592c487c1cbbec89bc28f3316578f49af1ca208361	ssf-backend-api_gateway:prod-e2a4e45
+api_gateway	sha256:383c480097fe0dd4c5d1daabf7104a244f53a406eb68dbb68ad9bce746573b6c	ssf-backend-api_gateway:prod-81f6e5f
 asr	sha256:a87eebfbbdba2328736002b2bf6d88783246545e270d5d572198cc2a302a7b08	ssf-backend-asr:prod-42b69b7
 translation	sha256:da56f999edd1d42dc65eb7bd73b7bee7c98c8060e9cdfca5ee4f542a640dbff1	ssf-backend-translation:prod-42b69b7
 tts	sha256:ff1d15b4f48a81ce6d1ae8f4ca7d1a76e46e214c80c406bafefe7ab1900be5e5	ssf-backend-tts:prod-e2a4e45
