@@ -224,7 +224,7 @@ def _service_auth_error(
     )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class _RuntimeRequest:
     authorization: str | None
     tenant_id: str | None
@@ -246,13 +246,13 @@ def _runtime_request(
 ) -> _RuntimeRequest:
     """Collect the runtime contract's headers once for both contract versions."""
     return _RuntimeRequest(
-        authorization,
-        x_studio_tenant_id,
-        x_correlation_id,
-        x_studio_instance_id,
-        x_tenant_id,
-        x_mock_scenario,
-        bool(request.url.query),
+        authorization=authorization,
+        tenant_id=x_studio_tenant_id,
+        correlation_id=x_correlation_id,
+        instance_id=x_studio_instance_id,
+        legacy_tenant_id=x_tenant_id,
+        scenario=x_mock_scenario,
+        has_query=bool(request.url.query),
     )
 
 

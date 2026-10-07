@@ -179,3 +179,62 @@ def test_unknown_scenarios_serve_the_plain_body() -> None:
     assert fixtures.installation_content_v2("storage-disabled") == (
         fixtures.installation_content_v2(None)
     )
+
+
+def _kassel_with_guest_languages(monkeypatch: pytest.MonkeyPatch, languages: list[dict]) -> None:
+    template = fixtures.runtime_configuration_v2("tenant-kassel", None)
+    del template["configurationRevision"]
+    template["guestLanguages"] = languages
+    monkeypatch.setitem(fixtures._RUNTIME, "tenant-kassel", template)
+
+
+def test_invalid_content_replaces_an_explicit_null_guest_form(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    languages = fixtures.runtime_configuration_v2("tenant-kassel", None)["guestLanguages"]
+    languages[0]["feedback"] = None
+    _kassel_with_guest_languages(monkeypatch, languages)
+
+    body = fixtures.runtime_configuration_v2("tenant-kassel", "invalid-content")
+    read = parse_runtime_configuration_v2(body, expected_tenant_id="tenant-kassel")
+
+    assert body["guestLanguages"][0]["feedback"]["questions"] == [fixtures.UNSUPPORTED_QUESTION]
+    assert [language.locale for language in read.content.guest_languages] == [
+        "tr",
+        "ar",
+        "kmr",
+        "pt-BR",
+    ]
+
+
+def test_invalid_content_without_guest_languages_serves_the_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _kassel_with_guest_languages(monkeypatch, [])
+
+    body = fixtures.runtime_configuration_v2("tenant-kassel", "invalid-content")
+
+    assert body["guestLanguages"] == []
+    assert body["conversationContentStorage"] == {"mode": "ask", "retentionHours": 4320}
+
+
+def _write_runtime(directory, file_tenant: str, body_tenant: str) -> None:
+    body = {"contractVersion": "2.0", "tenant": {"id": body_tenant}}
+    (directory / f"runtime-{file_tenant}.json").write_text(json.dumps(body), encoding="utf-8")
+
+
+def test_runtime_templates_are_keyed_by_the_tenant_id_in_the_body(tmp_path) -> None:
+    _write_runtime(tmp_path, "tenant-a", "tenant-a")
+    _write_runtime(tmp_path, "tenant-b", "tenant-b")
+
+    templates = fixtures.load_runtime_templates(tmp_path)
+
+    assert sorted(templates) == ["tenant-a", "tenant-b"]
+    assert templates["tenant-a"]["tenant"]["id"] == "tenant-a"
+
+
+def test_a_runtime_fixture_named_after_another_tenant_fails_at_load(tmp_path) -> None:
+    _write_runtime(tmp_path, "tenant-giessen", "tenant-gießen")
+
+    with pytest.raises(ValueError, match="runtime-tenant-giessen.json"):
+        fixtures.load_runtime_templates(tmp_path)

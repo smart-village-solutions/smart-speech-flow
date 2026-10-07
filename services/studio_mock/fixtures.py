@@ -20,16 +20,25 @@ UNSUPPORTED_QUESTION: dict[str, Any] = {
 Transform = Callable[[dict[str, Any]], None]
 
 
-def _load(name: str) -> Any:
-    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+def _load(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-_RUNTIME: dict[str, dict[str, Any]] = {
-    path.stem.removeprefix("runtime-"): _load(path.name)
-    for path in sorted(FIXTURES.glob("runtime-*.json"))
-}
-_INSTALLATION: dict[str, Any] = _load("installation.json")
-_LOGIN_DIRECTORY: list[dict[str, Any]] = _load("login-directory.json")
+def load_runtime_templates(directory: Path) -> dict[str, dict[str, Any]]:
+    """Key each `runtime-<tenant>.json` by the tenant id the gateway will check."""
+    templates = {}
+    for path in sorted(directory.glob("runtime-*.json")):
+        body = _load(path)
+        tenant_id = body["tenant"]["id"]
+        if path.name != f"runtime-{tenant_id}.json":
+            raise ValueError(f"{path.name} serves tenant {tenant_id!r}")
+        templates[tenant_id] = body
+    return templates
+
+
+_RUNTIME = load_runtime_templates(FIXTURES)
+_INSTALLATION: dict[str, Any] = _load(FIXTURES / "installation.json")
+_LOGIN_DIRECTORY: list[dict[str, Any]] = _load(FIXTURES / "login-directory.json")
 RUNTIME_V2_TENANTS = tuple(sorted(_RUNTIME))
 
 
@@ -47,16 +56,17 @@ def _storage_disabled(body: dict[str, Any]) -> None:
 
 def _invalid_guest_form(body: dict[str, Any]) -> None:
     # The gateway drops a guest language whose form is invalid; the policy stays valid.
-    form = body["guestLanguages"][0].setdefault(
-        "feedback",
-        {
+    if not body["guestLanguages"]:
+        return
+    language = body["guestLanguages"][0]
+    if not language.get("feedback"):
+        language["feedback"] = {
             "headline": "Feedback",
             "questions": [],
             "noticeHtml": "<p>Test environment.</p>",
             "button": "Send",
-        },
-    )
-    form["questions"].append(deepcopy(UNSUPPORTED_QUESTION))
+        }
+    language["feedback"]["questions"].append(deepcopy(UNSUPPORTED_QUESTION))
 
 
 def _invalid_installation_form(body: dict[str, Any]) -> None:
