@@ -1,4 +1,4 @@
-"""The Studio mock and the gateway's clients must agree on the V1 and v2 contracts (#346).
+"""The Studio mock and the gateway's clients must agree on every Studio contract (#346).
 
 The mock is what the clients are tested against, so a disagreement here means
 green tests and a broken integration. #308 was one such disagreement.
@@ -13,7 +13,6 @@ from fastapi.testclient import TestClient
 from services.api_gateway import (
     studio_installation_client,
     studio_login_directory_client,
-    studio_runtime_client,
     studio_runtime_v2_client,
 )
 from services.api_gateway.session_lifecycle import _TENANT_CONFLICT_CODES
@@ -24,10 +23,6 @@ from services.api_gateway.studio_installation_client import (
 from services.api_gateway.studio_login_directory_client import (
     StudioLoginDirectoryClient,
     StudioLoginDirectoryClientError,
-)
-from services.api_gateway.studio_runtime_client import (
-    StudioRuntimeClient,
-    StudioRuntimeClientError,
 )
 from services.api_gateway.studio_runtime_v2_client import (
     StudioRuntimeV2Client,
@@ -65,39 +60,10 @@ def _token(value: str):
     return provide
 
 
-def _runtime(token: str = AUTHORIZED, scenario: str | None = None) -> StudioRuntimeClient:
-    return StudioRuntimeClient(
-        "http://studio-mock.test", _token(token), transport=MockTransport(scenario)
-    )
-
-
 def _directory(token: str = AUTHORIZED, scenario: str | None = None) -> StudioLoginDirectoryClient:
     return StudioLoginDirectoryClient(
         "http://studio-mock.test", _token(token), transport=MockTransport(scenario)
     )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("tenant_id", sorted(mock.TENANT_CONFIGURATION_TEMPLATES))
-async def test_every_mock_tenant_validates_in_the_runtime_client(tenant_id: str) -> None:
-    configuration = await _runtime().fetch(tenant_id, "contract-correlation")
-
-    assert configuration.tenant.id == tenant_id
-
-
-@pytest.mark.parametrize("tenant_id", sorted(mock.TENANT_CONFIGURATION_TEMPLATES))
-def test_the_response_model_serves_the_configuration_unchanged(tenant_id: str) -> None:
-    """The client's models must not rewrite what the revision was computed over."""
-    response = TestClient(mock.app).get(
-        "/internal/plugins/ssf/v1/runtime-configuration",
-        headers={
-            "Authorization": f"Bearer {AUTHORIZED}",
-            "X-Studio-Tenant-Id": tenant_id,
-            "X-Correlation-Id": "contract-correlation",
-        },
-    )
-
-    assert response.json() == mock._configuration_for(tenant_id)
 
 
 def test_the_response_model_serves_the_directory_unchanged() -> None:
@@ -107,30 +73,6 @@ def test_the_response_model_serves_the_directory_unchanged() -> None:
     )
 
     assert response.json() == mock._login_directory()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("token", "scenario", "tenant_id", "code"),
-    [
-        ("not-a-mock-token", None, "tenant-kassel", "service_authentication_invalid"),
-        (UNAUTHORIZED, None, "tenant-kassel", "service_action_forbidden"),
-        (AUTHORIZED, None, "tenant-unknown", "tenant_not_found"),
-        (AUTHORIZED, "suspended", "tenant-kassel", "tenant_suspended"),
-        (AUTHORIZED, "plugin-inactive", "tenant-kassel", "ssf_plugin_inactive"),
-        (AUTHORIZED, "tenant-not-ready", "tenant-kassel", "ssf_tenant_not_ready"),
-        (AUTHORIZED, "unavailable", "tenant-kassel", "runtime_configuration_unavailable"),
-    ],
-)
-async def test_every_mock_runtime_error_is_one_the_client_accepts(
-    token: str, scenario: str | None, tenant_id: str, code: str
-) -> None:
-    runtime_client = _runtime(token, scenario)
-
-    with pytest.raises(StudioRuntimeClientError) as caught:
-        await runtime_client.fetch(tenant_id, "contract-correlation")
-
-    assert caught.value.code == code
 
 
 @pytest.mark.asyncio
@@ -164,11 +106,9 @@ async def test_every_reachable_mock_directory_error_is_one_the_client_accepts(
     assert caught.value.code == code
 
 
-def test_mock_emits_only_codes_the_clients_accept() -> None:
-    runtime_codes = set().union(*studio_runtime_client.EXPECTED_ERROR_CODES.values())
+def test_the_mock_directory_emits_only_codes_the_client_accepts() -> None:
     directory_codes = set().union(*studio_login_directory_client.EXPECTED_ERROR_CODES.values())
 
-    assert set(get_args(mock.RuntimeErrorCode)) <= runtime_codes
     # 404 tenant_not_found answers tenant selectors, which the directory client never sends.
     assert set(get_args(mock.DirectoryErrorCode)) - {"tenant_not_found"} <= directory_codes
 
@@ -358,8 +298,7 @@ def test_the_mock_v2_routes_emit_only_codes_the_v2_clients_accept() -> None:
     assert set(get_args(mock.InstallationErrorCode)) <= installation_codes
 
 
-def test_every_directory_tenant_is_readable_through_both_runtime_versions() -> None:
+def test_every_directory_tenant_has_a_runtime_configuration() -> None:
     directory_ids = {tenant["id"] for tenant in mock._login_directory()["tenants"]}
 
     assert directory_ids <= set(contract_fixtures.RUNTIME_V2_TENANTS)
-    assert directory_ids <= set(mock.TENANT_CONFIGURATION_TEMPLATES)

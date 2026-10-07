@@ -4,9 +4,9 @@ import pytest
 
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.runtime_policy import PolicyReason, RuntimePolicyGate
-from services.api_gateway.studio_runtime_client import StudioRuntimeClientError
+from services.api_gateway.studio_runtime_v2_client import StudioRuntimeV2ClientError
 from services.api_gateway.studio_runtime_token import StudioTokenError
-from tests.runtime_policy_helpers import RecordingClient, configuration
+from tests.runtime_policy_helpers import RecordingClient, runtime_read
 
 
 async def _authorize(client, consent=ConsentStatus.GRANTED):
@@ -14,7 +14,7 @@ async def _authorize(client, consent=ConsentStatus.GRANTED):
 
 
 async def test_ask_plus_granted_authorises():
-    decision = await _authorize(RecordingClient(configuration()))
+    decision = await _authorize(RecordingClient(runtime_read()))
 
     assert decision.authorized is True
     assert decision.reason is PolicyReason.GRANTED
@@ -29,21 +29,21 @@ async def test_ask_plus_granted_authorises():
     ],
 )
 async def test_ask_without_granted_consent_refuses(consent, reason):
-    decision = await _authorize(RecordingClient(configuration()), consent)
+    decision = await _authorize(RecordingClient(runtime_read()), consent)
 
     assert decision.authorized is False
     assert decision.reason is reason
 
 
 async def test_disabled_refuses_even_when_consent_says_granted():
-    decision = await _authorize(RecordingClient(configuration(mode="disabled")))
+    decision = await _authorize(RecordingClient(runtime_read(mode="disabled")))
 
     assert decision.authorized is False
     assert decision.reason is PolicyReason.POLICY_DISABLED
 
 
 async def test_a_mode_flip_between_two_writes_stops_the_second():
-    client = RecordingClient(configuration(), configuration(mode="disabled"))
+    client = RecordingClient(runtime_read(), runtime_read(mode="disabled"))
     gate = RuntimePolicyGate(client)
 
     first = await gate.authorize("tenant-kassel", ConsentStatus.GRANTED, "cid")
@@ -76,7 +76,7 @@ async def test_a_mode_flip_between_two_writes_stops_the_second():
 )
 async def test_every_runtime_client_failure_refuses_under_its_reason(code, reason):
     decision = await _authorize(
-        RecordingClient(StudioRuntimeClientError(code, retryable=False))
+        RecordingClient(StudioRuntimeV2ClientError(code, retryable=False))
     )
 
     assert decision.authorized is False
@@ -112,7 +112,7 @@ async def test_the_reason_follows_the_code_not_the_retryable_flag():
 
 async def test_a_retryable_failure_is_not_retried_in_place():
     client = RecordingClient(
-        StudioRuntimeClientError("runtime_configuration_unavailable", retryable=True)
+        StudioRuntimeV2ClientError("runtime_configuration_unavailable", retryable=True)
     )
 
     await _authorize(client)
@@ -121,7 +121,7 @@ async def test_a_retryable_failure_is_not_retried_in_place():
 
 
 async def test_the_gate_rechecks_the_tenant_of_any_fetcher():
-    decision = await _authorize(RecordingClient(configuration("tenant-fulda")))
+    decision = await _authorize(RecordingClient(runtime_read("tenant-fulda")))
 
     assert decision.authorized is False
     assert decision.reason is PolicyReason.VALIDATION_FAILED
@@ -135,7 +135,7 @@ async def test_an_unexpected_error_refuses_rather_than_propagating():
 
 
 async def test_only_the_granted_member_authorises_not_a_lookalike():
-    decision = await _authorize(RecordingClient(configuration()), consent="granted")
+    decision = await _authorize(RecordingClient(runtime_read()), consent="granted")
 
     assert decision.authorized is False
     assert decision.reason is PolicyReason.CONSENT_PENDING

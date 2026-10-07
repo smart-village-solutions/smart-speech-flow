@@ -16,12 +16,11 @@ from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_models import Session, SessionStatus
 from services.api_gateway.session_pseudonym import SessionPseudonymizer
 from services.api_gateway.session_store import MemoryTenantSessionStore
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket_monitor import WebSocketMetrics, WebSocketMonitor
 
 TENANT = "tenant-a"
-_REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(_REVISION, _REVISION, "{}")
+REVISION = f"sha256:{'a' * 64}"
 
 
 def tenant_session_manager() -> TenantSessionManager:

@@ -27,17 +27,16 @@ from services.api_gateway.session_store import (
     session_key,
     tenant_sessions_key,
 )
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.websocket import WebSocketManager
 from tests.realtime_sessions import websocket_monitor
 from tests.test_tenant_persistence_lifespan import PersistentFakeRedis
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 def make_session(tenant_id: str, session_id: str) -> Session:
-    return Session(id=session_id, tenant_id=tenant_id, runtime_configuration=SNAPSHOT)
+    return Session(id=session_id, tenant_id=tenant_id, configuration_revision=REVISION)
 
 
 class SlowFirstEvalRedis:
@@ -231,7 +230,7 @@ class LifecycleRecorder:
 
 async def test_concurrent_terminations_commit_and_report_once(tmp_path: Path) -> None:
     manager = TenantSessionManager(store=SuspendingStore(), audio_store=AudioStore(tmp_path))
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     recorder = LifecycleRecorder()
     manager.attach_quality_telemetry(recorder)
 
@@ -248,8 +247,8 @@ async def test_one_admins_concurrent_creates_leave_one_live_session(tmp_path: Pa
     manager = TenantSessionManager(store=SuspendingStore(), audio_store=AudioStore(tmp_path))
 
     await asyncio.gather(
-        manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref="owner-1"),
-        manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref="owner-1"),
+        manager.create_admin_session("tenant-a", REVISION, owner_ref="owner-1"),
+        manager.create_admin_session("tenant-a", REVISION, owner_ref="owner-1"),
     )
 
     live = await manager.get_active_sessions(tenant_id="tenant-a", owner_ref="owner-1")
@@ -275,13 +274,13 @@ async def test_different_admins_create_without_waiting_for_each_other(tmp_path: 
     store = StalledCreateStore("owner-1")
     manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
     stalled = asyncio.create_task(
-        manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref="owner-1")
+        manager.create_admin_session("tenant-a", REVISION, owner_ref="owner-1")
     )
     for _ in range(5):
         await asyncio.sleep(0)
 
     created = await asyncio.wait_for(
-        manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref="owner-2"), 1
+        manager.create_admin_session("tenant-a", REVISION, owner_ref="owner-2"), 1
     )
     store.release.set()
     await stalled
@@ -295,7 +294,7 @@ async def test_a_failed_sweep_does_not_restore_content_onto_a_terminated_session
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "24")
     store = SweepSaveFailsStore()
     manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     session.messages.append(_message("expired", age=timedelta(hours=30)))
 
     async def terminate_during_the_sweep() -> None:
@@ -422,7 +421,7 @@ async def test_a_change_waiting_behind_a_termination_is_refused(
     redis = HeldTerminationRedis()
     store = RedisTenantSessionStore(redis)
     manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     recorder = LifecycleRecorder()
     manager.attach_quality_telemetry(recorder)
     apply, refusal = CHANGES_REFUSED_AFTER_TERMINATION[change]
@@ -453,7 +452,7 @@ async def test_a_guest_socket_that_connects_behind_a_termination_is_closed(
     manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
     sockets = WebSocketManager(manager, monitor=websocket_monitor())
     sockets.start_heartbeat_system = AsyncMock()
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     await manager.activate_session(session.key, "en")
     guest = AsyncMock()
 

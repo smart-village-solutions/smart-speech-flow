@@ -1,13 +1,18 @@
 """Activation resolves consent exactly once, from a live read."""
 
+import json
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.dependencies import get_studio_runtime_flow
-from services.api_gateway.studio_runtime_client import StudioRuntimeClientError
-from tests.runtime_policy_helpers import configuration
+from services.api_gateway.studio_runtime_v2_client import StudioRuntimeV2ClientError
+from tests.runtime_policy_helpers import runtime_read
+
+_KASSEL_FIXTURE = Path(__file__).parent / "fixtures" / "studio_v2" / "runtime-tenant-kassel.json"
 
 
 class _FakeStudio:
@@ -26,7 +31,7 @@ class _FakeStudio:
         self._error = None
 
     def fail(self, code: str, *, status: int | None = None, retryable: bool = True):
-        self._error = StudioRuntimeClientError(code, retryable=retryable)
+        self._error = StudioRuntimeV2ClientError(code, retryable=retryable)
 
     def reset_calls(self) -> None:
         self.calls = 0
@@ -40,7 +45,7 @@ class _FakeStudio:
         self.calls += 1
         if self._error is not None:
             raise self._error
-        return configuration(tenant_id=tenant_id, mode=self._mode)
+        return runtime_read(tenant_id=tenant_id, mode=self._mode)
 
 
 @pytest.fixture
@@ -286,3 +291,46 @@ async def test_customer_session_routes_reject_query_tenant_selectors(
 
     assert response.status_code == 400
     assert (await session_manager.get_session(key)).status.value == "pending"
+
+
+class _BrokenContentStudio:
+    """A v2 body with a valid policy and invalid staff and guest content."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def get(self, url, headers, timeout_seconds):
+        from services.api_gateway.studio_v1 import StudioV1HttpResponse
+
+        self.calls += 1
+        body = json.loads(_KASSEL_FIXTURE.read_text(encoding="utf-8"))
+        body["tenant"]["id"] = headers["X-Studio-Tenant-Id"]
+        body["staff"] = {"locale": 7}
+        body["guestLanguages"][0]["feedback"] = {"questions": [{"type": "unknown"}]}
+        return StudioV1HttpResponse(200, body)
+
+
+async def test_invalid_content_resolves_consent_from_the_valid_policy(
+    session_manager, pending_session, client, monkeypatch
+):
+    from services.api_gateway.studio_runtime_flow import StudioRuntimeFlow
+    from services.api_gateway.studio_runtime_v2_client import StudioRuntimeV2Client
+
+    async def token() -> str:
+        return "token"
+
+    transport = _BrokenContentStudio()
+    flow = StudioRuntimeFlow(
+        StudioRuntimeV2Client("https://studio.test", token, transport=transport)
+    )
+    monkeypatch.setitem(app.dependency_overrides, get_studio_runtime_flow, lambda: flow)
+    session_id, key = pending_session
+
+    response = client.post(
+        "/api/customer/session/activate",
+        json={"session_id": session_id, "customer_language": "en", "data_retention_consent": True},
+    )
+
+    assert response.status_code == 200
+    assert transport.calls == 1
+    assert (await session_manager.get_session(key)).consent_status is ConsentStatus.GRANTED

@@ -20,12 +20,11 @@ from services.api_gateway.tenant_context import (
     admin_ref,
     require_studio_tenant_context,
 )
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
-from tests.gateway_contract.contract_support import runtime_configuration
+from services.api_gateway.tenant_session import TenantSessionKey
+from tests.gateway_contract.contract_support import runtime_read
 
 TENANT = "tenant-a"
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 NOT_FOUND = {"detail": "Session not found"}
 
 
@@ -40,7 +39,7 @@ def client() -> Iterator[TestClient]:
 
 def _as(subject: str) -> None:
     context = StudioTenantContext(TENANT, REVISION)
-    configuration = runtime_configuration(TENANT)
+    configuration = runtime_read(TENANT)
     app.dependency_overrides[require_ssf_user] = lambda: {"sub": subject}
     app.dependency_overrides[require_studio_tenant_context] = lambda: context
     app.dependency_overrides[require_validated_runtime_configuration] = lambda: (
@@ -176,7 +175,7 @@ def test_a_colleagues_ended_session_stays_hidden(client):
 
 async def _owner_less_session() -> str:
     manager = app.state.dependencies.session_manager
-    session = await manager.create_admin_session(TENANT, SNAPSHOT)
+    session = await manager.create_admin_session(TENANT, REVISION)
     return session.id
 
 

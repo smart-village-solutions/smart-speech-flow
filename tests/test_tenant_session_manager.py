@@ -16,13 +16,11 @@ from services.api_gateway.session_store import (
     SessionStoreConsistencyError,
 )
 from services.api_gateway.tenant_context import admin_ref
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 from services.api_gateway.websocket import WebSocketManager
 from services.api_gateway.websocket_polling_routes import TenantPollingStore
 from tests.realtime_sessions import websocket_monitor
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 class Clock:
@@ -58,9 +56,9 @@ async def test_single_active_session_limit_is_per_tenant(
 ) -> None:
     owner_a = admin_ref("tenant-a", "admin-subject")
     owner_b = admin_ref("tenant-b", "admin-subject")
-    first_a = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner_a)
-    first_b = await manager.create_admin_session("tenant-b", SNAPSHOT, owner_ref=owner_b)
-    second_a = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner_a)
+    first_a = await manager.create_admin_session("tenant-a", REVISION, owner_ref=owner_a)
+    first_b = await manager.create_admin_session("tenant-b", REVISION, owner_ref=owner_b)
+    second_a = await manager.create_admin_session("tenant-a", REVISION, owner_ref=owner_a)
 
     assert (await manager.get_session(first_a.key)).status is SessionStatus.TERMINATED
     assert (await manager.get_session(first_b.key)).status is SessionStatus.PENDING
@@ -75,7 +73,7 @@ async def test_single_active_session_limit_is_per_tenant(
 async def test_customer_resolution_uses_server_owned_join_index(
     manager: TenantSessionManager,
 ) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
 
     assert await manager.resolve_customer_session(session.id) == session.key
 
@@ -88,7 +86,7 @@ async def test_customer_resolution_uses_server_owned_join_index(
 async def test_connected_admin_survives_silence_until_absolute_limit(
     manager: TenantSessionManager, clock: Clock
 ) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     await manager.admin_connected(session.key)
 
     clock.advance(hours=7, minutes=55)
@@ -103,7 +101,7 @@ async def test_connected_admin_survives_silence_until_absolute_limit(
 async def test_customer_alone_does_not_cancel_admin_reconnect_grace(
     manager: TenantSessionManager, clock: Clock
 ) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     await manager.admin_connected(session.key)
     await manager.customer_connected(session.key)
     await manager.admin_disconnected(session.key)
@@ -120,7 +118,7 @@ async def test_customer_alone_does_not_cancel_admin_reconnect_grace(
 async def test_admin_reconnect_cancels_grace_warning(
     manager: TenantSessionManager, clock: Clock
 ) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     await manager.admin_connected(session.key)
     await manager.admin_disconnected(session.key)
     clock.advance(minutes=25)
@@ -137,7 +135,7 @@ async def test_admin_reconnect_cancels_grace_warning(
 async def test_pending_session_without_admin_connection_expires_from_creation(
     manager: TenantSessionManager, clock: Clock
 ) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
 
     assert session.admin_disconnected_at == session.created_at
     clock.advance(minutes=30)
@@ -148,7 +146,7 @@ async def test_pending_session_without_admin_connection_expires_from_creation(
 async def test_session_status_exposes_warning_and_timeout_deadlines(
     manager: TenantSessionManager,
 ) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
 
     payload = session.to_dict()
 
@@ -161,7 +159,7 @@ async def test_session_status_exposes_warning_and_timeout_deadlines(
 async def test_multiple_admin_sockets_decrement_presence_independently(
     manager: TenantSessionManager,
 ) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
 
     await manager.add_websocket_connection(session.key, ClientType.ADMIN, object())
     await manager.add_websocket_connection(session.key, ClientType.ADMIN, object())
@@ -180,7 +178,7 @@ async def test_multiple_admin_sockets_decrement_presence_independently(
 async def test_termination_persists_tombstone_before_socket_presence_cleanup(
     manager: TenantSessionManager,
 ) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     sockets = WebSocketManager(manager, monitor=websocket_monitor())
     sockets.start_heartbeat_system = AsyncMock()
     websocket = AsyncMock()
@@ -223,7 +221,7 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
         session_id_factory=lambda: "RETRY123",
         audio_store=AudioStore.from_environment(),
     )
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     tickets = RealtimeTicketStore(MemoryRealtimeTicketBackend(clock=clock), clock=clock)
     usable_after_failure = await tickets.issue(session.key, "websocket")
     revoked_after_success = await tickets.issue(session.key, "websocket")
@@ -263,7 +261,7 @@ async def test_failed_atomic_termination_is_consistent_and_retry_cleans_realtime
 async def test_timeout_monitor_uses_tenant_deadlines_and_full_key(
     manager: TenantSessionManager, clock: Clock
 ) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     realtime = AsyncMock()
     manager.websocket_manager = realtime
 
@@ -284,7 +282,7 @@ async def test_timeout_monitor_uses_tenant_deadlines_and_full_key(
 async def test_connected_admin_is_not_terminated_at_legacy_30_minute_deadline(
     manager: TenantSessionManager, clock: Clock
 ) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     await manager.admin_connected(session.key)
     clock.advance(minutes=30)
 
@@ -299,7 +297,7 @@ async def test_timeout_monitor_releases_idle_polling_presence(
 ) -> None:
     polling_store = TenantPollingStore(clock=lambda: 121.0)
     manager.polling_store = polling_store
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     client = polling_store.activate(session.key, ClientType.ADMIN)
     await manager.admin_connected(session.key)
     client.last_seen = 0
@@ -322,7 +320,7 @@ async def test_a_session_that_just_ended_resolves_for_its_grace_window(
     The window is the caller's, passed in rather than read here, so the store
     and the manager hold no feedback policy between them.
     """
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     await manager.terminate_session(session.key, "manual_admin_termination")
 
     assert await manager.resolve_ended_session(session.id, within=GRACE) == session.key
@@ -338,7 +336,7 @@ async def test_a_session_that_just_ended_resolves_for_its_grace_window(
 async def test_resolving_an_ended_session_grants_no_route_back_into_it(
     manager: TenantSessionManager,
 ) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     await manager.terminate_session(session.key, "manual_admin_termination")
 
     assert await manager.resolve_ended_session(session.id, within=GRACE) == session.key
@@ -348,7 +346,7 @@ async def test_resolving_an_ended_session_grants_no_route_back_into_it(
 
 @pytest.mark.asyncio
 async def test_a_live_session_is_not_an_ended_one(manager: TenantSessionManager) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
 
     assert await manager.resolve_customer_session(session.id) == session.key
     assert await manager.resolve_ended_session(session.id, within=GRACE) is None
@@ -356,7 +354,7 @@ async def test_a_live_session_is_not_an_ended_one(manager: TenantSessionManager)
 
 @pytest.mark.asyncio
 async def test_an_unknown_id_never_resolves_as_ended(manager: TenantSessionManager) -> None:
-    await manager.create_admin_session("tenant-a", SNAPSHOT)
+    await manager.create_admin_session("tenant-a", REVISION)
 
     assert await manager.resolve_ended_session("NOSUCH99", within=GRACE) is None
 
@@ -372,7 +370,7 @@ async def test_an_ended_session_without_a_termination_time_fails_closed(
     committed, so the two are distinct objects afterwards, and the store's is
     the one the window is judged against.
     """
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     await manager.terminate_session(session.key, "manual_admin_termination")
     (await manager.store.load(session.key)).terminated_at = None
 
@@ -394,7 +392,7 @@ async def test_the_window_survives_a_naive_clock() -> None:
         session_id_factory=lambda: "NAIVE001",
         audio_store=AudioStore.from_environment(),
     )
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     await manager.terminate_session(session.key, "manual_admin_termination")
 
     assert await manager.resolve_ended_session(session.id, within=GRACE) == session.key

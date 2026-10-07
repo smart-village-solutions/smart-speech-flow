@@ -12,11 +12,9 @@ from services.api_gateway.session_store import (
     MemoryTenantSessionStore,
     SessionStoreConsistencyError,
 )
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 from tests.pipeline_helpers import speech_pipeline
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture
@@ -48,7 +46,7 @@ def _message(message_id: str, *, record: bool, original: bool, translated: bool)
 
 
 async def _session_with(manager, audio_store, messages):
-    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-test", REVISION)
     for message in messages:
         await manager.add_message(session.key, message)
         for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
@@ -154,7 +152,7 @@ async def test_a_retained_message_stops_advertising_removed_original_audio(
     """
     from services.api_gateway.conversation_service import ConversationService
 
-    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-test", REVISION)
     message = _message("m1", record=True, original=False, translated=True)
     message.original_audio_url = "available"
     message.pipeline_metadata = {"input": {"type": "audio"}}
@@ -182,7 +180,7 @@ async def test_a_failed_termination_leaves_the_audio_in_place(manager, audio_sto
     and the caller retries. Files removed ahead of that commit are gone for a
     conversation that is still running.
     """
-    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-test", REVISION)
     # Retained record, refused artefacts: the branch that mutates the message
     # in place rather than dropping it.
     doomed = _message("m1", record=True, original=False, translated=False)
@@ -223,7 +221,7 @@ async def test_refused_translated_audio_leaves_no_url_in_pipeline_metadata(
     """
     from services.api_gateway.conversation_service import ConversationService
 
-    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-test", REVISION)
     message = _message("m1", record=True, original=True, translated=False)
     message.pipeline_metadata = {
         "steps": [{"step": "TTS", "output": {"audio_available": True, "audio_url": "x.wav"}}]
@@ -252,7 +250,7 @@ async def test_a_consented_text_message_keeps_its_metadata(manager, audio_store)
     false. Treating that as a refusal stripped `input.type` from a record the
     guest consented to, and the frontend renders that field.
     """
-    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-test", REVISION)
     message = _message("m1", record=True, original=False, translated=True)
     message.pipeline_metadata = {
         "input": {"type": "text", "source_lang": "de"},
@@ -270,7 +268,7 @@ async def test_a_consented_text_message_keeps_its_metadata(manager, audio_store)
 
 async def test_a_message_without_tts_audio_keeps_its_negative_marker(manager, audio_store):
     """A step that produced no audio must keep saying so, not lose the key."""
-    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-test", REVISION)
     message = _message("m1", record=True, original=True, translated=False)
     message.translated_audio_available = False
     message.pipeline_metadata = {

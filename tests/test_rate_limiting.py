@@ -14,11 +14,9 @@ from services.api_gateway.rate_limiter import RateLimitConfig
 from services.api_gateway.session_models import ClientType, SessionMessage, SessionStatus
 from services.api_gateway.tenant_context import admin_ref
 from services.api_gateway import message_processing
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 client = TestClient(app)
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +30,7 @@ def reset_session_manager(session_manager) -> None:
 def _register_active_session(session_manager) -> str:
     session = asyncio.run(
         session_manager.create_admin_session(
-            "tenant-test", SNAPSHOT, owner_ref=admin_ref("tenant-test", "test-admin")
+            "tenant-test", REVISION, owner_ref=admin_ref("tenant-test", "test-admin")
         )
     )
     session.customer_language = "en"

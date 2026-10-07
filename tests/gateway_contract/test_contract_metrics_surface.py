@@ -124,12 +124,12 @@ EXPECTED_SURFACE: dict[str, Family] = {
     ),
     "ssf_runtime_policy_content_discarded_total": (
         "counter",
-        "Conversation-content writes refused and discarded",
+        "Messages whose conversation content was refused and discarded",
         frozenset({"reason"}),
     ),
     "ssf_runtime_policy_decision_total": (
         "counter",
-        "Conversation-content persistence decisions",
+        "Conversation-content persistence decisions, one per message",
         frozenset({"decision", "reason"}),
     ),
     "ssf_runtime_policy_read_duration_seconds": (

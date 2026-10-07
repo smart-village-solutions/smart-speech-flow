@@ -38,7 +38,6 @@ from services.api_gateway.session_store import (
     tenant_active_sessions_key,
     tenant_sessions_key,
 )
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 pytestmark = [
     pytest.mark.integration,
@@ -49,12 +48,11 @@ pytestmark = [
 ]
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 TERMINATED_AT = datetime(2026, 10, 5, 9, 30, tzinfo=timezone.utc)
 
 
 def make_session(tenant_id: str, session_id: str) -> Session:
-    return Session(id=session_id, tenant_id=tenant_id, runtime_configuration=SNAPSHOT)
+    return Session(id=session_id, tenant_id=tenant_id, configuration_revision=REVISION)
 
 
 def terminal(session: Session) -> Session:
@@ -266,7 +264,7 @@ async def test_a_connect_waiting_behind_a_termination_is_refused(
     from services.api_gateway.session_manager import TenantSessionManager
 
     manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
 
     terminated, connected = await asyncio.gather(
         manager.terminate_session(session.key, "manual_admin_termination"),

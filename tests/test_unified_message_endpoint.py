@@ -11,11 +11,9 @@ from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_models import ClientType, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 from tests.pipeline_helpers import speech_pipeline
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture
@@ -24,7 +22,7 @@ async def active_session(monkeypatch: pytest.MonkeyPatch):
         store=MemoryTenantSessionStore(),
         audio_store=AudioStore.from_environment(),
     )
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
     await manager.store.save(session)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from hashlib import sha256
+
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -11,47 +13,28 @@ from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.auth import optional_ssf_user, require_ssf_user
 from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_store import MemoryTenantSessionStore
-from services.api_gateway.studio_runtime_client import RuntimeConfiguration
 from services.api_gateway.studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
     require_validated_runtime_configuration,
 )
+from services.api_gateway.studio_v2 import RuntimeRead
 from services.api_gateway.tenant_context import (
     StudioTenantContext,
     admin_ref,
     require_studio_tenant_context,
 )
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from services.api_gateway.tenant_session import TenantSessionKey
+from tests.runtime_policy_helpers import runtime_read
 
 REVISION = f"sha256:{'a' * 64}"
 
 
-def _configuration(tenant_id: str) -> RuntimeConfiguration:
-    return RuntimeConfiguration.model_validate(
-        {
-            "contractVersion": "1.0",
-            "configurationRevision": REVISION,
-            "authorizationRevision": REVISION,
-            "tenant": {
-                "id": tenant_id,
-                "displayName": tenant_id,
-                "timeZone": "Europe/Berlin",
-            },
-            "branding": {"logo": None, "icon": None},
-            "localization": {
-                "defaultLocale": "de-DE",
-                "locales": [
-                    {
-                        "locale": "de-DE",
-                        "authenticatedHomeExplanationHtml": "<p>Admin</p>",
-                        "guestExplanationHtml": "<p>Guest</p>",
-                        "conversationContentStorageQuestionHtml": "<p>Store?</p>",
-                    }
-                ],
-            },
-            "conversationContentStorage": {"mode": "ask"},
-        }
-    )
+def _revision(tenant_id: str) -> str:
+    return f"sha256:{sha256(tenant_id.encode()).hexdigest()}"
+
+
+def _read(tenant_id: str) -> RuntimeRead:
+    return runtime_read(tenant_id, revision=_revision(tenant_id))
 
 
 @pytest.fixture
@@ -70,7 +53,7 @@ async def test_admin_access_uses_only_the_authenticated_tenant(
 
     session = await manager.create_admin_session(
         "tenant-b",
-        RuntimeConfigurationSnapshot.from_configuration(_configuration("tenant-b")),
+        _revision("tenant-b"),
         owner_ref=admin_ref("tenant-b", "operator"),
     )
 
@@ -95,7 +78,7 @@ async def test_customer_capability_allows_an_anonymous_request(
 
     session = await manager.create_admin_session(
         "tenant-a",
-        RuntimeConfigurationSnapshot.from_configuration(_configuration("tenant-a")),
+        _revision("tenant-a"),
     )
 
     assert await require_customer_session_key(session.id, None, manager) == session.key
@@ -109,7 +92,7 @@ async def test_customer_bearer_must_match_capability_tenant(
 
     session = await manager.create_admin_session(
         "tenant-b",
-        RuntimeConfigurationSnapshot.from_configuration(_configuration("tenant-b")),
+        _revision("tenant-b"),
     )
 
     with pytest.raises(HTTPException) as caught:
@@ -152,7 +135,7 @@ def http_client():
 
 def _authenticate_as(tenant_id: str) -> None:
     context = StudioTenantContext(tenant_id, REVISION)
-    configuration = _configuration(tenant_id)
+    read = _read(tenant_id)
     app.dependency_overrides[require_ssf_user] = lambda: {
         "sub": "operator",
         "studio_tenant_id": tenant_id,
@@ -160,11 +143,11 @@ def _authenticate_as(tenant_id: str) -> None:
     }
     app.dependency_overrides[require_studio_tenant_context] = lambda: context
     app.dependency_overrides[require_validated_runtime_configuration] = lambda: (
-        ValidatedRuntimeConfiguration(context, configuration, "test-correlation")
+        ValidatedRuntimeConfiguration(context, read, "test-correlation")
     )
 
 
-async def test_http_create_freezes_each_tenants_own_runtime_configuration(
+async def test_http_create_stores_each_tenants_own_configuration_revision(
     http_client: TestClient,
 ) -> None:
     session_manager = app.state.dependencies.session_manager
@@ -184,12 +167,8 @@ async def test_http_create_freezes_each_tenants_own_runtime_configuration(
     )
     assert session_a is not None
     assert session_b is not None
-    assert session_a.runtime_configuration == RuntimeConfigurationSnapshot.from_configuration(
-        _configuration("tenant-a")
-    )
-    assert session_b.runtime_configuration == RuntimeConfigurationSnapshot.from_configuration(
-        _configuration("tenant-b")
-    )
+    assert session_a.configuration_revision == _revision("tenant-a")
+    assert session_b.configuration_revision == _revision("tenant-b")
 
 
 @pytest.mark.parametrize(

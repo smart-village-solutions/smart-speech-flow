@@ -19,7 +19,6 @@ from services.api_gateway.session_models import ClientType, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_context import StudioTenantContext
 from services.api_gateway.tenant_session import (
-    RuntimeConfigurationSnapshot,
     TenantSessionKey,
 )
 from services.api_gateway.websocket import (
@@ -51,9 +50,6 @@ class _PresenceManager:
             customer_language=None,
             is_owned_by=lambda _owner_ref: True,
         )
-
-
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.mark.asyncio
@@ -188,7 +184,7 @@ async def test_connection_is_not_registered_if_session_terminates_during_accept(
         store=MemoryTenantSessionStore(),
         audio_store=AudioStore.from_environment(),
     )
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     sockets = WebSocketManager(manager, monitor=websocket_monitor())
     sockets.start_heartbeat_system = AsyncMock()
     accept_started = asyncio.Event()
@@ -219,7 +215,7 @@ async def test_inbound_message_is_not_dispatched_after_termination_starts() -> N
         store=MemoryTenantSessionStore(),
         audio_store=AudioStore.from_environment(),
     )
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     sockets = WebSocketManager(manager, monitor=websocket_monitor())
     sockets.start_heartbeat_system = AsyncMock()
     sender = AsyncMock()

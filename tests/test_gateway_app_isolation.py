@@ -19,7 +19,6 @@ from services.api_gateway.app import create_app
 from services.api_gateway.dependencies import GatewayDependencies, get_login_directory
 from services.api_gateway.service_health import ServiceHealthManager
 from services.api_gateway.studio_login_directory_client import StudioLoginDirectory
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 REVISION = f"sha256:{'a' * 64}"
 
@@ -228,14 +227,13 @@ async def test_polling_records_presence_in_its_own_apps_sessions(monkeypatch: py
     for variable in ("REDIS_URL", "SSF_DEPLOYMENT_ENV", "STUDIO_RUNTIME_CONFIGURATION_BASE_URL"):
         monkeypatch.delenv(variable, raising=False)
     monkeypatch.setenv("SSF_QUALITY_TELEMETRY_MODE", "disabled")
-    snapshot = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
     first_app, second_app = create_app(), create_app()
 
     with TestClient(first_app) as first, TestClient(second_app) as second:
         keys = []
         for client, app in ((first, first_app), (second, second_app)):
             sessions = app.state.dependencies.session_manager
-            session = client.portal.call(sessions.create_admin_session, "tenant-a", snapshot)
+            session = client.portal.call(sessions.create_admin_session, "tenant-a", REVISION)
             activated = client.post(f"/api/customer/session/{session.id}/polling/activate")
             assert activated.status_code == 200, activated.text
             keys.append(session.key)

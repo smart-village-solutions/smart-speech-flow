@@ -10,7 +10,6 @@ import pytest
 from services.api_gateway.app import app, lifespan
 from services.api_gateway.studio_installation_client import StudioInstallationClient
 from services.api_gateway.studio_login_directory_client import StudioLoginDirectoryClient
-from services.api_gateway.studio_runtime_client import StudioRuntimeClient
 from services.api_gateway.studio_runtime_token import (
     AiohttpTokenTransport,
     StudioRuntimeTokenProvider,
@@ -65,9 +64,6 @@ async def test_concurrent_clients_make_one_token_request() -> None:
     base = "https://studio.test"
 
     await asyncio.gather(
-        StudioRuntimeClient(base, provider.get_token, transport=studio).fetch(
-            "tenant-kassel", "c-1"
-        ),
         StudioRuntimeV2Client(base, provider.get_token, transport=studio).fetch(
             "tenant-kassel", "c-2"
         ),
@@ -77,7 +73,7 @@ async def test_concurrent_clients_make_one_token_request() -> None:
     )
 
     assert token_transport.calls == 1
-    assert studio.authorizations == ["Bearer shared-token"] * 4
+    assert studio.authorizations == ["Bearer shared-token"] * 3
 
 
 def _route_studio_traffic(
@@ -109,6 +105,7 @@ async def test_the_lifespan_gives_every_studio_client_one_provider(
     async with lifespan(app):
         dependencies = app.state.dependencies
         assert dependencies.studio_token_provider is not None
+        assert isinstance(dependencies.studio_runtime_flow.client, StudioRuntimeV2Client)
         await asyncio.gather(
             dependencies.studio_runtime_flow.client.fetch("tenant-kassel", "c-1"),
             dependencies.login_directory.get("c-2"),

@@ -15,12 +15,11 @@ from services.api_gateway.dependencies import build_gateway_dependencies
 from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_models import ClientType, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from services.api_gateway.tenant_session import TenantSessionKey
 from services.api_gateway.translation_refiner import NoOpTranslationRefiner
 from services.api_gateway.websocket import BroadcastResult
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 PIPELINE_SUCCESS = {
     "error": False,
     "asr_text": "Guten Tag",
@@ -40,7 +39,7 @@ def _text_request() -> Mock:
 
 
 async def _active_session(sessions: TenantSessionManager) -> TenantSessionKey:
-    session = await sessions.create_admin_session("tenant-a", SNAPSHOT)
+    session = await sessions.create_admin_session("tenant-a", REVISION)
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
     await sessions.store.save(session)

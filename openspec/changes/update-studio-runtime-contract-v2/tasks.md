@@ -14,12 +14,12 @@
 
 ## 3. Cutover to v2
 
-- [ ] 3.1 Move session create, activation and the persistence gate to the v2 client
-- [ ] 3.2 Authorize persistence with one live read per message and record the decision per artefact
-- [ ] 3.3 Replace `Session.runtime_configuration` with `configuration_revision`; keep `from_dict` reading v1 records, with a test
-- [ ] 3.4 Remove the v1 runtime client, `presentation_configuration.py` and `display_text_fallback.py`; move the nh3 sanitiser to `studio_html.py`
-- [ ] 3.5 Rewrite the affected test builders and suites; regenerate the OpenAPI snapshot
-- [ ] 3.6 Run the tenant isolation matrix by hand against a rebuilt image
+- [x] 3.1 Move session create, activation and the persistence gate to the v2 client
+- [x] 3.2 Authorize persistence with one live read per message and record the decision per artefact
+- [x] 3.3 Replace `Session.runtime_configuration` with `configuration_revision`; keep `from_dict` reading v1 records, with a test
+- [x] 3.4 Remove the v1 runtime client, `presentation_configuration.py` and `display_text_fallback.py`; move the nh3 sanitiser to `studio_html.py`
+- [x] 3.5 Rewrite the affected test builders and suites; regenerate the OpenAPI snapshot
+- [x] 3.6 Run the tenant isolation matrix by hand against a rebuilt image
 
 ## 4. Per-session retention
 
@@ -86,4 +86,6 @@
 
 - [ ] 14.1 Alert on Studio policy read failures and stale content; retune the audio disk thresholds for 180 days
 - [ ] 14.2 Remove dead i18n keys and code; update `services/api_gateway/README.md` and the architecture docs
+  - Stop writing the v1 `runtime_configuration` key in `Session.to_dict` (`_previous_gateway_snapshot`) only once rolling back to a gateway image from before the cutover is ruled out; without the key that gateway quarantines every newer session record
+  - Remove the v1 fallback in `Session.from_dict` only after a scan of production Redis finds no session record without `configuration_revision`; terminal records live as long as their content retention, and retention `0` never expires them, so elapsed time alone does not prove they are gone
 - [ ] 14.3 Deploy with Postgres `004`, ClickHouse `008` and a Prometheus restart; verify against production

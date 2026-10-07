@@ -14,12 +14,10 @@ from services.api_gateway.session_models import ClientType, Session, SessionMess
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_context import admin_ref
 from services.api_gateway.tenant_session import (
-    RuntimeConfigurationSnapshot,
     TenantSessionKey,
 )
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 def _http_request() -> Request:
@@ -51,7 +49,7 @@ def test_session_round_trip_keeps_scope_message_and_timeout_state() -> None:
     session = Session(
         id="SESSION1",
         tenant_id="tenant-a",
-        runtime_configuration=SNAPSHOT,
+        configuration_revision=REVISION,
         customer_language="en",
         status=SessionStatus.ACTIVE,
         created_at=created_at,
@@ -73,11 +71,11 @@ async def test_manager_replaces_only_the_same_tenants_active_session(
     manager: TenantSessionManager,
 ) -> None:
     owner_a = admin_ref("tenant-a", "admin-subject")
-    first = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner_a)
+    first = await manager.create_admin_session("tenant-a", REVISION, owner_ref=owner_a)
     other = await manager.create_admin_session(
-        "tenant-b", SNAPSHOT, owner_ref=admin_ref("tenant-b", "admin-subject")
+        "tenant-b", REVISION, owner_ref=admin_ref("tenant-b", "admin-subject")
     )
-    second = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner_a)
+    second = await manager.create_admin_session("tenant-a", REVISION, owner_ref=owner_a)
 
     assert (await manager.get_session(first.key)).status is SessionStatus.TERMINATED
     assert (await manager.get_session(other.key)).status is SessionStatus.PENDING
@@ -98,7 +96,7 @@ def test_openapi_omits_generic_session_management_routes() -> None:
 async def test_customer_activation_uses_the_resolved_capability_key(
     manager: TenantSessionManager,
 ) -> None:
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     request = customer.ActivateSessionRequest(
         session_id=session.id,
         customer_language="ar",

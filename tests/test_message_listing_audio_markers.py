@@ -11,11 +11,10 @@ from services.api_gateway.conversation_service import ConversationService
 from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_models import ClientType, SessionMessage
 from services.api_gateway.session_store import MemoryTenantSessionStore
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from services.api_gateway.tenant_session import TenantSessionKey
 from tests.pipeline_helpers import speech_pipeline
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 class UndeletableAudioStore(AudioStore):
@@ -82,7 +81,7 @@ def _save_both(key: TenantSessionKey, audio_store: AudioStore) -> None:
 async def test_listing_advertises_recorded_audio_without_a_filesystem_stat(
     manager: TenantSessionManager, audio_store: AudioStore
 ) -> None:
-    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-test", REVISION)
     await manager.add_message(session.key, _audio_message())
 
     [item] = await _list_without_filesystem(manager, session.key, ClientType.ADMIN)
@@ -95,7 +94,7 @@ async def test_listing_advertises_recorded_audio_without_a_filesystem_stat(
 async def test_listing_advertises_no_audio_for_a_message_without_markers(
     manager: TenantSessionManager, audio_store: AudioStore
 ) -> None:
-    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-test", REVISION)
     message = _audio_message()
     message.translated_audio_available = False
     message.original_audio_url = None
@@ -114,7 +113,7 @@ async def test_settled_refused_audio_is_not_advertised_even_if_its_file_survives
     """A failed unlink after settlement must not bring the refused audio back into view."""
     audio_store = UndeletableAudioStore(tmp_path)
     manager = TenantSessionManager(store=MemoryTenantSessionStore(), audio_store=audio_store)
-    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-test", REVISION)
     await manager.add_message(
         session.key, _audio_message(original_authorized=False, translated_authorized=False)
     )
@@ -136,7 +135,7 @@ async def test_the_content_sweep_clears_the_markers_it_settles(
     manager: TenantSessionManager, audio_store: AudioStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
-    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-test", REVISION)
     await manager.add_message(
         session.key, _audio_message(original_authorized=False, translated_authorized=False)
     )
@@ -153,7 +152,7 @@ async def test_the_content_sweep_clears_the_markers_it_settles(
 async def test_serving_audio_still_checks_that_the_file_exists(
     manager: TenantSessionManager, audio_store: AudioStore
 ) -> None:
-    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-test", REVISION)
     await manager.add_message(session.key, _audio_message())
 
     with pytest.raises(HTTPException) as missing:

@@ -1,6 +1,6 @@
 """A caller-supplied correlation ID is validated once, at every entry point.
 
-`StudioRuntimeClient` rejects a malformed correlation ID with a plain
+`StudioRuntimeV2Client` rejects a malformed correlation ID with a plain
 `ValueError`. Every route that forwards the header must refuse the request with
 a 400 instead of letting that surface as a 500, or -- worse on the write path --
 be swallowed into a silent refusal to persist.
@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from services.api_gateway.app import app
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.dependencies import get_studio_runtime_flow
-from tests.runtime_policy_helpers import configuration
+from tests.runtime_policy_helpers import runtime_read
 
 MALFORMED = ["x" * 129, "has\nnewline", "has\x00null", ""]
 
@@ -27,7 +27,7 @@ class _FakeStudio:
 
     async def fetch(self, tenant_id: str, correlation_id: str):
         self.calls += 1
-        return configuration(tenant_id=tenant_id, mode="ask")
+        return runtime_read(tenant_id=tenant_id, mode="ask")
 
 
 @pytest.fixture
@@ -113,9 +113,9 @@ async def test_the_studio_client_raises_a_bare_value_error(correlation_id):
     nor anything that would classify it, so an unvalidated header reaches here
     and escapes as a 500 -- or is swallowed by the gate's blanket except.
     """
-    from services.api_gateway.studio_runtime_client import StudioRuntimeClient
+    from services.api_gateway.studio_runtime_v2_client import StudioRuntimeV2Client
 
-    client = StudioRuntimeClient("http://studio-mock:8000", _token)
+    client = StudioRuntimeV2Client("http://studio-mock:8000", _token)
     with pytest.raises(ValueError):
         await client.fetch("tenant-kassel", correlation_id)
 

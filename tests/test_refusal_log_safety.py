@@ -14,11 +14,9 @@ from services.api_gateway.runtime_policy import (
 )
 from services.api_gateway.runtime_policy_metrics import RuntimePolicyMetrics
 from services.api_gateway.session_models import ClientType
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
-from tests.runtime_policy_helpers import RecordingClient, configuration
+from tests.runtime_policy_helpers import RecordingClient, runtime_read
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture
@@ -33,12 +31,12 @@ async def test_refusal_log_contains_no_conversation_content(
     secret_translated = "my secret request"
 
     session_manager.reset(clear_persistence=True)
-    session = await session_manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await session_manager.create_admin_session("tenant-test", REVISION)
     session.consent_status = ConsentStatus.DECLINED
     await session_manager.store.save(session)
 
     gate = RuntimePolicyGate(
-        RecordingClient(configuration(tenant_id="tenant-test", mode="ask")),
+        RecordingClient(runtime_read(tenant_id="tenant-test", mode="ask")),
         metrics=RuntimePolicyMetrics(policy_metrics_registry),
     )
     session_manager.runtime_policy = gate
@@ -63,7 +61,7 @@ async def test_refusal_log_contains_no_conversation_content(
 
 async def test_refusal_metrics_carry_no_identifiers(policy_metrics_registry):
     gate = RuntimePolicyGate(
-        RecordingClient(configuration(tenant_id="tenant-kassel", mode="disabled")),
+        RecordingClient(runtime_read(tenant_id="tenant-kassel", mode="disabled")),
         metrics=RuntimePolicyMetrics(policy_metrics_registry),
     )
     decision = await gate.authorize(

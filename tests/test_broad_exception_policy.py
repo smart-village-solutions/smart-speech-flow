@@ -59,12 +59,6 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/circuit_breaker.py", "CircuitBreaker._notify_state_change"): [
         "boundary"
     ],
-    # source text when translation or sanitising fails (open change add-conversation-language-display-fallback)
-    ("services/api_gateway/display_text_fallback.py", "resolve_field"): [
-        "fallback",
-        "fallback",
-        "fallback",
-    ],
     # an unavailable pass, never a raise
     ("services/api_gateway/feedback/maintenance.py", "FeedbackMaintenance.reconcile_once"): [
         "fallback"

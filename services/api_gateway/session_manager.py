@@ -48,7 +48,7 @@ from .session_store import (
     SessionStoreConsistencyError,
     TenantSessionStore,
 )
-from .tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from .tenant_session import TenantSessionKey
 
 if TYPE_CHECKING:
     from .audio_storage import AudioStore
@@ -312,7 +312,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
     async def create_admin_session(
         self,
         tenant_id: str,
-        runtime_configuration: RuntimeConfigurationSnapshot,
+        configuration_revision: str,
         *,
         owner_ref: Optional[str] = None,
     ) -> Session:
@@ -324,12 +324,12 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         """
         await asyncio.sleep(0)
         async with self._creation_locks.hold((tenant_id, owner_ref)):
-            return await self._replace_owner_session(tenant_id, runtime_configuration, owner_ref)
+            return await self._replace_owner_session(tenant_id, configuration_revision, owner_ref)
 
     async def _replace_owner_session(
         self,
         tenant_id: str,
-        runtime_configuration: RuntimeConfigurationSnapshot,
+        configuration_revision: str,
         owner_ref: Optional[str],
     ) -> Session:
         if not self.allow_parallel_sessions:
@@ -341,7 +341,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             session = Session(
                 id=self.session_id_factory(),
                 tenant_id=tenant_id,
-                runtime_configuration=runtime_configuration,
+                configuration_revision=configuration_revision,
                 status=SessionStatus.PENDING,
                 created_at=created_at,
                 last_activity=created_at,
@@ -599,7 +599,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         original_audio: bool,
         translated_audio: bool,
     ) -> None:
-        """Store the outcome of one message's three policy reads.
+        """Store the decision of one message's live policy read, per artefact.
 
         Args:
             session_id: The session key.

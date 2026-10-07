@@ -131,8 +131,8 @@ async def create_session_message(
         # WebSocket-Fehler sollen den HTTP-Request nicht zum Absturz bringen
 
     # Only now, with every participant served, does persistence get its say.
-    # Each artefact carries its own live read; the outcome decides what
-    # survives termination, never what the conversation delivered.
+    # One live read decides every artefact of the message; the outcome decides
+    # what survives termination, never what the conversation delivered.
     authorization = await authorize_message_artifacts(
         gate=sessions.runtime_policy,
         tenant_id=session_id.tenant_id,
@@ -153,7 +153,7 @@ async def create_session_message(
             translated_audio=authorization.translated_audio,
         )
     except Exception:  # noqa: BLE001 - the message is already delivered
-        # The policy reads leave a window in which the session can terminate,
+        # The policy read leaves a window in which the session can terminate,
         # and the store then refuses the write-back. Failing the request here
         # would report an error for a message the other party already has, and
         # a retry would duplicate it. The record defaults to refused, so the

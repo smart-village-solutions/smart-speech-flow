@@ -9,12 +9,10 @@ from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_pseudonym import SessionPseudonymizer
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import (
-    RuntimeConfigurationSnapshot,
     TenantSessionKey,
 )
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 PSEUDONYMIZER = SessionPseudonymizer(key=b"tenant-log-safety-test")
 
 
@@ -52,7 +50,7 @@ async def test_customer_activation_logs_only_pseudonymous_session_scope(
         session_id_factory=lambda: "JOIN1234",
         audio_store=AudioStore.from_environment(),
     )
-    session = await manager.create_admin_session("secret-tenant", SNAPSHOT)
+    session = await manager.create_admin_session("secret-tenant", REVISION)
     capsys.readouterr()
 
     with caplog.at_level(logging.INFO):

@@ -264,7 +264,9 @@ async def create_admin_session(
     logger.info("🚀 Admin-Session-Erstellung gestartet")
 
     session = await lifecycle.create(
-        runtime.context.tenant_id, runtime.configuration, owner_ref=owner_ref
+        runtime.context.tenant_id,
+        runtime.read.policy.configuration_revision,
+        owner_ref=owner_ref,
     )
     session_id = session.id
 

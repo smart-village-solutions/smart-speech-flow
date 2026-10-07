@@ -151,6 +151,7 @@ async def test_tenant_active_lookup_rejects_ambiguity_and_excludes_other_tenants
     selected = await manager.get_active_session("SESSION2", tenant_id="tenant-a", owner_ref=OWNER)
     assert selected["id"] == "SESSION2"
     assert "tenant_id" not in selected
+    assert "configuration_revision" not in selected
     assert "runtime_configuration" not in selected
     assert await manager.get_active_session("SESSION3", tenant_id="tenant-a", owner_ref=OWNER) is None
     first.status = second.status = SessionStatus.TERMINATED

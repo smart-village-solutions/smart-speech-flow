@@ -11,7 +11,6 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
-from services.api_gateway.studio_runtime_client import RuntimeConfiguration
 from services.api_gateway.studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
     require_validated_runtime_configuration,
@@ -28,36 +27,9 @@ from tests.compose_documents import (
     render_development_compose,
 )
 from tests.gateway_container import installed_gateway_dependencies
+from tests.runtime_policy_helpers import runtime_read
 
 REVISION = f"sha256:{'a' * 64}"
-
-
-def _test_runtime_configuration() -> RuntimeConfiguration:
-    return RuntimeConfiguration.model_validate(
-        {
-            "contractVersion": "1.0",
-            "configurationRevision": REVISION,
-            "authorizationRevision": REVISION,
-            "tenant": {
-                "id": "tenant-test",
-                "displayName": "Test Tenant",
-                "timeZone": "Europe/Berlin",
-            },
-            "branding": {"logo": None, "icon": None},
-            "localization": {
-                "defaultLocale": "de-DE",
-                "locales": [
-                    {
-                        "locale": "de-DE",
-                        "authenticatedHomeExplanationHtml": "<p>Admin</p>",
-                        "guestExplanationHtml": "<p>Guest</p>",
-                        "conversationContentStorageQuestionHtml": "<p>Store?</p>",
-                    }
-                ],
-            },
-            "conversationContentStorage": {"mode": "ask"},
-        }
-    )
 
 
 try:  # pragma: no cover - optional dependency detection
@@ -144,7 +116,7 @@ def bypass_admin_auth_for_legacy_route_tests(request):
         return
 
     context = StudioTenantContext("tenant-test", REVISION)
-    configuration = _test_runtime_configuration()
+    read = runtime_read(context.tenant_id, revision=REVISION)
     app.dependency_overrides[require_ssf_user] = lambda: {
         "sub": "test-admin",
         "studio_tenant_id": context.tenant_id,
@@ -152,7 +124,7 @@ def bypass_admin_auth_for_legacy_route_tests(request):
     }
     app.dependency_overrides[require_studio_tenant_context] = lambda: context
     app.dependency_overrides[require_validated_runtime_configuration] = lambda: (
-        ValidatedRuntimeConfiguration(context, configuration, "test-correlation")
+        ValidatedRuntimeConfiguration(context, read, "test-correlation")
     )
     yield
     app.dependency_overrides.pop(require_ssf_user, None)

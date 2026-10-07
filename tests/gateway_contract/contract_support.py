@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from services.api_gateway.studio_runtime_client import RuntimeConfiguration
+from services.api_gateway.studio_v2 import RuntimeRead
+from tests.runtime_policy_helpers import runtime_read as build_runtime_read
 
 REVISION = f"sha256:{'a' * 64}"
 ALLOWED_ORIGIN = "https://translate.smart-village.solutions"
@@ -10,30 +11,8 @@ TENANT_A = "tenant-a"
 TENANT_B = "tenant-b"
 
 
-def runtime_configuration(tenant_id: str, *, storage_mode: str = "ask") -> RuntimeConfiguration:
-    return RuntimeConfiguration.model_validate(
-        {
-            "contractVersion": "1.0",
-            "configurationRevision": REVISION,
-            "authorizationRevision": REVISION,
-            "tenant": {"id": tenant_id, "displayName": tenant_id, "timeZone": "Europe/Berlin"},
-            "branding": {"logo": None, "icon": None},
-            "localization": {
-                "defaultLocale": "de-DE",
-                "locales": [
-                    {
-                        "locale": "de-DE",
-                        "authenticatedHomeExplanationHtml": "<p>Admin</p>",
-                        "guestExplanationHtml": "<p>Guest</p>",
-                        "conversationContentStorageQuestionHtml": (
-                            "<p>Store?</p>" if storage_mode == "ask" else None
-                        ),
-                    }
-                ],
-            },
-            "conversationContentStorage": {"mode": storage_mode},
-        }
-    )
+def runtime_read(tenant_id: str, *, storage_mode: str = "ask") -> RuntimeRead:
+    return build_runtime_read(tenant_id, storage_mode, revision=REVISION)
 
 
 def wav_bytes(seconds: float = 1.0, rate: int = 16000) -> bytes:

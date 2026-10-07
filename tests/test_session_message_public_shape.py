@@ -7,17 +7,15 @@ import pytest
 from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.conversation_service import ConversationService
 from services.api_gateway.session_models import ClientType, SessionMessage
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 from tests.pipeline_helpers import speech_pipeline
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture
 async def granted_session_with_message(session_manager):
     session_manager.reset(clear_persistence=True)
-    session = await session_manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await session_manager.create_admin_session("tenant-test", REVISION)
     await session_manager.add_message(
         session.key,
         SessionMessage(

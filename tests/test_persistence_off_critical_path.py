@@ -16,10 +16,8 @@ from services.api_gateway import message_delivery
 from services.api_gateway import message_requests
 from services.api_gateway.runtime_policy import PolicyDecision, PolicyReason
 from services.api_gateway.session_models import ClientType
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture
@@ -30,7 +28,7 @@ def audio_store(tmp_path: Path) -> AudioStore:
 
 async def _session_with_consent(session_manager, status: ConsentStatus):
     session_manager.reset(clear_persistence=True)
-    session = await session_manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await session_manager.create_admin_session("tenant-test", REVISION)
     session.consent_status = status
     await session_manager.store.save(session)
     return session.key

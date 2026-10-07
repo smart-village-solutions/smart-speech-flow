@@ -4,29 +4,19 @@
 
 Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für mehrsprachige Kommunikation zwischen Verwaltungsmitarbeitern und Bürgern. Das System ermöglicht bidirektionale Sprachkommunikation mit automatischer Übersetzung in Echtzeit.
 
-### Conversation language and Studio display text
+### Studio runtime configuration and display text
 
 `GET /api/languages/supported` supplies conversation and pipeline languages.
-Studio runtime configuration supplies reviewed display variants through
-`localization.defaultLocale` and `localization.locales`. The internal Gateway
-resolver in `services/api_gateway/display_text_fallback.py` uses a selected
-conversation language to choose display text; it never changes that language.
-The existing language picker and Studio V1 contract are unchanged.
-
-For each explicitly supported text field, a present matching Studio variant
-wins. If it is missing, SSF translates the German Studio value, then the
-English Studio value, then a limited SSF-owned English display default. An
-unsupported language or translation failure returns the selected safe source
-for that field. The English default is only a display fallback for a missing
-variant in an otherwise valid Studio response; it does not replace a value
-Studio supplies. If conversation-content storage is disabled, the storage
-question is absent.
-
-HTML fields are sanitized and only their text nodes are translated; plain-text
-fields bypass HTML parsing. New Studio fields must be registered explicitly
-with their text kind and English default. Locale matching uses language tags
-and does not require a fixed SSF language table. No UI currently consumes this
-resolver and it has no public endpoint.
+The gateway reads Studio runtime configuration contract v2. Its storage policy
+(`conversationContentStorage`) is read live and never cached: it decides consent
+at guest activation and authorizes each message's persistence with one read per
+message. A session keeps only the `configurationRevision` it was created on.
+Content sections (staff texts, guest languages, branding) are parsed leniently:
+an invalid section is dropped on its own and the rest of the read stays usable.
+No gateway route serves Studio content yet, and nothing calls the HTML
+allowlist in `services/api_gateway/studio_html.py` yet. A route that exposes
+Studio content must pass every HTML field through `safe_html` first. The login
+directory stays on contract v1.
 
 ## 🎯 Zielgruppen
 - **Admin-Benutzer:** Deutschsprachige Verwaltungsmitarbeiter
