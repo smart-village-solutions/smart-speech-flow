@@ -47,7 +47,16 @@ def _storage_disabled(body: dict[str, Any]) -> None:
 
 def _invalid_guest_form(body: dict[str, Any]) -> None:
     # The gateway drops a guest language whose form is invalid; the policy stays valid.
-    body["guestLanguages"][0]["feedback"]["questions"].append(deepcopy(UNSUPPORTED_QUESTION))
+    form = body["guestLanguages"][0].setdefault(
+        "feedback",
+        {
+            "headline": "Feedback",
+            "questions": [],
+            "noticeHtml": "<p>Test environment.</p>",
+            "button": "Send",
+        },
+    )
+    form["questions"].append(deepcopy(UNSUPPORTED_QUESTION))
 
 
 def _invalid_installation_form(body: dict[str, Any]) -> None:

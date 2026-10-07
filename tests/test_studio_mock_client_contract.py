@@ -257,6 +257,18 @@ async def test_invalid_content_drops_one_guest_language_and_keeps_the_policy() -
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("tenant_id", fixtures.RUNTIME_V2_TENANTS)
+async def test_invalid_content_keeps_every_tenants_policy(tenant_id: str) -> None:
+    plain = await _runtime_v2().fetch(tenant_id, "contract-correlation")
+
+    read = await _runtime_v2(scenario="invalid-content").fetch(tenant_id, "contract-correlation")
+
+    assert read.policy.mode == plain.policy.mode
+    assert read.policy.retention_hours == plain.policy.retention_hours
+    assert read.content.guest_languages == plain.content.guest_languages[1:]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("token", "scenario", "tenant_id", "code", "status"),
     [

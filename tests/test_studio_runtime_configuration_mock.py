@@ -412,6 +412,15 @@ def test_v2_runtime_rejects_missing_correlation_and_query_selectors() -> None:
     assert query.json() == _v2_error("tenant_not_found", False, RUNTIME_MESSAGE)
 
 
+@pytest.mark.parametrize("tenant_id", fixtures.RUNTIME_V2_TENANTS)
+@pytest.mark.parametrize("scenario", ["storage-disabled", "invalid-content"])
+def test_v2_content_scenarios_serve_every_tenant(tenant_id: str, scenario: str) -> None:
+    response = CLIENT.get(V2_PATH, headers=_headers(tenant_id, **{"X-Mock-Scenario": scenario}))
+
+    assert response.status_code == 200
+    assert response.json() == fixtures.runtime_configuration_v2(tenant_id, scenario)
+
+
 def test_v1_runtime_still_answers_with_v1_envelopes() -> None:
     response = CLIENT.get(PATH, headers=_headers(**{"X-Mock-Scenario": "suspended"}))
 

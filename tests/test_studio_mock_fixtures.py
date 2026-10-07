@@ -147,6 +147,21 @@ def test_invalid_content_drops_only_the_affected_guest_language() -> None:
     assert read.content.staff is not None and read.content.staff.feedback is not None
 
 
+@pytest.mark.parametrize("tenant_id", fixtures.RUNTIME_V2_TENANTS)
+def test_invalid_content_drops_the_first_guest_language_of_every_tenant(tenant_id: str) -> None:
+    plain = parse_runtime_configuration_v2(
+        fixtures.runtime_configuration_v2(tenant_id, None), expected_tenant_id=tenant_id
+    )
+    body = fixtures.runtime_configuration_v2(tenant_id, "invalid-content")
+
+    read = parse_runtime_configuration_v2(body, expected_tenant_id=tenant_id)
+
+    assert fixtures.UNSUPPORTED_QUESTION in body["guestLanguages"][0]["feedback"]["questions"]
+    assert read.policy.mode == plain.policy.mode
+    assert read.policy.retention_hours == plain.policy.retention_hours
+    assert read.content.guest_languages == plain.content.guest_languages[1:]
+
+
 def test_invalid_installation_content_drops_only_the_form() -> None:
     body = fixtures.installation_content_v2("invalid-content")
 
