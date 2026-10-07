@@ -35,6 +35,7 @@ CONTAINER_BUILT = (
     "session_lifecycle",
     "studio_runtime_flow",
     "login_directory",
+    "studio_token_provider",
     "service_health",
     "circuit_breaker_client",
     "speech_pipeline",

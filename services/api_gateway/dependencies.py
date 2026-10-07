@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from .session_pseudonym import SessionPseudonymizer
     from .studio_login_directory import StudioLoginDirectoryService
     from .studio_runtime_flow import StudioRuntimeFlow
+    from .studio_runtime_token import StudioRuntimeTokenProvider
     from .translation_refiner import BaseTranslationRefiner
     from .websocket import WebSocketManager
     from .websocket_monitor import WebSocketMetrics, WebSocketMonitor
@@ -60,6 +61,8 @@ class GatewayDependencies:
     # fail-closed answer.
     studio_runtime_flow: StudioRuntimeFlow | None
     login_directory: StudioLoginDirectoryService | None
+    # Shared by every Studio client, so concurrent reads make one token request.
+    studio_token_provider: StudioRuntimeTokenProvider | None
     # The breakers, their health polling and the degradation mode derived
     # from them; the speech pipeline calls through the same breakers.
     service_health: ServiceHealthManager
@@ -84,6 +87,7 @@ def build_gateway_dependencies(
     redis: Any = None,
     redis_namespace: str = "ssf",
     studio_runtime_flow: StudioRuntimeFlow | None = None,
+    studio_token_provider: StudioRuntimeTokenProvider | None = None,
     runtime_policy: RuntimePolicyGate | None = None,
     polling_messages_dropped: Counter | None = None,
     websocket_metrics: WebSocketMetrics | None = None,
@@ -100,7 +104,9 @@ def build_gateway_dependencies(
     store and the realtime tickets; without one both live in process memory,
     as local development always has. `studio_runtime_flow` and the persistence
     gate built on it come from the lifespan; None means Studio is unconfigured,
-    and a None gate refuses every write of conversation content. The refiner,
+    and a None gate refuses every write of conversation content.
+    `studio_token_provider` is the lifespan's one provider; the login directory
+    takes its tokens from it, and None leaves the directory unconfigured. The refiner,
     the admission gate and quality telemetry come from the lifespan too, which
     builds them first; None leaves the pipeline unbounded and emits no rows.
     Without an `audio_store` the app stores audio under SSF_AUDIO_BASE_DIR as
@@ -185,7 +191,8 @@ def build_gateway_dependencies(
         ),
         session_lifecycle=SessionLifecycleService(session_manager),
         studio_runtime_flow=studio_runtime_flow,
-        login_directory=login_directory_from_environment(),
+        login_directory=login_directory_from_environment(studio_token_provider),
+        studio_token_provider=studio_token_provider,
         service_health=service_health,
         circuit_breaker_client=CircuitBreakerServiceClient(service_health),
         speech_pipeline=speech_pipeline,

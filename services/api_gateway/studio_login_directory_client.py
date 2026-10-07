@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from typing import Awaitable, Callable
-from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -12,6 +11,7 @@ from .studio_v1 import (
     StudioV1ClientError,
     StudioV1Endpoint,
     StudioV1Transport,
+    is_safe_https_url,
     require_printable_ascii,
 )
 
@@ -55,16 +55,8 @@ class StudioLoginTenant(BaseModel):
     def validate_studio_url(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        parsed = urlsplit(value)
-        if (
-            parsed.scheme != "https"
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or any(character.isspace() for character in value)
-        ):
+        if not is_safe_https_url(value):
             raise ValueError("studioUrl must be a safe HTTPS URL")
-        _ = parsed.port
         return value
 
 

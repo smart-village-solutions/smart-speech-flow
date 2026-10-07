@@ -48,10 +48,11 @@ def test_timeout_variable_reaches_the_client(monkeypatch):
     from services.api_gateway.studio_runtime_flow import (
         runtime_flow_from_environment,
     )
+    from services.api_gateway.studio_runtime_token import token_provider_from_environment
 
     _configure_studio(monkeypatch)
     monkeypatch.setenv("STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS", "2.5")
-    flow = runtime_flow_from_environment()
+    flow = runtime_flow_from_environment(token_provider_from_environment())
     assert flow.client.timeout_seconds == pytest.approx(2.5)
 
 
@@ -59,10 +60,11 @@ def test_timeout_defaults_to_the_client_default(monkeypatch):
     from services.api_gateway.studio_runtime_flow import (
         runtime_flow_from_environment,
     )
+    from services.api_gateway.studio_runtime_token import token_provider_from_environment
 
     _configure_studio(monkeypatch)
     monkeypatch.delenv("STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS", raising=False)
-    flow = runtime_flow_from_environment()
+    flow = runtime_flow_from_environment(token_provider_from_environment())
     assert flow.client.timeout_seconds == pytest.approx(5.0)
 
 
@@ -78,8 +80,9 @@ def test_an_out_of_range_timeout_falls_back_instead_of_breaking_the_flow(monkeyp
     from services.api_gateway.studio_runtime_flow import (
         runtime_flow_from_environment,
     )
+    from services.api_gateway.studio_runtime_token import token_provider_from_environment
 
     _configure_studio(monkeypatch)
     monkeypatch.setenv("STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS", raw)
-    flow = runtime_flow_from_environment()
+    flow = runtime_flow_from_environment(token_provider_from_environment())
     assert flow.client.timeout_seconds == pytest.approx(5.0)
