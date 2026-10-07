@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from httpx import Response
 
-from services.studio_mock import fixtures
+from services.studio_mock import contract_fixtures
 from services.studio_mock.app import app
 
 CLIENT = TestClient(app)
@@ -346,12 +346,12 @@ def _v2_error(
     }
 
 
-@pytest.mark.parametrize("tenant_id", fixtures.RUNTIME_V2_TENANTS)
+@pytest.mark.parametrize("tenant_id", contract_fixtures.RUNTIME_V2_TENANTS)
 def test_v2_runtime_serves_each_fixture_with_its_revision(tenant_id: str) -> None:
     response = CLIENT.get(V2_PATH, headers=_headers(tenant_id))
 
     assert response.status_code == 200
-    assert response.json() == fixtures.runtime_configuration_v2(tenant_id, None)
+    assert response.json() == contract_fixtures.runtime_configuration_v2(tenant_id, None)
     assert response.json()["contractVersion"] == "2.0"
     assert "authorizationRevision" not in response.json()
 
@@ -361,13 +361,17 @@ def test_v2_runtime_applies_the_scenario_per_request() -> None:
     plain = CLIENT.get(V2_PATH, headers=_headers())
     invalid = CLIENT.get(V2_PATH, headers=_headers(**{"X-Mock-Scenario": "invalid-content"}))
 
-    assert disabled.json() == fixtures.runtime_configuration_v2("tenant-kassel", "storage-disabled")
+    assert disabled.json() == contract_fixtures.runtime_configuration_v2(
+        "tenant-kassel", "storage-disabled"
+    )
     assert disabled.json()["conversationContentStorage"] == {
         "mode": "disabled",
         "retentionHours": None,
     }
     assert plain.json()["conversationContentStorage"] == {"mode": "ask", "retentionHours": 4320}
-    assert invalid.json() == fixtures.runtime_configuration_v2("tenant-kassel", "invalid-content")
+    assert invalid.json() == contract_fixtures.runtime_configuration_v2(
+        "tenant-kassel", "invalid-content"
+    )
 
 
 @pytest.mark.parametrize(
@@ -412,13 +416,13 @@ def test_v2_runtime_rejects_missing_correlation_and_query_selectors() -> None:
     assert query.json() == _v2_error("tenant_not_found", False, RUNTIME_MESSAGE)
 
 
-@pytest.mark.parametrize("tenant_id", fixtures.RUNTIME_V2_TENANTS)
+@pytest.mark.parametrize("tenant_id", contract_fixtures.RUNTIME_V2_TENANTS)
 @pytest.mark.parametrize("scenario", ["storage-disabled", "invalid-content"])
 def test_v2_content_scenarios_serve_every_tenant(tenant_id: str, scenario: str) -> None:
     response = CLIENT.get(V2_PATH, headers=_headers(tenant_id, **{"X-Mock-Scenario": scenario}))
 
     assert response.status_code == 200
-    assert response.json() == fixtures.runtime_configuration_v2(tenant_id, scenario)
+    assert response.json() == contract_fixtures.runtime_configuration_v2(tenant_id, scenario)
 
 
 def test_v1_runtime_still_answers_with_v1_envelopes() -> None:
@@ -442,8 +446,8 @@ def test_installation_content_serves_the_fixture_with_its_revision() -> None:
     )
 
     assert plain.status_code == 200
-    assert plain.json() == fixtures.installation_content_v2(None)
-    assert invalid.json() == fixtures.installation_content_v2("invalid-content")
+    assert plain.json() == contract_fixtures.installation_content_v2(None)
+    assert invalid.json() == contract_fixtures.installation_content_v2("invalid-content")
 
 
 @pytest.mark.parametrize(

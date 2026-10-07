@@ -58,19 +58,23 @@ def _invalid_guest_form(body: dict[str, Any]) -> None:
     # The gateway drops a guest language whose form is invalid; the policy stays valid.
     if not body["guestLanguages"]:
         return
-    language = body["guestLanguages"][0]
-    if not language.get("feedback"):
-        language["feedback"] = {
+    _add_unsupported_question(body["guestLanguages"][0])
+
+
+def _invalid_installation_form(body: dict[str, Any]) -> None:
+    _add_unsupported_question(body["localization"])
+
+
+def _add_unsupported_question(owner: dict[str, Any]) -> None:
+    # The form is optional in the contract; a missing or null one gets a placeholder.
+    if not owner.get("feedback"):
+        owner["feedback"] = {
             "headline": "Feedback",
             "questions": [],
             "noticeHtml": "<p>Test environment.</p>",
             "button": "Send",
         }
-    language["feedback"]["questions"].append(deepcopy(UNSUPPORTED_QUESTION))
-
-
-def _invalid_installation_form(body: dict[str, Any]) -> None:
-    body["localization"]["feedback"]["questions"].append(deepcopy(UNSUPPORTED_QUESTION))
+    owner["feedback"]["questions"].append(deepcopy(UNSUPPORTED_QUESTION))
 
 
 _RUNTIME_SCENARIOS: dict[str, Transform] = {

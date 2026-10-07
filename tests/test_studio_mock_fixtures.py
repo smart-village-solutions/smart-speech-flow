@@ -12,7 +12,7 @@ from services.api_gateway.studio_v2 import (
     parse_installation_content_v2,
     parse_runtime_configuration_v2,
 )
-from services.studio_mock import fixtures
+from services.studio_mock import contract_fixtures
 
 DROPPED = "Studio content dropped"
 
@@ -28,8 +28,10 @@ def _dropped(caplog: pytest.LogCaptureFixture) -> list[str]:
 
 
 def test_every_runtime_fixture_is_named_after_its_tenant() -> None:
-    for tenant_id in fixtures.RUNTIME_V2_TENANTS:
-        raw = json.loads((fixtures.FIXTURES / f"runtime-{tenant_id}.json").read_text("utf-8"))
+    for tenant_id in contract_fixtures.RUNTIME_V2_TENANTS:
+        raw = json.loads(
+            (contract_fixtures.FIXTURES / f"runtime-{tenant_id}.json").read_text("utf-8")
+        )
         assert raw["tenant"]["id"] == tenant_id
         assert "configurationRevision" not in raw
         assert "authorizationRevision" not in raw
@@ -37,8 +39,10 @@ def test_every_runtime_fixture_is_named_after_its_tenant() -> None:
 
 def test_the_three_tenants_cover_ask_disabled_and_zero_retention() -> None:
     storage = {
-        tenant: fixtures.runtime_configuration_v2(tenant, None)["conversationContentStorage"]
-        for tenant in fixtures.RUNTIME_V2_TENANTS
+        tenant: contract_fixtures.runtime_configuration_v2(tenant, None)[
+            "conversationContentStorage"
+        ]
+        for tenant in contract_fixtures.RUNTIME_V2_TENANTS
     }
 
     assert storage == {
@@ -48,12 +52,12 @@ def test_the_three_tenants_cover_ask_disabled_and_zero_retention() -> None:
     }
 
 
-@pytest.mark.parametrize("tenant_id", fixtures.RUNTIME_V2_TENANTS)
+@pytest.mark.parametrize("tenant_id", contract_fixtures.RUNTIME_V2_TENANTS)
 @pytest.mark.parametrize("scenario", [None, "storage-disabled"])
 def test_every_runtime_body_parses_without_dropping_content(
     tenant_id: str, scenario: str | None, caplog: pytest.LogCaptureFixture
 ) -> None:
-    body = fixtures.runtime_configuration_v2(tenant_id, scenario)
+    body = contract_fixtures.runtime_configuration_v2(tenant_id, scenario)
 
     with caplog.at_level(logging.WARNING, logger="services.api_gateway.studio_v2"):
         read = parse_runtime_configuration_v2(body, expected_tenant_id=tenant_id)
@@ -69,7 +73,7 @@ def test_every_runtime_body_parses_without_dropping_content(
 def test_the_installation_body_parses_without_dropping_content(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    body = fixtures.installation_content_v2(None)
+    body = contract_fixtures.installation_content_v2(None)
 
     with caplog.at_level(logging.WARNING, logger="services.api_gateway.studio_v2"):
         content = parse_installation_content_v2(body)
@@ -89,10 +93,10 @@ def test_the_installation_body_parses_without_dropping_content(
 
 
 def test_revisions_are_canonical_sha256_and_follow_the_body() -> None:
-    plain = fixtures.runtime_configuration_v2("tenant-kassel", None)
-    again = fixtures.runtime_configuration_v2("tenant-kassel", None)
-    disabled = fixtures.runtime_configuration_v2("tenant-kassel", "storage-disabled")
-    installation = fixtures.installation_content_v2(None)
+    plain = contract_fixtures.runtime_configuration_v2("tenant-kassel", None)
+    again = contract_fixtures.runtime_configuration_v2("tenant-kassel", None)
+    disabled = contract_fixtures.runtime_configuration_v2("tenant-kassel", "storage-disabled")
+    installation = contract_fixtures.installation_content_v2(None)
 
     assert plain == again
     assert plain["configurationRevision"] == _canonical_sha(plain)
@@ -102,27 +106,27 @@ def test_revisions_are_canonical_sha256_and_follow_the_body() -> None:
 
 
 def test_a_served_body_is_a_copy_the_caller_may_mutate() -> None:
-    fixtures.runtime_configuration_v2("tenant-kassel", None)["guestLanguages"].clear()
-    fixtures.login_directory_tenants().clear()
+    contract_fixtures.runtime_configuration_v2("tenant-kassel", None)["guestLanguages"].clear()
+    contract_fixtures.login_directory_tenants().clear()
 
-    assert fixtures.runtime_configuration_v2("tenant-kassel", None)["guestLanguages"]
-    assert fixtures.login_directory_tenants()
+    assert contract_fixtures.runtime_configuration_v2("tenant-kassel", None)["guestLanguages"]
+    assert contract_fixtures.login_directory_tenants()
 
 
 def test_an_unknown_tenant_is_a_key_error() -> None:
     with pytest.raises(KeyError):
-        fixtures.runtime_configuration_v2("tenant-unknown", None)
+        contract_fixtures.runtime_configuration_v2("tenant-unknown", None)
 
 
 def test_every_directory_tenant_has_a_v2_fixture() -> None:
-    directory_ids = {tenant["id"] for tenant in fixtures.login_directory_tenants()}
+    directory_ids = {tenant["id"] for tenant in contract_fixtures.login_directory_tenants()}
 
     assert directory_ids == {"tenant-kassel", "tenant-fulda"}
-    assert directory_ids <= set(fixtures.RUNTIME_V2_TENANTS)
+    assert directory_ids <= set(contract_fixtures.RUNTIME_V2_TENANTS)
 
 
 def test_storage_disabled_flips_the_policy_and_every_question() -> None:
-    body = fixtures.runtime_configuration_v2("tenant-kassel", "storage-disabled")
+    body = contract_fixtures.runtime_configuration_v2("tenant-kassel", "storage-disabled")
 
     read = parse_runtime_configuration_v2(body, expected_tenant_id="tenant-kassel")
 
@@ -132,11 +136,13 @@ def test_storage_disabled_flips_the_policy_and_every_question() -> None:
 
 
 def test_invalid_content_drops_only_the_affected_guest_language() -> None:
-    body = fixtures.runtime_configuration_v2("tenant-kassel", "invalid-content")
+    body = contract_fixtures.runtime_configuration_v2("tenant-kassel", "invalid-content")
 
     read = parse_runtime_configuration_v2(body, expected_tenant_id="tenant-kassel")
 
-    assert fixtures.UNSUPPORTED_QUESTION in body["guestLanguages"][0]["feedback"]["questions"]
+    assert (
+        contract_fixtures.UNSUPPORTED_QUESTION in body["guestLanguages"][0]["feedback"]["questions"]
+    )
     assert (read.policy.mode, read.policy.retention_hours) == ("ask", 4320)
     assert [language.locale for language in read.content.guest_languages] == [
         "tr",
@@ -147,58 +153,62 @@ def test_invalid_content_drops_only_the_affected_guest_language() -> None:
     assert read.content.staff is not None and read.content.staff.feedback is not None
 
 
-@pytest.mark.parametrize("tenant_id", fixtures.RUNTIME_V2_TENANTS)
+@pytest.mark.parametrize("tenant_id", contract_fixtures.RUNTIME_V2_TENANTS)
 def test_invalid_content_drops_the_first_guest_language_of_every_tenant(tenant_id: str) -> None:
     plain = parse_runtime_configuration_v2(
-        fixtures.runtime_configuration_v2(tenant_id, None), expected_tenant_id=tenant_id
+        contract_fixtures.runtime_configuration_v2(tenant_id, None), expected_tenant_id=tenant_id
     )
-    body = fixtures.runtime_configuration_v2(tenant_id, "invalid-content")
+    body = contract_fixtures.runtime_configuration_v2(tenant_id, "invalid-content")
 
     read = parse_runtime_configuration_v2(body, expected_tenant_id=tenant_id)
 
-    assert fixtures.UNSUPPORTED_QUESTION in body["guestLanguages"][0]["feedback"]["questions"]
+    assert (
+        contract_fixtures.UNSUPPORTED_QUESTION in body["guestLanguages"][0]["feedback"]["questions"]
+    )
     assert read.policy.mode == plain.policy.mode
     assert read.policy.retention_hours == plain.policy.retention_hours
     assert read.content.guest_languages == plain.content.guest_languages[1:]
 
 
 def test_invalid_installation_content_drops_only_the_form() -> None:
-    body = fixtures.installation_content_v2("invalid-content")
+    body = contract_fixtures.installation_content_v2("invalid-content")
 
     content = parse_installation_content_v2(body)
 
-    assert fixtures.UNSUPPORTED_QUESTION in body["localization"]["feedback"]["questions"]
+    assert contract_fixtures.UNSUPPORTED_QUESTION in body["localization"]["feedback"]["questions"]
     assert content.feedback is None
     assert content.legal.imprint_url == "https://example.org/impressum"
 
 
 def test_unknown_scenarios_serve_the_plain_body() -> None:
-    assert fixtures.runtime_configuration_v2("tenant-kassel", "no-such-scenario") == (
-        fixtures.runtime_configuration_v2("tenant-kassel", None)
+    assert contract_fixtures.runtime_configuration_v2("tenant-kassel", "no-such-scenario") == (
+        contract_fixtures.runtime_configuration_v2("tenant-kassel", None)
     )
-    assert fixtures.installation_content_v2("storage-disabled") == (
-        fixtures.installation_content_v2(None)
+    assert contract_fixtures.installation_content_v2("storage-disabled") == (
+        contract_fixtures.installation_content_v2(None)
     )
 
 
 def _kassel_with_guest_languages(monkeypatch: pytest.MonkeyPatch, languages: list[dict]) -> None:
-    template = fixtures.runtime_configuration_v2("tenant-kassel", None)
+    template = contract_fixtures.runtime_configuration_v2("tenant-kassel", None)
     del template["configurationRevision"]
     template["guestLanguages"] = languages
-    monkeypatch.setitem(fixtures._RUNTIME, "tenant-kassel", template)
+    monkeypatch.setitem(contract_fixtures._RUNTIME, "tenant-kassel", template)
 
 
 def test_invalid_content_replaces_an_explicit_null_guest_form(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    languages = fixtures.runtime_configuration_v2("tenant-kassel", None)["guestLanguages"]
+    languages = contract_fixtures.runtime_configuration_v2("tenant-kassel", None)["guestLanguages"]
     languages[0]["feedback"] = None
     _kassel_with_guest_languages(monkeypatch, languages)
 
-    body = fixtures.runtime_configuration_v2("tenant-kassel", "invalid-content")
+    body = contract_fixtures.runtime_configuration_v2("tenant-kassel", "invalid-content")
     read = parse_runtime_configuration_v2(body, expected_tenant_id="tenant-kassel")
 
-    assert body["guestLanguages"][0]["feedback"]["questions"] == [fixtures.UNSUPPORTED_QUESTION]
+    assert body["guestLanguages"][0]["feedback"]["questions"] == [
+        contract_fixtures.UNSUPPORTED_QUESTION
+    ]
     assert [language.locale for language in read.content.guest_languages] == [
         "tr",
         "ar",
@@ -212,7 +222,7 @@ def test_invalid_content_without_guest_languages_serves_the_body(
 ) -> None:
     _kassel_with_guest_languages(monkeypatch, [])
 
-    body = fixtures.runtime_configuration_v2("tenant-kassel", "invalid-content")
+    body = contract_fixtures.runtime_configuration_v2("tenant-kassel", "invalid-content")
 
     assert body["guestLanguages"] == []
     assert body["conversationContentStorage"] == {"mode": "ask", "retentionHours": 4320}
@@ -227,7 +237,7 @@ def test_runtime_templates_are_keyed_by_the_tenant_id_in_the_body(tmp_path) -> N
     _write_runtime(tmp_path, "tenant-a", "tenant-a")
     _write_runtime(tmp_path, "tenant-b", "tenant-b")
 
-    templates = fixtures.load_runtime_templates(tmp_path)
+    templates = contract_fixtures.load_runtime_templates(tmp_path)
 
     assert sorted(templates) == ["tenant-a", "tenant-b"]
     assert templates["tenant-a"]["tenant"]["id"] == "tenant-a"
@@ -237,4 +247,24 @@ def test_a_runtime_fixture_named_after_another_tenant_fails_at_load(tmp_path) ->
     _write_runtime(tmp_path, "tenant-giessen", "tenant-gießen")
 
     with pytest.raises(ValueError, match="runtime-tenant-giessen.json"):
-        fixtures.load_runtime_templates(tmp_path)
+        contract_fixtures.load_runtime_templates(tmp_path)
+
+
+@pytest.mark.parametrize("form", ["missing", None])
+def test_invalid_content_on_installation_without_a_form_drops_only_the_form(
+    monkeypatch: pytest.MonkeyPatch, form: str | None
+) -> None:
+    template = contract_fixtures.installation_content_v2(None)
+    del template["configurationRevision"]
+    if form == "missing":
+        del template["localization"]["feedback"]
+    else:
+        template["localization"]["feedback"] = None
+    monkeypatch.setattr(contract_fixtures, "_INSTALLATION", template)
+
+    body = contract_fixtures.installation_content_v2("invalid-content")
+    content = parse_installation_content_v2(body)
+
+    assert body["localization"]["feedback"]["questions"] == [contract_fixtures.UNSUPPORTED_QUESTION]
+    assert content.feedback is None
+    assert content.legal.imprint_url == "https://example.org/impressum"

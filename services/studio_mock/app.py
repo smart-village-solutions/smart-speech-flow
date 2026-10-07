@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from services.api_gateway.studio_login_directory_client import StudioLoginDirectory
 from services.api_gateway.studio_runtime_client import RuntimeConfiguration
 from services.api_gateway.studio_v1 import StudioV1ErrorEnvelope
-from services.studio_mock import fixtures
+from services.studio_mock import contract_fixtures
 
 app = FastAPI(title="Studio Runtime Configuration Mock")
 
@@ -167,8 +167,8 @@ def _configuration_for(tenant_id: str) -> dict[str, Any]:
         "tenantId": tenant_id,
         "permissions": ["ssf.runtime-configuration.read"],
     }
-    configuration["authorizationRevision"] = fixtures.revision(authorization)
-    configuration["configurationRevision"] = fixtures.revision(configuration)
+    configuration["authorizationRevision"] = contract_fixtures.revision(authorization)
+    configuration["configurationRevision"] = contract_fixtures.revision(configuration)
     return configuration
 
 
@@ -176,9 +176,9 @@ def _login_directory() -> dict[str, Any]:
     """Return the deterministic V1 login directory for all ready tenants."""
     directory = {
         "contractVersion": _CONTRACT_VERSION,
-        "tenants": fixtures.login_directory_tenants(),
+        "tenants": contract_fixtures.login_directory_tenants(),
     }
-    directory["directoryRevision"] = fixtures.revision(directory)
+    directory["directoryRevision"] = contract_fixtures.revision(directory)
     return directory
 
 
@@ -321,10 +321,12 @@ def runtime_configuration_v2(
     runtime_request: _RuntimeRequest = Depends(_runtime_request),
 ) -> dict[str, Any] | JSONResponse:
     """Return a tenant's v2 body; scenarios may flip its storage mode or break its content."""
-    tenant = _checked_tenant(runtime_request, fixtures.RUNTIME_V2_TENANTS, _CONTRACT_VERSION_V2)
+    tenant = _checked_tenant(
+        runtime_request, contract_fixtures.RUNTIME_V2_TENANTS, _CONTRACT_VERSION_V2
+    )
     if isinstance(tenant, JSONResponse):
         return tenant
-    return fixtures.runtime_configuration_v2(tenant, runtime_request.scenario)
+    return contract_fixtures.runtime_configuration_v2(tenant, runtime_request.scenario)
 
 
 @app.get(INSTALLATION_PATH, response_model=None, responses=_INSTALLATION_ERROR_RESPONSES)
@@ -366,7 +368,7 @@ def installation_content(
         return error(400, "malformed_request")
     if x_mock_scenario == "unavailable":
         return error(503, "installation_content_unavailable", retryable=True)
-    return fixtures.installation_content_v2(x_mock_scenario)
+    return contract_fixtures.installation_content_v2(x_mock_scenario)
 
 
 @app.get(

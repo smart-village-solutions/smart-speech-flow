@@ -31,3 +31,5 @@ def test_runbook_documents_protected_swappable_mock_endpoint() -> None:
     assert "storage-disabled" in runbook
     assert "invalid-content" in runbook
     assert "tenant-marburg" in runbook
+    assert "Installation content ignores the tenant scenarios" in runbook
+    assert "a missing `X-Correlation-Id`" in runbook

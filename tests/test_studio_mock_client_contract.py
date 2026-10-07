@@ -35,7 +35,7 @@ from services.api_gateway.studio_runtime_v2_client import (
 )
 from services.api_gateway.studio_v1 import StudioV1HttpResponse
 from services.studio_mock import app as mock
-from services.studio_mock import fixtures
+from services.studio_mock import contract_fixtures
 
 AUTHORIZED = "studio-mock-authorized-token"
 UNAUTHORIZED = "studio-mock-unauthorized-token"
@@ -137,9 +137,11 @@ async def test_every_mock_runtime_error_is_one_the_client_accepts(
 async def test_the_mock_directory_validates_in_the_directory_client() -> None:
     directory = await _directory().fetch("contract-correlation")
 
-    assert {tenant.id for tenant in directory.tenants} == {
-        tenant["id"] for tenant in fixtures.login_directory_tenants()
-    }
+    # Literal on purpose: the fixture the mock serves from cannot check itself.
+    assert [(tenant.id, tenant.realm) for tenant in directory.tenants] == [
+        ("tenant-kassel", "kassel-ssf-2025"),
+        ("tenant-fulda", "fulda-ssf-2025"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -184,11 +186,11 @@ def _installation(token: str = AUTHORIZED, scenario: str | None = None) -> Studi
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("tenant_id", fixtures.RUNTIME_V2_TENANTS)
+@pytest.mark.parametrize("tenant_id", contract_fixtures.RUNTIME_V2_TENANTS)
 async def test_every_v2_tenant_validates_in_the_v2_client(tenant_id: str) -> None:
     read = await _runtime_v2().fetch(tenant_id, "contract-correlation")
 
-    served = fixtures.runtime_configuration_v2(tenant_id, None)
+    served = contract_fixtures.runtime_configuration_v2(tenant_id, None)
     assert read.policy.tenant_id == tenant_id
     assert read.policy.contract_version == "2.0"
     assert read.policy.configuration_revision == served["configurationRevision"]
@@ -257,7 +259,7 @@ async def test_invalid_content_drops_one_guest_language_and_keeps_the_policy() -
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("tenant_id", fixtures.RUNTIME_V2_TENANTS)
+@pytest.mark.parametrize("tenant_id", contract_fixtures.RUNTIME_V2_TENANTS)
 async def test_invalid_content_keeps_every_tenants_policy(tenant_id: str) -> None:
     plain = await _runtime_v2().fetch(tenant_id, "contract-correlation")
 
@@ -307,7 +309,7 @@ async def test_a_v2_409_suspension_is_a_tenant_conflict() -> None:
 async def test_the_installation_content_validates_in_the_installation_client() -> None:
     content = await _installation().fetch("contract-correlation")
 
-    served = fixtures.installation_content_v2(None)
+    served = contract_fixtures.installation_content_v2(None)
     assert content.configuration_revision == served["configurationRevision"]
     assert content.locale == "de-DE"
     assert content.legal.imprint_url == "https://example.org/impressum"
@@ -359,5 +361,5 @@ def test_the_mock_v2_routes_emit_only_codes_the_v2_clients_accept() -> None:
 def test_every_directory_tenant_is_readable_through_both_runtime_versions() -> None:
     directory_ids = {tenant["id"] for tenant in mock._login_directory()["tenants"]}
 
-    assert directory_ids <= set(fixtures.RUNTIME_V2_TENANTS)
+    assert directory_ids <= set(contract_fixtures.RUNTIME_V2_TENANTS)
     assert directory_ids <= set(mock.TENANT_CONFIGURATION_TEMPLATES)
