@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from .clock import utc_now
 from .consent import ConsentStatus
+from .studio_v2 import REVISION_PATTERN
 from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
@@ -102,7 +103,7 @@ class SessionMessage:
     # NEW: Pipeline Metadata
     pipeline_metadata: Optional[Dict[str, Any]] = None
     original_audio_url: Optional[str] = None  # URL to original input audio
-    # Whether each artefact's own live policy read authorised keeping it.
+    # Whether the message's live policy read authorised keeping each artefact.
     # Defaults are refused, so a record written before consent existed, or a
     # process with no gate bound, retains nothing.
     record_authorized: bool = False
@@ -153,7 +154,8 @@ class SessionMessage:
         )
 
 
-_CONFIGURATION_REVISION = re.compile(r"sha256:[0-9a-f]{64}")
+# Studio's own pattern: a revision a valid read produced always loads again.
+_CONFIGURATION_REVISION = re.compile(REVISION_PATTERN)
 
 
 def _stored_configuration_revision(data: Dict[str, Any]) -> str:

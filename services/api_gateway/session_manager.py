@@ -599,7 +599,7 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         original_audio: bool,
         translated_audio: bool,
     ) -> None:
-        """Store the outcome of one message's three policy reads.
+        """Store the decision of one message's live policy read, per artefact.
 
         Args:
             session_id: The session key.

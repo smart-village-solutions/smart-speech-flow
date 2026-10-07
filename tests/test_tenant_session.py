@@ -7,7 +7,9 @@ from pathlib import Path
 import pytest
 
 from services.api_gateway.session_models import Session
+from services.api_gateway.studio_v2 import parse_runtime_configuration_v2
 from services.api_gateway.tenant_session import TenantSessionKey
+from tests.studio_v2_fixtures import KASSEL, LABOR, load_fixture
 
 REVISION = f"sha256:{'a' * 64}"
 # Real records, written by Session.to_dict(include_messages=True) before the v2 cutover
@@ -75,9 +77,9 @@ def test_a_record_still_carries_the_key_the_previous_gateway_requires() -> None:
     # Rollback safety for one release: the v1 gateway's from_dict reads these three
     # keys unconditionally and quarantines the record without them. It never parses
     # canonical_json outside tests. Remove with the v1 compatibility in PR 14.
-    payload = Session(
-        id="ABC12345", tenant_id="tenant-a", configuration_revision=REVISION
-    ).to_dict(include_messages=True)
+    payload = Session(id="ABC12345", tenant_id="tenant-a", configuration_revision=REVISION).to_dict(
+        include_messages=True
+    )
 
     assert payload["runtime_configuration"] == {
         "configuration_revision": REVISION,
@@ -145,3 +147,18 @@ def test_session_payload_without_tenant_scope_is_rejected() -> None:
 
     with pytest.raises((KeyError, TypeError, ValueError)):
         Session.from_dict(payload)
+
+
+@pytest.mark.parametrize("fixture", [KASSEL, LABOR])
+def test_a_revision_from_a_valid_read_survives_the_session_record(fixture: str) -> None:
+    body = load_fixture(fixture)
+    read = parse_runtime_configuration_v2(body, expected_tenant_id=body["tenant"]["id"])
+    session = Session(
+        id="ABC12345",
+        tenant_id=read.policy.tenant_id,
+        configuration_revision=read.policy.configuration_revision,
+    )
+
+    restored = Session.from_dict(session.to_dict(include_messages=True))
+
+    assert restored.configuration_revision == read.policy.configuration_revision
