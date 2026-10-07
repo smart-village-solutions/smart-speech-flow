@@ -12,7 +12,7 @@ from fastapi import Depends, HTTPException, status
 
 from .dependencies import get_login_directory
 from .studio_login_directory_client import StudioLoginDirectory, StudioLoginDirectoryClient
-from .studio_runtime_token import StudioRuntimeTokenProvider, StudioTokenConfig, StudioTokenError
+from .studio_runtime_token import StudioRuntimeTokenProvider
 
 
 class LoginDirectoryFetcher(Protocol):
@@ -79,15 +79,16 @@ class StudioLoginDirectoryService:
         return directory
 
 
-def _build_studio_login_directory_service() -> StudioLoginDirectoryService:
-    """Construct the service from explicit environment settings."""
+def _build_studio_login_directory_service(
+    token_provider: StudioRuntimeTokenProvider | None,
+) -> StudioLoginDirectoryService:
+    """Construct the service from explicit environment settings and the app's token provider."""
     base_url = os.getenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", "").strip()
     try:
         cache_seconds = float(os.getenv("STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS", "60"))
         timeout_seconds = float(os.getenv("STUDIO_LOGIN_DIRECTORY_TIMEOUT_SECONDS", "5"))
-        if not 1 <= cache_seconds <= 300 or not 0 < timeout_seconds <= 30:
+        if token_provider is None or not 1 <= cache_seconds <= 300 or not 0 < timeout_seconds <= 30:
             raise ValueError
-        token_provider = StudioRuntimeTokenProvider(StudioTokenConfig.from_env())
         client = StudioLoginDirectoryClient(
             base_url,
             token_provider.get_token,
@@ -97,20 +98,22 @@ def _build_studio_login_directory_service() -> StudioLoginDirectoryService:
             client,
             cache_seconds=cache_seconds,
         )
-    except (StudioTokenError, ValueError):
+    except ValueError:
         raise StudioLoginDirectoryConfigurationError(
             "studio_login_directory_configuration_invalid"
         ) from None
 
 
-def login_directory_from_environment() -> StudioLoginDirectoryService | None:
+def login_directory_from_environment(
+    token_provider: StudioRuntimeTokenProvider | None,
+) -> StudioLoginDirectoryService | None:
     """The app's directory service, or None when Studio is not configured.
 
     Built once per app, so its cache and single-flight refresh are shared by
     that app's requests and by nothing else.
     """
     try:
-        return _build_studio_login_directory_service()
+        return _build_studio_login_directory_service(token_provider)
     except StudioLoginDirectoryConfigurationError:
         return None
 

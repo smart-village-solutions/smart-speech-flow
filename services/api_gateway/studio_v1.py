@@ -1,7 +1,9 @@
-"""Transport, envelope and status dispatch shared by the Studio V1 clients.
+"""Transport, envelope and status dispatch shared by the Studio clients.
 
-Each client keeps only its own contract: path, success models, the error codes
-each status may carry, and its error subclass and code prefix (#346).
+Contract v2 kept the V1 transport and error envelope, so the v2 clients use
+this module too. Each client keeps only its own contract: path, success
+parsing, the error codes each status may carry, and its error subclass and
+code prefix (#346).
 """
 
 from __future__ import annotations
@@ -9,6 +11,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping, Protocol
+from urllib.parse import urlsplit
 
 import aiohttp
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -32,9 +35,10 @@ class StudioV1ErrorDetails(ContractModel):
 
 
 class StudioV1ErrorEnvelope(ContractModel):
-    """The stable Studio V1 error response shape."""
+    """The stable Studio error response shape, unchanged in contract v2."""
 
-    contract_version: str = Field(alias="contractVersion", pattern="^1[.]0$")
+    # v2 endpoints answer with "2.0" envelopes; V1 ones with "1.0".
+    contract_version: str = Field(alias="contractVersion", pattern="^[12][.](0|[1-9][0-9]*)$")
     error: StudioV1ErrorDetails
 
 
@@ -84,6 +88,22 @@ def is_printable_ascii(value: object) -> bool:
         isinstance(value, str)
         and bool(value)
         and all(32 <= ord(character) <= 126 for character in value)
+    )
+
+
+def is_safe_https_url(value: str) -> bool:
+    """An absolute HTTPS URL with a host, a valid port, no credentials and no whitespace."""
+    try:
+        parsed = urlsplit(value)
+        _ = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and bool(parsed.hostname)
+        and parsed.username is None
+        and parsed.password is None
+        and not any(character.isspace() for character in value)
     )
 
 
@@ -137,6 +157,16 @@ class StudioV1Endpoint:
         model: type[M],
         expected_codes: Mapping[int, set[str]],
     ) -> M:
+        payload = await self.fetch_payload(headers, expected_codes)
+        try:
+            return model.model_validate(payload)
+        except ValidationError:
+            raise self._error("response_invalid", status=200) from None
+
+    async def fetch_payload(
+        self, headers: Mapping[str, str], expected_codes: Mapping[int, set[str]]
+    ) -> Mapping[str, Any]:
+        """Return a 200 body as a JSON object, or raise the classified failure."""
         try:
             response = await self._transport.get(self.url, headers, self._timeout_seconds)
         except StudioV1ClientError:
@@ -147,10 +177,7 @@ class StudioV1Endpoint:
         if response.payload is None:
             raise self._error("response_invalid", status=response.status)
         if response.status == 200:
-            try:
-                return model.model_validate(response.payload)
-            except ValidationError:
-                raise self._error("response_invalid", status=200) from None
+            return response.payload
         if response.status not in expected_codes:
             raise self._error(
                 "unexpected_status", retryable=response.status >= 500, status=response.status

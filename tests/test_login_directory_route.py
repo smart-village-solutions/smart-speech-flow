@@ -163,14 +163,14 @@ def test_classified_directory_failures_return_the_same_neutral_503(
 def test_dependency_factory_converts_configuration_failures_to_neutral_503(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail_to_build() -> None:
+    def fail_to_build(_token_provider: object) -> None:
         raise StudioLoginDirectoryConfigurationError("studio_login_directory_configuration_invalid")
 
     monkeypatch.setattr(directory_module, "_build_studio_login_directory_service", fail_to_build)
     app = FastAPI()
     app.include_router(login.router)
-    app.dependency_overrides[get_login_directory] = (
-        directory_module.login_directory_from_environment
+    app.dependency_overrides[get_login_directory] = lambda: (
+        directory_module.login_directory_from_environment(None)
     )
 
     response = TestClient(app, raise_server_exceptions=False).get("/api/login/tenants")

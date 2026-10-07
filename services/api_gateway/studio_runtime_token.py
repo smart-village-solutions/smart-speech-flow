@@ -128,21 +128,25 @@ class StudioRuntimeTokenProvider:
         self._clock = clock
         self._token: str | None = None
         self._expires_at = 0.0
-        self._lock = asyncio.Lock()
+        self._refresh_task: asyncio.Task[str] | None = None
 
     async def get_token(self) -> str:
-        """Return a valid token, refreshing it once for concurrent callers."""
+        """Return a valid token; concurrent callers share one refresh and its outcome.
+
+        Sharing the failure matters as much as sharing the token: every Studio
+        client waits on this provider, so serial retries behind a hanging token
+        endpoint would multiply its timeout by the number of waiting callers.
+        """
         if self._config.fixed_token:
             return self._config.fixed_token
         if self._is_valid():
             assert self._token is not None
             return self._token
 
-        async with self._lock:
-            if self._is_valid():
-                assert self._token is not None
-                return self._token
-            return await self._refresh()
+        if self._refresh_task is None or self._refresh_task.done():
+            self._refresh_task = asyncio.create_task(self._refresh())
+        # A cancelled caller must not cancel the refresh the others are waiting on.
+        return await asyncio.shield(self._refresh_task)
 
     def _is_valid(self) -> bool:
         return bool(
@@ -189,3 +193,15 @@ class StudioRuntimeTokenProvider:
         self._token = token
         self._expires_at = self._clock() + float(expires_in)
         return token
+
+
+def token_provider_from_environment() -> StudioRuntimeTokenProvider | None:
+    """The app's one Studio token provider, or None when Studio is unconfigured.
+
+    Built once per app by its lifespan and shared by every Studio client, so
+    concurrent reads make one token request.
+    """
+    try:
+        return StudioRuntimeTokenProvider(StudioTokenConfig.from_env())
+    except StudioTokenError:
+        return None

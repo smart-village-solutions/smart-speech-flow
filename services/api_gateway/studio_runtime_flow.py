@@ -16,7 +16,7 @@ from .studio_runtime_client import (
     StudioRuntimeClient,
     StudioRuntimeClientError,
 )
-from .studio_runtime_token import StudioRuntimeTokenProvider, StudioTokenConfig, StudioTokenError
+from .studio_runtime_token import StudioRuntimeTokenProvider, StudioTokenError
 from .tenant_context import StudioTenantContext, require_studio_tenant_context
 
 
@@ -106,20 +106,23 @@ def _configuration_timeout_seconds() -> float:
     return value
 
 
-def runtime_flow_from_environment() -> StudioRuntimeFlow:
-    """Build a runtime flow from explicit environment settings.
+def runtime_flow_from_environment(
+    token_provider: StudioRuntimeTokenProvider | None,
+) -> StudioRuntimeFlow:
+    """Build a runtime flow from explicit environment settings and the app's token provider.
 
     Called once per app by its lifespan; the flow lives in the app's container.
     """
     base_url = os.getenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", "").strip()
+    if token_provider is None:
+        raise StudioRuntimeFlowError("studio_runtime_configuration_invalid", retryable=False)
     try:
-        token_provider = StudioRuntimeTokenProvider(StudioTokenConfig.from_env())
         client = StudioRuntimeClient(
             base_url,
             token_provider.get_token,
             timeout_seconds=_configuration_timeout_seconds(),
         )
-    except (StudioTokenError, ValueError):
+    except ValueError:
         raise StudioRuntimeFlowError(
             "studio_runtime_configuration_invalid", retryable=False
         ) from None

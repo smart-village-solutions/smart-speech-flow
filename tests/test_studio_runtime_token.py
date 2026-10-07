@@ -268,3 +268,56 @@ def test_classifies_invalid_numeric_environment_configuration(monkeypatch) -> No
         StudioTokenConfig.from_env()
 
     assert caught.value.code == "studio_token_configuration_invalid"
+
+
+class SlowFailingTransport:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def post_form(
+        self, url: str, data: Mapping[str, str], timeout_seconds: float
+    ) -> TokenResponse:
+        self.calls += 1
+        await asyncio.sleep(0.01)
+        raise TimeoutError
+
+
+@pytest.mark.asyncio
+async def test_concurrent_callers_share_one_failed_refresh() -> None:
+    transport = SlowFailingTransport()
+    provider = StudioRuntimeTokenProvider(config(), transport=transport)
+
+    results = await asyncio.gather(
+        *(provider.get_token() for _ in range(5)), return_exceptions=True
+    )
+
+    assert transport.calls == 1
+    assert all(isinstance(result, StudioTokenError) for result in results)
+    assert {result.code for result in results} == {"studio_token_network_error"}
+
+
+@pytest.mark.asyncio
+async def test_a_failed_refresh_is_retried_by_the_next_caller() -> None:
+    transport = SlowFailingTransport()
+    provider = StudioRuntimeTokenProvider(config(), transport=transport)
+
+    for _ in range(2):
+        with pytest.raises(StudioTokenError):
+            await provider.get_token()
+
+    assert transport.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_caller_does_not_cancel_the_shared_refresh() -> None:
+    transport = StubTransport([TokenResponse(200, {"access_token": "token-1", "expires_in": 60})])
+    provider = StudioRuntimeTokenProvider(config(), transport=transport, clock=lambda: 100.0)
+
+    first = asyncio.create_task(provider.get_token())
+    second = asyncio.create_task(provider.get_token())
+    await asyncio.sleep(0)
+    first.cancel()
+
+    assert await second == "token-1"
+    assert first.cancelled()
+    assert len(transport.calls) == 1

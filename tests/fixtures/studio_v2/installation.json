@@ -1,0 +1,85 @@
+{
+  "branding": {
+    "logo": {
+      "url": "https://dialog.kassel.de/assets/Logo.png",
+      "alternativeText": "Logo KasselDIALOG"
+    },
+    "icon": {
+      "url": "https://dialog.kassel.de/favicon-200x200.png",
+      "alternativeText": "Icon"
+    }
+  },
+  "legal": {
+    "imprintUrl": "https://www.kassel.de/impressum.php",
+    "privacyPolicyUrl": "https://www.kassel.de/datenschutzerklaerung.php",
+    "accessibilityStatementUrl": "https://www.kassel.de/erklaerung-zur-barrierefreiheit.php"
+  },
+  "localization": {
+    "locale": "de-DE",
+    "startpage": {
+      "enterCode": "Code eingeben",
+      "send": "Weiter",
+      "login": "Login für Nutzer"
+    },
+    "login": {
+      "headline": "Login",
+      "descriptionHtml": "<p>Bitte wählen Sie Ihre Abteilung oder Organisation aus der Liste aus.</p><p></p>"
+    },
+    "feedback": {
+      "headline": "Feedback geben",
+      "questions": [
+        {
+          "id": "translationQuality",
+          "headline": "Übersetzungsqualität",
+          "question": "Wie genau waren die Übersetzungen?",
+          "required": true,
+          "type": "rating",
+          "min": 1,
+          "max": 5
+        },
+        {
+          "id": "performance",
+          "headline": "Geschwindigkeit",
+          "question": "Wie schnell und reaktionsschnell war die App?",
+          "required": true,
+          "type": "rating",
+          "min": 1,
+          "max": 5
+        },
+        {
+          "id": "usability",
+          "headline": "Bedienung",
+          "question": "Wie einfach und angenehm war die Bedienung?",
+          "required": true,
+          "type": "rating",
+          "min": 1,
+          "max": 5
+        },
+        {
+          "id": "recommendation",
+          "headline": "Weiterempfehlung",
+          "question": "Wie wahrscheinlich empfehlen Sie KasselDIALOG einer Kollegin oder einem Kollegen weiter?",
+          "required": true,
+          "type": "scale",
+          "min": 0,
+          "max": 10,
+          "minLabel": "Sehr unwahrscheinlich",
+          "maxLabel": "Sehr wahrscheinlich"
+        },
+        {
+          "id": "improvementIdeas",
+          "headline": "Verbesserungsvorschläge",
+          "question": "Was würde KasselDIALOG noch besser machen?",
+          "required": false,
+          "type": "longText",
+          "placeholder": "Ihre Ideen und Wünsche oder alles andere, was Sie uns mitteilen möchten.",
+          "maxLength": 4000
+        }
+      ],
+      "noticeHtml": "<p>Ihre Angaben werden ausschließlich zur Verbesserung von KasselDIALOG ausgewertet.</p><p>Wir speichern das Feedback zwölf Monate lang und löschen es danach automatisch.</p><p>Sie können Ihr Feedback jederzeit widerrufen lassen – wenden Sie sich dazu an das Personal vor Ort.</p>",
+      "button": "Feedback senden"
+    }
+  },
+  "contractVersion": "2.0",
+  "configurationRevision": "sha256:352bfa1fce39de520625d95bc1b69df5fba423ec15f78544c54da49fc8fee666"
+}

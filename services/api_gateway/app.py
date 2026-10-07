@@ -50,6 +50,7 @@ if TYPE_CHECKING:
     from .quality_telemetry_schema import TelemetryMode
     from .runtime_policy import RuntimePolicyGate
     from .studio_runtime_flow import StudioRuntimeFlow
+    from .studio_runtime_token import StudioRuntimeTokenProvider
     from .tenant_persistence import TenantPersistenceBinding
     from .translation_refiner import BaseTranslationRefiner
 
@@ -110,6 +111,7 @@ def _announce(line: str) -> None:
 
 def _build_runtime_policy(
     registry: CollectorRegistry,
+    token_provider: "StudioRuntimeTokenProvider | None",
 ) -> "tuple[StudioRuntimeFlow | None, RuntimePolicyGate | None]":
     """The Studio flow and the persistence gate built on it.
 
@@ -122,7 +124,7 @@ def _build_runtime_policy(
     from .studio_runtime_flow import StudioRuntimeFlowError, runtime_flow_from_environment
 
     try:
-        runtime_flow = runtime_flow_from_environment()
+        runtime_flow = runtime_flow_from_environment(token_provider)
     except StudioRuntimeFlowError as error:
         sys.stderr.write(f"Runtime policy gate unbound ({error.code}); persistence refused\n")
         sys.stderr.flush()
@@ -139,6 +141,7 @@ def _build_dependencies(
     runtime_flow: "StudioRuntimeFlow | None",
     runtime_policy: "RuntimePolicyGate | None",
     pipeline: "_PipelineCollaborators",
+    studio_token_provider: "StudioRuntimeTokenProvider | None",
 ) -> GatewayDependencies:
     _announce("Building gateway dependencies...")
     metrics: GatewayMetrics = app.state.gateway_metrics
@@ -147,6 +150,7 @@ def _build_dependencies(
         redis=persistence.redis if persistence is not None else None,
         redis_namespace=persistence.namespace if persistence is not None else "ssf",
         studio_runtime_flow=runtime_flow,
+        studio_token_provider=studio_token_provider,
         runtime_policy=runtime_policy,
         polling_messages_dropped=metrics.polling_messages_dropped,
         websocket_metrics=metrics.websocket,
@@ -349,14 +353,20 @@ async def _start_serving(
     tenant_persistence: "TenantPersistenceBinding | None",
 ) -> tuple[GatewayDependencies, list[asyncio.Task[None]]]:
     """Everything startup does once the tenant connection is verified."""
+    from .studio_runtime_token import token_provider_from_environment
+
     metrics: GatewayMetrics = app.state.gateway_metrics
-    runtime_flow, runtime_policy = _build_runtime_policy(app.state.prometheus_registry)
+    # One per app: every Studio client shares its cached service token.
+    studio_token_provider = token_provider_from_environment()
+    runtime_flow, runtime_policy = _build_runtime_policy(
+        app.state.prometheus_registry, studio_token_provider
+    )
     pipeline = _build_pipeline_collaborators(
         app.state.prometheus_registry, metrics.pipeline_admission, refiner
     )
 
     dependencies = _build_dependencies(
-        app, tenant_persistence, runtime_flow, runtime_policy, pipeline
+        app, tenant_persistence, runtime_flow, runtime_policy, pipeline, studio_token_provider
     )
     if tenant_persistence is not None:
         # Before any request, socket or background task can see this app's sessions.
