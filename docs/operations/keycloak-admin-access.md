@@ -49,7 +49,8 @@ continue emitting legacy claims until the consumer migration is verified.
 ## Local Studio Runtime Configuration mock
 
 The `studio-mock` service is an opt-in contract-testing dependency for the
-Studio--SSF Runtime Configuration V1 API. Start it explicitly:
+Studio--SSF runtime configuration API, contract versions 1 and 2, and the
+installation content API (contract version 2). Start it explicitly:
 
 ```bash
 docker compose --profile studio-mock up --build studio-mock
@@ -57,11 +58,16 @@ docker compose --profile studio-mock up --build studio-mock
 
 It listens only on loopback at `http://127.0.0.1:8010`. SSF containers on the
 same Compose network use `http://studio-mock:8000` as their base URL. Configure
-the consumer through `STUDIO_RUNTIME_CONFIGURATION_BASE_URL` and retain the
-path `/internal/plugins/ssf/v1/runtime-configuration`; replacing the mock with
-Studio then requires only a base-URL change.
+the consumer through `STUDIO_RUNTIME_CONFIGURATION_BASE_URL`; the clients add
+the contract paths themselves, so replacing the mock with Studio requires only
+a base-URL change. The mock serves:
 
-Every request requires these headers:
+- `/internal/plugins/ssf/v1/runtime-configuration` (until SSF has moved to v2)
+- `/internal/plugins/ssf/v2/runtime-configuration`
+- `/internal/plugins/ssf/v2/installation-content`
+- `/internal/plugins/ssf/v1/admin-login-tenants`
+
+Runtime configuration requests require these headers:
 
 ```text
 Authorization: Bearer studio-mock-authorized-token
@@ -69,17 +75,50 @@ X-Studio-Tenant-Id: tenant-kassel
 X-Correlation-Id: local-test-correlation-id
 ```
 
+Installation content and the login directory take the same headers without
+`X-Studio-Tenant-Id`.
+
 `Bearer studio-mock-authorized-token` has
 `ssf.runtime-configuration.read`; `Bearer studio-mock-unauthorized-token`
 models an authenticated caller without that permission. `tenant-kassel`
-returns storage mode `ask`; `tenant-fulda` returns `disabled`. Send
-`X-Mock-Scenario: suspended`, `plugin-inactive`, `tenant-not-ready`, or
-`unavailable` to exercise the exact `409` and `503` contract envelopes. Send
-an unknown tenant ID to exercise `404`. Legacy headers (`X-Studio-Instance-Id`
-and `X-Tenant-Id`) and all query selectors are deliberately rejected.
-Every error response has the Studio V1 `contractVersion` and `error` envelope
-documented in the mock's OpenAPI description.
+returns storage mode `ask`; `tenant-fulda` returns `disabled`. On v2,
+`tenant-kassel` keeps conversation content for 4320 hours, `tenant-fulda` has
+no retention and no storage questions, and `tenant-marburg` returns
+`retentionHours: 0`. `tenant-marburg` has no local Keycloak realm, so the login
+directory lists only Kassel and Fulda.
 
-The mock contains only fixed, non-sensitive test data, but it requires the V1
+On both runtime paths, send `X-Mock-Scenario: suspended`, `plugin-inactive`,
+`tenant-not-ready`, or `unavailable` to exercise the exact `409` and `503`
+contract envelopes. A scenario applies to any tenant ID, so it takes precedence
+over the unknown-tenant check. Send an unknown tenant ID without a scenario to
+exercise `404`. A missing `X-Studio-Tenant-Id` or `X-Correlation-Id`, a legacy
+header (`X-Studio-Instance-Id` or `X-Tenant-Id`) or any query selector is
+rejected with `404 tenant_not_found`, as Studio does.
+
+On v2, `storage-disabled` turns the tenant's storage mode to `disabled` for
+that request, and `invalid-content` adds a feedback question of an unsupported
+type to the first guest language: the runtime body keeps a valid storage policy
+and SSF drops only that guest language.
+
+Installation content ignores the tenant scenarios (`suspended`,
+`plugin-inactive`, `tenant-not-ready` and `storage-disabled`) and answers them
+with `200`. It answers `400 malformed_request` to a missing `X-Correlation-Id`,
+a tenant header (`X-Studio-Tenant-Id`, `X-Studio-Instance-Id` or `X-Tenant-Id`)
+or a query, `503 installation_content_unavailable` to `unavailable`, and with
+`invalid-content` keeps everything but its feedback form.
+
+The login directory answers `404 tenant_not_found` to a missing
+`X-Correlation-Id`, a tenant header or a query, and
+`503 admin_login_directory_unavailable` to `unavailable`.
+
+Every error response has the Studio `contractVersion` and `error` envelope
+documented in the mock's OpenAPI description, with `contractVersion` `1.0` on
+v1 paths and `2.0` on v2 paths.
+
+The v2 bodies live in `services/studio_mock/fixtures/` without a revision;
+`services/studio_mock/contract_fixtures.py` loads them and stamps
+`configurationRevision` as the SHA-256 of their canonical JSON.
+
+The mock contains only fixed, non-sensitive test data, but it requires the
 mock service token and is intentionally not publicly reachable. Do not use it
 as a production Studio service.

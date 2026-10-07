@@ -1,0 +1,176 @@
+{
+  "contractVersion": "2.0",
+  "tenant": {
+    "id": "tenant-kassel",
+    "displayName": "Kassel Test Municipality",
+    "timeZone": "Europe/Berlin"
+  },
+  "branding": {
+    "logo": {
+      "url": "https://example.org/studio-mock/kassel/logo.png",
+      "alternativeText": "Kassel test logo"
+    },
+    "icon": {
+      "url": "https://example.org/studio-mock/kassel/icon.png",
+      "alternativeText": "Kassel test icon"
+    }
+  },
+  "conversationContentStorage": {
+    "mode": "ask",
+    "retentionHours": 4320
+  },
+  "staff": {
+    "locale": "de-DE",
+    "dashboard": {
+      "headline": "Willkommen in der Testumgebung",
+      "explanationHtml": "<p>Testumgebung: Starten Sie ein neues Gespräch, um es mit einer anderssprachigen Person zu führen.</p>",
+      "callToAction": "Neues Gespräch starten",
+      "load": {
+        "headline": "Systemauslastung",
+        "green": "Ausreichend Kapazitäten verfügbar",
+        "yellow": "Das System ist stark ausgelastet.",
+        "red": "Derzeit sind keine neuen Gespräche möglich."
+      }
+    },
+    "newConversation": {
+      "headline": "Neues Gespräch",
+      "descriptionHtml": "<p>Code oder Link mit dem Gesprächspartner teilen</p>"
+    },
+    "feedback": {
+      "headline": "Feedback geben",
+      "questions": [
+        {
+          "id": "translationQuality",
+          "type": "rating",
+          "headline": "Übersetzungsqualität",
+          "question": "Wie genau waren die Übersetzungen?",
+          "required": true,
+          "min": 1,
+          "max": 5
+        },
+        {
+          "id": "recommendation",
+          "type": "scale",
+          "headline": "Weiterempfehlung",
+          "question": "Wie wahrscheinlich empfehlen Sie den Dienst weiter?",
+          "required": true,
+          "min": 0,
+          "max": 10,
+          "minLabel": "Sehr unwahrscheinlich",
+          "maxLabel": "Sehr wahrscheinlich"
+        },
+        {
+          "id": "improvementIdeas",
+          "type": "longText",
+          "headline": "Verbesserungsvorschläge",
+          "question": "Was würde den Dienst noch besser machen?",
+          "required": false,
+          "placeholder": "Ihre Ideen sind willkommen.",
+          "maxLength": 4000
+        }
+      ],
+      "noticeHtml": "<p>Testumgebung: Ihre Angaben dienen nur der Verbesserung des Dienstes.</p>",
+      "button": "Feedback senden"
+    }
+  },
+  "guestLanguages": [
+    {
+      "locale": "en",
+      "nativeName": "English",
+      "staffName": "Englisch",
+      "icon": {
+        "url": "https://example.org/studio-mock/flags/en.png",
+        "alternativeText": "Flag EN"
+      },
+      "guest": {
+        "explanationHtml": "<p>Test environment: conversations are translated in real time.</p>",
+        "storageQuestionHtml": "<p>I agree to the storage of my conversation data for up to 180 days.</p>"
+      },
+      "feedback": {
+        "headline": "Share your feedback",
+        "questions": [
+          {
+            "id": "translationQuality",
+            "type": "rating",
+            "headline": "Translation quality",
+            "question": "How accurate were the translations?",
+            "required": true,
+            "min": 1,
+            "max": 5
+          },
+          {
+            "id": "recommendation",
+            "type": "scale",
+            "headline": "Recommendation",
+            "question": "How likely are you to recommend the service?",
+            "required": true,
+            "min": 0,
+            "max": 10,
+            "minLabel": "Not at all likely",
+            "maxLabel": "Extremely likely"
+          },
+          {
+            "id": "improvementIdeas",
+            "type": "longText",
+            "headline": "Improvement ideas",
+            "question": "What would make the service even better?",
+            "required": false,
+            "placeholder": "Your ideas or complaints",
+            "maxLength": 4000
+          }
+        ],
+        "noticeHtml": "<p>Test environment: your answers are used only to improve the service.</p>",
+        "button": "Send feedback"
+      }
+    },
+    {
+      "locale": "tr",
+      "nativeName": "Türkçe",
+      "staffName": "Türkisch",
+      "icon": {
+        "url": "https://example.org/studio-mock/flags/tr.png",
+        "alternativeText": "Flag TR"
+      },
+      "guest": {
+        "explanationHtml": "<p>Test ortamı: konuşmalar gerçek zamanlı olarak çevrilir.</p>",
+        "storageQuestionHtml": "<p>Konuşma verilerimin 180 güne kadar saklanmasını kabul ediyorum.</p>"
+      }
+    },
+    {
+      "locale": "ar",
+      "nativeName": "العربية",
+      "staffName": "Arabisch",
+      "icon": null,
+      "guest": {
+        "explanationHtml": "<p>بيئة اختبار: تتم ترجمة المحادثات في الوقت الفعلي.</p>",
+        "storageQuestionHtml": "<p>أوافق على تخزين بيانات محادثتي لمدة تصل إلى 180 يومًا.</p>"
+      }
+    },
+    {
+      "locale": "kmr",
+      "nativeName": "Kurmancî",
+      "staffName": "Kurmandschi",
+      "icon": {
+        "url": "https://example.org/studio-mock/flags/kmr.png",
+        "alternativeText": "Flag KMR"
+      },
+      "guest": {
+        "explanationHtml": "<p>Hawirdora ceribandinê: axaftin di demê de têne wergerandin.</p>",
+        "storageQuestionHtml": "<p>Ez qebûl dikim ku daneyên axaftina min heta 180 rojan bên hilanîn.</p>"
+      }
+    },
+    {
+      "locale": "pt-BR",
+      "nativeName": "Português (Brasil)",
+      "staffName": "Portugiesisch (Brasilien)",
+      "icon": {
+        "url": "https://example.org/studio-mock/flags/pt-br.png",
+        "alternativeText": "Flag PT-BR"
+      },
+      "guest": {
+        "explanationHtml": "<p>Ambiente de teste: as conversas são traduzidas em tempo real.</p>",
+        "storageQuestionHtml": "<p>Concordo com o armazenamento dos dados da minha conversa por até 180 dias.</p>"
+      }
+    }
+  ]
+}
