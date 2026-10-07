@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.tenant_session import (
-    RuntimeConfigurationSnapshot,
     TenantSessionKey,
 )
 
@@ -45,7 +44,7 @@ def test_admin_cannot_issue_a_ticket_for_another_tenant(session_manager) -> None
     session = asyncio.run(
         session_manager.create_admin_session(
             "tenant-other",
-            RuntimeConfigurationSnapshot(REVISION, REVISION, "{}"),
+            REVISION,
         )
     )
 

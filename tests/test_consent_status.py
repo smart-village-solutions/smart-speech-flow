@@ -2,14 +2,12 @@
 
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.session_models import Session
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 REVISION = "sha256:" + "a" * 64
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 def _session() -> Session:
-    return Session(id="s1", tenant_id="tenant-kassel", runtime_configuration=SNAPSHOT)
+    return Session(id="s1", tenant_id="tenant-kassel", configuration_revision=REVISION)
 
 
 def test_the_four_contract_states_are_the_only_states():

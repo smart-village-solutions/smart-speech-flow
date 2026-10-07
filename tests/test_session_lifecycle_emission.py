@@ -19,7 +19,6 @@ from services.api_gateway.legacy_session_manager import LegacySessionManager
 from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_models import SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 
 class _Spy:
@@ -65,14 +64,7 @@ class TestTheThreeTransitions:
         )
         spy = _Spy()
         manager.attach_quality_telemetry(spy)
-        runtime_configuration = RuntimeConfigurationSnapshot(
-            configuration_revision="revision-a",
-            authorization_revision="authorization-a",
-            canonical_json="{}",
-        )
-        session = await manager.create_admin_session(
-            "secret-tenant", runtime_configuration
-        )
+        session = await manager.create_admin_session("secret-tenant", "revision-a")
 
         (call,) = spy.calls
         assert call["tenant_ref"] == sha256(b"secret-tenant").hexdigest()[:12]

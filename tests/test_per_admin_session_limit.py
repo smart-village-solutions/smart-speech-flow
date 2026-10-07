@@ -23,11 +23,10 @@ from services.api_gateway.tenant_context import (
     admin_ref,
     require_studio_tenant_context,
 )
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
-from tests.gateway_contract.contract_support import runtime_configuration
+from services.api_gateway.tenant_session import TenantSessionKey
+from tests.gateway_contract.contract_support import runtime_read
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 ALICE = admin_ref("tenant-a", "alice-subject")
 BOB = admin_ref("tenant-a", "bob-subject")
 
@@ -56,8 +55,8 @@ def test_admin_ref_is_a_stable_hash_scoped_to_the_tenant():
 async def test_two_admins_of_one_tenant_converse_in_parallel():
     manager = _manager()
 
-    alice = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=ALICE)
-    bob = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=BOB)
+    alice = await manager.create_admin_session("tenant-a", REVISION, owner_ref=ALICE)
+    bob = await manager.create_admin_session("tenant-a", REVISION, owner_ref=BOB)
 
     assert await _status(manager, alice) is SessionStatus.PENDING
     assert await _status(manager, bob) is SessionStatus.PENDING
@@ -65,10 +64,10 @@ async def test_two_admins_of_one_tenant_converse_in_parallel():
 
 async def test_an_admins_new_conversation_ends_only_their_own_previous_one():
     manager = _manager()
-    first = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=ALICE)
-    colleague = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=BOB)
+    first = await manager.create_admin_session("tenant-a", REVISION, owner_ref=ALICE)
+    colleague = await manager.create_admin_session("tenant-a", REVISION, owner_ref=BOB)
 
-    second = await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=ALICE)
+    second = await manager.create_admin_session("tenant-a", REVISION, owner_ref=ALICE)
 
     ended = await manager.get_session(first.key)
     assert ended is not None
@@ -80,18 +79,18 @@ async def test_an_admins_new_conversation_ends_only_their_own_previous_one():
 
 async def test_an_owner_less_legacy_session_is_not_ended_by_an_admin():
     manager = _manager()
-    legacy = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    legacy = await manager.create_admin_session("tenant-a", REVISION)
 
-    await manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=ALICE)
+    await manager.create_admin_session("tenant-a", REVISION, owner_ref=ALICE)
 
     assert await _status(manager, legacy) is SessionStatus.PENDING
 
 
 async def test_a_create_without_an_owner_ends_nothing():
     manager = _manager()
-    legacy = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    legacy = await manager.create_admin_session("tenant-a", REVISION)
 
-    await manager.create_admin_session("tenant-a", SNAPSHOT)
+    await manager.create_admin_session("tenant-a", REVISION)
 
     assert await _status(manager, legacy) is SessionStatus.PENDING
 
@@ -99,17 +98,17 @@ async def test_a_create_without_an_owner_ends_nothing():
 async def test_the_rule_holds_across_a_gateway_restart():
     store = MemoryTenantSessionStore()
     before_restart = await _manager(store).create_admin_session(
-        "tenant-a", SNAPSHOT, owner_ref=ALICE
+        "tenant-a", REVISION, owner_ref=ALICE
     )
 
     restarted = _manager(store)
-    await restarted.create_admin_session("tenant-a", SNAPSHOT, owner_ref=ALICE)
+    await restarted.create_admin_session("tenant-a", REVISION, owner_ref=ALICE)
 
     assert await _status(restarted, before_restart) is SessionStatus.TERMINATED
 
 
 def test_the_owner_survives_the_stored_representation():
-    session = Session(id="ABCDEFGH", tenant_id="tenant-a", runtime_configuration=SNAPSHOT)
+    session = Session(id="ABCDEFGH", tenant_id="tenant-a", configuration_revision=REVISION)
     session.owner_ref = ALICE
 
     stored = json.loads(json.dumps(session.to_dict(include_messages=True)))
@@ -118,7 +117,7 @@ def test_the_owner_survives_the_stored_representation():
 
 
 def test_the_owner_never_reaches_public_output():
-    session = Session(id="ABCDEFGH", tenant_id="tenant-a", runtime_configuration=SNAPSHOT)
+    session = Session(id="ABCDEFGH", tenant_id="tenant-a", configuration_revision=REVISION)
     session.owner_ref = ALICE
 
     assert "owner_ref" not in session.to_public_dict()
@@ -127,8 +126,8 @@ def test_the_owner_never_reaches_public_output():
 async def test_current_is_the_requesting_admins_own_conversation():
     manager = _manager()
     lifecycle = SessionLifecycleService(manager)
-    alice = await lifecycle.create("tenant-a", runtime_configuration("tenant-a"), owner_ref=ALICE)
-    bob = await lifecycle.create("tenant-a", runtime_configuration("tenant-a"), owner_ref=BOB)
+    alice = await lifecycle.create("tenant-a", REVISION, owner_ref=ALICE)
+    bob = await lifecycle.create("tenant-a", REVISION, owner_ref=BOB)
 
     assert (await lifecycle.current("tenant-a", None, owner_ref=ALICE)).id == alice.id
     assert (await lifecycle.current("tenant-a", None, owner_ref=BOB)).id == bob.id
@@ -139,7 +138,7 @@ async def test_current_is_the_requesting_admins_own_conversation():
 async def test_a_named_session_is_found_only_for_its_owner():
     manager = _manager()
     lifecycle = SessionLifecycleService(manager)
-    alice = await lifecycle.create("tenant-a", runtime_configuration("tenant-a"), owner_ref=ALICE)
+    alice = await lifecycle.create("tenant-a", REVISION, owner_ref=ALICE)
 
     assert (await lifecycle.current("tenant-a", alice.id, owner_ref=ALICE)).id == alice.id
     with pytest.raises(NoActiveSessionError):
@@ -157,7 +156,7 @@ def http_client():
 
 def _authenticate_as(subject: str) -> None:
     context = StudioTenantContext("tenant-a", REVISION)
-    configuration = runtime_configuration("tenant-a")
+    configuration = runtime_read("tenant-a")
     app.dependency_overrides[require_ssf_user] = lambda: {"sub": subject}
     app.dependency_overrides[require_studio_tenant_context] = lambda: context
     app.dependency_overrides[require_validated_runtime_configuration] = lambda: (

@@ -62,7 +62,6 @@ the consumer through `STUDIO_RUNTIME_CONFIGURATION_BASE_URL`; the clients add
 the contract paths themselves, so replacing the mock with Studio requires only
 a base-URL change. The mock serves:
 
-- `/internal/plugins/ssf/v1/runtime-configuration` (until SSF has moved to v2)
 - `/internal/plugins/ssf/v2/runtime-configuration`
 - `/internal/plugins/ssf/v2/installation-content`
 - `/internal/plugins/ssf/v1/admin-login-tenants`

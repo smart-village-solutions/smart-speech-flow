@@ -1,7 +1,8 @@
 """The live, fail-closed authorisation for writing conversation content.
 
-Every write of conversation content is preceded by its own Studio read. No
-value is cached and no previous answer is reused: see
+Every message is decided by its own Studio read, and that one decision covers
+each artefact the message produced: the record, its original audio and its
+translated audio. No value is cached and no previous answer is reused: see
 docs/superpowers/specs/2026-09-15-fail-closed-runtime-configuration-caching-design.md.
 """
 
@@ -13,9 +14,9 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from .consent import ConsentStatus
-from .studio_runtime_client import StudioRuntimeClientError
 from .studio_runtime_flow import RuntimeConfigurationFetcher
 from .studio_runtime_token import StudioTokenError
+from .studio_runtime_v2_client import StudioRuntimeV2ClientError
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, avoids an import cycle
     from .runtime_policy_metrics import RuntimePolicyMetrics
@@ -63,7 +64,7 @@ _CONSENT_REFUSALS = {
 
 
 class RuntimePolicyGate:
-    """Authorise one write of conversation content, or refuse it."""
+    """Authorise one message's conversation content, or refuse it."""
 
     def __init__(
         self,
@@ -96,16 +97,16 @@ class RuntimePolicyGate:
         correlation_id: str,
     ) -> PolicyDecision:
         try:
-            configuration = await self._client.fetch(tenant_id, correlation_id)
-        except (StudioRuntimeClientError, StudioTokenError) as error:
+            read = await self._client.fetch(tenant_id, correlation_id)
+        except (StudioRuntimeV2ClientError, StudioTokenError) as error:
             reason = _REASON_BY_CODE.get(error.code, PolicyReason.STUDIO_ERROR)
             return PolicyDecision(False, reason)
         except Exception:  # Any failure must refuse, never raise.
             return PolicyDecision(False, PolicyReason.STUDIO_ERROR)
 
-        if configuration.tenant.id != tenant_id:
+        if read.policy.tenant_id != tenant_id:
             return PolicyDecision(False, PolicyReason.VALIDATION_FAILED)
-        if configuration.conversation_content_storage.mode != "ask":
+        if read.policy.mode != "ask":
             return PolicyDecision(False, PolicyReason.POLICY_DISABLED)
         if consent_status is not ConsentStatus.GRANTED:
             reason = _CONSENT_REFUSALS.get(consent_status, PolicyReason.CONSENT_PENDING)

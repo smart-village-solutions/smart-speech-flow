@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 
 from services.api_gateway.session_models import ClientType, Session, SessionMessage, SessionStatus
 from services.api_gateway.tenant_session import (
-    RuntimeConfigurationSnapshot,
     TenantSessionKey,
 )
 from services.api_gateway.session_store import (
@@ -21,7 +20,6 @@ from services.api_gateway.session_store import (
 )
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 TERMINATED_AT = datetime(2026, 9, 14, 9, 30, tzinfo=timezone.utc)
 
 
@@ -29,7 +27,7 @@ def make_session(tenant_id: str, session_id: str) -> Session:
     return Session(
         id=session_id,
         tenant_id=tenant_id,
-        runtime_configuration=SNAPSHOT,
+        configuration_revision=REVISION,
     )
 
 

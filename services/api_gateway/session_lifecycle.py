@@ -15,14 +15,15 @@ from .consent_resolution import resolve_consent
 from .log_safety import safe_session_ref, sanitize_log_value
 from .session_manager import TenantSessionManager
 from .session_models import Session, SessionStatus
-from .studio_runtime_client import RuntimeConfiguration, StudioRuntimeClientError
 from .studio_runtime_flow import StudioRuntimeFlow
 from .studio_runtime_token import StudioTokenError
-from .tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from .studio_runtime_v2_client import StudioRuntimeV2ClientError
+from .studio_v2 import RuntimePolicy
+from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
 
-# The Contract V1 codes that mean the tenant may not start a session at all.
+# The Studio codes that mean the tenant may not start a session at all.
 _TENANT_CONFLICT_CODES = frozenset(
     {"tenant_suspended", "ssf_plugin_inactive", "ssf_tenant_not_ready"}
 )
@@ -71,15 +72,13 @@ class SessionLifecycleService:
     async def create(
         self,
         tenant_id: str,
-        configuration: RuntimeConfiguration,
+        configuration_revision: str,
         *,
         owner_ref: str,
     ) -> Session:
-        """A new admin session on the frozen configuration; it ends the owner's previous one."""
+        """A new admin session on the read's revision; it ends the owner's previous one."""
         return await self._sessions.create_admin_session(
-            tenant_id,
-            RuntimeConfigurationSnapshot.from_configuration(configuration),
-            owner_ref=owner_ref,
+            tenant_id, configuration_revision, owner_ref=owner_ref
         )
 
     async def current(
@@ -169,10 +168,8 @@ class SessionLifecycleService:
         # Consent is resolved on this transition alone. `activate_session` is
         # re-entered on every customer language change, and re-resolving there
         # would let a consent-less call overwrite a granted answer.
-        live_configuration = await _read_activation_configuration(
-            correlation_id, key.tenant_id, runtime_flow
-        )
-        session.consent_status = resolve_consent(live_configuration, data_retention_consent)
+        live_policy = await _read_activation_policy(correlation_id, key.tenant_id, runtime_flow)
+        session.consent_status = resolve_consent(live_policy, data_retention_consent)
 
         await self._sessions.activate_session(key, customer_language)
 
@@ -214,9 +211,9 @@ class SessionLifecycleService:
         return Activation(session=updated, already_active=True)
 
 
-async def _read_activation_configuration(
+async def _read_activation_policy(
     correlation_id: Callable[[], str], tenant_id: str, runtime_flow: StudioRuntimeFlow | None
-) -> Optional[RuntimeConfiguration]:
+) -> Optional[RuntimePolicy]:
     """Read the live storage policy for one activation.
 
     Returns `None` for every failure except a tenant conflict, which is raised
@@ -233,9 +230,10 @@ async def _read_activation_configuration(
     if runtime_flow is None:
         return None
     try:
-        return await runtime_flow.client.fetch(tenant_id, request_correlation_id)
-    except (StudioRuntimeClientError, StudioTokenError) as error:
+        read = await runtime_flow.client.fetch(tenant_id, request_correlation_id)
+    except (StudioRuntimeV2ClientError, StudioTokenError) as error:
         code = getattr(error, "code", None)
         if code in _TENANT_CONFLICT_CODES:
             raise TenantConflictError(code) from None
         return None
+    return read.policy

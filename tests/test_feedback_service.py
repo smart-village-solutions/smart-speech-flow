@@ -489,7 +489,6 @@ class TestTenantBoundSessions:
     async def test_a_tenant_bound_session_is_known(self) -> None:
         from services.api_gateway.session_manager import TenantSessionManager
         from services.api_gateway.session_store import MemoryTenantSessionStore
-        from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
         revision = f"sha256:{'a' * 64}"
         manager = TenantSessionManager(
@@ -497,9 +496,7 @@ class TestTenantBoundSessions:
             session_id_factory=lambda: "TENANT01",
             audio_store=AudioStore.from_environment(),
         )
-        session = await manager.create_admin_session(
-            "tenant-kassel", RuntimeConfigurationSnapshot(revision, revision, "{}")
-        )
+        session = await manager.create_admin_session("tenant-kassel", revision)
         service, _ = _service(session_manager=manager)
 
         feedback_id = await service.submit(_request(session_id=session.id))
@@ -525,7 +522,6 @@ class TestTenantBoundSessions:
         from services.api_gateway.feedback.tenant import SessionTenantResolver
         from services.api_gateway.session_manager import TenantSessionManager
         from services.api_gateway.session_store import MemoryTenantSessionStore
-        from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
         revision = f"sha256:{'a' * 64}"
         manager = TenantSessionManager(
@@ -533,9 +529,7 @@ class TestTenantBoundSessions:
             session_id_factory=lambda: "KASSEL01",
             audio_store=AudioStore.from_environment(),
         )
-        session = await manager.create_admin_session(
-            "tenant-kassel", RuntimeConfigurationSnapshot(revision, revision, "{}")
-        )
+        session = await manager.create_admin_session("tenant-kassel", revision)
         service, parts = _service(
             session_manager=manager,
             tenant_resolver=SessionTenantResolver(
@@ -585,7 +579,6 @@ class TestFeedbackJustAfterTheConversationEnds:
     async def _ended_session(self, clock):
         from services.api_gateway.session_manager import TenantSessionManager
         from services.api_gateway.session_store import MemoryTenantSessionStore
-        from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
         manager = TenantSessionManager(
             store=MemoryTenantSessionStore(),
@@ -595,7 +588,7 @@ class TestFeedbackJustAfterTheConversationEnds:
         )
         session = await manager.create_admin_session(
             "tenant-kassel",
-            RuntimeConfigurationSnapshot(self.REVISION, self.REVISION, "{}"),
+            self.REVISION,
         )
         await manager.terminate_session(session.key, "manual_admin_termination")
         return manager, session

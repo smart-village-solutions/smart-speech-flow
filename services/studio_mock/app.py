@@ -1,10 +1,8 @@
-"""Contract-faithful Studio mock: runtime configuration V1 and v2, installation content v2.
+"""Contract-faithful Studio mock: runtime configuration v2 and installation content v2.
 
-The v1 runtime endpoint stays until the gateway has cut over to v2.
+The login directory stays on contract v1, because Studio has no v2 directory.
 """
 
-from collections.abc import Collection
-from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Literal, get_args
 
@@ -13,7 +11,6 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from services.api_gateway.studio_login_directory_client import StudioLoginDirectory
-from services.api_gateway.studio_runtime_client import RuntimeConfiguration
 from services.api_gateway.studio_v1 import StudioV1ErrorEnvelope
 from services.studio_mock import contract_fixtures
 
@@ -21,7 +18,6 @@ app = FastAPI(title="Studio Runtime Configuration Mock")
 
 _CONTRACT_VERSION = "1.0"
 _CONTRACT_VERSION_V2 = "2.0"
-RUNTIME_V1_PATH = "/internal/plugins/ssf/v1/runtime-configuration"
 RUNTIME_V2_PATH = "/internal/plugins/ssf/v2/runtime-configuration"
 INSTALLATION_PATH = "/internal/plugins/ssf/v2/installation-content"
 DIRECTORY_PATH = "/internal/plugins/ssf/v1/admin-login-tenants"
@@ -114,63 +110,6 @@ _INSTALLATION_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     },
 }
 
-TENANT_CONFIGURATION_TEMPLATES: dict[str, dict[str, Any]] = {
-    "tenant-kassel": {
-        "contractVersion": _CONTRACT_VERSION,
-        "tenant": {
-            "id": "tenant-kassel",
-            "displayName": "Kassel Test Municipality",
-            "timeZone": "Europe/Berlin",
-        },
-        "branding": {"logo": None, "icon": None},
-        "localization": {
-            "defaultLocale": "de-DE",
-            "locales": [
-                {
-                    "locale": "de-DE",
-                    "authenticatedHomeExplanationHtml": "<p>Test environment</p>",
-                    "guestExplanationHtml": "<p>Guest test environment</p>",
-                    "conversationContentStorageQuestionHtml": "<p>Store this conversation?</p>",
-                }
-            ],
-        },
-        "conversationContentStorage": {"mode": "ask"},
-    },
-    "tenant-fulda": {
-        "contractVersion": _CONTRACT_VERSION,
-        "tenant": {
-            "id": "tenant-fulda",
-            "displayName": "Fulda Test Municipality",
-            "timeZone": "Europe/Berlin",
-        },
-        "branding": {"logo": None, "icon": None},
-        "localization": {
-            "defaultLocale": "de-DE",
-            "locales": [
-                {
-                    "locale": "de-DE",
-                    "authenticatedHomeExplanationHtml": "<p>Test environment</p>",
-                    "guestExplanationHtml": "<p>Guest test environment</p>",
-                    "conversationContentStorageQuestionHtml": None,
-                }
-            ],
-        },
-        "conversationContentStorage": {"mode": "disabled"},
-    },
-}
-
-
-def _configuration_for(tenant_id: str) -> dict[str, Any]:
-    """Return the effective configuration and its two deterministic revisions."""
-    configuration = deepcopy(TENANT_CONFIGURATION_TEMPLATES[tenant_id])
-    authorization = {
-        "tenantId": tenant_id,
-        "permissions": ["ssf.runtime-configuration.read"],
-    }
-    configuration["authorizationRevision"] = contract_fixtures.revision(authorization)
-    configuration["configurationRevision"] = contract_fixtures.revision(configuration)
-    return configuration
-
 
 def _login_directory() -> dict[str, Any]:
     """Return the deterministic V1 login directory for all ready tenants."""
@@ -244,7 +183,7 @@ def _runtime_request(
     x_tenant_id: str | None = Header(default=None, include_in_schema=False),
     x_mock_scenario: str | None = Header(default=None),
 ) -> _RuntimeRequest:
-    """Collect the runtime contract's headers once for both contract versions."""
+    """Collect the runtime contract's headers for the v2 runtime route."""
     return _RuntimeRequest(
         authorization=authorization,
         tenant_id=x_studio_tenant_id,
@@ -264,10 +203,9 @@ _RUNTIME_SCENARIO_ERRORS: dict[str, tuple[int, RuntimeErrorCode, bool]] = {
 }
 
 
-def _checked_tenant(
-    runtime_request: _RuntimeRequest, known_tenants: Collection[str], contract_version: str
-) -> str | JSONResponse:
-    """Return the selected tenant, or the envelope for the first check it fails."""
+def _checked_tenant(runtime_request: _RuntimeRequest) -> str | JSONResponse:
+    """Return the selected tenant, or the v2 envelope for the first check it fails."""
+    contract_version = _CONTRACT_VERSION_V2
     auth_error = _service_auth_error(
         runtime_request.authorization, runtime_request.correlation_id, contract_version
     )
@@ -294,26 +232,11 @@ def _checked_tenant(
         return _error_response(
             status_code, code, correlation_id, retryable, contract_version=contract_version
         )
-    if tenant_id not in known_tenants:
+    if tenant_id not in contract_fixtures.RUNTIME_V2_TENANTS:
         return _error_response(
             404, "tenant_not_found", correlation_id, False, contract_version=contract_version
         )
     return tenant_id
-
-
-@app.get(
-    RUNTIME_V1_PATH,
-    response_model=RuntimeConfiguration,
-    responses=_ERROR_RESPONSES,
-)
-def runtime_configuration(
-    runtime_request: _RuntimeRequest = Depends(_runtime_request),
-) -> dict[str, Any] | JSONResponse:
-    """Return deterministic V1 data for authorized Studio service callers."""
-    tenant = _checked_tenant(runtime_request, TENANT_CONFIGURATION_TEMPLATES, _CONTRACT_VERSION)
-    if isinstance(tenant, JSONResponse):
-        return tenant
-    return _configuration_for(tenant)
 
 
 @app.get(RUNTIME_V2_PATH, response_model=None, responses=_ERROR_RESPONSES)
@@ -321,9 +244,7 @@ def runtime_configuration_v2(
     runtime_request: _RuntimeRequest = Depends(_runtime_request),
 ) -> dict[str, Any] | JSONResponse:
     """Return a tenant's v2 body; scenarios may flip its storage mode or break its content."""
-    tenant = _checked_tenant(
-        runtime_request, contract_fixtures.RUNTIME_V2_TENANTS, _CONTRACT_VERSION_V2
-    )
+    tenant = _checked_tenant(runtime_request)
     if isinstance(tenant, JSONResponse):
         return tenant
     return contract_fixtures.runtime_configuration_v2(tenant, runtime_request.scenario)
@@ -410,7 +331,6 @@ def _custom_openapi() -> dict[str, Any]:
     runtime_headers = {"authorization", "x-studio-tenant-id", "x-correlation-id"}
     service_headers = {"authorization", "x-correlation-id"}
     required_headers_by_path = {
-        RUNTIME_V1_PATH: runtime_headers,
         RUNTIME_V2_PATH: runtime_headers,
         INSTALLATION_PATH: service_headers,
         DIRECTORY_PATH: service_headers,
@@ -423,7 +343,6 @@ def _custom_openapi() -> dict[str, Any]:
                 parameter["schema"] = {"type": "string"}
     # The shared envelope types `code` as a string; document what this mock emits.
     emitted_codes = {
-        RUNTIME_V1_PATH: get_args(RuntimeErrorCode),
         RUNTIME_V2_PATH: get_args(RuntimeErrorCode),
         INSTALLATION_PATH: get_args(InstallationErrorCode),
         DIRECTORY_PATH: get_args(DirectoryErrorCode),

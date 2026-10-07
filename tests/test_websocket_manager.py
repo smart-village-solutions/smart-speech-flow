@@ -12,12 +12,12 @@ import pytest
 
 from services.api_gateway.realtime_protocol import ConnectionState, MessageType
 from services.api_gateway.session_models import ClientType
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from services.api_gateway.tenant_session import TenantSessionKey
 
 # WebSocket-Manager und Dependencies
 from services.api_gateway.websocket import WebSocketManager
 from tests.realtime_sessions import (
-    SNAPSHOT,
+    REVISION,
     TENANT,
     open_session,
     tenant_session_manager,
@@ -282,7 +282,7 @@ class TestWebSocketManager:
         mock_ws = MockWebSocket()
         revision = f"sha256:{'a' * 64}"
         session = await gateway_dependencies.session_manager.create_admin_session(
-            "tenant-test", RuntimeConfigurationSnapshot(revision, revision, "{}")
+            "tenant-test", revision
         )
         session_id = session.key
 
@@ -719,7 +719,7 @@ class TestWebSocketIntegration:
     async def test_integration_with_session_manager(self, websocket_manager, mock_websocket):
         """Test: Integration mit SessionManager"""
         # Session im SessionManager erstellen
-        session = await websocket_manager.session_manager.create_admin_session(TENANT, SNAPSHOT)
+        session = await websocket_manager.session_manager.create_admin_session(TENANT, REVISION)
         session_id = session.key
 
         # WebSocket-Verbindung zur Session
@@ -738,7 +738,7 @@ class TestWebSocketIntegration:
     ):
         """Test: Session-Termination über SessionManager löst WebSocket-Cleanup aus"""
         # Session und WebSocket-Verbindung erstellen
-        session_id = (await session_manager.create_admin_session(TENANT, SNAPSHOT)).key
+        session_id = (await session_manager.create_admin_session(TENANT, REVISION)).key
 
         mock_ws = MockWebSocket()
         connection_id = await websocket_manager.connect_websocket(
@@ -761,14 +761,14 @@ class TestWebSocketIntegration:
         session_manager.allow_parallel_sessions = True
 
         # Erste Session mit WebSocket
-        session1_id = (await session_manager.create_admin_session(TENANT, SNAPSHOT)).key
+        session1_id = (await session_manager.create_admin_session(TENANT, REVISION)).key
         mock_ws1 = MockWebSocket()
         conn1_id = await websocket_manager.connect_websocket(
             mock_ws1, session1_id, ClientType.ADMIN
         )
 
         # Zweite Session erstellen (soll parallel bestehen bleiben)
-        session2_id = (await session_manager.create_admin_session(TENANT, SNAPSHOT)).key
+        session2_id = (await session_manager.create_admin_session(TENANT, REVISION)).key
 
         # Erste WebSocket-Verbindung soll aktiv bleiben
         assert not mock_ws1.is_closed

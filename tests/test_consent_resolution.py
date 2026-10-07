@@ -4,27 +4,27 @@ import pytest
 
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.consent_resolution import resolve_consent
-from tests.runtime_policy_helpers import configuration
+from tests.runtime_policy_helpers import runtime_read
 
 
 @pytest.mark.parametrize("answer", [True, False, None])
 def test_disabled_mode_ignores_the_answer(answer):
-    status = resolve_consent(configuration(mode="disabled"), answer)
+    status = resolve_consent(runtime_read(mode="disabled").policy, answer)
     assert status is ConsentStatus.POLICY_DISABLED
 
 
 def test_ask_with_affirmative_answer_grants():
-    status = resolve_consent(configuration(mode="ask"), True)
+    status = resolve_consent(runtime_read(mode="ask").policy, True)
     assert status is ConsentStatus.GRANTED
 
 
 def test_ask_with_negative_answer_declines():
-    status = resolve_consent(configuration(mode="ask"), False)
+    status = resolve_consent(runtime_read(mode="ask").policy, False)
     assert status is ConsentStatus.DECLINED
 
 
 def test_ask_with_absent_answer_declines():
-    status = resolve_consent(configuration(mode="ask"), None)
+    status = resolve_consent(runtime_read(mode="ask").policy, None)
     assert status is ConsentStatus.DECLINED
 
 

@@ -14,7 +14,7 @@ import pytest
 
 from services.api_gateway.app import create_app, lifespan
 from services.api_gateway.session_models import ClientType
-from tests.realtime_sessions import SNAPSHOT, TENANT
+from tests.realtime_sessions import REVISION, TENANT
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ async def test_the_heartbeat_task_does_not_outlive_the_lifespan() -> None:
 
     async with lifespan(app):
         dependencies = app.state.dependencies
-        session = await dependencies.session_manager.create_admin_session(TENANT, SNAPSHOT)
+        session = await dependencies.session_manager.create_admin_session(TENANT, REVISION)
         socket = AsyncMock()
         await dependencies.websocket_manager.connect_websocket(
             socket, session.key, ClientType.ADMIN

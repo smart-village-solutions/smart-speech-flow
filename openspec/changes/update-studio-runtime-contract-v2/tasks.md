@@ -14,12 +14,12 @@
 
 ## 3. Cutover to v2
 
-- [ ] 3.1 Move session create, activation and the persistence gate to the v2 client
-- [ ] 3.2 Authorize persistence with one live read per message and record the decision per artefact
-- [ ] 3.3 Replace `Session.runtime_configuration` with `configuration_revision`; keep `from_dict` reading v1 records, with a test
-- [ ] 3.4 Remove the v1 runtime client, `presentation_configuration.py` and `display_text_fallback.py`; move the nh3 sanitiser to `studio_html.py`
-- [ ] 3.5 Rewrite the affected test builders and suites; regenerate the OpenAPI snapshot
-- [ ] 3.6 Run the tenant isolation matrix by hand against a rebuilt image
+- [x] 3.1 Move session create, activation and the persistence gate to the v2 client
+- [x] 3.2 Authorize persistence with one live read per message and record the decision per artefact
+- [x] 3.3 Replace `Session.runtime_configuration` with `configuration_revision`; keep `from_dict` reading v1 records, with a test
+- [x] 3.4 Remove the v1 runtime client, `presentation_configuration.py` and `display_text_fallback.py`; move the nh3 sanitiser to `studio_html.py`
+- [x] 3.5 Rewrite the affected test builders and suites; regenerate the OpenAPI snapshot
+- [x] 3.6 Run the tenant isolation matrix by hand against a rebuilt image
 
 ## 4. Per-session retention
 

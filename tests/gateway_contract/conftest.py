@@ -25,16 +25,16 @@ from services.api_gateway.auth import (
     require_ssf_user,
 )
 from services.api_gateway.dependencies import GatewayDependencies
-from services.api_gateway.studio_runtime_client import RuntimeConfiguration
 from services.api_gateway.studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
     require_validated_runtime_configuration,
 )
+from services.api_gateway.studio_v2 import RuntimeRead
 from services.api_gateway.tenant_context import StudioTenantContext, require_studio_tenant_context
 from tests.gateway_contract.contract_support import (
     REVISION,
     TENANT_A,
-    runtime_configuration,
+    runtime_read,
     wav_bytes,
 )
 
@@ -102,7 +102,7 @@ class SignedIdentity:
 
     def runtime(self) -> ValidatedRuntimeConfiguration:
         return ValidatedRuntimeConfiguration(
-            self.context(), runtime_configuration(self.tenant_id), f"contract-{self.tenant_id}"
+            self.context(), runtime_read(self.tenant_id), f"contract-{self.tenant_id}"
         )
 
     def _install(self) -> None:
@@ -258,7 +258,7 @@ def openapi_document(gateway) -> dict[str, Any]:
 
 
 class StudioStub:
-    """Studio Runtime Configuration V1 as seen by the gateway.
+    """Studio runtime configuration v2 as seen by the gateway.
 
     One object answers all three reads: the admin create resolution, the
     customer activation read and the persistence gate.
@@ -267,21 +267,21 @@ class StudioStub:
     def __init__(self) -> None:
         self.storage_mode = "ask"
         self.error: Exception | None = None
-        self.configuration_override: RuntimeConfiguration | None = None
+        self.configuration_override: RuntimeRead | None = None
         self.fetches: list[tuple[str, str]] = []
 
     def fail(self, code: str, *, retryable: bool) -> None:
-        from services.api_gateway.studio_runtime_client import StudioRuntimeClientError
+        from services.api_gateway.studio_runtime_v2_client import StudioRuntimeV2ClientError
 
-        self.error = StudioRuntimeClientError(code, retryable=retryable)
+        self.error = StudioRuntimeV2ClientError(code, retryable=retryable)
 
-    async def fetch(self, tenant_id: str, correlation_id: str) -> RuntimeConfiguration:
+    async def fetch(self, tenant_id: str, correlation_id: str) -> RuntimeRead:
         self.fetches.append((tenant_id, correlation_id))
         if self.error is not None:
             raise self.error
         if self.configuration_override is not None:
             return self.configuration_override
-        return runtime_configuration(tenant_id, storage_mode=self.storage_mode)
+        return runtime_read(tenant_id, storage_mode=self.storage_mode)
 
 
 @pytest.fixture

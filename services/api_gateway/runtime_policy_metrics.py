@@ -20,21 +20,25 @@ DISCARDED_COUNTER_NAME = "ssf_runtime_policy_content_discarded_total"
 
 
 class RuntimePolicyMetrics:
-    """Record one decision per write, with no identifier in any label."""
+    """Record one decision per message, with no identifier in any label.
+
+    One live read decides every artefact of a message, so a refused voice
+    message counts once, not once per record or audio file.
+    """
 
     def __init__(self, registry: CollectorRegistry) -> None:
         self._decisions = _registered(
             registry,
             Counter,
             DECISION_COUNTER_NAME,
-            "Conversation-content persistence decisions",
+            "Conversation-content persistence decisions, one per message",
             ("decision", "reason"),
         )
         self._discarded = _registered(
             registry,
             Counter,
             DISCARDED_COUNTER_NAME,
-            "Conversation-content writes refused and discarded",
+            "Messages whose conversation content was refused and discarded",
             ("reason",),
         )
         self._duration = _registered(

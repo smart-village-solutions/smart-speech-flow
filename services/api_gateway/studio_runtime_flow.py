@@ -1,4 +1,4 @@
-"""Tenant-bound composition for Studio Runtime Configuration V1."""
+"""Tenant-bound composition for Studio runtime configuration v2."""
 
 from __future__ import annotations
 
@@ -11,19 +11,16 @@ from uuid import uuid4
 from fastapi import Depends, HTTPException, Request, status
 
 from .dependencies import get_studio_runtime_flow
-from .studio_runtime_client import (
-    RuntimeConfiguration,
-    StudioRuntimeClient,
-    StudioRuntimeClientError,
-)
 from .studio_runtime_token import StudioRuntimeTokenProvider, StudioTokenError
+from .studio_runtime_v2_client import StudioRuntimeV2Client, StudioRuntimeV2ClientError
+from .studio_v2 import RuntimeRead
 from .tenant_context import StudioTenantContext, require_studio_tenant_context
 
 
 class RuntimeConfigurationFetcher(Protocol):
-    """The already validated Studio Runtime Configuration V1 client boundary."""
+    """The already validated Studio runtime configuration v2 client boundary."""
 
-    async def fetch(self, tenant_id: str, correlation_id: str) -> RuntimeConfiguration:
+    async def fetch(self, tenant_id: str, correlation_id: str) -> RuntimeRead:
         raise NotImplementedError
 
 
@@ -38,15 +35,15 @@ class StudioRuntimeFlowError(RuntimeError):
 
 @dataclass(frozen=True)
 class ValidatedRuntimeConfiguration:
-    """A Studio configuration bound to one validated SSF tenant context."""
+    """A Studio read bound to one validated SSF tenant context."""
 
     context: StudioTenantContext
-    configuration: RuntimeConfiguration
+    read: RuntimeRead
     correlation_id: str
 
 
 class StudioRuntimeFlow:
-    """Fetch Runtime Configuration V1 only for its validated tenant context."""
+    """Fetch the runtime configuration only for its validated tenant context."""
 
     def __init__(self, client: RuntimeConfigurationFetcher) -> None:
         self._client = client
@@ -61,21 +58,21 @@ class StudioRuntimeFlow:
         context: StudioTenantContext,
         correlation_id: str,
     ) -> ValidatedRuntimeConfiguration:
-        """Return a configuration only when its tenant matches the verified realm."""
+        """Return a read only when its tenant matches the verified realm."""
         try:
-            configuration = await self._client.fetch(context.tenant_id, correlation_id)
-        except (StudioRuntimeClientError, StudioTokenError) as error:
+            read = await self._client.fetch(context.tenant_id, correlation_id)
+        except (StudioRuntimeV2ClientError, StudioTokenError) as error:
             raise StudioRuntimeFlowError(error.code, retryable=error.retryable) from None
 
         # Studio's tenant id is not guaranteed ASCII, and compare_digest raises on non-ASCII str.
         if not hmac.compare_digest(
-            configuration.tenant.id.encode("utf-8"),
+            read.policy.tenant_id.encode("utf-8"),
             context.tenant_id.encode("utf-8"),
         ):
             raise StudioRuntimeFlowError("studio_runtime_tenant_mismatch", retryable=False)
         return ValidatedRuntimeConfiguration(
             context=context,
-            configuration=configuration,
+            read=read,
             correlation_id=correlation_id,
         )
 
@@ -117,7 +114,7 @@ def runtime_flow_from_environment(
     if token_provider is None:
         raise StudioRuntimeFlowError("studio_runtime_configuration_invalid", retryable=False)
     try:
-        client = StudioRuntimeClient(
+        client = StudioRuntimeV2Client(
             base_url,
             token_provider.get_token,
             timeout_seconds=_configuration_timeout_seconds(),
@@ -155,7 +152,7 @@ def correlation_id_from_request(request: Request) -> str:
     """Return a safe caller correlation ID or a gateway-generated UUID.
 
     Every route that forwards this header to Studio must go through here.
-    `StudioRuntimeClient` rejects a malformed value with a bare `ValueError`,
+    `StudioRuntimeV2Client` rejects a malformed value with a bare `ValueError`,
     which no caller classifies: on a read path it escapes as a 500, and on a
     write path the policy gate's blanket except turns it into a silent refusal
     to persist.

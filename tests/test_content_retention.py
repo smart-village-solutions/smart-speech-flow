@@ -17,10 +17,8 @@ from services.api_gateway.session_store import (
     MemoryTenantSessionStore,
     SessionStoreConsistencyError,
 )
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 NOW = datetime(2026, 9, 17, 12, 0, tzinfo=timezone.utc)
 
 
@@ -56,7 +54,7 @@ def manager(audio_store: AudioStore) -> TenantSessionManager:
 
 
 async def _session_aged(manager, *, age: timedelta, authorized: bool):
-    session = await manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-test", REVISION)
     session.created_at = NOW - age
     await manager.add_message(
         session.key,
@@ -192,7 +190,7 @@ async def test_an_audio_only_removal_is_persisted(
     # The message count is unchanged, so a count-based dirty check would keep
     # `translated_audio_available: true` in the store for a file that is gone.
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
-    session = await strict_manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await strict_manager.create_admin_session("tenant-test", REVISION)
     session.created_at = NOW - timedelta(hours=9)
     await strict_manager.add_message(
         session.key,
@@ -272,7 +270,7 @@ async def test_a_failed_sweep_write_retries_on_the_next_pass(
     never removed while Redis still holds the unpruned record.
     """
     monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
-    session = await strict_manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await strict_manager.create_admin_session("tenant-test", REVISION)
     session.created_at = NOW - timedelta(hours=9)
     await strict_manager.add_message(
         session.key,

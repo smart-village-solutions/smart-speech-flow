@@ -17,13 +17,11 @@ from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_models import ClientType, SessionMessage, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
 from services.api_gateway.tenant_session import (
-    RuntimeConfigurationSnapshot,
     TenantSessionKey,
 )
 from tests.pipeline_helpers import speech_pipeline
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 @pytest.fixture
@@ -70,7 +68,7 @@ def test_message_route_uses_server_assigned_role(
 
 async def test_audio_lookup_requires_message_ownership(session_manager, client: TestClient) -> None:
     session_id = client.post("/api/admin/session/create").json()["session_id"]
-    other = await session_manager.create_admin_session("tenant-other", SNAPSHOT)
+    other = await session_manager.create_admin_session("tenant-other", REVISION)
     message = SessionMessage(
         id="other-message",
         sender=ClientType.CUSTOMER,
@@ -131,7 +129,7 @@ async def test_live_audio_urls_are_scoped_to_each_receiving_role(
     key = (
         await TenantSessionManager(
             store=MemoryTenantSessionStore(), audio_store=AudioStore.from_environment()
-        ).create_admin_session("tenant-a", SNAPSHOT)
+        ).create_admin_session("tenant-a", REVISION)
     ).key
     message = SessionMessage(
         id="message-1",
@@ -307,7 +305,7 @@ async def test_created_message_persists_translated_audio_without_retaining_bytes
 
     store = RecordingAudioStore()
     manager = TenantSessionManager(store=MemoryTenantSessionStore(), audio_store=store)
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
 
     available = message_requests._store_translated_audio(
         session.key, "message-1", b"translated", audio_store=store
@@ -384,7 +382,7 @@ async def test_text_processing_ignores_a_spoofed_client_role(
     manager = TenantSessionManager(
         store=MemoryTenantSessionStore(), audio_store=AudioStore.from_environment()
     )
-    session = await manager.create_admin_session("tenant-a", SNAPSHOT)
+    session = await manager.create_admin_session("tenant-a", REVISION)
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"
     await manager.store.save(session)

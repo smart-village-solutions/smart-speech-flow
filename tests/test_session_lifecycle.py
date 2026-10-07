@@ -15,14 +15,12 @@ from services.api_gateway.session_lifecycle import (
 from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_models import SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
-from services.api_gateway.studio_runtime_client import StudioRuntimeClientError
 from services.api_gateway.studio_runtime_flow import StudioRuntimeFlow
+from services.api_gateway.studio_runtime_v2_client import StudioRuntimeV2ClientError
 from services.api_gateway.tenant_context import admin_ref
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
-from tests.gateway_contract.contract_support import runtime_configuration
+from services.api_gateway.tenant_session import TenantSessionKey
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 class _Unread(Exception):
@@ -52,7 +50,7 @@ def sessions() -> TenantSessionManager:
 
 
 async def _pending(sessions: TenantSessionManager) -> TenantSessionKey:
-    return (await sessions.create_admin_session("tenant-a", SNAPSHOT)).key
+    return (await sessions.create_admin_session("tenant-a", REVISION)).key
 
 
 async def test_a_repeated_activation_never_reads_the_correlation_id(
@@ -89,7 +87,7 @@ async def test_a_tenant_conflict_refuses_activation(
     sessions: TenantSessionManager, code: str
 ) -> None:
     key = await _pending(sessions)
-    fetcher = _FailingFetcher(StudioRuntimeClientError(code, retryable=False))
+    fetcher = _FailingFetcher(StudioRuntimeV2ClientError(code, retryable=False))
 
     with pytest.raises(TenantConflictError) as raised:
         await SessionLifecycleService(sessions).activate(
@@ -107,7 +105,7 @@ async def test_any_other_studio_failure_activates_without_consent(
     sessions: TenantSessionManager,
 ) -> None:
     key = await _pending(sessions)
-    fetcher = _FailingFetcher(StudioRuntimeClientError("studio_unavailable", retryable=True))
+    fetcher = _FailingFetcher(StudioRuntimeV2ClientError("studio_unavailable", retryable=True))
 
     activation = await SessionLifecycleService(sessions).activate(
         key, "en", True, StudioRuntimeFlow(fetcher), lambda: "corr-1"
@@ -143,17 +141,13 @@ async def test_create_replaces_only_the_same_tenants_active_session(
 ) -> None:
     lifecycle = SessionLifecycleService(sessions)
     tenant_a_admin = admin_ref("tenant-a", "admin-subject")
-    first = await lifecycle.create(
-        "tenant-a", runtime_configuration("tenant-a"), owner_ref=tenant_a_admin
-    )
+    first = await lifecycle.create("tenant-a", REVISION, owner_ref=tenant_a_admin)
     other = await lifecycle.create(
         "tenant-b",
-        runtime_configuration("tenant-b"),
+        REVISION,
         owner_ref=admin_ref("tenant-b", "admin-subject"),
     )
-    second = await lifecycle.create(
-        "tenant-a", runtime_configuration("tenant-a"), owner_ref=tenant_a_admin
-    )
+    second = await lifecycle.create("tenant-a", REVISION, owner_ref=tenant_a_admin)
 
     assert (await sessions.get_session(first.key)).status is SessionStatus.TERMINATED
     assert (await sessions.get_session(other.key)).status is SessionStatus.PENDING

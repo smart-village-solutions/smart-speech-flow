@@ -20,10 +20,8 @@ from services.api_gateway.session_store import (
 )
 from services.api_gateway.session_store import session_key as persisted_session_key
 from services.api_gateway.tenant_context import admin_ref
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 class PersistentFakeRedis:
@@ -189,7 +187,7 @@ async def test_production_startup_uses_shared_redis_and_survives_restart(
         assert isinstance(dependencies.realtime_tickets.backend, RedisRealtimeTicketBackend)
         assert dependencies.realtime_tickets.backend.redis is redis
         assert session_manager.websocket_manager is dependencies.websocket_manager
-        session = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
+        session = await session_manager.create_admin_session("tenant-a", REVISION)
         issued = await dependencies.realtime_tickets.issue(session.key, "websocket")
 
     async with lifespan(app):
@@ -200,7 +198,7 @@ async def test_production_startup_uses_shared_redis_and_survives_restart(
         restored = await session_manager.get_session(session.key)
         assert restored is not None
         assert restored is not session
-        assert json.loads(restored.runtime_configuration.canonical_json) == {}
+        assert restored.configuration_revision == REVISION
         assert await realtime_ticket_store.consume(issued.ticket, session.key, "websocket") is True
         assert await realtime_ticket_store.consume(issued.ticket, session.key, "websocket") is False
 
@@ -269,7 +267,7 @@ async def test_ambiguous_termination_rejects_stale_saves_before_cleanup_retry(
         monkeypatch.setattr(polling, "clock", lambda: 0.0)
         sockets = dependencies.websocket_manager
         monkeypatch.setattr(sockets, "start_heartbeat_system", AsyncMock())
-        session = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
+        session = await session_manager.create_admin_session("tenant-a", REVISION)
         usable_after_failure = await realtime_ticket_store.issue(session.key, "websocket")
         revoked_after_retry = await realtime_ticket_store.issue(session.key, "websocket")
         polling_client = polling.activate(session.key, ClientType.CUSTOMER)
@@ -350,12 +348,12 @@ async def test_restart_rehydrates_active_session_for_same_tenant_replacement(
 
     async with lifespan(app):
         session_manager = app.state.dependencies.session_manager
-        first = await session_manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner)
+        first = await session_manager.create_admin_session("tenant-a", REVISION, owner_ref=owner)
 
     async with lifespan(app):
         session_manager = app.state.dependencies.session_manager
         assert session_manager.active_admin_sessions == {"tenant-a": {first.id}}
-        second = await session_manager.create_admin_session("tenant-a", SNAPSHOT, owner_ref=owner)
+        second = await session_manager.create_admin_session("tenant-a", REVISION, owner_ref=owner)
 
         assert (await session_manager.get_session(first.key)).status is SessionStatus.TERMINATED
         assert (await session_manager.get_session(second.key)).status is SessionStatus.PENDING
@@ -380,7 +378,7 @@ async def test_restart_terminates_sessions_whose_persisted_deadline_expired(
 
     async with lifespan(app):
         session_manager = app.state.dependencies.session_manager
-        session = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
+        session = await session_manager.create_admin_session("tenant-a", REVISION)
         if expired_by == "absolute_lifetime":
             await session_manager.admin_connected(session.key)
 
@@ -414,7 +412,7 @@ async def test_restart_clears_stale_transport_presence_and_starts_admin_grace(
 
     async with lifespan(app):
         session_manager = app.state.dependencies.session_manager
-        session = await session_manager.create_admin_session("tenant-a", SNAPSHOT)
+        session = await session_manager.create_admin_session("tenant-a", REVISION)
         await session_manager.admin_connected(session.key)
         await session_manager.customer_connected(session.key)
 

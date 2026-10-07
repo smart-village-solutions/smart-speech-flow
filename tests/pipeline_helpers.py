@@ -17,7 +17,6 @@ from services.api_gateway.session_models import SessionStatus
 from services.api_gateway.speech_services import HttpSpeechServices
 from services.api_gateway.tenant_context import admin_ref
 from services.api_gateway.tenant_session import (
-    RuntimeConfigurationSnapshot,
     TenantSessionKey,
 )
 from services.api_gateway.translation_refiner import (
@@ -88,7 +87,6 @@ def wav_collaborators(
     return {"speech": pipeline.speech, "refiner": pipeline.refiner}
 
 
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 async def make_active_session(manager, *, admin: str = "test-admin") -> TenantSessionKey:
@@ -101,7 +99,7 @@ async def make_active_session(manager, *, admin: str = "test-admin") -> TenantSe
     """
     # Owned by the admin tests/conftest.py authenticates, so the admin routes serve it.
     session = await manager.create_admin_session(
-        "tenant-test", SNAPSHOT, owner_ref=admin_ref("tenant-test", admin)
+        "tenant-test", REVISION, owner_ref=admin_ref("tenant-test", admin)
     )
     session.status = SessionStatus.ACTIVE
     session.customer_language = "en"

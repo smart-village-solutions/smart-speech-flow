@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from tests.gateway_contract.contract_support import TENANT_A, TENANT_B, runtime_configuration
+from services.api_gateway.tenant_session import TenantSessionKey
+from tests.gateway_contract.contract_support import TENANT_A, TENANT_B, runtime_read
+from tests.runtime_policy_helpers import runtime_read as build_runtime_read
 
 NO_ACTIVE_SESSION = {"detail": "Keine aktive Admin-Session gefunden"}
 
@@ -39,7 +41,7 @@ def test_session_create_fails_closed_on_a_studio_failure(
 
 
 def test_session_create_refuses_a_configuration_for_another_tenant(client, studio):
-    studio.configuration_override = runtime_configuration(TENANT_B)
+    studio.configuration_override = runtime_read(TENANT_B)
 
     response = client.post("/api/admin/session/create")
 
@@ -48,16 +50,20 @@ def test_session_create_refuses_a_configuration_for_another_tenant(client, studi
     assert client.get("/api/admin/session/current").json() == NO_ACTIVE_SESSION
 
 
-def test_session_create_ignores_the_authorization_revision(client, studio):
-    configuration = runtime_configuration(TENANT_A).model_dump(by_alias=True)
-    configuration["authorizationRevision"] = f"sha256:{'b' * 64}"
-    studio.configuration_override = type(runtime_configuration(TENANT_A)).model_validate(
-        configuration
+def test_session_create_stores_the_reads_configuration_revision(
+    client, studio, gateway_dependencies
+):
+    revision = f"sha256:{'b' * 64}"
+    studio.configuration_override = build_runtime_read(TENANT_A, revision=revision)
+
+    created = client.post("/api/admin/session/create")
+
+    assert created.status_code == 201
+    session = client.portal.call(
+        gateway_dependencies.session_manager.get_session,
+        TenantSessionKey(TENANT_A, created.json()["session_id"]),
     )
-
-    response = client.post("/api/admin/session/create")
-
-    assert response.status_code == 201
+    assert session.configuration_revision == revision
 
 
 @pytest.mark.usefixtures("studio_unconfigured")

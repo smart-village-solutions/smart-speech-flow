@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -12,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from .clock import utc_now
 from .consent import ConsentStatus
-from .tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
 
@@ -152,13 +153,42 @@ class SessionMessage:
         )
 
 
+_CONFIGURATION_REVISION = re.compile(r"sha256:[0-9a-f]{64}")
+
+
+def _stored_configuration_revision(data: Dict[str, Any]) -> str:
+    """The record's revision; v1 records carry it inside their configuration snapshot."""
+    revision = data.get("configuration_revision")
+    if revision is None:
+        snapshot = data.get("runtime_configuration")
+        revision = snapshot.get("configuration_revision") if isinstance(snapshot, dict) else None
+    if not isinstance(revision, str) or not _CONFIGURATION_REVISION.fullmatch(revision):
+        raise ValueError("session record has no valid configuration revision")
+    return revision
+
+
+def _previous_gateway_snapshot(revision: Optional[str]) -> Optional[Dict[str, str]]:
+    """The v1 snapshot shape, so a rollback to the v1 gateway can still load the record.
+
+    That gateway's `from_dict` requires these three keys and never parses
+    `canonical_json` outside tests. Drop with the v1 compatibility (Studio v2 PR 14).
+    """
+    if revision is None:
+        return None
+    return {
+        "configuration_revision": revision,
+        "authorization_revision": revision,
+        "canonical_json": "{}",
+    }
+
+
 @dataclass
 class Session:
     id: str
     # Transitional defaults keep untouched legacy call sites importable while
     # the hard-cut routes are migrated. Persistence rejects missing scope.
     tenant_id: Optional[str] = None
-    runtime_configuration: Optional[RuntimeConfigurationSnapshot] = None
+    configuration_revision: Optional[str] = None
     consent_status: ConsentStatus = ConsentStatus.PENDING
     customer_language: Optional[str] = None  # Wird erst bei Client-Join gesetzt
     admin_language: str = "de"
@@ -221,11 +251,8 @@ class Session:
         data: Dict[str, Any] = {
             "id": self.id,
             "tenant_id": self.tenant_id,
-            "runtime_configuration": (
-                self.runtime_configuration.to_dict()
-                if self.runtime_configuration is not None
-                else None
-            ),
+            "configuration_revision": self.configuration_revision,
+            "runtime_configuration": _previous_gateway_snapshot(self.configuration_revision),
             "consent_status": self.consent_status.value,
             "customer_language": self.customer_language,
             "admin_language": self.admin_language,
@@ -267,6 +294,7 @@ class Session:
         """Serialize dashboard-safe session state without tenant internals."""
         data = self.to_dict()
         data.pop("tenant_id", None)
+        data.pop("configuration_revision", None)
         data.pop("runtime_configuration", None)
         data.pop("owner_ref", None)
         return data
@@ -308,9 +336,7 @@ class Session:
         session = cls(
             id=data["id"],
             tenant_id=data["tenant_id"],
-            runtime_configuration=RuntimeConfigurationSnapshot.from_dict(
-                data["runtime_configuration"]
-            ),
+            configuration_revision=_stored_configuration_revision(data),
             consent_status=ConsentStatus.from_stored(data.get("consent_status")),
             customer_language=data.get("customer_language"),
             admin_language=data.get("admin_language", "de"),

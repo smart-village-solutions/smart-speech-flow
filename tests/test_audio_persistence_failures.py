@@ -16,10 +16,9 @@ from services.api_gateway.consent import ConsentStatus
 from services.api_gateway import message_delivery
 from services.api_gateway import message_requests
 from services.api_gateway.session_models import ClientType
-from services.api_gateway.tenant_session import RuntimeConfigurationSnapshot, TenantSessionKey
+from services.api_gateway.tenant_session import TenantSessionKey
 
 REVISION = f"sha256:{'a' * 64}"
-SNAPSHOT = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
 
 
 class RefusingAudioStore(AudioStore):
@@ -36,7 +35,7 @@ def refusing_audio_storage(tmp_path) -> AudioStore:
 
 async def _session(session_manager) -> object:
     session_manager.reset(clear_persistence=True)
-    session = await session_manager.create_admin_session("tenant-test", SNAPSHOT)
+    session = await session_manager.create_admin_session("tenant-test", REVISION)
     session.consent_status = ConsentStatus.GRANTED
     await session_manager.store.save(session)
     return session.key

@@ -8,6 +8,7 @@ identifiers and deterministic timeout/ticket behavior that HTTP cannot create.
 from __future__ import annotations
 
 import base64
+import hashlib
 import itertools
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -27,22 +28,22 @@ from services.api_gateway.realtime_ticket import (
 from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_models import ClientType, SessionMessage, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
-from services.api_gateway.studio_runtime_client import RuntimeConfiguration
 from services.api_gateway.studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
     require_validated_runtime_configuration,
 )
+from services.api_gateway.studio_v2 import RuntimeRead
 from services.api_gateway.tenant_context import (
     StudioTenantContext,
     require_studio_tenant_context,
 )
 from services.api_gateway.tenant_session import (
-    RuntimeConfigurationSnapshot,
     TenantSessionKey,
 )
 from services.api_gateway.websocket import WebSocketManager
 from services.api_gateway.websocket_polling_routes import TenantPollingStore
 from tests.realtime_sessions import websocket_monitor
+from tests.runtime_policy_helpers import runtime_read
 
 REVISION = f"sha256:{'a' * 64}"
 _CLIENT_ADDRESSES = itertools.count(1)
@@ -53,32 +54,12 @@ PROTECTED_OPERATIONS = (
 )
 
 
-def _configuration(tenant_id: str) -> RuntimeConfiguration:
-    return RuntimeConfiguration.model_validate(
-        {
-            "contractVersion": "1.0",
-            "configurationRevision": REVISION,
-            "authorizationRevision": REVISION,
-            "tenant": {
-                "id": tenant_id,
-                "displayName": tenant_id,
-                "timeZone": "Europe/Berlin",
-            },
-            "branding": {"logo": None, "icon": None},
-            "localization": {
-                "defaultLocale": "de-DE",
-                "locales": [
-                    {
-                        "locale": "de-DE",
-                        "authenticatedHomeExplanationHtml": "<p>Admin</p>",
-                        "guestExplanationHtml": "<p>Guest</p>",
-                        "conversationContentStorageQuestionHtml": "<p>Store?</p>",
-                    }
-                ],
-            },
-            "conversationContentStorage": {"mode": "ask"},
-        }
-    )
+def _revision(tenant_id: str) -> str:
+    return f"sha256:{hashlib.sha256(tenant_id.encode()).hexdigest()}"
+
+
+def _read(tenant_id: str) -> RuntimeRead:
+    return runtime_read(tenant_id, revision=_revision(tenant_id))
 
 
 @dataclass(frozen=True)
@@ -127,7 +108,7 @@ class TwoTenantSystem:
     def runtime(self) -> ValidatedRuntimeConfiguration:
         return ValidatedRuntimeConfiguration(
             self.context(),
-            _configuration(self.actor),
+            _read(self.actor),
             f"matrix-{self.actor}",
         )
 
@@ -308,12 +289,12 @@ async def test_a_policy_read_for_one_tenant_never_authorises_another(
         authorize_message_artifacts,
     )
     from services.api_gateway.runtime_policy import RuntimePolicyGate
-    from tests.runtime_policy_helpers import RecordingClient, configuration
+    from tests.runtime_policy_helpers import RecordingClient, runtime_read
 
     # Studio answers for tenant-a whoever asks, which is the shape of both a
     # misrouted response and a confused-deputy read.
     gate = RuntimePolicyGate(
-        RecordingClient(configuration(tenant_id="tenant-a", mode="ask"))
+        RecordingClient(runtime_read(tenant_id="tenant-a", mode="ask"))
     )
 
     authorised = {}
@@ -356,6 +337,7 @@ def test_history_lists_only_the_authenticated_tenant(two_tenant_system) -> None:
     for group in (body["sessions"], body["active_sessions"]):
         for item in group:
             assert "tenant_id" not in item
+            assert "configuration_revision" not in item
             assert "runtime_configuration" not in item
 
 
@@ -373,20 +355,19 @@ def test_customer_join_link_resolves_only_through_the_public_capability(
     assert response.json()["session_id"] == resource.session_id
 
 
-def test_each_tenant_session_keeps_its_creation_time_runtime_snapshot(
+def test_each_tenant_session_keeps_its_creation_time_configuration_revision(
     two_tenant_system,
 ) -> None:
-    snapshots = {
+    revisions = {
         tenant_id: two_tenant_system.client.portal.call(
             two_tenant_system.sessions.get_session,
             TenantSessionKey(tenant_id, resource.session_id),
-        ).runtime_configuration
+        ).configuration_revision
         for tenant_id, resource in two_tenant_system.resources.items()
     }
 
-    assert snapshots["tenant-a"].to_configuration().tenant.id == "tenant-a"
-    assert snapshots["tenant-b"].to_configuration().tenant.id == "tenant-b"
-    assert snapshots["tenant-a"] != snapshots["tenant-b"]
+    assert revisions == {tenant_id: _revision(tenant_id) for tenant_id in revisions}
+    assert revisions["tenant-a"] != revisions["tenant-b"]
 
 
 class Clock:
@@ -410,8 +391,7 @@ async def test_presence_grace_warning_and_absolute_lifetime_boundaries() -> None
         session_id_factory=lambda: next(identifiers),
         audio_store=AudioStore.from_environment(),
     )
-    snapshot = RuntimeConfigurationSnapshot(REVISION, REVISION, "{}")
-    grace = await manager.create_admin_session("tenant-a", snapshot)
+    grace = await manager.create_admin_session("tenant-a", REVISION)
     await manager.admin_connected(grace.key)
     await manager.admin_disconnected(grace.key)
     clock.advance(minutes=25)
@@ -420,7 +400,7 @@ async def test_presence_grace_warning_and_absolute_lifetime_boundaries() -> None
     clock.advance(minutes=5)
     assert grace.timeout_due(clock()) is True
 
-    maximum = await manager.create_admin_session("tenant-b", snapshot)
+    maximum = await manager.create_admin_session("tenant-b", REVISION)
     await manager.admin_connected(maximum.key)
     clock.advance(hours=7, minutes=55)
     assert maximum.warning_due(clock()) is True

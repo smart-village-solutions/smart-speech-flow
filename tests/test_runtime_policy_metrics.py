@@ -11,7 +11,7 @@ from services.api_gateway.runtime_policy import (
     RuntimePolicyGate,
 )
 from services.api_gateway.runtime_policy_metrics import RuntimePolicyMetrics
-from tests.runtime_policy_helpers import RecordingClient, configuration
+from tests.runtime_policy_helpers import RecordingClient, runtime_read
 
 DECISIONS = "ssf_runtime_policy_decision_total"
 DURATION_COUNT = "ssf_runtime_policy_read_duration_seconds_count"
@@ -30,7 +30,7 @@ async def _authorize(registry, client):
 async def test_an_authorised_decision_is_counted_once():
     registry = CollectorRegistry()
 
-    await _authorize(registry, RecordingClient(configuration()))
+    await _authorize(registry, RecordingClient(runtime_read()))
 
     assert _value(registry, DECISIONS, decision="authorized", reason="granted") == 1.0
 
@@ -38,7 +38,7 @@ async def test_an_authorised_decision_is_counted_once():
 async def test_a_refusal_is_counted_under_its_reason():
     registry = CollectorRegistry()
 
-    await _authorize(registry, RecordingClient(configuration(mode="disabled")))
+    await _authorize(registry, RecordingClient(runtime_read(mode="disabled")))
 
     assert (
         _value(registry, DECISIONS, decision="refused", reason="policy_disabled") == 1.0
@@ -48,7 +48,7 @@ async def test_a_refusal_is_counted_under_its_reason():
 async def test_every_read_observes_one_duration():
     registry = CollectorRegistry()
 
-    await _authorize(registry, RecordingClient(configuration()))
+    await _authorize(registry, RecordingClient(runtime_read()))
 
     assert _value(registry, DURATION_COUNT) == 1.0
 
@@ -56,7 +56,7 @@ async def test_every_read_observes_one_duration():
 async def test_a_refusal_counts_its_content_as_discarded():
     registry = CollectorRegistry()
 
-    await _authorize(registry, RecordingClient(configuration(mode="disabled")))
+    await _authorize(registry, RecordingClient(runtime_read(mode="disabled")))
 
     assert _value(registry, DISCARDED, reason="policy_disabled") == 1.0
 
@@ -64,7 +64,7 @@ async def test_a_refusal_counts_its_content_as_discarded():
 async def test_an_authorised_write_discards_nothing():
     registry = CollectorRegistry()
 
-    await _authorize(registry, RecordingClient(configuration()))
+    await _authorize(registry, RecordingClient(runtime_read()))
 
     discarded = [
         sample

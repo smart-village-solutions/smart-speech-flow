@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import pytest
 
+from services.api_gateway.tenant_session import TenantSessionKey
+from tests.gateway_contract.contract_support import TENANT_A, wav_bytes
+
 pytestmark = pytest.mark.usefixtures("speech_services")
 
 
@@ -80,3 +83,31 @@ def test_consent_and_authorization_state_never_reach_a_client(client, conversati
     for role in ("admin", "customer"):
         [message] = client.get(f"/api/{role}/session/{session_id}/messages").json()["messages"]
         assert not [field for field in message if "authoriz" in field or "consent" in field]
+
+
+@pytest.mark.parametrize(("mode", "authorized"), [("ask", True), ("disabled", False)])
+def test_one_studio_read_decides_every_artefact_of_a_voice_message(
+    client, conversations, studio, gateway_dependencies, mode, authorized
+):
+    session_id = conversations.create()
+    conversations.activate(session_id, "en", consent=True)
+    studio.storage_mode = mode
+    reads_before = len(studio.fetches)
+
+    response = client.post(
+        f"/api/customer/session/{session_id}/message",
+        files={"file": ("speech.wav", wav_bytes(), "audio/wav")},
+        data={"source_lang": "en", "target_lang": "de"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert len(studio.fetches) - reads_before == 1
+    session = client.portal.call(
+        gateway_dependencies.session_manager.get_session, TenantSessionKey(TENANT_A, session_id)
+    )
+    [message] = session.messages
+    assert (
+        message.record_authorized,
+        message.original_audio_authorized,
+        message.translated_audio_authorized,
+    ) == (authorized, authorized, authorized)
