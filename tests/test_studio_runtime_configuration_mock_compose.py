@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).parents[1]
 RUNBOOK = ROOT / "docs/operations/keycloak-admin-access.md"
 
@@ -26,3 +25,9 @@ def test_runbook_documents_protected_swappable_mock_endpoint() -> None:
     assert "STUDIO_RUNTIME_CONFIGURATION_BASE_URL" in runbook
     assert "X-Studio-Tenant-Id" in runbook
     assert "tenant-not-ready" in runbook
+    assert "/internal/plugins/ssf/v2/runtime-configuration" in runbook
+    assert "/internal/plugins/ssf/v2/installation-content" in runbook
+    assert "services/studio_mock/fixtures/" in runbook
+    assert "storage-disabled" in runbook
+    assert "invalid-content" in runbook
+    assert "tenant-marburg" in runbook

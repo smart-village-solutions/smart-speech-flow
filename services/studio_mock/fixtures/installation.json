@@ -1,0 +1,66 @@
+{
+  "contractVersion": "2.0",
+  "branding": {
+    "logo": {
+      "url": "https://example.org/studio-mock/installation/logo.png",
+      "alternativeText": "Test installation logo"
+    },
+    "icon": {
+      "url": "https://example.org/studio-mock/installation/icon.png",
+      "alternativeText": "Test installation icon"
+    }
+  },
+  "legal": {
+    "imprintUrl": "https://example.org/impressum",
+    "privacyPolicyUrl": "https://example.org/datenschutz",
+    "accessibilityStatementUrl": "https://example.org/barrierefreiheit"
+  },
+  "localization": {
+    "locale": "de-DE",
+    "startpage": {
+      "enterCode": "Code eingeben",
+      "send": "Weiter",
+      "login": "Login für Nutzer"
+    },
+    "login": {
+      "headline": "Login",
+      "descriptionHtml": "<p>Testumgebung: Bitte wählen Sie Ihre Organisation aus der Liste aus.</p>"
+    },
+    "feedback": {
+      "headline": "Feedback geben",
+      "questions": [
+        {
+          "id": "translationQuality",
+          "type": "rating",
+          "headline": "Übersetzungsqualität",
+          "question": "Wie genau waren die Übersetzungen?",
+          "required": true,
+          "min": 1,
+          "max": 5
+        },
+        {
+          "id": "recommendation",
+          "type": "scale",
+          "headline": "Weiterempfehlung",
+          "question": "Wie wahrscheinlich empfehlen Sie den Dienst weiter?",
+          "required": true,
+          "min": 0,
+          "max": 10,
+          "minLabel": "Sehr unwahrscheinlich",
+          "maxLabel": "Sehr wahrscheinlich"
+        },
+        {
+          "id": "improvementIdeas",
+          "type": "longText",
+          "headline": "Verbesserungsvorschläge",
+          "question": "Was würde den Dienst noch besser machen?",
+          "required": false,
+          "placeholder": "Ihre Ideen sind willkommen.",
+          "maxLength": 4000
+        }
+      ],
+      "noticeHtml": "<p>Testumgebung: Ihre Angaben dienen nur der Verbesserung des Dienstes.</p>",
+      "button": "Feedback senden"
+    }
+  }
+}

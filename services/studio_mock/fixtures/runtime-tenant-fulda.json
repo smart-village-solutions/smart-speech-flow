@@ -1,0 +1,71 @@
+{
+  "contractVersion": "2.0",
+  "tenant": {
+    "id": "tenant-fulda",
+    "displayName": "Fulda Test Municipality",
+    "timeZone": "Europe/Berlin"
+  },
+  "branding": {
+    "logo": null,
+    "icon": null
+  },
+  "conversationContentStorage": {
+    "mode": "disabled",
+    "retentionHours": null
+  },
+  "staff": {
+    "locale": "de-DE",
+    "dashboard": {
+      "headline": "Willkommen in der Testumgebung",
+      "explanationHtml": "<p>Testumgebung ohne Speicherung von Gesprächsinhalten.</p>",
+      "callToAction": "Neues Gespräch starten",
+      "load": {
+        "headline": "Systemauslastung",
+        "green": "Ausreichend Kapazitäten verfügbar",
+        "yellow": "Das System ist stark ausgelastet.",
+        "red": "Derzeit sind keine neuen Gespräche möglich."
+      }
+    },
+    "newConversation": {
+      "headline": "Neues Gespräch",
+      "descriptionHtml": "<p>Code oder Link mit dem Gesprächspartner teilen</p>"
+    },
+    "feedback": {
+      "headline": "Feedback geben",
+      "questions": [
+        {
+          "id": "translationQuality",
+          "type": "rating",
+          "question": "Wie genau waren die Übersetzungen?",
+          "required": true,
+          "min": 1,
+          "max": 5
+        }
+      ],
+      "noticeHtml": "<p>Testumgebung: Ihre Angaben dienen nur der Verbesserung des Dienstes.</p>",
+      "button": "Feedback senden"
+    }
+  },
+  "guestLanguages": [
+    {
+      "locale": "en",
+      "nativeName": "English",
+      "staffName": "Englisch",
+      "icon": null,
+      "guest": {
+        "explanationHtml": "<p>Test environment: conversation content is never stored.</p>",
+        "storageQuestionHtml": null
+      }
+    },
+    {
+      "locale": "ar",
+      "nativeName": "العربية",
+      "staffName": "Arabisch",
+      "icon": null,
+      "guest": {
+        "explanationHtml": "<p>بيئة اختبار: لا يتم تخزين محتوى المحادثة أبدًا.</p>",
+        "storageQuestionHtml": null
+      }
+    }
+  ]
+}
