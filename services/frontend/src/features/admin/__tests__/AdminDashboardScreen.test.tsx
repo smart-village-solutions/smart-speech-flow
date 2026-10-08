@@ -17,6 +17,14 @@ describe('AdminDashboardScreen', () => {
       .toHaveClass('pt-content-top');
   });
 
+  it('keeps the legal links at the foot of the page however short the list is', async () => {
+    renderWithProviders(<AdminDashboardScreen onEnterSession={noop} onSignOut={noop} />);
+
+    expect(
+      await screen.findByRole('navigation', { name: 'Rechtliches' })
+    ).toHaveClass('mt-auto');
+  });
+
   it('welcomes the SSF tenant', async () => {
     renderWithProviders(<AdminDashboardScreen onEnterSession={noop} onSignOut={noop} />, {
       brand: 'ssf',

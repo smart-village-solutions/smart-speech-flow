@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -45,7 +45,8 @@ describe('TenantLoginScreen', () => {
     renderScreen(async () => []);
 
     expect(await screen.findByText('Derzeit sind keine Organisationen verfügbar.')).toBeInTheDocument();
-    expect(screen.queryAllByRole('link')).toHaveLength(0);
+    // The footer's legal links are not organisations.
+    expect(within(screen.getByRole('main')).queryAllByRole('link')).toHaveLength(0);
   });
 
   it('offers a retry after the directory request fails', async () => {
@@ -83,7 +84,7 @@ describe('TenantLoginScreen', () => {
       await screen.findAllByRole('link', { name: 'Ämter' })
     ).toHaveLength(2);
 
-    const links = screen.getAllByRole('link');
+    const links = within(screen.getByRole('main')).getAllByRole('link');
     expect(links.map((link) => link.textContent)).toEqual([
       'Amt Fulda',
       'Ämter',
@@ -128,6 +129,7 @@ describe('TenantLoginScreen', () => {
         {
           locale: 'de',
           brand: 'kassel',
+          publicContent: 'fetched',
           services: {
             loginTenant: {
               list: () =>

@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/reac
 import { useTranslation } from 'react-i18next';
 import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { RequireSession } from './RequireSession';
+import { RouteState } from './RouteState';
 import { AccessCodeScreen } from '@/features/access-code/AccessCodeScreen';
 import { LanguageSelectScreen } from '@/features/language-select/LanguageSelectScreen';
 import { ConsentScreen } from '@/features/consent/ConsentScreen';
@@ -20,6 +21,7 @@ import {
   subscribeToKeycloakAuthorization,
 } from '@/app/auth/keycloak';
 import { TenantLoginScreen } from '@/features/login/TenantLoginScreen';
+import { contentKeys } from '@/features/content/contentQuery';
 
 /** QR deep link: /join/:sessionId lands straight on the language picker. */
 function JoinRedirect() {
@@ -36,10 +38,23 @@ function TenantLoginEntry() {
   );
 }
 
-/** Each administrative entry owns its entire query cache, including session queries. */
+/**
+ * Each administrative entry owns its entire query cache, including session
+ * queries. Installation content is the one exception: it is anonymous and the
+ * same for every tenant, so the entry starts with the copy the app holds.
+ */
 function AdminQueryBoundary({ children }: Readonly<{ children: ReactNode }>) {
   const parent = useQueryClient();
-  const [client] = useState(() => new QueryClient({ defaultOptions: parent.getDefaultOptions() }));
+  const [client] = useState(() => {
+    const own = new QueryClient({ defaultOptions: parent.getDefaultOptions() });
+    const installation = parent.getQueryState(contentKeys.public);
+    if (installation?.data !== undefined) {
+      own.setQueryData(contentKeys.public, installation.data, {
+        updatedAt: installation.dataUpdatedAt,
+      });
+    }
+    return own;
+  });
   useEffect(
     () => () => {
       client.clear();
@@ -105,8 +120,15 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
   };
 
   if (status === 'missing') return <NotFoundPage />;
-  if (status === 'error') return <p role="alert">{t('admin.tenantLogin.unavailable')}</p>;
-  if (status !== 'authenticated') return null;
+  if (status === 'error')
+    return (
+      <RouteState>
+        <p role="alert" className="text-center text-note text-fg-muted">
+          {t('admin.tenantLogin.unavailable')}
+        </p>
+      </RouteState>
+    );
+  if (status !== 'authenticated') return <RouteState />;
 
   const accountUrl = getAccountConsoleUrl() ?? undefined;
 

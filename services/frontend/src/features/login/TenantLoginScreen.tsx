@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useFeedback } from '@/app/providers/feedback';
 import { useScreenLocale } from '@/app/providers/locale';
 import { useServices } from '@/app/providers/services';
+import { SiteLegalLinks } from '@/features/content/SiteLegalLinks';
 import { useLoginCopy } from '@/features/content/useInstallationCopy';
 import { AppHeader } from '@/ui/patterns/AppHeader';
 import { RichText } from '@/ui/patterns/RichText';
@@ -94,7 +95,11 @@ export function TenantLoginScreen() {
         </div>
       </main>
 
-      <StartPageFooter />
+      <StartPageFooter
+        legal={
+          <SiteLegalLinks tone="light" className="mx-auto w-full max-w-app px-5 pb-legal-end" />
+        }
+      />
     </ScreenShell>
   );
 }

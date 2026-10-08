@@ -31,7 +31,7 @@ function Staff() {
 
 describe('content hooks', () => {
   it('read installation content', async () => {
-    renderWithProviders(<Public />);
+    renderWithProviders(<Public />, { publicContent: 'fetched' });
 
     expect(screen.getByText('pending')).toBeInTheDocument();
     expect(await screen.findByText('de-DE')).toBeInTheDocument();
@@ -45,7 +45,7 @@ describe('content hooks', () => {
     const requests = recordRequests((request) => request.url.endsWith('/api/content/installation'));
     server.use(http.get('*/api/content/installation', reply));
 
-    renderWithProviders(<Public />);
+    renderWithProviders(<Public />, { publicContent: 'fetched' });
 
     expect(await screen.findByText('bundled')).toBeInTheDocument();
     expect(requests).toHaveLength(1);

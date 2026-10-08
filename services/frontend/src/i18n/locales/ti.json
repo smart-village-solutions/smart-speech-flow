@@ -94,5 +94,12 @@
     "server": "ኣብ ወገንና ጌጋ ተፈጢሩ።",
     "noSpeech": "ዝኾነ ዘረባ ኣይተለለየን። በጃኹም ደጊምኩም ፈትኑ።",
     "unknown": "ጌጋ ተፈጢሩ።"
+  },
+  "legal": {
+    "label": "ሕጋዊ ሓበሬታ",
+    "imprint": "ሓበሬታ ኣሕታሚ",
+    "privacyPolicy": "ብሕትውና",
+    "accessibilityStatement": "ተበጻሕነት",
+    "opensInNewTab": "(ኣብ ሓድሽ ታብ ይኽፈት)"
   }
 }

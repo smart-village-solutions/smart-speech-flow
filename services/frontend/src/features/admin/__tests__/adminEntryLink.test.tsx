@@ -7,11 +7,14 @@ describe('the admin entry link', () => {
   it('offers only the tenant login chooser from the start page', async () => {
     renderWithProviders(<AccessCodeScreen />, { locale: 'de' });
 
-    expect(await screen.findByRole('link', { name: 'Login' })).toHaveAttribute(
+    // The Studio label; the bundled one is "Login".
+    expect(await screen.findByRole('link', { name: 'Login für Nutzer' })).toHaveAttribute(
       'href',
       '/login'
     );
-    expect(screen.getAllByRole('link')).toHaveLength(1);
+    const legal = screen.queryByRole('navigation', { name: 'Rechtliches' });
+    const outsideLegal = screen.getAllByRole('link').filter((link) => !legal?.contains(link));
+    expect(outsideLegal).toHaveLength(1);
     expect(screen.queryByRole('link', { name: 'Admin-Login' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Neuer Admin-Login' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Studio/i })).not.toBeInTheDocument();

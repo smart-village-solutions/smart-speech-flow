@@ -16,6 +16,7 @@ import { ScreenShell } from '@/ui/patterns/ScreenShell';
 import { Button } from '@/ui/primitives/Button';
 import { Checkbox } from '@/ui/primitives/Checkbox';
 import { useLanguages } from '@/features/language-select/useLanguages';
+import { SiteLegalLinks } from '@/features/content/SiteLegalLinks';
 
 export function ConsentScreen() {
   const { t } = useTranslation();
@@ -93,6 +94,7 @@ export function ConsentScreen() {
           )}
         </div>
       </div>
+      <SiteLegalLinks className="px-5 pt-4 pb-legal-end" />
     </ScreenShell>
   );
 }

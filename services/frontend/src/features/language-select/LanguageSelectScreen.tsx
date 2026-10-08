@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useScreenLocale } from '@/app/providers/locale';
 import { useFeedback } from '@/app/providers/feedback';
 import { guestOrigin } from '@/domain/feedback/feedbackOrigin';
+import { SiteLegalLinks } from '@/features/content/SiteLegalLinks';
 import { AppHeader } from '@/ui/patterns/AppHeader';
 import { FlagAvatar } from '@/ui/patterns/FlagAvatar';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
@@ -79,6 +80,7 @@ export function LanguageSelectScreen() {
           )}
         </div>
       </div>
+      <SiteLegalLinks className="px-5 pt-4 pb-legal-end" />
     </ScreenShell>
   );
 }

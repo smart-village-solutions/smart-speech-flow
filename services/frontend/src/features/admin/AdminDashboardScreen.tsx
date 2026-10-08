@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useBrand } from '@/app/providers/brand';
 import { useFeedback } from '@/app/providers/feedback';
 import { useScreenLocale } from '@/app/providers/locale';
+import { SiteLegalLinks } from '@/features/content/SiteLegalLinks';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
 import { AdminHeader } from '@/ui/patterns/AdminHeader';
 import { SystemLoadCard } from './SystemLoadCard';
@@ -58,6 +59,7 @@ export function AdminDashboardScreen({
 
         <AdminSessionList sessions={sessions} isError={isError} onEnter={onEnterSession} />
       </div>
+      <SiteLegalLinks className="mt-auto px-5 pt-4 pb-legal-end" />
     </ScreenShell>
   );
 }

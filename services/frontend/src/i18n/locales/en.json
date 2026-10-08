@@ -95,6 +95,13 @@
     "noSpeech": "Nothing was recognised. Please try again.",
     "unknown": "Something went wrong."
   },
+  "legal": {
+    "label": "Legal information",
+    "imprint": "Imprint",
+    "privacyPolicy": "Privacy policy",
+    "accessibilityStatement": "Accessibility",
+    "opensInNewTab": "(opens in a new tab)"
+  },
   "admin": {
     "tenantLogin": {
       "title": "Login",

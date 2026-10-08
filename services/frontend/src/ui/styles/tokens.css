@@ -68,7 +68,18 @@
   --spacing-flag-lg: 72px;
   --spacing-bubble-inset: 16px;
   --spacing-bubble-gutter: 46px;
+  /* The buttons row above the open keyboard, where the legal row is hidden. */
   --spacing-mic-bottom: 40px;
+  /* Legal links (SCREEN_SPECS "Legal links"). On the conversation screens the
+     legal row sits at legal-bottom and the buttons row one legal band above it.
+     48px holds two lines of 13px links (12 + 2 x 19.5 + 4 = 55, under the
+     buttons at 60); the labels are kept short enough for two lines at 320px.
+     A row that still wraps taller (enlarged text) is measured, and the buttons
+     rise to its height plus legal-gap. */
+  --spacing-legal-bottom: 12px;
+  --spacing-legal-band: 48px;
+  --spacing-legal-gap: 4px;
+  --spacing-legal-end: max(24px, env(safe-area-inset-bottom));
   --container-app: 800px;
   --container-bubble: 500px;
   /* A bubble's own width once both its inline margins are taken off, so an

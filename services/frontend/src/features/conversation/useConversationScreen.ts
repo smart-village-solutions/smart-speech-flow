@@ -6,8 +6,8 @@ import type { ChatMessage } from '@/domain/message/message.types';
 import { hasConversationStatus } from './conversation.status';
 import { useComposer } from './useComposer';
 import { useConversation } from './useConversation';
+import { useConversationOffsets } from './useConversationOffsets';
 import { useConversationPlayback } from './useConversationPlayback';
-import { useKeyboardOffset } from './useKeyboardOffset';
 import { useLatestRef } from './useLatestRef';
 import { useSendFlight } from './useSendFlight';
 import { useSessionLanguages } from './useSessionLanguages';
@@ -28,7 +28,6 @@ function useScrollToLatest(ref: RefObject<HTMLDivElement | null>, messages: Chat
 export function useConversationScreen(sessionId: string, role: ClientRole) {
   const playback = usePlayback();
   const languages = useSessionLanguages(sessionId, role);
-  const keyboardOffset = useKeyboardOffset();
   const chatRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -40,11 +39,8 @@ export function useConversationScreen(sessionId: string, role: ClientRole) {
 
   const { flight, sourceRef, launch } = useSendFlight(chatRef);
 
-  // The admin surface carries a terminate link at the customer's composer
-  // baseline, so its composer sits a step higher. Applied here rather than in
-  // the surface because the send flight launches from this value.
-  const composerLift = role === 'admin' ? 'var(--spacing-composer-lift)' : '0px';
-  const bottom = `calc(${keyboardOffset}px + max(var(--spacing-mic-bottom), env(safe-area-inset-bottom)) + ${composerLift})`;
+  const offsets = useConversationOffsets(role);
+  const { bottom } = offsets;
   // The recorder callback runs outside render, so the offset it launches from
   // is mirrored into a ref after each commit.
   const bottomRef = useLatestRef(bottom);
@@ -99,9 +95,7 @@ export function useConversationScreen(sessionId: string, role: ClientRole) {
     chatRef,
     composerRef,
     sourceRef,
-    keyboardOffset,
-    bottom,
-    composerLift,
+    ...offsets,
     isTyping,
     isRecording,
     // The pill floats over the top of the stack, so the stack keeps clear of it.

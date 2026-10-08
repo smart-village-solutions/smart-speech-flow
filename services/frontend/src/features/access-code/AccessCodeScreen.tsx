@@ -6,6 +6,7 @@ import { useScreenLocale } from '@/app/providers/locale';
 import { useMutation } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
 import { useFeedback } from '@/app/providers/feedback';
+import { SiteLegalLinks } from '@/features/content/SiteLegalLinks';
 import { useStartpageCopy } from '@/features/content/useInstallationCopy';
 import { isJoinable } from '@/domain/session/session.types';
 import { AppError } from '@/core/http/AppError';
@@ -97,7 +98,11 @@ export function AccessCodeScreen() {
         </div>
       </div>
 
-      <StartPageFooter />
+      <StartPageFooter
+        legal={
+          <SiteLegalLinks tone="light" className="mx-auto w-full max-w-app px-5 pb-legal-end" />
+        }
+      />
     </ScreenShell>
   );
 }

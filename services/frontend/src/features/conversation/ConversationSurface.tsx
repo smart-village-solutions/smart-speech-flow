@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { SiteLegalLinks } from '@/features/content/SiteLegalLinks';
 import { MessageBubble } from '@/ui/patterns/MessageBubble';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
 import { ComposerBoxes } from './ComposerBoxes';
@@ -45,6 +46,10 @@ export function ConversationSurface({
     sourceRef,
     keyboardOffset,
     bottom,
+    legalBottom,
+    legalBand,
+    showsLegal,
+    legalRef,
     composerLift,
     draft,
     setDraft,
@@ -70,7 +75,7 @@ export function ConversationSurface({
         className="absolute inset-x-0 overflow-y-auto transition-[max-height] duration-300"
         style={{
           top: contentTop,
-          maxHeight: `calc(50dvh - 36px - ${keyboardOffset}px)`,
+          maxHeight: `calc(50dvh - 36px - ${keyboardOffset}px - ${legalBand})`,
         }}
       >
         <div className={cn('flex flex-col gap-3 pb-4', showsStatus ? 'pt-14' : 'pt-4')}>
@@ -104,6 +109,17 @@ export function ConversationSurface({
         onMic={toggleMic}
         onKeyboard={toggleKeyboard}
       />
+
+      {/* Full width for centring only: taps on its empty sides reach the buttons. */}
+      <div
+        ref={legalRef}
+        data-legal-row=""
+        hidden={!showsLegal}
+        className="pointer-events-none absolute inset-x-0 px-5 transition-[bottom] duration-300 [&_a]:pointer-events-auto"
+        style={{ bottom: legalBottom }}
+      >
+        <SiteLegalLinks />
+      </div>
 
       <ConversationStatus
         ended={state.ended}
