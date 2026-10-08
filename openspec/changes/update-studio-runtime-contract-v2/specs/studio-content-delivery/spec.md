@@ -130,8 +130,15 @@ row below the microphone row.
 
 #### Scenario: Accessibility statement absent
 
-- **WHEN** installation content has no accessibility statement URL
+- **WHEN** neither installation content nor the installation's bundled fallback
+  has an accessibility statement URL
 - **THEN** that link is omitted
+
+#### Scenario: Invalid legal URL from Studio
+
+- **WHEN** installation content has no valid URL for a legal link and the
+  bundled fallback has one
+- **THEN** the bundled URL is linked
 
 ### Requirement: Tenant display name is not shown
 
