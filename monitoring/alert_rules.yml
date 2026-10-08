@@ -402,8 +402,8 @@ groups:
           description: "Sessions report connections but connection count is 0. Possible state corruption in WebSocketManager."
 
   # Audio retention (#426). The pass runs before the gateway serves and then
-  # hourly, deleting nothing on a quiet deployment or with
-  # SSF_CONTENT_RETENTION_HOURS=0, so no rule here may read a missing deletion
+  # hourly, deleting nothing on a quiet deployment or for sessions that
+  # captured a retention of 0, so no rule here may read a missing deletion
   # as a failure. The size thresholds are absolute: the audio volume shares
   # the host disk that ServerDiskUsageHigh watches.
   - name: ssf-audio-storage
@@ -419,7 +419,7 @@ groups:
           component: audio-storage
         annotations:
           summary: The audio retention pass has stopped reporting.
-          description: No retention pass has completed for more than two and a half hours, so recordings and transcripts past SSF_CONTENT_RETENTION_HOURS may not be deleted. Check the gateway log for the hourly Audio-Cleanup line and for an error from the pass.
+          description: No retention pass has completed for more than two and a half hours, so recordings and transcripts past their session's retention may not be deleted. Check the gateway log for the hourly Audio-Cleanup line and for an error from the pass.
 
       - alert: AudioCleanupErrors
         expr: sum(increase(audio_cleanup_errors_total[2h])) > 0
@@ -429,7 +429,7 @@ groups:
           component: audio-storage
         annotations:
           summary: The audio retention pass cannot delete expired recordings.
-          description: "{{ $value | printf \"%.0f\" }} failed deletions in the last two hours. Each hourly pass retries the same files, so this counts attempts, not files; the recordings outlive SSF_CONTENT_RETENTION_HOURS until it clears. The gateway log names the failure; an audio volume the gateway's user cannot write or read is the usual cause."
+          description: "{{ $value | printf \"%.0f\" }} failed deletions in the last two hours. Each hourly pass retries the same files, so this counts attempts, not files; the recordings outlive their session's retention until it clears. The gateway log names the failure; an audio volume the gateway's user cannot write or read is the usual cause."
 
       - alert: AudioStorageDiskUsageHigh
         expr: sum(audio_storage_disk_usage_bytes) / 1024^3 > 8
@@ -439,7 +439,7 @@ groups:
           component: audio-storage
         annotations:
           summary: Stored audio exceeds 8 GiB.
-          description: "Stored audio totals {{ $value | humanize }} GiB. Retention should keep it well below this, so check AudioCleanupNotRunning and AudioCleanupErrors and the SSF_CONTENT_RETENTION_HOURS setting. ServerDiskUsageHigh covers the disk itself."
+          description: "Stored audio totals {{ $value | humanize }} GiB. Retention should keep it well below this, so check AudioCleanupNotRunning and AudioCleanupErrors and the tenants' Studio retentionHours. ServerDiskUsageHigh covers the disk itself."
 
       - alert: AudioStorageDiskUsageCritical
         expr: sum(audio_storage_disk_usage_bytes) / 1024^3 > 9.5

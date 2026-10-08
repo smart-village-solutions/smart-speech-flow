@@ -31,22 +31,28 @@ STUDIO_RUNTIME_AUDIENCE=sva-studio-ssf-runtime
 STUDIO_RUNTIME_CLIENT_SECRET=<deployment secret>
 STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS=60
 STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS=5.0
-SSF_CONTENT_RETENTION_HOURS=24
+SSF_TERMINAL_RECORD_HOURS=24
 ```
 
 `STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS` bounds one live policy read and
 must be greater than 0 and at most 30. `KEYCLOAK_REQUIRED_ROLE` guards
 feedback reads and the telemetry probe, not conversation admission.
-`SSF_CONTENT_RETENTION_HOURS` controls how long consented conversation content
-is kept; `0` disables automatic deletion so an operator removes it by hand.
-Neither ever retains content a guest declined
-or a tenant policy disabled: that is removed when the conversation ends, and at
-the latest when the session passes `SSF_SESSION_MAX_HOURS`.
+
+When a guest grants consent, the session stores Studio's `retentionHours` and
+`configurationRevision` from that same live read, and keeps them for the rest
+of its life. That value governs how long the session's consented content is
+kept; `0` disables automatic deletion so an operator removes it by hand.
+`SSF_TERMINAL_RECORD_HOURS` (default 24, positive) is the period for everything
+else: the terminal record of a session without granted consent, which holds no
+conversation content, and audio whose retention marker is missing or invalid.
+No retention ever keeps content a guest declined or a tenant policy disabled:
+that is removed when the conversation ends, and at the latest when the session
+passes `SSF_SESSION_MAX_HOURS`.
 
 Retention is applied two ways, because the two stores differ. Audio files are
-swept hourly by age. A session record is immutable once terminated, so its
-expiry is set on the record at the moment it terminates; changing the setting
-later does not retime records that already terminated. The join tombstone
+swept hourly by age, against the `retention.json` marker written beside a
+consented session's audio. A session record is immutable once terminated, so
+its expiry is set on the record at the moment it terminates. The join tombstone
 deliberately outlives the record -- it holds no conversation content and is
 what stops a session identifier being reused.
 

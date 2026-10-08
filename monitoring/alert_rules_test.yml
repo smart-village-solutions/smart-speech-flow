@@ -215,7 +215,8 @@ tests:
 
   # Audio retention (#426). The pass runs hourly and stamps
   # audio_cleanup_last_run_timestamp_seconds, deleting nothing on a quiet
-  # deployment or with SSF_CONTENT_RETENTION_HOURS=0. Neither may alert.
+  # deployment or for sessions that captured a retention of 0. Neither may
+  # alert.
   - interval: 1m
     input_series:
       - series: 'audio_cleanup_last_run_timestamp_seconds{job="api_gateway",instance="api_gateway:8000"}'
@@ -252,8 +253,8 @@ tests:
               summary: The audio retention pass has stopped reporting.
               description: >-
                 No retention pass has completed for more than two and a half
-                hours, so recordings and transcripts past
-                SSF_CONTENT_RETENTION_HOURS may not be deleted. Check the gateway
+                hours, so recordings and transcripts past their session's
+                retention may not be deleted. Check the gateway
                 log for the hourly Audio-Cleanup line and for an error from the
                 pass.
 
@@ -279,8 +280,8 @@ tests:
               summary: The audio retention pass has stopped reporting.
               description: >-
                 No retention pass has completed for more than two and a half
-                hours, so recordings and transcripts past
-                SSF_CONTENT_RETENTION_HOURS may not be deleted. Check the gateway
+                hours, so recordings and transcripts past their session's
+                retention may not be deleted. Check the gateway
                 log for the hourly Audio-Cleanup line and for an error from the
                 pass.
 
@@ -315,7 +316,7 @@ tests:
               description: >-
                 3 failed deletions in the last two hours. Each hourly pass
                 retries the same files, so this counts attempts, not files; the
-                recordings outlive SSF_CONTENT_RETENTION_HOURS until it clears.
+                recordings outlive their session's retention until it clears.
                 The gateway log names the failure; an audio volume the gateway's
                 user cannot write or read is the usual cause.
 
@@ -337,7 +338,7 @@ tests:
               description: >-
                 3 failed deletions in the last two hours. Each hourly pass
                 retries the same files, so this counts attempts, not files; the
-                recordings outlive SSF_CONTENT_RETENTION_HOURS until it clears.
+                recordings outlive their session's retention until it clears.
                 The gateway log names the failure; an audio volume the gateway's
                 user cannot write or read is the usual cause.
 
@@ -360,7 +361,7 @@ tests:
               description: >-
                 Stored audio totals 9 GiB. Retention should keep it well below
                 this, so check AudioCleanupNotRunning and AudioCleanupErrors and
-                the SSF_CONTENT_RETENTION_HOURS setting. ServerDiskUsageHigh
+                the tenants' Studio retentionHours. ServerDiskUsageHigh
                 covers the disk itself.
       - eval_time: 10m
         alertname: AudioStorageDiskUsageCritical
