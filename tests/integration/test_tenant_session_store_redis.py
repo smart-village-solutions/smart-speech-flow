@@ -29,6 +29,7 @@ import pytest
 from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
 
+from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.session_models import Session, SessionStatus
 from services.api_gateway.session_store import (
     RedisTenantSessionStore,
@@ -189,21 +190,70 @@ async def test_termination_revokes_the_join_and_refuses_later_saves(
         await store.save(replace(committed, customer_language="ar"))
 
 
-async def test_termination_expires_the_record_but_not_the_tombstone(
+@pytest.mark.parametrize(
+    ("consent", "captured", "ttl_hours"),
+    [
+        (ConsentStatus.GRANTED, 4320, 4320),
+        (ConsentStatus.DECLINED, None, 24),
+        (ConsentStatus.POLICY_DISABLED, None, 24),
+        (ConsentStatus.PENDING, None, 24),
+    ],
+)
+async def test_termination_expires_the_record_on_its_retention_but_not_the_tombstone(
     store: RedisTenantSessionStore,
     redis_client: Redis,
     namespace: str,
     monkeypatch: pytest.MonkeyPatch,
+    consent: ConsentStatus,
+    captured: int | None,
+    ttl_hours: int,
 ) -> None:
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "24")
+    monkeypatch.delenv("SSF_TERMINAL_RECORD_HOURS", raising=False)
     session = make_session("tenant-a", "ABC12345")
+    session.consent_status = consent
+    session.consent_retention_hours = captured
     await store.create(session)
 
     await store.terminate(terminal(session))
 
-    assert 24 * 3600 - 5 < redis_client.ttl(session_key(namespace, session.key)) <= 24 * 3600
+    ttl = redis_client.ttl(session_key(namespace, session.key))
+    assert ttl_hours * 3600 - 5 < ttl <= ttl_hours * 3600
     assert redis_client.ttl(join_key(namespace, session.id)) == -1
     assert await store.create(make_session("tenant-a", "ABC12345")) is False
+
+
+async def test_a_captured_zero_never_expires_the_record(
+    store: RedisTenantSessionStore, redis_client: Redis, namespace: str
+) -> None:
+    session = make_session("tenant-a", "ABC12345")
+    session.consent_status = ConsentStatus.GRANTED
+    session.consent_retention_hours = 0
+    await store.create(session)
+
+    await store.terminate(terminal(session))
+
+    assert redis_client.ttl(session_key(namespace, session.key)) == -1
+
+
+async def test_listing_prunes_expired_members_of_that_tenant_only(
+    store: RedisTenantSessionStore, redis_client: Redis, namespace: str
+) -> None:
+    kept = make_session("tenant-a", "KEPTAAAA")
+    expired_a = make_session("tenant-a", "GONEAAAA")
+    expired_b = make_session("tenant-b", "GONEBBBB")
+    for session in (kept, expired_a, expired_b):
+        await store.create(session)
+    for session in (expired_a, expired_b):
+        await store.terminate(terminal(session))
+        # What the record's EXPIRE does when it fires.
+        redis_client.delete(session_key(namespace, session.key))
+
+    listed = await store.list_for_tenant("tenant-a")
+
+    assert [session.id for session in listed] == ["KEPTAAAA"]
+    assert redis_client.smembers(tenant_sessions_key(namespace, "tenant-a")) == {"KEPTAAAA"}
+    assert redis_client.smembers(tenant_sessions_key(namespace, "tenant-b")) == {"GONEBBBB"}
+    assert await store.create(make_session("tenant-a", "GONEAAAA")) is False
 
 
 async def test_a_repeated_termination_returns_the_persisted_record(

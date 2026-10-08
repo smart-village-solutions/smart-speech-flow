@@ -50,7 +50,7 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     # unnormalised audio when normalisation fails
     ("services/api_gateway/audio_processing.py", "normalize_audio"): ["fallback"],
     # one unremovable file must not stop the sweep
-    ("services/api_gateway/audio_storage.py", "cleanup_old_audio_files"): ["boundary"],
+    ("services/api_gateway/audio_storage.py", "_delete_expired"): ["boundary"],
     # one unreadable file must not stop the count
     ("services/api_gateway/audio_storage.py", "get_disk_usage"): ["boundary"],
     # applies the failure to the breaker, then re-raises

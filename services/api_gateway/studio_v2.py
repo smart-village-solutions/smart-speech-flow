@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 CONTRACT_VERSION_PATTERN = r"^2[.](0|[1-9][0-9]*)$"
 REVISION_PATTERN = r"^sha256:[0-9a-f]{64}$"
+MAX_RETENTION_HOURS = 8760
 LOCALE_PATTERN = r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
 QUESTION_ID_PATTERN = r"^[A-Za-z][A-Za-z0-9]*$"
 
@@ -295,7 +296,7 @@ class _TenantTexts(_StudioModel):
 
 class _Storage(_StudioModel):
     mode: Literal["ask", "disabled"]
-    retention_hours: int | None = Field(alias="retentionHours", ge=0, le=8760)
+    retention_hours: int | None = Field(alias="retentionHours", ge=0, le=MAX_RETENTION_HOURS)
 
     @model_validator(mode="after")
     def _retention_matches_mode(self) -> Self:

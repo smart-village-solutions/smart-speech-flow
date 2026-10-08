@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from services.api_gateway.audio_storage import AudioStore
@@ -19,6 +21,8 @@ from services.api_gateway.studio_runtime_flow import StudioRuntimeFlow
 from services.api_gateway.studio_runtime_v2_client import StudioRuntimeV2ClientError
 from services.api_gateway.tenant_context import admin_ref
 from services.api_gateway.tenant_session import TenantSessionKey
+from tests.runtime_policy_helpers import REVISION as READ_REVISION
+from tests.runtime_policy_helpers import runtime_read
 
 REVISION = f"sha256:{'a' * 64}"
 
@@ -187,3 +191,71 @@ async def test_activation_logs_only_allowlisted_language_codes(
     assert f"'new_language': '{logged[2]}'" in switched
     assert "injected" not in text
     assert "forged" not in text
+
+
+class _GatedFetcher:
+    """Hands out one read per call, each released by the test."""
+
+    def __init__(self, *reads: object) -> None:
+        self.reads = list(reads)
+        self.gates = [asyncio.Event() for _ in reads]
+        self.calls = 0
+
+    async def fetch(self, tenant_id: str, correlation_id: str) -> object:
+        index = self.calls
+        self.calls += 1
+        await self.gates[index].wait()
+        return self.reads[index]
+
+
+async def test_a_second_join_waits_and_makes_no_studio_read(
+    sessions: TenantSessionManager,
+) -> None:
+    # A double-submitted join must not swap the consent the guest gave first.
+    lifecycle = SessionLifecycleService(sessions)
+    key = await _pending(sessions)
+    fetcher = _GatedFetcher(runtime_read("tenant-a", retention_hours=4320))
+    flow = StudioRuntimeFlow(fetcher)
+
+    first = asyncio.create_task(lifecycle.activate(key, "en", True, flow, lambda: "first"))
+    second = asyncio.create_task(lifecycle.activate(key, "en", False, flow, lambda: "second"))
+    while fetcher.calls < 1:
+        await asyncio.sleep(0)
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert fetcher.calls == 1
+    fetcher.gates[0].set()
+    activated, repeated = await asyncio.gather(first, second)
+
+    assert not activated.already_active and repeated.already_active
+    assert fetcher.calls == 1
+    stored = await sessions.store.load(key)
+    assert stored.consent_status is ConsentStatus.GRANTED
+    assert stored.consent_retention_hours == 4320
+
+
+async def test_a_read_finishing_while_the_first_activation_saves_cannot_overwrite_it(
+    sessions: TenantSessionManager,
+) -> None:
+    # Both reads return together: the second resumes while the first is still
+    # inside activate_session, before the status says ACTIVE.
+    lifecycle = SessionLifecycleService(sessions)
+    key = await _pending(sessions)
+    fetcher = _GatedFetcher(
+        runtime_read("tenant-a", retention_hours=4320),
+        runtime_read("tenant-a", retention_hours=24, revision=f"sha256:{'b' * 64}"),
+    )
+    flow = StudioRuntimeFlow(fetcher)
+    first = asyncio.create_task(lifecycle.activate(key, "en", True, flow, lambda: "first"))
+    second = asyncio.create_task(lifecycle.activate(key, "en", False, flow, lambda: "second"))
+    while fetcher.calls < 1:
+        await asyncio.sleep(0)
+    for gate in fetcher.gates:
+        gate.set()
+
+    await asyncio.gather(first, second)
+
+    stored = await sessions.store.load(key)
+    assert stored.consent_status is ConsentStatus.GRANTED
+    assert stored.consent_retention_hours == 4320
+    assert stored.consent_configuration_revision == READ_REVISION

@@ -2,8 +2,8 @@
 
 The ssf-audio-storage alerts ask two questions of these series: is the
 retention pass still completing, and can it delete what has expired. A count
-of deleted files answers neither, since a quiet deployment or
-SSF_CONTENT_RETENTION_HOURS=0 deletes nothing on every healthy pass.
+of deleted files answers neither, since a quiet deployment, or one whose
+sessions captured a retention of 0, deletes nothing on every healthy pass.
 """
 
 from __future__ import annotations
@@ -31,8 +31,8 @@ not_root = pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory 
 
 @pytest.fixture(autouse=True)
 def default_retention(monkeypatch):
-    """The tester setting of 0 would keep every expired file these tests expect gone."""
-    monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
+    """Files without a marker expire after the short default these tests age them past."""
+    monkeypatch.delenv("SSF_TERMINAL_RECORD_HOURS", raising=False)
 
 
 def _value(registry: CollectorRegistry, name: str, **labels: str) -> float | None:
@@ -44,8 +44,10 @@ def _store(tmp_path: Path) -> tuple[AudioStore, CollectorRegistry]:
     return AudioStore(tmp_path, AudioStorageMetrics(registry)), registry
 
 
-def _expired(store: AudioStore, message_id: str = "expired") -> Path:
-    path = store.save(KEY, message_id, AudioVariant.ORIGINAL, b"RIFF")
+def _expired(
+    store: AudioStore, message_id: str = "expired", *, retention_hours: int | None = None
+) -> Path:
+    path = store.save(KEY, message_id, AudioVariant.ORIGINAL, b"RIFF", retention_hours=retention_hours)
     os.utime(path, (TWO_DAYS_AGO, TWO_DAYS_AGO))
     return path
 
@@ -145,10 +147,9 @@ async def test_file_work_leaves_the_event_loop_and_the_sweep_stays_on_it(tmp_pat
     assert sessions.swept_on is threading.current_thread()
 
 
-async def test_a_pass_with_retention_disabled_still_records_that_it_ran(tmp_path, monkeypatch):
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
+async def test_a_pass_with_retention_disabled_still_records_that_it_ran(tmp_path):
     store, registry = _store(tmp_path)
-    kept = _expired(store)
+    kept = _expired(store, retention_hours=0)
     started = _value(registry, LAST_RUN)
 
     time.sleep(0.01)
@@ -156,6 +157,29 @@ async def test_a_pass_with_retention_disabled_still_records_that_it_ran(tmp_path
 
     assert kept.exists()
     assert _value(registry, LAST_RUN) > started
+
+
+def test_a_retention_marker_is_neither_counted_nor_an_error(tmp_path):
+    store, registry = _store(tmp_path)
+    store.save(KEY, "kept", AudioVariant.ORIGINAL, b"RIFF", retention_hours=4320)
+    _expired(store, retention_hours=4320)
+
+    store.cleanup_expired()
+    store.disk_usage()
+
+    assert _value(registry, "audio_cleanup_errors_total") == 0
+    assert _value(registry, "audio_cleanup_deleted_files_total", directory="original") == 0
+    assert _value(registry, "audio_files_total", directory="original") == 2
+
+
+def test_a_session_without_a_marker_is_cleaned_by_the_short_default(tmp_path):
+    store, registry = _store(tmp_path)
+    expired = _expired(store)
+
+    store.cleanup_expired()
+
+    assert not expired.exists()
+    assert _value(registry, "audio_cleanup_deleted_files_total", directory="original") == 1
 
 
 @not_root

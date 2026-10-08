@@ -132,9 +132,8 @@ async def test_settled_refused_audio_is_not_advertised_even_if_its_file_survives
 
 
 async def test_the_content_sweep_clears_the_markers_it_settles(
-    manager: TenantSessionManager, audio_store: AudioStore, monkeypatch: pytest.MonkeyPatch
+    manager: TenantSessionManager, audio_store: AudioStore
 ) -> None:
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
     session = await manager.create_admin_session("tenant-test", REVISION)
     await manager.add_message(
         session.key, _audio_message(original_authorized=False, translated_authorized=False)

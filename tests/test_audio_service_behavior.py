@@ -86,6 +86,7 @@ def tts_service(monkeypatch):
 
 def test_audio_storage_separates_files_and_cleans_only_expired_audio(tmp_path):
     from services.api_gateway import audio_storage
+    from services.api_gateway.content_retention import DEFAULT_TERMINAL_RECORD_HOURS
     from services.api_gateway.tenant_session import TenantSessionKey
 
     key = TenantSessionKey("tenant-a", "ABC12345")
@@ -103,7 +104,7 @@ def test_audio_storage_separates_files_and_cleans_only_expired_audio(tmp_path):
         b"new",
         base_dir=tmp_path,
     )
-    old_timestamp = time.time() - (audio_storage.RETENTION_HOURS + 1) * 3600
+    old_timestamp = time.time() - (DEFAULT_TERMINAL_RECORD_HOURS + 1) * 3600
     os.utime(expired, (old_timestamp, old_timestamp))
 
     stats = audio_storage.cleanup_old_audio_files(base_dir=tmp_path)

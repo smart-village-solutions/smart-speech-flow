@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Protocol
 
+from .content_retention import session_retention_hours
 from .keyed_locks import KeyedLocks
 from .tenant_session import TenantSessionKey
 
@@ -55,7 +56,7 @@ return 1
 # one -- so retention for its conversation content is an expiry set here, at
 # the moment it becomes terminal. The join tombstone deliberately does not
 # expire: it carries no content and is what stops a session identifier being
-# reused. ARGV[6] is the retention in seconds; 0 means never expire.
+# reused. ARGV[6] is the session's retention in seconds; 0 means never expire.
 TERMINATE_SESSION_LUA = """
 local current_join = redis.call('GET', KEYS[3])
 if current_join == ARGV[3] then
@@ -132,15 +133,14 @@ def join_key(namespace: str, session_id: str) -> str:
     return f"{namespace}:v2:join:{session_id}"
 
 
-def _content_retention_seconds() -> int:
-    """Seconds a terminated record may keep its conversation content.
+def _content_retention_seconds(session: Session) -> int:
+    """Seconds this terminated record may keep its conversation content.
 
-    Zero disables automatic deletion, which must mean "never expire" rather
-    than "expire now".
+    The session's own retention: the one captured with granted consent, else
+    the short terminal-record period. Zero disables automatic deletion, which
+    must mean "never expire" rather than "expire now".
     """
-    from .audio_storage import retention_hours
-
-    return retention_hours() * 3600
+    return session_retention_hours(session) * 3600
 
 
 def _join_payload(key: TenantSessionKey, *, active: bool) -> str:
@@ -262,12 +262,15 @@ class MemoryTenantSessionStore:
         return key, session.terminated_at
 
     async def list_for_tenant(self, tenant_id: str) -> list[Session]:
-        return [
-            session
-            for key in tuple(self._sessions)
-            if hmac.compare_digest(key.tenant_id, tenant_id)
-            and (session := await self.load(key)) is not None
+        keys = [
+            key for key in tuple(self._sessions) if hmac.compare_digest(key.tenant_id, tenant_id)
         ]
+        # Mirrors the Redis index pruning; the tombstone in `_joins` stays.
+        for key in keys:
+            if self._is_expired(key):
+                del self._sessions[key]
+                del self._expiries[key]
+        return [session for key in keys if (session := await self.load(key)) is not None]
 
     async def list_active(self) -> list[Session]:
         return [
@@ -289,7 +292,7 @@ class MemoryTenantSessionStore:
         self._sessions[session.key] = session
         self._joins[session.id] = (session.key, False)
         # Mirrors the Redis EXPIRE: the record goes, the tombstone stays.
-        retention = _content_retention_seconds()
+        retention = _content_retention_seconds(session)
         if retention > 0:
             self._expiries[session.key] = datetime.now(timezone.utc) + timedelta(seconds=retention)
         return session
@@ -408,6 +411,12 @@ class RedisTenantSessionStore:
             return []
         # Every record and join in one MGET: one round trip, one snapshot.
         raw = await self.redis.mget(*(name for key in keys for name in self._record_keys(key)))
+        # Only CREATE_SESSION_LUA adds a member, with its record, and the join
+        # tombstone stops the id ever being reused: an absent record has
+        # expired for good. A present but unreadable one stays indexed.
+        expired = [key.session_id for index, key in enumerate(keys) if raw[2 * index] is None]
+        if expired:
+            await self.redis.srem(tenant_sessions_key(self.namespace, tenant_id), *expired)
         return [
             session
             for index, key in enumerate(keys)
@@ -474,7 +483,7 @@ class RedisTenantSessionStore:
                 _join_payload(key, active=True),
                 _join_payload(key, active=False),
                 key.tenant_id,
-                _content_retention_seconds(),
+                _content_retention_seconds(session),
             )
         if result == 1:
             return session

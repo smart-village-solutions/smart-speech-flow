@@ -162,3 +162,71 @@ def test_a_revision_from_a_valid_read_survives_the_session_record(fixture: str) 
     restored = Session.from_dict(session.to_dict(include_messages=True))
 
     assert restored.configuration_revision == read.policy.configuration_revision
+
+
+OTHER_REVISION = f"sha256:{'b' * 64}"
+
+
+def test_the_captured_retention_survives_the_session_record() -> None:
+    session = Session(
+        id="session-1",
+        tenant_id="tenant-a",
+        configuration_revision=REVISION,
+        consent_retention_hours=4320,
+        consent_configuration_revision=OTHER_REVISION,
+    )
+
+    restored = Session.from_dict(session.to_dict(include_messages=True))
+
+    assert restored.consent_retention_hours == 4320
+    assert restored.consent_configuration_revision == OTHER_REVISION
+
+
+def test_a_zero_retention_survives_the_session_record() -> None:
+    session = Session(
+        id="session-1",
+        tenant_id="tenant-a",
+        configuration_revision=REVISION,
+        consent_retention_hours=0,
+    )
+
+    assert Session.from_dict(session.to_dict()).consent_retention_hours == 0
+
+
+@pytest.mark.parametrize("name", ["v1-active", "v1-terminated"])
+def test_a_record_written_before_capture_reads_no_retention(name: str) -> None:
+    session = Session.from_dict(_v1_record(name))
+
+    assert session.consent_retention_hours is None
+    assert session.consent_configuration_revision is None
+
+
+@pytest.mark.parametrize("hours", ["4320", -1, True, 1.5, [], {}, 8761, 99999999])
+def test_malformed_stored_retention_reads_as_none(hours) -> None:
+    payload = Session(id="session-1", tenant_id="tenant-a", configuration_revision=REVISION).to_dict()
+    payload["consent_retention_hours"] = hours
+
+    assert Session.from_dict(payload).consent_retention_hours is None
+
+
+@pytest.mark.parametrize("revision", ["sha256:short", 7, "", REVISION.upper()])
+def test_a_malformed_stored_consent_revision_reads_as_none(revision) -> None:
+    payload = Session(id="session-1", tenant_id="tenant-a", configuration_revision=REVISION).to_dict()
+    payload["consent_configuration_revision"] = revision
+
+    assert Session.from_dict(payload).consent_configuration_revision is None
+
+
+def test_the_public_dict_carries_no_captured_retention() -> None:
+    session = Session(
+        id="session-1",
+        tenant_id="tenant-a",
+        configuration_revision=REVISION,
+        consent_retention_hours=4320,
+        consent_configuration_revision=REVISION,
+    )
+
+    public = session.to_public_dict()
+
+    assert "consent_retention_hours" not in public
+    assert "consent_configuration_revision" not in public

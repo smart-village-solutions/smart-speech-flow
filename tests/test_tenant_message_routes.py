@@ -274,7 +274,13 @@ class RecordingAudioStore(AudioStore):
         self.saved: list[tuple[TenantSessionKey, str, AudioVariant, bytes]] = []
 
     def save(
-        self, key: TenantSessionKey, message_id: str, variant: AudioVariant, data: bytes
+        self,
+        key: TenantSessionKey,
+        message_id: str,
+        variant: AudioVariant,
+        data: bytes,
+        *,
+        retention_hours: int | None = None,
     ) -> Path:
         self.saved.append((key, message_id, variant, data))
         return self.path(key, message_id, variant)

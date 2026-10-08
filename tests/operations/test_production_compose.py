@@ -340,3 +340,21 @@ def test_both_composes_admit_the_measured_number_of_concurrent_pipelines():
         assert environment["PIPELINE_QUEUE_WAIT_SECONDS"] == (
             "${PIPELINE_QUEUE_WAIT_SECONDS:-10.0}"
         ), path
+
+
+def test_production_gateway_forwards_the_retention_settings_with_defaults():
+    # A `:?required` here would break every compose interpolation test.
+    environment = _environment_by_name(load_production_compose()["services"]["api_gateway"])
+
+    assert environment["STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS"] == (
+        "${STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS:-5.0}"
+    )
+    assert environment["SSF_TERMINAL_RECORD_HOURS"] == "${SSF_TERMINAL_RECORD_HOURS:-24}"
+
+
+def test_no_compose_file_sets_a_global_content_retention():
+    # Retention is captured per session from Studio (Studio v2 PR 4).
+    for path in (DEVELOPMENT_COMPOSE, PRODUCTION_COMPOSE):
+        environment = _environment_by_name(load_compose(path)["services"]["api_gateway"])
+        assert "SSF_CONTENT_RETENTION_HOURS" not in environment, path
+        assert "AUDIO_RETENTION_HOURS" not in environment, path

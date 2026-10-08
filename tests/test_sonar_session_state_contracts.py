@@ -219,7 +219,7 @@ async def test_sweep_preserves_snapshot_when_store_adds_session_during_write(mon
         manager.sessions[added.key] = added
 
     monkeypatch.setattr(store, "save", save_and_add)
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "24")
+    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "24")
 
     assert await manager.sweep_expired_content(NOW) == {
         "refused_removed": 0,

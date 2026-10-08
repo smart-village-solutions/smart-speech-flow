@@ -23,11 +23,11 @@
 
 ## 4. Per-session retention
 
-- [ ] 4.1 Capture `consent_retention_hours` and `consent_configuration_revision` at activation when consent is granted
-- [ ] 4.2 Apply the session value to the message text sweep and the terminal record TTL; add `SSF_TERMINAL_RECORD_HOURS` for sessions without granted consent
-- [ ] 4.3 Write the audio `retention.json` marker and read it in the cleanup walk, falling back to the short default
-- [ ] 4.4 Prune expired members from the tenant session index
-- [ ] 4.5 Remove `SSF_CONTENT_RETENTION_HOURS` and the unused `AUDIO_RETENTION_HOURS`; forward `STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS` in production compose; update `production.env.example`
+- [x] 4.1 Capture `consent_retention_hours` and `consent_configuration_revision` at activation when consent is granted
+- [x] 4.2 Apply the session value to the message text sweep and the terminal record TTL; add `SSF_TERMINAL_RECORD_HOURS` for sessions without granted consent
+- [x] 4.3 Write the audio `retention.json` marker and read it in the cleanup walk, falling back to the short default
+- [x] 4.4 Prune expired members from the tenant session index
+- [x] 4.5 Remove `SSF_CONTENT_RETENTION_HOURS` and the unused `AUDIO_RETENTION_HOURS`; forward `STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS` in production compose; update `production.env.example`
 
 ## 5. Content cache and browser routes
 

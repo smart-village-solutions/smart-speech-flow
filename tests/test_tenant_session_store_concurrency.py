@@ -150,7 +150,7 @@ class SweepSaveFailsStore(MemoryTenantSessionStore):
 async def test_a_failed_sweep_keeps_a_message_appended_while_it_saved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "24")
+    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "24")
     store = SweepSaveFailsStore()
     manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
     session = make_session("tenant-a", "ABC12345")
@@ -291,7 +291,7 @@ async def test_different_admins_create_without_waiting_for_each_other(tmp_path: 
 async def test_a_failed_sweep_does_not_restore_content_onto_a_terminated_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "24")
+    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "24")
     store = SweepSaveFailsStore()
     manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
     session = await manager.create_admin_session("tenant-a", REVISION)
@@ -314,7 +314,7 @@ async def test_a_failed_sweep_does_not_restore_content_onto_a_terminated_session
 async def test_a_failed_sweep_keeps_an_authorization_recorded_while_it_saved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "24")
+    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "24")
     store = SweepSaveFailsStore()
     manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
     session = make_session("tenant-a", "ABC12345")

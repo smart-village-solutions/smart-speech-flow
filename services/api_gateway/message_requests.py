@@ -194,10 +194,13 @@ def _store_audio_artifacts(
     file_bytes: bytes,
     *,
     audio_store: AudioStore,
+    retention_hours: Optional[int] = None,
 ) -> bool:
     original_audio_available = False
     try:
-        audio_store.save(key, message_id, AudioVariant.ORIGINAL, file_bytes)
+        audio_store.save(
+            key, message_id, AudioVariant.ORIGINAL, file_bytes, retention_hours=retention_hours
+        )
         original_audio_available = True
     except Exception as e:
         # See _store_translated_audio: success is still reported to the
@@ -217,12 +220,15 @@ def _store_translated_audio(
     audio_bytes: Optional[bytes],
     *,
     audio_store: AudioStore,
+    retention_hours: Optional[int] = None,
 ) -> bool:
     """Save the synthesised reply, reporting whether the listener can play it."""
     if not audio_bytes:
         return False
     try:
-        audio_store.save(key, message_id, AudioVariant.TRANSLATED, audio_bytes)
+        audio_store.save(
+            key, message_id, AudioVariant.TRANSLATED, audio_bytes, retention_hours=retention_hours
+        )
     except Exception as error:
         # Logged at error, not warning: the pipeline still answers
         # successfully, so this line is the only signal that the reply

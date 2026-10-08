@@ -115,7 +115,6 @@ services:
       - CLIENT_BASE_URL=https://translate.smart-village.solutions
       # Audio Storage Configuration
       - AUDIO_STORAGE_PATH=/data/audio
-      - AUDIO_RETENTION_HOURS=24
       - AUDIO_TEMP_PATH=/tmp/audio
       - AUDIO_MAX_DISK_USAGE_GB=9
       - AUDIO_CLEANUP_INTERVAL_MINUTES=60

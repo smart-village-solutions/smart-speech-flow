@@ -26,6 +26,7 @@ from typing import (
 )
 
 from .clock import utc_now
+from .content_retention import session_retention_hours
 from .keyed_locks import KeyedLocks
 from .quality_telemetry_schema import SessionLifecyclePhase, SessionTerminationReason
 from .realtime_protocol import timeout_warning_frame
@@ -135,9 +136,10 @@ class SessionManagerBase(Generic[KeyT]):
         """Remove refused content past session lifetime, and expired text.
 
         The two removals are deliberately different. Refused content goes at
-        the maximum session lifetime and no operator setting can retain it.
-        Authorised content goes at `SSF_CONTENT_RETENTION_HOURS`, which `0`
-        disables for the tester environment.
+        the maximum session lifetime and no retention can keep it. Authorised
+        content goes at the session's own retention: the one captured with
+        granted consent, where `0` disables automatic deletion, else the short
+        `SSF_TERMINAL_RECORD_HOURS`.
 
         Args:
             now: The moment to measure both ages against.
@@ -146,9 +148,6 @@ class SessionManagerBase(Generic[KeyT]):
             Counts of the messages removed by each rule, and of the sessions
             whose removal could not be saved and stays for the next pass.
         """
-        from .audio_storage import retention_hours
-
-        keep_for = retention_hours()
         refused_removed = 0
         expired_removed = 0
         failed = 0
@@ -162,9 +161,7 @@ class SessionManagerBase(Generic[KeyT]):
             if session.status is SessionStatus.TERMINATED:
                 continue
             try:
-                refused_delta, expired_delta = await self._sweep_session_content(
-                    session, now, keep_for
-                )
+                refused_delta, expired_delta = await self._sweep_session_content(session, now)
                 refused_removed += refused_delta
                 expired_removed += expired_delta
             except Exception:  # noqa: BLE001 - one session must not stop the pass
@@ -181,9 +178,7 @@ class SessionManagerBase(Generic[KeyT]):
             "failed": failed,
         }
 
-    async def _sweep_session_content(
-        self, session: Session, now: datetime, keep_for: int
-    ) -> tuple[int, int]:
+    async def _sweep_session_content(self, session: Session, now: datetime) -> tuple[int, int]:
         # Settled on a copy, exactly as termination does. A failed
         # write must leave the live session and its files untouched,
         # or the next pass sees an already-pruned list, computes an
@@ -199,6 +194,7 @@ class SessionManagerBase(Generic[KeyT]):
             before = len(working.messages)
             changed, doomed_audio = _settle_refused_content(working)
             refused_delta = before - len(working.messages)
+        keep_for = session_retention_hours(session)
         if keep_for:
             cutoff = now - timedelta(hours=keep_for)
             retained = [m for m in working.messages if m.timestamp > cutoff]

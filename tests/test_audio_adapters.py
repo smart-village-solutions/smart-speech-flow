@@ -208,7 +208,7 @@ def test_the_cleanup_task_removes_expired_audio_from_its_store(
     fresh = store.save(key, "m2", AudioVariant.ORIGINAL, b"wav")
     old = time.time() - 25 * 3600
     os.utime(expired, (old, old))
-    monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
+    monkeypatch.delenv("SSF_TERMINAL_RECORD_HOURS", raising=False)
     sleeps: list[float] = []
 
     async def one_pass(seconds: float) -> None:
