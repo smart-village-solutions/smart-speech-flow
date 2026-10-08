@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useScreenLocale } from '@/app/providers/locale';
 import { useFeedback } from '@/app/providers/feedback';
+import { guestOrigin } from '@/domain/feedback/feedbackOrigin';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
 import { AppError } from '@/core/http/AppError';
@@ -54,7 +55,7 @@ export function ConsentScreen() {
       <AppHeader
         onBack={() => void navigate(`/s/${sessionId}/language`)}
         onHome={() => void navigate('/')}
-        onFeedback={() => openFeedback(sessionId ?? null)}
+        onFeedback={() => openFeedback(guestOrigin(sessionId))}
       />
 
       <div className="flex-1 overflow-y-auto px-5 pb-12 pt-content-top">

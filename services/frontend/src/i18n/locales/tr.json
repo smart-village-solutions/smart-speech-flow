@@ -78,6 +78,7 @@
       "withdrawal": "Geri bildiriminizi dilediğiniz zaman geri çektirebilirsiniz; bunun için görevlilere başvurun."
     },
     "stars": "{{count}} yıldız",
+    "required": "Zorunlu",
     "submit": "Geri bildirim gönder",
     "submitting": "Gönderiliyor…",
     "retry": "Tekrar gönder",
