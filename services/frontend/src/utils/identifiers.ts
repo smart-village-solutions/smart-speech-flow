@@ -1,12 +1,14 @@
-const SESSION_ID_PATTERN = /^[A-Z0-9]{8}$/;
-const POLLING_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+export type PathIdentifierKind = 'session' | 'polling' | 'language';
 
-export type PathIdentifierKind = 'session' | 'polling';
+const PATTERNS: Record<PathIdentifierKind, RegExp> = {
+  session: /^[A-Z0-9]{8}$/,
+  polling: /^[A-Za-z0-9_-]{1,128}$/,
+  language: /^[a-z]{2,3}$/,
+};
 
 /** Validates identifiers before they become URL path segments. */
 export function validatePathIdentifier(value: string, kind: PathIdentifierKind): boolean {
-  const pattern = kind === 'session' ? SESSION_ID_PATTERN : POLLING_ID_PATTERN;
-  return pattern.test(value);
+  return PATTERNS[kind].test(value);
 }
 
 export function requirePathIdentifier(value: string, kind: PathIdentifierKind): string {

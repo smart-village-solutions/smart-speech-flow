@@ -18,3 +18,13 @@ export function resolveApiUrl(apiBaseUrl: string, url: string): string {
   const base = apiBaseUrl.replace(/\/$/, '');
   return url.startsWith('/') ? `${base}${url}` : `${base}/${url}`;
 }
+
+/** An absolute https: URL without credentials: the only kind Studio may hand the browser. */
+export function isSafeHttpsUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.username === '' && url.password === '';
+  } catch {
+    return false;
+  }
+}

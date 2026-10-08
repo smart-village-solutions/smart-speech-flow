@@ -1,21 +1,32 @@
+import { http, HttpResponse } from 'msw';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { server } from '@/test/setup';
+import { installationBody } from '@/test/contentFixtures';
+import { ContentSettled } from '@/test/ContentSettled';
 import type { LoginTenant } from '@/domain/login-tenant/loginTenant.types';
 import { TenantLoginScreen } from '@/features/login/TenantLoginScreen';
 
 function renderScreen(list: () => Promise<LoginTenant[]>) {
-  return renderWithProviders(<TenantLoginScreen />, {
-    locale: 'de',
-    brand: 'kassel',
-    services: { loginTenant: { list } },
-  });
+  return renderWithProviders(
+    <>
+      <TenantLoginScreen />
+      <ContentSettled />
+    </>,
+    {
+      locale: 'de',
+      brand: 'kassel',
+      services: { loginTenant: { list } },
+    }
+  );
 }
 
 describe('TenantLoginScreen', () => {
-  it('shows loading feedback while the tenant directory is pending', () => {
+  it('shows loading feedback while the tenant directory is pending', async () => {
     renderScreen(() => new Promise<LoginTenant[]>(() => undefined));
+    await screen.findByTestId('public-content-settled');
 
     expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
     expect(screen.getByText('Bitte wählen Sie Ihre Abteilung oder Organisation aus der Liste aus.')).toBeInTheDocument();
@@ -94,5 +105,110 @@ describe('TenantLoginScreen', () => {
     const funding = screen.getByRole('img', { name: 'Fördermittelgeber' });
     const city = screen.getByRole('img', { name: 'Stadt Kassel' });
     expect(funding.closest('footer')).toContainElement(city);
+  });
+
+  describe('installation texts', () => {
+    const DIRECTORY_NAME = 'Stadt Kassel';
+    const BUNDLED_INSTRUCTION = 'Bitte wählen Sie Ihre Abteilung oder Organisation aus der Liste aus.';
+
+    function serveLogin(locale: string, login: { headline: string; descriptionHtml: string }) {
+      server.use(
+        http.get('*/api/content/installation', () =>
+          HttpResponse.json({ ...installationBody, locale, login })
+        )
+      );
+    }
+
+    async function renderSettled() {
+      renderWithProviders(
+        <>
+          <TenantLoginScreen />
+          <ContentSettled />
+        </>,
+        {
+          locale: 'de',
+          brand: 'kassel',
+          services: {
+            loginTenant: {
+              list: async () => [
+                { id: 'tenant-kassel', displayName: DIRECTORY_NAME, realm: 'kassel-ssf-2025' },
+              ],
+            },
+          },
+        }
+      );
+      await screen.findByTestId('public-content-settled');
+    }
+
+    it('shows the Studio headline and description, without the empty paragraph', async () => {
+      serveLogin('de-DE', {
+        headline: 'Anmeldung',
+        descriptionHtml: '<p>Wählen Sie <strong>Ihre</strong> Organisation.</p><p></p>',
+      });
+
+      await renderSettled();
+
+      expect(screen.getByRole('heading', { name: 'Anmeldung' })).toBeInTheDocument();
+      const paragraph = screen.getByText('Ihre').closest('p');
+      expect(paragraph).toHaveTextContent('Wählen Sie Ihre Organisation.');
+      expect(paragraph?.parentElement?.querySelectorAll('p')).toHaveLength(1);
+      expect(screen.queryByText(BUNDLED_INSTRUCTION)).not.toBeInTheDocument();
+    });
+
+    it('keeps a description without paragraphs on one line', async () => {
+      serveLogin('de-DE', {
+        headline: 'Login',
+        descriptionHtml: 'Wählen Sie <strong>Ihre</strong> Organisation.',
+      });
+
+      await renderSettled();
+
+      const paragraph = screen.getByText('Ihre').closest('p');
+      expect(paragraph).toHaveTextContent('Wählen Sie Ihre Organisation.');
+      expect(paragraph?.parentElement?.childNodes).toHaveLength(1);
+    });
+
+    it('shows the live description as one paragraph', async () => {
+      await renderSettled();
+
+      const paragraph = screen.getByText(BUNDLED_INSTRUCTION);
+      expect(paragraph.tagName).toBe('P');
+      expect(paragraph.parentElement?.querySelectorAll('p')).toHaveLength(1);
+    });
+
+    it('keeps bundled texts while installation content is unavailable (503)', async () => {
+      server.use(
+        http.get('*/api/content/installation', () =>
+          HttpResponse.json({ detail: 'Studio content is temporarily unavailable' }, { status: 503 })
+        )
+      );
+
+      await renderSettled();
+
+      expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
+      expect(screen.getByText(BUNDLED_INSTRUCTION).tagName).toBe('P');
+    });
+
+    it('keeps bundled texts when the content is in another language', async () => {
+      serveLogin('en-GB', {
+        headline: 'Sign in',
+        descriptionHtml: '<p>Choose your organisation.</p>',
+      });
+
+      await renderSettled();
+
+      expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
+      expect(screen.getByText(BUNDLED_INSTRUCTION)).toBeInTheDocument();
+      expect(screen.queryByText('Choose your organisation.')).not.toBeInTheDocument();
+    });
+
+    it('lists organisations by their login directory names', async () => {
+      await renderSettled();
+
+      expect(await screen.findByRole('link', { name: DIRECTORY_NAME })).toHaveAttribute(
+        'href',
+        '/login/tenant-kassel'
+      );
+    });
   });
 });

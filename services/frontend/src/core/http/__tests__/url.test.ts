@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveApiUrl } from '@/core/http/url';
+import { isSafeHttpsUrl, resolveApiUrl } from '@/core/http/url';
 
 describe('resolveApiUrl', () => {
   // In production the gateway has its own origin at api.dialog.kassel.de, so
@@ -45,5 +45,23 @@ describe('resolveApiUrl', () => {
 
   it('leaves an empty url alone', () => {
     expect(resolveApiUrl('https://ssf.example', '')).toBe('');
+  });
+});
+
+describe('isSafeHttpsUrl', () => {
+  it('accepts an absolute https URL', () => {
+    expect(isSafeHttpsUrl('https://dialog.kassel.de/assets/Logo.png')).toBe(true);
+  });
+
+  it.each([
+    'http://dialog.kassel.de/',
+    'javascript:alert(1)',
+    'data:image/png;base64,AAAA',
+    'https://user:pass@dialog.kassel.de/',
+    'https://user@dialog.kassel.de/',
+    '/assets/Logo.png',
+    '',
+  ])('rejects %j', (value) => {
+    expect(isSafeHttpsUrl(value)).toBe(false);
   });
 });

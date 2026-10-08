@@ -15,6 +15,14 @@ describe('path identifier validation', () => {
     expect(() => requirePathIdentifier('../admin', 'session')).toThrow('Invalid session identifier');
   });
 
+  it.each(['en', 'ku', 'fil'])('accepts the language code %s', (code) => {
+    expect(validatePathIdentifier(code, 'language')).toBe(true);
+  });
+
+  it.each(['', 'EN', 'en-GB', 'e', 'abcd', '../en', 'en/x'])('rejects the language code %j', (code) => {
+    expect(validatePathIdentifier(code, 'language')).toBe(false);
+  });
+
   it('allows only ws and wss base URLs and clears injected URL parts', () => {
     expect(
       buildWebSocketUrl(
