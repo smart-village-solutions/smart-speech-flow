@@ -82,6 +82,9 @@ async def _connect_feedback_request_path(state: Any, dsn: str, sessions: Any) ->
         session_manager=sessions,
         telemetry=state.quality_telemetry,
         pseudonymizer=state.pseudonymizer,
+        # The window the guest content routes use too, so the form and the
+        # submission it sends end together.
+        grace_window=state.guest_grace_window,
     )
     sys.stderr.write("Feedback persistence ready\n")
     return True

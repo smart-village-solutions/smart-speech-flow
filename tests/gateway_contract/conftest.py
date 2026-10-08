@@ -13,6 +13,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlsplit
 
 import anyio.from_thread
 import pytest
@@ -295,6 +296,90 @@ def studio(gateway_dependencies: GatewayDependencies) -> Iterator[StudioStub]:
     gateway_dependencies.studio_runtime_flow = studio_runtime_flow.StudioRuntimeFlow(stub)
     gateway_dependencies.session_manager.runtime_policy = RuntimePolicyGate(stub)
     yield stub
+
+
+class StudioMock:
+    """The Studio mock at its HTTP boundary, read by the real v2 and installation clients.
+
+    Wired by `wire_studio`, as the lifespan wires Studio.
+    """
+
+    TOKEN = "studio-mock-authorized-token"
+
+    def __init__(self) -> None:
+        from services.studio_mock import app as mock
+
+        self._mock = TestClient(mock.app)
+        self.scenario: str | None = None
+        self.stopped = False
+        self.now = 1000.0
+        # Set by the fixture: fresh content state, as after a gateway restart,
+        # which keeps its sessions and loses its cache.
+        self.restart_content: Callable[[], None] = lambda: None
+
+    def clock(self) -> float:
+        return self.now
+
+    def age_content(self, seconds: float) -> None:
+        """Move the content cache's clock on, so its content counts as old."""
+        self.now += seconds
+
+    async def token(self) -> str:
+        return self.TOKEN
+
+    async def get(self, url: str, headers: Any, timeout_seconds: float) -> Any:
+        import aiohttp
+
+        from services.api_gateway.studio_v1 import StudioV1HttpResponse
+
+        if self.stopped:
+            raise aiohttp.ClientConnectionError("studio-mock is stopped")
+        sent = dict(headers)
+        if self.scenario:
+            sent["X-Mock-Scenario"] = self.scenario
+        response = self._mock.get(urlsplit(url).path, headers=sent)
+        return StudioV1HttpResponse(response.status_code, response.json())
+
+
+@pytest.fixture
+def studio_mock(gateway_dependencies: GatewayDependencies) -> StudioMock:
+    from prometheus_client import CollectorRegistry
+
+    from services.api_gateway.studio_content import StudioContentCache
+    from services.api_gateway.studio_content_metrics import StudioContentMetrics
+    from services.api_gateway.studio_installation_client import StudioInstallationClient
+    from services.api_gateway.studio_runtime_v2_client import StudioRuntimeV2Client
+    from services.api_gateway.studio_wiring import wire_studio
+
+    studio = StudioMock()
+    base_url = "http://studio-mock.test"
+
+    def wire() -> None:
+        wiring = wire_studio(
+            StudioRuntimeV2Client(base_url, studio.token, transport=studio),
+            StudioInstallationClient(base_url, studio.token, transport=studio),
+            StudioContentCache(clock=studio.clock),
+            policy_registry=CollectorRegistry(),
+            content_metrics=StudioContentMetrics(CollectorRegistry()),
+        )
+        gateway_dependencies.studio_runtime_flow = wiring.runtime_flow
+        gateway_dependencies.session_manager.runtime_policy = wiring.runtime_policy
+        gateway_dependencies.studio_content = wiring.content
+
+    app.dependency_overrides.pop(require_validated_runtime_configuration, None)
+    wire()
+    studio.restart_content = wire
+    return studio
+
+
+@pytest.fixture
+def guest_grace_window(gateway_dependencies: GatewayDependencies) -> Callable[[timedelta], None]:
+    """Sets how long after a conversation ends its guest may still read content."""
+
+    def set_window(window: timedelta) -> None:
+        gateway_dependencies.guest_grace_window = window
+
+    return set_window
 
 
 @pytest.fixture

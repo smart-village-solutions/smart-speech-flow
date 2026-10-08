@@ -35,6 +35,7 @@ CONTAINER_BUILT = (
     "studio_runtime_flow",
     "login_directory",
     "studio_token_provider",
+    "studio_content",
     "service_health",
     "circuit_breaker_client",
     "speech_pipeline",
@@ -45,6 +46,8 @@ CONTAINER_BUILT = (
 )
 # Built once per app by create_app(), so every lifespan of that app reuses it.
 APP_BUILT = ("prometheus_registry",)
+# Values read from the environment, not collaborators.
+SETTINGS = ("guest_grace_window",)
 # None without a feedback database, as tests/gateway_contract/test_contract_lifespan.py pins.
 FEEDBACK = (
     "feedback_repository",
@@ -89,6 +92,7 @@ def test_every_container_field_is_classified() -> None:
     assert {field.name for field in fields(GatewayDependencies)} == {
         *CONTAINER_BUILT,
         *APP_BUILT,
+        *SETTINGS,
         *FEEDBACK,
     }
 

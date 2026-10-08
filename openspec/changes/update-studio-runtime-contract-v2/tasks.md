@@ -31,11 +31,11 @@
 
 ## 5. Content cache and browser routes
 
-- [ ] 5.1 Add `StudioContentCache` for tenant content and the installation content cache, both serving stale on error
-- [ ] 5.2 Add `GET /api/content/installation` with ETag and cache headers
-- [ ] 5.3 Add `GET /api/customer/session/{session_id}/languages` and `.../content/{language}`, including the feedback grace period and the live storage mode
-- [ ] 5.4 Add `GET /api/admin/content`
-- [ ] 5.5 Map Studio locales to SSF codes with aliases; count skipped locales
+- [x] 5.1 Add `StudioContentCache` for tenant content and the installation content cache, both serving stale on error
+- [x] 5.2 Add `GET /api/content/installation` with ETag and cache headers
+- [x] 5.3 Add `GET /api/customer/session/{session_id}/languages` and `.../content/{language}`, including the feedback grace period and the live storage mode
+- [x] 5.4 Add `GET /api/admin/content`
+- [x] 5.5 Map Studio locales to SSF codes with aliases; count skipped locales
 
 ## 6. Frontend: feedback form from a definition
 

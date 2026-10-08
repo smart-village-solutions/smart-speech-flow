@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from ..audio_storage import AudioVariant
 from ..auth import require_ssf_privileged_user, require_ssf_user
 from ..clock import utc_now
+from ..content_responses import StaffContentResponse, staff_content_response
 from ..conversation_service import ConversationService
 from ..dependencies import (
     get_conversation_service,
@@ -21,6 +22,7 @@ from ..dependencies import (
     get_realtime_ticket_store,
     get_session_lifecycle,
     get_session_manager,
+    get_studio_content,
     get_websocket_manager,
 )
 from ..log_safety import safe_session_ref, sanitize_log_value
@@ -31,8 +33,10 @@ from ..session_access import require_admin_session_key
 from ..session_lifecycle import NoActiveSessionError, SessionLifecycleService, SessionNotFoundError
 from ..session_manager import TenantSessionManager
 from ..session_models import ClientType
+from ..studio_content_service import ContentUnavailable, StudioContentService
 from ..studio_runtime_flow import (
     ValidatedRuntimeConfiguration,
+    correlation_id_from_request,
     require_validated_runtime_configuration,
 )
 from ..tenant_context import (
@@ -120,6 +124,30 @@ def _connection_payload(
         if client.key == key
     )
     return connections
+
+
+@router.get(
+    "/content",
+    response_model=StaffContentResponse,
+    summary="Staff texts, staff form, branding and time zone of the token's tenant",
+    responses={503: {"description": "No Studio content was ever read; use bundled copy"}},
+)
+async def get_staff_content(
+    request: Request,
+    context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
+    content: Annotated[StudioContentService, Depends(get_studio_content)],
+) -> StaffContentResponse:
+    try:
+        tenant = await content.tenant_content(
+            context.tenant_id, correlation_id_from_request(request), endpoint="staff_content"
+        )
+    except ContentUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Studio content is temporarily unavailable",
+            headers={"Cache-Control": "no-store"},
+        ) from None
+    return staff_content_response(tenant)
 
 
 @router.get("/realtime/connections")

@@ -15,6 +15,7 @@ from prometheus_client import CollectorRegistry, Counter, ProcessCollector
 from .audio_storage import AudioStorageMetrics
 from .pipeline_admission import PipelineAdmissionMetrics
 from .refinement_metrics import RefinementMetrics
+from .studio_content_metrics import StudioContentMetrics
 from .websocket_monitor import WebSocketMetrics
 from .websocket_polling_routes import polling_dropped_counter
 
@@ -29,6 +30,7 @@ class GatewayMetrics:
     websocket: WebSocketMetrics
     polling_messages_dropped: Counter
     audio_storage: AudioStorageMetrics
+    studio_content: StudioContentMetrics
 
     @classmethod
     def build(cls) -> GatewayMetrics:
@@ -48,4 +50,5 @@ class GatewayMetrics:
             websocket=WebSocketMetrics(registry),
             polling_messages_dropped=polling_dropped_counter(registry),
             audio_storage=AudioStorageMetrics(registry),
+            studio_content=StudioContentMetrics(registry),
         )

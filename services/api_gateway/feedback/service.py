@@ -37,7 +37,7 @@ FEEDBACK_GRACE_ENV: Final[str] = "SSF_FEEDBACK_GRACE_MINUTES"
 DEFAULT_GRACE_MINUTES: Final[int] = 30
 
 
-def _configured_grace_window() -> timedelta:
+def configured_grace_window() -> timedelta:
     """How long after a conversation ends its feedback is still accepted.
 
     `0` turns the window off, restoring the refusal that shipped before it
@@ -103,9 +103,7 @@ class FeedbackService:
         self._telemetry = telemetry
         self._pseudonymizer = pseudonymizer
         self._clock = clock
-        self._grace_window = (
-            grace_window if grace_window is not None else _configured_grace_window()
-        )
+        self._grace_window = grace_window if grace_window is not None else configured_grace_window()
 
     async def submit(self, request: FeedbackSubmissionRequest) -> UUID:
         text = self._validated_text(request.improvements)
