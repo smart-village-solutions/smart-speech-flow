@@ -31,12 +31,24 @@ STUDIO_RUNTIME_AUDIENCE=sva-studio-ssf-runtime
 STUDIO_RUNTIME_CLIENT_SECRET=<deployment secret>
 STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS=60
 STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS=5.0
+STUDIO_CONTENT_CACHE_SECONDS=60
+STUDIO_INSTALLATION_CONTENT_TIMEOUT_SECONDS=3
 SSF_TERMINAL_RECORD_HOURS=24
 ```
 
 `STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS` bounds one live policy read and
 must be greater than 0 and at most 30. `KEYCLOAK_REQUIRED_ROLE` guards
 feedback reads and the telemetry probe, not conversation admission.
+
+Studio display content (texts, feedback forms, logo, icon, legal links) is
+sanitised once per `configurationRevision` and reused for
+`STUDIO_CONTENT_CACHE_SECONDS` (default 60, at most 3600). Every live read the
+gateway already makes refreshes it; once it has aged, the next browser request
+makes one live read shared by concurrent requests, and serves the last known
+content when Studio fails. `STUDIO_INSTALLATION_CONTENT_TIMEOUT_SECONDS`
+(default 3, at most 30) bounds the installation content read. The storage mode
+is never cached: `GET /api/customer/session/{id}/content/{language}` reads it
+live and answers `unknown` when Studio cannot be read.
 
 When a guest grants consent, the session stores Studio's `retentionHours` and
 `configurationRevision` from that same live read, and keeps them for the rest

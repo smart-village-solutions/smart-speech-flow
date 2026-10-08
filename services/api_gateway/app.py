@@ -49,8 +49,11 @@ if TYPE_CHECKING:
     from .quality_telemetry import QualityTelemetry
     from .quality_telemetry_schema import TelemetryMode
     from .runtime_policy import RuntimePolicyGate
+    from .studio_content_metrics import StudioContentMetrics
+    from .studio_content_service import StudioContentService
     from .studio_runtime_flow import StudioRuntimeFlow
     from .studio_runtime_token import StudioRuntimeTokenProvider
+    from .studio_wiring import StudioWiring
     from .tenant_persistence import TenantPersistenceBinding
     from .translation_refiner import BaseTranslationRefiner
 
@@ -109,30 +112,37 @@ def _announce(line: str) -> None:
     sys.stderr.flush()
 
 
-def _build_runtime_policy(
+def _build_studio(
     registry: CollectorRegistry,
     token_provider: "StudioRuntimeTokenProvider | None",
-) -> "tuple[StudioRuntimeFlow | None, RuntimePolicyGate | None]":
-    """The Studio flow and the persistence gate built on it.
+    content_metrics: "StudioContentMetrics",
+) -> "StudioWiring":
+    """The Studio flow, the persistence gate built on it, and the content service.
 
     No gate refuses every write, so a failure to build one is a safe state,
     not a startup error. Studio credentials are absent in local development
-    and CI.
+    and CI. Every read through the flow also refreshes display content.
     """
-    from .runtime_policy import RuntimePolicyGate
-    from .runtime_policy_metrics import RuntimePolicyMetrics
+    from .studio_content import StudioContentCache
+    from .studio_content_service import content_cache_seconds, installation_client_from_environment
     from .studio_runtime_flow import StudioRuntimeFlowError, runtime_flow_from_environment
+    from .studio_wiring import wire_studio
 
     try:
-        runtime_flow = runtime_flow_from_environment(token_provider)
+        runtime_client = runtime_flow_from_environment(token_provider).client
     except StudioRuntimeFlowError as error:
-        sys.stderr.write(f"Runtime policy gate unbound ({error.code}); persistence refused\n")
-        sys.stderr.flush()
-        return None, None
-    gate = RuntimePolicyGate(runtime_flow.client, metrics=RuntimePolicyMetrics(registry))
-    sys.stderr.write("Runtime policy gate ready\n")
-    sys.stderr.flush()
-    return runtime_flow, gate
+        _announce(f"Runtime policy gate unbound ({error.code}); persistence refused")
+        runtime_client = None
+    else:
+        _announce("Runtime policy gate ready")
+    return wire_studio(
+        runtime_client,
+        installation_client_from_environment(token_provider),
+        StudioContentCache(on_skip=content_metrics.skipped),
+        policy_registry=registry,
+        content_metrics=content_metrics,
+        cache_seconds=content_cache_seconds(),
+    )
 
 
 def _build_dependencies(
@@ -142,6 +152,7 @@ def _build_dependencies(
     runtime_policy: "RuntimePolicyGate | None",
     pipeline: "_PipelineCollaborators",
     studio_token_provider: "StudioRuntimeTokenProvider | None",
+    studio_content: "StudioContentService",
 ) -> GatewayDependencies:
     _announce("Building gateway dependencies...")
     metrics: GatewayMetrics = app.state.gateway_metrics
@@ -151,6 +162,7 @@ def _build_dependencies(
         redis_namespace=persistence.namespace if persistence is not None else "ssf",
         studio_runtime_flow=runtime_flow,
         studio_token_provider=studio_token_provider,
+        studio_content=studio_content,
         runtime_policy=runtime_policy,
         polling_messages_dropped=metrics.polling_messages_dropped,
         websocket_metrics=metrics.websocket,
@@ -358,15 +370,21 @@ async def _start_serving(
     metrics: GatewayMetrics = app.state.gateway_metrics
     # One per app: every Studio client shares its cached service token.
     studio_token_provider = token_provider_from_environment()
-    runtime_flow, runtime_policy = _build_runtime_policy(
-        app.state.prometheus_registry, studio_token_provider
+    studio = _build_studio(
+        app.state.prometheus_registry, studio_token_provider, metrics.studio_content
     )
     pipeline = _build_pipeline_collaborators(
         app.state.prometheus_registry, metrics.pipeline_admission, refiner
     )
 
     dependencies = _build_dependencies(
-        app, tenant_persistence, runtime_flow, runtime_policy, pipeline, studio_token_provider
+        app,
+        tenant_persistence,
+        studio.runtime_flow,
+        studio.runtime_policy,
+        pipeline,
+        studio_token_provider,
+        studio.content,
     )
     if tenant_persistence is not None:
         # Before any request, socket or background task can see this app's sessions.
@@ -494,7 +512,7 @@ def setup_cors_for_websockets(app: FastAPI) -> None:
 
 # === Module Imports ===
 from . import websocket, websocket_monitoring_routes, websocket_polling_routes
-from .routes import admin, circuit_breaker, customer, feedback, login, session
+from .routes import admin, circuit_breaker, content, customer, feedback, login, session
 from .routes.health import router as health_router
 from .routes.metrics import metrics
 
@@ -510,6 +528,7 @@ def _include_routes(app: FastAPI) -> None:
     app.include_router(login.router)
     app.include_router(admin.router, tags=["admin"])
     app.include_router(customer.router, tags=["customer"])
+    app.include_router(content.router)
     app.include_router(websocket_monitoring_routes.router, tags=["websocket-monitoring"])
     app.include_router(websocket_polling_routes.router, tags=["websocket-polling-fallback"])
     app.include_router(websocket.router, tags=["websocket"])

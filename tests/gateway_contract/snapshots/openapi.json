@@ -98,6 +98,511 @@
         "title": "AudioVariant",
         "type": "string"
       },
+      "BundledGuestLanguage": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "native": {
+            "title": "Native",
+            "type": "string"
+          },
+          "provided": {
+            "const": false,
+            "default": false,
+            "title": "Provided",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "native",
+          "provided"
+        ],
+        "title": "BundledGuestLanguage",
+        "type": "object"
+      },
+      "ContentBranding": {
+        "properties": {
+          "icon": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentMedia"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "logo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentMedia"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "logo",
+          "icon"
+        ],
+        "title": "ContentBranding",
+        "type": "object"
+      },
+      "ContentDashboard": {
+        "properties": {
+          "callToAction": {
+            "title": "Calltoaction",
+            "type": "string"
+          },
+          "explanationHtml": {
+            "title": "Explanationhtml",
+            "type": "string"
+          },
+          "headline": {
+            "title": "Headline",
+            "type": "string"
+          },
+          "load": {
+            "$ref": "#/components/schemas/ContentLoadLabels"
+          }
+        },
+        "required": [
+          "headline",
+          "explanationHtml",
+          "callToAction",
+          "load"
+        ],
+        "title": "ContentDashboard",
+        "type": "object"
+      },
+      "ContentFeedbackForm": {
+        "properties": {
+          "button": {
+            "title": "Button",
+            "type": "string"
+          },
+          "headline": {
+            "title": "Headline",
+            "type": "string"
+          },
+          "noticeHtml": {
+            "title": "Noticehtml",
+            "type": "string"
+          },
+          "questions": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "longText": "#/components/schemas/ContentLongTextQuestion",
+                  "rating": "#/components/schemas/ContentRatingQuestion",
+                  "scale": "#/components/schemas/ContentScaleQuestion"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ContentRatingQuestion"
+                },
+                {
+                  "$ref": "#/components/schemas/ContentScaleQuestion"
+                },
+                {
+                  "$ref": "#/components/schemas/ContentLongTextQuestion"
+                }
+              ]
+            },
+            "title": "Questions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "headline",
+          "questions",
+          "noticeHtml",
+          "button"
+        ],
+        "title": "ContentFeedbackForm",
+        "type": "object"
+      },
+      "ContentLegal": {
+        "properties": {
+          "accessibilityStatementUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accessibilitystatementurl"
+          },
+          "imprintUrl": {
+            "title": "Imprinturl",
+            "type": "string"
+          },
+          "privacyPolicyUrl": {
+            "title": "Privacypolicyurl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "imprintUrl",
+          "privacyPolicyUrl",
+          "accessibilityStatementUrl"
+        ],
+        "title": "ContentLegal",
+        "type": "object"
+      },
+      "ContentLoadLabels": {
+        "properties": {
+          "green": {
+            "title": "Green",
+            "type": "string"
+          },
+          "headline": {
+            "title": "Headline",
+            "type": "string"
+          },
+          "red": {
+            "title": "Red",
+            "type": "string"
+          },
+          "yellow": {
+            "title": "Yellow",
+            "type": "string"
+          }
+        },
+        "required": [
+          "headline",
+          "green",
+          "yellow",
+          "red"
+        ],
+        "title": "ContentLoadLabels",
+        "type": "object"
+      },
+      "ContentLogin": {
+        "properties": {
+          "descriptionHtml": {
+            "title": "Descriptionhtml",
+            "type": "string"
+          },
+          "headline": {
+            "title": "Headline",
+            "type": "string"
+          }
+        },
+        "required": [
+          "headline",
+          "descriptionHtml"
+        ],
+        "title": "ContentLogin",
+        "type": "object"
+      },
+      "ContentLongTextQuestion": {
+        "properties": {
+          "headline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "maxLength": {
+            "title": "Maxlength",
+            "type": "integer"
+          },
+          "placeholder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Placeholder"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "const": "longText",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "headline",
+          "question",
+          "required",
+          "type",
+          "placeholder",
+          "maxLength"
+        ],
+        "title": "ContentLongTextQuestion",
+        "type": "object"
+      },
+      "ContentMedia": {
+        "properties": {
+          "alternativeText": {
+            "title": "Alternativetext",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "alternativeText"
+        ],
+        "title": "ContentMedia",
+        "type": "object"
+      },
+      "ContentNewConversation": {
+        "properties": {
+          "descriptionHtml": {
+            "title": "Descriptionhtml",
+            "type": "string"
+          },
+          "headline": {
+            "title": "Headline",
+            "type": "string"
+          }
+        },
+        "required": [
+          "headline",
+          "descriptionHtml"
+        ],
+        "title": "ContentNewConversation",
+        "type": "object"
+      },
+      "ContentRatingQuestion": {
+        "properties": {
+          "headline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "max": {
+            "title": "Max",
+            "type": "integer"
+          },
+          "min": {
+            "title": "Min",
+            "type": "integer"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "const": "rating",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "headline",
+          "question",
+          "required",
+          "type",
+          "min",
+          "max"
+        ],
+        "title": "ContentRatingQuestion",
+        "type": "object"
+      },
+      "ContentScaleQuestion": {
+        "properties": {
+          "headline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "max": {
+            "title": "Max",
+            "type": "integer"
+          },
+          "maxLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxlabel"
+          },
+          "min": {
+            "title": "Min",
+            "type": "integer"
+          },
+          "minLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minlabel"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "const": "scale",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "headline",
+          "question",
+          "required",
+          "type",
+          "min",
+          "max",
+          "minLabel",
+          "maxLabel"
+        ],
+        "title": "ContentScaleQuestion",
+        "type": "object"
+      },
+      "ContentStaff": {
+        "properties": {
+          "dashboard": {
+            "$ref": "#/components/schemas/ContentDashboard"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentFeedbackForm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "locale": {
+            "title": "Locale",
+            "type": "string"
+          },
+          "newConversation": {
+            "$ref": "#/components/schemas/ContentNewConversation"
+          }
+        },
+        "required": [
+          "locale",
+          "dashboard",
+          "newConversation",
+          "feedback"
+        ],
+        "title": "ContentStaff",
+        "type": "object"
+      },
+      "ContentStartpage": {
+        "properties": {
+          "enterCode": {
+            "title": "Entercode",
+            "type": "string"
+          },
+          "login": {
+            "title": "Login",
+            "type": "string"
+          },
+          "send": {
+            "title": "Send",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enterCode",
+          "send",
+          "login"
+        ],
+        "title": "ContentStartpage",
+        "type": "object"
+      },
+      "ContentStorage": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "ask",
+              "disabled",
+              "unknown"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "ContentStorage",
+        "type": "object"
+      },
       "FeedbackAcceptedResponse": {
         "description": "The opaque confirmation identifier.",
         "properties": {
@@ -343,6 +848,36 @@
         "title": "FeedbackSummaryResponse",
         "type": "object"
       },
+      "GuestLanguagesResponse": {
+        "properties": {
+          "languages": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "False": "#/components/schemas/BundledGuestLanguage",
+                  "True": "#/components/schemas/ProvidedGuestLanguage"
+                },
+                "propertyName": "provided"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ProvidedGuestLanguage"
+                },
+                {
+                  "$ref": "#/components/schemas/BundledGuestLanguage"
+                }
+              ]
+            },
+            "title": "Languages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "languages"
+        ],
+        "title": "GuestLanguagesResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -354,6 +889,51 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InstallationContentResponse": {
+        "properties": {
+          "branding": {
+            "$ref": "#/components/schemas/ContentBranding"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentFeedbackForm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "legal": {
+            "$ref": "#/components/schemas/ContentLegal"
+          },
+          "locale": {
+            "title": "Locale",
+            "type": "string"
+          },
+          "login": {
+            "$ref": "#/components/schemas/ContentLogin"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "startpage": {
+            "$ref": "#/components/schemas/ContentStartpage"
+          }
+        },
+        "required": [
+          "revision",
+          "branding",
+          "legal",
+          "locale",
+          "startpage",
+          "login",
+          "feedback"
+        ],
+        "title": "InstallationContentResponse",
         "type": "object"
       },
       "LoginTenantDirectoryResponse": {
@@ -427,6 +1007,104 @@
           "content"
         ],
         "title": "PollingMessage",
+        "type": "object"
+      },
+      "ProvidedGuestContent": {
+        "properties": {
+          "explanationHtml": {
+            "title": "Explanationhtml",
+            "type": "string"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentFeedbackForm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provided": {
+            "const": true,
+            "default": true,
+            "title": "Provided",
+            "type": "boolean"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "storage": {
+            "$ref": "#/components/schemas/ContentStorage"
+          },
+          "storageQuestionHtml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storagequestionhtml"
+          }
+        },
+        "required": [
+          "storage",
+          "provided",
+          "revision",
+          "explanationHtml",
+          "storageQuestionHtml",
+          "feedback"
+        ],
+        "title": "ProvidedGuestContent",
+        "type": "object"
+      },
+      "ProvidedGuestLanguage": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentMedia"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "native": {
+            "title": "Native",
+            "type": "string"
+          },
+          "nativeName": {
+            "title": "Nativename",
+            "type": "string"
+          },
+          "provided": {
+            "const": true,
+            "default": true,
+            "title": "Provided",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "native",
+          "provided",
+          "nativeName",
+          "icon"
+        ],
+        "title": "ProvidedGuestLanguage",
         "type": "object"
       },
       "RealtimeTicketRequest": {
@@ -613,6 +1291,54 @@
         "title": "SessionStatusResponse",
         "type": "object"
       },
+      "StaffContentResponse": {
+        "properties": {
+          "branding": {
+            "$ref": "#/components/schemas/ContentBranding"
+          },
+          "guestLanguageNames": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Guestlanguagenames",
+            "type": "object"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "staff": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentStaff"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeZone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          }
+        },
+        "required": [
+          "revision",
+          "timeZone",
+          "branding",
+          "staff",
+          "guestLanguageNames"
+        ],
+        "title": "StaffContentResponse",
+        "type": "object"
+      },
       "TelemetryProbeResponse": {
         "properties": {
           "event_id": {
@@ -643,6 +1369,25 @@
           "outcome"
         ],
         "title": "TelemetryProbeResponse",
+        "type": "object"
+      },
+      "UnprovidedGuestContent": {
+        "properties": {
+          "provided": {
+            "const": false,
+            "default": false,
+            "title": "Provided",
+            "type": "boolean"
+          },
+          "storage": {
+            "$ref": "#/components/schemas/ContentStorage"
+          }
+        },
+        "required": [
+          "storage",
+          "provided"
+        ],
+        "title": "UnprovidedGuestContent",
         "type": "object"
       },
       "ValidationError": {
@@ -772,6 +1517,31 @@
         "summary": "Reset Circuit Breaker",
         "tags": [
           "circuit-breaker"
+        ]
+      }
+    },
+    "/api/admin/content": {
+      "get": {
+        "operationId": "get_staff_content_api_admin_content_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffContentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "description": "No Studio content was ever read; use bundled copy"
+          }
+        },
+        "summary": "Staff texts, staff form, branding and time zone of the token's tenant",
+        "tags": [
+          "admin",
+          "admin"
         ]
       }
     },
@@ -1689,6 +2459,34 @@
         ]
       }
     },
+    "/api/content/installation": {
+      "get": {
+        "description": "Branding, legal links, start page and login texts, and the installation form.",
+        "operationId": "get_installation_content_api_content_installation_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationContentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "304": {
+            "description": "The browser's copy is current"
+          },
+          "503": {
+            "description": "No installation content was ever read; use bundled copy"
+          }
+        },
+        "summary": "Get Installation Content",
+        "tags": [
+          "content"
+        ]
+      }
+    },
     "/api/customer/languages/supported": {
       "get": {
         "description": "Liste aller verfügbaren Sprachen für die Session-Aktivierung",
@@ -1885,6 +2683,134 @@
           }
         },
         "summary": "Get Customer Audio",
+        "tags": [
+          "customer",
+          "customer"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/content/{language}": {
+      "get": {
+        "operationId": "get_guest_content_api_customer_session__session_id__content__language__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "language",
+            "required": true,
+            "schema": {
+              "title": "Language",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "False": "#/components/schemas/UnprovidedGuestContent",
+                      "True": "#/components/schemas/ProvidedGuestContent"
+                    },
+                    "propertyName": "provided"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ProvidedGuestContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/UnprovidedGuestContent"
+                    }
+                  ],
+                  "title": "Response Get Guest Content Api Customer Session  Session Id  Content  Language  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid customer session request"
+          },
+          "404": {
+            "description": "Session or language not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Customer session operation failed"
+          }
+        },
+        "summary": "The live storage mode and Studio's guest texts and form for one language",
+        "tags": [
+          "customer",
+          "customer"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/languages": {
+      "get": {
+        "operationId": "get_guest_languages_api_customer_session__session_id__languages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestLanguagesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Invalid customer session request"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Customer session operation failed"
+          }
+        },
+        "summary": "The guest languages, with Studio's names and icons where Studio provides them",
         "tags": [
           "customer",
           "customer"

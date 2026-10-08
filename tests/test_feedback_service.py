@@ -676,13 +676,13 @@ class TestFeedbackJustAfterTheConversationEnds:
         """A pasted epoch timestamp overflows timedelta; the default absorbs it."""
         from services.api_gateway.feedback.service import (
             DEFAULT_GRACE_MINUTES,
-            _configured_grace_window,
+            configured_grace_window,
         )
 
         default = timedelta(minutes=DEFAULT_GRACE_MINUTES)
         for value in ("1757808000000", "-5", "half an hour", "30.5"):
             monkeypatch.setenv(FEEDBACK_GRACE_ENV, value)
-            assert _configured_grace_window() == default, value
+            assert configured_grace_window() == default, value
 
 
 class TestAnIdNoSessionCouldCarry:
