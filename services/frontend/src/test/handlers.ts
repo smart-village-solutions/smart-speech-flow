@@ -1,4 +1,12 @@
 import { http, HttpResponse } from 'msw';
+import {
+  GUEST_LANGUAGE_CODES,
+  INSTALLATION_ETAG,
+  guestContentBody,
+  guestLanguagesBody,
+  installationBody,
+  staffContentBody,
+} from './contentFixtures';
 
 export const SESSION_ID = 'A1B2C3D4';
 
@@ -107,6 +115,23 @@ export const handlers = [
       timestamp: '2026-08-26T12:30:00+00:00',
     })
   ),
+
+  http.get('*/api/content/installation', () =>
+    HttpResponse.json(installationBody, {
+      headers: { ETag: INSTALLATION_ETAG, 'Cache-Control': 'public, max-age=60' },
+    })
+  ),
+
+  http.get('*/api/customer/session/:id/languages', () => HttpResponse.json(guestLanguagesBody)),
+
+  http.get('*/api/customer/session/:id/content/:language', ({ params }) => {
+    const language = String(params.language);
+    return (GUEST_LANGUAGE_CODES as readonly string[]).includes(language)
+      ? HttpResponse.json(guestContentBody(language))
+      : HttpResponse.json({ detail: 'Language not supported' }, { status: 404 });
+  }),
+
+  http.get('*/api/admin/content', () => HttpResponse.json(staffContentBody)),
 
   // Shapes follow the gateway routes; a fixture that drifts from them hides mapper bugs.
   http.get('*/api/customer/session/:id', ({ params }) =>

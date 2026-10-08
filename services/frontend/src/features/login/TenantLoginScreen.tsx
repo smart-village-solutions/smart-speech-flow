@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { useFeedback } from '@/app/providers/feedback';
 import { useScreenLocale } from '@/app/providers/locale';
 import { useServices } from '@/app/providers/services';
+import { useLoginCopy } from '@/features/content/useInstallationCopy';
 import { AppHeader } from '@/ui/patterns/AppHeader';
+import { RichText } from '@/ui/patterns/RichText';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
 import { StartPageFooter } from '@/ui/patterns/StartPageFooter';
 import { Button } from '@/ui/primitives/Button';
@@ -15,6 +17,7 @@ export function TenantLoginScreen() {
   const { t } = useTranslation();
   const { openFeedback } = useFeedback();
   const { loginTenant } = useServices();
+  const copy = useLoginCopy();
   const navigate = useNavigate();
 
   useScreenLocale('de');
@@ -40,11 +43,11 @@ export function TenantLoginScreen() {
       <main className="flex w-full flex-1 flex-col px-5 pb-10 pt-content-top">
         <div className="mx-auto w-full max-w-sm">
           <h1 className="mb-4 text-center text-title font-bold leading-tight tracking-title text-fg-strong">
-            {t('admin.tenantLogin.title')}
+            {copy.headline}
           </h1>
-          <p className="mb-10 text-center text-body leading-prose tracking-prose text-fg-body">
-            {t('admin.tenantLogin.instruction')}
-          </p>
+          <div className="mb-10 flex flex-col gap-5 text-center text-body leading-prose tracking-prose text-fg-body">
+            <RichText html={copy.descriptionHtml} />
+          </div>
 
           {tenants.isPending && (
             <div className="flex justify-center">

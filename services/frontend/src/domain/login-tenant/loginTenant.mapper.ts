@@ -1,3 +1,4 @@
+import { isSafeHttpsUrl } from '@/core/http/url';
 import type { LoginTenant } from './loginTenant.types';
 
 export interface LoginTenantDirectoryDto {
@@ -17,13 +18,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isStudioUrl(value: unknown): value is string | undefined {
   if (value === undefined) return true;
-  if (!isNonBlankString(value)) return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && url.username === '' && url.password === '';
-  } catch {
-    return false;
-  }
+  return isNonBlankString(value) && isSafeHttpsUrl(value);
 }
 
 function isLoginTenantDirectoryDto(value: unknown): value is LoginTenantDirectoryDto {

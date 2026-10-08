@@ -1,16 +1,16 @@
 ## 1. v2 models and clients (backend, not wired)
 
-- [ ] 1.1 Add `studio_v2.py` with the policy view and lenient content models for the runtime and installation bodies, including feedback question unions and cross-field checks
-- [ ] 1.2 Add fixtures from the production responses (both tenants, installation) and negative cases per validator
-- [ ] 1.3 Add `StudioRuntimeV2Client` and `StudioInstallationClient`; accept `2.x` bodies and `1.x`/`2.x` error envelopes
-- [ ] 1.4 Build one shared `StudioRuntimeTokenProvider` in the lifespan and inject it into all Studio clients
+- [x] 1.1 Add `studio_v2.py` with the policy view and lenient content models for the runtime and installation bodies, including feedback question unions and cross-field checks
+- [x] 1.2 Add fixtures from the production responses (both tenants, installation) and negative cases per validator
+- [x] 1.3 Add `StudioRuntimeV2Client` and `StudioInstallationClient`; accept `2.x` bodies and `1.x`/`2.x` error envelopes
+- [x] 1.4 Build one shared `StudioRuntimeTokenProvider` in the lifespan and inject it into all Studio clients
 
 ## 2. Studio mock on v2
 
-- [ ] 2.1 Serve both v2 endpoints in `services/studio_mock`, keep `/v1/admin-login-tenants`
-- [ ] 2.2 Add fixtures: `ask` tenant, `disabled` tenant, `retentionHours` 0 tenant, guest languages `en`, `tr`, `ar` (null icon), `kmr`, `pt-BR`
-- [ ] 2.3 Add the `storage-disabled` and `invalid-content` scenarios and a v2 error envelope
-- [ ] 2.4 Update the mock contract and compose tests
+- [x] 2.1 Serve both v2 endpoints in `services/studio_mock`, keep `/v1/admin-login-tenants`
+- [x] 2.2 Add fixtures: `ask` tenant, `disabled` tenant, `retentionHours` 0 tenant, guest languages `en`, `tr`, `ar` (null icon), `kmr`, `pt-BR`
+- [x] 2.3 Add the `storage-disabled` and `invalid-content` scenarios and a v2 error envelope
+- [x] 2.4 Update the mock contract and compose tests
 
 ## 3. Cutover to v2
 
@@ -39,15 +39,15 @@
 
 ## 6. Frontend: feedback form from a definition
 
-- [ ] 6.1 Introduce `FeedbackFormDefinition` and build the bundled form from i18n keys with Studio's question ids
-- [ ] 6.2 Render rating, scale and longText questions generically with required validation; keep the v1 submission payload unchanged
-- [ ] 6.3 Change `openFeedback` to a context of public, guest or staff and update its call sites
+- [x] 6.1 Introduce `FeedbackFormDefinition` and build the bundled form from i18n keys with Studio's question ids
+- [x] 6.2 Render rating, scale and longText questions generically with required validation; keep the v1 submission payload unchanged
+- [x] 6.3 Change `openFeedback` to a context of public, guest or staff and update its call sites
 
 ## 7. Frontend: content layer, safe markup, start and login pages
 
-- [ ] 7.1 Add `src/domain/content` (types, port, repository, zod mapper) and wire it into the services
-- [ ] 7.2 Add the `RichText` pattern and a test that forbids `dangerouslySetInnerHTML`
-- [ ] 7.3 Use installation texts on the start and login pages, with bundled fallback
+- [x] 7.1 Add `src/domain/content` (types, port, repository, zod mapper) and wire it into the services
+- [x] 7.2 Add the `RichText` pattern and a test that forbids `dangerouslySetInnerHTML`
+- [x] 7.3 Use installation texts on the start and login pages, with bundled fallback
 
 ## 8. Frontend: legal links, logo and favicon
 

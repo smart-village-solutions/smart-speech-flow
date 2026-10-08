@@ -21,6 +21,8 @@ import { createStaticBrandSource } from '@/domain/brand/StaticBrandSource';
 import type { BrandSource } from '@/domain/brand/brand.port';
 import { createLoginTenantRepository } from '@/domain/login-tenant/loginTenant.repository';
 import type { LoginTenantRepository } from '@/domain/login-tenant/loginTenant.repository';
+import { createContentRepository } from '@/domain/content/content.repository';
+import type { ContentSource } from '@/domain/content/content.port';
 
 export interface Services {
   config: AppConfig;
@@ -30,6 +32,7 @@ export interface Services {
   health: HealthRepository;
   admin: AdminRepository;
   loginTenant: LoginTenantRepository;
+  content: ContentSource;
   feedback: FeedbackSink;
   brand: BrandSource;
   audio: AudioOutput;
@@ -55,6 +58,7 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     health: createHealthRepository(http),
     admin,
     loginTenant: createLoginTenantRepository(http),
+    content: createContentRepository(http),
     brand: createStaticBrandSource(config.brand),
     audio,
     clips: createBrowserClipLoader(http, audio),

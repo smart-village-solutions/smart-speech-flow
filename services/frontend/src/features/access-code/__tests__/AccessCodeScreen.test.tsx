@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { Route, Routes, useParams } from 'react-router-dom';
 import { server } from '@/test/setup';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { installationBody } from '@/test/contentFixtures';
+import { ContentSettled } from '@/test/ContentSettled';
 import { AccessCodeScreen } from '@/features/access-code/AccessCodeScreen';
 
 function LanguageScreen() {
@@ -20,9 +22,29 @@ function tree() {
   );
 }
 
+function serveInstallation(overrides: Partial<typeof installationBody>) {
+  server.use(
+    http.get('*/api/content/installation', () =>
+      HttpResponse.json({ ...installationBody, ...overrides })
+    )
+  );
+}
+
+/** Renders the start page and waits until its installation content has arrived or failed. */
+async function renderSettled(options?: Parameters<typeof renderWithProviders>[1]) {
+  renderWithProviders(
+    <>
+      {tree()}
+      <ContentSettled />
+    </>,
+    options
+  );
+  await screen.findByTestId('public-content-settled');
+}
+
 describe('AccessCodeScreen', () => {
-  it('uses the shared fixed header above the start-page content', () => {
-    renderWithProviders(tree(), { brand: 'kassel' });
+  it('uses the shared fixed header above the start-page content', async () => {
+    await renderSettled({ brand: 'kassel' });
 
     const header = screen.getByRole('banner');
     expect(header).toHaveClass('bg-white');
@@ -76,13 +98,16 @@ describe('AccessCodeScreen', () => {
     expect(screen.getAllByRole('textbox')[0]).toHaveValue('Z');
   });
 
-  it('offers the tenant login chooser link', () => {
-    renderWithProviders(tree());
-    expect(screen.getByRole('link', { name: 'Login' })).toHaveAttribute('href', '/login');
+  it('offers the tenant login chooser link', async () => {
+    await renderSettled();
+    expect(screen.getByRole('link', { name: 'Login für Nutzer' })).toHaveAttribute(
+      'href',
+      '/login'
+    );
   });
 
-  it('keeps both funding logos side by side in the start-page footer', () => {
-    renderWithProviders(tree());
+  it('keeps both funding logos side by side in the start-page footer', async () => {
+    await renderSettled();
 
     const funding = screen.getByRole('img', { name: 'Fördermittelgeber' });
     const city = screen.getByRole('img', { name: 'Stadt Kassel' });
@@ -96,5 +121,52 @@ describe('AccessCodeScreen', () => {
     const footer = funding.closest('footer');
     expect(footer).toHaveClass('w-screen', 'bg-white', 'shadow-[0_-2px_6px_rgba(0,0,0,0.08)]');
     expect(document.querySelector('[data-screen-shell]')).toHaveClass('overflow-x-clip');
+  });
+
+  describe('installation texts', () => {
+    it('shows Studio texts on the German start page', async () => {
+      serveInstallation({
+        startpage: { enterCode: 'Gesprächscode eingeben', send: 'Los', login: 'Login für Nutzer' },
+      });
+
+      await renderSettled();
+
+      expect(screen.getByRole('heading', { name: 'Gesprächscode eingeben' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Los' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Login für Nutzer' })).toHaveAttribute(
+        'href',
+        '/login'
+      );
+    });
+
+    it('keeps bundled texts while installation content is unavailable (503)', async () => {
+      server.use(
+        http.get('*/api/content/installation', () =>
+          HttpResponse.json(
+            { detail: 'Studio content is temporarily unavailable' },
+            { status: 503 }
+          )
+        )
+      );
+
+      await renderSettled();
+
+      expect(screen.getByRole('heading', { name: 'Code eingeben' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Weiter' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Login' })).toHaveAttribute('href', '/login');
+    });
+
+    it('keeps bundled texts when the content is in another language', async () => {
+      serveInstallation({
+        locale: 'en-GB',
+        startpage: { enterCode: 'Enter code', send: 'Next', login: 'Staff login' },
+      });
+
+      await renderSettled();
+
+      expect(screen.getByRole('heading', { name: 'Code eingeben' })).toBeInTheDocument();
+      expect(screen.queryByText('Enter code')).not.toBeInTheDocument();
+      expect(screen.queryByText('Staff login')).not.toBeInTheDocument();
+    });
   });
 });

@@ -6,6 +6,7 @@ import { useScreenLocale } from '@/app/providers/locale';
 import { useMutation } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
 import { useFeedback } from '@/app/providers/feedback';
+import { useStartpageCopy } from '@/features/content/useInstallationCopy';
 import { isJoinable } from '@/domain/session/session.types';
 import { AppError } from '@/core/http/AppError';
 import { Button } from '@/ui/primitives/Button';
@@ -19,6 +20,7 @@ export function AccessCodeScreen() {
   const { t } = useTranslation();
   const { openFeedback } = useFeedback();
   const { session } = useServices();
+  const copy = useStartpageCopy();
   const navigate = useNavigate();
 
   const [code, setCode] = useState('');
@@ -59,7 +61,7 @@ export function AccessCodeScreen() {
 
       <div className="flex w-full flex-1 flex-col items-center justify-center px-5 pt-content-top">
         <h1 className="mb-10 text-center text-title font-bold leading-tight tracking-title text-fg-strong">
-          {t('accessCode.title')}
+          {copy.enterCode}
         </h1>
 
         <CodeInput
@@ -75,7 +77,7 @@ export function AccessCodeScreen() {
           onClick={() => submit.mutate(normalized)}
           className="bg-accent text-accent-on"
         >
-          {t('accessCode.continue')}
+          {copy.send}
           <ArrowRight size={16} strokeWidth={2.5} />
         </Button>
 
@@ -90,7 +92,7 @@ export function AccessCodeScreen() {
             to="/login"
             className="text-note font-normal tracking-link text-fg-link underline underline-offset-2 transition-colors duration-200 hover:text-fg-link-hover"
           >
-            {t('admin.tenantLogin.title')}
+            {copy.login}
           </Link>
         </div>
       </div>
