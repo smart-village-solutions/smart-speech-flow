@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useFeedback } from '@/app/providers/feedback';
+import { guestOrigin } from '@/domain/feedback/feedbackOrigin';
 import { AppHeader } from '@/ui/patterns/AppHeader';
 import { ConversationSurface } from './ConversationSurface';
 import { useConversationScreen } from './useConversationScreen';
@@ -18,7 +19,7 @@ export function ConversationScreen() {
         <AppHeader
           onBack={() => void navigate(`/s/${sessionId}/language`)}
           onHome={() => void navigate('/')}
-          onFeedback={() => openFeedback(sessionId ?? null)}
+          onFeedback={() => openFeedback(guestOrigin(sessionId))}
         />
       }
     />

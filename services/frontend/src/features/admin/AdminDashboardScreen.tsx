@@ -36,7 +36,7 @@ export function AdminDashboardScreen({
       <AdminHeader
         onBack={() => navigate(-1)}
         onHome={() => void navigate('/')}
-        onFeedback={() => openFeedback(null)}
+        onFeedback={() => openFeedback({ kind: 'staff', sessionId: null })}
         onSignOut={onSignOut}
         accountUrl={accountUrl}
         studioUrl={studioUrl}

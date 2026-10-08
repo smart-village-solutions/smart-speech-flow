@@ -2,6 +2,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useScreenLocale } from '@/app/providers/locale';
 import { useFeedback } from '@/app/providers/feedback';
+import { guestOrigin } from '@/domain/feedback/feedbackOrigin';
 import { AppHeader } from '@/ui/patterns/AppHeader';
 import { FlagAvatar } from '@/ui/patterns/FlagAvatar';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
@@ -25,7 +26,7 @@ export function LanguageSelectScreen() {
       <AppHeader
         onBack={() => void navigate('/')}
         onHome={() => void navigate('/')}
-        onFeedback={() => openFeedback(sessionId ?? null)}
+        onFeedback={() => openFeedback(guestOrigin(sessionId))}
       />
 
       <div className="flex-1 overflow-y-auto px-5 pb-8 pt-content-top">

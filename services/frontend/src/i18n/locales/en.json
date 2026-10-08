@@ -78,6 +78,7 @@
       "withdrawal": "You can have your feedback withdrawn at any time — just ask a member of staff."
     },
     "stars": "{{count}} stars",
+    "required": "Required",
     "submit": "Send feedback",
     "submitting": "Sending…",
     "retry": "Send again",

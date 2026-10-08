@@ -1,3 +1,9 @@
+import type {
+  FeedbackAnswers,
+  FeedbackFormDefinition,
+  FeedbackQuestion,
+} from '@/domain/feedback/feedbackForm.types';
+
 /**
  * The Gateway rejects anything longer (MAX_IMPROVEMENTS_LENGTH in
  * services/api_gateway/feedback/models.py). Without the same limit on the
@@ -6,22 +12,8 @@
  */
 export const MAX_IMPROVEMENTS_LENGTH = 4000;
 
-export interface FeedbackFormValues {
-  quality: number;
-  performance: number;
-  usability: number;
-  nps: number;
-  improvements: string;
-}
-
-/** `nps: -1` rather than 0, because 0 is a real score on an 0-10 scale. */
-export const EMPTY_FORM: FeedbackFormValues = {
-  quality: 0,
-  performance: 0,
-  usability: 0,
-  nps: -1,
-  improvements: '',
-};
+type LongTextQuestion = Extract<FeedbackQuestion, { type: 'longText' }>;
+type NumericQuestion = Exclude<FeedbackQuestion, LongTextQuestion>;
 
 /**
  * `idle → submitting → submitted | failed`, and `failed → submitting` on retry.
@@ -30,7 +22,35 @@ export const EMPTY_FORM: FeedbackFormValues = {
  */
 export type FeedbackStatus = 'idle' | 'submitting' | 'submitted' | 'failed';
 
-/** Export 140: three stars set and a score chosen. The free text is optional. */
-export function isComplete(values: FeedbackFormValues): boolean {
-  return values.quality > 0 && values.performance > 0 && values.usability > 0 && values.nps >= 0;
+/**
+ * Every required question answered, every number within its range, every text
+ * within its limit once trimmed. For the bundled form this is export 140:
+ * three stars set and a score chosen, the free text optional.
+ */
+export function isComplete(definition: FeedbackFormDefinition, answers: FeedbackAnswers): boolean {
+  return definition.questions.every((question) => fits(question, answers[question.id] ?? null));
+}
+
+function fits(question: FeedbackQuestion, value: number | string | null): boolean {
+  if (value === null) {
+    return !question.required;
+  }
+  return question.type === 'longText' ? textFits(question, value) : numberFits(question, value);
+}
+
+function textFits(question: LongTextQuestion, value: number | string): boolean {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const text = value.trim();
+  return text.length <= question.maxLength && (text !== '' || !question.required);
+}
+
+function numberFits(question: NumericQuestion, value: number | string): boolean {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= question.min &&
+    value <= question.max
+  );
 }

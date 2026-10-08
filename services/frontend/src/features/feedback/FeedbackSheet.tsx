@@ -1,20 +1,22 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Lightbulb, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useServices } from '@/app/providers/services';
-import { AppError } from '@/core/http/AppError';
+import type { FeedbackOrigin } from '@/domain/feedback/feedback.types';
+import type { FeedbackAnswers } from '@/domain/feedback/feedbackForm.types';
 import { cn } from '@/lib/cn';
 import { IconButton } from '@/ui/primitives/IconButton';
 import { FeedbackForm } from './FeedbackForm';
 import { FeedbackThanks } from './FeedbackThanks';
-import { EMPTY_FORM } from './feedback.state';
-import type { FeedbackStatus } from './feedback.state';
+import { useFeedbackForm } from './useFeedbackForm';
+import { useFeedbackSubmission } from './useFeedbackSubmission';
+
+const PUBLIC: FeedbackOrigin = { kind: 'public' };
 
 interface FeedbackSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  sessionId?: string | null;
+  origin?: FeedbackOrigin;
 }
 
 /**
@@ -26,37 +28,19 @@ interface FeedbackSheetProps {
 export function FeedbackSheet({
   open,
   onOpenChange,
-  sessionId = null,
+  origin = PUBLIC,
 }: Readonly<FeedbackSheetProps>) {
   const { t } = useTranslation();
-  const { feedback } = useServices();
-  const [values, setValues] = useState(EMPTY_FORM);
-  const [status, setStatus] = useState<FeedbackStatus>('idle');
-  const [reasonKey, setReasonKey] = useState<string | null>(null);
-  const [retryable, setRetryable] = useState(true);
-
-  // A result belonging to a closed sheet is discarded, whichever way it went.
-  //
-  // Keeping a late success looks kinder -- the row is stored, so confirming it
-  // would stop the user resubmitting -- but it cannot be done reliably here.
-  // The reset below is deferred 300ms for the exit animation, so a response
-  // landing inside that window is wiped anyway and one landing after it is
-  // kept: the same action would produce two different screens depending on
-  // network timing. Worse, the kept state outlives its sheet, so the next
-  // open -- possibly from another screen entirely -- greets the user with a
-  // thank-you for feedback they gave minutes ago, with no form to fill in.
-  //
-  // Deterministic and slightly less kind beats kind and unpredictable.
-  const attempt = useRef(0);
+  const form = useFeedbackForm(origin);
+  const submission = useFeedbackSubmission(form);
+  const [answers, setAnswers] = useState<FeedbackAnswers>({});
 
   const close = () => {
-    attempt.current += 1;
+    submission.discard();
     onOpenChange(false);
     window.setTimeout(() => {
-      setValues(EMPTY_FORM);
-      setStatus('idle');
-      setReasonKey(null);
-      setRetryable(true);
+      setAnswers({});
+      submission.reset();
     }, 300);
   };
 
@@ -64,37 +48,10 @@ export function FeedbackSheet({
   // outlive an edit. Without this the sheet has a dead end: a submission
   // refused as terminal leaves the button disabled for the life of the sheet,
   // and the only way out is Close, which discards every rating entered.
-  const edit = (next: typeof values) => {
-    setValues(next);
-    if (status === 'failed') {
-      setStatus('idle');
-      setReasonKey(null);
-      setRetryable(true);
-    }
-  };
-
-  const submit = async () => {
-    const current = attempt.current;
-    setStatus('submitting');
-    setReasonKey(null);
-
-    try {
-      await feedback.submit({
-        translationQuality: values.quality,
-        performance: values.performance,
-        usability: values.usability,
-        netPromoterScore: values.nps,
-        improvements: values.improvements,
-        sessionId,
-      });
-      if (attempt.current !== current) return;
-      setStatus('submitted');
-    } catch (error) {
-      if (attempt.current !== current) return;
-      // Nothing is reset: the entered values are the whole point of the retry.
-      setReasonKey(error instanceof AppError ? error.userMessageKey : 'errors.unknown');
-      setRetryable(!(error instanceof AppError) || error.retryable);
-      setStatus('failed');
+  const edit = (next: FeedbackAnswers) => {
+    setAnswers(next);
+    if (submission.status === 'failed') {
+      submission.reset();
     }
   };
 
@@ -118,7 +75,7 @@ export function FeedbackSheet({
             <div className="flex items-center gap-2">
               <Lightbulb size={18} strokeWidth={2} className="text-accent" />
               <Dialog.Title className="text-item font-semibold text-fg-strong">
-                {t('feedback.title')}
+                {form.definition.headline}
               </Dialog.Title>
             </div>
             <IconButton label={t('feedback.close')} tone="close" onClick={close}>
@@ -128,16 +85,17 @@ export function FeedbackSheet({
 
           <div className="mx-5 border-t border-border-divider" />
 
-          {status === 'submitted' ? (
+          {submission.status === 'submitted' ? (
             <FeedbackThanks onClose={close} />
           ) : (
             <FeedbackForm
-              values={values}
+              definition={form.definition}
+              answers={answers}
               onChange={edit}
-              onSubmit={() => void submit()}
-              status={status}
-              reasonKey={reasonKey}
-              retryable={retryable}
+              onSubmit={() => void submission.submit(answers)}
+              status={submission.status}
+              reasonKey={submission.reasonKey}
+              retryable={submission.retryable}
             />
           )}
         </Dialog.Content>

@@ -78,6 +78,7 @@
       "withdrawal": "Sie können Ihr Feedback jederzeit widerrufen lassen – wenden Sie sich dazu an das Personal vor Ort."
     },
     "stars": "{{count}} Sterne",
+    "required": "Pflichtangabe",
     "submit": "Feedback senden",
     "submitting": "Wird gesendet…",
     "retry": "Erneut senden",

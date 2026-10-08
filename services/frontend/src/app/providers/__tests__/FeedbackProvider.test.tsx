@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { useFeedback } from '@/app/providers/feedback';
 import { createStubFeedbackSink } from '@/domain/feedback/StubFeedbackSink';
+import type { FeedbackOrigin } from '@/domain/feedback/feedback.types';
 
 /**
  * The provider sits above <Routes>, so useParams cannot reach a session here.
@@ -15,7 +16,17 @@ function Opener({ sessions }: Readonly<{ sessions: (string | null)[] }>) {
   return (
     <>
       {sessions.map((session) => (
-        <button key={String(session)} type="button" onClick={() => openFeedback(session)}>
+        <button
+          key={String(session)}
+          type="button"
+          onClick={() =>
+            openFeedback(
+              session === null
+                ? { kind: 'staff', sessionId: null }
+                : { kind: 'guest', sessionId: session }
+            )
+          }
+        >
           {`open ${String(session)}`}
         </button>
       ))}
@@ -88,6 +99,37 @@ describe('FeedbackProvider', () => {
 
     await waitFor(() =>
       expect(recorded).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'E5F6G7H8' }))
+    );
+  });
+});
+
+function OriginOpener({ origin }: Readonly<{ origin: FeedbackOrigin }>) {
+  const { openFeedback } = useFeedback();
+
+  return (
+    <button type="button" onClick={() => openFeedback(origin)}>
+      open
+    </button>
+  );
+}
+
+describe('openFeedback contexts', () => {
+  it.each([
+    ['public', { kind: 'public' } as const, null],
+    ['guest', { kind: 'guest', sessionId: 'A1B2C3D4' } as const, 'A1B2C3D4'],
+    ['staff in a session', { kind: 'staff', sessionId: 'E5F6G7H8' } as const, 'E5F6G7H8'],
+    ['staff on the dashboard', { kind: 'staff', sessionId: null } as const, null],
+  ])('carries a %s context through to the submission', async (_name, origin, sessionId) => {
+    const recorded = vi.fn();
+    renderWithProviders(<OriginOpener origin={origin} />, {
+      services: { feedback: createStubFeedbackSink(recorded) },
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'open' }));
+    await submitTheForm();
+
+    await waitFor(() =>
+      expect(recorded).toHaveBeenCalledWith(expect.objectContaining({ sessionId }))
     );
   });
 });
