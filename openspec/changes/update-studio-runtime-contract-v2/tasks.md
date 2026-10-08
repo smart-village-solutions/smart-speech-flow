@@ -58,9 +58,9 @@
 
 ## 9. Frontend: guest screens
 
-- [ ] 9.1 Show Studio names and icons in the language picker for Studio-provided languages
-- [ ] 9.2 Use Studio explanation and storage question for Studio-provided languages; hide the question when the mode is `disabled` or unknown
-- [ ] 9.3 Prefetch guest content on the language screen
+- [x] 9.1 Show Studio names and icons in the language picker for Studio-provided languages
+- [x] 9.2 Use Studio explanation and storage question for Studio-provided languages; hide the question when the mode is `disabled` or unknown
+- [x] 9.3 Prefetch guest content on the language screen
 
 ## 10. Frontend: staff screens
 
