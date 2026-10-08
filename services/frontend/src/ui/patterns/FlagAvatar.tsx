@@ -4,6 +4,8 @@ import { flagCodeFor } from './flags';
 
 interface FlagAvatarProps {
   language: Language;
+  /** Replaces the bundled flag, e.g. Studio's icon for the language. */
+  iconUrl?: string | null;
   size?: '2xs' | 'xs' | 'sm' | 'lg';
   className?: string;
 }
@@ -16,8 +18,14 @@ const DIMENSION = {
   lg: 'size-flag-lg',
 } as const;
 
-export function FlagAvatar({ language, size = 'sm', className }: Readonly<FlagAvatarProps>) {
+export function FlagAvatar({
+  language,
+  iconUrl,
+  size = 'sm',
+  className,
+}: Readonly<FlagAvatarProps>) {
   const flagCode = flagCodeFor(language.code);
+  const src = iconUrl ?? (flagCode === null ? null : `/flags/${flagCode}.png`);
   const dimension = DIMENSION[size];
 
   return (
@@ -28,13 +36,13 @@ export function FlagAvatar({ language, size = 'sm', className }: Readonly<FlagAv
         className
       )}
     >
-      {flagCode === null ? (
+      {src === null ? (
         <span className="flex size-full items-center justify-center bg-surface-field text-meta font-semibold text-fg-muted">
           {language.code.toUpperCase()}
         </span>
       ) : (
         <img
-          src={`/flags/${flagCode}.png`}
+          src={src}
           alt={language.english}
           className="size-full object-cover"
           draggable={false}

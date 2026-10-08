@@ -11,6 +11,7 @@ export const contentKeys = {
   public: ['content', 'public'] as const,
   guest: (sessionId: string, language: string) =>
     ['content', 'guest', sessionId, language] as const,
+  guestLanguages: (sessionId: string) => ['content', 'languages', sessionId] as const,
   staff: ['content', 'staff'] as const,
 };
 

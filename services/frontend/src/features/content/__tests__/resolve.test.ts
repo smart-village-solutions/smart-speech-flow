@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { htmlOr, inLocale, sameLanguage, textOr } from '@/features/content/resolve';
+import { htmlOr, inLocale, sameLanguage, studioHtml, textOr } from '@/features/content/resolve';
 
 describe('sameLanguage', () => {
   it.each([
@@ -53,4 +53,17 @@ describe('htmlOr', () => {
     expect(htmlOr(undefined, 'A < B & "C" > D')).toBe('<p>A &lt; B &amp; "C" &gt; D</p>');
     expect(htmlOr(' ', 'Bundled')).toBe('<p>Bundled</p>');
   });
+});
+
+describe('studioHtml', () => {
+  it("returns Studio's markup when it carries text", () => {
+    expect(studioHtml('<p>Studio <em>text</em></p>')).toBe('<p>Studio <em>text</em></p>');
+  });
+
+  it.each([null, undefined, '', '   ', '<p></p>', '<p> </p><br>'])(
+    'treats %j as missing',
+    (studio) => {
+      expect(studioHtml(studio)).toBeUndefined();
+    }
+  );
 });

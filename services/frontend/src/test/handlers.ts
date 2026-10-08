@@ -1,4 +1,4 @@
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse, type JsonBodyType } from 'msw';
 import {
   GUEST_LANGUAGE_CODES,
   INSTALLATION_ETAG,
@@ -9,6 +9,39 @@ import {
 } from './contentFixtures';
 
 export const SESSION_ID = 'A1B2C3D4';
+
+export const GUEST_LANGUAGES_ROUTE = '*/api/customer/session/:id/languages';
+const GUEST_CONTENT_ROUTE = '*/api/customer/session/:id/content/:language';
+
+const isGuestLanguage = (language: string) =>
+  (GUEST_LANGUAGE_CODES as readonly string[]).includes(language);
+
+/** The content route: `respond` for the nine guest languages, the gateway's 404 for any other. */
+export function guestContentHandler(respond: (language: string) => Response | Promise<Response>) {
+  return http.get(GUEST_CONTENT_ROUTE, ({ params }) => {
+    const language = String(params.language);
+    return isGuestLanguage(language)
+      ? respond(language)
+      : HttpResponse.json({ detail: 'Language not supported' }, { status: 404 });
+  });
+}
+
+export function guestLanguagesHandler(body: JsonBodyType) {
+  return http.get(GUEST_LANGUAGES_ROUTE, () => HttpResponse.json(body));
+}
+
+/** Holds every content request until `release`, for the wait and timeout cases. */
+export function holdGuestContent() {
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const handler = guestContentHandler(async (language) => {
+    await released;
+    return HttpResponse.json(guestContentBody(language));
+  });
+  return { handler, release };
+}
 
 export const handlers = [
   http.get('*/api/login/tenants', () =>
@@ -122,14 +155,9 @@ export const handlers = [
     })
   ),
 
-  http.get('*/api/customer/session/:id/languages', () => HttpResponse.json(guestLanguagesBody)),
+  guestLanguagesHandler(guestLanguagesBody),
 
-  http.get('*/api/customer/session/:id/content/:language', ({ params }) => {
-    const language = String(params.language);
-    return (GUEST_LANGUAGE_CODES as readonly string[]).includes(language)
-      ? HttpResponse.json(guestContentBody(language))
-      : HttpResponse.json({ detail: 'Language not supported' }, { status: 404 });
-  }),
+  guestContentHandler((language) => HttpResponse.json(guestContentBody(language))),
 
   http.get('*/api/admin/content', () => HttpResponse.json(staffContentBody)),
 

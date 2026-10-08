@@ -28,7 +28,8 @@
     "retention": "Ji xwe, daneyên deng û nivîsandinê tenê di dema danişîna çalak de tên pêvajokirin û paşê nayên hilanîn. Piştî ku axaftin diqede, dane bixweber tên jêbirin. Tu dikarî her dem bi fonksiyona nêrînan a di sepanê de kêşeyan ragihînî an pêşniyarên baştirkirinê parve bikî.",
     "optIn": "Heke tu bixwazî alîkariya me bikî ku $t(app.name) baştir bibe, tu dikarî destûrê bidî ku daneyên axaftina te heta 180 rojan bên hilanîn. Ev dane tenê ji bo analîz û baştirkirina kalîteyê di çarçoveya projeya $t(app.name) de tên bikaranîn.",
     "checkbox": "Ez razî me ku daneyên axaftina min ji bo baştirkirina $t(app.name) heta 180 rojan bên hilanîn.",
-    "getStarted": "Dest pê bike"
+    "getStarted": "Dest pê bike",
+    "loading": "Agahî tê barkirin"
   },
   "conversation": {
     "record": "Tomar bike",
