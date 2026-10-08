@@ -37,7 +37,7 @@ async function renderSettled(options?: Parameters<typeof renderWithProviders>[1]
       {tree()}
       <ContentSettled />
     </>,
-    options
+    { publicContent: 'fetched', ...options }
   );
   await screen.findByTestId('public-content-settled');
 }

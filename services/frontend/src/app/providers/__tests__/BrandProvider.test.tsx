@@ -7,10 +7,10 @@ import { useBrand } from '@/app/providers/brand';
 import { createStaticBrandSource } from '@/domain/brand/StaticBrandSource';
 
 function Probe() {
-  const { brand, displayName, toggleBrand } = useBrand();
+  const { brand, displayName, legal, toggleBrand } = useBrand();
   return (
     <button type="button" onClick={toggleBrand}>
-      {brand}:{displayName}
+      {brand}:{displayName}:{legal.imprintUrl ?? 'no imprint'}
     </button>
   );
 }
@@ -29,7 +29,7 @@ describe('BrandProvider', () => {
       </I18nProvider>
     );
 
-    expect(screen.getByRole('button')).toHaveTextContent('ssf:KasselDIALOG');
+    expect(screen.getByRole('button')).toHaveTextContent('ssf:KasselDIALOG:no imprint');
     expect(document.documentElement).toHaveAttribute('data-brand', 'ssf');
   });
 
@@ -44,7 +44,9 @@ describe('BrandProvider', () => {
 
     await userEvent.click(screen.getByRole('button'));
 
-    expect(screen.getByRole('button')).toHaveTextContent('kassel:KasselDIALOG');
+    expect(screen.getByRole('button')).toHaveTextContent(
+      'kassel:KasselDIALOG:https://www.kassel.de/impressum.php'
+    );
     expect(document.documentElement).toHaveAttribute('data-brand', 'kassel');
   });
 });

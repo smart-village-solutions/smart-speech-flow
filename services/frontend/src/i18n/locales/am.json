@@ -94,5 +94,12 @@
     "server": "በእኛ በኩል የሆነ ችግር ተፈጥሯል።",
     "noSpeech": "ምንም ንግግር አልተለየም። እባክዎ እንደገና ይሞክሩ።",
     "unknown": "የሆነ ችግር ተፈጥሯል።"
+  },
+  "legal": {
+    "label": "ሕጋዊ መረጃ",
+    "imprint": "የአሳታሚ መረጃ",
+    "privacyPolicy": "ግላዊነት",
+    "accessibilityStatement": "ተደራሽነት",
+    "opensInNewTab": "(በአዲስ ትር ይከፈታል)"
   }
 }

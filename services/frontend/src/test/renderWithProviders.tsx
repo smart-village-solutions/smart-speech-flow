@@ -18,6 +18,9 @@ import type { BrandId } from '@/app/config/env';
 import type { AudioPlayerPort } from '@/core/audio/player.port';
 import type { ClipLoader } from '@/core/audio/clips';
 import { WAVE_HEIGHTS } from '@/core/audio/waveform';
+import { toPublicContent } from '@/domain/content/content.mapper';
+import { contentKeys } from '@/features/content/contentQuery';
+import { installationBody } from './contentFixtures';
 import { createFakeAudioOutput } from './fakeAudioOutput';
 import { createFakeAudioPlayer } from './fakeAudioPlayer';
 import { createFakeRealtimeTransport } from './fakeRealtimeTransport';
@@ -33,6 +36,13 @@ interface Options {
   player?: AudioPlayerPort;
   /** Supplies waveform shapes; jsdom implements no Web Audio at all. */
   clips?: ClipLoader;
+  /**
+   * `seeded` (the default) starts with installation content in the cache, as
+   * every screen does in production once `PublicContentGate` has opened.
+   * `fetched` leaves it to the screen's own request, for tests that drive the
+   * installation route; they await `ContentSettled`.
+   */
+  publicContent?: 'seeded' | 'fetched';
 }
 
 export function renderWithProviders(ui: ReactElement, options: Options = {}): RenderResult {
@@ -56,6 +66,9 @@ export function renderWithProviders(ui: ReactElement, options: Options = {}): Re
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  if ((options.publicContent ?? 'seeded') === 'seeded') {
+    queryClient.setQueryData(contentKeys.public, toPublicContent(installationBody));
+  }
 
   function Localised({ children }: Readonly<{ children: ReactNode }>) {
     const { locale: active } = useLocale();

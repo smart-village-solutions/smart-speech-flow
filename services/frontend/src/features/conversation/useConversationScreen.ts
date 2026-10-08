@@ -4,6 +4,7 @@ import type { ClientRole } from '@/core/roles';
 import { useAudioRecorder } from '@/core/audio/useAudioRecorder';
 import type { ChatMessage } from '@/domain/message/message.types';
 import { hasConversationStatus } from './conversation.status';
+import { conversationOffsets } from './conversationOffsets';
 import { useComposer } from './useComposer';
 import { useConversation } from './useConversation';
 import { useConversationPlayback } from './useConversationPlayback';
@@ -44,7 +45,7 @@ export function useConversationScreen(sessionId: string, role: ClientRole) {
   // baseline, so its composer sits a step higher. Applied here rather than in
   // the surface because the send flight launches from this value.
   const composerLift = role === 'admin' ? 'var(--spacing-composer-lift)' : '0px';
-  const bottom = `calc(${keyboardOffset}px + max(var(--spacing-mic-bottom), env(safe-area-inset-bottom)) + ${composerLift})`;
+  const { legalBottom, bottom } = conversationOffsets(keyboardOffset, composerLift);
   // The recorder callback runs outside render, so the offset it launches from
   // is mirrored into a ref after each commit.
   const bottomRef = useLatestRef(bottom);
@@ -101,6 +102,7 @@ export function useConversationScreen(sessionId: string, role: ClientRole) {
     sourceRef,
     keyboardOffset,
     bottom,
+    legalBottom,
     composerLift,
     isTyping,
     isRecording,

@@ -10,7 +10,7 @@ import { readConfig } from '@/app/config/env';
 
 const config = readConfig({ VITE_API_BASE_URL: 'http://api.test' });
 
-function setup() {
+async function setup() {
   const rendered: Services[] = [];
 
   function Probe() {
@@ -39,6 +39,8 @@ function setup() {
       <Probe />
     </AppProvidersInner>
   );
+  // PublicContentGate holds the first paint until installation content settles.
+  await screen.findByTestId('locale');
 
   return rendered;
 }
@@ -46,8 +48,28 @@ function setup() {
 const click = (name: string) => userEvent.click(screen.getByRole('button', { name }));
 
 describe('AppProvidersInner', () => {
-  it('provides the login tenant directory repository to screens', () => {
-    const [services] = setup();
+  it('holds the first paint until installation content has settled', async () => {
+    let requests = 0;
+    server.use(
+      http.get('http://api.test/api/content/installation', () => {
+        requests += 1;
+        return HttpResponse.json({ detail: 'unavailable' }, { status: 503 });
+      })
+    );
+
+    render(
+      <AppProvidersInner config={config}>
+        <p>first screen</p>
+      </AppProvidersInner>
+    );
+
+    expect(screen.queryByText('first screen')).not.toBeInTheDocument();
+    expect(await screen.findByText('first screen')).toBeInTheDocument();
+    expect(requests).toBe(1);
+  });
+
+  it('provides the login tenant directory repository to screens', async () => {
+    const [services] = await setup();
 
     expect(services.loginTenant.list).toBeTypeOf('function');
   });
@@ -56,7 +78,7 @@ describe('AppProvidersInner', () => {
   // tore down the live conversation socket and refetched history the moment the
   // session's language arrived, which is on every load of the conversation.
   it('keeps one service graph across a locale change', async () => {
-    const rendered = setup();
+    const rendered = await setup();
     const first = rendered[0];
 
     await click('switch');
@@ -83,7 +105,7 @@ describe('AppProvidersInner', () => {
       })
     );
 
-    setup();
+    await setup();
 
     await click('fetch');
     await waitFor(() => expect(locales).toHaveLength(1));

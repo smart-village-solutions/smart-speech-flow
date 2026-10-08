@@ -2,6 +2,7 @@ import { Navigate, Outlet, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useServices } from '@/app/providers/services';
 import { isJoinable } from '@/domain/session/session.types';
+import { RouteState } from './RouteState';
 
 export function RequireSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -14,7 +15,7 @@ export function RequireSession() {
   });
 
   if (query.isPending) {
-    return null;
+    return <RouteState />;
   }
 
   if (query.isError || !query.data || !isJoinable(query.data)) {

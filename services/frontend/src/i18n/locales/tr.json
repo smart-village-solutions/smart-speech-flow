@@ -94,5 +94,12 @@
     "server": "Bizim tarafımızda bir sorun oluştu.",
     "noSpeech": "Hiçbir şey anlaşılamadı. Lütfen tekrar deneyin.",
     "unknown": "Bir şeyler ters gitti."
+  },
+  "legal": {
+    "label": "Yasal bilgiler",
+    "imprint": "Künye",
+    "privacyPolicy": "Gizlilik",
+    "accessibilityStatement": "Erişilebilirlik",
+    "opensInNewTab": "(yeni sekmede açılır)"
   }
 }

@@ -1,9 +1,12 @@
 import { createContext, useContext } from 'react';
 import type { BrandId } from '@/app/config/env';
+import type { LegalLinks } from '@/domain/content/content.types';
 
 export interface BrandContextValue {
   brand: BrandId;
   displayName: string;
+  /** The active brand's bundled legal links, the fallback for Studio's. */
+  legal: LegalLinks;
   toggleBrand: () => void;
 }
 

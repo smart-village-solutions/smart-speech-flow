@@ -95,6 +95,13 @@
     "noSpeech": "Es wurde nichts erkannt. Bitte erneut versuchen.",
     "unknown": "Etwas ist schiefgelaufen."
   },
+  "legal": {
+    "label": "Rechtliches",
+    "imprint": "Impressum",
+    "privacyPolicy": "Datenschutz",
+    "accessibilityStatement": "Barrierefreiheit",
+    "opensInNewTab": "(öffnet in neuem Tab)"
+  },
   "admin": {
     "tenantLogin": {
       "title": "Login",

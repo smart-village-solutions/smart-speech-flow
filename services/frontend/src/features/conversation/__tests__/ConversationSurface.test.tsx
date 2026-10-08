@@ -29,7 +29,9 @@ const state = (): ConversationScreenState =>
     composerRef: { current: null },
     sourceRef: { current: null },
     keyboardOffset: 0,
-    bottom: 'calc(0px + 40px + 0px)',
+    // Opaque on purpose: jsdom folds a calc() of plain lengths into one length.
+    legalBottom: 'var(--test-legal-bottom)',
+    bottom: 'var(--test-buttons-bottom)',
     composerLift: '0px',
     draft: '',
     setDraft: () => undefined,
@@ -89,5 +91,30 @@ describe('ConversationSurface', () => {
     );
     const stack = container.querySelector('[data-chat-stack]');
     expect(stack).toHaveStyle({ top: '128px' });
+  });
+
+  it('puts the legal links in their own row below the buttons row', () => {
+    const { container } = renderWithProviders(
+      <ConversationSurface screen={state()} header={<h1>h</h1>} contentTop="72px" />
+    );
+
+    const legal = screen.getByRole('navigation', { name: 'Legal information' });
+    const row = legal.closest('[data-legal-row]');
+    const buttons = container.querySelector('[data-dismiss-keep]');
+    expect(row).not.toBeNull();
+    expect(buttons).not.toBeNull();
+    expect(buttons?.contains(legal)).toBe(false);
+    expect(row).toHaveStyle({ bottom: 'var(--test-legal-bottom)' });
+    expect(buttons).toHaveStyle({ bottom: 'var(--test-buttons-bottom)' });
+  });
+
+  it('gives the chat stack up to the legal band', () => {
+    const { container } = renderWithProviders(
+      <ConversationSurface screen={state()} header={<h1>h</h1>} contentTop="72px" />
+    );
+
+    expect(container.querySelector('[data-chat-stack]')?.getAttribute('style')).toContain(
+      'var(--spacing-legal-band)'
+    );
   });
 });

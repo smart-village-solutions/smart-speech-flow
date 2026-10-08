@@ -10,6 +10,7 @@ import { BrandProvider } from './BrandProvider';
 import { FeedbackProvider } from './FeedbackProvider';
 import { PlaybackProvider } from './PlaybackProvider';
 import { ServicesProvider } from './ServicesProvider';
+import { PublicContentGate } from '@/features/content/PublicContentGate';
 import { createServices } from './services';
 
 interface Props {
@@ -47,7 +48,7 @@ function LocalisedProviders({ children, config }: Readonly<Props>) {
             <BrandProvider source={services.brand}>
               <FeedbackProvider>
                 <PlaybackProvider output={services.audio} clips={services.clips}>
-                  {children}
+                  <PublicContentGate>{children}</PublicContentGate>
                 </PlaybackProvider>
               </FeedbackProvider>
             </BrandProvider>
