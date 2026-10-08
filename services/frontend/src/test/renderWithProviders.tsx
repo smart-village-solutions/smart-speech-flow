@@ -40,7 +40,8 @@ interface Options {
    * `seeded` (the default) starts with installation content in the cache, as
    * every screen does in production once `PublicContentGate` has opened.
    * `fetched` leaves it to the screen's own request, for tests that drive the
-   * installation route; they await `ContentSettled`.
+   * installation route; they await `ContentSettled`. Overriding
+   * `services.content` implies `fetched`, so the override is what answers.
    */
   publicContent?: 'seeded' | 'fetched';
 }
@@ -66,7 +67,8 @@ export function renderWithProviders(ui: ReactElement, options: Options = {}): Re
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  if ((options.publicContent ?? 'seeded') === 'seeded') {
+  const seed = options.publicContent ?? (options.services?.content ? 'fetched' : 'seeded');
+  if (seed === 'seeded') {
     queryClient.setQueryData(contentKeys.public, toPublicContent(installationBody));
   }
 

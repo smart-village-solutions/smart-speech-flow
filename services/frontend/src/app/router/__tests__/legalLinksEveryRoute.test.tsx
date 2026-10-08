@@ -111,7 +111,8 @@ describe('legal links on every route', () => {
     async ({ route, arrive, services, pendingLogin }) => {
       if (pendingLogin)
         vi.mocked(requireKeycloakLogin).mockImplementation(() => new Promise(() => {}));
-      renderWithProviders(<AppRoutes />, { route, brand: 'kassel', services });
+      // The neutral brand bundles no links, so only Studio's can satisfy this.
+      renderWithProviders(<AppRoutes />, { route, brand: 'ssf', services });
 
       await arrive();
 

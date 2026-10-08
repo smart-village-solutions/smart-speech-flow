@@ -68,6 +68,7 @@ describe('SiteLegalLinks', () => {
             ...installationBody.legal,
             imprintUrl: plainHttp('https://studio.example/impressum'),
             privacyPolicyUrl: 'https://studio.example/datenschutz',
+            accessibilityStatementUrl: 'https://studio.example/barrierefreiheit',
           },
         })
       )
@@ -75,6 +76,10 @@ describe('SiteLegalLinks', () => {
 
     await renderFetched('kassel');
 
-    expect(hrefs()).toEqual([KASSEL[0], 'https://studio.example/datenschutz', KASSEL[2]]);
+    expect(hrefs()).toEqual([
+      KASSEL[0],
+      'https://studio.example/datenschutz',
+      'https://studio.example/barrierefreiheit',
+    ]);
   });
 });

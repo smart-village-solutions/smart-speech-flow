@@ -59,7 +59,7 @@ export function AdminDashboardScreen({
 
         <AdminSessionList sessions={sessions} isError={isError} onEnter={onEnterSession} />
       </div>
-      <SiteLegalLinks className="px-5 pt-4 pb-legal-end" />
+      <SiteLegalLinks className="mt-auto px-5 pt-4 pb-legal-end" />
     </ScreenShell>
   );
 }

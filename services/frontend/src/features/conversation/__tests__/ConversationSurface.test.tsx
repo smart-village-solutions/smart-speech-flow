@@ -31,6 +31,9 @@ const state = (): ConversationScreenState =>
     keyboardOffset: 0,
     // Opaque on purpose: jsdom folds a calc() of plain lengths into one length.
     legalBottom: 'var(--test-legal-bottom)',
+    legalBand: 'var(--test-legal-band)',
+    showsLegal: true,
+    legalRef: { current: null },
     bottom: 'var(--test-buttons-bottom)',
     composerLift: '0px',
     draft: '',
@@ -108,13 +111,38 @@ describe('ConversationSurface', () => {
     expect(buttons).toHaveStyle({ bottom: 'var(--test-buttons-bottom)' });
   });
 
+  it('measures the legal row and lets taps through its empty width to the buttons', () => {
+    const screenState = state();
+    renderWithProviders(
+      <ConversationSurface screen={screenState} header={<h1>h</h1>} contentTop="72px" />
+    );
+
+    const row = screen
+      .getByRole('navigation', { name: 'Legal information' })
+      .closest('[data-legal-row]');
+    expect(screenState.legalRef.current).toBe(row);
+    expect(row).toHaveClass('pointer-events-none', '[&_a]:pointer-events-auto');
+  });
+
+  it('hides the legal row while the keyboard is open', () => {
+    renderWithProviders(
+      <ConversationSurface
+        screen={{ ...state(), showsLegal: false }}
+        header={<h1>h</h1>}
+        contentTop="72px"
+      />
+    );
+
+    expect(screen.queryByRole('navigation', { name: 'Legal information' })).not.toBeInTheDocument();
+  });
+
   it('gives the chat stack up to the legal band', () => {
     const { container } = renderWithProviders(
       <ConversationSurface screen={state()} header={<h1>h</h1>} contentTop="72px" />
     );
 
     expect(container.querySelector('[data-chat-stack]')?.getAttribute('style')).toContain(
-      'var(--spacing-legal-band)'
+      'var(--test-legal-band)'
     );
   });
 });

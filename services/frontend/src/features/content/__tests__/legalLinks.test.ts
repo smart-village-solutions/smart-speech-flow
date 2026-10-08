@@ -37,10 +37,19 @@ describe('resolveLegalLinks', () => {
     });
   });
 
-  it('omits the accessibility statement when Studio has none, whatever is bundled', () => {
+  it('falls back for a missing accessibility statement too, which Kassel must publish', () => {
     expect(
       resolveLegalLinks(withLegal({ accessibilityStatementUrl: null }), bundled)
         .accessibilityStatementUrl
+    ).toBe(bundled.accessibilityStatementUrl);
+  });
+
+  it('omits a link that neither Studio nor the brand provides', () => {
+    expect(
+      resolveLegalLinks(withLegal({ accessibilityStatementUrl: null }), {
+        ...bundled,
+        accessibilityStatementUrl: null,
+      }).accessibilityStatementUrl
     ).toBeNull();
   });
 });

@@ -1,10 +1,10 @@
 import type { LegalLinks, PublicContent } from '@/domain/content/content.types';
 
 /**
- * Studio's links over the brand's bundled ones. An imprint and a privacy policy
- * are required, so a missing one (the mapper nulls a non-https URL) falls back;
- * the accessibility statement is optional, and installation content without one
- * means the installation has none.
+ * Studio's links over the brand's bundled ones, field by field. A null Studio
+ * URL may be missing or invalid (the mapper nulls a non-https one); either way
+ * the bundled link stands in, so a bad Studio value cannot hide a statement
+ * the operator must publish. A link neither provides is omitted.
  */
 export function resolveLegalLinks(
   content: PublicContent | undefined,
@@ -15,6 +15,6 @@ export function resolveLegalLinks(
   return {
     imprintUrl: imprintUrl ?? bundled.imprintUrl,
     privacyPolicyUrl: privacyPolicyUrl ?? bundled.privacyPolicyUrl,
-    accessibilityStatementUrl,
+    accessibilityStatementUrl: accessibilityStatementUrl ?? bundled.accessibilityStatementUrl,
   };
 }

@@ -47,6 +47,9 @@ export function ConversationSurface({
     keyboardOffset,
     bottom,
     legalBottom,
+    legalBand,
+    showsLegal,
+    legalRef,
     composerLift,
     draft,
     setDraft,
@@ -72,7 +75,7 @@ export function ConversationSurface({
         className="absolute inset-x-0 overflow-y-auto transition-[max-height] duration-300"
         style={{
           top: contentTop,
-          maxHeight: `calc(50dvh - 36px - ${keyboardOffset}px - var(--spacing-legal-band))`,
+          maxHeight: `calc(50dvh - 36px - ${keyboardOffset}px - ${legalBand})`,
         }}
       >
         <div className={cn('flex flex-col gap-3 pb-4', showsStatus ? 'pt-14' : 'pt-4')}>
@@ -107,9 +110,12 @@ export function ConversationSurface({
         onKeyboard={toggleKeyboard}
       />
 
+      {/* Full width for centring only: taps on its empty sides reach the buttons. */}
       <div
+        ref={legalRef}
         data-legal-row=""
-        className="absolute inset-x-0 px-5 transition-[bottom] duration-300"
+        hidden={!showsLegal}
+        className="pointer-events-none absolute inset-x-0 px-5 transition-[bottom] duration-300 [&_a]:pointer-events-auto"
         style={{ bottom: legalBottom }}
       >
         <SiteLegalLinks />
