@@ -51,8 +51,9 @@
 
 ## 8. Frontend: legal links, logo and favicon
 
-- [ ] 8.1 Add legal links to every page, below the microphone row on conversation screens; specify the measurements in `SCREEN_SPECS.md` first
-- [ ] 8.2 Use the Studio logo in the header and the Studio icon as favicon, with the static assets as fallback
+- [x] 8.1 Add legal links to every page, below the microphone row on conversation screens; specify the measurements in `SCREEN_SPECS.md` first
+- [x] 8.2 Use the Studio logo in the header and the Studio icon as favicon, with the static assets as fallback
+  - header logo deferred: Studio's logo is outdated and has no dark variant; bundled logos stay until Studio updates it
 
 ## 9. Frontend: guest screens
 
