@@ -99,8 +99,9 @@ def sanitised_installation(content: InstallationContent) -> InstallationContent:
 
 def _tenant_content(read: RuntimeRead, on_skip: Callable[[SkipReason], None]) -> TenantContent:
     content = read.content
-    mapped = guest_languages_by_code(content.guest_languages, on_skip)
-    return TenantContent(
+    skipped: list[SkipReason] = []
+    mapped = guest_languages_by_code(content.guest_languages, skipped.append)
+    built = TenantContent(
         revision=read.policy.configuration_revision,
         time_zone=content.time_zone,
         branding=content.branding,
@@ -109,6 +110,10 @@ def _tenant_content(read: RuntimeRead, on_skip: Callable[[SkipReason], None]) ->
             {code: _guest(mapped[code]) for code in GUEST_LANGUAGES if code in mapped}
         ),
     )
+    # Reported once the revision is held, so a failed insert retried later counts once.
+    for reason in skipped:
+        on_skip(reason)
+    return built
 
 
 def _ignore_skip(reason: SkipReason) -> None:

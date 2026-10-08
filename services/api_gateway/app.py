@@ -125,11 +125,11 @@ def _build_studio(
     """
     from .studio_content import StudioContentCache
     from .studio_content_service import content_cache_seconds, installation_client_from_environment
-    from .studio_runtime_flow import StudioRuntimeFlowError, runtime_flow_from_environment
+    from .studio_runtime_flow import StudioRuntimeFlowError, runtime_client_from_environment
     from .studio_wiring import wire_studio
 
     try:
-        runtime_client = runtime_flow_from_environment(token_provider).client
+        runtime_client = runtime_client_from_environment(token_provider)
     except StudioRuntimeFlowError as error:
         _announce(f"Runtime policy gate unbound ({error.code}); persistence refused")
         runtime_client = None

@@ -22,7 +22,8 @@ def test_every_policy_read_goes_through_the_content_cache(monkeypatch) -> None:
     assert studio.runtime_flow is not None and studio.runtime_policy is not None
     assert isinstance(studio.runtime_flow.client, ContentRecordingFetcher)
     assert studio.runtime_policy._client is studio.runtime_flow.client
-    assert studio.content._runtime is studio.runtime_flow.client
+    # The service records its own reads; only policy reads go through the wrapper.
+    assert studio.content._runtime is studio.runtime_flow.client._inner
     assert studio.content._installation is not None
 
 

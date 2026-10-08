@@ -210,3 +210,26 @@ async def test_a_failed_read_records_nothing() -> None:
         await ContentRecordingFetcher(RecordingClient(LookupError()), cache).fetch(TENANT, "c")
 
     assert cache.latest(TENANT) is None
+
+
+def test_skipped_locales_are_counted_once_even_after_a_failed_insert(monkeypatch) -> None:
+    import services.api_gateway.studio_content as studio_content
+
+    real = studio_content.safe_html
+    failures = iter([RuntimeError("sanitiser defect")])
+
+    def flaky(fragment: str) -> str:
+        error = next(failures, None)
+        if error is not None:
+            raise error
+        return real(fragment)
+
+    monkeypatch.setattr(studio_content, "safe_html", flaky)
+    skipped: list[str] = []
+    cache = StudioContentCache(on_skip=skipped.append)
+
+    assert cache.try_record(kassel_read()) is None
+    assert cache.try_record(kassel_read()) is not None
+    assert cache.try_record(kassel_read()) is not None
+
+    assert skipped == ["unsupported"]

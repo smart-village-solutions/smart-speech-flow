@@ -6,7 +6,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
-from ..content_responses import InstallationContentResponse, installation_response
+from ..content_responses import (
+    InstallationContentResponse,
+    installation_etag,
+    installation_response,
+)
 from ..dependencies import get_studio_content
 from ..studio_content_service import ContentUnavailable, StudioContentService
 from ..studio_runtime_flow import correlation_id_from_request
@@ -46,11 +50,9 @@ async def get_installation_content(
             detail="Installation content is temporarily unavailable",
             headers={"Cache-Control": "no-store"},
         ) from None
-    headers = {
-        "ETag": f'"{installation.configuration_revision}"',
-        "Cache-Control": _CACHE_CONTROL,
-    }
+    body = installation_response(installation)
+    headers = {"ETag": installation_etag(body), "Cache-Control": _CACHE_CONTROL}
     if _matches(request.headers.get("If-None-Match"), headers["ETag"]):
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
     response.headers.update(headers)
-    return installation_response(installation)
+    return body

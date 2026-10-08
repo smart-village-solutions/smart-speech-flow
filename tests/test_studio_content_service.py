@@ -314,31 +314,101 @@ async def test_concurrent_guest_requests_share_one_live_read() -> None:
     assert {result.mode for result in results} == {"ask"}
 
 
-async def test_the_guest_mode_is_never_paused_after_a_failure() -> None:
+async def test_guest_content_answers_unknown_at_once_while_studio_is_paused() -> None:
+    clock = Clock()
     studio = Studio(DOWN, read())
-    content, _, _ = service(studio)
+    content, cache, _ = service(studio, clock=clock)
+    cache.record(read())
 
     first = await content.guest_content(TENANT, "c")
-    second = await content.guest_content(TENANT, "c")
+    clock.now += 59
+    paused = await content.guest_content(TENANT, "c")
+    reads_while_paused = studio.calls
+    clock.now += 1
+    after = await content.guest_content(TENANT, "c")
 
-    assert (first.mode, second.mode) == ("unknown", "ask")
+    assert (first.mode, paused.mode, after.mode) == ("unknown", "unknown", "ask")
+    assert reads_while_paused == 1
+    assert paused.content is not None
+    assert studio.calls == 2
 
 
-async def test_a_read_whose_content_cannot_be_cached_keeps_its_mode_and_falls_back() -> None:
-    class BrokenCache(StudioContentCache):
-        def record(self, read):
+async def test_a_failed_guest_read_pauses_display_reads_too() -> None:
+    clock = Clock()
+    studio = Studio(DOWN)
+    content, cache, _ = service(studio, clock=clock)
+    cache.record(read())
+    clock.now += 61
+
+    await content.guest_content(TENANT, "c")
+    await content.tenant_content(TENANT, "c", endpoint="guest_languages")
+
+    assert studio.calls == 1
+
+
+async def test_guest_and_display_requests_share_one_live_read() -> None:
+    clock = Clock()
+    studio = Studio(read(seed="2"))
+    studio.gate = asyncio.Event()
+    content, cache, _ = service(studio, clock=clock)
+    cache.record(read(seed="1"))
+    clock.now += 61
+
+    waiting = [
+        asyncio.create_task(content.guest_content(TENANT, "c")),
+        asyncio.create_task(content.tenant_content(TENANT, "c", endpoint="guest_languages")),
+    ]
+    await asyncio.sleep(0)
+    studio.gate.set()
+    guest, languages = await asyncio.gather(*waiting)
+
+    assert studio.calls == 1
+    assert guest.content is not None
+    assert guest.content.revision == languages.revision == "sha256:" + "2" * 64
+
+
+class FailingNewRevisions(StudioContentCache):
+    """Holds what it already has; caching any further revision fails."""
+
+    frozen = False
+
+    def record(self, read):
+        if self.frozen:
             raise RuntimeError("sanitiser defect")
+        return super().record(read)
 
-    registry = CollectorRegistry()
+
+async def test_a_live_mode_is_never_paired_with_another_revisions_content() -> None:
+    cache = FailingNewRevisions(clock=Clock())
+    cache.record(read(seed="1"))
+    cache.frozen = True
+    disabled = read(scenario="storage-disabled", seed="2")
     content = StudioContentService(
-        BrokenCache(clock=Clock()),
-        runtime=Studio(read()),
+        cache,
+        runtime=Studio(disabled),
         installation=None,
-        metrics=StudioContentMetrics(registry),
+        metrics=StudioContentMetrics(CollectorRegistry()),
     )
 
     guest = await content.guest_content(TENANT, "c")
-    with pytest.raises(ContentUnavailable):
-        await content.tenant_content(TENANT, "c", endpoint="guest_languages")
 
-    assert (guest.mode, guest.content) == ("ask", None)
+    # Revision 1 asks the storage question; it must not sit beside "disabled".
+    assert (guest.mode, guest.content) == ("disabled", None)
+
+
+async def test_display_reads_fall_back_when_a_read_cannot_be_cached() -> None:
+    clock = Clock()
+    cache = FailingNewRevisions(clock=clock)
+    cache.record(read(seed="1"))
+    cache.frozen = True
+    clock.now += 61
+    content = StudioContentService(
+        cache,
+        runtime=Studio(read(seed="2")),
+        installation=None,
+        metrics=StudioContentMetrics(CollectorRegistry()),
+    )
+
+    tenant = await content.tenant_content(TENANT, "c", endpoint="guest_languages")
+
+    assert tenant.revision == "sha256:" + "1" * 64

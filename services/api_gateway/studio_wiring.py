@@ -1,8 +1,8 @@
 """One app's Studio collaborators, wired one way for the lifespan and the contract suite.
 
-The runtime client sits behind the content cache's recording fetcher, and that
-one fetcher serves session create, activation, the persistence gate and the
-content routes. Every policy read therefore refreshes display content.
+Session create, activation and the persistence gate read through the content
+cache's recording fetcher, so every policy read refreshes display content. The
+content routes read the same client directly and record what they read once.
 """
 
 from __future__ import annotations
@@ -40,15 +40,16 @@ def wire_studio(
     content_metrics: StudioContentMetrics,
     cache_seconds: float = DEFAULT_CACHE_SECONDS,
 ) -> StudioWiring:
-    runtime = None if runtime_client is None else ContentRecordingFetcher(runtime_client, cache)
+    # The service records its own reads; the recording fetcher serves the policy reads.
     content = StudioContentService(
         cache,
-        runtime=runtime,
+        runtime=runtime_client,
         installation=installation_client,
         metrics=content_metrics,
         cache_seconds=cache_seconds,
     )
-    if runtime is None:
+    if runtime_client is None:
         return StudioWiring(None, None, content)
+    runtime = ContentRecordingFetcher(runtime_client, cache)
     gate = RuntimePolicyGate(runtime, metrics=RuntimePolicyMetrics(policy_registry))
     return StudioWiring(StudioRuntimeFlow(runtime), gate, content)

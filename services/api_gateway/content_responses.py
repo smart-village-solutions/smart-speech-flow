@@ -6,6 +6,7 @@ else Studio sends, the tenant display name included, can reach a browser.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -196,6 +197,17 @@ def installation_response(content: InstallationContent) -> InstallationContentRe
     return InstallationContentResponse.model_validate(
         {**body, "revision": content.configuration_revision}
     )
+
+
+def installation_etag(body: InstallationContentResponse) -> str:
+    """Studio's revision plus a digest of the body this gateway sends.
+
+    The revision alone would keep answering 304 after a gateway release that
+    changes this body (its fields or the sanitiser) while Studio's revision
+    stays the same, and browsers would hold the old body indefinitely.
+    """
+    digest = hashlib.sha256(body.model_dump_json(by_alias=True).encode()).hexdigest()
+    return f'"{body.revision}.{digest[:16]}"'
 
 
 def guest_languages_response(content: TenantContent | None) -> GuestLanguagesResponse:

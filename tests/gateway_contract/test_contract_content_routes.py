@@ -80,7 +80,7 @@ def test_installation_content_is_anonymous_cacheable_and_tagged(client, identity
     assert response.status_code == 200
     assert response.json() == expected_installation()
     assert response.headers["Cache-Control"] == "public, max-age=60"
-    assert response.headers["ETag"] == f'"{expected_installation()["revision"]}"'
+    assert response.headers["ETag"].startswith(f'"{expected_installation()["revision"]}.')
     assert_no_display_name(response)
 
 
@@ -94,6 +94,15 @@ def test_a_current_etag_answers_not_modified(client, form):
     assert response.content == b""
     assert response.headers["ETag"] == tag
     assert response.headers["Cache-Control"] == "public, max-age=60"
+
+
+def test_a_tag_for_the_same_revision_but_another_body_gets_the_content(client):
+    """A gateway release that changes this body must not leave browsers on the old one."""
+    bare_revision = f'"{expected_installation()["revision"]}"'
+
+    response = client.get(INSTALLATION, headers={"If-None-Match": bare_revision})
+
+    assert response.status_code == 200
 
 
 def test_another_etag_gets_the_content(client):

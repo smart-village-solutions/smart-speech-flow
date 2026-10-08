@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import hmac
 import logging
-import os
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from functools import partial
@@ -21,8 +20,9 @@ from .studio_installation_client import StudioInstallationClient
 from .studio_runtime_flow import RuntimeConfigurationFetcher
 from .studio_runtime_token import StudioRuntimeTokenProvider, StudioTokenError
 from .studio_runtime_v2_client import StudioRuntimeV2ClientError
+from .studio_settings import seconds_setting, studio_base_url
 from .studio_v1 import StudioV1ClientError
-from .studio_v2 import InstallationContent, RuntimeRead
+from .studio_v2 import InstallationContent
 
 logger = logging.getLogger(__name__)
 
@@ -71,23 +71,24 @@ class _SingleFlight[K, V]:
             task.exception()
 
 
-class _ContentNotCached(Exception):
-    """A read arrived but its content could not be cached; it counts as a failed read."""
-
-    code = "studio_content_not_cached"
-
-
 # Every Studio client and the token provider raise only these; anything else is a defect.
-_STUDIO_FAILURES = (StudioV1ClientError, StudioTokenError, _ContentNotCached)
+_STUDIO_FAILURES = (StudioV1ClientError, StudioTokenError)
 _NEVER = float("-inf")
+
+
+@dataclass(frozen=True, slots=True)
+class _LiveRead:
+    mode: Literal["ask", "disabled"]
+    # None when this read could not be cached.
+    content: TenantContent | None
 
 
 class StudioContentService:
     """Answer display reads from the cache, refreshing it from Studio when it has aged.
 
-    After a failed read, display reads answer from what is held, without waiting
-    on Studio again, until one cache period has passed. The storage mode has no
-    such pause: every guest content request reads it live.
+    One live read per tenant at a time serves every route. After it fails,
+    Studio is left alone for one cache period: display routes answer from what
+    is held and the guest content route answers `unknown`, each without waiting.
     """
 
     def __init__(
@@ -105,10 +106,8 @@ class StudioContentService:
         self._installation = installation
         self._metrics = metrics
         self._cache_seconds = cache_seconds
-        self._tenant_reads: _SingleFlight[str, TenantContent] = _SingleFlight()
+        self._runtime_reads: _SingleFlight[str, _LiveRead] = _SingleFlight()
         self._installation_reads: _SingleFlight[None, InstallationContent] = _SingleFlight()
-        # Concurrent guest requests share one live read; nothing of it is kept.
-        self._guest_reads: _SingleFlight[str, GuestContent] = _SingleFlight()
         self._tenant_retry_after: dict[str, float] = {}
         self._installation_retry_after = _NEVER
 
@@ -137,63 +136,56 @@ class StudioContentService:
         cached = self._cache.latest(tenant_id)
         if cached is not None and cached.age_seconds < self._cache_seconds:
             return self._answer(endpoint, "cached", cached)
-        retry_after = self._tenant_retry_after.get(tenant_id, _NEVER)
-        if self._runtime is not None and self._clock() >= retry_after:
-            read = partial(self._read_tenant, self._runtime, tenant_id, correlation_id)
-            try:
-                content = await self._tenant_reads.run(tenant_id, read)
-            except _STUDIO_FAILURES as error:
-                _log_failure(endpoint, error)
-                self._tenant_retry_after[tenant_id] = self._clock() + self._cache_seconds
-            else:
-                self._tenant_retry_after.pop(tenant_id, None)
-                return self._answer(endpoint, "live", Cached(content, 0.0))
+        live = await self._live_read(tenant_id, correlation_id, endpoint)
+        if live is not None and live.content is not None:
+            return self._answer(endpoint, "live", Cached(live.content, 0.0))
         return self._fallback(endpoint, self._cache.latest(tenant_id))
 
     async def guest_content(self, tenant_id: str, correlation_id: str) -> GuestContent:
         """The storage mode from a live read, never from the cache, and the content beside it."""
         endpoint: ContentEndpoint = "guest_content"
-        if self._runtime is not None:
-            read = partial(self._read_guest, self._runtime, tenant_id, correlation_id)
-            try:
-                guest = await self._guest_reads.run(tenant_id, read)
-            except _STUDIO_FAILURES as error:
-                _log_failure(endpoint, error)
-            else:
-                age = None if guest.content is None else 0.0
-                self._metrics.answered(endpoint, "live", age)
-                return guest
+        live = await self._live_read(tenant_id, correlation_id, endpoint)
+        if live is not None:
+            # Content of another revision could contradict the live mode, so a
+            # read that could not be cached answers with no Studio content at all.
+            self._metrics.answered(endpoint, "live", None if live.content is None else 0.0)
+            return GuestContent(live.mode, live.content)
         try:
             return GuestContent("unknown", self._fallback(endpoint, self._cache.latest(tenant_id)))
         except ContentUnavailable:
             return GuestContent("unknown", None)
+
+    async def _live_read(
+        self, tenant_id: str, correlation_id: str, endpoint: ContentEndpoint
+    ) -> _LiveRead | None:
+        """None when Studio is unconfigured, paused after a failure, or failing now."""
+        runtime = self._runtime
+        if runtime is None or self._clock() < self._tenant_retry_after.get(tenant_id, _NEVER):
+            return None
+        read = partial(self._read_runtime, runtime, tenant_id, correlation_id)
+        try:
+            live = await self._runtime_reads.run(tenant_id, read)
+        except _STUDIO_FAILURES as error:
+            _log_failure(endpoint, error)
+            self._tenant_retry_after[tenant_id] = self._clock() + self._cache_seconds
+            return None
+        self._tenant_retry_after.pop(tenant_id, None)
+        return live
 
     async def _read_installation(
         self, installation: InstallationFetcher, correlation_id: str
     ) -> InstallationContent:
         return self._cache.record_installation(await installation.fetch(correlation_id))
 
-    async def _read_tenant(
+    async def _read_runtime(
         self, runtime: RuntimeConfigurationFetcher, tenant_id: str, correlation_id: str
-    ) -> TenantContent:
-        return self._record(await runtime.fetch(tenant_id, correlation_id), tenant_id)
-
-    async def _read_guest(
-        self, runtime: RuntimeConfigurationFetcher, tenant_id: str, correlation_id: str
-    ) -> GuestContent:
-        read = _same_tenant(await runtime.fetch(tenant_id, correlation_id), tenant_id)
-        # The mode was read either way; only the content beside it may fall back.
-        content = self._cache.try_record(read)
-        if content is None:
-            latest = self._cache.latest(tenant_id)
-            content = None if latest is None else latest.content
-        return GuestContent(read.policy.mode, content)
-
-    def _record(self, read: RuntimeRead, tenant_id: str) -> TenantContent:
-        content = self._cache.try_record(_same_tenant(read, tenant_id))
-        if content is None:
-            raise _ContentNotCached
-        return content
+    ) -> _LiveRead:
+        read = await runtime.fetch(tenant_id, correlation_id)
+        # The client checks this too; these routes serve the content, so they check
+        # again rather than trust whichever fetcher they were given.
+        if not hmac.compare_digest(read.policy.tenant_id.encode(), tenant_id.encode()):
+            raise StudioRuntimeV2ClientError("studio_runtime_tenant_mismatch", retryable=False)
+        return _LiveRead(read.policy.mode, self._cache.try_record(read))
 
     def _answer[T](
         self, endpoint: ContentEndpoint, outcome: ContentOutcome, cached: Cached[T]
@@ -208,28 +200,8 @@ class StudioContentService:
         return self._answer(endpoint, "stale", cached)
 
 
-def _same_tenant(read: RuntimeRead, tenant_id: str) -> RuntimeRead:
-    # The client checks this too; these routes serve the content, so they check
-    # again rather than trust whichever fetcher they were given.
-    if not hmac.compare_digest(read.policy.tenant_id.encode(), tenant_id.encode()):
-        raise StudioRuntimeV2ClientError("studio_runtime_tenant_mismatch", retryable=False)
-    return read
-
-
-def _log_failure(
-    endpoint: ContentEndpoint, error: StudioV1ClientError | StudioTokenError | _ContentNotCached
-) -> None:
+def _log_failure(endpoint: ContentEndpoint, error: StudioV1ClientError | StudioTokenError) -> None:
     logger.warning("Studio content read failed for %s (%s)", endpoint, error.code)
-
-
-def _seconds(name: str, default: float, maximum: float) -> float:
-    """A positive number of seconds up to `maximum`; anything else is the default."""
-    raw = os.getenv(name, "").strip()
-    try:
-        value = float(raw) if raw else default
-    except ValueError:
-        return default
-    return value if 0 < value <= maximum else default
 
 
 def installation_client_from_environment(
@@ -240,9 +212,9 @@ def installation_client_from_environment(
         return None
     try:
         return StudioInstallationClient(
-            os.getenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", "").strip(),
+            studio_base_url(),
             token_provider.get_token,
-            timeout_seconds=_seconds(
+            timeout_seconds=seconds_setting(
                 "STUDIO_INSTALLATION_CONTENT_TIMEOUT_SECONDS",
                 DEFAULT_INSTALLATION_TIMEOUT_SECONDS,
                 30,
@@ -254,4 +226,4 @@ def installation_client_from_environment(
 
 def content_cache_seconds() -> float:
     """How long display content is reused before the next live read: positive, at most an hour."""
-    return _seconds("STUDIO_CONTENT_CACHE_SECONDS", DEFAULT_CACHE_SECONDS, 3600)
+    return seconds_setting("STUDIO_CONTENT_CACHE_SECONDS", DEFAULT_CACHE_SECONDS, 3600)

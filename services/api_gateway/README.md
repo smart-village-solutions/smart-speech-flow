@@ -44,11 +44,23 @@ Studio display content (texts, feedback forms, logo, icon, legal links) is
 sanitised once per `configurationRevision` and reused for
 `STUDIO_CONTENT_CACHE_SECONDS` (default 60, at most 3600). Every live read the
 gateway already makes refreshes it; once it has aged, the next browser request
-makes one live read shared by concurrent requests, and serves the last known
-content when Studio fails. `STUDIO_INSTALLATION_CONTENT_TIMEOUT_SECONDS`
-(default 3, at most 30) bounds the installation content read. The storage mode
-is never cached: `GET /api/customer/session/{id}/content/{language}` reads it
-live and answers `unknown` when Studio cannot be read.
+makes one live read per tenant, shared by every concurrent content request.
+When that read fails, the gateway leaves Studio alone for one cache period and
+answers from the last known content, or with 503 when it has none, so the
+browser falls back to bundled copy. `STUDIO_INSTALLATION_CONTENT_TIMEOUT_SECONDS`
+(default 3, at most 30) bounds the installation content read.
+
+The storage mode is never cached: `GET /api/customer/session/{id}/content/{language}`
+reads it live and answers `unknown` when Studio cannot be read, at once during
+that pause, with the last known texts. A mode that was read is never paired with
+another revision's texts: they come from that same read, or are left out.
+
+The last known content outlasts a Studio outage only on the routes that do not
+need Studio to authenticate. Every `/api/admin` route first resolves the
+token's issuer through the Studio login directory, cached for
+`STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS`; once Studio has been unreachable for
+longer than that, `GET /api/admin/content` answers 503 like every other staff
+route, and the dashboard shows its bundled texts.
 
 When a guest grants consent, the session stores Studio's `retentionHours` and
 `configurationRevision` from that same live read, and keeps them for the rest

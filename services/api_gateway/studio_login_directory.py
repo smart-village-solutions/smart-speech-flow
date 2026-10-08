@@ -13,6 +13,7 @@ from fastapi import Depends, HTTPException, status
 from .dependencies import get_login_directory
 from .studio_login_directory_client import StudioLoginDirectory, StudioLoginDirectoryClient
 from .studio_runtime_token import StudioRuntimeTokenProvider
+from .studio_settings import studio_base_url
 
 
 class LoginDirectoryFetcher(Protocol):
@@ -83,7 +84,7 @@ def _build_studio_login_directory_service(
     token_provider: StudioRuntimeTokenProvider | None,
 ) -> StudioLoginDirectoryService:
     """Construct the service from explicit environment settings and the app's token provider."""
-    base_url = os.getenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", "").strip()
+    base_url = studio_base_url()
     try:
         cache_seconds = float(os.getenv("STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS", "60"))
         timeout_seconds = float(os.getenv("STUDIO_LOGIN_DIRECTORY_TIMEOUT_SECONDS", "5"))
