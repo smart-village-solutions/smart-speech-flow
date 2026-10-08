@@ -48,6 +48,11 @@ class StudioInstallationClient:
         )
         self._token_provider = token_provider
 
+    @property
+    def timeout_seconds(self) -> float:
+        """The per-read timeout this client was built with."""
+        return self._endpoint.timeout_seconds
+
     async def fetch(self, correlation_id: str) -> InstallationContent:
         require_printable_ascii(correlation_id, "correlation_id")
         token = await self._endpoint.bearer_token(self._token_provider)

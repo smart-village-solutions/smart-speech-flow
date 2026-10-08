@@ -10,6 +10,7 @@ ownership" in openspec/changes/archive/2026-09-28-refactor-api-gateway-boundarie
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from starlette.requests import HTTPConnection
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
     from .session_pseudonym import SessionPseudonymizer
+    from .studio_content_service import StudioContentService
     from .studio_login_directory import StudioLoginDirectoryService
     from .studio_runtime_flow import StudioRuntimeFlow
     from .studio_runtime_token import StudioRuntimeTokenProvider
@@ -63,6 +65,10 @@ class GatewayDependencies:
     login_directory: StudioLoginDirectoryService | None
     # Shared by every Studio client, so concurrent reads make one token request.
     studio_token_provider: StudioRuntimeTokenProvider | None
+    # Studio display content for the browser routes; never the storage mode.
+    studio_content: StudioContentService
+    # How long after a conversation ends its guest may still read content and give feedback.
+    guest_grace_window: timedelta
     # The breakers, their health polling and the degradation mode derived
     # from them; the speech pipeline calls through the same breakers.
     service_health: ServiceHealthManager
@@ -88,6 +94,7 @@ def build_gateway_dependencies(
     redis_namespace: str = "ssf",
     studio_runtime_flow: StudioRuntimeFlow | None = None,
     studio_token_provider: StudioRuntimeTokenProvider | None = None,
+    studio_content: StudioContentService | None = None,
     runtime_policy: RuntimePolicyGate | None = None,
     polling_messages_dropped: Counter | None = None,
     websocket_metrics: WebSocketMetrics | None = None,
@@ -106,7 +113,10 @@ def build_gateway_dependencies(
     gate built on it come from the lifespan; None means Studio is unconfigured,
     and a None gate refuses every write of conversation content.
     `studio_token_provider` is the lifespan's one provider; the login directory
-    takes its tokens from it, and None leaves the directory unconfigured. The refiner,
+    takes its tokens from it, and None leaves the directory unconfigured.
+    `studio_content` is the lifespan's content service; without one the
+    container serves whatever `studio_runtime_flow` reads and no installation
+    content. The refiner,
     the admission gate and quality telemetry come from the lifespan too, which
     builds them first; None leaves the pipeline unbounded and emits no rows.
     Without an `audio_store` the app stores audio under SSF_AUDIO_BASE_DIR as
@@ -123,6 +133,7 @@ def build_gateway_dependencies(
     from .auth import OidcKeyCache
     from .circuit_breaker_client import CircuitBreakerServiceClient
     from .conversation_service import ConversationService
+    from .feedback.service import configured_grace_window
     from .pipeline_logic import SpeechPipeline
     from .realtime_ticket import (
         MemoryRealtimeTicketBackend,
@@ -135,6 +146,9 @@ def build_gateway_dependencies(
     from .session_pseudonym import SessionPseudonymizer
     from .session_store import MemoryTenantSessionStore, RedisTenantSessionStore
     from .speech_services import HttpSpeechServices
+    from .studio_content import StudioContentCache
+    from .studio_content_metrics import StudioContentMetrics
+    from .studio_content_service import StudioContentService
     from .studio_login_directory import login_directory_from_environment
     from .websocket import WebSocketManager
     from .websocket_monitor import WebSocketMetrics, WebSocketMonitor
@@ -167,6 +181,13 @@ def build_gateway_dependencies(
         pseudonymizer=pseudonymizer,
     )
     websocket_manager = WebSocketManager(session_manager, polling_store, monitor=websocket_monitor)
+    if studio_content is None:
+        studio_content = StudioContentService(
+            StudioContentCache(),
+            runtime=studio_runtime_flow.client if studio_runtime_flow is not None else None,
+            installation=None,
+            metrics=StudioContentMetrics(CollectorRegistry()),
+        )
     service_health = ServiceHealthManager()
     speech_pipeline = SpeechPipeline(
         speech=HttpSpeechServices(service_health.circuit_breakers),
@@ -193,6 +214,8 @@ def build_gateway_dependencies(
         studio_runtime_flow=studio_runtime_flow,
         login_directory=login_directory_from_environment(studio_token_provider),
         studio_token_provider=studio_token_provider,
+        studio_content=studio_content,
+        guest_grace_window=configured_grace_window(),
         service_health=service_health,
         circuit_breaker_client=CircuitBreakerServiceClient(service_health),
         speech_pipeline=speech_pipeline,
@@ -249,6 +272,14 @@ def get_studio_runtime_flow(connection: HTTPConnection) -> StudioRuntimeFlow | N
 
 def get_login_directory(connection: HTTPConnection) -> StudioLoginDirectoryService | None:
     return _container(connection).login_directory
+
+
+def get_studio_content(connection: HTTPConnection) -> StudioContentService:
+    return _container(connection).studio_content
+
+
+def get_guest_grace_window(connection: HTTPConnection) -> timedelta:
+    return _container(connection).guest_grace_window
 
 
 def get_circuit_breaker_client(connection: HTTPConnection) -> CircuitBreakerServiceClient:

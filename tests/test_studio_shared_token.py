@@ -8,6 +8,7 @@ from typing import Any, Mapping
 import pytest
 
 from services.api_gateway.app import app, lifespan
+from services.api_gateway.studio_content import ContentRecordingFetcher
 from services.api_gateway.studio_installation_client import StudioInstallationClient
 from services.api_gateway.studio_login_directory_client import StudioLoginDirectoryClient
 from services.api_gateway.studio_runtime_token import (
@@ -105,15 +106,17 @@ async def test_the_lifespan_gives_every_studio_client_one_provider(
     async with lifespan(app):
         dependencies = app.state.dependencies
         assert dependencies.studio_token_provider is not None
-        assert isinstance(dependencies.studio_runtime_flow.client, StudioRuntimeV2Client)
+        # The runtime client sits behind the content cache's recording fetcher.
+        assert isinstance(dependencies.studio_runtime_flow.client, ContentRecordingFetcher)
         await asyncio.gather(
             dependencies.studio_runtime_flow.client.fetch("tenant-kassel", "c-1"),
             dependencies.login_directory.get("c-2"),
+            dependencies.studio_content.installation_content("c-3"),
             return_exceptions=True,
         )
 
     assert token_transport.calls == 1
-    assert studio.authorizations == ["Bearer shared-token"] * 2
+    assert studio.authorizations == ["Bearer shared-token"] * 3
 
 
 async def test_no_provider_and_no_studio_clients_without_credentials(

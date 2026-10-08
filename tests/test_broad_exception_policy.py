@@ -146,6 +146,8 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/session_manager.py", "SessionManagerBase._sweep_session_content"): [
         "bookkeeping-reraise"
     ],
+    # display content must never cost a persistence read, nor a content route a 500
+    ("services/api_gateway/studio_content.py", "StudioContentCache.try_record"): ["fallback"],
     # any transport failure, which may carry the client secret, becomes a redacted StudioTokenError
     ("services/api_gateway/studio_runtime_token.py", "StudioRuntimeTokenProvider._refresh"): [
         "fallback"

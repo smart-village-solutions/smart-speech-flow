@@ -13,16 +13,25 @@ from pydantic import BaseModel, Field
 from ..audio_storage import AudioVariant
 from ..auth import optional_ssf_user
 from ..clock import utc_now
+from ..content_responses import (
+    GuestContentResponse,
+    GuestLanguagesResponse,
+    ProvidedGuestContent,
+    UnprovidedGuestContent,
+    guest_content_response,
+    guest_languages_response,
+)
 from ..conversation_service import ConversationService
 from ..dependencies import (
     get_conversation_service,
     get_session_lifecycle,
     get_session_manager,
+    get_studio_content,
     get_studio_runtime_flow,
 )
 from ..log_safety import safe_language_code, safe_session_ref
 from ..message_models import MESSAGE_VALIDATION_RESPONSE
-from ..session_access import require_customer_session_key
+from ..session_access import require_customer_session_key, require_guest_session_key
 from ..session_lifecycle import (
     SessionLifecycleService,
     SessionNotFoundError,
@@ -31,6 +40,8 @@ from ..session_lifecycle import (
 )
 from ..session_manager import TenantSessionManager
 from ..session_models import ClientType, SessionStatus
+from ..studio_content_service import ContentUnavailable, StudioContentService
+from ..studio_locales import GUEST_LANGUAGES
 from ..studio_runtime_flow import StudioRuntimeFlow, correlation_id_from_request
 from ..tenant_context import reject_request_tenant_selectors
 from ..tenant_session import TenantSessionKey
@@ -236,6 +247,46 @@ async def get_customer_session_status(
         "warning_at": session.warning_at().isoformat(),
         "timeout_at": session.next_timeout_at().isoformat(),
     }
+
+
+@router.get(
+    "/session/{session_id}/languages",
+    response_model=GuestLanguagesResponse,
+    summary="The guest languages, with Studio's names and icons where Studio provides them",
+    responses=CUSTOMER_ROUTE_RESPONSES,
+)
+async def get_guest_languages(
+    session_id: str,
+    request: Request,
+    key: Annotated[TenantSessionKey, Depends(require_guest_session_key)],
+    content: Annotated[StudioContentService, Depends(get_studio_content)],
+) -> GuestLanguagesResponse:
+    try:
+        tenant = await content.tenant_content(
+            key.tenant_id, correlation_id_from_request(request), endpoint="guest_languages"
+        )
+    except ContentUnavailable:
+        tenant = None
+    return guest_languages_response(tenant)
+
+
+@router.get(
+    "/session/{session_id}/content/{language}",
+    response_model=GuestContentResponse,
+    summary="The live storage mode and Studio's guest texts and form for one language",
+    responses={**CUSTOMER_ROUTE_RESPONSES, 404: {"description": "Session or language not found"}},
+)
+async def get_guest_content(
+    session_id: str,
+    language: str,
+    request: Request,
+    key: Annotated[TenantSessionKey, Depends(require_guest_session_key)],
+    content: Annotated[StudioContentService, Depends(get_studio_content)],
+) -> ProvidedGuestContent | UnprovidedGuestContent:
+    if language not in GUEST_LANGUAGES:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Language not supported")
+    guest = await content.guest_content(key.tenant_id, correlation_id_from_request(request))
+    return guest_content_response(guest, language)
 
 
 @router.get(

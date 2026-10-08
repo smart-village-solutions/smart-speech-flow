@@ -31,12 +31,36 @@ STUDIO_RUNTIME_AUDIENCE=sva-studio-ssf-runtime
 STUDIO_RUNTIME_CLIENT_SECRET=<deployment secret>
 STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS=60
 STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS=5.0
+STUDIO_CONTENT_CACHE_SECONDS=60
+STUDIO_INSTALLATION_CONTENT_TIMEOUT_SECONDS=3
 SSF_TERMINAL_RECORD_HOURS=24
 ```
 
 `STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS` bounds one live policy read and
 must be greater than 0 and at most 30. `KEYCLOAK_REQUIRED_ROLE` guards
 feedback reads and the telemetry probe, not conversation admission.
+
+Studio display content (texts, feedback forms, logo, icon, legal links) is
+sanitised once per `configurationRevision` and reused for
+`STUDIO_CONTENT_CACHE_SECONDS` (default 60, at most 3600). Every live read the
+gateway already makes refreshes it; once it has aged, the next browser request
+makes one live read per tenant, shared by every concurrent content request.
+When that read fails, the gateway leaves Studio alone for one cache period and
+answers from the last known content, or with 503 when it has none, so the
+browser falls back to bundled copy. `STUDIO_INSTALLATION_CONTENT_TIMEOUT_SECONDS`
+(default 3, at most 30) bounds the installation content read.
+
+The storage mode is never cached: `GET /api/customer/session/{id}/content/{language}`
+reads it live and answers `unknown` when Studio cannot be read, at once during
+that pause, with the last known texts. A mode that was read is never paired with
+another revision's texts: they come from that same read, or are left out.
+
+The last known content outlasts a Studio outage only on the routes that do not
+need Studio to authenticate. Every `/api/admin` route first resolves the
+token's issuer through the Studio login directory, cached for
+`STUDIO_LOGIN_DIRECTORY_CACHE_SECONDS`; once Studio has been unreachable for
+longer than that, `GET /api/admin/content` answers 503 like every other staff
+route, and the dashboard shows its bundled texts.
 
 When a guest grants consent, the session stores Studio's `retentionHours` and
 `configurationRevision` from that same live read, and keeps them for the rest

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hmac
-import os
 from dataclasses import dataclass
 from typing import Annotated, Protocol
 from uuid import uuid4
@@ -13,6 +12,7 @@ from fastapi import Depends, HTTPException, Request, status
 from .dependencies import get_studio_runtime_flow
 from .studio_runtime_token import StudioRuntimeTokenProvider, StudioTokenError
 from .studio_runtime_v2_client import StudioRuntimeV2Client, StudioRuntimeV2ClientError
+from .studio_settings import seconds_setting, studio_base_url
 from .studio_v2 import RuntimeRead
 from .tenant_context import StudioTenantContext, require_studio_tenant_context
 
@@ -80,50 +80,43 @@ class StudioRuntimeFlow:
 _DEFAULT_CONFIGURATION_TIMEOUT_SECONDS = 5.0
 
 
-def _configuration_timeout_seconds() -> float:
-    """Read the runtime-configuration timeout, mirroring the token provider's knob.
-
-    An unusable value falls back to the default rather than propagating. This
-    flow also backs `require_validated_runtime_configuration`, so letting the
-    client's range check raise here would turn a mistyped timeout into a 502 on
-    every tenant-login request, not merely an unbound persistence gate.
-
-    Returns:
-        A timeout inside the client's accepted range of 0 to 30 seconds.
-    """
-    raw = os.getenv("STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS", "").strip()
-    if not raw:
-        return _DEFAULT_CONFIGURATION_TIMEOUT_SECONDS
-    try:
-        value = float(raw)
-    except ValueError:
-        return _DEFAULT_CONFIGURATION_TIMEOUT_SECONDS
-    if not 0 < value <= 30:
-        return _DEFAULT_CONFIGURATION_TIMEOUT_SECONDS
-    return value
-
-
-def runtime_flow_from_environment(
+def runtime_client_from_environment(
     token_provider: StudioRuntimeTokenProvider | None,
-) -> StudioRuntimeFlow:
-    """Build a runtime flow from explicit environment settings and the app's token provider.
+) -> StudioRuntimeV2Client:
+    """The app's one runtime client, from explicit settings and the app's token provider.
 
-    Called once per app by its lifespan; the flow lives in the app's container.
+    An unusable timeout falls back to the default rather than propagating. The
+    flow built on this also backs `require_validated_runtime_configuration`,
+    so letting the client's range check raise here would turn a mistyped
+    timeout into a 502 on every tenant-login request, not merely an unbound
+    persistence gate.
+
+    Raises:
+        StudioRuntimeFlowError: no token provider, or no usable base URL.
     """
-    base_url = os.getenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", "").strip()
     if token_provider is None:
         raise StudioRuntimeFlowError("studio_runtime_configuration_invalid", retryable=False)
     try:
-        client = StudioRuntimeV2Client(
-            base_url,
+        return StudioRuntimeV2Client(
+            studio_base_url(),
             token_provider.get_token,
-            timeout_seconds=_configuration_timeout_seconds(),
+            timeout_seconds=seconds_setting(
+                "STUDIO_RUNTIME_CONFIGURATION_TIMEOUT_SECONDS",
+                _DEFAULT_CONFIGURATION_TIMEOUT_SECONDS,
+                30,
+            ),
         )
     except ValueError:
         raise StudioRuntimeFlowError(
             "studio_runtime_configuration_invalid", retryable=False
         ) from None
-    return StudioRuntimeFlow(client)
+
+
+def runtime_flow_from_environment(
+    token_provider: StudioRuntimeTokenProvider | None,
+) -> StudioRuntimeFlow:
+    """A runtime flow on `runtime_client_from_environment`."""
+    return StudioRuntimeFlow(runtime_client_from_environment(token_provider))
 
 
 async def require_validated_runtime_configuration(

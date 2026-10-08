@@ -137,6 +137,21 @@ EXPECTED_SURFACE: dict[str, Family] = {
         "Duration of one live Studio policy read",
         frozenset(),
     ),
+    "ssf_studio_content_fetch_total": (
+        "counter",
+        "Content route answers, by route and by where their content came from",
+        frozenset({"endpoint", "outcome"}),
+    ),
+    "ssf_studio_content_locales_skipped_total": (
+        "counter",
+        "Studio guest locales SSF does not offer, counted once per cached revision",
+        frozenset({"reason"}),
+    ),
+    "ssf_studio_content_staleness_seconds": (
+        "gauge",
+        "Age of the Studio content in each content route's latest answer",
+        frozenset({"endpoint"}),
+    ),
     "tenant_polling_messages_dropped_total": (
         "counter",
         "Polling messages discarded because a bounded recipient queue was full",

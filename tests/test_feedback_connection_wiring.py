@@ -12,6 +12,7 @@ an operator to the wrong problem.
 """
 
 import base64
+from datetime import timedelta
 
 import pytest
 from prometheus_client import CollectorRegistry
@@ -72,6 +73,7 @@ def wired(monkeypatch):
     monkeypatch.setattr(state, "quality_telemetry", object(), raising=False)
     monkeypatch.setattr(state, "prometheus_registry", CollectorRegistry(), raising=False)
     monkeypatch.setattr(state, "pseudonymizer", SessionPseudonymizer(key=b"k"), raising=False)
+    monkeypatch.setattr(state, "guest_grace_window", timedelta(minutes=30), raising=False)
 
     return state
 
@@ -303,6 +305,15 @@ class TestTheRequestPathTakesTheTenantFromTheSession:
 
         assert isinstance(wired.feedback_service._tenant_resolver, SessionTenantResolver)
 
+    async def test_submissions_end_with_the_guest_content_routes(self, wired, monkeypatch) -> None:
+        """One grace window: the ended-conversation screen may show the form
+        exactly as long as its submission is accepted."""
+        monkeypatch.setattr(wired, "guest_grace_window", timedelta(minutes=7))
+
+        await wiring._connect_feedback_request_path(gateway.app.state, APP_URL, object())
+
+        assert wired.feedback_service._grace_window == timedelta(minutes=7)
+
 
 class TestTheLifespanWiresTheAppItWasGiven:
     """The feedback helpers must act on the lifespan's app, not the module's.
@@ -360,6 +371,7 @@ class TestTheLifespanWiresTheAppItWasGiven:
         live.state.quality_telemetry = object()
         live.state.prometheus_registry = CollectorRegistry()
         live.state.pseudonymizer = SessionPseudonymizer(key=b"k")
+        live.state.guest_grace_window = timedelta(minutes=30)
 
         await wiring._connect_feedback_request_path(live.state, APP_URL, object())
         await wiring._connect_feedback_read_path(live.state, READER_URL)
