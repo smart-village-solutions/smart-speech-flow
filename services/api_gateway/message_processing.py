@@ -561,7 +561,7 @@ async def process_audio_input(
         sessions=sessions,
         audio_store=audio_store,
         start_time=start_time,
-        retention_hours=captured_retention_hours(session) if session is not None else None,
+        retention_hours=captured_retention_hours(session),
     )
 
 
@@ -672,5 +672,5 @@ async def process_text_input(
         sessions=sessions,
         audio_store=audio_store,
         start_time=start_time,
-        retention_hours=captured_retention_hours(session) if session is not None else None,
+        retention_hours=captured_retention_hours(session),
     )

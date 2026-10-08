@@ -80,3 +80,21 @@ def test_an_unusable_period_is_reported_once_not_on_every_call(monkeypatch, capl
             assert terminal_record_hours() == 24
 
     assert caplog.text.count("SSF_TERMINAL_RECORD_HOURS") == 1
+
+
+@pytest.mark.parametrize("raw", ["8761", "1000000000"])
+def test_a_period_beyond_studios_cap_falls_back_to_24_hours(monkeypatch, raw):
+    # Past the cap a cutoff can fall before year 1 and stop every cleanup.
+    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", raw)
+
+    assert terminal_record_hours() == 24
+
+
+def test_the_cap_itself_is_accepted(monkeypatch):
+    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "8760")
+
+    assert terminal_record_hours() == 8760
+
+
+def test_no_session_has_no_captured_retention():
+    assert captured_retention_hours(None) is None

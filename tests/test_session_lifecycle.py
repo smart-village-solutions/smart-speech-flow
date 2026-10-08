@@ -208,27 +208,52 @@ class _GatedFetcher:
         return self.reads[index]
 
 
-async def test_concurrent_activations_keep_the_first_captured_consent(
+async def test_a_second_join_waits_and_makes_no_studio_read(
     sessions: TenantSessionManager,
 ) -> None:
-    # A double-submitted join must not swap the retention the guest agreed to.
+    # A double-submitted join must not swap the consent the guest gave first.
     lifecycle = SessionLifecycleService(sessions)
     key = await _pending(sessions)
-    other = f"sha256:{'b' * 64}"
-    fetcher = _GatedFetcher(
-        runtime_read("tenant-a", retention_hours=4320),
-        runtime_read("tenant-a", retention_hours=24, revision=other),
-    )
+    fetcher = _GatedFetcher(runtime_read("tenant-a", retention_hours=4320))
     flow = StudioRuntimeFlow(fetcher)
 
     first = asyncio.create_task(lifecycle.activate(key, "en", True, flow, lambda: "first"))
     second = asyncio.create_task(lifecycle.activate(key, "en", False, flow, lambda: "second"))
-    while fetcher.calls < 2:
+    while fetcher.calls < 1:
         await asyncio.sleep(0)
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert fetcher.calls == 1
     fetcher.gates[0].set()
-    await first
-    fetcher.gates[1].set()
-    await second
+    activated, repeated = await asyncio.gather(first, second)
+
+    assert not activated.already_active and repeated.already_active
+    assert fetcher.calls == 1
+    stored = await sessions.store.load(key)
+    assert stored.consent_status is ConsentStatus.GRANTED
+    assert stored.consent_retention_hours == 4320
+
+
+async def test_a_read_finishing_while_the_first_activation_saves_cannot_overwrite_it(
+    sessions: TenantSessionManager,
+) -> None:
+    # Both reads return together: the second resumes while the first is still
+    # inside activate_session, before the status says ACTIVE.
+    lifecycle = SessionLifecycleService(sessions)
+    key = await _pending(sessions)
+    fetcher = _GatedFetcher(
+        runtime_read("tenant-a", retention_hours=4320),
+        runtime_read("tenant-a", retention_hours=24, revision=f"sha256:{'b' * 64}"),
+    )
+    flow = StudioRuntimeFlow(fetcher)
+    first = asyncio.create_task(lifecycle.activate(key, "en", True, flow, lambda: "first"))
+    second = asyncio.create_task(lifecycle.activate(key, "en", False, flow, lambda: "second"))
+    while fetcher.calls < 1:
+        await asyncio.sleep(0)
+    for gate in fetcher.gates:
+        gate.set()
+
+    await asyncio.gather(first, second)
 
     stored = await sessions.store.load(key)
     assert stored.consent_status is ConsentStatus.GRANTED

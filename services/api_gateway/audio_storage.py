@@ -100,6 +100,9 @@ def _configured_base_dir() -> Path:
 # consent. It is not a WAV, so the walk never mistakes it for audio.
 RETENTION_MARKER = "retention.json"
 _MARKER_MAX_BYTES = 64
+_MARKER_TEMP_PREFIX = ".retention-"
+# A marker write takes milliseconds; a temp file this old was left by a process that died.
+_STALE_MARKER_TEMP_SECONDS = 3600
 
 
 _STORAGE_IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
@@ -184,7 +187,7 @@ def _write_retention_marker(session_dir: Path, hours: int) -> None:
     """Write the marker atomically, unless it already says the same."""
     if read_retention_marker(session_dir) == hours:
         return
-    descriptor, temporary = tempfile.mkstemp(dir=session_dir, prefix=".retention-")
+    descriptor, temporary = tempfile.mkstemp(dir=session_dir, prefix=_MARKER_TEMP_PREFIX)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump({"hours": hours}, handle)
@@ -205,9 +208,9 @@ def save_audio(
     """Persist one audio artifact below its tenant and session scope.
 
     With `retention_hours` (captured with granted consent) the session's
-    marker is written first, so no audio of a consented session sits without
-    one for longer than the write. Without it the cleanup applies the short
-    default.
+    marker is written first, and a failure to write it fails the save: the
+    short default the cleanup would apply instead can outlive a shorter
+    retention. Without it the cleanup applies the short default.
     """
     if not data:
         raise ValueError("audio data cannot be empty")
@@ -218,7 +221,7 @@ def save_audio(
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             if retention_hours is not None:
-                _write_marker_or_warn(path.parents[1], retention_hours)
+                _write_retention_marker(path.parents[1], retention_hours)
             path.write_bytes(data)
             break
         except FileNotFoundError:
@@ -229,17 +232,6 @@ def save_audio(
         extra={"tenant_ref": key.tenant_ref, "variant": variant.value},
     )
     return path
-
-
-def _write_marker_or_warn(session_dir: Path, hours: int) -> None:
-    # Without a marker the audio falls back to the short default, so a failed
-    # write deletes sooner rather than losing the recording now.
-    try:
-        _write_retention_marker(session_dir, hours)
-    except FileNotFoundError:
-        raise
-    except OSError:
-        logger.warning("Failed to write the audio retention marker")
 
 
 def scoped_audio_url(
@@ -361,23 +353,6 @@ def _managed_v2_audio_files(
         yield from files
 
 
-def _last_change(session_dir: Path, files: list[tuple[AudioVariant, Path]]) -> float:
-    """When anything in the session directory last changed, before this pass touched it."""
-    entries = [
-        session_dir,
-        session_dir / RETENTION_MARKER,
-        *(session_dir / variant.value for variant in AudioVariant),
-        *(path for _variant, path in files),
-    ]
-    newest = 0.0
-    for entry in entries:
-        try:
-            newest = max(newest, entry.lstat().st_mtime)
-        except OSError:
-            continue
-    return newest
-
-
 def _remove_session_directory(session_dir: Path, hours: int | None) -> None:
     """Remove an emptied session directory; stop at the first entry that is not ours.
 
@@ -386,6 +361,7 @@ def _remove_session_directory(session_dir: Path, hours: int | None) -> None:
     not read may be a save's fresh write, and stays.
     """
     try:
+        _remove_stale_marker_temps(session_dir)
         for variant in AudioVariant:
             variant_dir = session_dir / variant.value
             if variant_dir.is_symlink():
@@ -400,8 +376,19 @@ def _remove_session_directory(session_dir: Path, hours: int | None) -> None:
     except FileNotFoundError:
         return
     except OSError:
+        logger.warning(
+            "Audio session directory without audio could not be removed",
+            extra={"tenant_ref": session_dir.parent.name},
+        )
         if hours is not None:
             _restore_marker(session_dir, hours)
+
+
+def _remove_stale_marker_temps(session_dir: Path) -> None:
+    stale_before = utc_now().timestamp() - _STALE_MARKER_TEMP_SECONDS
+    for temporary in session_dir.glob(f"{_MARKER_TEMP_PREFIX}*"):
+        if not temporary.is_symlink() and temporary.lstat().st_mtime < stale_before:
+            temporary.unlink(missing_ok=True)
 
 
 def _restore_marker(session_dir: Path, hours: int) -> None:
@@ -444,9 +431,9 @@ def cleanup_old_audio_files(*, base_dir: Path) -> dict:
 
     Each session directory's marker carries the retention captured with
     granted consent; `0` keeps that directory's audio. A missing or invalid
-    marker falls back to the short SSF_TERMINAL_RECORD_HOURS, so an error
-    deletes sooner. A session directory left without audio, and unchanged
-    since its cutoff, is removed.
+    marker falls back to the short SSF_TERMINAL_RECORD_HOURS. A session
+    directory left without audio is removed; a save racing that removal finds
+    `rmdir` refused or retries into a recreated directory.
 
     Returns:
         Statistics about deleted files:
@@ -471,12 +458,11 @@ def cleanup_old_audio_files(*, base_dir: Path) -> dict:
     for session_dir, files in _managed_sessions(base_dir, unreadable):
         marker_hours = read_retention_marker(session_dir)
         keep_for = short_default if marker_hours is None else marker_hours
-        if keep_for == 0:
-            continue
-        cutoff_time = now - timedelta(hours=keep_for)
-        last_change = _last_change(session_dir, files)
-        emptied = _delete_expired(files, cutoff_time, stats)
-        if emptied and last_change < cutoff_time.timestamp():
+        if keep_for:
+            emptied = _delete_expired(files, now - timedelta(hours=keep_for), stats)
+        else:
+            emptied = not files
+        if emptied:
             _remove_session_directory(session_dir, marker_hours)
     stats["errors"] += len(unreadable)
 

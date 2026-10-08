@@ -28,7 +28,8 @@ def terminal_record_hours() -> int:
     """The short period, in hours, for content no granted consent covers.
 
     Zero is refused like any other unusable value: a record without consented
-    content must not live forever.
+    content must not live forever. Studio's cap bounds it too, so no cutoff
+    falls out of the calendar.
     """
     return _parsed_terminal_record_hours((os.environ.get(TERMINAL_RECORD_HOURS_ENV) or "").strip())
 
@@ -42,10 +43,11 @@ def _parsed_terminal_record_hours(raw: str) -> int:
         value = int(raw)
     except ValueError:
         value = 0
-    if value <= 0:
+    if not 0 < value <= MAX_RETENTION_HOURS:
         logger.warning(
-            "%s must be a positive number of hours; using %d",
+            "%s must be between 1 and %d hours; using %d",
             TERMINAL_RECORD_HOURS_ENV,
+            MAX_RETENTION_HOURS,
             DEFAULT_TERMINAL_RECORD_HOURS,
         )
         return DEFAULT_TERMINAL_RECORD_HOURS
@@ -62,9 +64,9 @@ def valid_retention_hours(value: object) -> int | None:
     return value if 0 <= value <= MAX_RETENTION_HOURS else None
 
 
-def captured_retention_hours(session: Session) -> int | None:
+def captured_retention_hours(session: Session | None) -> int | None:
     """The retention captured with granted consent, or None when there is none."""
-    if session.consent_status is not ConsentStatus.GRANTED:
+    if session is None or session.consent_status is not ConsentStatus.GRANTED:
         return None
     return session.consent_retention_hours
 

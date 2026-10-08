@@ -293,15 +293,20 @@ def test_a_session_directory_still_holding_audio_is_kept(tmp_path) -> None:
     assert (_session_dir(tmp_path) / RETENTION_MARKER).exists()
 
 
-def test_an_empty_session_directory_goes_after_the_short_default(tmp_path) -> None:
+def test_an_empty_session_directory_is_removed_on_the_next_pass(tmp_path) -> None:
     # A declined session: settlement deleted its refused audio, leaving the directories.
     wav = _saved(tmp_path, "msg-1", age_hours=2)
     wav.unlink()
-    _age_directory(tmp_path, 2)
-    cleanup_old_audio_files(base_dir=tmp_path)
-    assert _session_dir(tmp_path).exists()
 
-    _age_directory(tmp_path, 25)
+    cleanup_old_audio_files(base_dir=tmp_path)
+
+    assert not _session_dir(tmp_path).exists()
+
+
+def test_an_empty_directory_of_a_session_that_keeps_everything_is_removed(tmp_path) -> None:
+    wav = _saved(tmp_path, "msg-1", age_hours=2, retention_hours=0)
+    wav.unlink()
+
     cleanup_old_audio_files(base_dir=tmp_path)
 
     assert not _session_dir(tmp_path).exists()
@@ -390,3 +395,104 @@ def test_a_session_directory_that_vanishes_mid_removal_does_not_stop_the_pass(
     cleanup_old_audio_files(base_dir=tmp_path)
 
     assert not gone.exists()
+
+
+def test_an_absurd_short_default_does_not_stop_the_pass(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "1000000000")
+    gone = _saved(tmp_path, "msg-1", age_hours=25)
+
+    cleanup_old_audio_files(base_dir=tmp_path)
+
+    assert not gone.exists()
+
+
+def test_a_recording_is_not_kept_without_its_marker(tmp_path, monkeypatch) -> None:
+    # The short default would outlive a retention below it, such as 2 hours.
+    import tempfile
+
+    def refuse(*_args, **_kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(tempfile, "mkstemp", refuse)
+
+    with pytest.raises(PermissionError):
+        save_audio(KEY, "msg-1", AudioVariant.ORIGINAL, b"RIFF", base_dir=tmp_path, retention_hours=2)
+
+    assert list(tmp_path.rglob("*.wav")) == []
+
+
+def _shift_back(tmp_path, hours: float) -> None:
+    """Let `hours` pass: every entry of the session directory ages by that much."""
+    session_dir = _session_dir(tmp_path)
+    for entry in [*session_dir.rglob("*"), session_dir]:
+        stat = entry.stat()
+        os.utime(entry, (stat.st_atime - hours * 3600, stat.st_mtime - hours * 3600))
+
+
+def test_a_directory_whose_recordings_expire_in_separate_passes_is_removed(tmp_path) -> None:
+    # Deleting the first recording touches the directory; that must not keep
+    # the emptied directory for another full retention period.
+    _saved(tmp_path, "first", age_hours=73, retention_hours=72)
+    second = _saved(tmp_path, "second", age_hours=70, retention_hours=72)
+    cleanup_old_audio_files(base_dir=tmp_path)
+    assert second.exists()
+
+    _shift_back(tmp_path, 3)
+    cleanup_old_audio_files(base_dir=tmp_path)
+
+    assert not _session_dir(tmp_path).exists()
+
+
+def test_a_save_survives_the_cleanup_removing_its_fresh_directory(tmp_path, monkeypatch) -> None:
+    import shutil
+
+    real_write = Path.write_bytes
+    removed = []
+
+    def removed_first(self, data):
+        if not removed:
+            removed.append(self)
+            shutil.rmtree(_session_dir(tmp_path))
+        return real_write(self, data)
+
+    monkeypatch.setattr(Path, "write_bytes", removed_first)
+    stored = save_audio(
+        KEY, "msg-1", AudioVariant.ORIGINAL, b"RIFF", base_dir=tmp_path, retention_hours=4320
+    )
+
+    assert removed and stored.read_bytes() == b"RIFF"
+    assert json.loads((_session_dir(tmp_path) / RETENTION_MARKER).read_text()) == {"hours": 4320}
+
+
+def test_a_stale_marker_temp_file_does_not_block_removal(tmp_path) -> None:
+    # Left behind when the process died between mkstemp and the replace.
+    _old_empty_session(tmp_path, hours=72)
+    leftover = _session_dir(tmp_path) / ".retention-abc123"
+    leftover.write_text('{"hou', encoding="utf-8")
+    _hours_ago(leftover, 2)
+
+    cleanup_old_audio_files(base_dir=tmp_path)
+
+    assert not _session_dir(tmp_path).exists()
+
+
+def test_a_marker_temp_file_being_written_is_left_alone(tmp_path) -> None:
+    _old_empty_session(tmp_path, hours=72)
+    in_flight = _session_dir(tmp_path) / ".retention-abc123"
+    in_flight.write_text('{"hou', encoding="utf-8")
+
+    cleanup_old_audio_files(base_dir=tmp_path)
+
+    assert in_flight.exists()
+
+
+def test_a_directory_that_cannot_be_removed_is_reported(tmp_path, caplog) -> None:
+    _old_empty_session(tmp_path)
+    (_session_dir(tmp_path) / RETENTION_MARKER).write_text("broken", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        stats = cleanup_old_audio_files(base_dir=tmp_path)
+
+    assert _session_dir(tmp_path).exists()
+    assert "could not be removed" in caplog.text
+    assert stats["errors"] == 0
