@@ -22,6 +22,14 @@ function tree() {
   );
 }
 
+function serveInstallation(overrides: Partial<typeof installationBody>) {
+  server.use(
+    http.get('*/api/content/installation', () =>
+      HttpResponse.json({ ...installationBody, ...overrides })
+    )
+  );
+}
+
 /** Renders the start page and waits until its installation content has arrived or failed. */
 async function renderSettled(options?: Parameters<typeof renderWithProviders>[1]) {
   renderWithProviders(
@@ -116,14 +124,6 @@ describe('AccessCodeScreen', () => {
   });
 
   describe('installation texts', () => {
-    function serveInstallation(overrides: Partial<typeof installationBody>) {
-      server.use(
-        http.get('*/api/content/installation', () =>
-          HttpResponse.json({ ...installationBody, ...overrides })
-        )
-      );
-    }
-
     it('shows Studio texts on the German start page', async () => {
       serveInstallation({
         startpage: { enterCode: 'Gesprächscode eingeben', send: 'Los', login: 'Login für Nutzer' },

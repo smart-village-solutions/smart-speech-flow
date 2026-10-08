@@ -23,6 +23,14 @@ function renderScreen(list: () => Promise<LoginTenant[]>) {
   );
 }
 
+function serveLogin(locale: string, login: { headline: string; descriptionHtml: string }) {
+  server.use(
+    http.get('*/api/content/installation', () =>
+      HttpResponse.json({ ...installationBody, locale, login })
+    )
+  );
+}
+
 describe('TenantLoginScreen', () => {
   it('shows loading feedback while the tenant directory is pending', async () => {
     renderScreen(() => new Promise<LoginTenant[]>(() => undefined));
@@ -111,14 +119,6 @@ describe('TenantLoginScreen', () => {
     const DIRECTORY_NAME = 'Stadt Kassel';
     const BUNDLED_INSTRUCTION = 'Bitte wählen Sie Ihre Abteilung oder Organisation aus der Liste aus.';
 
-    function serveLogin(locale: string, login: { headline: string; descriptionHtml: string }) {
-      server.use(
-        http.get('*/api/content/installation', () =>
-          HttpResponse.json({ ...installationBody, locale, login })
-        )
-      );
-    }
-
     async function renderSettled() {
       renderWithProviders(
         <>
@@ -130,9 +130,10 @@ describe('TenantLoginScreen', () => {
           brand: 'kassel',
           services: {
             loginTenant: {
-              list: async () => [
-                { id: 'tenant-kassel', displayName: DIRECTORY_NAME, realm: 'kassel-ssf-2025' },
-              ],
+              list: () =>
+                Promise.resolve([
+                  { id: 'tenant-kassel', displayName: DIRECTORY_NAME, realm: 'kassel-ssf-2025' },
+                ]),
             },
           },
         }

@@ -16,7 +16,7 @@ export const contentKeys = {
 
 /**
  * Bundled copy is a complete answer, so a failure is not retried. The routes
- * allow 60 s of browser caching, and the query cache keeps content as long.
+ * allow 60 s of browser caching, and content counts as fresh for as long.
  */
 export const CONTENT_QUERY = { retry: false, staleTime: 60_000 } as const;
 

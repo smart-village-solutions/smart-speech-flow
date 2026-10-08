@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isSafeHttpsUrl, resolveApiUrl } from '@/core/http/url';
+import { plainHttp } from '@/test/plainHttp';
 
 describe('resolveApiUrl', () => {
   // In production the gateway has its own origin at api.dialog.kassel.de, so
@@ -54,7 +55,7 @@ describe('isSafeHttpsUrl', () => {
   });
 
   it.each([
-    'http://dialog.kassel.de/',
+    plainHttp('https://dialog.kassel.de/'),
     'javascript:alert(1)',
     'data:image/png;base64,AAAA',
     'https://user:pass@dialog.kassel.de/',

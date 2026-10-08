@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { RichText } from '@/ui/patterns/RichText';
+import { plainHttp } from '@/test/plainHttp';
 
 function rendered(html: string, inline = false): HTMLElement {
   const { container } = render(
@@ -70,6 +71,11 @@ describe('RichText', () => {
     expect(rendered('<p>One</p>\n  <p>Two</p>\n').innerHTML).toBe('<p>One</p><p>Two</p>');
   });
 
+  it('does not take inherited object keys for allowlisted tags', () => {
+    expect(rendered('<constructor>Text</constructor>').innerHTML).toBe('<p>Text</p>');
+    expect(rendered('<p><constructor>Text</constructor></p>').innerHTML).toBe('<p>Text</p>');
+  });
+
   it('keeps escaped markup as text', () => {
     const host = rendered('<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>');
 
@@ -130,9 +136,11 @@ describe('RichText', () => {
       'java\tscript:alert(1)',
       'data:text/html,<script>alert(1)</script>',
       'vbscript:msgbox(1)',
-      'http://www.kassel.de/',
+      plainHttp('https://www.kassel.de/'),
       '/relative',
       '',
+      'https://dialog.kassel.de@evil.example/',
+      'https://user:secret@www.kassel.de/',
     ])('unwraps a link to %j into its text', (href) => {
       const host = rendered(`<p><a href="${href}">Klick</a></p>`);
 

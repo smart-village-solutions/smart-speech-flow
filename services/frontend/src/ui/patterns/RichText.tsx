@@ -1,4 +1,5 @@
 import { createElement, Fragment, isValidElement, useMemo, type ReactNode } from 'react';
+import { isSafeHttpsUrl } from '@/core/http/url';
 
 const LINK_CLASS =
   'text-fg-link underline underline-offset-2 transition-colors duration-200 hover:text-fg-link-hover';
@@ -25,13 +26,22 @@ const DROPPED = new Set([
   'select',
 ]);
 
-function safeHref(element: Element): string | null {
+function isMailto(href: string): boolean {
   try {
-    const url = new URL(element.getAttribute('href') ?? '');
-    return url.protocol === 'https:' || url.protocol === 'mailto:' ? url.href : null;
+    return new URL(href).protocol === 'mailto:';
   } catch {
-    return null;
+    return false;
   }
+}
+
+/** Credentials are refused: `https://dialog.kassel.de@evil.example/` reads as the city's site. */
+function safeHref(element: Element): string | null {
+  const href = element.getAttribute('href') ?? '';
+  return isSafeHttpsUrl(href) || isMailto(href) ? new URL(href).href : null;
+}
+
+function isBlockTag(tag: string): boolean {
+  return Object.hasOwn(BLOCK_CLASS, tag);
 }
 
 /** A line break alone is not content: `<p><br></p>` is an empty block. */
@@ -44,7 +54,7 @@ function isBlank(nodes: ReactNode[]): boolean {
 }
 
 function isBlock(node: ReactNode): boolean {
-  return isValidElement(node) && typeof node.type === 'string' && node.type in BLOCK_CLASS;
+  return isValidElement(node) && typeof node.type === 'string' && isBlockTag(node.type);
 }
 
 function link(element: Element, children: ReactNode[]): ReactNode[] {
@@ -72,7 +82,7 @@ function wrap(element: Element, inline: boolean, children: ReactNode[]): ReactNo
   const tag = element.localName;
   if (tag === 'a') return link(element, children);
   if (FORMATTING.has(tag)) return [createElement(tag, null, ...children)];
-  if (tag in BLOCK_CLASS) return [block(tag, inline, children)];
+  if (isBlockTag(tag)) return [block(tag, inline, children)];
   return children;
 }
 

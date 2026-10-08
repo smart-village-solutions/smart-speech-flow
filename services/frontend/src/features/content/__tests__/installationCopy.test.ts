@@ -56,6 +56,14 @@ describe('loginCopy', () => {
     });
   });
 
+  it('keeps the bundled instruction when Studio sends a cleared description', () => {
+    const cleared = { ...studio, login: { headline: 'Login', descriptionHtml: '<p></p>' } };
+
+    expect(loginCopy(cleared, 'de', t).descriptionHtml).toBe(
+      '<p>Bitte wählen Sie Ihre Abteilung oder Organisation aus der Liste aus.</p>'
+    );
+  });
+
   it('uses bundled texts for content in another language', () => {
     expect(loginCopy({ ...studio, locale: 'en' }, 'de', t).headline).toBe('Login');
   });

@@ -11,6 +11,7 @@ import {
   installationBody,
   staffContentBody,
 } from '@/test/contentFixtures';
+import { plainHttp } from '@/test/plainHttp';
 
 type Mutable = Record<string, unknown>;
 
@@ -56,7 +57,7 @@ describe('toPublicContent', () => {
   });
 
   it.each([
-    ['an http:', 'http://dialog.kassel.de/assets/Logo.png'],
+    ['an http:', plainHttp('https://dialog.kassel.de/assets/Logo.png')],
     ['a javascript:', 'javascript:alert(1)'],
     ['a data:', 'data:image/png;base64,AAAA'],
     ['a credentialed', 'https://user:pass@dialog.kassel.de/assets/Logo.png'],
@@ -73,7 +74,7 @@ describe('toPublicContent', () => {
 
   it('turns a non-https legal URL into null and keeps the others', () => {
     const body = installation();
-    body.legal.imprintUrl = 'http://www.kassel.de/impressum.php';
+    body.legal.imprintUrl = plainHttp('https://www.kassel.de/impressum.php');
 
     expect(toPublicContent(body).legal).toEqual({
       imprintUrl: null,
@@ -199,7 +200,7 @@ describe('toGuestLanguages', () => {
   it('turns an unsafe icon into null without withdrawing the language', () => {
     const body = structuredClone(guestLanguagesBody);
     (body.languages[0] as Mutable).icon = {
-      url: 'http://dialog.kassel.de/flags/gb.png',
+      url: plainHttp('https://dialog.kassel.de/flags/gb.png'),
       alternativeText: 'Flag EN',
     };
 

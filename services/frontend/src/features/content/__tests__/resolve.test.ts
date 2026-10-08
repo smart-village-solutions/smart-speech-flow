@@ -42,6 +42,13 @@ describe('htmlOr', () => {
     expect(htmlOr('<p>Studio</p>', 'Bundled')).toBe('<p>Studio</p>');
   });
 
+  it.each(['<p></p>', '<p><br></p>', '<p> </p><p></p>', '<ul><li></li></ul>'])(
+    'treats markup without text, %j, as missing',
+    (studio) => {
+      expect(htmlOr(studio, 'Bundled')).toBe('<p>Bundled</p>');
+    }
+  );
+
   it('escapes bundled text into one paragraph', () => {
     expect(htmlOr(undefined, 'A < B & "C" > D')).toBe('<p>A &lt; B &amp; "C" &gt; D</p>');
     expect(htmlOr(' ', 'Bundled')).toBe('<p>Bundled</p>');

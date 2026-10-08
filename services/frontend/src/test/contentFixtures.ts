@@ -21,62 +21,122 @@ const kasselBranding = {
   },
 };
 
-/** The installation's German form; the staff form differs only in its placeholder. */
-const germanFeedback = {
+/** Question structure shared by every production form; only the texts differ. */
+const QUESTIONS = [
+  {
+    id: 'translationQuality',
+    type: 'rating',
+    required: true,
+    min: 1,
+    max: 5,
+  },
+  {
+    id: 'performance',
+    type: 'rating',
+    required: true,
+    min: 1,
+    max: 5,
+  },
+  {
+    id: 'usability',
+    type: 'rating',
+    required: true,
+    min: 1,
+    max: 5,
+  },
+  {
+    id: 'recommendation',
+    type: 'scale',
+    required: true,
+    min: 0,
+    max: 10,
+  },
+  {
+    id: 'improvementIdeas',
+    type: 'longText',
+    required: false,
+    maxLength: 4000,
+  },
+];
+
+type FormTexts = {
+  headline: string;
+  noticeHtml: string;
+  button: string;
+  questions: Record<string, Record<string, string>>;
+};
+
+/** A form as the gateway sends it: every question carries its headline. */
+function feedbackForm({ questions, ...form }: FormTexts) {
+  return {
+    ...form,
+    questions: QUESTIONS.map((question) => ({ ...question, ...questions[question.id] })),
+  };
+}
+
+const germanTexts: FormTexts = {
   headline: 'Feedback geben',
-  questions: [
-    {
-      id: 'translationQuality',
-      headline: 'Übersetzungsqualität',
-      question: 'Wie genau waren die Übersetzungen?',
-      required: true,
-      type: 'rating',
-      min: 1,
-      max: 5,
-    },
-    {
-      id: 'performance',
-      headline: 'Geschwindigkeit',
-      question: 'Wie schnell und reaktionsschnell war die App?',
-      required: true,
-      type: 'rating',
-      min: 1,
-      max: 5,
-    },
-    {
-      id: 'usability',
-      headline: 'Bedienung',
-      question: 'Wie einfach und angenehm war die Bedienung?',
-      required: true,
-      type: 'rating',
-      min: 1,
-      max: 5,
-    },
-    {
-      id: 'recommendation',
-      headline: 'Weiterempfehlung',
-      question:
-        'Wie wahrscheinlich empfehlen Sie KasselDIALOG einer Kollegin oder einem Kollegen weiter?',
-      required: true,
-      type: 'scale',
-      min: 0,
-      max: 10,
-      minLabel: 'Sehr unwahrscheinlich',
-      maxLabel: 'Sehr wahrscheinlich',
-    },
-    {
-      id: 'improvementIdeas',
-      headline: 'Verbesserungsvorschläge',
-      question: 'Was würde KasselDIALOG noch besser machen?',
-      required: false,
-      type: 'longText',
-      placeholder: 'Ihre Ideen und Wünsche oder alles andere, was Sie uns mitteilen möchten.',
-      maxLength: 4000,
-    },
-  ],
   noticeHtml:
     '<p>Ihre Angaben werden ausschließlich zur Verbesserung von KasselDIALOG ausgewertet.</p><p>Wir speichern das Feedback zwölf Monate lang und löschen es danach automatisch.</p><p>Sie können Ihr Feedback jederzeit widerrufen lassen – wenden Sie sich dazu an das Personal vor Ort.</p>',
   button: 'Feedback senden',
+  questions: {
+    translationQuality: {
+      headline: 'Übersetzungsqualität',
+      question: 'Wie genau waren die Übersetzungen?',
+    },
+    performance: {
+      headline: 'Geschwindigkeit',
+      question: 'Wie schnell und reaktionsschnell war die App?',
+    },
+    usability: {
+      headline: 'Bedienung',
+      question: 'Wie einfach und angenehm war die Bedienung?',
+    },
+    recommendation: {
+      headline: 'Weiterempfehlung',
+      question:
+        'Wie wahrscheinlich empfehlen Sie KasselDIALOG einer Kollegin oder einem Kollegen weiter?',
+      minLabel: 'Sehr unwahrscheinlich',
+      maxLabel: 'Sehr wahrscheinlich',
+    },
+    improvementIdeas: {
+      headline: 'Verbesserungsvorschläge',
+      question: 'Was würde KasselDIALOG noch besser machen?',
+      placeholder: 'Ihre Ideen und Wünsche oder alles andere, was Sie uns mitteilen möchten.',
+    },
+  },
+};
+
+const englishTexts: FormTexts = {
+  headline: 'Share your feedback',
+  noticeHtml:
+    '<p>Your answers are used only to improve KasselDIALOG.</p><p>We keep feedback for twelve months and delete it automatically after that.</p><p>You can have your feedback withdrawn at any time — just ask a member of staff.</p>',
+  button: 'Send feedback',
+  questions: {
+    translationQuality: {
+      headline: 'Translation quality',
+      question: 'How accurate were the translations?',
+    },
+    performance: {
+      headline: 'Performance',
+      question: 'How fast and responsive did the app feel?',
+    },
+    usability: {
+      headline: 'UI / UX',
+      question: 'How easy and pleasant was the interface to use?',
+    },
+    recommendation: {
+      headline: 'Recommendation',
+      question: 'How likely are you to recommend KasselDIALOG to a colleague?',
+      minLabel: 'Not at all likely',
+      maxLabel: 'Extremely likely',
+    },
+    improvementIdeas: {
+      headline: 'Improvement ideas',
+      question: 'What would make KasselDIALOG even better?',
+      placeholder: 'Your ideas or complaints',
+    },
+  },
 };
 
 export const installationBody = {
@@ -99,7 +159,7 @@ export const installationBody = {
     descriptionHtml:
       '<p>Bitte wählen Sie Ihre Abteilung oder Organisation aus der Liste aus.</p><p></p>',
   },
-  feedback: germanFeedback,
+  feedback: feedbackForm(germanTexts),
 };
 
 export const GUEST_LANGUAGE_CODES = ['en', 'ar', 'tr', 'ru', 'uk', 'am', 'ti', 'ku', 'fa'] as const;
@@ -141,61 +201,7 @@ const englishGuestContent = {
     '<p>KasselDIALOG is an automatic real-time language translation service designed to support conversations between people who speak different languages. The service runs exclusively on a dedicated private server.</p><p>To start recording, tap the microphone button. You will then have 20 seconds to speak your input. You can also end the recording earlier with another tap. Alternatively, you can use the text input instead.</p><p>By default, audio and transcription data are processed only during the active session and are not retained afterwards. Once the conversation ends, the data is discarded automatically. You can report issues or share ideas for improvement at any time using the in-app feedback function.</p><p>If you would like to help us improve KasselDIALOG, you have the option to allow your conversation data to be stored for up to 180 days. This data may be used solely for analysis and quality improvement purposes within the KasselDIALOG project.</p>',
   storageQuestionHtml:
     '<p>I agree to the storage of my conversation data for up to 180 days for the purpose of improving KasselDIALOG.</p>',
-  feedback: {
-    headline: 'Share your feedback',
-    questions: [
-      {
-        id: 'translationQuality',
-        headline: 'Translation quality',
-        question: 'How accurate were the translations?',
-        required: true,
-        type: 'rating',
-        min: 1,
-        max: 5,
-      },
-      {
-        id: 'performance',
-        headline: 'Performance',
-        question: 'How fast and responsive did the app feel?',
-        required: true,
-        type: 'rating',
-        min: 1,
-        max: 5,
-      },
-      {
-        id: 'usability',
-        headline: 'UI / UX',
-        question: 'How easy and pleasant was the interface to use?',
-        required: true,
-        type: 'rating',
-        min: 1,
-        max: 5,
-      },
-      {
-        id: 'recommendation',
-        headline: 'Recommendation',
-        question: 'How likely are you to recommend KasselDIALOG to a colleague?',
-        required: true,
-        type: 'scale',
-        min: 0,
-        max: 10,
-        minLabel: 'Not at all likely',
-        maxLabel: 'Extremely likely',
-      },
-      {
-        id: 'improvementIdeas',
-        headline: 'Improvement ideas',
-        question: 'What would make KasselDIALOG even better?',
-        required: false,
-        type: 'longText',
-        placeholder: 'Your ideas or complaints',
-        maxLength: 4000,
-      },
-    ],
-    noticeHtml:
-      '<p>Your answers are used only to improve KasselDIALOG.</p><p>We keep feedback for twelve months and delete it automatically after that.</p><p>You can have your feedback withdrawn at any time — just ask a member of staff.</p>',
-    button: 'Send feedback',
-  },
+  feedback: feedbackForm(englishTexts),
 };
 
 export function guestContentBody(language: string) {
@@ -224,14 +230,17 @@ export const staffContentBody = {
       headline: 'Neues Gespräch',
       descriptionHtml: '<p>Code oder Link mit dem Gesprächspartner teilen</p>',
     },
-    feedback: {
-      ...germanFeedback,
-      questions: germanFeedback.questions.map((question) =>
-        question.id === 'improvementIdeas'
-          ? { ...question, placeholder: 'Ihre Ideen oder Beschwerden sind willkommen.' }
-          : question
-      ),
-    },
+    // The staff form differs from the installation's only in its placeholder.
+    feedback: feedbackForm({
+      ...germanTexts,
+      questions: {
+        ...germanTexts.questions,
+        improvementIdeas: {
+          ...germanTexts.questions.improvementIdeas,
+          placeholder: 'Ihre Ideen oder Beschwerden sind willkommen.',
+        },
+      },
+    }),
   },
   guestLanguageNames: { en: 'Englisch' },
 };

@@ -24,8 +24,13 @@ export function textOr(studio: string | null | undefined, bundled: string): stri
 
 const ESCAPES: Readonly<Record<string, string>> = { '&': '&amp;', '<': '&lt;', '>': '&gt;' };
 
+/** A cleared rich-text field arrives as `<p></p>`; markup without text counts as missing. */
+function hasText(html: string): boolean {
+  return new DOMParser().parseFromString(html, 'text/html').body.textContent?.trim() !== '';
+}
+
 /** Studio's markup, or the bundled text as one paragraph, so the caller always renders RichText. */
 export function htmlOr(studio: string | null | undefined, bundled: string): string {
-  if (isPresent(studio)) return studio;
+  if (isPresent(studio) && hasText(studio)) return studio;
   return `<p>${bundled.replaceAll(/[&<>]/g, (character) => ESCAPES[character])}</p>`;
 }
