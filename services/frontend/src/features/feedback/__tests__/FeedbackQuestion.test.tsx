@@ -44,6 +44,13 @@ describe('FeedbackQuestion', () => {
     expect(screen.getByRole('group', { name: 'Would you recommend us?' })).toBeInTheDocument();
   });
 
+  it('treats an empty headline as no headline', () => {
+    show({ ...SPEED, headline: '' });
+
+    const group = screen.getByRole('group', { name: 'How fast was it?' });
+    expect(within(group).getAllByText('How fast was it?')).toHaveLength(1);
+  });
+
   it('marks a required question without changing its name', () => {
     show(SPEED);
 

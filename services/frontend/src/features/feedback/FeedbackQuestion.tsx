@@ -17,33 +17,35 @@ interface FeedbackQuestionProps {
 /**
  * The legend names the group, so the required marker stays out of it and is
  * read as the group's description. A rendered legend is not a flex item, which
- * is why it carries the section gap as its own margin.
+ * is why it carries the section gap as its own margin, and older WebKit does
+ * not lay out a legend as a flex container, so an inner span does that.
  */
 export function FeedbackQuestion({ question, value, onChange }: Readonly<FeedbackQuestionProps>) {
   const { t } = useTranslation();
   const requiredId = useId();
   const scale = question.type === 'scale';
+  // Studio may send a blank headline; it must not leave the group unnamed.
+  const headline = question.headline?.trim() ? question.headline : null;
 
   return (
     <fieldset aria-describedby={question.required ? requiredId : undefined}>
       <legend
         className={cn(
-          'flex items-center gap-1',
           scale ? 'mb-3' : 'mb-2',
-          question.headline === undefined
+          headline === null
             ? 'text-body text-fg-strong'
             : 'text-label font-medium uppercase tracking-wider text-fg-muted'
         )}
       >
-        {question.headline ?? question.question}
-        {question.required && (
-          <Asterisk aria-hidden size={10} strokeWidth={3} className="text-accent" />
-        )}
+        <span className="flex items-center gap-1">
+          {headline ?? question.question}
+          {question.required && (
+            <Asterisk aria-hidden size={10} strokeWidth={3} className="text-accent" />
+          )}
+        </span>
       </legend>
       <div className={cn('flex flex-col', scale ? 'gap-3' : 'gap-2')}>
-        {question.headline !== undefined && (
-          <p className="text-body text-fg-strong">{question.question}</p>
-        )}
+        {headline !== null && <p className="text-body text-fg-strong">{question.question}</p>}
         <QuestionInput question={question} value={value} onChange={onChange} />
       </div>
       {question.required && (

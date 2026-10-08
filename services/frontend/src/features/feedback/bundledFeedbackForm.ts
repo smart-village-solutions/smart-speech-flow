@@ -3,6 +3,7 @@ import type {
   FeedbackFormDefinition,
   FeedbackQuestion,
 } from '@/domain/feedback/feedbackForm.types';
+import { BUNDLED_QUESTION_IDS as IDS } from '@/domain/feedback/bundledQuestionIds';
 import { MAX_IMPROVEMENTS_LENGTH } from './feedback.state';
 
 /** Article 13 information, on screen wherever the submit action is. */
@@ -26,11 +27,11 @@ export function bundledFeedbackForm(t: TFunction): FeedbackFormDefinition {
   return {
     headline: t('feedback.title'),
     questions: [
-      rating('translationQuality', 'quality'),
-      rating('performance', 'performance'),
-      rating('usability', 'usability'),
+      rating(IDS.translationQuality, 'quality'),
+      rating(IDS.performance, 'performance'),
+      rating(IDS.usability, 'usability'),
       {
-        id: 'recommendation',
+        id: IDS.recommendation,
         type: 'scale',
         headline: t('feedback.nps.label'),
         question: t('feedback.nps.question'),
@@ -41,7 +42,7 @@ export function bundledFeedbackForm(t: TFunction): FeedbackFormDefinition {
         maxLabel: t('feedback.nps.high'),
       },
       {
-        id: 'improvementIdeas',
+        id: IDS.improvementIdeas,
         type: 'longText',
         headline: t('feedback.improvements.label'),
         question: t('feedback.improvements.question'),

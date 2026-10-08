@@ -1,3 +1,4 @@
+import { BUNDLED_QUESTION_IDS as IDS } from './bundledQuestionIds';
 import type { FeedbackAnswers } from './feedbackForm.types';
 import type { FeedbackSubmission } from './feedback.types';
 
@@ -9,13 +10,13 @@ export function toV1Submission(
   answers: FeedbackAnswers,
   sessionId: string | null
 ): FeedbackSubmission {
-  const note = answers.improvementIdeas;
+  const note = answers[IDS.improvementIdeas];
 
   return {
-    translationQuality: score(answers, 'translationQuality'),
-    performance: score(answers, 'performance'),
-    usability: score(answers, 'usability'),
-    netPromoterScore: score(answers, 'recommendation'),
+    translationQuality: score(answers, IDS.translationQuality),
+    performance: score(answers, IDS.performance),
+    usability: score(answers, IDS.usability),
+    netPromoterScore: score(answers, IDS.recommendation),
     improvements: typeof note === 'string' ? note : '',
     sessionId,
   };
