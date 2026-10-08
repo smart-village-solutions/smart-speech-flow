@@ -1,15 +1,12 @@
-"""One configurable period governs authorised audio and authorised text."""
+"""A session's captured retention governs its authorised text; refused text goes regardless."""
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
-from services.api_gateway.audio_storage import (
-    AudioStore,
-    AudioVariant,
-    retention_hours,
-)
+from services.api_gateway.audio_storage import AudioStore, AudioVariant
+from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_models import ClientType, SessionMessage
 from services.api_gateway.session_models import SessionStatus
@@ -20,27 +17,13 @@ from services.api_gateway.session_store import (
 
 REVISION = f"sha256:{'a' * 64}"
 NOW = datetime(2026, 9, 17, 12, 0, tzinfo=timezone.utc)
+# Captured but never consulted: none of these sessions granted consent.
+UNGRANTED = None
 
 
-def test_retention_defaults_to_24_hours(monkeypatch):
-    monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
-    assert retention_hours() == 24
-
-
-def test_retention_is_configurable(monkeypatch):
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "72")
-    assert retention_hours() == 72
-
-
-def test_zero_disables_automatic_deletion(monkeypatch):
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
-    assert retention_hours() == 0
-
-
-@pytest.mark.parametrize("raw", ["", "  ", "not-a-number", "-5"])
-def test_invalid_values_fall_back_to_the_default(monkeypatch, raw):
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", raw)
-    assert retention_hours() == 24
+@pytest.fixture(autouse=True)
+def default_terminal_period(monkeypatch):
+    monkeypatch.delenv("SSF_TERMINAL_RECORD_HOURS", raising=False)
 
 
 @pytest.fixture
@@ -53,9 +36,14 @@ def manager(audio_store: AudioStore) -> TenantSessionManager:
     return TenantSessionManager(store=MemoryTenantSessionStore(), audio_store=audio_store)
 
 
-async def _session_aged(manager, *, age: timedelta, authorized: bool):
+async def _session_aged(
+    manager, *, age: timedelta, authorized: bool, retention: int | None = UNGRANTED
+):
     session = await manager.create_admin_session("tenant-test", REVISION)
     session.created_at = NOW - age
+    if retention is not None:
+        session.consent_status = ConsentStatus.GRANTED
+        session.consent_retention_hours = retention
     await manager.add_message(
         session.key,
         SessionMessage(
@@ -75,49 +63,63 @@ async def _session_aged(manager, *, age: timedelta, authorized: bool):
     return session.key
 
 
-async def test_authorised_text_expires_at_the_retention_boundary(
-    manager, audio_store, monkeypatch
-):
-    monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
+async def test_authorised_text_expires_at_the_captured_retention(manager):
+    key = await _session_aged(manager, age=timedelta(hours=73), authorized=True, retention=72)
+    await manager.sweep_expired_content(NOW)
+    assert (await manager.get_session(key)).messages == []
+
+
+async def test_authorised_text_survives_inside_the_captured_retention(manager):
+    key = await _session_aged(manager, age=timedelta(hours=71), authorized=True, retention=72)
+    await manager.sweep_expired_content(NOW)
+    assert len((await manager.get_session(key)).messages) == 1
+
+
+async def test_a_long_captured_retention_outlasts_the_short_default(manager):
+    key = await _session_aged(manager, age=timedelta(hours=25), authorized=True, retention=4320)
+    await manager.sweep_expired_content(NOW)
+    assert len((await manager.get_session(key)).messages) == 1
+
+
+async def test_a_captured_zero_never_expires_authorised_text(manager):
+    key = await _session_aged(manager, age=timedelta(days=30), authorized=True, retention=0)
+    await manager.sweep_expired_content(NOW)
+    assert len((await manager.get_session(key)).messages) == 1
+
+
+async def test_text_without_granted_consent_expires_at_the_short_default(manager):
     key = await _session_aged(manager, age=timedelta(hours=25), authorized=True)
     await manager.sweep_expired_content(NOW)
     assert (await manager.get_session(key)).messages == []
 
 
-async def test_authorised_text_survives_inside_the_retention_window(
-    manager, audio_store, monkeypatch
-):
-    monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
-    key = await _session_aged(manager, age=timedelta(hours=2), authorized=True)
+async def test_the_short_default_is_configurable(manager, monkeypatch):
+    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "48")
+    key = await _session_aged(manager, age=timedelta(hours=25), authorized=True)
     await manager.sweep_expired_content(NOW)
     assert len((await manager.get_session(key)).messages) == 1
 
 
-async def test_authorised_text_survives_when_deletion_is_disabled(
-    manager, audio_store, monkeypatch
-):
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
-    key = await _session_aged(manager, age=timedelta(days=30), authorized=True)
+async def test_each_session_is_swept_by_its_own_retention(manager):
+    kept = await _session_aged(manager, age=timedelta(hours=30), authorized=True, retention=4320)
+    expired = await _session_aged(manager, age=timedelta(hours=30), authorized=True, retention=24)
+
     await manager.sweep_expired_content(NOW)
-    assert len((await manager.get_session(key)).messages) == 1
+
+    assert len((await manager.get_session(kept)).messages) == 1
+    assert (await manager.get_session(expired)).messages == []
 
 
-async def test_refused_content_in_an_abandoned_session_is_removed(
-    manager, audio_store, monkeypatch
-):
-    # Disabling automatic deletion must not retain refused content.
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
-    key = await _session_aged(manager, age=timedelta(hours=9), authorized=False)
+async def test_refused_content_in_an_abandoned_session_is_removed(manager):
+    # A captured zero must not retain refused content.
+    key = await _session_aged(manager, age=timedelta(hours=9), authorized=False, retention=0)
     await manager.sweep_expired_content(NOW)
     assert (await manager.get_session(key)).messages == []
 
 
-async def test_refused_content_survives_inside_the_session_lifetime(
-    manager, audio_store, monkeypatch
-):
+async def test_refused_content_survives_inside_the_session_lifetime(manager):
     # Removal belongs to termination; the sweep is the net for what never ends.
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
-    key = await _session_aged(manager, age=timedelta(hours=2), authorized=False)
+    key = await _session_aged(manager, age=timedelta(hours=2), authorized=False, retention=0)
     await manager.sweep_expired_content(NOW)
     assert len((await manager.get_session(key)).messages) == 1
 
@@ -153,7 +155,6 @@ def strict_manager(audio_store: AudioStore) -> TenantSessionManager:
 async def test_one_terminated_session_does_not_abort_the_whole_sweep(
     strict_manager, audio_store, monkeypatch
 ):
-    monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
     terminated = await _session_aged(
         strict_manager, age=timedelta(hours=25), authorized=True
     )
@@ -173,7 +174,6 @@ async def test_the_sweep_leaves_terminated_records_untouched(
 ):
     # A terminated record is immutable in the store. Pruning it in memory only
     # would drift from Redis and resurrect on the next load.
-    monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
     key = await _session_aged(
         strict_manager, age=timedelta(hours=25), authorized=True
     )
@@ -189,9 +189,10 @@ async def test_an_audio_only_removal_is_persisted(
 ):
     # The message count is unchanged, so a count-based dirty check would keep
     # `translated_audio_available: true` in the store for a file that is gone.
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
     session = await strict_manager.create_admin_session("tenant-test", REVISION)
     session.created_at = NOW - timedelta(hours=9)
+    session.consent_status = ConsentStatus.GRANTED
+    session.consent_retention_hours = 0
     await strict_manager.add_message(
         session.key,
         SessionMessage(
@@ -233,7 +234,6 @@ async def test_a_legacy_session_sweeps_without_logging_a_failure(monkeypatch, ca
     from services.api_gateway.legacy_session_manager import LegacySessionManager
     from services.api_gateway.session_models import Session
 
-    monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
     legacy = Session(id="LEGACY01")
     legacy.created_at = NOW - timedelta(hours=25)
     legacy.messages = [
@@ -269,9 +269,10 @@ async def test_a_failed_sweep_write_retries_on_the_next_pass(
     sees nothing refused, returns an empty deletion list, and the files are
     never removed while Redis still holds the unpruned record.
     """
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
     session = await strict_manager.create_admin_session("tenant-test", REVISION)
     session.created_at = NOW - timedelta(hours=9)
+    session.consent_status = ConsentStatus.GRANTED
+    session.consent_retention_hours = 0
     await strict_manager.add_message(
         session.key,
         SessionMessage(
@@ -311,7 +312,6 @@ async def test_a_failed_sweep_write_retries_on_the_next_pass(
 
 async def test_a_session_the_sweep_could_not_save_is_reported(manager, audio_store, monkeypatch):
     """The retention pass must not call itself complete over unsaved deletions."""
-    monkeypatch.delenv("SSF_CONTENT_RETENTION_HOURS", raising=False)
     key = await _session_aged(manager, age=timedelta(hours=25), authorized=True)
 
     def unavailable(_session):

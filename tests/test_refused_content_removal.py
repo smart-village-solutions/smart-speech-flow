@@ -1,11 +1,12 @@
 """Termination keeps authorised content and removes everything else."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from services.api_gateway.audio_storage import AudioStore, AudioVariant
+from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.session_manager import TenantSessionManager
 from services.api_gateway.session_models import ClientType, SessionMessage
 from services.api_gateway.session_store import (
@@ -283,3 +284,42 @@ async def test_a_message_without_tts_audio_keeps_its_negative_marker(manager, au
     output = (await manager.get_session(session.key)).messages[0].pipeline_metadata["steps"][0]
     assert output["output"]["audio_available"] is False
     assert "audio_url" not in output["output"]
+
+
+async def test_a_captured_zero_never_retains_refused_content(manager, audio_store):
+    session = await manager.create_admin_session("tenant-test", REVISION)
+    session.consent_status = ConsentStatus.GRANTED
+    session.consent_retention_hours = 0
+    for message in (
+        _message("kept", record=True, original=True, translated=True),
+        _message("refused", record=False, original=False, translated=False),
+    ):
+        await manager.add_message(session.key, message)
+        for variant in (AudioVariant.ORIGINAL, AudioVariant.TRANSLATED):
+            audio_store.save(session.key, message.id, variant, b"wav", retention_hours=0)
+
+    await manager.terminate_session(session.key, reason="test")
+
+    stored = await manager.store.load(session.key)
+    assert [message.id for message in stored.messages] == ["kept"]
+    assert not audio_store.path(session.key, "refused", AudioVariant.ORIGINAL).exists()
+    assert audio_store.path(session.key, "kept", AudioVariant.ORIGINAL).exists()
+    # Zero keeps the authorised rest until an operator removes it.
+    assert session.key not in manager.store._expiries
+
+
+async def test_a_declined_session_keeps_nothing_and_expires_at_the_short_default(
+    manager, audio_store, declined_session_with_content, monkeypatch
+):
+    monkeypatch.delenv("SSF_TERMINAL_RECORD_HOURS", raising=False)
+    session, key, _ = declined_session_with_content
+    session.consent_status = ConsentStatus.DECLINED
+    before = datetime.now(timezone.utc)
+
+    await manager.terminate_session(key, reason="test")
+
+    stored = await manager.store.load(key)
+    assert stored.messages == []
+    assert list(audio_store.base_dir.rglob("*.wav")) == []
+    lifetime = manager.store._expiries[key] - before
+    assert timedelta(hours=24) <= lifetime < timedelta(hours=24, seconds=5)

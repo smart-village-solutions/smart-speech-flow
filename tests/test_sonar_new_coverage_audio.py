@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 def test_audio_storage_counts_cleanup_errors_for_both_directories(monkeypatch, tmp_path, caplog):
     from services.api_gateway import audio_storage
+    from services.api_gateway.content_retention import DEFAULT_TERMINAL_RECORD_HOURS
     from services.api_gateway.tenant_session import TenantSessionKey
 
     key = TenantSessionKey("tenant-a", "ABC12345")
@@ -25,7 +26,7 @@ def test_audio_storage_counts_cleanup_errors_for_both_directories(monkeypatch, t
         b"old",
         base_dir=tmp_path,
     )
-    old_timestamp = time.time() - (audio_storage.RETENTION_HOURS + 1) * 3600
+    old_timestamp = time.time() - (DEFAULT_TERMINAL_RECORD_HOURS + 1) * 3600
     os.utime(original_file, (old_timestamp, old_timestamp))
     os.utime(translated_file, (old_timestamp, old_timestamp))
     monkeypatch.setattr(

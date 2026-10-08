@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from .clock import utc_now
 from .consent import ConsentStatus
+from .content_retention import valid_retention_hours
 from .studio_v2 import REVISION_PATTERN
 from .tenant_session import TenantSessionKey
 
@@ -169,6 +170,18 @@ def _stored_configuration_revision(data: Dict[str, Any]) -> str:
     return revision
 
 
+def _stored_retention_hours(data: Dict[str, Any]) -> Optional[int]:
+    """The captured retention; a missing or malformed value reads as None (the short default)."""
+    return valid_retention_hours(data.get("consent_retention_hours"))
+
+
+def _stored_consent_revision(data: Dict[str, Any]) -> Optional[str]:
+    revision = data.get("consent_configuration_revision")
+    if isinstance(revision, str) and _CONFIGURATION_REVISION.fullmatch(revision):
+        return revision
+    return None
+
+
 def _previous_gateway_snapshot(revision: Optional[str]) -> Optional[Dict[str, str]]:
     """The v1 snapshot shape, so a rollback to the v1 gateway can still load the record.
 
@@ -192,6 +205,9 @@ class Session:
     tenant_id: Optional[str] = None
     configuration_revision: Optional[str] = None
     consent_status: ConsentStatus = ConsentStatus.PENDING
+    # Captured from the live read that granted consent and never changed after.
+    consent_retention_hours: Optional[int] = None
+    consent_configuration_revision: Optional[str] = None
     customer_language: Optional[str] = None  # Wird erst bei Client-Join gesetzt
     admin_language: str = "de"
     status: SessionStatus = SessionStatus.PENDING
@@ -256,6 +272,8 @@ class Session:
             "configuration_revision": self.configuration_revision,
             "runtime_configuration": _previous_gateway_snapshot(self.configuration_revision),
             "consent_status": self.consent_status.value,
+            "consent_retention_hours": self.consent_retention_hours,
+            "consent_configuration_revision": self.consent_configuration_revision,
             "customer_language": self.customer_language,
             "admin_language": self.admin_language,
             "status": self.status.value,
@@ -298,6 +316,8 @@ class Session:
         data.pop("tenant_id", None)
         data.pop("configuration_revision", None)
         data.pop("runtime_configuration", None)
+        data.pop("consent_retention_hours", None)
+        data.pop("consent_configuration_revision", None)
         data.pop("owner_ref", None)
         return data
 
@@ -340,6 +360,8 @@ class Session:
             tenant_id=data["tenant_id"],
             configuration_revision=_stored_configuration_revision(data),
             consent_status=ConsentStatus.from_stored(data.get("consent_status")),
+            consent_retention_hours=_stored_retention_hours(data),
+            consent_configuration_revision=_stored_consent_revision(data),
             customer_language=data.get("customer_language"),
             admin_language=data.get("admin_language", "de"),
             status=SessionStatus(data.get("status", SessionStatus.PENDING.value)),

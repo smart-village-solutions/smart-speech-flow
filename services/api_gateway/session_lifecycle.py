@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from .consent import ConsentStatus
 from .consent_resolution import resolve_consent
 from .log_safety import safe_session_ref, sanitize_log_value
 from .session_manager import TenantSessionManager
@@ -169,7 +170,17 @@ class SessionLifecycleService:
         # re-entered on every customer language change, and re-resolving there
         # would let a consent-less call overwrite a granted answer.
         live_policy = await _read_activation_policy(correlation_id, key.tenant_id, runtime_flow)
+        # A concurrent activation may have finished during the read; its consent stands.
+        status_after_read = await self._sessions.get_session_status(key)
+        if status_after_read == SessionStatus.ACTIVE:
+            return await self._reactivate(key, session, customer_language)
+        if status_after_read == SessionStatus.TERMINATED:
+            raise SessionTerminatedError
         session.consent_status = resolve_consent(live_policy, data_retention_consent)
+        # The retention the guest agreed to, from the same read; it never changes after.
+        if session.consent_status is ConsentStatus.GRANTED and live_policy is not None:
+            session.consent_retention_hours = live_policy.retention_hours
+            session.consent_configuration_revision = live_policy.configuration_revision
 
         await self._sessions.activate_session(key, customer_language)
 

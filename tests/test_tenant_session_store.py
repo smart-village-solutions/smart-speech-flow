@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+import pytest
+
+from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.session_models import ClientType, Session, SessionMessage, SessionStatus
 from services.api_gateway.tenant_session import (
     TenantSessionKey,
@@ -13,6 +16,7 @@ from services.api_gateway.tenant_session import (
 from services.api_gateway.session_store import (
     MemoryTenantSessionStore,
     RedisTenantSessionStore,
+    _join_payload,
     join_key,
     session_key,
     tenant_active_sessions_key,
@@ -92,6 +96,28 @@ class RecordingRedis:
 
     async def smembers(self, key: str) -> set[str]:
         return self.sets.get(key, set())
+
+
+class PruningRedis(RecordingRedis):
+    """Index sets and records as Redis holds them, with SREM recorded."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.srem_calls: list[tuple[str, tuple[str, ...]]] = []
+
+    def add_record(self, store: RedisTenantSessionStore, session: Session) -> None:
+        self.values[session_key("ssf", session.key)] = store._session_payload(session)
+        self.values[join_key("ssf", session.id)] = _join_payload(session.key, active=True)
+        self.sets.setdefault(tenant_sessions_key("ssf", session.key.tenant_id), set()).add(
+            session.id
+        )
+
+    async def srem(self, key: str, *members: str) -> int:
+        self.srem_calls.append((key, members))
+        held = self.sets.get(key, set())
+        removed = held & set(members)
+        held -= removed
+        return len(removed)
 
 
 async def test_redis_create_is_one_atomic_script_with_exact_v2_keys() -> None:
@@ -295,40 +321,62 @@ class TestEndedJoinResolution:
             assert await store.resolve_join(ended.id) is None
 
 
-async def test_terminating_expires_the_record_after_the_retention_period(monkeypatch) -> None:
-    """The terminal record is immutable, so retention is an expiry, not a prune.
+def granted(session: Session, hours: int) -> Session:
+    session.consent_status = ConsentStatus.GRANTED
+    session.consent_retention_hours = hours
+    return session
 
-    Nothing else can remove it: the save script refuses every change to a
-    terminated record, and there is no purge job.
-    """
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "24")
+
+async def _terminal_ttl(session: Session) -> object:
     redis = RecordingRedis()
     store = RedisTenantSessionStore(redis, namespace="ssf")
-    session = make_session("tenant-a", "ABC12345")
     session.status = SessionStatus.TERMINATED
 
     await store.terminate(session)
 
     call = redis.eval_calls[-1]
     assert call[0].count("EXPIRE") == 1
-    assert call[10] == 24 * 3600
+    return call[10]
 
 
-async def test_zero_retention_never_expires_the_record(monkeypatch) -> None:
+async def test_a_granted_record_expires_after_its_captured_retention(monkeypatch) -> None:
+    """The terminal record is immutable, so retention is an expiry, not a prune.
+
+    Nothing else can remove it: the save script refuses every change to a
+    terminated record, and there is no purge job.
+    """
+    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "24")
+
+    assert await _terminal_ttl(granted(make_session("tenant-a", "ABC12345"), 4320)) == 4320 * 3600
+
+
+async def test_a_captured_zero_never_expires_the_record() -> None:
     # Zero disables automatic deletion; it must not mean "expire immediately".
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "0")
-    redis = RecordingRedis()
-    store = RedisTenantSessionStore(redis, namespace="ssf")
+    assert await _terminal_ttl(granted(make_session("tenant-a", "ABC12345"), 0)) == 0
+
+
+@pytest.mark.parametrize(
+    "status", [ConsentStatus.PENDING, ConsentStatus.DECLINED, ConsentStatus.POLICY_DISABLED]
+)
+async def test_a_record_without_granted_consent_expires_after_the_short_default(
+    monkeypatch, status
+) -> None:
+    monkeypatch.delenv("SSF_TERMINAL_RECORD_HOURS", raising=False)
     session = make_session("tenant-a", "ABC12345")
-    session.status = SessionStatus.TERMINATED
+    session.consent_status = status
+    # Never consulted without granted consent.
+    session.consent_retention_hours = 4320
 
-    await store.terminate(session)
-
-    assert redis.eval_calls[-1][10] == 0
+    assert await _terminal_ttl(session) == 24 * 3600
 
 
-async def test_an_expired_terminal_record_is_gone(monkeypatch) -> None:
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "24")
+async def test_the_short_default_is_configurable(monkeypatch) -> None:
+    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "48")
+
+    assert await _terminal_ttl(make_session("tenant-a", "ABC12345")) == 48 * 3600
+
+
+async def test_an_expired_terminal_record_is_gone() -> None:
     store = MemoryTenantSessionStore()
     session = make_session("tenant-a", "ABC12345")
     assert await store.create(session) is True
@@ -340,10 +388,89 @@ async def test_an_expired_terminal_record_is_gone(monkeypatch) -> None:
     assert await store.load(session.key) is None
 
 
+async def test_the_memory_store_mirrors_the_captured_retention(monkeypatch) -> None:
+    monkeypatch.delenv("SSF_TERMINAL_RECORD_HOURS", raising=False)
+    store = MemoryTenantSessionStore()
+    sessions = {
+        hours: granted(make_session("tenant-a", f"SESSION{hours or 0}"), hours)
+        for hours in (4320, 0)
+    }
+    declined = make_session("tenant-a", "DECLINED")
+    before = datetime.now(timezone.utc)
+    for session in (*sessions.values(), declined):
+        assert await store.create(session) is True
+        session.status = SessionStatus.TERMINATED
+        await store.terminate(session)
+
+    def lifetime(session: Session) -> timedelta:
+        return store._expiries[session.key] - before
+
+    assert timedelta(hours=4320) <= lifetime(sessions[4320]) < timedelta(hours=4320, seconds=5)
+    assert sessions[0].key not in store._expiries
+    assert timedelta(hours=24) <= lifetime(declined) < timedelta(hours=24, seconds=5)
+
+
+async def test_listing_prunes_index_members_whose_record_is_gone() -> None:
+    redis = PruningRedis()
+    store = RedisTenantSessionStore(redis, namespace="ssf")
+    live = make_session("tenant-a", "LIVEAAAA")
+    redis.add_record(store, live)
+    redis.sets[tenant_sessions_key("ssf", "tenant-a")].add("GONEAAAA")
+    redis.sets[tenant_sessions_key("ssf", "tenant-b")] = {"GONEBBBB"}
+
+    listed = await store.list_for_tenant("tenant-a")
+
+    assert [session.id for session in listed] == ["LIVEAAAA"]
+    assert redis.srem_calls == [(tenant_sessions_key("ssf", "tenant-a"), ("GONEAAAA",))]
+    assert redis.sets[tenant_sessions_key("ssf", "tenant-a")] == {"LIVEAAAA"}
+    assert redis.sets[tenant_sessions_key("ssf", "tenant-b")] == {"GONEBBBB"}
+
+
+async def test_listing_keeps_a_quarantined_record_indexed() -> None:
+    # Present but unreadable is not expired; only an absent record is pruned.
+    redis = PruningRedis()
+    store = RedisTenantSessionStore(redis, namespace="ssf")
+    broken = make_session("tenant-a", "BROKENAA")
+    redis.add_record(store, broken)
+    redis.values[session_key("ssf", broken.key)] = "{not json"
+
+    assert await store.list_for_tenant("tenant-a") == []
+    assert redis.srem_calls == []
+
+
+async def test_listing_without_expired_members_writes_nothing() -> None:
+    redis = PruningRedis()
+    store = RedisTenantSessionStore(redis, namespace="ssf")
+    redis.add_record(store, make_session("tenant-a", "LIVEAAAA"))
+
+    await store.list_for_tenant("tenant-a")
+
+    assert redis.srem_calls == []
+
+
+async def test_the_memory_store_forgets_expired_records_of_the_listed_tenant_only() -> None:
+    store = MemoryTenantSessionStore()
+    ended = {}
+    for tenant in ("tenant-a", "tenant-b"):
+        session = make_session(tenant, f"ENDED{tenant[-1].upper()}AA")
+        await store.create(session)
+        session.status = SessionStatus.TERMINATED
+        await store.terminate(session)
+        store.expire_now(session.key)
+        ended[tenant] = session
+
+    assert await store.list_for_tenant("tenant-a") == []
+
+    assert ended["tenant-a"].key not in store._sessions
+    assert ended["tenant-a"].key not in store._expiries
+    assert ended["tenant-b"].key in store._sessions
+    # The tombstone still stops the identifier being reused.
+    assert await store.create(make_session("tenant-a", "ENDEDAAA")) is False
+
+
 async def test_the_join_tombstone_outlives_the_expired_record(monkeypatch) -> None:
     # The tombstone carries no conversation content and is what stops a
     # session identifier being reused, so it must not expire with the record.
-    monkeypatch.setenv("SSF_CONTENT_RETENTION_HOURS", "24")
     store = MemoryTenantSessionStore()
     session = make_session("tenant-a", "ABC12345")
     assert await store.create(session) is True

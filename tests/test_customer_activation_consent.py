@@ -1,6 +1,7 @@
 """Activation resolves consent exactly once, from a live read."""
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -10,8 +11,9 @@ from services.api_gateway.app import app
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.dependencies import get_studio_runtime_flow
 from services.api_gateway.studio_runtime_v2_client import StudioRuntimeV2ClientError
-from tests.runtime_policy_helpers import runtime_read
+from tests.runtime_policy_helpers import REVISION, runtime_read
 
+OTHER_REVISION = f"sha256:{'b' * 64}"
 _KASSEL_FIXTURE = Path(__file__).parent / "fixtures" / "studio_v2" / "runtime-tenant-kassel.json"
 
 
@@ -25,6 +27,8 @@ class _FakeStudio:
         self._mode = "ask"
         self._error: Exception | None = None
         self.calls = 0
+        self.retention_hours: int | None = 4320
+        self.revision = REVISION
 
     def set_mode(self, mode: str) -> None:
         self._mode = mode
@@ -45,7 +49,14 @@ class _FakeStudio:
         self.calls += 1
         if self._error is not None:
             raise self._error
-        return runtime_read(tenant_id=tenant_id, mode=self._mode)
+        if self._mode == "disabled":
+            return runtime_read(tenant_id=tenant_id, mode="disabled", revision=self.revision)
+        return runtime_read(
+            tenant_id=tenant_id,
+            mode="ask",
+            retention_hours=self.retention_hours,
+            revision=self.revision,
+        )
 
 
 @pytest.fixture
@@ -334,3 +345,71 @@ async def test_invalid_content_resolves_consent_from_the_valid_policy(
     assert response.status_code == 200
     assert transport.calls == 1
     assert (await session_manager.get_session(key)).consent_status is ConsentStatus.GRANTED
+
+
+def _activate(client: TestClient, session_id: str, **body) -> None:
+    response = client.post(
+        "/api/customer/session/activate",
+        json={"session_id": session_id, "customer_language": "en", **body},
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("hours", [4320, 0])
+async def test_granted_consent_captures_the_reads_retention_and_revision(
+    session_manager, pending_session, client, studio, hours
+):
+    session_id, key = pending_session
+    studio.retention_hours = hours
+    studio.revision = OTHER_REVISION
+
+    _activate(client, session_id, data_retention_consent=True)
+
+    stored = await session_manager.store.load(key)
+    assert stored.consent_retention_hours == hours
+    assert stored.consent_configuration_revision == OTHER_REVISION
+
+
+@pytest.mark.parametrize(
+    ("mode", "body", "fails"),
+    [
+        ("ask", {}, False),
+        ("ask", {"data_retention_consent": False}, False),
+        ("disabled", {"data_retention_consent": True}, False),
+        ("ask", {"data_retention_consent": True}, True),
+    ],
+    ids=["absent", "declined", "policy-disabled", "read-failed"],
+)
+async def test_consent_that_is_not_granted_captures_nothing(
+    session_manager, pending_session, client, studio, mode, body, fails
+):
+    session_id, key = pending_session
+    studio.set_mode(mode)
+    if fails:
+        studio.fail("runtime_configuration_unavailable")
+
+    _activate(client, session_id, **body)
+
+    stored = await session_manager.store.load(key)
+    assert stored.consent_status is not ConsentStatus.GRANTED
+    assert stored.consent_retention_hours is None
+    assert stored.consent_configuration_revision is None
+
+
+async def test_a_retention_change_mid_session_keeps_the_captured_value(
+    session_manager, active_granted_session, client, studio
+):
+    session_id, key = active_granted_session
+    studio.retention_hours = 72
+    studio.revision = OTHER_REVISION
+
+    _activate(client, session_id, customer_language="de")
+    before = datetime.now(timezone.utc)
+    await session_manager.terminate_session(key, "manual_admin_termination")
+
+    stored = await session_manager.store.load(key)
+    assert stored.status.value == "terminated"
+    assert stored.consent_retention_hours == 4320
+    assert stored.consent_configuration_revision == REVISION
+    # The terminal record expires on the captured value, not today's 72 hours.
+    assert session_manager.store._expiries[key] - before >= timedelta(hours=4320)

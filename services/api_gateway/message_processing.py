@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException, Request
 
 from .audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
+from .content_retention import captured_retention_hours
 from .log_safety import safe_session_ref, sanitize_log_value
 from .message_delivery import create_session_message
 from .message_models import MessageResponse, create_error_response
@@ -412,12 +413,22 @@ async def _complete_message(
     sessions: TenantSessionManager,
     audio_store: AudioStore,
     start_time: float,
+    retention_hours: Optional[int],
 ) -> MessageResponse:
-    """Store, record and answer a message the pipeline produced, for either mode."""
+    """Store, record and answer a message the pipeline produced, for either mode.
+
+    `retention_hours` is the session's captured retention, written beside its
+    audio for the cleanup; None leaves the audio to the short default.
+    """
     message_id = str(uuid.uuid4())
     original_audio_available = (
         _store_audio_artifacts(
-            key, client_type, message_id, original_audio, audio_store=audio_store
+            key,
+            client_type,
+            message_id,
+            original_audio,
+            audio_store=audio_store,
+            retention_hours=retention_hours,
         )
         if original_audio is not None
         else False
@@ -430,7 +441,11 @@ async def _complete_message(
         original_audio_available=original_audio_available,
     )
     translated_audio_available = _store_translated_audio(
-        key, message_id, result.get("audio_bytes"), audio_store=audio_store
+        key,
+        message_id,
+        result.get("audio_bytes"),
+        audio_store=audio_store,
+        retention_hours=retention_hours,
     )
     message = await create_session_message(
         session_id=key,
@@ -546,6 +561,7 @@ async def process_audio_input(
         sessions=sessions,
         audio_store=audio_store,
         start_time=start_time,
+        retention_hours=captured_retention_hours(session) if session is not None else None,
     )
 
 
@@ -656,4 +672,5 @@ async def process_text_input(
         sessions=sessions,
         audio_store=audio_store,
         start_time=start_time,
+        retention_hours=captured_retention_hours(session) if session is not None else None,
     )
