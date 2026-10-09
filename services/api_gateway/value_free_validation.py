@@ -3,9 +3,10 @@
 FastAPI's default 422 copies each pydantic error whole, `input` included, and
 for a missing field `input` is the entire request body. On the feedback routes
 that published the free text whenever any other field was absent. Keeping only
-`type`, `loc` and `msg` drops every value: `msg` is pydantic's fixed text, and
-`loc` names fields, never answers, because `answers` is not validated by
-pydantic at all.
+`type`, `loc` and `msg` drops every value: `msg` is pydantic's fixed text. `loc`
+names fields, which for an unknown top-level key is the key the sender sent
+itself; it never names an answer or an answer id, because pydantic does not
+validate `answers` at all.
 """
 
 from __future__ import annotations

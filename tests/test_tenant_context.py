@@ -139,3 +139,32 @@ def test_dependency_accepts_ordinary_keys_that_only_resemble_selectors() -> None
 
     assert response.status_code == 200
     assert response.json() == {"tenant_id": "tenant-kassel"}
+
+
+@pytest.mark.parametrize("question_id", ["tenantId", "instanceId", "studioTenantId"])
+def test_feedback_answers_may_use_question_ids_that_look_like_selectors(question_id: str) -> None:
+    """Studio's question ids allow these names, and an answer key selects no tenant.
+
+    Rejecting them would refuse every staff submission of a form that uses one.
+    """
+    response = _tenant_test_client().post(
+        "/tenant-operation",
+        json={"audience": "staff", "answers": {question_id: 4, "notes": "ok"}},
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"answers": {"notes": "ok"}, "tenant_id": "tenant-berlin"},
+        {"payload": {"answers": {"tenantId": "tenant-berlin"}}},
+        [{"answers": {"tenantId": "tenant-berlin"}}],
+    ],
+    ids=["selector-beside-answers", "nested-answers", "answers-in-a-list"],
+)
+def test_only_top_level_feedback_answers_are_exempt(body: object) -> None:
+    response = _tenant_test_client().post("/tenant-operation", json=body)
+
+    assert response.status_code == 400

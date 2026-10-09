@@ -90,7 +90,19 @@ def _request_has_tenant_selector(request: HTTPConnection, body: object) -> bool:
         return True
     if any(_normalized_name(name) in _SELECTOR_HEADER_NAMES for name in request.headers.keys()):
         return True
-    return _contains_tenant_selector(body)
+    return _contains_tenant_selector(_without_feedback_answers(body))
+
+
+def _without_feedback_answers(body: object) -> object:
+    """A feedback body without its `answers`, whose keys are Studio question ids.
+
+    Studio's id pattern allows `tenantId` or `instanceId`, so scanning them would
+    refuse every staff submission of a form that uses one. Only the top level is
+    exempt; the body's own keys are still scanned.
+    """
+    if isinstance(body, dict) and "answers" in body:
+        return {key: value for key, value in body.items() if key != "answers"}
+    return body
 
 
 def _contains_tenant_selector(value: object) -> bool:
