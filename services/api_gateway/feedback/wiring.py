@@ -36,6 +36,7 @@ async def _connect_feedback_request_path(state: Any, dsn: str, sessions: Any) ->
     # import is what binds.
     try:
         from .crypto import FeedbackCipher, MissingEncryptionKey
+        from .forms import FeedbackForms
         from .repository import PostgresFeedbackRepository
         from .service import FeedbackService
         from .tenant import ConfiguredTenantResolver, SessionTenantResolver
@@ -82,6 +83,9 @@ async def _connect_feedback_request_path(state: Any, dsn: str, sessions: Any) ->
         session_manager=sessions,
         telemetry=state.quality_telemetry,
         pseudonymizer=state.pseudonymizer,
+        # The content routes' service, so a submission is checked against the
+        # forms they served, from the same cache.
+        forms=FeedbackForms(state.studio_content),
         # The window the guest content routes use too, so the form and the
         # submission it sends end together.
         grace_window=state.guest_grace_window,

@@ -409,7 +409,8 @@ jobs:
       run: |
         if [ "${{ github.event_name }}" != "pull_request" ]; then
           echo "frontend_changed=true" >> "$GITHUB_OUTPUT"
-        elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -q '^services/frontend/'; then
+        # The shared feedback fixture is half of a frontend test, too.
+        elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qE '^(services/frontend/|tests/fixtures/feedback/)'; then
           echo "frontend_changed=true" >> "$GITHUB_OUTPUT"
         else
           echo "frontend_changed=false" >> "$GITHUB_OUTPUT"

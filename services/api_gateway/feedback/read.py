@@ -1,7 +1,7 @@
 """The authorised read path over stored feedback.
 
 Separate from FeedbackService, which only ever writes. This is the one place
-that turns `improvements_ciphertext` back into text, so it is also the one
+that turns `text_answers_ciphertext` back into text, so it is also the one
 place that has to record an access audit row for doing so.
 """
 
@@ -13,29 +13,39 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from . import bundled_form
+from .text_answers import LEGACY_TEXT_ID, open_text_answers
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
 class FeedbackSummary:
-    """One row as Studio may list it: ratings and metadata, never free text.
+    """One row as Studio may list it: numbers and metadata, never free text.
 
-    `has_improvements` reports that text exists without disclosing it, so a
-    list view can show which records are worth opening -- and opening one is
-    the act that gets audited.
+    `has_improvements` reports that any text answer exists without disclosing
+    it, so a list view can show which records are worth opening -- and opening
+    one is the act that gets audited. The four rating fields predate answers
+    by question id; each is filled when its bundled id was answered.
     """
 
     feedback_id: UUID
     session_ref: str
-    translation_quality: int
-    performance: int
-    usability: int
-    net_promoter_score: int
+    translation_quality: int | None
+    performance: int | None
+    usability: int | None
+    net_promoter_score: int | None
     has_improvements: bool
     form_version: str
     analytics_state: str
     created_at: datetime
     expires_at: datetime
+    audience: str
+    form_source: str
+    configuration_revision: str | None
+    locale: str | None
+    numeric_answers: dict[str, int]
+    form_snapshot: list[dict[str, Any]]
 
 
 class FeedbackNotFound(LookupError):
@@ -48,10 +58,15 @@ class FeedbackNotFound(LookupError):
 
 @dataclass(frozen=True, slots=True)
 class FeedbackDetail:
-    """One record with its free text decrypted, for an audited disclosure."""
+    """One record with its free text decrypted, for an audited disclosure.
+
+    `improvements` is the `improvementIdeas` answer, kept for readers of the
+    v1 shape; `text_answers` holds every text answer by question id.
+    """
 
     summary: FeedbackSummary
     improvements: str | None
+    text_answers: dict[str, str]
 
 
 class FeedbackTextUnreadable(RuntimeError):
@@ -111,15 +126,19 @@ class FeedbackReadService:
             accessed_by=accessed_by,
             access_scope="detail",
         )
-        improvements = self._decrypt(record)
-        return FeedbackDetail(summary=_summarise(record), improvements=improvements)
+        text_answers = self._decrypt(record)
+        return FeedbackDetail(
+            summary=_summarise(record),
+            improvements=text_answers.get(LEGACY_TEXT_ID),
+            text_answers=text_answers,
+        )
 
-    def _decrypt(self, record: Any) -> str | None:
-        if record.improvements_ciphertext is None:
-            return None
+    def _decrypt(self, record: Any) -> dict[str, str]:
         try:
-            return self._cipher.decrypt(
-                record.improvements_ciphertext,
+            return open_text_answers(
+                self._cipher,
+                record.text_answers_ciphertext,
+                legacy=record.text_answers_legacy,
                 feedback_id=record.feedback_id,
                 tenant_id=record.tenant_id,
             )
@@ -131,14 +150,15 @@ class FeedbackReadService:
 
 
 def _summarise(record: Any) -> FeedbackSummary:
+    numbers = record.numeric_answers
     return FeedbackSummary(
         feedback_id=record.feedback_id,
         session_ref=record.session_ref,
-        translation_quality=record.translation_quality,
-        performance=record.performance,
-        usability=record.usability,
-        net_promoter_score=record.net_promoter_score,
-        has_improvements=record.improvements_ciphertext is not None,
+        translation_quality=_legacy(bundled_form.TRANSLATION_QUALITY, record),
+        performance=_legacy(bundled_form.PERFORMANCE, record),
+        usability=_legacy(bundled_form.USABILITY, record),
+        net_promoter_score=_legacy(bundled_form.RECOMMENDATION, record),
+        has_improvements=record.text_answers_ciphertext is not None,
         form_version=record.form_version,
         analytics_state=(
             record.analytics_state.value
@@ -147,4 +167,15 @@ def _summarise(record: Any) -> FeedbackSummary:
         ),
         created_at=record.created_at,
         expires_at=record.expires_at,
+        audience=record.audience,
+        form_source=record.form_source,
+        configuration_revision=record.configuration_revision,
+        locale=record.form_locale,
+        numeric_answers=dict(numbers),
+        form_snapshot=list(record.form_snapshot),
     )
+
+
+def _legacy(question_id: str, record: Any) -> int | None:
+    """A v1 field means its bundled range, so a form that asked differently leaves it null."""
+    return bundled_form.legacy_rating(question_id, record.numeric_answers, record.form_snapshot)

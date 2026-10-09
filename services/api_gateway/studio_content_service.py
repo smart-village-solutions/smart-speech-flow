@@ -141,6 +141,19 @@ class StudioContentService:
             return self._answer(endpoint, "live", Cached(live.content, 0.0))
         return self._fallback(endpoint, self._cache.latest(tenant_id))
 
+    def tenant_content_at(
+        self, tenant_id: str, revision: str, *, endpoint: ContentEndpoint
+    ) -> TenantContent | None:
+        """A recent revision still held, to check a submission against the form it answered.
+
+        Counted as cached without a staleness reading: an older revision has no
+        age of its own, and the gauge tracks the latest content.
+        """
+        held = self._cache.at_revision(tenant_id, revision)
+        if held is not None:
+            self._metrics.answered(endpoint, "cached", None)
+        return held
+
     async def guest_content(self, tenant_id: str, correlation_id: str) -> GuestContent:
         """The storage mode from a live read, never from the cache, and the content beside it."""
         endpoint: ContentEndpoint = "guest_content"

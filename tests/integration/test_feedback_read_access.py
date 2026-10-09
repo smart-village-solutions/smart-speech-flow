@@ -28,11 +28,12 @@ TENANT_B = "tenant-b"
 
 _INSERT = """
 INSERT INTO feedback (
-    feedback_id, tenant_id, session_ref, translation_quality, performance,
-    usability, net_promoter_score, improvements_ciphertext, form_version,
+    feedback_id, tenant_id, session_ref, audience, form_source, form_snapshot,
+    numeric_answers, text_answers_ciphertext, form_version,
     retention_policy_version, consent_snapshot, analytics_event_id,
     analytics_state, created_at, expires_at
-) VALUES ($1, $2, $3, 4, 5, 3, 9, $4, 'v1', 'v1-12-months',
+) VALUES ($1, $2, $3, 'guest', 'bundled', '[]'::jsonb,
+          '{"translationQuality": 4, "performance": 5, "usability": 3, "recommendation": 9}'::jsonb, $4, 'v1', 'v1-12-months',
           '{}'::jsonb, $5, 'delivered', $6, $7)
 """
 
@@ -92,7 +93,7 @@ class TestTheReadRoleIsWhatItClaimsToBe:
 
         with pytest.raises(asyncpg.InsufficientPrivilegeError):
             await reader_connection.execute(
-                "UPDATE feedback SET usability = 1 WHERE feedback_id = $1", feedback_id
+                "UPDATE feedback SET form_locale = NULL WHERE feedback_id = $1", feedback_id
             )
 
     async def test_the_read_role_cannot_delete_feedback(self, owner, reader_connection) -> None:
@@ -130,7 +131,7 @@ class TestOneTenantCannotReadAnother:
         record = await repository.fetch_record(feedback_id=mine, tenant_id=TENANT_A)
 
         assert record is not None
-        assert record.improvements_ciphertext == b"\x01sealed"
+        assert record.text_answers_ciphertext == b"\x01sealed"
 
 
 class TestTheAccessAuditIsWritable:

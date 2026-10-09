@@ -103,6 +103,20 @@ def gateway_dependencies():
 
 
 @pytest.fixture(autouse=True)
+def fresh_rate_limit_window():
+    """Every test starts with an empty rate-limit window.
+
+    The suites share one app, and its global limit counts every TestClient
+    request in the last minute, so without this a test answers 429 or not
+    depending on how many requests the files before it happened to make.
+    """
+    limits = getattr(app.state, "rate_limits", None)
+    if limits is not None:
+        asyncio.run(limits.reset())
+    yield
+
+
+@pytest.fixture(autouse=True)
 def bypass_admin_auth_for_legacy_route_tests(request):
     """Keep pre-auth route tests focused on their domain behavior.
 

@@ -47,7 +47,10 @@ def test_the_job_supplies_every_role_dsn(variable: str) -> None:
     assert f"{variable}:" in WORKFLOW
 
 
-@pytest.mark.parametrize("migration", ["001_feedback", "002_feedback_roles", "003_feedback_reader"])
+@pytest.mark.parametrize(
+    "migration",
+    ["001_feedback", "002_feedback_roles", "003_feedback_reader", "004_feedback_dynamic"],
+)
 def test_the_job_checks_each_migration_applied(migration: str) -> None:
     """The roles these tests exercise only exist if their migration ran."""
     assert f"{migration}.sql" in WORKFLOW

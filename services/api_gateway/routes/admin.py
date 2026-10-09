@@ -25,6 +25,8 @@ from ..dependencies import (
     get_studio_content,
     get_websocket_manager,
 )
+from ..feedback.models import FeedbackAcceptedResponse, FeedbackSubmissionV2
+from ..feedback.service import FeedbackService
 from ..log_safety import safe_session_ref, sanitize_log_value
 from ..message_models import MESSAGE_VALIDATION_RESPONSE
 from ..quality_telemetry import QualityTelemetry
@@ -45,8 +47,10 @@ from ..tenant_context import (
     require_studio_tenant_context,
 )
 from ..tenant_session import TenantSessionKey
+from ..value_free_validation import ValueFreeValidationRoute
 from ..websocket import WebSocketManager
 from ..websocket_polling_routes import TenantPollingStore
+from .feedback import FEEDBACK_SUBMIT_RESPONSES, get_feedback_service, submission_errors
 
 # Logger setup
 logger = logging.getLogger(__name__)
@@ -148,6 +152,39 @@ async def get_staff_content(
             headers={"Cache-Control": "no-store"},
         ) from None
     return staff_content_response(tenant)
+
+
+async def submit_staff_feedback(
+    submission: FeedbackSubmissionV2,
+    request: Request,
+    context: Annotated[StudioTenantContext, Depends(require_studio_tenant_context)],
+    owner_ref: Annotated[str, Depends(require_admin_ref)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
+    service: Annotated[FeedbackService, Depends(get_feedback_service)],
+) -> FeedbackAcceptedResponse:
+    """Staff feedback, filed under the token's tenant; a named session must be the caller's."""
+    if submission.session_id is not None:
+        await require_admin_session_key(submission.session_id, context, sessions, owner_ref)
+    with submission_errors():
+        feedback_id = await service.submit_staff(
+            submission,
+            tenant_id=context.tenant_id,
+            correlation_id=correlation_id_from_request(request),
+        )
+    return FeedbackAcceptedResponse(feedback_id=feedback_id)
+
+
+# Registered rather than decorated: only add_api_route takes a route class, and
+# this one's 422s must not echo the answers.
+router.add_api_route(
+    "/feedback",
+    submit_staff_feedback,
+    methods=["POST"],
+    status_code=status.HTTP_201_CREATED,
+    summary="Submit staff feedback for the token's tenant",
+    responses={**FEEDBACK_SUBMIT_RESPONSES, 404: {"description": _SESSION_NOT_FOUND}},
+    route_class_override=ValueFreeValidationRoute,
+)
 
 
 @router.get("/realtime/connections")

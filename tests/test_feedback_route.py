@@ -11,9 +11,16 @@ from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
 from services.api_gateway.audio_storage import AudioStore
-from services.api_gateway.feedback.models import MAX_IMPROVEMENTS_LENGTH, FeedbackTextTooLong
+from services.api_gateway.feedback.answers import FeedbackFormChanged
+from services.api_gateway.feedback.forms import FeedbackFormUnavailable
+from services.api_gateway.feedback.models import (
+    MAX_IMPROVEMENTS_LENGTH,
+    FeedbackSubmissionRequest,
+    FeedbackSubmissionV2,
+    FeedbackTextTooLong,
+)
 from services.api_gateway.feedback.repository import FeedbackStorageUnavailable
-from services.api_gateway.feedback.service import UnknownSession
+from services.api_gateway.feedback.service import FeedbackRequestInvalid, UnknownSession
 from services.api_gateway.routes.feedback import get_feedback_service
 
 ACCEPTED_ID = UUID("11111111-2222-3333-4444-555555555555")
@@ -34,10 +41,10 @@ class StubService:
         self._raises = raises
         self.submitted: list = []
 
-    async def submit(self, request):
+    async def submit(self, request, *, correlation_id):
         if self._raises is not None:
             raise self._raises
-        self.submitted.append(request)
+        self.submitted.append((request, correlation_id))
         return ACCEPTED_ID
 
 
@@ -57,6 +64,95 @@ def test_a_valid_submission_is_created(client_for) -> None:
 
     assert response.status_code == 201
     assert response.json() == {"feedback_id": str(ACCEPTED_ID)}
+
+
+V2 = {
+    "audience": "guest",
+    "session_id": "ABC12345",
+    "locale": "en",
+    "form_source": "studio",
+    "configuration_revision": "sha256:abc",
+    "answers": {"translationQuality": 4, "improvementIdeas": "More languages please."},
+}
+
+
+def test_a_v1_body_reaches_the_service_as_v1(client_for) -> None:
+    service = StubService()
+
+    client_for(service).post("/api/feedback", json=VALID)
+
+    (submitted, correlation_id), = service.submitted
+    assert isinstance(submitted, FeedbackSubmissionRequest)
+    assert correlation_id
+
+
+def test_a_v2_body_reaches_the_service_as_v2(client_for) -> None:
+    service = StubService()
+
+    response = client_for(service).post(
+        "/api/feedback", json=V2, headers={"X-Correlation-ID": "corr-abc"}
+    )
+
+    assert response.status_code == 201
+    (submitted, correlation_id), = service.submitted
+    assert isinstance(submitted, FeedbackSubmissionV2)
+    assert submitted.answers == V2["answers"]
+    assert correlation_id == "corr-abc"
+
+
+def test_answers_that_no_longer_fit_are_a_conflict(client_for) -> None:
+    client = client_for(StubService(raises=FeedbackFormChanged("out_of_range")))
+
+    response = client.post("/api/feedback", json=V2)
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {
+            "error_code": "feedback_form_changed",
+            "message": "The feedback form has changed; reload it and answer again",
+        }
+    }
+
+
+def test_a_form_that_cannot_be_read_is_retryable(client_for) -> None:
+    client = client_for(StubService(raises=FeedbackFormUnavailable("down")))
+
+    response = client.post("/api/feedback", json=V2)
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["error_code"] == "feedback_form_unavailable"
+    assert "Retry-After" in response.headers
+
+
+def test_a_body_that_contradicts_itself_is_a_coded_client_error(client_for) -> None:
+    client = client_for(StubService(raises=FeedbackRequestInvalid("guest feedback needs a session_id")))
+
+    response = client.post("/api/feedback", json=V2)
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": {
+            "error_code": "feedback_request_invalid",
+            "message": "guest feedback needs a session_id",
+        }
+    }
+
+
+@pytest.mark.parametrize("missing", ["usability", "translation_quality"])
+def test_a_v1_body_missing_a_field_does_not_echo_the_body(client_for, missing: str) -> None:
+    """FastAPI puts the whole body in `input` for a missing field."""
+    sentinel = "SENTINEL-PURPLE-RHINOCEROS"
+    payload = {key: value for key, value in VALID.items() if key != missing}
+
+    response = client_for(StubService()).post(
+        "/api/feedback", json={**payload, "improvements": sentinel}
+    )
+
+    assert response.status_code == 422
+    assert sentinel not in response.text
+    assert response.json()["detail"] == [
+        {"type": "missing", "loc": ["body", "v1", missing], "msg": "Field required"}
+    ]
 
 
 def test_the_route_is_registered_on_the_application() -> None:
@@ -192,7 +288,7 @@ def test_a_session_id_no_session_could_carry_answers_404(client_for) -> None:
     the seam between them: the store raises ValueError on an id outside
     ^[A-Za-z0-9_-]{1,128}$, and this route catches UnknownSession,
     FeedbackTextTooLong and FeedbackStorageUnavailable -- none of which that
-    is. The repository, cipher and telemetry are never reached, so the
+    is. The repository, cipher, telemetry and forms are never reached, so the
     submission is refused before anything would use them.
     """
     from services.api_gateway.feedback.service import FeedbackService
@@ -218,6 +314,7 @@ def test_a_session_id_no_session_could_carry_answers_404(client_for) -> None:
         ),
         telemetry=None,
         pseudonymizer=SessionPseudonymizer(key=b"feedback-route-test"),
+        forms=None,
     )
     client = client_for(service)
 

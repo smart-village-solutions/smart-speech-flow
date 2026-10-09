@@ -1,7 +1,7 @@
 """Authoritative feedback storage.
 
 The reconciliation query deliberately does not select
-`improvements_ciphertext`: the recovery path in #305 must be structurally
+`text_answers_ciphertext`: the recovery path in #305 must be structurally
 unable to carry free text, not merely careful with it.
 
 Errors are reduced to a type name before they reach a log. A PostgreSQL error
@@ -17,7 +17,7 @@ import logging
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import AsyncIterator, Protocol, Sequence
+from typing import Any, AsyncIterator, Protocol, Sequence
 from uuid import UUID
 
 import asyncpg
@@ -73,10 +73,8 @@ class PendingAnalytics:
     tenant_id: str
     session_ref: str
     analytics_event_id: UUID
-    translation_quality: int
-    performance: int
-    usability: int
-    net_promoter_score: int
+    numeric_answers: dict[str, int]
+    form_snapshot: list[dict[str, Any]]
     form_version: str
     created_at: datetime
 
@@ -104,20 +102,21 @@ class FeedbackRepository(Protocol):
 _INSERT = """
 INSERT INTO feedback (
     feedback_id, tenant_id, session_ref,
-    translation_quality, performance, usability, net_promoter_score,
-    improvements_ciphertext, form_version, retention_policy_version,
+    audience, form_source, configuration_revision, form_locale,
+    form_snapshot, numeric_answers, text_answers_ciphertext, text_answers_legacy,
+    form_version, retention_policy_version,
     consent_snapshot, analytics_event_id, analytics_state,
     created_at, expires_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15
+    $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13,
+    $14::jsonb, $15, $16, $17, $18
 )
 """
 
-# No improvements_ciphertext column here, deliberately.
+# No text_answers_ciphertext column here, deliberately.
 _CLAIM_PENDING = """
 SELECT feedback_id, tenant_id, session_ref, analytics_event_id,
-       translation_quality, performance, usability, net_promoter_score,
-       form_version, created_at
+       numeric_answers, form_snapshot, form_version, created_at
 FROM feedback
 WHERE analytics_state = 'pending'
 ORDER BY created_at
@@ -181,11 +180,14 @@ class PostgresFeedbackRepository:
                         record.feedback_id,
                         record.tenant_id,
                         record.session_ref,
-                        record.translation_quality,
-                        record.performance,
-                        record.usability,
-                        record.net_promoter_score,
-                        record.improvements_ciphertext,
+                        record.audience,
+                        record.form_source,
+                        record.configuration_revision,
+                        record.form_locale,
+                        json.dumps(list(record.form_snapshot)),
+                        json.dumps(record.numeric_answers),
+                        record.text_answers_ciphertext,
+                        record.text_answers_legacy,
                         record.form_version,
                         record.retention_policy_version,
                         json.dumps(record.consent_snapshot),
@@ -252,7 +254,7 @@ class PostgresFeedbackRepository:
     async def claim_pending_analytics(self, limit: int) -> Sequence[PendingAnalytics]:
         async with self._pool.acquire() as connection:
             rows = await connection.fetch(_CLAIM_PENDING, limit)
-        return [PendingAnalytics(**dict(row)) for row in rows]
+        return [_pending_from_row(row) for row in rows]
 
     async def delete_expired(
         self, now: datetime, limit: int, lock_key: int | None = None
@@ -303,8 +305,9 @@ async def _bind_tenant(connection: asyncpg.Connection, tenant_id: str) -> None:
 
 
 _SELECT_COLUMNS = """
-    feedback_id, tenant_id, session_ref, translation_quality, performance,
-    usability, net_promoter_score, improvements_ciphertext, form_version,
+    feedback_id, tenant_id, session_ref, audience, form_source,
+    configuration_revision, form_locale, form_snapshot, numeric_answers,
+    text_answers_ciphertext, text_answers_legacy, form_version,
     retention_policy_version, consent_snapshot, analytics_event_id,
     analytics_state, created_at, expires_at
 """
@@ -438,11 +441,14 @@ def _record_from_row(row: asyncpg.Record) -> FeedbackRecord:
         feedback_id=row["feedback_id"],
         tenant_id=row["tenant_id"],
         session_ref=row["session_ref"],
-        translation_quality=row["translation_quality"],
-        performance=row["performance"],
-        usability=row["usability"],
-        net_promoter_score=row["net_promoter_score"],
-        improvements_ciphertext=row["improvements_ciphertext"],
+        audience=row["audience"],
+        form_source=row["form_source"],
+        configuration_revision=row["configuration_revision"],
+        form_locale=row["form_locale"],
+        form_snapshot=tuple(json.loads(row["form_snapshot"])),
+        numeric_answers=json.loads(row["numeric_answers"]),
+        text_answers_ciphertext=row["text_answers_ciphertext"],
+        text_answers_legacy=row["text_answers_legacy"],
         form_version=row["form_version"],
         retention_policy_version=row["retention_policy_version"],
         consent_snapshot=json.loads(row["consent_snapshot"]),
@@ -450,4 +456,17 @@ def _record_from_row(row: asyncpg.Record) -> FeedbackRecord:
         analytics_state=AnalyticsState(row["analytics_state"]),
         created_at=row["created_at"],
         expires_at=row["expires_at"],
+    )
+
+
+def _pending_from_row(row: asyncpg.Record) -> PendingAnalytics:
+    return PendingAnalytics(
+        feedback_id=row["feedback_id"],
+        tenant_id=row["tenant_id"],
+        session_ref=row["session_ref"],
+        analytics_event_id=row["analytics_event_id"],
+        numeric_answers=json.loads(row["numeric_answers"]),
+        form_snapshot=json.loads(row["form_snapshot"]),
+        form_version=row["form_version"],
+        created_at=row["created_at"],
     )

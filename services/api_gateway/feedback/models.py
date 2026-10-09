@@ -5,13 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Final
+from typing import Annotated, Any, Final, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, SkipValidation, Tag
 
 MAX_IMPROVEMENTS_LENGTH: Final[int] = 4000
 CURRENT_FORM_VERSION: Final[str] = "v1"
+# Stored as form_version for v2 bodies; form_source and the snapshot say the rest.
+V2_FORM_VERSION: Final[str] = "v2"
 RETENTION_POLICY_VERSION: Final[str] = "v1-12-months"
 
 
@@ -63,6 +65,43 @@ class FeedbackSubmissionRequest(BaseModel):
     form_version: str = Field(default=CURRENT_FORM_VERSION, max_length=32)
 
 
+Audience = Literal["guest", "staff", "installation"]
+FormSource = Literal["studio", "bundled"]
+
+
+class FeedbackSubmissionV2(BaseModel):
+    """Answers by question id, for the form the browser rendered.
+
+    `answers` is deliberately not validated here, for the reason the v1 model
+    gives about `improvements`, and more: an error inside a mapping carries the
+    key in `loc` as well as the value in `input`. SkipValidation keeps the
+    declared shape in the OpenAPI document while FeedbackService does the
+    checking, against the form, with errors that carry neither.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    audience: Audience
+    session_id: str | None = Field(default=None, max_length=128)
+    locale: str = Field(min_length=2, max_length=35, pattern=r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$")
+    form_source: FormSource
+    configuration_revision: str | None = Field(default=None, max_length=128)
+    answers: SkipValidation[dict[str, int | str | None]]
+
+
+def _body_version(body: Any) -> str:
+    """v2 when the body names an audience. Chosen by presence, never by trying both."""
+    if isinstance(body, dict):
+        return "v2" if "audience" in body else "v1"
+    return "v2" if isinstance(body, FeedbackSubmissionV2) else "v1"
+
+
+FeedbackSubmission = Annotated[
+    Annotated[FeedbackSubmissionV2, Tag("v2")] | Annotated[FeedbackSubmissionRequest, Tag("v1")],
+    Discriminator(_body_version),
+]
+
+
 class FeedbackAcceptedResponse(BaseModel):
     """The opaque confirmation identifier."""
 
@@ -71,16 +110,23 @@ class FeedbackAcceptedResponse(BaseModel):
 
 @dataclass(frozen=True, slots=True)
 class FeedbackRecord:
-    """One authoritative row. `improvements_ciphertext` is never plaintext."""
+    """One authoritative row. `text_answers_ciphertext` is never plaintext.
+
+    `text_answers_legacy` marks a row converted by migration 004, whose
+    envelope holds the v1 improvement text rather than a JSON object.
+    """
 
     feedback_id: UUID
     tenant_id: str
     session_ref: str
-    translation_quality: int
-    performance: int
-    usability: int
-    net_promoter_score: int
-    improvements_ciphertext: bytes | None
+    audience: Audience
+    form_source: FormSource
+    configuration_revision: str | None
+    form_locale: str | None
+    form_snapshot: tuple[dict[str, Any], ...]
+    numeric_answers: dict[str, int]
+    text_answers_ciphertext: bytes | None
+    text_answers_legacy: bool
     form_version: str
     retention_policy_version: str
     consent_snapshot: dict[str, Any]

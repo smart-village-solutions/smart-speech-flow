@@ -16,7 +16,13 @@ def test_every_series_exists_before_the_first_answer() -> None:
     registry = CollectorRegistry()
     StudioContentMetrics(registry)
 
-    for endpoint in ("installation", "guest_languages", "guest_content", "staff_content"):
+    for endpoint in (
+        "installation",
+        "guest_languages",
+        "guest_content",
+        "staff_content",
+        "feedback",
+    ):
         assert registry.get_sample_value(STALENESS, {"endpoint": endpoint}) == 0
         for outcome in ("cached", "live", "stale", "unavailable"):
             labels = {"endpoint": endpoint, "outcome": outcome}

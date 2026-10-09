@@ -25,6 +25,7 @@ from uuid import uuid4
 import asyncpg
 import pytest
 
+from services.api_gateway.feedback.bundled_form import bundled_rules
 from services.api_gateway.feedback.models import AnalyticsState, FeedbackRecord
 from services.api_gateway.feedback.repository import (
     FeedbackStorageUnavailable,
@@ -50,11 +51,19 @@ def _record(**overrides: object) -> FeedbackRecord:
         feedback_id=uuid4(),
         tenant_id="tenant-a",
         session_ref="a" * 32,
-        translation_quality=4,
-        performance=5,
-        usability=3,
-        net_promoter_score=9,
-        improvements_ciphertext=b"\x01ciphertext-bytes",
+        audience="guest",
+        form_source="bundled",
+        configuration_revision=None,
+        form_locale="en",
+        form_snapshot=bundled_rules().snapshot,
+        numeric_answers={
+            "translationQuality": 4,
+            "performance": 5,
+            "usability": 3,
+            "recommendation": 9,
+        },
+        text_answers_ciphertext=b"\x01ciphertext-bytes",
+        text_answers_legacy=False,
         form_version="v1",
         retention_policy_version="v1-12-months",
         consent_snapshot={"form_version": "v1", "manifestation": "form_submission"},
@@ -136,7 +145,7 @@ async def test_claimed_rows_carry_no_ciphertext(repository) -> None:
 
     assert pending
     for row in pending:
-        assert not hasattr(row, "improvements_ciphertext")
+        assert not hasattr(row, "text_answers_ciphertext")
 
 
 async def test_marking_delivered_removes_it_from_the_backlog(repository) -> None:
@@ -206,7 +215,7 @@ async def test_deletion_writes_a_content_free_audit_row(repository) -> None:
 
     assert row is not None
     assert row["reason"] == "retention_expiry"
-    assert "improvements" not in dict(row)
+    assert "text_answers_ciphertext" not in dict(row)
 
 
 async def test_unexpired_rows_survive(repository) -> None:
@@ -234,7 +243,7 @@ async def test_a_row_at_exactly_its_expiry_is_deleted(repository) -> None:
 async def test_a_constraint_violation_does_not_leak_the_row(repository) -> None:
     """A PostgreSQL error DETAIL carries the entire failing row."""
     sentinel = b"\x01SENTINEL-PURPLE-RHINOCEROS"
-    record = _record(translation_quality=99, improvements_ciphertext=sentinel)
+    record = _record(audience="visitor", text_answers_ciphertext=sentinel)
 
     with pytest.raises(FeedbackStorageUnavailable) as caught:
         await _store(record)
@@ -391,7 +400,7 @@ async def test_the_deletion_audit_survives_the_row_it_describes(repository) -> N
     assert rows[0]["feedback_id"] == record.feedback_id
     assert rows[0]["reason"] == "retention_expiry"
     # Content-free by construction: no column could hold the text.
-    assert "improvements_ciphertext" not in rows[0].keys()
+    assert "text_answers_ciphertext" not in rows[0].keys()
 
 
 async def test_a_full_reconciliation_pass_recovers_a_pending_row(repository) -> None:
@@ -436,10 +445,26 @@ async def test_the_reconciler_never_reads_the_ciphertext_column(repository) -> N
     """Structural, not careful: the claim query has no such column."""
     from services.api_gateway.feedback.repository import _CLAIM_PENDING, PendingAnalytics
 
-    await _store(_record(improvements_ciphertext=b"\x01SENTINEL-BYTES"))
+    await _store(_record(text_answers_ciphertext=b"\x01SENTINEL-BYTES"))
     pending = await repository.claim_pending_analytics(limit=10)
 
-    assert "improvements" not in _CLAIM_PENDING
+    assert "text_answers" not in _CLAIM_PENDING
     # slots=True, so there is no __dict__ to walk: read the declared fields.
     values = [getattr(pending[0], f) for f in PendingAnalytics.__dataclass_fields__]
     assert not any("SENTINEL" in str(value) for value in values)
+
+
+async def test_the_claim_carries_the_answers_by_id_and_the_form_they_answered(repository) -> None:
+    """Reconciliation rebuilds the v1 event from these, so they must round-trip."""
+    record = _record(
+        form_source="studio",
+        configuration_revision="sha256:abc",
+        numeric_answers={"clarity": 7},
+        form_snapshot=({"id": "clarity", "type": "rating", "min": 1, "max": 7},),
+    )
+    await _store(record)
+
+    (pending,) = await repository.claim_pending_analytics(limit=10)
+
+    assert pending.numeric_answers == {"clarity": 7}
+    assert pending.form_snapshot == [{"id": "clarity", "type": "rating", "min": 1, "max": 7}]
