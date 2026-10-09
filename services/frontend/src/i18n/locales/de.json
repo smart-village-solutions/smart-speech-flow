@@ -6,16 +6,13 @@
     "back": "Zurück",
     "home": "Start",
     "feedback": "Feedback",
-    "theme": "Design wechseln",
-    "brand": "Marke wechseln"
+    "theme": "Design wechseln"
   },
   "accessCode": {
     "title": "Code eingeben",
     "continue": "Weiter",
-    "adminLogin": "Admin-Login",
     "digitLabel": "Stelle {{position}}",
-    "notFound": "Zu diesem Code gibt es keine offene Sitzung.",
-    "invalid": "Bitte alle acht Zeichen eingeben."
+    "notFound": "Zu diesem Code gibt es keine offene Sitzung."
   },
   "language": {
     "title": "Wählen Sie Ihre Sprache",

@@ -6,16 +6,13 @@
     "back": "Geri",
     "home": "Başlangıç",
     "feedback": "Geri bildirim",
-    "theme": "Temayı değiştir",
-    "brand": "Markayı değiştir"
+    "theme": "Temayı değiştir"
   },
   "accessCode": {
     "title": "Kodu girin",
     "continue": "Devam",
-    "adminLogin": "Yönetici girişi",
     "digitLabel": "{{position}}. karakter",
-    "notFound": "Bu kodla eşleşen açık bir oturum yok.",
-    "invalid": "Lütfen sekiz karakterin tamamını girin."
+    "notFound": "Bu kodla eşleşen açık bir oturum yok."
   },
   "language": {
     "title": "Dilinizi seçin",

@@ -6,16 +6,13 @@
     "back": "ተመለስ",
     "home": "መበገሲ",
     "feedback": "ርእይቶ",
-    "theme": "ገጽታ ቀይር",
-    "brand": "ብራንድ ቀይር"
+    "theme": "ገጽታ ቀይር"
   },
   "accessCode": {
     "title": "ኮድ የእቱ",
     "continue": "ቀጽል",
-    "adminLogin": "መእተዊ ኣማሓዳሪ",
     "digitLabel": "ፊደል {{position}}",
-    "notFound": "ምስዚ ኮድ ዝሰማማዕ ክፉት ክፍለ-ግዜ የለን።",
-    "invalid": "ኩሎም ሸሞንተ ፊደላት የእቱ።"
+    "notFound": "ምስዚ ኮድ ዝሰማማዕ ክፉት ክፍለ-ግዜ የለን።"
   },
   "language": {
     "title": "ቋንቋኹም ምረጹ",

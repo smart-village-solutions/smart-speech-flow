@@ -6,16 +6,13 @@
     "back": "Back",
     "home": "Home",
     "feedback": "Feedback",
-    "theme": "Toggle theme",
-    "brand": "Switch brand"
+    "theme": "Toggle theme"
   },
   "accessCode": {
     "title": "Enter code",
     "continue": "Continue",
-    "adminLogin": "Admin login",
     "digitLabel": "Character {{position}}",
-    "notFound": "That code does not match an open session.",
-    "invalid": "Enter all eight characters."
+    "notFound": "That code does not match an open session."
   },
   "language": {
     "title": "Choose your language",

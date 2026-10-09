@@ -6,16 +6,13 @@
     "back": "Vegere",
     "home": "Destpêk",
     "feedback": "Nêrîn",
-    "theme": "Temayê biguhere",
-    "brand": "Markê biguhere"
+    "theme": "Temayê biguhere"
   },
   "accessCode": {
     "title": "Kodê binivîse",
     "continue": "Bidomîne",
-    "adminLogin": "Têketina rêveber",
     "digitLabel": "Tîpa {{position}}",
-    "notFound": "Bi vê kodê tu danişîneke vekirî tune.",
-    "invalid": "Ji kerema xwe her heşt tîpan binivîse."
+    "notFound": "Bi vê kodê tu danişîneke vekirî tune."
   },
   "language": {
     "title": "Zimanê xwe hilbijêre",
