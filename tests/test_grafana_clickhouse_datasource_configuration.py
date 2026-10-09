@@ -347,7 +347,31 @@ def test_answers_are_averaged_per_question_in_both_tiers() -> None:
     assert "uniqExact(event_id)" in exact
     assert "FROM feedback_answer_daily" in gold
     for sql in (exact, gold):
-        assert re.search(r"GROUP BY question_id, question_type, answer_min, answer_max", sql), sql
+        assert re.search(
+            r"GROUP BY tenant_ref, question_id, question_type, answer_min, answer_max", sql
+        ), sql
+
+
+def test_answer_averages_keep_each_tenants_questions_apart() -> None:
+    """PR #554 review: question ids are per tenant form; with the picker on All,
+    tenant A's and tenant B's `clarity` would otherwise average as one question."""
+    for title in ("Answer Averages by Question", "Answer Averages by Question (Gold Tier, approximate)"):
+        (sql,) = _queries(title)
+        assert sql.startswith("SELECT tenant_ref, question_id"), sql
+
+
+def test_answer_averages_skip_answers_that_lost_their_question() -> None:
+    """While apply.sh re-runs 006 the view briefly projects no question id."""
+    for title in ("Answer Averages by Question", "Answer Averages by Question (Gold Tier, approximate)"):
+        (sql,) = _queries(title)
+        assert "question_id != ''" in sql, sql
+
+
+def test_the_daily_submissions_panel_does_not_promise_a_question_set_split() -> None:
+    """Every v2 submission has form version `v2`, whatever Studio form it answered."""
+    description = _panel("Daily Submissions (Gold Tier)")["description"]
+
+    assert "revised question set is visible" not in description
 
 
 def test_the_response_rate_excludes_submissions_carrying_no_session() -> None:

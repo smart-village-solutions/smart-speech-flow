@@ -1873,7 +1873,7 @@
       "id": 46,
       "type": "timeseries",
       "title": "Daily Submissions (Gold Tier)",
-      "description": "Thirteen months of history, split by form version so a revised question set is visible rather than pooled. Exact: gold counts with uniqExact over event_id, so a re-emission does not inflate them. Filter by tenant with the Tenant picker. The breakdown starts when #325 shipped: rows aggregated before it carry no reference and sit under an empty tenant, which All includes and no single tenant does. Read from feedback_daily_v2 since migration 008; history from before it was copied over with no audience recorded, and is included. Staff feedback is excluded; Feedback by Audience shows it separately.",
+      "description": "Thirteen months of history, split by form version: v1 is the old body, v2 every submission since PR 11, whichever Studio form it answered. A revised Studio question set shows in the per-question panels, not here. Exact: gold counts with uniqExact over event_id, so a re-emission does not inflate them. Filter by tenant with the Tenant picker. The breakdown starts when #325 shipped: rows aggregated before it carry no reference and sit under an empty tenant, which All includes and no single tenant does. Read from feedback_daily_v2 since migration 008; history from before it was copied over with no audience recorded, and is included. Staff feedback is excluded; Feedback by Audience shows it separately.",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -1992,7 +1992,7 @@
       "id": 50,
       "type": "table",
       "title": "Answer Averages by Question",
-      "description": "Exact: one feedback_answer event per answered numeric question, averaged over the deduplicated silver rows. Studio forms ask their own questions, so this is where they are read; the bundled questions appear here too. A question asked on two ranges shows as two rows, never averaged together. Silver keeps 30 days. Staff feedback is excluded; Feedback by Audience shows it separately.",
+      "description": "Exact: one feedback_answer event per answered numeric question, averaged over the deduplicated silver rows. Studio forms ask their own questions, so this is where they are read; the bundled questions appear here too. A question asked on two ranges shows as two rows, never averaged together. Silver keeps 30 days. Staff feedback is excluded; Feedback by Audience shows it separately. One row per tenant: question ids belong to each tenant's own form.",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -2012,7 +2012,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT question_id, question_type, answer_min, answer_max, uniqExact(event_id) AS answers, round(avg(answer_value), 2) AS average FROM quality_events FINAL WHERE event_type = 'feedback_answer' AND audience != 'staff' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY question_id, question_type, answer_min, answer_max ORDER BY answers DESC"
+          "rawSql": "SELECT tenant_ref, question_id, question_type, answer_min, answer_max, uniqExact(event_id) AS answers, round(avg(answer_value), 2) AS average FROM quality_events FINAL WHERE event_type = 'feedback_answer' AND question_id != '' AND audience != 'staff' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY tenant_ref, question_id, question_type, answer_min, answer_max ORDER BY answers DESC"
         }
       ]
     },
@@ -2020,7 +2020,7 @@
       "id": 51,
       "type": "table",
       "title": "Answer Averages by Question (Gold Tier, approximate)",
-      "description": "APPROXIMATE BY CONSTRUCTION, for the same reason as the gold rating averages: avgState has no distinct-by form, so an answer the reconciler re-emits counts twice in the average. The answer counts are exact. Thirteen months of history; inside 30 days read 'Answer Averages by Question'. Filter by tenant with the Tenant picker. Staff feedback is excluded; Feedback by Audience shows it separately.",
+      "description": "APPROXIMATE BY CONSTRUCTION, for the same reason as the gold rating averages: avgState has no distinct-by form, so an answer the reconciler re-emits counts twice in the average. The answer counts are exact. Thirteen months of history; inside 30 days read 'Answer Averages by Question'. Filter by tenant with the Tenant picker. Staff feedback is excluded; Feedback by Audience shows it separately. One row per tenant: question ids belong to each tenant's own form.",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -2040,7 +2040,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT question_id, question_type, answer_min, answer_max, uniqExactMerge(answers) AS answers, round(avgMerge(value_avg), 2) AS average FROM feedback_answer_daily WHERE $__dateFilter(event_date) AND audience != 'staff' AND match(tenant_ref, '${tenant:regex}') GROUP BY question_id, question_type, answer_min, answer_max ORDER BY answers DESC"
+          "rawSql": "SELECT tenant_ref, question_id, question_type, answer_min, answer_max, uniqExactMerge(answers) AS answers, round(avgMerge(value_avg), 2) AS average FROM feedback_answer_daily WHERE $__dateFilter(event_date) AND question_id != '' AND audience != 'staff' AND match(tenant_ref, '${tenant:regex}') GROUP BY tenant_ref, question_id, question_type, answer_min, answer_max ORDER BY answers DESC"
         }
       ]
     }
