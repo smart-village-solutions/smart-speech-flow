@@ -37,6 +37,17 @@ def _summary(**overrides):
         "analytics_state": "delivered",
         "created_at": CREATED,
         "expires_at": EXPIRES,
+        "audience": "guest",
+        "form_source": "studio",
+        "configuration_revision": REVISION,
+        "locale": "en",
+        "numeric_answers": {
+            "translationQuality": 4,
+            "performance": 5,
+            "usability": 3,
+            "recommendation": 9,
+        },
+        "form_snapshot": [{"id": "translationQuality", "type": "rating", "min": 1, "max": 5}],
     }
     fields.update(overrides)
     return FeedbackSummary(**fields)
@@ -102,7 +113,11 @@ class StubDetailService(StubReadService):
 def _detail(**overrides):
     from services.api_gateway.feedback.read import FeedbackDetail
 
-    fields = {"summary": _summary(), "improvements": "More languages please."}
+    fields = {
+        "summary": _summary(),
+        "improvements": "More languages please.",
+        "text_answers": {"improvementIdeas": "More languages please."},
+    }
     fields.update(overrides)
     return FeedbackDetail(**fields)
 
@@ -115,6 +130,61 @@ def test_the_detail_route_discloses_the_free_text(client_for) -> None:
     assert response.status_code == 200
     assert response.json()["improvements"] == "More languages please."
     assert service.read == [(RECORD_ID, TENANT, "operator-1")]
+
+
+def test_a_listed_item_carries_the_form_and_answers_by_id(client_for) -> None:
+    item = client_for(StubReadService()).get("/api/feedback").json()["items"][0]
+
+    assert item == {
+        "feedback_id": str(RECORD_ID),
+        "session_ref": "b" * 32,
+        "translation_quality": 4,
+        "performance": 5,
+        "usability": 3,
+        "net_promoter_score": 9,
+        "has_improvements": True,
+        "form_version": "v1",
+        "analytics_state": "delivered",
+        "created_at": "2026-09-11T10:30:00Z",
+        "expires_at": "2027-09-11T10:30:00Z",
+        "audience": "guest",
+        "form_source": "studio",
+        "configuration_revision": REVISION,
+        "locale": "en",
+        "numeric_answers": {
+            "translationQuality": 4,
+            "performance": 5,
+            "usability": 3,
+            "recommendation": 9,
+        },
+        "form_snapshot": [{"id": "translationQuality", "type": "rating", "min": 1, "max": 5}],
+    }
+
+
+def test_a_row_without_the_bundled_ids_lists_null_ratings(client_for) -> None:
+    summary = _summary(
+        translation_quality=None,
+        performance=None,
+        usability=None,
+        net_promoter_score=None,
+        numeric_answers={"clarity": 6},
+    )
+
+    item = client_for(StubReadService(summaries=[summary])).get("/api/feedback").json()["items"][0]
+
+    assert item["translation_quality"] is None
+    assert item["numeric_answers"] == {"clarity": 6}
+
+
+def test_the_detail_route_discloses_every_text_answer(client_for) -> None:
+    detail = _detail(text_answers={"improvementIdeas": "More languages please.", "notes": "n"})
+
+    response = client_for(StubDetailService(detail=detail)).get(f"/api/feedback/{RECORD_ID}")
+
+    assert response.json()["text_answers"] == {
+        "improvementIdeas": "More languages please.",
+        "notes": "n",
+    }
 
 
 def test_a_record_belonging_to_another_tenant_is_not_found(client_for) -> None:

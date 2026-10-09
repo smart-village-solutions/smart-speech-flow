@@ -70,10 +70,10 @@
 
 ## 11. Feedback backend
 
-- [ ] 11.1 Add Postgres migration `004` for answers by question id, form snapshot and encrypted text answers; re-check grants
-- [ ] 11.2 Validate submissions against the form of their revision in the service layer
-- [ ] 11.3 Add `POST /api/admin/feedback` filed under the token's tenant; keep `POST /api/feedback` for guest and installation feedback
-- [ ] 11.4 Update the read API and the maintenance re-emit path
+- [x] 11.1 Add Postgres migration `004` for answers by question id, form snapshot and encrypted text answers; re-check grants
+- [x] 11.2 Validate submissions against the form of their revision in the service layer
+- [x] 11.3 Add `POST /api/admin/feedback` filed under the token's tenant; keep `POST /api/feedback` for guest and installation feedback
+- [x] 11.4 Update the read API and the maintenance re-emit path
 
 ## 12. Feedback analytics
 

@@ -5,8 +5,10 @@ test_a_telemetry_failure_still_stores_the_feedback) is the contract: commit
 first, emit second. Reorder the two calls and one of them fails.
 """
 
+import json
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -19,17 +21,64 @@ from services.api_gateway.feedback.models import (
     FeedbackSubmissionRequest,
     FeedbackTextTooLong,
 )
+from services.api_gateway.feedback.answers import FeedbackFormChanged
+from services.api_gateway.feedback.forms import FeedbackForms, FeedbackFormUnavailable
+from services.api_gateway.feedback.models import FeedbackSubmissionV2
 from services.api_gateway.feedback.repository import FeedbackStorageUnavailable
 from services.api_gateway.feedback.service import (
     FEEDBACK_GRACE_ENV,
+    FeedbackRequestInvalid,
     FeedbackService,
     UnknownSession,
 )
 from services.api_gateway.feedback.tenant import ConfiguredTenantResolver
+from services.api_gateway.feedback.text_answers import open_text_answers
 from services.api_gateway.quality_telemetry_schema import ProbeOutcome, ProbeResult
-from services.api_gateway.session_pseudonym import SessionPseudonymizer
+from services.api_gateway.session_pseudonym import MISSING_REFERENCE, SessionPseudonymizer
+from services.api_gateway.studio_content import StudioContentCache
+from services.api_gateway.studio_content_metrics import StudioContentMetrics
+from services.api_gateway.studio_content_service import StudioContentService
+from services.api_gateway.studio_runtime_v2_client import StudioRuntimeV2ClientError
+from services.api_gateway.studio_v2 import parse_runtime_configuration_v2
 
 FIXED_NOW = datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc)
+CORRELATION = "feedback-service-test"
+KASSEL = "tenant-kassel"
+REVISION = "sha256:" + "a" * 64
+STUDIO_DOWN = StudioRuntimeV2ClientError("studio_runtime_network_error", retryable=True)
+FIXTURES = Path(__file__).parent / "fixtures" / "studio_v2"
+
+
+def _kassel(revision: str = REVISION, *, rating_max: int = 5):
+    """Kassel's captured runtime configuration; its forms ask the bundled questions."""
+    body = json.loads((FIXTURES / "runtime-tenant-kassel.json").read_text(encoding="utf-8"))
+    body["configurationRevision"] = revision
+    for owner in (body["staff"], *body["guestLanguages"]):
+        owner["feedback"]["questions"][0]["max"] = rating_max
+    return parse_runtime_configuration_v2(body, expected_tenant_id=KASSEL)
+
+
+class FakeStudio:
+    def __init__(self, outcome) -> None:
+        self.outcome = outcome
+
+    async def fetch(self, *arguments):
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
+        return self.outcome
+
+
+def _forms(runtime=None) -> FeedbackForms:
+    from prometheus_client import CollectorRegistry
+
+    return FeedbackForms(
+        StudioContentService(
+            StudioContentCache(),
+            runtime=FakeStudio(runtime if runtime is not None else _kassel()),
+            installation=None,
+            metrics=StudioContentMetrics(CollectorRegistry()),
+        )
+    )
 
 
 class FakeRepository:
@@ -98,6 +147,7 @@ def _service(**overrides):
         session_manager=FakeSessionManager(),
         telemetry=FakeTelemetry(),
         pseudonymizer=SessionPseudonymizer(key=b"feedback-service-test"),
+        forms=_forms(),
     )
     parts.update(overrides)
     return FeedbackService(clock=lambda: FIXED_NOW, **parts), parts
@@ -120,7 +170,7 @@ def _request(**overrides) -> FeedbackSubmissionRequest:
 async def test_a_valid_submission_is_stored_and_returns_its_id() -> None:
     service, parts = _service()
 
-    feedback_id = await service.submit(_request())
+    feedback_id = await service.submit(_request(), correlation_id=CORRELATION)
 
     assert isinstance(feedback_id, UUID)
     assert parts["repository"].stored[0].feedback_id == feedback_id
@@ -131,7 +181,7 @@ async def test_an_unknown_session_is_rejected_before_any_write() -> None:
     request = _request()
 
     with pytest.raises(UnknownSession):
-        await service.submit(request)
+        await service.submit(request, correlation_id=CORRELATION)
 
     assert parts["repository"].stored == []
 
@@ -140,7 +190,7 @@ async def test_a_missing_session_stores_the_missing_reference() -> None:
     """Spec O1: the admin dashboard submits with no session at all."""
     service, parts = _service()
 
-    await service.submit(_request(session_id=None))
+    await service.submit(_request(session_id=None), correlation_id=CORRELATION)
 
     assert parts["repository"].stored[0].session_ref == "0" * 32
 
@@ -149,7 +199,7 @@ async def test_a_missing_session_is_not_an_unknown_session() -> None:
     """A null session is allowed; a session id that does not resolve is not."""
     service, _ = _service(session_manager=FakeSessionManager(known=False))
 
-    assert await service.submit(_request(session_id=None))
+    assert await service.submit(_request(session_id=None), correlation_id=CORRELATION)
 
 
 async def test_text_over_the_limit_is_rejected_before_any_write() -> None:
@@ -158,7 +208,7 @@ async def test_text_over_the_limit_is_rejected_before_any_write() -> None:
     request = _request(improvements="x" * (MAX_IMPROVEMENTS_LENGTH + 1))
 
     with pytest.raises(FeedbackTextTooLong):
-        await service.submit(request)
+        await service.submit(request, correlation_id=CORRELATION)
 
     assert parts["repository"].stored == []
 
@@ -166,7 +216,7 @@ async def test_text_over_the_limit_is_rejected_before_any_write() -> None:
 async def test_text_at_the_limit_is_accepted() -> None:
     service, parts = _service()
 
-    await service.submit(_request(improvements="x" * MAX_IMPROVEMENTS_LENGTH))
+    await service.submit(_request(improvements="x" * MAX_IMPROVEMENTS_LENGTH), correlation_id=CORRELATION)
 
     assert parts["repository"].stored
 
@@ -179,7 +229,7 @@ async def test_the_too_long_error_carries_no_copy_of_the_text() -> None:
     request = _request(improvements=text)
 
     with pytest.raises(FeedbackTextTooLong) as caught:
-        await service.submit(request)
+        await service.submit(request, correlation_id=CORRELATION)
 
     assert secret not in str(caught.value)
     assert secret not in repr(caught.value)
@@ -188,9 +238,9 @@ async def test_the_too_long_error_carries_no_copy_of_the_text() -> None:
 async def test_the_stored_text_is_encrypted() -> None:
     service, parts = _service()
 
-    await service.submit(_request(improvements="a distinctive sentence"))
+    await service.submit(_request(improvements="a distinctive sentence"), correlation_id=CORRELATION)
 
-    ciphertext = parts["repository"].stored[0].improvements_ciphertext
+    ciphertext = parts["repository"].stored[0].text_answers_ciphertext
     assert b"a distinctive sentence" not in ciphertext
 
 
@@ -199,40 +249,39 @@ async def test_the_stored_text_round_trips_for_authorised_reads() -> None:
     service, parts = _service()
     cipher = FeedbackCipher(key=b"0" * 32)
 
-    await service.submit(_request(improvements="a distinctive sentence"))
+    await service.submit(_request(improvements="a distinctive sentence"), correlation_id=CORRELATION)
     record = parts["repository"].stored[0]
 
-    assert (
-        cipher.decrypt(
-            record.improvements_ciphertext,
-            feedback_id=record.feedback_id,
-            tenant_id=record.tenant_id,
-        )
-        == "a distinctive sentence"
-    )
+    assert open_text_answers(
+        cipher,
+        record.text_answers_ciphertext,
+        legacy=record.text_answers_legacy,
+        feedback_id=record.feedback_id,
+        tenant_id=record.tenant_id,
+    ) == {"improvementIdeas": "a distinctive sentence"}
 
 
 async def test_empty_text_stores_null_not_an_empty_ciphertext() -> None:
     service, parts = _service()
 
-    await service.submit(_request(improvements=None))
+    await service.submit(_request(improvements=None), correlation_id=CORRELATION)
 
-    assert parts["repository"].stored[0].improvements_ciphertext is None
+    assert parts["repository"].stored[0].text_answers_ciphertext is None
 
 
 async def test_blank_text_stores_null() -> None:
     """An empty string is not a submission; it should not become ciphertext."""
     service, parts = _service()
 
-    await service.submit(_request(improvements="   "))
+    await service.submit(_request(improvements="   "), correlation_id=CORRELATION)
 
-    assert parts["repository"].stored[0].improvements_ciphertext is None
+    assert parts["repository"].stored[0].text_answers_ciphertext is None
 
 
 async def test_expiry_is_twelve_months_after_creation() -> None:
     service, parts = _service()
 
-    await service.submit(_request())
+    await service.submit(_request(), correlation_id=CORRELATION)
 
     record = parts["repository"].stored[0]
     assert record.created_at == FIXED_NOW
@@ -245,7 +294,7 @@ async def test_expiry_survives_a_leap_day() -> None:
     service, parts = _service()
     service._clock = lambda: leap  # noqa: SLF001 - pinning the clock
 
-    await service.submit(_request())
+    await service.submit(_request(), correlation_id=CORRELATION)
 
     assert parts["repository"].stored[0].expires_at == datetime(
         2029, 2, 28, 9, 0, tzinfo=timezone.utc
@@ -255,7 +304,7 @@ async def test_expiry_survives_a_leap_day() -> None:
 async def test_the_session_reference_is_derived_not_accepted() -> None:
     service, parts = _service()
 
-    await service.submit(_request(session_id="ABC12345"))
+    await service.submit(_request(session_id="ABC12345"), correlation_id=CORRELATION)
 
     record = parts["repository"].stored[0]
     assert record.session_ref != "ABC12345"
@@ -266,7 +315,7 @@ async def test_the_retention_policy_version_is_recorded() -> None:
     """#305 must not retroactively move an existing record's expiry."""
     service, parts = _service()
 
-    await service.submit(_request())
+    await service.submit(_request(), correlation_id=CORRELATION)
 
     assert parts["repository"].stored[0].retention_policy_version == "v1-12-months"
 
@@ -274,7 +323,7 @@ async def test_the_retention_policy_version_is_recorded() -> None:
 async def test_the_consent_snapshot_records_the_submitted_form_version() -> None:
     service, parts = _service()
 
-    await service.submit(_request(form_version="v1"))
+    await service.submit(_request(form_version="v1"), correlation_id=CORRELATION)
 
     snapshot = parts["repository"].stored[0].consent_snapshot
     assert snapshot["form_version"] == "v1"
@@ -285,7 +334,7 @@ async def test_telemetry_receives_the_stored_event_id() -> None:
     """The reconciler re-emits this id; a second one would double-count."""
     service, parts = _service()
 
-    await service.submit(_request())
+    await service.submit(_request(), correlation_id=CORRELATION)
 
     record = parts["repository"].stored[0]
     assert parts["telemetry"].calls[0]["event_id"] == record.analytics_event_id
@@ -294,7 +343,7 @@ async def test_telemetry_receives_the_stored_event_id() -> None:
 async def test_telemetry_never_receives_the_free_text() -> None:
     service, parts = _service()
 
-    await service.submit(_request(improvements="a distinctive sentence"))
+    await service.submit(_request(improvements="a distinctive sentence"), correlation_id=CORRELATION)
 
     assert "a distinctive sentence" not in str(parts["telemetry"].calls)
 
@@ -302,7 +351,7 @@ async def test_telemetry_never_receives_the_free_text() -> None:
 async def test_telemetry_never_receives_the_raw_session_id() -> None:
     service, parts = _service()
 
-    await service.submit(_request(session_id="ABC12345"))
+    await service.submit(_request(session_id="ABC12345"), correlation_id=CORRELATION)
 
     assert "ABC12345" not in str(parts["telemetry"].calls)
 
@@ -313,7 +362,7 @@ async def test_a_storage_failure_emits_nothing() -> None:
     request = _request()
 
     with pytest.raises(FeedbackStorageUnavailable):
-        await service.submit(request)
+        await service.submit(request, correlation_id=CORRELATION)
 
     assert parts["telemetry"].calls == []
 
@@ -322,7 +371,7 @@ async def test_a_telemetry_failure_still_stores_the_feedback() -> None:
     """The other half: a Collector outage is not an API failure."""
     service, parts = _service(telemetry=FakeTelemetry(ProbeOutcome.EXPORT_FAILED))
 
-    feedback_id = await service.submit(_request())
+    feedback_id = await service.submit(_request(), correlation_id=CORRELATION)
 
     assert parts["repository"].stored[0].feedback_id == feedback_id
     assert parts["repository"].stored[0].analytics_state is AnalyticsState.PENDING
@@ -331,7 +380,7 @@ async def test_a_telemetry_failure_still_stores_the_feedback() -> None:
 async def test_a_rejected_event_stays_pending() -> None:
     service, parts = _service(telemetry=FakeTelemetry(ProbeOutcome.DROPPED_DISALLOWED))
 
-    await service.submit(_request())
+    await service.submit(_request(), correlation_id=CORRELATION)
 
     assert parts["repository"].stored[0].analytics_state is AnalyticsState.PENDING
 
@@ -339,7 +388,7 @@ async def test_a_rejected_event_stays_pending() -> None:
 async def test_a_delivered_event_is_marked_delivered() -> None:
     service, parts = _service()
 
-    feedback_id = await service.submit(_request())
+    feedback_id = await service.submit(_request(), correlation_id=CORRELATION)
 
     assert parts["repository"].delivered == [feedback_id]
 
@@ -353,7 +402,7 @@ async def test_the_delivery_mark_carries_the_rows_own_tenant() -> None:
     """
     service, parts = _service()
 
-    await service.submit(_request())
+    await service.submit(_request(), correlation_id=CORRELATION)
 
     stored = parts["repository"].stored[0]
     assert parts["repository"].marked_tenants == [stored.tenant_id]
@@ -363,7 +412,7 @@ async def test_the_delivery_mark_carries_the_rows_own_tenant() -> None:
 async def test_disabled_telemetry_is_not_a_reconciliation_backlog() -> None:
     service, parts = _service(telemetry=FakeTelemetry(ProbeOutcome.DISABLED))
 
-    await service.submit(_request())
+    await service.submit(_request(), correlation_id=CORRELATION)
 
     state = parts["repository"].stored[0].analytics_state
     assert state is AnalyticsState.NOT_APPLICABLE
@@ -399,7 +448,7 @@ class TestTheRealTelemetrySeam:
         )
         service, parts = _service(telemetry=telemetry)
 
-        feedback_id = await service.submit(_request())
+        feedback_id = await service.submit(_request(), correlation_id=CORRELATION)
 
         assert exported, "the real emitter was never reached"
         name, attributes = exported[0]
@@ -423,7 +472,7 @@ class TestTheRealTelemetrySeam:
         )
         service, parts = _service(telemetry=telemetry)
 
-        feedback_id = await service.submit(_request())
+        feedback_id = await service.submit(_request(), correlation_id=CORRELATION)
 
         attributes = exported[0][1]
         feedback_ref = parts["pseudonymizer"].feedback_reference(feedback_id)
@@ -453,7 +502,7 @@ class TestTheRealTelemetrySeam:
         )
         service, _ = _service(telemetry=telemetry)
 
-        await service.submit(_request())
+        await service.submit(_request(), correlation_id=CORRELATION)
 
         attributes = exported[0][1]
         assert attributes["ssf.quality.tenant_ref"] == tenant_ref("tenant-a")
@@ -469,7 +518,7 @@ async def test_a_failure_after_the_commit_still_confirms_the_submission() -> Non
     """
     service, parts = _service(repository=FakeRepository(marking_fails=True))
 
-    feedback_id = await service.submit(_request())
+    feedback_id = await service.submit(_request(), correlation_id=CORRELATION)
 
     assert feedback_id == parts["repository"].stored[0].feedback_id
     assert parts["repository"].stored[0].analytics_state is AnalyticsState.PENDING
@@ -499,7 +548,7 @@ class TestTenantBoundSessions:
         session = await manager.create_admin_session("tenant-kassel", revision)
         service, _ = _service(session_manager=manager)
 
-        feedback_id = await service.submit(_request(session_id=session.id))
+        feedback_id = await service.submit(_request(session_id=session.id), correlation_id=CORRELATION)
 
         assert isinstance(feedback_id, UUID)
 
@@ -516,7 +565,7 @@ class TestTenantBoundSessions:
         request = _request(session_id="NOSUCH99")
 
         with pytest.raises(UnknownSession):
-            await service.submit(request)
+            await service.submit(request, correlation_id=CORRELATION)
 
     async def test_the_submission_is_stored_under_the_sessions_tenant(self) -> None:
         from services.api_gateway.feedback.tenant import SessionTenantResolver
@@ -537,7 +586,7 @@ class TestTenantBoundSessions:
             ),
         )
 
-        await service.submit(_request(session_id=session.id))
+        await service.submit(_request(session_id=session.id), correlation_id=CORRELATION)
 
         assert parts["repository"].stored[0].tenant_id == "tenant-kassel"
 
@@ -612,7 +661,7 @@ class TestFeedbackJustAfterTheConversationEnds:
         service, parts = self._service_for(manager)
 
         clock.advance(minutes=29)
-        feedback_id = await service.submit(_request(session_id=session.id))
+        feedback_id = await service.submit(_request(session_id=session.id), correlation_id=CORRELATION)
 
         assert isinstance(feedback_id, UUID)
         assert parts["repository"].stored[0].tenant_id == "tenant-kassel"
@@ -626,7 +675,7 @@ class TestFeedbackJustAfterTheConversationEnds:
         request = _request(session_id=session.id)
 
         with pytest.raises(UnknownSession):
-            await service.submit(request)
+            await service.submit(request, correlation_id=CORRELATION)
         assert parts["repository"].stored == []
 
     async def test_the_window_is_configurable(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -639,7 +688,7 @@ class TestFeedbackJustAfterTheConversationEnds:
         request = _request(session_id=session.id)
 
         with pytest.raises(UnknownSession):
-            await service.submit(request)
+            await service.submit(request, correlation_id=CORRELATION)
 
     async def test_accepting_the_feedback_does_not_revive_the_session(self) -> None:
         """Criterion 3: the submission must buy the caller nothing else."""
@@ -647,7 +696,7 @@ class TestFeedbackJustAfterTheConversationEnds:
         manager, session = await self._ended_session(clock)
         service, _parts = self._service_for(manager)
 
-        await service.submit(_request(session_id=session.id))
+        await service.submit(_request(session_id=session.id), correlation_id=CORRELATION)
 
         assert await manager.resolve_customer_session(session.id) is None
         assert await manager.store.resolve_join(session.id) is None
@@ -668,7 +717,7 @@ class TestFeedbackJustAfterTheConversationEnds:
         request = _request(session_id=session.id)
 
         with pytest.raises(UnknownSession):
-            await service.submit(request)
+            await service.submit(request, correlation_id=CORRELATION)
 
     async def test_an_unusable_window_costs_neither_the_endpoint_nor_the_boot(
         self, monkeypatch: pytest.MonkeyPatch
@@ -718,4 +767,271 @@ class TestAnIdNoSessionCouldCarry:
         service = self._service()
         request = _request(session_id=malformed)
         with pytest.raises(UnknownSession):
-            await service.submit(request)
+            await service.submit(request, correlation_id=CORRELATION)
+
+
+BUNDLED_ANSWERS = {
+    "translationQuality": 4,
+    "performance": 5,
+    "usability": 3,
+    "recommendation": 9,
+    "improvementIdeas": "More languages please.",
+}
+
+
+def _v2(**overrides) -> FeedbackSubmissionV2:
+    payload: dict = {
+        "audience": "guest",
+        "session_id": "ABC12345",
+        "locale": "en",
+        "form_source": "studio",
+        "configuration_revision": REVISION,
+        "answers": dict(BUNDLED_ANSWERS),
+    }
+    payload.update(overrides)
+    return FeedbackSubmissionV2(**payload)
+
+
+def _kassel_service(**overrides):
+    """Sessions resolve to Kassel, whose Studio forms the fake Studio serves."""
+    return _service(tenant_resolver=ConfiguredTenantResolver(tenant_id=KASSEL), **overrides)
+
+
+class TestV1Submissions:
+    async def test_a_v1_body_is_stored_as_answers_to_the_bundled_form(self) -> None:
+        service, parts = _service()
+
+        await service.submit(_request(), correlation_id=CORRELATION)
+
+        record = parts["repository"].stored[0]
+        assert record.audience == "guest"
+        assert record.form_source == "bundled"
+        assert record.configuration_revision is None
+        assert record.form_locale is None
+        assert record.form_version == "v1"
+        assert record.numeric_answers == {
+            "translationQuality": 4,
+            "performance": 5,
+            "usability": 3,
+            "recommendation": 9,
+        }
+        assert record.text_answers_legacy is False
+        assert [question["id"] for question in record.form_snapshot] == list(BUNDLED_ANSWERS)
+
+    async def test_a_v1_body_without_a_session_is_installation_feedback(self) -> None:
+        service, parts = _service()
+
+        await service.submit(_request(session_id=None), correlation_id=CORRELATION)
+
+        assert parts["repository"].stored[0].audience == "installation"
+
+    async def test_a_v1_body_needs_no_studio(self) -> None:
+        service, parts = _service(forms=_forms(STUDIO_DOWN))
+
+        await service.submit(_request(), correlation_id=CORRELATION)
+
+        assert parts["repository"].stored
+
+
+class TestV2Submissions:
+    async def test_a_guest_studio_submission_is_stored_with_its_form(self) -> None:
+        service, parts = _kassel_service()
+
+        feedback_id = await service.submit(_v2(), correlation_id=CORRELATION)
+
+        record = parts["repository"].stored[0]
+        assert record.feedback_id == feedback_id
+        assert record.tenant_id == KASSEL
+        assert record.audience == "guest"
+        assert record.form_source == "studio"
+        assert record.configuration_revision == REVISION
+        assert record.form_locale == "en"
+        assert record.form_version == "v2"
+        assert record.numeric_answers["recommendation"] == 9
+        assert record.form_snapshot[0]["question"]
+        assert open_text_answers(
+            FeedbackCipher(key=b"0" * 32),
+            record.text_answers_ciphertext,
+            legacy=False,
+            feedback_id=record.feedback_id,
+            tenant_id=KASSEL,
+        ) == {"improvementIdeas": "More languages please."}
+
+    async def test_a_bundled_v2_submission_needs_no_studio(self) -> None:
+        service, parts = _service(forms=_forms(STUDIO_DOWN))
+
+        await service.submit(
+            _v2(form_source="bundled", configuration_revision=None, locale="ar"),
+            correlation_id=CORRELATION,
+        )
+
+        record = parts["repository"].stored[0]
+        assert record.form_source == "bundled"
+        assert record.form_locale == "ar"
+        assert record.configuration_revision is None
+
+    async def test_an_installation_submission_is_filed_under_the_configured_tenant(self) -> None:
+        service, parts = _service()
+
+        await service.submit(
+            _v2(
+                audience="installation",
+                session_id=None,
+                form_source="bundled",
+                configuration_revision=None,
+            ),
+            correlation_id=CORRELATION,
+        )
+
+        record = parts["repository"].stored[0]
+        assert record.audience == "installation"
+        assert record.tenant_id == "tenant-a"
+        assert record.session_ref == MISSING_REFERENCE
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"audience": "staff"},
+            {"session_id": None},
+            {"audience": "installation"},
+            {"configuration_revision": None},
+            {"form_source": "bundled"},
+        ],
+        ids=[
+            "staff-on-the-public-route",
+            "guest-without-session",
+            "installation-with-session",
+            "studio-without-revision",
+            "bundled-with-revision",
+        ],
+    )
+    async def test_a_body_that_contradicts_itself_is_invalid(self, overrides: dict) -> None:
+        service, parts = _kassel_service()
+
+        with pytest.raises(FeedbackRequestInvalid):
+            await service.submit(_v2(**overrides), correlation_id=CORRELATION)
+
+        assert parts["repository"].stored == []
+
+    async def test_answers_that_do_not_fit_are_refused_before_any_write(self) -> None:
+        service, parts = _kassel_service()
+
+        with pytest.raises(FeedbackFormChanged):
+            await service.submit(
+                _v2(answers={**BUNDLED_ANSWERS, "usability": 6}), correlation_id=CORRELATION
+            )
+
+        assert parts["repository"].stored == []
+        assert parts["telemetry"].calls == []
+
+    async def test_studio_unavailable_is_refused_before_any_write(self) -> None:
+        service, parts = _kassel_service(forms=_forms(STUDIO_DOWN))
+
+        with pytest.raises(FeedbackFormUnavailable):
+            await service.submit(_v2(), correlation_id=CORRELATION)
+
+        assert parts["repository"].stored == []
+
+    async def test_an_unknown_session_is_refused_before_the_form_is_read(self) -> None:
+        service, parts = _kassel_service(
+            session_manager=FakeSessionManager(known=False), forms=_forms(STUDIO_DOWN)
+        )
+
+        with pytest.raises(UnknownSession):
+            await service.submit(_v2(), correlation_id=CORRELATION)
+
+    async def test_whitespace_text_is_no_answer(self) -> None:
+        service, parts = _kassel_service()
+
+        await service.submit(
+            _v2(answers={**BUNDLED_ANSWERS, "improvementIdeas": "  "}), correlation_id=CORRELATION
+        )
+
+        assert parts["repository"].stored[0].text_answers_ciphertext is None
+
+
+class TestAnalyticsUntilPr12:
+    async def test_a_studio_form_asking_the_bundled_questions_emits_the_v1_event(self) -> None:
+        service, parts = _kassel_service()
+
+        await service.submit(_v2(), correlation_id=CORRELATION)
+
+        (call,) = parts["telemetry"].calls
+        assert (
+            call["translation_quality"],
+            call["performance"],
+            call["usability"],
+            call["net_promoter_score"],
+            call["form_version"],
+        ) == (4, 5, 3, 9, "v2")
+        assert parts["repository"].stored[0].analytics_state is AnalyticsState.DELIVERED
+
+    async def test_a_form_asking_differently_is_not_applicable_and_emits_nothing(self) -> None:
+        service, parts = _kassel_service(forms=_forms(_kassel(rating_max=7)))
+
+        await service.submit(
+            _v2(answers={**BUNDLED_ANSWERS, "translationQuality": 7}), correlation_id=CORRELATION
+        )
+
+        assert parts["telemetry"].calls == []
+        assert parts["repository"].stored[0].analytics_state is AnalyticsState.NOT_APPLICABLE
+
+    async def test_a_partial_answer_set_is_not_applicable(self) -> None:
+        body = json.loads((FIXTURES / "runtime-tenant-kassel.json").read_text(encoding="utf-8"))
+        body["configurationRevision"] = REVISION
+        body["guestLanguages"][0]["feedback"]["questions"][1]["required"] = False
+        read = parse_runtime_configuration_v2(body, expected_tenant_id=KASSEL)
+        service, parts = _kassel_service(forms=_forms(read))
+        answers = {key: value for key, value in BUNDLED_ANSWERS.items() if key != "performance"}
+
+        await service.submit(_v2(answers=answers), correlation_id=CORRELATION)
+
+        assert parts["telemetry"].calls == []
+        assert parts["repository"].stored[0].analytics_state is AnalyticsState.NOT_APPLICABLE
+
+
+class TestStaffSubmissions:
+    async def test_staff_feedback_is_filed_under_the_given_tenant(self) -> None:
+        service, parts = _service()
+
+        await service.submit_staff(
+            _v2(audience="staff", locale="de-DE"), tenant_id=KASSEL, correlation_id=CORRELATION
+        )
+
+        record = parts["repository"].stored[0]
+        assert record.tenant_id == KASSEL
+        assert record.audience == "staff"
+        assert record.session_ref == SessionPseudonymizer(
+            key=b"feedback-service-test"
+        ).reference("ABC12345")
+
+    async def test_staff_feedback_without_a_session_stores_the_missing_reference(self) -> None:
+        service, parts = _service()
+
+        await service.submit_staff(
+            _v2(audience="staff", session_id=None), tenant_id=KASSEL, correlation_id=CORRELATION
+        )
+
+        assert parts["repository"].stored[0].session_ref == MISSING_REFERENCE
+
+    @pytest.mark.parametrize("audience", ["guest", "installation"])
+    async def test_the_staff_path_takes_staff_feedback_only(self, audience: str) -> None:
+        service, parts = _service()
+
+        with pytest.raises(FeedbackRequestInvalid):
+            await service.submit_staff(
+                _v2(audience=audience, session_id=None),
+                tenant_id=KASSEL,
+                correlation_id=CORRELATION,
+            )
+
+    async def test_staff_answers_are_checked_against_the_staff_form(self) -> None:
+        service, parts = _service()
+
+        with pytest.raises(FeedbackFormChanged):
+            await service.submit_staff(
+                _v2(audience="staff", answers={"translationQuality": 4}),
+                tenant_id=KASSEL,
+                correlation_id=CORRELATION,
+            )
+        assert parts["repository"].stored == []

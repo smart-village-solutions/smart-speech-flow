@@ -74,6 +74,7 @@ def wired(monkeypatch):
     monkeypatch.setattr(state, "prometheus_registry", CollectorRegistry(), raising=False)
     monkeypatch.setattr(state, "pseudonymizer", SessionPseudonymizer(key=b"k"), raising=False)
     monkeypatch.setattr(state, "guest_grace_window", timedelta(minutes=30), raising=False)
+    monkeypatch.setattr(state, "studio_content", object(), raising=False)
 
     return state
 
@@ -315,6 +316,18 @@ class TestTheRequestPathTakesTheTenantFromTheSession:
         assert wired.feedback_service._grace_window == timedelta(minutes=7)
 
 
+    async def test_submissions_are_checked_against_the_content_routes_forms(
+        self, wired, monkeypatch
+    ) -> None:
+        """One content service: the form a route served is the form a submission meets."""
+        content = object()
+        monkeypatch.setattr(wired, "studio_content", content)
+
+        await wiring._connect_feedback_request_path(gateway.app.state, APP_URL, object())
+
+        assert wired.feedback_service._forms._content is content
+
+
 class TestTheLifespanWiresTheAppItWasGiven:
     """The feedback helpers must act on the lifespan's app, not the module's.
 
@@ -372,6 +385,7 @@ class TestTheLifespanWiresTheAppItWasGiven:
         live.state.prometheus_registry = CollectorRegistry()
         live.state.pseudonymizer = SessionPseudonymizer(key=b"k")
         live.state.guest_grace_window = timedelta(minutes=30)
+        live.state.studio_content = object()
 
         await wiring._connect_feedback_request_path(live.state, APP_URL, object())
         await wiring._connect_feedback_read_path(live.state, READER_URL)

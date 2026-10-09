@@ -10,27 +10,32 @@ tenant from the verified issuer through
 require_studio_tenant_context, which also rejects any tenant selector supplied
 by the request. No handler may read across tenants on a caller's say-so.
 
-No handler here may put `submission.improvements` into a response or a log.
-The single exception is the detail route, which exists to disclose it to an
-authorised operator and writes an access audit row for every disclosure.
+No handler here may put a free-text answer into a response or a log. The
+single exception is the detail route, which exists to disclose it to an
+authorised operator and writes an access audit row for every disclosure. The
+submit routes' 422s carry no submitted value at all (ValueFreeValidationRoute).
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from ..auth import require_ssf_privileged_user
 from ..dependencies import optional_container
+from ..feedback.answers import FeedbackFormChanged
+from ..feedback.forms import FeedbackFormUnavailable
 from ..feedback.models import (
     FeedbackAcceptedResponse,
-    FeedbackSubmissionRequest,
+    FeedbackSubmission,
     FeedbackTextTooLong,
 )
 from ..feedback.read import (
@@ -41,12 +46,14 @@ from ..feedback.read import (
     FeedbackTextUnreadable,
 )
 from ..feedback.repository import FeedbackStorageUnavailable
-from ..feedback.service import FeedbackService, UnknownSession
+from ..feedback.service import FeedbackRequestInvalid, FeedbackService, UnknownSession
+from ..studio_runtime_flow import correlation_id_from_request
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
+from ..value_free_validation import ValueFreeValidationRoute
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api", tags=["feedback"])
+router = APIRouter(prefix="/api", tags=["feedback"], route_class=ValueFreeValidationRoute)
 
 
 _RETRY_AFTER_SECONDS = "30"
@@ -69,28 +76,54 @@ def get_feedback_service(request: Request):
     return service
 
 
-@router.post(
-    "/feedback",
-    status_code=status.HTTP_201_CREATED,
-    summary="Submit voluntary feedback for a session",
-)
-async def submit_feedback(
-    submission: FeedbackSubmissionRequest,
-    service: Annotated[FeedbackService, Depends(get_feedback_service)],
-) -> FeedbackAcceptedResponse:
+FEEDBACK_SUBMIT_RESPONSES: dict[int | str, dict[str, object]] = {
+    404: {"description": "The named session is not known"},
+    409: {"description": "feedback_form_changed: the answers do not fit the current form"},
+    422: {"description": "The body is invalid; no submitted value is echoed"},
+    503: {"description": "Studio or the feedback store is unavailable; retry"},
+}
+
+
+def _coded(status_code: int, code: str, message: str, **headers: str) -> HTTPException:
+    """The gateway's coded error envelope, which the frontend reads as `detail.error_code`."""
+    return HTTPException(
+        status_code=status_code,
+        detail={"error_code": code, "message": message},
+        headers=headers or None,
+    )
+
+
+@contextmanager
+def submission_errors() -> Iterator[None]:
+    """Each refusal as fixed text. Every `from None` keeps a submitted value out of the chain."""
     try:
-        feedback_id = await service.submit(submission)
+        yield
     except UnknownSession:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="The session is not known",
         ) from None
     except FeedbackTextTooLong as error:
-        # The exception carries the limit, never the text. `from None` keeps
-        # the submitted value out of the traceback a handler might serialise.
+        # The exception carries the limit, never the text.
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(error),
+        ) from None
+    except FeedbackRequestInvalid as error:
+        raise _coded(422, "feedback_request_invalid", str(error)) from None
+    except FeedbackFormChanged:
+        raise _coded(
+            409,
+            "feedback_form_changed",
+            "The feedback form has changed; reload it and answer again",
+        ) from None
+    except FeedbackFormUnavailable:
+        logger.warning("Feedback form unavailable")
+        raise _coded(
+            503,
+            "feedback_form_unavailable",
+            "The feedback form cannot be checked right now; please retry",
+            **{"Retry-After": _RETRY_AFTER_SECONDS},
         ) from None
     except FeedbackStorageUnavailable:
         # No exception text: an asyncpg error carries the bound parameters,
@@ -102,6 +135,23 @@ async def submit_feedback(
             headers={"Retry-After": _RETRY_AFTER_SECONDS},
         ) from None
 
+
+@router.post(
+    "/feedback",
+    status_code=status.HTTP_201_CREATED,
+    summary="Submit voluntary feedback for a session",
+    responses=FEEDBACK_SUBMIT_RESPONSES,
+)
+async def submit_feedback(
+    submission: Annotated[FeedbackSubmission, Body()],
+    request: Request,
+    service: Annotated[FeedbackService, Depends(get_feedback_service)],
+) -> FeedbackAcceptedResponse:
+    """Guest and installation feedback, as a v2 body or, until PR 13 ships, a v1 body."""
+    with submission_errors():
+        feedback_id = await service.submit(
+            submission, correlation_id=correlation_id_from_request(request)
+        )
     return FeedbackAcceptedResponse(feedback_id=feedback_id)
 
 
@@ -110,19 +160,30 @@ MAX_PAGE_SIZE = 200
 
 
 class FeedbackSummaryResponse(BaseModel):
-    """A listed record. Carries no free text, only whether any exists."""
+    """A listed record. Carries no free text, only whether any exists.
+
+    The four rating fields are those bundled question ids' answers, or null;
+    `numeric_answers` holds every number by question id, and `form_snapshot`
+    the questions they answered.
+    """
 
     feedback_id: UUID
     session_ref: str
-    translation_quality: int
-    performance: int
-    usability: int
-    net_promoter_score: int
+    translation_quality: int | None
+    performance: int | None
+    usability: int | None
+    net_promoter_score: int | None
     has_improvements: bool
     form_version: str
     analytics_state: str
     created_at: datetime
     expires_at: datetime
+    audience: str
+    form_source: str
+    configuration_revision: str | None
+    locale: str | None
+    numeric_answers: dict[str, int]
+    form_snapshot: list[dict[str, Any]]
 
     @classmethod
     def of(cls, summary: FeedbackSummary) -> "FeedbackSummaryResponse":
@@ -184,13 +245,22 @@ def _operator(claims: dict) -> str:
 
 
 class FeedbackDetailResponse(FeedbackSummaryResponse):
-    """A listed record plus the text it was hiding. Audited on every read."""
+    """A listed record plus the text it was hiding. Audited on every read.
+
+    `improvements` is the `improvementIdeas` answer; `text_answers` holds every
+    text answer by question id.
+    """
 
     improvements: str | None
+    text_answers: dict[str, str]
 
     @classmethod
     def of_detail(cls, detail: FeedbackDetail) -> "FeedbackDetailResponse":
-        return cls(**asdict(detail.summary), improvements=detail.improvements)
+        return cls(
+            **asdict(detail.summary),
+            improvements=detail.improvements,
+            text_answers=detail.text_answers,
+        )
 
 
 @router.get(

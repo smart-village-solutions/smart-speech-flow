@@ -297,11 +297,13 @@ free text is not readable in the database:
 ```bash
 production_compose exec -T ssf-postgres sh -ec \
   'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
-   "SELECT analytics_state, improvements_ciphertext IS NOT NULL, expires_at::date FROM feedback ORDER BY created_at DESC LIMIT 1"'
+   "SELECT analytics_state, text_answers_ciphertext IS NOT NULL, expires_at::date FROM feedback ORDER BY created_at DESC LIMIT 1"'
 ```
 
 Expect `delivered|t|<today plus twelve months>`, or `not_applicable` in place of
-`delivered` while telemetry is still `disabled`. Both are correct.
+`delivered` while telemetry is still `disabled`. Both are correct. A form that
+does not ask the four bundled questions with their bundled ranges is also
+`not_applicable`: the `feedback_submitted` event cannot describe it yet.
 
 `pending` means the row was stored but its analytics event did not go out. That
 is recoverable rather than lost: the reconciliation pass retries it within five
@@ -370,8 +372,8 @@ Two authenticated endpoints let Studio read what was submitted:
 
 | Endpoint | Returns |
 | --- | --- |
-| `GET /api/feedback` | one page of the caller's tenant: ratings, dates, form version, analytics state, and `has_improvements` — never the text itself |
-| `GET /api/feedback/{feedback_id}` | one record including its decrypted free text |
+| `GET /api/feedback` | one page of the caller's tenant: numeric answers by question id, the form they answered (audience, source, revision, locale, snapshot), the four legacy ratings when those ids were asked, dates, analytics state, and `has_improvements` — never the text itself |
+| `GET /api/feedback/{feedback_id}` | one record including its decrypted text answers (`text_answers` by question id, and `improvements` for `improvementIdeas`) |
 
 Both take the tenant from the verified bearer token issuer and its unique
 Studio login-directory entry. The read routes additionally require the
@@ -464,6 +466,14 @@ when the database comes back — no gateway restart is needed in either
 direction. Leave the variables in `.env`: removing them breaks every
 `production_compose` command on the host, including the backups for every other
 service.
+
+Rolling the gateway back past migration `004` is the one exception to
+"additive". `004` replaces the four rating columns and `improvements_ciphertext`
+with answers by question id, converting existing rows in place, so an older
+gateway's feedback statements fail against it: submissions and reads answer
+`503`, reconciliation reports itself unavailable, and retention keeps running.
+Conversations are unaffected. Feedback written after `004` does not survive a
+schema rollback.
 
 Leave the volume in place. Removing the volume destroys every
 stored submission, and the twelve-month retention promise made to the people who

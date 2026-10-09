@@ -162,11 +162,12 @@ jobs:
           docker logs ssf-postgres-ci >&2
           exit 1
 
-      - name: Confirm both migrations ran
+      - name: Confirm every migration ran
         run: |
           docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*001_feedback.sql'
           docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*002_feedback_roles.sql'
           docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*003_feedback_reader.sql'
+          docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*004_feedback_dynamic.sql'
 
       - name: Run the feedback integration tests
         # The three passwords arrive from the previous step through GITHUB_ENV.
@@ -180,7 +181,8 @@ jobs:
           pytest --run-integration -q \
             tests/integration/test_feedback_repository.py \
             tests/integration/test_feedback_row_level_security.py \
-            tests/integration/test_feedback_read_access.py
+            tests/integration/test_feedback_read_access.py \
+            tests/integration/test_feedback_migration.py
 
       - name: Database logs on failure
         if: failure()

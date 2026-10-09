@@ -260,6 +260,19 @@ Two cases do not resolve through a live session:
   yields the session's key and the time it ended, nothing more. Past the window
   the submission is refused as an unknown session (#324).
 
+**Staff feedback** is authenticated: `POST /api/admin/feedback` takes the
+tenant from the staff token, exactly as the read routes do, and rejects a
+tenant in the body. A session it names must be one the caller owns in that
+tenant, otherwise it answers `404` like every other admin route. Until the
+frontend sends staff feedback there, staff feedback through the unauthenticated
+v1 body is indistinguishable from a guest's.
+
+**Forms.** Studio defines the feedback form for each audience. A submission's
+answers are checked against the form of the revision it names while the
+gateway's content cache still holds it, and against the current form
+otherwise; when no form can be read at all, the submission is refused as
+retryable rather than accepted unchecked.
+
 See `docs/operations/runbooks/feedback-database-deployment.md` for the
 deployment consequences, including how to confirm no stored tenant is one that
 no operator can read.

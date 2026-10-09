@@ -7,12 +7,14 @@ would put feedback free text into a 422 response body.
 """
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from services.api_gateway.feedback.models import (
     MAX_IMPROVEMENTS_LENGTH,
     AnalyticsState,
+    FeedbackSubmission,
     FeedbackSubmissionRequest,
+    FeedbackSubmissionV2,
 )
 
 
@@ -169,3 +171,68 @@ def test_the_analytics_states_are_the_three_the_schema_allows() -> None:
         "delivered",
         "not_applicable",
     }
+
+
+SUBMISSION = TypeAdapter(FeedbackSubmission)
+
+
+def _v2(**overrides: object) -> dict:
+    payload: dict = {
+        "audience": "guest",
+        "session_id": "ABC12345",
+        "locale": "en",
+        "form_source": "studio",
+        "configuration_revision": "sha256:abc",
+        "answers": {"translationQuality": 4, "improvementIdeas": "More please."},
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_a_body_with_an_audience_is_a_v2_submission() -> None:
+    submission = SUBMISSION.validate_python(_v2())
+
+    assert isinstance(submission, FeedbackSubmissionV2)
+    assert submission.answers == {"translationQuality": 4, "improvementIdeas": "More please."}
+
+
+def test_a_body_without_an_audience_is_a_v1_submission() -> None:
+    assert isinstance(SUBMISSION.validate_python(_valid()), FeedbackSubmissionRequest)
+
+
+def test_v1_fields_beside_an_audience_are_refused_as_v2_not_tried_as_v1() -> None:
+    with pytest.raises(ValidationError) as caught:
+        SUBMISSION.validate_python({**_valid(), "audience": "guest"})
+
+    assert {error["type"] for error in caught.value.errors()} >= {"extra_forbidden", "missing"}
+    assert all("v2" in error["loc"] for error in caught.value.errors())
+
+
+@pytest.mark.parametrize("answers", [[1, 2], "free text", None, 4, {"a": {"b": []}}])
+def test_answers_of_any_shape_reach_the_service_unchecked(answers: object) -> None:
+    """The service checks them against the form; pydantic would echo them in a 422."""
+    assert SUBMISSION.validate_python(_v2(answers=answers)).answers == answers
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"audience": "visitor"},
+        {"form_source": "imported"},
+        {"locale": "x"},
+        {"locale": "en_GB"},
+        {"locale": "e" * 40},
+        {"configuration_revision": "r" * 200},
+        {"session_id": "s" * 200},
+        {"tenant_id": "attacker-chosen"},
+        {"form_version": "v2"},
+    ],
+)
+def test_an_invalid_v2_envelope_is_refused(invalid: dict) -> None:
+    with pytest.raises(ValidationError):
+        SUBMISSION.validate_python(_v2(**invalid))
+
+
+@pytest.mark.parametrize("locale", ["en", "de-DE", "kmr", "zh-Hant-TW"])
+def test_bcp47_locales_are_accepted(locale: str) -> None:
+    assert SUBMISSION.validate_python(_v2(locale=locale)).locale == locale

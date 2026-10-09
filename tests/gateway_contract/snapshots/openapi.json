@@ -619,11 +619,26 @@
         "type": "object"
       },
       "FeedbackDetailResponse": {
-        "description": "A listed record plus the text it was hiding. Audited on every read.",
+        "description": "A listed record plus the text it was hiding. Audited on every read.\n\n`improvements` is the `improvementIdeas` answer; `text_answers` holds every\ntext answer by question id.",
         "properties": {
           "analytics_state": {
             "title": "Analytics State",
             "type": "string"
+          },
+          "audience": {
+            "title": "Audience",
+            "type": "string"
+          },
+          "configuration_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configuration Revision"
           },
           "created_at": {
             "format": "date-time",
@@ -638,6 +653,18 @@
           "feedback_id": {
             "format": "uuid",
             "title": "Feedback Id",
+            "type": "string"
+          },
+          "form_snapshot": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Form Snapshot",
+            "type": "array"
+          },
+          "form_source": {
+            "title": "Form Source",
             "type": "string"
           },
           "form_version": {
@@ -659,25 +686,78 @@
             ],
             "title": "Improvements"
           },
+          "locale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
           "net_promoter_score": {
-            "title": "Net Promoter Score",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Promoter Score"
+          },
+          "numeric_answers": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Numeric Answers",
+            "type": "object"
           },
           "performance": {
-            "title": "Performance",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performance"
           },
           "session_ref": {
             "title": "Session Ref",
             "type": "string"
           },
+          "text_answers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Text Answers",
+            "type": "object"
+          },
           "translation_quality": {
-            "title": "Translation Quality",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Quality"
           },
           "usability": {
-            "title": "Usability",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usability"
           }
         },
         "required": [
@@ -692,7 +772,14 @@
           "analytics_state",
           "created_at",
           "expires_at",
-          "improvements"
+          "audience",
+          "form_source",
+          "configuration_revision",
+          "locale",
+          "numeric_answers",
+          "form_snapshot",
+          "improvements",
+          "text_answers"
         ],
         "title": "FeedbackDetailResponse",
         "type": "object"
@@ -781,12 +868,106 @@
         "title": "FeedbackSubmissionRequest",
         "type": "object"
       },
+      "FeedbackSubmissionV2": {
+        "additionalProperties": false,
+        "description": "Answers by question id, for the form the browser rendered.\n\n`answers` is deliberately not validated here, for the reason the v1 model\ngives about `improvements`, and more: an error inside a mapping carries the\nkey in `loc` as well as the value in `input`. SkipValidation keeps the\ndeclared shape in the OpenAPI document while FeedbackService does the\nchecking, against the form, with errors that carry neither.",
+        "properties": {
+          "answers": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Answers",
+            "type": "object"
+          },
+          "audience": {
+            "enum": [
+              "guest",
+              "staff",
+              "installation"
+            ],
+            "title": "Audience",
+            "type": "string"
+          },
+          "configuration_revision": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configuration Revision"
+          },
+          "form_source": {
+            "enum": [
+              "studio",
+              "bundled"
+            ],
+            "title": "Form Source",
+            "type": "string"
+          },
+          "locale": {
+            "maxLength": 35,
+            "minLength": 2,
+            "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$",
+            "title": "Locale",
+            "type": "string"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "required": [
+          "audience",
+          "locale",
+          "form_source",
+          "answers"
+        ],
+        "title": "FeedbackSubmissionV2",
+        "type": "object"
+      },
       "FeedbackSummaryResponse": {
-        "description": "A listed record. Carries no free text, only whether any exists.",
+        "description": "A listed record. Carries no free text, only whether any exists.\n\nThe four rating fields are those bundled question ids' answers, or null;\n`numeric_answers` holds every number by question id, and `form_snapshot`\nthe questions they answered.",
         "properties": {
           "analytics_state": {
             "title": "Analytics State",
             "type": "string"
+          },
+          "audience": {
+            "title": "Audience",
+            "type": "string"
+          },
+          "configuration_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configuration Revision"
           },
           "created_at": {
             "format": "date-time",
@@ -803,6 +984,18 @@
             "title": "Feedback Id",
             "type": "string"
           },
+          "form_snapshot": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Form Snapshot",
+            "type": "array"
+          },
+          "form_source": {
+            "title": "Form Source",
+            "type": "string"
+          },
           "form_version": {
             "title": "Form Version",
             "type": "string"
@@ -811,25 +1004,71 @@
             "title": "Has Improvements",
             "type": "boolean"
           },
+          "locale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
           "net_promoter_score": {
-            "title": "Net Promoter Score",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Promoter Score"
+          },
+          "numeric_answers": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Numeric Answers",
+            "type": "object"
           },
           "performance": {
-            "title": "Performance",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Performance"
           },
           "session_ref": {
             "title": "Session Ref",
             "type": "string"
           },
           "translation_quality": {
-            "title": "Translation Quality",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Translation Quality"
           },
           "usability": {
-            "title": "Usability",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usability"
           }
         },
         "required": [
@@ -843,7 +1082,13 @@
           "form_version",
           "analytics_state",
           "created_at",
-          "expires_at"
+          "expires_at",
+          "audience",
+          "form_source",
+          "configuration_revision",
+          "locale",
+          "numeric_answers",
+          "form_snapshot"
         ],
         "title": "FeedbackSummaryResponse",
         "type": "object"
@@ -1539,6 +1784,51 @@
           }
         },
         "summary": "Staff texts, staff form, branding and time zone of the token's tenant",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/feedback": {
+      "post": {
+        "description": "Staff feedback, filed under the token's tenant; a named session must be the caller's.",
+        "operationId": "submit_staff_feedback_api_admin_feedback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackSubmissionV2"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackAcceptedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "409": {
+            "description": "feedback_form_changed: the answers do not fit the current form"
+          },
+          "422": {
+            "description": "The body is invalid; no submitted value is echoed"
+          },
+          "503": {
+            "description": "Studio or the feedback store is unavailable; retry"
+          }
+        },
+        "summary": "Submit staff feedback for the token's tenant",
         "tags": [
           "admin",
           "admin"
@@ -3319,12 +3609,21 @@
         ]
       },
       "post": {
+        "description": "Guest and installation feedback, as a v2 body or, until PR 13 ships, a v1 body.",
         "operationId": "submit_feedback_api_feedback_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FeedbackSubmissionRequest"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/FeedbackSubmissionV2"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FeedbackSubmissionRequest"
+                  }
+                ],
+                "title": "Submission"
               }
             }
           },
@@ -3341,15 +3640,17 @@
             },
             "description": "Successful Response"
           },
+          "404": {
+            "description": "The named session is not known"
+          },
+          "409": {
+            "description": "feedback_form_changed: the answers do not fit the current form"
+          },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "The body is invalid; no submitted value is echoed"
+          },
+          "503": {
+            "description": "Studio or the feedback store is unavailable; retry"
           }
         },
         "summary": "Submit voluntary feedback for a session",

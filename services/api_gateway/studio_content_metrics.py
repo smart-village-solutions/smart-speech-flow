@@ -11,13 +11,17 @@ from prometheus_client import CollectorRegistry, Counter, Gauge
 
 from .studio_locales import SKIP_REASONS, SkipReason
 
-ContentEndpoint = Literal["installation", "guest_languages", "guest_content", "staff_content"]
+ContentEndpoint = Literal[
+    "installation", "guest_languages", "guest_content", "staff_content", "feedback"
+]
 ContentOutcome = Literal["cached", "live", "stale", "unavailable"]
 ENDPOINTS: tuple[ContentEndpoint, ...] = (
     "installation",
     "guest_languages",
     "guest_content",
     "staff_content",
+    # Not a browser route: the form a feedback submission is checked against.
+    "feedback",
 )
 OUTCOMES: tuple[ContentOutcome, ...] = ("cached", "live", "stale", "unavailable")
 

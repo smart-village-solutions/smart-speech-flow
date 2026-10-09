@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 
 from prometheus_client import CollectorRegistry
 
+from services.api_gateway.feedback.bundled_form import bundled_rules
 from services.api_gateway.feedback.maintenance import (
     RECONCILIATION_LOCK_KEY,
     RETENTION_LOCK_KEY,
@@ -43,10 +44,13 @@ def _pending(**overrides) -> PendingAnalytics:
         tenant_id="tenant-a",
         session_ref="c" * 32,
         analytics_event_id=uuid4(),
-        translation_quality=4,
-        performance=5,
-        usability=3,
-        net_promoter_score=9,
+        numeric_answers={
+            "translationQuality": 4,
+            "performance": 5,
+            "usability": 3,
+            "recommendation": 9,
+        },
+        form_snapshot=list(bundled_rules().snapshot),
         form_version="v1",
         created_at=NOW - timedelta(hours=2),
     )
@@ -254,6 +258,45 @@ class TestReconciliationRecoversDelivery:
         assert result.failed == 0
         assert result.recovered == 0
         assert result.unavailable is True
+
+
+class TestReconciliationRebuildsTheV1EventFromAnswersById:
+    async def test_the_four_numbers_come_from_the_numeric_answers(self):
+        row = _pending(
+            numeric_answers={
+                "translationQuality": 2,
+                "performance": 3,
+                "usability": 1,
+                "recommendation": 0,
+            }
+        )
+        telemetry = FakeTelemetry()
+
+        await _maintenance(FakeRepository([row]), telemetry).reconcile_once()
+
+        call = telemetry.calls[0]
+        assert (
+            call["translation_quality"],
+            call["performance"],
+            call["usability"],
+            call["net_promoter_score"],
+        ) == (2, 3, 1, 0)
+
+    async def test_a_row_without_the_bundled_questions_is_drained_not_emitted(self):
+        """Not stored as pending since PR 11, but a row that is must not retry forever."""
+        row = _pending(
+            numeric_answers={"clarity": 6},
+            form_snapshot=[{"id": "clarity", "type": "rating", "min": 1, "max": 7}],
+        )
+        repository = FakeRepository([row])
+        telemetry = FakeTelemetry()
+
+        result = await _maintenance(repository, telemetry).reconcile_once()
+
+        assert telemetry.calls == []
+        assert result.drained == 1
+        assert repository.states[row.feedback_id] is AnalyticsState.NOT_APPLICABLE
+        assert repository.marked_tenants[row.feedback_id] == row.tenant_id
 
 
 class TestReconciliationCarriesNoText:

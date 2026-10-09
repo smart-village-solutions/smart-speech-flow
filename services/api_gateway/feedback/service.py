@@ -11,6 +11,7 @@ from __future__ import annotations
 import calendar
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Final, Optional, Protocol
 from uuid import UUID, uuid4
@@ -18,16 +19,25 @@ from uuid import UUID, uuid4
 from ..quality_telemetry_schema import ProbeOutcome
 from ..session_pseudonym import MISSING_REFERENCE, SessionPseudonymizer, tenant_ref
 from ..tenant_session import TenantSessionKey
+from . import bundled_form
+from .answers import FormRules, ValidatedAnswers, validate_answers
+from .bundled_form import LegacyRatings, bundled_rules, legacy_ratings
+from .forms import FeedbackForms
 from .models import (
     MAX_IMPROVEMENTS_LENGTH,
     RETENTION_POLICY_VERSION,
+    V2_FORM_VERSION,
     AnalyticsState,
+    Audience,
     FeedbackRecord,
     FeedbackSubmissionRequest,
+    FeedbackSubmissionV2,
     FeedbackTextTooLong,
+    FormSource,
 )
 from .repository import FeedbackRepository
 from .tenant import TenantResolver
+from .text_answers import seal_text_answers
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +93,25 @@ class FeedbackSessions(Protocol):
     def has_unscoped_session(self, session_id: str) -> bool: ...
 
 
+class FeedbackRequestInvalid(ValueError):
+    """The body contradicts itself or the route; the message is fixed text."""
+
+
+@dataclass(frozen=True, slots=True)
+class _Draft:
+    """A checked submission, everything but the ids and times the store adds."""
+
+    tenant_id: str
+    session_ref: str
+    audience: Audience
+    form_source: FormSource
+    revision: str | None
+    locale: str | None
+    rules: FormRules
+    answers: ValidatedAnswers
+    form_version: str
+
+
 class FeedbackService:
     def __init__(
         self,
@@ -93,6 +122,7 @@ class FeedbackService:
         session_manager: FeedbackSessions,
         telemetry: Any,
         pseudonymizer: SessionPseudonymizer,
+        forms: FeedbackForms,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         grace_window: timedelta | None = None,
     ) -> None:
@@ -102,58 +132,158 @@ class FeedbackService:
         self._session_manager = session_manager
         self._telemetry = telemetry
         self._pseudonymizer = pseudonymizer
+        self._forms = forms
         self._clock = clock
         self._grace_window = grace_window if grace_window is not None else configured_grace_window()
 
-    async def submit(self, request: FeedbackSubmissionRequest) -> UUID:
+    async def submit(
+        self,
+        submission: FeedbackSubmissionRequest | FeedbackSubmissionV2,
+        *,
+        correlation_id: str,
+    ) -> UUID:
+        """Guest and installation feedback, in either body version."""
+        if isinstance(submission, FeedbackSubmissionV2):
+            draft = await self._public_v2(submission, correlation_id)
+        else:
+            draft = await self._v1(submission)
+        return await self._store_and_emit(draft)
+
+    async def submit_staff(
+        self, submission: FeedbackSubmissionV2, *, tenant_id: str, correlation_id: str
+    ) -> UUID:
+        """Staff feedback, filed under the tenant of the caller's verified token.
+
+        The route has already checked that a named session belongs to that
+        tenant, so the session here is only pseudonymised, never looked up.
+        """
+        if submission.audience != "staff":
+            raise FeedbackRequestInvalid("this route accepts staff feedback only")
+        _check_revision(submission)
+        session_id = submission.session_id
+        reference = (
+            self._pseudonymizer.reference(session_id)
+            if session_id is not None
+            else MISSING_REFERENCE
+        )
+        return await self._store_and_emit(
+            await self._checked(submission, tenant_id, reference, correlation_id)
+        )
+
+    async def _v1(self, request: FeedbackSubmissionRequest) -> _Draft:
         text = self._validated_text(request.improvements)
         reference, session_key = await self._resolve_session(request.session_id)
         tenant_id = await self._tenant_resolver.resolve(request.session_id, session_key)
+        answers: dict[str, int | str | None] = {
+            bundled_form.TRANSLATION_QUALITY: request.translation_quality,
+            bundled_form.PERFORMANCE: request.performance,
+            bundled_form.USABILITY: request.usability,
+            bundled_form.RECOMMENDATION: request.net_promoter_score,
+            bundled_form.IMPROVEMENT_IDEAS: text,
+        }
+        rules = bundled_rules()
+        return _Draft(
+            tenant_id=tenant_id,
+            session_ref=reference,
+            # Staff used this body too; they cannot be told apart until PR 13.
+            audience="guest" if request.session_id is not None else "installation",
+            form_source="bundled",
+            revision=None,
+            locale=None,
+            rules=rules,
+            answers=validate_answers(answers, rules),
+            form_version=request.form_version,
+        )
 
+    async def _public_v2(self, submission: FeedbackSubmissionV2, correlation_id: str) -> _Draft:
+        _check_public_audience(submission)
+        _check_revision(submission)
+        reference, session_key = await self._resolve_session(submission.session_id)
+        tenant_id = await self._tenant_resolver.resolve(submission.session_id, session_key)
+        return await self._checked(submission, tenant_id, reference, correlation_id)
+
+    async def _checked(
+        self,
+        submission: FeedbackSubmissionV2,
+        tenant_id: str,
+        reference: str,
+        correlation_id: str,
+    ) -> _Draft:
+        form = await self._forms.resolve(
+            audience=submission.audience,
+            source=submission.form_source,
+            tenant_id=tenant_id,
+            revision=submission.configuration_revision,
+            locale=submission.locale,
+            correlation_id=correlation_id,
+        )
+        return _Draft(
+            tenant_id=tenant_id,
+            session_ref=reference,
+            audience=submission.audience,
+            form_source=submission.form_source,
+            revision=form.revision,
+            locale=submission.locale,
+            rules=form.rules,
+            answers=validate_answers(submission.answers, form.rules),
+            form_version=V2_FORM_VERSION,
+        )
+
+    async def _store_and_emit(self, draft: _Draft) -> UUID:
         feedback_id = uuid4()
-        analytics_event_id = uuid4()
         created_at = self._clock()
-
-        ciphertext = None
-        if text is not None:
-            ciphertext = self._cipher.encrypt(text, feedback_id=feedback_id, tenant_id=tenant_id)
+        ratings = legacy_ratings(draft.answers.numeric, draft.rules.snapshot)
 
         record = FeedbackRecord(
             feedback_id=feedback_id,
-            tenant_id=tenant_id,
-            session_ref=reference,
-            translation_quality=request.translation_quality,
-            performance=request.performance,
-            usability=request.usability,
-            net_promoter_score=request.net_promoter_score,
-            improvements_ciphertext=ciphertext,
-            form_version=request.form_version,
+            tenant_id=draft.tenant_id,
+            session_ref=draft.session_ref,
+            audience=draft.audience,
+            form_source=draft.form_source,
+            configuration_revision=draft.revision,
+            form_locale=draft.locale,
+            form_snapshot=draft.rules.snapshot,
+            numeric_answers=draft.answers.numeric,
+            text_answers_ciphertext=seal_text_answers(
+                self._cipher, draft.answers.text, feedback_id=feedback_id, tenant_id=draft.tenant_id
+            ),
+            text_answers_legacy=False,
+            form_version=draft.form_version,
             retention_policy_version=RETENTION_POLICY_VERSION,
             consent_snapshot={
-                "form_version": request.form_version,
+                "form_version": draft.form_version,
                 "retention_policy_version": RETENTION_POLICY_VERSION,
                 "agreed_at": created_at.isoformat(),
                 "manifestation": "form_submission",
             },
-            analytics_event_id=analytics_event_id,
-            analytics_state=AnalyticsState.PENDING,
+            analytics_event_id=uuid4(),
+            # Until PR 12 only the bundled questions have an event. Anything
+            # else stays out of the reconciliation backlog, which could
+            # otherwise never drain it.
+            analytics_state=(
+                AnalyticsState.PENDING if ratings is not None else AnalyticsState.NOT_APPLICABLE
+            ),
             created_at=created_at,
             expires_at=_add_months(created_at, _RETENTION_MONTHS),
         )
 
         # Commit first. Everything after this point is best-effort.
         await self._repository.store(record)
+        if ratings is not None:
+            await self._emit(record, ratings)
+        return feedback_id
 
+    async def _emit(self, record: FeedbackRecord, ratings: LegacyRatings) -> None:
         result = self._telemetry.emit_feedback_submitted(
-            event_id=analytics_event_id,
-            session_ref=reference,
-            tenant_ref=tenant_ref(tenant_id),
-            feedback_ref=self._pseudonymizer.feedback_reference(feedback_id),
-            translation_quality=request.translation_quality,
-            performance=request.performance,
-            usability=request.usability,
-            net_promoter_score=request.net_promoter_score,
-            form_version=request.form_version,
+            event_id=record.analytics_event_id,
+            session_ref=record.session_ref,
+            tenant_ref=tenant_ref(record.tenant_id),
+            feedback_ref=self._pseudonymizer.feedback_reference(record.feedback_id),
+            translation_quality=ratings.translation_quality,
+            performance=ratings.performance,
+            usability=ratings.usability,
+            net_promoter_score=ratings.net_promoter_score,
+            form_version=record.form_version,
         )
 
         # Best-effort for real: the row is committed, so nothing from here on
@@ -163,18 +293,18 @@ class FeedbackService:
         # left `pending` is what the reconciler exists to drain.
         try:
             if result.outcome is ProbeOutcome.EMITTED:
-                await self._repository.mark_analytics_delivered(feedback_id, tenant_id)
+                await self._repository.mark_analytics_delivered(
+                    record.feedback_id, record.tenant_id
+                )
             elif result.outcome is ProbeOutcome.DISABLED:
                 # Nothing will ever drain a backlog for an event type this
                 # deployment does not emit, so it is not a backlog.
                 await self._repository.mark_analytics_state(
-                    feedback_id, AnalyticsState.NOT_APPLICABLE, tenant_id
+                    record.feedback_id, AnalyticsState.NOT_APPLICABLE, record.tenant_id
                 )
         except Exception as error:  # Reported, never raised.
             # Type name only: an asyncpg error carries the bound parameters.
             logger.warning("Feedback analytics state not recorded: %s", type(error).__name__)
-
-        return feedback_id
 
     @staticmethod
     def _validated_text(improvements: str | None) -> str | None:
@@ -227,6 +357,22 @@ class FeedbackService:
         if key is None and not self._session_manager.has_unscoped_session(session_id):
             raise UnknownSession
         return self._pseudonymizer.reference(session_id), key
+
+
+def _check_public_audience(submission: FeedbackSubmissionV2) -> None:
+    if submission.audience == "staff":
+        raise FeedbackRequestInvalid("staff feedback is accepted only at /api/admin/feedback")
+    if submission.audience == "guest" and submission.session_id is None:
+        raise FeedbackRequestInvalid("guest feedback needs a session_id")
+    if submission.audience == "installation" and submission.session_id is not None:
+        raise FeedbackRequestInvalid("installation feedback takes no session_id")
+
+
+def _check_revision(submission: FeedbackSubmissionV2) -> None:
+    if submission.form_source == "studio" and submission.configuration_revision is None:
+        raise FeedbackRequestInvalid("a Studio form needs its configuration_revision")
+    if submission.form_source == "bundled" and submission.configuration_revision is not None:
+        raise FeedbackRequestInvalid("the bundled form has no configuration_revision")
 
 
 def _add_months(moment: datetime, months: int) -> datetime:

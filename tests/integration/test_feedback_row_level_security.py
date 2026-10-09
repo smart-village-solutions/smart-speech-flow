@@ -20,6 +20,7 @@ from uuid import UUID, uuid4
 import asyncpg
 import pytest
 
+from services.api_gateway.feedback.bundled_form import bundled_rules
 from services.api_gateway.feedback.models import AnalyticsState, FeedbackRecord
 from services.api_gateway.feedback.repository import PostgresFeedbackRepository
 
@@ -40,11 +41,12 @@ TENANT_B = "tenant-b"
 
 _INSERT = """
 INSERT INTO feedback (
-    feedback_id, tenant_id, session_ref, translation_quality, performance,
-    usability, net_promoter_score, improvements_ciphertext, form_version,
+    feedback_id, tenant_id, session_ref, audience, form_source, form_snapshot,
+    numeric_answers, text_answers_ciphertext, form_version,
     retention_policy_version, consent_snapshot, analytics_event_id,
     analytics_state, created_at, expires_at
-) VALUES ($1, $2, $3, 4, 5, 3, 9, NULL, 'v1', 'v1-12-months',
+) VALUES ($1, $2, $3, 'guest', 'bundled', '[]'::jsonb,
+          '{"translationQuality": 4, "performance": 5, "usability": 3, "recommendation": 9}'::jsonb, NULL, 'v1', 'v1-12-months',
           '{}'::jsonb, $4, 'pending', $5, $6)
 """
 
@@ -57,11 +59,19 @@ def _record(**overrides: object) -> FeedbackRecord:
         feedback_id=uuid4(),
         tenant_id=TENANT_A,
         session_ref="a" * 32,
-        translation_quality=4,
-        performance=5,
-        usability=3,
-        net_promoter_score=9,
-        improvements_ciphertext=b"\x01ciphertext-bytes",
+        audience="guest",
+        form_source="bundled",
+        configuration_revision=None,
+        form_locale="en",
+        form_snapshot=bundled_rules().snapshot,
+        numeric_answers={
+            "translationQuality": 4,
+            "performance": 5,
+            "usability": 3,
+            "recommendation": 9,
+        },
+        text_answers_ciphertext=b"\x01ciphertext-bytes",
+        text_answers_legacy=False,
         form_version="v1",
         retention_policy_version="v1-12-months",
         consent_snapshot={"form_version": "v1", "manifestation": "form_submission"},
