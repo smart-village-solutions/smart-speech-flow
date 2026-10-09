@@ -91,4 +91,4 @@
   - [ ] Stop writing the v1 `runtime_configuration` key in `Session.to_dict` (`_previous_gateway_snapshot`) — after the deploy, once rolling back to a pre-cutover gateway is ruled out; that gateway quarantines every record without the key
   - [ ] Remove the v1 fallback in `Session.from_dict` — only after a production Redis scan finds no record without `configuration_revision`; retention `0` records never expire, so time alone proves nothing
   - [ ] Retire the v1 feedback body (`FeedbackSubmissionRequest` and its branch) — after the deploy, once browsers holding a pre-PR-13 frontend have reloaded
-- [ ] 14.3 Deploy with Postgres `004`, ClickHouse `008` and a Prometheus restart; verify against production
+- [x] 14.3 Deploy with Postgres `004`, ClickHouse `008` and a Prometheus restart; verify against production
