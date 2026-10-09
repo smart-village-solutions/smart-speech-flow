@@ -44,6 +44,9 @@ def _pending(**overrides) -> PendingAnalytics:
         tenant_id="tenant-a",
         session_ref="c" * 32,
         analytics_event_id=uuid4(),
+        audience="guest",
+        form_source="bundled",
+        form_locale=None,
         numeric_answers={
             "translationQuality": 4,
             "performance": 5,
@@ -115,8 +118,11 @@ class FakeRepository:
 
 
 class FakeTelemetry:
+    """Headers in `calls`, with scripted outcomes; answers in `answers`, always emitted."""
+
     def __init__(self, outcomes: list[ProbeOutcome] | None = None) -> None:
         self.calls: list[dict] = []
+        self.answers: list[dict] = []
         self._outcomes = outcomes
 
     def emit_feedback_submitted(self, **kwargs) -> ProbeResult:
@@ -126,6 +132,10 @@ class FakeTelemetry:
         else:
             outcome = self._outcomes[min(len(self.calls) - 1, len(self._outcomes) - 1)]
         return ProbeResult(outcome, kwargs["event_id"])
+
+    def emit_feedback_answer(self, **kwargs) -> ProbeResult:
+        self.answers.append(kwargs)
+        return ProbeResult(ProbeOutcome.EMITTED, None)
 
 
 def _maintenance(repository, telemetry=None, registry=None):
@@ -260,7 +270,7 @@ class TestReconciliationRecoversDelivery:
         assert result.unavailable is True
 
 
-class TestReconciliationRebuildsTheV1EventFromAnswersById:
+class TestReconciliationRebuildsTheEventsFromAnswersById:
     async def test_the_four_numbers_come_from_the_numeric_answers(self):
         row = _pending(
             numeric_answers={
@@ -282,9 +292,12 @@ class TestReconciliationRebuildsTheV1EventFromAnswersById:
             call["net_promoter_score"],
         ) == (2, 3, 1, 0)
 
-    async def test_a_row_without_the_bundled_questions_is_drained_not_emitted(self):
-        """Not stored as pending since PR 11, but a row that is must not retry forever."""
+    async def test_a_row_without_the_bundled_questions_is_re_emitted_not_drained(self):
+        """PR 12: every form has events, so no pending row is a dead end any more."""
         row = _pending(
+            audience="staff",
+            form_source="studio",
+            form_locale="de",
             numeric_answers={"clarity": 6},
             form_snapshot=[{"id": "clarity", "type": "rating", "min": 1, "max": 7}],
         )
@@ -293,10 +306,32 @@ class TestReconciliationRebuildsTheV1EventFromAnswersById:
 
         result = await _maintenance(repository, telemetry).reconcile_once()
 
-        assert telemetry.calls == []
-        assert result.drained == 1
-        assert repository.states[row.feedback_id] is AnalyticsState.NOT_APPLICABLE
-        assert repository.marked_tenants[row.feedback_id] == row.tenant_id
+        (header,) = telemetry.calls
+        assert header["net_promoter_score"] is None
+        assert (header["audience"], header["form_source"], header["locale"]) == (
+            "staff",
+            "studio",
+            "de",
+        )
+        assert [answer["question_id"] for answer in telemetry.answers] == ["clarity"]
+        assert result.recovered == 1
+        assert repository.states[row.feedback_id] is AnalyticsState.DELIVERED
+
+    async def test_every_answer_is_re_emitted_under_the_rows_event_id(self):
+        row = _pending()
+        telemetry = FakeTelemetry()
+
+        await _maintenance(FakeRepository([row]), telemetry).reconcile_once()
+
+        assert [answer["question_id"] for answer in telemetry.answers] == [
+            "translationQuality",
+            "performance",
+            "usability",
+            "recommendation",
+        ]
+        assert {answer["submission_event_id"] for answer in telemetry.answers} == {
+            row.analytics_event_id
+        }
 
 
 class TestReconciliationCarriesNoText:
@@ -316,12 +351,27 @@ class TestReconciliationCarriesNoText:
             "event_id",
             "session_ref",
             "feedback_ref",
+            "audience",
+            "form_source",
+            "locale",
+            "answer_count",
             "translation_quality",
             "performance",
             "usability",
             "net_promoter_score",
             "form_version",
             "tenant_ref",
+        }
+        assert set(telemetry.answers[0]) == {
+            "submission_event_id",
+            "feedback_ref",
+            "tenant_ref",
+            "audience",
+            "question_id",
+            "question_type",
+            "value",
+            "minimum",
+            "maximum",
         }
 
 

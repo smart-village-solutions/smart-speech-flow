@@ -22,8 +22,11 @@ _TARGET_LANG_ATTRIBUTE: Final = "ssf.quality.target_lang"
 _ERROR_CODE_ATTRIBUTE: Final = "ssf.quality.error_code"
 _SESSION_REF_ATTRIBUTE: Final = "ssf.quality.session_ref"
 _TENANT_REF_ATTRIBUTE: Final = "ssf.quality.tenant_ref"
+_FEEDBACK_REF_ATTRIBUTE: Final = "ssf.quality.feedback_ref"
+_AUDIENCE_ATTRIBUTE: Final = "ssf.quality.audience"
 _INVALID_SESSION_REF: Final = "session_ref is not an opaque reference"
 _INVALID_TENANT_REF: Final = "tenant_ref is not a bounded tenant reference"
+_INVALID_FEEDBACK_REF: Final = "feedback_ref is not an opaque reference"
 _EVENT_REJECTED: Final = "Quality telemetry event rejected before export"
 
 
@@ -35,6 +38,7 @@ class QualityEventType(str, Enum):
     TRANSLATION_MESSAGE = "translation_message"
     SESSION_LIFECYCLE = "session_lifecycle"
     FEEDBACK_SUBMITTED = "feedback_submitted"
+    FEEDBACK_ANSWER = "feedback_answer"
 
 
 class QualityErrorCode(str, Enum):
@@ -169,6 +173,26 @@ class SessionTerminationReason(str, Enum):
         return cls.OTHER if reason is cls.NONE else reason
 
 
+class FeedbackAudience(str, Enum):
+    """Who answered. Staff feedback must never pool with citizens' numbers."""
+
+    GUEST = "guest"
+    STAFF = "staff"
+    INSTALLATION = "installation"
+
+
+class FeedbackFormSource(str, Enum):
+    STUDIO = "studio"
+    BUNDLED = "bundled"
+
+
+class FeedbackQuestionType(str, Enum):
+    """The numeric question types. longText has no member: it is never emitted."""
+
+    RATING = "rating"
+    SCALE = "scale"
+
+
 class AttributeKind(str, Enum):
     """What shape an allowlisted value may take.
 
@@ -239,12 +263,25 @@ ALLOWED_ATTRIBUTES: Final[Mapping[str, AttributeSpec]] = {
     # feedback_submitted (#304). The free text these ratings came with is in
     # the transactional store; there is deliberately no key for it here, and
     # AttributeKind has no member that could carry one.
-    "ssf.quality.feedback_ref": AttributeSpec(AttributeKind.OPAQUE_REF),
+    _FEEDBACK_REF_ATTRIBUTE: AttributeSpec(AttributeKind.OPAQUE_REF),
     "ssf.quality.translation_quality": AttributeSpec(AttributeKind.NUMBER),
     "ssf.quality.performance": AttributeSpec(AttributeKind.NUMBER),
     "ssf.quality.usability": AttributeSpec(AttributeKind.NUMBER),
     "ssf.quality.net_promoter_score": AttributeSpec(AttributeKind.NUMBER),
     "ssf.quality.feedback_form_version": AttributeSpec(AttributeKind.LABEL),
+    _AUDIENCE_ATTRIBUTE: AttributeSpec(AttributeKind.ENUM, _enum_values(FeedbackAudience)),
+    "ssf.quality.form_source": AttributeSpec(AttributeKind.ENUM, _enum_values(FeedbackFormSource)),
+    "ssf.quality.feedback_locale": AttributeSpec(AttributeKind.LANGUAGE),
+    "ssf.quality.answer_count": AttributeSpec(AttributeKind.NUMBER),
+    # feedback_answer (PR 12). A question id is a Studio identifier, never the
+    # question's wording, and fits a LABEL by Studio's own pattern.
+    "ssf.quality.question_id": AttributeSpec(AttributeKind.LABEL),
+    "ssf.quality.question_type": AttributeSpec(
+        AttributeKind.ENUM, _enum_values(FeedbackQuestionType)
+    ),
+    "ssf.quality.answer_value": AttributeSpec(AttributeKind.NUMBER),
+    "ssf.quality.answer_min": AttributeSpec(AttributeKind.NUMBER),
+    "ssf.quality.answer_max": AttributeSpec(AttributeKind.NUMBER),
     "ssf.quality.direction": AttributeSpec(AttributeKind.ENUM, _enum_values(MessageDirection)),
     "ssf.quality.input_mode": AttributeSpec(AttributeKind.ENUM, _enum_values(InputMode)),
     "ssf.quality.terminal_outcome": AttributeSpec(
@@ -529,14 +566,21 @@ class SessionLifecycleEvent:
         }
 
 
+_RATING_FIELDS: Final[tuple[str, ...]] = ("translation_quality", "performance", "usability")
+
+
 @dataclass(frozen=True, slots=True)
 class FeedbackSubmittedEvent:
     """One voluntary feedback submission, structured half only.
 
     `feedback_ref` is a keyed HMAC of the transactional record's id, so a row
     here can be tied to a stored submission by someone holding the key and to
-    nothing at all by someone who is not. The optional improvement text that
-    accompanied these ratings is not representable in this class.
+    nothing at all by someone who is not. The free text that accompanied the
+    answers is not representable in this class.
+
+    The four ratings are the bundled form's, present only when the form asked
+    those questions the bundled way. Silver stores an absent rating as 0, and
+    gold averages only rows that carry them, so they are all four or none.
     """
 
     event_id: UUID
@@ -545,42 +589,126 @@ class FeedbackSubmittedEvent:
     event_type: QualityEventType
     session_ref: str
     feedback_ref: str
-    translation_quality: int
-    performance: int
-    usability: int
-    net_promoter_score: int
     feedback_form_version: str
+    audience: FeedbackAudience
+    form_source: FeedbackFormSource
+    feedback_locale: str
+    answer_count: int
+    translation_quality: int | None = None
+    performance: int | None = None
+    usability: int | None = None
+    net_promoter_score: int | None = None
     tenant_ref: str = MISSING_TENANT_REFERENCE
 
     def __post_init__(self) -> None:
         _validate_envelope(self.emitted_at_utc, self.event_type, self.schema_version)
         if self.event_type is not QualityEventType.FEEDBACK_SUBMITTED:
             raise ValueError("event_type must be feedback_submitted")
-        for name in ("translation_quality", "performance", "usability"):
-            value = getattr(self, name)
-            if not 1 <= value <= 5:
-                raise ValueError(f"{name} must be between 1 and 5")
-        if not 0 <= self.net_promoter_score <= 10:
-            raise ValueError("net_promoter_score must be between 0 and 10")
+        self._validate_ratings()
+        if self.answer_count < 0:
+            raise ValueError("answer_count must not be negative")
         if not _OPAQUE_REF_PATTERN.match(self.session_ref):
             raise ValueError(_INVALID_SESSION_REF)
         if not _OPAQUE_REF_PATTERN.match(self.feedback_ref):
-            raise ValueError("feedback_ref is not an opaque reference")
+            raise ValueError(_INVALID_FEEDBACK_REF)
         if not _TENANT_REF_PATTERN.match(self.tenant_ref):
             raise ValueError(_INVALID_TENANT_REF)
         if not _LABEL_PATTERN.match(self.feedback_form_version):
             raise ValueError("feedback_form_version is not a label")
+        if not _LANGUAGE_PATTERN.match(self.feedback_locale):
+            raise ValueError("feedback_locale is not a language code")
+
+    @property
+    def has_ratings(self) -> bool:
+        return self.net_promoter_score is not None
+
+    def _validate_ratings(self) -> None:
+        ratings = [getattr(self, name) for name in _RATING_FIELDS]
+        present = [value is not None for value in (*ratings, self.net_promoter_score)]
+        if any(present) and not all(present):
+            raise ValueError("the bundled ratings are all present or all absent")
+        if not self.has_ratings:
+            return
+        for name, value in zip(_RATING_FIELDS, ratings):
+            if not 1 <= value <= 5:
+                raise ValueError(f"{name} must be between 1 and 5")
+        if not 0 <= (self.net_promoter_score or 0) <= 10:
+            raise ValueError("net_promoter_score must be between 0 and 10")
+
+    def _attributes(self) -> dict[str, str]:
+        attributes = {
+            _SESSION_REF_ATTRIBUTE: self.session_ref,
+            _TENANT_REF_ATTRIBUTE: self.tenant_ref,
+            _FEEDBACK_REF_ATTRIBUTE: self.feedback_ref,
+            "ssf.quality.feedback_form_version": self.feedback_form_version,
+            _AUDIENCE_ATTRIBUTE: self.audience.value,
+            "ssf.quality.form_source": self.form_source.value,
+            "ssf.quality.feedback_locale": self.feedback_locale,
+            "ssf.quality.answer_count": str(self.answer_count),
+        }
+        if self.has_ratings:
+            attributes.update(
+                {
+                    "ssf.quality.translation_quality": str(self.translation_quality),
+                    "ssf.quality.performance": str(self.performance),
+                    "ssf.quality.usability": str(self.usability),
+                    "ssf.quality.net_promoter_score": str(self.net_promoter_score),
+                }
+            )
+        return attributes
+
+
+# The silver columns are UInt8. Studio caps every range at 0-10 today.
+_MAX_ANSWER_VALUE: Final[int] = 255
+
+
+@dataclass(frozen=True, slots=True)
+class FeedbackAnswerEvent:
+    """One answered numeric question of a stored submission.
+
+    The id is uuid5(submission event id, question id), so a re-emission by the
+    reconciler lands on the same silver row and the same gold uniqExact entry.
+    The question's wording is not representable here, only its Studio id.
+    """
+
+    event_id: UUID
+    schema_version: int
+    emitted_at_utc: datetime
+    event_type: QualityEventType
+    feedback_ref: str
+    audience: FeedbackAudience
+    question_id: str
+    question_type: FeedbackQuestionType
+    value: int
+    minimum: int
+    maximum: int
+    tenant_ref: str = MISSING_TENANT_REFERENCE
+
+    def __post_init__(self) -> None:
+        _validate_envelope(self.emitted_at_utc, self.event_type, self.schema_version)
+        if self.event_type is not QualityEventType.FEEDBACK_ANSWER:
+            raise ValueError("event_type must be feedback_answer")
+        if not 0 <= self.minimum < self.maximum <= _MAX_ANSWER_VALUE:
+            raise ValueError("the answer range is not a valid range")
+        if not self.minimum <= self.value <= self.maximum:
+            raise ValueError("the answer lies outside its range")
+        if not _LABEL_PATTERN.match(self.question_id):
+            raise ValueError("question_id is not a label")
+        if not _OPAQUE_REF_PATTERN.match(self.feedback_ref):
+            raise ValueError(_INVALID_FEEDBACK_REF)
+        if not _TENANT_REF_PATTERN.match(self.tenant_ref):
+            raise ValueError(_INVALID_TENANT_REF)
 
     def _attributes(self) -> dict[str, str]:
         return {
-            _SESSION_REF_ATTRIBUTE: self.session_ref,
             _TENANT_REF_ATTRIBUTE: self.tenant_ref,
-            "ssf.quality.feedback_ref": self.feedback_ref,
-            "ssf.quality.translation_quality": str(self.translation_quality),
-            "ssf.quality.performance": str(self.performance),
-            "ssf.quality.usability": str(self.usability),
-            "ssf.quality.net_promoter_score": str(self.net_promoter_score),
-            "ssf.quality.feedback_form_version": self.feedback_form_version,
+            _FEEDBACK_REF_ATTRIBUTE: self.feedback_ref,
+            _AUDIENCE_ATTRIBUTE: self.audience.value,
+            "ssf.quality.question_id": self.question_id,
+            "ssf.quality.question_type": self.question_type.value,
+            "ssf.quality.answer_value": str(self.value),
+            "ssf.quality.answer_min": str(self.minimum),
+            "ssf.quality.answer_max": str(self.maximum),
         }
 
 
@@ -590,6 +718,7 @@ QualityEvent = (
     | TranslationMessageEvent
     | SessionLifecycleEvent
     | FeedbackSubmittedEvent
+    | FeedbackAnswerEvent
 )
 
 

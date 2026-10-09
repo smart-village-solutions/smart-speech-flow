@@ -411,24 +411,26 @@ the result — it should now list `otel-collector`.
 
 **11. Turn real pipeline events on (optional, and separate).** Steps 1-10 leave
 the gateway on `probe`, which emits no pipeline events. Before switching to
-`enabled`, confirm migrations `002`, `003`, `004`, `005`, `006` and `007` have been applied — they
-are what give `quality_events` its typed columns and the feedback aggregate its
-tenant dimension, and `initdb` does **not**
+`enabled`, confirm migrations `002`, `003`, `004`, `005`, `006`, `007` and `008` have been applied — they
+are what give `quality_events` its typed columns and the feedback aggregates
+their tenant and audience dimensions, and `initdb` does **not**
 re-run on a volume that already has data:
 
     $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT name FROM system.tables WHERE database = currentDatabase() ORDER BY name"'
 
-Expect `feedback_daily`, `feedback_daily_mv`, `otel_logs`, `quality_events`,
-`quality_events_daily`, `quality_events_daily_mv`, `quality_events_mv`. If the
-gold tier or the feedback aggregate is missing,
-re-run `apply.sh` (step 5) — it is idempotent.
+Expect `feedback_answer_daily`, `feedback_answer_daily_mv`, `feedback_daily`,
+`feedback_daily_v2`, `feedback_daily_v2_backfill`, `feedback_daily_v2_mv`,
+`otel_logs`, `quality_events`, `quality_events_daily`, `quality_events_daily_mv`,
+`quality_events_mv`. If the gold tier or a feedback aggregate is missing,
+re-run `apply.sh` (step 5) — it is idempotent. `feedback_daily_mv` is absent on
+purpose: `008` retires it, and `feedback_daily` stays as read-only history.
 
 The table list does not distinguish `002` from `003`, `004`, `005`, `006` and `007`,
 because those only add columns. Check them directly:
 
     $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = '"'"'quality_events'"'"'"'
 
-Expect `37`. Fewer means a migration has not been applied; re-run `apply.sh`.
+Expect `47`. Fewer means a migration has not been applied; re-run `apply.sh`.
 
 `007` adds no column to `quality_events`, so the count above does not cover it.
 It dimensions the feedback aggregate by tenant, which is visible in that
@@ -438,7 +440,23 @@ table's sorting key:
 
 Expect `tenant_ref` at the end of the key. Absent means `007` is unapplied.
 
-**Order matters.** Emitting events while any of `002`-`007` is unapplied writes rows
+`008` moves the feedback aggregate to `feedback_daily_v2`, keyed by audience
+and form source as well, and copies the old aggregate into it once:
+
+    $PC exec -T clickhouse sh -ec 'clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --query "SELECT sorting_key FROM system.tables WHERE database = currentDatabase() AND name = '"'"'feedback_daily_v2'"'"'"'
+
+Expect the key to end in `tenant_ref, audience, form_source`, and
+`SELECT count() FROM feedback_daily_v2_backfill` to read `1`: `008` copies the
+old aggregate into v2 exactly once. Apply `008` **before** deploying a gateway
+that emits PR 12 feedback events: until `008` drops it, the old aggregate's
+view stores a header without ratings as four zeros, and the one-off copy keeps
+those as rated detractors permanently. `008` also widens
+the collector's `keep_keys` with the feedback answer fields, which the collector
+reads only at startup: recreate it after pulling
+(`$PC up -d --no-deps --force-recreate otel-collector`), or it strips them and
+every answer event lands without its typed columns.
+
+**Order matters.** Emitting events while any of `002`-`008` is unapplied writes rows
 whose typed columns are all defaults, and those rows cannot be repaired: the
 attributes were dropped at projection time and bronze expires after 7 days. The
 dashboard's `Rows Missing Typed Fields` panel exists to catch exactly this and
@@ -670,8 +688,9 @@ That makes the pull, not the migration, the moment a panel changes. A panel
 that reads a column a migration adds fails with a missing-column error from
 the pull until `apply.sh` (step 5 of "Enabling in production") has run, so run
 it straight after pulling. Nothing is lost in the gap, but the panel reads as
-broken. Currently this is `007`: the two gold-tier feedback panels and the
-`Tenant` picker read `feedback_daily.tenant_ref`.
+broken. Currently this is `008`: the feedback panels read `has_legacy_ratings`
+and `audience` from silver, the gold panels and the `Tenant` picker read
+`feedback_daily_v2`, and the per-question panels read `feedback_answer_daily`.
 
 Using the same `PC` invocation as "Enabling in production" above:
 

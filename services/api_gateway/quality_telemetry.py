@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Final, TypedDict, Unpack
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 from prometheus_client import CollectorRegistry, Counter
 
@@ -27,6 +27,10 @@ from .quality_telemetry_schema import (
     SCHEMA_VERSION,
     DisallowedTelemetryAttribute,
     DisallowedTelemetryValue,
+    FeedbackAnswerEvent,
+    FeedbackAudience,
+    FeedbackFormSource,
+    FeedbackQuestionType,
     FeedbackSubmittedEvent,
     InputMode,
     MessageDirection,
@@ -70,6 +74,14 @@ def _as_opaque_ref(value: str) -> str:
     rather than repaired here.
     """
     return value if _OPAQUE_REF_PATTERN.match(str(value or "")) else UNKNOWN_REFERENCE
+
+
+def _as_tenant_ref(value: str) -> str:
+    return value if _TENANT_REF_PATTERN.match(str(value)) else MISSING_TENANT_REFERENCE
+
+
+def _optional_int(value: int | None) -> int | None:
+    return None if value is None else int(value)
 
 
 def _as_language(value: str) -> str:
@@ -381,22 +393,27 @@ class QualityTelemetry:
         event_id: UUID,
         session_ref: str,
         feedback_ref: str,
-        translation_quality: int,
-        performance: int,
-        usability: int,
-        net_promoter_score: int,
+        audience: str,
+        form_source: str,
+        locale: str | None,
+        answer_count: int,
         form_version: str,
         tenant_ref: str = MISSING_TENANT_REFERENCE,
+        translation_quality: int | None = None,
+        performance: int | None = None,
+        usability: int | None = None,
+        net_promoter_score: int | None = None,
     ) -> ProbeResult:
-        """One voluntary feedback submission, structured half only.
+        """The header of one stored submission, structured half only.
 
         Unlike its siblings this takes `event_id` from the caller rather than
         minting one. #305's reconciler re-emits a failed delivery with the same
         id, and silver's ReplacingMergeTree plus gold's uniqExactState(event_id)
         deduplicate only if that id is stable across attempts.
 
-        There is no parameter for the improvement text, and no allowlisted key
-        that could carry it.
+        The four ratings are passed only when the form asked the bundled
+        questions; see FeedbackSubmittedEvent. There is no parameter for the
+        free text, and no allowlisted key that could carry it.
         """
         if not self._mode.emits_pipeline_events:
             return self._record(ProbeOutcome.DISABLED, None)
@@ -408,17 +425,62 @@ class QualityTelemetry:
                 emitted_at_utc=datetime.now(timezone.utc),
                 event_type=QualityEventType.FEEDBACK_SUBMITTED,
                 session_ref=_as_opaque_ref(session_ref),
-                tenant_ref=(
-                    tenant_ref
-                    if _TENANT_REF_PATTERN.match(str(tenant_ref))
-                    else MISSING_TENANT_REFERENCE
-                ),
+                tenant_ref=_as_tenant_ref(tenant_ref),
                 feedback_ref=_as_opaque_ref(feedback_ref),
-                translation_quality=int(translation_quality),
-                performance=int(performance),
-                usability=int(usability),
-                net_promoter_score=int(net_promoter_score),
                 feedback_form_version=_as_label(form_version),
+                audience=FeedbackAudience(audience),
+                form_source=FeedbackFormSource(form_source),
+                feedback_locale=_as_language(locale or ""),
+                answer_count=int(answer_count),
+                translation_quality=_optional_int(translation_quality),
+                performance=_optional_int(performance),
+                usability=_optional_int(usability),
+                net_promoter_score=_optional_int(net_promoter_score),
+            )
+        except (ValueError, TypeError):
+            logger.warning(_EVENT_REJECTED)
+            return self._record(ProbeOutcome.DROPPED_DISALLOWED, event_id)
+
+        return self._export(event)
+
+    def emit_feedback_answer(
+        self,
+        *,
+        submission_event_id: UUID,
+        feedback_ref: str,
+        audience: str,
+        question_id: str,
+        question_type: str,
+        value: int,
+        minimum: int,
+        maximum: int,
+        tenant_ref: str = MISSING_TENANT_REFERENCE,
+    ) -> ProbeResult:
+        """One answered numeric question, under an id derived from its submission.
+
+        The id is computed here rather than by the caller so the submit path
+        and the reconciler cannot derive it differently. A question id that is
+        not a label is dropped, never coerced: pooled under a placeholder, it
+        would corrupt that placeholder's average.
+        """
+        if not self._mode.emits_pipeline_events:
+            return self._record(ProbeOutcome.DISABLED, None)
+
+        event_id = uuid5(submission_event_id, str(question_id))
+        try:
+            event = FeedbackAnswerEvent(
+                event_id=event_id,
+                schema_version=SCHEMA_VERSION,
+                emitted_at_utc=datetime.now(timezone.utc),
+                event_type=QualityEventType.FEEDBACK_ANSWER,
+                feedback_ref=_as_opaque_ref(feedback_ref),
+                tenant_ref=_as_tenant_ref(tenant_ref),
+                audience=FeedbackAudience(audience),
+                question_id=question_id,
+                question_type=FeedbackQuestionType(question_type),
+                value=int(value),
+                minimum=int(minimum),
+                maximum=int(maximum),
             )
         except (ValueError, TypeError):
             logger.warning(_EVENT_REJECTED)

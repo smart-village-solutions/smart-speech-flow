@@ -79,6 +79,12 @@ class RecordingTelemetry:
         self.calls.append(kwargs)
         return ProbeResult(ProbeOutcome.EMITTED, kwargs.get("event_id"))
 
+    def emit_feedback_answer(self, **kwargs):
+        from services.api_gateway.quality_telemetry_schema import ProbeOutcome, ProbeResult
+
+        self.calls.append(kwargs)
+        return ProbeResult(ProbeOutcome.EMITTED, None)
+
 
 class KnownSessions:
     """A legacy session: known by its bare id, with no tenant key behind it."""

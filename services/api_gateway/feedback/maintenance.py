@@ -23,9 +23,9 @@ request path for; the Collector's own health is alerted separately
 (QualityTelemetryCollectorDown).
 
 Free text is structurally out of reach here: `PendingAnalytics` has no
-ciphertext field and the claim query does not select the column. The event's
-four numbers are rebuilt from `numeric_answers`; a row whose form did not ask
-the bundled questions is marked `not_applicable` rather than retried forever.
+ciphertext field and the claim query does not select the column. The header
+and every answer event are rebuilt from `numeric_answers` and `form_snapshot`
+by the same `emit_submission` the submit path uses, under the same ids.
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ from typing import Any, Callable
 from prometheus_client import CollectorRegistry, Counter, Gauge
 
 from ..quality_telemetry_schema import ProbeOutcome
-from ..session_pseudonym import SessionPseudonymizer, tenant_ref
-from .bundled_form import legacy_ratings
+from ..session_pseudonym import SessionPseudonymizer
+from .analytics import emit_submission
 from .models import AnalyticsState
 from .repository import FeedbackRepository, ReconciliationLockUnavailable, RetentionLockUnavailable
 
@@ -253,29 +253,15 @@ class FeedbackMaintenance:
     async def _redeliver(self, row: Any) -> ProbeOutcome:
         """One row. Returns the outcome; never raises."""
         try:
-            ratings = legacy_ratings(row.numeric_answers, row.form_snapshot)
-            if ratings is None:
-                # The v1 event cannot describe this form, so no pass ever could.
-                return await self._drain(row)
-            result = self._telemetry.emit_feedback_submitted(
-                event_id=row.analytics_event_id,
-                session_ref=row.session_ref,
-                tenant_ref=tenant_ref(row.tenant_id),
-                feedback_ref=self._pseudonymizer.feedback_reference(row.feedback_id),
-                translation_quality=ratings.translation_quality,
-                performance=ratings.performance,
-                usability=ratings.usability,
-                net_promoter_score=ratings.net_promoter_score,
-                form_version=row.form_version,
-            )
+            outcome = emit_submission(self._telemetry, self._pseudonymizer, row)
         except Exception as error:  # One bad row must not end the batch.
             logger.warning("Feedback re-emission raised: %s", type(error).__name__)
             return ProbeOutcome.EXPORT_FAILED
 
         try:
-            if result.outcome is ProbeOutcome.EMITTED:
+            if outcome is ProbeOutcome.EMITTED:
                 await self._repository.mark_analytics_delivered(row.feedback_id, row.tenant_id)
-            elif result.outcome is ProbeOutcome.DISABLED:
+            elif outcome is ProbeOutcome.DISABLED:
                 await self._repository.mark_analytics_state(
                     row.feedback_id, AnalyticsState.NOT_APPLICABLE, row.tenant_id
                 )
@@ -285,13 +271,7 @@ class FeedbackMaintenance:
             logger.warning("Feedback state update failed: %s", type(error).__name__)
             return ProbeOutcome.EXPORT_FAILED
 
-        return result.outcome
-
-    async def _drain(self, row: Any) -> ProbeOutcome:
-        await self._repository.mark_analytics_state(
-            row.feedback_id, AnalyticsState.NOT_APPLICABLE, row.tenant_id
-        )
-        return ProbeOutcome.DISABLED
+        return outcome
 
     async def expire_once(self) -> RetentionPass:
         now = self._clock()

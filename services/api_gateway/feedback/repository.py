@@ -73,6 +73,9 @@ class PendingAnalytics:
     tenant_id: str
     session_ref: str
     analytics_event_id: UUID
+    audience: str
+    form_source: str
+    form_locale: str | None
     numeric_answers: dict[str, int]
     form_snapshot: list[dict[str, Any]]
     form_version: str
@@ -116,6 +119,7 @@ INSERT INTO feedback (
 # No text_answers_ciphertext column here, deliberately.
 _CLAIM_PENDING = """
 SELECT feedback_id, tenant_id, session_ref, analytics_event_id,
+       audience, form_source, form_locale,
        numeric_answers, form_snapshot, form_version, created_at
 FROM feedback
 WHERE analytics_state = 'pending'
@@ -465,6 +469,9 @@ def _pending_from_row(row: asyncpg.Record) -> PendingAnalytics:
         tenant_id=row["tenant_id"],
         session_ref=row["session_ref"],
         analytics_event_id=row["analytics_event_id"],
+        audience=row["audience"],
+        form_source=row["form_source"],
+        form_locale=row["form_locale"],
         numeric_answers=json.loads(row["numeric_answers"]),
         form_snapshot=json.loads(row["form_snapshot"]),
         form_version=row["form_version"],

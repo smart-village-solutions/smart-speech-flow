@@ -73,8 +73,12 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
         "fallback",
         "fallback",
     ],
-    # a committed row stays pending for the reconciler
-    ("services/api_gateway/feedback/service.py", "FeedbackService._emit"): ["fallback"],
+    # a committed row stays pending for the reconciler, whether emitting or
+    # marking it raised
+    ("services/api_gateway/feedback/service.py", "FeedbackService._emit"): [
+        "fallback",
+        "fallback",
+    ],
     # one dead socket must not stop the others' notice
     (
         "services/api_gateway/legacy_session_manager.py",
