@@ -3,12 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useFeedback } from '@/app/providers/feedback';
 import { ConversationSurface } from '@/features/conversation/ConversationSurface';
 import { useConversationScreen } from '@/features/conversation/useConversationScreen';
-// The languages query is a hook over a domain repository, not UI. Duplicating
-// it in this feature would be worse than importing it across the boundary.
-import { useLanguages } from '@/features/language-select/useLanguages';
 import { AdminHeader } from '@/ui/patterns/AdminHeader';
 import { SessionStatusOverlay } from './SessionStatusOverlay';
 import { TerminateLink } from './TerminateLink';
+import { useStaffLocalisation } from './useStaffLocalisation';
 
 interface AdminSessionScreenProps {
   sessionId: string;
@@ -36,9 +34,11 @@ export function AdminSessionScreen({
   const { openFeedback } = useFeedback();
   const navigate = useNavigate();
   const screen = useConversationScreen(sessionId, 'admin');
-  const { data: languages = [] } = useLanguages();
+  const { languageOf } = useStaffLocalisation();
 
-  const language = languages.find((entry) => entry.code === screen.customerLanguage) ?? null;
+  // A code SSF does not list would read as "Sprache offen", i.e. not yet chosen.
+  const chosen = languageOf(screen.customerLanguage);
+  const language = chosen.bundled === null ? null : chosen;
 
   const footer = screen.state.ended ? (
     <button

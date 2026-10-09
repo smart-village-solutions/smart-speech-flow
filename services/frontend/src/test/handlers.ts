@@ -43,6 +43,19 @@ export function holdGuestContent() {
   return { handler, release };
 }
 
+const STAFF_CONTENT_ROUTE = '*/api/admin/content';
+
+export function staffContentHandler(body: JsonBodyType) {
+  return http.get(STAFF_CONTENT_ROUTE, () => HttpResponse.json(body));
+}
+
+/** Studio's login directory down past its cache: every /api/admin route answers 503. */
+export function staffContentUnavailable() {
+  return http.get(STAFF_CONTENT_ROUTE, () =>
+    HttpResponse.json({ detail: 'Studio content is temporarily unavailable' }, { status: 503 })
+  );
+}
+
 export const handlers = [
   http.get('*/api/login/tenants', () =>
     HttpResponse.json({
@@ -159,7 +172,7 @@ export const handlers = [
 
   guestContentHandler((language) => HttpResponse.json(guestContentBody(language))),
 
-  http.get('*/api/admin/content', () => HttpResponse.json(staffContentBody)),
+  staffContentHandler(staffContentBody),
 
   // Shapes follow the gateway routes; a fixture that drifts from them hides mapper bugs.
   http.get('*/api/customer/session/:id', ({ params }) =>

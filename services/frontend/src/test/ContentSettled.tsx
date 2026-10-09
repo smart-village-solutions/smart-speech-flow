@@ -1,6 +1,7 @@
 import { useGuestContent } from '@/features/content/useGuestContent';
 import { useGuestLanguages } from '@/features/content/useGuestLanguages';
 import { usePublicContent } from '@/features/content/usePublicContent';
+import { useStaffContent } from '@/features/content/useStaffContent';
 
 /**
  * Renders once installation content has arrived or failed. Beside a screen it
@@ -23,4 +24,9 @@ export function GuestContentSettled({ sessionId, language }: Readonly<GuestConte
   return languagesIdle && contentSettled ? (
     <span data-testid="guest-content-settled" hidden />
   ) : null;
+}
+
+/** The same for a staff screen: the tenant's staff content. */
+export function StaffContentSettled() {
+  return useStaffContent().settled ? <span data-testid="staff-content-settled" hidden /> : null;
 }

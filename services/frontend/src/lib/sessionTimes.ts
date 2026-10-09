@@ -12,23 +12,40 @@ const DAY_MS = 86_400_000;
 const MINUTE_MS = 60_000;
 const WEEK_DAYS = 7;
 
-/** Local midnight, so "yesterday" means the previous date and not 24 hours ago. */
-function startOfDay(date: Date): number {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+/**
+ * The calendar date in `timeZone` as UTC midnight. Two of these are always a
+ * whole number of 24-hour days apart, whatever clock change lies between them,
+ * so "yesterday" means the previous date and not 24 hours ago.
+ */
+function calendarDay(date: Date, timeZone: string | undefined): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((entry) => entry.type === type)?.value);
+  return Date.UTC(part('year'), part('month') - 1, part('day'));
 }
 
 /**
- * The session list's "Gestartet" column. The copy stays with the caller: this
- * returns which of the three shapes applies and the parts to interpolate.
+ * The session list's "Gestartet" column, in the tenant's time zone; null means
+ * the browser's. The copy stays with the caller: this returns which of the
+ * three shapes applies and the parts to interpolate.
  */
-export function describeStart(iso: string, now: Date, locale: string): StartDescriptor {
+export function describeStart(
+  iso: string,
+  now: Date,
+  locale: string,
+  timeZone: string | null
+): StartDescriptor {
+  const zone = timeZone ?? undefined;
   const start = new Date(iso);
-  const time = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(
-    start
-  );
-  // Rounded, not truncated: a clock change makes the span between two local
-  // midnights 23 or 25 hours, which integer division would read as a day off.
-  const days = Math.round((startOfDay(now) - startOfDay(start)) / DAY_MS);
+  const format = (options: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat(locale, { ...options, timeZone: zone }).format(start);
+  const time = format({ hour: '2-digit', minute: '2-digit' });
+  const days = (calendarDay(now, zone) - calendarDay(start, zone)) / DAY_MS;
 
   if (days <= 0) {
     return { day: 'today', time, label: '' };
@@ -38,9 +55,7 @@ export function describeStart(iso: string, now: Date, locale: string): StartDesc
   }
 
   const label =
-    days < WEEK_DAYS
-      ? new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(start)
-      : new Intl.DateTimeFormat(locale, { day: '2-digit', month: '2-digit' }).format(start);
+    days < WEEK_DAYS ? format({ weekday: 'short' }) : format({ day: '2-digit', month: '2-digit' });
 
   return { day: 'other', time, label };
 }

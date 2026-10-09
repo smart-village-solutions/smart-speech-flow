@@ -1,11 +1,11 @@
-import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { useBrand } from '@/app/providers/brand';
 import { useFeedback } from '@/app/providers/feedback';
 import { useScreenLocale } from '@/app/providers/locale';
 import { SiteLegalLinks } from '@/features/content/SiteLegalLinks';
+import { useStaffCopy } from '@/features/content/useStaffCopy';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
 import { AdminHeader } from '@/ui/patterns/AdminHeader';
+import { RichText } from '@/ui/patterns/RichText';
 import { SystemLoadCard } from './SystemLoadCard';
 import { AdminNewSessionButton } from './AdminNewSessionButton';
 import { AdminSessionList } from './AdminSessionList';
@@ -24,8 +24,7 @@ export function AdminDashboardScreen({
   accountUrl,
   studioUrl,
 }: Readonly<AdminDashboardScreenProps>) {
-  const { t } = useTranslation();
-  const { brand } = useBrand();
+  const copy = useStaffCopy();
   const { openFeedback } = useFeedback();
   const navigate = useNavigate();
   const { data: sessions = [], isError } = useAdminSessions();
@@ -46,16 +45,21 @@ export function AdminDashboardScreen({
       <div className="flex flex-col gap-6 px-5 pb-16 pt-content-top">
         <div className="flex gap-4">
           <div className="basis-2/3 rounded-2xl border border-border-card bg-surface-card p-5">
-            <p className="mb-1.5 text-thanks font-semibold text-fg-strong">
-              {t(`admin.dashboard.welcome.${brand}`)}
-            </p>
-            <p className="text-note leading-chat text-fg-muted">{t('admin.dashboard.intro')}</p>
+            <p className="mb-1.5 text-thanks font-semibold text-fg-strong">{copy.headline}</p>
+            <div className="flex flex-col gap-2 text-note leading-chat text-fg-muted">
+              <RichText html={copy.introHtml} />
+            </div>
           </div>
 
-          <SystemLoadCard />
+          <SystemLoadCard copy={copy.load} />
         </div>
 
-        <AdminNewSessionButton liveSessionId={ownLiveSessionId} onEnter={onEnterSession} />
+        <AdminNewSessionButton
+          liveSessionId={ownLiveSessionId}
+          callToAction={copy.callToAction}
+          invite={copy.invite}
+          onEnter={onEnterSession}
+        />
 
         <AdminSessionList sessions={sessions} isError={isError} onEnter={onEnterSession} />
       </div>

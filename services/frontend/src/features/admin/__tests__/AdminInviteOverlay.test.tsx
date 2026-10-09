@@ -5,8 +5,10 @@ import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { installFakeClipboard } from '@/test/fakeClipboard';
 import { server } from '@/test/setup';
+import { bundledStaffCopy } from '@/test/staffCopy';
 import { AdminInviteOverlay } from '@/features/admin/AdminInviteOverlay';
 import type { CreatedSession } from '@/domain/admin/admin.types';
+import type { InviteCopy } from '@/features/content/staffCopy';
 
 const SESSION: CreatedSession = {
   id: 'A1B2C3D4',
@@ -33,11 +35,13 @@ const joined = (customerConnected: boolean) =>
 const renderOverlay = (
   session: CreatedSession | null,
   handlers: { onEnter?: () => void; onCancel?: () => void } = {},
-  brand: 'ssf' | 'kassel' = 'ssf'
+  brand: 'ssf' | 'kassel' = 'ssf',
+  copy: InviteCopy = bundledStaffCopy().invite
 ) =>
   renderWithProviders(
     <AdminInviteOverlay
       session={session}
+      copy={copy}
       onEnter={handlers.onEnter ?? vi.fn()}
       onCancel={handlers.onCancel ?? vi.fn()}
     />,
@@ -137,5 +141,18 @@ describe('AdminInviteOverlay', () => {
 
     expect(onCancel).toHaveBeenCalledOnce();
     expect(onEnter).not.toHaveBeenCalled();
+  });
+
+  it('renders the copy it is given, each paragraph a block of its own', async () => {
+    joined(false);
+    renderOverlay(SESSION, {}, 'ssf', {
+      headline: 'Studio-Einladung',
+      descriptionHtml: '<p>Erster Absatz</p><p>Zweiter Absatz</p>',
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Studio-Einladung' })).toBeInTheDocument();
+    expect(screen.getByText('Erster Absatz').parentElement?.tagName).toBe('DIV');
+    expect(screen.getByText('Zweiter Absatz').tagName).toBe('P');
+    expect(document.querySelectorAll('p p')).toHaveLength(0);
   });
 });
