@@ -84,6 +84,9 @@
     "submitting": "Tê şandin…",
     "retry": "Dîsa bişîne",
     "failed": "Nêrîna te nehat şandin. Tiştên ku te nivîsîne mane.",
+    "formChanged": "Form di vê navberê de hat guhertin. Forma nû bar bike; bersivên ku hê li hev tên dimînin.",
+    "reload": "Forma nû bar bike",
+    "loading": "Forma nêrînê tê barkirin",
     "thanksTitle": "Spas dikin!",
     "thanksBody": "Nêrîna te alî me dike ku em $t(app.name) ji bo her kesî baştir bikin."
   },

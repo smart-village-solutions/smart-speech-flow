@@ -56,6 +56,48 @@ export function staffContentUnavailable() {
   );
 }
 
+const FEEDBACK_ROUTES = {
+  public: '*/api/feedback',
+  admin: '*/api/admin/feedback',
+} as const;
+
+type FeedbackResponder = (body: Record<string, unknown>) => Response | Promise<Response>;
+
+const storedFeedback: FeedbackResponder = () =>
+  HttpResponse.json({ feedback_id: '11111111-2222-3333-4444-555555555555' }, { status: 201 });
+
+/**
+ * A submit route that refuses anything but the v2 body, as the gateway will
+ * once PR 14 retires v1, so a test cannot pass on a v1 regression.
+ */
+export function feedbackHandler(
+  route: keyof typeof FEEDBACK_ROUTES,
+  respond: FeedbackResponder = storedFeedback
+) {
+  return http.post(FEEDBACK_ROUTES[route], async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    return 'audience' in body
+      ? respond(body)
+      : HttpResponse.json(
+          { detail: { error_code: 'feedback_request_invalid', message: 'v1 body' } },
+          { status: 422 }
+        );
+  });
+}
+
+/** The gateway's 409 when the answers no longer fit the current form. */
+export function feedbackFormChanged() {
+  return HttpResponse.json(
+    {
+      detail: {
+        error_code: 'feedback_form_changed',
+        message: 'The feedback form has changed; reload it and answer again',
+      },
+    },
+    { status: 409 }
+  );
+}
+
 export const handlers = [
   http.get('*/api/login/tenants', () =>
     HttpResponse.json({
@@ -173,6 +215,10 @@ export const handlers = [
   guestContentHandler((language) => HttpResponse.json(guestContentBody(language))),
 
   staffContentHandler(staffContentBody),
+
+  feedbackHandler('public'),
+
+  feedbackHandler('admin'),
 
   // Shapes follow the gateway routes; a fixture that drifts from them hides mapper bugs.
   http.get('*/api/customer/session/:id', ({ params }) =>

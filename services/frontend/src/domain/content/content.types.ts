@@ -19,8 +19,8 @@ export interface LegalLinks {
 }
 
 /**
- * A Studio feedback form. The questions already have PR 6's shape; PR 13 turns
- * `noticeHtml` into an html notice and the whole into a FeedbackFormDefinition.
+ * A Studio feedback form. The questions already have the renderer's shape; the
+ * sheet turns `noticeHtml` into an html notice (see resolveFeedbackForm).
  */
 export interface StudioFeedbackForm {
   headline: string;

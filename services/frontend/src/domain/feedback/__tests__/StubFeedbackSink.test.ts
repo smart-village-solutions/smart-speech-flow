@@ -3,12 +3,12 @@ import { createStubFeedbackSink } from '@/domain/feedback/StubFeedbackSink';
 import type { FeedbackSubmission } from '@/domain/feedback/feedback.types';
 
 const submission: FeedbackSubmission = {
-  translationQuality: 5,
-  performance: 4,
-  usability: 5,
-  netPromoterScore: 9,
-  improvements: 'more languages',
+  audience: 'guest',
   sessionId: 'A1B2C3D4',
+  locale: 'en',
+  formSource: 'bundled',
+  revision: null,
+  answers: { translationQuality: 5, improvementIdeas: 'more languages' },
 };
 
 describe('createStubFeedbackSink', () => {

@@ -1,4 +1,4 @@
-import type { FeedbackOrigin } from './feedback.types';
+import type { FeedbackAudience, FeedbackOrigin } from './feedback.types';
 
 /**
  * Guest routes always carry a session, but useParams types it optional. Without
@@ -11,4 +11,9 @@ export function guestOrigin(sessionId: string | undefined): FeedbackOrigin {
 
 export function sessionIdOf(origin: FeedbackOrigin): string | null {
   return origin.kind === 'public' ? null : origin.sessionId;
+}
+
+/** The start and login pages give installation feedback; the other origins name their audience. */
+export function audienceOf(origin: FeedbackOrigin): FeedbackAudience {
+  return origin.kind === 'public' ? 'installation' : origin.kind;
 }

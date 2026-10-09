@@ -54,3 +54,25 @@ function numberFits(question: NumericQuestion, value: number | string): boolean 
     value <= question.max
   );
 }
+
+/** Whether `value` is still a possible answer to `question`, whatever it requires. */
+function accepts(question: FeedbackQuestion, value: number | string | null | undefined): boolean {
+  return value != null && fits({ ...question, required: false }, value);
+}
+
+/**
+ * The answers `definition` still accepts, by the ids it asks. After a reload to
+ * a changed form, this keeps what still fits and drops the rest, so a value
+ * the new form cannot show is never submitted unseen.
+ */
+export function keepFitting(
+  definition: FeedbackFormDefinition,
+  answers: FeedbackAnswers
+): FeedbackAnswers {
+  const kept: FeedbackAnswers = {};
+  for (const question of definition.questions) {
+    const value = answers[question.id];
+    if (accepts(question, value)) kept[question.id] = value;
+  }
+  return kept;
+}
