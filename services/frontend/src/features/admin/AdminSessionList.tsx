@@ -1,9 +1,7 @@
 import { useTranslation } from 'react-i18next';
-// The languages query is a hook over a domain repository, not UI. Duplicating
-// it in this feature would be worse than importing it across the boundary.
-import { useLanguages } from '@/features/language-select/useLanguages';
 import type { AdminSession } from '@/domain/admin/admin.types';
 import { AdminSessionRow } from './AdminSessionRow';
+import { useStaffLocalisation } from './useStaffLocalisation';
 
 interface AdminSessionListProps {
   sessions: readonly AdminSession[];
@@ -13,12 +11,10 @@ interface AdminSessionListProps {
 
 export function AdminSessionList({ sessions, isError, onEnter }: Readonly<AdminSessionListProps>) {
   const { t } = useTranslation();
-  const { data: languages = [] } = useLanguages();
+  const { languageOf, timeZone } = useStaffLocalisation();
 
   // One clock for the whole render, so two rows cannot disagree about now.
   const now = new Date();
-  const nameFor = (code: string | null) =>
-    languages.find((language) => language.code === code) ?? null;
 
   let body;
   if (isError) {
@@ -30,7 +26,8 @@ export function AdminSessionList({ sessions, isError, onEnter }: Readonly<AdminS
       <AdminSessionRow
         key={session.id}
         session={session}
-        language={nameFor(session.customerLanguage)}
+        language={languageOf(session.customerLanguage)}
+        timeZone={timeZone}
         now={now}
         onEnter={onEnter}
       />

@@ -6,6 +6,7 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 import { installFakeClipboard } from '@/test/fakeClipboard';
 import { recordRequests } from '@/test/recordRequests';
 import { server } from '@/test/setup';
+import { bundledStaffCopy } from '@/test/staffCopy';
 import { AdminNewSessionButton } from '@/features/admin/AdminNewSessionButton';
 
 const START = 'Neues Gespräch starten';
@@ -16,9 +17,16 @@ const countCreates = () =>
   );
 
 const renderButton = (liveSessionId: string | null, onEnter = vi.fn()) => {
-  renderWithProviders(<AdminNewSessionButton liveSessionId={liveSessionId} onEnter={onEnter} />, {
-    locale: 'de',
-  });
+  const copy = bundledStaffCopy();
+  renderWithProviders(
+    <AdminNewSessionButton
+      liveSessionId={liveSessionId}
+      callToAction={copy.callToAction}
+      invite={copy.invite}
+      onEnter={onEnter}
+    />,
+    { locale: 'de' }
+  );
   return onEnter;
 };
 

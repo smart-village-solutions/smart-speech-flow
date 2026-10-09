@@ -64,9 +64,9 @@
 
 ## 10. Frontend: staff screens
 
-- [ ] 10.1 Use Studio staff texts on the dashboard, system-load card (`unknown` stays bundled) and invite dialog
-- [ ] 10.2 Show staff language names and format staff timestamps in the tenant time zone
-- [ ] 10.3 Keep the tenant display name off every page
+- [x] 10.1 Use Studio staff texts on the dashboard, system-load card (`unknown` stays bundled) and invite dialog
+- [x] 10.2 Show staff language names and format staff timestamps in the tenant time zone
+- [x] 10.3 Keep the tenant display name off every page
 
 ## 11. Feedback backend
 

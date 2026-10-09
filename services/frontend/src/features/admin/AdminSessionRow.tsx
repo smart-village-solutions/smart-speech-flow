@@ -3,8 +3,8 @@ import { cn } from '@/lib/cn';
 import { describeStart, durationMinutes } from '@/lib/sessionTimes';
 import { isReenterable } from '@/domain/admin/admin.types';
 import type { AdminSession } from '@/domain/admin/admin.types';
-import type { Language } from '@/domain/language/language.types';
 import { FlagAvatar } from '@/ui/patterns/FlagAvatar';
+import type { StaffLanguage } from './useStaffLocalisation';
 
 const STATUS_COLOUR = {
   connected: 'text-status-ok',
@@ -17,8 +17,9 @@ const ROW =
 
 interface AdminSessionRowProps {
   session: AdminSession;
-  /** Null when the customer never chose one, or when the code is unknown to us. */
-  language: Language | null;
+  language: StaffLanguage;
+  /** The tenant's IANA zone; null formats in the browser's. */
+  timeZone: string | null;
   /** Injected so the duration of an open session is testable. */
   now: Date;
   onEnter: (sessionId: string) => void;
@@ -27,12 +28,13 @@ interface AdminSessionRowProps {
 export function AdminSessionRow({
   session,
   language,
+  timeZone,
   now,
   onEnter,
 }: Readonly<AdminSessionRowProps>) {
   const { t, i18n } = useTranslation();
 
-  const start = describeStart(session.createdAt, now, i18n.language);
+  const start = describeStart(session.createdAt, now, i18n.language, timeZone);
   const started =
     start.day === 'other'
       ? t('admin.sessions.on', { day: start.label, time: start.time })
@@ -42,10 +44,8 @@ export function AdminSessionRow({
   const cells = (
     <>
       <span className="flex min-w-0 items-center gap-2.5">
-        {language === null ? null : <FlagAvatar language={language} size="xs" />}
-        <span className="truncate text-note font-medium text-fg-strong">
-          {language?.native ?? t('admin.sessions.unknownLanguage')}
-        </span>
+        {language.bundled === null ? null : <FlagAvatar language={language.bundled} size="xs" />}
+        <span className="truncate text-note font-medium text-fg-strong">{language.name}</span>
       </span>
       <span className="truncate text-label text-fg-muted">{started}</span>
       <span className="text-label text-fg-muted">

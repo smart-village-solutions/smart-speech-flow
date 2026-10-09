@@ -271,3 +271,61 @@ export const staffContentBody = {
   },
   guestLanguageNames: { en: 'Englisch' },
 };
+
+/**
+ * Production staff texts read almost word for word like the bundled German, so
+ * a test that must tell Studio from bundled uses these instead.
+ */
+export const STUDIO_STAFF = {
+  headline: 'Studio-Begrüßung',
+  intro: 'Studio-Einleitung',
+  secondParagraph: 'Studio-Absatz zwei',
+  callToAction: 'Studio-Gesprächsstart',
+  loadHeadline: 'Studio-Auslastung',
+  green: 'Studio grün',
+  yellow: 'Studio gelb',
+  red: 'Studio rot',
+  inviteHeadline: 'Studio-Einladung',
+  inviteDescription: 'Studio-Teilen',
+} as const;
+
+const markedStaffTexts = {
+  dashboard: {
+    headline: STUDIO_STAFF.headline,
+    explanationHtml: `<p>${STUDIO_STAFF.intro}</p><p>${STUDIO_STAFF.secondParagraph}</p>`,
+    callToAction: STUDIO_STAFF.callToAction,
+    load: {
+      headline: STUDIO_STAFF.loadHeadline,
+      green: STUDIO_STAFF.green,
+      yellow: STUDIO_STAFF.yellow,
+      red: STUDIO_STAFF.red,
+    },
+  },
+  newConversation: {
+    headline: STUDIO_STAFF.inviteHeadline,
+    descriptionHtml: `<p>${STUDIO_STAFF.inviteDescription}</p>`,
+  },
+};
+
+interface StaffContentVariant {
+  locale?: string;
+  timeZone?: string | null;
+  guestLanguageNames?: Record<string, string>;
+  /** Swap the production texts for `STUDIO_STAFF`. */
+  marked?: boolean;
+}
+
+export function staffContentBodyWith({
+  locale = 'de-DE',
+  timeZone = 'Europe/Berlin',
+  guestLanguageNames = { en: 'Englisch' },
+  marked = false,
+}: StaffContentVariant = {}) {
+  const texts = marked ? markedStaffTexts : {};
+  return {
+    ...staffContentBody,
+    timeZone,
+    staff: { ...staffContentBody.staff, ...texts, locale },
+    guestLanguageNames,
+  };
+}

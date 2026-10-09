@@ -6,12 +6,12 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 import { server } from '@/test/setup';
 import { AdminSessionScreen } from '@/features/admin/AdminSessionScreen';
 
-const arabicSession = () =>
+const sessionIn = (language: string) =>
   server.use(
     http.get('*/api/admin/session/:id/status', ({ params }) =>
       HttpResponse.json({
         id: params.id,
-        customer_language: 'ar',
+        customer_language: language,
         admin_language: 'de',
         status: 'active',
         created_at: '2026-08-26T10:00:00+00:00',
@@ -21,6 +21,8 @@ const arabicSession = () =>
       })
     )
   );
+
+const arabicSession = () => sessionIn('ar');
 
 const history = () =>
   server.use(
@@ -73,7 +75,8 @@ describe('AdminSessionScreen', () => {
     renderScreen();
 
     expect(await screen.findByText('A1B2C3D4')).toBeInTheDocument();
-    expect(await screen.findByText('العربية')).toBeInTheDocument();
+    expect(await screen.findByText('Arabisch')).toBeInTheDocument();
+    expect(screen.queryByText('العربية')).not.toBeInTheDocument();
   });
 
   // The admin reads the customer's turn in German, not in Arabic. If the role
@@ -91,7 +94,7 @@ describe('AdminSessionScreen', () => {
     arabicSession();
     renderScreen();
 
-    await screen.findByText('العربية');
+    await screen.findByText('Arabisch');
     expect(document.documentElement.lang).toBe('de');
   });
 
@@ -133,5 +136,16 @@ describe('AdminSessionScreen', () => {
     // session already terminated still offers the terminate link, and the
     // ended-state swap is covered by the reducer's own tests.
     expect(await screen.findByRole('button', { name: 'Gespräch beenden' })).toBeInTheDocument();
+  });
+
+  // "Sprache offen" means the customer has not chosen; for a chosen code SSF
+  // does not list, the overlay says nothing rather than something untrue.
+  it('omits the language group for a code SSF does not list', async () => {
+    sessionIn('zz');
+    renderScreen();
+
+    expect(await screen.findByRole('status')).toHaveTextContent('A1B2C3D4');
+    await screen.findByRole('button', { name: 'Gespräch beenden' });
+    expect(screen.getByRole('status')).not.toHaveTextContent('Sprache offen');
   });
 });

@@ -5,7 +5,10 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 import { AdminSessionRow } from '@/features/admin/AdminSessionRow';
 import type { AdminSession } from '@/domain/admin/admin.types';
 
-const ARABIC = { code: 'ar', native: 'العربية', english: 'Arabic' };
+const ARABIC = {
+  bundled: { code: 'ar', native: 'العربية', english: 'Arabic' },
+  name: 'Arabisch',
+};
 
 /** Local wall-clock, so the rendered time does not depend on the runner's TZ. */
 const at = (day: number, hour: number, minute: number) => new Date(2026, 7, day, hour, minute);
@@ -24,6 +27,7 @@ const renderRow = (over: Partial<AdminSession> = {}, onEnter = vi.fn()) => {
     <AdminSessionRow
       session={session(over)}
       language={ARABIC}
+      timeZone={null}
       now={at(26, 18, 0)}
       onEnter={onEnter}
     />,
@@ -33,16 +37,18 @@ const renderRow = (over: Partial<AdminSession> = {}, onEnter = vi.fn()) => {
 };
 
 describe('AdminSessionRow', () => {
-  it('names the language in its own script', async () => {
+  it('names the language in German, beside its flag', async () => {
     renderRow();
-    expect(await screen.findByText('العربية')).toBeInTheDocument();
+    expect(await screen.findByText('Arabisch')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Arabic' })).toBeInTheDocument();
   });
 
   it('says the language is still open when the customer never chose one', async () => {
     renderWithProviders(
       <AdminSessionRow
         session={session({ customerLanguage: null, status: 'open', terminatedAt: null })}
-        language={null}
+        language={{ bundled: null, name: 'Sprache offen' }}
+        timeZone={null}
         now={at(26, 18, 0)}
         onEnter={vi.fn()}
       />,
@@ -84,5 +90,34 @@ describe('AdminSessionRow', () => {
   it('distinguishes an open session from a connected one', async () => {
     renderRow({ status: 'open', terminatedAt: null });
     expect(await screen.findByText('offen')).toBeInTheDocument();
+  });
+
+  it('shows the start in the tenant time zone', async () => {
+    renderWithProviders(
+      <AdminSessionRow
+        session={session({ createdAt: '2026-08-26T09:00:00Z' })}
+        language={ARABIC}
+        timeZone="America/New_York"
+        now={new Date('2026-08-26T18:00:00Z')}
+        onEnter={vi.fn()}
+      />,
+      { locale: 'de' }
+    );
+    expect(await screen.findByText('Heute, 05:00')).toBeInTheDocument();
+  });
+
+  it('shows no flag for a language SSF does not list', async () => {
+    renderWithProviders(
+      <AdminSessionRow
+        session={session()}
+        language={{ bundled: null, name: 'Suaheli' }}
+        timeZone={null}
+        now={at(26, 18, 0)}
+        onEnter={vi.fn()}
+      />,
+      { locale: 'de' }
+    );
+    expect(await screen.findByText('Suaheli')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 });

@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import type { RealtimeStatus } from '@/core/realtime/realtime.port';
-import type { Language } from '@/domain/language/language.types';
 import { FlagAvatar } from '@/ui/patterns/FlagAvatar';
+import type { StaffLanguage } from './useStaffLocalisation';
 
 type Connection = 'connected' | 'connecting' | 'interrupted';
 
@@ -30,8 +30,8 @@ function connectionOf(status: RealtimeStatus): Connection {
 interface SessionStatusOverlayProps {
   sessionId: string;
   connection: RealtimeStatus;
-  /** Null until the customer has chosen one; the group is then omitted. */
-  language: Language | null;
+  /** Null until the customer has chosen a language SSF lists; the group is then omitted. */
+  language: StaffLanguage | null;
 }
 
 /**
@@ -83,8 +83,8 @@ export function SessionStatusOverlay({
           <>
             <span aria-hidden className="h-3 w-px bg-border-status" />
             <span className="flex items-center gap-1.5">
-              <FlagAvatar language={language} size="2xs" />
-              <span className="text-meta text-fg-muted">{language.native}</span>
+              {language.bundled !== null && <FlagAvatar language={language.bundled} size="2xs" />}
+              <span className="text-meta text-fg-muted">{language.name}</span>
             </span>
           </>
         )}

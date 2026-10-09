@@ -4,12 +4,15 @@ import { useTranslation } from 'react-i18next';
 import { useServices } from '@/app/providers/services';
 import { ConfirmDialog } from '@/ui/patterns/ConfirmDialog';
 import type { CreatedSession } from '@/domain/admin/admin.types';
+import type { InviteCopy } from '@/features/content/staffCopy';
 import { AdminInviteOverlay } from './AdminInviteOverlay';
 import { ADMIN_SESSIONS_KEY } from './useAdminSessions';
 
 interface AdminNewSessionButtonProps {
   /** The admin's own live session, which creating another would terminate, if any. */
   liveSessionId: string | null;
+  callToAction: string;
+  invite: InviteCopy;
   onEnter: (sessionId: string) => void;
 }
 
@@ -23,6 +26,8 @@ interface AdminNewSessionButtonProps {
  */
 export function AdminNewSessionButton({
   liveSessionId,
+  callToAction,
+  invite: inviteCopy,
   onEnter,
 }: Readonly<AdminNewSessionButtonProps>) {
   const { t } = useTranslation();
@@ -82,7 +87,7 @@ export function AdminNewSessionButton({
         disabled={create.isPending}
         className="w-full rounded-2xl bg-accent py-4 text-item font-semibold text-accent-on shadow-lg active:scale-[0.98] disabled:opacity-40"
       >
-        {t('admin.dashboard.newSession')}
+        {callToAction}
       </button>
 
       {create.isError && (
@@ -101,7 +106,12 @@ export function AdminNewSessionButton({
         onCancel={() => setConfirming(false)}
       />
 
-      <AdminInviteOverlay session={invite} onEnter={onEnter} onCancel={cancelInvite} />
+      <AdminInviteOverlay
+        session={invite}
+        copy={inviteCopy}
+        onEnter={onEnter}
+        onCancel={cancelInvite}
+      />
     </>
   );
 }

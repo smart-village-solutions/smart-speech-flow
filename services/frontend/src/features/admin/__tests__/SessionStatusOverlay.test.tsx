@@ -3,7 +3,10 @@ import { screen } from '@testing-library/react';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { SessionStatusOverlay } from '@/features/admin/SessionStatusOverlay';
 
-const ARABIC = { code: 'ar', native: 'العربية', english: 'Arabic' };
+const ARABIC = {
+  bundled: { code: 'ar', native: 'العربية', english: 'Arabic' },
+  name: 'Arabisch',
+};
 
 describe('SessionStatusOverlay', () => {
   it('names the session', () => {
@@ -48,12 +51,27 @@ describe('SessionStatusOverlay', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Verbindung unterbrochen');
   });
 
-  it('names the customer language', () => {
+  it('names the customer language in German', () => {
     renderWithProviders(
       <SessionStatusOverlay sessionId="A1B2C3D4" connection="connected" language={ARABIC} />,
       { locale: 'de' }
     );
-    expect(screen.getByText('العربية')).toBeInTheDocument();
+    expect(screen.getByText('Arabisch')).toBeInTheDocument();
+    expect(screen.queryByText('العربية')).not.toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Arabic' })).toBeInTheDocument();
+  });
+
+  it('names a language SSF does not list without a flag', () => {
+    renderWithProviders(
+      <SessionStatusOverlay
+        sessionId="A1B2C3D4"
+        connection="connected"
+        language={{ bundled: null, name: 'Suaheli' }}
+      />,
+      { locale: 'de' }
+    );
+    expect(screen.getByText('Suaheli')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
 
   it('omits the language group before anyone has joined', () => {

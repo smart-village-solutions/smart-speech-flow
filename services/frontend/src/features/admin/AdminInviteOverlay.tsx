@@ -4,12 +4,15 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/ui/primitives/Button';
 import { CodeDisplay } from '@/ui/patterns/CodeDisplay';
 import type { CreatedSession } from '@/domain/admin/admin.types';
+import type { InviteCopy } from '@/features/content/staffCopy';
+import { RichText } from '@/ui/patterns/RichText';
 import { InviteShareRow } from './InviteShareRow';
 import { useJoinWatch } from './useJoinWatch';
 
 interface AdminInviteOverlayProps {
   /** Null until a session has been created; the overlay is then closed. */
   session: CreatedSession | null;
+  copy: InviteCopy;
   onEnter: (sessionId: string) => void;
   onCancel: () => void;
 }
@@ -21,6 +24,7 @@ interface AdminInviteOverlayProps {
  */
 export function AdminInviteOverlay({
   session,
+  copy,
   onEnter,
   onCancel,
 }: Readonly<AdminInviteOverlayProps>) {
@@ -53,9 +57,11 @@ export function AdminInviteOverlay({
           <div className="flex w-full max-w-invite flex-col gap-6">
             <div className="flex flex-col items-center gap-1.5 text-center">
               <Dialog.Title className="text-overlay-title font-bold text-fg-strong">
-                {t('admin.invite.title')}
+                {copy.headline}
               </Dialog.Title>
-              <p className="text-note text-fg-muted">{t('admin.invite.subtitle')}</p>
+              <div className="flex flex-col gap-2 text-note text-fg-muted">
+                <RichText html={copy.descriptionHtml} />
+              </div>
             </div>
 
             <CodeDisplay code={code} label={t('admin.invite.codeLabel', { code })} />
