@@ -45,6 +45,8 @@ from .repository import FeedbackRepository, ReconciliationLockUnavailable, Reten
 
 logger = logging.getLogger(__name__)
 
+_FINAL_OUTCOMES = frozenset({ProbeOutcome.DISABLED, ProbeOutcome.DROPPED_DISALLOWED})
+
 RECONCILIATION_BATCH_LIMIT = 200
 RETENTION_BATCH_LIMIT = 500
 
@@ -61,6 +63,7 @@ class ReconciliationPass:
     recovered: int = 0
     failed: int = 0
     drained: int = 0
+    rejected: int = 0
     unavailable: bool = False
     skipped: bool = False
 
@@ -168,6 +171,9 @@ class FeedbackMaintenanceMetrics:
     def drained(self, count: int) -> None:
         self._count(self.reconciliation, count, outcome="not_applicable")
 
+    def rejected(self, count: int) -> None:
+        self._count(self.reconciliation, count, outcome="rejected")
+
     def observed_backlog(self, depth: int) -> None:
         if self.backlog is not None:
             self.backlog.set(depth)
@@ -235,20 +241,21 @@ class FeedbackMaintenance:
 
         self._metrics.observed_backlog(len(pending))
 
-        recovered = failed = drained = 0
+        tally = {outcome: 0 for outcome in ProbeOutcome}
         for row in pending:
-            outcome = await self._redeliver(row)
-            if outcome is ProbeOutcome.EMITTED:
-                recovered += 1
-            elif outcome is ProbeOutcome.DISABLED:
-                drained += 1
-            else:
-                failed += 1
+            tally[await self._redeliver(row)] += 1
+        recovered = tally[ProbeOutcome.EMITTED]
+        drained = tally[ProbeOutcome.DISABLED]
+        rejected = tally[ProbeOutcome.DROPPED_DISALLOWED]
+        failed = tally[ProbeOutcome.EXPORT_FAILED]
 
         self._metrics.recovered(recovered)
         self._metrics.failed(failed)
         self._metrics.drained(drained)
-        return ReconciliationPass(recovered=recovered, failed=failed, drained=drained)
+        self._metrics.rejected(rejected)
+        return ReconciliationPass(
+            recovered=recovered, failed=failed, drained=drained, rejected=rejected
+        )
 
     async def _redeliver(self, row: Any) -> ProbeOutcome:
         """One row. Returns the outcome; never raises."""
@@ -261,7 +268,9 @@ class FeedbackMaintenance:
         try:
             if outcome is ProbeOutcome.EMITTED:
                 await self._repository.mark_analytics_delivered(row.feedback_id, row.tenant_id)
-            elif outcome is ProbeOutcome.DISABLED:
+            elif outcome in _FINAL_OUTCOMES:
+                # A rejection repeats on every pass; retried, the row would hold
+                # a batch slot for good. The telemetry module alerts on it.
                 await self._repository.mark_analytics_state(
                     row.feedback_id, AnalyticsState.NOT_APPLICABLE, row.tenant_id
                 )

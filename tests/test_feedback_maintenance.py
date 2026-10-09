@@ -11,6 +11,7 @@ structurally unable to leak the improvement text rather than merely careful.
 """
 
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
@@ -118,24 +119,21 @@ class FakeRepository:
 
 
 class FakeTelemetry:
-    """Headers in `calls`, with scripted outcomes; answers in `answers`, always emitted."""
+    """Headers in `calls`, with scripted outcomes per submission; answers in `answers`."""
 
     def __init__(self, outcomes: list[ProbeOutcome] | None = None) -> None:
         self.calls: list[dict] = []
         self.answers: list[dict] = []
         self._outcomes = outcomes
 
-    def emit_feedback_submitted(self, **kwargs) -> ProbeResult:
-        self.calls.append(kwargs)
+    def emit_feedback(self, header, answers) -> ProbeResult:
+        self.calls.append(asdict(header))
+        self.answers.extend(asdict(answer) for answer in answers)
         if self._outcomes is None:
             outcome = ProbeOutcome.EMITTED
         else:
             outcome = self._outcomes[min(len(self.calls) - 1, len(self._outcomes) - 1)]
-        return ProbeResult(outcome, kwargs["event_id"])
-
-    def emit_feedback_answer(self, **kwargs) -> ProbeResult:
-        self.answers.append(kwargs)
-        return ProbeResult(ProbeOutcome.EMITTED, None)
+        return ProbeResult(outcome, header.event_id)
 
 
 def _maintenance(repository, telemetry=None, registry=None):
@@ -248,11 +246,11 @@ class TestReconciliationRecoversDelivery:
         first, second = _pending(), _pending()
 
         class Exploding(FakeTelemetry):
-            def emit_feedback_submitted(self, **kwargs):
-                self.calls.append(kwargs)
+            def emit_feedback(self, header, answers):
+                self.calls.append(asdict(header))
                 if len(self.calls) == 1:
                     raise RuntimeError("collector exploded")
-                return ProbeResult(ProbeOutcome.EMITTED, kwargs["event_id"])
+                return ProbeResult(ProbeOutcome.EMITTED, header.event_id)
 
         repository = FakeRepository([first, second])
         result = await _maintenance(repository, Exploding()).reconcile_once()
@@ -329,9 +327,8 @@ class TestReconciliationRebuildsTheEventsFromAnswersById:
             "usability",
             "recommendation",
         ]
-        assert {answer["submission_event_id"] for answer in telemetry.answers} == {
-            row.analytics_event_id
-        }
+        assert telemetry.calls[0]["event_id"] == row.analytics_event_id
+        assert telemetry.calls[0]["occurred_at"] == row.created_at
 
 
 class TestReconciliationCarriesNoText:
@@ -349,12 +346,12 @@ class TestReconciliationCarriesNoText:
 
         assert set(telemetry.calls[0]) == {
             "event_id",
+            "occurred_at",
             "session_ref",
             "feedback_ref",
             "audience",
             "form_source",
             "locale",
-            "answer_count",
             "translation_quality",
             "performance",
             "usability",
@@ -363,10 +360,6 @@ class TestReconciliationCarriesNoText:
             "tenant_ref",
         }
         assert set(telemetry.answers[0]) == {
-            "submission_event_id",
-            "feedback_ref",
-            "tenant_ref",
-            "audience",
             "question_id",
             "question_type",
             "value",
@@ -630,3 +623,45 @@ class TestASkippedPassDoesNotLeaveAStaleGauge:
         await _maintenance(loser, registry=registry).expire_once()
 
         assert _value(registry, "ssf_feedback_retention_overdue") == 0
+
+
+class TestARejectedRowIsFinal:
+    """PR #554 review: a rejection repeats on every pass, so retrying it only harms."""
+
+    async def test_a_row_the_schema_rejects_is_marked_not_applicable(self):
+        row = _pending()
+        repository = FakeRepository([row])
+
+        result = await _maintenance(
+            repository, FakeTelemetry([ProbeOutcome.DROPPED_DISALLOWED])
+        ).reconcile_once()
+
+        assert result.rejected == 1
+        assert (result.failed, result.drained) == (0, 0)
+        assert repository.states[row.feedback_id] is AnalyticsState.NOT_APPLICABLE
+
+    async def test_rejections_are_counted_apart_from_disabled_telemetry(self):
+        registry = CollectorRegistry()
+        repository = FakeRepository([_pending()])
+
+        await _maintenance(
+            repository, FakeTelemetry([ProbeOutcome.DROPPED_DISALLOWED]), registry
+        ).reconcile_once()
+
+        assert registry.get_sample_value(
+            "ssf_feedback_reconciliation_total", {"outcome": "rejected"}
+        ) == 1
+        assert registry.get_sample_value(
+            "ssf_feedback_reconciliation_total", {"outcome": "not_applicable"}
+        ) is None
+
+    async def test_an_export_failure_still_stays_pending(self):
+        row = _pending()
+        repository = FakeRepository([row])
+
+        result = await _maintenance(
+            repository, FakeTelemetry([ProbeOutcome.EXPORT_FAILED])
+        ).reconcile_once()
+
+        assert result.failed == 1
+        assert row.feedback_id not in repository.states

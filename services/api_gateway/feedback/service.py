@@ -42,6 +42,8 @@ from .text_answers import seal_text_answers
 
 logger = logging.getLogger(__name__)
 
+_FINAL_OUTCOMES = frozenset({ProbeOutcome.DISABLED, ProbeOutcome.DROPPED_DISALLOWED})
+
 _RETENTION_MONTHS = 12
 
 FEEDBACK_GRACE_ENV: Final[str] = "SSF_FEEDBACK_GRACE_MINUTES"
@@ -284,9 +286,11 @@ class FeedbackService:
                 await self._repository.mark_analytics_delivered(
                     record.feedback_id, record.tenant_id
                 )
-            elif outcome is ProbeOutcome.DISABLED:
+            elif outcome in _FINAL_OUTCOMES:
                 # Nothing will ever drain a backlog for an event type this
-                # deployment does not emit, so it is not a backlog.
+                # deployment does not emit, nor for events the schema rejects
+                # on every attempt; neither is a backlog. A rejection is
+                # counted and alerted by the telemetry module.
                 await self._repository.mark_analytics_state(
                     record.feedback_id, AnalyticsState.NOT_APPLICABLE, record.tenant_id
                 )

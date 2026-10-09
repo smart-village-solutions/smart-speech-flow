@@ -107,6 +107,8 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/pipeline_logic.py", "process_wav"): ["boundary"],
     # a pluggable exporter must not break the emitter
     ("services/api_gateway/quality_telemetry.py", "QualityTelemetry._export"): ["boundary"],
+    # the same, per event of one feedback submission
+    ("services/api_gateway/quality_telemetry.py", "QualityTelemetry.emit_feedback"): ["boundary"],
     # one socket send
     (
         "services/api_gateway/realtime_client_status.py",

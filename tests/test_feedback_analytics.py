@@ -12,7 +12,8 @@ from uuid import uuid4, uuid5
 import pytest
 from prometheus_client import CollectorRegistry
 
-from services.api_gateway.feedback.analytics import NumericAnswer, emit_submission, numeric_answers
+from services.api_gateway.feedback.analytics import emit_submission, numeric_answers
+from services.api_gateway.quality_telemetry import FeedbackAnswer
 from services.api_gateway.feedback.bundled_form import bundled_rules
 from services.api_gateway.feedback.repository import PendingAnalytics
 from services.api_gateway.quality_telemetry import QualityTelemetry
@@ -81,8 +82,12 @@ def _bundled_row(**overrides) -> PendingAnalytics:
 class TestNumericAnswers:
     def test_answers_follow_the_form_order_with_their_ranges(self):
         assert numeric_answers({"recommendation": 3, "clarity": 6}, STUDIO_SNAPSHOT) == (
-            NumericAnswer("clarity", "rating", 6, 1, 7),
-            NumericAnswer("recommendation", "scale", 3, 0, 10),
+            FeedbackAnswer(
+                question_id="clarity", question_type="rating", value=6, minimum=1, maximum=7
+            ),
+            FeedbackAnswer(
+                question_id="recommendation", question_type="scale", value=3, minimum=0, maximum=10
+            ),
         )
 
     def test_unanswered_and_text_questions_produce_nothing(self):
@@ -219,26 +224,33 @@ class TestTheOutcome:
         assert {a["ssf.quality.audience"] for _, a in recording.calls} == {audience}
 
 
-class TestARejectionIsReported:
-    """A rejected event leaves the row failed, so the reconciliation alert sees it."""
+class TestARejectionIsFinal:
+    """PR #554 review: nothing of a rejected submission is sent, so nothing is re-sent."""
 
-    def test_a_rejected_answer_is_reported_as_rejected(self):
+    def test_a_rejected_answer_sends_nothing_and_reports_the_rejection(self):
         recording = _Recording()
-        row = _row(form_snapshot=[{"id": "how was it", "type": "rating", "min": 1, "max": 7}],
-                   numeric_answers={"how was it": 3})
-
-        outcome = emit_submission(_telemetry(recording), PSEUDONYMIZER, row)
-
-        assert outcome is ProbeOutcome.DROPPED_DISALLOWED
-
-    def test_a_transient_failure_outranks_a_rejection(self):
-        """Retry while anything could still go out; the next pass settles it."""
-        recording = _Recording(fail_on="clarity")
         row = _row(
-            form_snapshot=[{"id": "how was it", "type": "rating", "min": 1, "max": 7}, *STUDIO_SNAPSHOT],
+            form_snapshot=[
+                *STUDIO_SNAPSHOT,
+                {"id": "how was it", "type": "rating", "min": 1, "max": 7},
+            ],
             numeric_answers={"clarity": 6, "how was it": 3},
         )
 
         outcome = emit_submission(_telemetry(recording), PSEUDONYMIZER, row)
 
-        assert outcome is ProbeOutcome.EXPORT_FAILED
+        assert outcome is ProbeOutcome.DROPPED_DISALLOWED
+        assert recording.calls == []
+
+
+class TestTheSubmissionTime:
+    def test_every_event_carries_the_rows_creation_time(self):
+        """A re-send lands on the submission's gold day, not the retry's."""
+        times = []
+        row = _row()
+
+        emit_submission(
+            _telemetry(lambda name, attributes, at: times.append(at)), PSEUDONYMIZER, row
+        )
+
+        assert set(times) == {row.created_at}

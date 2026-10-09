@@ -5,7 +5,7 @@ ratings, NPS and two opaque references. Its whole reason for existing is that
 the other half -- the free text -- cannot be represented here at all, which is
 enforced by AttributeKind having no free-text member.
 
-`emit_feedback_submitted` takes `event_id` from its caller rather than minting
+`emit_feedback` takes the header's `event_id` from its caller rather than minting
 one, unlike every sibling. #305's reconciler re-emits a failed delivery with
 the same id, and silver's ReplacingMergeTree plus gold's uniqExactState only
 deduplicate if that id is stable.
@@ -19,7 +19,12 @@ from uuid import uuid4, uuid5
 import pytest
 from prometheus_client import CollectorRegistry
 
-from services.api_gateway.quality_telemetry import QualityTelemetry, discard_event
+from services.api_gateway.quality_telemetry import (
+    FeedbackAnswer,
+    FeedbackHeader,
+    QualityTelemetry,
+    discard_event,
+)
 from services.api_gateway.quality_telemetry_schema import (
     ALLOWED_ATTRIBUTE_KEYS,
     ALLOWED_ATTRIBUTES,
@@ -103,9 +108,10 @@ def _telemetry(mode=TelemetryMode.ENABLED, exporter=None):
     )
 
 
-def _emit(telemetry, **overrides):
+def _header(**overrides) -> FeedbackHeader:
     fields = dict(
         event_id=uuid4(),
+        occurred_at=datetime.now(timezone.utc),
         session_ref=SESSION_REFERENCE,
         feedback_ref=FEEDBACK_REFERENCE,
         translation_quality=4,
@@ -116,10 +122,20 @@ def _emit(telemetry, **overrides):
         audience="guest",
         form_source="bundled",
         locale="en",
-        answer_count=4,
     )
     fields.update(overrides)
-    return telemetry.emit_feedback_submitted(**fields)
+    return FeedbackHeader(**fields)
+
+
+def _answer(**overrides) -> FeedbackAnswer:
+    fields = dict(question_id="clarity", question_type="rating", value=4, minimum=1, maximum=7)
+    fields.update(overrides)
+    return FeedbackAnswer(**fields)
+
+
+def _emit(telemetry, answers=(), **overrides):
+    """A submission's header, and its answers if given, through the one batch call."""
+    return telemetry.emit_feedback(_header(**overrides), answers)
 
 
 def _answer_event(**overrides) -> FeedbackAnswerEvent:
@@ -140,19 +156,14 @@ def _answer_event(**overrides) -> FeedbackAnswerEvent:
     return FeedbackAnswerEvent(**fields)
 
 
-def _emit_answer(telemetry, **overrides):
-    fields = dict(
-        submission_event_id=uuid4(),
-        feedback_ref=FEEDBACK_REFERENCE,
-        audience="guest",
-        question_id="clarity",
-        question_type="rating",
-        value=4,
-        minimum=1,
-        maximum=7,
-    )
-    fields.update(overrides)
-    return telemetry.emit_feedback_answer(**fields)
+def _emit_answer(telemetry, submission_event_id=None, **overrides):
+    """One answer and the header it belongs to."""
+    header = _header(event_id=submission_event_id or uuid4())
+    return telemetry.emit_feedback(header, [_answer(**overrides)])
+
+
+def _answers(recording) -> list[dict]:
+    return [attributes for name, attributes, _ in recording.calls if name == "feedback_answer"]
 
 
 class TestTheEventCarriesNoContent:
@@ -448,8 +459,8 @@ class TestAnswerEmission:
         )
 
         assert result.outcome is ProbeOutcome.EMITTED
-        assert result.event_id == uuid5(submission, "clarity")
-        assert recording.calls[0][1]["ssf.quality.event_id"] == str(uuid5(submission, "clarity"))
+        assert result.event_id == submission
+        assert _answers(recording)[0]["ssf.quality.event_id"] == str(uuid5(submission, "clarity"))
 
     def test_re_emitting_an_answer_repeats_its_id(self):
         """The reconciler re-emits; a fresh id would count the answer twice."""
@@ -460,29 +471,42 @@ class TestAnswerEmission:
         _emit_answer(telemetry, submission_event_id=submission)
         _emit_answer(telemetry, submission_event_id=submission)
 
-        first, second = recording.calls
-        assert first[1]["ssf.quality.event_id"] == second[1]["ssf.quality.event_id"]
+        first, second = _answers(recording)
+        assert first["ssf.quality.event_id"] == second["ssf.quality.event_id"]
 
     def test_two_questions_of_one_submission_get_different_ids(self):
         recording = _Recording()
-        telemetry = _telemetry(exporter=recording)
-        submission = uuid4()
 
-        _emit_answer(telemetry, submission_event_id=submission, question_id="clarity")
-        _emit_answer(telemetry, submission_event_id=submission, question_id="speed")
+        _emit(_telemetry(exporter=recording), [_answer(question_id="clarity"), _answer(question_id="speed")])
 
-        assert recording.calls[0][1]["ssf.quality.event_id"] != recording.calls[1][1][
-            "ssf.quality.event_id"
-        ]
+        first, second = _answers(recording)
+        assert first["ssf.quality.event_id"] != second["ssf.quality.event_id"]
+
+    def test_answers_share_the_headers_references_and_audience(self):
+        recording = _Recording()
+
+        _emit(_telemetry(exporter=recording), [_answer()], audience="staff", tenant_ref=TENANT_REFERENCE)
+
+        (answer,) = _answers(recording)
+        assert answer["ssf.quality.feedback_ref"] == FEEDBACK_REFERENCE
+        assert answer["ssf.quality.tenant_ref"] == TENANT_REFERENCE
+        assert answer["ssf.quality.audience"] == "staff"
+
+    def test_the_header_counts_the_answers_it_was_sent_with(self):
+        recording = _Recording()
+
+        _emit(_telemetry(exporter=recording), [_answer(question_id="a"), _answer(question_id="b")])
+
+        assert recording.calls[0][1]["ssf.quality.answer_count"] == "2"
 
     def test_it_emits_under_the_answer_event_name(self):
         recording = _Recording()
 
         _emit_answer(_telemetry(exporter=recording))
 
-        assert recording.calls[0][0] == "feedback_answer"
+        assert [name for name, _, _ in recording.calls] == ["feedback_submitted", "feedback_answer"]
 
-    def test_a_disabled_deployment_emits_no_answer(self):
+    def test_a_disabled_deployment_emits_nothing(self):
         recording = _Recording()
 
         result = _emit_answer(_telemetry(mode=TelemetryMode.DISABLED, exporter=recording))
@@ -505,6 +529,88 @@ class TestAnswerEmission:
         recording = _Recording()
 
         result = _emit_answer(_telemetry(exporter=recording), question_type="longText")
+
+        assert result.outcome is ProbeOutcome.DROPPED_DISALLOWED
+        assert recording.calls == []
+
+
+class TestASubmissionIsAllOrNothing:
+    """PR #554 review: a rejection must not leave the accepted events to be re-sent.
+
+    The schema rejects the same event on every attempt, so the row is marked
+    final; anything sent before the rejection would have been sent for good,
+    and re-sending it on every pass re-adds it to gold's averages.
+    """
+
+    def test_one_rejected_answer_sends_nothing_at_all(self):
+        recording = _Recording()
+
+        result = _emit(
+            _telemetry(exporter=recording),
+            [_answer(question_id="clarity"), _answer(question_id="speed", value=99, maximum=10)],
+        )
+
+        assert result.outcome is ProbeOutcome.DROPPED_DISALLOWED
+        assert recording.calls == []
+
+    def test_a_rejected_header_sends_no_answer(self):
+        recording = _Recording()
+
+        result = _emit(_telemetry(exporter=recording), [_answer()], translation_quality=99)
+
+        assert result.outcome is ProbeOutcome.DROPPED_DISALLOWED
+        assert recording.calls == []
+
+    def test_a_rejection_is_counted_once_so_the_alert_fires(self):
+        registry = CollectorRegistry()
+        telemetry = QualityTelemetry(mode=TelemetryMode.ENABLED, exporter=_Recording(), registry=registry)
+
+        telemetry.emit_feedback(_header(), [_answer(value=99)])
+
+        assert registry.get_sample_value(
+            "ssf_quality_telemetry_events_total", {"outcome": "dropped_disallowed"}
+        ) == 1
+
+    def test_every_sent_event_is_counted_so_the_collector_gap_stays_honest(self):
+        """QualityTelemetryEventsLostBeforeCollector compares this count with
+        the records the collector accepted, which counts every event."""
+        registry = CollectorRegistry()
+        telemetry = QualityTelemetry(mode=TelemetryMode.ENABLED, exporter=_Recording(), registry=registry)
+
+        telemetry.emit_feedback(_header(), [_answer(question_id="a"), _answer(question_id="b")])
+
+        assert registry.get_sample_value(
+            "ssf_quality_telemetry_events_total", {"outcome": "emitted"}
+        ) == 3
+
+    def test_an_export_failure_still_sends_the_rest_and_asks_for_a_retry(self):
+        sent = []
+
+        def flaky(name, attributes, emitted_at_utc):
+            if attributes.get("ssf.quality.question_id") == "a":
+                raise ConnectionError("collector unreachable")
+            sent.append(name)
+
+        result = QualityTelemetry(
+            mode=TelemetryMode.ENABLED, exporter=flaky, registry=CollectorRegistry()
+        ).emit_feedback(_header(), [_answer(question_id="a"), _answer(question_id="b")])
+
+        assert result.outcome is ProbeOutcome.EXPORT_FAILED
+        assert sent == ["feedback_submitted", "feedback_answer"]
+
+    def test_every_event_is_stamped_with_the_submission_time(self):
+        """A re-send lands on the submission's gold day and renews no silver TTL."""
+        recording = _Recording()
+        submitted = datetime(2026, 10, 1, 9, 30, tzinfo=timezone.utc)
+
+        _emit(_telemetry(exporter=recording), [_answer()], occurred_at=submitted)
+
+        assert {emitted_at for _, _, emitted_at in recording.calls} == {submitted}
+
+    def test_a_naive_submission_time_is_rejected_not_guessed(self):
+        recording = _Recording()
+
+        result = _emit(_telemetry(exporter=recording), occurred_at=datetime(2026, 10, 1, 9, 30))
 
         assert result.outcome is ProbeOutcome.DROPPED_DISALLOWED
         assert recording.calls == []

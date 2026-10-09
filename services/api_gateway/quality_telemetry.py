@@ -9,7 +9,7 @@ openspec/changes/add-clickhouse-quality-telemetry/design.md.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -204,6 +204,80 @@ class _TranslationDurations:
     tts_duration_ms: int
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FeedbackHeader:
+    """A stored submission as the header event describes it.
+
+    The four ratings are the bundled form's, given only when the form asked
+    them the bundled way: all four or none.
+    """
+
+    event_id: UUID
+    occurred_at: datetime
+    session_ref: str
+    feedback_ref: str
+    audience: str
+    form_source: str
+    locale: str | None
+    form_version: str
+    tenant_ref: str = MISSING_TENANT_REFERENCE
+    translation_quality: int | None = None
+    performance: int | None = None
+    usability: int | None = None
+    net_promoter_score: int | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class FeedbackAnswer:
+    """One answered rating or scale question, with the range it was asked on."""
+
+    question_id: str
+    question_type: str
+    value: int
+    minimum: int
+    maximum: int
+
+
+def _feedback_header_event(header: FeedbackHeader, answer_count: int) -> FeedbackSubmittedEvent:
+    """Coerces what has a safe placeholder; raises on what does not."""
+    return FeedbackSubmittedEvent(
+        event_id=header.event_id,
+        schema_version=SCHEMA_VERSION,
+        emitted_at_utc=header.occurred_at,
+        event_type=QualityEventType.FEEDBACK_SUBMITTED,
+        session_ref=_as_opaque_ref(header.session_ref),
+        tenant_ref=_as_tenant_ref(header.tenant_ref),
+        feedback_ref=_as_opaque_ref(header.feedback_ref),
+        feedback_form_version=_as_label(header.form_version),
+        audience=FeedbackAudience(header.audience),
+        form_source=FeedbackFormSource(header.form_source),
+        feedback_locale=_as_language(header.locale or ""),
+        answer_count=answer_count,
+        translation_quality=_optional_int(header.translation_quality),
+        performance=_optional_int(header.performance),
+        usability=_optional_int(header.usability),
+        net_promoter_score=_optional_int(header.net_promoter_score),
+    )
+
+
+def _feedback_answer_event(header: FeedbackHeader, answer: FeedbackAnswer) -> FeedbackAnswerEvent:
+    """Never coerced: an answer pooled under a placeholder corrupts that placeholder's average."""
+    return FeedbackAnswerEvent(
+        event_id=uuid5(header.event_id, str(answer.question_id)),
+        schema_version=SCHEMA_VERSION,
+        emitted_at_utc=header.occurred_at,
+        event_type=QualityEventType.FEEDBACK_ANSWER,
+        feedback_ref=_as_opaque_ref(header.feedback_ref),
+        tenant_ref=_as_tenant_ref(header.tenant_ref),
+        audience=FeedbackAudience(header.audience),
+        question_id=answer.question_id,
+        question_type=FeedbackQuestionType(answer.question_type),
+        value=int(answer.value),
+        minimum=int(answer.minimum),
+        maximum=int(answer.maximum),
+    )
+
+
 class QualityTelemetry:
     """Emits allowlisted quality events. Never raises to its caller.
 
@@ -387,106 +461,48 @@ class QualityTelemetry:
 
         return self._export(event)
 
-    def emit_feedback_submitted(
-        self,
-        *,
-        event_id: UUID,
-        session_ref: str,
-        feedback_ref: str,
-        audience: str,
-        form_source: str,
-        locale: str | None,
-        answer_count: int,
-        form_version: str,
-        tenant_ref: str = MISSING_TENANT_REFERENCE,
-        translation_quality: int | None = None,
-        performance: int | None = None,
-        usability: int | None = None,
-        net_promoter_score: int | None = None,
+    def emit_feedback(
+        self, header: "FeedbackHeader", answers: Sequence["FeedbackAnswer"]
     ) -> ProbeResult:
-        """The header of one stored submission, structured half only.
+        """One stored submission: its header and one event per numeric answer.
 
-        Unlike its siblings this takes `event_id` from the caller rather than
-        minting one. #305's reconciler re-emits a failed delivery with the same
-        id, and silver's ReplacingMergeTree plus gold's uniqExactState(event_id)
-        deduplicate only if that id is stable across attempts.
+        All or nothing at the schema: every event is built and checked against
+        the allowlist before any is sent. A rejection repeats on every attempt,
+        so the caller marks it final, and anything sent before it would
+        otherwise be re-sent with every retry. A rejection counts once; each
+        event that is sent counts on its own, because the collector's accepted
+        records, which QualityTelemetryEventsLostBeforeCollector compares
+        against, count every event too.
 
-        The four ratings are passed only when the form asked the bundled
-        questions; see FeedbackSubmittedEvent. There is no parameter for the
-        free text, and no allowlisted key that could carry it.
+        Events are stamped with the submission time rather than now, so a
+        reconciler re-send lands on the submission's gold day. Ids are stable:
+        the header's comes from the caller, each answer's is
+        uuid5(header id, question id). There is no parameter for free text.
         """
         if not self._mode.emits_pipeline_events:
             return self._record(ProbeOutcome.DISABLED, None)
 
         try:
-            event = FeedbackSubmittedEvent(
-                event_id=event_id,
-                schema_version=SCHEMA_VERSION,
-                emitted_at_utc=datetime.now(timezone.utc),
-                event_type=QualityEventType.FEEDBACK_SUBMITTED,
-                session_ref=_as_opaque_ref(session_ref),
-                tenant_ref=_as_tenant_ref(tenant_ref),
-                feedback_ref=_as_opaque_ref(feedback_ref),
-                feedback_form_version=_as_label(form_version),
-                audience=FeedbackAudience(audience),
-                form_source=FeedbackFormSource(form_source),
-                feedback_locale=_as_language(locale or ""),
-                answer_count=int(answer_count),
-                translation_quality=_optional_int(translation_quality),
-                performance=_optional_int(performance),
-                usability=_optional_int(usability),
-                net_promoter_score=_optional_int(net_promoter_score),
-            )
-        except (ValueError, TypeError):
+            events: list[FeedbackSubmittedEvent | FeedbackAnswerEvent] = [
+                _feedback_header_event(header, len(answers))
+            ]
+            events += [_feedback_answer_event(header, answer) for answer in answers]
+            prepared = [(event.event_type.value, to_otlp_attributes(event)) for event in events]
+        except (ValueError, TypeError):  # includes the allowlist's own errors
             logger.warning(_EVENT_REJECTED)
-            return self._record(ProbeOutcome.DROPPED_DISALLOWED, event_id)
+            return self._record(ProbeOutcome.DROPPED_DISALLOWED, header.event_id)
 
-        return self._export(event)
-
-    def emit_feedback_answer(
-        self,
-        *,
-        submission_event_id: UUID,
-        feedback_ref: str,
-        audience: str,
-        question_id: str,
-        question_type: str,
-        value: int,
-        minimum: int,
-        maximum: int,
-        tenant_ref: str = MISSING_TENANT_REFERENCE,
-    ) -> ProbeResult:
-        """One answered numeric question, under an id derived from its submission.
-
-        The id is computed here rather than by the caller so the submit path
-        and the reconciler cannot derive it differently. A question id that is
-        not a label is dropped, never coerced: pooled under a placeholder, it
-        would corrupt that placeholder's average.
-        """
-        if not self._mode.emits_pipeline_events:
-            return self._record(ProbeOutcome.DISABLED, None)
-
-        event_id = uuid5(submission_event_id, str(question_id))
-        try:
-            event = FeedbackAnswerEvent(
-                event_id=event_id,
-                schema_version=SCHEMA_VERSION,
-                emitted_at_utc=datetime.now(timezone.utc),
-                event_type=QualityEventType.FEEDBACK_ANSWER,
-                feedback_ref=_as_opaque_ref(feedback_ref),
-                tenant_ref=_as_tenant_ref(tenant_ref),
-                audience=FeedbackAudience(audience),
-                question_id=question_id,
-                question_type=FeedbackQuestionType(question_type),
-                value=int(value),
-                minimum=int(minimum),
-                maximum=int(maximum),
-            )
-        except (ValueError, TypeError):
-            logger.warning(_EVENT_REJECTED)
-            return self._record(ProbeOutcome.DROPPED_DISALLOWED, event_id)
-
-        return self._export(event)
+        outcome = ProbeOutcome.EMITTED
+        for name, attributes in prepared:
+            try:
+                self._exporter(name, attributes, header.occurred_at)
+            except Exception:  # telemetry must never reach the caller
+                logger.warning("Quality telemetry export failed", exc_info=True)
+                self._record(ProbeOutcome.EXPORT_FAILED, header.event_id)
+                outcome = ProbeOutcome.EXPORT_FAILED
+                continue
+            self._record(ProbeOutcome.EMITTED, header.event_id)
+        return ProbeResult(outcome, header.event_id)
 
     def _export(self, event: QualityEvent) -> ProbeResult:
         event_type = event.event_type

@@ -6,7 +6,7 @@ first, emit second. Reorder the two calls and one of them fails.
 """
 
 import json
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
@@ -121,13 +121,10 @@ class FakeTelemetry:
         self.answers: list = []
         self._outcome = outcome
 
-    def emit_feedback_submitted(self, **kwargs) -> ProbeResult:
-        self.calls.append(kwargs)
-        return ProbeResult(self._outcome, kwargs.get("event_id"))
-
-    def emit_feedback_answer(self, **kwargs) -> ProbeResult:
-        self.answers.append(kwargs)
-        return ProbeResult(ProbeOutcome.EMITTED, None)
+    def emit_feedback(self, header, answers) -> ProbeResult:
+        self.calls.append(asdict(header))
+        self.answers.extend(asdict(answer) for answer in answers)
+        return ProbeResult(self._outcome, header.event_id)
 
 
 class FakeSessionManager:
@@ -382,8 +379,22 @@ async def test_a_telemetry_failure_still_stores_the_feedback() -> None:
     assert parts["repository"].stored[0].analytics_state is AnalyticsState.PENDING
 
 
-async def test_a_rejected_event_stays_pending() -> None:
+async def test_a_rejected_submission_is_final_not_a_backlog() -> None:
+    """PR #554 review: the schema rejects the same events on every attempt.
+
+    Left pending, the row would be retried every pass for good and, with
+    enough of them, fill the reconciler's batch. The rejection is counted by
+    the telemetry module and alerted (QualityTelemetryAttributeRejected).
+    """
     service, parts = _service(telemetry=FakeTelemetry(ProbeOutcome.DROPPED_DISALLOWED))
+
+    await service.submit(_request(), correlation_id=CORRELATION)
+
+    assert parts["repository"].stored[0].analytics_state is AnalyticsState.NOT_APPLICABLE
+
+
+async def test_an_export_failure_stays_pending_for_the_reconciler() -> None:
+    service, parts = _service(telemetry=FakeTelemetry(ProbeOutcome.EXPORT_FAILED))
 
     await service.submit(_request(), correlation_id=CORRELATION)
 
@@ -982,7 +993,7 @@ class TestAnalyticsForEveryForm:
         (call,) = parts["telemetry"].calls
         assert call["translation_quality"] is None
         assert call["net_promoter_score"] is None
-        assert (call["audience"], call["form_source"], call["answer_count"]) == (
+        assert (call["audience"], call["form_source"], len(parts["telemetry"].answers)) == (
             "guest",
             "studio",
             4,
@@ -1019,7 +1030,7 @@ class TestAnalyticsForEveryForm:
 
         (call,) = parts["telemetry"].calls
         assert call["net_promoter_score"] is None
-        assert call["answer_count"] == 3
+        assert len(parts["telemetry"].answers) == 3
         assert "performance" not in [a["question_id"] for a in parts["telemetry"].answers]
         assert parts["repository"].stored[0].analytics_state is AnalyticsState.DELIVERED
 
@@ -1035,7 +1046,7 @@ class TestStaffSubmissions:
 
         (call,) = parts["telemetry"].calls
         assert call["audience"] == "staff"
-        assert {answer["audience"] for answer in parts["telemetry"].answers} == {"staff"}
+        assert parts["telemetry"].answers, "the staff form's answers are emitted too"
 
     async def test_staff_feedback_is_filed_under_the_given_tenant(self) -> None:
         service, parts = _service()
@@ -1088,7 +1099,7 @@ class TestAStoredRowIsNeverAnError:
 
     async def test_a_raising_emitter_leaves_the_row_pending_and_the_caller_answered(self) -> None:
         class Exploding(FakeTelemetry):
-            def emit_feedback_submitted(self, **kwargs):
+            def emit_feedback(self, header, answers):
                 raise RuntimeError("collector exploded")
 
         service, parts = _service(telemetry=Exploding())
