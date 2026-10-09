@@ -22,8 +22,12 @@ function flatten(value: Record<string, unknown>, prefix = ''): string[] {
   });
 }
 
+/** Tests, their fixtures and handlers, and test files beside the code are not the app. */
+const isTestCode = (path: string) =>
+  path.includes('/__tests__/') || path.startsWith('/src/test/') || /\.test\.tsx?$/.test(path);
+
 const appSources = Object.entries(sources)
-  .filter(([path]) => !path.includes('/__tests__/'))
+  .filter(([path]) => !isTestCode(path))
   .map(([, source]) => source);
 
 const literals = new Set(
@@ -49,6 +53,9 @@ describe('translation keys', () => {
   // Without this the glob silently matching nothing would read as a pass.
   it('reads the app sources and their runtime-built keys', () => {
     expect(appSources.length).toBeGreaterThan(50);
+    expect(Object.keys(sources).some((path) => path.startsWith('/src/test/'))).toBe(true);
+    expect(isTestCode('/src/test/handlers.ts')).toBe(true);
+    expect(isTestCode('/src/features/feedback/FeedbackSheet.tsx')).toBe(false);
     expect(templates.some((pattern) => pattern.test('feedback.quality.label'))).toBe(true);
     expect(isRead('header.feedback')).toBe(true);
   });

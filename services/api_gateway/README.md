@@ -25,13 +25,13 @@ Browsers never call Studio. They read content through four routes:
 | `GET /api/admin/content` | a staff token | the tenant's staff texts, time zone and staff feedback form |
 
 Both guest routes keep answering for an ended session during the feedback grace
-period. A failed policy read counts in `ssf_studio_policy_read_total{stage,outcome}`
+period. Every live policy read, successful or not, counts in `ssf_studio_policy_read_total{stage,outcome}`
 (`session_create | activation | message`; `ok | unavailable | contract_error | tenant_conflict`)
-and pages through `StudioPolicyReadsFailing` once failures persist. A gateway
+and `StudioPolicyReadsFailing` pages once failures persist. A gateway
 that started without a runtime client reads nothing at all;
 `ssf_studio_policy_gate_bound` is then 0 and `StudioPolicyGateUnbound` pages.
-A content route that answers from old content or without content counts in
-`ssf_studio_content_fetch_total{endpoint,outcome}`, and `StudioContentStale`
+Every content route answer counts in `ssf_studio_content_fetch_total{endpoint,outcome}`
+by where its content came from, and `StudioContentStale`
 warns when a route has served no fresh answer (`live` or `cached`) for twenty
 minutes. None of these carries a tenant or session id.
 

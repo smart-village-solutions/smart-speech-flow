@@ -25,7 +25,6 @@ from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
 
-# The Studio codes that mean the tenant may not start a session at all.
 _SUPPORTED_CUSTOMER_LANGUAGES = ("de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa")
 # A logged language is looked up here, so the value written to the log is one of these
 # constants and never the code the request carried.

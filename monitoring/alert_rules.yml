@@ -409,9 +409,11 @@ groups:
   #
   # Sized for 180 days of retention (Studio retentionHours 4320):
   #   original audio is stored after validation as 16 kHz 16-bit mono WAV,
-  #   32,000 B/s; the reply is Piper TTS at 22,050 Hz 16-bit mono, 44,100 B/s
-  #   (Amharic's MMS voice is 16 kHz). A 10 s spoken message with a reply of
-  #   about the same length stores 320,000 + 441,000 = 761,000 B in two files.
+  #   32,000 B/s; the spoken translation is Piper TTS at 22,050 Hz 16-bit
+  #   mono, 44,100 B/s (Amharic's MMS voice is 16 kHz). A 10 s voice message
+  #   whose translation runs about as long stores 320,000 + 441,000 =
+  #   761,000 B in two files. A text message stores only its spoken
+  #   translation, one file; the headroom below covers them.
   #   Budget: 500 voice messages a day, an assumption well above today's
   #   traffic. 500 x 180 = 90,000 messages = 68.5 GB (63.8 GiB), 180,000 files.
   # Warning at 100 GiB (1.6x budget), critical at 150 GiB (2.4x; 161 GB, under

@@ -435,7 +435,8 @@ tests:
         exp_alerts: []
 
   # Studio is unreachable during a conversation: every message's policy read
-  # fails. Firing once the ten-minute ratio has held for ten minutes.
+  # fails. The floor of three failures is met at 3m, so the alert holds from
+  # there and fires at 13m, not a minute earlier.
   - interval: 1m
     input_series:
       - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="unavailable"}'
@@ -445,6 +446,18 @@ tests:
       - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="contract_error"}'
         values: "0+0x40"
     alert_rule_test:
+      - eval_time: 12m
+        alertname: StudioPolicyReadsFailing
+        exp_alerts: []
+      - eval_time: 13m
+        alertname: StudioPolicyReadsFailing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: studio
+            exp_annotations:
+              summary: Most live Studio policy reads are failing.
+              description: "100% of Studio policy reads failed over the last ten minutes. Staff cannot start sessions, guests cannot grant consent, and conversation content is not stored while this lasts; translation itself keeps working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
       - eval_time: 25m
         alertname: StudioPolicyReadsFailing
         exp_alerts:
@@ -506,6 +519,40 @@ tests:
               summary: Most live Studio policy reads are failing.
               description: "100% of Studio policy reads failed over the last ten minutes. Staff cannot start sessions, guests cannot grant consent, and conversation content is not stored while this lasts; translation itself keeps working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
 
+  # Four failed and six successful reads every ten minutes: the floor is met,
+  # but most reads succeed, so the ratio keeps it quiet.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="unavailable"}'
+        values: "0+0.4x40"
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="ok"}'
+        values: "0+0.6x40"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: StudioPolicyReadsFailing
+        exp_alerts: []
+
+  # Six failed and four successful reads every ten minutes: above one half.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="unavailable"}'
+        values: "0+0.6x40"
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="ok"}'
+        values: "0+0.4x40"
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: StudioPolicyReadsFailing
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: StudioPolicyReadsFailing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: studio
+            exp_annotations:
+              summary: Most live Studio policy reads are failing.
+              description: "60% of Studio policy reads failed over the last ten minutes. Staff cannot start sessions, guests cannot grant consent, and conversation content is not stored while this lasts; translation itself keeps working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
+
   # A suspended tenant refuses every read on purpose: not a failure.
   - interval: 1m
     input_series:
@@ -533,6 +580,19 @@ tests:
       - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="installation",outcome="cached"}'
         values: "0+1x60"
     alert_rule_test:
+      - eval_time: 20m
+        alertname: StudioContentStale
+        exp_alerts: []
+      - eval_time: 21m
+        alertname: StudioContentStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: studio
+              endpoint: guest_content
+            exp_annotations:
+              summary: Studio display content is being served stale or not at all.
+              description: "The guest_content content route has answered from old content or without content, and never from a fresh Studio read, for twenty minutes. Users see the last known Studio texts, or the bundled texts and the bundled feedback form where none are held. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token; StudioPolicyReadsFailing fires as well when policy reads fail too. A code of tenant_suspended, ssf_plugin_inactive or ssf_tenant_not_ready in the gateway's 'Studio content read failed' log line means Studio switched that tenant off on purpose."
       - eval_time: 50m
         alertname: StudioContentStale
         exp_alerts:
@@ -543,6 +603,33 @@ tests:
             exp_annotations:
               summary: Studio display content is being served stale or not at all.
               description: "The guest_content content route has answered from old content or without content, and never from a fresh Studio read, for twenty minutes. Users see the last known Studio texts, or the bundled texts and the bundled feedback form where none are held. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token; StudioPolicyReadsFailing fires as well when policy reads fail too. A code of tenant_suspended, ssf_plugin_inactive or ssf_tenant_not_ready in the gateway's 'Studio content read failed' log line means Studio switched that tenant off on purpose."
+
+  # Studio is down and nothing was ever cached: every answer is unavailable
+  # and the browsers show bundled texts.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="installation",outcome="unavailable"}'
+        values: "0+1x60"
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="installation",outcome="stale"}'
+        values: "0+0x60"
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="installation",outcome="live"}'
+        values: "0+0x60"
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="installation",outcome="cached"}'
+        values: "0+0x60"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: StudioContentStale
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: StudioContentStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: studio
+              endpoint: installation
+            exp_annotations:
+              summary: Studio display content is being served stale or not at all.
+              description: "The installation content route has answered from old content or without content, and never from a fresh Studio read, for twenty minutes. Users see the last known Studio texts, or the bundled texts and the bundled feedback form where none are held. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token; StudioPolicyReadsFailing fires as well when policy reads fail too. A code of tenant_suspended, ssf_plugin_inactive or ssf_tenant_not_ready in the gateway's 'Studio content read failed' log line means Studio switched that tenant off on purpose."
 
   # Stale answers between successful live reads are a flaky Studio, not an
   # outage: the cache is refreshed every ten minutes.

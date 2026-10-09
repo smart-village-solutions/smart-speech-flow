@@ -459,7 +459,7 @@ goes between steps 3 and 4 below, as
    Expect `001_feedback.sql` through `004_feedback_dynamic.sql`.
 
 2. Dump the feedback database. `004` drops columns, so this is the only way
-   back:
+   back (see "Going back to before `004`" below):
 
    ```bash
    set -o pipefail
@@ -518,6 +518,24 @@ goes between steps 3 and 4 below, as
 
    Expect `Feedback persistence ready` and `Feedback maintenance ready`, as in
    Step 4. Then submit one piece of feedback and run Step 6.
+
+**Going back to before `004`.** Only with the dump from step 2, and only
+together with a gateway image from before `004`: pin and start that image
+first, then replace the schema with the dump. Feedback stored after `004` is
+lost.
+
+```bash
+production_compose exec -T ssf-postgres sh -ec \
+  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -qc "DROP TABLE feedback, feedback_access_audit, feedback_deletion_audit CASCADE"'
+zcat "$dump" | production_compose exec -T ssf-postgres sh -ec \
+  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -q'
+```
+
+The dump holds the tables, their row-level security policy and their grants;
+the roles live outside the database and are untouched. psql echoes a few
+`set_config` and `setval` results while it restores; anything starting with
+`ERROR` stops it. Then re-run Step 3's privilege checks and expect
+`translation_quality` back in place of `numeric_answers`.
 
 ## Backups
 

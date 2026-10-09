@@ -76,6 +76,8 @@ def test_a_failure_is_classified_by_its_code(error, outcome):
         ("studio_runtime_response_invalid", 502, "unavailable"),
         ("studio_runtime_response_invalid", 504, "unavailable"),
         ("studio_runtime_unexpected_status", 503, "unavailable"),
+        # A rate limit is Studio saying "not now", not an answer outside the contract.
+        ("studio_runtime_unexpected_status", 429, "unavailable"),
         ("studio_runtime_response_invalid", 200, "contract_error"),
         ("studio_runtime_unexpected_status", 404, "contract_error"),
         ("studio_runtime_error_invalid", 400, "contract_error"),
@@ -135,9 +137,10 @@ async def test_session_create_counts_its_read():
         RecordingClient(_runtime_error("runtime_configuration_unavailable")),
         policy_reads=StudioPolicyReadMetrics(registry),
     )
+    context = StudioTenantContext("tenant-kassel")
 
     with pytest.raises(StudioRuntimeFlowError):
-        await flow.resolve(StudioTenantContext("tenant-kassel"), "cid")
+        await flow.resolve(context, "cid")
 
     assert _count(registry, "session_create", "unavailable") == 1.0
 
@@ -188,6 +191,8 @@ def test_the_app_owns_one_set_of_policy_read_series():
 
 
 GATE_BOUND = "ssf_studio_policy_gate_bound"
+# Never contacted: the client is only built.
+STUDIO_BASE_URL = "https://studio.test"
 
 
 class _Tokens:
@@ -203,7 +208,7 @@ def test_the_gate_reads_as_unbound_until_the_lifespan_binds_it():
 
 
 def test_a_configured_studio_marks_the_gate_bound(monkeypatch):
-    monkeypatch.setenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", "http://studio-mock:8000")
+    monkeypatch.setenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", STUDIO_BASE_URL)
     registry = CollectorRegistry()
 
     _build_studio(
@@ -218,7 +223,7 @@ def test_a_configured_studio_marks_the_gate_bound(monkeypatch):
 
 def test_an_unconfigured_studio_marks_the_gate_unbound(monkeypatch):
     # No read ever happens then, so the read counter alone would stay silent.
-    monkeypatch.setenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", "http://studio-mock:8000")
+    monkeypatch.setenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", STUDIO_BASE_URL)
     registry = CollectorRegistry()
     metrics = StudioPolicyReadMetrics(registry)
     _build_studio(

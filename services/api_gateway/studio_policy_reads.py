@@ -36,8 +36,9 @@ def read_outcome(error: Exception) -> PolicyReadOutcome:
 
     A 5xx means Studio, or a proxy in front of it, did not answer, whatever the
     code: a proxy's HTML error page has no JSON, so it arrives as
-    `studio_runtime_response_invalid`. The token client carries no status and
-    sets `retryable` exactly when its endpoint answered 5xx.
+    `studio_runtime_response_invalid`. A 429 is Studio asking to come back
+    later, not an answer outside the contract. The token client carries no
+    status and sets `retryable` exactly when its endpoint answered 5xx.
     """
     code = getattr(error, "code", None)
     if not isinstance(code, str):
@@ -45,7 +46,7 @@ def read_outcome(error: Exception) -> PolicyReadOutcome:
     if code in TENANT_CONFLICT_CODES:
         return "tenant_conflict"
     status = getattr(error, "status", None)
-    if code in _UNAVAILABLE_CODES or (isinstance(status, int) and status >= 500):
+    if code in _UNAVAILABLE_CODES or (isinstance(status, int) and (status >= 500 or status == 429)):
         return "unavailable"
     if code == "studio_token_authentication_failed" and getattr(error, "retryable", False):
         return "unavailable"
