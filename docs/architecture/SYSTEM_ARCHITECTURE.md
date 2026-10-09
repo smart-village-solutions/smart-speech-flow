@@ -10,13 +10,24 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 The gateway reads Studio runtime configuration contract v2. Its storage policy
 (`conversationContentStorage`) is read live and never cached: it decides consent
 at guest activation and authorizes each message's persistence with one read per
-message. A session keeps only the `configurationRevision` it was created on.
-Content sections (staff texts, guest languages, branding) are parsed leniently:
-an invalid section is dropped on its own and the rest of the read stays usable.
-No gateway route serves Studio content yet, and nothing calls the HTML
-allowlist in `services/api_gateway/studio_html.py` yet. A route that exposes
-Studio content must pass every HTML field through `safe_html` first. The login
-directory stays on contract v1.
+message. A session keeps the `configurationRevision` it was created on; when a
+guest grants consent it also keeps that read's `retentionHours` and revision,
+which govern how long the session's consented content is kept (`0` keeps it
+until it is removed by hand). Everything else uses `SSF_TERMINAL_RECORD_HOURS`.
+
+Content sections (staff texts, guest languages, feedback forms, branding, legal
+links) are parsed leniently: an invalid section is dropped on its own and the
+rest of the read stays usable. The gateway caches content by revision for
+`STUDIO_CONTENT_CACHE_SECONDS`, passes every HTML field through
+`studio_html.safe_html` once when it caches it, and serves it to browsers through
+`GET /api/content/installation`, `GET /api/customer/session/{id}/languages`,
+`GET /api/customer/session/{id}/content/{language}` and `GET /api/admin/content`.
+When Studio cannot be read, those routes answer from the last known content or
+with 503, and the frontend falls back to its bundled copy; the guest content
+route then reports the storage mode as `unknown`. Feedback forms come from the
+same content; a submission names the revision of the form it answers. Staff
+feedback goes to `POST /api/admin/feedback`. The login directory stays on
+contract v1. `services/api_gateway/README.md` has the details and the metrics.
 
 ## 🎯 Zielgruppen
 - **Admin-Benutzer:** Deutschsprachige Verwaltungsmitarbeiter

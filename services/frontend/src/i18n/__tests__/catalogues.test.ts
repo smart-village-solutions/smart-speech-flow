@@ -110,7 +110,6 @@ describe('translation catalogues', () => {
   it('keep the export German wording on the screens that had it', () => {
     expect(de.accessCode.title).toBe('Code eingeben');
     expect(de.accessCode.continue).toBe('Weiter');
-    expect(de.accessCode.adminLogin).toBe('Admin-Login');
   });
 
   it('keep the export English wording on the screens that had it', () => {

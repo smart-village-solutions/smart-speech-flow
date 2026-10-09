@@ -3,8 +3,9 @@
 #
 # Runs in two contexts, both from inside the container:
 #   - automatically, as /docker-entrypoint-initdb.d/apply.sh on a fresh volume
-#   - by hand on an existing volume:
-#       docker compose exec -T ssf-postgres /docker-entrypoint-initdb.d/apply.sh
+#   - by hand on an existing volume (production, after a pg_dump; see
+#     docs/operations/runbooks/feedback-database-deployment.md):
+#       production_compose exec -T ssf-postgres /docker-entrypoint-initdb.d/apply.sh
 #
 # Every statement is IF NOT EXISTS, so re-running is safe.
 set -eu

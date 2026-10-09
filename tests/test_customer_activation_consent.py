@@ -45,6 +45,9 @@ class _FakeStudio:
     def client(self) -> "_FakeStudio":
         return self
 
+    def reads(self, _stage: str) -> "_FakeStudio":
+        return self
+
     async def fetch(self, tenant_id: str, correlation_id: str):
         self.calls += 1
         if self._error is not None:

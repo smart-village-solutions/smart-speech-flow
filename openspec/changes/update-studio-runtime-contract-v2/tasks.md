@@ -86,8 +86,9 @@
 
 ## 14. Monitoring and cleanup
 
-- [ ] 14.1 Alert on Studio policy read failures and stale content; retune the audio disk thresholds for 180 days
-- [ ] 14.2 Remove dead i18n keys and code; update `services/api_gateway/README.md` and the architecture docs
-  - Stop writing the v1 `runtime_configuration` key in `Session.to_dict` (`_previous_gateway_snapshot`) only once rolling back to a gateway image from before the cutover is ruled out; without the key that gateway quarantines every newer session record
-  - Remove the v1 fallback in `Session.from_dict` only after a scan of production Redis finds no session record without `configuration_revision`; terminal records live as long as their content retention, and retention `0` never expires them, so elapsed time alone does not prove they are gone
+- [x] 14.1 Alert on Studio policy read failures and stale content; retune the audio disk thresholds for 180 days
+- [x] 14.2 Remove dead i18n keys and code; update `services/api_gateway/README.md` and the architecture docs
+  - [ ] Stop writing the v1 `runtime_configuration` key in `Session.to_dict` (`_previous_gateway_snapshot`) — after the deploy, once rolling back to a pre-cutover gateway is ruled out; that gateway quarantines every record without the key
+  - [ ] Remove the v1 fallback in `Session.from_dict` — only after a production Redis scan finds no record without `configuration_revision`; retention `0` records never expire, so time alone proves nothing
+  - [ ] Retire the v1 feedback body (`FeedbackSubmissionRequest` and its branch) — after the deploy, once browsers holding a pre-PR-13 frontend have reloaded
 - [ ] 14.3 Deploy with Postgres `004`, ClickHouse `008` and a Prometheus restart; verify against production

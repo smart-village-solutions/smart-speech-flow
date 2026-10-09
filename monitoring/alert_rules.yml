@@ -406,6 +406,20 @@ groups:
   # captured a retention of 0, so no rule here may read a missing deletion
   # as a failure. The size thresholds are absolute: the audio volume shares
   # the host disk that ServerDiskUsageHigh watches.
+  #
+  # Sized for 180 days of retention (Studio retentionHours 4320):
+  #   original audio is stored after validation as 16 kHz 16-bit mono WAV,
+  #   32,000 B/s; the spoken translation is Piper TTS at 22,050 Hz 16-bit
+  #   mono, 44,100 B/s (Amharic's MMS voice is 16 kHz). A 10 s voice message
+  #   whose translation runs about as long stores 320,000 + 441,000 =
+  #   761,000 B in two files. A text message stores only its spoken
+  #   translation, one file; the headroom below covers them.
+  #   Budget: 500 voice messages a day, an assumption well above today's
+  #   traffic. 500 x 180 = 90,000 messages = 68.5 GB (63.8 GiB), 180,000 files.
+  # Warning at 100 GiB (1.6x budget), critical at 150 GiB (2.4x; 161 GB, under
+  # a quarter of the 715 GB free on the production host), files at 250,000
+  # (1.4x). A tenant with retentionHours 0 keeps its audio until it is removed
+  # by hand, so its growth eventually reaches these too.
   - name: ssf-audio-storage
     rules:
       # Two missed hourly passes. Until a pass completes the gauge holds the
@@ -432,34 +446,93 @@ groups:
           description: "{{ $value | printf \"%.0f\" }} failed deletions in the last two hours. Each hourly pass retries the same files, so this counts attempts, not files; the recordings outlive their session's retention until it clears. The gateway log names the failure; an audio volume the gateway's user cannot write or read is the usual cause."
 
       - alert: AudioStorageDiskUsageHigh
-        expr: sum(audio_storage_disk_usage_bytes) / 1024^3 > 8
+        expr: sum(audio_storage_disk_usage_bytes) / 1024^3 > 100
         for: 5m
         labels:
           severity: warning
           component: audio-storage
         annotations:
-          summary: Stored audio exceeds 8 GiB.
-          description: "Stored audio totals {{ $value | humanize }} GiB. Retention should keep it well below this, so check AudioCleanupNotRunning and AudioCleanupErrors and the tenants' Studio retentionHours. ServerDiskUsageHigh covers the disk itself."
+          summary: Stored audio exceeds 100 GiB.
+          description: "Stored audio totals {{ $value | humanize }} GiB, above the 100 GiB sized for 180 days of retention at 500 voice messages a day. Retention should keep it below this, so check AudioCleanupNotRunning and AudioCleanupErrors, the tenants' Studio retentionHours (0 keeps audio until it is removed by hand) and whether traffic has outgrown the budget. ServerDiskUsageHigh covers the disk itself."
 
       - alert: AudioStorageDiskUsageCritical
-        expr: sum(audio_storage_disk_usage_bytes) / 1024^3 > 9.5
+        expr: sum(audio_storage_disk_usage_bytes) / 1024^3 > 150
         for: 2m
         labels:
           severity: critical
           component: audio-storage
         annotations:
-          summary: Stored audio exceeds 9.5 GiB.
+          summary: Stored audio exceeds 150 GiB.
           description: "Stored audio totals {{ $value | humanize }} GiB and is still growing past the warning threshold. Check the cleanup alerts and free space on the host disk before saving audio starts to fail."
 
       - alert: AudioStorageFileCountHigh
-        expr: sum(audio_files_total) > 10000
+        expr: sum(audio_files_total) > 250000
         for: 5m
         labels:
           severity: warning
           component: audio-storage
         annotations:
-          summary: High number of audio files stored
-          description: "{{ $value }} audio files currently stored. This may indicate high traffic or cleanup issues."
+          summary: More than 250,000 audio files are stored.
+          description: "{{ $value }} audio files are stored, above the 250,000 sized for 180 days of retention at 500 voice messages a day, two files each. Check AudioCleanupNotRunning and AudioCleanupErrors and the tenants' Studio retentionHours."
+
+  # Studio contract v2. The storage policy is read live and never cached, so a
+  # failed read refuses whatever waited on it: session create answers 502/503,
+  # an activation cannot grant consent, and a message's content is not stored.
+  # Display content fails open to the last known texts, then to bundled copy.
+  - name: ssf-studio
+    rules:
+      # Persistent, not merely total: the ten-minute ratio must stay above one
+      # half with at least three failed reads in the window, for ten minutes.
+      # Two failed clicks during a Studio restart are 100% of the reads and
+      # stay in the window for thirteen minutes, which alone would page.
+      # tenant_conflict is not a failure: a suspended tenant or an inactive
+      # plugin is a state Studio sets on purpose.
+      - alert: StudioPolicyReadsFailing
+        expr: |
+          sum(increase(ssf_studio_policy_read_total{outcome=~"unavailable|contract_error"}[10m]))
+            /
+          sum(increase(ssf_studio_policy_read_total[10m])) > 0.5
+            and
+          sum(increase(ssf_studio_policy_read_total{outcome=~"unavailable|contract_error"}[10m])) >= 3
+        for: 10m
+        labels:
+          severity: critical
+          component: studio
+        annotations:
+          summary: Most live Studio policy reads are failing.
+          description: "{{ $value | humanizePercentage }} of Studio policy reads failed over the last ten minutes. Staff cannot start sessions, guests cannot grant consent, and conversation content is not stored while this lasts; translation itself keeps working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
+
+      # Without a runtime client the gateway reads nothing, so the rule above
+      # sees no reads at all while every decision is refused.
+      - alert: StudioPolicyGateUnbound
+        expr: min(ssf_studio_policy_gate_bound) == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: studio
+        annotations:
+          summary: The gateway cannot read the Studio policy at all.
+          description: "The gateway started without a usable Studio runtime client, so it never reads the policy: staff cannot start sessions and no conversation content is stored. Its startup log says 'Runtime policy gate unbound' with the reason. Check STUDIO_RUNTIME_CONFIGURATION_BASE_URL and the ssf-runtime client settings (STUDIO_RUNTIME_TOKEN_URL, STUDIO_RUNTIME_CLIENT_SECRET) in .env, then recreate the gateway."
+
+      # ssf_studio_content_staleness_seconds keeps the age of a route's latest
+      # answer between requests, so it cannot tell stale now from stale when
+      # the last browser asked an hour ago. The counter can. `cached` is
+      # healthy: it is served only from content younger than the cache period,
+      # which every policy read refreshes. Ten-minute windows held for twenty
+      # minutes, so one stale answer at a quiet hour never fires. Per endpoint,
+      # because installation content comes from another Studio endpoint.
+      - alert: StudioContentStale
+        expr: |
+          sum by (endpoint) (increase(ssf_studio_content_fetch_total{outcome=~"stale|unavailable"}[10m])) > 0
+            and on (endpoint)
+          sum by (endpoint) (increase(ssf_studio_content_fetch_total{outcome=~"live|cached"}[10m])) == 0
+        for: 20m
+        labels:
+          severity: warning
+          component: studio
+        annotations:
+          summary: Studio display content is being served stale or not at all.
+          description: "The {{ $labels.endpoint }} content route has answered from old content or without content, and never from a fresh Studio read, for twenty minutes. Users see the last known Studio texts, or the bundled texts and the bundled feedback form where none are held. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token; StudioPolicyReadsFailing fires as well when policy reads fail too. A code of tenant_suspended, ssf_plugin_inactive or ssf_tenant_not_ready in the gateway's 'Studio content read failed' log line means Studio switched that tenant off on purpose."
 
   # Quality telemetry is optional and must never page: a dead collector or a
   # dead ClickHouse cannot affect translation, sessions or WebSocket delivery.

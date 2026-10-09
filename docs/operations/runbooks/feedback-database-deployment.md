@@ -10,6 +10,11 @@ on, the Studio read endpoints, and the checks that prove each step worked.
 Follow it top to bottom. Every step states what to expect, so a step that
 produces different output should stop the deployment rather than be repeated.
 
+**A host that already runs the feedback store** does not repeat these steps.
+Migrations run by themselves only when the volume is created, so a new
+migration on an existing volume is applied by hand: see
+[Upgrading an existing volume](#upgrading-an-existing-volume) below.
+
 **Complete this runbook in the same deployment window that ships the compose
 file.** All seven variables below are declared `:?required`, and Compose
 interpolates the whole file before running any command, so until `.env` has all
@@ -169,6 +174,8 @@ Expect exactly this, in this order:
 ```
 apply.sh: applying /docker-entrypoint-initdb.d/migrations/001_feedback.sql to ssf
 apply.sh: applying /docker-entrypoint-initdb.d/migrations/002_feedback_roles.sql to ssf
+apply.sh: applying /docker-entrypoint-initdb.d/migrations/003_feedback_reader.sql to ssf
+apply.sh: applying /docker-entrypoint-initdb.d/migrations/004_feedback_dynamic.sql to ssf
 apply.sh: done
 ```
 
@@ -425,6 +432,110 @@ correct it in `.env` and restart `api_gateway`. The rows already written can be
 re-attributed with an `UPDATE` on `tenant_id` as the owner, restricted to that
 exact wrong value — every one of them was written by the fallback setting, so
 there is no ambiguity about whose they are.
+
+## Upgrading an existing volume
+
+`apply.sh` runs by itself only when the volume is first created. On a host whose
+feedback store already exists, a new migration is applied by hand, and
+migration `004` needs care: it replaces the four rating columns and
+`improvements_ciphertext` with answers by question id, dropping the old
+columns. There is no way back except the dump taken first, and a gateway from
+before `004` answers `503` on every feedback request against the new schema
+(conversations are unaffected).
+
+Build and pin the new gateway image **before** starting, so the last step
+follows within minutes. If the deployment also applies ClickHouse `008`, it
+goes between steps 3 and 4 below, as
+[clickhouse-operations.md](clickhouse-operations.md) orders it; feedback answers
+`503` for those minutes.
+
+1. Update the checkout, so the container sees `004` (the migrations directory is
+   bind-mounted, not copied):
+
+   ```bash
+   ls deploy/postgres/migrations/
+   ```
+
+   Expect `001_feedback.sql` through `004_feedback_dynamic.sql`.
+
+2. Dump the feedback database. `004` drops columns, so this is the only way
+   back (see "Going back to before `004`" below):
+
+   ```bash
+   set -o pipefail
+   mkdir -p backups/manual
+   dump="backups/manual/ssf-postgres-before-004-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
+   production_compose exec -T ssf-postgres sh -ec \
+     'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+     | gzip -c > "$dump"
+   gzip -t "$dump" && ls -l "$dump"
+   zcat "$dump" | grep -c '^CREATE TABLE public.feedback '
+   ```
+
+   Expect no error, a file of more than a few kilobytes, and `1`. Without
+   `pipefail` a failed dump still leaves a valid, empty archive. The dump is
+   restorable only together with `SSF_FEEDBACK_ENCRYPTION_KEY` (see Backups).
+
+3. Apply the migrations:
+
+   ```bash
+   production_compose exec -T ssf-postgres /docker-entrypoint-initdb.d/apply.sh
+   ```
+
+   Every migration is re-run, and each one skips what already exists. psql
+   also prints its command tags (`CREATE TABLE`, `ALTER TABLE`, `GRANT`, `DO`)
+   and `NOTICE: relation "…" already exists, skipping` lines; the `apply.sh:`
+   lines must read exactly:
+
+   ```
+   apply.sh: applying /docker-entrypoint-initdb.d/migrations/001_feedback.sql to ssf
+   apply.sh: applying /docker-entrypoint-initdb.d/migrations/002_feedback_roles.sql to ssf
+   apply.sh: applying /docker-entrypoint-initdb.d/migrations/003_feedback_reader.sql to ssf
+   apply.sh: applying /docker-entrypoint-initdb.d/migrations/004_feedback_dynamic.sql to ssf
+   apply.sh: done
+   ```
+
+   An `ERROR` line stops the script before `done`. Stop there, read the
+   error, and do not replace the gateway; the dump from step 2 is the way back.
+   Otherwise confirm the conversion:
+
+   ```bash
+   production_compose exec -T ssf-postgres sh -ec \
+     'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
+      "SELECT column_name FROM information_schema.columns WHERE table_name = '"'"'feedback'"'"' AND column_name IN ('"'"'numeric_answers'"'"', '"'"'form_snapshot'"'"', '"'"'audience'"'"', '"'"'translation_quality'"'"', '"'"'improvements_ciphertext'"'"') ORDER BY column_name"'
+   ```
+
+   Expect `audience`, `form_snapshot` and `numeric_answers`, and neither old
+   column. Then re-run Step 3's privilege checks: `004` grants nothing, so they
+   must read exactly as before.
+
+4. Replace the gateway straight away, every replica at once:
+
+   ```bash
+   production_compose up -d api_gateway
+   production_compose logs api_gateway | grep -i feedback
+   ```
+
+   Expect `Feedback persistence ready` and `Feedback maintenance ready`, as in
+   Step 4. Then submit one piece of feedback and run Step 6.
+
+**Going back to before `004`.** Only with the dump from step 2, and only
+together with a gateway image from before `004`: pin and start that image
+first, then replace the schema with the dump. Feedback stored after `004` is
+lost.
+
+```bash
+production_compose exec -T ssf-postgres sh -ec \
+  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -qc "DROP TABLE feedback, feedback_access_audit, feedback_deletion_audit CASCADE"'
+zcat "$dump" | production_compose exec -T ssf-postgres sh -ec \
+  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -q'
+```
+
+The dump holds the tables, their row-level security policy and their grants;
+the roles live outside the database and are untouched. psql echoes a few
+`set_config` and `setval` results while it restores; anything starting with
+`ERROR` stops it. Then re-run Step 3's privilege checks and expect
+`translation_quality` back in place of `numeric_answers`.
 
 ## Backups
 

@@ -154,6 +154,10 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ],
     # display content must never cost a persistence read, nor a content route a 500
     ("services/api_gateway/studio_content.py", "StudioContentCache.try_record"): ["fallback"],
+    # counts the failed policy read, then re-raises it unchanged
+    ("services/api_gateway/studio_policy_reads.py", "CountedPolicyReads.fetch"): [
+        "bookkeeping-reraise"
+    ],
     # any transport failure, which may carry the client secret, becomes a redacted StudioTokenError
     ("services/api_gateway/studio_runtime_token.py", "StudioRuntimeTokenProvider._refresh"): [
         "fallback"

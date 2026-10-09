@@ -9,9 +9,9 @@ from typing import Any, Mapping
 import pytest
 
 import services.api_gateway.studio_v2 as studio_v2_module
-from services.api_gateway.session_lifecycle import _TENANT_CONFLICT_CODES
 from services.api_gateway.studio_runtime_v2_client import (
     RUNTIME_V2_PATH,
+    TENANT_CONFLICT_CODES,
     StudioRuntimeV2Client,
     StudioRuntimeV2ClientError,
 )
@@ -153,7 +153,7 @@ async def test_a_v2_409_tenant_suspended_is_a_tenant_conflict() -> None:
     error = await fetch_error(StudioV1HttpResponse(409, envelope("tenant_suspended")))
 
     assert error.code == "tenant_suspended"
-    assert error.code in _TENANT_CONFLICT_CODES
+    assert error.code in TENANT_CONFLICT_CODES
 
 
 async def test_the_production_v2_404_is_tenant_not_found() -> None:

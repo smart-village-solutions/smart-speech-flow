@@ -6,16 +6,13 @@
     "back": "ተመለስ",
     "home": "መነሻ",
     "feedback": "አስተያየት",
-    "theme": "ገጽታ ቀይር",
-    "brand": "ብራንድ ቀይር"
+    "theme": "ገጽታ ቀይር"
   },
   "accessCode": {
     "title": "ኮድ ያስገቡ",
     "continue": "ቀጥል",
-    "adminLogin": "የአስተዳዳሪ መግቢያ",
     "digitLabel": "ቁምፊ {{position}}",
-    "notFound": "ከዚህ ኮድ ጋር የሚዛመድ ክፍት ክፍለ ጊዜ የለም።",
-    "invalid": "ስምንቱንም ቁምፊዎች ያስገቡ።"
+    "notFound": "ከዚህ ኮድ ጋር የሚዛመድ ክፍት ክፍለ ጊዜ የለም።"
   },
   "language": {
     "title": "ቋንቋዎን ይምረጡ",

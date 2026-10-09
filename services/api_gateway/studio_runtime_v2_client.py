@@ -25,6 +25,9 @@ EXPECTED_ERROR_CODES = {
     409: {"tenant_suspended", "ssf_plugin_inactive", "ssf_tenant_not_ready"},
     503: {"runtime_configuration_unavailable"},
 }
+# The tenant states Studio answers 409 for: a session may not start, and they are
+# deliberate, not failures of Studio.
+TENANT_CONFLICT_CODES = frozenset(EXPECTED_ERROR_CODES[409])
 _CODE_PREFIX = "studio_runtime"
 
 

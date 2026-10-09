@@ -20,6 +20,7 @@ from .studio_content_service import (
     InstallationFetcher,
     StudioContentService,
 )
+from .studio_policy_reads import StudioPolicyReadMetrics
 from .studio_runtime_flow import RuntimeConfigurationFetcher, StudioRuntimeFlow
 
 
@@ -38,6 +39,7 @@ def wire_studio(
     *,
     policy_registry: CollectorRegistry,
     content_metrics: StudioContentMetrics,
+    policy_reads: StudioPolicyReadMetrics,
     cache_seconds: float = DEFAULT_CACHE_SECONDS,
 ) -> StudioWiring:
     # The service records its own reads; the recording fetcher serves the policy reads.
@@ -51,5 +53,6 @@ def wire_studio(
     if runtime_client is None:
         return StudioWiring(None, None, content)
     runtime = ContentRecordingFetcher(runtime_client, cache)
-    gate = RuntimePolicyGate(runtime, metrics=RuntimePolicyMetrics(policy_registry))
-    return StudioWiring(StudioRuntimeFlow(runtime), gate, content)
+    flow = StudioRuntimeFlow(runtime, policy_reads=policy_reads)
+    gate = RuntimePolicyGate(flow.reads("message"), metrics=RuntimePolicyMetrics(policy_registry))
+    return StudioWiring(flow, gate, content)
