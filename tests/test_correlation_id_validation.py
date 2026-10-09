@@ -25,6 +25,9 @@ class _FakeStudio:
     def client(self) -> "_FakeStudio":
         return self
 
+    def reads(self, _stage: str) -> "_FakeStudio":
+        return self
+
     async def fetch(self, tenant_id: str, correlation_id: str):
         self.calls += 1
         return runtime_read(tenant_id=tenant_id, mode="ask")

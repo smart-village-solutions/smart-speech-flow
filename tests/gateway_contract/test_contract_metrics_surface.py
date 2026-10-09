@@ -152,6 +152,16 @@ EXPECTED_SURFACE: dict[str, Family] = {
         "Age of the Studio content in each content route's latest answer",
         frozenset({"endpoint"}),
     ),
+    "ssf_studio_policy_gate_bound": (
+        "gauge",
+        "1 while the gateway can read the Studio policy, 0 while every policy decision is refused unread",
+        frozenset(),
+    ),
+    "ssf_studio_policy_read_total": (
+        "counter",
+        "Live Studio policy reads, by the stage that made them and their outcome",
+        frozenset({"stage", "outcome"}),
+    ),
     "tenant_polling_messages_dropped_total": (
         "counter",
         "Polling messages discarded because a bounded recipient queue was full",

@@ -10,6 +10,7 @@ from uuid import uuid4
 from fastapi import Depends, HTTPException, Request, status
 
 from .dependencies import get_studio_runtime_flow
+from .studio_policy_reads import CountedPolicyReads, PolicyReadStage, StudioPolicyReadMetrics
 from .studio_runtime_token import StudioRuntimeTokenProvider, StudioTokenError
 from .studio_runtime_v2_client import StudioRuntimeV2Client, StudioRuntimeV2ClientError
 from .studio_settings import seconds_setting, studio_base_url
@@ -45,13 +46,25 @@ class ValidatedRuntimeConfiguration:
 class StudioRuntimeFlow:
     """Fetch the runtime configuration only for its validated tenant context."""
 
-    def __init__(self, client: RuntimeConfigurationFetcher) -> None:
+    def __init__(
+        self,
+        client: RuntimeConfigurationFetcher,
+        *,
+        policy_reads: StudioPolicyReadMetrics | None = None,
+    ) -> None:
         self._client = client
+        self._policy_reads = policy_reads
 
     @property
     def client(self) -> RuntimeConfigurationFetcher:
         """The underlying fetcher, for callers that carry no tenant context."""
         return self._client
+
+    def reads(self, stage: PolicyReadStage) -> RuntimeConfigurationFetcher:
+        """The client, counting each read under `stage` when the app counts policy reads."""
+        if self._policy_reads is None:
+            return self._client
+        return CountedPolicyReads(self._client, self._policy_reads, stage)
 
     async def resolve(
         self,
@@ -60,7 +73,7 @@ class StudioRuntimeFlow:
     ) -> ValidatedRuntimeConfiguration:
         """Return a read only when its tenant matches the verified realm."""
         try:
-            read = await self._client.fetch(context.tenant_id, correlation_id)
+            read = await self.reads("session_create").fetch(context.tenant_id, correlation_id)
         except (StudioRuntimeV2ClientError, StudioTokenError) as error:
             raise StudioRuntimeFlowError(error.code, retryable=error.retryable) from None
 

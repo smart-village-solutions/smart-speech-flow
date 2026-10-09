@@ -15,7 +15,6 @@ from services.api_gateway import (
     studio_login_directory_client,
     studio_runtime_v2_client,
 )
-from services.api_gateway.session_lifecycle import _TENANT_CONFLICT_CODES
 from services.api_gateway.studio_installation_client import (
     StudioInstallationClient,
     StudioInstallationClientError,
@@ -25,6 +24,7 @@ from services.api_gateway.studio_login_directory_client import (
     StudioLoginDirectoryClientError,
 )
 from services.api_gateway.studio_runtime_v2_client import (
+    TENANT_CONFLICT_CODES,
     StudioRuntimeV2Client,
     StudioRuntimeV2ClientError,
 )
@@ -242,7 +242,7 @@ async def test_a_v2_409_suspension_is_a_tenant_conflict() -> None:
         await client.fetch("tenant-kassel", "contract-correlation")
 
     assert caught.value.code == "tenant_suspended"
-    assert caught.value.code in _TENANT_CONFLICT_CODES
+    assert caught.value.code in TENANT_CONFLICT_CODES
 
 
 @pytest.mark.asyncio

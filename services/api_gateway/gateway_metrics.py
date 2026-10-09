@@ -16,6 +16,7 @@ from .audio_storage import AudioStorageMetrics
 from .pipeline_admission import PipelineAdmissionMetrics
 from .refinement_metrics import RefinementMetrics
 from .studio_content_metrics import StudioContentMetrics
+from .studio_policy_reads import StudioPolicyReadMetrics
 from .websocket_monitor import WebSocketMetrics
 from .websocket_polling_routes import polling_dropped_counter
 
@@ -31,6 +32,7 @@ class GatewayMetrics:
     polling_messages_dropped: Counter
     audio_storage: AudioStorageMetrics
     studio_content: StudioContentMetrics
+    studio_policy_reads: StudioPolicyReadMetrics
 
     @classmethod
     def build(cls) -> GatewayMetrics:
@@ -51,4 +53,5 @@ class GatewayMetrics:
             polling_messages_dropped=polling_dropped_counter(registry),
             audio_storage=AudioStorageMetrics(registry),
             studio_content=StudioContentMetrics(registry),
+            studio_policy_reads=StudioPolicyReadMetrics(registry),
         )

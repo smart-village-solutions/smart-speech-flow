@@ -348,6 +348,7 @@ def studio_mock(gateway_dependencies: GatewayDependencies) -> StudioMock:
     from services.api_gateway.studio_content import StudioContentCache
     from services.api_gateway.studio_content_metrics import StudioContentMetrics
     from services.api_gateway.studio_installation_client import StudioInstallationClient
+    from services.api_gateway.studio_policy_reads import StudioPolicyReadMetrics
     from services.api_gateway.studio_runtime_v2_client import StudioRuntimeV2Client
     from services.api_gateway.studio_wiring import wire_studio
 
@@ -361,6 +362,7 @@ def studio_mock(gateway_dependencies: GatewayDependencies) -> StudioMock:
             StudioContentCache(clock=studio.clock),
             policy_registry=CollectorRegistry(),
             content_metrics=StudioContentMetrics(CollectorRegistry()),
+            policy_reads=StudioPolicyReadMetrics(CollectorRegistry()),
         )
         gateway_dependencies.studio_runtime_flow = wiring.runtime_flow
         gateway_dependencies.session_manager.runtime_policy = wiring.runtime_policy

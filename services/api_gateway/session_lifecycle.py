@@ -19,16 +19,13 @@ from .session_manager import TenantSessionManager
 from .session_models import Session, SessionStatus
 from .studio_runtime_flow import StudioRuntimeFlow
 from .studio_runtime_token import StudioTokenError
-from .studio_runtime_v2_client import StudioRuntimeV2ClientError
+from .studio_runtime_v2_client import TENANT_CONFLICT_CODES, StudioRuntimeV2ClientError
 from .studio_v2 import RuntimePolicy
 from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
 
 # The Studio codes that mean the tenant may not start a session at all.
-_TENANT_CONFLICT_CODES = frozenset(
-    {"tenant_suspended", "ssf_plugin_inactive", "ssf_tenant_not_ready"}
-)
 _SUPPORTED_CUSTOMER_LANGUAGES = ("de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa")
 # A logged language is looked up here, so the value written to the log is one of these
 # constants and never the code the request carried.
@@ -255,10 +252,10 @@ async def _read_activation_policy(
     if runtime_flow is None:
         return None
     try:
-        read = await runtime_flow.client.fetch(tenant_id, request_correlation_id)
+        read = await runtime_flow.reads("activation").fetch(tenant_id, request_correlation_id)
     except (StudioRuntimeV2ClientError, StudioTokenError) as error:
         code = getattr(error, "code", None)
-        if code in _TENANT_CONFLICT_CODES:
+        if code in TENANT_CONFLICT_CODES:
             raise TenantConflictError(code) from None
         return None
     return read.policy

@@ -51,6 +51,7 @@ if TYPE_CHECKING:
     from .runtime_policy import RuntimePolicyGate
     from .studio_content_metrics import StudioContentMetrics
     from .studio_content_service import StudioContentService
+    from .studio_policy_reads import StudioPolicyReadMetrics
     from .studio_runtime_flow import StudioRuntimeFlow
     from .studio_runtime_token import StudioRuntimeTokenProvider
     from .studio_wiring import StudioWiring
@@ -116,6 +117,7 @@ def _build_studio(
     registry: CollectorRegistry,
     token_provider: "StudioRuntimeTokenProvider | None",
     content_metrics: "StudioContentMetrics",
+    policy_reads: "StudioPolicyReadMetrics",
 ) -> "StudioWiring":
     """The Studio flow, the persistence gate built on it, and the content service.
 
@@ -135,12 +137,14 @@ def _build_studio(
         runtime_client = None
     else:
         _announce("Runtime policy gate ready")
+    policy_reads.gate_bound(runtime_client is not None)
     return wire_studio(
         runtime_client,
         installation_client_from_environment(token_provider),
         StudioContentCache(on_skip=content_metrics.skipped),
         policy_registry=registry,
         content_metrics=content_metrics,
+        policy_reads=policy_reads,
         cache_seconds=content_cache_seconds(),
     )
 
@@ -371,7 +375,10 @@ async def _start_serving(
     # One per app: every Studio client shares its cached service token.
     studio_token_provider = token_provider_from_environment()
     studio = _build_studio(
-        app.state.prometheus_registry, studio_token_provider, metrics.studio_content
+        app.state.prometheus_registry,
+        studio_token_provider,
+        metrics.studio_content,
+        metrics.studio_policy_reads,
     )
     pipeline = _build_pipeline_collaborators(
         app.state.prometheus_registry, metrics.pipeline_admission, refiner
