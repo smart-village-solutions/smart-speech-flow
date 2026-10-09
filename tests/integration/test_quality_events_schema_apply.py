@@ -24,8 +24,14 @@ EXPECTED_TABLES = [
     # feedback_daily and its view come from 006: the feedback ratings get their
     # own gold aggregate rather than sharing quality_events_daily, because they
     # are averaged per day while everything else there is counted.
+    "feedback_answer_daily",
+    "feedback_answer_daily_mv",
     "feedback_daily",
-    "feedback_daily_mv",
+    # 008 retires feedback_daily_mv: gold moved to feedback_daily_v2, and the
+    # marker table makes its one-off copy of the old aggregate run once.
+    "feedback_daily_v2",
+    "feedback_daily_v2_backfill",
+    "feedback_daily_v2_mv",
     "otel_logs",
     "quality_events",
     "quality_events_daily",
@@ -677,7 +683,7 @@ def test_feedback_rows_aggregate_separately_per_tenant(scratch_db: str) -> None:
 
     rows = _client(
         "SELECT tenant_ref, uniqExactMerge(submissions), avgMerge(net_promoter_score_avg) "
-        "FROM feedback_daily WHERE tenant_ref IN ('aaaaaaaaaaaa', 'ffffffffffff') "
+        "FROM feedback_daily_v2 WHERE tenant_ref IN ('aaaaaaaaaaaa', 'ffffffffffff') "
         "GROUP BY tenant_ref ORDER BY tenant_ref",
         database=scratch_db,
     ).splitlines()
@@ -699,6 +705,228 @@ def test_a_feedback_row_carries_its_tenant_into_silver(scratch_db: str) -> None:
     )
 
     assert stored == "c" * 12
+
+
+def _insert_event(db: str, event_name: str, attributes: dict[str, str]) -> None:
+    pairs = ", ".join(f"'{key}': '{value}'" for key, value in attributes.items())
+    _client(
+        f"INSERT INTO otel_logs ({', '.join(_EXPORTER_COLUMNS)}) VALUES "
+        f"(now64(9), '', '', 0, '', 0, 'api_gateway', '', '', "
+        f"{{'service.version': 'itest', 'deployment.environment.name': 'itest'}}, "
+        f"'', 'ssf.quality', '', {{}}, {{{pairs}}}, '{event_name}')",
+        database=db,
+    )
+
+
+def _header(event_id: str, tenant_ref: str, *, audience: str = "guest", ratings: tuple | None = None) -> dict[str, str]:
+    """A PR 12 header. `ratings` are (translation, performance, usability, nps)."""
+    attributes = {
+        "ssf.quality.event_id": event_id,
+        "ssf.quality.schema_version": "1",
+        "ssf.quality.session_ref": "a" * 32,
+        "ssf.quality.feedback_ref": "b" * 32,
+        "ssf.quality.tenant_ref": tenant_ref,
+        "ssf.quality.feedback_form_version": "v2",
+        "ssf.quality.audience": audience,
+        "ssf.quality.form_source": "bundled" if ratings else "studio",
+        "ssf.quality.feedback_locale": "en",
+        "ssf.quality.answer_count": "2",
+    }
+    if ratings:
+        for key, value in zip(
+            ("translation_quality", "performance", "usability", "net_promoter_score"), ratings
+        ):
+            attributes[f"ssf.quality.{key}"] = str(value)
+    return attributes
+
+
+def _answer(event_id: str, tenant_ref: str, *, value: int = 6, audience: str = "guest") -> dict[str, str]:
+    return {
+        "ssf.quality.event_id": event_id,
+        "ssf.quality.schema_version": "1",
+        "ssf.quality.feedback_ref": "b" * 32,
+        "ssf.quality.tenant_ref": tenant_ref,
+        "ssf.quality.audience": audience,
+        "ssf.quality.question_id": "clarity",
+        "ssf.quality.question_type": "scale",
+        "ssf.quality.answer_value": str(value),
+        "ssf.quality.answer_min": "0",
+        "ssf.quality.answer_max": "10",
+    }
+
+
+def _fresh_tenant() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+def test_a_header_without_ratings_leaves_the_rating_aggregates_alone(scratch_db: str) -> None:
+    """THE TRAP 008 closes: absent ratings are stored as 0.
+
+    Averaged in, a Studio form's header would pull every rating towards zero
+    and count as an NPS detractor. It must still count as a submission.
+    """
+    tenant = _fresh_tenant()
+    _insert_event(scratch_db, "feedback_submitted", _header(str(uuid.uuid4()), tenant, ratings=(4, 5, 3, 9)))
+    _insert_event(scratch_db, "feedback_submitted", _header(str(uuid.uuid4()), tenant))
+
+    row = _client(
+        "SELECT uniqExactMerge(submissions), uniqExactMerge(rated_submissions), "
+        "avgMerge(translation_quality_avg), avgMerge(performance_avg), "
+        "avgMerge(usability_avg), avgMerge(net_promoter_score_avg), "
+        "uniqExactMerge(promoters), uniqExactMerge(detractors) "
+        f"FROM feedback_daily_v2 WHERE tenant_ref = '{tenant}'",
+        database=scratch_db,
+    )
+
+    assert row.split("\t") == ["2", "1", "4", "5", "3", "9", "1", "0"]
+
+
+def test_silver_flags_only_the_header_that_carries_ratings(scratch_db: str) -> None:
+    tenant = _fresh_tenant()
+    _insert_event(scratch_db, "feedback_submitted", _header(str(uuid.uuid4()), tenant, ratings=(4, 4, 4, 0)))
+    _insert_event(scratch_db, "feedback_submitted", _header(str(uuid.uuid4()), tenant))
+
+    flags = _client(
+        "SELECT arraySort(groupArray(has_legacy_ratings)) FROM quality_events FINAL "
+        f"WHERE tenant_ref = '{tenant}' AND event_type = 'feedback_submitted'",
+        database=scratch_db,
+    )
+
+    # NPS 0 is a real answer: the flag reads the key's presence, not the value.
+    assert flags == "[0,1]"
+
+
+def test_staff_feedback_aggregates_apart_from_citizens(scratch_db: str) -> None:
+    tenant = _fresh_tenant()
+    _insert_event(scratch_db, "feedback_submitted", _header(str(uuid.uuid4()), tenant, ratings=(5, 5, 5, 10)))
+    _insert_event(
+        scratch_db,
+        "feedback_submitted",
+        _header(str(uuid.uuid4()), tenant, audience="staff", ratings=(1, 1, 1, 0)),
+    )
+    _insert_event(scratch_db, "feedback_answer", _answer(str(uuid.uuid4()), tenant, value=9))
+    _insert_event(scratch_db, "feedback_answer", _answer(str(uuid.uuid4()), tenant, value=1, audience="staff"))
+
+    headers = _client(
+        "SELECT audience, uniqExactMerge(submissions), avgMerge(net_promoter_score_avg) "
+        f"FROM feedback_daily_v2 WHERE tenant_ref = '{tenant}' GROUP BY audience ORDER BY audience",
+        database=scratch_db,
+    ).splitlines()
+    answers = _client(
+        "SELECT audience, uniqExactMerge(answers), avgMerge(value_avg) "
+        f"FROM feedback_answer_daily WHERE tenant_ref = '{tenant}' GROUP BY audience ORDER BY audience",
+        database=scratch_db,
+    ).splitlines()
+
+    assert headers == ["guest\t1\t10", "staff\t1\t0"], headers
+    assert answers == ["guest\t1\t9", "staff\t1\t1"], answers
+
+
+def test_a_re_delivered_answer_is_counted_once(scratch_db: str) -> None:
+    """The reconciler re-emits under the same uuid5 id; both tiers count it once."""
+    tenant = _fresh_tenant()
+    answer_id = str(uuid.uuid4())
+    for _ in range(2):
+        _insert_event(scratch_db, "feedback_answer", _answer(answer_id, tenant))
+
+    bronze = _client(
+        f"SELECT count() FROM otel_logs WHERE LogAttributes['ssf.quality.event_id'] = '{answer_id}'",
+        database=scratch_db,
+    )
+    silver = _client(
+        "SELECT count(), any(question_id), any(question_type), any(answer_value), "
+        f"any(answer_min), any(answer_max) FROM quality_events FINAL WHERE event_id = '{answer_id}'",
+        database=scratch_db,
+    )
+    gold = _client(
+        "SELECT question_id, uniqExactMerge(answers) FROM feedback_answer_daily "
+        f"WHERE tenant_ref = '{tenant}' GROUP BY question_id",
+        database=scratch_db,
+    )
+
+    assert bronze == "2", "the duplicate delivery must actually have landed"
+    assert silver.split("\t") == ["1", "clarity", "scale", "6", "0", "10"]
+    assert gold.split("\t") == ["clarity", "1"]
+
+
+def test_an_answer_with_another_range_is_not_averaged_with_it(scratch_db: str) -> None:
+    tenant = _fresh_tenant()
+    _insert_event(scratch_db, "feedback_answer", _answer(str(uuid.uuid4()), tenant, value=10))
+    narrow = _answer(str(uuid.uuid4()), tenant, value=2)
+    narrow.update({"ssf.quality.answer_min": "1", "ssf.quality.answer_max": "5"})
+    _insert_event(scratch_db, "feedback_answer", narrow)
+
+    rows = _client(
+        "SELECT answer_max, avgMerge(value_avg) FROM feedback_answer_daily "
+        f"WHERE tenant_ref = '{tenant}' GROUP BY answer_max ORDER BY answer_max",
+        database=scratch_db,
+    ).splitlines()
+
+    assert rows == ["5\t2", "10\t10"], rows
+
+
+def test_the_upgrade_copies_old_gold_once_and_survives_re_runs() -> None:
+    """Production holds 001-007 with data; apply.sh then re-runs everything.
+
+    The old aggregate's rows must reach v2 exactly once (a second copy would
+    double every average's weight), v2's key must survive 007's re-run, and
+    the retired view must stay gone.
+    """
+    upgrade_db = f"{SCRATCH_DB}_feedback_upgrade"
+    _client(f"DROP DATABASE IF EXISTS {upgrade_db}; CREATE DATABASE {upgrade_db};")
+    try:
+        for path in MIGRATIONS:
+            if path.name[:3] <= "007":
+                _client(path.read_text(), database=upgrade_db)
+        before = str(uuid.uuid4())
+        _insert_feedback(upgrade_db, before, "d" * 12, "3")
+
+        for _ in range(2):
+            for path in MIGRATIONS:
+                _client(path.read_text(), database=upgrade_db)
+
+        copied = _client(
+            "SELECT uniqExactMerge(submissions), uniqExactMerge(rated_submissions), "
+            "uniqExactMerge(detractors), any(audience) = '' "
+            "FROM feedback_daily_v2 WHERE tenant_ref = 'dddddddddddd'",
+            database=upgrade_db,
+        )
+        # The copy's weight, not its row count: a background merge collapses a
+        # double copy into one row with twice the avg weight, and uniqExact
+        # hides it too. One new header with NPS 9 beside the copied 3 averages
+        # 6 if the old row was copied once, 5 if twice.
+        _insert_event(
+            upgrade_db,
+            "feedback_submitted",
+            _header(str(uuid.uuid4()), "d" * 12, ratings=(4, 4, 4, 9)),
+        )
+        weighted = _client(
+            "SELECT avgMerge(net_promoter_score_avg) FROM feedback_daily_v2 "
+            "WHERE tenant_ref = 'dddddddddddd'",
+            database=upgrade_db,
+        )
+        flag = _client(
+            f"SELECT has_legacy_ratings FROM quality_events FINAL WHERE event_id = '{before}'",
+            database=upgrade_db,
+        )
+        key = _client(
+            "SELECT sorting_key FROM system.tables "
+            "WHERE database = currentDatabase() AND name = 'feedback_daily_v2'",
+            database=upgrade_db,
+        )
+        retired = _client(
+            "SELECT count() FROM system.tables "
+            "WHERE database = currentDatabase() AND name = 'feedback_daily_mv'",
+            database=upgrade_db,
+        )
+
+        assert copied.split("\t") == ["1", "1", "1", "1"], copied
+        assert weighted == "6", "the old aggregate was copied more than once"
+        assert flag == "1", "a header written before 008 carried ratings"
+        assert key.endswith("tenant_ref, audience, form_source"), key
+        assert retired == "0"
+    finally:
+        _client(f"DROP DATABASE IF EXISTS {upgrade_db};")
 
 
 def _clickhouse_image() -> str:

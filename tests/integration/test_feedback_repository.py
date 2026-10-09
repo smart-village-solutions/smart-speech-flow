@@ -434,11 +434,13 @@ async def test_a_full_reconciliation_pass_recovers_a_pending_row(repository) -> 
     first = await maintenance.reconcile_once()
     assert first.recovered == 1
     assert exported[0][1]["ssf.quality.event_id"] == str(record.analytics_event_id)
+    # The header and one event per bundled numeric answer.
+    assert [name for name, _ in exported] == ["feedback_submitted"] + ["feedback_answer"] * 4
 
     # Delivered rows must not be claimed again, or every pass re-emits forever.
     second = await maintenance.reconcile_once()
     assert second.recovered == 0
-    assert len(exported) == 1
+    assert len(exported) == 5
 
 
 async def test_the_reconciler_never_reads_the_ciphertext_column(repository) -> None:
@@ -468,3 +470,17 @@ async def test_the_claim_carries_the_answers_by_id_and_the_form_they_answered(re
 
     assert pending.numeric_answers == {"clarity": 7}
     assert pending.form_snapshot == [{"id": "clarity", "type": "rating", "min": 1, "max": 7}]
+
+
+async def test_the_claim_carries_what_the_header_event_needs(repository) -> None:
+    """PR 12: the reconciler re-emits the header, which names audience, source and locale."""
+    await _store(_record(audience="staff", form_source="studio", form_locale="de-DE",
+                         configuration_revision="sha256:abc"))
+
+    (pending,) = await repository.claim_pending_analytics(limit=10)
+
+    assert (pending.audience, pending.form_source, pending.form_locale) == (
+        "staff",
+        "studio",
+        "de-DE",
+    )

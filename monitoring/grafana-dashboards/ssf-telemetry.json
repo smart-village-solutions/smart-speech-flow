@@ -270,7 +270,7 @@
       "id": 66,
       "type": "stat",
       "title": "Ratings of 4 or 5",
-      "description": "KPIs F2/SQ1, F7/SQ2, F3/SQ3. Share of submissions rating 4 or 5 on each 1-5 question, filtered by tenant. The form asks about translation quality, performance and usability -- close to, not worded as, the catalogue's SQ1-SQ3. Silver keeps 30 days.",
+      "description": "KPIs F2/SQ1, F7/SQ2, F3/SQ3. Share of submissions rating 4 or 5 on each 1-5 question, filtered by tenant. The form asks about translation quality, performance and usability -- close to, not worded as, the catalogue's SQ1-SQ3. Silver keeps 30 days. Only submissions that answered the bundled questions carry these ratings: a Studio form asking other questions stores none, and its zeros would otherwise read as low scores. Staff feedback is excluded; Feedback by Audience shows it separately.",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -290,7 +290,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT round(100 * countIf(translation_quality >= 4) / nullIf(count(), 0), 1) AS translation_quality, round(100 * countIf(performance >= 4) / nullIf(count(), 0), 1) AS performance, round(100 * countIf(usability >= 4) / nullIf(count(), 0), 1) AS usability FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
+          "rawSql": "SELECT round(100 * countIf(translation_quality >= 4) / nullIf(count(), 0), 1) AS translation_quality, round(100 * countIf(performance >= 4) / nullIf(count(), 0), 1) AS performance, round(100 * countIf(usability >= 4) / nullIf(count(), 0), 1) AS usability FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND has_legacy_ratings = 1 AND audience != 'staff' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
         }
       ],
       "fieldConfig": {
@@ -1648,7 +1648,7 @@
           },
           "editorType": "sql",
           "format": 0,
-          "rawSql": "SELECT countIf(event_type = 'refinement_attempt' AND model_ref = '') + countIf(event_type = 'translation_message' AND session_ref = '') + countIf(event_type = 'session_lifecycle' AND lifecycle_phase = '') AS untyped FROM quality_events FINAL WHERE $__timeFilter(emitted_at_utc)",
+          "rawSql": "SELECT countIf(event_type = 'refinement_attempt' AND model_ref = '') + countIf(event_type = 'translation_message' AND session_ref = '') + countIf(event_type = 'session_lifecycle' AND lifecycle_phase = '') + countIf(event_type = 'feedback_submitted' AND feedback_ref = '') + countIf(event_type = 'feedback_answer' AND question_id = '') + countIf(event_type = '') AS untyped FROM quality_events FINAL WHERE $__timeFilter(emitted_at_utc)",
           "refId": "A"
         }
       ],
@@ -1677,13 +1677,13 @@
         },
         "textMode": "auto"
       },
-      "description": "Should be zero. Anything else means refinement events were written while migration 002 was not yet applied, so the view projected only the envelope. Apply the migrations before switching the mode to `enabled`."
+      "description": "Should be zero. Anything else means refinement events were written while migration 002 was not yet applied, so the view projected only the envelope. Apply the migrations before switching the mode to `enabled`. Feedback rows count too: an answer without its question id means 008 is unapplied or the collector still runs the old keep_keys and must be recreated. A row with no event type at all means the collector started before ClickHouse, its schema detection failed, and it writes no EventName until it is recreated."
     },
     {
       "id": 40,
       "type": "stat",
       "title": "Feedback Submissions",
-      "description": "Distinct submissions. uniqExact over event_id rather than count(), because #305 re-emits a failed delivery under the same id and the ReplacingMergeTree only collapses that duplicate at merge time.",
+      "description": "Distinct submissions. uniqExact over event_id rather than count(), because #305 re-emits a failed delivery under the same id and the ReplacingMergeTree only collapses that duplicate at merge time. Every form counts here, Studio or bundled. Staff feedback is excluded; Feedback by Audience shows it separately.",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -1703,7 +1703,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT uniqExact(event_id) AS submissions FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
+          "rawSql": "SELECT uniqExact(event_id) AS submissions FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND audience != 'staff' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
         }
       ]
     },
@@ -1711,7 +1711,7 @@
       "id": 41,
       "type": "stat",
       "title": "Feedback Response Rate",
-      "description": "Sessions that submitted feedback, over sessions that were activated. Submissions carrying no session reference are excluded from the numerator: the access-code and admin-dashboard screens submit without one, and every such row shares the same placeholder reference, so counting them would both collapse them into one session and let the rate exceed 100%.",
+      "description": "Sessions that submitted feedback, over sessions that were activated. Submissions carrying no session reference are excluded from the numerator: the access-code and admin-dashboard screens submit without one, and every such row shares the same placeholder reference, so counting them would both collapse them into one session and let the rate exceed 100%. Staff submissions are excluded from the numerator: a staff member naming their own session would otherwise count as that session's citizen responding.",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -1739,7 +1739,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT round(100 * uniqExactIf(session_ref, event_type = 'feedback_submitted' AND session_ref != '00000000000000000000000000000000') / nullIf(uniqExactIf(session_ref, event_type = 'session_lifecycle' AND lifecycle_phase = 'activated'), 0), 1) AS response_rate FROM quality_events FINAL WHERE match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
+          "rawSql": "SELECT round(100 * uniqExactIf(session_ref, event_type = 'feedback_submitted' AND audience != 'staff' AND session_ref != '00000000000000000000000000000000') / nullIf(uniqExactIf(session_ref, event_type = 'session_lifecycle' AND lifecycle_phase = 'activated'), 0), 1) AS response_rate FROM quality_events FINAL WHERE match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
         }
       ]
     },
@@ -1747,7 +1747,7 @@
       "id": 42,
       "type": "stat",
       "title": "Net Promoter Score",
-      "description": "Promoters (9-10) minus detractors (0-6) as a percentage of submissions. Built on uniqExact, so it stays exact under re-emission -- unlike the gold tier's rating averages.",
+      "description": "Promoters (9-10) minus detractors (0-6) as a percentage of the submissions that answered the bundled recommendation question. Built on uniqExact, so it stays exact under re-emission -- unlike the gold tier's rating averages. A form without that question has no NPS: counted in, every such submission would be a detractor. Staff feedback is excluded; Feedback by Audience shows it separately.",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -1774,7 +1774,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT round(100 * (uniqExactIf(event_id, net_promoter_score >= 9) - uniqExactIf(event_id, net_promoter_score <= 6)) / nullIf(uniqExact(event_id), 0)) AS nps FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
+          "rawSql": "SELECT round(100 * (uniqExactIf(event_id, net_promoter_score >= 9) - uniqExactIf(event_id, net_promoter_score <= 6)) / nullIf(uniqExact(event_id), 0)) AS nps FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND has_legacy_ratings = 1 AND audience != 'staff' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc)"
         }
       ]
     },
@@ -1810,7 +1810,7 @@
       "id": 44,
       "type": "timeseries",
       "title": "Rating Averages",
-      "description": "Exact: averaged over the deduplicated silver rows. Silver keeps 30 days, so a longer time range silently truncates here -- use the gold panel below for history, and read its caveat first.",
+      "description": "Exact: averaged over the deduplicated silver rows. Silver keeps 30 days, so a longer time range silently truncates here -- use the gold panel below for history, and read its caveat first. Only submissions that answered the bundled questions carry these ratings: a Studio form asking other questions stores none, and its zeros would otherwise read as low scores. Staff feedback is excluded; Feedback by Audience shows it separately.",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -1837,7 +1837,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 1 DAY) AS time, avg(translation_quality) AS translation_quality, avg(performance) AS performance, avg(usability) AS usability FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 1 DAY) AS time, avg(translation_quality) AS translation_quality, avg(performance) AS performance, avg(usability) AS usability FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND has_legacy_ratings = 1 AND audience != 'staff' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
         }
       ]
     },
@@ -1845,7 +1845,7 @@
       "id": 45,
       "type": "timeseries",
       "title": "Promoters, Passives and Detractors",
-      "description": "The split behind the score, so a moving NPS can be read as gaining promoters or losing detractors rather than as one number.",
+      "description": "The split behind the score, so a moving NPS can be read as gaining promoters or losing detractors rather than as one number. Only submissions that answered the bundled questions carry these ratings: a Studio form asking other questions stores none, and its zeros would otherwise read as low scores. Staff feedback is excluded; Feedback by Audience shows it separately.",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -1865,7 +1865,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 1 DAY) AS time, uniqExactIf(event_id, net_promoter_score >= 9) AS promoters, uniqExactIf(event_id, net_promoter_score >= 7 AND net_promoter_score <= 8) AS passives, uniqExactIf(event_id, net_promoter_score <= 6) AS detractors FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
+          "rawSql": "SELECT toStartOfInterval(emitted_at_utc, INTERVAL 1 DAY) AS time, uniqExactIf(event_id, net_promoter_score >= 9) AS promoters, uniqExactIf(event_id, net_promoter_score >= 7 AND net_promoter_score <= 8) AS passives, uniqExactIf(event_id, net_promoter_score <= 6) AS detractors FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND has_legacy_ratings = 1 AND audience != 'staff' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY time ORDER BY time"
         }
       ]
     },
@@ -1873,7 +1873,7 @@
       "id": 46,
       "type": "timeseries",
       "title": "Daily Submissions (Gold Tier)",
-      "description": "Thirteen months of history, split by form version so a revised question set is visible rather than pooled. Exact: gold counts with uniqExact over event_id, so a re-emission does not inflate them. Filter by tenant with the Tenant picker. The breakdown starts when #325 shipped: rows aggregated before it carry no reference and sit under an empty tenant, which All includes and no single tenant does.",
+      "description": "Thirteen months of history, split by form version: v1 is the old body, v2 every submission since PR 11, whichever Studio form it answered. A revised Studio question set shows in the per-question panels, not here. Exact: gold counts with uniqExact over event_id, so a re-emission does not inflate them. Filter by tenant with the Tenant picker. The breakdown starts when #325 shipped: rows aggregated before it carry no reference and sit under an empty tenant, which All includes and no single tenant does. Read from feedback_daily_v2 since migration 008; history from before it was copied over with no audience recorded, and is included. Staff feedback is excluded; Feedback by Audience shows it separately.",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -1893,7 +1893,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT event_date AS time, feedback_form_version, uniqExactMerge(submissions) AS submissions FROM feedback_daily WHERE $__dateFilter(event_date) AND match(tenant_ref, '${tenant:regex}') GROUP BY event_date, feedback_form_version ORDER BY event_date"
+          "rawSql": "SELECT event_date AS time, feedback_form_version, uniqExactMerge(submissions) AS submissions FROM feedback_daily_v2 WHERE $__dateFilter(event_date) AND audience != 'staff' AND match(tenant_ref, '${tenant:regex}') GROUP BY event_date, feedback_form_version ORDER BY event_date"
         }
       ]
     },
@@ -1901,7 +1901,7 @@
       "id": 47,
       "type": "timeseries",
       "title": "Rating Averages (Gold Tier, approximate)",
-      "description": "APPROXIMATE BY CONSTRUCTION. avgState has no distinct-by form, so a submission re-emitted by the #305 reconciler contributes its ratings twice -- and #305 re-emits by design, not only after a fault. Verified against ClickHouse 26.3.17: two submissions of 9 and 3 read as an average of 7 after one retry, where the true value is 6. Counts and NPS on this dashboard are exact; these four averages are not. Inside 30 days, read 'Rating Averages'. Filter by tenant with the Tenant picker. The breakdown starts when #325 shipped: rows aggregated before it carry no reference and sit under an empty tenant, which All includes and no single tenant does.",
+      "description": "APPROXIMATE BY CONSTRUCTION. avgState has no distinct-by form, so a submission re-emitted by the #305 reconciler contributes its ratings twice -- and #305 re-emits by design, not only after a fault. Verified against ClickHouse 26.3.17: two submissions of 9 and 3 read as an average of 7 after one retry, where the true value is 6. Counts and NPS on this dashboard are exact; these four averages are not. Inside 30 days, read 'Rating Averages'. Filter by tenant with the Tenant picker. The breakdown starts when #325 shipped: rows aggregated before it carry no reference and sit under an empty tenant, which All includes and no single tenant does. Read from feedback_daily_v2 since migration 008, whose view averages only submissions that carry the bundled ratings. Staff feedback is excluded; Feedback by Audience shows it separately.",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -1928,7 +1928,7 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT event_date AS time, avgMerge(translation_quality_avg) AS translation_quality, avgMerge(performance_avg) AS performance, avgMerge(usability_avg) AS usability FROM feedback_daily WHERE $__dateFilter(event_date) AND match(tenant_ref, '${tenant:regex}') GROUP BY event_date ORDER BY event_date"
+          "rawSql": "SELECT event_date AS time, avgMerge(translation_quality_avg) AS translation_quality, avgMerge(performance_avg) AS performance, avgMerge(usability_avg) AS usability FROM feedback_daily_v2 WHERE $__dateFilter(event_date) AND audience != 'staff' AND match(tenant_ref, '${tenant:regex}') GROUP BY event_date HAVING uniqExactMerge(rated_submissions) > 0 ORDER BY event_date"
         }
       ]
     },
@@ -1936,7 +1936,7 @@
       "id": 48,
       "type": "table",
       "title": "Ratings by Form Version",
-      "description": "The denominator beside the averages, which #304 asks for explicitly: an average of four submissions and an average of four hundred look identical without it.",
+      "description": "The denominator beside the averages, which #304 asks for explicitly: an average of four submissions and an average of four hundred look identical without it. Only submissions that answered the bundled questions carry these ratings: a Studio form asking other questions stores none, and its zeros would otherwise read as low scores. Staff feedback is excluded; Feedback by Audience shows it separately.",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse-ssf"
@@ -1956,7 +1956,91 @@
           "editorType": "sql",
           "format": 0,
           "refId": "A",
-          "rawSql": "SELECT feedback_form_version AS form_version, uniqExact(event_id) AS submissions, round(avg(translation_quality), 2) AS translation_quality, round(avg(performance), 2) AS performance, round(avg(usability), 2) AS usability, round(avg(net_promoter_score), 2) AS nps_mean FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY form_version ORDER BY submissions DESC"
+          "rawSql": "SELECT feedback_form_version AS form_version, uniqExact(event_id) AS submissions, round(avg(translation_quality), 2) AS translation_quality, round(avg(performance), 2) AS performance, round(avg(usability), 2) AS usability, round(avg(net_promoter_score), 2) AS nps_mean FROM quality_events FINAL WHERE event_type = 'feedback_submitted' AND has_legacy_ratings = 1 AND audience != 'staff' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY form_version ORDER BY submissions DESC"
+        }
+      ]
+    },
+    {
+      "id": 49,
+      "type": "table",
+      "title": "Feedback by Audience",
+      "description": "Guests, staff and installations side by side, thirteen months from gold. Every other feedback panel leaves staff out, so this is where staff feedback is read. 'not recorded' is history copied from the aggregate migration 008 retired, and headers from a gateway older than PR 12: neither carried an audience. NPS counts only submissions that answered the bundled recommendation question; the rated column is its denominator. Filter by tenant with the Tenant picker.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 116
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT if(audience = '', 'not recorded', audience) AS who, uniqExactMerge(submissions) AS submissions, uniqExactMerge(rated_submissions) AS rated, round(100 * (uniqExactMerge(promoters) - uniqExactMerge(detractors)) / nullIf(uniqExactMerge(rated_submissions), 0)) AS nps FROM feedback_daily_v2 WHERE $__dateFilter(event_date) AND match(tenant_ref, '${tenant:regex}') GROUP BY audience ORDER BY submissions DESC"
+        }
+      ]
+    },
+    {
+      "id": 50,
+      "type": "table",
+      "title": "Answer Averages by Question",
+      "description": "Exact: one feedback_answer event per answered numeric question, averaged over the deduplicated silver rows. Studio forms ask their own questions, so this is where they are read; the bundled questions appear here too. A question asked on two ranges shows as two rows, never averaged together. Silver keeps 30 days. Staff feedback is excluded; Feedback by Audience shows it separately. One row per tenant: question ids belong to each tenant's own form.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 116
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT tenant_ref, question_id, question_type, answer_min, answer_max, uniqExact(event_id) AS answers, round(avg(answer_value), 2) AS average FROM quality_events FINAL WHERE event_type = 'feedback_answer' AND question_id != '' AND audience != 'staff' AND match(tenant_ref, '${tenant:regex}') AND $__timeFilter(emitted_at_utc) GROUP BY tenant_ref, question_id, question_type, answer_min, answer_max ORDER BY answers DESC"
+        }
+      ]
+    },
+    {
+      "id": 51,
+      "type": "table",
+      "title": "Answer Averages by Question (Gold Tier, approximate)",
+      "description": "APPROXIMATE BY CONSTRUCTION, for the same reason as the gold rating averages: avgState has no distinct-by form, so an answer the reconciler re-emits counts twice in the average. The answer counts are exact. Thirteen months of history; inside 30 days read 'Answer Averages by Question'. Filter by tenant with the Tenant picker. Staff feedback is excluded; Feedback by Audience shows it separately. One row per tenant: question ids belong to each tenant's own form.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse-ssf"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 116
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse-ssf"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "refId": "A",
+          "rawSql": "SELECT tenant_ref, question_id, question_type, answer_min, answer_max, uniqExactMerge(answers) AS answers, round(avgMerge(value_avg), 2) AS average FROM feedback_answer_daily WHERE $__dateFilter(event_date) AND question_id != '' AND audience != 'staff' AND match(tenant_ref, '${tenant:regex}') GROUP BY tenant_ref, question_id, question_type, answer_min, answer_max ORDER BY answers DESC"
         }
       ]
     }
@@ -1979,7 +2063,7 @@
           "type": "grafana-clickhouse-datasource",
           "uid": "clickhouse-ssf"
         },
-        "query": "SELECT DISTINCT tenant_ref FROM feedback_daily WHERE tenant_ref NOT IN ('', '000000000000') ORDER BY tenant_ref",
+        "query": "SELECT DISTINCT tenant_ref FROM feedback_daily_v2 WHERE tenant_ref NOT IN ('', '000000000000') ORDER BY tenant_ref",
         "includeAll": true,
         "allValue": ".*",
         "multi": true,

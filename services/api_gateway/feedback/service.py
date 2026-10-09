@@ -17,11 +17,12 @@ from typing import Any, Callable, Final, Optional, Protocol
 from uuid import UUID, uuid4
 
 from ..quality_telemetry_schema import ProbeOutcome
-from ..session_pseudonym import MISSING_REFERENCE, SessionPseudonymizer, tenant_ref
+from ..session_pseudonym import MISSING_REFERENCE, SessionPseudonymizer
 from ..tenant_session import TenantSessionKey
 from . import bundled_form
+from .analytics import emit_submission
 from .answers import FormRules, ValidatedAnswers, validate_answers
-from .bundled_form import LegacyRatings, bundled_rules, legacy_ratings
+from .bundled_form import bundled_rules
 from .forms import FeedbackForms
 from .models import (
     MAX_IMPROVEMENTS_LENGTH,
@@ -40,6 +41,8 @@ from .tenant import TenantResolver
 from .text_answers import seal_text_answers
 
 logger = logging.getLogger(__name__)
+
+_FINAL_OUTCOMES = frozenset({ProbeOutcome.DISABLED, ProbeOutcome.DROPPED_DISALLOWED})
 
 _RETENTION_MONTHS = 12
 
@@ -232,7 +235,6 @@ class FeedbackService:
     async def _store_and_emit(self, draft: _Draft) -> UUID:
         feedback_id = uuid4()
         created_at = self._clock()
-        ratings = legacy_ratings(draft.answers.numeric, draft.rules.snapshot)
 
         record = FeedbackRecord(
             feedback_id=feedback_id,
@@ -257,34 +259,22 @@ class FeedbackService:
                 "manifestation": "form_submission",
             },
             analytics_event_id=uuid4(),
-            # Until PR 12 only the bundled questions have an event. Anything
-            # else stays out of the reconciliation backlog, which could
-            # otherwise never drain it.
-            analytics_state=(
-                AnalyticsState.PENDING if ratings is not None else AnalyticsState.NOT_APPLICABLE
-            ),
+            analytics_state=AnalyticsState.PENDING,
             created_at=created_at,
             expires_at=_add_months(created_at, _RETENTION_MONTHS),
         )
 
         # Commit first. Everything after this point is best-effort.
         await self._repository.store(record)
-        if ratings is not None:
-            await self._emit(record, ratings)
+        await self._emit(record)
         return feedback_id
 
-    async def _emit(self, record: FeedbackRecord, ratings: LegacyRatings) -> None:
-        result = self._telemetry.emit_feedback_submitted(
-            event_id=record.analytics_event_id,
-            session_ref=record.session_ref,
-            tenant_ref=tenant_ref(record.tenant_id),
-            feedback_ref=self._pseudonymizer.feedback_reference(record.feedback_id),
-            translation_quality=ratings.translation_quality,
-            performance=ratings.performance,
-            usability=ratings.usability,
-            net_promoter_score=ratings.net_promoter_score,
-            form_version=record.form_version,
-        )
+    async def _emit(self, record: FeedbackRecord) -> None:
+        try:
+            outcome = emit_submission(self._telemetry, self._pseudonymizer, record)
+        except Exception as error:  # The row is committed; the reconciler retries.
+            logger.warning("Feedback analytics emission raised: %s", type(error).__name__)
+            return
 
         # Best-effort for real: the row is committed, so nothing from here on
         # may turn a stored submission into an error the caller can act on. A
@@ -292,13 +282,15 @@ class FeedbackService:
         # the retry would store a second row that analytics counts again. A row
         # left `pending` is what the reconciler exists to drain.
         try:
-            if result.outcome is ProbeOutcome.EMITTED:
+            if outcome is ProbeOutcome.EMITTED:
                 await self._repository.mark_analytics_delivered(
                     record.feedback_id, record.tenant_id
                 )
-            elif result.outcome is ProbeOutcome.DISABLED:
+            elif outcome in _FINAL_OUTCOMES:
                 # Nothing will ever drain a backlog for an event type this
-                # deployment does not emit, so it is not a backlog.
+                # deployment does not emit, nor for events the schema rejects
+                # on every attempt; neither is a backlog. A rejection is
+                # counted and alerted by the telemetry module.
                 await self._repository.mark_analytics_state(
                     record.feedback_id, AnalyticsState.NOT_APPLICABLE, record.tenant_id
                 )

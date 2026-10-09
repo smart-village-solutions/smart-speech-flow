@@ -5,7 +5,7 @@ ratings, NPS and two opaque references. Its whole reason for existing is that
 the other half -- the free text -- cannot be represented here at all, which is
 enforced by AttributeKind having no free-text member.
 
-`emit_feedback_submitted` takes `event_id` from its caller rather than minting
+`emit_feedback` takes the header's `event_id` from its caller rather than minting
 one, unlike every sibling. #305's reconciler re-emits a failed delivery with
 the same id, and silver's ReplacingMergeTree plus gold's uniqExactState only
 deduplicate if that id is stable.
@@ -14,13 +14,31 @@ deduplicate if that id is stable.
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
+from uuid import uuid4, uuid5
 
 import pytest
 from prometheus_client import CollectorRegistry
 
-from services.api_gateway.quality_telemetry import QualityTelemetry, discard_event
-from services.api_gateway.quality_telemetry_schema import ALLOWED_ATTRIBUTE_KEYS, ALLOWED_ATTRIBUTES, AttributeKind, FeedbackSubmittedEvent, ProbeOutcome, QualityEventType, TelemetryMode, to_otlp_attributes
+from services.api_gateway.quality_telemetry import (
+    FeedbackAnswer,
+    FeedbackHeader,
+    QualityTelemetry,
+    discard_event,
+)
+from services.api_gateway.quality_telemetry_schema import (
+    ALLOWED_ATTRIBUTE_KEYS,
+    ALLOWED_ATTRIBUTES,
+    AttributeKind,
+    FeedbackAnswerEvent,
+    FeedbackAudience,
+    FeedbackFormSource,
+    FeedbackQuestionType,
+    FeedbackSubmittedEvent,
+    ProbeOutcome,
+    QualityEventType,
+    TelemetryMode,
+    to_otlp_attributes,
+)
 from services.api_gateway.session_pseudonym import MISSING_TENANT_REFERENCE
 
 ROOT = Path(__file__).parents[1]
@@ -35,6 +53,22 @@ NEW_KEYS = {
     "ssf.quality.usability": AttributeKind.NUMBER,
     "ssf.quality.net_promoter_score": AttributeKind.NUMBER,
     "ssf.quality.feedback_form_version": AttributeKind.LABEL,
+    "ssf.quality.audience": AttributeKind.ENUM,
+    "ssf.quality.form_source": AttributeKind.ENUM,
+    "ssf.quality.feedback_locale": AttributeKind.LANGUAGE,
+    "ssf.quality.answer_count": AttributeKind.NUMBER,
+    "ssf.quality.question_id": AttributeKind.LABEL,
+    "ssf.quality.question_type": AttributeKind.ENUM,
+    "ssf.quality.answer_value": AttributeKind.NUMBER,
+    "ssf.quality.answer_min": AttributeKind.NUMBER,
+    "ssf.quality.answer_max": AttributeKind.NUMBER,
+}
+
+RATING_KEYS = {
+    "ssf.quality.translation_quality",
+    "ssf.quality.performance",
+    "ssf.quality.usability",
+    "ssf.quality.net_promoter_score",
 }
 
 
@@ -51,6 +85,10 @@ def _event(**overrides) -> FeedbackSubmittedEvent:
         usability=3,
         net_promoter_score=9,
         feedback_form_version="v1",
+        audience=FeedbackAudience.GUEST,
+        form_source=FeedbackFormSource.BUNDLED,
+        feedback_locale="en",
+        answer_count=4,
     )
     fields.update(overrides)
     return FeedbackSubmittedEvent(**fields)
@@ -70,9 +108,10 @@ def _telemetry(mode=TelemetryMode.ENABLED, exporter=None):
     )
 
 
-def _emit(telemetry, **overrides):
+def _header(**overrides) -> FeedbackHeader:
     fields = dict(
         event_id=uuid4(),
+        occurred_at=datetime.now(timezone.utc),
         session_ref=SESSION_REFERENCE,
         feedback_ref=FEEDBACK_REFERENCE,
         translation_quality=4,
@@ -80,9 +119,51 @@ def _emit(telemetry, **overrides):
         usability=3,
         net_promoter_score=9,
         form_version="v1",
+        audience="guest",
+        form_source="bundled",
+        locale="en",
     )
     fields.update(overrides)
-    return telemetry.emit_feedback_submitted(**fields)
+    return FeedbackHeader(**fields)
+
+
+def _answer(**overrides) -> FeedbackAnswer:
+    fields = dict(question_id="clarity", question_type="rating", value=4, minimum=1, maximum=7)
+    fields.update(overrides)
+    return FeedbackAnswer(**fields)
+
+
+def _emit(telemetry, answers=(), **overrides):
+    """A submission's header, and its answers if given, through the one batch call."""
+    return telemetry.emit_feedback(_header(**overrides), answers)
+
+
+def _answer_event(**overrides) -> FeedbackAnswerEvent:
+    fields = dict(
+        event_id=uuid4(),
+        schema_version=1,
+        emitted_at_utc=datetime.now(timezone.utc),
+        event_type=QualityEventType.FEEDBACK_ANSWER,
+        feedback_ref=FEEDBACK_REFERENCE,
+        audience=FeedbackAudience.GUEST,
+        question_id="clarity",
+        question_type=FeedbackQuestionType.RATING,
+        value=4,
+        minimum=1,
+        maximum=7,
+    )
+    fields.update(overrides)
+    return FeedbackAnswerEvent(**fields)
+
+
+def _emit_answer(telemetry, submission_event_id=None, **overrides):
+    """One answer and the header it belongs to."""
+    header = _header(event_id=submission_event_id or uuid4())
+    return telemetry.emit_feedback(header, [_answer(**overrides)])
+
+
+def _answers(recording) -> list[dict]:
+    return [attributes for name, attributes, _ in recording.calls if name == "feedback_answer"]
 
 
 class TestTheEventCarriesNoContent:
@@ -94,6 +175,8 @@ class TestTheEventCarriesNoContent:
             AttributeKind.NUMBER,
             AttributeKind.ENUM,
             AttributeKind.LABEL,
+            # The form's locale: a two- or three-letter tag, no room for a word.
+            AttributeKind.LANGUAGE,
             AttributeKind.OPAQUE_REF,
             AttributeKind.TENANT_REF,
         }
@@ -241,6 +324,296 @@ class TestEmission:
         attributes = recording.calls[0][1]
         assert attributes["ssf.quality.session_ref"] == "0" * 32
         assert "ABC12345" not in str(attributes)
+
+
+class TestTheHeaderDescribesEveryForm:
+    """PR 12: a header for every stored row, with the bundled ratings only when they apply.
+
+    Gold averages the four rating columns, and an absent rating is stored as 0.
+    A header that sent zeros for a form without the bundled questions would drag
+    every average down and count as an NPS detractor, so the keys are omitted.
+    """
+
+    def test_a_header_without_ratings_carries_no_rating_key(self):
+        event = _event(
+            translation_quality=None, performance=None, usability=None, net_promoter_score=None
+        )
+
+        assert not RATING_KEYS & set(to_otlp_attributes(event))
+
+    def test_a_header_with_ratings_carries_all_four(self):
+        assert RATING_KEYS <= set(to_otlp_attributes(_event()))
+
+    @pytest.mark.parametrize("field", ["translation_quality", "performance", "usability", "net_promoter_score"])
+    def test_a_partial_rating_set_is_rejected(self, field):
+        """Half a rating set would read as a real submission with zeros in it."""
+        with pytest.raises(ValueError):
+            _event(**{field: None})
+
+    def test_audience_form_source_locale_and_count_reach_the_attributes(self):
+        attributes = to_otlp_attributes(
+            _event(
+                audience=FeedbackAudience.STAFF,
+                form_source=FeedbackFormSource.STUDIO,
+                feedback_locale="de",
+                answer_count=7,
+            )
+        )
+
+        assert attributes["ssf.quality.audience"] == "staff"
+        assert attributes["ssf.quality.form_source"] == "studio"
+        assert attributes["ssf.quality.feedback_locale"] == "de"
+        assert attributes["ssf.quality.answer_count"] == "7"
+
+    def test_a_negative_answer_count_is_rejected(self):
+        with pytest.raises(ValueError):
+            _event(answer_count=-1)
+
+    def test_the_emitter_sends_no_rating_when_none_is_given(self):
+        recording = _Recording()
+
+        result = _emit(
+            _telemetry(exporter=recording),
+            translation_quality=None,
+            performance=None,
+            usability=None,
+            net_promoter_score=None,
+            form_source="studio",
+        )
+
+        assert result.outcome is ProbeOutcome.EMITTED
+        assert not RATING_KEYS & set(recording.calls[0][1])
+
+    @pytest.mark.parametrize("locale", [None, "zh-Hant-TW", "a sentence"])
+    def test_a_locale_that_is_not_a_language_tag_becomes_undetermined(self, locale):
+        recording = _Recording()
+
+        _emit(_telemetry(exporter=recording), locale=locale)
+
+        assert recording.calls[0][1]["ssf.quality.feedback_locale"] == "und"
+
+    @pytest.mark.parametrize("field,value", [("audience", "citizen"), ("form_source", "remote")])
+    def test_an_unknown_audience_or_source_is_dropped_not_guessed(self, field, value):
+        recording = _Recording()
+
+        result = _emit(_telemetry(exporter=recording), **{field: value})
+
+        assert result.outcome is ProbeOutcome.DROPPED_DISALLOWED
+        assert recording.calls == []
+
+
+class TestTheAnswerEvent:
+    def test_it_carries_the_question_and_its_range(self):
+        attributes = to_otlp_attributes(_answer_event(tenant_ref=TENANT_REFERENCE))
+
+        assert attributes["ssf.quality.feedback_ref"] == FEEDBACK_REFERENCE
+        assert attributes["ssf.quality.tenant_ref"] == TENANT_REFERENCE
+        assert attributes["ssf.quality.audience"] == "guest"
+        assert attributes["ssf.quality.question_id"] == "clarity"
+        assert attributes["ssf.quality.question_type"] == "rating"
+        assert attributes["ssf.quality.answer_value"] == "4"
+        assert attributes["ssf.quality.answer_min"] == "1"
+        assert attributes["ssf.quality.answer_max"] == "7"
+
+    def test_it_carries_no_session_and_no_rating_key(self):
+        """The header joins a submission to its session; one copy is enough."""
+        attributes = to_otlp_attributes(_answer_event())
+
+        assert "ssf.quality.session_ref" not in attributes
+        assert not RATING_KEYS & set(attributes)
+
+    @pytest.mark.parametrize("question_id", ["how was it", "a" * 65, "", "q;drop", "naïve"])
+    def test_a_question_id_that_is_not_a_label_is_rejected(self, question_id):
+        with pytest.raises(ValueError):
+            _answer_event(question_id=question_id)
+
+    def test_the_allowlist_rejects_a_question_id_that_is_not_a_label(self):
+        """The shape guard, independent of the event class's own check."""
+        from services.api_gateway.quality_telemetry_schema import (
+            DisallowedTelemetryValue,
+            enforce_value_shapes,
+        )
+
+        with pytest.raises(DisallowedTelemetryValue):
+            enforce_value_shapes({"ssf.quality.question_id": "what did you think"})
+
+    @pytest.mark.parametrize(
+        "value,minimum,maximum", [(0, 1, 5), (6, 1, 5), (3, 5, 5), (3, 5, 1), (300, 0, 400)]
+    )
+    def test_a_value_outside_a_valid_range_is_rejected(self, value, minimum, maximum):
+        with pytest.raises(ValueError):
+            _answer_event(value=value, minimum=minimum, maximum=maximum)
+
+    def test_the_wrong_event_type_is_rejected(self):
+        with pytest.raises(ValueError):
+            _answer_event(event_type=QualityEventType.FEEDBACK_SUBMITTED)
+
+
+class TestAnswerEmission:
+    def test_the_event_id_derives_from_the_submission_and_the_question(self):
+        recording = _Recording()
+        submission = uuid4()
+
+        result = _emit_answer(
+            _telemetry(exporter=recording), submission_event_id=submission, question_id="clarity"
+        )
+
+        assert result.outcome is ProbeOutcome.EMITTED
+        assert result.event_id == submission
+        assert _answers(recording)[0]["ssf.quality.event_id"] == str(uuid5(submission, "clarity"))
+
+    def test_re_emitting_an_answer_repeats_its_id(self):
+        """The reconciler re-emits; a fresh id would count the answer twice."""
+        recording = _Recording()
+        telemetry = _telemetry(exporter=recording)
+        submission = uuid4()
+
+        _emit_answer(telemetry, submission_event_id=submission)
+        _emit_answer(telemetry, submission_event_id=submission)
+
+        first, second = _answers(recording)
+        assert first["ssf.quality.event_id"] == second["ssf.quality.event_id"]
+
+    def test_two_questions_of_one_submission_get_different_ids(self):
+        recording = _Recording()
+
+        _emit(_telemetry(exporter=recording), [_answer(question_id="clarity"), _answer(question_id="speed")])
+
+        first, second = _answers(recording)
+        assert first["ssf.quality.event_id"] != second["ssf.quality.event_id"]
+
+    def test_answers_share_the_headers_references_and_audience(self):
+        recording = _Recording()
+
+        _emit(_telemetry(exporter=recording), [_answer()], audience="staff", tenant_ref=TENANT_REFERENCE)
+
+        (answer,) = _answers(recording)
+        assert answer["ssf.quality.feedback_ref"] == FEEDBACK_REFERENCE
+        assert answer["ssf.quality.tenant_ref"] == TENANT_REFERENCE
+        assert answer["ssf.quality.audience"] == "staff"
+
+    def test_the_header_counts_the_answers_it_was_sent_with(self):
+        recording = _Recording()
+
+        _emit(_telemetry(exporter=recording), [_answer(question_id="a"), _answer(question_id="b")])
+
+        assert recording.calls[0][1]["ssf.quality.answer_count"] == "2"
+
+    def test_it_emits_under_the_answer_event_name(self):
+        recording = _Recording()
+
+        _emit_answer(_telemetry(exporter=recording))
+
+        assert [name for name, _, _ in recording.calls] == ["feedback_submitted", "feedback_answer"]
+
+    def test_a_disabled_deployment_emits_nothing(self):
+        recording = _Recording()
+
+        result = _emit_answer(_telemetry(mode=TelemetryMode.DISABLED, exporter=recording))
+
+        assert result.outcome is ProbeOutcome.DISABLED
+        assert recording.calls == []
+
+    def test_a_question_id_that_is_not_a_label_is_dropped_and_not_echoed(self, caplog):
+        """Never coerced: pooled under a placeholder it would corrupt that average."""
+        recording = _Recording()
+
+        result = _emit_answer(_telemetry(exporter=recording), question_id="what did you think")
+
+        assert result.outcome is ProbeOutcome.DROPPED_DISALLOWED
+        assert recording.calls == []
+        assert "what did you think" not in caplog.text
+
+    def test_an_unknown_question_type_is_dropped(self):
+        """longText never reaches here; if it did, it must not become a number."""
+        recording = _Recording()
+
+        result = _emit_answer(_telemetry(exporter=recording), question_type="longText")
+
+        assert result.outcome is ProbeOutcome.DROPPED_DISALLOWED
+        assert recording.calls == []
+
+
+class TestASubmissionIsAllOrNothing:
+    """PR #554 review: a rejection must not leave the accepted events to be re-sent.
+
+    The schema rejects the same event on every attempt, so the row is marked
+    final; anything sent before the rejection would have been sent for good,
+    and re-sending it on every pass re-adds it to gold's averages.
+    """
+
+    def test_one_rejected_answer_sends_nothing_at_all(self):
+        recording = _Recording()
+
+        result = _emit(
+            _telemetry(exporter=recording),
+            [_answer(question_id="clarity"), _answer(question_id="speed", value=99, maximum=10)],
+        )
+
+        assert result.outcome is ProbeOutcome.DROPPED_DISALLOWED
+        assert recording.calls == []
+
+    def test_a_rejected_header_sends_no_answer(self):
+        recording = _Recording()
+
+        result = _emit(_telemetry(exporter=recording), [_answer()], translation_quality=99)
+
+        assert result.outcome is ProbeOutcome.DROPPED_DISALLOWED
+        assert recording.calls == []
+
+    def test_a_rejection_is_counted_once_so_the_alert_fires(self):
+        registry = CollectorRegistry()
+        telemetry = QualityTelemetry(mode=TelemetryMode.ENABLED, exporter=_Recording(), registry=registry)
+
+        telemetry.emit_feedback(_header(), [_answer(value=99)])
+
+        assert registry.get_sample_value(
+            "ssf_quality_telemetry_events_total", {"outcome": "dropped_disallowed"}
+        ) == 1
+
+    def test_every_sent_event_is_counted_so_the_collector_gap_stays_honest(self):
+        """QualityTelemetryEventsLostBeforeCollector compares this count with
+        the records the collector accepted, which counts every event."""
+        registry = CollectorRegistry()
+        telemetry = QualityTelemetry(mode=TelemetryMode.ENABLED, exporter=_Recording(), registry=registry)
+
+        telemetry.emit_feedback(_header(), [_answer(question_id="a"), _answer(question_id="b")])
+
+        assert registry.get_sample_value(
+            "ssf_quality_telemetry_events_total", {"outcome": "emitted"}
+        ) == 3
+
+    def test_an_export_failure_still_sends_the_rest_and_asks_for_a_retry(self):
+        sent = []
+
+        def flaky(name, attributes, emitted_at_utc):
+            if attributes.get("ssf.quality.question_id") == "a":
+                raise ConnectionError("collector unreachable")
+            sent.append(name)
+
+        result = QualityTelemetry(
+            mode=TelemetryMode.ENABLED, exporter=flaky, registry=CollectorRegistry()
+        ).emit_feedback(_header(), [_answer(question_id="a"), _answer(question_id="b")])
+
+        assert result.outcome is ProbeOutcome.EXPORT_FAILED
+        assert sent == ["feedback_submitted", "feedback_answer"]
+
+    def test_every_event_is_stamped_with_the_submission_time(self):
+        """A re-send lands on the submission's gold day and renews no silver TTL."""
+        recording = _Recording()
+        submitted = datetime(2026, 10, 1, 9, 30, tzinfo=timezone.utc)
+
+        _emit(_telemetry(exporter=recording), [_answer()], occurred_at=submitted)
+
+        assert {emitted_at for _, _, emitted_at in recording.calls} == {submitted}
+
+    def test_a_naive_submission_time_is_rejected_not_guessed(self):
+        recording = _Recording()
+
+        result = _emit(_telemetry(exporter=recording), occurred_at=datetime(2026, 10, 1, 9, 30))
+
+        assert result.outcome is ProbeOutcome.DROPPED_DISALLOWED
+        assert recording.calls == []
 
 
 class TestTheCollectorKeepsTheNewKeys:
@@ -395,3 +768,113 @@ class TestTheGoldTableIsDimensionedByTenant:
         )
 
         assert "quality_events_mv" not in statements
+
+
+class TestTheFeedbackGoldTiersAfterPr12:
+    """008: header events for every form, answer events, and an audience split.
+
+    `feedback_daily_mv` averaged the four rating columns over every header, and
+    an absent rating is 0. Once forms without the bundled ids send headers,
+    those zeros would drag every average down and every such row would count
+    as an NPS detractor. 008 moves gold to `feedback_daily_v2`, whose averages
+    and NPS see only rows that carry the ratings.
+    """
+
+    MIGRATION = ROOT / "deploy/clickhouse/migrations/008_feedback_answers_and_audience.sql"
+
+    @classmethod
+    def _statements(cls) -> list[str]:
+        sql = "\n".join(
+            line for line in cls.MIGRATION.read_text().splitlines() if not line.lstrip().startswith("--")
+        )
+        return [" ".join(statement.split()) for statement in sql.split(";") if statement.strip()]
+
+    @classmethod
+    def _statement(cls, opening: str) -> str:
+        matching = [statement for statement in cls._statements() if statement.startswith(opening)]
+        assert len(matching) == 1, (opening, matching)
+        return matching[0]
+
+    def test_silver_gains_the_legacy_flag_derived_from_the_ratings(self):
+        """Every pre-PR-12 header carried ratings, so old rows must read 1."""
+        added = self._statement("ALTER TABLE quality_events ADD COLUMN")
+
+        assert re.search(r"has_legacy_ratings UInt8 DEFAULT toUInt8\(translation_quality > 0\)", added)
+
+    def test_the_view_derives_the_flag_from_the_rating_key(self):
+        view = self._statement("ALTER TABLE quality_events_mv MODIFY QUERY")
+
+        assert (
+            "toUInt8(LogAttributes['ssf.quality.translation_quality'] != '') AS has_legacy_ratings"
+            in view
+        )
+
+    def test_gold_v2_is_keyed_by_audience_and_form_source(self):
+        """A new table, not MODIFY ORDER BY: a re-run of 007 shrinks an
+        extended key back without an error (verified on 26.3.17)."""
+        table = self._statement("CREATE TABLE IF NOT EXISTS feedback_daily_v2 ")
+        key = re.search(r"ORDER BY \(([^)]*)\)", table).group(1)
+
+        assert [column.strip() for column in key.split(",")][-3:] == [
+            "tenant_ref",
+            "audience",
+            "form_source",
+        ]
+        assert not any(
+            statement.startswith("ALTER TABLE feedback_daily ") for statement in self._statements()
+        )
+
+    @pytest.mark.parametrize(
+        "state",
+        [
+            "avgStateIf(translation_quality, has_legacy_ratings = 1)",
+            "avgStateIf(performance, has_legacy_ratings = 1)",
+            "avgStateIf(usability, has_legacy_ratings = 1)",
+            "avgStateIf(net_promoter_score, has_legacy_ratings = 1)",
+            "uniqExactStateIf(event_id, has_legacy_ratings = 1) AS rated_submissions",
+            "uniqExactStateIf(event_id, has_legacy_ratings = 1 AND net_promoter_score >= 9)",
+            "uniqExactStateIf(event_id, has_legacy_ratings = 1 AND net_promoter_score <= 6)",
+        ],
+    )
+    def test_the_v2_view_sees_ratings_only_on_rows_that_carry_them(self, state):
+        view = self._statement("CREATE MATERIALIZED VIEW IF NOT EXISTS feedback_daily_v2_mv")
+
+        assert state in view
+
+    def test_the_v2_view_counts_every_submission(self):
+        view = self._statement("CREATE MATERIALIZED VIEW IF NOT EXISTS feedback_daily_v2_mv")
+
+        assert "uniqExactState(event_id) AS submissions" in view
+        assert "WHERE event_type = 'feedback_submitted'" in view
+        assert view.split("GROUP BY")[-1].split(",")[-2:] == [" audience", " form_source"]
+
+    def test_the_old_gold_view_is_retired(self):
+        assert "DROP VIEW IF EXISTS feedback_daily_mv" in self._statements()
+
+    def test_old_gold_is_copied_into_v2_at_most_once(self):
+        """A plain INSERT would re-copy on every apply.sh run and double the averages."""
+        copy = self._statement("INSERT INTO feedback_daily_v2 SELECT")
+
+        assert "FROM feedback_daily " in copy + " "
+        assert "(SELECT count() FROM feedback_daily_v2_backfill) = 0" in copy
+        assert any(
+            statement.startswith("INSERT INTO feedback_daily_v2_backfill")
+            and "(SELECT count() FROM feedback_daily_v2_backfill) = 0" in statement
+            for statement in self._statements()
+        )
+
+    def test_the_answer_aggregate_counts_distinct_answers_per_question(self):
+        table = self._statement("CREATE TABLE IF NOT EXISTS feedback_answer_daily ")
+        view = self._statement("CREATE MATERIALIZED VIEW IF NOT EXISTS feedback_answer_daily_mv")
+
+        for column in ("audience", "question_id", "question_type", "answer_min", "answer_max"):
+            assert column in re.search(r"ORDER BY \(([^)]*)\)", table).group(1)
+        assert "uniqExactState(event_id) AS answers" in view
+        assert "avgState(answer_value) AS value_avg" in view
+        assert "WHERE event_type = 'feedback_answer'" in view
+
+    def test_every_create_is_guarded(self):
+        unguarded = re.findall(
+            r"CREATE (?:TABLE|MATERIALIZED VIEW)(?! IF NOT EXISTS)", self.MIGRATION.read_text()
+        )
+        assert not unguarded

@@ -41,12 +41,55 @@ from services.api_gateway.app import app, lifespan
 async def main():
     async with lifespan(app):
         results = [
-            app.state.quality_telemetry.emit_probe(event_type="telemetry_probe")
+            app.state.dependencies.quality_telemetry.emit_probe(event_type="telemetry_probe")
             for _ in range(EMISSIONS)
         ]
     print("RESULT " + json.dumps(
         [{"outcome": r.outcome.value, "event_id": str(r.event_id)} for r in results]
     ))
+
+asyncio.run(main())
+"""
+
+
+# A stored submission's events, emitted twice through the gateway's own
+# telemetry: the second pass is what the reconciler does after an outage.
+_EMIT_FEEDBACK_THROUGH_LIFESPAN = """
+import asyncio, json, uuid
+from datetime import datetime, timezone
+from services.api_gateway.app import app, lifespan
+from services.api_gateway.feedback.analytics import emit_submission
+from services.api_gateway.feedback.repository import PendingAnalytics
+from services.api_gateway.session_pseudonym import SessionPseudonymizer, tenant_ref
+
+row = PendingAnalytics(
+    feedback_id=uuid.uuid4(),
+    tenant_id="itest-" + uuid.uuid4().hex,
+    session_ref="c" * 32,
+    analytics_event_id=uuid.uuid4(),
+    audience="guest",
+    form_source="studio",
+    form_locale="en",
+    numeric_answers={"clarity": 6, "speed": 9},
+    form_snapshot=[
+        {"id": "clarity", "type": "rating", "min": 1, "max": 7},
+        {"id": "notes", "type": "longText", "maxLength": 4000},
+        {"id": "speed", "type": "scale", "min": 0, "max": 10},
+    ],
+    form_version="v2",
+    created_at=datetime.now(timezone.utc),
+)
+
+async def main():
+    async with lifespan(app):
+        telemetry = app.state.dependencies.quality_telemetry
+        pseudonymizer = SessionPseudonymizer.from_environment()
+        outcomes = [emit_submission(telemetry, pseudonymizer, row).value for _ in range(2)]
+    print("RESULT " + json.dumps({
+        "outcomes": outcomes,
+        "event_id": str(row.analytics_event_id),
+        "tenant_ref": tenant_ref(row.tenant_id),
+    }))
 
 asyncio.run(main())
 """
@@ -71,7 +114,7 @@ def _query(sql: str) -> str:
     ).stdout.strip()
 
 
-def _emit_through_the_gateway(emissions: int = 1) -> list[dict]:
+def _run_in_the_gateway(script: str, mode: str) -> object:
     """Run the gateway's real startup path and emit, then let teardown flush."""
     completed = subprocess.run(
         [
@@ -80,7 +123,7 @@ def _emit_through_the_gateway(emissions: int = 1) -> list[dict]:
             "exec",
             "-T",
             "-e",
-            "SSF_QUALITY_TELEMETRY_MODE=probe",
+            f"SSF_QUALITY_TELEMETRY_MODE={mode}",
             "-e",
             "SSF_RELEASE_VERSION=itest",
             "-e",
@@ -88,7 +131,7 @@ def _emit_through_the_gateway(emissions: int = 1) -> list[dict]:
             "api_gateway",
             "python",
             "-c",
-            _EMIT_THROUGH_LIFESPAN.replace("EMISSIONS", str(emissions)),
+            script,
         ],
         capture_output=True,
         text=True,
@@ -96,6 +139,12 @@ def _emit_through_the_gateway(emissions: int = 1) -> list[dict]:
     )
     line = next(ln for ln in completed.stdout.splitlines() if ln.startswith("RESULT "))
     return json.loads(line[len("RESULT ") :])
+
+
+def _emit_through_the_gateway(emissions: int = 1) -> list[dict]:
+    return _run_in_the_gateway(
+        _EMIT_THROUGH_LIFESPAN.replace("EMISSIONS", str(emissions)), "probe"
+    )
 
 
 def _await_silver(event_id: str, expected: str = "1") -> None:
@@ -324,3 +373,53 @@ def test_the_collector_drops_a_record_that_is_not_a_quality_event() -> None:
 
     time.sleep(10)
     assert _query("SELECT count() FROM otel_logs") == before
+
+
+def _await(sql: str, expected: str) -> str:
+    for _ in range(30):
+        value = _query(sql)
+        if value == expected:
+            return value
+        time.sleep(1)
+    return value
+
+
+def test_a_re_emitted_feedback_submission_is_counted_once_in_every_tier() -> None:
+    """PR 12, end to end: gateway emitter, collector keep_keys, 008's views.
+
+    The submission's header and two answers go out twice under the same ids,
+    as the reconciler sends them after an outage. Bronze holds both copies;
+    silver and both gold tables count each event once. The longText question
+    produces no event.
+    """
+    result = _run_in_the_gateway(_EMIT_FEEDBACK_THROUGH_LIFESPAN, "enabled")
+    assert result["outcomes"] == ["emitted", "emitted"], result
+    tenant = result["tenant_ref"]
+
+    bronze = _await(
+        f"SELECT count() FROM otel_logs WHERE LogAttributes['ssf.quality.tenant_ref'] = '{tenant}'",
+        "6",
+    )
+    silver = _await(
+        "SELECT count(), uniqExact(event_id), countIf(event_type = 'feedback_answer') "
+        f"FROM quality_events FINAL WHERE tenant_ref = '{tenant}'",
+        "3\t3\t2",
+    )
+    header = _query(
+        "SELECT audience, form_source, feedback_locale, answer_count, has_legacy_ratings "
+        f"FROM quality_events FINAL WHERE event_id = toUUID('{result['event_id']}')"
+    )
+    submissions = _query(
+        "SELECT audience, uniqExactMerge(submissions), uniqExactMerge(rated_submissions) "
+        f"FROM feedback_daily_v2 WHERE tenant_ref = '{tenant}' GROUP BY audience"
+    )
+    answers = _query(
+        "SELECT question_id, uniqExactMerge(answers), answer_max FROM feedback_answer_daily "
+        f"WHERE tenant_ref = '{tenant}' GROUP BY question_id, answer_max ORDER BY question_id"
+    )
+
+    assert bronze == "6", "both emissions must actually have landed"
+    assert silver == "3\t3\t2"
+    assert header.split("\t") == ["guest", "studio", "en", "2", "0"]
+    assert submissions.split("\t") == ["guest", "1", "0"]
+    assert answers.splitlines() == ["clarity\t1\t7", "speed\t1\t10"]

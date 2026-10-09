@@ -73,11 +73,14 @@ class RecordingTelemetry:
     def __init__(self) -> None:
         self.calls: list = []
 
-    def emit_feedback_submitted(self, **kwargs):
+    def emit_feedback(self, header, answers):
+        from dataclasses import asdict
+
         from services.api_gateway.quality_telemetry_schema import ProbeOutcome, ProbeResult
 
-        self.calls.append(kwargs)
-        return ProbeResult(ProbeOutcome.EMITTED, kwargs.get("event_id"))
+        self.calls.append(asdict(header))
+        self.calls.extend(asdict(answer) for answer in answers)
+        return ProbeResult(ProbeOutcome.EMITTED, header.event_id)
 
 
 class KnownSessions:

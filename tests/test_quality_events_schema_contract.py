@@ -28,6 +28,7 @@ LIFECYCLE = MIGRATIONS / "004_session_lifecycle_fields.sql"
 TENANT = MIGRATIONS / "005_tenant_reference.sql"
 FEEDBACK = MIGRATIONS / "006_feedback_submitted_fields.sql"
 TENANT_DIMENSION = MIGRATIONS / "007_feedback_tenant_dimension.sql"
+FEEDBACK_ANSWERS = MIGRATIONS / "008_feedback_answers_and_audience.sql"
 
 # The envelope keys 001 already projects; everything else must arrive in a later
 # migration. Which one does not matter -- only that some migration gives the key
@@ -195,6 +196,7 @@ def test_every_migration_after_the_first_is_covered_by_these_guards() -> None:
         TENANT.name,
         FEEDBACK.name,
         TENANT_DIMENSION.name,
+        FEEDBACK_ANSWERS.name,
     }
 
 
@@ -327,3 +329,8 @@ class TestMigrationIsIdempotent:
         sql = GOLD.read_text()
         assert "ALTER TABLE quality_events_mv MODIFY QUERY" in sql
         assert "DROP VIEW" not in sql
+
+
+def test_the_feedback_answer_migration_restates_the_silver_view() -> None:
+    """008 adds silver fields, so it must be the newest full projection."""
+    assert _latest_silver_view_migration() == FEEDBACK_ANSWERS

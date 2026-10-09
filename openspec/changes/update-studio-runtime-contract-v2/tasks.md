@@ -77,8 +77,8 @@
 
 ## 12. Feedback analytics
 
-- [ ] 12.1 Emit `feedback_submitted` and per-answer `feedback_answer` events with deterministic ids
-- [ ] 12.2 Add ClickHouse migration `008` and update the Grafana feedback panels
+- [x] 12.1 Emit `feedback_submitted` and per-answer `feedback_answer` events with deterministic ids
+- [x] 12.2 Add ClickHouse migration `008` and update the Grafana feedback panels
 
 ## 13. Frontend: Studio feedback forms
 

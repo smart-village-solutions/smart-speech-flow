@@ -139,7 +139,7 @@ def test_dashboard_json_is_valid() -> None:
 # every read must deduplicate; the gold tables are AggregatingMergeTrees keyed on
 # event_date, already idempotent and filtered by date rather than by timestamp.
 RAW_TIER = "quality_events"
-GOLD_TIERS = ("quality_events_daily", "feedback_daily")
+GOLD_TIERS = ("quality_events_daily", "feedback_daily_v2", "feedback_answer_daily")
 
 
 def _clickhouse_queries() -> list[str]:
@@ -291,6 +291,89 @@ def test_feedback_panels_read_the_feedback_event_only() -> None:
         assert "event_type = 'feedback_submitted'" in sql, sql
 
 
+def _is_feedback_panel(sql: str) -> bool:
+    """Feedback analysis, not the deployment-wide data-health count of untyped rows."""
+    return "feedback_" in sql and "AS untyped" not in sql
+
+
+def _feedback_queries() -> list[str]:
+    return [sql for sql in _clickhouse_queries() if _is_feedback_panel(sql)]
+
+
+def test_silver_rating_reads_see_only_rows_that_carry_the_ratings() -> None:
+    """PR 12: a header from a form without the bundled questions stores 0s.
+
+    Averaged in, those zeros pull every rating down; in the NPS they are
+    detractors. Gold filters in its view (008); silver panels must filter here.
+    """
+    for sql in _clickhouse_queries():
+        if "quality_events FINAL" not in sql:
+            continue
+        if not any(f"({column})" in sql or f"({column}," in sql or f"{column} >=" in sql
+                   or f"{column} <=" in sql for column in RATING_COLUMNS):
+            continue
+        assert "has_legacy_ratings = 1" in sql, sql
+
+
+def test_no_panel_reads_the_retired_feedback_aggregate() -> None:
+    """008 stops feeding `feedback_daily`; a panel on it would flatline."""
+    for sql in _clickhouse_queries():
+        assert not re.search(r"\bfeedback_daily\b(?!_)", sql), sql
+
+
+def test_every_feedback_panel_keeps_staff_apart() -> None:
+    """Staff feedback is filtered out of citizen numbers, or split out by audience."""
+    queries = _feedback_queries()
+    assert queries
+
+    for sql in queries:
+        split = re.search(r"GROUP BY [^)]*\baudience\b", sql)
+        assert "audience != 'staff'" in sql or split, sql
+
+
+def test_an_audience_split_panel_exists() -> None:
+    (sql,) = _queries("Feedback by Audience")
+
+    assert "FROM feedback_daily_v2" in sql
+    assert "GROUP BY audience" in sql
+
+
+def test_answers_are_averaged_per_question_in_both_tiers() -> None:
+    """Studio forms ask their own questions; only per-answer events describe them."""
+    (exact,) = _queries("Answer Averages by Question")
+    (gold,) = _queries("Answer Averages by Question (Gold Tier, approximate)")
+
+    assert "event_type = 'feedback_answer'" in exact and "quality_events FINAL" in exact
+    assert "uniqExact(event_id)" in exact
+    assert "FROM feedback_answer_daily" in gold
+    for sql in (exact, gold):
+        assert re.search(
+            r"GROUP BY tenant_ref, question_id, question_type, answer_min, answer_max", sql
+        ), sql
+
+
+def test_answer_averages_keep_each_tenants_questions_apart() -> None:
+    """PR #554 review: question ids are per tenant form; with the picker on All,
+    tenant A's and tenant B's `clarity` would otherwise average as one question."""
+    for title in ("Answer Averages by Question", "Answer Averages by Question (Gold Tier, approximate)"):
+        (sql,) = _queries(title)
+        assert sql.startswith("SELECT tenant_ref, question_id"), sql
+
+
+def test_answer_averages_skip_answers_that_lost_their_question() -> None:
+    """While apply.sh re-runs 006 the view briefly projects no question id."""
+    for title in ("Answer Averages by Question", "Answer Averages by Question (Gold Tier, approximate)"):
+        (sql,) = _queries(title)
+        assert "question_id != ''" in sql, sql
+
+
+def test_the_daily_submissions_panel_does_not_promise_a_question_set_split() -> None:
+    """Every v2 submission has form version `v2`, whatever Studio form it answered."""
+    description = _panel("Daily Submissions (Gold Tier)")["description"]
+
+    assert "revised question set is visible" not in description
+
+
 def test_the_response_rate_excludes_submissions_carrying_no_session() -> None:
     """The access-code and admin-dashboard screens submit without a session.
 
@@ -330,8 +413,10 @@ def test_the_dashboard_reads_the_feedback_gold_tier() -> None:
     """A gold tier nothing reads is a tier nobody notices has stopped filling."""
     queries = _clickhouse_queries()
 
-    assert any("feedback_daily" in sql for sql in queries)
+    assert any("feedback_daily_v2" in sql for sql in queries)
+    assert any("feedback_answer_daily" in sql for sql in queries)
     assert any("feedback_submitted" in sql and "quality_events FINAL" in sql for sql in queries)
+    assert any("feedback_answer" in sql and "quality_events FINAL" in sql for sql in queries)
 
 
 def test_the_dashboard_reads_both_medallion_tiers() -> None:
@@ -413,7 +498,7 @@ class TestTheFeedbackPanelsCanBeFilteredByTenant:
         return named[0]
 
     def test_the_variable_offers_every_tenant_the_aggregate_holds(self):
-        assert "feedback_daily" in self._variable()["query"]
+        assert "feedback_daily_v2" in self._variable()["query"]
         assert "tenant_ref" in self._variable()["query"]
 
     def test_it_includes_an_all_option_and_starts_there(self):
@@ -429,9 +514,9 @@ class TestTheFeedbackPanelsCanBeFilteredByTenant:
         feedback = [
             sql
             for sql in _clickhouse_queries()
-            if "feedback_daily" in sql or "feedback_submitted" in sql
+            if _is_feedback_panel(sql)
         ]
-        assert len(feedback) >= 8, f"expected every feedback panel, got {len(feedback)}"
+        assert len(feedback) >= 11, f"expected every feedback panel, got {len(feedback)}"
 
         for sql in feedback:
             assert "${tenant" in sql, sql
@@ -672,3 +757,32 @@ class TestTheRefinementServingPanels:
             for rule in group["rules"]
         }
         assert "RefinementFailureRateHigh" in names
+
+
+def test_the_gold_rating_averages_skip_days_with_nothing_rated() -> None:
+    """avgMerge over an empty filtered state is nan, which plots as a broken point.
+
+    Since 008 a day can hold only Studio submissions, none carrying the bundled
+    ratings; verified against local ClickHouse, the panel returned nan for it.
+    """
+    (sql,) = _queries("Rating Averages (Gold Tier, approximate)")
+
+    assert "HAVING uniqExactMerge(rated_submissions) > 0" in sql
+
+
+def test_the_untyped_rows_panel_covers_the_feedback_events() -> None:
+    """Review of PR 12: a collector still on the old keep_keys strips the answer
+    fields, and the runbook points at this panel to catch it."""
+    (sql,) = _queries("Rows Missing Typed Fields")
+
+    assert "countIf(event_type = 'feedback_answer' AND question_id = '')" in sql
+    assert "countIf(event_type = 'feedback_submitted' AND feedback_ref = '')" in sql
+
+
+def test_the_untyped_rows_panel_counts_rows_that_lost_their_event_name() -> None:
+    """A collector started before ClickHouse writes every row with an empty
+    EventName (schema detection fails once and is never retried), and those
+    rows match no event_type filter anywhere else on the dashboard."""
+    (sql,) = _queries("Rows Missing Typed Fields")
+
+    assert "countIf(event_type = '')" in sql

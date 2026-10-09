@@ -23,9 +23,9 @@ request path for; the Collector's own health is alerted separately
 (QualityTelemetryCollectorDown).
 
 Free text is structurally out of reach here: `PendingAnalytics` has no
-ciphertext field and the claim query does not select the column. The event's
-four numbers are rebuilt from `numeric_answers`; a row whose form did not ask
-the bundled questions is marked `not_applicable` rather than retried forever.
+ciphertext field and the claim query does not select the column. The header
+and every answer event are rebuilt from `numeric_answers` and `form_snapshot`
+by the same `emit_submission` the submit path uses, under the same ids.
 """
 
 from __future__ import annotations
@@ -38,12 +38,14 @@ from typing import Any, Callable
 from prometheus_client import CollectorRegistry, Counter, Gauge
 
 from ..quality_telemetry_schema import ProbeOutcome
-from ..session_pseudonym import SessionPseudonymizer, tenant_ref
-from .bundled_form import legacy_ratings
+from ..session_pseudonym import SessionPseudonymizer
+from .analytics import emit_submission
 from .models import AnalyticsState
 from .repository import FeedbackRepository, ReconciliationLockUnavailable, RetentionLockUnavailable
 
 logger = logging.getLogger(__name__)
+
+_FINAL_OUTCOMES = frozenset({ProbeOutcome.DISABLED, ProbeOutcome.DROPPED_DISALLOWED})
 
 RECONCILIATION_BATCH_LIMIT = 200
 RETENTION_BATCH_LIMIT = 500
@@ -61,6 +63,7 @@ class ReconciliationPass:
     recovered: int = 0
     failed: int = 0
     drained: int = 0
+    rejected: int = 0
     unavailable: bool = False
     skipped: bool = False
 
@@ -168,6 +171,9 @@ class FeedbackMaintenanceMetrics:
     def drained(self, count: int) -> None:
         self._count(self.reconciliation, count, outcome="not_applicable")
 
+    def rejected(self, count: int) -> None:
+        self._count(self.reconciliation, count, outcome="rejected")
+
     def observed_backlog(self, depth: int) -> None:
         if self.backlog is not None:
             self.backlog.set(depth)
@@ -235,47 +241,36 @@ class FeedbackMaintenance:
 
         self._metrics.observed_backlog(len(pending))
 
-        recovered = failed = drained = 0
+        tally = {outcome: 0 for outcome in ProbeOutcome}
         for row in pending:
-            outcome = await self._redeliver(row)
-            if outcome is ProbeOutcome.EMITTED:
-                recovered += 1
-            elif outcome is ProbeOutcome.DISABLED:
-                drained += 1
-            else:
-                failed += 1
+            tally[await self._redeliver(row)] += 1
+        recovered = tally[ProbeOutcome.EMITTED]
+        drained = tally[ProbeOutcome.DISABLED]
+        rejected = tally[ProbeOutcome.DROPPED_DISALLOWED]
+        failed = tally[ProbeOutcome.EXPORT_FAILED]
 
         self._metrics.recovered(recovered)
         self._metrics.failed(failed)
         self._metrics.drained(drained)
-        return ReconciliationPass(recovered=recovered, failed=failed, drained=drained)
+        self._metrics.rejected(rejected)
+        return ReconciliationPass(
+            recovered=recovered, failed=failed, drained=drained, rejected=rejected
+        )
 
     async def _redeliver(self, row: Any) -> ProbeOutcome:
         """One row. Returns the outcome; never raises."""
         try:
-            ratings = legacy_ratings(row.numeric_answers, row.form_snapshot)
-            if ratings is None:
-                # The v1 event cannot describe this form, so no pass ever could.
-                return await self._drain(row)
-            result = self._telemetry.emit_feedback_submitted(
-                event_id=row.analytics_event_id,
-                session_ref=row.session_ref,
-                tenant_ref=tenant_ref(row.tenant_id),
-                feedback_ref=self._pseudonymizer.feedback_reference(row.feedback_id),
-                translation_quality=ratings.translation_quality,
-                performance=ratings.performance,
-                usability=ratings.usability,
-                net_promoter_score=ratings.net_promoter_score,
-                form_version=row.form_version,
-            )
+            outcome = emit_submission(self._telemetry, self._pseudonymizer, row)
         except Exception as error:  # One bad row must not end the batch.
             logger.warning("Feedback re-emission raised: %s", type(error).__name__)
             return ProbeOutcome.EXPORT_FAILED
 
         try:
-            if result.outcome is ProbeOutcome.EMITTED:
+            if outcome is ProbeOutcome.EMITTED:
                 await self._repository.mark_analytics_delivered(row.feedback_id, row.tenant_id)
-            elif result.outcome is ProbeOutcome.DISABLED:
+            elif outcome in _FINAL_OUTCOMES:
+                # A rejection repeats on every pass; retried, the row would hold
+                # a batch slot for good. The telemetry module alerts on it.
                 await self._repository.mark_analytics_state(
                     row.feedback_id, AnalyticsState.NOT_APPLICABLE, row.tenant_id
                 )
@@ -285,13 +280,7 @@ class FeedbackMaintenance:
             logger.warning("Feedback state update failed: %s", type(error).__name__)
             return ProbeOutcome.EXPORT_FAILED
 
-        return result.outcome
-
-    async def _drain(self, row: Any) -> ProbeOutcome:
-        await self._repository.mark_analytics_state(
-            row.feedback_id, AnalyticsState.NOT_APPLICABLE, row.tenant_id
-        )
-        return ProbeOutcome.DISABLED
+        return outcome
 
     async def expire_once(self) -> RetentionPass:
         now = self._clock()
