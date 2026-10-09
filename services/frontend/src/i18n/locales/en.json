@@ -28,7 +28,8 @@
     "retention": "By default, audio and transcription data are processed only during the active session and are not retained afterwards. Once the conversation ends, the data is discarded automatically. You can report issues or share ideas for improvement at any time using the in-app feedback function.",
     "optIn": "If you would like to help us improve $t(app.name), you have the option to allow your conversation data to be stored for up to 180 days. This data may be used solely for analysis and quality improvement purposes within the $t(app.name) project.",
     "checkbox": "I agree to the storage of my conversation data for up to 180 days for the purpose of improving $t(app.name).",
-    "getStarted": "Get started"
+    "getStarted": "Get started",
+    "loading": "Loading the information"
   },
   "conversation": {
     "record": "Record",

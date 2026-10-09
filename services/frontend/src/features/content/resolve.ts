@@ -29,8 +29,15 @@ function hasText(html: string): boolean {
   return new DOMParser().parseFromString(html, 'text/html').body.textContent?.trim() !== '';
 }
 
+/** Studio's markup when it carries text; undefined means the caller's bundled copy. */
+export function studioHtml(studio: string | null | undefined): string | undefined {
+  return isPresent(studio) && hasText(studio) ? studio : undefined;
+}
+
 /** Studio's markup, or the bundled text as one paragraph, so the caller always renders RichText. */
 export function htmlOr(studio: string | null | undefined, bundled: string): string {
-  if (isPresent(studio) && hasText(studio)) return studio;
-  return `<p>${bundled.replaceAll(/[&<>]/g, (character) => ESCAPES[character])}</p>`;
+  return (
+    studioHtml(studio) ??
+    `<p>${bundled.replaceAll(/[&<>]/g, (character) => ESCAPES[character])}</p>`
+  );
 }

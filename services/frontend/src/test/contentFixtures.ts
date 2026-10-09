@@ -176,21 +176,40 @@ const NAMES: Record<string, [string, string]> = {
   fa: ['Persian', 'فارسی'],
 };
 
+type ProvidedLanguage = {
+  nativeName: string;
+  icon: { url: string; alternativeText: string } | null;
+};
+
+/** The nine guest languages, with Studio's entries exactly where given. */
+export function guestLanguagesBodyWith(provided: Readonly<Record<string, ProvidedLanguage>>) {
+  return {
+    languages: GUEST_LANGUAGE_CODES.map((code) => {
+      const [name, native] = NAMES[code];
+      const studio = provided[code];
+      return studio
+        ? { code, name, native, provided: true, ...studio }
+        : { code, name, native, provided: false };
+    }),
+  };
+}
+
 /** Kassel provides English only, as on production. */
-export const guestLanguagesBody = {
-  languages: GUEST_LANGUAGE_CODES.map((code) => {
-    const [name, native] = NAMES[code];
-    return code === 'en'
-      ? {
-          code,
-          name,
-          native,
-          provided: true,
-          nativeName: 'English',
-          icon: { url: 'https://dialog.kassel.de/flags/gb.png', alternativeText: 'Flag EN' },
-        }
-      : { code, name, native, provided: false };
-  }),
+export const guestLanguagesBody = guestLanguagesBodyWith({
+  en: {
+    nativeName: 'English',
+    icon: { url: 'https://dialog.kassel.de/flags/gb.png', alternativeText: 'Flag EN' },
+  },
+});
+
+/** Not production's icon, which is byte-identical to the bundled gb.png. */
+export const STUDIO_ICON_URL = 'https://studio.example.org/flags/en.svg';
+
+/** English texts that differ from the bundled ones, so a test can tell the source. */
+export const STUDIO_ENGLISH = {
+  explanationHtml:
+    '<p>Studio explains the service.</p><p>Studio explains <strong>storage</strong>.</p>',
+  storageQuestionHtml: '<p>Studio asks to <em>keep</em> the conversation.</p>',
 };
 
 const englishGuestContent = {
@@ -204,8 +223,16 @@ const englishGuestContent = {
   feedback: feedbackForm(englishTexts),
 };
 
-export function guestContentBody(language: string) {
-  return language === 'en' ? englishGuestContent : { storage: { mode: 'ask' }, provided: false };
+export type FixtureStorageMode = 'ask' | 'disabled' | 'unknown';
+
+/** The gateway sends no storage question while the tenant's mode is `disabled`. */
+export function guestContentBody(language: string, mode: FixtureStorageMode = 'ask') {
+  if (language !== 'en') return { storage: { mode }, provided: false };
+  return {
+    ...englishGuestContent,
+    storage: { mode },
+    storageQuestionHtml: mode === 'disabled' ? null : englishGuestContent.storageQuestionHtml,
+  };
 }
 
 export const staffContentBody = {
