@@ -342,13 +342,14 @@ tests:
                 The gateway log names the failure; an audio volume the gateway's
                 user cannot write or read is the usual cause.
 
-  # Neither directory alone is over 8 GiB; together they are.
+  # Sized for 180 days of retention (see the ssf-audio-storage comment in
+  # alert_rules.yml). Neither directory alone is over 100 GiB; together they are.
   - interval: 1m
     input_series:
       - series: 'audio_storage_disk_usage_bytes{job="api_gateway",instance="api_gateway:8000",directory="original"}'
-        values: "5368709120+0x20"
+        values: "64424509440+0x20"
       - series: 'audio_storage_disk_usage_bytes{job="api_gateway",instance="api_gateway:8000",directory="translated"}'
-        values: "4294967296+0x20"
+        values: "53687091200+0x20"
     alert_rule_test:
       - eval_time: 10m
         alertname: AudioStorageDiskUsageHigh
@@ -357,12 +358,263 @@ tests:
               severity: warning
               component: audio-storage
             exp_annotations:
-              summary: Stored audio exceeds 8 GiB.
+              summary: Stored audio exceeds 100 GiB.
               description: >-
-                Stored audio totals 9 GiB. Retention should keep it well below
-                this, so check AudioCleanupNotRunning and AudioCleanupErrors and
-                the tenants' Studio retentionHours. ServerDiskUsageHigh
-                covers the disk itself.
+                Stored audio totals 110 GiB, above the 100 GiB sized for 180 days
+                of retention at 500 voice messages a day. Retention should keep it
+                below this, so check AudioCleanupNotRunning and AudioCleanupErrors,
+                the tenants' Studio retentionHours (0 keeps audio until it is
+                removed by hand) and whether traffic has outgrown the budget.
+                ServerDiskUsageHigh covers the disk itself.
       - eval_time: 10m
         alertname: AudioStorageDiskUsageCritical
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'audio_storage_disk_usage_bytes{job="api_gateway",instance="api_gateway:8000",directory="original"}'
+        values: "96636764160+0x20"
+      - series: 'audio_storage_disk_usage_bytes{job="api_gateway",instance="api_gateway:8000",directory="translated"}'
+        values: "75161927680+0x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AudioStorageDiskUsageCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: audio-storage
+            exp_annotations:
+              summary: Stored audio exceeds 150 GiB.
+              description: >-
+                Stored audio totals 160 GiB and is still growing past the
+                warning threshold. Check the cleanup alerts and free space on
+                the host disk before saving audio starts to fail.
+
+  - interval: 1m
+    input_series:
+      - series: 'audio_files_total{job="api_gateway",instance="api_gateway:8000",directory="original"}'
+        values: "130000+0x20"
+      - series: 'audio_files_total{job="api_gateway",instance="api_gateway:8000",directory="translated"}'
+        values: "130000+0x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AudioStorageFileCountHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: audio-storage
+            exp_annotations:
+              summary: More than 250,000 audio files are stored.
+              description: >-
+                260000 audio files are stored, above the 250,000 sized for 180
+                days of retention at 500 voice messages a day, two files each.
+                Check AudioCleanupNotRunning and AudioCleanupErrors and the
+                tenants' Studio retentionHours.
+
+  # The full budget, 180 days at 500 voice messages a day plus headroom, is
+  # quiet: the old 24-hour thresholds (8 GiB, 10,000 files) would fire here.
+  - interval: 1m
+    input_series:
+      - series: 'audio_storage_disk_usage_bytes{job="api_gateway",instance="api_gateway:8000",directory="original"}'
+        values: "53687091200+0x20"
+      - series: 'audio_storage_disk_usage_bytes{job="api_gateway",instance="api_gateway:8000",directory="translated"}'
+        values: "42949672960+0x20"
+      - series: 'audio_files_total{job="api_gateway",instance="api_gateway:8000",directory="original"}'
+        values: "100000+0x20"
+      - series: 'audio_files_total{job="api_gateway",instance="api_gateway:8000",directory="translated"}'
+        values: "100000+0x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AudioStorageDiskUsageHigh
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: AudioStorageDiskUsageCritical
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: AudioStorageFileCountHigh
+        exp_alerts: []
+
+  # Studio is unreachable during a conversation: every message's policy read
+  # fails. Firing once the ten-minute ratio has held for ten minutes.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="unavailable"}'
+        values: "0+1x40"
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="ok"}'
+        values: "0+0x40"
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="contract_error"}'
+        values: "0+0x40"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: StudioPolicyReadsFailing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: studio
+            exp_annotations:
+              summary: Most live Studio policy reads are failing.
+              description: "100% of Studio policy reads failed over the last ten minutes. Staff cannot start sessions, guests cannot grant consent, and conversation content is not stored while this lasts; translation itself keeps working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
+
+  # Two failed clicks three minutes apart while Studio restarts, nothing else
+  # reading: the ratio is 100% for thirteen minutes, but two reads are not a
+  # persistent failure. Without the floor this fires at 13m.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="session_create",outcome="unavailable"}'
+        values: "0 0 0 1 1 1 2+0x30"
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="session_create",outcome="ok"}'
+        values: "0+0x36"
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: StudioPolicyReadsFailing
+        exp_alerts: []
+      - eval_time: 13m
+        alertname: StudioPolicyReadsFailing
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: StudioPolicyReadsFailing
+        exp_alerts: []
+
+  # One failed read among a conversation's successful ones.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="unavailable"}'
+        values: "0 0 0 1+0x30"
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="message",outcome="ok"}'
+        values: "0+1x33"
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: StudioPolicyReadsFailing
+        exp_alerts: []
+
+  # Failures arriving every three minutes, nothing succeeding: persistent
+  # although sparse, so it pages once ten minutes have held three failures.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="activation",outcome="unavailable"}'
+        values: "0 0 1 1 1 2 2 2 3 3 3 4 4 4 5 5 5 6 6 6 7 7 7 8 8 8 9 9 9 10 10 10 11 11 11 12 12 12 13 13 13"
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="activation",outcome="ok"}'
+        values: "0+0x40"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: StudioPolicyReadsFailing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: studio
+            exp_annotations:
+              summary: Most live Studio policy reads are failing.
+              description: "100% of Studio policy reads failed over the last ten minutes. Staff cannot start sessions, guests cannot grant consent, and conversation content is not stored while this lasts; translation itself keeps working. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token. By outcome in ssf_studio_policy_read_total: unavailable means Studio, a proxy in front of it or the token endpoint did not answer, contract_error means a refused token or an answer outside the contract."
+
+  # A suspended tenant refuses every read on purpose: not a failure.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="session_create",outcome="tenant_conflict"}'
+        values: "0+1x40"
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="session_create",outcome="unavailable"}'
+        values: "0+0x40"
+      - series: 'ssf_studio_policy_read_total{job="api_gateway",stage="session_create",outcome="contract_error"}'
+        values: "0+0x40"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: StudioPolicyReadsFailing
+        exp_alerts: []
+
+  # Guests keep asking for content and every answer comes from the cache after
+  # a failed live read. The installation route is healthy and stays quiet.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="guest_content",outcome="stale"}'
+        values: "0+1x60"
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="guest_content",outcome="live"}'
+        values: "0+0x60"
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="installation",outcome="stale"}'
+        values: "0+0x60"
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="installation",outcome="cached"}'
+        values: "0+1x60"
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: StudioContentStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: studio
+              endpoint: guest_content
+            exp_annotations:
+              summary: Studio display content is being served stale or not at all.
+              description: "The guest_content content route has answered from old content or without content, and never from a fresh Studio read, for twenty minutes. Users see the last known Studio texts, or the bundled texts and the bundled feedback form where none are held. Check that Studio answers from the gateway and that the ssf-runtime client can still obtain a token; StudioPolicyReadsFailing fires as well when policy reads fail too. A code of tenant_suspended, ssf_plugin_inactive or ssf_tenant_not_ready in the gateway's 'Studio content read failed' log line means Studio switched that tenant off on purpose."
+
+  # Stale answers between successful live reads are a flaky Studio, not an
+  # outage: the cache is refreshed every ten minutes.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="staff_content",outcome="unavailable"}'
+        values: "0+1x60"
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="staff_content",outcome="live"}'
+        values: "0+0.1x60"
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: StudioContentStale
+        exp_alerts: []
+
+  # Studio recovers after fifteen minutes. Policy reads during the conversation
+  # refresh the cache, so the route answers `cached` and never `live`: that is
+  # a fresh answer, and the alert must not keep firing on the old stale ones.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="staff_content",outcome="stale"}'
+        values: "0+1x15 15+0x45"
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="staff_content",outcome="cached"}'
+        values: "0+0x15 0+1x45"
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="staff_content",outcome="live"}'
+        values: "0+0x60"
+    alert_rule_test:
+      - eval_time: 22m
+        alertname: StudioContentStale
+        exp_alerts: []
+      - eval_time: 45m
+        alertname: StudioContentStale
+        exp_alerts: []
+
+  # One stale answer at a quiet hour, then nobody asks: a blip, not an outage.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="guest_languages",outcome="stale"}'
+        values: "0 0 0 1+0x60"
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="guest_languages",outcome="live"}'
+        values: "0+0x63"
+      - series: 'ssf_studio_content_fetch_total{job="api_gateway",endpoint="guest_languages",outcome="cached"}'
+        values: "0+0x63"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: StudioContentStale
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: StudioContentStale
+        exp_alerts: []
+
+  # A gateway that started without a Studio runtime client reads nothing, so
+  # the read counter stays silent; the gauge does not.
+  - interval: 1m
+    input_series:
+      - series: 'ssf_studio_policy_gate_bound{job="api_gateway",instance="api_gateway:8000"}'
+        values: "0+0x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: StudioPolicyGateUnbound
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: studio
+            exp_annotations:
+              summary: The gateway cannot read the Studio policy at all.
+              description: "The gateway started without a usable Studio runtime client, so it never reads the policy: staff cannot start sessions and no conversation content is stored. Its startup log says 'Runtime policy gate unbound' with the reason. Check STUDIO_RUNTIME_CONFIGURATION_BASE_URL and the ssf-runtime client settings (STUDIO_RUNTIME_TOKEN_URL, STUDIO_RUNTIME_CLIENT_SECRET) in .env, then recreate the gateway."
+
+  - interval: 1m
+    input_series:
+      - series: 'ssf_studio_policy_gate_bound{job="api_gateway",instance="api_gateway:8000"}'
+        values: "1+0x20"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: StudioPolicyGateUnbound
         exp_alerts: []
