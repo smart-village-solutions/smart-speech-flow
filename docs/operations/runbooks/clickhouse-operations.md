@@ -450,7 +450,9 @@ Expect the key to end in `tenant_ref, audience, form_source`, and
 old aggregate into v2 exactly once. Apply `008` **before** deploying a gateway
 that emits PR 12 feedback events: until `008` drops it, the old aggregate's
 view stores a header without ratings as four zeros, and the one-off copy keeps
-those as rated detractors permanently. `008` also widens
+those as rated detractors permanently. Replace every gateway replica at once:
+a pre-PR-12 reconciler marks pending Studio feedback without the bundled
+questions `not_applicable`, and those rows never reach analytics. `008` also widens
 the collector's `keep_keys` with the feedback answer fields, which the collector
 reads only at startup: recreate it after pulling
 (`$PC up -d --no-deps --force-recreate otel-collector`), or it strips them and

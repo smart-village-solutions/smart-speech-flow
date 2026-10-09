@@ -15,6 +15,8 @@ ALTER TABLE quality_events
     ADD COLUMN IF NOT EXISTS audience           LowCardinality(String) DEFAULT '',
     ADD COLUMN IF NOT EXISTS form_source        LowCardinality(String) DEFAULT '',
     ADD COLUMN IF NOT EXISTS feedback_locale    LowCardinality(String) DEFAULT '',
+    -- Numeric answers only, so it equals the submission's feedback_answer
+    -- events; text answers are never counted or emitted.
     ADD COLUMN IF NOT EXISTS answer_count       UInt8                  DEFAULT 0,
     -- Derived, not emitted: a header carries the rating keys exactly when it
     -- has legacy ratings. Rows written before this migration all did, and a
@@ -170,8 +172,11 @@ GROUP BY event_date, deployment_env, service_version, feedback_form_version, ten
 -- `feedback_daily` itself stays, read-only history that nothing reads after
 -- the copy. It cannot be dropped for good while apply.sh re-runs 006, which
 -- re-creates the table and this view on every apply; 007 then modifies the
--- view and this statement drops it again. Writes in that sub-second window
--- land only in the retired table.
+-- view and this statement drops it again. A header in that sub-second window
+-- reaches both tables; the marker below keeps it from being copied twice, and
+-- nothing reads the retired one. Until apply.sh stops re-running applied
+-- migrations (PR 14), the same window briefly projects silver without 008's
+-- columns, which is why the per-question panels skip an empty question id.
 DROP VIEW IF EXISTS feedback_daily_mv;
 
 -- Copy the old aggregate into v2, once. Every row in it predates PR 12, when

@@ -886,9 +886,23 @@ def test_the_upgrade_copies_old_gold_once_and_survives_re_runs() -> None:
                 _client(path.read_text(), database=upgrade_db)
 
         copied = _client(
-            "SELECT count(), any(audience), uniqExactMerge(submissions), "
-            "uniqExactMerge(rated_submissions), uniqExactMerge(detractors) "
+            "SELECT uniqExactMerge(submissions), uniqExactMerge(rated_submissions), "
+            "uniqExactMerge(detractors), any(audience) = '' "
             "FROM feedback_daily_v2 WHERE tenant_ref = 'dddddddddddd'",
+            database=upgrade_db,
+        )
+        # The copy's weight, not its row count: a background merge collapses a
+        # double copy into one row with twice the avg weight, and uniqExact
+        # hides it too. One new header with NPS 9 beside the copied 3 averages
+        # 6 if the old row was copied once, 5 if twice.
+        _insert_event(
+            upgrade_db,
+            "feedback_submitted",
+            _header(str(uuid.uuid4()), "d" * 12, ratings=(4, 4, 4, 9)),
+        )
+        weighted = _client(
+            "SELECT avgMerge(net_promoter_score_avg) FROM feedback_daily_v2 "
+            "WHERE tenant_ref = 'dddddddddddd'",
             database=upgrade_db,
         )
         flag = _client(
@@ -906,8 +920,8 @@ def test_the_upgrade_copies_old_gold_once_and_survives_re_runs() -> None:
             database=upgrade_db,
         )
 
-        # count() is the number of copied aggregate rows: one, not two.
-        assert copied.split("\t") == ["1", "", "1", "1", "1"], copied
+        assert copied.split("\t") == ["1", "1", "1", "1"], copied
+        assert weighted == "6", "the old aggregate was copied more than once"
         assert flag == "1", "a header written before 008 carried ratings"
         assert key.endswith("tenant_ref, audience, form_source"), key
         assert retired == "0"
