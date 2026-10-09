@@ -31,7 +31,6 @@ describe('the installation form', () => {
 
     expect(form).toMatchObject({
       origin: PUBLIC,
-      audience: 'installation',
       formSource: 'studio',
       revision: INSTALLATION_REVISION,
       locale: 'de-DE',
@@ -70,7 +69,6 @@ describe('the guest form', () => {
     const form = resolveFeedbackForm(GUEST, guestStudioForm(english, 'en'), 'en', t);
 
     expect(form).toMatchObject({
-      audience: 'guest',
       formSource: 'studio',
       revision: KASSEL_REVISION,
       locale: 'en',
@@ -98,7 +96,6 @@ describe('the staff form', () => {
     const form = resolveFeedbackForm(STAFF, staffStudioForm(staff, 'de'), 'de', t);
 
     expect(form).toMatchObject({
-      audience: 'staff',
       formSource: 'studio',
       revision: KASSEL_REVISION,
       locale: 'de-DE',

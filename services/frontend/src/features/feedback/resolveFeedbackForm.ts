@@ -5,13 +5,8 @@ import type {
   StaffContent,
   StudioFeedbackForm,
 } from '@/domain/content/content.types';
-import type {
-  FeedbackAudience,
-  FeedbackFormSource,
-  FeedbackOrigin,
-} from '@/domain/feedback/feedback.types';
+import type { FeedbackFormSource, FeedbackOrigin } from '@/domain/feedback/feedback.types';
 import type { FeedbackFormDefinition } from '@/domain/feedback/feedbackForm.types';
-import { audienceOf } from '@/domain/feedback/feedbackOrigin';
 import { inLocale, studioHtml, textOr } from '@/features/content/resolve';
 import { bundledFeedbackForm } from './bundledFeedbackForm';
 
@@ -26,7 +21,6 @@ export interface StudioFormSource {
 export interface ResolvedFeedbackForm {
   origin: FeedbackOrigin;
   definition: FeedbackFormDefinition;
-  audience: FeedbackAudience;
   formSource: FeedbackFormSource;
   /** The content revision of a Studio form; null for the bundled one. */
   revision: string | null;
@@ -85,12 +79,10 @@ export function resolveFeedbackForm(
   screenLocale: string,
   t: TFunction
 ): ResolvedFeedbackForm {
-  const audience = audienceOf(origin);
   const bundled = bundledFeedbackForm(t);
   return studio
     ? {
         origin,
-        audience,
         definition: studioDefinition(studio.form, bundled),
         formSource: 'studio',
         revision: studio.revision,
@@ -98,7 +90,6 @@ export function resolveFeedbackForm(
       }
     : {
         origin,
-        audience,
         definition: bundled,
         formSource: 'bundled',
         revision: null,

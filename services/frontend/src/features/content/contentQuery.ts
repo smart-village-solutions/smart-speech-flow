@@ -21,6 +21,9 @@ export const contentKeys = {
  */
 export const CONTENT_QUERY = { retry: false, staleTime: 60_000 } as const;
 
+/** How long a screen holds still for content before bundled copy is the answer. */
+export const CONTENT_WAIT_MS = 1_000;
+
 export function toContentState<T>(query: UseQueryResult<T>): ContentState<T> {
   return { content: query.data, settled: query.fetchStatus === 'idle' || !query.isPending };
 }

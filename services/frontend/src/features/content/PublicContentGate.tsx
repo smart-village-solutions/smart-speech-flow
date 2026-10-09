@@ -1,9 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useFavicon } from '@/ui/hooks/useFavicon';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
+import { CONTENT_WAIT_MS } from './contentQuery';
 import { usePublicContent } from './usePublicContent';
-
-const PUBLIC_CONTENT_WAIT_MS = 1_000;
 
 interface PublicContentGateProps {
   children: ReactNode;
@@ -18,7 +17,7 @@ interface PublicContentGateProps {
  */
 export function PublicContentGate({
   children,
-  waitMs = PUBLIC_CONTENT_WAIT_MS,
+  waitMs = CONTENT_WAIT_MS,
 }: Readonly<PublicContentGateProps>) {
   const { content, settled } = usePublicContent();
   const [open, setOpen] = useState(false);

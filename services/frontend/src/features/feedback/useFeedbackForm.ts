@@ -18,10 +18,11 @@ import {
   type StudioFormSource,
 } from './resolveFeedbackForm';
 
+/** Built only when the sheet freezes a form, not on every render of an open sheet. */
 export interface LiveFeedbackForm {
-  form: ResolvedFeedbackForm;
+  resolve: () => ResolvedFeedbackForm;
   /** The fallback, for when the origin's content cannot be read again. */
-  bundled: ResolvedFeedbackForm;
+  resolveBundled: () => ResolvedFeedbackForm;
   /** False while the origin's content request is outstanding. */
   settled: boolean;
   /** The origin's content query, and a read of it past the browser cache. */
@@ -73,23 +74,27 @@ function studioSource(origin: FeedbackOrigin, contents: Contents, locale: string
 /**
  * The form for `origin` as content stands now: Studio's when the audience's
  * content offers one in the screen's language, the bundled form otherwise.
- * Only the origin's own content is asked for; the sheet decides when to freeze it.
+ * Only the origin's own content is asked for, and only while `active` (the sheet
+ * is open): a closed sheet keeps its last origin, whose session may have ended.
  */
-export function useFeedbackForm(origin: FeedbackOrigin): LiveFeedbackForm {
+export function useFeedbackForm(origin: FeedbackOrigin, active: boolean): LiveFeedbackForm {
   const { t } = useTranslation();
   const { locale } = useLocale();
   const { content } = useServices();
   const installation = usePublicContent();
-  const guest = useGuestContent(origin.kind === 'guest' ? origin.sessionId : undefined, locale);
-  const staff = useStaffContent(origin.kind === 'staff');
+  const guest = useGuestContent(
+    active && origin.kind === 'guest' ? origin.sessionId : undefined,
+    locale
+  );
+  const staff = useStaffContent(active && origin.kind === 'staff');
   const { studio, settled, contentKey, readFresh } = studioSource(
     origin,
     { installation, guest, staff },
     locale
   );
   return {
-    form: resolveFeedbackForm(origin, studio, locale, t),
-    bundled: resolveFeedbackForm(origin, undefined, locale, t),
+    resolve: () => resolveFeedbackForm(origin, studio, locale, t),
+    resolveBundled: () => resolveFeedbackForm(origin, undefined, locale, t),
     settled,
     contentKey,
     readFresh: () => readFresh(content),

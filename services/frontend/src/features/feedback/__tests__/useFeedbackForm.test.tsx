@@ -2,6 +2,7 @@ import { HttpResponse } from 'msw';
 import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { FeedbackOrigin } from '@/domain/feedback/feedback.types';
+import { audienceOf } from '@/domain/feedback/feedbackOrigin';
 import { useFeedbackForm } from '@/features/feedback/useFeedbackForm';
 import { contentKeys } from '@/features/content/contentQuery';
 import { GuestContentSettled, StaffContentSettled } from '@/test/ContentSettled';
@@ -14,15 +15,16 @@ import { server } from '@/test/setup';
 const GUEST: FeedbackOrigin = { kind: 'guest', sessionId: 'A1B2C3D4' };
 const STAFF: FeedbackOrigin = { kind: 'staff', sessionId: null };
 
-function Probe({ origin }: Readonly<{ origin: FeedbackOrigin }>) {
-  const { form, settled, contentKey } = useFeedbackForm(origin);
+function Probe({ origin, active = true }: Readonly<{ origin: FeedbackOrigin; active?: boolean }>) {
+  const { resolve, settled, contentKey } = useFeedbackForm(origin, active);
+  const form = resolve();
   return (
     <output aria-label="form">
       {JSON.stringify({
         source: form.formSource,
         revision: form.revision,
         locale: form.locale,
-        audience: form.audience,
+        audience: audienceOf(form.origin),
         headline: form.definition.headline,
         settled,
         contentKey,
@@ -135,5 +137,16 @@ describe('useFeedbackForm', () => {
     await screen.findByTestId('staff-content-settled');
 
     expect(read()).toMatchObject({ source: 'bundled', locale: 'de', audience: 'staff' });
+  });
+
+  it('asks for nothing while the sheet is closed', async () => {
+    // A guest who closed the sheet may leave the session, and the screen's
+    // locale may change; a live query would keep asking for content that 404s.
+    const requests = contentRequests();
+    renderWithProviders(<Probe origin={GUEST} active={false} />);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(requests).toEqual([]);
+    expect(read()).toMatchObject({ settled: true });
   });
 });

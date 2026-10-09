@@ -4,7 +4,7 @@ import { AppError } from '@/core/http/AppError';
 import { answeredOnly } from '@/domain/feedback/feedback.mapper';
 import type { FeedbackSubmission } from '@/domain/feedback/feedback.types';
 import type { FeedbackAnswers } from '@/domain/feedback/feedbackForm.types';
-import { sessionIdOf } from '@/domain/feedback/feedbackOrigin';
+import { audienceOf, sessionIdOf } from '@/domain/feedback/feedbackOrigin';
 import type { FeedbackStatus } from './feedback.state';
 import type { ResolvedFeedbackForm } from './resolveFeedbackForm';
 
@@ -43,7 +43,7 @@ function failure(error: unknown): SubmissionState {
 
 function toSubmission(form: ResolvedFeedbackForm, answers: FeedbackAnswers): FeedbackSubmission {
   return {
-    audience: form.audience,
+    audience: audienceOf(form.origin),
     sessionId: sessionIdOf(form.origin),
     locale: form.locale,
     formSource: form.formSource,
