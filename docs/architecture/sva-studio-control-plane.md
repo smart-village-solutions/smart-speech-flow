@@ -159,6 +159,30 @@ handler in the bound tenant context. V1 does not require a second signed tenant
 assertion or replay protection for this read-only internal request. Browsers
 receive neither database credentials nor direct access to this internal API.
 
+## Runtime Configuration v2 in SSF
+
+SSF reads `/internal/plugins/ssf/v2/runtime-configuration` for one tenant and
+`/internal/plugins/ssf/v2/installation-content` for installation-wide content,
+both with the `ssf-runtime` service identity. A tenant read has two halves with
+opposite failure behaviour:
+
+- **Policy** — `conversationContentStorage` (mode and `retentionHours`) — is
+  read live whenever SSF decides with it: when staff create a session, when a
+  guest activates it (consent is resolved here, and on `granted` the session
+  keeps that read's `retentionHours` and `configurationRevision` for life), and
+  once per message before anything is stored. It is never cached, and it fails
+  closed: without a successful read no session starts and nothing is stored.
+- **Content** — staff texts, guest languages and texts, feedback forms per
+  audience, branding, legal links — fails open. SSF sanitises it once, caches it
+  by revision, and serves it to browsers through four routes:
+  `GET /api/content/installation`, `GET /api/customer/session/{id}/languages`,
+  `GET /api/customer/session/{id}/content/{language}` and `GET /api/admin/content`.
+  When Studio cannot be read, browsers get the last known content, or bundled
+  copy. The tenant display name is never shown.
+
+SSF keeps its own ten guest languages; Studio texts are used only for languages
+Studio provides. German is staff-only.
+
 ## First Delivery Runtime Flows
 
 ### Create a tenant
@@ -263,15 +287,22 @@ Two cases do not resolve through a live session:
 **Staff feedback** is authenticated: `POST /api/admin/feedback` takes the
 tenant from the staff token, exactly as the read routes do, and rejects a
 tenant in the body. A session it names must be one the caller owns in that
-tenant, otherwise it answers `404` like every other admin route. Until the
-frontend sends staff feedback there, staff feedback through the unauthenticated
-v1 body is indistinguishable from a guest's.
+tenant, otherwise it answers `404` like every other admin route. The frontend
+sends every staff submission there.
 
 **Forms.** Studio defines the feedback form for each audience. A submission's
 answers are checked against the form of the revision it names while the
 gateway's content cache still holds it, and against the current form
 otherwise; when no form can be read at all, the submission is refused as
 retryable rather than accepted unchecked.
+
+A submission names its `audience` (`guest`, `staff` or `installation`), its
+`locale`, whether the form came from Studio or from SSF's bundled copy
+(`form_source`), the `configuration_revision` of the Studio form it answers, and
+its answers by question id. A form that changed since the browser read it is
+refused with `409 feedback_form_changed`, and the browser reloads the form. The
+older body with four fixed ratings is still accepted for browsers that hold a
+frontend from before the Studio forms; it is retired after the deploy.
 
 See `docs/operations/runbooks/feedback-database-deployment.md` for the
 deployment consequences, including how to confirm no stored tenant is one that

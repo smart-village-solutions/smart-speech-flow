@@ -456,7 +456,15 @@ questions `not_applicable`, and those rows never reach analytics. `008` also wid
 the collector's `keep_keys` with the feedback answer fields, which the collector
 reads only at startup: recreate it after pulling
 (`$PC up -d --no-deps --force-recreate otel-collector`), or it strips them and
-every answer event lands without its typed columns.
+every answer event lands without its typed columns. Then check the collector's
+startup log:
+
+    $PC logs otel-collector | grep "schema detection failed"
+
+Expect no output. The ClickHouse exporter reads the table's columns once, at
+startup; if ClickHouse did not answer then, it writes every row without its
+event name, so every event-type view misses them until the collector is
+recreated again. Recreate it once ClickHouse answers and check again.
 
 **Order matters.** Emitting events while any of `002`-`008` is unapplied writes rows
 whose typed columns are all defaults, and those rows cannot be repaired: the

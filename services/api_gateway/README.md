@@ -1,5 +1,40 @@
 # API Gateway Service
 
+## Studio runtime configuration contract v2
+
+The gateway reads one tenant's runtime configuration from Studio's
+`/internal/plugins/ssf/v2/runtime-configuration` with the shared `ssf-runtime`
+service token. A read has two halves, parsed differently. The storage policy
+(`conversationContentStorage`: mode and `retentionHours`) is strict and read
+live every time it decides something, at three stages: staff session create,
+guest activation (where consent is resolved and retention captured) and each
+message's persistence gate. It is never cached. The display content (staff
+texts, guest languages and their texts, feedback forms, branding, legal links)
+is lenient: an invalid section is dropped on its own, the rest stays usable,
+and every HTML field is sanitised once, through `studio_html.safe_html`, when
+the read is cached by its `configurationRevision`. Installation-wide content
+comes from Studio's installation endpoint and is cached the same way.
+
+Browsers never call Studio. They read content through four routes:
+
+| Route | Caller | Serves |
+| --- | --- | --- |
+| `GET /api/content/installation` | anyone (start, login and access-code pages) | installation texts, legal links, logo, icon and the public feedback form; `ETag`, `Cache-Control: max-age=60` |
+| `GET /api/customer/session/{session_id}/languages` | the session's guest capability | every guest language SSF offers, with Studio's name and icon and `provided: true` where Studio supplies texts for it |
+| `GET /api/customer/session/{session_id}/content/{language}` | the session's guest capability | that language's guest texts and form, and the live storage mode (`ask`, `disabled` or `unknown`) |
+| `GET /api/admin/content` | a staff token | the tenant's staff texts, time zone and staff feedback form |
+
+Both guest routes keep answering for an ended session during the feedback grace
+period. A failed policy read counts in `ssf_studio_policy_read_total{stage,outcome}`
+(`session_create | activation | message`; `ok | unavailable | contract_error | tenant_conflict`)
+and pages through `StudioPolicyReadsFailing` once failures persist. A gateway
+that started without a runtime client reads nothing at all;
+`ssf_studio_policy_gate_bound` is then 0 and `StudioPolicyGateUnbound` pages.
+A content route that answers from old content or without content counts in
+`ssf_studio_content_fetch_total{endpoint,outcome}`, and `StudioContentStale`
+warns when a route has served no fresh answer (`live` or `cached`) for twenty
+minutes. None of these carries a tenant or session id.
+
 ## Studio-backed login directory
 
 `GET /api/login/tenants` is an anonymous, read-only facade over Studio's
@@ -147,8 +182,24 @@ capability or a bearer token of the same tenant.
   lives below `/api/{admin|customer}/session/{session_id}/polling`: `activate`,
   then `{polling_id}` (GET polls, DELETE disconnects), `send`, `recover` and
   `status`.
-- Login and feedback: `GET /api/login/tenants`, `POST /api/feedback`,
-  `GET /api/feedback`, `GET /api/feedback/{feedback_id}`.
+- Studio content: `GET /api/content/installation`,
+  `GET /api/customer/session/{session_id}/languages`,
+  `GET /api/customer/session/{session_id}/content/{language}` and
+  `GET /api/admin/content` (see "Studio runtime configuration contract v2").
+- Login and feedback: `GET /api/login/tenants`; `POST /api/feedback` for guest
+  and installation feedback, `POST /api/admin/feedback` for staff feedback
+  (staff token; the tenant comes from the token, never from the body);
+  `GET /api/feedback` and `GET /api/feedback/{feedback_id}` for Studio.
+  A submission names its `audience` (`guest | staff | installation`), its
+  `session_id` (required for a guest, absent for installation feedback),
+  `locale`, `form_source` (`studio | bundled`), the `configuration_revision` of
+  the Studio form it answers (null for the bundled form) and `answers` by
+  question id. The gateway checks the answers against that revision's form while
+  the content cache holds it, and against the current form otherwise; a form
+  that changed answers 409 `feedback_form_changed`, one that cannot be read
+  answers 503 `feedback_form_unavailable`. The older body with four fixed
+  ratings is still accepted for browsers holding a frontend from before the
+  Studio forms, and is retired after the deploy.
 - Health and operations: `GET /health`, `GET /metrics`, `/api/health/*`,
   `/api/admin/circuit-breakers/*`, `POST /api/admin/telemetry/probe` and
   `GET /api/websocket/monitoring/health`, which is public and reports only
@@ -191,7 +242,7 @@ container, so it serves HTTP and WebSocket routes alike and adds nothing to the
 OpenAPI document: `get_session_manager`, `get_realtime_ticket_store`,
 `get_polling_store`, `get_websocket_manager`, `get_conversation_service`,
 `get_session_lifecycle`, `get_studio_runtime_flow`, `get_login_directory`,
-`get_circuit_breaker_client`, `get_connection_monitor`, `get_prometheus_registry`, `get_oidc_key_cache` and
+`get_studio_content`, `get_guest_grace_window`, `get_circuit_breaker_client`, `get_connection_monitor`, `get_prometheus_registry`, `get_oidc_key_cache` and
 `get_quality_telemetry`. A test replaces one with
 `app.dependency_overrides[provider]`, or builds its own app with
 `create_app()` and runs its lifespan.
