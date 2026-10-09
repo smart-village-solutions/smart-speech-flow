@@ -3,9 +3,10 @@
  * of the production Studio bodies in tests/fixtures/studio_v2. Browser-route
  * shapes, not Studio's: a fixture in Studio's shape would hide mapper bugs.
  */
-const INSTALLATION_REVISION =
+export const INSTALLATION_REVISION =
   'sha256:352bfa1fce39de520625d95bc1b69df5fba423ec15f78544c54da49fc8fee666';
-const KASSEL_REVISION = 'sha256:302a620a286580ceae9a5e0404c71c97b79c42a023b479a979e41475b309e60e';
+export const KASSEL_REVISION =
+  'sha256:302a620a286580ceae9a5e0404c71c97b79c42a023b479a979e41475b309e60e';
 
 /** Opaque to the browser: the revision plus a digest of the body. */
 export const INSTALLATION_ETAG = `"${INSTALLATION_REVISION}.0f1e2d3c4b5a6978"`;

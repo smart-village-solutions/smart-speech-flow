@@ -1,15 +1,13 @@
-import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Lightbulb, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { FeedbackOrigin } from '@/domain/feedback/feedback.types';
-import type { FeedbackAnswers } from '@/domain/feedback/feedbackForm.types';
 import { cn } from '@/lib/cn';
 import { IconButton } from '@/ui/primitives/IconButton';
 import { FeedbackForm } from './FeedbackForm';
+import { FeedbackSkeleton } from './FeedbackSkeleton';
 import { FeedbackThanks } from './FeedbackThanks';
-import { useFeedbackForm } from './useFeedbackForm';
-import { useFeedbackSubmission } from './useFeedbackSubmission';
+import { useFeedbackSheet } from './useFeedbackSheet';
 
 const PUBLIC: FeedbackOrigin = { kind: 'public' };
 
@@ -31,29 +29,11 @@ export function FeedbackSheet({
   origin = PUBLIC,
 }: Readonly<FeedbackSheetProps>) {
   const { t } = useTranslation();
-  const form = useFeedbackForm(origin);
-  const submission = useFeedbackSubmission(form);
-  const [answers, setAnswers] = useState<FeedbackAnswers>({});
-
-  const close = () => {
-    submission.discard();
-    onOpenChange(false);
-    window.setTimeout(() => {
-      setAnswers({});
-      submission.reset();
-    }, 300);
-  };
-
-  // A refusal is a verdict on the payload that was sent, so it must not
-  // outlive an edit. Without this the sheet has a dead end: a submission
-  // refused as terminal leaves the button disabled for the life of the sheet,
-  // and the only way out is Close, which discards every rating entered.
-  const edit = (next: FeedbackAnswers) => {
-    setAnswers(next);
-    if (submission.status === 'failed') {
-      submission.reset();
-    }
-  };
+  const { form, answers, submission, close, edit, submit, reload } = useFeedbackSheet(
+    origin,
+    open,
+    onOpenChange
+  );
 
   return (
     <Dialog.Root open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
@@ -75,7 +55,7 @@ export function FeedbackSheet({
             <div className="flex items-center gap-2">
               <Lightbulb size={18} strokeWidth={2} className="text-accent" />
               <Dialog.Title className="text-item font-semibold text-fg-strong">
-                {form.definition.headline}
+                {form?.definition.headline ?? t('feedback.title')}
               </Dialog.Title>
             </div>
             <IconButton label={t('feedback.close')} tone="close" onClick={close}>
@@ -85,17 +65,18 @@ export function FeedbackSheet({
 
           <div className="mx-5 border-t border-border-divider" />
 
-          {submission.status === 'submitted' ? (
-            <FeedbackThanks onClose={close} />
-          ) : (
+          {form === null && <FeedbackSkeleton label={t('feedback.loading')} />}
+          {form !== null && submission.status === 'submitted' && <FeedbackThanks onClose={close} />}
+          {form !== null && submission.status !== 'submitted' && (
             <FeedbackForm
               definition={form.definition}
               answers={answers}
               onChange={edit}
-              onSubmit={() => void submission.submit(answers)}
+              onSubmit={() => void submit()}
               status={submission.status}
               reasonKey={submission.reasonKey}
               retryable={submission.retryable}
+              onReload={reload}
             />
           )}
         </Dialog.Content>

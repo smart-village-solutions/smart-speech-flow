@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FeedbackFormDefinition } from '@/domain/feedback/feedbackForm.types';
-import { isComplete } from '@/features/feedback/feedback.state';
+import { isComplete, keepFitting } from '@/features/feedback/feedback.state';
 
 const FORM: FeedbackFormDefinition = {
   headline: 'Tell us',
@@ -47,5 +47,35 @@ describe('isComplete', () => {
 
     expect(isComplete(form, { note: '   ' })).toBe(false);
     expect(isComplete(form, { note: 'ok' })).toBe(true);
+  });
+});
+
+describe('keepFitting', () => {
+  it('keeps every answer the form still accepts, unchanged', () => {
+    const answers = { stars: 3, score: 0, note: ' short ' };
+
+    expect(keepFitting(FORM, answers)).toEqual(answers);
+  });
+
+  it('drops answers to questions the form no longer asks', () => {
+    expect(keepFitting(FORM, { stars: 3, usability: 4 })).toEqual({ stars: 3 });
+  });
+
+  it.each([
+    ['a number now out of range', { stars: 9 }],
+    ['text where a number is asked', { score: 'nine' }],
+    ['a number where text is asked', { note: 4 }],
+    ['text over the new limit', { note: 'far too long now' }],
+  ])('drops %s', (_name, answers) => {
+    expect(keepFitting(FORM, answers)).toEqual({});
+  });
+
+  it('keeps text still being typed, blanks included', () => {
+    const required: FeedbackFormDefinition = {
+      ...FORM,
+      questions: [{ id: 'note', type: 'longText', question: 'Q', required: true, maxLength: 10 }],
+    };
+
+    expect(keepFitting(required, { note: '  ' })).toEqual({ note: '  ' });
   });
 });

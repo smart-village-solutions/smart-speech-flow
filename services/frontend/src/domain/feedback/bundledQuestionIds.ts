@@ -1,6 +1,7 @@
 /**
- * Studio's ids for the bundled form's questions. The bundled definition asks
- * under them and the v1 mapper reads them back, so they must be one source.
+ * Studio's ids for the bundled form's questions, so the fallback and a Studio
+ * form answer under the same ids. The gateway's bundled form checks the same
+ * ids (tests/fixtures/feedback/bundled_form.json).
  */
 export const BUNDLED_QUESTION_IDS = {
   translationQuality: 'translationQuality',

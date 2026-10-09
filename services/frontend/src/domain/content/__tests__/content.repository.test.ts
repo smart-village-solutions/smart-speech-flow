@@ -34,6 +34,20 @@ function serve(path: string, body: unknown): (string | null)[] {
   return authorizations;
 }
 
+type Repo = ReturnType<typeof repository>;
+
+/** Answers `body` on `path` and records one request header of each request. */
+function serveRecording(path: string, body: unknown, header: string): (string | null)[] {
+  const values: (string | null)[] = [];
+  server.use(
+    http.get(`http://api.test${path}`, ({ request }) => {
+      values.push(request.headers.get(header));
+      return HttpResponse.json(body);
+    })
+  );
+  return values;
+}
+
 describe('content repository', () => {
   beforeEach(() => {
     vi.mocked(getAdminAccessToken).mockReset().mockResolvedValue('staff-token');
@@ -76,6 +90,45 @@ describe('content repository', () => {
     ['a malformed language', () => repository().getGuest(SESSION, '../../admin')],
   ])('refuses %s before any request', async (_label, call) => {
     await expect(call()).rejects.toThrow(/Invalid (session|language) identifier/);
+  });
+
+  it.each([
+    [
+      'installation',
+      '/api/content/installation',
+      installationBody,
+      (r: Repo) => r.getPublic({ fresh: true }),
+    ],
+    [
+      'guest',
+      `/api/customer/session/${SESSION}/content/en`,
+      guestContentBody('en'),
+      (r: Repo) => r.getGuest(SESSION, 'en', { fresh: true }),
+    ],
+    ['staff', '/api/admin/content', staffContentBody, (r: Repo) => r.getStaff({ fresh: true })],
+  ])(
+    'reads %s content past the browser cache when asked for a fresh copy',
+    async (_name, path, body, read) => {
+      // The installation route allows 60 s of browser caching; a reload after a
+      // changed form must not be answered from that copy.
+      const cacheControl = serveRecording(path, body, 'Cache-Control');
+
+      await read(repository());
+
+      expect(cacheControl).toEqual(['no-cache']);
+    }
+  );
+
+  it('leaves the browser cache alone for an ordinary read', async () => {
+    const cacheControl = serveRecording(
+      '/api/content/installation',
+      installationBody,
+      'Cache-Control'
+    );
+
+    await repository().getPublic();
+
+    expect(cacheControl).toEqual([null]);
   });
 
   it('rejects a 503, so the caller falls back', async () => {

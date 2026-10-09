@@ -82,7 +82,7 @@
 
 ## 13. Frontend: Studio feedback forms
 
-- [ ] 13.1 Use Studio forms for each audience and submit them to the new payload with revision and locale
+- [x] 13.1 Use Studio forms for each audience and submit them to the new payload with revision and locale
 
 ## 14. Monitoring and cleanup
 

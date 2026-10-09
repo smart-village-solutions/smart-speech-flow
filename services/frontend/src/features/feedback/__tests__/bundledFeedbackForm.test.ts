@@ -6,7 +6,7 @@ import { server } from '@/test/setup';
 import { readConfig } from '@/app/config/env';
 import { createHttpClient } from '@/core/http/client';
 import { createFeedbackRepository } from '@/domain/feedback/feedback.repository';
-import { toV1Submission } from '@/domain/feedback/feedback.mapper';
+import { answeredOnly } from '@/domain/feedback/feedback.mapper';
 import type {
   FeedbackAnswers,
   FeedbackQuestion,
@@ -67,14 +67,14 @@ describe('bundledFeedbackForm', () => {
       placeholder: 'Your ideas, feature requests, or anything that bothered you…',
       maxLength: 4000,
     });
-    expect(form.notice.lines.map((line) => line.text)).toEqual([
+    expect(form.notice.kind === 'lines' && form.notice.lines.map((line) => line.text)).toEqual([
       'Your answers are used only to improve KasselDIALOG.',
       'We keep feedback for twelve months and delete it automatically after that.',
       'You can have your feedback withdrawn at any time — just ask a member of staff.',
     ]);
   });
 
-  it('produces the v1 body byte for byte when answered as today', async () => {
+  it('produces the v2 bundled body byte for byte when answered as today', async () => {
     let raw = '';
     server.use(
       http.post('http://api.test/api/feedback', async ({ request }) => {
@@ -94,11 +94,19 @@ describe('bundledFeedbackForm', () => {
     );
 
     expect(isComplete(form, answers)).toBe(true);
-    await repository.submit(toV1Submission(answers, 'A1B2C3D4'));
+    await repository.submit({
+      audience: 'guest',
+      sessionId: 'A1B2C3D4',
+      locale: 'en',
+      formSource: 'bundled',
+      revision: null,
+      answers: answeredOnly(form.questions, answers),
+    });
 
     expect(raw).toBe(
-      '{"session_id":"A1B2C3D4","translation_quality":4,"performance":5,"usability":2,' +
-        '"net_promoter_score":0,"improvements":"more languages","form_version":"v1"}'
+      '{"audience":"guest","session_id":"A1B2C3D4","locale":"en","form_source":"bundled",' +
+        '"configuration_revision":null,"answers":{"translationQuality":4,"performance":5,' +
+        '"usability":2,"recommendation":0,"improvementIdeas":"more languages"}}'
     );
   });
 });

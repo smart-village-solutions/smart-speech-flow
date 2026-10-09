@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { screen, waitFor, within } from '@testing-library/react';
+import { useQueryClient } from '@tanstack/react-query';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -8,6 +9,12 @@ import { AppError } from '@/core/http/AppError';
 import { createStubFeedbackSink } from '@/domain/feedback/StubFeedbackSink';
 import type { FeedbackSink } from '@/domain/feedback/feedback.port';
 import type { FeedbackSubmission } from '@/domain/feedback/feedback.types';
+import { toPublicContent } from '@/domain/content/content.mapper';
+import { contentKeys } from '@/features/content/contentQuery';
+import { usePublicContent } from '@/features/content/usePublicContent';
+import { installationBody } from '@/test/contentFixtures';
+import { holdGuestContent } from '@/test/handlers';
+import { server } from '@/test/setup';
 
 const PLACEHOLDER = 'Your ideas, feature requests, or anything that bothered you…';
 
@@ -98,12 +105,18 @@ describe('FeedbackSheet', () => {
 
     await waitFor(() =>
       expect(recorded).toHaveBeenCalledWith({
-        translationQuality: 5,
-        performance: 5,
-        usability: 5,
-        netPromoterScore: 9,
-        improvements: 'more languages',
+        audience: 'installation',
         sessionId: null,
+        locale: 'en',
+        formSource: 'bundled',
+        revision: null,
+        answers: {
+          translationQuality: 5,
+          performance: 5,
+          usability: 5,
+          recommendation: 9,
+          improvementIdeas: 'more languages',
+        },
       })
     );
   });
@@ -227,7 +240,7 @@ describe('FeedbackSheet', () => {
         if (attempts === 1) {
           throw new AppError('server', { status: 503 });
         }
-        expect(submission.improvements).toBe('more languages');
+        expect(submission.answers.improvementIdeas).toBe('more languages');
       },
     };
     renderWithProviders(<FeedbackSheet open onOpenChange={vi.fn()} />, { services: { feedback: sink } });
@@ -264,12 +277,12 @@ describe('FeedbackSheet', () => {
     expect(screen.getByPlaceholderText(PLACEHOLDER)).toHaveAttribute('maxlength', '4000');
   });
 
-  // Closing mid-submit, at both timings that matter. The reset is deferred
-  // 300ms for the exit animation, so a result can land on either side of it
-  // and the outcome must not depend on which.
+  // Closing mid-submit, at both timings that matter. The exit transition lasts
+  // 300ms, so a result can land during it or after it, and the outcome must
+  // not depend on which.
   it.each([
-    ['before the deferred reset', 120],
-    ['after the deferred reset', 400],
+    ['during the exit transition', 120],
+    ['after the exit transition', 400],
   ])('discards a success that lands %s', async (_name, delay) => {
     const controlled = controllable();
     renderWithProviders(<Reopenable />, {
@@ -290,8 +303,8 @@ describe('FeedbackSheet', () => {
   });
 
   it.each([
-    ['before the deferred reset', 120],
-    ['after the deferred reset', 400],
+    ['during the exit transition', 120],
+    ['after the exit transition', 400],
   ])('discards a failure that lands %s', async (_name, delay) => {
     const controlled = controllable();
     renderWithProviders(<Reopenable />, {
@@ -380,5 +393,66 @@ describe('FeedbackSheet', () => {
 
     expect(submitButton()).toBeEnabled();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+describe('FeedbackSheet with Studio content', () => {
+  it('holds the body with a placeholder while the guest form loads, then shows it', async () => {
+    const held = holdGuestContent();
+    server.use(held.handler);
+    renderWithProviders(
+      <FeedbackSheet open onOpenChange={vi.fn()} origin={{ kind: 'guest', sessionId: 'A1B2C3D4' }} />,
+      { services: { feedback: createStubFeedbackSink() } }
+    );
+
+    expect(screen.getByRole('status', { name: 'Loading the feedback form' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Share your feedback' })).toBeInTheDocument();
+    expect(screen.queryByRole('group')).not.toBeInTheDocument();
+
+    held.release();
+
+    expect(await screen.findByPlaceholderText('Your ideas or complaints')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('never swaps a form being answered for a newer revision', async () => {
+    function Publisher() {
+      const queryClient = useQueryClient();
+      const revision = usePublicContent().content?.revision;
+      const next = toPublicContent({
+        ...installationBody,
+        revision: 'sha256:republished',
+        feedback: { ...installationBody.feedback, headline: 'Neue Umfrage' },
+      });
+      return (
+        <>
+          <button type="button" onClick={() => queryClient.setQueryData(contentKeys.public, next)}>
+            publish
+          </button>
+          <output aria-label="revision">{revision}</output>
+        </>
+      );
+    }
+    renderWithProviders(
+      <>
+        <Publisher />
+        <FeedbackSheet open onOpenChange={vi.fn()} />
+      </>,
+      { locale: 'de', services: { feedback: createStubFeedbackSink() } }
+    );
+
+    const group = screen.getByRole('group', { name: 'Übersetzungsqualität' });
+    await userEvent.click(within(group).getByRole('button', { name: '4 Sterne' }));
+    // The modal dialog hides the page behind it, so the click is dispatched directly.
+    fireEvent.click(screen.getByRole('button', { name: 'publish', hidden: true }));
+    // The page has seen the new revision, so the sheet has had its chance to swap.
+    expect(await screen.findByText('sha256:republished')).toBeInTheDocument();
+
+    expect(screen.getByRole('dialog', { name: 'Feedback geben' })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('group', { name: 'Übersetzungsqualität' })).getByRole('button', {
+        name: '4 Sterne',
+      })
+    ).toHaveAttribute('aria-pressed', 'true');
   });
 });

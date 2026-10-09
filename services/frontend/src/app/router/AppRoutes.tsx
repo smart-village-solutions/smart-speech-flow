@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { RequireSession } from './RequireSession';
 import { RouteState } from './RouteState';
+import { FeedbackProvider } from '@/app/providers/FeedbackProvider';
 import { AccessCodeScreen } from '@/features/access-code/AccessCodeScreen';
 import { LanguageSelectScreen } from '@/features/language-select/LanguageSelectScreen';
 import { ConsentScreen } from '@/features/consent/ConsentScreen';
@@ -42,6 +43,8 @@ function TenantLoginEntry() {
  * Each administrative entry owns its entire query cache, including session
  * queries. Installation content is the one exception: it is anonymous and the
  * same for every tenant, so the entry starts with the copy the app holds.
+ * The entry's own feedback sheet reads the staff form from this cache too;
+ * the app-wide sheet would fetch tenant texts into the shared one.
  */
 function AdminQueryBoundary({ children }: Readonly<{ children: ReactNode }>) {
   const parent = useQueryClient();
@@ -61,7 +64,11 @@ function AdminQueryBoundary({ children }: Readonly<{ children: ReactNode }>) {
     },
     [client]
   );
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={client}>
+      <FeedbackProvider>{children}</FeedbackProvider>
+    </QueryClientProvider>
+  );
 }
 
 /** Resolve the route ID through the validated directory before using a realm. */

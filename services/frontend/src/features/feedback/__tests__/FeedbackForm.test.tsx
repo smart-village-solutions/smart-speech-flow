@@ -84,6 +84,29 @@ describe('FeedbackForm', () => {
     await userEvent.type(screen.getByPlaceholderText('Write'), 'fine');
     expect(send()).toBeEnabled();
   });
+
+  it('renders a Studio notice as markup, with no paragraph inside a paragraph', () => {
+    const { container } = renderWithProviders(
+      <FeedbackForm
+        definition={{
+          ...FORM,
+          notice: {
+            kind: 'html',
+            html: '<p>Studio <strong>purpose</strong></p><p>Studio retention</p>',
+          },
+        }}
+        answers={{}}
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        status="idle"
+        reasonKey={null}
+      />
+    );
+
+    expect(screen.getByText('purpose').tagName).toBe('STRONG');
+    expect(screen.getByText('Studio retention').tagName).toBe('P');
+    expect(container.ownerDocument.querySelector('p p')).toBeNull();
+  });
 });
 
 describe('the bundled form in Arabic', () => {

@@ -1,7 +1,8 @@
-import { act, screen, waitFor } from '@testing-library/react';
+import { HttpResponse } from 'msw';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Link, useLocation } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { AppRoutes } from '@/app/router/AppRoutes';
 import {
@@ -11,6 +12,10 @@ import {
   logoutFromKeycloak,
 } from '@/app/auth/keycloak';
 import type { AdminSession } from '@/domain/admin/admin.types';
+import { KASSEL_REVISION } from '@/test/contentFixtures';
+import { feedbackHandler } from '@/test/handlers';
+import { recordRequests } from '@/test/recordRequests';
+import { server } from '@/test/setup';
 
 const { expirationListeners, authorizationListeners } = vi.hoisted(() => ({
   expirationListeners: new Set<() => void>(),
@@ -39,6 +44,17 @@ const kassel = {
   realm: 'kassel-ssf-2025',
   studioUrl: 'https://smartcity.dialog.kassel.de/',
 };
+/** The Authorization header of every request to `path`, until the test ends. */
+function recordAuthorization(path: string): (string | null)[] {
+  const seen: (string | null)[] = [];
+  const listener = ({ request }: { request: Request }) => {
+    if (new URL(request.url).pathname === path) seen.push(request.headers.get('Authorization'));
+  };
+  server.events.on('request:start', listener);
+  onTestFinished(() => server.events.removeListener('request:start', listener));
+  return seen;
+}
+
 function Location() {
   return <output aria-label="Location">{useLocation().pathname}</output>;
 }
@@ -192,6 +208,48 @@ describe('tenant login routes', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Abmelden' }));
     expect(await screen.findByRole('link', { name: 'Stadt Kassel' })).toBeInTheDocument();
     expect(logoutFromKeycloak).toHaveBeenCalledOnce();
+  });
+
+  it("sends dashboard feedback on the tenant's Studio staff form, with the tenant token", async () => {
+    const sent: Record<string, unknown>[] = [];
+    const staffContentReads = recordRequests((request) =>
+      request.url.endsWith('/api/admin/content')
+    );
+    server.use(
+      feedbackHandler('admin', (body) => {
+        sent.push(body);
+        return HttpResponse.json({ feedback_id: 'f1' }, { status: 201 });
+      })
+    );
+    const authorizations = recordAuthorization('/api/admin/feedback');
+    renderWithProviders(<AppRoutes />, { route: '/login/tenant-kassel' });
+    await screen.findByRole('button', { name: 'Neues Gespräch starten' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Feedback' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Feedback geben' });
+    expect(
+      within(dialog).getByPlaceholderText('Ihre Ideen oder Beschwerden sind willkommen.')
+    ).toBeInTheDocument();
+    for (const label of ['Übersetzungsqualität', 'Geschwindigkeit', 'Bedienung']) {
+      const group = within(dialog).getByRole('group', { name: label });
+      await userEvent.click(within(group).getByRole('button', { name: '5 Sterne' }));
+    }
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Wert 9' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: /Feedback senden/ }));
+
+    expect(await screen.findByText('Vielen Dank!')).toBeInTheDocument();
+    expect(sent).toEqual([
+      {
+        audience: 'staff',
+        locale: 'de-DE',
+        form_source: 'studio',
+        configuration_revision: KASSEL_REVISION,
+        answers: { translationQuality: 5, performance: 5, usability: 5, recommendation: 9 },
+      },
+    ]);
+    expect(authorizations).toEqual(['Bearer tenant-token']);
+    // The sheet reads the dashboard's own query in the tenant's client.
+    expect(staffContentReads).toHaveLength(1);
   });
 
   it('returns to the chooser when the authenticated session expires', async () => {

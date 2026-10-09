@@ -5,6 +5,7 @@ import { cn } from '@/lib/cn';
 import type { FeedbackAnswers, FeedbackFormDefinition } from '@/domain/feedback/feedbackForm.types';
 import { Button } from '@/ui/primitives/Button';
 import { FeedbackError } from './FeedbackError';
+import { FeedbackNotice } from './FeedbackNotice';
 import { FeedbackQuestion } from './FeedbackQuestion';
 import { isComplete } from './feedback.state';
 import type { FeedbackStatus } from './feedback.state';
@@ -18,6 +19,8 @@ interface FeedbackFormProps {
   reasonKey: string | null;
   /** False when the server has judged this payload; a retry repeats it. */
   retryable?: boolean;
+  /** Set when the form changed under the user; the failure then offers a reload. */
+  onReload?: () => void;
 }
 
 export function FeedbackForm({
@@ -28,6 +31,7 @@ export function FeedbackForm({
   status,
   reasonKey,
   retryable = true,
+  onReload,
 }: Readonly<FeedbackFormProps>) {
   const { t } = useTranslation();
   const busy = status === 'submitting';
@@ -54,15 +58,14 @@ export function FeedbackForm({
         </Fragment>
       ))}
 
-      {reasonKey !== null && <FeedbackError reasonKey={reasonKey} />}
+      {reasonKey !== null && (
+        <FeedbackError
+          reasonKey={reasonKey}
+          action={onReload && { label: t('feedback.reload'), onClick: onReload }}
+        />
+      )}
 
-      <div className="flex flex-col gap-1">
-        {definition.notice.lines.map((line) => (
-          <p key={line.id} className="text-caption leading-chat text-fg-subtle">
-            {line.text}
-          </p>
-        ))}
-      </div>
+      <FeedbackNotice notice={definition.notice} />
 
       <Button
         variant="sheet"

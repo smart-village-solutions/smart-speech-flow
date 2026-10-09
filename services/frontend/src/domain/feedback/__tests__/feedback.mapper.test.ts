@@ -1,31 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { toV1Submission } from '@/domain/feedback/feedback.mapper';
+import { answeredOnly } from '@/domain/feedback/feedback.mapper';
+import type { FeedbackQuestion } from '@/domain/feedback/feedbackForm.types';
 
-const ANSWERS = {
-  translationQuality: 4,
-  performance: 5,
-  usability: 3,
-  recommendation: 0,
-  improvementIdeas: 'more languages',
-};
+const QUESTIONS: FeedbackQuestion[] = [
+  { id: 'translationQuality', type: 'rating', question: 'Q', required: true, min: 1, max: 5 },
+  { id: 'recommendation', type: 'scale', question: 'Q', required: true, min: 0, max: 10 },
+  { id: 'improvementIdeas', type: 'longText', question: 'Q', required: false, maxLength: 4000 },
+];
 
-describe('toV1Submission', () => {
-  it('maps Studio question ids onto the v1 fields', () => {
-    expect(toV1Submission(ANSWERS, 'A1B2C3D4')).toEqual({
+describe('answeredOnly', () => {
+  it('keeps numbers, zero included, and trims text', () => {
+    expect(
+      answeredOnly(QUESTIONS, {
+        translationQuality: 4,
+        recommendation: 0,
+        improvementIdeas: '  more languages ',
+      })
+    ).toEqual({ translationQuality: 4, recommendation: 0, improvementIdeas: 'more languages' });
+  });
+
+  it.each([null, '', '   '])('leaves out an unanswered question (%j)', (value) => {
+    expect(answeredOnly(QUESTIONS, { translationQuality: 4, improvementIdeas: value })).toEqual({
       translationQuality: 4,
-      performance: 5,
-      usability: 3,
-      netPromoterScore: 0,
-      improvements: 'more languages',
-      sessionId: 'A1B2C3D4',
     });
   });
 
-  it('sends an empty note when the free text was left unanswered', () => {
-    expect(toV1Submission({ ...ANSWERS, improvementIdeas: null }, null).improvements).toBe('');
-  });
-
-  it('refuses a score that was never given rather than inventing one', () => {
-    expect(() => toV1Submission({ ...ANSWERS, usability: null }, null)).toThrow('usability');
+  it('leaves out answers to questions the form does not ask', () => {
+    // The gateway refuses an unknown id with 409, as if the form had changed.
+    expect(answeredOnly(QUESTIONS, { translationQuality: 4, usability: 3 })).toEqual({
+      translationQuality: 4,
+    });
   });
 });

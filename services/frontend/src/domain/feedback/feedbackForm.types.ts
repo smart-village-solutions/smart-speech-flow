@@ -1,7 +1,7 @@
 /**
  * A feedback form as data, so the bundled form and the forms Studio publishes
  * share one renderer. Mirrors Studio's FeedbackForm JSON except `noticeHtml`,
- * which arrives as a `notice` variant in PR 13.
+ * which arrives as the `html` notice variant.
  */
 interface QuestionBase {
   id: string;
@@ -33,14 +33,10 @@ interface LongTextQuestion extends QuestionBase {
 
 export type FeedbackQuestion = RatingQuestion | ScaleQuestion | LongTextQuestion;
 
-/**
- * Bundled copy is plain catalogue lines. PR 13 adds `{ kind: 'html'; html }`
- * for Studio's `noticeHtml`, rendered through RichText.
- */
-interface FeedbackNotice {
-  kind: 'lines';
-  lines: readonly { id: string; text: string }[];
-}
+/** Bundled copy is plain catalogue lines; Studio's `noticeHtml` is rendered through RichText. */
+type FeedbackNotice =
+  | { kind: 'lines'; lines: readonly { id: string; text: string }[] }
+  | { kind: 'html'; html: string };
 
 export interface FeedbackFormDefinition {
   headline: string;

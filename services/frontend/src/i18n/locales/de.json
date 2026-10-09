@@ -84,6 +84,9 @@
     "submitting": "Wird gesendet…",
     "retry": "Erneut senden",
     "failed": "Ihr Feedback konnte nicht gesendet werden. Ihre Eingaben bleiben erhalten.",
+    "formChanged": "Das Formular wurde inzwischen geändert. Laden Sie das neue Formular; passende Antworten bleiben erhalten.",
+    "reload": "Neues Formular laden",
+    "loading": "Feedback-Formular wird geladen",
     "thanksTitle": "Vielen Dank!",
     "thanksBody": "Ihr Feedback hilft uns, $t(app.name) für alle zu verbessern."
   },

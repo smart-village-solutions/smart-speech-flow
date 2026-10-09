@@ -84,6 +84,9 @@
     "submitting": "Gönderiliyor…",
     "retry": "Tekrar gönder",
     "failed": "Geri bildiriminiz gönderilemedi. Yanıtlarınız korundu.",
+    "formChanged": "Form bu arada değişti. Yeni formu yükleyin; hâlâ uyan yanıtlarınız korunur.",
+    "reload": "Yeni formu yükle",
+    "loading": "Geri bildirim formu yükleniyor",
     "thanksTitle": "Teşekkür ederiz!",
     "thanksBody": "Geri bildiriminiz $t(app.name)'u herkes için geliştirmemize yardımcı oluyor."
   },

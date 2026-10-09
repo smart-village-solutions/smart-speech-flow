@@ -84,6 +84,9 @@
     "submitting": "Sending…",
     "retry": "Send again",
     "failed": "Your feedback could not be sent. Your answers have been kept.",
+    "formChanged": "The form has changed in the meantime. Load the new form; answers that still fit are kept.",
+    "reload": "Load the new form",
+    "loading": "Loading the feedback form",
     "thanksTitle": "Thank you!",
     "thanksBody": "Your feedback helps us improve $t(app.name) for everyone."
   },
