@@ -389,12 +389,23 @@ def test_session_terminated_on_both_transports(client, conversations, reason, te
         terminated = admin.receive_json()
         polled = _polled(client, "customer", session_id, poller)
 
+    # `role` is what the frontend transport routes on; without it the frame is dropped.
+    assert list(terminated) == [
+        "type",
+        "session_id",
+        "reason",
+        "message",
+        "timestamp",
+        "reconnect_allowed",
+        "role",
+    ]
     assert _without(terminated, "timestamp") == {
         "type": "session_terminated",
         "session_id": session_id,
         "reason": reason,
         "message": text,
         "reconnect_allowed": False,
+        "role": "session_terminated",
     }
     assert _is_timestamp(terminated["timestamp"])
     assert polled[-1] == {
@@ -402,6 +413,7 @@ def test_session_terminated_on_both_transports(client, conversations, reason, te
         "session_id": session_id,
         "reason": reason,
         "reconnect_allowed": False,
+        "role": "session_terminated",
     }
 
 
@@ -419,11 +431,20 @@ def test_timeout_warning_reaches_sockets_and_pollers(client, conversations, sess
         warning = customer.receive_json()
         polled = _polled(client, "customer", session_id, poller)
 
+    assert list(warning) == [
+        "type",
+        "session_id",
+        "message",
+        "remaining_minutes",
+        "timestamp",
+        "role",
+    ]
     assert _without(warning, "timestamp") == {
         "type": "timeout_warning",
         "session_id": session_id,
         "message": "Session wird in 5 Minuten aufgrund von Inaktivität beendet.",
         "remaining_minutes": 5,
+        "role": "timeout_warning",
     }
     assert _is_timestamp(warning["timestamp"])
     assert polled == [warning]

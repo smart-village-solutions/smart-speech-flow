@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import type { StatusSnapshot } from './conversation.status';
@@ -18,6 +18,7 @@ interface ConversationStatusProps extends StatusSnapshot {
  */
 export function ConversationStatus({
   ended,
+  timeoutWarning,
   connection,
   hasConnected,
   errorKey,
@@ -46,6 +47,16 @@ export function ConversationStatus({
     return (
       <Pill role="status" icon={<CheckCircle2 size={14} strokeWidth={2} />}>
         <span className="truncate">{t('conversation.ended')}</span>
+      </Pill>
+    );
+  }
+
+  if (timeoutWarning !== null) {
+    return (
+      <Pill role="status" icon={<Clock size={14} strokeWidth={2} />}>
+        <span className="truncate">
+          {t('conversation.timeoutWarning', { minutes: timeoutWarning })}
+        </span>
       </Pill>
     );
   }

@@ -67,9 +67,25 @@ export function useConversation(
   }, [message, role, sessionId]);
 
   useEffect(() => {
+    let warningExpiry: ReturnType<typeof setTimeout> | undefined;
+
     const offEvent = transport.onEvent((event) => {
       if (event.role === 'session_terminated') {
         dispatch({ type: 'session/ended' });
+        // The gateway closes the socket next; reconnecting to an ended session only fails.
+        transport.disconnect();
+        return;
+      }
+
+      if (event.role === 'timeout_warning') {
+        const minutes = warningMinutes(event.remaining_minutes);
+        dispatch({ type: 'session/timeoutWarning', minutes });
+        // No frame withdraws a warning, and an admin who reconnects extends the session.
+        clearTimeout(warningExpiry);
+        warningExpiry = setTimeout(
+          () => dispatch({ type: 'session/timeoutWarningExpired' }),
+          minutes * 60_000
+        );
         return;
       }
 
@@ -109,6 +125,7 @@ export function useConversation(
     void transport.connect(sessionId, role);
 
     return () => {
+      clearTimeout(warningExpiry);
       offEvent();
       offStatus();
       transport.disconnect();
@@ -146,6 +163,10 @@ export function useConversation(
         const errorKey =
           error instanceof AppError ? error.userMessageKey : 'conversation.sendFailed';
         dispatch({ type: 'send/failed', tempId, errorKey });
+        // The message routes answer 404 only once the session has gone.
+        if (error instanceof AppError && error.kind === 'notFound') {
+          dispatch({ type: 'session/ended' });
+        }
       }
     },
     [languages.source, languages.target]
@@ -204,4 +225,9 @@ export function useConversation(
     // there would send the previous message a second time.
     retryLast: state.canRetry ? retry : null,
   };
+}
+
+/** The gateway always sends a positive whole number; anything else falls back to its default. */
+function warningMinutes(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 5;
 }

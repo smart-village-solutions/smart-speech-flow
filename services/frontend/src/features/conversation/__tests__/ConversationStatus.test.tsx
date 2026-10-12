@@ -7,6 +7,7 @@ import { hasConversationStatus } from '@/features/conversation/conversation.stat
 
 const quiet = {
   ended: false,
+  timeoutWarning: null,
   connection: 'connected' as const,
   hasConnected: true,
   errorKey: null,
@@ -78,5 +79,20 @@ describe('ConversationStatus', () => {
     expect(pill?.className).toContain('rounded-pill');
     expect(pill?.className).toContain('bg-surface-status');
     expect(pill?.className).toContain('border');
+  });
+
+  it('warns that the conversation will end soon', () => {
+    const warned = { ...quiet, timeoutWarning: 5 };
+
+    renderWithProviders(<ConversationStatus {...warned} />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('This conversation will end in 5 minutes.');
+    expect(hasConversationStatus(warned)).toBe(true);
+  });
+
+  it('says the conversation ended rather than that it will end', () => {
+    renderWithProviders(<ConversationStatus {...quiet} ended timeoutWarning={5} />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('This conversation has ended.');
   });
 });

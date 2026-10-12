@@ -142,6 +142,7 @@ class SessionTerminatedFrame(TypedDict):
     message: str
     timestamp: str
     reconnect_allowed: bool
+    role: str
 
 
 class PolledSessionTerminatedFrame(TypedDict):
@@ -149,6 +150,7 @@ class PolledSessionTerminatedFrame(TypedDict):
     session_id: str
     reason: str
     reconnect_allowed: bool
+    role: str
 
 
 class TimeoutWarningFrame(TypedDict):
@@ -157,6 +159,7 @@ class TimeoutWarningFrame(TypedDict):
     message: str
     remaining_minutes: int
     timestamp: str
+    role: str
 
 
 class PollingIntervalUpdateFrame(TypedDict):
@@ -317,6 +320,8 @@ def session_terminated_frame(session_id: str, reason: str) -> SessionTerminatedF
         "message": termination_text(reason),
         "timestamp": _timestamp(),
         "reconnect_allowed": False,
+        # The frontend transport forwards only frames that carry a role.
+        "role": MessageType.SESSION_TERMINATED.value,
     }
 
 
@@ -327,6 +332,7 @@ def polled_session_terminated_frame(session_id: str, reason: str) -> PolledSessi
         "session_id": session_id,
         "reason": reason,
         "reconnect_allowed": False,
+        "role": MessageType.SESSION_TERMINATED.value,
     }
 
 
@@ -339,6 +345,7 @@ def timeout_warning_frame(session_id: str, remaining_minutes: int) -> TimeoutWar
         ),
         "remaining_minutes": remaining_minutes,
         "timestamp": _timestamp(),
+        "role": MessageType.TIMEOUT_WARNING.value,
     }
 
 

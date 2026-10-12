@@ -41,7 +41,8 @@
     "retry": "Erneut senden",
     "micDenied": "Der Zugriff auf das Mikrofon wurde abgelehnt. Sie können Ihre Nachricht stattdessen eingeben.",
     "reconnecting": "Verbindung wird wiederhergestellt…",
-    "ended": "Dieses Gespräch ist beendet."
+    "ended": "Dieses Gespräch ist beendet.",
+    "timeoutWarning": "Diese Unterhaltung endet in {{minutes}} Minuten."
   },
   "feedback": {
     "title": "Feedback geben",

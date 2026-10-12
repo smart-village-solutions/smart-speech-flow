@@ -12,10 +12,18 @@ export interface ConversationState {
       reported to the customer as a reconnection. */
   hasConnected: boolean;
   ended: boolean;
+  /** Minutes left before the gateway ends an idle session; null when none is due. */
+  timeoutWarning: number | null;
   errorKey: string | null;
   /** True only while the error on show came from a send that can be repeated. */
   canRetry: boolean;
 }
+
+/** What the gateway says about the session itself, as opposed to its messages. */
+type SessionAction =
+  | { type: 'session/ended' }
+  | { type: 'session/timeoutWarning'; minutes: number }
+  | { type: 'session/timeoutWarningExpired' };
 
 export type ConversationAction =
   | { type: 'history/loaded'; messages: ChatMessage[] }
@@ -35,7 +43,7 @@ export type ConversationAction =
   | { type: 'error/raised'; errorKey: string }
   | { type: 'realtime/message'; message: ChatMessage }
   | { type: 'realtime/status'; status: RealtimeStatus }
-  | { type: 'session/ended' }
+  | SessionAction
   | { type: 'error/cleared' };
 
 export const initialConversationState: ConversationState = {
@@ -45,6 +53,7 @@ export const initialConversationState: ConversationState = {
   connection: 'disconnected',
   hasConnected: false,
   ended: false,
+  timeoutWarning: null,
   errorKey: null,
   canRetry: false,
 };
@@ -95,10 +104,39 @@ function withRealtimeMessage(state: ConversationState, arrived: ChatMessage): Ch
   return state.messages.map((message, index) => (index === inFlight ? arrived : message));
 }
 
+function isSessionAction(action: ConversationAction): action is SessionAction {
+  return action.type.startsWith('session/');
+}
+
+function sessionReducer(state: ConversationState, action: SessionAction): ConversationState {
+  switch (action.type) {
+    case 'session/ended':
+      // Nothing can be sent again in an ended session, so no error or retry outlives it.
+      return {
+        ...state,
+        ended: true,
+        composer: 'idle',
+        timeoutWarning: null,
+        errorKey: null,
+        canRetry: false,
+      };
+
+    case 'session/timeoutWarning':
+      return { ...state, timeoutWarning: action.minutes };
+
+    case 'session/timeoutWarningExpired':
+      return { ...state, timeoutWarning: null };
+  }
+}
+
 export function conversationReducer(
   state: ConversationState,
   action: ConversationAction
 ): ConversationState {
+  if (isSessionAction(action)) {
+    return sessionReducer(state, action);
+  }
+
   switch (action.type) {
     case 'history/loaded':
       return { ...state, messages: action.messages };
@@ -172,9 +210,6 @@ export function conversationReducer(
         connection: action.status,
         hasConnected: state.hasConnected || action.status === 'connected',
       };
-
-    case 'session/ended':
-      return { ...state, ended: true, composer: 'idle' };
 
     case 'error/raised':
       return { ...state, errorKey: action.errorKey, canRetry: false };

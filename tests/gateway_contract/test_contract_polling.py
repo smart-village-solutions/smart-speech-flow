@@ -214,6 +214,7 @@ def test_admin_poller_receives_termination_then_is_removed(client, conversations
                 "session_id": session_id,
                 "reason": "manual_admin_termination",
                 "reconnect_allowed": False,
+                "role": "session_terminated",
             }
         ],
         "message_count": 1,

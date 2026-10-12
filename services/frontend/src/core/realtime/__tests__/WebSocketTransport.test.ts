@@ -143,6 +143,35 @@ describe('createWebSocketTransport', () => {
     expect(events).toEqual([{ role: 'receiver_message', text: 'hi' }]);
   });
 
+  // The exact bodies the gateway builds (realtime_protocol.py). Without `role`
+  // these were dropped here, so neither party ever learnt the session ended.
+  it('delivers the gateway end and timeout-warning frames', () => {
+    const { transport, events } = makeTransport();
+    transport.connect('A1B2C3D4', 'customer');
+    const terminated = {
+      type: 'session_terminated',
+      session_id: 'A1B2C3D4',
+      reason: 'manual_admin_termination',
+      message: 'Die Session wurde beendet.',
+      timestamp: '2026-10-12T10:00:00+00:00',
+      reconnect_allowed: false,
+      role: 'session_terminated',
+    };
+    const warning = {
+      type: 'timeout_warning',
+      session_id: 'A1B2C3D4',
+      message: 'Session wird in 5 Minuten aufgrund von Inaktivität beendet.',
+      remaining_minutes: 5,
+      timestamp: '2026-10-12T10:00:00+00:00',
+      role: 'timeout_warning',
+    };
+    FakeSocket.instances[0].open();
+    FakeSocket.instances[0].receive(warning);
+    FakeSocket.instances[0].receive(terminated);
+
+    expect(events).toEqual([warning, terminated]);
+  });
+
   it('ignores payloads that are not valid JSON', () => {
     const { transport, events } = makeTransport();
     transport.connect('A1B2C3D4', 'customer');

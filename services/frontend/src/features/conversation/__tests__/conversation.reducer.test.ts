@@ -385,4 +385,33 @@ describe('conversationReducer', () => {
       expect(dropped.connection).toBe('disconnected');
     });
   });
+
+  it('holds a timeout warning until it expires or the session ends', () => {
+    const warned = conversationReducer(initialConversationState, {
+      type: 'session/timeoutWarning',
+      minutes: 5,
+    });
+    expect(warned.timeoutWarning).toBe(5);
+
+    expect(conversationReducer(warned, { type: 'session/timeoutWarningExpired' }).timeoutWarning).toBeNull();
+    expect(conversationReducer(warned, { type: 'session/ended' }).timeoutWarning).toBeNull();
+  });
+
+  it('drops the error and the retry once the session has ended', () => {
+    const failed = conversationReducer(
+      conversationReducer(initialConversationState, {
+        type: 'send/started',
+        tempId: 't1',
+        text: 'hello',
+        sourceLanguage: 'en',
+        targetLanguage: 'de',
+      }),
+      { type: 'send/failed', tempId: 't1', errorKey: 'errors.notFound' }
+    );
+
+    const ended = conversationReducer(failed, { type: 'session/ended' });
+
+    expect(ended.errorKey).toBeNull();
+    expect(ended.canRetry).toBe(false);
+  });
 });

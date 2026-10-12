@@ -41,7 +41,8 @@
     "retry": "Dîsa biceribîne",
     "micDenied": "Gihîştina mîkrofonê hat redkirin. Tu dikarî li şûna wê peyama xwe binivîsî.",
     "reconnecting": "Ji nû ve tê girêdan…",
-    "ended": "Ev axaftin qediya."
+    "ended": "Ev axaftin qediya.",
+    "timeoutWarning": "Ev axaftin dê di {{minutes}} deqeyan de biqede."
   },
   "feedback": {
     "title": "Nêrîna xwe parve bike",

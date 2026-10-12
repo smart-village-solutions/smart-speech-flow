@@ -123,6 +123,7 @@ export function ConversationSurface({
 
       <ConversationStatus
         ended={state.ended}
+        timeoutWarning={state.timeoutWarning}
         connection={state.connection}
         hasConnected={state.hasConnected}
         errorKey={state.errorKey}
