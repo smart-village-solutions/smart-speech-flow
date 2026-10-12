@@ -4,13 +4,9 @@ import { http, HttpResponse } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
 import { FLIGHT_MS } from '@/features/conversation/useSendFlight';
 import { createFakeAudioPlayer } from '@/test/fakeAudioPlayer';
-import type {
-  RealtimeEvent,
-  RealtimeStatus,
-  RealtimeTransport,
-} from '@/core/realtime/realtime.port';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { createRealtimeWire } from '@/test/realtimeWire';
 import { server } from '@/test/setup';
 import { ConversationScreen } from '@/features/conversation/ConversationScreen';
 import type { SendResult } from '@/domain/message/message.types';
@@ -24,41 +20,6 @@ function tree() {
 }
 
 const route = '/s/A1B2C3D4/live';
-
-/** A transport the test pushes gateway events through by hand. */
-function fakeTransport() {
-  const handlers: ((event: RealtimeEvent) => void)[] = [];
-  const statusHandlers: ((status: RealtimeStatus) => void)[] = [];
-
-  const transport: RealtimeTransport = {
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn(),
-    send: vi.fn(),
-    onEvent: (handler) => {
-      handlers.push(handler);
-      return () => handlers.splice(handlers.indexOf(handler), 1);
-    },
-    onStatus: (handler) => {
-      statusHandlers.push(handler);
-      return () => statusHandlers.splice(statusHandlers.indexOf(handler), 1);
-    },
-    getStatus: () => 'connected',
-  };
-
-  return {
-    transport,
-    async receive(event: RealtimeEvent) {
-      await act(async () => {
-        handlers.forEach((handler) => handler(event));
-      });
-    },
-    async status(next: RealtimeStatus) {
-      await act(async () => {
-        statusHandlers.forEach((handler) => handler(next));
-      });
-    },
-  };
-}
 
 const peerAudioEvent = {
   role: 'receiver_message',
@@ -244,7 +205,7 @@ describe('ConversationScreen', () => {
 
   it('plays an incoming message as soon as it arrives', async () => {
     const player = createFakeAudioPlayer();
-    const wire = fakeTransport();
+    const wire = createRealtimeWire();
 
     renderWithProviders(tree(), {
       route,
@@ -301,7 +262,7 @@ describe('ConversationScreen', () => {
 
   it('never autoplays the customer\'s own confirmed message', async () => {
     const player = createFakeAudioPlayer();
-    const wire = fakeTransport();
+    const wire = createRealtimeWire();
 
     renderWithProviders(tree(), {
       route,
@@ -325,7 +286,7 @@ describe('ConversationScreen', () => {
 
   it('queues a burst of arrivals and plays them in order', async () => {
     const player = createFakeAudioPlayer();
-    const wire = fakeTransport();
+    const wire = createRealtimeWire();
 
     renderWithProviders(tree(), {
       route,
@@ -364,7 +325,7 @@ describe('ConversationScreen', () => {
 
   it('falls silent when the customer leaves the conversation', async () => {
     const player = createFakeAudioPlayer();
-    const wire = fakeTransport();
+    const wire = createRealtimeWire();
 
     // Both routes under one provider, so leaving unmounts the screen but not
     // the player — exactly what happens in the app.
@@ -400,7 +361,7 @@ describe('ConversationScreen', () => {
   });
 
   it('recovers a message the gateway broadcast while the socket was down', async () => {
-    const wire = fakeTransport();
+    const wire = createRealtimeWire();
     const missed = {
       id: 'm42',
       origin: 'peer' as const,
@@ -438,7 +399,7 @@ describe('ConversationScreen', () => {
   });
 
   it('does not refetch on the first connect', async () => {
-    const wire = fakeTransport();
+    const wire = createRealtimeWire();
     const getHistory = vi.fn().mockResolvedValue([]);
 
     renderWithProviders(tree(), {
@@ -461,7 +422,7 @@ describe('ConversationScreen', () => {
   });
 
   it('shows one bubble when the socket confirmation overtakes the send response', async () => {
-    const wire = fakeTransport();
+    const wire = createRealtimeWire();
     let settle: ((result: SendResult) => void) | null = null;
     const sendText = vi.fn(
       () =>
@@ -523,7 +484,7 @@ describe('ConversationScreen', () => {
   });
 
   it('keeps the play control on a live message after a reconnect refetches it', async () => {
-    const wire = fakeTransport();
+    const wire = createRealtimeWire();
     let fetches = 0;
     serveHistory(() => {
       fetches += 1;

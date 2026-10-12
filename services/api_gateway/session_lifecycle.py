@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 from .consent import ConsentStatus
 from .consent_resolution import resolve_consent
+from .guest_token import claim_guest_token, guest_token_admits
 from .keyed_locks import KeyedLocks
 from .log_safety import safe_session_ref, sanitize_log_value
 from .session_manager import TenantSessionManager
@@ -55,10 +56,16 @@ class TenantConflictError(Exception):
         self.code = code
 
 
+class GuestConflictError(Exception):
+    """Another browser already holds this session's guest token."""
+
+
 @dataclass(frozen=True, slots=True)
 class Activation:
     session: Session
     already_active: bool
+    # Returned by the activation that claimed the session.
+    guest_token: Optional[str] = None
 
 
 class SessionLifecycleService:
@@ -137,8 +144,13 @@ class SessionLifecycleService:
         data_retention_consent: Optional[bool],
         runtime_flow: StudioRuntimeFlow | None,
         correlation_id: Callable[[], str],
+        *,
+        guest_token: Optional[str] = None,
     ) -> Activation:
         """Move a pending session to active, or switch an active one's language.
+
+        The first activation claims the session and returns its guest token;
+        after that only a request presenting that token may activate it again.
 
         `correlation_id` is read only when the live storage policy is fetched,
         so a repeated activation never reads it.
@@ -147,10 +159,16 @@ class SessionLifecycleService:
             SessionNotFoundError: no session under the key.
             SessionTerminatedError: the session has ended.
             TenantConflictError: Studio refuses the tenant any session.
+            GuestConflictError: another browser holds the session's guest token.
         """
         async with self._activation_locks.hold(key):
             return await self._activate(
-                key, customer_language, data_retention_consent, runtime_flow, correlation_id
+                key,
+                customer_language,
+                data_retention_consent,
+                runtime_flow,
+                correlation_id,
+                guest_token,
             )
 
     async def _activate(
@@ -160,6 +178,7 @@ class SessionLifecycleService:
         data_retention_consent: Optional[bool],
         runtime_flow: StudioRuntimeFlow | None,
         correlation_id: Callable[[], str],
+        guest_token: Optional[str],
     ) -> Activation:
         session = await self._sessions.get_session(key)
         if session is None:
@@ -171,6 +190,11 @@ class SessionLifecycleService:
                 sanitize_log_value({"session_ref": safe_session_ref(key.session_id)}),
             )
             raise SessionTerminatedError
+
+        # Checked under the activation lock: two first activations both pass any
+        # check made before it, and the loser must not reach _reactivate.
+        if not guest_token_admits(session.guest_token_hash, guest_token):
+            raise GuestConflictError
 
         if session.status == SessionStatus.ACTIVE:
             return await self._reactivate(key, session, customer_language)
@@ -192,7 +216,13 @@ class SessionLifecycleService:
             session.consent_retention_hours = live_policy.retention_hours
             session.consent_configuration_revision = live_policy.configuration_revision
 
-        await self._sessions.activate_session(key, customer_language)
+        claimed_token, session.guest_token_hash = claim_guest_token(guest_token)
+        try:
+            await self._sessions.activate_session(key, customer_language)
+        except Exception:
+            # An unsaved claim must not lock the guest out of their own retry.
+            session.guest_token_hash = None
+            raise
 
         logger.info(
             "✅ Session erfolgreich aktiviert | %s",
@@ -203,7 +233,7 @@ class SessionLifecycleService:
                 }
             ),
         )
-        return Activation(session=session, already_active=False)
+        return Activation(session=session, already_active=False, guest_token=claimed_token)
 
     async def _reactivate(
         self, key: TenantSessionKey, session: Session, customer_language: str
@@ -229,6 +259,7 @@ class SessionLifecycleService:
         updated = await self._sessions.get_session(key)
         if updated is None:
             raise RuntimeError("session disappeared during a language change")
+        await self._sessions.announce_customer_language(key, customer_language)
         return Activation(session=updated, already_active=True)
 
 

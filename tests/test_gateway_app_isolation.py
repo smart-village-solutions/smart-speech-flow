@@ -19,6 +19,7 @@ from services.api_gateway.app import create_app
 from services.api_gateway.dependencies import GatewayDependencies, get_login_directory
 from services.api_gateway.service_health import ServiceHealthManager
 from services.api_gateway.studio_login_directory_client import StudioLoginDirectory
+from tests.guest_access import join_as_guest
 
 REVISION = f"sha256:{'a' * 64}"
 
@@ -238,6 +239,7 @@ async def test_polling_records_presence_in_its_own_apps_sessions(monkeypatch: py
         for client, app in ((first, first_app), (second, second_app)):
             sessions = app.state.dependencies.session_manager
             session = client.portal.call(sessions.create_admin_session, "tenant-a", REVISION)
+            join_as_guest(client, session.id)
             activated = client.post(f"/api/customer/session/{session.id}/polling/activate")
             assert activated.status_code == 200, activated.text
             keys.append(session.key)

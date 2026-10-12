@@ -2,7 +2,11 @@ import type { ClientRole } from '@/core/roles';
 
 export type RealtimeStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
-/** A gateway push. `role` discriminates; see the WS contract in SCREEN_SPECS.md. */
+/**
+ * A gateway push. `role` discriminates; see the WS contract in SCREEN_SPECS.md.
+ * The transport reports `session_terminated` itself when the gateway refuses a
+ * reconnect because the session is gone.
+ */
 export interface RealtimeEvent {
   role: string;
   [key: string]: unknown;

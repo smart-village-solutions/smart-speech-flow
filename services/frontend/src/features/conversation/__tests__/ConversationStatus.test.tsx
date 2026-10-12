@@ -4,9 +4,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { ConversationStatus } from '@/features/conversation/ConversationStatus';
 import { hasConversationStatus } from '@/features/conversation/conversation.status';
+import { clockTime } from '@/lib/sessionTimes';
 
 const quiet = {
   ended: false,
+  timeoutAt: null,
   connection: 'connected' as const,
   hasConnected: true,
   errorKey: null,
@@ -78,5 +80,25 @@ describe('ConversationStatus', () => {
     expect(pill?.className).toContain('rounded-pill');
     expect(pill?.className).toContain('bg-surface-status');
     expect(pill?.className).toContain('border');
+  });
+
+  // The time it ends, not the minutes left: a count would stand still for the
+  // whole warning and needs plural forms in ten languages.
+  it('warns of the time the conversation will end', () => {
+    const endsAt = Date.parse('2026-10-12T10:05:00Z');
+    const warned = { ...quiet, timeoutAt: endsAt };
+
+    renderWithProviders(<ConversationStatus {...warned} />);
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      `This conversation will end at ${clockTime(endsAt, 'en')}.`
+    );
+    expect(hasConversationStatus(warned)).toBe(true);
+  });
+
+  it('says the conversation ended rather than that it will end', () => {
+    renderWithProviders(<ConversationStatus {...quiet} ended timeoutAt={Date.now()} />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('This conversation has ended.');
   });
 });

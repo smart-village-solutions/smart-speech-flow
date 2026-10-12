@@ -3,6 +3,7 @@ import { http, HttpResponse } from 'msw';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { createRealtimeWire } from '@/test/realtimeWire';
 import { server } from '@/test/setup';
 import { AdminSessionScreen } from '@/features/admin/AdminSessionScreen';
 
@@ -54,6 +55,23 @@ const renderScreen = (onLeave = vi.fn()) => {
 };
 
 describe('AdminSessionScreen', () => {
+  // The admin who ended it moves on, but a timeout or a colleague's tab can end
+  // the session under an open screen as well.
+  it('shows the end and stops reconnecting when the gateway ends the session', async () => {
+    arabicSession();
+    const wire = createRealtimeWire();
+    renderWithProviders(
+      <AdminSessionScreen sessionId="A1B2C3D4" onLeave={vi.fn()} onSignOut={vi.fn()} />,
+      { locale: 'de', services: { createRealtime: () => wire.transport } }
+    );
+    await screen.findByText('A1B2C3D4');
+
+    await wire.receive({ type: 'session_terminated', role: 'session_terminated' });
+
+    expect(await screen.findByText('Dieses Gespräch ist beendet.')).toBeInTheDocument();
+    expect(wire.transport.disconnect).toHaveBeenCalled();
+  });
+
   it('starts the chat stack below the shared header', async () => {
     arabicSession();
     renderScreen();

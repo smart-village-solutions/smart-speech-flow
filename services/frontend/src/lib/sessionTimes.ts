@@ -65,3 +65,8 @@ export function durationMinutes(startIso: string, endIso: string): number {
   const span = new Date(endIso).getTime() - new Date(startIso).getTime();
   return Math.max(0, Math.round(span / MINUTE_MS));
 }
+
+/** Hour and minute of an instant, in the browser's time zone. */
+export function clockTime(at: number, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(at);
+}

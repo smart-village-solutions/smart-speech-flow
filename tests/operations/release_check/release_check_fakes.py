@@ -19,6 +19,7 @@ from scripts.release_check.gateway import SocketRejectedError
 
 SELECTORS = ("tenant_id", "x-tenant-id")
 SELECTOR_REFUSAL = {"detail": "Tenant selectors are not accepted in requests"}
+GUEST_REFUSAL = {"detail": {"error_code": "SESSION_HAS_GUEST"}}
 
 
 def _json(status: int, body: object) -> httpx.Response:
@@ -52,6 +53,8 @@ class FakeSession:
     consent: bool = False
     messages: list[str] = field(default_factory=list)
     tickets: set[str] = field(default_factory=set)
+    guest_token: str | None = None
+    guest_tickets: set[str] = field(default_factory=set)
     admin: FakeSocket | None = None
     guest: FakeSocket | None = None
 
@@ -169,23 +172,46 @@ class FakeGateway:
         session.status = "terminated"
         return _json(200, {"status": "terminated"})
 
-    async def customer_session(self, session_id, *, params=None) -> httpx.Response:
+    async def customer_session(self, session_id, *, params=None, guest_token=None):
         if self._selected(params):
             return _json(400, SELECTOR_REFUSAL)
         session = self.sessions.get(session_id)
-        return _not_found() if session is None else _json(200, {"status": session.status})
+        if session is None:
+            return _not_found()
+        if not self._is_guest(session, guest_token):
+            return _json(409, GUEST_REFUSAL)
+        return _json(200, {"status": session.status})
 
     async def activate(self, session_id, language, consent) -> httpx.Response:
         session = self.sessions.get(session_id)
         if session is None:
             return _not_found()
+        if session.guest_token is not None:
+            return _json(409, GUEST_REFUSAL)
         session.status = "active"
         session.consent = consent
-        return _json(200, {"status": "active"})
+        session.guest_token = f"guest-{session_id}"
+        return _json(200, {"status": "active", "guest_token": session.guest_token})
 
-    async def customer_send(self, session_id, text, source, target) -> httpx.Response:
+    async def customer_send(self, session_id, text, source, target, guest_token):
         session = self.sessions[session_id]
+        if not self._is_guest(session, guest_token):
+            return _json(409, GUEST_REFUSAL)
         return self._deliver(session, session_id, session.admin)
+
+    async def guest_ticket(self, session_id, guest_token) -> httpx.Response:
+        session = self.sessions.get(session_id)
+        if session is None:
+            return _not_found()
+        if session.status != "active" or not self._is_guest(session, guest_token):
+            return _json(409, GUEST_REFUSAL)
+        ticket = f"guest-ticket-{session_id}-{len(session.guest_tickets)}"
+        session.guest_tickets.add(ticket)
+        return _json(200, {"ticket": ticket, "expires_at": "later"})
+
+    @staticmethod
+    def _is_guest(session: FakeSession, guest_token: str | None) -> bool:
+        return session.guest_token is None or guest_token == session.guest_token
 
     def _deliver(self, session: FakeSession, session_id: str, receiver: FakeSocket | None):
         message_id = f"{session_id}-M{len(session.messages) + 1}"
@@ -211,11 +237,14 @@ class FakeGateway:
         yield session.admin
 
     @asynccontextmanager
-    async def customer_socket(self, session_id, *, query=""):
+    async def customer_socket(self, session_id, ticket, *, query=""):
         if "tenant_id" in query and not self.accept_selectors:
             raise SocketRejectedError("closed 1008")
         session = self.sessions.get(session_id)
         if session is None:
             raise SocketRejectedError("closed 4404")
+        if ticket not in session.guest_tickets:
+            raise SocketRejectedError("closed 4403")
+        session.guest_tickets.discard(ticket)
         session.guest = self._connected()
         yield session.guest

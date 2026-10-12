@@ -8,7 +8,7 @@ import { mergeActivatedSession } from '@/domain/session/session.mapper';
 import { isJoinable, type Session } from '@/domain/session/session.types';
 
 const client = createHttpClient(readConfig({ VITE_API_BASE_URL: 'http://api.test' }), () => 'en');
-const repository = createSessionRepository(client);
+const repository = createSessionRepository(client, { read: () => null, save: () => undefined });
 
 describe('session repository', () => {
   it('maps the admin status response onto the domain session', async () => {

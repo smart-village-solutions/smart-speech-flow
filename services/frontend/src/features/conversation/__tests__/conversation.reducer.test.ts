@@ -385,4 +385,59 @@ describe('conversationReducer', () => {
       expect(dropped.connection).toBe('disconnected');
     });
   });
+
+  it('holds a timeout warning until it is withdrawn or the session ends', () => {
+    const endsAt = Date.parse('2026-10-12T10:05:00Z');
+    const warned = conversationReducer(initialConversationState, {
+      type: 'session/timeoutWarning',
+      endsAt,
+    });
+    expect(warned.timeoutAt).toBe(endsAt);
+
+    expect(conversationReducer(warned, { type: 'session/timeoutWarningWithdrawn' }).timeoutAt).toBeNull();
+    expect(conversationReducer(warned, { type: 'session/ended' }).timeoutAt).toBeNull();
+  });
+
+  // A send already in flight when the session ends can still fail: a network
+  // drop, a 5xx, the admin's 400 for an inactive session. None of it can be
+  // repeated, so it must not put an error and a Retry over the ended state.
+  it('keeps an ended session free of errors when a send in flight fails afterwards', () => {
+    const inFlight = conversationReducer(initialConversationState, {
+      type: 'send/started',
+      tempId: 't1',
+      text: 'hello',
+      sourceLanguage: 'en',
+      targetLanguage: 'de',
+    });
+    const ended = conversationReducer(inFlight, { type: 'session/ended' });
+
+    const state = conversationReducer(ended, {
+      type: 'send/failed',
+      tempId: 't1',
+      errorKey: 'errors.network',
+    });
+
+    expect(state.errorKey).toBeNull();
+    expect(state.canRetry).toBe(false);
+    expect(state.sending).toBe(false);
+    expect(state.messages[0].state).toBe('failed');
+  });
+
+  it('drops the error and the retry once the session has ended', () => {
+    const failed = conversationReducer(
+      conversationReducer(initialConversationState, {
+        type: 'send/started',
+        tempId: 't1',
+        text: 'hello',
+        sourceLanguage: 'en',
+        targetLanguage: 'de',
+      }),
+      { type: 'send/failed', tempId: 't1', errorKey: 'errors.notFound' }
+    );
+
+    const ended = conversationReducer(failed, { type: 'session/ended' });
+
+    expect(ended.errorKey).toBeNull();
+    expect(ended.canRetry).toBe(false);
+  });
 });

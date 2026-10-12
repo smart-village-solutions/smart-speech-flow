@@ -7,6 +7,7 @@ from starlette.testclient import WebSocketDenialResponse
 from starlette.websockets import WebSocketDisconnect
 
 from tests.gateway_contract.contract_support import ALLOWED_ORIGIN, TENANT_A, TENANT_B
+from tests.guest_access import ensure_guest, open_guest_socket
 
 ORIGIN = {"Origin": ALLOWED_ORIGIN}
 
@@ -17,7 +18,7 @@ def _admin_socket(client, conversations, session_id: str):
 
 
 def _customer_socket(client, session_id: str, headers=ORIGIN):
-    return client.websocket_connect(f"/ws/customer/{session_id}", headers=headers)
+    return open_guest_socket(client, session_id, headers)
 
 
 def test_connection_ack_carries_session_role_time_and_heartbeat_interval(client, conversations):
@@ -74,7 +75,8 @@ def test_customer_websocket_for_an_unknown_or_ended_session_is_denied_before_acc
 
     for session_id in ("NOSUCH01", ended):
         with pytest.raises(WebSocketDenialResponse) as denied:
-            with _customer_socket(client, session_id):
+            # No ticket: the session lookup refuses before any ticket is read.
+            with client.websocket_connect(f"/ws/customer/{session_id}", headers=ORIGIN):
                 pass
         assert denied.value.status_code == 404
         assert denied.value.json() == {"detail": "Session not found"}
@@ -99,6 +101,7 @@ def test_peers_see_joins_relayed_messages_typing_and_leaves(client, conversation
                 "connection_id",
                 "timestamp",
                 "customer_language",
+                "role",
             }
 
             admin.send_json({"type": "message", "content": {"text": "hallo"}})
@@ -165,6 +168,7 @@ def test_termination_notifies_connected_clients_and_closes_normally(client, conv
 def test_tenant_connection_listing_shows_only_the_signed_tenant(client, conversations, identity):
     own = conversations.create(TENANT_A)
     foreign = conversations.create(TENANT_B)
+    ensure_guest(client, foreign)
     polled = client.post(f"/api/customer/session/{foreign}/polling/activate")
     assert polled.status_code == 200
 

@@ -7,6 +7,8 @@ export type AppErrorKind =
   | 'validation'
   | 'server'
   | 'noSpeech'
+  | 'sessionHasGuest'
+  | 'languageChanged'
   | 'unknown';
 
 /**
@@ -30,6 +32,8 @@ const KIND_IS_RETRYABLE: Record<AppErrorKind, boolean> = {
   validation: false,
   server: true,
   noSpeech: false,
+  sessionHasGuest: false,
+  languageChanged: false,
   unknown: true,
 };
 
@@ -40,12 +44,18 @@ const KIND_MESSAGE_KEYS: Record<AppErrorKind, string> = {
   validation: 'errors.validation',
   server: 'errors.server',
   noSpeech: 'errors.noSpeech',
+  sessionHasGuest: 'accessCode.sessionHasGuest',
+  languageChanged: 'errors.languageChanged',
   unknown: 'errors.unknown',
 };
 
 /** Server error codes that name a kind of their own; matched only on a 4xx. */
 const KIND_BY_SERVER_CODE: ReadonlyMap<string, AppErrorKind> = new Map([
   ['NO_SPEECH_RECOGNIZED', 'noSpeech'],
+  ['SESSION_HAS_GUEST', 'sessionHasGuest'],
+  // The session's languages changed under this screen; the conversation refetches them.
+  ['INVALID_SOURCE_LANGUAGE', 'languageChanged'],
+  ['INVALID_TARGET_LANGUAGE', 'languageChanged'],
 ]);
 
 interface AppErrorOptions {
@@ -103,6 +113,27 @@ function serverErrorCode(data: unknown): string | undefined {
   return typeof code === 'string' ? code : undefined;
 }
 
+const SESSION_NOT_FOUND = 'SESSION_NOT_FOUND';
+
+/**
+ * The session routes answer a plain `"Session not found"` detail, the message
+ * routes the error envelope; both mean the gateway no longer has the session.
+ */
+function notFoundCode(data: unknown): string | undefined {
+  const detail = (data as { detail?: unknown } | null)?.detail;
+  return detail === 'Session not found' ? SESSION_NOT_FOUND : serverErrorCode(data);
+}
+
+/**
+ * Whether the gateway itself said the session is gone. A bare 404 is not
+ * enough: while the gateway is redeployed, the proxy in front answers 404 too.
+ */
+export function isSessionGone(error: unknown): boolean {
+  return (
+    error instanceof AppError && error.kind === 'notFound' && error.serverCode === SESSION_NOT_FOUND
+  );
+}
+
 export function toAppError(error: unknown): AppError {
   if (error instanceof AppError) {
     return error;
@@ -126,7 +157,8 @@ export function toAppError(error: unknown): AppError {
   const status = error.response.status;
 
   if (status === 404) {
-    return new AppError('notFound', { status, correlationId, cause: error });
+    const serverCode = notFoundCode(error.response.data);
+    return new AppError('notFound', { status, correlationId, serverCode, cause: error });
   }
 
   if (status >= 400 && status < 500) {

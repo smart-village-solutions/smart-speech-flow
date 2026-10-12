@@ -2,6 +2,8 @@ import type { RealtimeStatus } from '@/core/realtime/realtime.port';
 
 export interface StatusSnapshot {
   ended: boolean;
+  /** When the gateway will end the session for inactivity, once it has warned. */
+  timeoutAt: number | null;
   connection: RealtimeStatus;
   /** False until the socket has connected once; see the reducer. */
   hasConnected: boolean;
@@ -17,9 +19,15 @@ export interface StatusSnapshot {
  */
 export function hasConversationStatus({
   ended,
+  timeoutAt,
   connection,
   hasConnected,
   errorKey,
 }: StatusSnapshot): boolean {
-  return ended || errorKey !== null || (hasConnected && connection !== 'connected');
+  return (
+    ended ||
+    errorKey !== null ||
+    timeoutAt !== null ||
+    (hasConnected && connection !== 'connected')
+  );
 }

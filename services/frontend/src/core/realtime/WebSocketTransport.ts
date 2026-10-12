@@ -1,4 +1,5 @@
 import { buildWebSocketUrl } from '@/utils/identifiers';
+import { isSessionGone } from '@/core/http/AppError';
 import type { ClientRole } from '@/core/roles';
 import type { RealtimeEvent, RealtimeStatus, RealtimeTransport } from './realtime.port';
 
@@ -15,7 +16,8 @@ export interface WebSocketLike {
 
 export interface WebSocketTransportOptions {
   wsBaseUrl: string;
-  issueAdminTicket: (sessionId: string, transport: 'websocket') => Promise<string>;
+  /** A one-time ticket for this role's socket; fetched before every connect. */
+  issueTicket: (sessionId: string, role: ClientRole) => Promise<string>;
   createSocket?: (url: string) => WebSocketLike;
   maxReconnectAttempts?: number;
   reconnectDelayMs?: number;
@@ -34,12 +36,12 @@ const OPEN = 1;
 const HEARTBEAT_PONG = 'heartbeat_pong';
 const HEARTBEAT_PING = 'heartbeat_ping';
 
-type TicketResult = { ok: true; ticket?: string } | { ok: false };
+type TicketResult = { ok: true; ticket: string } | { ok: false };
 
 export function createWebSocketTransport(options: WebSocketTransportOptions): RealtimeTransport {
   const {
     wsBaseUrl,
-    issueAdminTicket,
+    issueTicket,
     createSocket = (url) => new WebSocket(url) as unknown as WebSocketLike,
     maxReconnectAttempts = 5,
     reconnectDelayMs = 1000,
@@ -117,19 +119,37 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
     );
   }
 
-  async function getAdminTicket(
+  async function getTicket(
     id: string,
+    connectionRole: ClientRole,
     expectedGeneration: number
   ): Promise<TicketResult> {
     try {
-      return { ok: true, ticket: await issueAdminTicket(id, 'websocket') };
-    } catch {
-      if (!intentionallyClosed && generation === expectedGeneration) {
+      return { ok: true, ticket: await issueTicket(id, connectionRole) };
+    } catch (error) {
+      if (intentionallyClosed || generation !== expectedGeneration) {
+        return { ok: false };
+      }
+      if (isSessionGone(error)) {
+        reportEnded(id);
+      } else {
         setStatus('error');
         scheduleReconnect(expectedGeneration);
       }
       return { ok: false };
     }
+  }
+
+  /**
+   * The gateway refuses a ticket once the session is gone. A socket that was
+   * down when the end frame went out learns of the end only here, so this
+   * stands in for that frame rather than retrying a session that cannot return.
+   */
+  function reportEnded(id: string): void {
+    const ended: RealtimeEvent = { role: 'session_terminated', type: 'session_terminated', session_id: id };
+    eventHandlers.forEach((handler) => handler(ended));
+    intentionallyClosed = true;
+    setStatus('disconnected');
   }
 
   function attachMessageHandler(next: WebSocketLike, isCurrent: () => boolean): void {
@@ -202,14 +222,11 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
       return;
     }
     setStatus('connecting');
-    let ticket: string | undefined;
-    if (connectionRole === 'admin') {
-      const ticketResult = await getAdminTicket(id, expectedGeneration);
-      if (!ticketResult.ok) {
-        return;
-      }
-      ticket = ticketResult.ticket;
+    const ticketResult = await getTicket(id, connectionRole, expectedGeneration);
+    if (!ticketResult.ok) {
+      return;
     }
+    const { ticket } = ticketResult;
 
     // Ticket issuance is asynchronous. A route change or StrictMode cleanup
     // may have invalidated this connection while the HTTP request was in

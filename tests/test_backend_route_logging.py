@@ -94,7 +94,7 @@ def test_unsupported_customer_language_warning_omits_tainted_value(
     session_manager, monkeypatch, caplog
 ):
     language = "tainted-language-value"
-    session = SimpleNamespace(status=SessionStatus.PENDING)
+    session = SimpleNamespace(status=SessionStatus.PENDING, guest_token_hash=None)
     key = TenantSessionKey("tenant-test", "session-id")
     monkeypatch.setattr(customer, "require_customer_session_key", AsyncMock(return_value=key))
     monkeypatch.setattr(session_manager, "get_session", AsyncMock(return_value=session))

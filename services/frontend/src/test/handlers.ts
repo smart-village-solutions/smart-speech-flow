@@ -279,8 +279,13 @@ export const handlers = [
       customer_language: body.customer_language,
       message: 'Session activated',
       timestamp: '2026-08-21T10:00:00+00:00',
+      guest_token: 'test-guest-token',
     });
   }),
+
+  http.post('*/api/customer/session/:id/realtime-ticket', () =>
+    HttpResponse.json({ ticket: 'guest-ticket', expires_at: '2026-08-21T10:01:00+00:00' })
+  ),
 
   http.get('*/api/:role/session/:id/messages', ({ params }) =>
     HttpResponse.json({ session_id: params.id, messages: [] })

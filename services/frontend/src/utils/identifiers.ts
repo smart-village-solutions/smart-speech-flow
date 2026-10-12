@@ -23,7 +23,7 @@ export function buildWebSocketUrl(
   baseUrl: string,
   sessionId: string,
   clientType: 'admin' | 'customer',
-  ticket?: string
+  ticket: string
 ): string {
   const base = new URL(baseUrl);
   if (base.protocol !== 'ws:' && base.protocol !== 'wss:') {
@@ -33,12 +33,10 @@ export function buildWebSocketUrl(
   const basePath = base.pathname.replace(/\/$/, '');
   base.pathname = `${basePath}/ws/${clientType}/${requirePathIdentifier(sessionId, 'session')}`;
   base.search = '';
-  if (clientType === 'admin') {
-    if (ticket === undefined || ticket === '') {
-      throw new Error('Admin WebSocket ticket is required');
-    }
-    base.searchParams.set('ticket', ticket);
+  if (ticket === '') {
+    throw new Error('WebSocket ticket is required');
   }
+  base.searchParams.set('ticket', ticket);
   base.hash = '';
   return base.toString();
 }

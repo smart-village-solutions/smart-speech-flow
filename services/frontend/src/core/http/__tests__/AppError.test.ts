@@ -1,6 +1,6 @@
 import { AxiosError, AxiosHeaders } from 'axios';
 import { describe, expect, it } from 'vitest';
-import { AppError, toAppError } from '@/core/http/AppError';
+import { AppError, isSessionGone, toAppError } from '@/core/http/AppError';
 
 function axiosErrorWithStatus(status: number, data: unknown = {}): AxiosError {
   const error = new AxiosError('boom', 'ERR_BAD_RESPONSE');
@@ -49,6 +49,26 @@ describe('toAppError', () => {
     expect(result.userMessageKey).toBe('errors.noSpeech');
     expect(result.retryable).toBe(false);
   });
+
+  it('reads a 409 SESSION_HAS_GUEST as sessionHasGuest', () => {
+    const result = toAppError(
+      axiosErrorWithStatus(409, { detail: { error_code: 'SESSION_HAS_GUEST' } })
+    );
+
+    expect(result.kind).toBe('sessionHasGuest');
+    expect(result.userMessageKey).toBe('accessCode.sessionHasGuest');
+    expect(result.retryable).toBe(false);
+  });
+
+  it.each(['INVALID_SOURCE_LANGUAGE', 'INVALID_TARGET_LANGUAGE'])(
+    'reads a 400 %s as languageChanged',
+    (code) => {
+      const result = toAppError(axiosErrorWithStatus(400, { detail: { error_code: code } }));
+
+      expect(result.kind).toBe('languageChanged');
+      expect(result.userMessageKey).toBe('errors.languageChanged');
+    }
+  );
 
   it('keeps a FastAPI field-validation 422 as validation', () => {
     // FastAPI answers 422 for invalid request fields on the same route, so
@@ -121,5 +141,36 @@ describe('toAppError', () => {
   it('has no status to judge a transport failure by, so it allows a retry', () => {
     expect(new AppError('network').retryable).toBe(true);
     expect(new AppError('timeout').retryable).toBe(true);
+  });
+});
+
+// A 404 is only proof the session ended when the gateway itself sent it. While
+// the gateway is redeployed, Traefik answers 404 with its own plain-text body.
+describe('isSessionGone', () => {
+  it.each([
+    ['the plain detail of the session routes', { detail: 'Session not found' }],
+    [
+      'the error envelope of the message routes',
+      { detail: { error_code: 'SESSION_NOT_FOUND', error_message: 'Session not found or expired' } },
+    ],
+  ])('recognises %s', (_shape, body) => {
+    expect(isSessionGone(toAppError(axiosErrorWithStatus(404, body)))).toBe(true);
+  });
+
+  it.each([
+    ['a proxy 404', '404 page not found'],
+    ['another resource', { detail: 'Audio not found' }],
+  ])('does not take %s for the end', (_shape, body) => {
+    const error = toAppError(axiosErrorWithStatus(404, body));
+
+    expect(error.kind).toBe('notFound');
+    expect(isSessionGone(error)).toBe(false);
+  });
+
+  it('does not take the code on any status but 404 for the end', () => {
+    const error = toAppError(axiosErrorWithStatus(400, { detail: { error_code: 'SESSION_NOT_FOUND' } }));
+
+    expect(isSessionGone(error)).toBe(false);
+    expect(isSessionGone(new Error('boom'))).toBe(false);
   });
 });
