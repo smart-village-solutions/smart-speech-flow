@@ -11,6 +11,7 @@ from services.api_gateway.app import app
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.dependencies import get_studio_runtime_flow
 from services.api_gateway.studio_runtime_v2_client import StudioRuntimeV2ClientError
+from tests.guest_access import GUEST_TOKEN_HEADER
 from tests.runtime_policy_helpers import REVISION, runtime_read
 
 OTHER_REVISION = f"sha256:{'b' * 64}"
@@ -100,6 +101,8 @@ async def active_granted_session(session_manager, client: TestClient, studio: _F
         },
     )
     assert response.status_code == 200
+    # The guest's browser keeps its token, as the frontend does, for any later activation.
+    client.headers[GUEST_TOKEN_HEADER] = response.json()["guest_token"]
     assert (await session_manager.get_session(key)).consent_status is ConsentStatus.GRANTED
     return session_id, key
 

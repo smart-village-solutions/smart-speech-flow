@@ -13,7 +13,14 @@ import httpx
 
 from .evidence import Evidence
 from .gateway import Gateway
-from .scenario import ADMIN_LANGUAGE, Conversation, Outcome, acknowledged, socket_refused
+from .scenario import (
+    ADMIN_LANGUAGE,
+    Conversation,
+    Outcome,
+    acknowledged,
+    guest_ticket,
+    socket_refused,
+)
 from .steps import run_step
 
 NOT_FOUND = "Session not found"
@@ -109,14 +116,23 @@ def _selector_checks(
         )
 
     async def guest_query() -> Outcome:
-        return _rejected(await gateway.customer_session(session_id, params=selector))
+        response = await gateway.customer_session(
+            session_id, params=selector, guest_token=actor.guest_token
+        )
+        return _rejected(response)
 
     async def guest_socket() -> Outcome:
-        context = gateway.customer_socket(session_id, query=f"?tenant_id={foreign_id}")
+        ticket = await guest_ticket(gateway, actor)
+        if ticket is None:
+            return False, "no guest ticket"
+        context = gateway.customer_socket(session_id, ticket, query=f"?tenant_id={foreign_id}")
         return await socket_refused(context)
 
     async def guest_reconnects() -> Outcome:
-        async with gateway.customer_socket(session_id) as socket:
+        ticket = await guest_ticket(gateway, actor)
+        if ticket is None:
+            return False, "no guest ticket"
+        async with gateway.customer_socket(session_id, ticket) as socket:
             return await acknowledged(socket)
 
     return {

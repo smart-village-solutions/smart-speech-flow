@@ -44,6 +44,18 @@
             "title": "Customer Language",
             "type": "string"
           },
+          "guest_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Returned once, to the browser that claimed the session; send it as X-Guest-Token on every guest request",
+            "title": "Guest Token"
+          },
           "message": {
             "description": "Success message",
             "title": "Message",
@@ -1121,6 +1133,24 @@
           "languages"
         ],
         "title": "GuestLanguagesResponse",
+        "type": "object"
+      },
+      "GuestRealtimeTicketResponse": {
+        "properties": {
+          "expires_at": {
+            "title": "Expires At",
+            "type": "string"
+          },
+          "ticket": {
+            "title": "Ticket",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket",
+          "expires_at"
+        ],
+        "title": "GuestRealtimeTicketResponse",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -2809,6 +2839,24 @@
       "post": {
         "description": "Übernimmt eine Session vom pending in den active Status. Idempotent - kann mehrmals aufgerufen werden.",
         "operationId": "activate_session_api_customer_session_activate_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2835,6 +2883,9 @@
           },
           "404": {
             "description": "Session not found"
+          },
+          "409": {
+            "description": "The session already has a guest"
           },
           "422": {
             "content": {
@@ -2870,6 +2921,22 @@
               "title": "Session Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
           }
         ],
         "responses": {
@@ -2890,6 +2957,9 @@
           },
           "404": {
             "description": "Session not found"
+          },
+          "409": {
+            "description": "The session already has a guest"
           },
           "422": {
             "content": {
@@ -2941,6 +3011,22 @@
             "schema": {
               "$ref": "#/components/schemas/AudioVariant"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
           }
         ],
         "responses": {
@@ -2957,6 +3043,9 @@
           },
           "404": {
             "description": "Session not found"
+          },
+          "409": {
+            "description": "The session already has a guest"
           },
           "422": {
             "content": {
@@ -3119,6 +3208,22 @@
               "title": "Session Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
           }
         ],
         "responses": {
@@ -3135,6 +3240,9 @@
           },
           "404": {
             "description": "Session not found"
+          },
+          "409": {
+            "description": "The session already has a guest"
           },
           "422": {
             "content": {
@@ -3169,6 +3277,22 @@
               "title": "Session Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
           }
         ],
         "responses": {
@@ -3189,6 +3313,9 @@
           },
           "404": {
             "description": "Session not found"
+          },
+          "409": {
+            "description": "The session already has a guest"
           },
           "422": {
             "content": {
@@ -3223,6 +3350,22 @@
               "title": "Session Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
           }
         ],
         "responses": {
@@ -3237,6 +3380,15 @@
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "description": "The session is not active"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "409": {
+            "description": "The session already has a guest"
           },
           "422": {
             "content": {
@@ -3549,6 +3701,80 @@
         "tags": [
           "websocket-polling-fallback",
           "realtime-polling"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/realtime-ticket": {
+      "post": {
+        "operationId": "issue_guest_realtime_ticket_api_customer_session__session_id__realtime_ticket_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestRealtimeTicketResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The session is not active"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "409": {
+            "description": "The session already has a guest"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "description": "Customer session operation failed"
+          },
+          "503": {
+            "description": "Ticket store unavailable"
+          }
+        },
+        "summary": "Issue Guest Realtime Ticket",
+        "tags": [
+          "customer",
+          "customer"
         ]
       }
     },

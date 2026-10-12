@@ -1,13 +1,18 @@
 import { http, HttpResponse } from 'msw';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { Route, Routes, useParams } from 'react-router-dom';
+import { Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { server } from '@/test/setup';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { installationBody } from '@/test/contentFixtures';
 import { ContentSettled } from '@/test/ContentSettled';
 import { AccessCodeScreen } from '@/features/access-code/AccessCodeScreen';
+import { RequireSession } from '@/app/router/RequireSession';
+
+function LocationState() {
+  return <output data-testid="location-state">{JSON.stringify(useLocation().state)}</output>;
+}
 
 function LanguageScreen() {
   return <p>language screen {useParams().sessionId}</p>;
@@ -96,6 +101,56 @@ describe('AccessCodeScreen', () => {
       await screen.findByText('Zu diesem Code gibt es keine offene Sitzung.')
     ).toBeInTheDocument();
     expect(screen.getAllByRole('textbox')[0]).toHaveValue('Z');
+  });
+
+  it('says the conversation already has a guest when the code is taken', async () => {
+    server.use(
+      http.get('*/api/customer/session/A1B2C3D4', () =>
+        HttpResponse.json({ detail: { error_code: 'SESSION_HAS_GUEST' } }, { status: 409 })
+      )
+    );
+
+    renderWithProviders(tree());
+
+    await userEvent.click(screen.getAllByRole('textbox')[0]);
+    await userEvent.paste('A1B2C3D4');
+    await userEvent.click(screen.getByRole('button', { name: 'Weiter' }));
+
+    // The screen settles on German after its first paint, so wait for that text.
+    expect(await screen.findByText('Diese Unterhaltung hat bereits einen Gast.')).toHaveAttribute(
+      'role',
+      'alert'
+    );
+  });
+
+  it('shows the same message when a join link of a taken conversation is opened', async () => {
+    server.use(
+      http.get('*/api/customer/session/A1B2C3D4', () =>
+        HttpResponse.json({ detail: { error_code: 'SESSION_HAS_GUEST' } }, { status: 409 })
+      )
+    );
+
+    renderWithProviders(
+      <>
+        <Routes>
+          <Route path="/" element={<AccessCodeScreen />} />
+          <Route path="/s/:sessionId" element={<RequireSession />}>
+            <Route path="language" element={<LanguageScreen />} />
+          </Route>
+        </Routes>
+        <LocationState />
+      </>,
+      { route: '/s/A1B2C3D4/language' }
+    );
+
+    // The screen settles on German after its first paint, so wait for that text.
+    expect(await screen.findByText('Diese Unterhaltung hat bereits einen Gast.')).toHaveAttribute(
+      'role',
+      'alert'
+    );
+    expect(screen.queryByText(/language screen/)).not.toBeInTheDocument();
+    // Read once and dropped, so a reload or Back does not bring the notice back.
+    await waitFor(() => expect(screen.getByTestId('location-state')).toHaveTextContent('null'));
   });
 
   it('offers the tenant login chooser link', async () => {

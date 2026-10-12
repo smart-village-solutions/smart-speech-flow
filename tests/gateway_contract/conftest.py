@@ -9,6 +9,7 @@ the composition root work repoints this one file instead of every test.
 from __future__ import annotations
 
 import itertools
+import json
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -16,6 +17,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import anyio.from_thread
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -33,11 +35,13 @@ from services.api_gateway.studio_runtime_flow import (
 from services.api_gateway.studio_v2 import RuntimeRead
 from services.api_gateway.tenant_context import StudioTenantContext, require_studio_tenant_context
 from tests.gateway_contract.contract_support import (
+    ALLOWED_ORIGIN,
     REVISION,
     TENANT_A,
     runtime_read,
     wav_bytes,
 )
+from tests.guest_access import GUEST_TOKEN_HEADER, guest_socket_path
 
 STUDIO_ENVIRONMENT = (
     "STUDIO_RUNTIME_CONFIGURATION_BASE_URL",
@@ -175,6 +179,36 @@ def identity(gateway_state: SignedIdentity) -> SignedIdentity:
     return gateway_state
 
 
+def _guest_session_id(request: httpx.Request) -> str | None:
+    parts = request.url.path.split("/")
+    if parts[1:4] != ["api", "customer", "session"] or len(parts) < 5:
+        return None
+    if parts[4] != "activate":
+        return parts[4]
+    try:
+        body = json.loads(request.content or b"{}")
+    except ValueError:
+        return None
+    return body.get("session_id") if isinstance(body, dict) else None
+
+
+def _sending_guest_tokens(tokens: dict[str, str]) -> Callable[[httpx.Request], None]:
+    """What the browser's interceptor does: a guest request carries its session's token.
+
+    The contract tests pin wire shapes, not who may join; a test that wants a
+    stranger sets the header itself, and tests/test_one_guest_per_session.py
+    owns the refusals.
+    """
+
+    def send(request: httpx.Request) -> None:
+        session_id = _guest_session_id(request)
+        token = tokens.get(session_id) if session_id else None
+        if token and GUEST_TOKEN_HEADER not in request.headers:
+            request.headers[GUEST_TOKEN_HEADER] = token
+
+    return send
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     """A client without the lifespan, on its own rate-limit bucket.
@@ -188,6 +222,11 @@ def client() -> Iterator[TestClient]:
     test_client = TestClient(
         app, headers={"x-forwarded-for": f"10.228.{number // 250}.{number % 250}"}
     )
+    test_client.guest_tokens = {}
+    test_client.event_hooks = {
+        "request": [_sending_guest_tokens(test_client.guest_tokens)],
+        "response": [],
+    }
     with anyio.from_thread.start_blocking_portal("asyncio") as portal:
         test_client.portal = portal
         try:
@@ -539,7 +578,15 @@ class Conversations:
             body["data_retention_consent"] = consent
         activated = self.client.post("/api/customer/session/activate", json=body)
         assert activated.status_code == 200, activated.text
+        token = activated.json().get("guest_token")
+        if token:
+            self.client.guest_tokens[session_id] = token
         return activated.json()
+
+    def guest_socket(self, session_id: str, headers: dict[str, str] | None = None):
+        """The activated guest's socket, on a fresh one-time ticket."""
+        path = guest_socket_path(self.client, session_id, None)
+        return self.client.websocket_connect(path, headers=headers or {"Origin": ALLOWED_ORIGIN})
 
     def ticket(self, session_id: str, transport: str = "websocket") -> str:
         issued = self.client.post(

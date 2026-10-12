@@ -25,9 +25,13 @@ from .dependencies import (
 )
 from .realtime_protocol import Frame, polled_envelope_frame, polled_session_terminated_frame
 from .realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
-from .session_access import require_admin_session_key, require_customer_session_key
+from .session_access import (
+    require_admin_session_key,
+    require_customer_session_key,
+    session_not_active,
+)
 from .session_manager import TenantSessionManager
-from .session_models import ClientType
+from .session_models import ClientType, SessionStatus
 from .session_store import SessionStoreConsistencyError
 from .tenant_context import reject_request_tenant_selectors
 from .tenant_session import TenantSessionKey
@@ -245,13 +249,23 @@ async def activate_admin_polling(
     return _activation_response(client)
 
 
-@router.post("/api/customer/session/{session_id}/polling/activate")
+@router.post(
+    "/api/customer/session/{session_id}/polling/activate",
+    responses={
+        400: {"description": "The session is not active"},
+        404: {"description": "Session not found"},
+        409: {"description": "The session already has a guest"},
+    },
+)
 async def activate_customer_polling(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
     sessions: SessionManagerDependency,
     polling_store: Annotated[TenantPollingStore, Depends(get_polling_store)],
 ) -> dict[str, object]:
+    # A poller opened before the guest claims the session would outlive the claim.
+    if await sessions.get_session_status(key) != SessionStatus.ACTIVE:
+        raise session_not_active()
     async with polling_store.mutation_lock:
         release = _release_stale_clients(polling_store, sessions)
         client = polling_store.activate(key, ClientType.CUSTOMER)

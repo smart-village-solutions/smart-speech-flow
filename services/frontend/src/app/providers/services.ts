@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { AppConfig } from '@/app/config/env';
 import { createHttpClient } from '@/core/http/client';
+import { createGuestTokenStore } from '@/core/http/guest-token-store';
 import { createAudioOutput, type AudioOutput } from '@/core/audio/audio-output';
 import { createBrowserClipLoader, type ClipLoader } from '@/core/audio/clips';
 import { createWebSocketTransport } from '@/core/realtime/WebSocketTransport';
@@ -42,13 +43,16 @@ export interface Services {
 
 /** The composition root. The only place implementations are chosen. */
 export function createServices(config: AppConfig, getLocale: () => string): Services {
-  const http = createHttpClient(config, getLocale);
+  // A sandboxed frame throws on merely reading localStorage, so the store reads it lazily.
+  const guestTokens = createGuestTokenStore(() => globalThis.localStorage ?? null);
+  const http = createHttpClient(config, getLocale, guestTokens);
   const admin = createAdminRepository(http);
+  const session = createSessionRepository(http, guestTokens);
   const audio = createAudioOutput();
 
   return {
     config,
-    session: createSessionRepository(http),
+    session,
     language: createLanguageRepository(http),
     message: createMessageRepository(http, {
       pipelineTimeoutMs: config.pipelineTimeoutMs,
@@ -65,8 +69,10 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     createRealtime: () =>
       createWebSocketTransport({
         wsBaseUrl: config.wsBaseUrl,
-        issueAdminTicket: (sessionId, transport) =>
-          admin.issueRealtimeTicket(sessionId, transport),
+        issueTicket: (sessionId, role) =>
+          role === 'admin'
+            ? admin.issueRealtimeTicket(sessionId, 'websocket')
+            : session.issueGuestTicket(sessionId),
       }),
   };
 }

@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
+from tests.guest_access import join_as_guest
 
 
 @pytest.fixture
@@ -44,6 +45,7 @@ async def test_customer_polling_activation_resolves_public_capability(
     polling_store.clients.clear()
     client = TestClient(app)
     session_id = client.post("/api/admin/session/create").json()["session_id"]
+    join_as_guest(client, session_id)
 
     response = client.post(f"/api/customer/session/{session_id}/polling/activate")
 
@@ -92,6 +94,7 @@ def test_existing_customer_poll_receives_termination_then_is_removed(
     polling_store.clients.clear()
     client = TestClient(app)
     session_id = client.post("/api/admin/session/create").json()["session_id"]
+    join_as_guest(client, session_id)
     activated = client.post(f"/api/customer/session/{session_id}/polling/activate").json()
     polling_id = activated["polling_id"]
 
@@ -148,6 +151,7 @@ async def test_customer_polling_rejects_tenant_selectors_without_side_effects(
     polling_store.clients.clear()
     client = TestClient(app, client=(request.node.nodeid, 50000))
     session_id = client.post("/api/admin/session/create").json()["session_id"]
+    join_as_guest(client, session_id)
     base = f"/api/customer/session/{session_id}/polling"
     polling_id = client.post(base + "/activate").json()["polling_id"]
     stored = polling_store.clients[polling_id]
@@ -192,6 +196,7 @@ def test_customer_polling_preserves_guest_and_authenticated_tenant_access(
     polling_store.clients.clear()
     client = TestClient(app, client=(request.node.nodeid, 50000))
     session_id = client.post("/api/admin/session/create").json()["session_id"]
+    join_as_guest(client, session_id)
     base = f"/api/customer/session/{session_id}/polling"
     polling_id = client.post(base + "/activate").json()["polling_id"]
     principal = {VERIFIED_TENANT_ID_CLAIM: actor} if actor else None

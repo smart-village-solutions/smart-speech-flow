@@ -282,3 +282,16 @@ async def test_the_redis_adapter_returns_str_and_bool() -> None:
     redis.reply = None
     assert await backend.consume("ticket") is None
     assert await backend.get("ticket") is None
+
+
+async def test_a_ticket_opens_only_its_own_role(backend: MemoryRealtimeTicketBackend) -> None:
+    store = RealtimeTicketStore(backend)
+    key = TenantSessionKey("tenant-a", "ABC12345")
+    guest = await store.issue(key, "websocket", role="customer")
+    admin = await store.issue(key, "websocket")
+
+    assert await store.consume(guest.ticket, key, "websocket") is False
+    assert await store.consume(admin.ticket, key, "websocket", role="customer") is False
+
+    guest_again = await store.issue(key, "websocket", role="customer")
+    assert await store.consume(guest_again.ticket, key, "websocket", role="customer") is True

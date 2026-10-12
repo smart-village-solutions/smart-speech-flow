@@ -17,6 +17,7 @@ import pytest
 from starlette.websockets import WebSocketDisconnect
 
 from tests.gateway_contract.contract_support import ALLOWED_ORIGIN
+from tests.guest_access import open_guest_socket
 
 ORIGIN = {"Origin": ALLOWED_ORIGIN}
 REPOSITORY = Path(__file__).resolve().parents[2]
@@ -174,7 +175,7 @@ def _drive_the_realtime_surface(client, conversations, dependencies) -> None:
         f"/ws/admin/{session_id}?ticket={ticket}", headers=ORIGIN
     ) as admin:
         assert _frame(admin)["type"] == "connection_ack"
-        with client.websocket_connect(f"/ws/customer/{session_id}", headers=ORIGIN) as customer:
+        with open_guest_socket(client, session_id, ORIGIN) as customer:
             assert _frame(customer)["type"] == "connection_ack"
             assert _frame(admin)["type"] == "client_joined"
 
@@ -202,9 +203,8 @@ def _drive_the_realtime_surface(client, conversations, dependencies) -> None:
     assert conversations.send_text(silent_session).status_code == 200
 
     with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect(
-            f"/ws/customer/{session_id}", headers={"Origin": "https://evil.example"}
-        ):
+        # A live session: a guest socket is refused for its origin only after a ticket.
+        with open_guest_socket(client, silent_session, {"Origin": "https://evil.example"}):
             pass
 
 

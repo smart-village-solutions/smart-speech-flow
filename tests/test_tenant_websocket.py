@@ -28,6 +28,7 @@ from services.api_gateway.websocket_polling_routes import (
     POLLING_QUEUE_SIZE,
     TenantPollingStore,
 )
+from tests.guest_access import activate_guest, guest_headers, guest_socket_path
 from tests.realtime_sessions import websocket_monitor
 
 REVISION = f"sha256:{'a' * 64}"
@@ -150,9 +151,10 @@ def test_customer_websocket_still_accepts_an_anonymous_capability(
     customer_websocket_client,
 ) -> None:
     client, session_id = customer_websocket_client
+    token = activate_guest(client, session_id)["guest_token"]
 
     with client.websocket_connect(
-        f"/ws/customer/{session_id}", headers={"Origin": ALLOWED_ORIGIN}
+        guest_socket_path(client, session_id, token), headers={"Origin": ALLOWED_ORIGIN}
     ) as websocket:
         acknowledgement = websocket.receive_json()
 
@@ -344,6 +346,12 @@ async def test_websocket_rejects_tenant_selectors_before_ticket_or_presence_muta
             f"/api/admin/session/{session_id}/realtime-ticket",
             json={"transport": "websocket"},
         ).json()["ticket"]
+    else:
+        token = activate_guest(client, session_id)["guest_token"]
+        query["ticket"] = client.post(
+            f"/api/customer/session/{session_id}/realtime-ticket",
+            headers=guest_headers(token),
+        ).json()["ticket"]
     headers = {"Origin": ALLOWED_ORIGIN}
     if selector_source == "query":
         query["tenant_id"] = "other-tenant"
@@ -384,6 +392,8 @@ def test_customer_websocket_preserves_verified_tenant_access(
     )
     path = f"/ws/customer/{session_id}"
     headers = {"Origin": ALLOWED_ORIGIN, "Authorization": "Bearer verified-test-principal"}
+    if actor == "tenant-test":
+        path = guest_socket_path(client, session_id, activate_guest(client, session_id)["guest_token"])
     if actor == "other-tenant":
         with pytest.raises(WebSocketDenialResponse) as denied:
             with client.websocket_connect(path, headers=headers):

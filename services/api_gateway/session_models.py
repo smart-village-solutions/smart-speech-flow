@@ -220,6 +220,9 @@ class Session:
     # The creating admin (tenant_context.admin_ref). None for sessions stored
     # before owners existed; such a session is never another admin's.
     owner_ref: Optional[str] = None
+    # SHA-256 of the guest token the first activation issued; None until then,
+    # and for sessions activated before guest tokens existed.
+    guest_token_hash: Optional[str] = None
 
     # ✨ Timeout Management Features
     last_activity: datetime = field(default_factory=utc_now)
@@ -284,6 +287,7 @@ class Session:
             "customer_connected": self.customer_connected,
             "termination_reason": self.termination_reason,
             "owner_ref": self.owner_ref,
+            "guest_token_hash": self.guest_token_hash,
             "last_activity": self.last_activity.isoformat(),
             "timeout_warning_sent": self.timeout_warning_sent,
             "session_timeout_minutes": self.session_timeout_minutes,
@@ -319,6 +323,7 @@ class Session:
         data.pop("consent_retention_hours", None)
         data.pop("consent_configuration_revision", None)
         data.pop("owner_ref", None)
+        data.pop("guest_token_hash", None)
         return data
 
     def update_activity(self) -> None:
@@ -372,6 +377,7 @@ class Session:
             customer_connected=data.get("customer_connected", False),
             termination_reason=data.get("termination_reason"),
             owner_ref=data.get("owner_ref"),
+            guest_token_hash=data.get("guest_token_hash"),
             last_activity=_ensure_utc(datetime.fromisoformat(last_activity_raw)),
             timeout_warning_sent=data.get("timeout_warning_sent", False),
             session_timeout_minutes=data.get("session_timeout_minutes", 30),

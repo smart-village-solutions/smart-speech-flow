@@ -3,9 +3,12 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppError } from '@/core/http/AppError';
 
-/** Retrying a 404 or a validation failure only delays the error. */
+/**
+ * Retrying what the server has refused outright -- a 404, a 409, a validation
+ * failure -- only delays the error. `AppError.retryable` says which those are.
+ */
 function shouldRetry(failureCount: number, error: unknown): boolean {
-  if (error instanceof AppError && (error.kind === 'notFound' || error.kind === 'validation')) {
+  if (error instanceof AppError && !error.retryable) {
     return false;
   }
 

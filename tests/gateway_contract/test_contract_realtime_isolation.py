@@ -14,6 +14,7 @@ import pytest
 from starlette.websockets import WebSocketDisconnect
 
 from tests.gateway_contract.contract_support import ALLOWED_ORIGIN, TENANT_A, TENANT_B
+from tests.guest_access import ensure_guest, open_guest_socket
 
 ORIGIN = {"Origin": ALLOWED_ORIGIN}
 
@@ -40,6 +41,7 @@ def _before_a_sentinel(socket) -> list[dict[str, Any]]:
 
 
 def _customer_poller(client, session_id: str) -> str:
+    ensure_guest(client, session_id)
     response = client.post(f"/api/customer/session/{session_id}/polling/activate")
     assert response.status_code == 200, response.text
     polling_id: str = response.json()["polling_id"]
@@ -84,9 +86,7 @@ def test_one_tenants_frames_never_reach_another_tenants_sockets_or_pollers(
         assert client.get(foreign_polling).json()["message_count"] == 1
         with _admin_socket(client, sessions[TENANT_A], tickets[TENANT_A]) as admin:
             admin.receive_json()
-            with client.websocket_connect(
-                f"/ws/customer/{sessions[TENANT_A]}", headers=ORIGIN
-            ) as customer:
+            with open_guest_socket(client, sessions[TENANT_A], ORIGIN) as customer:
                 customer.receive_json()
                 admin.receive_json()
                 admin.send_json({"type": "message", "content": {"text": "hallo"}})

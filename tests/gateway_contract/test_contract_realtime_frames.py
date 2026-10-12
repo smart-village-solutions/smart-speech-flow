@@ -17,8 +17,10 @@ from datetime import datetime
 from typing import Any
 
 import pytest
+from starlette.websockets import WebSocketDisconnect
 
 from tests.gateway_contract.contract_support import ALLOWED_ORIGIN
+from tests.guest_access import ensure_guest, open_guest_socket
 
 ORIGIN = {"Origin": ALLOWED_ORIGIN}
 RELAY_KEYS = {"type", "from", "session_id", "content", "timestamp"}
@@ -68,10 +70,11 @@ def _admin_socket(client, conversations, session_id: str):
 
 
 def _customer_socket(client, session_id: str):
-    return client.websocket_connect(f"/ws/customer/{session_id}", headers=ORIGIN)
+    return open_guest_socket(client, session_id, ORIGIN)
 
 
 def _customer_poller(client, session_id: str) -> str:
+    ensure_guest(client, session_id)
     response = client.post(f"/api/customer/session/{session_id}/polling/activate")
     assert response.status_code == 200, response.text
     polling_id: str = response.json()["polling_id"]
@@ -229,17 +232,46 @@ def test_an_admin_join_carries_no_customer_language(client, conversations):
     assert (joined["type"], joined["client_type"]) == ("client_joined", "admin")
 
 
-def test_a_customer_join_before_activation_carries_no_customer_language(client, conversations):
+def test_a_customer_cannot_join_before_activation(client, conversations):
+    # A connection opened before the guest claims the session would outlive the claim.
     session_id = conversations.create()
+
+    with pytest.raises(WebSocketDisconnect) as closed:
+        with client.websocket_connect(f"/ws/customer/{session_id}", headers=ORIGIN):
+            pass
+    ticket = client.post(f"/api/customer/session/{session_id}/realtime-ticket")
+
+    assert closed.value.code == 4403
+    assert ticket.status_code == 400
+    assert ticket.json()["detail"]["error_code"] == "SESSION_NOT_ACTIVE"
+
+
+def test_a_customer_language_change_reaches_the_admin_socket_and_poller(client, conversations):
+    session_id = conversations.create()
+    conversations.activate(session_id, "en")
+    poller = _admin_poller(client, conversations, session_id)
 
     with _admin_socket(client, conversations, session_id) as admin:
         admin.receive_json()
-        with _customer_socket(client, session_id) as customer:
-            customer.receive_json()
-            joined = admin.receive_json()
+        conversations.activate(session_id, "tr")
+        frames = _before_a_sentinel(admin)
+    polled = [
+        frame
+        for frame in _polled(client, "admin", session_id, poller)
+        if frame["type"] == "customer_language_changed"
+    ]
 
-    assert set(joined) == JOINED_KEYS
-    assert (joined["type"], joined["client_type"]) == ("client_joined", "customer")
+    assert len(frames) == 1
+    changed = frames[0]
+    assert list(changed) == ["type", "session_id", "customer_language", "timestamp", "role"]
+    assert _without(changed, "timestamp") == {
+        "type": "customer_language_changed",
+        "session_id": session_id,
+        "customer_language": "tr",
+        "role": "customer_language_changed",
+    }
+    assert _is_timestamp(changed["timestamp"])
+    assert polled == [changed]
 
 
 @pytest.mark.parametrize(

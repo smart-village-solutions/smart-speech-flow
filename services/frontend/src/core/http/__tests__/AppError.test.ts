@@ -50,6 +50,26 @@ describe('toAppError', () => {
     expect(result.retryable).toBe(false);
   });
 
+  it('reads a 409 SESSION_HAS_GUEST as sessionHasGuest', () => {
+    const result = toAppError(
+      axiosErrorWithStatus(409, { detail: { error_code: 'SESSION_HAS_GUEST' } })
+    );
+
+    expect(result.kind).toBe('sessionHasGuest');
+    expect(result.userMessageKey).toBe('accessCode.sessionHasGuest');
+    expect(result.retryable).toBe(false);
+  });
+
+  it.each(['INVALID_SOURCE_LANGUAGE', 'INVALID_TARGET_LANGUAGE'])(
+    'reads a 400 %s as languageChanged',
+    (code) => {
+      const result = toAppError(axiosErrorWithStatus(400, { detail: { error_code: code } }));
+
+      expect(result.kind).toBe('languageChanged');
+      expect(result.userMessageKey).toBe('errors.languageChanged');
+    }
+  );
+
   it('keeps a FastAPI field-validation 422 as validation', () => {
     // FastAPI answers 422 for invalid request fields on the same route, so
     // the status alone never means "no speech".

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useScreenLocale } from '@/app/providers/locale';
 import { useMutation } from '@tanstack/react-query';
@@ -23,25 +23,38 @@ export function AccessCodeScreen() {
   const { session } = useServices();
   const copy = useStartpageCopy();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [code, setCode] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  // A message key, translated at render: the screen settles its locale after mounting.
+  // A join link to a conversation another browser holds lands here with a notice.
+  const notice = (location.state as { notice?: string } | null)?.notice;
+  const [error, setError] = useState<string | null>(() =>
+    notice === 'sessionHasGuest' ? 'accessCode.sessionHasGuest' : null
+  );
+
+  // Read once: left in the history entry, a reload or Back would show it again.
+  useEffect(() => {
+    if (notice !== undefined) {
+      void navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.pathname, navigate, notice]);
 
   const submit = useMutation({
     mutationFn: (candidate: string) => session.getSession(candidate, 'customer'),
     onSuccess: (found) => {
       if (!isJoinable(found)) {
-        setError(t('accessCode.notFound'));
+        setError('accessCode.notFound');
         return;
       }
       void navigate(`/s/${found.id}/language`);
     },
     onError: (failure: unknown) => {
       if (failure instanceof AppError) {
-        setError(t(failure.kind === 'notFound' ? 'accessCode.notFound' : failure.userMessageKey));
+        setError(failure.kind === 'notFound' ? 'accessCode.notFound' : failure.userMessageKey);
         return;
       }
-      setError(t('errors.unknown'));
+      setError('errors.unknown');
     },
   });
 
@@ -84,7 +97,7 @@ export function AccessCodeScreen() {
 
         {error !== null && (
           <p role="alert" className="mt-4 text-center text-note text-fg-muted">
-            {error}
+            {t(error)}
           </p>
         )}
 

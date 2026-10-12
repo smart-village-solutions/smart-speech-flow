@@ -26,6 +26,7 @@ import pytest
 import yaml
 
 from tests.gateway_contract.contract_support import ALLOWED_ORIGIN, wav_bytes
+from tests.guest_access import open_guest_socket
 
 ORIGIN = {"Origin": ALLOWED_ORIGIN}
 REPOSITORY = Path(__file__).resolve().parents[2]
@@ -437,7 +438,7 @@ def _drive_the_realtime_and_message_paths(client, conversations, dependencies) -
         f"/ws/admin/{session_id}?ticket={ticket}", headers=ORIGIN
     ) as admin:
         assert _frame(admin)["type"] == "connection_ack"
-        with client.websocket_connect(f"/ws/customer/{session_id}", headers=ORIGIN) as customer:
+        with open_guest_socket(client, session_id, ORIGIN) as customer:
             assert _frame(customer)["type"] == "connection_ack"
             assert _frame(admin)["type"] == "client_joined"
             admin.send_json({"type": "message", "content": {"text": "relayed"}})
