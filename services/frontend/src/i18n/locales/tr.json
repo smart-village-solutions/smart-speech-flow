@@ -12,7 +12,8 @@
     "title": "Kodu girin",
     "continue": "Devam",
     "digitLabel": "{{position}}. karakter",
-    "notFound": "Bu kodla eşleşen açık bir oturum yok."
+    "notFound": "Bu kodla eşleşen açık bir oturum yok.",
+    "sessionHasGuest": "Bu görüşmede zaten bir misafir var."
   },
   "language": {
     "title": "Dilinizi seçin",
@@ -95,7 +96,8 @@
     "validation": "Bu istek işlenemedi.",
     "server": "Bizim tarafımızda bir sorun oluştu.",
     "noSpeech": "Hiçbir şey anlaşılamadı. Lütfen tekrar deneyin.",
-    "unknown": "Bir şeyler ters gitti."
+    "unknown": "Bir şeyler ters gitti.",
+    "languageChanged": "Görüşme dili değişti. Lütfen tekrar gönderin."
   },
   "legal": {
     "label": "Yasal bilgiler",

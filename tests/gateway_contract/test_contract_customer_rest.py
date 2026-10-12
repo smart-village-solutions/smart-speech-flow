@@ -7,7 +7,14 @@ import pytest
 from tests.gateway_contract.contract_support import TENANT_A, TENANT_B
 
 NOT_FOUND = {"detail": "Session not found"}
-ACTIVATION_FIELDS = {"session_id", "status", "customer_language", "message", "timestamp"}
+ACTIVATION_FIELDS = {
+    "session_id",
+    "status",
+    "customer_language",
+    "message",
+    "timestamp",
+    "guest_token",
+}
 CUSTOMER_STATUS_FIELDS = {
     "session_id",
     "status",
@@ -36,6 +43,9 @@ def test_activation_response_for_a_first_and_a_repeated_activation(conversations
     assert repeated["customer_language"] == "fa"
     assert switched["customer_language"] == "uk"
     assert first["message"] != repeated["message"]
+    # Only the activation that claimed the session hands out its guest token.
+    assert isinstance(first["guest_token"], str) and first["guest_token"]
+    assert repeated["guest_token"] is None and switched["guest_token"] is None
 
 
 def test_activation_of_an_unknown_session_is_not_found(client):

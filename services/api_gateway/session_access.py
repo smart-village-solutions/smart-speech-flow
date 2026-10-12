@@ -5,13 +5,15 @@ from __future__ import annotations
 import hmac
 import logging
 from datetime import timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 
 from .auth import VERIFIED_TENANT_ID_CLAIM, optional_ssf_user
 from .dependencies import get_guest_grace_window, get_session_manager
+from .guest_token import guest_token_admits
 from .log_safety import safe_closed_value
+from .message_models import create_error_response
 from .session_manager import TenantSessionManager
 from .session_pseudonym import SessionPseudonymizer
 from .tenant_context import StudioTenantContext, require_admin_ref, require_studio_tenant_context
@@ -91,7 +93,26 @@ def _require_principal_scope(
         raise _not_found()
 
 
-async def require_customer_session_key(
+GUEST_TOKEN_HEADER = "X-Guest-Token"
+
+
+def guest_conflict() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=create_error_response(
+            "SESSION_HAS_GUEST", "This conversation already has a guest", {}
+        ),
+    )
+
+
+def session_not_active() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=create_error_response("SESSION_NOT_ACTIVE", "The session is not active", {}),
+    )
+
+
+async def resolve_customer_session_key(
     session_id: str,
     principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
     sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
@@ -104,6 +125,20 @@ async def require_customer_session_key(
     if key is None:
         raise _not_found()
     _require_principal_scope(principal, key, sessions)
+    return key
+
+
+async def require_customer_session_key(
+    session_id: str,
+    principal: Annotated[dict[str, Any] | None, Depends(optional_ssf_user)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
+    guest_token: Annotated[Optional[str], Header(alias=GUEST_TOKEN_HEADER)] = None,
+) -> TenantSessionKey:
+    """The session's key, for the guest holding its token once one has claimed it."""
+    key = await resolve_customer_session_key(session_id, principal, sessions)
+    session = await sessions.get_session(key)
+    if session is not None and not guest_token_admits(session.guest_token_hash, guest_token):
+        raise guest_conflict()
     return key
 
 

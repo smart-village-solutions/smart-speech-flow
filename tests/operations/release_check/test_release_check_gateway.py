@@ -50,18 +50,21 @@ async def test_admin_calls_carry_the_bearer_token_and_the_right_route():
     ]
 
 
-async def test_messages_are_json_and_guest_calls_carry_no_token():
+async def test_messages_are_json_and_guest_calls_carry_no_admin_token():
     bodies: list[tuple[str, dict, str | None]] = []
+    guest_tokens: list[str | None] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content) if request.content else {}
         bodies.append((request.url.path, body, request.headers.get("authorization")))
+        guest_tokens.append(request.headers.get("x-guest-token"))
         return httpx.Response(200, json={})
 
     gateway, _ = _gateway(handler)
     await gateway.admin_send("tok", "S1", "Hallo", "de", "en", extra={"tenant_id": "x"})
     await gateway.activate("S1", "en", True)
-    await gateway.customer_send("S1", "Hello", "en", "de")
+    await gateway.customer_send("S1", "Hello", "en", "de", "guest")
+    await gateway.guest_ticket("S1", "guest")
 
     assert bodies[0] == (
         "/api/admin/session/S1/message",
@@ -75,6 +78,8 @@ async def test_messages_are_json_and_guest_calls_carry_no_token():
     )
     assert bodies[2][0] == "/api/customer/session/S1/message"
     assert bodies[2][2] is None
+    assert bodies[3][0] == "/api/customer/session/S1/realtime-ticket"
+    assert guest_tokens == [None, None, "guest", "guest"]
 
 
 async def test_selectors_reach_the_request_as_given():
@@ -98,12 +103,15 @@ async def test_sockets_use_the_websocket_base_and_the_frontend_origin():
 
     async with gateway.admin_socket("S1", "t/k"):
         pass
-    async with gateway.customer_socket("S1", query="?tenant_id=x"):
+    async with gateway.customer_socket("S1", "g/t", query="?tenant_id=x"):
+        pass
+    async with gateway.customer_socket("S1", "g/t"):
         pass
 
     assert connected == [
         ("wss://api.example/ws/admin/S1?ticket=t%2Fk", "https://app.example"),
-        ("wss://api.example/ws/customer/S1?tenant_id=x", "https://app.example"),
+        ("wss://api.example/ws/customer/S1?tenant_id=x&ticket=g%2Ft", "https://app.example"),
+        ("wss://api.example/ws/customer/S1?ticket=g%2Ft", "https://app.example"),
     ]
 
 

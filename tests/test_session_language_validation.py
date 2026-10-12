@@ -37,6 +37,7 @@ def test_the_session_pair_is_accepted(client, source, target):
             {
                 "error": "Customer must send messages in session language 'en', not 'fr'",
                 "error_type": "INVALID_SOURCE_LANGUAGE",
+                "error_code": "INVALID_SOURCE_LANGUAGE",
                 "details": {
                     "expected_source_lang": "en",
                     "actual_source_lang": "fr",
@@ -51,6 +52,7 @@ def test_the_session_pair_is_accepted(client, source, target):
             {
                 "error": "Customer messages must be translated to admin language 'de', not 'fr'",
                 "error_type": "INVALID_TARGET_LANGUAGE",
+                "error_code": "INVALID_TARGET_LANGUAGE",
                 "details": {
                     "expected_target_lang": "de",
                     "actual_target_lang": "fr",
@@ -65,6 +67,7 @@ def test_the_session_pair_is_accepted(client, source, target):
             {
                 "error": "Admin must send messages in admin language 'de', not 'fr'",
                 "error_type": "INVALID_SOURCE_LANGUAGE",
+                "error_code": "INVALID_SOURCE_LANGUAGE",
                 "details": {
                     "expected_source_lang": "de",
                     "actual_source_lang": "fr",
@@ -79,6 +82,7 @@ def test_the_session_pair_is_accepted(client, source, target):
             {
                 "error": "Admin messages must be translated to customer language 'en', not 'fr'",
                 "error_type": "INVALID_TARGET_LANGUAGE",
+                "error_code": "INVALID_TARGET_LANGUAGE",
                 "details": {
                     "expected_target_lang": "en",
                     "actual_target_lang": "fr",

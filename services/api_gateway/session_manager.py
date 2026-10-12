@@ -29,7 +29,7 @@ from .clock import utc_now
 from .content_retention import session_retention_hours
 from .keyed_locks import KeyedLocks
 from .quality_telemetry_schema import SessionLifecyclePhase, SessionTerminationReason
-from .realtime_protocol import timeout_warning_frame
+from .realtime_protocol import customer_language_changed_frame, timeout_warning_frame
 from .session_models import (
     ClientType,
     Session,
@@ -757,6 +757,16 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
                     await self.customer_disconnected(client.key)
             except KeyError:
                 pass
+
+    async def announce_customer_language(
+        self, session_id: TenantSessionKey, customer_language: str
+    ) -> None:
+        """Tell every connection that the guest now speaks another language."""
+        if self.websocket_manager:
+            await self.websocket_manager.broadcast_to_session(
+                session_id,
+                customer_language_changed_frame(session_id.session_id, customer_language),
+            )
 
     async def _send_timeout_warning(self, session: Session) -> None:
         """Timeout-Warning an alle WebSocket-Clients der Session senden"""

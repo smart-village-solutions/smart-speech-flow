@@ -41,7 +41,7 @@ from .realtime_protocol import (
 )
 from .realtime_registry import ConnectionRegistry
 from .realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
-from .session_access import require_customer_session_key
+from .session_access import resolve_customer_session_key
 from .session_manager import TenantSessionManager
 from .session_models import ClientType, SessionStatus
 from .session_ports import SessionRegistry
@@ -655,12 +655,39 @@ async def admin_websocket_endpoint(
 async def customer_websocket_endpoint(
     websocket: WebSocket,
     session_id: str,
-    key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
+    key: Annotated[TenantSessionKey, Depends(resolve_customer_session_key)],
     manager: WebSocketManagerDependency,
     sessions: SessionManagerDependency,
+    tickets: Annotated[RealtimeTicketStore, Depends(get_realtime_ticket_store)],
+    ticket: Optional[str] = None,
     origin: Annotated[Optional[str], Header()] = None,
 ) -> None:
+    try:
+        admitted = await _admits_guest_socket(key, ticket, sessions, tickets)
+    except RealtimeTicketUnavailable:
+        await websocket.close(code=1013, reason="Realtime service unavailable")
+        return
+    if not admitted:
+        await websocket.close(code=4403, reason="Guest ticket required")
+        return
     await websocket_endpoint(websocket, key, ClientType.CUSTOMER, manager, sessions, origin)
+
+
+async def _admits_guest_socket(
+    key: TenantSessionKey,
+    ticket: Optional[str],
+    sessions: TenantSessionManager,
+    tickets: RealtimeTicketStore,
+) -> bool:
+    if ticket is not None:
+        return await tickets.consume(ticket, key, "websocket", role="customer")
+    # Activated before guest tokens existed: an old bundle reconnects without a ticket.
+    session = await sessions.get_session(key)
+    return (
+        session is not None
+        and session.status is SessionStatus.ACTIVE
+        and session.guest_token_hash is None
+    )
 
 
 async def websocket_endpoint(

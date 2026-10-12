@@ -44,6 +44,7 @@ class MessageType(str, Enum):
     TYPING_INDICATOR = "typing_indicator"
     CLIENT_JOINED = "client_joined"
     CLIENT_LEFT = "client_left"
+    CUSTOMER_LANGUAGE_CHANGED = "customer_language_changed"
 
     # 📱 Mobile-Optimization Messages
     TAB_VISIBILITY_CHANGE = "tab_visibility_change"
@@ -158,6 +159,14 @@ class TimeoutWarningFrame(TypedDict):
     session_id: str
     message: str
     remaining_minutes: int
+    timestamp: str
+    role: str
+
+
+class CustomerLanguageChangedFrame(TypedDict):
+    type: str
+    session_id: str
+    customer_language: str
     timestamp: str
     role: str
 
@@ -346,6 +355,19 @@ def timeout_warning_frame(session_id: str, remaining_minutes: int) -> TimeoutWar
         "remaining_minutes": remaining_minutes,
         "timestamp": _timestamp(),
         "role": MessageType.TIMEOUT_WARNING.value,
+    }
+
+
+def customer_language_changed_frame(
+    session_id: str, customer_language: str
+) -> CustomerLanguageChangedFrame:
+    return {
+        "type": MessageType.CUSTOMER_LANGUAGE_CHANGED.value,
+        "session_id": session_id,
+        "customer_language": customer_language,
+        "timestamp": _timestamp(),
+        # The frontend transport forwards only frames that carry a role.
+        "role": MessageType.CUSTOMER_LANGUAGE_CHANGED.value,
     }
 
 

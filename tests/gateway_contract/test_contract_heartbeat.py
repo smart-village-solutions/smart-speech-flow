@@ -14,6 +14,7 @@ import pytest
 from starlette.websockets import WebSocketDisconnect
 
 from tests.gateway_contract.contract_support import ALLOWED_ORIGIN
+from tests.guest_access import open_guest_socket
 
 ORIGIN = {"Origin": ALLOWED_ORIGIN}
 # Far longer than the one-second timeout below, and far shorter than a CI job.
@@ -150,7 +151,7 @@ def test_a_silent_socket_is_closed_and_its_peer_told(client, conversations, fast
 
     with _admin_socket(client, conversations, session_id) as admin:
         admin.receive_json()
-        with client.websocket_connect(f"/ws/customer/{session_id}", headers=ORIGIN) as customer:
+        with open_guest_socket(client, session_id, ORIGIN) as customer:
             customer.receive_json()
             left = _answer_pings_until(admin, "client_left")
             frames, closed = _frames_until_closed(customer)

@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from tests.gateway_contract.contract_support import ALLOWED_ORIGIN, wav_bytes
+from tests.guest_access import open_guest_socket
 
 ORIGIN = {"Origin": ALLOWED_ORIGIN}
 LANGUAGES = {"admin": ("de", "en"), "customer": ("en", "de")}
@@ -88,9 +89,7 @@ def test_an_http_message_reaches_both_live_websockets(client, conversations, sen
         f"/ws/admin/{session_id}?ticket={ticket}", headers=ORIGIN
     ) as admin_socket:
         assert admin_socket.receive_json()["type"] == "connection_ack"
-        with client.websocket_connect(
-            f"/ws/customer/{session_id}", headers=ORIGIN
-        ) as customer_socket:
+        with open_guest_socket(client, session_id, ORIGIN) as customer_socket:
             assert customer_socket.receive_json()["type"] == "connection_ack"
             assert admin_socket.receive_json()["type"] == "client_joined"
 

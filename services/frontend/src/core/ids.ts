@@ -22,3 +22,19 @@ export function randomId(): string {
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
+
+/**
+ * A guest token: 32 random bytes, base64url without padding (43 characters),
+ * the shape the gateway accepts. Empty where Web Crypto is missing, which
+ * leaves the choice to the gateway.
+ */
+export function randomGuestToken(): string {
+  if (typeof crypto === 'undefined' || typeof crypto.getRandomValues !== 'function') {
+    return '';
+  }
+
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const base64 = btoa(String.fromCharCode(...bytes));
+  return base64.replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+}

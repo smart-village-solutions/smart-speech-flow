@@ -12,7 +12,8 @@
     "title": "Code eingeben",
     "continue": "Weiter",
     "digitLabel": "Stelle {{position}}",
-    "notFound": "Zu diesem Code gibt es keine offene Sitzung."
+    "notFound": "Zu diesem Code gibt es keine offene Sitzung.",
+    "sessionHasGuest": "Diese Unterhaltung hat bereits einen Gast."
   },
   "language": {
     "title": "Wählen Sie Ihre Sprache",
@@ -95,7 +96,8 @@
     "validation": "Diese Anfrage konnte nicht verarbeitet werden.",
     "server": "Auf unserer Seite ist etwas schiefgelaufen.",
     "noSpeech": "Es wurde nichts erkannt. Bitte erneut versuchen.",
-    "unknown": "Etwas ist schiefgelaufen."
+    "unknown": "Etwas ist schiefgelaufen.",
+    "languageChanged": "Die Gesprächssprache hat sich geändert. Bitte erneut senden."
   },
   "legal": {
     "label": "Rechtliches",

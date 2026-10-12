@@ -16,8 +16,9 @@ from services.api_gateway import websocket_polling_routes as polling
 from services.api_gateway.app import app
 from services.api_gateway.audio_storage import AudioStore
 from services.api_gateway.session_manager import TenantSessionManager
-from services.api_gateway.session_models import ClientType, Session
+from services.api_gateway.session_models import ClientType, Session, SessionStatus
 from services.api_gateway.session_store import MemoryTenantSessionStore
+from tests.guest_access import join_as_guest
 from tests.realtime_sessions import websocket_monitor
 
 
@@ -41,6 +42,8 @@ async def test_polling_timeout_openapi_and_request_contract(polling_client, gate
     assert (schema["default"], schema["minimum"], schema["maximum"]) == (0, 0, 60)
 
     session_id = polling_client.post("/api/admin/session/create").json()["session_id"]
+    if role == "customer":
+        join_as_guest(polling_client, session_id)
     base = f"/api/{role}/session/{session_id}/polling"
     payload = {}
     if role == "admin":
@@ -235,7 +238,10 @@ async def polling_http_state():
         audio_store=AudioStore.from_environment(),
     )
     key = polling.TenantSessionKey("tenant-a", "SESSION1")
-    await sessions.store.create(Session(id=key.session_id, tenant_id=key.tenant_id))
+    # Joined: a guest poller opens only on an active session.
+    await sessions.store.create(
+        Session(id=key.session_id, tenant_id=key.tenant_id, status=SessionStatus.ACTIVE)
+    )
     manager = websocket.WebSocketManager(sessions, monitor=websocket_monitor())
     endpoint_app = FastAPI()
     endpoint_app.include_router(polling.router)
@@ -480,7 +486,9 @@ async def test_an_activation_that_loses_a_race_with_termination_leaves_no_poller
         store=MemoryTenantSessionStore(), audio_store=AudioStore.from_environment()
     )
     key = polling.TenantSessionKey("tenant-a", "SESSION1")
-    await sessions.store.create(Session(id=key.session_id, tenant_id=key.tenant_id))
+    await sessions.store.create(
+        Session(id=key.session_id, tenant_id=key.tenant_id, status=SessionStatus.ACTIVE)
+    )
     session = await sessions.get_session(key)
     connect = sessions.admin_connected if role == "admin" else sessions.customer_connected
 

@@ -12,7 +12,8 @@
     "title": "Enter code",
     "continue": "Continue",
     "digitLabel": "Character {{position}}",
-    "notFound": "That code does not match an open session."
+    "notFound": "That code does not match an open session.",
+    "sessionHasGuest": "This conversation already has a guest."
   },
   "language": {
     "title": "Choose your language",
@@ -95,7 +96,8 @@
     "validation": "That request could not be processed.",
     "server": "Something went wrong on our side.",
     "noSpeech": "Nothing was recognised. Please try again.",
-    "unknown": "Something went wrong."
+    "unknown": "Something went wrong.",
+    "languageChanged": "The conversation language changed. Please send again."
   },
   "legal": {
     "label": "Legal information",

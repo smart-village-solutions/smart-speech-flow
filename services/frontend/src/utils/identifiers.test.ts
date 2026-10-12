@@ -32,7 +32,16 @@ describe('path identifier validation', () => {
         'opaque value'
       )
     ).toBe('wss://example.test/base/ws/admin/AB12CD34?ticket=opaque+value');
-    expect(() => buildWebSocketUrl('https://example.test', 'AB12CD34', 'admin'))
+    expect(() => buildWebSocketUrl('https://example.test', 'AB12CD34', 'admin', 't'))
       .toThrow('WebSocket base URL must use ws or wss');
+  });
+
+  it('puts the one-time ticket on the guest socket as well', () => {
+    expect(buildWebSocketUrl('wss://example.test/base', 'AB12CD34', 'customer', 'opaque value')).toBe(
+      'wss://example.test/base/ws/customer/AB12CD34?ticket=opaque+value'
+    );
+    expect(() => buildWebSocketUrl('wss://example.test', 'AB12CD34', 'customer', '')).toThrow(
+      'WebSocket ticket is required'
+    );
   });
 });

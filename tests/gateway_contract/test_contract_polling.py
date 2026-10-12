@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tests.gateway_contract.contract_support import ALLOWED_ORIGIN, TENANT_A, TENANT_B
+from tests.guest_access import ensure_guest
 
 
 def _activate_admin(client, conversations, session_id: str) -> dict:
@@ -17,6 +18,7 @@ def _activate_admin(client, conversations, session_id: str) -> dict:
 
 
 def _activate_customer(client, session_id: str) -> dict:
+    ensure_guest(client, session_id)
     response = client.post(f"/api/customer/session/{session_id}/polling/activate")
     assert response.status_code == 200, response.text
     return response.json()
@@ -51,6 +53,7 @@ def test_customer_activation_requires_a_live_session_and_a_matching_bearer(
     client, conversations, identity
 ):
     session_id = conversations.create(TENANT_A)
+    ensure_guest(client, session_id)
 
     unknown = client.post("/api/customer/session/NOSUCH01/polling/activate")
     identity.customer_bearer(TENANT_B)

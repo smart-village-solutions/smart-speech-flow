@@ -42,6 +42,22 @@ def test_cors_preflight_allows_correlation_id_from_customer_ui():
     assert "x-correlation-id" in response.headers["access-control-allow-headers"].lower()
 
 
+def test_cors_preflight_allows_the_guest_token_on_every_guest_request():
+    # The frontend calls the API on another origin in production, so every guest
+    # request after activation is preflighted with these headers.
+    response = client.options(
+        "/api/customer/session/D311FB67/messages",
+        headers={
+            "Origin": "https://translate.smart-village.solutions",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "x-correlation-id,x-guest-token",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert "x-guest-token" in response.headers["access-control-allow-headers"].lower()
+
+
 def test_cors_preflight_no_longer_allows_the_retired_legacy_access_header():
     response = client.options(
         "/api/admin/session/create",

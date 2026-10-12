@@ -143,6 +143,10 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
         "fallback"
     ],
     # telemetry must not decide whether a session opens
+    # undoes an unsaved guest claim, then re-raises
+    ("services/api_gateway/session_lifecycle.py", "SessionLifecycleService._activate"): [
+        "bookkeeping-reraise"
+    ],
     ("services/api_gateway/session_manager.py", "SessionManagerBase._emit_lifecycle"): ["fallback"],
     # one session must not stop the retention sweep
     ("services/api_gateway/session_manager.py", "SessionManagerBase.sweep_expired_content"): [

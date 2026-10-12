@@ -11,6 +11,7 @@ from collections.abc import Iterator
 import pytest
 
 from tests.gateway_contract.contract_support import ALLOWED_ORIGIN, TENANT_A, TENANT_B
+from tests.guest_access import open_guest_socket
 
 MONITORING_PREFIX = "/api/websocket/monitoring"
 ORIGIN = {"Origin": ALLOWED_ORIGIN}
@@ -65,7 +66,7 @@ def test_health_reports_only_aggregate_counts_across_tenants(
 
     with client.websocket_connect(admin_url, headers=ORIGIN) as admin_socket:
         admin_socket.receive_json()
-        with client.websocket_connect(f"/ws/customer/{foreign}", headers=ORIGIN) as customer:
+        with open_guest_socket(client, foreign, ORIGIN) as customer:
             customer.receive_json()
             connection_ids = set(gateway_dependencies.websocket_monitor.get_active_connections())
             identity.unauthenticated()
