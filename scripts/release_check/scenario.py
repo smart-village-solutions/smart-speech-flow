@@ -41,6 +41,8 @@ class Conversation:
     token: str = field(repr=False)
     consent: bool
     session_id: str | None = field(default=None, repr=False)
+    # Handed out by the activation that claimed the session; the guest's credential.
+    guest_token: str | None = field(default=None, repr=False)
     message_ids: list[str] = field(default_factory=list)
     completed: bool = False
     terminated: bool = False
@@ -160,16 +162,32 @@ async def _activate(
     response = await gateway.activate(
         conversation.require_session(), conversation.tenant.guest_language, conversation.consent
     )
-    state = _body(response, 200).get("status")
-    return state == "active", f"HTTP {response.status_code}, consent {conversation.consent}"
+    body = _body(response, 200)
+    token = body.get("guest_token")
+    conversation.guest_token = token if isinstance(token, str) and token else None
+    state = body.get("status")
+    claimed = state == "active" and conversation.guest_token is not None
+    return claimed, f"HTTP {response.status_code}, consent {conversation.consent}"
 
 
 async def _guest_socket(
     gateway: Gateway, conversation: Conversation, live: _Live, stack: AsyncExitStack
 ) -> Outcome:
-    context = gateway.customer_socket(conversation.require_session())
+    ticket = await guest_ticket(gateway, conversation)
+    if ticket is None:
+        return False, "no guest ticket"
+    context = gateway.customer_socket(conversation.require_session(), ticket)
     live.guest = await stack.enter_async_context(context)
     return await acknowledged(live.guest)
+
+
+async def guest_ticket(gateway: Gateway, conversation: Conversation) -> str | None:
+    """A one-time ticket for the guest's socket, or None when the gateway refuses one."""
+    response = await gateway.guest_ticket(
+        conversation.require_session(), conversation.guest_token or ""
+    )
+    ticket = _body(response, 200).get("ticket")
+    return ticket if isinstance(ticket, str) and ticket else None
 
 
 def _message(sender: str, index: int) -> ConversationStep:
@@ -185,7 +203,9 @@ def _message(sender: str, index: int) -> ConversationStep:
             receiver = live.guest
         else:
             text = GUEST_TEXTS[language][index]
-            response = await gateway.customer_send(session_id, text, language, ADMIN_LANGUAGE)
+            response = await gateway.customer_send(
+                session_id, text, language, ADMIN_LANGUAGE, conversation.guest_token or ""
+            )
             receiver = live.admin
         message_id = _body(response, 200).get("message_id")
         if not isinstance(message_id, str) or receiver is None:

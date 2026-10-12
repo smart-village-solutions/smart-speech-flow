@@ -7,7 +7,7 @@ Ermöglicht Kunden das Beitreten und Aktivieren von Sessions
 import logging
 from typing import Annotated, Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
 from ..audio_storage import AudioVariant
@@ -24,6 +24,7 @@ from ..content_responses import (
 from ..conversation_service import ConversationService
 from ..dependencies import (
     get_conversation_service,
+    get_realtime_ticket_store,
     get_session_lifecycle,
     get_session_manager,
     get_studio_content,
@@ -31,8 +32,16 @@ from ..dependencies import (
 )
 from ..log_safety import safe_language_code, safe_session_ref
 from ..message_models import MESSAGE_VALIDATION_RESPONSE
-from ..session_access import require_customer_session_key, require_guest_session_key
+from ..realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
+from ..session_access import (
+    GUEST_TOKEN_HEADER,
+    guest_conflict,
+    require_customer_session_key,
+    require_guest_session_key,
+    session_not_active,
+)
 from ..session_lifecycle import (
+    GuestConflictError,
     SessionLifecycleService,
     SessionNotFoundError,
     SessionTerminatedError,
@@ -62,6 +71,11 @@ CUSTOMER_ROUTE_RESPONSES = {
     404: {"description": _SESSION_NOT_FOUND},
     500: {"description": "Customer session operation failed"},
 }
+# The routes that act as the session's guest, and so require its token once claimed.
+GUEST_ROUTE_RESPONSES = {
+    **CUSTOMER_ROUTE_RESPONSES,
+    409: {"description": "The session already has a guest"},
+}
 
 
 # Request/Response Models
@@ -88,6 +102,13 @@ class ActivateSessionResponse(BaseModel):
     customer_language: str = Field(..., description="Customer language that was set")
     message: str = Field(..., description="Success message")
     timestamp: str = Field(..., description="Activation timestamp")
+    guest_token: Optional[str] = Field(
+        None,
+        description=(
+            "Returned once, to the browser that claimed the session; "
+            "send it as X-Guest-Token on every guest request"
+        ),
+    )
 
 
 class ErrorResponse(BaseModel):
@@ -100,7 +121,7 @@ class ErrorResponse(BaseModel):
 @router.post(
     "/session/{session_id}/message",
     summary="Process a customer message",
-    responses={**CUSTOMER_ROUTE_RESPONSES, 422: MESSAGE_VALIDATION_RESPONSE},
+    responses={**GUEST_ROUTE_RESPONSES, 422: MESSAGE_VALIDATION_RESPONSE},
 )
 async def send_customer_message(
     session_id: str,
@@ -111,7 +132,7 @@ async def send_customer_message(
     return await conversations.process(key, ClientType.CUSTOMER, request)
 
 
-@router.get("/session/{session_id}/messages", responses=CUSTOMER_ROUTE_RESPONSES)
+@router.get("/session/{session_id}/messages", responses=GUEST_ROUTE_RESPONSES)
 async def get_customer_messages(
     session_id: str,
     key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
@@ -125,7 +146,7 @@ async def get_customer_messages(
 
 @router.get(
     "/session/{session_id}/audio/{message_id}/{variant}.wav",
-    responses=CUSTOMER_ROUTE_RESPONSES,
+    responses=GUEST_ROUTE_RESPONSES,
 )
 async def get_customer_audio(
     session_id: str,
@@ -137,12 +158,46 @@ async def get_customer_audio(
     return await conversations.audio(key, message_id, variant)
 
 
+class GuestRealtimeTicketResponse(BaseModel):
+    ticket: str
+    expires_at: str
+
+
+@router.post(
+    "/session/{session_id}/realtime-ticket",
+    responses={
+        **GUEST_ROUTE_RESPONSES,
+        400: {"description": "The session is not active"},
+        503: {"description": "Ticket store unavailable"},
+    },
+)
+async def issue_guest_realtime_ticket(
+    session_id: str,
+    key: Annotated[TenantSessionKey, Depends(require_customer_session_key)],
+    sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
+    store: Annotated[RealtimeTicketStore, Depends(get_realtime_ticket_store)],
+) -> GuestRealtimeTicketResponse:
+    # A socket opened before the guest claims the session would outlive the claim.
+    if await sessions.get_session_status(key) != SessionStatus.ACTIVE:
+        raise session_not_active()
+    try:
+        issued = await store.issue(key, "websocket", role="customer")
+    except RealtimeTicketUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Realtime ticket service unavailable",
+        ) from None
+    return GuestRealtimeTicketResponse(
+        ticket=issued.ticket, expires_at=issued.expires_at.isoformat()
+    )
+
+
 @router.post(
     "/session/activate",
     status_code=status.HTTP_200_OK,
     summary="Aktiviert eine pending Session für den Kunden",
     description="Übernimmt eine Session vom pending in den active Status. Idempotent - kann mehrmals aufgerufen werden.",
-    responses=CUSTOMER_ROUTE_RESPONSES,
+    responses=GUEST_ROUTE_RESPONSES,
 )
 async def activate_session(
     request: ActivateSessionRequest,
@@ -151,6 +206,7 @@ async def activate_session(
     sessions: Annotated[TenantSessionManager, Depends(get_session_manager)],
     runtime_flow: Annotated[StudioRuntimeFlow | None, Depends(get_studio_runtime_flow)],
     lifecycle: Annotated[SessionLifecycleService, Depends(get_session_lifecycle)],
+    guest_token: Annotated[Optional[str], Header(alias=GUEST_TOKEN_HEADER)] = None,
 ) -> ActivateSessionResponse:
     """
     Aktiviert eine Session für Customer-Teilnahme
@@ -178,13 +234,16 @@ async def activate_session(
             safe_language_code(request.customer_language),
         )
 
-        key = await require_customer_session_key(request.session_id, principal, sessions)
+        key = await require_customer_session_key(
+            request.session_id, principal, sessions, guest_token
+        )
         activation = await lifecycle.activate(
             key,
             request.customer_language,
             request.data_retention_consent,
             runtime_flow,
             lambda: correlation_id_from_request(http_request),
+            guest_token=guest_token,
         )
 
         if activation.already_active:
@@ -194,6 +253,7 @@ async def activate_session(
                 customer_language=activation.session.customer_language,
                 message=f"Session {request.session_id} ist bereits aktiv",
                 timestamp=utc_now().isoformat(),
+                guest_token=activation.guest_token,
             )
 
         return ActivateSessionResponse(
@@ -202,6 +262,7 @@ async def activate_session(
             customer_language=request.customer_language,
             message=f"Session {request.session_id} wurde erfolgreich aktiviert",
             timestamp=utc_now().isoformat(),
+            guest_token=activation.guest_token,
         )
 
     except SessionNotFoundError:
@@ -213,13 +274,15 @@ async def activate_session(
         )
     except TenantConflictError as conflict:
         raise HTTPException(status_code=409, detail=conflict.code) from None
+    except GuestConflictError:
+        raise guest_conflict() from None
 
 
 @router.get(
     "/session/{session_id}",
     summary="Session-Status für Kunden abrufen",
     description="Ermöglicht Kunden zu prüfen ob eine Session bereit ist",
-    responses=CUSTOMER_ROUTE_RESPONSES,
+    responses=GUEST_ROUTE_RESPONSES,
 )
 async def get_customer_session_status(
     session_id: str,

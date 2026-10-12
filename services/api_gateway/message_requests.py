@@ -89,6 +89,8 @@ def validate_session_languages(
                 detail={
                     "error": message.format(expected=expected, actual=actual),
                     "error_type": f"INVALID_{side.upper()}_LANGUAGE",
+                    # The frontend reads error_code; error_type stays for existing readers.
+                    "error_code": f"INVALID_{side.upper()}_LANGUAGE",
                     "details": {
                         f"expected_{side}_lang": expected,
                         f"actual_{side}_lang": actual,

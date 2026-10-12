@@ -65,8 +65,12 @@ class TestCustomerRoutes:
         assert response1.status_code == 200
         assert response1.json()["status"] == "active"
 
-        # Second activation (idempotent)
-        response2 = client.post("/api/customer/session/activate", json=activate_payload)
+        # Second activation by the same guest (idempotent)
+        response2 = client.post(
+            "/api/customer/session/activate",
+            json=activate_payload,
+            headers={"X-Guest-Token": response1.json()["guest_token"]},
+        )
         assert response2.status_code == 200
         assert response2.json()["status"] == "active"
         assert "bereits aktiv" in response2.json()["message"]
@@ -106,10 +110,13 @@ class TestCustomerRoutes:
 
         # Activate session
         activate_payload = {"session_id": session_id, "customer_language": "ar"}
-        client.post("/api/customer/session/activate", json=activate_payload)
+        activated = client.post("/api/customer/session/activate", json=activate_payload)
 
-        # Get status again (should be active)
-        response = client.get(f"/api/customer/session/{session_id}")
+        # Get status again as that guest (should be active)
+        response = client.get(
+            f"/api/customer/session/{session_id}",
+            headers={"X-Guest-Token": activated.json()["guest_token"]},
+        )
         assert response.status_code == 200
 
         data = response.json()

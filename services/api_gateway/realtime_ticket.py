@@ -26,6 +26,7 @@ except ImportError:  # pragma: no cover - redis optional for tests
 _BACKEND_FAILURES = (RedisError, OSError, ValueError)
 
 RealtimeTransportKind = Literal["websocket", "polling"]
+RealtimeRole = Literal["admin", "customer"]
 
 CONSUME_TICKET_LUA = """
 local value = redis.call('GET', KEYS[1])
@@ -98,12 +99,14 @@ class RealtimeTicketStore:
         key: TenantSessionKey,
         transport: RealtimeTransportKind,
         ttl_seconds: int = 60,
+        *,
+        role: RealtimeRole = "admin",
     ) -> IssuedRealtimeTicket:
         if not 1 <= ttl_seconds <= 60:
             raise ValueError("realtime ticket lifetime must be between 1 and 60 seconds")
         payload = json.dumps(
             {
-                "role": "admin",
+                "role": role,
                 "session_id": key.session_id,
                 "tenant_id": key.tenant_id,
                 "transport": transport,
@@ -128,8 +131,10 @@ class RealtimeTicketStore:
         raw_ticket: str,
         key: TenantSessionKey,
         transport: RealtimeTransportKind,
+        *,
+        role: RealtimeRole = "admin",
     ) -> bool:
-        resolved = await self.consume_key(raw_ticket, key.session_id, transport)
+        resolved = await self.consume_key(raw_ticket, key.session_id, transport, role=role)
         return resolved is not None and all(
             hmac.compare_digest(left, right)
             for left, right in (
@@ -143,6 +148,8 @@ class RealtimeTicketStore:
         raw_ticket: str,
         session_id: str,
         transport: RealtimeTransportKind,
+        *,
+        role: RealtimeRole = "admin",
     ) -> TenantSessionKey | None:
         """Consume a ticket and recover its server-issued tenant scope."""
         try:
@@ -154,16 +161,16 @@ class RealtimeTicketStore:
             return None
         tenant_id = payload.get("tenant_id")
         payload_session_id = payload.get("session_id")
-        role = payload.get("role")
+        payload_role = payload.get("role")
         payload_transport = payload.get("transport")
         if not all(
             isinstance(value, str)
-            for value in (tenant_id, payload_session_id, role, payload_transport)
+            for value in (tenant_id, payload_session_id, payload_role, payload_transport)
         ):
             return None
         if not (
             hmac.compare_digest(payload_session_id, session_id)
-            and hmac.compare_digest(role, "admin")
+            and hmac.compare_digest(payload_role, role)
             and hmac.compare_digest(payload_transport, transport)
         ):
             return None

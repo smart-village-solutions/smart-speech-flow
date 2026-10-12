@@ -20,6 +20,11 @@ from websockets.typing import Origin
 OPEN_TIMEOUT_SECONDS = 10
 
 
+def _guest(token: str | None) -> dict[str, str]:
+    """The header that makes a request the session's one guest."""
+    return {"X-Guest-Token": token} if token else {}
+
+
 class SocketRejectedError(Exception):
     """The server refused the WebSocket or closed it."""
 
@@ -152,9 +157,17 @@ class Gateway:
         return await self._http.get("/api/admin/session/history", headers=self._auth(token))
 
     async def customer_session(
-        self, session_id: str, *, params: dict[str, str] | None = None
+        self,
+        session_id: str,
+        *,
+        params: dict[str, str] | None = None,
+        guest_token: str | None = None,
     ) -> httpx.Response:
-        return await self._http.get(f"/api/customer/session/{session_id}", params=params)
+        return await self._http.get(
+            f"/api/customer/session/{session_id}",
+            params=params,
+            headers=_guest(guest_token),
+        )
 
     async def activate(self, session_id: str, language: str, consent: bool) -> httpx.Response:
         body = {
@@ -165,17 +178,28 @@ class Gateway:
         return await self._http.post("/api/customer/session/activate", json=body)
 
     async def customer_send(
-        self, session_id: str, text: str, source: str, target: str
+        self, session_id: str, text: str, source: str, target: str, guest_token: str
     ) -> httpx.Response:
         body = {"text": text, "source_lang": source, "target_lang": target}
-        return await self._http.post(f"/api/customer/session/{session_id}/message", json=body)
+        return await self._http.post(
+            f"/api/customer/session/{session_id}/message", json=body, headers=_guest(guest_token)
+        )
+
+    async def guest_ticket(self, session_id: str, guest_token: str) -> httpx.Response:
+        return await self._http.post(
+            f"/api/customer/session/{session_id}/realtime-ticket", headers=_guest(guest_token)
+        )
 
     def admin_socket(self, session_id: str, ticket: str) -> AbstractAsyncContextManager[Socket]:
         url = f"{self._websocket_base}/ws/admin/{session_id}?ticket={quote(ticket, safe='')}"
         return self._connect(url, self._origin)
 
     def customer_socket(
-        self, session_id: str, *, query: str = ""
+        self, session_id: str, ticket: str, *, query: str = ""
     ) -> AbstractAsyncContextManager[Socket]:
-        url = f"{self._websocket_base}/ws/customer/{session_id}{query}"
+        separator = "&" if query else "?"
+        url = (
+            f"{self._websocket_base}/ws/customer/{session_id}{query}"
+            f"{separator}ticket={quote(ticket, safe='')}"
+        )
         return self._connect(url, self._origin)

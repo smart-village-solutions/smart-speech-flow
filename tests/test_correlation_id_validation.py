@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from services.api_gateway.app import app
 from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.dependencies import get_studio_runtime_flow
+from tests.guest_access import activate_guest, guest_headers
 from tests.runtime_policy_helpers import runtime_read
 
 MALFORMED = ["x" * 129, "has\nnewline", "has\x00null", ""]
@@ -92,17 +93,11 @@ async def test_a_message_refuses_a_malformed_correlation_id(
     # whose blanket `except Exception` turns it into a refusal to persist. That
     # would hand any client a silent switch for another guest's retention.
     session_id, _key = await _pending(client, session_manager)
-    assert (
-        client.post(
-            "/api/customer/session/activate",
-            json={"session_id": session_id, "customer_language": "en"},
-        ).status_code
-        == 200
-    )
+    token = activate_guest(client, session_id)["guest_token"]
     response = client.post(
         f"/api/customer/session/{session_id}/message",
         json={"text": "hello", "source_lang": "en", "target_lang": "de"},
-        headers={"X-Correlation-Id": correlation_id},
+        headers={"X-Correlation-Id": correlation_id, **guest_headers(token)},
     )
     assert response.status_code == 400
     assert "correlation" in repr(response.json()).lower()
