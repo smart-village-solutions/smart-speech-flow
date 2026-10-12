@@ -43,7 +43,7 @@
     "micDenied": "የማይክሮፎን መዳረሻ ተከልክሏል። በምትኩ መልእክትዎን መጻፍ ይችላሉ።",
     "reconnecting": "እንደገና በመገናኘት ላይ…",
     "ended": "ይህ ውይይት ተጠናቋል።",
-    "timeoutWarning": "ይህ ውይይት በ{{minutes}} ደቂቃ ውስጥ ያበቃል።"
+    "timeoutWarning": "ይህ ውይይት በ{{time}} ያበቃል።"
   },
   "feedback": {
     "title": "አስተያየትዎን ያካፍሉ",

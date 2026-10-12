@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
+import { clockTime } from '@/lib/sessionTimes';
 import type { StatusSnapshot } from './conversation.status';
 
 interface ConversationStatusProps extends StatusSnapshot {
@@ -18,13 +19,13 @@ interface ConversationStatusProps extends StatusSnapshot {
  */
 export function ConversationStatus({
   ended,
-  timeoutWarning,
+  timeoutAt,
   connection,
   hasConnected,
   errorKey,
   onRetry = null,
 }: Readonly<ConversationStatusProps>) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   if (errorKey !== null) {
     return (
@@ -51,11 +52,11 @@ export function ConversationStatus({
     );
   }
 
-  if (timeoutWarning !== null) {
+  if (timeoutAt !== null) {
     return (
       <Pill role="status" icon={<Clock size={14} strokeWidth={2} />}>
         <span className="truncate">
-          {t('conversation.timeoutWarning', { minutes: timeoutWarning })}
+          {t('conversation.timeoutWarning', { time: clockTime(timeoutAt, i18n.language) })}
         </span>
       </Pill>
     );

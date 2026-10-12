@@ -1,11 +1,11 @@
-import { act, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
 import { Route, Routes } from 'react-router-dom';
-import type { RealtimeEvent, RealtimeTransport } from '@/core/realtime/realtime.port';
 import { AppError } from '@/core/http/AppError';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { createRealtimeWire } from '@/test/realtimeWire';
 import { server } from '@/test/setup';
 import { ConversationScreen } from '@/features/conversation/ConversationScreen';
 
@@ -17,29 +17,6 @@ function tree() {
       <Route path="/s/:sessionId/live" element={<ConversationScreen />} />
     </Routes>
   );
-}
-
-function fakeTransport() {
-  const handlers: ((event: RealtimeEvent) => void)[] = [];
-  const transport: RealtimeTransport = {
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn(),
-    send: vi.fn(),
-    onEvent: (handler) => {
-      handlers.push(handler);
-      return () => handlers.splice(handlers.indexOf(handler), 1);
-    },
-    onStatus: () => () => undefined,
-    getStatus: () => 'connected',
-  };
-  return {
-    transport,
-    async receive(event: RealtimeEvent) {
-      await act(async () => {
-        handlers.forEach((handler) => handler(event));
-      });
-    },
-  };
 }
 
 /** The session as the gateway reports it, in whichever language it holds now. */
@@ -64,7 +41,7 @@ describe('the conversation follows the guest language', () => {
     const language = { current: 'en' };
     const reads = { count: 0 };
     serveSession(language, reads);
-    const wire = fakeTransport();
+    const wire = createRealtimeWire();
 
     renderWithProviders(tree(), {
       route,

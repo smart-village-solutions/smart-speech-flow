@@ -12,8 +12,8 @@ export interface ConversationState {
       reported to the customer as a reconnection. */
   hasConnected: boolean;
   ended: boolean;
-  /** Minutes left before the gateway ends an idle session; null when none is due. */
-  timeoutWarning: number | null;
+  /** When the gateway will end an idle session, in epoch ms; null when none is due. */
+  timeoutAt: number | null;
   errorKey: string | null;
   /** True only while the error on show came from a send that can be repeated. */
   canRetry: boolean;
@@ -22,8 +22,8 @@ export interface ConversationState {
 /** What the gateway says about the session itself, as opposed to its messages. */
 type SessionAction =
   | { type: 'session/ended' }
-  | { type: 'session/timeoutWarning'; minutes: number }
-  | { type: 'session/timeoutWarningExpired' };
+  | { type: 'session/timeoutWarning'; endsAt: number }
+  | { type: 'session/timeoutWarningWithdrawn' };
 
 export type ConversationAction =
   | { type: 'history/loaded'; messages: ChatMessage[] }
@@ -53,7 +53,7 @@ export const initialConversationState: ConversationState = {
   connection: 'disconnected',
   hasConnected: false,
   ended: false,
-  timeoutWarning: null,
+  timeoutAt: null,
   errorKey: null,
   canRetry: false,
 };
@@ -116,16 +116,16 @@ function sessionReducer(state: ConversationState, action: SessionAction): Conver
         ...state,
         ended: true,
         composer: 'idle',
-        timeoutWarning: null,
+        timeoutAt: null,
         errorKey: null,
         canRetry: false,
       };
 
     case 'session/timeoutWarning':
-      return { ...state, timeoutWarning: action.minutes };
+      return { ...state, timeoutAt: action.endsAt };
 
-    case 'session/timeoutWarningExpired':
-      return { ...state, timeoutWarning: null };
+    case 'session/timeoutWarningWithdrawn':
+      return { ...state, timeoutAt: null };
   }
 }
 
@@ -192,8 +192,9 @@ export function conversationReducer(
       return {
         ...state,
         sending: false,
-        errorKey: action.errorKey,
-        canRetry: true,
+        // A send that was in flight when the session ended cannot be repeated.
+        errorKey: state.ended ? null : action.errorKey,
+        canRetry: !state.ended,
         messages: state.messages.map((message) =>
           message.id === action.tempId ? { ...message, state: 'failed' } : message
         ),

@@ -13,7 +13,7 @@
     "continue": "Weiter",
     "digitLabel": "Stelle {{position}}",
     "notFound": "Zu diesem Code gibt es keine offene Sitzung.",
-    "sessionHasGuest": "Diese Unterhaltung hat bereits einen Gast."
+    "sessionHasGuest": "Dieses Gespräch hat bereits einen Gast."
   },
   "language": {
     "title": "Wählen Sie Ihre Sprache",
@@ -43,7 +43,7 @@
     "micDenied": "Der Zugriff auf das Mikrofon wurde abgelehnt. Sie können Ihre Nachricht stattdessen eingeben.",
     "reconnecting": "Verbindung wird wiederhergestellt…",
     "ended": "Dieses Gespräch ist beendet.",
-    "timeoutWarning": "Diese Unterhaltung endet in {{minutes}} Minuten."
+    "timeoutWarning": "Dieses Gespräch endet um {{time}} Uhr."
   },
   "feedback": {
     "title": "Feedback geben",

@@ -44,6 +44,7 @@ const peerAudioEvent = {
 function setup() {
   const player = createFakeAudioPlayer();
   const wire = createRealtimeWire();
+  const sendAudio = vi.fn().mockReturnValue(new Promise(() => undefined));
 
   renderWithProviders(
     <Routes>
@@ -56,7 +57,7 @@ function setup() {
         message: {
           getHistory: vi.fn().mockResolvedValue([]),
           sendText: vi.fn(),
-          sendAudio: vi.fn().mockReturnValue(new Promise(() => undefined)),
+          sendAudio,
           resolveAudioUrl: (url: string) => url,
         },
         createRealtime: () => wire.transport,
@@ -64,7 +65,7 @@ function setup() {
     }
   );
 
-  return { player, wire };
+  return { player, wire, sendAudio };
 }
 
 /** Ends the recording the way the recorder does: hand over the audio. */
@@ -78,6 +79,18 @@ describe('ConversationScreen audio while recording', () => {
   beforeEach(() => {
     mocks.capturedConfig = null;
     mocks.startRecording.mockResolvedValue(undefined);
+  });
+
+  // The recorder hands over its audio after the stop, which can come after the
+  // session ended; nothing may leave the device for an ended session.
+  it('does not upload a recording handed over after the conversation ended', async () => {
+    const { wire, sendAudio } = setup();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Record' }));
+    await wire.receive({ role: 'session_terminated', type: 'session_terminated' });
+    await finishRecording();
+
+    expect(sendAudio).not.toHaveBeenCalled();
   });
 
   it('keeps an arriving message silent while the microphone is open', async () => {

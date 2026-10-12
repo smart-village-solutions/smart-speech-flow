@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { useServices } from '@/app/providers/services';
 import type { ClientRole } from '@/core/roles';
-import { AppError } from '@/core/http/AppError';
+import { AppError, isSessionGone } from '@/core/http/AppError';
 import { randomId } from '@/core/ids';
 import type { ChatMessage } from '@/domain/message/message.types';
 import {
@@ -48,10 +48,13 @@ export function useConversation(
   // A retry sends the languages current when it runs: after a guest language
   // switch, the pair captured at the first attempt would fail forever.
   const languagesRef = useRef(languages);
+  // A recording is handed over after it stops, which can be after the end.
+  const endedRef = useRef(state.ended);
 
   useEffect(() => {
     onPeerAudioRef.current = options.onPeerAudio;
     languagesRef.current = languages;
+    endedRef.current = state.ended;
   });
 
   useConversationFeed({ sessionId, role, dispatch, onPeerAudioRef });
@@ -61,6 +64,9 @@ export function useConversation(
       perform: () => Promise<{ messageId: string; originalText: string }>,
       text: string
     ) => {
+      if (endedRef.current) {
+        return;
+      }
       const tempId = `temp-${randomId()}`;
       const { source, target } = languagesRef.current;
       dispatch({ type: 'send/started', tempId, text, sourceLanguage: source, targetLanguage: target });
@@ -85,8 +91,7 @@ export function useConversation(
         const errorKey =
           error instanceof AppError ? error.userMessageKey : 'conversation.sendFailed';
         dispatch({ type: 'send/failed', tempId, errorKey });
-        // The message routes answer 404 only once the session has gone.
-        if (error instanceof AppError && error.kind === 'notFound') {
+        if (isSessionGone(error)) {
           dispatch({ type: 'session/ended' });
         }
       }

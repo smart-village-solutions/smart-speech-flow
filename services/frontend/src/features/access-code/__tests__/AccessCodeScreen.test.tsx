@@ -117,7 +117,7 @@ describe('AccessCodeScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Weiter' }));
 
     // The screen settles on German after its first paint, so wait for that text.
-    expect(await screen.findByText('Diese Unterhaltung hat bereits einen Gast.')).toHaveAttribute(
+    expect(await screen.findByText('Dieses Gespräch hat bereits einen Gast.')).toHaveAttribute(
       'role',
       'alert'
     );
@@ -144,7 +144,7 @@ describe('AccessCodeScreen', () => {
     );
 
     // The screen settles on German after its first paint, so wait for that text.
-    expect(await screen.findByText('Diese Unterhaltung hat bereits einen Gast.')).toHaveAttribute(
+    expect(await screen.findByText('Dieses Gespräch hat bereits einen Gast.')).toHaveAttribute(
       'role',
       'alert'
     );

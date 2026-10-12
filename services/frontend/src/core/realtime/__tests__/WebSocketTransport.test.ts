@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createWebSocketTransport } from '@/core/realtime/WebSocketTransport';
 import type { WebSocketLike } from '@/core/realtime/WebSocketTransport';
 import type { RealtimeEvent, RealtimeStatus } from '@/core/realtime/realtime.port';
+import { AppError } from '@/core/http/AppError';
 
 class FakeSocket implements WebSocketLike {
   static readonly instances: FakeSocket[] = [];
@@ -129,6 +130,40 @@ describe('createWebSocketTransport', () => {
     expect(FakeSocket.instances[1].url).toBe(
       'ws://api.test/ws/admin/A1B2C3D4?ticket=second-ticket'
     );
+  });
+
+  // The gateway refuses a ticket for a session it no longer has. A socket that
+  // was down when the end frame went out hears of the end only this way.
+  it('reports the end, and stops, when a ticket is refused for a session that is gone', async () => {
+    const gone = new AppError('notFound', { status: 404, serverCode: 'SESSION_NOT_FOUND' });
+    const { transport, events, statuses, issueTicket } = makeTransport(
+      vi.fn().mockResolvedValueOnce('first-ticket').mockRejectedValue(gone)
+    );
+    await transport.connect('A1B2C3D4', 'customer');
+    lastSocket().open();
+    lastSocket().drop();
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(events).toEqual([
+      { role: 'session_terminated', type: 'session_terminated', session_id: 'A1B2C3D4' },
+    ]);
+    expect(issueTicket).toHaveBeenCalledTimes(2);
+    expect(FakeSocket.instances).toHaveLength(1);
+    expect(statuses.at(-1)).toBe('disconnected');
+  });
+
+  it('keeps retrying a ticket refused by anything but the gateway', async () => {
+    const proxy404 = new AppError('notFound', { status: 404 });
+    const { transport, events, issueTicket } = makeTransport(
+      vi.fn().mockResolvedValueOnce('first-ticket').mockRejectedValue(proxy404)
+    );
+    await transport.connect('A1B2C3D4', 'customer');
+    lastSocket().open();
+    lastSocket().drop();
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(events).toEqual([]);
+    expect(issueTicket).toHaveBeenCalledTimes(3);
   });
 
   it('does not open a socket when an admin ticket arrives after disconnect', async () => {

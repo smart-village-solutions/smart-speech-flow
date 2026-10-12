@@ -43,7 +43,7 @@
     "micDenied": "Mikrofon erişimi reddedildi. Bunun yerine mesajınızı yazabilirsiniz.",
     "reconnecting": "Yeniden bağlanılıyor…",
     "ended": "Bu görüşme sona erdi.",
-    "timeoutWarning": "Bu görüşme {{minutes}} dakika içinde sona erecek."
+    "timeoutWarning": "Bu görüşmenin bitiş saati: {{time}}."
   },
   "feedback": {
     "title": "Geri bildiriminizi paylaşın",

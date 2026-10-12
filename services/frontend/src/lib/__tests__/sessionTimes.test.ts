@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeStart, durationMinutes } from '@/lib/sessionTimes';
+import { clockTime, describeStart, durationMinutes } from '@/lib/sessionTimes';
 
 /** Local wall-clock time in the browser's zone, which a null tenant zone formats in. */
 const at = (year: number, month: number, day: number, hour: number, minute: number) =>
@@ -151,5 +151,11 @@ describe('durationMinutes', () => {
     expect(
       durationMinutes(at(2026, 8, 26, 9, 14).toISOString(), at(2026, 8, 26, 9, 0).toISOString())
     ).toBe(0);
+  });
+});
+
+describe('clockTime', () => {
+  it('gives hour and minute in the reader’s locale', () => {
+    expect(clockTime(Date.parse('2026-10-12T10:05:00Z'), 'de')).toMatch(/^\d{2}:\d{2}$/);
   });
 });
