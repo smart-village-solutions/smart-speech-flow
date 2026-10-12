@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict
 from uuid import uuid4
 
 if TYPE_CHECKING:
@@ -113,6 +113,7 @@ class ClientJoinedFrame(TypedDict):
     client_type: str
     connection_id: str
     timestamp: str
+    role: Literal["client_joined"]
     customer_language: NotRequired[str]
 
 
@@ -143,7 +144,7 @@ class SessionTerminatedFrame(TypedDict):
     message: str
     timestamp: str
     reconnect_allowed: bool
-    role: str
+    role: Literal["session_terminated"]
 
 
 class PolledSessionTerminatedFrame(TypedDict):
@@ -151,7 +152,7 @@ class PolledSessionTerminatedFrame(TypedDict):
     session_id: str
     reason: str
     reconnect_allowed: bool
-    role: str
+    role: Literal["session_terminated"]
 
 
 class TimeoutWarningFrame(TypedDict):
@@ -160,7 +161,8 @@ class TimeoutWarningFrame(TypedDict):
     message: str
     remaining_minutes: int
     timestamp: str
-    role: str
+    role: Literal["timeout_warning"]
+    timeout_at: str
 
 
 class CustomerLanguageChangedFrame(TypedDict):
@@ -168,7 +170,7 @@ class CustomerLanguageChangedFrame(TypedDict):
     session_id: str
     customer_language: str
     timestamp: str
-    role: str
+    role: Literal["customer_language_changed"]
 
 
 class PollingIntervalUpdateFrame(TypedDict):
@@ -278,6 +280,8 @@ def client_joined_frame(
         "client_type": client_type.value,
         "connection_id": connection_id,
         "timestamp": _timestamp(),
+        # The frontend transport forwards only frames that carry a role.
+        "role": "client_joined",
     }
     if customer_language:
         frame["customer_language"] = customer_language
@@ -330,7 +334,7 @@ def session_terminated_frame(session_id: str, reason: str) -> SessionTerminatedF
         "timestamp": _timestamp(),
         "reconnect_allowed": False,
         # The frontend transport forwards only frames that carry a role.
-        "role": MessageType.SESSION_TERMINATED.value,
+        "role": "session_terminated",
     }
 
 
@@ -341,11 +345,14 @@ def polled_session_terminated_frame(session_id: str, reason: str) -> PolledSessi
         "session_id": session_id,
         "reason": reason,
         "reconnect_allowed": False,
-        "role": MessageType.SESSION_TERMINATED.value,
+        "role": "session_terminated",
     }
 
 
-def timeout_warning_frame(session_id: str, remaining_minutes: int) -> TimeoutWarningFrame:
+def timeout_warning_frame(
+    session_id: str, remaining_minutes: int, timeout_at: datetime
+) -> TimeoutWarningFrame:
+    """``remaining_minutes`` is the configured lead time; ``timeout_at`` is the deadline."""
     return {
         "type": MessageType.TIMEOUT_WARNING.value,
         "session_id": session_id,
@@ -354,7 +361,8 @@ def timeout_warning_frame(session_id: str, remaining_minutes: int) -> TimeoutWar
         ),
         "remaining_minutes": remaining_minutes,
         "timestamp": _timestamp(),
-        "role": MessageType.TIMEOUT_WARNING.value,
+        "role": "timeout_warning",
+        "timeout_at": timeout_at.isoformat(),
     }
 
 
@@ -367,7 +375,7 @@ def customer_language_changed_frame(
         "customer_language": customer_language,
         "timestamp": _timestamp(),
         # The frontend transport forwards only frames that carry a role.
-        "role": MessageType.CUSTOMER_LANGUAGE_CHANGED.value,
+        "role": "customer_language_changed",
     }
 
 
