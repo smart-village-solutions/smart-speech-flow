@@ -1,4 +1,5 @@
 import { buildWebSocketUrl } from '@/utils/identifiers';
+import { isSessionGone } from '@/core/http/AppError';
 import type { ClientRole } from '@/core/roles';
 import type { RealtimeEvent, RealtimeStatus, RealtimeTransport } from './realtime.port';
 
@@ -125,13 +126,30 @@ export function createWebSocketTransport(options: WebSocketTransportOptions): Re
   ): Promise<TicketResult> {
     try {
       return { ok: true, ticket: await issueTicket(id, connectionRole) };
-    } catch {
-      if (!intentionallyClosed && generation === expectedGeneration) {
+    } catch (error) {
+      if (intentionallyClosed || generation !== expectedGeneration) {
+        return { ok: false };
+      }
+      if (isSessionGone(error)) {
+        reportEnded(id);
+      } else {
         setStatus('error');
         scheduleReconnect(expectedGeneration);
       }
       return { ok: false };
     }
+  }
+
+  /**
+   * The gateway refuses a ticket once the session is gone. A socket that was
+   * down when the end frame went out learns of the end only here, so this
+   * stands in for that frame rather than retrying a session that cannot return.
+   */
+  function reportEnded(id: string): void {
+    const ended: RealtimeEvent = { role: 'session_terminated', type: 'session_terminated', session_id: id };
+    eventHandlers.forEach((handler) => handler(ended));
+    intentionallyClosed = true;
+    setStatus('disconnected');
   }
 
   function attachMessageHandler(next: WebSocketLike, isCurrent: () => boolean): void {

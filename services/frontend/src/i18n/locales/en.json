@@ -42,7 +42,8 @@
     "retry": "Retry",
     "micDenied": "Microphone access was declined. You can type your message instead.",
     "reconnecting": "Reconnecting…",
-    "ended": "This conversation has ended."
+    "ended": "This conversation has ended.",
+    "timeoutWarning": "This conversation will end at {{time}}."
   },
   "feedback": {
     "title": "Share your feedback",

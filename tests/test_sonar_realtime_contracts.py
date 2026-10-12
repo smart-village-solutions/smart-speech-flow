@@ -354,6 +354,7 @@ async def test_terminated_long_poll_does_not_release_a_deleted_client_twice(
                 "session_id": "SESSION1",
                 "reason": "manual_termination",
                 "reconnect_allowed": False,
+                "role": "session_terminated",
             }
         ],
         "message_count": 1,

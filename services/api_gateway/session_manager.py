@@ -771,7 +771,9 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
     async def _send_timeout_warning(self, session: Session) -> None:
         """Timeout-Warning an alle WebSocket-Clients der Session senden"""
         if self.websocket_manager:
-            warning_message = timeout_warning_frame(session.id, session.timeout_warning_minutes)
+            warning_message = timeout_warning_frame(
+                session.id, session.timeout_warning_minutes, session.next_timeout_at()
+            )
 
             await self.websocket_manager.broadcast_to_session(session.key, warning_message)
             session.timeout_warning_sent = True

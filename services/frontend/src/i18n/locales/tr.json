@@ -42,7 +42,8 @@
     "retry": "Tekrar dene",
     "micDenied": "Mikrofon erişimi reddedildi. Bunun yerine mesajınızı yazabilirsiniz.",
     "reconnecting": "Yeniden bağlanılıyor…",
-    "ended": "Bu görüşme sona erdi."
+    "ended": "Bu görüşme sona erdi.",
+    "timeoutWarning": "Bu görüşmenin bitiş saati: {{time}}."
   },
   "feedback": {
     "title": "Geri bildiriminizi paylaşın",

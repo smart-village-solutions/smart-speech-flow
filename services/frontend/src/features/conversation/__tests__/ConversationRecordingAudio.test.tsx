@@ -3,9 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { createRealtimeWire } from '@/test/realtimeWire';
 import { createFakeAudioPlayer } from '@/test/fakeAudioPlayer';
 import { ConversationScreen } from '@/features/conversation/ConversationScreen';
-import type { RealtimeEvent, RealtimeTransport } from '@/core/realtime/realtime.port';
 
 interface RecorderConfig {
   maxDurationMs?: number;
@@ -31,31 +31,6 @@ vi.mock('@/utils/AudioRecorderWithWAVConversion', () => ({
   },
 }));
 
-function fakeTransport() {
-  const handlers: ((event: RealtimeEvent) => void)[] = [];
-
-  const transport: RealtimeTransport = {
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn(),
-    send: vi.fn(),
-    onEvent: (handler) => {
-      handlers.push(handler);
-      return () => handlers.splice(handlers.indexOf(handler), 1);
-    },
-    onStatus: () => () => undefined,
-    getStatus: () => 'connected',
-  };
-
-  return {
-    transport,
-    async receive(event: RealtimeEvent) {
-      await act(async () => {
-        handlers.forEach((handler) => handler(event));
-      });
-    },
-  };
-}
-
 const peerAudioEvent = {
   role: 'receiver_message',
   message_id: 'm9',
@@ -68,7 +43,8 @@ const peerAudioEvent = {
 
 function setup() {
   const player = createFakeAudioPlayer();
-  const wire = fakeTransport();
+  const wire = createRealtimeWire();
+  const sendAudio = vi.fn().mockReturnValue(new Promise(() => undefined));
 
   renderWithProviders(
     <Routes>
@@ -81,7 +57,7 @@ function setup() {
         message: {
           getHistory: vi.fn().mockResolvedValue([]),
           sendText: vi.fn(),
-          sendAudio: vi.fn().mockReturnValue(new Promise(() => undefined)),
+          sendAudio,
           resolveAudioUrl: (url: string) => url,
         },
         createRealtime: () => wire.transport,
@@ -89,7 +65,7 @@ function setup() {
     }
   );
 
-  return { player, wire };
+  return { player, wire, sendAudio };
 }
 
 /** Ends the recording the way the recorder does: hand over the audio. */
@@ -103,6 +79,18 @@ describe('ConversationScreen audio while recording', () => {
   beforeEach(() => {
     mocks.capturedConfig = null;
     mocks.startRecording.mockResolvedValue(undefined);
+  });
+
+  // The recorder hands over its audio after the stop, which can come after the
+  // session ended; nothing may leave the device for an ended session.
+  it('does not upload a recording handed over after the conversation ended', async () => {
+    const { wire, sendAudio } = setup();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Record' }));
+    await wire.receive({ role: 'session_terminated', type: 'session_terminated' });
+    await finishRecording();
+
+    expect(sendAudio).not.toHaveBeenCalled();
   });
 
   it('keeps an arriving message silent while the microphone is open', async () => {

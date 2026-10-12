@@ -13,7 +13,7 @@ test_contract_polling.py.
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -25,7 +25,8 @@ from tests.guest_access import ensure_guest, open_guest_socket
 ORIGIN = {"Origin": ALLOWED_ORIGIN}
 RELAY_KEYS = {"type", "from", "session_id", "content", "timestamp"}
 TYPING_KEYS = {"type", "from", "session_id", "is_typing", "timestamp"}
-JOINED_KEYS = {"type", "session_id", "client_type", "connection_id", "timestamp"}
+# `role` is what the frontend transport routes on; frames without one are dropped there.
+JOINED_KEYS = {"type", "session_id", "client_type", "connection_id", "timestamp", "role"}
 LEFT_KEYS = {"type", "session_id", "client_type", "connection_id", "reason", "timestamp"}
 INTERVAL_KEYS = {
     "type",
@@ -196,6 +197,7 @@ def test_client_joined_and_left_reach_the_peer_and_the_pollers(client, conversat
         "session_id": session_id,
         "client_type": "customer",
         "customer_language": "ar",
+        "role": "client_joined",
     }
     assert set(left) == LEFT_KEYS
     assert _without(left, "timestamp", "connection_id") == {
@@ -421,12 +423,23 @@ def test_session_terminated_on_both_transports(client, conversations, reason, te
         terminated = admin.receive_json()
         polled = _polled(client, "customer", session_id, poller)
 
+    # `role` is what the frontend transport routes on; without it the frame is dropped.
+    assert list(terminated) == [
+        "type",
+        "session_id",
+        "reason",
+        "message",
+        "timestamp",
+        "reconnect_allowed",
+        "role",
+    ]
     assert _without(terminated, "timestamp") == {
         "type": "session_terminated",
         "session_id": session_id,
         "reason": reason,
         "message": text,
         "reconnect_allowed": False,
+        "role": "session_terminated",
     }
     assert _is_timestamp(terminated["timestamp"])
     assert polled[-1] == {
@@ -434,6 +447,7 @@ def test_session_terminated_on_both_transports(client, conversations, reason, te
         "session_id": session_id,
         "reason": reason,
         "reconnect_allowed": False,
+        "role": "session_terminated",
     }
 
 
@@ -451,11 +465,25 @@ def test_timeout_warning_reaches_sockets_and_pollers(client, conversations, sess
         warning = customer.receive_json()
         polled = _polled(client, "customer", session_id, poller)
 
-    assert _without(warning, "timestamp") == {
+    assert list(warning) == [
+        "type",
+        "session_id",
+        "message",
+        "remaining_minutes",
+        "timestamp",
+        "role",
+        "timeout_at",
+    ]
+    # The deadline, not the configured lead time: the check runs once a minute,
+    # so the minutes actually left are fewer than remaining_minutes says.
+    left = datetime.fromisoformat(warning["timeout_at"]) - session_clock()
+    assert timedelta(minutes=3) < left <= timedelta(minutes=4)
+    assert _without(warning, "timestamp", "timeout_at") == {
         "type": "timeout_warning",
         "session_id": session_id,
         "message": "Session wird in 5 Minuten aufgrund von Inaktivität beendet.",
         "remaining_minutes": 5,
+        "role": "timeout_warning",
     }
     assert _is_timestamp(warning["timestamp"])
     assert polled == [warning]

@@ -101,6 +101,7 @@ def test_peers_see_joins_relayed_messages_typing_and_leaves(client, conversation
                 "connection_id",
                 "timestamp",
                 "customer_language",
+                "role",
             }
 
             admin.send_json({"type": "message", "content": {"text": "hallo"}})
