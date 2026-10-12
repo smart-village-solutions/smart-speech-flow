@@ -75,7 +75,8 @@ function Pill({ children, icon, role, alert = false }: Readonly<PillProps>) {
         role={role}
         data-status-pill=""
         className={cn(
-          'animate-status-in flex max-w-bubble items-center gap-2 rounded-pill border',
+          // min-w-0: on a narrow phone the pill shrinks to the screen and truncates.
+          'animate-status-in flex min-w-0 max-w-bubble items-center gap-2 rounded-pill border',
           'bg-surface-status px-3 py-1.5 text-note shadow-lg',
           alert
             ? 'border-border-status-alert text-fg-status-alert'

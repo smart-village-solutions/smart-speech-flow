@@ -63,6 +63,11 @@
   /* ── Named sizes ── */
   --spacing-header: 180px;
   --spacing-content-top: calc(var(--spacing-header) + 24px);
+  /* The Kassel logo block above the 72px navigation row; dropped while the
+     on-screen keyboard is open, when the header is the row alone. */
+  --spacing-header-logo: 108px;
+  --spacing-header-compact: 72px;
+  --spacing-content-top-compact: calc(var(--spacing-header-compact) + 24px);
   --spacing-code-w: 46px;
   --spacing-code-h: 48px;
   --spacing-flag-lg: 72px;
