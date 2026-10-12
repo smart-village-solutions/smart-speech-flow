@@ -5,7 +5,7 @@ torch
 # piper-tts is installed from requirements-piper.txt with --no-deps, because
 # it requires the CPU onnxruntime, which would overwrite the GPU build. Its
 # other declared dependency is listed here by hand.
-onnxruntime-gpu==1.30.0
+onnxruntime-gpu==1.31.0
 pathvalidate>=3,<4
 soundfile
 numpy>=2.5.3
