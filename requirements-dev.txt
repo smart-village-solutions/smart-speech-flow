@@ -18,7 +18,7 @@ authlib==1.7.2
     # via safety
 bandit==1.9.4
     # via -r requirements-dev.in
-black==26.5.1
+black==26.10.0
     # via -r requirements-dev.in
 boolean-py==5.0
     # via license-expression
