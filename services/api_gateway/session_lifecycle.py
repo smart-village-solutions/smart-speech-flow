@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from .consent import ConsentStatus
 from .consent_resolution import resolve_consent
-from .guest_token import guest_token_admits, issue_guest_token
+from .guest_token import claim_guest_token, guest_token_admits
 from .keyed_locks import KeyedLocks
 from .log_safety import safe_session_ref, sanitize_log_value
 from .session_manager import TenantSessionManager
@@ -64,9 +64,8 @@ class GuestConflictError(Exception):
 class Activation:
     session: Session
     already_active: bool
-    # Returned once, by the activation that claimed the session.
+    # Returned by the activation that claimed the session.
     guest_token: Optional[str] = None
-    language_changed: bool = False
 
 
 class SessionLifecycleService:
@@ -217,8 +216,13 @@ class SessionLifecycleService:
             session.consent_retention_hours = live_policy.retention_hours
             session.consent_configuration_revision = live_policy.configuration_revision
 
-        issued_token, session.guest_token_hash = issue_guest_token()
-        await self._sessions.activate_session(key, customer_language)
+        claimed_token, session.guest_token_hash = claim_guest_token(guest_token)
+        try:
+            await self._sessions.activate_session(key, customer_language)
+        except Exception:
+            # An unsaved claim must not lock the guest out of their own retry.
+            session.guest_token_hash = None
+            raise
 
         logger.info(
             "✅ Session erfolgreich aktiviert | %s",
@@ -229,7 +233,7 @@ class SessionLifecycleService:
                 }
             ),
         )
-        return Activation(session=session, already_active=False, guest_token=issued_token)
+        return Activation(session=session, already_active=False, guest_token=claimed_token)
 
     async def _reactivate(
         self, key: TenantSessionKey, session: Session, customer_language: str
@@ -256,7 +260,7 @@ class SessionLifecycleService:
         if updated is None:
             raise RuntimeError("session disappeared during a language change")
         await self._sessions.announce_customer_language(key, customer_language)
-        return Activation(session=updated, already_active=True, language_changed=True)
+        return Activation(session=updated, already_active=True)
 
 
 async def _read_activation_policy(

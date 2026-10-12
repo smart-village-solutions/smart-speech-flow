@@ -304,7 +304,7 @@ async def test_the_holder_switches_language_and_the_session_is_told(
 
     switched = await lifecycle.activate(key, "tr", None, None, _must_not_read, guest_token=token)
 
-    assert switched.language_changed and switched.guest_token is None
+    assert switched.guest_token is None
     assert switched.session.customer_language == "tr"
     assert [frame["role"] for _, frame in sockets.frames] == ["customer_language_changed"]
     assert sockets.frames[0][0] == key
@@ -322,7 +322,7 @@ async def test_the_holder_repeating_the_same_language_changes_nothing(
 
     same = await lifecycle.activate(key, "en", None, None, _must_not_read, guest_token=token)
 
-    assert same.already_active and not same.language_changed
+    assert same.already_active
     assert sockets.frames == []
 
 
@@ -377,3 +377,35 @@ async def test_a_session_activated_before_tokens_existed_keeps_todays_behaviour(
     switched = await lifecycle.activate(key, "ar", None, None, _must_not_read)
 
     assert switched.session.customer_language == "ar"
+
+
+async def test_the_browser_chooses_the_token_so_a_lost_response_can_be_retried(
+    sessions: TenantSessionManager,
+) -> None:
+    lifecycle = SessionLifecycleService(sessions)
+    key = await _pending(sessions)
+    chosen = "c" * 43
+
+    claimed = await lifecycle.activate(key, "en", True, None, lambda: "c", guest_token=chosen)
+    # The response never arrived; the browser retries with the token it kept.
+    retried = await lifecycle.activate(key, "en", True, None, _must_not_read, guest_token=chosen)
+
+    assert claimed.guest_token == chosen
+    assert retried.already_active
+
+
+async def test_a_claim_whose_save_fails_leaves_the_session_unclaimed(
+    sessions: TenantSessionManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lifecycle = SessionLifecycleService(sessions)
+    key = await _pending(sessions)
+
+    async def failing_save(*_args) -> None:
+        raise RuntimeError("store unavailable")
+
+    monkeypatch.setattr(sessions, "activate_session", failing_save)
+    with pytest.raises(RuntimeError):
+        await lifecycle.activate(key, "en", True, None, lambda: "c", guest_token="d" * 43)
+
+    session = await sessions.get_session(key)
+    assert session is not None and session.guest_token_hash is None

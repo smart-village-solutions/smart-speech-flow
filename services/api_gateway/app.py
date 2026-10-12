@@ -498,6 +498,8 @@ def setup_cors_for_websockets(app: FastAPI) -> None:
             "Cache-Control",
             "Pragma",
             "X-Correlation-Id",
+            # The guest's credential for its one session; see session_access.py.
+            "X-Guest-Token",
             # WebSocket-specific headers
             "Upgrade",
             "Connection",

@@ -1,6 +1,12 @@
 """The guest token: issued once, stored as a digest, compared in constant time."""
 
-from services.api_gateway.guest_token import guest_token_admits, issue_guest_token
+import pytest
+
+from services.api_gateway.guest_token import (
+    claim_guest_token,
+    guest_token_admits,
+    issue_guest_token,
+)
 from services.api_gateway.session_models import Session
 
 REVISION = f"sha256:{'a' * 64}"
@@ -45,3 +51,20 @@ def test_a_record_stored_before_the_field_existed_loads_unclaimed() -> None:
     stored.pop("guest_token_hash")
 
     assert Session.from_dict(stored).guest_token_hash is None
+
+
+def test_a_well_formed_token_from_the_browser_is_kept() -> None:
+    presented = "b" * 43
+
+    token, digest = claim_guest_token(presented)
+
+    assert token == presented
+    assert guest_token_admits(digest, presented)
+
+
+@pytest.mark.parametrize("presented", [None, "", "short", "x" * 129, "has space" + "a" * 40])
+def test_anything_else_gets_a_token_from_the_server(presented) -> None:
+    token, digest = claim_guest_token(presented)
+
+    assert token != presented and len(token) >= 43
+    assert guest_token_admits(digest, token)

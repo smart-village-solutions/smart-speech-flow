@@ -153,8 +153,8 @@ def test_a_pending_session_offers_no_realtime_connection(client, route) -> None:
     assert response.json()["detail"]["error_code"] == "SESSION_NOT_ACTIVE"
 
 
-@pytest.mark.parametrize("claimed", [True, False])
-def test_the_socket_refuses_a_missing_ticket_unless_the_session_predates_tokens(
+@pytest.mark.parametrize("claimed", [True, False], ids=["claimed", "pending"])
+def test_the_socket_refuses_a_missing_ticket_on_a_claimed_or_pending_session(
     client, sockets, claimed
 ) -> None:
     session_id = _create(client)
