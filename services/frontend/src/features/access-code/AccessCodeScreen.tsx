@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -28,11 +28,17 @@ export function AccessCodeScreen() {
   const [code, setCode] = useState('');
   // A message key, translated at render: the screen settles its locale after mounting.
   // A join link to a conversation another browser holds lands here with a notice.
+  const notice = (location.state as { notice?: string } | null)?.notice;
   const [error, setError] = useState<string | null>(() =>
-    (location.state as { notice?: string } | null)?.notice === 'sessionHasGuest'
-      ? 'accessCode.sessionHasGuest'
-      : null
+    notice === 'sessionHasGuest' ? 'accessCode.sessionHasGuest' : null
   );
+
+  // Read once: left in the history entry, a reload or Back would show it again.
+  useEffect(() => {
+    if (notice !== undefined) {
+      void navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.pathname, navigate, notice]);
 
   const submit = useMutation({
     mutationFn: (candidate: string) => session.getSession(candidate, 'customer'),

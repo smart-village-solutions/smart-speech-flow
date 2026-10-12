@@ -99,9 +99,9 @@ describe('createHttpClient', () => {
   });
 
   it.each([
-    ['/api/customer/session/activate', 'guest-token'],
     ['/api/customer/session/A1B2C3D4/messages', 'guest-token'],
     ['http://api.test/api/customer/session/A1B2C3D4/audio/m1/translated.wav', 'guest-token'],
+    ['/api/customer/session/ZZZZ9999/messages', null],
     ['/api/admin/session/A1B2C3D4/status', null],
     ['http://elsewhere.test/api/customer/session/A1B2C3D4', null],
   ])('sends the guest token to %s: %s', async (url, expected) => {
@@ -112,7 +112,10 @@ describe('createHttpClient', () => {
         return HttpResponse.json({});
       })
     );
-    const tokens = { read: () => 'guest-token', save: vi.fn() };
+    const tokens = {
+      read: (sessionId: string) => (sessionId === 'A1B2C3D4' ? 'guest-token' : null),
+      save: vi.fn(),
+    };
 
     await createHttpClient(config, () => 'en', tokens).get(url);
 

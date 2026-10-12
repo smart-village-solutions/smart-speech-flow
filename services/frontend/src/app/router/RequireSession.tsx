@@ -19,7 +19,10 @@ export function RequireSession() {
     return <RouteState />;
   }
 
-  if (query.isError || !query.data || !isJoinable(query.data)) {
+  // A failed re-read of a session already shown is kept unless the server's
+  // answer is final: a network blip must not tear down a live conversation.
+  const finalError = query.isError && !(query.error instanceof AppError && query.error.retryable);
+  if (!query.data || !isJoinable(query.data) || finalError) {
     const taken = query.error instanceof AppError && query.error.kind === 'sessionHasGuest';
     return <Navigate to="/" replace state={taken ? { notice: 'sessionHasGuest' } : undefined} />;
   }

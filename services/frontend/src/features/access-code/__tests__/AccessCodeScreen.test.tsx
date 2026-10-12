@@ -1,14 +1,18 @@
 import { http, HttpResponse } from 'msw';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { Route, Routes, useParams } from 'react-router-dom';
+import { Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { server } from '@/test/setup';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { installationBody } from '@/test/contentFixtures';
 import { ContentSettled } from '@/test/ContentSettled';
 import { AccessCodeScreen } from '@/features/access-code/AccessCodeScreen';
 import { RequireSession } from '@/app/router/RequireSession';
+
+function LocationState() {
+  return <output data-testid="location-state">{JSON.stringify(useLocation().state)}</output>;
+}
 
 function LanguageScreen() {
   return <p>language screen {useParams().sessionId}</p>;
@@ -127,12 +131,15 @@ describe('AccessCodeScreen', () => {
     );
 
     renderWithProviders(
-      <Routes>
-        <Route path="/" element={<AccessCodeScreen />} />
-        <Route path="/s/:sessionId" element={<RequireSession />}>
-          <Route path="language" element={<LanguageScreen />} />
-        </Route>
-      </Routes>,
+      <>
+        <Routes>
+          <Route path="/" element={<AccessCodeScreen />} />
+          <Route path="/s/:sessionId" element={<RequireSession />}>
+            <Route path="language" element={<LanguageScreen />} />
+          </Route>
+        </Routes>
+        <LocationState />
+      </>,
       { route: '/s/A1B2C3D4/language' }
     );
 
@@ -142,6 +149,8 @@ describe('AccessCodeScreen', () => {
       'alert'
     );
     expect(screen.queryByText(/language screen/)).not.toBeInTheDocument();
+    // Read once and dropped, so a reload or Back does not bring the notice back.
+    await waitFor(() => expect(screen.getByTestId('location-state')).toHaveTextContent('null'));
   });
 
   it('offers the tenant login chooser link', async () => {

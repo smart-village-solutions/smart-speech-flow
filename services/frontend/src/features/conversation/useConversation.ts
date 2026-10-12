@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { useServices } from '@/app/providers/services';
 import type { ClientRole } from '@/core/roles';
 import { AppError } from '@/core/http/AppError';
 import { randomId } from '@/core/ids';
-import { realtimeToChatMessage } from '@/domain/message/message.mapper';
 import type { ChatMessage } from '@/domain/message/message.types';
 import {
   conversationReducer,
@@ -11,6 +10,7 @@ import {
   type ConversationAction,
   type ConversationState,
 } from './conversation.reducer';
+import { useConversationFeed } from './useConversationFeed';
 import { useSessionRefresh } from './useSessionRefresh';
 
 interface UseConversationOptions {
@@ -38,10 +38,9 @@ export function useConversation(
   languages: { source: string; target: string },
   options: UseConversationOptions
 ): UseConversationResult {
-  const { message, createRealtime } = useServices();
+  const { message } = useServices();
   const { role } = options;
   const [state, dispatch] = useReducer(conversationReducer, initialConversationState);
-  const transport = useMemo(() => createRealtime(), [createRealtime]);
   const refreshSession = useSessionRefresh(sessionId);
 
   // Held in a ref so a new callback identity does not tear down the socket.
@@ -55,76 +54,7 @@ export function useConversation(
     languagesRef.current = languages;
   });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    void message
-      .getHistory(sessionId, role)
-      .then((messages) => {
-        if (!cancelled) {
-          dispatch({ type: 'history/loaded', messages });
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [message, role, sessionId]);
-
-  useEffect(() => {
-    const offEvent = transport.onEvent((event) => {
-      if (event.role === 'session_terminated') {
-        dispatch({ type: 'session/ended' });
-        return;
-      }
-
-      if (event.role === 'customer_language_changed') {
-        refreshSession();
-        return;
-      }
-
-      const mapped = realtimeToChatMessage(event, message.resolveAudioUrl);
-      if (mapped !== null && mapped.id !== '') {
-        dispatch({ type: 'realtime/message', message: mapped });
-
-        if (mapped.origin === 'peer' && mapped.audioUrl !== null) {
-          onPeerAudioRef.current?.(mapped.id, mapped.audioUrl);
-        }
-      }
-    });
-
-    // The gateway does not resend what it failed to deliver, so a reconnect
-    // refetches: a message broadcast while the socket was down is otherwise
-    // lost until the page is reloaded. The first connect is skipped — the mount
-    // effect above has already loaded that history.
-    let seenConnected = false;
-
-    const offStatus = transport.onStatus((status) => {
-      dispatch({ type: 'realtime/status', status });
-
-      if (status !== 'connected') {
-        return;
-      }
-
-      if (seenConnected) {
-        void message
-          .getHistory(sessionId, role)
-          .then((messages) => dispatch({ type: 'history/reloaded', messages }))
-          .catch(() => undefined);
-      }
-
-      seenConnected = true;
-    });
-
-    void transport.connect(sessionId, role);
-
-    return () => {
-      offEvent();
-      offStatus();
-      transport.disconnect();
-    };
-  }, [message, refreshSession, role, sessionId, transport]);
+  useConversationFeed({ sessionId, role, dispatch, onPeerAudioRef });
 
   const send = useCallback(
     async (

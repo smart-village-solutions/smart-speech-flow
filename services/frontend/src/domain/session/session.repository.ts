@@ -1,5 +1,6 @@
 import type { AxiosInstance } from 'axios';
 import { requirePathIdentifier } from '@/utils/identifiers';
+import { randomGuestToken } from '@/core/ids';
 import type { ClientRole } from '@/core/roles';
 import type { GuestTokenStore } from '@/core/http/guest-token.port';
 import { activationToSession, statusToSession } from './session.mapper';
@@ -35,14 +36,24 @@ export function createSessionRepository(
 
     async activate(id, languageCode, dataRetentionConsent) {
       const safeId = requirePathIdentifier(id, 'session');
-      const response = await http.post<ActivateSessionDto>('/api/customer/session/activate', {
-        session_id: safeId,
-        customer_language: languageCode,
-        data_retention_consent: dataRetentionConsent,
-      });
-      // Only the activation that claims the session carries a token.
-      if (response.data.guest_token) {
-        guestTokens.save(safeId, response.data.guest_token);
+      // Chosen and kept before asking: if the answer is lost, the retry carries
+      // the same token and the gateway admits it.
+      const token = guestTokens.read(safeId) ?? randomGuestToken();
+      if (token) {
+        guestTokens.save(safeId, token);
+      }
+      const response = await http.post<ActivateSessionDto>(
+        '/api/customer/session/activate',
+        {
+          session_id: safeId,
+          customer_language: languageCode,
+          data_retention_consent: dataRetentionConsent,
+        },
+        { headers: token ? { 'X-Guest-Token': token } : {} }
+      );
+      const issued = response.data.guest_token;
+      if (issued && issued !== token) {
+        guestTokens.save(safeId, issued);
       }
       return activationToSession(response.data);
     },

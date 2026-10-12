@@ -27,7 +27,8 @@ describe('createGuestTokenStore', () => {
     store.save('AAAA1111', 'first');
     store.save('BBBB2222', 'second');
 
-    expect(store.read()).toBe('second');
+    expect(store.read('BBBB2222')).toBe('second');
+    expect(store.read('AAAA1111')).toBeNull();
     expect(storage.length).toBe(1);
   });
 
@@ -35,7 +36,7 @@ describe('createGuestTokenStore', () => {
     const storage = memoryStorage();
     createGuestTokenStore(() => storage).save('AAAA1111', 'kept');
 
-    expect(createGuestTokenStore(() => storage).read()).toBe('kept');
+    expect(createGuestTokenStore(() => storage).read('AAAA1111')).toBe('kept');
   });
 
   it('serves the token from memory when storage refuses', () => {
@@ -43,13 +44,31 @@ describe('createGuestTokenStore', () => {
 
     store.save('AAAA1111', 'in-memory');
 
-    expect(store.read()).toBe('in-memory');
+    expect(store.read('AAAA1111')).toBe('in-memory');
   });
 
   it('reads nothing from storage it cannot parse', () => {
     const storage = memoryStorage();
     storage.setItem('ssf.guestToken', 'not json');
 
-    expect(createGuestTokenStore(() => storage).read()).toBeNull();
+    expect(createGuestTokenStore(() => storage).read('AAAA1111')).toBeNull();
+  });
+
+  it('sees a token another tab saved after this one started', () => {
+    const storage = memoryStorage();
+    const thisTab = createGuestTokenStore(() => storage);
+
+    createGuestTokenStore(() => storage).save('AAAA1111', 'from-the-other-tab');
+
+    expect(thisTab.read('AAAA1111')).toBe('from-the-other-tab');
+  });
+
+  it('still serves its own token when storage holds another session', () => {
+    const storage = memoryStorage();
+    const store = createGuestTokenStore(() => storage);
+    store.save('AAAA1111', 'mine');
+    storage.setItem('ssf.guestToken', JSON.stringify({ sessionId: 'BBBB2222', token: 'theirs' }));
+
+    expect(store.read('AAAA1111')).toBe('mine');
   });
 });

@@ -20,6 +20,19 @@ function targetsApiPath(requestUrl: string | undefined, apiBaseUrl: string, pref
   }
 }
 
+const GUEST_SESSION_PATH = /^\/api\/customer\/session\/([^/?#]+)/;
+
+/** The session a same-origin guest request is about, read from its path. */
+function guestSessionOf(requestUrl: string | undefined, apiBaseUrl: string): string | null {
+  if (!targetsApiPath(requestUrl, apiBaseUrl, '/api/customer/')) return null;
+  try {
+    const path = new URL(requestUrl as string, apiBaseUrl || 'http://localhost').pathname;
+    return GUEST_SESSION_PATH.exec(path)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * No default Content-Type is set on purpose: axios infers application/json for
  * plain objects and generates the multipart boundary for FormData. Forcing a
@@ -47,8 +60,9 @@ export function createHttpClient(
         request.headers.set('Authorization', `Bearer ${token}`);
       }
     }
-    const guestToken = guestTokens.read();
-    if (guestToken !== null && targetsApiPath(request.url, config.apiBaseUrl, '/api/customer/')) {
+    const sessionId = guestSessionOf(request.url, config.apiBaseUrl);
+    const guestToken = sessionId === null ? null : guestTokens.read(sessionId);
+    if (guestToken !== null && !request.headers.has('X-Guest-Token')) {
       request.headers.set('X-Guest-Token', guestToken);
     }
     return request;
