@@ -65,7 +65,7 @@ export function ConversationSurface({
   } = screen;
 
   return (
-    <ScreenShell>
+    <ScreenShell keyboardOpen={keyboardOffset > 0}>
       {header}
       {overlay}
 

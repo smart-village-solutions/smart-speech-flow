@@ -33,7 +33,7 @@ export function AppHeader({
     // on document order alone, and painted straight over the open menu. The
     // header's z is therefore what decides it, not the menu's.
     <header className="fixed inset-x-0 top-0 z-20 border-b border-black/10 bg-white shadow-[0_2px_6px_rgba(0,0,0,0.08)]">
-      <div className="mx-auto flex h-[180px] max-w-app flex-wrap content-start items-center px-5 md:flex-nowrap">
+      <div className="mx-auto flex h-header max-w-app flex-wrap content-start items-center px-5 md:flex-nowrap">
         <div className="order-2 flex flex-1 items-center gap-6 md:order-1 md:flex-none">
           {showNavigation && (
             <>
@@ -58,7 +58,7 @@ export function AppHeader({
           )}
         </div>
 
-        <div className="order-1 flex h-[108px] w-full flex-none justify-center md:order-2 md:h-full md:flex-1">
+        <div className="order-1 flex h-header-logo w-full flex-none justify-center group-data-[keyboard=open]/shell:hidden md:order-2 md:h-full md:flex-1">
           {brand === 'kassel' ? (
             <img
               src="/assets/Logo.png"

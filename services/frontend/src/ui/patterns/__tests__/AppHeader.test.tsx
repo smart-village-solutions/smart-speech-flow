@@ -42,7 +42,15 @@ describe('AppHeader', () => {
 
     const header = screen.getByRole('banner');
     expect(header).toHaveClass('bg-white', 'shadow-[0_2px_6px_rgba(0,0,0,0.08)]');
-    expect(header.firstElementChild).toHaveClass('h-[180px]', 'content-start');
+    // The height is the token, so a compact shell (keyboard open) can shrink it.
+    expect(header.firstElementChild).toHaveClass('h-header', 'content-start');
+  });
+
+  it('drops the logo block while the shell says the keyboard is open', () => {
+    setup();
+
+    const block = screen.getByRole('img', { name: 'KasselDIALOG' }).parentElement;
+    expect(block).toHaveClass('h-header-logo', 'group-data-[keyboard=open]/shell:hidden');
   });
 
   it('uses the catalogue name instead of a Kassel image for another brand', () => {
