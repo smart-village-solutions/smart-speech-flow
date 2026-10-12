@@ -2,9 +2,9 @@ import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Route, Routes } from 'react-router-dom';
-import type { RealtimeEvent, RealtimeTransport } from '@/core/realtime/realtime.port';
 import { AppError } from '@/core/http/AppError';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { createRealtimeWire } from '@/test/realtimeWire';
 import { ConversationScreen } from '@/features/conversation/ConversationScreen';
 
 const route = '/s/A1B2C3D4/live';
@@ -17,30 +17,7 @@ function tree() {
   );
 }
 
-function fakeTransport() {
-  const handlers: ((event: RealtimeEvent) => void)[] = [];
-  const transport: RealtimeTransport = {
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn(),
-    send: vi.fn(),
-    onEvent: (handler) => {
-      handlers.push(handler);
-      return () => handlers.splice(handlers.indexOf(handler), 1);
-    },
-    onStatus: () => () => undefined,
-    getStatus: () => 'connected',
-  };
-  return {
-    transport,
-    async receive(event: RealtimeEvent) {
-      await act(async () => {
-        handlers.forEach((handler) => handler(event));
-      });
-    },
-  };
-}
-
-function render(wire: ReturnType<typeof fakeTransport>, sendText = vi.fn()) {
+function render(wire: ReturnType<typeof createRealtimeWire>, sendText = vi.fn()) {
   renderWithProviders(tree(), {
     route,
     services: {
@@ -69,7 +46,7 @@ afterEach(() => {
 
 describe('the end of a conversation', () => {
   it('ends the conversation, locks the composer and stops reconnecting', async () => {
-    const wire = fakeTransport();
+    const wire = createRealtimeWire();
     render(wire);
     await screen.findByRole('button', { name: 'Record' });
 
@@ -83,7 +60,7 @@ describe('the end of a conversation', () => {
 
   it('warns before a timeout and drops the warning once its minutes have passed', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const wire = fakeTransport();
+    const wire = createRealtimeWire();
     render(wire);
     await screen.findByRole('button', { name: 'Record' });
 
@@ -101,7 +78,7 @@ describe('the end of a conversation', () => {
   });
 
   it('treats a send refused as not found as the end, not as something to retry', async () => {
-    const wire = fakeTransport();
+    const wire = createRealtimeWire();
     const sendText = vi.fn().mockRejectedValue(new AppError('notFound', { status: 404 }));
     render(wire, sendText);
 

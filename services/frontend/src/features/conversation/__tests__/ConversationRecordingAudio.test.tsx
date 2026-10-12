@@ -3,9 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { createRealtimeWire } from '@/test/realtimeWire';
 import { createFakeAudioPlayer } from '@/test/fakeAudioPlayer';
 import { ConversationScreen } from '@/features/conversation/ConversationScreen';
-import type { RealtimeEvent, RealtimeTransport } from '@/core/realtime/realtime.port';
 
 interface RecorderConfig {
   maxDurationMs?: number;
@@ -31,31 +31,6 @@ vi.mock('@/utils/AudioRecorderWithWAVConversion', () => ({
   },
 }));
 
-function fakeTransport() {
-  const handlers: ((event: RealtimeEvent) => void)[] = [];
-
-  const transport: RealtimeTransport = {
-    connect: vi.fn().mockResolvedValue(undefined),
-    disconnect: vi.fn(),
-    send: vi.fn(),
-    onEvent: (handler) => {
-      handlers.push(handler);
-      return () => handlers.splice(handlers.indexOf(handler), 1);
-    },
-    onStatus: () => () => undefined,
-    getStatus: () => 'connected',
-  };
-
-  return {
-    transport,
-    async receive(event: RealtimeEvent) {
-      await act(async () => {
-        handlers.forEach((handler) => handler(event));
-      });
-    },
-  };
-}
-
 const peerAudioEvent = {
   role: 'receiver_message',
   message_id: 'm9',
@@ -68,7 +43,7 @@ const peerAudioEvent = {
 
 function setup() {
   const player = createFakeAudioPlayer();
-  const wire = fakeTransport();
+  const wire = createRealtimeWire();
 
   renderWithProviders(
     <Routes>
