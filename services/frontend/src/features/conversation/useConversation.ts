@@ -11,6 +11,7 @@ import {
   type ConversationAction,
   type ConversationState,
 } from './conversation.reducer';
+import { useSessionRefresh } from './useSessionRefresh';
 
 interface UseConversationOptions {
   /** Which end of the session this screen is. Never defaulted. */
@@ -41,12 +42,17 @@ export function useConversation(
   const { role } = options;
   const [state, dispatch] = useReducer(conversationReducer, initialConversationState);
   const transport = useMemo(() => createRealtime(), [createRealtime]);
+  const refreshSession = useSessionRefresh(sessionId);
 
   // Held in a ref so a new callback identity does not tear down the socket.
   const onPeerAudioRef = useRef(options.onPeerAudio);
+  // A retry sends the languages current when it runs: after a guest language
+  // switch, the pair captured at the first attempt would fail forever.
+  const languagesRef = useRef(languages);
 
   useEffect(() => {
     onPeerAudioRef.current = options.onPeerAudio;
+    languagesRef.current = languages;
   });
 
   useEffect(() => {
@@ -70,6 +76,11 @@ export function useConversation(
     const offEvent = transport.onEvent((event) => {
       if (event.role === 'session_terminated') {
         dispatch({ type: 'session/ended' });
+        return;
+      }
+
+      if (event.role === 'customer_language_changed') {
+        refreshSession();
         return;
       }
 
@@ -113,7 +124,7 @@ export function useConversation(
       offStatus();
       transport.disconnect();
     };
-  }, [message, role, sessionId, transport]);
+  }, [message, refreshSession, role, sessionId, transport]);
 
   const send = useCallback(
     async (
@@ -121,13 +132,8 @@ export function useConversation(
       text: string
     ) => {
       const tempId = `temp-${randomId()}`;
-      dispatch({
-        type: 'send/started',
-        tempId,
-        text,
-        sourceLanguage: languages.source,
-        targetLanguage: languages.target,
-      });
+      const { source, target } = languagesRef.current;
+      dispatch({ type: 'send/started', tempId, text, sourceLanguage: source, targetLanguage: target });
 
       try {
         const result = await perform();
@@ -136,19 +142,22 @@ export function useConversation(
           origin: 'self',
           text: result.originalText,
           audioUrl: null,
-          sourceLanguage: languages.source,
-          targetLanguage: languages.target,
+          sourceLanguage: source,
+          targetLanguage: target,
           timestamp: new Date().toISOString(),
           state: 'sent',
         };
         dispatch({ type: 'send/confirmed', tempId, message: confirmed });
       } catch (error) {
+        if (error instanceof AppError && error.kind === 'languageChanged') {
+          refreshSession();
+        }
         const errorKey =
           error instanceof AppError ? error.userMessageKey : 'conversation.sendFailed';
         dispatch({ type: 'send/failed', tempId, errorKey });
       }
     },
-    [languages.source, languages.target]
+    [refreshSession]
   );
 
   const lastAttempt = useRef<(() => Promise<void>) | null>(null);
@@ -161,8 +170,8 @@ export function useConversation(
           () =>
             message.sendText(sessionId, {
               text,
-              sourceLanguage: languages.source,
-              targetLanguage: languages.target,
+              sourceLanguage: languagesRef.current.source,
+              targetLanguage: languagesRef.current.target,
               role,
             }),
           text
@@ -170,7 +179,7 @@ export function useConversation(
       lastAttempt.current = attempt;
       return attempt();
     },
-    [languages.source, languages.target, message, role, send, sessionId]
+    [message, role, send, sessionId]
   );
 
   const sendAudio = useCallback(
@@ -180,8 +189,8 @@ export function useConversation(
           () =>
             message.sendAudio(sessionId, {
               wav,
-              sourceLanguage: languages.source,
-              targetLanguage: languages.target,
+              sourceLanguage: languagesRef.current.source,
+              targetLanguage: languagesRef.current.target,
               role,
             }),
           // A recording has no transcript until the gateway returns one.
@@ -190,7 +199,7 @@ export function useConversation(
       lastAttempt.current = attempt;
       return attempt();
     },
-    [languages.source, languages.target, message, role, send, sessionId]
+    [message, role, send, sessionId]
   );
 
   return {

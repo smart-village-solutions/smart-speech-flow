@@ -98,6 +98,41 @@ describe('createHttpClient', () => {
     await expect(client.get('/missing')).rejects.toMatchObject({ kind: 'notFound' });
   });
 
+  it.each([
+    ['/api/customer/session/activate', 'guest-token'],
+    ['/api/customer/session/A1B2C3D4/messages', 'guest-token'],
+    ['http://api.test/api/customer/session/A1B2C3D4/audio/m1/translated.wav', 'guest-token'],
+    ['/api/admin/session/A1B2C3D4/status', null],
+    ['http://elsewhere.test/api/customer/session/A1B2C3D4', null],
+  ])('sends the guest token to %s: %s', async (url, expected) => {
+    let seen: Headers | undefined;
+    server.use(
+      http.all('*', ({ request }) => {
+        seen = request.headers;
+        return HttpResponse.json({});
+      })
+    );
+    const tokens = { read: () => 'guest-token', save: vi.fn() };
+
+    await createHttpClient(config, () => 'en', tokens).get(url);
+
+    expect(seen?.get('X-Guest-Token')).toBe(expected);
+  });
+
+  it('sends no guest token while the browser holds none', async () => {
+    let seen: Headers | undefined;
+    server.use(
+      http.get('http://api.test/api/customer/session/A1B2C3D4', ({ request }) => {
+        seen = request.headers;
+        return HttpResponse.json({});
+      })
+    );
+
+    await createHttpClient(config, () => 'en').get('/api/customer/session/A1B2C3D4');
+
+    expect(seen?.get('X-Guest-Token')).toBeNull();
+  });
+
   it('does not force a JSON content type, so FormData keeps its boundary', async () => {
     let contentType = '';
     server.use(

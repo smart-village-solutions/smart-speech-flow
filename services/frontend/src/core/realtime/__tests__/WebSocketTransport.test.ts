@@ -51,7 +51,7 @@ function makeTransport(issueTicket = vi.fn().mockResolvedValue('opaque-ticket'))
     reconnectDelayMs: 1000,
     heartbeatIntervalMs: 30_000,
     maxReconnectAttempts: 2,
-    issueAdminTicket: issueTicket,
+    issueTicket,
   });
   transport.onStatus((status) => statuses.push(status));
   transport.onEvent((event) => events.push(event));
@@ -80,14 +80,34 @@ describe('createWebSocketTransport', () => {
     const { transport } = makeTransport();
     await transport.connect('A1B2C3D4', 'customer');
 
-    expect(FakeSocket.instances[0].url).toBe('ws://api.test/ws/customer/A1B2C3D4');
+    expect(FakeSocket.instances[0].url).toBe(
+      'ws://api.test/ws/customer/A1B2C3D4?ticket=opaque-ticket'
+    );
+  });
+
+  it('fetches a fresh guest ticket for every connect and reconnect', async () => {
+    const issueTicket = vi
+      .fn()
+      .mockResolvedValueOnce('first-ticket')
+      .mockResolvedValueOnce('second-ticket');
+    const { transport } = makeTransport(issueTicket);
+    await transport.connect('A1B2C3D4', 'customer');
+    FakeSocket.instances[0].open();
+    FakeSocket.instances[0].drop();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(issueTicket).toHaveBeenNthCalledWith(1, 'A1B2C3D4', 'customer');
+    expect(issueTicket).toHaveBeenNthCalledWith(2, 'A1B2C3D4', 'customer');
+    expect(FakeSocket.instances[1].url).toBe(
+      'ws://api.test/ws/customer/A1B2C3D4?ticket=second-ticket'
+    );
   });
 
   it('opens the admin socket with an opaque ticket', async () => {
     const { transport, issueTicket } = makeTransport();
     await transport.connect('A1B2C3D4', 'admin');
 
-    expect(issueTicket).toHaveBeenCalledWith('A1B2C3D4', 'websocket');
+    expect(issueTicket).toHaveBeenCalledWith('A1B2C3D4', 'admin');
     expect(FakeSocket.instances[0].url).toBe(
       'ws://api.test/ws/admin/A1B2C3D4?ticket=opaque-ticket'
     );
@@ -126,26 +146,26 @@ describe('createWebSocketTransport', () => {
     expect(FakeSocket.instances).toHaveLength(0);
   });
 
-  it('reports connecting then connected', () => {
+  it('reports connecting then connected', async () => {
     const { transport, statuses } = makeTransport();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
 
     expect(statuses).toEqual(['connecting', 'connected']);
   });
 
-  it('dispatches parsed events to subscribers', () => {
+  it('dispatches parsed events to subscribers', async () => {
     const { transport, events } = makeTransport();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     FakeSocket.instances[0].receive({ role: 'receiver_message', text: 'hi' });
 
     expect(events).toEqual([{ role: 'receiver_message', text: 'hi' }]);
   });
 
-  it('ignores payloads that are not valid JSON', () => {
+  it('ignores payloads that are not valid JSON', async () => {
     const { transport, events } = makeTransport();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     FakeSocket.instances[0].onmessage?.({ data: 'not json' });
 
@@ -156,53 +176,53 @@ describe('createWebSocketTransport', () => {
   // (api_gateway/websocket.py:923) and closes the socket 60s after the last
   // refresh. Any other type is logged as unknown and refreshes nothing, so the
   // wording of these messages is load-bearing, not cosmetic.
-  it('sends the heartbeat the gateway recognises, on the configured interval', () => {
+  it('sends the heartbeat the gateway recognises, on the configured interval', async () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
-    vi.advanceTimersByTime(30_000);
+    await vi.advanceTimersByTimeAsync(30_000);
 
     expect(FakeSocket.instances[0].sent).toEqual([JSON.stringify({ type: 'heartbeat_pong' })]);
   });
 
-  it('answers the gateway heartbeat ping at once, without waiting for the interval', () => {
+  it('answers the gateway heartbeat ping at once, without waiting for the interval', async () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     FakeSocket.instances[0].receive({ type: 'heartbeat_ping', timestamp: '2026-08-24T10:00:00Z' });
 
     expect(FakeSocket.instances[0].sent).toEqual([JSON.stringify({ type: 'heartbeat_pong' })]);
   });
 
-  it('keeps heartbeat pings out of the conversation', () => {
+  it('keeps heartbeat pings out of the conversation', async () => {
     const { transport, events } = makeTransport();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     FakeSocket.instances[0].receive({ type: 'heartbeat_ping' });
 
     expect(events).toEqual([]);
   });
 
-  it('reconnects after an unexpected close', () => {
+  it('reconnects after an unexpected close', async () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     FakeSocket.instances[0].drop();
-    vi.advanceTimersByTime(1000);
+    await vi.advanceTimersByTimeAsync(1000);
 
     expect(FakeSocket.instances).toHaveLength(2);
   });
 
-  it('resets the attempt budget once a reconnect succeeds', () => {
+  it('resets the attempt budget once a reconnect succeeds', async () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
 
     // Four drops, each followed by a socket that opens successfully. Because a
     // successful open clears the counter, the budget of 2 is never spent.
     for (let attempt = 0; attempt < 4; attempt += 1) {
       lastSocket().drop();
-      vi.advanceTimersByTime(10_000);
+      await vi.advanceTimersByTimeAsync(10_000);
       lastSocket().open();
     }
 
@@ -210,28 +230,28 @@ describe('createWebSocketTransport', () => {
     expect(transport.getStatus()).toBe('connected');
   });
 
-  it('stops reconnecting once the attempt budget is spent', () => {
+  it('stops reconnecting once the attempt budget is spent', async () => {
     const { transport, statuses } = makeTransport();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
 
     // No socket opens after the first, so the failures are consecutive.
     for (let attempt = 0; attempt < 4; attempt += 1) {
       lastSocket().drop();
-      vi.advanceTimersByTime(10_000);
+      await vi.advanceTimersByTimeAsync(10_000);
     }
 
     expect(FakeSocket.instances).toHaveLength(3);
     expect(statuses.at(-1)).toBe('error');
   });
 
-  it('does not reconnect after an explicit disconnect', () => {
+  it('does not reconnect after an explicit disconnect', async () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     transport.disconnect();
     FakeSocket.instances[0].drop(1000);
-    vi.advanceTimersByTime(10_000);
+    await vi.advanceTimersByTimeAsync(10_000);
 
     expect(FakeSocket.instances).toHaveLength(1);
   });
@@ -239,55 +259,58 @@ describe('createWebSocketTransport', () => {
   // A remount — StrictMode does one on every mount — disconnects and reconnects
   // the same transport. The first socket's close event arrives after the second
   // is already open, and must not be mistaken for the live socket dropping.
-  it('ignores the close of a socket it has already replaced', () => {
+  it('ignores the close of a socket it has already replaced', async () => {
     const { transport, statuses } = makeTransport();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     const first = FakeSocket.instances[0];
     first.open();
 
     transport.disconnect();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     const second = FakeSocket.instances[1];
     second.open();
 
     statuses.length = 0;
     first.drop();
-    vi.advanceTimersByTime(10_000);
+    await vi.advanceTimersByTimeAsync(10_000);
 
     expect(statuses).toEqual([]);
     expect(FakeSocket.instances).toHaveLength(2);
   });
 
-  it('keeps the live socket beating when a replaced socket closes', () => {
+  it('keeps the live socket beating when a replaced socket closes', async () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     const first = FakeSocket.instances[0];
     first.open();
 
     transport.disconnect();
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     const second = FakeSocket.instances[1];
     second.open();
 
     first.drop();
-    vi.advanceTimersByTime(30_000);
+    await vi.advanceTimersByTimeAsync(30_000);
 
     expect(second.sent.map((payload) => JSON.parse(payload).type)).toContain('heartbeat_pong');
   });
 
-  it('opens no second socket while the first is still connecting', () => {
+  it('opens no second socket while the first is still connecting', async () => {
     const { transport } = makeTransport();
-    transport.connect('A1B2C3D4', 'customer');
-    transport.connect('A1B2C3D4', 'customer');
+    // Both start before either ticket arrives: the second must see the first in flight.
+    await Promise.all([
+      transport.connect('A1B2C3D4', 'customer'),
+      transport.connect('A1B2C3D4', 'customer'),
+    ]);
 
     expect(FakeSocket.instances).toHaveLength(1);
   });
 
-  it('unsubscribes cleanly', () => {
+  it('unsubscribes cleanly', async () => {
     const { transport } = makeTransport();
     const seen: RealtimeEvent[] = [];
     const unsubscribe = transport.onEvent((event) => seen.push(event));
-    transport.connect('A1B2C3D4', 'customer');
+    await transport.connect('A1B2C3D4', 'customer');
     FakeSocket.instances[0].open();
     unsubscribe();
     FakeSocket.instances[0].receive({ role: 'error' });

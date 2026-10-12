@@ -12,7 +12,8 @@
     "title": "Kodê binivîse",
     "continue": "Bidomîne",
     "digitLabel": "Tîpa {{position}}",
-    "notFound": "Bi vê kodê tu danişîneke vekirî tune."
+    "notFound": "Bi vê kodê tu danişîneke vekirî tune.",
+    "sessionHasGuest": "Di vê axaftinê de jixwe mêvanek heye."
   },
   "language": {
     "title": "Zimanê xwe hilbijêre",
@@ -94,7 +95,8 @@
     "validation": "Ev daxwaz nehat pêvajokirin.",
     "server": "Li aliyê me tiştek çewt çû.",
     "noSpeech": "Tiştek nehat naskirin. Ji kerema xwe dîsa biceribîne.",
-    "unknown": "Tiştek çewt çû."
+    "unknown": "Tiştek çewt çû.",
+    "languageChanged": "Zimanê axaftinê guherî. Ji kerema xwe dîsa bişînin."
   },
   "legal": {
     "label": "Agahiyên qanûnî",

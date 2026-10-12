@@ -7,6 +7,8 @@ export type AppErrorKind =
   | 'validation'
   | 'server'
   | 'noSpeech'
+  | 'sessionHasGuest'
+  | 'languageChanged'
   | 'unknown';
 
 /**
@@ -30,6 +32,8 @@ const KIND_IS_RETRYABLE: Record<AppErrorKind, boolean> = {
   validation: false,
   server: true,
   noSpeech: false,
+  sessionHasGuest: false,
+  languageChanged: false,
   unknown: true,
 };
 
@@ -40,12 +44,18 @@ const KIND_MESSAGE_KEYS: Record<AppErrorKind, string> = {
   validation: 'errors.validation',
   server: 'errors.server',
   noSpeech: 'errors.noSpeech',
+  sessionHasGuest: 'accessCode.sessionHasGuest',
+  languageChanged: 'errors.languageChanged',
   unknown: 'errors.unknown',
 };
 
 /** Server error codes that name a kind of their own; matched only on a 4xx. */
 const KIND_BY_SERVER_CODE: ReadonlyMap<string, AppErrorKind> = new Map([
   ['NO_SPEECH_RECOGNIZED', 'noSpeech'],
+  ['SESSION_HAS_GUEST', 'sessionHasGuest'],
+  // The session's languages changed under this screen; the conversation refetches them.
+  ['INVALID_SOURCE_LANGUAGE', 'languageChanged'],
+  ['INVALID_TARGET_LANGUAGE', 'languageChanged'],
 ]);
 
 interface AppErrorOptions {

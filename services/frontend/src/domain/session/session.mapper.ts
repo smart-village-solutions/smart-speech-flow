@@ -19,6 +19,8 @@ export interface ActivateSessionDto {
   customer_language: string;
   message: string;
   timestamp: string;
+  /** Present on the activation that claimed the session, null on any other. */
+  guest_token?: string | null;
 }
 
 /**
