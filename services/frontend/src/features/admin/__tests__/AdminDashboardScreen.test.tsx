@@ -128,6 +128,23 @@ describe('AdminDashboardScreen', () => {
     expect(await screen.findByText('Ausreichend Kapazitäten verfügbar')).toBeInTheDocument();
   });
 
+  it('stacks the welcome and load cards on phones and splits them 2:1 from md up', async () => {
+    await renderDashboard();
+
+    const welcome = (await screen.findByText('Willkommen bei KasselDIALOG')).parentElement;
+    const load = (await screen.findByText('Ausreichend Kapazitäten verfügbar')).closest(
+      '.rounded-2xl'
+    );
+    const split = welcome?.parentElement;
+
+    expect(split).toHaveClass('flex-col', 'md:flex-row');
+    expect(load?.parentElement).toBe(split);
+    expect(welcome).toHaveClass('md:basis-2/3');
+    expect(welcome).not.toHaveClass('basis-2/3');
+    expect(load).toHaveClass('md:basis-1/3');
+    expect(load).not.toHaveClass('basis-1/3');
+  });
+
   it('carries the admin header', async () => {
     await renderDashboard();
     expect(await screen.findByRole('button', { name: 'Benutzerkonto' })).toBeInTheDocument();

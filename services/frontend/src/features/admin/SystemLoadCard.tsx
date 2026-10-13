@@ -20,7 +20,7 @@ export function SystemLoadCard({ copy }: Readonly<SystemLoadCardProps>) {
   const level: SystemLoadLevel = isError ? 'unknown' : (data?.level ?? 'unknown');
 
   return (
-    <div className="flex basis-1/3 flex-col gap-3 rounded-2xl border border-border-card bg-surface-card p-5">
+    <div className="flex flex-col gap-3 rounded-2xl border border-border-card bg-surface-card p-5 md:basis-1/3">
       <p className="text-thanks font-semibold text-fg-strong">{copy.headline}</p>
 
       <div className="flex flex-1 items-center gap-3">
