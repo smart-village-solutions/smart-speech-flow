@@ -1,6 +1,10 @@
-# Updated on 2026-10-12 for api_gateway and frontend, built on the host from
+# Updated on 2026-10-15 for frontend, built on the host from merged main
+# 257fbb1 (#583 load light ignores resident GPU memory; with
+# api.dialog.kassel.de); on 2026-10-13 for frontend, built on the host from
+# merged main d6e0b2c (#581 dashboard cards stack on phones);
+# on 2026-10-12 for api_gateway, built on the host from
 # merged main 6b64b8d (#577 one guest per session, #578 session end frames,
-# #579 keyboard composer; frontend with api.dialog.kassel.de); on 2026-10-06
+# #579 keyboard composer); on 2026-10-06
 # for tts and keycloak, built on the host
 # from merged main e2a4e45 (#426, #428, #432, #346); on 2026-10-01 for asr
 # and translation, built on the host from merged main 42b69b7 (#230); on
@@ -15,7 +19,7 @@ api_gateway	sha256:b8a56fed9b7c2090db226ab15e1a1f3e93256b6b6682903915bb7d2bb38cd
 asr	sha256:a87eebfbbdba2328736002b2bf6d88783246545e270d5d572198cc2a302a7b08	ssf-backend-asr:prod-42b69b7
 translation	sha256:da56f999edd1d42dc65eb7bd73b7bee7c98c8060e9cdfca5ee4f542a640dbff1	ssf-backend-translation:prod-42b69b7
 tts	sha256:ff1d15b4f48a81ce6d1ae8f4ca7d1a76e46e214c80c406bafefe7ab1900be5e5	ssf-backend-tts:prod-e2a4e45
-frontend	sha256:c9d73d9f06a4dc1cd13a15393b2e2d1a0351d59efa934e73b1d5a192c941586e	ssf-backend-frontend:prod-6b64b8d
+frontend	sha256:868950c3050e78a271f222406ae8fac81c89a4456f79fe4fe9e64c7717ad1a23	ssf-backend-frontend:prod-257fbb1
 keycloak	sha256:fee0a19bf7c023f77a9d1e6e191d9f7fd7aaa508e081afb9bc8f73075eb56513	ssf-keycloak:prod-e2a4e45
 traefik	sha256:76de233753150da70cde36a5d845c231d408a041b6fcf5a36f924c1322bd98fd	traefik@sha256:ca0f90490fe3091f5f4e582a28638652edb3b26b4d7a1d9ee621ce88fb2bff86
 ollama	sha256:edd5fde06b3f61a0c2de426ea87ea0491101f3bfa3f27b2b997ef6f4624199b2	ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a
