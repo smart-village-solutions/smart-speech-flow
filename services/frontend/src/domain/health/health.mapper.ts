@@ -16,9 +16,37 @@ export interface HealthSummaryDto {
       recommended_action?: string;
     };
   };
+  gpu_summary?: {
+    autoscaling_signals?: {
+      service?: string;
+      recommended_action?: string;
+      reasons?: string[];
+    }[];
+  };
 }
 
 const DOWN_MODES = new Set(['minimal', 'offline']);
+
+/**
+ * The speech services ask to scale up once GPU memory reaches 85%
+ * (`services/resource_metrics.py`), but their models stay resident, so the card
+ * sits above that with nobody talking. Memory that is actually running out
+ * still turns the light yellow through the gateway's own warning level (94%).
+ */
+const RESIDENT_GPU_MEMORY = /^gpu\d+_mem>=/;
+
+function asksToScaleForLoad(dto: HealthSummaryDto): boolean {
+  if (dto.summary?.gpu?.recommended_action !== 'scale_up') {
+    return false;
+  }
+  const signals = dto.gpu_summary?.autoscaling_signals;
+  if (!signals) {
+    return true;
+  }
+  return signals
+    .filter((signal) => signal.recommended_action === 'scale_up')
+    .some((signal) => (signal.reasons ?? []).some((reason) => !RESIDENT_GPU_MEMORY.test(reason)));
+}
 
 function isUnavailable(dto: HealthSummaryDto, circuits: string[]): boolean {
   const { service_mode: mode, gpu } = dto.summary ?? {};
@@ -37,7 +65,7 @@ function isDelayed(dto: HealthSummaryDto, circuits: string[]): boolean {
   return (
     mode === 'degraded' ||
     (gpu?.warning_devices ?? 0) > 0 ||
-    gpu?.recommended_action === 'scale_up' ||
+    asksToScaleForLoad(dto) ||
     circuits.includes('half_open')
   );
 }

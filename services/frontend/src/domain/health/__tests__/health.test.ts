@@ -47,10 +47,43 @@ describe('toSystemLoad', () => {
     expect(toSystemLoad(withSummary({ gpu: { warning_devices: 2 } })).level).toBe('delayed');
   });
 
-  it('is delayed when the GPU asks to scale up', () => {
+  it('is delayed when the GPU asks to scale up without saying why', () => {
     expect(toSystemLoad(withSummary({ gpu: { recommended_action: 'scale_up' } })).level).toBe(
       'delayed'
     );
+  });
+
+  describe('scale-up reasons', () => {
+    const scaleUp = (...reasons: string[][]): HealthSummaryDto => ({
+      ...withSummary({ gpu: { recommended_action: 'scale_up' } }),
+      gpu_summary: {
+        autoscaling_signals: reasons.map((r) => ({ recommended_action: 'scale_up', reasons: r })),
+      },
+    });
+
+    it('is ok when resident model memory is the only reason', () => {
+      expect(toSystemLoad(scaleUp(['gpu0_mem>=85'], ['gpu0_mem>=85'])).level).toBe('ok');
+    });
+
+    it('is delayed when the GPU is busy as well', () => {
+      expect(toSystemLoad(scaleUp(['gpu0_mem>=85'], ['gpu0_util>=85'])).level).toBe('delayed');
+    });
+
+    it.each(['cpu>=85', 'memory>=85'])('is delayed when host %s', (reason) => {
+      expect(toSystemLoad(scaleUp(['gpu0_mem>=85', reason])).level).toBe('delayed');
+    });
+
+    it('still turns yellow when GPU memory reaches the warning level', () => {
+      const dto = scaleUp(['gpu0_mem>=85']);
+      dto.summary = { ...dto.summary, gpu: { recommended_action: 'scale_up', warning_devices: 1 } };
+      expect(toSystemLoad(dto).level).toBe('delayed');
+    });
+
+    it('ignores signals that do not ask to scale up', () => {
+      const dto = scaleUp(['gpu0_mem>=85']);
+      dto.gpu_summary?.autoscaling_signals?.push({ recommended_action: 'steady', reasons: ['cpu>=85'] });
+      expect(toSystemLoad(dto).level).toBe('ok');
+    });
   });
 
   it('is delayed when a circuit is half open', () => {
@@ -91,5 +124,31 @@ describe('toSystemLoad', () => {
       },
     };
     expect(toSystemLoad(live).level).toBe('ok');
+  });
+
+  // Captured from production on 2026-10-15 via GET /api/health/summary with no
+  // session live and GPU utilisation at 0%: the resident models alone hold
+  // 85.43% of the card's memory, which used to keep the light yellow at rest.
+  it('reads the real idle production response as ok', () => {
+    const idle: HealthSummaryDto = {
+      overall_healthy: true,
+      summary: {
+        service_mode: 'full',
+        circuit_states: { asr: 'closed', translation: 'closed', tts: 'closed' },
+        gpu: {
+          critical_devices: 0,
+          warning_devices: 0,
+          recommended_action: 'scale_up',
+        },
+      },
+      gpu_summary: {
+        autoscaling_signals: [
+          { service: 'asr', recommended_action: 'scale_up', reasons: ['gpu0_mem>=85'] },
+          { service: 'translation', recommended_action: 'scale_up', reasons: ['gpu0_mem>=85'] },
+          { service: 'tts', recommended_action: 'scale_up', reasons: ['gpu0_mem>=85'] },
+        ],
+      },
+    };
+    expect(toSystemLoad(idle).level).toBe('ok');
   });
 });
