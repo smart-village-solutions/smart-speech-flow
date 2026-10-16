@@ -194,3 +194,12 @@ def test_primary_refinement_status_distinguishes_skip_from_success():
     assert pipeline_logic._primary_refinement_status(success) == "success"
     assert pipeline_logic._primary_refinement_status(skipped) == "skipped"
     assert pipeline_logic._primary_refinement_status(errored) == "error"
+
+
+def test_primary_refinement_status_names_a_rejected_refinement():
+    pipeline_logic = importlib.import_module("services.api_gateway.pipeline_logic")
+    rejected = pipeline_logic.RefinementOutcome(
+        text="hallo", changed=False, latency_ms=300.0, rejected_reason="facts_changed"
+    )
+
+    assert pipeline_logic._primary_refinement_status(rejected) == "rejected"
