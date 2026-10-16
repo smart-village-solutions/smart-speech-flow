@@ -1,0 +1,109 @@
+{
+  "app": {
+    "name": "KasselDIALOG"
+  },
+  "header": {
+    "back": "返回",
+    "home": "首页",
+    "feedback": "反馈",
+    "theme": "切换主题"
+  },
+  "accessCode": {
+    "title": "输入代码",
+    "continue": "继续",
+    "digitLabel": "第 {{position}} 个字符",
+    "notFound": "该代码不对应任何已开启的会话。",
+    "sessionHasGuest": "此对话已有一位访客。"
+  },
+  "language": {
+    "title": "选择您的语言",
+    "loadFailed": "无法加载语言列表。",
+    "retry": "重试"
+  },
+  "consent": {
+    "intro": "$t(app.name) 是一项自动实时语言翻译服务，旨在帮助讲不同语言的人进行对话。该服务仅在专用私有服务器上运行。",
+    "howTo": "如需开始录音，请点按麦克风按钮。之后您有 20 秒的时间说话。再次点按也可以提前结束录音。您也可以改用文字输入。",
+    "retention": "默认情况下，音频和转写数据仅在会话进行期间处理，结束后不会保留。对话结束后，数据会被自动删除。您可以随时通过应用内的反馈功能报告问题或分享改进建议。",
+    "optIn": "如果您愿意帮助我们改进 $t(app.name)，可以允许将您的对话数据保存最多 180 天。这些数据仅可用于 $t(app.name) 项目内的分析和质量改进。",
+    "checkbox": "我同意将我的对话数据保存最多 180 天，用于改进 $t(app.name)。",
+    "getStarted": "开始",
+    "loading": "正在加载信息"
+  },
+  "conversation": {
+    "record": "录音",
+    "sendRecording": "发送录音",
+    "openKeyboard": "打开键盘",
+    "sendText": "发送文字",
+    "placeholder": "输入您的消息…",
+    "play": "播放",
+    "pause": "暂停",
+    "sendFailed": "该消息无法发送。",
+    "notSent": "未发送",
+    "retry": "重试",
+    "micDenied": "麦克风访问被拒绝。您可以改为输入消息。",
+    "reconnecting": "正在重新连接…",
+    "ended": "此对话已结束。",
+    "timeoutWarning": "此对话将于 {{time}} 结束。"
+  },
+  "feedback": {
+    "title": "分享您的反馈",
+    "close": "关闭",
+    "quality": {
+      "label": "翻译质量",
+      "question": "翻译的准确程度如何？"
+    },
+    "performance": {
+      "label": "性能",
+      "question": "应用的速度和响应如何？"
+    },
+    "usability": {
+      "label": "UI / UX",
+      "question": "界面使用起来是否简单、舒适？"
+    },
+    "nps": {
+      "label": "推荐意愿",
+      "question": "您向同事推荐 $t(app.name) 的可能性有多大？",
+      "low": "完全不可能",
+      "high": "非常可能",
+      "option": "{{score}} 分"
+    },
+    "improvements": {
+      "label": "改进建议",
+      "question": "怎样能让 $t(app.name) 变得更好？",
+      "placeholder": "您的想法、功能需求或任何让您不满意的地方…"
+    },
+    "notice": {
+      "purpose": "您的回答仅用于改进 $t(app.name)。",
+      "retention": "我们会将反馈保存十二个月，之后自动删除。",
+      "withdrawal": "您可以随时撤回您的反馈——只需告知工作人员。"
+    },
+    "stars": "{{count}} 颗星",
+    "required": "必填",
+    "submit": "发送反馈",
+    "submitting": "正在发送…",
+    "retry": "重新发送",
+    "failed": "您的反馈未能发送。您的回答已保留。",
+    "formChanged": "表单已在此期间更改。请加载新表单；仍然适用的回答会被保留。",
+    "reload": "加载新表单",
+    "loading": "正在加载反馈表单",
+    "thanksTitle": "谢谢！",
+    "thanksBody": "您的反馈帮助我们为所有人改进 $t(app.name)。"
+  },
+  "errors": {
+    "network": "无法连接到服务器。",
+    "timeout": "用时过长。请重试。",
+    "notFound": "未找到。",
+    "validation": "该请求无法处理。",
+    "server": "我们这边出了点问题。",
+    "noSpeech": "未识别到任何内容。请重试。",
+    "unknown": "出了点问题。",
+    "languageChanged": "对话语言已更改。请重新发送。"
+  },
+  "legal": {
+    "label": "法律信息",
+    "imprint": "网站信息",
+    "privacyPolicy": "隐私政策",
+    "accessibilityStatement": "无障碍",
+    "opensInNewTab": "（在新标签页中打开）"
+  }
+}

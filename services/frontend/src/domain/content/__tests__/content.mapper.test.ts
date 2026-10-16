@@ -167,19 +167,12 @@ describe('toPublicContent', () => {
 });
 
 describe('toGuestLanguages', () => {
-  it('keeps the nine guest languages in order, provided ones with name and icon', () => {
+  it('keeps the guest languages in order, provided ones with name and icon', () => {
     const languages = toGuestLanguages(guestLanguagesBody);
 
     expect(languages.map((language) => language.code)).toEqual([
-      'en',
-      'ar',
-      'tr',
-      'ru',
-      'uk',
-      'am',
-      'ti',
-      'ku',
-      'fa',
+      ...['en', 'ar', 'tr', 'ru', 'uk', 'am', 'ti', 'ku', 'fa'],
+      ...['it', 'ro', 'pl', 'bg', 'el', 'fr', 'es', 'pt', 'sq', 'hu', 'zh', 'hi'],
     ]);
     expect(languages[0]).toEqual({
       code: 'en',

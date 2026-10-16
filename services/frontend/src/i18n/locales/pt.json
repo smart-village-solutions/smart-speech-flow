@@ -1,0 +1,109 @@
+{
+  "app": {
+    "name": "KasselDIALOG"
+  },
+  "header": {
+    "back": "Voltar",
+    "home": "Início",
+    "feedback": "Opinião",
+    "theme": "Alterar tema"
+  },
+  "accessCode": {
+    "title": "Digite o código",
+    "continue": "Continuar",
+    "digitLabel": "Caractere {{position}}",
+    "notFound": "Este código não corresponde a nenhuma sessão aberta.",
+    "sessionHasGuest": "Esta conversa já tem um convidado."
+  },
+  "language": {
+    "title": "Escolha seu idioma",
+    "loadFailed": "Não foi possível carregar a lista de idiomas.",
+    "retry": "Tentar novamente"
+  },
+  "consent": {
+    "intro": "$t(app.name) é um serviço automático de tradução em tempo real, criado para apoiar conversas entre pessoas que falam idiomas diferentes. O serviço funciona exclusivamente em um servidor privado dedicado.",
+    "howTo": "Para começar a gravar, toque no botão do microfone. Você terá então 20 segundos para falar. Também é possível encerrar a gravação antes, tocando novamente. Como alternativa, você pode digitar o texto.",
+    "retention": "Por padrão, os dados de áudio e de transcrição são processados somente durante a sessão ativa e não são guardados depois. Quando a conversa termina, os dados são descartados automaticamente. Você pode relatar problemas ou compartilhar ideias de melhoria a qualquer momento pela função de opinião do aplicativo.",
+    "optIn": "Se quiser nos ajudar a melhorar o $t(app.name), você pode permitir que os dados da sua conversa sejam armazenados por até 180 dias. Esses dados podem ser usados exclusivamente para análise e melhoria da qualidade no âmbito do projeto $t(app.name).",
+    "checkbox": "Concordo com o armazenamento dos dados da minha conversa por até 180 dias para melhorar o $t(app.name).",
+    "getStarted": "Começar",
+    "loading": "Carregando as informações"
+  },
+  "conversation": {
+    "record": "Gravar",
+    "sendRecording": "Enviar gravação",
+    "openKeyboard": "Abrir teclado",
+    "sendText": "Enviar texto",
+    "placeholder": "Digite sua mensagem…",
+    "play": "Reproduzir",
+    "pause": "Pausar",
+    "sendFailed": "Não foi possível enviar a mensagem.",
+    "notSent": "Não enviada",
+    "retry": "Tentar de novo",
+    "micDenied": "O acesso ao microfone foi negado. Você pode digitar sua mensagem.",
+    "reconnecting": "Reconectando…",
+    "ended": "Esta conversa foi encerrada.",
+    "timeoutWarning": "Esta conversa será encerrada às {{time}}."
+  },
+  "feedback": {
+    "title": "Dê sua opinião",
+    "close": "Fechar",
+    "quality": {
+      "label": "Qualidade da tradução",
+      "question": "Quão precisas foram as traduções?"
+    },
+    "performance": {
+      "label": "Desempenho",
+      "question": "O aplicativo pareceu rápido e responsivo?"
+    },
+    "usability": {
+      "label": "UI / UX",
+      "question": "A interface foi fácil e agradável de usar?"
+    },
+    "nps": {
+      "label": "Recomendação",
+      "question": "Qual a probabilidade de você recomendar o $t(app.name) a um colega?",
+      "low": "Nada provável",
+      "high": "Extremamente provável",
+      "option": "Nota {{score}}"
+    },
+    "improvements": {
+      "label": "Ideias de melhoria",
+      "question": "O que tornaria o $t(app.name) ainda melhor?",
+      "placeholder": "Suas ideias, sugestões de funções ou qualquer coisa que tenha incomodado você…"
+    },
+    "notice": {
+      "purpose": "Suas respostas são usadas apenas para melhorar o $t(app.name).",
+      "retention": "Guardamos as opiniões por doze meses e depois as excluímos automaticamente.",
+      "withdrawal": "Você pode pedir a retirada da sua opinião a qualquer momento — basta falar com um funcionário."
+    },
+    "stars": "{{count}} estrelas",
+    "required": "Obrigatório",
+    "submit": "Enviar opinião",
+    "submitting": "Enviando…",
+    "retry": "Enviar novamente",
+    "failed": "Não foi possível enviar sua opinião. Suas respostas foram mantidas.",
+    "formChanged": "O formulário mudou nesse meio-tempo. Carregue o novo formulário; as respostas que ainda se aplicam são mantidas.",
+    "reload": "Carregar o novo formulário",
+    "loading": "Carregando o formulário de opinião",
+    "thanksTitle": "Obrigado!",
+    "thanksBody": "Sua opinião nos ajuda a melhorar o $t(app.name) para todos."
+  },
+  "errors": {
+    "network": "Sem conexão com o servidor.",
+    "timeout": "Demorou demais. Tente novamente.",
+    "notFound": "Não encontrado.",
+    "validation": "Não foi possível processar a solicitação.",
+    "server": "Algo deu errado do nosso lado.",
+    "noSpeech": "Nada foi reconhecido. Tente novamente.",
+    "unknown": "Algo deu errado.",
+    "languageChanged": "O idioma da conversa mudou. Envie novamente."
+  },
+  "legal": {
+    "label": "Informações legais",
+    "imprint": "Aviso legal",
+    "privacyPolicy": "Privacidade",
+    "accessibilityStatement": "Acessibilidade",
+    "opensInNewTab": "(abre em uma nova aba)"
+  }
+}

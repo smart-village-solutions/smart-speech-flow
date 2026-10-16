@@ -43,7 +43,7 @@ describe('translation catalogues', () => {
     expect(instance.t('feedback.nps.question')).toContain('FuldaDIALOG');
     expect(instance.t('admin.dashboard.welcome.kassel')).toBe('Willkommen bei FuldaDIALOG');
   });
-  // Customer keys must exist in all ten locales. The admin namespace is
+  // Customer keys must exist in every locale. The admin namespace is
   // German and English only and has its own parity test below.
   const customerKeys = (catalogue: Record<string, unknown>) =>
     flatten(catalogue)
@@ -53,7 +53,10 @@ describe('translation catalogues', () => {
 
   it('covers every language the gateway offers', () => {
     expect([...SUPPORTED_UI_LOCALES].sort(byName)).toEqual(
-      ['am', 'ar', 'de', 'en', 'fa', 'ku', 'ru', 'ti', 'tr', 'uk'].sort(byName)
+      [
+        ...['am', 'ar', 'de', 'en', 'fa', 'ku', 'ru', 'ti', 'tr', 'uk'],
+        ...['it', 'ro', 'pl', 'bg', 'el', 'fr', 'es', 'pt', 'sq', 'hu', 'zh', 'hi'],
+      ].sort(byName)
     );
   });
 

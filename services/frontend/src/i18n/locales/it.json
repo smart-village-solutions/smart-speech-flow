@@ -1,0 +1,109 @@
+{
+  "app": {
+    "name": "KasselDIALOG"
+  },
+  "header": {
+    "back": "Indietro",
+    "home": "Home",
+    "feedback": "Feedback",
+    "theme": "Cambia tema"
+  },
+  "accessCode": {
+    "title": "Inserisca il codice",
+    "continue": "Continua",
+    "digitLabel": "Carattere {{position}}",
+    "notFound": "Questo codice non corrisponde a nessuna sessione aperta.",
+    "sessionHasGuest": "Questa conversazione ha già un ospite."
+  },
+  "language": {
+    "title": "Scelga la sua lingua",
+    "loadFailed": "Non è stato possibile caricare l'elenco delle lingue.",
+    "retry": "Riprova"
+  },
+  "consent": {
+    "intro": "$t(app.name) è un servizio automatico di traduzione linguistica in tempo reale, pensato per facilitare le conversazioni tra persone che parlano lingue diverse. Il servizio funziona esclusivamente su un server privato dedicato.",
+    "howTo": "Per avviare la registrazione, tocchi il pulsante del microfono. Avrà quindi 20 secondi per parlare. Può anche terminare prima la registrazione toccando di nuovo. In alternativa, può usare l'inserimento di testo.",
+    "retention": "Per impostazione predefinita, i dati audio e di trascrizione vengono elaborati solo durante la sessione attiva e non vengono conservati in seguito. Al termine della conversazione, i dati vengono eliminati automaticamente. Può segnalare problemi o condividere idee di miglioramento in qualsiasi momento tramite la funzione di feedback dell'app.",
+    "optIn": "Se desidera aiutarci a migliorare $t(app.name), può consentire che i dati della sua conversazione vengano conservati fino a 180 giorni. Questi dati possono essere utilizzati esclusivamente a fini di analisi e di miglioramento della qualità nell'ambito del progetto $t(app.name).",
+    "checkbox": "Acconsento alla conservazione dei dati della mia conversazione fino a 180 giorni allo scopo di migliorare $t(app.name).",
+    "getStarted": "Inizia",
+    "loading": "Caricamento delle informazioni"
+  },
+  "conversation": {
+    "record": "Registra",
+    "sendRecording": "Invia registrazione",
+    "openKeyboard": "Apri tastiera",
+    "sendText": "Invia testo",
+    "placeholder": "Scriva il suo messaggio…",
+    "play": "Riproduci",
+    "pause": "Pausa",
+    "sendFailed": "Non è stato possibile inviare il messaggio.",
+    "notSent": "Non inviato",
+    "retry": "Riprova",
+    "micDenied": "L'accesso al microfono è stato negato. Può invece scrivere il suo messaggio.",
+    "reconnecting": "Riconnessione in corso…",
+    "ended": "Questa conversazione è terminata.",
+    "timeoutWarning": "Questa conversazione terminerà alle {{time}}."
+  },
+  "feedback": {
+    "title": "Condivida il suo feedback",
+    "close": "Chiudi",
+    "quality": {
+      "label": "Qualità della traduzione",
+      "question": "Quanto erano accurate le traduzioni?"
+    },
+    "performance": {
+      "label": "Prestazioni",
+      "question": "Quanto le è sembrata veloce e reattiva l'app?"
+    },
+    "usability": {
+      "label": "UI / UX",
+      "question": "Quanto è stato facile e piacevole usare l'interfaccia?"
+    },
+    "nps": {
+      "label": "Raccomandazione",
+      "question": "Con quale probabilità consiglierebbe $t(app.name) a un collega?",
+      "low": "Per niente probabile",
+      "high": "Estremamente probabile",
+      "option": "Punteggio {{score}}"
+    },
+    "improvements": {
+      "label": "Idee di miglioramento",
+      "question": "Cosa renderebbe $t(app.name) ancora migliore?",
+      "placeholder": "Le sue idee, richieste di funzionalità o qualsiasi cosa non le sia piaciuta…"
+    },
+    "notice": {
+      "purpose": "Le sue risposte vengono utilizzate solo per migliorare $t(app.name).",
+      "retention": "Conserviamo il feedback per dodici mesi e poi lo eliminiamo automaticamente.",
+      "withdrawal": "Può chiedere in qualsiasi momento il ritiro del suo feedback: basta rivolgersi a un membro del personale."
+    },
+    "stars": "{{count}} stelle",
+    "required": "Obbligatorio",
+    "submit": "Invia feedback",
+    "submitting": "Invio in corso…",
+    "retry": "Invia di nuovo",
+    "failed": "Non è stato possibile inviare il suo feedback. Le sue risposte sono state conservate.",
+    "formChanged": "Nel frattempo il modulo è cambiato. Carichi il nuovo modulo; le risposte ancora valide vengono mantenute.",
+    "reload": "Carica il nuovo modulo",
+    "loading": "Caricamento del modulo di feedback",
+    "thanksTitle": "Grazie!",
+    "thanksBody": "Il suo feedback ci aiuta a migliorare $t(app.name) per tutti."
+  },
+  "errors": {
+    "network": "Nessuna connessione al server.",
+    "timeout": "Ci è voluto troppo tempo. Riprovi.",
+    "notFound": "Non trovato.",
+    "validation": "Non è stato possibile elaborare la richiesta.",
+    "server": "Si è verificato un errore da parte nostra.",
+    "noSpeech": "Non è stato riconosciuto nulla. Riprovi.",
+    "unknown": "Si è verificato un errore.",
+    "languageChanged": "La lingua della conversazione è cambiata. Invii di nuovo il messaggio."
+  },
+  "legal": {
+    "label": "Informazioni legali",
+    "imprint": "Note legali",
+    "privacyPolicy": "Privacy",
+    "accessibilityStatement": "Accessibilità",
+    "opensInNewTab": "(si apre in una nuova scheda)"
+  }
+}
