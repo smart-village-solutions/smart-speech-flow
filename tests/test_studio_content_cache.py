@@ -68,8 +68,12 @@ def _html_fields(node: Any) -> list[str]:
     return []
 
 
-def kassel_read(revision_seed: str = "", *, mode_scenario: str | None = None):
+def kassel_read(
+    revision_seed: str = "", *, mode_scenario: str | None = None, extra_locale: str | None = None
+):
     body = contract_fixtures.runtime_configuration_v2(TENANT, mode_scenario)
+    if extra_locale:
+        body["guestLanguages"].append({**body["guestLanguages"][0], "locale": extra_locale})
     if revision_seed:
         body["configurationRevision"] = "sha256:" + revision_seed * 64
     return parse_runtime_configuration_v2(body, expected_tenant_id=TENANT)
@@ -116,9 +120,10 @@ def test_cached_content_has_no_storage_mode_and_no_display_name() -> None:
 def test_guest_languages_are_keyed_by_ssf_code_in_ssf_order() -> None:
     skipped: list[str] = []
 
-    content = StudioContentCache(on_skip=skipped.append).record(kassel_read())
+    content = StudioContentCache(on_skip=skipped.append).record(kassel_read(extra_locale="hr"))
 
-    assert list(content.guest_languages) == ["en", "ar", "tr", "ku"]
+    assert list(content.guest_languages) == ["en", "ar", "tr", "ku", "pt"]
+    assert content.guest_languages["pt"].locale == "pt-BR"
     assert content.guest_languages["ku"].locale == "kmr"
     assert content.guest_languages["ar"].icon is None
     assert skipped == ["unsupported"]
@@ -128,8 +133,8 @@ def test_a_known_revision_is_reused_and_reports_no_second_skip() -> None:
     skipped: list[str] = []
     cache = StudioContentCache(on_skip=skipped.append)
 
-    first = cache.record(kassel_read())
-    second = cache.record(kassel_read())
+    first = cache.record(kassel_read(extra_locale="hr"))
+    second = cache.record(kassel_read(extra_locale="hr"))
 
     assert second is first
     assert skipped == ["unsupported"]
@@ -228,8 +233,8 @@ def test_skipped_locales_are_counted_once_even_after_a_failed_insert(monkeypatch
     skipped: list[str] = []
     cache = StudioContentCache(on_skip=skipped.append)
 
-    assert cache.try_record(kassel_read()) is None
-    assert cache.try_record(kassel_read()) is not None
-    assert cache.try_record(kassel_read()) is not None
+    assert cache.try_record(kassel_read(extra_locale="hr")) is None
+    assert cache.try_record(kassel_read(extra_locale="hr")) is not None
+    assert cache.try_record(kassel_read(extra_locale="hr")) is not None
 
     assert skipped == ["unsupported"]

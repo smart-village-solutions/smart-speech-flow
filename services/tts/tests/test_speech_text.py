@@ -319,3 +319,52 @@ def test_the_languages_own_decimal_sign_is_kept(lang, text, expected):
 )
 def test_money_never_has_three_decimal_places(lang, text, expected):
     assert piper(text, lang) == expected
+
+
+@pytest.mark.parametrize(
+    ("lang", "text", "expected"),
+    [
+        ("it", "La tassa è di 3,50 €.", "La tassa è di 3 euro 50."),
+        ("ro", "Taxa este 3,50 €.", "Taxa este 3 euro 50."),
+        ("pl", "Opłata wynosi 3,50 €.", "Opłata wynosi 3 euro 50."),
+        ("bg", "Таксата е 3,50 €.", "Таксата е 3 евро 50."),
+        ("el", "Το τέλος είναι 3,50 €.", "Το τέλος είναι 3 ευρώ 50."),
+        ("fr", "Les frais sont de 3,50 €.", "Les frais sont de 3 euros 50."),
+        ("es", "La tasa es de 3,50 €.", "La tasa es de 3 euros 50."),
+        ("pt", "A taxa é de 3,50 €.", "A taxa é de 3 euros 50."),
+        ("sq", "Tarifa është 3,50 €.", "Tarifa është 3 euro 50."),
+        ("hu", "A díj 3,50 €.", "A díj 3 euró 50."),
+        ("zh", "费用为 €3.50。", "费用为 3 欧元 50。"),
+        ("hi", "शुल्क €3.50 है।", "शुल्क 3 यूरो 50 है।"),
+        ("fr", "Cela coûte 1.250,00 €.", "Cela coûte 1250 euros."),
+        ("hi", "€1,250.99", "1250 यूरो 99"),
+    ],
+)
+def test_added_languages_read_money_in_their_own_word(lang, text, expected):
+    assert piper(text, lang) == expected
+
+
+@pytest.mark.parametrize("lang", ["it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu"])
+def test_a_decimal_comma_is_not_read_as_a_thousands_group(lang):
+    assert piper("1,500 kg", lang) == "1,500 kg"
+    assert piper("2.250 kg", lang) == "2250 kg"
+
+
+@pytest.mark.parametrize("lang", ["zh", "hi"])
+def test_a_decimal_point_is_not_read_as_a_thousands_group(lang):
+    assert piper("1.500 kg", lang) == "1.500 kg"
+    assert piper("2,250 kg", lang) == "2250 kg"
+
+
+def test_chinese_sentences_split_without_a_space_after_the_full_stop():
+    text = f"{'中' * 150}。{'文' * 150}！{'字' * 150}？"
+    assert split_for_synthesis(text, max_chars=200) == [
+        f"{'中' * 150}。",
+        f"{'文' * 150}！",
+        f"{'字' * 150}？",
+    ]
+
+
+def test_a_hindi_danda_ends_a_sentence():
+    first, second = " ".join(["कक"] * 40) + "।", " ".join(["खख"] * 40) + "।"
+    assert split_for_synthesis(f"{first} {second}", max_chars=200) == [first, second]

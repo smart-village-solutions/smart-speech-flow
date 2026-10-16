@@ -1,6 +1,9 @@
 import pytest
 
-LANGS = {"de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa"}
+LANGS = {
+    "de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa",
+    "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
+}  # fmt: skip
 
 
 def test_health_reports_every_voice_and_its_device(client):
@@ -39,9 +42,7 @@ def test_voices_on_cpu_are_not_reported_as_gpu(client, speakers):
 
 
 def test_supported_languages_are_the_voice_table(client):
-    assert client.get("/supported-languages").json() == {
-        "languages": ["am", "ar", "de", "en", "fa", "ku", "ru", "ti", "tr", "uk"]
-    }
+    assert client.get("/supported-languages").json() == {"languages": sorted(LANGS)}
 
 
 @pytest.mark.parametrize(

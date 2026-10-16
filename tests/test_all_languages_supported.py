@@ -1,5 +1,5 @@
 """
-Test zur Sicherstellung, dass alle 10 unterstützten Sprachen funktionieren
+Test zur Sicherstellung, dass alle 22 unterstützten Sprachen funktionieren
 """
 
 import pytest
@@ -9,8 +9,11 @@ from services.api_gateway.message_models import SUPPORTED_LANGUAGES
 # Liste aller unterstützten Sprachen
 ALL_SUPPORTED_LANGUAGES = list(SUPPORTED_LANGUAGES.keys())
 
-# Erwartete 10 Sprachen gemäß Anforderungen
-REQUIRED_LANGUAGES = ["de", "en", "ar", "tr", "ku", "ti", "am", "fa", "ru", "uk"]
+# Erwartete 22 Sprachen gemäß Anforderungen
+REQUIRED_LANGUAGES = [
+    "de", "en", "ar", "tr", "ku", "ti", "am", "fa", "ru", "uk",
+    "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
+]  # fmt: skip
 
 # Skip Integration-Tests wenn nicht explizit aktiviert
 SKIP_SERVICE_TESTS = os.getenv("TEST_SERVICES", "false").lower() != "true"
@@ -18,7 +21,7 @@ skip_service_msg = "Service tests disabled. Set TEST_SERVICES=true to enable."
 
 
 def test_all_required_languages_are_supported():
-    """Stelle sicher, dass alle 10 geforderten Sprachen unterstützt werden"""
+    """Stelle sicher, dass alle 22 geforderten Sprachen unterstützt werden"""
     for lang in REQUIRED_LANGUAGES:
         assert lang in ALL_SUPPORTED_LANGUAGES, (
             f"Sprache '{lang}' fehlt in SUPPORTED_LANGUAGES. "
@@ -26,10 +29,10 @@ def test_all_required_languages_are_supported():
         )
 
 
-def test_exactly_10_languages_supported():
-    """Stelle sicher, dass genau 10 Sprachen unterstützt werden"""
-    assert len(ALL_SUPPORTED_LANGUAGES) == 10, (
-        f"Erwartet: 10 Sprachen, Gefunden: {len(ALL_SUPPORTED_LANGUAGES)} - "
+def test_exactly_22_languages_supported():
+    """Stelle sicher, dass genau 22 Sprachen unterstützt werden"""
+    assert len(ALL_SUPPORTED_LANGUAGES) == 22, (
+        f"Erwartet: 22 Sprachen, Gefunden: {len(ALL_SUPPORTED_LANGUAGES)} - "
         f"{ALL_SUPPORTED_LANGUAGES}"
     )
 

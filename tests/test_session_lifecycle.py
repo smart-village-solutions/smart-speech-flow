@@ -163,6 +163,7 @@ async def test_create_replaces_only_the_same_tenants_active_session(
     ("first", "second", "logged"),
     [
         ("en", "ar", ["en", "en", "ar"]),
+        ("zh", "hi", ["zh", "zh", "hi"]),
         ("xx<injected>", "yy\nforged", ["unsupported", "unsupported", "unsupported"]),
     ],
 )

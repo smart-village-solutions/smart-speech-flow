@@ -9,7 +9,10 @@ import pytest
 from services.tts import fetch_voices
 from services.tts.voices import VOICES, voice_dir
 
-PRODUCT_LANGUAGES = {"de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa"}
+PRODUCT_LANGUAGES = {
+    "de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa",
+    "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
+}  # fmt: skip
 
 
 def test_every_product_language_has_exactly_one_voice():
@@ -36,6 +39,35 @@ def test_piper_urls_point_at_the_voice_they_name():
     assert voice.name == "piper:de_DE-thorsten-high"
     assert {f.name for f in voice.files} == {"model.onnx", "model.onnx.json"}
     assert all("/de/de_DE/thorsten/high/de_DE-thorsten-high.onnx" in f.url for f in voice.files)
+
+
+@pytest.mark.parametrize(
+    ("lang", "voice_id"),
+    [
+        ("it", "it_IT-serena-medium"),
+        ("ro", "ro_RO-mihai-medium"),
+        ("pl", "pl_PL-gosia-medium"),
+        ("bg", "bg_BG-dimitar-medium"),
+        ("el", "el_GR-joy-medium"),
+        ("fr", "fr_FR-siwis-medium"),
+        ("es", "es_ES-davefx-medium"),
+        ("pt", "pt_BR-faber-medium"),
+        ("sq", "sq_AL-edon-medium"),
+        ("hu", "hu_HU-imre-medium"),
+        ("zh", "zh_CN-huayan-medium"),
+        ("hi", "hi_IN-priyamvada-medium"),
+    ],
+)
+def test_added_languages_speak_with_their_piper_voice(lang, voice_id):
+    voice = VOICES[lang]
+    assert voice.engine == "piper"
+    assert voice.name == f"piper:{voice_id}"
+    assert all(f.url.isascii() for f in voice.files)
+
+
+def test_no_two_files_share_a_hash():
+    hashes = [f.sha256 for voice in VOICES.values() for f in voice.files]
+    assert len(hashes) == len(set(hashes))
 
 
 def test_voice_files_live_under_the_configured_root(monkeypatch, tmp_path):

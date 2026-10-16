@@ -16,6 +16,18 @@ Meta MMS for Amharic and Tigrinya, which Piper has no voice for.
 | Arabic (`ar`) | Piper | `ar_JO-kareem-medium` |
 | Persian (`fa`) | Piper | `fa_IR-gyro-medium` |
 | Kurdish, Kurmanji (`ku`) | Piper | `ku_TR-berfin_renas-medium` |
+| Italian (`it`) | Piper | `it_IT-serena-medium` |
+| Romanian (`ro`) | Piper | `ro_RO-mihai-medium` |
+| Polish (`pl`) | Piper | `pl_PL-gosia-medium` |
+| Bulgarian (`bg`) | Piper | `bg_BG-dimitar-medium` |
+| Greek (`el`) | Piper | `el_GR-joy-medium` |
+| French (`fr`) | Piper | `fr_FR-siwis-medium` |
+| Spanish (`es`) | Piper | `es_ES-davefx-medium` |
+| Portuguese (`pt`) | Piper | `pt_BR-faber-medium` |
+| Albanian (`sq`) | Piper | `sq_AL-edon-medium` |
+| Hungarian (`hu`) | Piper | `hu_HU-imre-medium` |
+| Chinese, Mandarin (`zh`) | Piper | `zh_CN-huayan-medium` |
+| Hindi (`hi`) | Piper | `hi_IN-priyamvada-medium` |
 | Amharic (`am`) | MMS | `facebook/mms-tts-amh` |
 | Tigrinya (`ti`) | MMS | `facebook/mms-tts-tir` |
 
@@ -74,9 +86,11 @@ startup.
 Voices are never loaded after startup and never evicted: there is one per
 language, so the set cannot grow, and a cold load would hold up a
 conversation for seconds. The service instead reads its own VRAM from NVML
-and compares it with `TTS_VRAM_BUDGET_MIB` (default 2048). On the production
-card the ten voices hold 1238 MiB after loading and 1464 MiB once each has
-spoken, flat from then on; a synthesis briefly adds a few hundred. Going over
+and compares it with `TTS_VRAM_BUDGET_MIB` (default 3072). On the production
+card the first ten voices hold 1722 MiB once each has spoken, flat from then
+on; the twelve added in October 2026 measured ~980 MiB more there (~71 MiB
+each to load, ~11 MiB each once spoken), so ~2700 MiB for all 22. A synthesis
+briefly adds about 200. Going over
 the budget does not change `status`, because every voice still works.
 Five minutes of readings over it log a warning (and an info line once back
 under), and twenty minutes fire the `TTSVRAMOverBudget` alert; a synthesis in

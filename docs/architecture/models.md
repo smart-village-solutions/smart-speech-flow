@@ -32,6 +32,18 @@
   - **Arabic:** `ar_JO-kareem-medium` (licence not stated upstream)
   - **Persian:** `fa_IR-gyro-medium` (licence not stated upstream)
   - **Kurdish (Kurmanji):** `ku_TR-berfin_renas-medium` (CC BY-NC 4.0)
+  - **Italian:** `it_IT-serena-medium` (CC BY 4.0)
+  - **Romanian:** `ro_RO-mihai-medium` (CC0)
+  - **Polish:** `pl_PL-gosia-medium` (CC0)
+  - **Bulgarian:** `bg_BG-dimitar-medium` (CC0)
+  - **Greek:** `el_GR-joy-medium` (CC BY-NC 4.0)
+  - **French:** `fr_FR-siwis-medium` (CC BY 4.0)
+  - **Spanish:** `es_ES-davefx-medium` (CC0)
+  - **Portuguese:** `pt_BR-faber-medium` (CC0)
+  - **Albanian:** `sq_AL-edon-medium` (CC0)
+  - **Hungarian:** `hu_HU-imre-medium` (CC0)
+  - **Chinese (Mandarin):** `zh_CN-huayan-medium` (licence not stated upstream)
+  - **Hindi:** `hi_IN-priyamvada-medium` (CC BY-NC-SA 4.0)
 
 ## **4. Meta MMS-TTS** (TTS Service)
 - **Description:** Massively Multilingual Speech TTS from Meta, used for the two languages Piper has no voice for.

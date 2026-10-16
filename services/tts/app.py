@@ -137,10 +137,11 @@ async def lifespan(app: FastAPI):
     # requests at once already ran out of memory; one at a time peaked at
     # 1722 MiB. At ~0.1 s per Piper request the queue is cheap.
     slots = _positive_int_setting("TTS_MAX_CONCURRENT_SYNTHESES", "1")
-    # On the production card the ten voices hold 1238 MiB after loading and
-    # 1464 MiB once each has spoken, flat from then on. A live reading can
-    # also catch a synthesis in flight: 1722 MiB at the peak above.
-    budget = _positive_int_setting("TTS_VRAM_BUDGET_MIB", "2048") * MIB
+    # On the production card the first ten voices held 1722 MiB once each had
+    # spoken; the twelve added in October 2026 measured ~980 MiB more there
+    # (~71 MiB each to load, ~11 MiB each once spoken), so ~2700 MiB steady.
+    # A synthesis in flight adds ~200 MiB to a single reading.
+    budget = _positive_int_setting("TTS_VRAM_BUDGET_MIB", "3072") * MIB
     vram = VramBudget(ProcessVram(pynvml, os.getpid()), budget, on_gpu=device != "cpu")
     loaded = await asyncio.to_thread(load_speakers, device, vram)
     vram.voice_bytes, vram.voices_loaded = loaded.vram_bytes, bool(loaded.speakers)
