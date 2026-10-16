@@ -205,12 +205,12 @@ def test_valid_tuning_values_reach_the_refiner(env):
     assert refiner.queue_limit == 2
 
 
-def test_skip_list_defaults_to_the_four_unsupported_languages(env):
+def test_skip_list_defaults_to_the_languages_refinement_does_not_help(env):
     env(ENABLED="true")
 
     refiner = refiner_module.get_translation_refiner()
 
-    assert refiner.skip_target_languages == frozenset({"am", "ti", "ku", "fa"})
+    assert refiner.skip_target_languages == frozenset("am ti ku fa pl bg el sq hi".split())
 
 
 def test_skip_list_can_be_emptied(env):

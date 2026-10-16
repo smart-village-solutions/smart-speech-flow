@@ -26,7 +26,7 @@ def test_pre_create_series_touches_the_in_path_outcomes_at_zero():
 
     metrics.pre_create_series("gemma-4-e4b-qat")
 
-    for outcome in ("success", "error", "skipped_language"):
+    for outcome in ("success", "error", "skipped_language", "rejected_facts"):
         value = registry.get_sample_value(
             "refinement_attempts_total",
             {"outcome": outcome, "model_ref": "gemma-4-e4b-qat"},

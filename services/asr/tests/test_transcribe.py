@@ -66,6 +66,32 @@ def test_transcribe_debug_response_identifies_large_v3_turbo():
     assert response.json()["debug"]["model"] == "whisper-large-v3-turbo"
 
 
+PRODUCT_LANGUAGES = [
+    "de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa",
+    "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
+]  # fmt: skip
+
+
+def test_supported_languages_are_the_product_languages():
+    response = client.get("/supported-languages")
+
+    assert sorted(response.json()["languages"]) == sorted(PRODUCT_LANGUAGES)
+
+
+@pytest.mark.usefixtures("without_ffmpeg")
+@pytest.mark.parametrize("lang", PRODUCT_LANGUAGES)
+def test_transcribes_in_every_product_language(lang):
+    with SAMPLE_WAV.open("rb") as f:
+        response = client.post(
+            "/transcribe",
+            files={"file": ("sample.wav", f, "audio/wav")},
+            data={"lang": lang},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["text"] == f"dummy transcription in {lang}"
+
+
 def test_transcribe_invalid_language():
     with SAMPLE_WAV.open("rb") as f:
         response = client.post(

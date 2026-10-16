@@ -604,3 +604,91 @@ def test_extract_text_reads_the_ollama_response_field():
 
     assert refiner._extract_text({"response": "  Guten Tag.  "}) == "Guten Tag."
     assert refiner._extract_text({}) == ""
+
+
+def _refiner_answering(mod, monkeypatch, refined: str):
+    response = Mock()
+    response.json.return_value = {"response": refined}
+    monkeypatch.setattr(mod.requests, "post", Mock(return_value=response))
+    return mod.OllamaTranslationRefiner(
+        endpoint="http://vllm:8000",
+        model="qwen3.5-4b",
+        timeout_seconds=4.0,
+        temperature=0.0,
+        max_retries=1,
+    )
+
+
+def test_a_refinement_that_changes_the_weekday_is_rejected(monkeypatch):
+    """Measured on production: the refiner moved Persian weekdays one day back
+    in 7 of 14 sentences, while M2M100 had every one of them right."""
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = _refiner_answering(mod, monkeypatch, "لطفاً دوشنبه برگردید.")
+
+    outcome = refiner._perform_refinement(
+        "لطفا روز سه شنبه برگردید.",
+        "de",
+        "fa",
+        context={"original_text": "Bitte kommen Sie am Dienstag wieder."},
+    )
+
+    assert outcome.text == "لطفا روز سه شنبه برگردید."
+    assert outcome.changed is False
+    assert outcome.error is None
+    assert outcome.rejected_reason == "facts_changed"
+
+
+def test_a_refinement_that_restores_the_amount_is_kept(monkeypatch):
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = _refiner_answering(mod, monkeypatch, "请在一楼收银台支付 12.80 欧元。")
+
+    outcome = refiner._perform_refinement(
+        "请在地板上支付1280欧元。",
+        "de",
+        "zh",
+        context={"original_text": "Bitte zahlen Sie 12,80 € an der Kasse im Erdgeschoss."},
+    )
+
+    assert outcome.text == "请在一楼收银台支付 12.80 欧元。"
+    assert outcome.rejected_reason is None
+
+
+def test_a_mismatch_the_candidate_already_had_does_not_reject_the_refinement(monkeypatch):
+    """A date written out as a month name loses a digit in both; only what the
+    refinement adds counts against it."""
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = _refiner_answering(mod, monkeypatch, "Venha ao quarto 2.14 em 15 de outubro de 2026.")
+
+    outcome = refiner._perform_refinement(
+        "Venha no quarto 2.14, no dia 15 de outubro de 2026.",
+        "de",
+        "pt",
+        context={"original_text": "Kommen Sie am 15.10.2026 in Zimmer 2.14."},
+    )
+
+    assert outcome.text == "Venha ao quarto 2.14 em 15 de outubro de 2026."
+
+
+def test_without_the_original_the_refinement_is_not_checked(monkeypatch):
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = _refiner_answering(mod, monkeypatch, "لطفاً دوشنبه برگردید.")
+
+    outcome = refiner._perform_refinement("لطفا روز سه شنبه برگردید.", "de", "fa", context=None)
+
+    assert outcome.text == "لطفاً دوشنبه برگردید."
+
+
+def test_a_rejected_refinement_is_emitted_as_rejected(monkeypatch):
+    mod = reload_module({"LLM_REFINEMENT_ENABLED": "0"})
+    refiner = _refiner_answering(mod, monkeypatch, "Ju lutem kthehuni të dielën.")
+    emitted = []
+    monkeypatch.setattr(refiner, "_emit_attempt", lambda **kwargs: emitted.append(kwargs))
+
+    refiner.refine(
+        "Ju lutem kthehuni të martën.",
+        "de",
+        "sq",
+        context={"original_text": "Bitte kommen Sie am Dienstag wieder."},
+    )
+
+    assert emitted[0]["outcome"] is mod.RefinementOutcomeCode.REJECTED_FACTS

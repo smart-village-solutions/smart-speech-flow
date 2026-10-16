@@ -12,7 +12,7 @@ from prometheus_client import CollectorRegistry, Counter
 #: Outcomes the in-path refiner (not the shadow candidate) can emit. Kept
 #: separate from `RefinementOutcomeCode` because pre-creation is deliberately
 #: narrower than the full enum -- see `pre_create_series`.
-IN_PATH_OUTCOMES = ("success", "error", "skipped_language")
+IN_PATH_OUTCOMES = ("success", "error", "skipped_language", "rejected_facts")
 
 
 class RefinementMetrics:

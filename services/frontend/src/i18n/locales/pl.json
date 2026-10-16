@@ -1,0 +1,109 @@
+{
+  "app": {
+    "name": "KasselDIALOG"
+  },
+  "header": {
+    "back": "Wstecz",
+    "home": "Strona główna",
+    "feedback": "Opinia",
+    "theme": "Zmień motyw"
+  },
+  "accessCode": {
+    "title": "Proszę wpisać kod",
+    "continue": "Dalej",
+    "digitLabel": "Znak {{position}}",
+    "notFound": "Ten kod nie pasuje do żadnej otwartej sesji.",
+    "sessionHasGuest": "Ta rozmowa ma już gościa."
+  },
+  "language": {
+    "title": "Proszę wybrać język",
+    "loadFailed": "Nie udało się wczytać listy języków.",
+    "retry": "Ponów próbę"
+  },
+  "consent": {
+    "intro": "$t(app.name) to automatyczna usługa tłumaczenia w czasie rzeczywistym, która wspiera rozmowy osób mówiących różnymi językami. Usługa działa wyłącznie na dedykowanym, prywatnym serwerze.",
+    "howTo": "Aby rozpocząć nagrywanie, należy dotknąć przycisku mikrofonu. Na wypowiedź jest wtedy 20 sekund. Nagrywanie można też zakończyć wcześniej, dotykając przycisku ponownie. Zamiast tego można również skorzystać z pola tekstowego.",
+    "retention": "Domyślnie dane audio i transkrypcje są przetwarzane wyłącznie w trakcie aktywnej sesji i nie są później przechowywane. Po zakończeniu rozmowy dane są automatycznie usuwane. Problemy lub pomysły na ulepszenia można w każdej chwili zgłosić za pomocą funkcji opinii w aplikacji.",
+    "optIn": "Aby pomóc nam ulepszyć $t(app.name), można wyrazić zgodę na przechowywanie danych rozmowy przez maksymalnie 180 dni. Dane te mogą być wykorzystywane wyłącznie do analiz i poprawy jakości w ramach projektu $t(app.name).",
+    "checkbox": "Wyrażam zgodę na przechowywanie danych mojej rozmowy przez maksymalnie 180 dni w celu ulepszenia $t(app.name).",
+    "getStarted": "Rozpocznij",
+    "loading": "Wczytywanie informacji"
+  },
+  "conversation": {
+    "record": "Nagraj",
+    "sendRecording": "Wyślij nagranie",
+    "openKeyboard": "Otwórz klawiaturę",
+    "sendText": "Wyślij tekst",
+    "placeholder": "Wpisz wiadomość…",
+    "play": "Odtwórz",
+    "pause": "Wstrzymaj",
+    "sendFailed": "Nie udało się wysłać wiadomości.",
+    "notSent": "Nie wysłano",
+    "retry": "Ponów",
+    "micDenied": "Odmówiono dostępu do mikrofonu. Zamiast tego można wpisać wiadomość.",
+    "reconnecting": "Ponowne łączenie…",
+    "ended": "Ta rozmowa została zakończona.",
+    "timeoutWarning": "Ta rozmowa zakończy się o {{time}}."
+  },
+  "feedback": {
+    "title": "Podziel się opinią",
+    "close": "Zamknij",
+    "quality": {
+      "label": "Jakość tłumaczenia",
+      "question": "Jak dokładne były tłumaczenia?"
+    },
+    "performance": {
+      "label": "Wydajność",
+      "question": "Jak szybko i sprawnie działała aplikacja?"
+    },
+    "usability": {
+      "label": "UI / UX",
+      "question": "Jak łatwy i przyjemny w obsłudze był interfejs?"
+    },
+    "nps": {
+      "label": "Rekomendacja",
+      "question": "Jak bardzo prawdopodobne jest polecenie $t(app.name) współpracownikowi?",
+      "low": "Zupełnie nieprawdopodobne",
+      "high": "Bardzo prawdopodobne",
+      "option": "Ocena {{score}}"
+    },
+    "improvements": {
+      "label": "Pomysły na ulepszenia",
+      "question": "Co sprawiłoby, że $t(app.name) byłby jeszcze lepszy?",
+      "placeholder": "Pomysły, propozycje funkcji lub wszystko, co przeszkadzało…"
+    },
+    "notice": {
+      "purpose": "Odpowiedzi są wykorzystywane wyłącznie do ulepszania $t(app.name).",
+      "retention": "Opinie przechowujemy przez dwanaście miesięcy, a następnie automatycznie je usuwamy.",
+      "withdrawal": "Wycofanie opinii jest możliwe w każdej chwili — wystarczy poprosić pracownika."
+    },
+    "stars": "Gwiazdki: {{count}}",
+    "required": "Wymagane",
+    "submit": "Wyślij opinię",
+    "submitting": "Wysyłanie…",
+    "retry": "Wyślij ponownie",
+    "failed": "Nie udało się wysłać opinii. Odpowiedzi zostały zachowane.",
+    "formChanged": "W międzyczasie formularz się zmienił. Proszę wczytać nowy formularz; pasujące odpowiedzi zostaną zachowane.",
+    "reload": "Wczytaj nowy formularz",
+    "loading": "Wczytywanie formularza opinii",
+    "thanksTitle": "Dziękujemy!",
+    "thanksBody": "Opinia pomaga nam ulepszać $t(app.name) dla wszystkich."
+  },
+  "errors": {
+    "network": "Brak połączenia z serwerem.",
+    "timeout": "Trwało to zbyt długo. Proszę spróbować ponownie.",
+    "notFound": "Nie znaleziono.",
+    "validation": "Nie udało się przetworzyć żądania.",
+    "server": "Wystąpił błąd po naszej stronie.",
+    "noSpeech": "Niczego nie rozpoznano. Proszę spróbować ponownie.",
+    "unknown": "Coś poszło nie tak.",
+    "languageChanged": "Język rozmowy się zmienił. Proszę wysłać ponownie."
+  },
+  "legal": {
+    "label": "Informacje prawne",
+    "imprint": "Nota prawna",
+    "privacyPolicy": "Prywatność",
+    "accessibilityStatement": "Dostępność",
+    "opensInNewTab": "(otwiera się w nowej karcie)"
+  }
+}

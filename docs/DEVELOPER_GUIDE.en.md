@@ -261,7 +261,7 @@ Variable groups currently interpolated by Compose include:
   - `LLM_REFINEMENT_TEMPERATURE` (default `0.0`) sets the sampling temperature. Zero ensures deterministic output with no hallucinations; refinement edits existing text rather than composing new content.
   - `LLM_REFINEMENT_BACKEND` selects which server answers refinement requests: `ollama` (the default) or `vllm`. An unrecognised value refuses to start, naming the variable. `LLM_REFINEMENT_ENDPOINT`'s default follows the backend (`http://ollama:11434` or `http://vllm:8000`) unless `LLM_REFINEMENT_SCHEME`/`HOST`/`PORT` override it. `LLM_REFINEMENT_MODE=shadow_compare` is rejected on `vllm`: the shadow candidate speaks Ollama's API, so run the shadow comparison on `ollama`.
   - `LLM_REFINEMENT_MAX_TOKENS` bounds the generated rewrite on the `vllm` backend (default `256`, minimum `16`). A refinement is one or two sentences, so this is a safety cap rather than a tuning knob.
-  - `LLM_REFINEMENT_SKIP_TARGET_LANGUAGES` (default `am,ti,ku,fa`) lists target languages left unrefined, comma separated; an empty value refines every target language.
+  - `LLM_REFINEMENT_SKIP_TARGET_LANGUAGES` (default `am,ti,ku,fa,pl,bg,el,sq,hi`) lists target languages left unrefined, comma separated; an empty value refines every target language.
   - The vLLM backend's candidate models enable reasoning ("thinking") by default; the request explicitly disables it (`chat_template_kwargs.enable_thinking=false`) so refinement stays inside its 4-second budget.
 - `GLOBAL_RATE_*` and `MESSAGE_RATE_*` for gateway throttling.
 - `ENVIRONMENT` and `DEVELOPMENT_CORS_ORIGINS` for environment-specific CORS behaviour.

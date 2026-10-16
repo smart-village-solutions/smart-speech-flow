@@ -9,7 +9,10 @@ import pytest
 
 from services.tts.tests.conftest import FakeNvml
 
-LANGS = ["de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa"]
+LANGS = [
+    "de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa",
+    "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
+]  # fmt: skip
 MIB = 1024 * 1024
 
 
@@ -58,7 +61,7 @@ def test_health_reports_what_each_voice_cost_to_load(client):
         lang: {"de": 300, "en": 60, "am": 140}.get(lang, 0) * MIB for lang in LANGS
     }
     assert vram["process_bytes"] == 500 * MIB
-    assert vram["budget_bytes"] == 2048 * MIB
+    assert vram["budget_bytes"] == 3072 * MIB
     assert vram["within_budget"] is True
 
 
@@ -101,9 +104,9 @@ def test_on_cpu_an_unlisted_process_holds_nothing(monkeypatch, request, nvml):
 
 
 def test_growth_after_startup_is_seen_live(client, nvml):
-    nvml.held += 2000 * MIB
+    nvml.held += 3000 * MIB
     vram = client.get("/health").json()["vram"]
-    assert vram["process_bytes"] == 2500 * MIB
+    assert vram["process_bytes"] == 3500 * MIB
     assert vram["within_budget"] is False
 
 
@@ -125,5 +128,5 @@ def test_metrics_expose_occupancy_footprint_and_budget(client, failing_langs):
     assert _metric(text, "tts_voice_vram_bytes", lang="de") == 300 * MIB
     assert _metric(text, "tts_voice_vram_bytes", lang="fa") is None
     assert _metric(text, "tts_process_vram_bytes") == 500 * MIB
-    assert _metric(text, "tts_vram_budget_bytes") == 2048 * MIB
+    assert _metric(text, "tts_vram_budget_bytes") == 3072 * MIB
     assert "CUDA context" in re.search(r"^# HELP tts_voice_vram_bytes (.*)$", text, re.M)[1]

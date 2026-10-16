@@ -150,7 +150,7 @@ def test_skip_target_languages_default_is_reachable_with_an_explicitly_empty_val
         compose = load_compose(path)
         environment = _environment_by_name(compose["services"]["api_gateway"])
         assert environment["LLM_REFINEMENT_SKIP_TARGET_LANGUAGES"] == (
-            "${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,ti,ku,fa}"
+            f"${{LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-{refiner_module.DEFAULT_SKIP_TARGET_LANGUAGES}}}"
         ), path
 
 
@@ -193,7 +193,7 @@ def test_development_gateway_can_exercise_the_vllm_path():
     assert environment["LLM_REFINEMENT_BACKEND"] == "${LLM_REFINEMENT_BACKEND:-ollama}"
     assert environment["LLM_REFINEMENT_MAX_TOKENS"] == "${LLM_REFINEMENT_MAX_TOKENS:-256}"
     assert environment["LLM_REFINEMENT_SKIP_TARGET_LANGUAGES"] == (
-        "${LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-am,ti,ku,fa}"
+        f"${{LLM_REFINEMENT_SKIP_TARGET_LANGUAGES-{refiner_module.DEFAULT_SKIP_TARGET_LANGUAGES}}}"
     )
 
 

@@ -163,7 +163,10 @@ export const installationBody = {
   feedback: feedbackForm(germanTexts),
 };
 
-export const GUEST_LANGUAGE_CODES = ['en', 'ar', 'tr', 'ru', 'uk', 'am', 'ti', 'ku', 'fa'] as const;
+export const GUEST_LANGUAGE_CODES = [
+  ...['en', 'ar', 'tr', 'ru', 'uk', 'am', 'ti', 'ku', 'fa'],
+  ...['it', 'ro', 'pl', 'bg', 'el', 'fr', 'es', 'pt', 'sq', 'hu', 'zh', 'hi'],
+] as const;
 
 const NAMES: Record<string, [string, string]> = {
   en: ['English', 'English'],
@@ -175,6 +178,18 @@ const NAMES: Record<string, [string, string]> = {
   ti: ['Tigrinya', 'ትግርኛ'],
   ku: ['Kurdish', 'Kurmancî'],
   fa: ['Persian', 'فارسی'],
+  it: ['Italian', 'Italiano'],
+  ro: ['Romanian', 'Română'],
+  pl: ['Polish', 'Polski'],
+  bg: ['Bulgarian', 'Български'],
+  el: ['Greek', 'Ελληνικά'],
+  fr: ['French', 'Français'],
+  es: ['Spanish', 'Español'],
+  pt: ['Portuguese', 'Português'],
+  sq: ['Albanian', 'Shqip'],
+  hu: ['Hungarian', 'Magyar'],
+  zh: ['Chinese', '中文'],
+  hi: ['Hindi', 'हिन्दी'],
 };
 
 type ProvidedLanguage = {
@@ -182,7 +197,7 @@ type ProvidedLanguage = {
   icon: { url: string; alternativeText: string } | null;
 };
 
-/** The nine guest languages, with Studio's entries exactly where given. */
+/** The guest languages, with Studio's entries exactly where given. */
 export function guestLanguagesBodyWith(provided: Readonly<Record<string, ProvidedLanguage>>) {
   return {
     languages: GUEST_LANGUAGE_CODES.map((code) => {

@@ -24,6 +24,17 @@ BUNDLED = {
     "am": ("Amharic", "አማርኛ"),
     "ti": ("Tigrinya", "ትግርኛ"),
     "fa": ("Persian", "فارسی"),
+    "it": ("Italian", "Italiano"),
+    "ro": ("Romanian", "Română"),
+    "pl": ("Polish", "Polski"),
+    "bg": ("Bulgarian", "Български"),
+    "el": ("Greek", "Ελληνικά"),
+    "fr": ("French", "Français"),
+    "es": ("Spanish", "Español"),
+    "sq": ("Albanian", "Shqip"),
+    "hu": ("Hungarian", "Magyar"),
+    "zh": ("Chinese", "中文"),
+    "hi": ("Hindi", "हिन्दी"),
 }
 
 pytestmark = pytest.mark.usefixtures("studio_mock")
@@ -156,16 +167,9 @@ def test_guest_languages_are_ssfs_with_studio_names_and_icons(client, conversati
     assert response.status_code == 200
     languages = response.json()["languages"]
     assert [language["code"] for language in languages] == [
-        "en",
-        "ar",
-        "tr",
-        "ru",
-        "uk",
-        "am",
-        "ti",
-        "ku",
-        "fa",
-    ]
+        "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa",
+        "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
+    ]  # fmt: skip
     by_code = {language["code"]: language for language in languages}
     assert by_code["en"] == {
         "code": "en",
@@ -178,6 +182,9 @@ def test_guest_languages_are_ssfs_with_studio_names_and_icons(client, conversati
     assert by_code["ar"]["provided"] is True
     assert by_code["ar"]["icon"] is None
     assert by_code["ku"]["nativeName"] == "Kurmancî"
+    # Studio's pt-BR is SSF's Portuguese.
+    assert by_code["pt"]["provided"] is True
+    assert by_code["pt"]["nativeName"] == "Português (Brasil)"
     assert by_code["ku"]["icon"] == guest_language(KASSEL, "kmr")["icon"]
     assert by_code["tr"]["nativeName"] == "Türkçe"
     for code, (name, native) in BUNDLED.items():
@@ -210,7 +217,7 @@ def test_languages_without_any_studio_content_are_all_bundled(client, conversati
     languages = client.get(languages_path(session_id)).json()["languages"]
     content = client.get(content_path(session_id, "en")).json()
 
-    assert [language["provided"] for language in languages] == [False] * 9
+    assert [language["provided"] for language in languages] == [False] * 21
     assert content == {"storage": {"mode": "unknown"}, "provided": False}
 
 
@@ -243,7 +250,7 @@ def test_guest_content_for_a_language_studio_does_not_provide(client, conversati
     assert response.json() == {"storage": {"mode": "ask"}, "provided": False}
 
 
-@pytest.mark.parametrize("language", ["de", "pt", "xx"])
+@pytest.mark.parametrize("language", ["de", "hr", "xx"])
 def test_guest_content_only_for_ssfs_guest_languages(client, conversations, language):
     session_id = conversations.create(KASSEL)
 
@@ -359,6 +366,7 @@ def test_staff_content_for_the_tokens_tenant(client, identity):
             "ar": "Arabisch",
             "tr": "Türkisch",
             "ku": "Kurmandschi",
+            "pt": "Portugiesisch (Brasilien)",
         },
     }
     assert_no_display_name(response)
