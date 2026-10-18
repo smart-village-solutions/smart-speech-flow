@@ -1,0 +1,51 @@
+# KasselDIALOG – Drehbuch für das Erklärvideo
+
+**Format:** Screencast mit Sprechertext
+**Zielgruppe:** Mitarbeitende, die Gespräche eröffnen, und eingeladene Gäste
+**Länge:** 4 Minuten für den geplanten Bildschnitt; generierte Sprechspur ca. 2 Minuten 50 Sekunden
+**Ansprache:** Sie-Form für die angemeldete Person; „der Gast“ für die eingeladene Person
+
+## Die Geschichte
+
+Eine neue Mitarbeiterin oder ein neuer Mitarbeiter erhält zunächst eine Einladungs-E-Mail. Über den enthaltenen Link vergibt die Person ein Passwort für ihr Organisationskonto. Anschließend meldet sie sich an, eröffnet ein Gespräch und lädt einen Gast ein. Der Gast tritt ohne eigenes Konto bei, wählt seine Sprache und kann anschließend sprechen oder schreiben. KasselDIALOG überträgt die Nachrichten für beide Seiten in die jeweils passende Sprache. Zum Schluss zeigt das Video, wie der Gast Feedback gibt und wie die angemeldete Person Kontoeinstellungen und Abmeldung erreicht.
+
+## Integriertes Drehbuch
+
+Jede Zeile ist eine vollständige Szene. Text in **Erzählerstimme** wird als Voice-over aufgenommen. Text in **Gesprächsstimme** ist Teil des dargestellten Gesprächs. Anweisungen in eckigen Klammern werden nicht gesprochen.
+
+Die Sprechdauern stammen aus einer vorläufigen, in Clueso generierten Sprachfassung (deutsche Stimme „Joanne“). Die Zeitfenster sind auf volle Sekunden gerundete Schnittvorgaben: Sie umfassen den gesprochenen Text sowie Zeit für Klicks, Eingaben, Perspektivwechsel und das Lesen der Übersetzungen. Die Tonspur allein ist daher kürzer als der geplante Film. In den beiden Gesprächsszenen sind Gast und angemeldete Person für die Laufzeitmessung noch mit derselben Stimme vertont; für die Endfassung werden eigene Gesprächsstimmen benötigt.
+
+| Zeit | Sprechdauer (Entwurf) | Bildschirm und Aktion | Einblendung oder Gespräch | Exakter Ton |
+|---|---:|---|---|---|
+| 00:00–00:04 | 1,7 s | **Introbild.** Ruhige Titelkarte mit KasselDIALOG-Logo; keine E-Mail und keine Benutzeroberfläche zeigen. | KasselDIALOG-Logo. | **Erzählerstimme:** „Willkommen bei Kassel Dialog.“ |
+| 00:04–00:14 | 8,2 s | **Kurzer Überblick.** Das Introbild bleibt im Bild. Optional eine dezente Einblendung „Konto aktivieren · Gast einladen · mehrsprachig sprechen“. | Einblendung: „Konto aktivieren · Gast einladen · mehrsprachig sprechen“. | **Erzählerstimme:** „In diesem Video erfahren Sie, wie Sie Ihr Konto aktivieren, einen Gast zu einem Gespräch einladen und Nachrichten in unterschiedlichen Sprachen austauschen.“ |
+| 00:14–00:24 | 6,4 s | **Einladungs-E-Mail.** Posteingang und anschließend die E-Mail von KasselDIALOG zeigen. Den Link zum Einrichten des Kontos hervorheben und anklicken. Keine echten personenbezogenen Daten zeigen. | Link zum Einrichten des Passworts. | **Erzählerstimme:** „Ihr Zugang beginnt mit einer Einladungs-E-Mail. Öffnen Sie die E-Mail und klicken Sie auf den enthaltenen Link.“ |
+| 00:24–00:35 | 6,2 s | **Passwort vergeben.** Passwort eingeben, bestätigen und speichern. | Formular zum Einrichten des Passworts. | **Erzählerstimme:** „Über diesen Link vergeben Sie Ihr persönliches Passwort. Damit aktivieren Sie Ihr Organisationskonto.“ |
+| 00:35–00:47 | 9,9 s | **Startseite.** Kassel-DIALOG-Logo, die achtstellige Code-Eingabe und den Link „Login“ zeigen. | Code-Eingabe für Gäste und Link „Login“ für registrierte Nutzerinnen und Nutzer. | **Erzählerstimme:** „Auf der Startseite gibt es zwei Einstiege. Gäste geben hier ihren achtstelligen Code ein. Registrierte Nutzerinnen und Nutzer wählen ‚Login‘.“ |
+| 00:47–00:53 | 4,5 s | **Anmeldung.** Den Link „Login“ anklicken. | Link „Login“. | **Erzählerstimme:** „Sie möchten ein Gespräch eröffnen. Klicken Sie dazu auf ‚Login‘.“ |
+| 00:53–01:03 | 6,0 s | **Organisation und Anmeldung.** Organisation auswählen. Danach E-Mail-Adresse und das eben vergebene Passwort eingeben. | Organisationsliste und Anmeldemaske. | **Erzählerstimme:** „Wählen Sie Ihre Organisation aus. Melden Sie sich mit Ihrer E-Mail-Adresse und Ihrem Passwort an.“ |
+| 01:03–01:10 | 4,7 s | **Gesprächsübersicht.** Schaltfläche „Neues Gespräch starten“ anklicken. | Dashboard. | **Erzählerstimme:** „Jetzt sehen Sie Ihre Gesprächsübersicht. Klicken Sie auf ‚Neues Gespräch starten‘.“ |
+| 01:10–01:20 | 7,2 s | **Einladung erzeugen.** Sitzungscode, Link und QR-Code zeigen. | Code, Link und QR-Code. | **Erzählerstimme:** „Kassel Dialog erstellt jetzt eine Einladung für Ihren Gast. Sie erhalten einen Code, einen Link und einen QR-Code.“ |
+| 01:20–01:28 | 5,4 s | **Einladung teilen.** Link kopieren oder QR-Code stehen lassen. | Der QR-Code bleibt gut lesbar. | **Erzählerstimme:** „Teilen Sie eine dieser Einladungen mit Ihrem Gast. Ein eigenes Konto ist dafür nicht erforderlich.“ |
+| 01:28–01:37 | 6,7 s | **Gastperspektive.** Zweites Gerät: QR-Code scannen, Link öffnen oder Code eingeben. Den Perspektivwechsel mit einer kurzen Einblendung markieren. | Einblendung: „Gastperspektive“. | **Erzählerstimme:** „Wechseln wir zur Gastperspektive. Der Gast scannt den QR-Code, öffnet den Link oder gibt den Code ein.“ |
+| 01:37–01:46 | 6,4 s | **Sprachauswahl.** Der Gast wählt Englisch. | Sprache „English“. | **Erzählerstimme:** „Nach dem Beitritt wählt der Gast seine Sprache. Diese Auswahl bestimmt die Sprache, in die Ihre Nachrichten übersetzt werden.“ |
+| 01:46–02:02 | 13,3 s | **Hinweise und Datenschutz.** Informationsseite zeigen; optionales Kontrollkästchen erkennbar lassen. | Erklärung und optionale Einwilligung. | **Erzählerstimme:** „Der Gast erhält Hinweise zum Ablauf und zum Datenschutz. Nachrichten werden standardmäßig nur während des aktiven Gesprächs verarbeitet. Die freiwillige Zustimmung zur längeren Speicherung dient ausschließlich der Qualitätsverbesserung.“ |
+| 02:02–02:10 | 5,5 s | **Gespräch starten.** Gast klickt auf „Loslegen“. Anschließend Unterhaltung auf beiden Geräten zeigen. | Schaltfläche „Loslegen“. | **Erzählerstimme:** „Mit ‚Loslegen‘ tritt der Gast dem Gespräch bei. Jetzt können Sie miteinander kommunizieren.“ |
+| 02:10–02:22 | 8,8 s | **Gespräch: Spracheingabe des Gastes.** Der Gast tippt auf das Mikrofon. Beim ersten Einsatz die Browserabfrage zeigen und Zugriff erlauben. Danach startet die Aufnahme. | Mikrofon-Schaltfläche und Browserabfrage. | **Erzählerstimme:** „Der Gast kann seine Nachricht sprechen. Beim ersten Mal fragt der Browser nach dem Zugriff auf das Mikrofon. Nach der Freigabe startet die Aufnahme.“ |
+| 02:22–02:35 | 8,8 s | **Gespräch: Anliegen des Gastes.** Der Gast spricht. Danach die Aufnahme mit einem weiteren Tipp beenden und senden. Auf der Mitarbeitendenseite die deutsche Übersetzung einblenden. | **Gast, Englisch:** „Hello. I need a new passport.“<br>**Bei Ihnen auf Deutsch:** „Guten Tag. Ich benötige einen neuen Reisepass.“ | **Gesprächsstimme, Gast:** „Hello. I need a new passport.“<br>**Erzählerstimme:** „Ein weiterer Tipp beendet und sendet die Aufnahme. Die Nachricht erscheint bei Ihnen automatisch auf Deutsch.“ |
+| 02:35–02:43 | 5,1 s | **Gespräch: Texteingabe der angemeldeten Person.** Auf Ihrer Seite das Tastatur-Symbol wählen und die Antwort schreiben. | Tastatur-Symbol und Texteingabe. | **Erzählerstimme:** „Sie können ebenfalls schreiben. Öffnen Sie dazu die Texteingabe über das Tastatur-Symbol.“ |
+| 02:43–02:59 | 11,8 s | **Gespräch: Antwort und Rückübersetzung.** Deutsche Antwort absenden. Auf der Gastansicht die englische Übersetzung einblenden. | **Sie, Deutsch:** „Guten Tag. Ich helfe Ihnen gern. Haben Sie Ihren alten Reisepass dabei?“<br>**Beim Gast auf Englisch:** „Hello. I’d be happy to help. Do you have your old passport with you?“ | **Gesprächsstimme, angemeldete Person:** „Guten Tag. Ich helfe Ihnen gern. Haben Sie Ihren alten Reisepass dabei?“<br>**Erzählerstimme:** „Der Gast erhält Ihre Antwort automatisch auf Englisch. So kommunizieren beide Seiten in ihrer jeweiligen Sprache.“ |
+| 02:59–03:08 | 6,2 s | **Audiowiedergabe.** Auf der Gastansicht die Wiedergabe der übersetzten Antwort starten. Die Wellenform muss sich sichtbar bewegen. | Wiedergabeschaltfläche und Wellenform. | **Erzählerstimme:** „Übersetzte eingehende Nachrichten können Sie anhören. Die Wellenform zeigt die laufende Wiedergabe an.“ |
+| 03:08–03:18 | 7,4 s | **Feedback des Gastes.** In der Gastansicht das Glühbirnen-Symbol anklicken. Bewertungsfelder zeigen. | Übersetzungsqualität, Geschwindigkeit und Bedienung. | **Erzählerstimme:** „Der Gast kann jederzeit Feedback geben. Über das Glühbirnen-Symbol bewertet er Übersetzungsqualität, Geschwindigkeit und Bedienung.“ |
+| 03:18–03:28 | 7,2 s | **Feedback absenden.** Weiterempfehlungs-Skala, Freitextfeld und „Feedback senden“ zeigen. | Verbesserungsvorschlag und Schaltfläche „Feedback senden“. | **Erzählerstimme:** „Zusätzlich kann der Gast einen Verbesserungsvorschlag hinterlassen. Mit ‚Feedback senden‘ wird die Rückmeldung übermittelt.“ |
+| 03:28–03:34 | 3,5 s | **Kontofunktionen.** Zur Mitarbeitendenansicht wechseln und das Benutzer-Symbol oben rechts öffnen. | Benutzermenü. | **Erzählerstimme:** „Ihre Kontofunktionen finden Sie über das Benutzer-Symbol oben rechts.“ |
+| 03:34–03:44 | 7,5 s | **Kontoeinstellungen.** „Kontoeinstellungen“ wählen. Die verknüpfte Kontoverwaltung öffnet sich in einem neuen Tab. | Eintrag „Kontoeinstellungen“. | **Erzählerstimme:** „Wählen Sie ‚Kontoeinstellungen‘, um Ihre Angaben und Zugangsdaten in der Kontoverwaltung zu bearbeiten.“ |
+| 03:44–03:51 | 4,5 s | **Abmeldung.** Zurück im Benutzermenü den Eintrag „Abmelden“ anklicken. | Eintrag „Abmelden“. | **Erzählerstimme:** „Zum Abmelden öffnen Sie das gleiche Menü und klicken auf ‚Abmelden‘.“ |
+| 03:51–04:00 | 6,6 s | **Abschlussbild.** Ruhige Ansicht der zweisprachigen Unterhaltung oder KasselDIALOG-Logo. | Keine zusätzliche Einblendung erforderlich. | **Erzählerstimme:** „Kassel Dialog macht mehrsprachige Gespräche einfach. Direkt, verständlich und in Ihrer jeweiligen Sprache.“ |
+
+## Allgemeine Regiehinweise
+
+- Nach jedem Klick etwa eine halbe Sekunde warten, bevor der nächste Satz beginnt.
+- Cursor ruhig führen und nur die gerade erklärte Funktion hervorheben.
+- Die Übersetzung in den Gesprächsszenen jeweils etwa zwei Sekunden stehen lassen.
+- Während der Datenschutz- und Feedbackhinweise keine Hintergrundmusik verwenden. Eine ruhige, dezente Musikspur genügt für Anfang und Schluss.
