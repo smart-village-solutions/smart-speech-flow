@@ -43,8 +43,8 @@ export function AdminDashboardScreen({
       />
 
       <div className="flex flex-col gap-6 px-5 pb-16 pt-content-top">
-        <div className="flex gap-4">
-          <div className="basis-2/3 rounded-2xl border border-border-card bg-surface-card p-5">
+        <div className="flex flex-col gap-4 md:flex-row">
+          <div className="rounded-2xl border border-border-card bg-surface-card p-5 md:basis-2/3">
             <p className="mb-1.5 text-thanks font-semibold text-fg-strong">{copy.headline}</p>
             <div className="flex flex-col gap-2 text-note leading-chat text-fg-muted">
               <RichText html={copy.introHtml} />
