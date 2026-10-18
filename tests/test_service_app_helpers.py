@@ -729,7 +729,7 @@ def test_tts_helper_functions_cover_responses_and_loading(tts_app, monkeypatch):
     monkeypatch.setattr(tts_app, "_load_speaker", load)
     vram = tts_app.VramBudget(tts_app.ProcessVram(None, pid=1), 1, on_gpu=False)
     loaded = tts_app.load_speakers("cpu", vram)
-    assert len(loaded.speakers) == 9
+    assert len(loaded.speakers) == len(tts_app.VOICES) - 1
     assert "fa" not in loaded.speakers
     assert loaded.errors == {"fa": "RuntimeError: corrupt voice file"}
     assert loaded.vram_bytes == {lang: 0 for lang in loaded.speakers}

@@ -63,7 +63,7 @@ describe('content repository', () => {
   it('reads guest languages by session key, without a token', async () => {
     const authorizations = serve(`/api/customer/session/${SESSION}/languages`, guestLanguagesBody);
 
-    await expect(repository().getGuestLanguages(SESSION)).resolves.toHaveLength(9);
+    await expect(repository().getGuestLanguages(SESSION)).resolves.toHaveLength(21);
     expect(authorizations).toEqual([null]);
   });
 

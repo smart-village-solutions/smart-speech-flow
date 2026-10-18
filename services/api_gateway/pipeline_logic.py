@@ -84,6 +84,8 @@ def _primary_refinement_status(outcome: RefinementOutcome) -> str:
         return "error"
     if outcome.skipped_reason:
         return "skipped"
+    if outcome.rejected_reason:
+        return "rejected"
     return "success"
 
 

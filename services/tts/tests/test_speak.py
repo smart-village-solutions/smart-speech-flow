@@ -10,7 +10,10 @@ import pytest
 
 from services.tts.speech_text import UnspeakableTextError
 
-LANGS = ["de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa"]
+LANGS = [
+    "de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa",
+    "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu", "zh", "hi",
+]  # fmt: skip
 
 
 @pytest.mark.parametrize("lang", LANGS)

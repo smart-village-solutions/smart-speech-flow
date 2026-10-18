@@ -16,6 +16,7 @@ from .consent_resolution import resolve_consent
 from .guest_token import claim_guest_token, guest_token_admits
 from .keyed_locks import KeyedLocks
 from .log_safety import safe_session_ref, sanitize_log_value
+from .message_models import SUPPORTED_LANGUAGES
 from .session_manager import TenantSessionManager
 from .session_models import Session, SessionStatus
 from .studio_runtime_flow import StudioRuntimeFlow
@@ -26,7 +27,7 @@ from .tenant_session import TenantSessionKey
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_CUSTOMER_LANGUAGES = ("de", "en", "ar", "tr", "ru", "uk", "am", "ti", "ku", "fa")
+_SUPPORTED_CUSTOMER_LANGUAGES = tuple(SUPPORTED_LANGUAGES)
 # A logged language is looked up here, so the value written to the log is one of these
 # constants and never the code the request carried.
 _LOGGED_LANGUAGES = {code: code for code in _SUPPORTED_CUSTOMER_LANGUAGES}

@@ -24,10 +24,23 @@ _EURO = {
     "ku": "euro",
     "am": "ዩሮ",
     "ti": "ዩሮ",
+    "bg": "евро",
+    "el": "ευρώ",
+    "fr": "euros",
+    "es": "euros",
+    "pt": "euros",
+    "hu": "euró",
+    "zh": "欧元",
+    "hi": "यूरो",
 }
 # The decimal sign where the language has a settled one; the other sign groups
 # thousands there. Elsewhere either sign may group ("0,125" stays a decimal).
-_DECIMAL_SIGN = {"de": ",", "tr": ",", "ru": ",", "uk": ",", "en": "."}
+_DECIMAL_SIGN = {
+    **dict.fromkeys(
+        ("de", "tr", "ru", "uk", "it", "ro", "pl", "bg", "el", "fr", "es", "pt", "sq", "hu"), ","
+    ),
+    **dict.fromkeys(("en", "zh", "hi"), "."),
+}
 
 # Only where a time is clearly meant do clock words ("Uhr", "o'clock") get added;
 # "Ergebnis 10:15" is a score.
@@ -259,7 +272,8 @@ def _below_100(number: int, words: dict) -> str:
     return f"{words['tens'][tens]} {words['units'][unit]}" if unit else words["tens"][tens]
 
 
-_SENTENCE_END = re.compile(r"(?<=[.!?…።؟])\s+")
+# Chinese runs sentences together with no space after the full-width stop.
+_SENTENCE_END = re.compile(r"(?<=[.!?…።؟।])\s+|(?<=[。！？])\s*")
 
 
 def split_for_synthesis(text: str, max_chars: int = 400) -> list[str]:
