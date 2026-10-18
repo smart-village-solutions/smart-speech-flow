@@ -59,6 +59,8 @@ export function LanguageSelectScreen() {
           {languages.isSuccess && (
             <ul className="mx-auto flex max-w-sm flex-col gap-4">
               {languages.data
+                // Withhold Albanian while its speech quality is reviewed.
+                .filter((entry) => entry.code !== 'sq')
                 .map((entry) => languageChoice(entry))
                 .map((language) => (
                   <li key={language.code}>
