@@ -1,3 +1,6 @@
+# Updated on 2026-10-18: api_gateway, asr, tts and frontend built from
+# merged main e774c86 (#585: 22 languages and refinement fact guard).
+# Earlier image history follows.
 # Updated on 2026-10-15 for frontend, built on the host from merged main
 # 257fbb1 (#583 load light ignores resident GPU memory; with
 # api.dialog.kassel.de); on 2026-10-13 for frontend, built on the host from
@@ -15,11 +18,11 @@
 # This lock is intentionally a human-readable audit record.  The canonical
 # Compose file is the executable source of truth and uses these references.
 service	image_id	immutable_reference
-api_gateway	sha256:b8a56fed9b7c2090db226ab15e1a1f3e93256b6b6682903915bb7d2bb38cd834	ssf-backend-api_gateway:prod-6b64b8d
-asr	sha256:a87eebfbbdba2328736002b2bf6d88783246545e270d5d572198cc2a302a7b08	ssf-backend-asr:prod-42b69b7
+api_gateway	sha256:1b06e5e97bff5b3f760ae0606d00cd8f5b61b64e49f39811bd8ad1b36eafcdd0	ssf-backend-api_gateway:prod-e774c86
+asr	sha256:7ca9d3524d441481e2216187397dd8cf1f04fa3537a115fa532eba0034b0b97d	ssf-backend-asr:prod-e774c86
 translation	sha256:da56f999edd1d42dc65eb7bd73b7bee7c98c8060e9cdfca5ee4f542a640dbff1	ssf-backend-translation:prod-42b69b7
-tts	sha256:ff1d15b4f48a81ce6d1ae8f4ca7d1a76e46e214c80c406bafefe7ab1900be5e5	ssf-backend-tts:prod-e2a4e45
-frontend	sha256:868950c3050e78a271f222406ae8fac81c89a4456f79fe4fe9e64c7717ad1a23	ssf-backend-frontend:prod-257fbb1
+tts	sha256:04de936ede59e7e7888a3960c03e27a216e87ab594d366a8fab268c9fbd2c5a9	ssf-backend-tts:prod-e774c86
+frontend	sha256:228711b07c7e079d68858a9bdfd474cd48cd01546185c56405d65c09cd0fbfe4	ssf-backend-frontend:prod-e774c86
 keycloak	sha256:fee0a19bf7c023f77a9d1e6e191d9f7fd7aaa508e081afb9bc8f73075eb56513	ssf-keycloak:prod-e2a4e45
 traefik	sha256:76de233753150da70cde36a5d845c231d408a041b6fcf5a36f924c1322bd98fd	traefik@sha256:ca0f90490fe3091f5f4e582a28638652edb3b26b4d7a1d9ee621ce88fb2bff86
 ollama	sha256:edd5fde06b3f61a0c2de426ea87ea0491101f3bfa3f27b2b997ef6f4624199b2	ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a
