@@ -1,3 +1,5 @@
+# Updated on 2026-10-18: frontend built from 59bf4f0 to hide Albanian
+# from the guest language picker. Backend language support is unchanged.
 # Updated on 2026-10-18: api_gateway, asr, tts and frontend built from
 # merged main e774c86 (#585: 22 languages and refinement fact guard).
 # Earlier image history follows.
@@ -22,7 +24,7 @@ api_gateway	sha256:1b06e5e97bff5b3f760ae0606d00cd8f5b61b64e49f39811bd8ad1b36eafc
 asr	sha256:7ca9d3524d441481e2216187397dd8cf1f04fa3537a115fa532eba0034b0b97d	ssf-backend-asr:prod-e774c86
 translation	sha256:da56f999edd1d42dc65eb7bd73b7bee7c98c8060e9cdfca5ee4f542a640dbff1	ssf-backend-translation:prod-42b69b7
 tts	sha256:04de936ede59e7e7888a3960c03e27a216e87ab594d366a8fab268c9fbd2c5a9	ssf-backend-tts:prod-e774c86
-frontend	sha256:228711b07c7e079d68858a9bdfd474cd48cd01546185c56405d65c09cd0fbfe4	ssf-backend-frontend:prod-e774c86
+frontend	sha256:ef2f6671f7a2ee76889b2b04e634f7ef94bcd32d99bbdb2e6be0f9b01166dd1e	ssf-backend-frontend:prod-59bf4f0
 keycloak	sha256:fee0a19bf7c023f77a9d1e6e191d9f7fd7aaa508e081afb9bc8f73075eb56513	ssf-keycloak:prod-e2a4e45
 traefik	sha256:76de233753150da70cde36a5d845c231d408a041b6fcf5a36f924c1322bd98fd	traefik@sha256:ca0f90490fe3091f5f4e582a28638652edb3b26b4d7a1d9ee621ce88fb2bff86
 ollama	sha256:edd5fde06b3f61a0c2de426ea87ea0491101f3bfa3f27b2b997ef6f4624199b2	ollama/ollama@sha256:57f573b47f1f71ebb445789f279fe3e596a8beab182f7cf486db9205bad87c5a
