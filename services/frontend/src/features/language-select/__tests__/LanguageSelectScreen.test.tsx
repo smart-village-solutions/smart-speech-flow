@@ -49,7 +49,7 @@ describe('LanguageSelectScreen', () => {
     ).toHaveClass('pt-content-top');
   });
 
-  it("lists the session's 21 guest languages, never German, without the supported-languages route", async () => {
+  it("lists 20 guest languages, omitting German and Albanian, without the supported-languages route", async () => {
     server.use(
       http.get('*/api/languages/supported', () => new HttpResponse(null, { status: 500 }))
     );
@@ -58,7 +58,8 @@ describe('LanguageSelectScreen', () => {
 
     const arabic = await screen.findByRole('button', { name: /العربية/ });
     const list = arabic.closest('ul') as HTMLElement;
-    expect(within(list).getAllByRole('button')).toHaveLength(21);
+    expect(within(list).getAllByRole('button')).toHaveLength(20);
+    expect(screen.queryByRole('button', { name: /Shqip|Albanian/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Deutsch/ })).not.toBeInTheDocument();
   });
 
