@@ -9,5 +9,5 @@ ffmpeg-python
 httpx==0.28.1
 psutil==7.2.2
 pynvml
-black==26.3.1
+black==26.10.1
 isort==9.0.1
