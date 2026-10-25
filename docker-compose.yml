@@ -406,7 +406,7 @@ services:
       start_period: 20s
 
   keycloak:
-    image: ssf-keycloak:26.7.2
+    image: ssf-keycloak:26.8.1
     build:
       context: .
       dockerfile: services/keycloak/Dockerfile
