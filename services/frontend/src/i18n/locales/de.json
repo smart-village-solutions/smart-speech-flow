@@ -120,7 +120,8 @@
       "accountSettings": "Kontoeinstellungen",
       "openStudio": "Organisation verwalten",
       "opensInNewTab": "(öffnet in neuem Tab)",
-      "signOut": "Abmelden"
+      "signOut": "Abmelden",
+      "keys": "Archivschlüssel"
     },
     "dashboard": {
       "welcome": {
@@ -188,6 +189,31 @@
       },
       "terminateFailed": "Das Gespräch konnte nicht beendet werden.",
       "backToDashboard": "Zurück zur Übersicht"
+    },
+    "keys": {
+      "title": "Archivschlüssel",
+      "intro": "Ihre persönlichen Schlüssel öffnen aufgezeichnete Gespräche. Sie sind durch eine Passphrase geschützt, die nur Sie kennen; SSF sieht sie nie und kann sie nicht zurücksetzen. Aufzeichnen funktioniert auch ohne Schlüssel.",
+      "stepUpTitle": "Identität bestätigen",
+      "stepUpBody": "Zum Einrichten der Schlüssel melden Sie sich bitte erneut mit Ihrem zweiten Faktor an.",
+      "stepUpAction": "Erneut anmelden",
+      "enrolTitle": "Schlüssel einrichten",
+      "enrolBody": "Wählen Sie eine Passphrase mit mindestens 12 Zeichen, zum Beispiel vier oder fünf zusammenhanglose Wörter. Sie ist nicht Ihr Anmeldepasswort.",
+      "passphrase": "Passphrase",
+      "passphraseConfirm": "Passphrase wiederholen",
+      "passphraseMismatch": "Die beiden Eingaben stimmen nicht überein.",
+      "passphraseWeak": "Diese Passphrase ist zu leicht zu erraten. Verwenden Sie mehr oder seltenere Wörter.",
+      "enrolFailed": "Ihre Schlüssel konnten nicht gespeichert werden. Bitte versuchen Sie es erneut.",
+      "enrolAction": "Schlüssel erzeugen",
+      "enrolPending": "Schlüssel werden erzeugt …",
+      "unlockTitle": "Schlüssel entsperren",
+      "fingerprintLabel": "Fingerabdruck:",
+      "unlockFailed": "Diese Passphrase öffnet die Schlüssel nicht.",
+      "unlockAction": "Entsperren",
+      "unlockPending": "Wird entsperrt …",
+      "unlockedTitle": "Ihre Schlüssel sind entsperrt",
+      "fingerprintHint": "Vergleichen Sie diesen Fingerabdruck telefonisch oder persönlich, wenn Sie gebeten werden, Ihren Schlüssel zu bestätigen.",
+      "lockAction": "Sperren",
+      "unavailable": "Archivschlüssel sind gerade nicht verfügbar."
     }
   }
 }

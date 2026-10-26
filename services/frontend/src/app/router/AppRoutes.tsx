@@ -11,6 +11,8 @@ import { ConsentScreen } from '@/features/consent/ConsentScreen';
 import { ConversationScreen } from '@/features/conversation/ConversationScreen';
 import NotFoundPage from '@/pages/NotFoundPage';
 import { useServices } from '@/app/providers/services';
+import { KeysScreen } from '@/features/keys/KeysScreen';
+import { KEYS_VIEW } from '@/features/keys/useKeys';
 import { AdminDashboardScreen } from '@/features/admin/AdminDashboardScreen';
 import { AdminSessionScreen } from '@/features/admin/AdminSessionScreen';
 import {
@@ -71,14 +73,65 @@ function AdminQueryBoundary({ children }: Readonly<{ children: ReactNode }>) {
   );
 }
 
+interface StaffScreensProps {
+  onSignOut: () => void;
+  studioUrl?: string;
+}
+
+/** The signed-in staff screens; switched by state, since Keycloak returns to one URL. */
+function StaffScreens({ onSignOut, studioUrl }: Readonly<StaffScreensProps>) {
+  const { resume } = useServices();
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  // A step-up redirect reloads the app; it asked to come back to the keys screen.
+  const [keysOpen, setKeysOpen] = useState(() => resume.take() === KEYS_VIEW);
+  const accountUrl = getAccountConsoleUrl() ?? undefined;
+
+  const out = () => {
+    setSessionId(null);
+    onSignOut();
+  };
+
+  if (keysOpen) {
+    return (
+      <KeysScreen
+        onBack={() => setKeysOpen(false)}
+        onSignOut={out}
+        accountUrl={accountUrl}
+        studioUrl={studioUrl}
+      />
+    );
+  }
+
+  if (sessionId === null) {
+    return (
+      <AdminDashboardScreen
+        onEnterSession={setSessionId}
+        onOpenKeys={() => setKeysOpen(true)}
+        onSignOut={out}
+        accountUrl={accountUrl}
+        studioUrl={studioUrl}
+      />
+    );
+  }
+
+  return (
+    <AdminSessionScreen
+      sessionId={sessionId}
+      onLeave={() => setSessionId(null)}
+      onSignOut={out}
+      accountUrl={accountUrl}
+      studioUrl={studioUrl}
+    />
+  );
+}
+
 /** Resolve the route ID through the validated directory before using a realm. */
 function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
-  const { config, loginTenant } = useServices();
+  const { config, loginTenant, keyVault } = useServices();
   const { t } = useTranslation();
   const [status, setStatus] = useState<'loading' | 'authenticated' | 'missing' | 'error'>(
     'loading'
   );
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const studioUrl = useSyncExternalStore(
     subscribeToKeycloakAuthorization,
     () => getStudioAdministrationUrl(tenantId),
@@ -116,10 +169,8 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
     };
   }, [config, loginTenant, tenantId]);
 
-  const leave = () => setSessionId(null);
-
   const out = () => {
-    setSessionId(null);
+    keyVault.lock();
     void logoutFromKeycloak().catch(() => {
       /* The local session is already cleared. */
     });
@@ -137,28 +188,7 @@ function TenantLoginSession({ tenantId }: Readonly<{ tenantId: string }>) {
     );
   if (status !== 'authenticated') return <RouteState />;
 
-  const accountUrl = getAccountConsoleUrl() ?? undefined;
-
-  if (sessionId === null) {
-    return (
-      <AdminDashboardScreen
-        onEnterSession={setSessionId}
-        onSignOut={out}
-        accountUrl={accountUrl}
-        studioUrl={studioUrl ?? undefined}
-      />
-    );
-  }
-
-  return (
-    <AdminSessionScreen
-      sessionId={sessionId}
-      onLeave={leave}
-      onSignOut={out}
-      accountUrl={accountUrl}
-      studioUrl={studioUrl ?? undefined}
-    />
-  );
+  return <StaffScreens onSignOut={out} studioUrl={studioUrl ?? undefined} />;
 }
 
 export function AppRoutes() {

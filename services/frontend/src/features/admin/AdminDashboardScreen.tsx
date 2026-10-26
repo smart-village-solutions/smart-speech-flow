@@ -14,6 +14,7 @@ import { useAdminSessions, useOwnLiveSessionId } from './useAdminSessions';
 interface AdminDashboardScreenProps {
   onEnterSession: (sessionId: string) => void;
   onSignOut: () => void;
+  onOpenKeys?: () => void;
   accountUrl?: string;
   studioUrl?: string;
 }
@@ -21,6 +22,7 @@ interface AdminDashboardScreenProps {
 export function AdminDashboardScreen({
   onEnterSession,
   onSignOut,
+  onOpenKeys,
   accountUrl,
   studioUrl,
 }: Readonly<AdminDashboardScreenProps>) {
@@ -40,6 +42,7 @@ export function AdminDashboardScreen({
         onSignOut={onSignOut}
         accountUrl={accountUrl}
         studioUrl={studioUrl}
+        onOpenKeys={onOpenKeys}
       />
 
       <div className="flex flex-col gap-6 px-5 pb-16 pt-content-top">

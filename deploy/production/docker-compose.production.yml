@@ -88,6 +88,9 @@ services:
       target: /tmp/audio
       tmpfs:
         size: 1G
+    # Recording secrets (#614): outside the project and outside .env, so no
+    # backup-production.sh artifact carries them. Back the directory up offline.
+    - ${SSF_RECORDING_SECRETS_DIR:-/etc/ssf/recording-secrets}:/run/secrets/ssf-recording:ro
     environment:
     - REDIS_URL=redis://redis:6379/0
     - REDIS_NAMESPACE=ssf
@@ -170,6 +173,12 @@ services:
     # feedback button sits in the ended-conversation screen's header, and the
     # ended session's join link is already revoked by then.
     - SSF_FEEDBACK_GRACE_MINUTES=${SSF_FEEDBACK_GRACE_MINUTES:-30}
+    # Recording mode (#614). Off until SSF_RECORDING_APP_PASSWORD is set and
+    # the secrets directory holds its two files.
+    - SSF_RECORDING_DATABASE_URL=postgresql://ssf_recording_app@ssf-postgres:5432/ssf_recording
+    - SSF_RECORDING_DATABASE_PASSWORD=${SSF_RECORDING_APP_PASSWORD:-}
+    - SSF_RECORDING_STEP_UP_ACR=${SSF_RECORDING_STEP_UP_ACR:-mfa}
+    - SSF_RECORDING_STEP_UP_MAX_AGE_SECONDS=${SSF_RECORDING_STEP_UP_MAX_AGE_SECONDS:-300}
     - SSF_OTLP_LOGS_ENDPOINT=${SSF_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
     - SSF_RELEASE_VERSION=${SSF_RELEASE_VERSION:-unknown}
     - SSF_DEPLOYMENT_ENV=${SSF_DEPLOYMENT_ENV:-production}
@@ -346,6 +355,8 @@ services:
       SSF_FEEDBACK_APP_PASSWORD: ${SSF_FEEDBACK_APP_PASSWORD:?required}
       SSF_FEEDBACK_MAINTENANCE_PASSWORD: ${SSF_FEEDBACK_MAINTENANCE_PASSWORD:?required}
       SSF_FEEDBACK_READER_PASSWORD: ${SSF_FEEDBACK_READER_PASSWORD:?required}
+      # Optional: apply.sh creates the ssf_recording database only when set.
+      SSF_RECORDING_APP_PASSWORD: ${SSF_RECORDING_APP_PASSWORD:-}
     volumes:
     - ssf-postgres-data:/var/lib/postgresql/data
     - ../../deploy/postgres:/docker-entrypoint-initdb.d:ro

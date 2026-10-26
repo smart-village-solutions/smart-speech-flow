@@ -125,12 +125,15 @@ jobs:
           app_password="$(openssl rand -hex 16)/+=@"
           maintenance_password="$(openssl rand -hex 16)/+=@"
           reader_password="$(openssl rand -hex 16)/+=@"
+          recording_password="$(openssl rand -hex 16)/+=@"
           owner_password="$(openssl rand -hex 16)"
           {
             echo "SSF_FEEDBACK_DATABASE_PASSWORD=$app_password"
             echo "SSF_FEEDBACK_MAINTENANCE_DATABASE_PASSWORD=$maintenance_password"
             echo "SSF_FEEDBACK_READER_DATABASE_PASSWORD=$reader_password"
             echo "SSF_FEEDBACK_OWNER_DATABASE_PASSWORD=$owner_password"
+            echo "SSF_RECORDING_DATABASE_PASSWORD=$recording_password"
+            echo "SSF_RECORDING_OWNER_DATABASE_PASSWORD=$owner_password"
           } >> "$GITHUB_ENV"
 
           # Started the way Compose starts it, mounting deploy/postgres so the
@@ -145,6 +148,7 @@ jobs:
             -e SSF_FEEDBACK_APP_PASSWORD="$app_password" \
             -e SSF_FEEDBACK_MAINTENANCE_PASSWORD="$maintenance_password" \
             -e SSF_FEEDBACK_READER_PASSWORD="$reader_password" \
+            -e SSF_RECORDING_APP_PASSWORD="$recording_password" \
             -p 5432:5432 \
             -v "$PWD/deploy/postgres:/docker-entrypoint-initdb.d:ro" \
             postgres:17.7-alpine
@@ -168,6 +172,7 @@ jobs:
           docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*002_feedback_roles.sql'
           docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*003_feedback_reader.sql'
           docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*004_feedback_dynamic.sql'
+          docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*recording/migrations/001_recording_keys.sql'
 
       - name: Run the feedback integration tests
         # The three passwords arrive from the previous step through GITHUB_ENV.
@@ -177,12 +182,15 @@ jobs:
           SSF_FEEDBACK_MAINTENANCE_DATABASE_URL: postgresql://ssf_feedback_maintenance@127.0.0.1:5432/ssf
           SSF_FEEDBACK_READER_DATABASE_URL: postgresql://ssf_feedback_reader@127.0.0.1:5432/ssf
           SSF_FEEDBACK_OWNER_DATABASE_URL: postgresql://ssf@127.0.0.1:5432/ssf
+          SSF_RECORDING_DATABASE_URL: postgresql://ssf_recording_app@127.0.0.1:5432/ssf_recording
+          SSF_RECORDING_OWNER_DATABASE_URL: postgresql://ssf@127.0.0.1:5432/ssf_recording
         run: |
           pytest --run-integration -q \
             tests/integration/test_feedback_repository.py \
             tests/integration/test_feedback_row_level_security.py \
             tests/integration/test_feedback_read_access.py \
-            tests/integration/test_feedback_migration.py
+            tests/integration/test_feedback_migration.py \
+            tests/integration/test_recording_database.py
 
       - name: Database logs on failure
         if: failure()

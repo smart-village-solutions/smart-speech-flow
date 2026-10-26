@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ExternalLink, LogOut, User } from 'lucide-react';
+import { ExternalLink, KeyRound, LogOut, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { IconButton } from '@/ui/primitives/IconButton';
 import { useDismissOnOutsideTap } from '@/ui/hooks/useDismissOnOutsideTap';
@@ -54,10 +54,17 @@ interface AdminUserMenuProps {
   onSignOut: () => void;
   accountUrl?: string;
   studioUrl?: string;
+  /** Personal archive keys; offered where the screen can switch to them. */
+  onOpenKeys?: () => void;
 }
 
 /** Credentials are Keycloak's concern (#396): SSF only links to its account console. */
-export function AdminUserMenu({ onSignOut, accountUrl, studioUrl }: Readonly<AdminUserMenuProps>) {
+export function AdminUserMenu({
+  onSignOut,
+  accountUrl,
+  studioUrl,
+  onOpenKeys,
+}: Readonly<AdminUserMenuProps>) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
@@ -85,6 +92,19 @@ export function AdminUserMenu({ onSignOut, accountUrl, studioUrl }: Readonly<Adm
 
           {studioUrl && (
             <MenuLink label={t('admin.menu.openStudio')} href={studioUrl} onClick={close} />
+          )}
+
+          {onOpenKeys && (
+            <MenuRow
+              label={t('admin.menu.keys')}
+              onClick={() => {
+                close();
+                onOpenKeys();
+              }}
+              className="text-fg-body hover:bg-surface-row-hover"
+            >
+              <KeyRound aria-hidden size={16} strokeWidth={2} />
+            </MenuRow>
           )}
 
           <MenuRow

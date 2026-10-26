@@ -8,6 +8,7 @@ interface AdminHeaderProps {
   onSignOut: () => void;
   accountUrl?: string;
   studioUrl?: string;
+  onOpenKeys?: () => void;
 }
 
 /** The customer header plus the account menu: same 72px bar, same 800px column. */
@@ -18,6 +19,7 @@ export function AdminHeader({
   onSignOut,
   accountUrl,
   studioUrl,
+  onOpenKeys,
 }: Readonly<AdminHeaderProps>) {
   return (
     <AppHeader
@@ -25,7 +27,12 @@ export function AdminHeader({
       onHome={onHome}
       onFeedback={onFeedback}
       trailing={
-        <AdminUserMenu onSignOut={onSignOut} accountUrl={accountUrl} studioUrl={studioUrl} />
+        <AdminUserMenu
+          onSignOut={onSignOut}
+          accountUrl={accountUrl}
+          studioUrl={studioUrl}
+          onOpenKeys={onOpenKeys}
+        />
       }
     />
   );

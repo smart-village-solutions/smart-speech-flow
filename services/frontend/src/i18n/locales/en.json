@@ -120,7 +120,8 @@
       "accountSettings": "Account settings",
       "openStudio": "Manage organization",
       "opensInNewTab": "(opens in a new tab)",
-      "signOut": "Sign out"
+      "signOut": "Sign out",
+      "keys": "Archive keys"
     },
     "dashboard": {
       "welcome": {
@@ -188,6 +189,31 @@
       },
       "terminateFailed": "The conversation could not be ended.",
       "backToDashboard": "Back to the overview"
+    },
+    "keys": {
+      "title": "Archive keys",
+      "intro": "Your personal keys open recorded conversations. They are protected by a passphrase that only you know; SSF never sees it and cannot reset it. Recording works without them.",
+      "stepUpTitle": "Confirm your identity",
+      "stepUpBody": "Setting up keys needs a fresh sign-in with your second factor.",
+      "stepUpAction": "Sign in again",
+      "enrolTitle": "Set up your keys",
+      "enrolBody": "Choose a passphrase of at least 12 characters, for example four or five unrelated words. It is not your sign-in password.",
+      "passphrase": "Passphrase",
+      "passphraseConfirm": "Repeat the passphrase",
+      "passphraseMismatch": "The two entries differ.",
+      "passphraseWeak": "This passphrase is too easy to guess. Use more or less common words.",
+      "enrolFailed": "Your keys could not be saved. Please try again.",
+      "enrolAction": "Create keys",
+      "enrolPending": "Creating keys…",
+      "unlockTitle": "Unlock your keys",
+      "fingerprintLabel": "Fingerprint:",
+      "unlockFailed": "The passphrase does not open these keys.",
+      "unlockAction": "Unlock",
+      "unlockPending": "Unlocking…",
+      "unlockedTitle": "Your keys are unlocked",
+      "fingerprintHint": "Compare this fingerprint by phone or in person when someone asks you to confirm your key.",
+      "lockAction": "Lock",
+      "unavailable": "Archive keys are not available right now."
     }
   }
 }

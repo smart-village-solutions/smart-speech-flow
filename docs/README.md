@@ -31,6 +31,7 @@ Welcome to the Smart Speech Flow Backend documentation! This guide helps you fin
 - [ClickHouse Telemetry Probe Findings](operations/clickhouse-telemetry-probe-findings.md) - Observed behaviour from the issue #199 discovery task
 - [Keycloak Operations Runbook](operations/runbooks/keycloak-operations.md) - Identity-provider operations and recovery
 - [Feedback Database Deployment Runbook](operations/runbooks/feedback-database-deployment.md) - Bringing the feedback store into production from nothing
+- [Recording Keys Deployment Runbook](operations/runbooks/recording-keys-deployment.md) - The recording database, gateway secrets, personal keys and step-up MFA
 - [Conversation Quality KPI Catalog](operations/conversation-quality-kpis.en.md) - Precise quality, reliability, and privacy-aware telemetry definitions ([German](operations/conversation-quality-kpis.md))
 - [Conversation Quality KPI Ideas CSV](operations/conversation-quality-kpis.csv) - Filterable inventory of defined KPIs and supplementary measurement candidates
 

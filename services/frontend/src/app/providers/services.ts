@@ -24,6 +24,14 @@ import { createLoginTenantRepository } from '@/domain/login-tenant/loginTenant.r
 import type { LoginTenantRepository } from '@/domain/login-tenant/loginTenant.repository';
 import { createContentRepository } from '@/domain/content/content.repository';
 import type { ContentSource } from '@/domain/content/content.port';
+import type { ArchiveCrypto, KeyVault, PassphraseStrength } from '@/core/crypto/archive-crypto.port';
+import { createKeyVault } from '@/core/crypto/key-vault';
+import { createWebArchiveCrypto } from '@/core/crypto/web-archive-crypto';
+import { createZxcvbnStrength } from '@/core/crypto/zxcvbn-strength';
+import { createResumeMemory } from '@/core/storage/resume-memory';
+import type { ResumeMemory } from '@/core/storage/resume-memory.port';
+import { createRecordingKeysRepository } from '@/domain/recording/recording.repository';
+import type { RecordingKeysRepository } from '@/domain/recording/recording.repository';
 
 export interface Services {
   config: AppConfig;
@@ -39,6 +47,11 @@ export interface Services {
   audio: AudioOutput;
   clips: ClipLoader;
   createRealtime: () => RealtimeTransport;
+  recordingKeys: RecordingKeysRepository;
+  archiveCrypto: ArchiveCrypto;
+  keyVault: KeyVault;
+  passphraseStrength: PassphraseStrength;
+  resume: ResumeMemory;
 }
 
 /** The composition root. The only place implementations are chosen. */
@@ -66,6 +79,12 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     brand: createStaticBrandSource(config.brand),
     audio,
     clips: createBrowserClipLoader(http, audio),
+    recordingKeys: createRecordingKeysRepository(http),
+    archiveCrypto: createWebArchiveCrypto(),
+    // Lives as long as these services: a reload or sign-out locks the keys.
+    keyVault: createKeyVault(),
+    passphraseStrength: createZxcvbnStrength(),
+    resume: createResumeMemory(() => globalThis.sessionStorage ?? null),
     createRealtime: () =>
       createWebSocketTransport({
         wsBaseUrl: config.wsBaseUrl,

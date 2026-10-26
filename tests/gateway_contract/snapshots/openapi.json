@@ -615,6 +615,36 @@
         "title": "ContentStorage",
         "type": "object"
       },
+      "EnrolmentBody": {
+        "additionalProperties": false,
+        "properties": {
+          "blob": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Blob",
+            "type": "string"
+          },
+          "enc_pub": {
+            "maxLength": 87,
+            "minLength": 87,
+            "title": "Enc Pub",
+            "type": "string"
+          },
+          "sig_pub": {
+            "maxLength": 87,
+            "minLength": 87,
+            "title": "Sig Pub",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enc_pub",
+          "sig_pub",
+          "blob"
+        ],
+        "title": "EnrolmentBody",
+        "type": "object"
+      },
       "FeedbackAcceptedResponse": {
         "description": "The opaque confirmation identifier.",
         "properties": {
@@ -1887,6 +1917,76 @@
         "tags": [
           "admin",
           "admin"
+        ]
+      }
+    },
+    "/api/admin/recording/keys": {
+      "post": {
+        "operationId": "enrol_key_api_admin_recording_keys_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrolmentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Enrol Key Api Admin Recording Keys Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enrol Key",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/keys/me": {
+      "get": {
+        "operationId": "own_key_api_admin_recording_keys_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Own Key Api Admin Recording Keys Me Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Own Key",
+        "tags": [
+          "recording"
         ]
       }
     },

@@ -109,6 +109,40 @@ function authenticatedSession(): ActiveKeycloakSession | null {
   return active;
 }
 
+/** The `acr` the realm maps to a fresh MFA login: the gateway's SSF_RECORDING_STEP_UP_ACR default. */
+const STEP_UP_ACR = 'mfa';
+/** The gateway accepts 300 s; asking a minute early leaves time to finish the action. */
+const STEP_UP_FRESH_SECONDS = 240;
+
+export function hasFreshStepUp(nowSeconds: number = Date.now() / 1000): boolean {
+  const claims = authenticatedSession()?.client.tokenParsed;
+  const authTime: unknown = claims?.auth_time;
+  return (
+    claims?.acr === STEP_UP_ACR &&
+    typeof authTime === 'number' &&
+    nowSeconds - authTime <= STEP_UP_FRESH_SECONDS
+  );
+}
+
+/** Redirects to Keycloak for a fresh MFA login, then back to this tenant's page. */
+export async function requestStepUp(): Promise<void> {
+  const session = authenticatedSession();
+  if (session === null) throw new Error('Keycloak session not ready');
+  await session.client.login({
+    acrValues: STEP_UP_ACR,
+    maxAge: 0,
+    redirectUri: tenantCallback(session.tenantId),
+  });
+}
+
+/** Who owns personal keys in this session; the gateway derives the same pair from the token. */
+export function getAdminIdentity(): { tenantId: string; userSub: string } | null {
+  const session = authenticatedSession();
+  const sub: unknown = session?.client.tokenParsed?.sub;
+  if (session === null || typeof sub !== 'string') return null;
+  return { tenantId: session.tenantId, userSub: sub };
+}
+
 /** Navigation hint only; Studio enforces its own authorization on arrival. */
 export function getStudioAdministrationUrl(tenantId: string): string | null {
   const session = authenticatedSession();
