@@ -27,6 +27,7 @@ from services.api_gateway.recording.crypto.transcript import (
     TranscriptInput,
     display_fingerprint,
     fingerprint,
+    paper_device_fingerprint,
     transcript_hash,
 )
 from tests import recording_crypto_reference as ref
@@ -65,6 +66,10 @@ def test_fingerprint_and_its_display():
     raw = fingerprint(case["tenant_id"], case["user_sub"], b(case["enc_pub"]), b(case["sig_pub"]))
     assert raw == b(case["fingerprint"])
     assert display_fingerprint(raw) == case["display"]
+    paper = case["paper_device"]
+    assert paper_device_fingerprint(case["tenant_id"], b(paper["device_pub"])) == b(
+        paper["fingerprint"]
+    )
 
 
 def test_object_envelope_opens_under_its_associated_data():

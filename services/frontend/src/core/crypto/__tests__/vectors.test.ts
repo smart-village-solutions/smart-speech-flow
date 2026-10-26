@@ -3,7 +3,7 @@ import path from 'node:path';
 import { p256 } from '@noble/curves/nist.js';
 import { describe, expect, it } from 'vitest';
 import { aesKey, objectAad, openEnvelope, sealEnvelope } from '@/core/crypto/aead';
-import { type Bytes, fromBase64Url, toBase64Url, toHex } from '@/core/crypto/bytes';
+import { type Bytes, bytesToBigInt, fromBase64Url, toBase64Url, toHex } from '@/core/crypto/bytes';
 import { publicPoint } from '@/core/crypto/curve';
 import { type Field, enc } from '@/core/crypto/encoding';
 import { openWithSharedX, parseSealed, seal, sealedToJson } from '@/core/crypto/ecies';
@@ -20,9 +20,9 @@ import {
   verifySchnorr,
   verifySubshare,
 } from '@/core/crypto/proofs';
-import { signedDigest, verifyFields, wrapFields } from '@/core/crypto/signatures';
+import { dealingFields, signedDigest, verifyFields, wrapFields } from '@/core/crypto/signatures';
 import { type SealedType, TAGS } from '@/core/crypto/tags';
-import { displayFingerprint, fingerprint, transcriptHash } from '@/core/crypto/transcript';
+import { displayFingerprint, fingerprint, paperDeviceFingerprint, transcriptHash } from '@/core/crypto/transcript';
 
 // The gateway generates and checks the same file (tests/test_recording_crypto_vectors.py).
 const vectors = JSON.parse(
@@ -56,6 +56,8 @@ describe('shared crypto vectors', () => {
     const raw = await fingerprint(f.tenant_id, f.user_sub, b(f.enc_pub), b(f.sig_pub));
     expect(toBase64Url(raw)).toBe(f.fingerprint);
     expect(displayFingerprint(raw)).toBe(f.display);
+    const paper = await paperDeviceFingerprint(f.tenant_id, b(f.paper_device.device_pub));
+    expect(toBase64Url(paper)).toBe(f.paper_device.fingerprint);
   });
 
   it('seals and opens archive objects', async () => {
@@ -107,6 +109,20 @@ describe('shared crypto vectors', () => {
       recipientFingerprint: recipientFingerprint as Bytes,
     });
     expect(toHex(enc(...rebuilt))).toBe(toHex(enc(...fields(wrap.fields))));
+  });
+
+  it('orders dealing-signature fields as the gateway does', () => {
+    const dealing = vectors.signatures.find((v: { tag: string }) => v.tag === TAGS.dealingSig);
+    const signed = fields(dealing.fields);
+    const commitments = signed.slice(4, -2) as Bytes[];
+    const rebuilt = dealingFields({
+      tenantId: signed[0] as string,
+      ceremonyId: signed[1] as string,
+      dealerIndex: signed[2] as number,
+      commitments,
+      proof: { c: bytesToBigInt(signed.at(-2) as Bytes), s: bytesToBigInt(signed.at(-1) as Bytes) },
+    });
+    expect(toHex(enc(...rebuilt))).toBe(toHex(enc(...signed)));
   });
 
   it('checks a whole ceremony', async () => {

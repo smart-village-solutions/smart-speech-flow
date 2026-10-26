@@ -26,6 +26,7 @@ vi.mock('@/app/auth/keycloak', () => ({
   requireKeycloakLogin: vi.fn(),
   logoutFromKeycloak: vi.fn(),
   getStudioAdministrationUrl: vi.fn(),
+  hasPermission: () => false,
   getAccountConsoleUrl: vi.fn(),
   getAdminAccessToken: vi.fn().mockResolvedValue('tenant-token'),
   subscribeToKeycloakAuthorization: (listener: () => void) => {

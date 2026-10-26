@@ -28,6 +28,7 @@ from services.api_gateway.recording.crypto.transcript import (
     TranscriptInput,
     display_fingerprint,
     fingerprint,
+    paper_device_fingerprint,
     transcript_hash,
 )
 from tests import recording_crypto_reference as ref
@@ -80,6 +81,10 @@ def fingerprint_vector() -> dict[str, Any]:
         "sig_pub": b64url(sig_pub),
         "fingerprint": b64url(raw),
         "display": display_fingerprint(raw),
+        "paper_device": {
+            "device_pub": b64url(enc_pub),
+            "fingerprint": b64url(paper_device_fingerprint(TENANT, enc_pub)),
+        },
     }
 
 
@@ -192,6 +197,17 @@ def signature_vectors() -> list[dict[str, Any]]:
     return [
         signature_vector(tags.WRAP_SIG, wrap),
         signature_vector(tags.TRANSCRIPT, (label_bytes("transcript", 32),)),
+        signature_vector(
+            tags.DEALING_SIG,
+            signatures.dealing_fields(
+                TENANT,
+                CEREMONY,
+                2,
+                (ref.public_point(scalar("deal-a0")), ref.public_point(scalar("deal-a1"))),
+                scalar("deal-c"),
+                scalar("deal-s"),
+            ),
+        ),
     ]
 
 

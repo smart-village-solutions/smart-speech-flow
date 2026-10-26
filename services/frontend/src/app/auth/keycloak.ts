@@ -135,6 +135,12 @@ export async function requestStepUp(): Promise<void> {
   });
 }
 
+/** Navigation hint only: the gateway checks every permission itself. */
+export function hasPermission(permission: string): boolean {
+  const permissions: unknown = authenticatedSession()?.client.tokenParsed?.ssf_permissions;
+  return Array.isArray(permissions) && permissions.includes(permission);
+}
+
 /** Who owns personal keys in this session; the gateway derives the same pair from the token. */
 export function getAdminIdentity(): { tenantId: string; userSub: string } | null {
   const session = authenticatedSession();

@@ -59,7 +59,12 @@ FEEDBACK = (
     "feedback_maintenance",
 )
 # None without a recording database and its secret files (#614).
-RECORDING = ("recording_repository", "recording_secrets", "recording_keys")
+RECORDING = (
+    "recording_repository",
+    "recording_secrets",
+    "recording_keys",
+    "recording_ceremony",
+)
 
 
 @pytest.fixture

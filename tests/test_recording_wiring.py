@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from services.api_gateway.recording import wiring
+from services.api_gateway.recording.ceremony_model import CeremonyError
 from services.api_gateway.recording.secrets import BLOB_KEY_FILE_ENV, SIGNING_KEY_FILE_ENV
 
 DSN = "postgresql://ssf_recording_app@db/ssf_recording"
@@ -22,7 +23,13 @@ def database_password(monkeypatch):
 
 
 def _state() -> SimpleNamespace:
-    return SimpleNamespace(recording_keys=None, recording_repository=None, recording_secrets=None)
+    return SimpleNamespace(
+        recording_keys=None,
+        recording_repository=None,
+        recording_secrets=None,
+        recording_ceremony=None,
+        studio_token_provider=None,
+    )
 
 
 @pytest.fixture
@@ -72,7 +79,7 @@ async def test_an_unreachable_database_asks_for_a_retry(secrets_on_disk, monkeyp
     async def refuse(**_):
         raise OSError("connection refused")
 
-    monkeypatch.setattr(wiring.PostgresRecordingRepository, "create", refuse)
+    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", refuse)
     assert await wiring.connect_recording(_state(), DSN) is False
 
 
@@ -82,8 +89,22 @@ async def test_a_connected_gateway_registers_its_signing_key(secrets_on_disk, mo
     async def create(**_):
         return repository
 
-    monkeypatch.setattr(wiring.PostgresRecordingRepository, "create", create)
+    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", create)
     state = _state()
     assert await wiring.connect_recording(state, DSN) is True
     assert state.recording_keys is not None
+    assert state.recording_ceremony is not None
     assert repository.registered == [state.recording_secrets.signing_key_id]
+
+
+async def test_without_studio_the_ceremony_cannot_name_custodians(secrets_on_disk, monkeypatch):
+    async def create(**_):
+        return _Repository()
+
+    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", create)
+    monkeypatch.delenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", raising=False)
+    state = _state()
+    await wiring.connect_recording(state, DSN)
+    with pytest.raises(CeremonyError) as caught:
+        await state.recording_ceremony.candidates("tenant-test", "corr")
+    assert caught.value.code == "DIRECTORY_UNAVAILABLE"

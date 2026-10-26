@@ -11,6 +11,8 @@ import { ConsentScreen } from '@/features/consent/ConsentScreen';
 import { ConversationScreen } from '@/features/conversation/ConversationScreen';
 import NotFoundPage from '@/pages/NotFoundPage';
 import { useServices } from '@/app/providers/services';
+import { CeremonyScreen } from '@/features/ceremony/CeremonyScreen';
+import { CEREMONY_VIEW, CUSTODIAN, TENANT_MANAGE } from '@/features/ceremony/useCeremony';
 import { KeysScreen } from '@/features/keys/KeysScreen';
 import { KEYS_VIEW } from '@/features/keys/useKeys';
 import { AdminDashboardScreen } from '@/features/admin/AdminDashboardScreen';
@@ -19,6 +21,7 @@ import {
   logoutFromKeycloak,
   getAccountConsoleUrl,
   getStudioAdministrationUrl,
+  hasPermission,
   requireKeycloakLogin,
   subscribeToKeycloakExpiration,
   subscribeToKeycloakAuthorization,
@@ -78,51 +81,42 @@ interface StaffScreensProps {
   studioUrl?: string;
 }
 
+type StaffView = 'dashboard' | typeof KEYS_VIEW | typeof CEREMONY_VIEW;
+
+/** A step-up redirect reloads the app; it asked to come back to the view it left. */
+function resumedView(remembered: string | null): StaffView {
+  return remembered === KEYS_VIEW || remembered === CEREMONY_VIEW ? remembered : 'dashboard';
+}
+
 /** The signed-in staff screens; switched by state, since Keycloak returns to one URL. */
 function StaffScreens({ onSignOut, studioUrl }: Readonly<StaffScreensProps>) {
   const { resume } = useServices();
   const [sessionId, setSessionId] = useState<string | null>(null);
-  // A step-up redirect reloads the app; it asked to come back to the keys screen.
-  const [keysOpen, setKeysOpen] = useState(() => resume.take() === KEYS_VIEW);
+  const [view, setView] = useState<StaffView>(() => resumedView(resume.take()));
   const accountUrl = getAccountConsoleUrl() ?? undefined;
-
+  const ceremonyAllowed = hasPermission(TENANT_MANAGE) || hasPermission(CUSTODIAN);
   const out = () => {
     setSessionId(null);
     onSignOut();
   };
+  const shared = { onSignOut: out, accountUrl, studioUrl };
 
-  if (keysOpen) {
-    return (
-      <KeysScreen
-        onBack={() => setKeysOpen(false)}
-        onSignOut={out}
-        accountUrl={accountUrl}
-        studioUrl={studioUrl}
-      />
-    );
+  if (view === KEYS_VIEW) return <KeysScreen onBack={() => setView('dashboard')} {...shared} />;
+  if (view === CEREMONY_VIEW) {
+    return <CeremonyScreen onBack={() => setView('dashboard')} onOpenKeys={() => setView(KEYS_VIEW)} {...shared} />;
   }
-
   if (sessionId === null) {
     return (
       <AdminDashboardScreen
         onEnterSession={setSessionId}
-        onOpenKeys={() => setKeysOpen(true)}
-        onSignOut={out}
-        accountUrl={accountUrl}
-        studioUrl={studioUrl}
+        onOpenKeys={() => setView(KEYS_VIEW)}
+        onOpenCeremony={ceremonyAllowed ? () => setView(CEREMONY_VIEW) : undefined}
+        {...shared}
       />
     );
   }
 
-  return (
-    <AdminSessionScreen
-      sessionId={sessionId}
-      onLeave={() => setSessionId(null)}
-      onSignOut={out}
-      accountUrl={accountUrl}
-      studioUrl={studioUrl}
-    />
-  );
+  return <AdminSessionScreen sessionId={sessionId} onLeave={() => setSessionId(null)} {...shared} />;
 }
 
 /** Resolve the route ID through the validated directory before using a realm. */

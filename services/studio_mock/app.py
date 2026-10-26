@@ -1,9 +1,10 @@
-"""Contract-faithful Studio mock: runtime configuration v2 and installation content v2.
+"""Contract-faithful Studio mock: runtime configuration v2, installation content v2
+and the recording directory v2.
 
 The login directory stays on contract v1, because Studio has no v2 directory.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal, get_args
 
 from fastapi import Depends, FastAPI, Header, Request
@@ -21,6 +22,7 @@ _CONTRACT_VERSION_V2 = "2.0"
 RUNTIME_V2_PATH = "/internal/plugins/ssf/v2/runtime-configuration"
 INSTALLATION_PATH = "/internal/plugins/ssf/v2/installation-content"
 DIRECTORY_PATH = "/internal/plugins/ssf/v1/admin-login-tenants"
+RECORDING_DIRECTORY_PATH = "/internal/plugins/ssf/v2/recording-directory"
 _AUTHORIZED_TOKEN = "Bearer studio-mock-authorized-token"
 _UNAUTHORIZED_TOKEN = "Bearer studio-mock-unauthorized-token"
 _UNAVAILABLE_MESSAGE = "Runtime configuration is unavailable."
@@ -42,6 +44,16 @@ DirectoryErrorCode = Literal[
     "service_action_forbidden",
     "tenant_not_found",
     "admin_login_directory_unavailable",
+]
+
+RecordingDirectoryErrorCode = Literal[
+    "service_authentication_invalid",
+    "service_action_forbidden",
+    "tenant_not_found",
+    "tenant_suspended",
+    "ssf_plugin_inactive",
+    "ssf_tenant_not_ready",
+    "recording_directory_unavailable",
 ]
 
 InstallationErrorCode = Literal[
@@ -123,7 +135,9 @@ def _login_directory() -> dict[str, Any]:
 
 def _error_response(
     status_code: int,
-    code: RuntimeErrorCode | DirectoryErrorCode | InstallationErrorCode,
+    code: (
+        RuntimeErrorCode | DirectoryErrorCode | InstallationErrorCode | RecordingDirectoryErrorCode
+    ),
     correlation_id: str,
     retryable: bool,
     message: str = _UNAVAILABLE_MESSAGE,
@@ -323,6 +337,35 @@ def admin_login_tenants(
     return _login_directory()
 
 
+_RECORDING_DIRECTORY_SCENARIO_ERRORS: dict[str, tuple[int, RecordingDirectoryErrorCode, bool]] = {
+    "suspended": (409, "tenant_suspended", False),
+    "unavailable": (503, "recording_directory_unavailable", True),
+}
+
+
+@app.get(RECORDING_DIRECTORY_PATH, response_model=None, responses=_ERROR_RESPONSES)
+def recording_directory(
+    runtime_request: _RuntimeRequest = Depends(_runtime_request),
+) -> dict[str, Any] | JSONResponse:
+    """Return a tenant's staff holding ssf.recording.* permissions (spec §10.1)."""
+    scenario = runtime_request.scenario
+    # The tenant checks are the runtime route's; only the scenarios differ.
+    tenant = _checked_tenant(replace(runtime_request, scenario=None))
+    if isinstance(tenant, JSONResponse):
+        return tenant
+    if scenario in _RECORDING_DIRECTORY_SCENARIO_ERRORS:
+        status_code, code, retryable = _RECORDING_DIRECTORY_SCENARIO_ERRORS[scenario]
+        return _error_response(
+            status_code,
+            code,
+            runtime_request.correlation_id or "unavailable",
+            retryable,
+            "Recording directory is unavailable.",
+            _CONTRACT_VERSION_V2,
+        )
+    return contract_fixtures.recording_directory(tenant)
+
+
 def _custom_openapi() -> dict[str, Any]:
     """Document required headers while preserving custom error envelopes."""
     if app.openapi_schema:
@@ -334,6 +377,7 @@ def _custom_openapi() -> dict[str, Any]:
         RUNTIME_V2_PATH: runtime_headers,
         INSTALLATION_PATH: service_headers,
         DIRECTORY_PATH: service_headers,
+        RECORDING_DIRECTORY_PATH: runtime_headers,
     }
     for path, header_names in required_headers_by_path.items():
         parameters = schema["paths"][path]["get"]["parameters"]
@@ -346,6 +390,7 @@ def _custom_openapi() -> dict[str, Any]:
         RUNTIME_V2_PATH: get_args(RuntimeErrorCode),
         INSTALLATION_PATH: get_args(InstallationErrorCode),
         DIRECTORY_PATH: get_args(DirectoryErrorCode),
+        RECORDING_DIRECTORY_PATH: get_args(RecordingDirectoryErrorCode),
     }
     for path, codes in emitted_codes.items():
         schema["paths"][path]["get"]["x-error-codes"] = sorted(codes)

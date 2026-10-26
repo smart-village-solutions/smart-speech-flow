@@ -1,0 +1,115 @@
+"""The recording-directory client accepts only a well-formed directory of the asked tenant."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+import pytest
+
+from services.api_gateway.studio_recording_directory_client import (
+    StudioRecordingDirectoryClient,
+    StudioRecordingDirectoryClientError,
+)
+from services.api_gateway.studio_v1 import StudioV1HttpResponse
+from services.studio_mock import contract_fixtures
+
+TENANT = "tenant-kassel"
+
+
+class FixedTransport:
+    def __init__(self, status: int, payload: Mapping[str, Any] | None) -> None:
+        self.status, self.payload = status, payload
+        self.headers: Mapping[str, str] = {}
+
+    async def get(
+        self, url: str, headers: Mapping[str, str], timeout_seconds: float
+    ) -> StudioV1HttpResponse:
+        self.headers = headers
+        return StudioV1HttpResponse(self.status, self.payload)
+
+
+async def _token() -> str:
+    return "service-token"
+
+
+def _client(transport: FixedTransport) -> StudioRecordingDirectoryClient:
+    return StudioRecordingDirectoryClient("https://studio.test", _token, transport=transport)
+
+
+def _body(**changes: Any) -> dict[str, Any]:
+    body = contract_fixtures.recording_directory(TENANT)
+    body.update(changes)
+    return body
+
+
+@pytest.mark.asyncio
+async def test_a_valid_directory_is_read_with_the_tenant_header():
+    transport = FixedTransport(200, _body())
+    directory = await _client(transport).fetch(TENANT, "corr-1")
+
+    assert transport.headers["X-Studio-Tenant-Id"] == TENANT
+    custodians = directory.holders_of("ssf.recording.recovery.custodian")
+    assert [user.display_name for user in custodians.values()] == [
+        "Anna Becker",
+        "Bernd Schulz",
+        "Carla Weber",
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("changes", "code"),
+    [
+        ({"tenantId": "tenant-fulda"}, "studio_recording_directory_tenant_mismatch"),
+        ({"contractVersion": "1.0"}, "studio_recording_directory_response_invalid"),
+        ({"directoryRevision": "sha256:XYZ"}, "studio_recording_directory_response_invalid"),
+    ],
+)
+async def test_a_directory_for_another_tenant_or_contract_is_refused(changes, code):
+    with pytest.raises(StudioRecordingDirectoryClientError) as caught:
+        await _client(FixedTransport(200, _body(**changes))).fetch(TENANT, "corr-1")
+    assert caught.value.code == code
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "user_change",
+    [
+        {"sub": "has space"},
+        {"permissions": ["ssf.configuration.tenant.manage"]},
+        {"permissions": []},
+        {"languages": ["Deutsch"]},
+        {"displayName": ""},
+    ],
+)
+async def test_a_malformed_user_refuses_the_whole_directory(user_change):
+    body = _body()
+    body["users"][0].update(user_change)
+    with pytest.raises(StudioRecordingDirectoryClientError) as caught:
+        await _client(FixedTransport(200, body)).fetch(TENANT, "corr-1")
+    assert caught.value.code == "studio_recording_directory_response_invalid"
+
+
+@pytest.mark.asyncio
+async def test_a_duplicate_subject_refuses_the_directory():
+    body = _body()
+    body["users"].append(dict(body["users"][0]))
+    with pytest.raises(StudioRecordingDirectoryClientError):
+        await _client(FixedTransport(200, body)).fetch(TENANT, "corr-1")
+
+
+@pytest.mark.asyncio
+async def test_studio_unavailability_is_retryable():
+    envelope = {
+        "contractVersion": "2.0",
+        "error": {
+            "code": "recording_directory_unavailable",
+            "message": "Recording directory is unavailable.",
+            "retryable": True,
+            "correlationId": "corr-1",
+        },
+    }
+    with pytest.raises(StudioRecordingDirectoryClientError) as caught:
+        await _client(FixedTransport(503, envelope)).fetch(TENANT, "corr-1")
+    assert (caught.value.code, caught.value.retryable) == ("recording_directory_unavailable", True)

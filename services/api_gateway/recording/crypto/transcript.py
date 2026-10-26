@@ -11,10 +11,16 @@ from . import tags
 from .encoding import Field, enc, scalar_to_bytes
 
 DISPLAY_BYTES: Final[int] = 20
+PAPER_DEVICE_REF: Final[str] = "paper-device"
 
 
 def fingerprint(tenant_id: str, user_sub: str, enc_pub: bytes, sig_pub: bytes) -> bytes:
     return hashlib.sha256(enc(tags.FINGERPRINT, tenant_id, user_sub, enc_pub, sig_pub)).digest()
+
+
+def paper_device_fingerprint(tenant_id: str, device_pub: bytes) -> bytes:
+    """The ceremony device has an encryption key only; it stands in for both halves."""
+    return fingerprint(tenant_id, PAPER_DEVICE_REF, device_pub, device_pub)
 
 
 def display_fingerprint(raw: bytes) -> str:

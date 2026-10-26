@@ -1,4 +1,4 @@
-import { type Bytes, fromBuffer } from './bytes';
+import { type Bytes, fromBuffer, scalarToBytes } from './bytes';
 import { decodePoint } from './curve';
 import { type Field, enc } from './encoding';
 
@@ -53,5 +53,26 @@ export function wrapFields(wrap: Readonly<WrapSignatureFields>): Field[] {
     wrap.recipientKind,
     wrap.recipientRef,
     wrap.recipientFingerprint,
+  ];
+}
+
+export interface DealingSignatureFields {
+  tenantId: string;
+  ceremonyId: string;
+  dealerIndex: number;
+  commitments: readonly Bytes[];
+  proof: { c: bigint; s: bigint };
+}
+
+/** What a dealer signs, so a server cannot swap in a dealing of its own; the gateway checks the same tuple. */
+export function dealingFields(dealing: Readonly<DealingSignatureFields>): Field[] {
+  return [
+    dealing.tenantId,
+    dealing.ceremonyId,
+    dealing.dealerIndex,
+    dealing.commitments.length,
+    ...dealing.commitments,
+    scalarToBytes(dealing.proof.c),
+    scalarToBytes(dealing.proof.s),
   ];
 }

@@ -4,8 +4,8 @@
 
 This runbook brings the first part of recording mode (#614) into production:
 the `ssf_recording` database, the gateway's two recording secrets, personal key
-enrolment for staff, and step-up MFA in the tenant realms. Nothing is recorded
-yet; that arrives with #615.
+enrolment for staff, step-up MFA in the tenant realms, and each tenant's
+recovery-key ceremony. Nothing is recorded yet; that arrives with #615.
 
 Everything here is optional per host. Until `SSF_RECORDING_APP_PASSWORD` is set
 and the secrets directory holds both files, the gateway serves conversations as
@@ -97,6 +97,7 @@ Expected, after the four feedback lines:
 ```
 apply.sh: ensuring database ssf_recording
 apply.sh: applying /docker-entrypoint-initdb.d/recording/migrations/001_recording_keys.sql to ssf_recording
+apply.sh: applying /docker-entrypoint-initdb.d/recording/migrations/002_recovery_ceremony.sql to ssf_recording
 apply.sh: done
 ```
 
@@ -169,6 +170,60 @@ Verify with a staff account that holds an `ssf.recording.*` permission:
 4. Sign out, sign in, open the keys screen again, and unlock with the
    passphrase. The fingerprint must match.
 
+## Step 7 — The recovery-key ceremony, per tenant
+
+Each tenant needs a recovery key before #615 can let it record. No device ever
+holds that key: custodians each deal a share of it in their own browsers, and
+the gateway only relays and checks what they publish (spec §9.2).
+
+**Before the day.**
+- Studio must list the custodians: each needs the
+  `ssf.recording.recovery.custodian` permission, and Studio's recording
+  directory (`/internal/plugins/ssf/v2/recording-directory`) must answer. Check
+  with the tenant administrator's **user menu → Wiederherstellungsschlüssel**:
+  the custodians appear there.
+- Every custodian has enrolled personal keys (Step 6) and knows their
+  passphrase. One without keys is listed as "noch keine Archivschlüssel" and
+  cannot be chosen.
+- Choose `k`, the shares needed to open a conversation. Name at least `k + 1`
+  custodians, at most 10, so a recovery can proceed when the requester is a
+  custodian. `k = 1` is the standard mode and offers no cryptographic
+  separation; `k ≥ 2` is the enhanced mode.
+- For a paper backup, prepare a dedicated ceremony device that no custodian
+  uses, with a printer attached. The tenant administrator signs in on it.
+  The paper backup is `k` sheets, each given to a different person.
+
+**The ceremony.** Everyone meets in person or by video. It must finish within
+24 hours of its start, or it lapses.
+1. The tenant administrator, on the ceremony device, opens
+   **Wiederherstellungsschlüssel**, signs in again with the second factor,
+   chooses the custodians, `k`, and whether to print a paper backup, and
+   starts the ceremony. That device must stay open until the sheets are
+   printed: a reload loses its key, and the ceremony must then be aborted and
+   started again.
+2. Each custodian opens the same screen, unlocks their archive keys, and reads
+   every fingerprint aloud. Each person compares their own fingerprint with the
+   one shown for them on every other screen, and the device fingerprint shown
+   on the ceremony device. On any difference, abort.
+3. Each custodian ticks the comparison box and selects **Beitrag abgeben**.
+4. When everyone has dealt, each custodian selects **Prüfen und
+   unterschreiben**. Their browser checks every dealing, and aborts the
+   ceremony itself if anything fails.
+5. On the ceremony device: **Prüfen und Papieranteile erzeugen**, **Drucken**,
+   seal each sheet separately and hand it to its holder, tick the box, and
+   select **Papiersicherung abschließen**.
+6. The screen shows "Der Wiederherstellungsschlüssel ist aktiv" with `k` of `n`.
+   Note the transcript value it shows in the tenant's records.
+
+Check the audit trail:
+
+```bash
+production_compose exec -T ssf-postgres sh -ec \
+  'psql -U "$POSTGRES_USER" -d ssf_recording -tAc "SELECT tenant_id, status, k, n FROM recovery_keys"'
+```
+
+Expected: one `active` row for the tenant.
+
 ## Rollback
 
 Unset `SSF_RECORDING_APP_PASSWORD` in `.env` and run
@@ -181,8 +236,9 @@ archived: `DROP DATABASE ssf_recording` as the owner, then
 
 `backup-production.sh` does not dump `ssf_recording` yet. Its own dump with a
 14-day retention arrives with #618, and it must exist before #615 archives
-anything. Until then the database holds only key enrolments and their audit
-trail; if it is lost, staff enrol again.
+anything. Until then the database holds key enrolments, recovery keys and their
+audit trail. If it is lost, staff enrol again and every tenant repeats its
+ceremony; nothing has been archived under the old keys yet.
 
 ## Known limits
 

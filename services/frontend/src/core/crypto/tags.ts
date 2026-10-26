@@ -7,6 +7,7 @@ export const TAGS = {
   subshare: 'ssf-rec/subshare/v1',
   partial: 'ssf-rec/partial/v1',
   wrapSig: 'ssf-rec/wrap-sig/v1',
+  dealingSig: 'ssf-rec/dealing-sig/v1',
   chainSig: 'ssf-rec/chain-sig/v1',
   verificationSig: 'ssf-rec/verification-sig/v1',
   transcript: 'ssf-rec/transcript/v1',

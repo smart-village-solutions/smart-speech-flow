@@ -14,8 +14,12 @@ from datetime import datetime, timezone
 from typing import Any, Final
 
 from ..dependencies import GatewayDependencies
+from ..studio_recording_directory_client import StudioRecordingDirectoryClient
+from ..studio_settings import studio_base_url
+from .ceremony import CeremonyService
+from .ceremony_repository import PostgresCeremonyRepository
+from .directory import StudioCustodianDirectory
 from .keys import KeyEnrolmentService
-from .repository import PostgresRecordingRepository
 from .secrets import MissingRecordingSecrets, RecordingSecrets
 
 RECORDING_DSN_ENV: Final[str] = "SSF_RECORDING_DATABASE_URL"
@@ -30,6 +34,19 @@ def recording_dsn() -> str:
 
 def _password() -> str | None:
     return os.environ.get(RECORDING_PASSWORD_ENV, "").strip() or None
+
+
+def _custodian_directory(state: Any) -> StudioCustodianDirectory:
+    """Studio's recording directory through the app's one token provider, if Studio is set up."""
+    token_provider = getattr(state, "studio_token_provider", None)
+    base_url = studio_base_url()
+    if token_provider is None or not base_url:
+        return StudioCustodianDirectory(None)
+    try:
+        client = StudioRecordingDirectoryClient(base_url, token_provider.get_token)
+    except ValueError:
+        return StudioCustodianDirectory(None)
+    return StudioCustodianDirectory(client)
 
 
 async def connect_recording(state: Any, dsn: str) -> bool:
@@ -47,7 +64,7 @@ async def connect_recording(state: Any, dsn: str) -> bool:
         sys.stderr.write(f"Recording disabled: {error}\n")
         return True
     try:
-        repository = await PostgresRecordingRepository.create(dsn=dsn, password=_password())
+        repository = await PostgresCeremonyRepository.create(dsn=dsn, password=_password())
     except Exception as error:
         sys.stderr.write(f"Recording storage unavailable ({type(error).__name__}); retrying\n")
         return False
@@ -63,6 +80,9 @@ async def connect_recording(state: Any, dsn: str) -> bool:
     state.recording_secrets = secrets
     state.recording_keys = KeyEnrolmentService(
         repository=repository, server_layer=secrets.server_layer
+    )
+    state.recording_ceremony = CeremonyService(
+        repository=repository, directory=_custodian_directory(state), secrets=secrets
     )
     sys.stderr.write("Recording keys ready\n")
     return True
@@ -89,6 +109,7 @@ async def close_recording(dependencies: GatewayDependencies) -> None:
     repository = dependencies.recording_repository
     dependencies.recording_repository = None
     dependencies.recording_keys = None
+    dependencies.recording_ceremony = None
     dependencies.recording_secrets = None
     if repository is not None:
         await repository.close()

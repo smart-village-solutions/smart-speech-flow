@@ -9,6 +9,7 @@ produces, so the DER that `cryptography` speaks is converted at this edge.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from typing import Final
 
 from cryptography.exceptions import InvalidSignature
@@ -20,7 +21,7 @@ from cryptography.hazmat.primitives.asymmetric.utils import (
 )
 
 from .curve import ORDER, InvalidPoint, public_key_from_point
-from .encoding import Field, enc
+from .encoding import Field, enc, scalar_to_bytes
 
 SIGNATURE_BYTES: Final[int] = 64
 
@@ -73,4 +74,24 @@ def wrap_fields(
         recipient_kind,
         recipient_ref,
         recipient_fingerprint,
+    )
+
+
+def dealing_fields(
+    tenant_id: str,
+    ceremony_id: str,
+    dealer_index: int,
+    commitments: Sequence[bytes],
+    proof_c: int,
+    proof_s: int,
+) -> tuple[Field, ...]:
+    """What a dealer signs, so a server cannot swap in a dealing of its own."""
+    return (
+        tenant_id,
+        ceremony_id,
+        dealer_index,
+        len(commitments),
+        *commitments,
+        scalar_to_bytes(proof_c),
+        scalar_to_bytes(proof_s),
     )

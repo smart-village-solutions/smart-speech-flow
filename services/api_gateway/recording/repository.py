@@ -11,13 +11,13 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Final
+from typing import Any, Final, Self
 
 import asyncpg
 
 from .audit import GENESIS, AuditEvent, AuditRow, audit_hash
 
-_DRIVER_FAILURE: Final = (
+DRIVER_FAILURE: Final = (
     asyncpg.PostgresError,
     asyncpg.InterfaceError,
     asyncpg.InternalClientError,
@@ -46,11 +46,11 @@ class UserKeyRecord:
     created_at: datetime
 
 
-async def _bind_tenant(connection: asyncpg.Connection, tenant_id: str) -> None:
+async def bind_tenant(connection: asyncpg.Connection, tenant_id: str) -> None:
     await connection.execute("SELECT set_config('ssf.tenant_id', $1, TRUE)", tenant_id)
 
 
-async def _append_audit(connection: asyncpg.Connection, event: AuditEvent) -> None:
+async def append_audit(connection: asyncpg.Connection, event: AuditEvent) -> None:
     """Append under a per-tenant transaction lock, so two writers cannot fork the chain."""
     await connection.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
@@ -73,13 +73,13 @@ async def _append_audit(connection: asyncpg.Connection, event: AuditEvent) -> No
     )
 
 
-def _unavailable(error: BaseException) -> RecordingStorageUnavailable:
+def storage_unavailable(error: BaseException) -> RecordingStorageUnavailable:
     # Type name only: a driver error can carry the DSN, and the DSN the password.
     sys.stderr.write(f"Recording storage failure: {type(error).__name__}\n")
     return RecordingStorageUnavailable("the recording database is unavailable")
 
 
-def _user_key(row: Any) -> UserKeyRecord:
+def user_key_from_row(row: Any) -> UserKeyRecord:
     encrypted = row["encrypted_private"]
     return UserKeyRecord(
         tenant_id=row["tenant_id"],
@@ -98,7 +98,7 @@ class PostgresRecordingRepository:
         self._pool = pool
 
     @classmethod
-    async def create(cls, *, dsn: str, password: str | None) -> "PostgresRecordingRepository":
+    async def create(cls, *, dsn: str, password: str | None) -> Self:
         """The password arrives beside the DSN: a generated one is not URL-safe."""
         pool = await asyncpg.create_pool(dsn=dsn, password=password or None, min_size=1, max_size=5)
         return cls(pool)
@@ -110,20 +110,20 @@ class PostgresRecordingRepository:
         try:
             async with self._pool.acquire() as connection:
                 async with connection.transaction():
-                    await _bind_tenant(connection, tenant_id)
+                    await bind_tenant(connection, tenant_id)
                     row = await connection.fetchrow(
                         "SELECT * FROM user_keys WHERE user_sub = $1 AND retired_at IS NULL",
                         user_sub,
                     )
-        except _DRIVER_FAILURE as error:
-            raise _unavailable(error) from None
-        return None if row is None else _user_key(row)
+        except DRIVER_FAILURE as error:
+            raise storage_unavailable(error) from None
+        return None if row is None else user_key_from_row(row)
 
     async def enrol_user_key(self, record: UserKeyRecord, audit: AuditEvent) -> None:
         try:
             async with self._pool.acquire() as connection:
                 async with connection.transaction():
-                    await _bind_tenant(connection, record.tenant_id)
+                    await bind_tenant(connection, record.tenant_id)
                     await connection.execute(
                         "INSERT INTO user_keys (tenant_id, user_sub, key_version, enc_pub,"
                         " sig_pub, fingerprint, encrypted_private, created_at)"
@@ -137,29 +137,29 @@ class PostgresRecordingRepository:
                         record.encrypted_private,
                         record.created_at,
                     )
-                    await _append_audit(connection, audit)
+                    await append_audit(connection, audit)
         except asyncpg.UniqueViolationError:
             raise KeyAlreadyEnrolled() from None
-        except _DRIVER_FAILURE as error:
-            raise _unavailable(error) from None
+        except DRIVER_FAILURE as error:
+            raise storage_unavailable(error) from None
 
     async def record_audit(self, event: AuditEvent) -> None:
         try:
             async with self._pool.acquire() as connection:
                 async with connection.transaction():
-                    await _bind_tenant(connection, event.tenant_id)
-                    await _append_audit(connection, event)
-        except _DRIVER_FAILURE as error:
-            raise _unavailable(error) from None
+                    await bind_tenant(connection, event.tenant_id)
+                    await append_audit(connection, event)
+        except DRIVER_FAILURE as error:
+            raise storage_unavailable(error) from None
 
     async def audit_rows(self, tenant_id: str) -> list[AuditRow]:
         try:
             async with self._pool.acquire() as connection:
                 async with connection.transaction():
-                    await _bind_tenant(connection, tenant_id)
+                    await bind_tenant(connection, tenant_id)
                     rows = await connection.fetch("SELECT * FROM audit_events ORDER BY seq")
-        except _DRIVER_FAILURE as error:
-            raise _unavailable(error) from None
+        except DRIVER_FAILURE as error:
+            raise storage_unavailable(error) from None
         return [
             AuditRow(
                 event=AuditEvent(
@@ -187,8 +187,8 @@ class PostgresRecordingRepository:
                     public_key,
                     at,
                 )
-        except _DRIVER_FAILURE as error:
-            raise _unavailable(error) from None
+        except DRIVER_FAILURE as error:
+            raise storage_unavailable(error) from None
 
     async def gateway_keys(self) -> tuple[tuple[str, bytes], ...]:
         try:
@@ -196,6 +196,6 @@ class PostgresRecordingRepository:
                 rows = await connection.fetch(
                     "SELECT key_id, public_key FROM gateway_signing_keys ORDER BY key_id"
                 )
-        except _DRIVER_FAILURE as error:
-            raise _unavailable(error) from None
+        except DRIVER_FAILURE as error:
+            raise storage_unavailable(error) from None
         return tuple((row["key_id"], bytes(row["public_key"])) for row in rows)

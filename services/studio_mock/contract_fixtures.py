@@ -39,6 +39,7 @@ def load_runtime_templates(directory: Path) -> dict[str, dict[str, Any]]:
 _RUNTIME = load_runtime_templates(FIXTURES)
 _INSTALLATION: dict[str, Any] = _load(FIXTURES / "installation.json")
 _LOGIN_DIRECTORY: list[dict[str, Any]] = _load(FIXTURES / "login-directory.json")
+_RECORDING_DIRECTORY: dict[str, list[dict[str, Any]]] = _load(FIXTURES / "recording-directory.json")
 RUNTIME_V2_TENANTS = tuple(sorted(_RUNTIME))
 
 
@@ -107,3 +108,14 @@ def installation_content_v2(scenario: str | None) -> dict[str, Any]:
 def login_directory_tenants() -> list[dict[str, Any]]:
     """Return the tenants the login directory lists, as a fresh copy."""
     return deepcopy(_LOGIN_DIRECTORY)
+
+
+def recording_directory(tenant_id: str) -> dict[str, Any]:
+    """One tenant's recording directory; a tenant without staff entries lists nobody."""
+    body: dict[str, Any] = {
+        "contractVersion": "2.0",
+        "tenantId": tenant_id,
+        "users": deepcopy(_RECORDING_DIRECTORY.get(tenant_id, [])),
+    }
+    body["directoryRevision"] = revision(body)
+    return body

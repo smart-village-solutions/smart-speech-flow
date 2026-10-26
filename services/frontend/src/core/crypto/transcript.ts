@@ -4,10 +4,16 @@ import type { Proof } from './proofs';
 import { TAGS } from './tags';
 
 const DISPLAY_BYTES = 20;
+const PAPER_DEVICE_REF = 'paper-device';
 
 /** fpr = SHA-256(enc(tag, tenant_id, user_sub, enc_pub, sig_pub)) (spec A.9). */
 export async function fingerprint(tenantId: string, userSub: string, encPub: Bytes, sigPub: Bytes): Promise<Bytes> {
   return fromBuffer(await crypto.subtle.digest('SHA-256', enc(TAGS.fingerprint, tenantId, userSub, encPub, sigPub)));
+}
+
+/** The ceremony device has an encryption key only; it stands in for both halves. */
+export function paperDeviceFingerprint(tenantId: string, devicePub: Bytes): Promise<Bytes> {
+  return fingerprint(tenantId, PAPER_DEVICE_REF, devicePub, devicePub);
 }
 
 /** First 20 bytes, hex, in groups of four: `a1b2 c3d4 …`. */

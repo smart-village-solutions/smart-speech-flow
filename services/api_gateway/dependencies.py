@@ -89,6 +89,7 @@ class GatewayDependencies:
     recording_repository: Any = None
     recording_secrets: Any = None
     recording_keys: Any = None
+    recording_ceremony: Any = None
 
 
 def build_gateway_dependencies(

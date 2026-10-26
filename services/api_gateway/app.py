@@ -532,7 +532,17 @@ def setup_cors_for_websockets(app: FastAPI) -> None:
 
 # === Module Imports ===
 from . import websocket, websocket_monitoring_routes, websocket_polling_routes
-from .routes import admin, circuit_breaker, content, customer, feedback, login, recording, session
+from .routes import (
+    admin,
+    circuit_breaker,
+    content,
+    customer,
+    feedback,
+    login,
+    recording,
+    recording_ceremony,
+    session,
+)
 from .routes.health import router as health_router
 from .routes.metrics import metrics
 
@@ -555,6 +565,7 @@ def _include_routes(app: FastAPI) -> None:
     app.include_router(circuit_breaker.router, prefix="/api", tags=["circuit-breaker"])
     app.include_router(feedback.router, tags=["feedback"])
     app.include_router(recording.router)
+    app.include_router(recording_ceremony.router)
 
     # Metrics-Route direkt an App binden
     app.get("/metrics")(metrics)

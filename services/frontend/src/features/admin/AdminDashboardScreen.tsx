@@ -15,6 +15,7 @@ interface AdminDashboardScreenProps {
   onEnterSession: (sessionId: string) => void;
   onSignOut: () => void;
   onOpenKeys?: () => void;
+  onOpenCeremony?: () => void;
   accountUrl?: string;
   studioUrl?: string;
 }
@@ -23,6 +24,7 @@ export function AdminDashboardScreen({
   onEnterSession,
   onSignOut,
   onOpenKeys,
+  onOpenCeremony,
   accountUrl,
   studioUrl,
 }: Readonly<AdminDashboardScreenProps>) {
@@ -43,6 +45,7 @@ export function AdminDashboardScreen({
         accountUrl={accountUrl}
         studioUrl={studioUrl}
         onOpenKeys={onOpenKeys}
+        onOpenCeremony={onOpenCeremony}
       />
 
       <div className="flex flex-col gap-6 px-5 pb-16 pt-content-top">

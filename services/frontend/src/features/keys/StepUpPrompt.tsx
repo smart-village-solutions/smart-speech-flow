@@ -5,21 +5,31 @@ import { useServices } from '@/app/providers/services';
 import { Button } from '@/ui/primitives/Button';
 import { KEYS_VIEW } from './useKeys';
 
-/** Enrolment needs a fresh MFA login; the redirect back reopens this screen. */
-export function StepUpPrompt() {
+const BODY = {
+  keys: 'admin.keys.stepUpBody',
+  ceremony: 'admin.ceremony.stepUpBody',
+} as const;
+
+interface StepUpPromptProps {
+  /** The staff view the redirect returns to, which also picks the explanation. */
+  returnTo?: keyof typeof BODY;
+}
+
+/** Enrolment and ceremony steps need a fresh MFA login; the redirect back reopens the screen. */
+export function StepUpPrompt({ returnTo = KEYS_VIEW }: Readonly<StepUpPromptProps>) {
   const { t } = useTranslation();
   const { resume } = useServices();
   const [failed, setFailed] = useState(false);
 
   const start = () => {
-    resume.remember(KEYS_VIEW);
+    resume.remember(returnTo);
     requestStepUp().catch(() => setFailed(true));
   };
 
   return (
     <section className="flex flex-col gap-4 rounded-2xl border border-border-card bg-surface-card p-5">
       <h2 className="text-body font-semibold text-fg-strong">{t('admin.keys.stepUpTitle')}</h2>
-      <p className="text-note leading-chat text-fg-muted">{t('admin.keys.stepUpBody')}</p>
+      <p className="text-note leading-chat text-fg-muted">{t(BODY[returnTo])}</p>
       {failed && (
         <p role="alert" className="text-meta text-fg-status-alert">
           {t('admin.keys.unavailable')}

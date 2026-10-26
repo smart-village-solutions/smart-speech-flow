@@ -25,13 +25,18 @@ import type { LoginTenantRepository } from '@/domain/login-tenant/loginTenant.re
 import { createContentRepository } from '@/domain/content/content.repository';
 import type { ContentSource } from '@/domain/content/content.port';
 import type { ArchiveCrypto, KeyVault, PassphraseStrength } from '@/core/crypto/archive-crypto.port';
+import type { CeremonyCrypto, PaperDeviceHolder } from '@/core/crypto/ceremony-crypto.port';
 import { createKeyVault } from '@/core/crypto/key-vault';
+import { createPaperDeviceHolder } from '@/core/crypto/paper-device-holder';
 import { createWebArchiveCrypto } from '@/core/crypto/web-archive-crypto';
+import { createWebCeremonyCrypto } from '@/core/crypto/web-ceremony-crypto';
 import { createZxcvbnStrength } from '@/core/crypto/zxcvbn-strength';
 import { createResumeMemory } from '@/core/storage/resume-memory';
 import type { ResumeMemory } from '@/core/storage/resume-memory.port';
 import { createRecordingKeysRepository } from '@/domain/recording/recording.repository';
 import type { RecordingKeysRepository } from '@/domain/recording/recording.repository';
+import { createRecoveryCeremonyRepository } from '@/domain/recovery/recovery.repository';
+import type { RecoveryCeremonyRepository } from '@/domain/recovery/recovery.repository';
 
 export interface Services {
   config: AppConfig;
@@ -52,6 +57,9 @@ export interface Services {
   keyVault: KeyVault;
   passphraseStrength: PassphraseStrength;
   resume: ResumeMemory;
+  recoveryCeremony: RecoveryCeremonyRepository;
+  ceremonyCrypto: CeremonyCrypto;
+  paperDevice: PaperDeviceHolder;
 }
 
 /** The composition root. The only place implementations are chosen. */
@@ -85,6 +93,10 @@ export function createServices(config: AppConfig, getLocale: () => string): Serv
     keyVault: createKeyVault(),
     passphraseStrength: createZxcvbnStrength(),
     resume: createResumeMemory(() => globalThis.sessionStorage ?? null),
+    recoveryCeremony: createRecoveryCeremonyRepository(http),
+    ceremonyCrypto: createWebCeremonyCrypto(),
+    // The ceremony device's key: in memory, like the key vault.
+    paperDevice: createPaperDeviceHolder(),
     createRealtime: () =>
       createWebSocketTransport({
         wsBaseUrl: config.wsBaseUrl,

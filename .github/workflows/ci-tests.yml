@@ -173,6 +173,7 @@ jobs:
           docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*003_feedback_reader.sql'
           docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*004_feedback_dynamic.sql'
           docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*recording/migrations/001_recording_keys.sql'
+          docker logs ssf-postgres-ci 2>&1 | grep 'apply.sh: applying .*recording/migrations/002_recovery_ceremony.sql'
 
       - name: Run the feedback integration tests
         # The three passwords arrive from the previous step through GITHUB_ENV.
@@ -190,7 +191,8 @@ jobs:
             tests/integration/test_feedback_row_level_security.py \
             tests/integration/test_feedback_read_access.py \
             tests/integration/test_feedback_migration.py \
-            tests/integration/test_recording_database.py
+            tests/integration/test_recording_database.py \
+            tests/integration/test_recording_ceremony_database.py
 
       - name: Database logs on failure
         if: failure()
