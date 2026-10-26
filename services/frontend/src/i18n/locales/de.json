@@ -222,6 +222,8 @@
       "unavailable": "Der Wiederherstellungsschlüssel ist gerade nicht verfügbar.",
       "stepUpBody": "Für diesen Schritt melden Sie sich bitte erneut mit Ihrem zweiten Faktor an.",
       "noCeremony": "Für diese Organisation gibt es noch keinen Wiederherstellungsschlüssel. Die Organisationsverwaltung startet die Zeremonie.",
+      "lastAborted": "Die letzte Zeremonie wurde abgebrochen ({{reason}}). Es gibt noch keinen Wiederherstellungsschlüssel; die Zeremonie muss vollständig neu gestartet werden.",
+      "lastExpired": "Die letzte Zeremonie ist nach 24 Stunden abgelaufen, ohne abgeschlossen zu werden. Sie muss vollständig neu gestartet werden.",
       "keyActiveTitle": "Der Wiederherstellungsschlüssel ist aktiv",
       "keyActiveBody": "{{k}} von {{n}} Anteilen öffnen gemeinsam ein Gespräch.",
       "modeStandard": "Standardmodus: Jeder Anteil allein genügt. Der Schutz ist organisatorisch und nur so stark wie die schwächste Passphrase.",

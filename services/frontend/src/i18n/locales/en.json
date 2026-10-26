@@ -222,6 +222,8 @@
       "unavailable": "The recovery key is not available right now.",
       "stepUpBody": "For this step, please sign in again with your second factor.",
       "noCeremony": "This organisation has no recovery key yet. The organisation administrator starts the ceremony.",
+      "lastAborted": "The last ceremony was aborted ({{reason}}). There is no recovery key yet; the ceremony must be started again from the beginning.",
+      "lastExpired": "The last ceremony lapsed after 24 hours without finishing. It must be started again from the beginning.",
       "keyActiveTitle": "The recovery key is active",
       "keyActiveBody": "{{k}} of {{n}} shares open a conversation together.",
       "modeStandard": "Standard mode: any single share is enough. The protection is organisational and only as strong as the weakest passphrase.",

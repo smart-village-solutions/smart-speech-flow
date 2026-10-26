@@ -93,23 +93,29 @@ function StaffScreens({ onSignOut, studioUrl }: Readonly<StaffScreensProps>) {
   const { resume } = useServices();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [view, setView] = useState<StaffView>(() => resumedView(resume.take()));
+  // A custodian sent from the ceremony to unlock their keys goes back to the ceremony.
+  const [keysReturn, setKeysReturn] = useState<StaffView>('dashboard');
   const accountUrl = getAccountConsoleUrl() ?? undefined;
   const ceremonyAllowed = hasPermission(TENANT_MANAGE) || hasPermission(CUSTODIAN);
   const out = () => {
     setSessionId(null);
     onSignOut();
   };
+  const openKeys = (from: StaffView) => {
+    setKeysReturn(from);
+    setView(KEYS_VIEW);
+  };
   const shared = { onSignOut: out, accountUrl, studioUrl };
 
-  if (view === KEYS_VIEW) return <KeysScreen onBack={() => setView('dashboard')} {...shared} />;
+  if (view === KEYS_VIEW) return <KeysScreen onBack={() => setView(keysReturn)} {...shared} />;
   if (view === CEREMONY_VIEW) {
-    return <CeremonyScreen onBack={() => setView('dashboard')} onOpenKeys={() => setView(KEYS_VIEW)} {...shared} />;
+    return <CeremonyScreen onBack={() => setView('dashboard')} onOpenKeys={() => openKeys(CEREMONY_VIEW)} {...shared} />;
   }
   if (sessionId === null) {
     return (
       <AdminDashboardScreen
         onEnterSession={setSessionId}
-        onOpenKeys={() => setView(KEYS_VIEW)}
+        onOpenKeys={() => openKeys('dashboard')}
         onOpenCeremony={ceremonyAllowed ? () => setView(CEREMONY_VIEW) : undefined}
         {...shared}
       />

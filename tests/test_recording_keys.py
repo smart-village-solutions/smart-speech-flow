@@ -10,7 +10,7 @@ import pytest
 
 from services.api_gateway.recording.crypto.transcript import fingerprint
 from services.api_gateway.recording.keys import Enrolment, InvalidEnrolment, KeyEnrolmentService
-from services.api_gateway.recording.repository import KeyAlreadyEnrolled
+from services.api_gateway.recording.repository import KeyAlreadyEnrolledError
 from services.api_gateway.recording.secrets import ServerLayer
 from tests import recording_crypto_reference as ref
 from tests.recording_fakes import FakeRecordingRepository, sealed_blob, with_kdf
@@ -50,7 +50,7 @@ async def test_own_key_returns_the_blob_and_audits_the_read(service, repository)
 
 async def test_a_second_enrolment_is_refused(service):
     await service.enrol("tenant-test", "alice", Enrolment(ENC, SIG, sealed_blob()))
-    with pytest.raises(KeyAlreadyEnrolled):
+    with pytest.raises(KeyAlreadyEnrolledError):
         await service.enrol("tenant-test", "alice", Enrolment(ENC, SIG, sealed_blob()))
 
 

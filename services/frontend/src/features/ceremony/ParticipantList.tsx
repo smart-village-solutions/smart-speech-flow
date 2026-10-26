@@ -33,14 +33,14 @@ export function ParticipantList({ ceremony, facts }: Readonly<ParticipantListPro
 
   if (fingerprints.isError) {
     return (
-      <p role="alert" className="text-note text-fg-status-alert">
+      <p role="alert" className="text-note text-fg-status-alert print:hidden">
         {t('admin.ceremony.fingerprintMismatch')}
       </p>
     );
   }
 
   return (
-    <section className="flex flex-col gap-3 rounded-2xl border border-border-card bg-surface-card p-5">
+    <section className="flex flex-col gap-3 rounded-2xl border border-border-card bg-surface-card p-5 print:hidden">
       <h2 className="text-body font-semibold text-fg-strong">{t('admin.ceremony.participantsTitle')}</h2>
       <ul className="flex flex-col gap-3">
         {ceremony.participants.map((participant) => {

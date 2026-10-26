@@ -31,6 +31,7 @@ from .ceremony_model import (
     ConfirmationRecord,
     DealingRecord,
     DealingSubmission,
+    FailedCeremony,
     RecoveryKeyRecord,
     RecoveryShareRecord,
     check_dealing,
@@ -58,6 +59,10 @@ class CeremonyStore(Protocol):
     async def gateway_keys(self) -> tuple[tuple[str, bytes], ...]: ...
 
     async def open_ceremony(self, tenant_id: str, now: datetime) -> CeremonySnapshot | None: ...
+
+    async def last_failed_ceremony(
+        self, tenant_id: str, now: datetime
+    ) -> FailedCeremony | None: ...
 
     async def subshares_for(
         self, tenant_id: str, ceremony_id: str, recipients: Collection[int]
@@ -126,6 +131,7 @@ class Candidate:
 class CeremonyState:
     recovery_key: RecoveryKeyRecord | None
     ceremony: CeremonySnapshot | None
+    last_failed: FailedCeremony | None = None
 
 
 def _now() -> datetime:
@@ -168,9 +174,13 @@ class CeremonyService:
         self._new_id = new_id
 
     async def state(self, tenant_id: str) -> CeremonyState:
+        now = self._clock()
+        key = await self._repository.active_recovery_key(tenant_id)
+        ceremony = await self._repository.open_ceremony(tenant_id, now)
+        if key is not None or ceremony is not None:
+            return CeremonyState(key, ceremony)
         return CeremonyState(
-            await self._repository.active_recovery_key(tenant_id),
-            await self._repository.open_ceremony(tenant_id, self._clock()),
+            None, None, await self._repository.last_failed_ceremony(tenant_id, now)
         )
 
     async def _custodian_names(self, tenant_id: str, correlation_id: str) -> Mapping[str, str]:

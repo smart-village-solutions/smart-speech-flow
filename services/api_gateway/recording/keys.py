@@ -140,7 +140,7 @@ class KeyEnrolmentService:
         self._clock = clock
 
     async def enrol(self, tenant_id: str, user_sub: str, enrolment: Enrolment) -> bytes:
-        """Returns the key fingerprint. KeyAlreadyEnrolled if a key is active."""
+        """Returns the key fingerprint. KeyAlreadyEnrolledError if a key is active."""
         _validate_points(enrolment)
         validate_blob(enrolment.blob)
         now = self._clock()

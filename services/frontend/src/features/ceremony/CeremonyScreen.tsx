@@ -4,6 +4,7 @@ import { useFeedback } from '@/app/providers/feedback';
 import { useScreenLocale } from '@/app/providers/locale';
 import { AdminHeader } from '@/ui/patterns/AdminHeader';
 import { ScreenShell } from '@/ui/patterns/ScreenShell';
+import { LastFailedNotice } from './LastFailedNotice';
 import { OpenCeremony } from './OpenCeremony';
 import { RecoveryKeyCard } from './RecoveryKeyCard';
 import { StartForm } from './StartForm';
@@ -22,11 +23,19 @@ function CeremonyPanel({ onOpenKeys }: Readonly<{ onOpenKeys: () => void }>) {
     );
   }
   if (state.isPending) return null;
-  const { recoveryKey, ceremony } = state.data;
+  const { recoveryKey, ceremony, lastFailed } = state.data;
   if (recoveryKey !== null) return <RecoveryKeyCard recoveryKey={recoveryKey} />;
   if (ceremony !== null) return <OpenCeremony ceremony={ceremony} owner={owner} onOpenKeys={onOpenKeys} />;
-  if (hasPermission(TENANT_MANAGE)) return <StartForm tenantId={owner.tenantId} />;
-  return <p className="text-note text-fg-muted">{t('admin.ceremony.noCeremony')}</p>;
+  return (
+    <>
+      {lastFailed !== null && <LastFailedNotice failed={lastFailed} />}
+      {hasPermission(TENANT_MANAGE) ? (
+        <StartForm tenantId={owner.tenantId} />
+      ) : (
+        <p className="text-note text-fg-muted">{t('admin.ceremony.noCeremony')}</p>
+      )}
+    </>
+  );
 }
 
 interface CeremonyScreenProps {

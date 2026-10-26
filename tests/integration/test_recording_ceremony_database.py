@@ -8,7 +8,7 @@ Same environment as test_recording_database.py:
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import asyncpg
 import pytest
@@ -114,10 +114,14 @@ async def test_a_whole_ceremony_lands_in_its_tables_with_an_intact_audit_chain(r
 
 async def test_one_ceremony_in_progress_per_tenant(repository):
     service = _service(repository)
-    await _start(service)
+    snapshot = await _start(service)
     with pytest.raises(CeremonyError) as caught:
         await _start(service)
     assert caught.value.code == "CEREMONY_IN_PROGRESS"
+    now = datetime.now(timezone.utc)
+    assert await repository.last_failed_ceremony(TENANT, now) is None
+    lapsed = await repository.last_failed_ceremony(TENANT, now + timedelta(hours=25))
+    assert (lapsed.ceremony_id, lapsed.reason) == (snapshot.ceremony.ceremony_id, "expired")
 
 
 async def test_an_aborted_ceremony_accepts_nothing_more(repository):
@@ -126,6 +130,9 @@ async def test_an_aborted_ceremony_accepts_nothing_more(repository):
     ceremony_id = snapshot.ceremony.ceremony_id
     dealing = ANNA.deal(snapshot, POLYNOMIALS["anna"])
     await service.abort(TENANT, "bernd", ceremony_id, "cancelled")
+    failed = await repository.last_failed_ceremony(TENANT, datetime.now(timezone.utc))
+    assert (failed.ceremony_id, failed.reason) == (ceremony_id, "cancelled")
+    assert await repository.last_failed_ceremony("tenant-other", datetime.now(timezone.utc)) is None
     with pytest.raises(CeremonyError):
         await service.deal(TENANT, "anna", ceremony_id, dealing)
     with pytest.raises(CeremonyError) as caught:

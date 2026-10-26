@@ -67,6 +67,23 @@ describe('recovery ceremony repository', () => {
     vi.mocked(getAdminAccessToken).mockReset().mockResolvedValue('staff-token');
   });
 
+  it('reads why the last ceremony ended', async () => {
+    server.use(
+      http.get(URL, () =>
+        HttpResponse.json({
+          recovery_key: null,
+          ceremony: null,
+          last_failed: { ceremony_id: CEREMONY, reason: 'proof_invalid', ended_at: '2026-10-26T10:00:00+00:00' },
+        })
+      )
+    );
+    expect((await repository().state()).lastFailed).toEqual({
+      ceremonyId: CEREMONY,
+      reason: 'proof_invalid',
+      endedAt: '2026-10-26T10:00:00+00:00',
+    });
+  });
+
   it('reads a ceremony in progress into bytes and scalars', async () => {
     server.use(http.get(URL, () => HttpResponse.json({ recovery_key: null, ceremony: ceremonyBody })));
     const { ceremony, recoveryKey } = await repository().state();

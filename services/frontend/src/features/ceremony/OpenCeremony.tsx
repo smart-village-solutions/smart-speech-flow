@@ -28,7 +28,7 @@ export function OpenCeremony({ ceremony, owner, onOpenKeys }: Readonly<OpenCerem
     <>
       <ParticipantList ceremony={ceremony} facts={facts} />
       {participant && keys === null && (
-        <section className="flex flex-col gap-3 rounded-2xl border border-border-card bg-surface-card p-5">
+        <section className="flex flex-col gap-3 rounded-2xl border border-border-card bg-surface-card p-5 print:hidden">
           <p className="text-note leading-chat text-fg-muted">{t('admin.ceremony.unlockFirst')}</p>
           <Button variant="compact" className="self-start bg-accent text-accent-on" onClick={onOpenKeys}>
             {t('admin.ceremony.openKeys')}

@@ -22,6 +22,7 @@ from .ceremony_model import (
     CeremonySnapshot,
     ConfirmationRecord,
     DealingRecord,
+    FailedCeremony,
     RecoveryKeyRecord,
     RecoveryShareRecord,
     conflict,
@@ -202,6 +203,22 @@ class PostgresCeremonyRepository(PostgresRecordingRepository):
                     return None if row is None else await _snapshot(connection, row)
         except DRIVER_FAILURE as error:
             raise storage_unavailable(error) from None
+
+    async def last_failed_ceremony(self, tenant_id: str, now: datetime) -> FailedCeremony | None:
+        """The latest ceremony if it was aborted or lapsed; a later start clears it."""
+        rows = await self._read(
+            tenant_id,
+            "SELECT ceremony_id, status, expires_at, closed_at, close_reason"
+            " FROM recovery_ceremonies ORDER BY started_at DESC LIMIT 1",
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        if row["status"] == "aborted":
+            return FailedCeremony(str(row["ceremony_id"]), row["close_reason"], row["closed_at"])
+        if row["status"] in _OPEN and row["expires_at"] <= now:
+            return FailedCeremony(str(row["ceremony_id"]), "expired", row["expires_at"])
+        return None
 
     async def subshares_for(
         self, tenant_id: str, ceremony_id: str, recipients: Collection[int]

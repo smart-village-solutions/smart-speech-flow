@@ -28,9 +28,18 @@ export interface RecoveryKey {
   activatedAt: string;
 }
 
+/** The tenant's latest ceremony, when it ended without a key. */
+export interface FailedCeremony {
+  ceremonyId: string;
+  /** An abort reason, or 'expired' when it lapsed. */
+  reason: string;
+  endedAt: string;
+}
+
 export interface CeremonyState {
   recoveryKey: RecoveryKey | null;
   ceremony: Ceremony | null;
+  lastFailed: FailedCeremony | null;
 }
 
 export interface CustodianCandidate {

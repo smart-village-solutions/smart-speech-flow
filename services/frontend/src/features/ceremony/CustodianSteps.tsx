@@ -34,7 +34,7 @@ export function CustodianSteps({ ceremony, facts, participant, keys }: Readonly<
   if (actions.error === 'stepUp') return <StepUpPrompt returnTo={CEREMONY_VIEW} />;
 
   return (
-    <section className="flex flex-col gap-4 rounded-2xl border border-border-card bg-surface-card p-5">
+    <section className="flex flex-col gap-4 rounded-2xl border border-border-card bg-surface-card p-5 print:hidden">
       <h2 className="text-body font-semibold text-fg-strong">{t('admin.ceremony.custodianTitle')}</h2>
       {step === 'wait' && <p className="text-note leading-chat text-fg-muted">{t('admin.ceremony.waitForOthers')}</p>}
       {step === 'deal' && (

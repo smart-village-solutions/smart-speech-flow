@@ -19,7 +19,7 @@ import pytest
 
 from services.api_gateway.recording.audit import AuditEvent, chain_is_intact
 from services.api_gateway.recording.repository import (
-    KeyAlreadyEnrolled,
+    KeyAlreadyEnrolledError,
     PostgresRecordingRepository,
     UserKeyRecord,
 )
@@ -114,7 +114,7 @@ async def test_enrolment_round_trip_one_active_key_and_an_intact_chain(repositor
         record, AuditEvent("tenant-a", "alice", "key_enrolled", "k", NOW)
     )
     assert await repository.active_user_key("tenant-a", "alice") == record
-    with pytest.raises(KeyAlreadyEnrolled):
+    with pytest.raises(KeyAlreadyEnrolledError):
         await repository.enrol_user_key(
             record, AuditEvent("tenant-a", "alice", "key_enrolled", "k", NOW)
         )

@@ -48,7 +48,8 @@ const recoveryKey = z.object({
   activated_at: z.string(),
 });
 
-const state = z.object({ recovery_key: recoveryKey.nullable(), ceremony: z.unknown() });
+const failed = z.object({ ceremony_id: z.string(), reason: z.string(), ended_at: z.string() });
+const state = z.object({ recovery_key: recoveryKey.nullable(), ceremony: z.unknown(), last_failed: failed.nullish() });
 
 const candidates = z.object({
   candidates: z.array(z.object({ sub: z.string(), display_name: z.string(), fingerprint_display: z.string().nullable() })),
@@ -103,6 +104,10 @@ export function toCeremonyState(body: unknown): CeremonyState {
             activatedAt: key.activated_at,
           },
     ceremony: parsed.ceremony == null ? null : toCeremony(parsed.ceremony),
+    lastFailed:
+      parsed.last_failed == null
+        ? null
+        : { ceremonyId: parsed.last_failed.ceremony_id, reason: parsed.last_failed.reason, endedAt: parsed.last_failed.ended_at },
   };
 }
 

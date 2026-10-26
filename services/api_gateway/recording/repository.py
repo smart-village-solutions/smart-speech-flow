@@ -29,7 +29,7 @@ class RecordingStorageUnavailable(RuntimeError):
     """The recording database could not answer; the route maps it to 503."""
 
 
-class KeyAlreadyEnrolled(Exception):
+class KeyAlreadyEnrolledError(Exception):
     """The user already has an active key; replacing it is key recovery (#617)."""
 
 
@@ -139,7 +139,7 @@ class PostgresRecordingRepository:
                     )
                     await append_audit(connection, audit)
         except asyncpg.UniqueViolationError:
-            raise KeyAlreadyEnrolled() from None
+            raise KeyAlreadyEnrolledError() from None
         except DRIVER_FAILURE as error:
             raise storage_unavailable(error) from None
 

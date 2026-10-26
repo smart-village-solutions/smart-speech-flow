@@ -88,7 +88,7 @@ function render(state: CeremonyState, overrides: { repository?: Partial<Recovery
   return { recoveryCeremony, ceremonyCrypto, paperDevice, device, remember, onOpenKeys };
 }
 
-const noKey = { recoveryKey: null };
+const noKey = { recoveryKey: null, lastFailed: null };
 
 describe('CeremonyScreen', () => {
   beforeEach(() => {
@@ -175,10 +175,21 @@ describe('CeremonyScreen', () => {
     expect(await screen.findByText(/hält den Papierschlüssel nicht mehr/)).toBeInTheDocument();
   });
 
+  it('tells every participant why the last ceremony ended', async () => {
+    render({
+      ...noKey,
+      ceremony: null,
+      lastFailed: { ceremonyId: 'c-1', reason: 'proof_invalid', endedAt: '2026-10-26T10:00:00+00:00' },
+    });
+    expect(await screen.findByText(/Die letzte Zeremonie wurde abgebrochen \(proof_invalid\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Die Organisationsverwaltung startet die Zeremonie/)).toBeInTheDocument();
+  });
+
   it('shows the active recovery key', async () => {
     render({
       recoveryKey: { keyId: 'k', k: 2, n: 5, mode: 'enhanced', transcriptDisplay: '1234 5678', activatedAt: '2026-10-26T10:00:00+00:00' },
       ceremony: null,
+      lastFailed: null,
     });
     expect(await screen.findByText(/2 von 5 Anteilen öffnen gemeinsam ein Gespräch/)).toBeInTheDocument();
   });

@@ -22,7 +22,7 @@ from ..recording.permissions import (
     require_permission,
     require_step_up,
 )
-from ..recording.repository import KeyAlreadyEnrolled, RecordingStorageUnavailable
+from ..recording.repository import KeyAlreadyEnrolledError, RecordingStorageUnavailable
 from ..tenant_context import StudioTenantContext, require_studio_tenant_context
 from ..value_free_validation import ValueFreeValidationRoute
 
@@ -90,7 +90,7 @@ async def enrol_key(
         fingerprint = await service.enrol(context.tenant_id, claims["sub"], enrolment)
     except ValueError:  # InvalidEnrolment, or base64 that does not decode
         raise coded(422, "INVALID_ENROLMENT", "The keys or the sealed blob are invalid") from None
-    except KeyAlreadyEnrolled:
+    except KeyAlreadyEnrolledError:
         raise coded(409, "KEY_ALREADY_ENROLLED", "A personal key is already enrolled") from None
     except RecordingStorageUnavailable:
         raise coded(503, "RECORDING_UNAVAILABLE", "Recording storage unavailable") from None

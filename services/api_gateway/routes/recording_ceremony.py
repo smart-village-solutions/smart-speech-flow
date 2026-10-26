@@ -175,6 +175,15 @@ def _state_body(state: CeremonyState) -> dict[str, Any]:
     return {
         "recovery_key": None if state.recovery_key is None else _key_body(state.recovery_key),
         "ceremony": None if state.ceremony is None else _ceremony_body(state.ceremony),
+        "last_failed": (
+            None
+            if state.last_failed is None
+            else {
+                "ceremony_id": state.last_failed.ceremony_id,
+                "reason": state.last_failed.reason,
+                "ended_at": state.last_failed.ended_at.isoformat(),
+            }
+        ),
     }
 
 

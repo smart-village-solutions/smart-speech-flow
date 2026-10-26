@@ -11,12 +11,13 @@ from datetime import datetime
 from services.api_gateway.recording.audit import AuditEvent
 from services.api_gateway.recording.ceremony_model import (
     CeremonySnapshot,
+    FailedCeremony,
     RecoveryKeyRecord,
     RecoveryShareRecord,
     conflict,
 )
 from services.api_gateway.recording.crypto.encoding import b64url
-from services.api_gateway.recording.repository import KeyAlreadyEnrolled, UserKeyRecord
+from services.api_gateway.recording.repository import KeyAlreadyEnrolledError, UserKeyRecord
 from tests import recording_crypto_reference as ref
 
 
@@ -30,7 +31,7 @@ class FakeRecordingRepository:
 
     async def enrol_user_key(self, record: UserKeyRecord, audit: AuditEvent) -> None:
         if (record.tenant_id, record.user_sub) in self.keys:
-            raise KeyAlreadyEnrolled()
+            raise KeyAlreadyEnrolledError()
         self.keys[(record.tenant_id, record.user_sub)] = record
         self.audit.append(audit)
 
@@ -76,6 +77,7 @@ class FakeCeremonyRepository:
     recovery_key: RecoveryKeyRecord | None = None
     shares: list[RecoveryShareRecord] = field(default_factory=list)
     audit: list[AuditEvent] = field(default_factory=list)
+    aborted: dict[str, FailedCeremony] = field(default_factory=dict)
 
     async def active_recovery_key(self, tenant_id: str) -> RecoveryKeyRecord | None:
         return self.recovery_key
@@ -91,6 +93,16 @@ class FakeCeremonyRepository:
             ceremony = snapshot.ceremony
             if ceremony.status in ("dealing", "confirming") and ceremony.expires_at > now:
                 return snapshot
+        return None
+
+    async def last_failed_ceremony(self, tenant_id: str, now: datetime) -> FailedCeremony | None:
+        if not self.ceremonies:
+            return None
+        latest = max(self.ceremonies.values(), key=lambda s: s.ceremony.started_at).ceremony
+        if latest.status == "aborted":
+            return self.aborted[latest.ceremony_id]
+        if latest.status in ("dealing", "confirming") and latest.expires_at <= now:
+            return FailedCeremony(latest.ceremony_id, "expired", latest.expires_at)
         return None
 
     async def subshares_for(
@@ -158,6 +170,7 @@ class FakeCeremonyRepository:
     async def abort(self, tenant_id, ceremony_id, reason, audit) -> None:
         self._locked(ceremony_id, audit.at, ("dealing", "confirming"))
         self._set(ceremony_id, status="aborted")
+        self.aborted[ceremony_id] = FailedCeremony(ceremony_id, reason, audit.at)
         self.audit.append(audit)
 
     async def activate(self, tenant_id, key, shares, audit) -> bool:

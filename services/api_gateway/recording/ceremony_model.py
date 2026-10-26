@@ -105,6 +105,15 @@ class CeremonyRecord:
 
 
 @dataclass(frozen=True)
+class FailedCeremony:
+    """The tenant's latest ceremony, when it ended without a key; every participant is told why."""
+
+    ceremony_id: str
+    reason: str  # an ABORT_REASONS value, or "expired"
+    ended_at: datetime
+
+
+@dataclass(frozen=True)
 class CeremonySnapshot:
     ceremony: CeremonyRecord
     participants: tuple[CeremonyParticipant, ...]

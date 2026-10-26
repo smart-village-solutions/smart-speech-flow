@@ -321,8 +321,16 @@ async def test_a_participant_aborts_and_the_tenant_may_start_again(world):
     )
     assert await _code(service.abort(TENANT, "anna", ceremony_id, "bored")) == "INVALID_REASON"
     await service.abort(TENANT, "anna", ceremony_id, "proof_invalid")
-    assert (await service.state(TENANT)).ceremony is None
+    state = await service.state(TENANT)
+    assert state.ceremony is None
     assert repository.audit[-1].object_ref == f"ceremony:{ceremony_id}:proof_invalid"
+    # Everyone learns why it ended, not only the browser whose check failed.
+    assert (state.last_failed.ceremony_id, state.last_failed.reason) == (
+        ceremony_id,
+        "proof_invalid",
+    )
+    await service.start(TENANT, ORG_ADMIN, _request(), "corr")
+    assert (await service.state(TENANT)).last_failed is None
 
 
 @pytest.mark.asyncio
@@ -330,7 +338,9 @@ async def test_an_expired_ceremony_is_over(world):
     service, _, _, clock = world
     snapshot = await service.start(TENANT, ORG_ADMIN, _request(), "corr")
     clock.now = START + timedelta(hours=24)
-    assert (await service.state(TENANT)).ceremony is None
+    state = await service.state(TENANT)
+    assert state.ceremony is None
+    assert (state.last_failed.reason, state.last_failed.ended_at) == ("expired", clock.now)
     dealing = ANNA.deal(snapshot, POLYNOMIALS["anna"])
     assert await _code(service.deal(TENANT, "anna", snapshot.ceremony.ceremony_id, dealing)) == (
         "NO_CEREMONY"

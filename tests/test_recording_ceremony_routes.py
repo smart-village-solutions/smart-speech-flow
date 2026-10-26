@@ -215,7 +215,10 @@ def test_a_custodian_can_abort_without_a_fresh_login(http):
     caller.be("bernd", CUSTODIAN, fresh=False)
     response = client.post(f"{BASE}/{ceremony_id}/abort", json={"reason": "subshare_invalid"})
     assert response.status_code == 204
-    assert client.get(BASE).json()["ceremony"] is None
+    state = client.get(BASE).json()
+    assert state["ceremony"] is None
+    assert state["last_failed"]["ceremony_id"] == ceremony_id
+    assert state["last_failed"]["reason"] == "subshare_invalid"
 
 
 def test_ceremony_errors_keep_their_codes(http):

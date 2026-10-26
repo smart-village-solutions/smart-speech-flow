@@ -146,8 +146,9 @@ Keycloak admin console of each realm:
    `mfa` → `2`. Save.
 2. **Authentication → Flows → browser → Action → Duplicate**, named
    `ssf step-up browser`.
-3. In its `forms` sub-flow, delete the existing `Username Password Form` and
-   `Conditional OTP` steps, then add:
+3. In its `forms` sub-flow, delete the existing `Username Password Form` step
+   and the `Browser - Conditional 2FA` sub-flow (named `Conditional OTP` before
+   Keycloak 26), then add:
    - a sub-flow `1st condition`, requirement **Conditional**, containing
      `Condition - Level of Authentication` (Required; level `1`, max age
      `36000`) and `Username Password Form` (Required);

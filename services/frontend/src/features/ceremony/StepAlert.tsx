@@ -7,7 +7,7 @@ export function StepAlert({ error }: Readonly<{ error: Exclude<StepError, 'stepU
   const message =
     error === 'failed' ? t('admin.ceremony.stepFailed') : t('admin.ceremony.checkFailed', { reason: error });
   return (
-    <p role="alert" className="text-meta text-fg-status-alert">
+    <p role="alert" className="text-meta text-fg-status-alert print:hidden">
       {message}
     </p>
   );
