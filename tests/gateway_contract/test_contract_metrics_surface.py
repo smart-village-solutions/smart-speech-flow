@@ -431,7 +431,6 @@ def _drive_the_realtime_and_message_paths(client, conversations, dependencies) -
     conversations.activate(session_id, "en")
     poller = client.post(f"/api/customer/session/{session_id}/polling/activate")
     assert poller.status_code == 200, poller.text
-    polling_id = poller.json()["polling_id"]
     ticket = conversations.ticket(session_id)
 
     with client.websocket_connect(
@@ -441,15 +440,9 @@ def _drive_the_realtime_and_message_paths(client, conversations, dependencies) -
         with open_guest_socket(client, session_id, ORIGIN) as customer:
             assert _frame(customer)["type"] == "connection_ack"
             assert _frame(admin)["type"] == "client_joined"
-            admin.send_json({"type": "message", "content": {"text": "relayed"}})
             _settle(admin)
             _answer_a_fresh_ping(customer)
 
-            sent = client.post(
-                f"/api/customer/session/{session_id}/polling/{polling_id}/send",
-                json={"type": "message", "content": {"text": "from the poller"}},
-            )
-            assert sent.json() == {"status": "success"}
             assert conversations.send_text(session_id).status_code == 200
             assert _send_audio(client, session_id).status_code == 200
 

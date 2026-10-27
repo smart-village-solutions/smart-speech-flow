@@ -45,6 +45,27 @@
     "ended": "此对话已结束。",
     "timeoutWarning": "此对话将于 {{time}} 结束。"
   },
+  "recording": {
+    "label": "正在录音",
+    "starting": "录音即将开始…",
+    "paused": "录音已暂停",
+    "stop": "停止录音",
+    "error": "无法更改录音。请重试。",
+    "reason": {
+      "liveness": "连接中断",
+      "unacknowledged": "正在等待双方屏幕",
+      "storage": "存储不可用",
+      "policy": "目前不允许"
+    },
+    "ask": {
+      "title": "可以录下这次对话吗？",
+      "body": "工作人员希望录下这次对话。从现在起，每条消息都将加密保存，直到您或工作人员停止录音。您可以随时停止。",
+      "resumeTitle": "继续录音吗？",
+      "resumeBody": "录音已停止。可以从现在起继续吗？您可以随时再次停止。",
+      "yes": "是，录音",
+      "no": "否"
+    }
+  },
   "feedback": {
     "title": "分享您的反馈",
     "close": "关闭",

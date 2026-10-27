@@ -45,6 +45,27 @@
     "ended": "Ta rozmowa została zakończona.",
     "timeoutWarning": "Ta rozmowa zakończy się o {{time}}."
   },
+  "recording": {
+    "label": "Nagrywanie",
+    "starting": "Rozpoczynanie nagrywania…",
+    "paused": "Nagrywanie wstrzymane",
+    "stop": "Zatrzymaj nagrywanie",
+    "error": "Nie udało się zmienić nagrywania. Proszę spróbować ponownie.",
+    "reason": {
+      "liveness": "połączenie przerwane",
+      "unacknowledged": "oczekiwanie na oba ekrany",
+      "storage": "magazyn niedostępny",
+      "policy": "obecnie niedozwolone"
+    },
+    "ask": {
+      "title": "Czy tę rozmowę można nagrać?",
+      "body": "Pracownik chciałby nagrać tę rozmowę. Od teraz każda wiadomość byłaby przechowywana w postaci zaszyfrowanej, dopóki Pan/Pani lub pracownik nie zatrzyma nagrywania. Można je zatrzymać w każdej chwili.",
+      "resumeTitle": "Kontynuować nagrywanie?",
+      "resumeBody": "Nagrywanie zostało zatrzymane. Czy może być kontynuowane od teraz? Można je ponownie zatrzymać w każdej chwili.",
+      "yes": "Tak, nagrywaj",
+      "no": "Nie"
+    }
+  },
   "feedback": {
     "title": "Podziel się opinią",
     "close": "Zamknij",

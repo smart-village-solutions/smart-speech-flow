@@ -45,6 +45,27 @@
     "ended": "Dieses Gespräch ist beendet.",
     "timeoutWarning": "Dieses Gespräch endet um {{time}} Uhr."
   },
+  "recording": {
+    "label": "Aufnahme läuft",
+    "starting": "Aufnahme startet …",
+    "paused": "Aufnahme pausiert",
+    "stop": "Aufnahme beenden",
+    "error": "Die Aufnahme konnte nicht geändert werden. Bitte versuchen Sie es erneut.",
+    "reason": {
+      "liveness": "Verbindung unterbrochen",
+      "unacknowledged": "warten auf beide Bildschirme",
+      "storage": "Speicher nicht erreichbar",
+      "policy": "derzeit nicht erlaubt"
+    },
+    "ask": {
+      "title": "Darf dieses Gespräch aufgezeichnet werden?",
+      "body": "Ihre Ansprechperson möchte dieses Gespräch aufzeichnen. Ab jetzt würde jede Nachricht verschlüsselt gespeichert, bis Sie oder Ihre Ansprechperson die Aufnahme beenden. Sie können sie jederzeit beenden.",
+      "resumeTitle": "Aufnahme fortsetzen?",
+      "resumeBody": "Die Aufnahme wurde beendet. Darf sie ab jetzt fortgesetzt werden? Sie können sie jederzeit wieder beenden.",
+      "yes": "Ja, aufzeichnen",
+      "no": "Nein"
+    }
+  },
   "feedback": {
     "title": "Feedback geben",
     "close": "Schließen",
@@ -277,6 +298,25 @@
       "abortBody": "Alle bisherigen Beiträge verfallen. Die Zeremonie muss danach vollständig neu gestartet werden.",
       "abortFailed": "Die Zeremonie konnte nicht abgebrochen werden. Bitte versuchen Sie es erneut.",
       "keepGoing": "Weitermachen"
+    },
+    "recording": {
+      "off": "Keine Aufnahme",
+      "request": "Aufnahme anfragen",
+      "waiting": "Warten auf die Antwort des Gastes …",
+      "cancel": "Anfrage zurückziehen",
+      "reason": {
+        "declined": "Der Gast hat die Aufnahme abgelehnt.",
+        "unanswered": "Der Gast hat nicht geantwortet.",
+        "stopped_by_guest": "Der Gast hat die Aufnahme beendet."
+      },
+      "error": {
+        "GUEST_NOT_CONNECTED": "Der Gast ist nicht verbunden.",
+        "RECORDING_DISABLED": "Aufnahmen sind für diese Organisation nicht freigegeben.",
+        "RECOVERY_KEY_MISSING": "Für diese Organisation fehlt noch der Wiederherstellungsschlüssel.",
+        "RECORDING_POLICY_UNAVAILABLE": "Die Aufnahmeeinstellungen sind gerade nicht erreichbar. Bitte erneut versuchen.",
+        "RECORDING_BUSY": "Die Aufnahme ist bereits angefragt oder läuft.",
+        "generic": "Die Aufnahme konnte nicht geändert werden."
+      }
     }
   }
 }

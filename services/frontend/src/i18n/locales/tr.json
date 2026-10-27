@@ -45,6 +45,27 @@
     "ended": "Bu görüşme sona erdi.",
     "timeoutWarning": "Bu görüşmenin bitiş saati: {{time}}."
   },
+  "recording": {
+    "label": "Kayıt yapılıyor",
+    "starting": "Kayıt başlıyor…",
+    "paused": "Kayıt duraklatıldı",
+    "stop": "Kaydı durdur",
+    "error": "Kayıt değiştirilemedi. Lütfen tekrar deneyin.",
+    "reason": {
+      "liveness": "bağlantı kesildi",
+      "unacknowledged": "her iki ekran bekleniyor",
+      "storage": "depolama kullanılamıyor",
+      "policy": "şu anda izin verilmiyor"
+    },
+    "ask": {
+      "title": "Bu görüşme kaydedilebilir mi?",
+      "body": "Görevli bu görüşmeyi kaydetmek istiyor. Bundan sonra, siz ya da görevli kaydı durdurana kadar her mesaj şifreli olarak saklanacaktır. Kaydı istediğiniz zaman durdurabilirsiniz.",
+      "resumeTitle": "Kayıt devam etsin mi?",
+      "resumeBody": "Kayıt durduruldu. Şu andan itibaren devam edebilir mi? Kaydı istediğiniz zaman yeniden durdurabilirsiniz.",
+      "yes": "Evet, kaydet",
+      "no": "Hayır"
+    }
+  },
   "feedback": {
     "title": "Geri bildiriminizi paylaşın",
     "close": "Kapat",

@@ -45,6 +45,27 @@
     "ended": "Kjo bisedë ka përfunduar.",
     "timeoutWarning": "Kjo bisedë do të përfundojë në orën {{time}}."
   },
+  "recording": {
+    "label": "Po regjistrohet",
+    "starting": "Regjistrimi po fillon…",
+    "paused": "Regjistrimi është në pauzë",
+    "stop": "Ndalo regjistrimin",
+    "error": "Regjistrimi nuk mund të ndryshohej. Ju lutemi provoni përsëri.",
+    "reason": {
+      "liveness": "lidhja u ndërpre",
+      "unacknowledged": "në pritje të të dy ekraneve",
+      "storage": "ruajtja nuk është e disponueshme",
+      "policy": "nuk lejohet për momentin"
+    },
+    "ask": {
+      "title": "A mund të regjistrohet kjo bisedë?",
+      "body": "Punonjësi dëshiron ta regjistrojë këtë bisedë. Që tani e tutje, çdo mesazh do të ruhej i enkriptuar derisa ju ose punonjësi ta ndaloni regjistrimin. Mund ta ndaloni në çdo kohë.",
+      "resumeTitle": "Të vazhdojë regjistrimi?",
+      "resumeBody": "Regjistrimi u ndal. A mund të vazhdojë që tani? Mund ta ndaloni përsëri në çdo kohë.",
+      "yes": "Po, regjistro",
+      "no": "Jo"
+    }
+  },
   "feedback": {
     "title": "Ndani mendimin tuaj",
     "close": "Mbyll",

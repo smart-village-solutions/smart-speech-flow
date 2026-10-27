@@ -45,6 +45,27 @@
     "ended": "Questa conversazione è terminata.",
     "timeoutWarning": "Questa conversazione terminerà alle {{time}}."
   },
+  "recording": {
+    "label": "Registrazione in corso",
+    "starting": "Avvio della registrazione…",
+    "paused": "Registrazione in pausa",
+    "stop": "Interrompi la registrazione",
+    "error": "Non è stato possibile modificare la registrazione. Riprovi.",
+    "reason": {
+      "liveness": "connessione interrotta",
+      "unacknowledged": "in attesa di entrambi gli schermi",
+      "storage": "archivio non disponibile",
+      "policy": "non consentito al momento"
+    },
+    "ask": {
+      "title": "Questa conversazione può essere registrata?",
+      "body": "Il suo interlocutore desidera registrare questa conversazione. Da ora in poi ogni messaggio verrebbe salvato in forma cifrata finché lei o il suo interlocutore non interrompete la registrazione. Può interromperla in qualsiasi momento.",
+      "resumeTitle": "Continuare la registrazione?",
+      "resumeBody": "La registrazione è stata interrotta. Può riprendere da adesso? Può interromperla di nuovo in qualsiasi momento.",
+      "yes": "Sì, registra",
+      "no": "No"
+    }
+  },
   "feedback": {
     "title": "Condivida il suo feedback",
     "close": "Chiudi",

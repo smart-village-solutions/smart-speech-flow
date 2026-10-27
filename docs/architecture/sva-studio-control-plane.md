@@ -172,6 +172,14 @@ opposite failure behaviour:
   keeps that read's `retentionHours` and `configurationRevision` for life), and
   once per message before anything is stored. It is never cached, and it fails
   closed: without a successful read no session starts and nothing is stored.
+- **Recording policy** — the optional `recording` block (`enabled`,
+  `legalBasis`, `signature`, `idCheck`, `retentionHours`,
+  `verificationRequired`, `recoveryMode`, `timestampAuthorityUrl`,
+  `auditRetentionHours`), proposed for the Studio contract in #612 — is read
+  live when staff request a recording, at the guest's yes, and while a
+  recording is paused for policy. It fails closed for recording alone: a
+  missing or invalid block makes recording unavailable and leaves the rest of
+  the read intact.
 - **Content** — staff texts, guest languages and texts, feedback forms per
   audience, branding, legal links — fails open. SSF sanitises it once, caches it
   by revision, and serves it to browsers through four routes:

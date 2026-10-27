@@ -7,6 +7,8 @@ import type { StatusSnapshot } from './conversation.status';
 
 interface ConversationStatusProps extends StatusSnapshot {
   onRetry?: (() => void) | null;
+  /** The recording band is showing, so the pill sits below it. */
+  belowBand?: boolean;
 }
 
 /**
@@ -24,12 +26,18 @@ export function ConversationStatus({
   hasConnected,
   errorKey,
   onRetry = null,
+  belowBand = false,
 }: Readonly<ConversationStatusProps>) {
   const { t, i18n } = useTranslation();
 
   if (errorKey !== null) {
     return (
-      <Pill alert role="alert" icon={<AlertTriangle size={14} strokeWidth={2} />}>
+      <Pill
+        belowBand={belowBand}
+        alert
+        role="alert"
+        icon={<AlertTriangle size={14} strokeWidth={2} />}
+      >
         <span className="truncate">{t(errorKey)}</span>
         {onRetry !== null && (
           <button
@@ -46,7 +54,7 @@ export function ConversationStatus({
 
   if (ended) {
     return (
-      <Pill role="status" icon={<CheckCircle2 size={14} strokeWidth={2} />}>
+      <Pill belowBand={belowBand} role="status" icon={<CheckCircle2 size={14} strokeWidth={2} />}>
         <span className="truncate">{t('conversation.ended')}</span>
       </Pill>
     );
@@ -54,7 +62,7 @@ export function ConversationStatus({
 
   if (timeoutAt !== null) {
     return (
-      <Pill role="status" icon={<Clock size={14} strokeWidth={2} />}>
+      <Pill belowBand={belowBand} role="status" icon={<Clock size={14} strokeWidth={2} />}>
         <span className="truncate">
           {t('conversation.timeoutWarning', { time: clockTime(timeoutAt, i18n.language) })}
         </span>
@@ -64,7 +72,7 @@ export function ConversationStatus({
 
   if (hasConnected && connection !== 'connected') {
     return (
-      <Pill role="status" icon={<PulsingDot />}>
+      <Pill belowBand={belowBand} role="status" icon={<PulsingDot />}>
         <span className="truncate">{t('conversation.reconnecting')}</span>
       </Pill>
     );
@@ -78,11 +86,19 @@ interface PillProps {
   icon: ReactNode;
   role: 'status' | 'alert';
   alert?: boolean;
+  belowBand: boolean;
 }
 
-function Pill({ children, icon, role, alert = false }: Readonly<PillProps>) {
+function Pill({ children, icon, role, alert = false, belowBand }: Readonly<PillProps>) {
   return (
-    <div className="absolute inset-x-0 top-header z-10 flex justify-center px-5 pt-2">
+    <div
+      className="absolute inset-x-0 top-header z-10 flex justify-center px-5 pt-2"
+      style={
+        belowBand
+          ? { top: 'calc(var(--spacing-header) + var(--spacing-recording-band))' }
+          : undefined
+      }
+    >
       <div
         role={role}
         data-status-pill=""

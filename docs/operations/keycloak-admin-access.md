@@ -95,12 +95,14 @@ header (`X-Studio-Instance-Id` or `X-Tenant-Id`) or any query selector is
 rejected with `404 tenant_not_found`, as Studio does.
 
 On v2, `storage-disabled` turns the tenant's storage mode to `disabled` for
-that request, and `invalid-content` adds a feedback question of an unsupported
+that request, `recording-disabled` drops `tenant-kassel`'s `recording` block
+(the only mock tenant that has one), and `invalid-content` adds a feedback question of an unsupported
 type to the first guest language: the runtime body keeps a valid storage policy
 and SSF drops only that guest language.
 
 Installation content ignores the tenant scenarios (`suspended`,
-`plugin-inactive`, `tenant-not-ready` and `storage-disabled`) and answers them
+`plugin-inactive`, `tenant-not-ready`, `storage-disabled` and
+`recording-disabled`) and answers them
 with `200`. It answers `400 malformed_request` to a missing `X-Correlation-Id`,
 a tenant header (`X-Studio-Tenant-Id`, `X-Studio-Instance-Id` or `X-Tenant-Id`)
 or a query, `503 installation_content_unavailable` to `unavailable`, and with

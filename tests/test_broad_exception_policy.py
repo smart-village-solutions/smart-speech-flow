@@ -45,6 +45,26 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/recording/wiring.py", "connect_recording"): ["fallback", "fallback"],
     # the recording connect loop survives any one attempt
     ("services/api_gateway/recording/wiring.py", "recording_connect_task"): ["boundary"],
+    # a failed recording greeting must not strand the socket it greets
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions.greet"): ["boundary"],
+    # the recording tick loop survives any one pass
+    ("services/api_gateway/recording/wiring.py", "recording_tick_task"): ["boundary"],
+    # a policy read that fails refuses recording (fail closed)
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions.check_available"): [
+        "fallback"
+    ],
+    # a failed policy read keeps a policy pause in place
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions._policy_reread"): [
+        "fallback"
+    ],
+    # one conversation's failure must not stall the others' liveness checks
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions._tick_guarded"): [
+        "boundary"
+    ],
+    # a failed audit write is logged; the transition it records already happened
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions._record"): [
+        "fallback"
+    ],
     # the recorder's callback failed: the item stays in the spool and is retried
     ("services/api_gateway/recording/storage/spool.py", "ArchiveUploader.flush"): ["boundary"],
     # a daemon-thread target hands its failure back to the loop

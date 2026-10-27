@@ -57,6 +57,10 @@
   --border-status: rgb(0 0 0 / 0.1);
   --border-status-alert: rgb(180 35 24 / 0.35);
 
+  /* Secure recording (#615, own design until Figma): the band and the frame
+     while a conversation is recorded. White text passes 4.5:1 on both. */
+  --recording-live: #b42318;
+
   /* Admin. The lamp colours are theme-independent: the export uses one hex per
      level in both themes, because a traffic light that changes hue with the
      theme stops being a traffic light. */
@@ -116,6 +120,7 @@
   --surface-status: #333333;
   --border-status: rgb(255 255 255 / 0.14);
   --border-status-alert: rgb(253 162 155 / 0.4);
+  --recording-live: #d92d20;
 
   /* Only the two that must follow the theme; the lamps deliberately do not. */
   --status-idle: rgb(255 255 255 / 0.25);

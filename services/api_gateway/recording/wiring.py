@@ -10,17 +10,22 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Final
 
 from ..dependencies import GatewayDependencies
+from ..realtime_protocol import ConnectionState, Frame
+from ..session_models import ClientType
 from ..studio_recording_directory_client import StudioRecordingDirectoryClient
 from ..studio_settings import studio_base_url
+from ..studio_v2 import RecordingPolicy, RuntimeRead
 from .ceremony import CeremonyService
 from .ceremony_repository import PostgresCeremonyRepository
 from .directory import StudioCustodianDirectory
 from .keys import KeyEnrolmentService
 from .secrets import MissingRecordingSecrets, RecordingSecrets
+from .session_service import TICK_SECONDS, RecordingSessions
 
 RECORDING_DSN_ENV: Final[str] = "SSF_RECORDING_DATABASE_URL"
 RECORDING_PASSWORD_ENV: Final[str] = "SSF_RECORDING_DATABASE_PASSWORD"
@@ -47,6 +52,70 @@ def _custodian_directory(state: Any) -> StudioCustodianDirectory:
     except ValueError:
         return StudioCustodianDirectory(None)
     return StudioCustodianDirectory(client)
+
+
+class WebSocketAnnouncer:
+    """Recording frames go to sockets only: a poller cannot answer a ping."""
+
+    def __init__(self, manager: Any) -> None:
+        self._manager = manager
+
+    async def broadcast(self, key: Any, frame: Frame, role: ClientType | None) -> None:
+        await self._manager.broadcast_to_session(
+            key, frame, target_client_type=role, include_polling=False
+        )
+
+    def connected(self, key: Any, role: ClientType) -> bool:
+        connections = self._manager.registry.session(key) or {}
+        return any(
+            connection.client_type is role and connection.state is ConnectionState.CONNECTED
+            for connection in connections.values()
+        )
+
+
+def _policy_reader(state: Any) -> Any:
+    async def read(tenant_id: str) -> RecordingPolicy | None:
+        flow = state.studio_runtime_flow
+        if flow is None:
+            raise RuntimeError("Studio is not configured")
+        runtime: RuntimeRead = await flow.client.fetch(tenant_id, f"recording-{uuid.uuid4().hex}")
+        return runtime.policy.recording
+
+    return read
+
+
+def _recording_sessions(state: Any, repository: PostgresCeremonyRepository) -> RecordingSessions:
+    async def recovery_key_ready(tenant_id: str) -> bool:
+        return await repository.active_recovery_key(tenant_id) is not None
+
+    return RecordingSessions(
+        store=state.recording_state_store,
+        announcer=WebSocketAnnouncer(state.websocket_manager),
+        policy=_policy_reader(state),
+        recovery_key_ready=recovery_key_ready,
+        audit=repository.record_audit,
+    )
+
+
+def _attach_sessions(state: Any, sessions: RecordingSessions | None) -> None:
+    state.recording_sessions = sessions
+    state.websocket_manager.recording = sessions
+    state.session_manager.recording = sessions
+
+
+async def recording_tick_task(state: Any) -> None:
+    """Advance recording conversations and ping their screens, once recording is wired."""
+    while True:
+        await asyncio.sleep(TICK_SECONDS)
+        sessions = state.recording_sessions
+        if sessions is None:
+            continue
+        try:
+            await sessions.tick()
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            sys.stderr.write(f"Recording tick failed ({type(error).__name__})\n")
 
 
 async def connect_recording(state: Any, dsn: str) -> bool:
@@ -84,6 +153,7 @@ async def connect_recording(state: Any, dsn: str) -> bool:
     state.recording_ceremony = CeremonyService(
         repository=repository, directory=_custodian_directory(state), secrets=secrets
     )
+    _attach_sessions(state, _recording_sessions(state, repository))
     sys.stderr.write("Recording keys ready\n")
     return True
 
@@ -111,5 +181,6 @@ async def close_recording(dependencies: GatewayDependencies) -> None:
     dependencies.recording_keys = None
     dependencies.recording_ceremony = None
     dependencies.recording_secrets = None
+    _attach_sessions(dependencies, None)
     if repository is not None:
         await repository.close()

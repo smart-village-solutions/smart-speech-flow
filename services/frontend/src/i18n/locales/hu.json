@@ -45,6 +45,27 @@
     "ended": "Ez a beszélgetés véget ért.",
     "timeoutWarning": "Ez a beszélgetés ekkor ér véget: {{time}}."
   },
+  "recording": {
+    "label": "Felvétel folyamatban",
+    "starting": "A felvétel indul…",
+    "paused": "A felvétel szünetel",
+    "stop": "Felvétel leállítása",
+    "error": "A felvételt nem sikerült módosítani. Próbálja újra.",
+    "reason": {
+      "liveness": "megszakadt a kapcsolat",
+      "unacknowledged": "várakozás mindkét képernyőre",
+      "storage": "a tárhely nem érhető el",
+      "policy": "jelenleg nem engedélyezett"
+    },
+    "ask": {
+      "title": "Rögzíthető ez a beszélgetés?",
+      "body": "Az ügyintéző szeretné rögzíteni ezt a beszélgetést. Mostantól minden üzenet titkosítva kerülne tárolásra, amíg Ön vagy az ügyintéző le nem állítja a felvételt. Bármikor leállíthatja.",
+      "resumeTitle": "Folytatódhat a felvétel?",
+      "resumeBody": "A felvétel leállt. Folytatódhat mostantól? Bármikor újra leállíthatja.",
+      "yes": "Igen, rögzítés",
+      "no": "Nem"
+    }
+  },
   "feedback": {
     "title": "Ossza meg véleményét",
     "close": "Bezárás",

@@ -15,6 +15,10 @@ interface ConversationSurfaceProps {
   contentTop: string;
   /** The admin's status pill. Rendered directly under the header. */
   overlay?: ReactNode;
+  /** Recording's band, frame and question; each screen brings its own side. */
+  recording?: ReactNode;
+  /** The recording band is showing, so the stack and the pill sit below it. */
+  recordingBand?: boolean;
   /**
    * Sits at the composer's unlifted baseline — the admin's terminate link. The
    * lift itself comes from `screen.composerLift`, applied inside `bottom` so the
@@ -34,6 +38,8 @@ export function ConversationSurface({
   header,
   contentTop,
   overlay,
+  recording,
+  recordingBand = false,
   footer,
 }: Readonly<ConversationSurfaceProps>) {
   const {
@@ -63,19 +69,24 @@ export function ConversationSurface({
     toggleMic,
     toggleKeyboard,
   } = screen;
+  // The recording band takes its height off the chat; nothing changes without it.
+  const lessBand = (length: string) =>
+    recordingBand ? `calc(${length} - var(--spacing-recording-band))` : length;
+  const chatHeight = `50dvh - 36px - ${keyboardOffset}px - ${legalBand}`;
 
   return (
     <ScreenShell keyboardOpen={keyboardOffset > 0}>
       {header}
       {overlay}
+      {recording}
 
       <div
         ref={chatRef}
         data-chat-stack=""
         className="absolute inset-x-0 overflow-y-auto transition-[max-height] duration-300"
         style={{
-          top: contentTop,
-          maxHeight: `calc(50dvh - 36px - ${keyboardOffset}px - ${legalBand})`,
+          top: recordingBand ? `calc(${contentTop} + var(--spacing-recording-band))` : contentTop,
+          maxHeight: lessBand(`calc(${chatHeight})`),
         }}
       >
         <div className={cn('flex flex-col gap-3 pb-4', showsStatus ? 'pt-14' : 'pt-4')}>
@@ -128,6 +139,7 @@ export function ConversationSurface({
         hasConnected={state.hasConnected}
         errorKey={state.errorKey}
         onRetry={retryLast}
+        belowBand={recordingBand}
       />
 
       {footer === undefined ? null : (

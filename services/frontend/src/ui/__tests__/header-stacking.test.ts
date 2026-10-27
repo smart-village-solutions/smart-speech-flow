@@ -44,6 +44,7 @@ const HEADER = '/src/ui/patterns/AppHeader.tsx';
 const OVERLAYS = [
   ['/src/features/admin/SessionStatusOverlay.tsx', 'div'],
   ['/src/features/conversation/ConversationStatus.tsx', 'div'],
+  ['/src/features/recording/RecordingBand.tsx', 'div'],
 ] as const;
 
 describe('header stacking', () => {

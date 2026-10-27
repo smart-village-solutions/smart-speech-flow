@@ -1,5 +1,12 @@
 import type { RealtimeStatus } from '@/core/realtime/realtime.port';
 import type { ChatMessage } from '@/domain/message/message.types';
+import {
+  initialRecording,
+  isRecordingAction,
+  recordingReducer,
+  type RecordingAction,
+  type RecordingSlice,
+} from '@/features/recording/recording.slice';
 
 export type ComposerMode = 'idle' | 'recording' | 'typing';
 
@@ -17,6 +24,7 @@ export interface ConversationState {
   errorKey: string | null;
   /** True only while the error on show came from a send that can be repeated. */
   canRetry: boolean;
+  recording: RecordingSlice;
 }
 
 /** What the gateway says about the session itself, as opposed to its messages. */
@@ -44,6 +52,7 @@ export type ConversationAction =
   | { type: 'realtime/message'; message: ChatMessage }
   | { type: 'realtime/status'; status: RealtimeStatus }
   | SessionAction
+  | RecordingAction
   | { type: 'error/cleared' };
 
 export const initialConversationState: ConversationState = {
@@ -56,6 +65,7 @@ export const initialConversationState: ConversationState = {
   timeoutAt: null,
   errorKey: null,
   canRetry: false,
+  recording: initialRecording,
 };
 
 /**
@@ -119,6 +129,8 @@ function sessionReducer(state: ConversationState, action: SessionAction): Conver
         timeoutAt: null,
         errorKey: null,
         canRetry: false,
+        // The gateway turns recording off with the session; no frame says so.
+        recording: initialRecording,
       };
 
     case 'session/timeoutWarning':
@@ -129,12 +141,24 @@ function sessionReducer(state: ConversationState, action: SessionAction): Conver
   }
 }
 
+/** The session and recording actions, each with its own reducer; null for the rest. */
+function delegated(state: ConversationState, action: ConversationAction): ConversationState | null {
+  if (isSessionAction(action)) {
+    return sessionReducer(state, action);
+  }
+  if (isRecordingAction(action)) {
+    return { ...state, recording: recordingReducer(state.recording, action) };
+  }
+  return null;
+}
+
 export function conversationReducer(
   state: ConversationState,
   action: ConversationAction
 ): ConversationState {
-  if (isSessionAction(action)) {
-    return sessionReducer(state, action);
+  const handled = delegated(state, action);
+  if (handled !== null) {
+    return handled;
   }
 
   switch (action.type) {

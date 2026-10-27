@@ -45,6 +45,27 @@
     "ended": "This conversation has ended.",
     "timeoutWarning": "This conversation will end at {{time}}."
   },
+  "recording": {
+    "label": "Recording",
+    "starting": "Recording is starting…",
+    "paused": "Recording paused",
+    "stop": "Stop recording",
+    "error": "The recording could not be changed. Please try again.",
+    "reason": {
+      "liveness": "connection interrupted",
+      "unacknowledged": "waiting for both screens",
+      "storage": "storage unavailable",
+      "policy": "not permitted at the moment"
+    },
+    "ask": {
+      "title": "May this conversation be recorded?",
+      "body": "The staff member would like to record this conversation. From now on, every message would be stored in encrypted form until you or the staff member stop the recording. You can stop it at any time.",
+      "resumeTitle": "Continue recording?",
+      "resumeBody": "The recording was stopped. May it continue from now on? You can stop it again at any time.",
+      "yes": "Yes, record",
+      "no": "No"
+    }
+  },
   "feedback": {
     "title": "Share your feedback",
     "close": "Close",
@@ -277,6 +298,25 @@
       "abortBody": "Every contribution so far is lost. The ceremony must then be started again from the beginning.",
       "abortFailed": "The ceremony could not be aborted. Please try again.",
       "keepGoing": "Keep going"
+    },
+    "recording": {
+      "off": "Not recording",
+      "request": "Request recording",
+      "waiting": "Waiting for the guest's answer…",
+      "cancel": "Withdraw request",
+      "reason": {
+        "declined": "The guest declined the recording.",
+        "unanswered": "The guest did not answer.",
+        "stopped_by_guest": "The guest stopped the recording."
+      },
+      "error": {
+        "GUEST_NOT_CONNECTED": "The guest is not connected.",
+        "RECORDING_DISABLED": "Recording is not enabled for this organisation.",
+        "RECOVERY_KEY_MISSING": "This organisation has no recovery key yet.",
+        "RECORDING_POLICY_UNAVAILABLE": "The recording settings cannot be reached right now. Please try again.",
+        "RECORDING_BUSY": "Recording is already requested or running.",
+        "generic": "The recording could not be changed."
+      }
     }
   }
 }

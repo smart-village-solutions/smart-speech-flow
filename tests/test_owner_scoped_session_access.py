@@ -133,7 +133,6 @@ def test_a_colleague_cannot_use_the_owners_polling_channel(client):
 
     for method, path, body in [
         ("GET", f"{base}?timeout=0", None),
-        ("POST", f"{base}/send", {"type": "heartbeat", "content": {}}),
         ("GET", f"{base}/status", None),
         ("POST", f"{base}/recover", None),
         ("DELETE", base, None),

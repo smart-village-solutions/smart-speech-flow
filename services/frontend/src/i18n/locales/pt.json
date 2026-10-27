@@ -45,6 +45,27 @@
     "ended": "Esta conversa foi encerrada.",
     "timeoutWarning": "Esta conversa será encerrada às {{time}}."
   },
+  "recording": {
+    "label": "Gravando",
+    "starting": "Iniciando a gravação…",
+    "paused": "Gravação pausada",
+    "stop": "Parar a gravação",
+    "error": "Não foi possível alterar a gravação. Tente de novo.",
+    "reason": {
+      "liveness": "conexão interrompida",
+      "unacknowledged": "aguardando as duas telas",
+      "storage": "armazenamento indisponível",
+      "policy": "não permitido no momento"
+    },
+    "ask": {
+      "title": "Esta conversa pode ser gravada?",
+      "body": "O atendente gostaria de gravar esta conversa. A partir de agora, cada mensagem seria armazenada de forma criptografada até que você ou o atendente parem a gravação. Você pode pará-la a qualquer momento.",
+      "resumeTitle": "Continuar a gravação?",
+      "resumeBody": "A gravação foi parada. Ela pode continuar a partir de agora? Você pode pará-la novamente a qualquer momento.",
+      "yes": "Sim, gravar",
+      "no": "Não"
+    }
+  },
   "feedback": {
     "title": "Dê sua opinião",
     "close": "Fechar",

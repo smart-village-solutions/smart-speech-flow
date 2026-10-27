@@ -254,12 +254,34 @@ class InstallationContent(_StudioModel):
         return lifted
 
 
+class RecordingPolicy(_StudioModel):
+    """The tenant's `recording` block (spec §14), proposed for the Studio contract in #612."""
+
+    enabled: bool
+    legal_basis: Literal["consent", "statutory"] = Field(alias="legalBasis")
+    signature: Literal["off", "optional", "required"]
+    id_check: Literal["off", "optional", "required"] = Field(alias="idCheck")
+    retention_hours: int = Field(alias="retentionHours", ge=1, le=MAX_RETENTION_HOURS)
+    verification_required: bool = Field(alias="verificationRequired")
+    recovery_mode: Literal["standard", "enhanced"] = Field(alias="recoveryMode")
+    timestamp_authority_url: HttpsUrl = Field(alias="timestampAuthorityUrl")
+    audit_retention_hours: int = Field(alias="auditRetentionHours", ge=1)
+
+    @model_validator(mode="after")
+    def _audit_outlives_archive(self) -> Self:
+        if self.audit_retention_hours < self.retention_hours:
+            raise ValueError("auditRetentionHours is at least retentionHours")
+        return self
+
+
 class RuntimePolicy(_StudioModel):
     contract_version: str
     configuration_revision: str
     tenant_id: str
     mode: Literal["ask", "disabled"]
     retention_hours: int | None
+    # None while Studio sends no valid block: recording is then unavailable.
+    recording: RecordingPolicy | None = None
 
 
 class RuntimeContent(_StudioModel):
@@ -348,6 +370,13 @@ def _guest_languages(raw: object, mode: str) -> tuple[GuestLanguageContent, ...]
     return tuple(languages)
 
 
+def _recording_policy(raw: object) -> RecordingPolicy | None:
+    """Fail closed for recording alone: a bad block must not refuse the conversation."""
+    if raw is None:
+        return None
+    return _validate_or_none(RecordingPolicy, raw, "recording")
+
+
 def parse_runtime_configuration_v2(body: object, *, expected_tenant_id: str) -> RuntimeRead:
     """Validate the policy strictly and keep every content section that is valid.
 
@@ -375,6 +404,7 @@ def parse_runtime_configuration_v2(body: object, *, expected_tenant_id: str) -> 
             tenant_id=view.tenant.id,
             mode=storage.mode,
             retention_hours=storage.retention_hours,
+            recording=_recording_policy(body.get("recording")),
         ),
         content=RuntimeContent(
             display_name=tenant.display_name,

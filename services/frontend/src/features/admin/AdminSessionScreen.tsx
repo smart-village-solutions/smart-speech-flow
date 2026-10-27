@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useFeedback } from '@/app/providers/feedback';
 import { ConversationSurface } from '@/features/conversation/ConversationSurface';
 import { useConversationScreen } from '@/features/conversation/useConversationScreen';
+import { RecordingIndicator } from '@/features/recording/RecordingIndicator';
+import { useAdminRecording } from '@/features/recording/useAdminRecording';
+import { useRecordingBand } from '@/features/recording/useRecordingBand';
 import { AdminHeader } from '@/ui/patterns/AdminHeader';
 import { SessionStatusOverlay } from './SessionStatusOverlay';
 import { TerminateLink } from './TerminateLink';
@@ -35,6 +38,9 @@ export function AdminSessionScreen({
   const navigate = useNavigate();
   const screen = useConversationScreen(sessionId, 'admin');
   const { languageOf } = useStaffLocalisation();
+  const { recording, connection } = screen.state;
+  const admin = useAdminRecording(sessionId, recording, screen.dispatch);
+  const band = useRecordingBand('admin', recording, connection, admin.canRequest);
 
   // A code SSF does not list would read as "Sprache offen", i.e. not yet chosen.
   const chosen = languageOf(screen.customerLanguage);
@@ -56,6 +62,8 @@ export function AdminSessionScreen({
     <ConversationSurface
       screen={screen}
       contentTop="var(--spacing-content-top)"
+      recording={<RecordingIndicator band={band} onAction={admin.onAction} />}
+      recordingBand={band.view !== null}
       header={
         <AdminHeader
           onBack={onLeave}

@@ -263,6 +263,8 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
         self.runtime_policy = runtime_policy
         self.session_id_factory = session_id_factory or (lambda: str(uuid.uuid4())[:8].upper())
         self.active_admin_sessions: Dict[str, set[str]] = {}
+        # Set once recording mode is wired; a session's end turns its recording off.
+        self.recording: Any = None
         # Listing an admin's sessions and creating the next one await the
         # store; without this, two concurrent creates both find none to end.
         self._creation_locks: KeyedLocks[tuple[str, Optional[str]]] = KeyedLocks()
@@ -400,6 +402,8 @@ class TenantSessionManager(SessionManagerBase[TenantSessionKey]):
             self.polling_store.terminate(session_id, reason)
         if self.websocket_manager:
             await self.websocket_manager.handle_session_termination(session_id, reason)
+        if self.recording is not None:
+            await self.recording.session_ended(session_id)
         # The yield the socket-pool cleanup always took before returning.
         await asyncio.sleep(0)
 

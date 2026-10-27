@@ -108,6 +108,9 @@
   --spacing-composer-lift: 40px;
   --spacing-flag-pill: 16px;
 
+  /* Secure recording (#615, SCREEN_SPECS "Recording"). */
+  --spacing-recording-band: 40px;
+
   /* The load lamp's glow. SCREEN_SPECS "Admin dashboard" gives it as the lamp's
      own colour at 0.56 alpha, which the export writes as `${color}90`
      (0x90 = 144, 144/255 = 0.565). Derived from the lamp tokens rather than
@@ -139,6 +142,7 @@
   --color-surface-icon-hover: var(--surface-icon-hover);
   --color-surface-wave-idle: var(--surface-wave-idle);
   --color-surface-status: var(--surface-status);
+  --color-recording-live: var(--recording-live);
 
   --color-fg-strong: var(--fg-strong);
   --color-fg-chat: var(--fg-chat);

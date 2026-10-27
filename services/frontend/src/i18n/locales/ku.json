@@ -45,6 +45,27 @@
     "ended": "Ev axaftin qediya.",
     "timeoutWarning": "Ev axaftin dê di saet {{time}} de biqede."
   },
+  "recording": {
+    "label": "Tomarkirin didome",
+    "starting": "Tomarkirin dest pê dike…",
+    "paused": "Tomarkirin hat rawestandin",
+    "stop": "Tomarkirinê rawestîne",
+    "error": "Tomarkirin nehat guhertin. Ji kerema xwe dîsa biceribîne.",
+    "reason": {
+      "liveness": "girêdan qut bû",
+      "unacknowledged": "li benda her du ekranan",
+      "storage": "depo ne berdest e",
+      "policy": "niha nayê destûrdan"
+    },
+    "ask": {
+      "title": "Ma ev axaftin dikare were tomarkirin?",
+      "body": "Karmend dixwaze vê axaftinê tomar bike. Ji niha û pê ve, her peyam dê bi şîfrekirî were hilanîn heta ku tu an karmend tomarkirinê rawestînin. Tu dikarî her dem wê rawestînî.",
+      "resumeTitle": "Tomarkirin bidome?",
+      "resumeBody": "Tomarkirin hat rawestandin. Ma ew dikare ji niha ve bidome? Tu dikarî her dem dîsa wê rawestînî.",
+      "yes": "Erê, tomar bike",
+      "no": "Na"
+    }
+  },
   "feedback": {
     "title": "Nêrîna xwe parve bike",
     "close": "Bigire",

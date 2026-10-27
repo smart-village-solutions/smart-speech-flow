@@ -90,6 +90,9 @@ class GatewayDependencies:
     recording_secrets: Any = None
     recording_keys: Any = None
     recording_ceremony: Any = None
+    # Where each conversation's recording state lives; always built, used once wired.
+    recording_state_store: Any = None
+    recording_sessions: Any = None
 
 
 def build_gateway_dependencies(
@@ -145,6 +148,7 @@ def build_gateway_dependencies(
         RealtimeTicketStore,
         RedisRealtimeTicketBackend,
     )
+    from .recording.session_store import MemoryRecordingStateStore, RedisRecordingStateStore
     from .service_health import ServiceHealthManager
     from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
@@ -230,6 +234,11 @@ def build_gateway_dependencies(
         pipeline_admission=pipeline_admission,
         quality_telemetry=quality_telemetry,
         quality_telemetry_exporter=quality_telemetry_exporter,
+        recording_state_store=(
+            RedisRecordingStateStore(redis, namespace=redis_namespace)
+            if redis is not None
+            else MemoryRecordingStateStore()
+        ),
     )
 
 

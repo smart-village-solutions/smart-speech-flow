@@ -89,13 +89,11 @@ def test_one_tenants_frames_never_reach_another_tenants_sockets_or_pollers(
             with open_guest_socket(client, sessions[TENANT_A], ORIGIN) as customer:
                 customer.receive_json()
                 admin.receive_json()
-                admin.send_json({"type": "message", "content": {"text": "hallo"}})
                 admin.send_json({"type": "typing_indicator", "is_typing": True})
                 identity.act_as(TENANT_A)
                 sent = conversations.send_text(sessions[TENANT_A])
                 assert sent.status_code == 200, sent.text
                 assert [frame["type"] for frame in _before_a_sentinel(customer)] == [
-                    "message",
                     "typing_indicator",
                     "message",
                 ]
@@ -133,7 +131,6 @@ def test_a_foreign_bearer_cannot_drive_or_feed_a_customer_poller(client, convers
     identity.customer_bearer(TENANT_B)
     responses = [
         client.get(base),
-        client.post(f"{base}/send", json={"type": "message", "content": {"text": "x"}}),
         client.get(f"{base}/status"),
         client.post(f"{base}/recover"),
         client.delete(base),

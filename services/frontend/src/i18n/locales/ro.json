@@ -45,6 +45,27 @@
     "ended": "Această conversație s-a încheiat.",
     "timeoutWarning": "Această conversație se va încheia la {{time}}."
   },
+  "recording": {
+    "label": "Înregistrare în curs",
+    "starting": "Înregistrarea pornește…",
+    "paused": "Înregistrare în pauză",
+    "stop": "Opriți înregistrarea",
+    "error": "Înregistrarea nu a putut fi modificată. Încercați din nou.",
+    "reason": {
+      "liveness": "conexiune întreruptă",
+      "unacknowledged": "se așteaptă ambele ecrane",
+      "storage": "stocare indisponibilă",
+      "policy": "nepermis în acest moment"
+    },
+    "ask": {
+      "title": "Poate fi înregistrată această conversație?",
+      "body": "Interlocutorul dumneavoastră dorește să înregistreze această conversație. De acum înainte, fiecare mesaj ar fi stocat criptat până când dumneavoastră sau interlocutorul opriți înregistrarea. O puteți opri oricând.",
+      "resumeTitle": "Continuați înregistrarea?",
+      "resumeBody": "Înregistrarea a fost oprită. Poate continua de acum înainte? O puteți opri din nou oricând.",
+      "yes": "Da, înregistrați",
+      "no": "Nu"
+    }
+  },
   "feedback": {
     "title": "Spuneți-ne părerea",
     "close": "Închideți",

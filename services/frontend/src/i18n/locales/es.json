@@ -45,6 +45,27 @@
     "ended": "Esta conversación ha terminado.",
     "timeoutWarning": "Esta conversación terminará a las {{time}}."
   },
+  "recording": {
+    "label": "Grabando",
+    "starting": "Iniciando la grabación…",
+    "paused": "Grabación en pausa",
+    "stop": "Detener la grabación",
+    "error": "No se pudo cambiar la grabación. Inténtelo de nuevo.",
+    "reason": {
+      "liveness": "conexión interrumpida",
+      "unacknowledged": "esperando a ambas pantallas",
+      "storage": "almacenamiento no disponible",
+      "policy": "no permitido en este momento"
+    },
+    "ask": {
+      "title": "¿Se puede grabar esta conversación?",
+      "body": "Su interlocutor desea grabar esta conversación. A partir de ahora, cada mensaje se guardaría cifrado hasta que usted o su interlocutor detengan la grabación. Puede detenerla en cualquier momento.",
+      "resumeTitle": "¿Continuar la grabación?",
+      "resumeBody": "La grabación se detuvo. ¿Puede continuar a partir de ahora? Puede volver a detenerla en cualquier momento.",
+      "yes": "Sí, grabar",
+      "no": "No"
+    }
+  },
   "feedback": {
     "title": "Comparta su opinión",
     "close": "Cerrar",

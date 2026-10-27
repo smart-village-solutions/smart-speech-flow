@@ -11,6 +11,7 @@ import {
   type ConversationState,
 } from './conversation.reducer';
 import { useConversationFeed } from './useConversationFeed';
+import { useLatestRef } from './useLatestRef';
 import { useSessionRefresh } from './useSessionRefresh';
 
 interface UseConversationOptions {
@@ -57,19 +58,23 @@ export function useConversation(
     endedRef.current = state.ended;
   });
 
-  useConversationFeed({ sessionId, role, dispatch, onPeerAudioRef });
+  const recordingVersionRef = useLatestRef(state.recording.status.stateVersion);
+  useConversationFeed({ sessionId, role, dispatch, onPeerAudioRef, recordingVersionRef });
 
   const send = useCallback(
-    async (
-      perform: () => Promise<{ messageId: string; originalText: string }>,
-      text: string
-    ) => {
+    async (perform: () => Promise<{ messageId: string; originalText: string }>, text: string) => {
       if (endedRef.current) {
         return;
       }
       const tempId = `temp-${randomId()}`;
       const { source, target } = languagesRef.current;
-      dispatch({ type: 'send/started', tempId, text, sourceLanguage: source, targetLanguage: target });
+      dispatch({
+        type: 'send/started',
+        tempId,
+        text,
+        sourceLanguage: source,
+        targetLanguage: target,
+      });
 
       try {
         const result = await perform();

@@ -44,6 +44,7 @@ CONTAINER_BUILT = (
     "quality_telemetry",
     "quality_telemetry_exporter",
     "oidc_key_cache",
+    "recording_state_store",
 )
 # Built once per app by create_app(), so every lifespan of that app reuses it.
 APP_BUILT = ("prometheus_registry",)
@@ -64,6 +65,7 @@ RECORDING = (
     "recording_secrets",
     "recording_keys",
     "recording_ceremony",
+    "recording_sessions",
 )
 
 
@@ -232,7 +234,9 @@ def test_a_provider_override_stays_on_its_own_app(monkeypatch: pytest.MonkeyPatc
     assert untouched.dependency_overrides == {}
 
 
-async def test_polling_records_presence_in_its_own_apps_sessions(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_polling_records_presence_in_its_own_apps_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A poller's presence lands in the session manager of the app it polled.
 
     Each app's session store is its own, so a route that reached another

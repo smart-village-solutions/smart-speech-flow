@@ -47,6 +47,7 @@ from .recording.wiring import (
     connect_recording,
     recording_connect_task,
     recording_dsn,
+    recording_tick_task,
 )
 from .refinement_metrics import RefinementMetrics
 from .unhandled_errors import UnhandledErrorMiddleware
@@ -316,6 +317,7 @@ def _start_background_tasks(
             feedback_connect_task(dependencies, feedback_dsn, maintenance_dsn, sessions, read_dsn)
         ),
         asyncio.create_task(recording_connect_task(dependencies, recording_dsn())),
+        asyncio.create_task(recording_tick_task(dependencies)),
     ]
 
 
@@ -541,6 +543,7 @@ from .routes import (
     login,
     recording,
     recording_ceremony,
+    recording_session,
     session,
 )
 from .routes.health import router as health_router
@@ -566,6 +569,7 @@ def _include_routes(app: FastAPI) -> None:
     app.include_router(feedback.router, tags=["feedback"])
     app.include_router(recording.router)
     app.include_router(recording_ceremony.router)
+    app.include_router(recording_session.router)
 
     # Metrics-Route direkt an App binden
     app.get("/metrics")(metrics)

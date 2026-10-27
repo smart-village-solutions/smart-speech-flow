@@ -21,9 +21,8 @@ from .dependencies import (
     get_polling_store,
     get_realtime_ticket_store,
     get_session_manager,
-    get_websocket_manager,
 )
-from .realtime_protocol import Frame, polled_envelope_frame, polled_session_terminated_frame
+from .realtime_protocol import Frame, polled_session_terminated_frame
 from .realtime_ticket import RealtimeTicketStore, RealtimeTicketUnavailable
 from .session_access import (
     require_admin_session_key,
@@ -35,7 +34,6 @@ from .session_models import ClientType, SessionStatus
 from .session_store import SessionStoreConsistencyError
 from .tenant_context import reject_request_tenant_selectors
 from .tenant_session import TenantSessionKey
-from .websocket import WebSocketManager
 
 router = APIRouter(
     tags=["realtime-polling"], dependencies=[Depends(reject_request_tenant_selectors)]
@@ -71,11 +69,6 @@ def polling_dropped_counter(registry: CollectorRegistry) -> Counter:
 
 class AdminPollingActivation(BaseModel):
     ticket: str = Field(min_length=1, max_length=256)
-
-
-class PollingMessage(BaseModel):
-    type: str = Field(min_length=1, max_length=64)
-    content: dict[str, Any]
 
 
 @dataclass
@@ -420,30 +413,6 @@ async def _poll_messages(client: PollingClient, wait_seconds: int) -> dict[str, 
     return {"messages": messages, "message_count": len(messages)}
 
 
-async def _send(
-    polling_store: TenantPollingStore,
-    client: PollingClient,
-    message: PollingMessage,
-    manager: WebSocketManager,
-) -> dict[str, object]:
-    if client.terminated:
-        raise HTTPException(status_code=404, detail=_POLLING_CLIENT_NOT_FOUND)
-    envelope = polled_envelope_frame(
-        message.type, message.content, client.key.session_id, client.client_type
-    )
-    _delivered, dropped = polling_store.broadcast(
-        client.key, envelope, exclude_polling_id=client.polling_id
-    )
-    await manager.broadcast_to_session(client.key, envelope, include_polling=False)
-    if dropped:
-        return {
-            "status": "partial",
-            "retryable": False,
-            "messages_dropped": dropped,
-        }
-    return {"status": "success"}
-
-
 def _status(client: PollingClient) -> dict[str, object]:
     if client.terminated:
         raise HTTPException(status_code=404, detail=_POLLING_CLIENT_NOT_FOUND)
@@ -494,20 +463,6 @@ def _register_role_routes(
             await _disconnect(polling_store, client, sessions)
         return response
 
-    async def send(
-        session_id: str,
-        polling_id: str,
-        message: PollingMessage,
-        key: TenantSessionKey = Depends(key_dependency),
-        manager: WebSocketManager = Depends(get_websocket_manager),
-        sessions: TenantSessionManager = Depends(get_session_manager),
-        polling_store: TenantPollingStore = Depends(get_polling_store),
-    ) -> dict[str, str]:
-        client = await _active_client(polling_store, polling_id, key, client_type, sessions)
-        # The response model stays dict[str, str], so an overflow's partial body is
-        # still refused with 500; characterization.md leaves that to its own issue.
-        return await _send(polling_store, client, message, manager)  # type: ignore[return-value]
-
     async def polling_status(
         session_id: str,
         polling_id: str,
@@ -537,7 +492,6 @@ def _register_role_routes(
         return await _disconnect(polling_store, client, sessions)
 
     router.add_api_route(base, poll, methods=["GET"], name=f"{prefix}_poll")
-    router.add_api_route(base + "/send", send, methods=["POST"], name=f"{prefix}_send")
     router.add_api_route(
         base + "/status",
         polling_status,

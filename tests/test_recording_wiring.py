@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from services.api_gateway.recording import wiring
 from services.api_gateway.recording.ceremony_model import CeremonyError
 from services.api_gateway.recording.secrets import BLOB_KEY_FILE_ENV, SIGNING_KEY_FILE_ENV
+from services.api_gateway.recording.session_store import MemoryRecordingStateStore
 
 DSN = "postgresql://ssf_recording_app@db/ssf_recording"
 
@@ -29,6 +30,11 @@ def _state() -> SimpleNamespace:
         recording_secrets=None,
         recording_ceremony=None,
         studio_token_provider=None,
+        studio_runtime_flow=None,
+        recording_state_store=MemoryRecordingStateStore(),
+        recording_sessions=None,
+        websocket_manager=SimpleNamespace(recording=None),
+        session_manager=SimpleNamespace(recording=None),
     )
 
 
@@ -55,6 +61,12 @@ class _Repository:
 
     async def register_gateway_key(self, key_id, public_key, at) -> None:
         self.registered.append(key_id)
+
+    async def record_audit(self, event) -> None:
+        pass
+
+    async def active_recovery_key(self, tenant_id):
+        return None
 
     async def close(self) -> None:
         self.closed = True
@@ -95,6 +107,14 @@ async def test_a_connected_gateway_registers_its_signing_key(secrets_on_disk, mo
     assert state.recording_keys is not None
     assert state.recording_ceremony is not None
     assert repository.registered == [state.recording_secrets.signing_key_id]
+    sessions = state.recording_sessions
+    assert sessions is not None
+    assert state.websocket_manager.recording is sessions
+    assert state.session_manager.recording is sessions
+    await wiring.close_recording(state)
+    assert state.recording_sessions is None
+    assert state.websocket_manager.recording is None
+    assert state.session_manager.recording is None
 
 
 async def test_without_studio_the_ceremony_cannot_name_custodians(secrets_on_disk, monkeypatch):
