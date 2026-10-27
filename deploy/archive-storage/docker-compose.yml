@@ -1,0 +1,33 @@
+# The archive store on its own VM (spec §12.1). Runbook:
+# docs/operations/runbooks/archive-storage-deployment.md
+#
+# Object Lock is enforced by the S3 API only. The gateway reaches port 8333 and
+# nothing else. The off-site replica pulls new versions over the private link
+# through the filer alone, so its HTTP and gRPC ports are published on the link
+# address only; security.toml makes the filer and volume servers refuse
+# unsigned writes.
+#
+#   archive_compose up -d                     (defined in the runbook)
+#
+# SSF_ARCHIVE_CONFIG_DIR exists for a local check of this file; on the VM the
+# configuration lives in /etc/ssf-archive.
+
+name: ssf-archive
+
+x-seaweedfs-image: &seaweedfs-image chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d # 4.48
+
+services:
+  seaweedfs:
+    image: *seaweedfs-image
+    command: server -dir=/data -s3 -s3.config=/etc/seaweedfs/s3.json
+    ports:
+      - "${SSF_ARCHIVE_LISTEN_ADDRESS:?the VM address the gateway reaches}:8333:8333"
+      - "${SSF_ARCHIVE_LINK_ADDRESS:?this VM's address on the private link to the replica}:8888:8888"
+      - "${SSF_ARCHIVE_LINK_ADDRESS}:18888:18888"
+    volumes:
+      - seaweedfs-data:/data
+      - ${SSF_ARCHIVE_CONFIG_DIR:-/etc/ssf-archive}/seaweedfs:/etc/seaweedfs:ro
+    restart: unless-stopped
+
+volumes:
+  seaweedfs-data:
