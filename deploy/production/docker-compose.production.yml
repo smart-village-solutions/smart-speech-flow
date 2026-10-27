@@ -177,6 +177,9 @@ services:
     # the secrets directory holds its two files.
     - SSF_RECORDING_DATABASE_URL=postgresql://ssf_recording_app@ssf-postgres:5432/ssf_recording
     - SSF_RECORDING_DATABASE_PASSWORD=${SSF_RECORDING_APP_PASSWORD:-}
+    # The archive store's S3 endpoint (#613); its writer credentials are the
+    # archive-writers.json file in the recording secrets directory.
+    - SSF_ARCHIVE_ENDPOINT=${SSF_ARCHIVE_ENDPOINT:-}
     - SSF_OTLP_LOGS_ENDPOINT=${SSF_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
     - SSF_RELEASE_VERSION=${SSF_RELEASE_VERSION:-unknown}
     - SSF_DEPLOYMENT_ENV=${SSF_DEPLOYMENT_ENV:-production}
