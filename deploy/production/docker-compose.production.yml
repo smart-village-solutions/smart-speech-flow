@@ -84,6 +84,8 @@ services:
           memory: 1G
     volumes:
     - audio-data:/data/audio
+    # Encrypted archive objects waiting for upload (#615): ciphertext only.
+    - archive-spool:/data/archive-spool
     - type: tmpfs
       target: /tmp/audio
       tmpfs:
@@ -576,6 +578,7 @@ volumes:
   ollama-data: null
   vllm-models: null
   audio-data: null
+  archive-spool: null
   clickhouse-data: null
   keycloak-postgres-data: null
   ssf-postgres-data: null

@@ -195,6 +195,8 @@ class _PipelineRun:
     start_total: float
     source_text: Optional[str] = None
     translation_text: Optional[str] = None
+    # The machine translation before refinement, which a recorded message keeps.
+    raw_translation_text: Optional[str] = None
 
 
 def _start_run(
@@ -243,6 +245,8 @@ def _translate(run: _PipelineRun, speech: SpeechServices) -> Tuple[Any, Dict[str
             "name": "translation",
             "input": payload,
             "output": body.get("translations", ""),
+            "model": body.get("model"),
+            "model_version": body.get("model_version"),
             "error": body.get("error"),
             "duration": round(time.perf_counter() - start, 3),
             "started_at": started_at.isoformat() + "Z",
@@ -277,6 +281,9 @@ def _refine(run: _PipelineRun, refiner: BaseTranslationRefiner) -> None:
             "completed_at": completed_at.isoformat() + "Z",
             "duration_ms": int(outcome.latency_ms or 0),
             "model": outcome.model,
+            "status": _primary_refinement_status(outcome),
+            "rejected_reason": outcome.rejected_reason,
+            "skipped_reason": outcome.skipped_reason,
             "refinement_comparison": {
                 "primary_model": outcome.model,
                 "primary_status": _primary_refinement_status(outcome),
@@ -326,6 +333,7 @@ def _run_translation_tail(
             upstream_response=response,
         )
     run.translation_text = body.get("translations", "")
+    run.raw_translation_text = run.translation_text
 
     _refine(run, refiner)
 
@@ -346,6 +354,7 @@ def _run_translation_tail(
         "error": False,
         "asr_text": run.source_text,
         "translation_text": run.translation_text,
+        "raw_translation_text": run.raw_translation_text,
         "audio_bytes": tts_call[0].content,
         "debug": run.debug_info,
     }
@@ -429,7 +438,10 @@ def _transcribe(
             "name": "asr",
             "input": {"lang": run.source_lang},
             "output": run.source_text,
-            "model": body.get("debug", {}).get("model"),
+            "model": body.get("model") or body.get("debug", {}).get("model"),
+            "model_version": body.get("model_version"),
+            # The normalised audio the model heard; the upload's own hash is the gateway's.
+            "input_sha256": body.get("input_sha256"),
             "error": body.get("error"),
             "duration": round(time.perf_counter() - start, 3),
             "started_at": started_at.isoformat() + "Z",

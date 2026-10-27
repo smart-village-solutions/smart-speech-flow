@@ -36,6 +36,7 @@ from .pipeline_results import (
 )
 from .quality_telemetry import QualityTelemetry
 from .quality_telemetry_schema import InputMode
+from .recording.message_archive import Acceptance, accept_message, archive_message
 from .session_manager import TenantSessionManager
 from .session_models import ClientType, SessionMessage, SessionStatus
 from .tenant_session import TenantSessionKey
@@ -123,7 +124,7 @@ def _transform_pipeline_step(
     elif step_name == "translation":
         transformed_step["output"] = {
             "text": step.get("output", ""),
-            "model": step.get("input", {}).get("model", "m2m100_1.2B"),
+            "model": step.get("model") or step.get("input", {}).get("model", "unknown"),
         }
     elif step_name in {"refinement", "llm_refinement"}:
         transformed_step["name"] = "refinement"
@@ -321,6 +322,8 @@ async def send_unified_message(
         )
 
     _log_session_event("✅ Session-Validation erfolgreich", session_id)
+    # Acceptance, for the recording decision (spec §5.3); None unless recording is wired.
+    acceptance = await accept_message(getattr(sessions, "recording", None), key)
 
     # Content-Type-basierte Auto-Detection
     content_type = request.headers.get("content-type", "")
@@ -345,6 +348,7 @@ async def send_unified_message(
                 pipeline=pipeline,
                 audio_store=audio_store,
                 admission=admission,
+                acceptance=acceptance,
             )
             _log_session_event("✅ Audio-Pipeline erfolgreich", session_id)
             return result
@@ -363,6 +367,7 @@ async def send_unified_message(
                 pipeline=pipeline,
                 audio_store=audio_store,
                 admission=admission,
+                acceptance=acceptance,
             )
             _log_session_event("✅ Text-Pipeline erfolgreich", session_id)
             return result
@@ -414,6 +419,7 @@ async def _complete_message(
     audio_store: AudioStore,
     start_time: float,
     retention_hours: Optional[int],
+    acceptance: Optional[Acceptance] = None,
 ) -> MessageResponse:
     """Store, record and answer a message the pipeline produced, for either mode.
 
@@ -421,6 +427,16 @@ async def _complete_message(
     audio for the cleanup; None leaves the audio to the short default.
     """
     message_id = str(uuid.uuid4())
+    await archive_message(
+        acceptance,
+        message_id=message_id,
+        sender=client_type,
+        source_lang=source_lang,
+        target_lang=target_lang,
+        source_text=original_text,
+        result=result,
+        original_audio=original_audio,
+    )
     original_audio_available = (
         _store_audio_artifacts(
             key,
@@ -488,6 +504,7 @@ async def process_audio_input(
     pipeline: SpeechPipeline,
     audio_store: AudioStore,
     admission: Optional[PipelineAdmission] = None,
+    acceptance: Optional[Acceptance] = None,
 ) -> MessageResponse:
     """Audio-Input verarbeiten (multipart/form-data)"""
     # A recorder nobody armed emits nothing, so a direct caller -- every test
@@ -536,6 +553,17 @@ async def process_audio_input(
     recorder.record_pipeline_result(result)
 
     if result.get("error", False):
+        # A failed utterance is archived with its audio and error (spec §5.3).
+        await archive_message(
+            acceptance,
+            message_id=str(uuid.uuid4()),
+            sender=client_type,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            source_text=result.get("asr_text"),
+            result=result,
+            original_audio=file_bytes,
+        )
         _raise_if_upstream_busy(result)
         _raise_if_no_speech(result)
         raise HTTPException(
@@ -562,6 +590,7 @@ async def process_audio_input(
         audio_store=audio_store,
         start_time=start_time,
         retention_hours=captured_retention_hours(session),
+        acceptance=acceptance,
     )
 
 
@@ -577,6 +606,7 @@ async def process_text_input(
     pipeline: SpeechPipeline,
     audio_store: AudioStore,
     admission: Optional[PipelineAdmission] = None,
+    acceptance: Optional[Acceptance] = None,
 ) -> MessageResponse:
     """Text-Input verarbeiten (application/json)"""
     session_id = key.session_id
@@ -648,6 +678,16 @@ async def process_text_input(
 
     # Fehlerbehandlung
     if pipeline_result.get("error"):
+        await archive_message(
+            acceptance,
+            message_id=str(uuid.uuid4()),
+            sender=client_type,
+            source_lang=text_request.source_lang,
+            target_lang=text_request.target_lang,
+            source_text=text_request.text,
+            result=pipeline_result,
+            original_audio=None,
+        )
         _raise_if_upstream_busy(pipeline_result)
         raise HTTPException(
             status_code=400,
@@ -673,4 +713,5 @@ async def process_text_input(
         audio_store=audio_store,
         start_time=start_time,
         retention_hours=captured_retention_hours(session),
+        acceptance=acceptance,
     )

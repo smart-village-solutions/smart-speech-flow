@@ -103,6 +103,9 @@ services:
       # non-root container user without relying on host directory ownership)
       - audio-data:/data/audio
 
+      # Encrypted archive objects waiting for upload (#615): ciphertext only.
+      - archive-spool:/data/archive-spool
+
       # Temporary Upload Buffer (RAM - tmpfs)
       - type: tmpfs
         target: /tmp/audio
@@ -617,6 +620,7 @@ volumes:
   ollama-data:
   vllm-models:
   audio-data:
+  archive-spool:
   clickhouse-data:
   keycloak-postgres-data:
   ssf-postgres-data:

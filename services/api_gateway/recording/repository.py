@@ -17,11 +17,13 @@ import asyncpg
 
 from .audit import GENESIS, AuditEvent, AuditRow, audit_hash
 
+COMMAND_TIMEOUT_SECONDS: Final[float] = 5.0
 DRIVER_FAILURE: Final = (
     asyncpg.PostgresError,
     asyncpg.InterfaceError,
     asyncpg.InternalClientError,
     OSError,
+    TimeoutError,  # command_timeout, or no pooled connection in time
 )
 
 
@@ -100,8 +102,20 @@ class PostgresRecordingRepository:
     @classmethod
     async def create(cls, *, dsn: str, password: str | None) -> Self:
         """The password arrives beside the DSN: a generated one is not URL-safe."""
-        pool = await asyncpg.create_pool(dsn=dsn, password=password or None, min_size=1, max_size=5)
+        pool = await asyncpg.create_pool(
+            dsn=dsn,
+            password=password or None,
+            min_size=1,
+            max_size=5,
+            # A hung database must not hold a recording step, and its session lock, forever.
+            command_timeout=COMMAND_TIMEOUT_SECONDS,
+        )
         return cls(pool)
+
+    @property
+    def pool(self) -> asyncpg.Pool:
+        """Shared with the archive repository, so recording holds one pool."""
+        return self._pool
 
     async def close(self) -> None:
         await self._pool.close()

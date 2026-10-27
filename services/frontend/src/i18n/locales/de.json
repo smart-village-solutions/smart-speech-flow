@@ -315,6 +315,8 @@
         "RECOVERY_KEY_MISSING": "Für diese Organisation fehlt noch der Wiederherstellungsschlüssel.",
         "RECORDING_POLICY_UNAVAILABLE": "Die Aufnahmeeinstellungen sind gerade nicht erreichbar. Bitte erneut versuchen.",
         "RECORDING_BUSY": "Die Aufnahme ist bereits angefragt oder läuft.",
+        "ARCHIVE_UNAVAILABLE": "Für diese Installation ist kein Aufnahmearchiv eingerichtet.",
+        "ARCHIVE_WRITE_FAILED": "Die Zustimmung des Gastes konnte nicht gespeichert werden. Der Gast kann es erneut versuchen.",
         "generic": "Die Aufnahme konnte nicht geändert werden."
       }
     }

@@ -10,6 +10,7 @@ acknowledge the version they render.
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import time
 import uuid
@@ -21,6 +22,7 @@ from ..clock import utc_now
 from ..keyed_locks import KeyedLocks
 from ..realtime_protocol import (
     Frame,
+    recording_error_frame,
     recording_ping_frame,
     recording_request_frame,
     recording_state_frame,
@@ -29,21 +31,30 @@ from ..session_models import ClientType
 from ..studio_v2 import RecordingPolicy
 from ..tenant_session import TenantSessionKey
 from . import session_state as rs
+from .archive_service import ArchiveUnavailableError, ConversationArchive, MessageArtefacts
 from .audit import AuditEvent
+from .records import PlaybackEvent
 from .session_state import Phase, Reason, RecordingState, Snapshot
 from .session_store import RecordingStateStore
 
 logger = logging.getLogger(__name__)
 
 TICK_SECONDS: Final[float] = 1.0
+# How long a tick waits for any one conversation; a slower one finishes on its own.
+TICK_STEP_SECONDS: Final[float] = 2.0
 # A policy read the tick waits for; a slower Studio leaves the pause in place.
 POLICY_READ_SECONDS: Final[float] = 1.0
+# The read at a message's acceptance while ON (§14); a slower Studio pauses recording.
+ACCEPT_POLICY_READ_SECONDS: Final[float] = 2.0
+# How long an archive step may hold the session lock: a slower database pauses recording.
+ARCHIVE_SECONDS: Final[float] = 10.0
 GUEST_ACTOR: Final[str] = "guest"
 SYSTEM_ACTOR: Final[str] = "system"
 _ROLES: Final[tuple[ClientType, ClientType]] = (ClientType.ADMIN, ClientType.CUSTOMER)
 
 PolicyReader = Callable[[str], Awaitable[RecordingPolicy | None]]
 Send = Callable[[Frame], Awaitable[None]]
+Opening = Callable[[RecordingState, RecordingState], Awaitable[RecordingState]]
 
 
 class RecordingUnavailableError(Exception):
@@ -71,7 +82,8 @@ class RecordingSessions:
         policy: PolicyReader,
         recovery_key_ready: Callable[[str], Awaitable[bool]],
         audit: Callable[[AuditEvent], Awaitable[None]],
-        storage_ready: Callable[[TenantSessionKey], bool] = lambda _key: True,
+        archive: ConversationArchive | None = None,
+        storage_ready: Callable[[TenantSessionKey], bool] | None = None,
         clock: Callable[[], datetime] = utc_now,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -80,6 +92,9 @@ class RecordingSessions:
         self._policy = policy
         self._recovery_key_ready = recovery_key_ready
         self._audit = audit
+        self._archive = archive
+        if storage_ready is None:
+            storage_ready = archive.ready if archive is not None else (lambda _key: True)
         self._storage_ready = storage_ready
         self._clock = clock
         self._monotonic = monotonic
@@ -87,12 +102,16 @@ class RecordingSessions:
         self._pongs: dict[tuple[TenantSessionKey, ClientType], float] = {}
         self._last_ping: dict[TenantSessionKey, float] = {}
         self._last_policy_read: dict[TenantSessionKey, float] = {}
+        # A conversation whose last tick step is still running is not started again.
+        self._ticking: dict[TenantSessionKey, asyncio.Task[None]] = {}
 
     async def state(self, key: TenantSessionKey) -> RecordingState:
         return await self._store.load(key)
 
-    async def check_available(self, tenant_id: str) -> None:
-        """Raise unless this tenant may record now: a live, fail-closed read (§14)."""
+    async def check_available(self, tenant_id: str) -> RecordingPolicy:
+        """The tenant's policy, unless it may not record now: a live, fail-closed read (§14)."""
+        if self._archive is None or not self._archive.can_record(tenant_id):
+            raise RecordingUnavailableError("ARCHIVE_UNAVAILABLE")
         try:
             policy = await self._policy(tenant_id)
         except Exception:
@@ -101,6 +120,7 @@ class RecordingSessions:
             raise RecordingUnavailableError("RECORDING_DISABLED")
         if not await self._recovery_key_ready(tenant_id):
             raise RecordingUnavailableError("RECOVERY_KEY_MISSING")
+        return policy
 
     async def request(
         self, key: TenantSessionKey, *, request_id: str, requested_by: str
@@ -132,10 +152,11 @@ class RecordingSessions:
         self, key: TenantSessionKey, *, request_id: str, consent: bool
     ) -> RecordingState:
         current = await self._store.load(key)
+        policy = None
         if consent and current.phase is Phase.ASKING and current.request_id == request_id:
             # The policy is read again at the guest's yes; a failure refuses it.
             # A replay or a stale answer needs no read: the transition settles it.
-            await self.check_available(key.tenant_id)
+            policy = await self.check_available(key.tenant_id)
         window_id = str(uuid.uuid4())
         return await self._change(
             key,
@@ -143,7 +164,35 @@ class RecordingSessions:
             lambda state, now: rs.answer(
                 state, request_id=request_id, consent=consent, window_id=window_id, now=now
             ),
+            opening=self._opening(key, policy),
         )
+
+    def _opening(self, key: TenantSessionKey, policy: RecordingPolicy | None) -> Opening:
+        """The yes's archive work, inside the lock: if it fails, the yes did not happen."""
+
+        async def open_window(before: RecordingState, after: RecordingState) -> RecordingState:
+            if self._archive is None:
+                raise RecordingUnavailableError("ARCHIVE_UNAVAILABLE")
+            if policy is None:
+                raise RecordingUnavailableError("RECORDING_POLICY_UNAVAILABLE")
+            try:
+                return await asyncio.wait_for(
+                    self._archive.open_window(key, before, after, policy), ARCHIVE_SECONDS
+                )
+            except (ArchiveUnavailableError, TimeoutError) as error:
+                code = getattr(error, "code", "timeout")
+                logger.error(
+                    "recording_window_not_opened tenant_ref=%s code=%s", key.tenant_ref, code
+                )
+                # The question stays open for the guest; the employee should know why.
+                await self._announcer.broadcast(
+                    key,
+                    recording_error_frame(key.session_id, code="ARCHIVE_WRITE_FAILED"),
+                    ClientType.ADMIN,
+                )
+                raise RecordingUnavailableError("ARCHIVE_WRITE_FAILED") from None
+
+        return open_window
 
     async def stop(self, key: TenantSessionKey, *, role: ClientType, actor: str) -> RecordingState:
         return await self._change(key, actor, lambda state, now: rs.stop(state, by=role, now=now))
@@ -179,6 +228,82 @@ class RecordingSessions:
     async def snapshot(self, key: TenantSessionKey) -> Snapshot:
         return rs.snapshot(await self._store.load(key), live=self.live(key))
 
+    async def accept(self, key: TenantSessionKey) -> Snapshot:
+        """A message's acceptance (§5.3): the state under the lock, after the §14 policy read.
+
+        The read happens under the lock, for the very state the message is accepted
+        in; it is bounded, so the lock is held at most that long.
+        """
+        async with self._locks.hold(key):
+            state = await self._store.load(key)
+            if state.phase is Phase.ON and not await self._policy_allows(key.tenant_id):
+                paused = rs.pause(state, reason=Reason.POLICY, now=self._clock())
+                await self._commit(key, state, paused, SYSTEM_ACTOR)
+                state = paused
+            return rs.snapshot(state, live=self.live(key))
+
+    async def _policy_allows(self, tenant_id: str) -> bool:
+        try:
+            policy = await asyncio.wait_for(self._policy(tenant_id), ACCEPT_POLICY_READ_SECONDS)
+        except Exception:
+            return False
+        return policy is not None and policy.enabled
+
+    async def archive(
+        self, key: TenantSessionKey, accepted: Snapshot, artefacts: MessageArtefacts
+    ) -> str | None:
+        """A message's completion (§5.3): decide and append in one locked step.
+
+        Returns the chain entry, or None when the message is not stored. Delivery
+        never waits on why: a failed archive pauses recording with reason
+        `storage`, which both screens show, and the message goes out as usual.
+        """
+        if self._archive is None or not accepted.holds():
+            return None
+        async with self._locks.hold(key):
+            state = await self._store.load(key)
+            if not rs.archivable(accepted, rs.snapshot(state, live=self.live(key))):
+                return None
+            try:
+                return await asyncio.wait_for(
+                    self._archive.archive_message(key, state, artefacts), ARCHIVE_SECONDS
+                )
+            except Exception as error:  # an archive fault must never cost the message
+                await self._archive_failed(key, state, error)
+                return None
+
+    async def playback(
+        self,
+        key: TenantSessionKey,
+        role: ClientType,
+        message_id: str,
+        event: PlaybackEvent,
+    ) -> None:
+        """A screen played an archived message: its own entry, if recording holds now (§7.1)."""
+        if self._archive is None:
+            return
+        async with self._locks.hold(key):
+            state = await self._store.load(key)
+            if not rs.snapshot(state, live=self.live(key)).holds():
+                return
+            try:
+                await asyncio.wait_for(
+                    self._archive.archive_playback(key, state, message_id, event, role),
+                    ARCHIVE_SECONDS,
+                )
+            except Exception as error:  # a report is never worth an error to the screen
+                await self._archive_failed(key, state, error)
+
+    async def _archive_failed(
+        self, key: TenantSessionKey, state: RecordingState, error: Exception
+    ) -> None:
+        """Under the lock. Recording pauses until the archive can take entries again."""
+        code = error.code if isinstance(error, ArchiveUnavailableError) else type(error).__name__
+        logger.error("recording_archive_failed tenant_ref=%s code=%s", key.tenant_ref, code)
+        paused = rs.pause(state, reason=Reason.STORAGE, now=self._clock())
+        if paused != state:
+            await self._commit(key, state, paused, SYSTEM_ACTOR)
+
     async def pause(self, key: TenantSessionKey, reason: Reason) -> None:
         await self._change(
             key, SYSTEM_ACTOR, lambda state, now: rs.pause(state, reason=reason, now=now)
@@ -207,16 +332,39 @@ class RecordingSessions:
             if ended != state:
                 await self._store.save(key, ended)
                 await self._record(key, state, ended, SYSTEM_ACTOR)
+            if self._archive is not None:
+                await self._archive.transitioned(key, state, ended)
+                await self._archive.session_ended(key, state)
         self._forget(key)
 
     async def tick(self) -> None:
         """Advance every recording conversation, and ping its screens on schedule.
 
-        Concurrently, so one conversation's slow store or Studio read never
-        delays another's liveness check.
+        Concurrently, so one conversation's slow store, Studio read or database
+        write never delays another's liveness check: a step still running after
+        TICK_STEP_SECONDS keeps running, and its conversation sits out the next ticks.
         """
         keys = await self._store.recording_sessions()
-        await asyncio.gather(*(self._tick_guarded(key) for key in keys))
+        started = []
+        for key in keys:
+            if key in self._ticking:
+                continue
+            task = asyncio.create_task(self._tick_guarded(key))
+            self._ticking[key] = task
+            task.add_done_callback(functools.partial(self._tick_done, key))
+            started.append(task)
+        if started:
+            await asyncio.wait(started, timeout=TICK_STEP_SECONDS)
+
+    def _tick_done(self, key: TenantSessionKey, _task: asyncio.Task[None]) -> None:
+        self._ticking.pop(key, None)
+
+    async def close(self) -> None:
+        """Cancel tick steps still running, so none outlives the gateway's shutdown."""
+        steps = list(self._ticking.values())
+        for step in steps:
+            step.cancel()
+        await asyncio.gather(*steps, return_exceptions=True)
 
     async def _tick_guarded(self, key: TenantSessionKey) -> None:
         try:
@@ -277,16 +425,32 @@ class RecordingSessions:
         key: TenantSessionKey,
         actor: str,
         transition: Callable[[RecordingState, datetime], RecordingState],
+        *,
+        opening: Opening | None = None,
     ) -> RecordingState:
         async with self._locks.hold(key):
             state = await self._store.load(key)
             changed = transition(state, self._clock())
+            audited = False
+            if (
+                opening is not None
+                and state.phase is Phase.ASKING
+                and changed.phase is Phase.ARMING
+            ):
+                # The archive writes this transition's audit event with the consent entry.
+                changed, audited = await opening(state, changed), True
             if changed != state:
-                await self._commit(key, state, changed, actor)
+                await self._commit(key, state, changed, actor, audited=audited)
         return changed
 
     async def _commit(
-        self, key: TenantSessionKey, before: RecordingState, after: RecordingState, actor: str
+        self,
+        key: TenantSessionKey,
+        before: RecordingState,
+        after: RecordingState,
+        actor: str,
+        *,
+        audited: bool = False,
     ) -> None:
         await self._store.save(key, after)
         if after.state_version == before.state_version:
@@ -301,7 +465,10 @@ class RecordingSessions:
             # live only once a ping arrives: both get one now, not in up to 5 s.
             self._last_ping.pop(key, None)
             await self._ping_when_due(key)
-        await self._record(key, before, after, actor)
+        if not audited:
+            await self._record(key, before, after, actor)
+        if self._archive is not None:
+            await self._archive.transitioned(key, before, after)
 
     async def _record(
         self, key: TenantSessionKey, before: RecordingState, after: RecordingState, actor: str

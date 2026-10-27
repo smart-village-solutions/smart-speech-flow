@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
@@ -9,13 +10,15 @@ import pytest
 
 from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
+from services.api_gateway.clock import utc_now
 from services.api_gateway.recording.audit import AuditEvent
 from services.api_gateway.recording.session_service import RecordingSessions
 from services.api_gateway.recording.wiring import WebSocketAnnouncer
 from services.api_gateway.studio_v2 import RecordingPolicy
 from services.api_gateway.tenant_session import TenantSessionKey
-from tests.gateway_contract.contract_support import ALLOWED_ORIGIN, TENANT_A
+from tests.gateway_contract.contract_support import ALLOWED_ORIGIN, TENANT_A, wav_bytes
 from tests.guest_access import open_guest_socket
+from tests.recording_archive_fakes import archive_rig, open_object
 
 ORIGIN = {"Origin": ALLOWED_ORIGIN}
 STATE_KEYS = {
@@ -44,8 +47,9 @@ POLICY = RecordingPolicy.model_validate(
 
 
 @pytest.fixture
-def recording(gateway_dependencies, identity):
+def recording(gateway_dependencies, identity, tmp_path):
     audit: list[AuditEvent] = []
+    rig = archive_rig(tmp_path, utc_now)
 
     async def policy(_tenant_id: str) -> RecordingPolicy:
         return POLICY
@@ -62,7 +66,9 @@ def recording(gateway_dependencies, identity):
         policy=policy,
         recovery_key_ready=recovery_key_ready,
         audit=append,
+        archive=rig.archive,
     )
+    sessions.rig = rig  # type: ignore[attr-defined]
     gateway_dependencies.recording_sessions = sessions
     gateway_dependencies.websocket_manager.recording = sessions
     gateway_dependencies.session_manager.recording = sessions
@@ -300,3 +306,92 @@ def test_only_the_sessions_guest_may_answer_or_stop(client, conversations, recor
     )
     stopped = client.post(f"/api/customer/session/{session_id}/recording/stop", headers=headers)
     assert (answered.status_code, stopped.status_code) == (409, 409)
+
+
+def _turn_on(client, conversations, session_id: str, admin, guest) -> None:
+    """Ask, answer yes, and acknowledge through ARMING and ON on both sockets."""
+    _queued(admin), _queued(guest)
+    request_id = str(uuid.uuid4())
+    client.post(
+        f"/api/admin/session/{session_id}/recording/request", json={"request_id": request_id}
+    )
+    arming = client.post(
+        f"/api/customer/session/{session_id}/recording/answer",
+        json={"request_id": request_id, "consent": True},
+    ).json()
+    for socket in (admin, guest):
+        _queued(socket)
+        socket.send_json({"type": "recording_pong"})
+        _ack(socket, arming["state_version"])
+    for socket in (admin, guest):
+        (on,) = _of(_queued(socket), "recording_state")
+        assert on["state"] == "on"
+    for socket in (admin, guest):
+        _ack(socket, on["state_version"])
+        _queued(socket)
+
+
+def _entries(recording) -> list[Any]:
+    return [entry for chain in recording.rig.repository.entries.values() for entry in chain]
+
+
+def _kinds(recording) -> list[str]:
+    return [entry.kind for entry in _entries(recording)]
+
+
+def test_messages_are_archived_only_while_recording_and_playback_is_reported(
+    client, conversations, recording, speech_services
+) -> None:
+    session_id = conversations.create()
+    conversations.activate(session_id, "en")
+    with _admin_socket(client, conversations, session_id) as admin:
+        with open_guest_socket(client, session_id, ORIGIN) as guest:
+            _turn_on(client, conversations, session_id, admin, guest)
+
+            sent = client.post(
+                f"/api/admin/session/{session_id}/message",
+                files={"file": ("speech.wav", wav_bytes(), "audio/wav")},
+                data={"source_lang": "de", "target_lang": "en"},
+            )
+            assert sent.status_code == 200, sent.text
+            assert _kinds(recording) == ["consent", "message"]
+
+            played = client.post(
+                f"/api/customer/session/{session_id}/recording/playback",
+                json={"message_id": sent.json()["message_id"], "event": "completed"},
+            )
+            assert played.status_code == 204
+            assert _kinds(recording) == ["consent", "message", "playback"]
+            playback = json.loads(
+                client.portal.call(
+                    open_object, recording.rig, _entries(recording)[-1], "playback.json"
+                )
+            )
+            assert (playback["reported_by"], playback["event"]) == ("customer", "completed")
+
+            speech_services.fail("translation", 500)
+            assert conversations.send_text(session_id).status_code >= 400
+            assert _kinds(recording)[-1] == "failed"
+            spoken = client.post(
+                f"/api/admin/session/{session_id}/message",
+                files={"file": ("speech.wav", wav_bytes(), "audio/wav")},
+                data={"source_lang": "de", "target_lang": "en"},
+            )
+            assert spoken.status_code >= 400
+            failed_audio = _entries(recording)[-1]
+            assert failed_audio.kind == "failed"
+            assert "original.wav" in failed_audio.objects
+            speech_services.recover("translation")
+
+            client.post(f"/api/admin/session/{session_id}/recording/stop")
+            assert conversations.send_text(session_id).status_code == 200
+            assert _kinds(recording) == ["consent", "message", "playback", "failed", "failed"]
+
+
+def test_a_playback_report_with_a_malformed_body_is_refused(client, conversations, recording):
+    session_id = conversations.create()
+    refused = client.post(
+        f"/api/admin/session/{session_id}/recording/playback",
+        json={"message_id": "not-a-uuid", "event": "completed"},
+    )
+    assert refused.status_code == 422

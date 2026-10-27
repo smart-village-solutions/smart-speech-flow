@@ -1398,6 +1398,30 @@
         "title": "PaperConfirmationBody",
         "type": "object"
       },
+      "PlaybackBody": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "enum": [
+              "started",
+              "completed"
+            ],
+            "title": "Event",
+            "type": "string"
+          },
+          "message_id": {
+            "format": "uuid",
+            "title": "Message Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message_id",
+          "event"
+        ],
+        "title": "PlaybackBody",
+        "type": "object"
+      },
       "ProvidedGuestContent": {
         "properties": {
           "explanationHtml": {
@@ -3299,6 +3323,51 @@
         ]
       }
     },
+    "/api/admin/session/{session_id}/recording/playback": {
+      "post": {
+        "operationId": "report_playback_as_employee_api_admin_session__session_id__recording_playback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaybackBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Playback As Employee",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
     "/api/admin/session/{session_id}/recording/request": {
       "post": {
         "operationId": "request_recording_api_admin_session__session_id__recording_request_post",
@@ -4582,6 +4651,67 @@
           }
         },
         "summary": "Answer Recording",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/recording/playback": {
+      "post": {
+        "operationId": "report_playback_as_guest_api_customer_session__session_id__recording_playback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaybackBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Playback As Guest",
         "tags": [
           "recording"
         ]

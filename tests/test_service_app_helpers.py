@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import hashlib
 import importlib
 import importlib.util
 import inspect
@@ -325,11 +326,15 @@ def test_asr_helpers_build_debug_payloads(asr_app, monkeypatch):
 
     assert debug_info["input"] == {"lang": "de"}
     assert debug_info["system"] == {"cpu": 12.5, "ram": 38.0}
-    assert asr_app._build_asr_response("Hallo", False, False, debug_info) == {
+    assert asr_app._build_asr_response("Hallo", False, False, debug_info, "ab" * 32) == {
         "text": "Hallo",
         "fallback": False,
+        "model": "whisper-large-v3-turbo",
+        "model_version": asr_app._model_version(),
+        "input_sha256": "ab" * 32,
     }
-    assert asr_app._build_asr_response("Hallo", True, True, debug_info)["debug"] == debug_info
+    response = asr_app._build_asr_response("Hallo", True, True, debug_info, "ab" * 32)
+    assert response["debug"] == debug_info
 
 
 def test_asr_health_supported_languages_and_metrics(asr_app, monkeypatch):
@@ -533,6 +538,9 @@ async def test_asr_transcribe_fallback_and_success_paths(asr_app, monkeypatch):
     assert success_response == {
         "text": f"en:{os.path.basename(tmp_output.name)}",
         "fallback": False,
+        "model": "whisper-large-v3-turbo",
+        "model_version": asr_app._model_version(),
+        "input_sha256": hashlib.sha256(b"").hexdigest(),  # the empty normalised file
     }
     assert not os.path.exists(tmp_input.name)
     assert not os.path.exists(tmp_output.name)

@@ -52,6 +52,7 @@ class MessageType(str, Enum):
     RECORDING_STATE_ACK = "recording_state_ack"
     RECORDING_PING = "recording_ping"
     RECORDING_PONG = "recording_pong"
+    RECORDING_ERROR = "recording_error"
 
     # 📱 Mobile-Optimization Messages
     TAB_VISIBILITY_CHANGE = "tab_visibility_change"
@@ -199,6 +200,13 @@ class RecordingPingFrame(TypedDict):
     type: str
     session_id: str
     role: Literal["recording_ping"]
+
+
+class RecordingErrorFrame(TypedDict):
+    type: str
+    session_id: str
+    code: str
+    role: Literal["recording_error"]
 
 
 class PollingIntervalUpdateFrame(TypedDict):
@@ -429,6 +437,16 @@ def recording_ping_frame(session_id: str) -> RecordingPingFrame:
         "type": MessageType.RECORDING_PING.value,
         "session_id": session_id,
         "role": "recording_ping",
+    }
+
+
+def recording_error_frame(session_id: str, *, code: str) -> RecordingErrorFrame:
+    """To the employee: recording could not do what the guest asked for, and why."""
+    return {
+        "type": MessageType.RECORDING_ERROR.value,
+        "session_id": session_id,
+        "code": code,
+        "role": "recording_error",
     }
 
 

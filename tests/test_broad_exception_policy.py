@@ -65,6 +65,29 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/recording/session_service.py", "RecordingSessions._record"): [
         "fallback"
     ],
+    # a failed policy read at a message's acceptance pauses recording (fail closed)
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions._policy_allows"): [
+        "fallback"
+    ],
+    # an archive fault pauses recording; the message is delivered unstored
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions.archive"): [
+        "fallback"
+    ],
+    # a playback report that cannot be archived pauses recording; the screen gets no error
+    ("services/api_gateway/recording/session_service.py", "RecordingSessions.playback"): [
+        "fallback"
+    ],
+    # a recording fault never costs a message: it goes unstored and is delivered
+    ("services/api_gateway/recording/message_archive.py", "accept_message"): ["fallback"],
+    ("services/api_gateway/recording/message_archive.py", "archive_message"): ["fallback"],
+    # a write that may have landed drops the cached chain head, then re-raises
+    ("services/api_gateway/recording/archive_service.py", "ConversationArchive._commit"): [
+        "bookkeeping-reraise"
+    ],
+    # one authority's malformed answer defers its stamp and never stops the others'
+    ("services/api_gateway/recording/archive_service.py", "ChainStamper._stamp"): ["fallback"],
+    # the stamping loop survives any one pass
+    ("services/api_gateway/recording/wiring.py", "recording_stamp_task"): ["boundary"],
     # the recorder's callback failed: the item stays in the spool and is retried
     ("services/api_gateway/recording/storage/spool.py", "ArchiveUploader.flush"): ["boundary"],
     # a daemon-thread target hands its failure back to the loop

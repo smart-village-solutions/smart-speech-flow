@@ -4,6 +4,7 @@ import { GuestRecordingQuestion } from './GuestRecordingQuestion';
 import { RecordingIndicator } from './RecordingIndicator';
 import type { RecordingBandState } from './useRecordingBand';
 import { useGuestRecording } from './useGuestRecording';
+import { usePlaybackReports } from './usePlaybackReports';
 
 interface GuestRecordingProps {
   sessionId: string;
@@ -20,6 +21,7 @@ export function GuestRecording({
   band,
 }: Readonly<GuestRecordingProps>) {
   const { answer, stop, answerFailed } = useGuestRecording(sessionId, slice, dispatch);
+  usePlaybackReports(sessionId, 'customer', band.view?.variant === 'live');
   const request = slice.status.phase === 'asking' ? slice.request : null;
 
   return (

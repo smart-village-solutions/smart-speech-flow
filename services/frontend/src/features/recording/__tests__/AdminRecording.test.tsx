@@ -18,10 +18,12 @@ const off = {
 
 function render(view: Record<string, unknown>) {
   server.use(http.get(`*/api/admin/session/${SESSION}/recording`, () => HttpResponse.json(view)));
+  const wire = createRealtimeWire();
   renderWithProviders(
     <AdminSessionScreen sessionId={SESSION} onLeave={vi.fn()} onSignOut={vi.fn()} />,
-    { locale: 'de', services: { createRealtime: () => createRealtimeWire().transport } }
+    { locale: 'de', services: { createRealtime: () => wire.transport } }
   );
+  return wire;
 }
 
 describe('recording, as the employee sees it', () => {
@@ -57,6 +59,22 @@ describe('recording, as the employee sees it', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Aufnahme anfragen' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Der Gast ist nicht verbunden.');
+  });
+
+  it("says so when the guest's yes could not be recorded", async () => {
+    const wire = render({ ...off, can_request: true, unavailable_reason: null });
+    await screen.findByText('Keine Aufnahme');
+
+    await wire.receive({
+      type: 'recording_error',
+      role: 'recording_error',
+      session_id: SESSION,
+      code: 'ARCHIVE_WRITE_FAILED',
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Die Zustimmung des Gastes konnte nicht gespeichert werden.'
+    );
   });
 
   it('shows no band to an employee who may not ask', async () => {

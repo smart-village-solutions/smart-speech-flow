@@ -1,5 +1,6 @@
 """Behavioral coverage for model-backed service endpoints without model downloads."""
 
+import hashlib
 import os
 import tempfile
 from types import SimpleNamespace
@@ -99,7 +100,13 @@ async def test_asr_transcription_returns_text_and_removes_temporary_audio(
         FakeUploadFile(b"audio"), build_request(), lang="en"
     )
 
-    assert response == {"text": "hello world", "fallback": False}
+    assert response == {
+        "text": "hello world",
+        "fallback": False,
+        "model": "whisper-large-v3-turbo",
+        "model_version": asr_service._model_version(),
+        "input_sha256": hashlib.sha256(b"").hexdigest(),  # the empty normalised file
+    }
     assert not os.path.exists(input_file.name)
     assert not os.path.exists(normalized_file.name)
 

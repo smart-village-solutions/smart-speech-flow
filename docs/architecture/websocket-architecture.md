@@ -95,7 +95,7 @@ translated text, the audio URLs and the pipeline metadata scoped to their role.
 
 ## Recording frames
 
-Recording mode (#615, spec `docs/architecture/recording-mode.md`) adds four
+Recording mode (#615, spec `docs/architecture/recording-mode.md`) adds these
 frames. The gateway holds each conversation's recording state
 (`recording/session_service.py`) and sends `recording_state` (`state`,
 `reason`, `window_id`, `state_version`, `since`) to both sockets on every
@@ -107,8 +107,11 @@ each screen answers `recording_pong`; a screen silent for 12 seconds, or one
 whose last socket has closed, turns ON into PAUSED, and a screen that hears
 nothing from the gateway for 12 seconds shows "paused" on its own. ARMING and
 ON also pause when both screens have not acknowledged them within 10 seconds. Recording frames go to sockets only: a poller cannot answer a ping.
+When the archive cannot record a guest's yes, the question stays open and the
+employee's sockets get `recording_error` with `code` `ARCHIVE_WRITE_FAILED`.
 The routes that change the state live under
-`/api/{admin|customer}/session/{session_id}/recording`.
+`/api/{admin|customer}/session/{session_id}/recording`; the receiving screen
+reports each clip it plays there too (`POST …/recording/playback`).
 
 ## Heartbeat
 

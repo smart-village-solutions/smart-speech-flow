@@ -8,10 +8,10 @@ Either side may stop at any time; only an employee holding
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict
 
 from ..auth import require_ssf_user
@@ -32,8 +32,8 @@ router = APIRouter(tags=["recording"], route_class=ValueFreeValidationRoute)
 
 ADMIN = "/api/admin/session/{session_id}/recording"
 CUSTOMER = "/api/customer/session/{session_id}/recording"
-# Studio unreachable is the only refusal a retry may cure.
-_UNAVAILABLE_STATUS = {"RECORDING_POLICY_UNAVAILABLE": 503}
+# Studio unreachable, or the archive failing to record a yes: refusals a retry may cure.
+_UNAVAILABLE_STATUS = {"RECORDING_POLICY_UNAVAILABLE": 503, "ARCHIVE_WRITE_FAILED": 503}
 
 Claims = Annotated[dict[str, Any], Depends(require_ssf_user)]
 AdminKey = Annotated[TenantSessionKey, Depends(require_admin_session_key)]
@@ -60,6 +60,13 @@ class RecordingRequestBody(BaseModel):
 
 class RecordingAnswerBody(RecordingRequestBody):
     consent: bool
+
+
+class PlaybackBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message_id: UUID
+    event: Literal["started", "completed"]
 
 
 def state_body(state: RecordingState) -> dict[str, Any]:
@@ -146,3 +153,20 @@ async def answer_recording(
 @router.post(f"{CUSTOMER}/stop")
 async def stop_recording_as_guest(key: GuestKey, sessions: Sessions) -> dict[str, Any]:
     return await _changed(sessions.stop(key, role=ClientType.CUSTOMER, actor=GUEST_ACTOR))
+
+
+# A report says nothing back: whether it was archived is not the screen's business.
+@router.post(f"{ADMIN}/playback", status_code=204)
+async def report_playback_as_employee(
+    body: PlaybackBody, key: AdminKey, sessions: Sessions
+) -> Response:
+    await sessions.playback(key, ClientType.ADMIN, str(body.message_id), body.event)
+    return Response(status_code=204)
+
+
+@router.post(f"{CUSTOMER}/playback", status_code=204)
+async def report_playback_as_guest(
+    body: PlaybackBody, key: GuestKey, sessions: Sessions
+) -> Response:
+    await sessions.playback(key, ClientType.CUSTOMER, str(body.message_id), body.event)
+    return Response(status_code=204)

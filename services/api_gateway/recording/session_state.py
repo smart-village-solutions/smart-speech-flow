@@ -78,6 +78,9 @@ class RecordingState:
     consented: bool = False
     acked_admin: int = 0
     acked_customer: int = 0
+    # Set by the archive at the first yes and kept for the rest of the session,
+    # so a restart continues the same archived conversation.
+    conversation_id: str | None = None
 
     @property
     def recording(self) -> bool:
@@ -124,6 +127,8 @@ def archivable(at_acceptance: Snapshot, at_completion: Snapshot) -> bool:
         at_acceptance.holds()
         and at_completion.holds()
         and at_acceptance.state_version == at_completion.state_version
+        # The version restarts if the state itself is ever lost; the window does not.
+        and at_acceptance.window_id == at_completion.window_id
     )
 
 

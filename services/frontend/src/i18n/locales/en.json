@@ -315,6 +315,8 @@
         "RECOVERY_KEY_MISSING": "This organisation has no recovery key yet.",
         "RECORDING_POLICY_UNAVAILABLE": "The recording settings cannot be reached right now. Please try again.",
         "RECORDING_BUSY": "Recording is already requested or running.",
+        "ARCHIVE_UNAVAILABLE": "No recording archive is set up for this installation.",
+        "ARCHIVE_WRITE_FAILED": "The guest's consent could not be saved. The guest can try again.",
         "generic": "The recording could not be changed."
       }
     }

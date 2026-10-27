@@ -62,6 +62,7 @@ def tenant_ref(tenant_id: Any) -> str:
 # spaces is sufficient, and it is the one with no history.
 _SESSION_DOMAIN: Final[str] = ""
 _FEEDBACK_DOMAIN: Final[str] = "feedback"
+_RECORDING_DOMAIN: Final[str] = "recording"
 
 
 class SessionPseudonymizer:
@@ -108,6 +109,14 @@ class SessionPseudonymizer:
         the same output in both spaces.
         """
         return self._domain_reference(_FEEDBACK_DOMAIN, feedback_id)
+
+    def recording_reference(self, session_id: Any) -> str:
+        """The session reference a recorded conversation keeps (spec §13).
+
+        Its own domain, so an archive row and a telemetry row of the same
+        session carry different references and cannot be joined (§5.5).
+        """
+        return self._domain_reference(_RECORDING_DOMAIN, session_id)
 
     def _domain_reference(self, domain: str, value: Any) -> str:
         text = str(value or "").strip()

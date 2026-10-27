@@ -47,6 +47,7 @@ from .recording.wiring import (
     connect_recording,
     recording_connect_task,
     recording_dsn,
+    recording_stamp_task,
     recording_tick_task,
 )
 from .refinement_metrics import RefinementMetrics
@@ -318,6 +319,7 @@ def _start_background_tasks(
         ),
         asyncio.create_task(recording_connect_task(dependencies, recording_dsn())),
         asyncio.create_task(recording_tick_task(dependencies)),
+        asyncio.create_task(recording_stamp_task(dependencies)),
     ]
 
 

@@ -66,6 +66,11 @@ RECORDING = (
     "recording_keys",
     "recording_ceremony",
     "recording_sessions",
+    # ...and without an archive store (#615).
+    "recording_archive",
+    "recording_spools",
+    "recording_archive_client",
+    "recording_stamper",
 )
 
 

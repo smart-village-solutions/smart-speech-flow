@@ -3,6 +3,9 @@ export type RecordingPhase = 'off' | 'asking' | 'arming' | 'on' | 'paused';
 
 export type ConsentKind = 'first' | 'resume';
 
+/** What a screen reports of a clip it played (spec §7.1). */
+export type PlaybackEvent = 'started' | 'completed';
+
 /** One `recording_state`: what both screens render and acknowledge. */
 export interface RecordingStatus {
   phase: RecordingPhase;

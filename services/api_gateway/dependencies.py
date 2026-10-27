@@ -93,6 +93,11 @@ class GatewayDependencies:
     # Where each conversation's recording state lives; always built, used once wired.
     recording_state_store: Any = None
     recording_sessions: Any = None
+    # The archive behind recording (#615), wired with it when a store is configured.
+    recording_archive: Any = None
+    recording_spools: Any = None
+    recording_archive_client: Any = None
+    recording_stamper: Any = None
 
 
 def build_gateway_dependencies(

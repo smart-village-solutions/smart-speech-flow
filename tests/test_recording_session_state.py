@@ -164,6 +164,14 @@ def test_a_message_is_archivable_only_if_on_unchanged_acked_and_live_at_both_poi
     assert not rs.archivable(held, later)
 
 
+def test_a_lost_state_whose_version_happens_to_match_is_still_another_window() -> None:
+    held = live_on()
+    elsewhere = replace(held, window_id="another-window")
+
+    assert elsewhere.holds()
+    assert not rs.archivable(held, elsewhere)
+
+
 def test_an_on_that_one_screen_never_acknowledged_pauses_after_ten_seconds() -> None:
     """A lost acknowledgement must not leave both screens showing a recording that is not stored."""
     half = rs.acknowledge(on(), role=ClientType.ADMIN, version=on().state_version)

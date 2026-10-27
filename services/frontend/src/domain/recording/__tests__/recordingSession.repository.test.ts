@@ -91,6 +91,20 @@ describe('recording session repository', () => {
 });
 
 describe('recording frames', () => {
+  it("reports a playback to the role's own route", async () => {
+    let reported: unknown;
+    server.use(
+      http.post(`${BASE}/api/customer/session/S1/recording/playback`, async ({ request }) => {
+        reported = await request.json();
+        return new HttpResponse(null, { status: 204 });
+      })
+    );
+
+    await repository().reportPlayback('S1', 'customer', 'm-1', 'completed');
+
+    expect(reported).toEqual({ message_id: 'm-1', event: 'completed' });
+  });
+
   it('maps a state frame and drops a malformed one', () => {
     expect(toRecordingStatus({ ...asking, role: 'recording_state' })?.stateVersion).toBe(1);
     expect(toRecordingStatus({ ...asking, state_version: -1 })).toBeNull();

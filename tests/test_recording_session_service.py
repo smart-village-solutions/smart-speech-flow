@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from services.api_gateway.recording import session_service
 from services.api_gateway.recording.audit import AuditEvent
 from services.api_gateway.recording.session_service import (
     RecordingSessions,
@@ -23,6 +24,7 @@ from services.api_gateway.recording.session_store import MemoryRecordingStateSto
 from services.api_gateway.session_models import ClientType
 from services.api_gateway.studio_v2 import RecordingPolicy
 from services.api_gateway.tenant_session import TenantSessionKey
+from tests.recording_archive_fakes import archive_rig
 
 KEY = TenantSessionKey("tenant-kassel", "ABCD1234")
 ADMIN, GUEST = ClientType.ADMIN, ClientType.CUSTOMER
@@ -70,9 +72,10 @@ class Clocks:
 
 
 class Harness:
-    def __init__(self) -> None:
+    def __init__(self, root) -> None:
         self.announcer = Announcer()
         self.clocks = Clocks()
+        self.rig = archive_rig(root, lambda: self.clocks.now)
         self.audit: list[AuditEvent] = []
         self.policy: RecordingPolicy | None = RecordingPolicy.model_validate(POLICY_FIELDS)
         self.policy_fails = False
@@ -85,6 +88,7 @@ class Harness:
             policy=self._read_policy,
             recovery_key_ready=self._recovery_ready,
             audit=self._append,
+            archive=self.rig.archive,
             storage_ready=lambda _key: self.storage_ok,
             clock=lambda: self.clocks.now,
             monotonic=lambda: self.clocks.mono,
@@ -115,8 +119,8 @@ class Harness:
 
 
 @pytest.fixture
-def h() -> Harness:
-    return Harness()
+def h(tmp_path) -> Harness:
+    return Harness(tmp_path)
 
 
 async def test_a_request_announces_asking_to_both_and_asks_only_the_guest(h) -> None:
@@ -467,3 +471,28 @@ async def test_the_tick_keeps_a_watched_state_from_expiring(h) -> None:
     h.announcer.admin_connected = False
     await h.service.tick()
     assert touched == [KEY]
+
+
+async def test_one_conversation_stuck_in_its_tick_holds_up_no_other(h, monkeypatch) -> None:
+    other = TenantSessionKey(KEY.tenant_id, "OTHER123")
+    stuck, seen = asyncio.Event(), []
+    monkeypatch.setattr(session_service, "TICK_STEP_SECONDS", 0.1)
+
+    async def recording_sessions():
+        return [KEY, other]
+
+    async def tick_one(key):
+        seen.append(key)
+        if key == KEY:
+            await stuck.wait()
+
+    monkeypatch.setattr(h.store, "recording_sessions", recording_sessions)
+    monkeypatch.setattr(h.service, "_tick_one", tick_one)
+
+    await asyncio.wait_for(h.service.tick(), 2)
+    await asyncio.wait_for(h.service.tick(), 2)
+
+    # The stuck one is not started again while its last step still waits.
+    assert seen == [KEY, other, other]
+    await h.service.close()
+    assert h.service._ticking == {}

@@ -2,6 +2,7 @@ import type { Dispatch } from 'react';
 import type { RealtimeEvent, RealtimeTransport } from '@/core/realtime/realtime.port';
 import { toRecordingRequest, toRecordingStatus } from '@/domain/recording/recordingSession.mapper';
 import type { RecordingAction } from './recording.slice';
+import { adminRecordingCodeKey } from './recordingErrors';
 
 type Handler = (event: RealtimeEvent) => void;
 
@@ -14,7 +15,7 @@ type Handler = (event: RealtimeEvent) => void;
  * `appliedVersion` reads the version the screen currently renders.
  */
 export function recordingEvents(
-  dispatch: Dispatch<RecordingAction>,
+  dispatch: Dispatch<RecordingAction | { type: 'error/raised'; errorKey: string }>,
   transport: Pick<RealtimeTransport, 'send'>,
   appliedVersion: () => number
 ): [string, Handler][] {
@@ -40,6 +41,14 @@ export function recordingEvents(
         if (request !== null) {
           dispatch({ type: 'recording/request', request });
         }
+      },
+    ],
+    [
+      // Only the employee gets these: a guest's yes the archive could not record.
+      'recording_error',
+      (event) => {
+        const code = typeof event.code === 'string' ? event.code : undefined;
+        dispatch({ type: 'error/raised', errorKey: adminRecordingCodeKey(code) });
       },
     ],
     [

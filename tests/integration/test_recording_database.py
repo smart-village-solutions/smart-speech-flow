@@ -54,7 +54,8 @@ async def owner():
     if not OWNER_DSN:
         pytest.skip("SSF_RECORDING_OWNER_DATABASE_URL is not set")
     connection = await asyncpg.connect(OWNER_DSN, password=OWNER_PASSWORD)
-    await connection.execute("TRUNCATE user_keys, audit_events, gateway_signing_keys")
+    # CASCADE: chain entries (migration 003) reference the gateway keys.
+    await connection.execute("TRUNCATE user_keys, audit_events, gateway_signing_keys CASCADE")
     yield connection
     await connection.close()
 

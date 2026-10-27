@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 from types import SimpleNamespace
 
@@ -13,6 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from services.api_gateway.recording import wiring
 from services.api_gateway.recording.ceremony_model import CeremonyError
 from services.api_gateway.recording.secrets import BLOB_KEY_FILE_ENV, SIGNING_KEY_FILE_ENV
+from services.api_gateway.recording.session_service import RecordingUnavailableError
 from services.api_gateway.recording.session_store import MemoryRecordingStateStore
 
 DSN = "postgresql://ssf_recording_app@db/ssf_recording"
@@ -33,8 +35,14 @@ def _state() -> SimpleNamespace:
         studio_runtime_flow=None,
         recording_state_store=MemoryRecordingStateStore(),
         recording_sessions=None,
+        recording_archive=None,
+        recording_spools=None,
+        recording_archive_client=None,
+        recording_stamper=None,
         websocket_manager=SimpleNamespace(recording=None),
-        session_manager=SimpleNamespace(recording=None),
+        session_manager=SimpleNamespace(
+            recording=None, pseudonymizer=SimpleNamespace(recording_reference=str)
+        ),
     )
 
 
@@ -67,6 +75,13 @@ class _Repository:
 
     async def active_recovery_key(self, tenant_id):
         return None
+
+    async def active_user_key(self, tenant_id, user_sub):
+        return None
+
+    @property
+    def pool(self):
+        return object()
 
     async def close(self) -> None:
         self.closed = True
@@ -128,3 +143,89 @@ async def test_without_studio_the_ceremony_cannot_name_custodians(secrets_on_dis
     with pytest.raises(CeremonyError) as caught:
         await state.recording_ceremony.candidates("tenant-test", "corr")
     assert caught.value.code == "DIRECTORY_UNAVAILABLE"
+
+
+async def test_without_an_archive_store_recording_is_wired_but_unavailable(
+    secrets_on_disk, monkeypatch
+):
+    async def create(**_):
+        return _Repository()
+
+    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", create)
+    monkeypatch.delenv("SSF_ARCHIVE_ENDPOINT", raising=False)
+    state = _state()
+    await wiring.connect_recording(state, DSN)
+
+    assert state.recording_archive is None and state.recording_stamper is None
+    with pytest.raises(RecordingUnavailableError) as caught:
+        await state.recording_sessions.check_available("tenant-test")
+    assert caught.value.code == "ARCHIVE_UNAVAILABLE"
+    await wiring.close_recording(state)
+
+
+async def test_an_archive_store_wires_spools_that_stop_with_recording(
+    secrets_on_disk, monkeypatch, tmp_path
+):
+    async def create(**_):
+        return _Repository()
+
+    writers = tmp_path / "archive-writers.json"
+    writers.write_text(
+        json.dumps({"tenant-test": {"access_key_id": "k", "secret_access_key": "s"}})
+    )
+    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", create)
+    monkeypatch.setenv("SSF_ARCHIVE_ENDPOINT", "http://archive.test:8333")
+    monkeypatch.setenv("SSF_ARCHIVE_WRITERS_FILE", str(writers))
+    monkeypatch.setenv("SSF_ARCHIVE_SPOOL_DIR", str(tmp_path / "spool"))
+    state = _state()
+    await wiring.connect_recording(state, DSN)
+
+    assert state.recording_archive is not None
+    assert state.recording_sessions._archive is state.recording_archive
+    assert (tmp_path / "spool").is_dir()
+    spools = state.recording_spools
+    spools.spool("tenant-test")
+    assert spools._tasks  # an uploader per tenant, running
+    await wiring.close_recording(state)
+    assert spools._tasks == {} and state.recording_archive is None
+
+
+async def test_a_tenant_missing_from_the_writers_file_cannot_record(
+    secrets_on_disk, monkeypatch, tmp_path
+):
+    async def create(**_):
+        return _Repository()
+
+    writers = tmp_path / "archive-writers.json"
+    writers.write_text(
+        json.dumps({"tenant-test": {"access_key_id": "k", "secret_access_key": "s"}})
+    )
+    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", create)
+    monkeypatch.setenv("SSF_ARCHIVE_ENDPOINT", "http://archive.test:8333")
+    monkeypatch.setenv("SSF_ARCHIVE_WRITERS_FILE", str(writers))
+    monkeypatch.setenv("SSF_ARCHIVE_SPOOL_DIR", str(tmp_path / "spool"))
+    state = _state()
+    await wiring.connect_recording(state, DSN)
+
+    assert state.recording_archive.can_record("tenant-test")
+    with pytest.raises(RecordingUnavailableError) as caught:
+        await state.recording_sessions.check_available("tenant-other")
+    assert caught.value.code == "ARCHIVE_UNAVAILABLE"
+    await wiring.close_recording(state)
+
+
+async def test_an_unreadable_writers_file_leaves_the_archive_off(
+    secrets_on_disk, monkeypatch, tmp_path
+):
+    async def create(**_):
+        return _Repository()
+
+    monkeypatch.setattr(wiring.PostgresCeremonyRepository, "create", create)
+    monkeypatch.setenv("SSF_ARCHIVE_ENDPOINT", "http://archive.test:8333")
+    monkeypatch.setenv("SSF_ARCHIVE_WRITERS_FILE", str(tmp_path / "absent.json"))
+    state = _state()
+
+    assert await wiring.connect_recording(state, DSN) is True
+    assert state.recording_archive is None
+    assert state.recording_sessions is not None
+    await wiring.close_recording(state)

@@ -5,7 +5,12 @@ import {
   toRecordingStatus,
   toRecordingView,
 } from './recordingSession.mapper';
-import type { AdminRecordingView, RecordingStatus, RecordingView } from './recordingSession.types';
+import type {
+  AdminRecordingView,
+  PlaybackEvent,
+  RecordingStatus,
+  RecordingView,
+} from './recordingSession.types';
 
 /**
  * Recording a live conversation (spec §5.2). Every change answers with the
@@ -18,6 +23,13 @@ export interface RecordingSessionRepository {
   cancel(sessionId: string, requestId: string): Promise<RecordingStatus>;
   answer(sessionId: string, requestId: string, consent: boolean): Promise<RecordingStatus>;
   stop(sessionId: string, role: ClientRole): Promise<RecordingStatus>;
+  /** A clip this screen played; archived only if its message was (spec §7.1). */
+  reportPlayback(
+    sessionId: string,
+    role: ClientRole,
+    messageId: string,
+    event: PlaybackEvent
+  ): Promise<void>;
 }
 
 const base = (role: ClientRole, sessionId: string) =>
@@ -68,6 +80,10 @@ export function createRecordingSessionRepository(http: AxiosInstance): Recording
     async stop(sessionId, role) {
       const response = await http.post<unknown>(`${base(role, sessionId)}/stop`);
       return status(response.data);
+    },
+
+    async reportPlayback(sessionId, role, messageId, event) {
+      await http.post(`${base(role, sessionId)}/playback`, { message_id: messageId, event });
     },
   };
 }
