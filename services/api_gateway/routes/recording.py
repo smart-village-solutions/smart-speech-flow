@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..dependencies import optional_container
 from ..recording.crypto.encoding import b64url, from_b64url
 from ..recording.crypto.transcript import display_fingerprint
-from ..recording.keys import Enrolment, KeyEnrolmentService
+from ..recording.keys import Enrolment, KeyEnrolmentService, KeyUnreadableError
 from ..recording.permissions import (
     RECORDING_PERMISSIONS,
     coded,
@@ -66,6 +66,8 @@ async def own_key(
         key = await service.own_key(context.tenant_id, claims["sub"])
     except RecordingStorageUnavailable:
         raise coded(503, "RECORDING_UNAVAILABLE", "Recording storage unavailable") from None
+    except KeyUnreadableError:
+        raise coded(500, "KEY_UNREADABLE", "The stored key cannot be read") from None
     if key is None:
         raise coded(404, "KEY_NOT_ENROLLED", "No personal key is enrolled")
     return {

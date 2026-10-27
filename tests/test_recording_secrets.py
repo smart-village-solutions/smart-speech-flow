@@ -87,3 +87,18 @@ def test_the_generator_script_writes_loadable_secrets_and_never_overwrites(tmp_p
     again = subprocess.run(["sh", str(SCRIPT), str(target)], capture_output=True)
     assert again.returncode != 0
     assert oct((target / "blob-key").stat().st_mode & 0o777) == "0o600"
+
+
+def test_the_generator_script_hands_the_files_to_the_reading_user(tmp_path):
+    target = tmp_path / "secrets"
+    owner = f"{os.getuid()}:{os.getgid()}"
+    subprocess.run(["sh", str(SCRIPT), str(target), owner], check=True, capture_output=True)
+    try:
+        assert oct(target.stat().st_mode & 0o777) == "0o500"
+        for name in ("signing-key.pem", "blob-key"):
+            stat = (target / name).stat()
+            assert (stat.st_uid, stat.st_gid) == (os.getuid(), os.getgid())
+            assert oct(stat.st_mode & 0o777) == "0o400"
+        RecordingSecrets.from_files(target / "signing-key.pem", target / "blob-key")
+    finally:
+        target.chmod(0o700)

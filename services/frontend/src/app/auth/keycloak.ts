@@ -109,7 +109,7 @@ function authenticatedSession(): ActiveKeycloakSession | null {
   return active;
 }
 
-/** The `acr` the realm maps to a fresh MFA login: the gateway's SSF_RECORDING_STEP_UP_ACR default. */
+/** The `acr` the realm maps to a fresh MFA login; the gateway's STEP_UP_ACR is the same value. */
 const STEP_UP_ACR = 'mfa';
 /** The gateway accepts 300 s; asking a minute early leaves time to finish the action. */
 const STEP_UP_FRESH_SECONDS = 240;

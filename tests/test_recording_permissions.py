@@ -10,11 +10,9 @@ from fastapi import HTTPException
 from services.api_gateway.recording.permissions import (
     CUSTODIAN,
     REQUEST,
-    STEP_UP_ACR_ENV,
-    STEP_UP_MAX_AGE_ENV,
-    StepUpPolicy,
     permissions_of,
     require_permission,
+    step_up_satisfied,
 )
 
 
@@ -40,22 +38,16 @@ async def test_another_recording_permission_does_not_admit():
     assert await dependency(claims=holder) is holder
 
 
-def test_step_up_needs_the_configured_acr_and_a_fresh_login(monkeypatch):
-    monkeypatch.delenv(STEP_UP_ACR_ENV, raising=False)
-    monkeypatch.delenv(STEP_UP_MAX_AGE_ENV, raising=False)
-    policy = StepUpPolicy.from_environment()
+def test_step_up_needs_an_mfa_login_from_the_last_five_minutes():
     now = time.time()
-    assert policy.satisfied_by({"acr": "mfa", "auth_time": int(now) - 10}, now)
-    assert not policy.satisfied_by({"acr": "1", "auth_time": int(now) - 10}, now)
-    assert not policy.satisfied_by({"acr": "mfa", "auth_time": int(now) - 301}, now)
-    assert not policy.satisfied_by({"acr": "mfa"}, now)
-    assert not policy.satisfied_by({"acr": "mfa", "auth_time": True}, now)
-    assert not policy.satisfied_by({"acr": "mfa", "auth_time": int(now) + 60}, now)
+    assert step_up_satisfied({"acr": "mfa", "auth_time": int(now) - 10}, now)
+    assert not step_up_satisfied({"acr": "1", "auth_time": int(now) - 10}, now)
+    assert not step_up_satisfied({"acr": "mfa", "auth_time": int(now) - 301}, now)
+    assert not step_up_satisfied({"acr": "mfa"}, now)
+    assert not step_up_satisfied({"acr": "mfa", "auth_time": True}, now)
+    assert not step_up_satisfied({"acr": "mfa", "auth_time": int(now) + 61}, now)
 
 
-def test_step_up_settings_are_bounded(monkeypatch):
-    monkeypatch.setenv(STEP_UP_ACR_ENV, "gold, mfa")
-    monkeypatch.setenv(STEP_UP_MAX_AGE_ENV, "86400")
-    policy = StepUpPolicy.from_environment()
-    assert policy.acr_values == {"gold", "mfa"}
-    assert policy.max_age_seconds == 300
+def test_a_login_stamped_by_a_slightly_fast_keycloak_clock_counts():
+    now = time.time()
+    assert step_up_satisfied({"acr": "mfa", "auth_time": int(now) + 5}, now)

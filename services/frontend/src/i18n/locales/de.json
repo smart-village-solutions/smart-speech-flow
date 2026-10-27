@@ -260,6 +260,7 @@
       "paperTitle": "Papiersicherung",
       "deviceFingerprint": "Fingerabdruck dieses Geräts:",
       "deviceLost": "Dieses Gerät hält den Papierschlüssel nicht mehr, etwa nach einem Neuladen. Brechen Sie die Zeremonie ab und starten Sie neu.",
+      "paperDone": "Die Papiersicherung ist abgeschlossen. Warten auf die Unterschriften der Verwahrenden …",
       "paperWaiting": "Warten, bis alle Verwahrenden ihren Beitrag abgegeben haben …",
       "verifyPaperAction": "Prüfen und Papieranteile erzeugen",
       "printAction": "Drucken",
@@ -274,6 +275,7 @@
       "abortAction": "Zeremonie abbrechen",
       "abortTitle": "Zeremonie abbrechen?",
       "abortBody": "Alle bisherigen Beiträge verfallen. Die Zeremonie muss danach vollständig neu gestartet werden.",
+      "abortFailed": "Die Zeremonie konnte nicht abgebrochen werden. Bitte versuchen Sie es erneut.",
       "keepGoing": "Weitermachen"
     }
   }

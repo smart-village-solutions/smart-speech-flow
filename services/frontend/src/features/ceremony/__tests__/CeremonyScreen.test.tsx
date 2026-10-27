@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAdminIdentity, hasPermission, requestStepUp } from '@/app/auth/keycloak';
@@ -50,7 +50,10 @@ function ceremony(overrides: Partial<Ceremony> = {}): Ceremony {
   };
 }
 
-function render(state: CeremonyState, overrides: { repository?: Partial<RecoveryCeremonyRepository>; crypto?: Partial<CeremonyCrypto>; unlocked?: boolean } = {}) {
+function render(
+  state: CeremonyState,
+  overrides: { repository?: Partial<RecoveryCeremonyRepository>; crypto?: Partial<CeremonyCrypto>; unlocked?: boolean; device?: boolean } = {}
+) {
   const recoveryCeremony: RecoveryCeremonyRepository = {
     state: vi.fn().mockResolvedValue(state),
     candidates: vi.fn().mockResolvedValue([
@@ -79,6 +82,7 @@ function render(state: CeremonyState, overrides: { repository?: Partial<Recovery
   const keyVault = createKeyVault();
   if (overrides.unlocked) keyVault.hold(keys);
   const paperDevice = createPaperDeviceHolder();
+  if (overrides.device) paperDevice.hold(device);
   const remember = vi.fn();
   const onOpenKeys = vi.fn();
   renderWithProviders(<CeremonyScreen onBack={vi.fn()} onOpenKeys={onOpenKeys} onSignOut={vi.fn()} />, {
@@ -89,6 +93,19 @@ function render(state: CeremonyState, overrides: { repository?: Partial<Recovery
 }
 
 const noKey = { recoveryKey: null, lastFailed: null };
+
+function withPaperHolders(open: Ceremony): Ceremony {
+  const paper = [4, 5].map((holderIndex) => ({
+    holderIndex,
+    holderRef: `paper-${holderIndex - 3}`,
+    kind: 'paper' as const,
+    displayName: null,
+    encPub: point(9),
+    sigPub: null,
+    fingerprint: new Uint8Array(32),
+  }));
+  return { ...open, participants: [...open.participants, ...paper] };
+}
 
 describe('CeremonyScreen', () => {
   beforeEach(() => {
@@ -157,6 +174,19 @@ describe('CeremonyScreen', () => {
     expect(recoveryCeremony.confirm).not.toHaveBeenCalled();
   });
 
+  it('aborts rather than sign a zero share when the gateway leaves out this custodian\'s sub-shares', async () => {
+    const open = ceremony({ status: 'confirming', transcriptHash: new Uint8Array(32) });
+    const received = { shares: new Map<number, bigint>(), transcriptHash: new Uint8Array(32) };
+    const { recoveryCeremony, ceremonyCrypto } = render(
+      { ...noKey, ceremony: open },
+      { unlocked: true, crypto: { receive: vi.fn().mockResolvedValue(received) } }
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Prüfen und unterschreiben' }));
+    expect(await screen.findByText(/Eine Prüfung ist fehlgeschlagen \(subshare_invalid\)/)).toBeInTheDocument();
+    expect(recoveryCeremony.abort).toHaveBeenCalledWith(open.ceremonyId, 'subshare_invalid');
+    expect(ceremonyCrypto.confirm).not.toHaveBeenCalled();
+  });
+
   it('refuses to deal when the gateway lists other keys for this custodian', async () => {
     const swapped = ceremony();
     swapped.participants[0] = { ...swapped.participants[0], encPub: point(7) };
@@ -173,6 +203,40 @@ describe('CeremonyScreen', () => {
     withPaper.participants.push({ holderIndex: 4, holderRef: 'paper-1', kind: 'paper', displayName: null, encPub: point(9), sigPub: null, fingerprint: new Uint8Array(32) });
     render({ ...noKey, ceremony: withPaper });
     expect(await screen.findByText(/hält den Papierschlüssel nicht mehr/)).toBeInTheDocument();
+  });
+
+  it('aborts rather than print a zero sheet when a paper sub-share is missing', async () => {
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'olga' });
+    const open = withPaperHolders(ceremony({ status: 'confirming', transcriptHash: new Uint8Array(32) }));
+    const received = { shares: new Map([[4, 7n]]), transcriptHash: new Uint8Array(32) };
+    const { recoveryCeremony } = render(
+      { ...noKey, ceremony: open },
+      { device: true, crypto: { receive: vi.fn().mockResolvedValue(received) } }
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Prüfen und Papieranteile erzeugen' }));
+    expect(await screen.findByText(/Eine Prüfung ist fehlgeschlagen \(subshare_invalid\)/)).toBeInTheDocument();
+    expect(recoveryCeremony.abort).toHaveBeenCalledWith(open.ceremonyId, 'subshare_invalid');
+    expect(screen.queryByRole('button', { name: 'Drucken' })).not.toBeInTheDocument();
+  });
+
+  it('does not call the device lost once its paper shares are printed and confirmed', async () => {
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'olga' });
+    const printed = withPaperHolders(ceremony({ status: 'confirming', transcriptHash: new Uint8Array(32), paperConfirmed: true }));
+    render({ ...noKey, ceremony: printed });
+    expect(await screen.findByText(/Die Papiersicherung ist abgeschlossen/)).toBeInTheDocument();
+    expect(screen.queryByText(/hält den Papierschlüssel nicht mehr/)).not.toBeInTheDocument();
+  });
+
+  it('says so when an abort fails, and keeps the paper key for another try', async () => {
+    vi.mocked(getAdminIdentity).mockReturnValue({ tenantId: 'tenant-kassel', userSub: 'olga' });
+    const { paperDevice, device } = render(
+      { ...noKey, ceremony: withPaperHolders(ceremony()) },
+      { device: true, repository: { abort: vi.fn().mockRejectedValue(new AppError('network')) } }
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Zeremonie abbrechen' }));
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Zeremonie abbrechen' }));
+    expect(await screen.findByText(/konnte nicht abgebrochen werden/)).toBeInTheDocument();
+    expect(paperDevice.current()).toBe(device);
   });
 
   it('tells every participant why the last ceremony ended', async () => {

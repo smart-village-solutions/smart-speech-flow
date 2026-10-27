@@ -20,6 +20,9 @@ export function PaperDevicePanel({ ceremony, facts }: Readonly<PaperDevicePanelP
   const paper = usePaperDevice(ceremony, facts);
   const [sealed, setSealed] = useState(false);
 
+  if (paper.device === null && ceremony.paperConfirmed) {
+    return <p className="text-note text-fg-muted">{t('admin.ceremony.paperDone')}</p>;
+  }
   if (paper.device === null) {
     return (
       <p role="alert" className="text-note text-fg-status-alert">

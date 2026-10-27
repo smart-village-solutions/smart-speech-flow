@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 import asyncpg
 import pytest
 
+from services.api_gateway.recording import ceremony_repository
 from services.api_gateway.recording.audit import AuditEvent, chain_is_intact
 from services.api_gateway.recording.ceremony import CeremonyService, StartRequest
 from services.api_gateway.recording.ceremony_model import CeremonyError, DealingRecord
@@ -110,6 +111,65 @@ async def test_a_whole_ceremony_lands_in_its_tables_with_an_intact_audit_chain(r
     rows = await repository.audit_rows(TENANT)
     assert chain_is_intact(rows)
     assert rows[-1].event.event_type == "recovery_key_activated"
+
+
+async def test_the_last_dealing_and_the_move_to_signing_commit_together(repository, monkeypatch):
+    service = _service(repository)
+    snapshot = await _start(service, paper=False)
+    ceremony_id = snapshot.ceremony.ceremony_id
+    for holder in (ANNA, BERND):
+        snapshot = await service.deal(
+            TENANT, holder.sub, ceremony_id, holder.deal(snapshot, POLYNOMIALS[holder.sub])
+        )
+    last = CARLA.deal(snapshot, POLYNOMIALS["carla"])
+
+    def broken(_snapshot):
+        raise RuntimeError("transcript failed")
+
+    monkeypatch.setattr(ceremony_repository, "computed_transcript_hash", broken)
+    with pytest.raises(RuntimeError):
+        await service.deal(TENANT, "carla", ceremony_id, last)
+    stuck = (await service.state(TENANT)).ceremony
+    assert (stuck.ceremony.status, stuck.has_dealt(3)) == ("dealing", False)
+
+    monkeypatch.undo()
+    after = await service.deal(TENANT, "carla", ceremony_id, last)
+    assert after.ceremony.status == "confirming"
+    assert after.ceremony.transcript_hash is not None
+
+
+async def test_the_last_signature_and_the_activation_commit_together(repository, monkeypatch):
+    service = _service(repository)
+    snapshot = await _start(service, paper=False)
+    ceremony_id = snapshot.ceremony.ceremony_id
+    for holder in CUSTODIANS:
+        snapshot = await service.deal(
+            TENANT, holder.sub, ceremony_id, holder.deal(snapshot, POLYNOMIALS[holder.sub])
+        )
+    snapshot = (await service.state(TENANT)).ceremony
+    signed = {}
+    for holder in CUSTODIANS:
+        index = snapshot.custodian(holder.sub).holder_index
+        received = await service.subshares(TENANT, holder.sub, ceremony_id)
+        share = holder.share(snapshot, index, received[index])
+        signed[holder.sub] = holder.confirmation(
+            snapshot, index, share, snapshot.ceremony.transcript_hash
+        )
+    for holder in (ANNA, BERND):
+        await service.confirm(TENANT, holder.sub, ceremony_id, *signed[holder.sub])
+
+    def broken(_snapshot):
+        raise RuntimeError("signing failed")
+
+    monkeypatch.setattr(service, "_recovery_key", broken)
+    with pytest.raises(RuntimeError):
+        await service.confirm(TENANT, "carla", ceremony_id, *signed["carla"])
+    assert await repository.active_recovery_key(TENANT) is None
+    assert not (await service.state(TENANT)).ceremony.has_confirmed(3)
+
+    monkeypatch.undo()
+    assert await service.confirm(TENANT, "carla", ceremony_id, *signed["carla"]) == "active"
+    assert await repository.active_recovery_key(TENANT) is not None
 
 
 async def test_one_ceremony_in_progress_per_tenant(repository):

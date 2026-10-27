@@ -177,8 +177,6 @@ services:
     # the secrets directory holds its two files.
     - SSF_RECORDING_DATABASE_URL=postgresql://ssf_recording_app@ssf-postgres:5432/ssf_recording
     - SSF_RECORDING_DATABASE_PASSWORD=${SSF_RECORDING_APP_PASSWORD:-}
-    - SSF_RECORDING_STEP_UP_ACR=${SSF_RECORDING_STEP_UP_ACR:-mfa}
-    - SSF_RECORDING_STEP_UP_MAX_AGE_SECONDS=${SSF_RECORDING_STEP_UP_MAX_AGE_SECONDS:-300}
     - SSF_OTLP_LOGS_ENDPOINT=${SSF_OTLP_LOGS_ENDPOINT:-http://otel-collector:4318/v1/logs}
     - SSF_RELEASE_VERSION=${SSF_RELEASE_VERSION:-unknown}
     - SSF_DEPLOYMENT_ENV=${SSF_DEPLOYMENT_ENV:-production}

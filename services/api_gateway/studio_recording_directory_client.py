@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from typing import Awaitable, Callable
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .studio_v1 import (
     StudioV1ClientError,
@@ -129,20 +129,15 @@ class StudioRecordingDirectoryClient:
         require_printable_ascii(tenant_id, "tenant_id")
         require_printable_ascii(correlation_id, "correlation_id")
         token = await self._endpoint.bearer_token(self._token_provider)
-        payload = await self._endpoint.fetch_payload(
+        directory = await self._endpoint.fetch_validated(
             {
                 "Authorization": f"Bearer {token}",
                 "X-Studio-Tenant-Id": tenant_id,
                 "X-Correlation-Id": correlation_id,
             },
+            RecordingDirectory,
             EXPECTED_ERROR_CODES,
         )
-        try:
-            directory = RecordingDirectory.model_validate(payload)
-        except ValidationError:
-            raise StudioRecordingDirectoryClientError(
-                f"{_CODE_PREFIX}_response_invalid", retryable=False, status=200
-            ) from None
         if directory.tenant_id != tenant_id:
             raise StudioRecordingDirectoryClientError(
                 f"{_CODE_PREFIX}_tenant_mismatch", retryable=False, status=200

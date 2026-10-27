@@ -260,6 +260,7 @@
       "paperTitle": "Paper backup",
       "deviceFingerprint": "This device's fingerprint:",
       "deviceLost": "This device no longer holds the paper key, for example after a reload. Abort the ceremony and start again.",
+      "paperDone": "The paper backup is finished. Waiting for the custodians' signatures …",
       "paperWaiting": "Waiting for every custodian to make their contribution …",
       "verifyPaperAction": "Check and create paper shares",
       "printAction": "Print",
@@ -274,6 +275,7 @@
       "abortAction": "Abort ceremony",
       "abortTitle": "Abort the ceremony?",
       "abortBody": "Every contribution so far is lost. The ceremony must then be started again from the beginning.",
+      "abortFailed": "The ceremony could not be aborted. Please try again.",
       "keepGoing": "Keep going"
     }
   }

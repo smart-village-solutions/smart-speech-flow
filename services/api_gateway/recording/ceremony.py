@@ -24,6 +24,7 @@ from .ceremony_model import (
     MAX_CUSTODIANS,
     MAX_K,
     PAPER,
+    Activation,
     CeremonyError,
     CeremonyParticipant,
     CeremonyRecord,
@@ -36,7 +37,6 @@ from .ceremony_model import (
     RecoveryShareRecord,
     check_dealing,
     check_sealed,
-    computed_transcript_hash,
     conflict,
     invalid,
     transcript_input,
@@ -44,7 +44,7 @@ from .ceremony_model import (
 from .crypto import ecies, tags
 from .crypto.curve import InvalidPoint, decode_point
 from .crypto.signatures import sign_fields, verify_fields, wrap_fields
-from .crypto.transcript import paper_device_fingerprint
+from .crypto.transcript import paper_device_fingerprint, transcript_hash
 from .repository import UserKeyRecord
 from .secrets import RecordingSecrets
 
@@ -77,11 +77,9 @@ class CeremonyStore(Protocol):
 
     async def add_dealing(
         self, tenant_id: str, ceremony_id: str, dealing: DealingRecord, audit: AuditEvent
-    ) -> CeremonySnapshot: ...
-
-    async def begin_confirming(
-        self, tenant_id: str, ceremony_id: str, transcript_hash: bytes, audit: AuditEvent
-    ) -> None: ...
+    ) -> CeremonySnapshot:
+        """The last dealing also moves the ceremony to confirming, atomically."""
+        ...
 
     async def add_confirmation(
         self,
@@ -89,21 +87,18 @@ class CeremonyStore(Protocol):
         ceremony_id: str,
         confirmation: ConfirmationRecord,
         audit: AuditEvent,
-    ) -> None: ...
+        activation: Activation,
+    ) -> str:
+        """The step that completes the ceremony also activates its key, atomically."""
+        ...
 
-    async def confirm_paper(self, tenant_id: str, ceremony_id: str, audit: AuditEvent) -> None: ...
+    async def confirm_paper(
+        self, tenant_id: str, ceremony_id: str, audit: AuditEvent, activation: Activation
+    ) -> str: ...
 
     async def abort(
         self, tenant_id: str, ceremony_id: str, reason: str, audit: AuditEvent
     ) -> None: ...
-
-    async def activate(
-        self,
-        tenant_id: str,
-        key: RecoveryKeyRecord,
-        shares: Sequence[RecoveryShareRecord],
-        audit: AuditEvent,
-    ) -> bool: ...
 
 
 class CustodianDirectory(Protocol):
@@ -265,22 +260,12 @@ class CeremonyService:
             now,
             dealing.subshares,
         )
-        after = await self._repository.add_dealing(
+        return await self._repository.add_dealing(
             tenant_id,
             ceremony_id,
             record,
             AuditEvent(tenant_id, dealer_sub, "ceremony_dealt", f"ceremony:{ceremony_id}", now),
         )
-        if after.all_dealt():
-            await self._repository.begin_confirming(
-                tenant_id,
-                ceremony_id,
-                computed_transcript_hash(after),
-                AuditEvent(
-                    tenant_id, dealer_sub, "ceremony_dealt_all", f"ceremony:{ceremony_id}", now
-                ),
-            )
-        return after
 
     async def subshares(
         self, tenant_id: str, user_sub: str, ceremony_id: str
@@ -317,13 +302,13 @@ class CeremonyService:
             raise invalid("INVALID_CONFIRMATION", "The transcript signature does not verify")
         check_sealed(encrypted_share, tags.SHARE)
         now = self._clock()
-        await self._repository.add_confirmation(
+        return await self._repository.add_confirmation(
             tenant_id,
             ceremony_id,
             ConfirmationRecord(holder.holder_index, transcript_signature, encrypted_share, now),
             AuditEvent(tenant_id, user_sub, "ceremony_confirmed", f"ceremony:{ceremony_id}", now),
+            self._activation(user_sub),
         )
-        return await self._activate_if_complete(tenant_id, ceremony_id, user_sub)
 
     async def confirm_paper(
         self, tenant_id: str, user_sub: str, ceremony_id: str, transcript: bytes
@@ -337,7 +322,7 @@ class CeremonyService:
             raise conflict("CEREMONY_STATE", "The ceremony is not waiting for paper shares")
         if transcript != ceremony.transcript_hash:
             raise invalid("TRANSCRIPT_MISMATCH", "The device computed a different transcript")
-        await self._repository.confirm_paper(
+        return await self._repository.confirm_paper(
             tenant_id,
             ceremony_id,
             AuditEvent(
@@ -347,8 +332,8 @@ class CeremonyService:
                 f"ceremony:{ceremony_id}",
                 self._clock(),
             ),
+            self._activation(user_sub),
         )
-        return await self._activate_if_complete(tenant_id, ceremony_id, user_sub)
 
     async def abort(self, tenant_id: str, user_sub: str, ceremony_id: str, reason: str) -> None:
         if reason not in ABORT_REASONS:
@@ -369,26 +354,21 @@ class CeremonyService:
             ),
         )
 
-    async def _activate_if_complete(self, tenant_id: str, ceremony_id: str, actor: str) -> str:
-        snapshot = await self._repository.open_ceremony(tenant_id, self._clock())
-        if snapshot is None or snapshot.ceremony.ceremony_id != ceremony_id:
-            return "active"
-        if not snapshot.ready_to_activate():
-            return snapshot.ceremony.status
-        key, shares = self._recovery_key(snapshot)
-        await self._repository.activate(
-            tenant_id,
-            key,
-            shares,
-            AuditEvent(
-                tenant_id,
+    def _activation(self, actor: str) -> Activation:
+        def activation(
+            snapshot: CeremonySnapshot,
+        ) -> tuple[RecoveryKeyRecord, list[RecoveryShareRecord], AuditEvent]:
+            key, shares = self._recovery_key(snapshot)
+            event = AuditEvent(
+                key.tenant_id,
                 actor,
                 "recovery_key_activated",
                 f"recovery-key:{key.key_id}",
                 key.activated_at,
-            ),
-        )
-        return "active"
+            )
+            return key, shares, event
+
+        return activation
 
     def _recovery_key(
         self, snapshot: CeremonySnapshot
@@ -396,9 +376,9 @@ class CeremonyService:
         transcript = transcript_input(snapshot)
         ceremony = snapshot.ceremony
         key_id = ceremony.ceremony_id
-        transcript_hash = computed_transcript_hash(snapshot)
+        digest = transcript_hash(transcript)
         canary, signature = self._canary(
-            ceremony.tenant_id, key_id, transcript.recovery_public_key, transcript_hash
+            ceremony.tenant_id, key_id, transcript.recovery_public_key, digest
         )
         key = RecoveryKeyRecord(
             tenant_id=ceremony.tenant_id,
@@ -407,7 +387,7 @@ class CeremonyService:
             k=ceremony.k,
             n=len(snapshot.participants),
             mode="standard" if ceremony.k == 1 else "enhanced",
-            transcript_hash=transcript_hash,
+            transcript_hash=digest,
             canary_wrap=canary,
             canary_signature=signature,
             canary_signer_key_id=self._secrets.signing_key_id,

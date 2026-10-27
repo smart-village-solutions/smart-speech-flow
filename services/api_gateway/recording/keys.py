@@ -9,12 +9,14 @@ layer, and stores. It cannot open the blob and never tries.
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Final, Protocol
 
 from .audit import AuditEvent
+from .crypto.aead import EnvelopeError
 from .crypto.curve import InvalidPoint, decode_point
 from .crypto.encoding import from_b64url
 from .crypto.transcript import fingerprint
@@ -34,6 +36,10 @@ _SEALED_KEY_BYTES: Final[range] = range(100, 513)
 
 class InvalidEnrolment(ValueError):
     """The upload is not a pair of P-256 keys with a well-formed sealed blob."""
+
+
+class KeyUnreadableError(Exception):
+    """The stored blob fails the server layer: a replaced blob key, or a damaged row."""
 
 
 class KeyStore(Protocol):
@@ -164,9 +170,13 @@ class KeyEnrolmentService:
         record = await self._repository.active_user_key(tenant_id, user_sub)
         if record is None or record.encrypted_private is None:
             return None
-        blob = self._server_layer.open(
-            record.encrypted_private, tenant_id=tenant_id, user_sub=user_sub
-        ).decode("utf-8")
+        try:
+            blob = self._server_layer.open(
+                record.encrypted_private, tenant_id=tenant_id, user_sub=user_sub
+            ).decode("utf-8")
+        except EnvelopeError:
+            sys.stderr.write("Recording key blob failed the server layer\n")
+            raise KeyUnreadableError() from None
         # Every blob download is a chance to guess offline, so each is on record.
         await self._repository.record_audit(
             AuditEvent(

@@ -33,23 +33,19 @@ database dump alone gives an attacker nothing to test passphrase guesses
 against. Both live outside `.env`, because `backup-production.sh` copies `.env`
 into every backup.
 
-```bash
-sudo scripts/recording/generate-secrets.sh /etc/ssf/recording-secrets
-```
-
-Expected: `generate-secrets.sh: wrote /etc/ssf/recording-secrets/signing-key.pem
-and /etc/ssf/recording-secrets/blob-key`. The script refuses to overwrite
-either file.
-
-The gateway runs as the image's `app` user, so it must be able to read them:
+The gateway runs as the image's `app` user, so the files are written for it.
+Find its numbers first:
 
 ```bash
 production_compose run --rm --no-deps --entrypoint id api_gateway
 # uid=100(app) gid=101(app) ...  -- use the numbers this prints
-sudo chown -R 100:101 /etc/ssf/recording-secrets
-sudo chmod 0500 /etc/ssf/recording-secrets
-sudo chmod 0400 /etc/ssf/recording-secrets/*
+sudo scripts/recording/generate-secrets.sh /etc/ssf/recording-secrets 100:101
 ```
+
+Expected: `generate-secrets.sh: wrote /etc/ssf/recording-secrets/signing-key.pem
+and /etc/ssf/recording-secrets/blob-key for 100:101`. The directory is then
+0500 and both files 0400, owned by that user. The script refuses to overwrite
+either file.
 
 **Back the directory up offline now**, for example to an encrypted USB key kept
 by the operator. It is deliberately in no backup the host makes. Losing the blob
@@ -68,8 +64,6 @@ Add:
 ```
 SSF_RECORDING_APP_PASSWORD=<the password above>
 SSF_RECORDING_SECRETS_DIR=/etc/ssf/recording-secrets
-SSF_RECORDING_STEP_UP_ACR=mfa
-SSF_RECORDING_STEP_UP_MAX_AGE_SECONDS=300
 ```
 
 ## Step 3 — Create the database on the existing volume
@@ -133,10 +127,10 @@ yet; the gateway retries on its own with backoff up to 60 s.
 ## Step 6 — Step-up MFA in each tenant realm
 
 Enrolment, and later the recovery ceremony and approvals, require a fresh login
-with a second factor. The gateway accepts a token whose `acr` is
-`SSF_RECORDING_STEP_UP_ACR` (`mfa`) and whose `auth_time` is at most
-`SSF_RECORDING_STEP_UP_MAX_AGE_SECONDS` old. Each tenant realm must therefore map
-`mfa` to a level of authentication that demands OTP.
+with a second factor. The gateway accepts a token whose `acr` is `mfa` and
+whose `auth_time` is at most 300 seconds old; both values are fixed in the
+gateway and the frontend. Each tenant realm must therefore map `mfa` to a
+level of authentication that demands OTP.
 
 Tenant realms are provisioned by Studio, so this configuration belongs in
 Studio's realm provisioning (#612). Until it is there, apply it by hand in the

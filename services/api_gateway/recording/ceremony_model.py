@@ -8,11 +8,12 @@ rather than discovered by each holder.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
 
+from .audit import AuditEvent
 from .crypto import tags
 from .crypto.curve import InvalidPoint, decode_point
 from .crypto.ecies import Sealed, SealedPayloadError
@@ -168,6 +169,13 @@ class RecoveryShareRecord:
     holder_public_share: bytes
     # None for a paper share, which exists only on paper.
     encrypted_share: str | None
+
+
+# Builds the key, its shares and the audit event from a ceremony ready to activate.
+# The store calls it inside the transaction that records the last signature.
+Activation = Callable[
+    [CeremonySnapshot], tuple[RecoveryKeyRecord, Sequence[RecoveryShareRecord], AuditEvent]
+]
 
 
 @dataclass(frozen=True)

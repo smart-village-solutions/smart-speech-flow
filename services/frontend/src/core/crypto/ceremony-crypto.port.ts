@@ -74,6 +74,13 @@ export class CeremonyCheckError extends Error {
   }
 }
 
+/** x_i for `index`. Sub-shares the gateway left out fail like bad ones, never as a zero share. */
+export function heldShare(received: Readonly<ReceivedShares>, index: number): bigint {
+  const share = received.shares.get(index);
+  if (share === undefined) throw new CeremonyCheckError('subshare_invalid');
+  return share;
+}
+
 /** The browser's part of the recovery-key ceremony (spec §9.2). Features reach it through this port only. */
 export interface CeremonyCrypto {
   /** Rejects with CeremonyCheckError('fingerprint_mismatch') if a listed fingerprint does not match its keys. */

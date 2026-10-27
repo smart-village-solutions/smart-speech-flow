@@ -10,10 +10,12 @@ from datetime import datetime
 
 from services.api_gateway.recording.audit import AuditEvent
 from services.api_gateway.recording.ceremony_model import (
+    Activation,
     CeremonySnapshot,
     FailedCeremony,
     RecoveryKeyRecord,
     RecoveryShareRecord,
+    computed_transcript_hash,
     conflict,
 )
 from services.api_gateway.recording.crypto.encoding import b64url
@@ -141,45 +143,56 @@ class FakeCeremonyRepository:
         snapshot = self._locked(ceremony_id, dealing.dealt_at, ("dealing",))
         if snapshot.has_dealt(dealing.dealer_index):
             raise conflict("ALREADY_SUBMITTED", "dealt")
-        self.subshares[ceremony_id][dealing.dealer_index] = dealing.subshares
         public = replace(dealing, subshares={})
-        snapshot = replace(snapshot, dealings=(*snapshot.dealings, public))
-        self.ceremonies[ceremony_id] = snapshot
-        self.audit.append(audit)
-        return snapshot
+        after = replace(snapshot, dealings=(*snapshot.dealings, public))
+        events = [audit]
+        if after.all_dealt():
+            # Computed before anything is stored: a failure here stores nothing, as in Postgres.
+            transcript = computed_transcript_hash(after)
+            ceremony = replace(after.ceremony, status="confirming", transcript_hash=transcript)
+            after = replace(after, ceremony=ceremony)
+            events.append(replace(audit, event_type="ceremony_dealt_all"))
+        self.subshares[ceremony_id][dealing.dealer_index] = dealing.subshares
+        self.ceremonies[ceremony_id] = after
+        self.audit.extend(events)
+        return after
 
-    async def begin_confirming(self, tenant_id, ceremony_id, transcript_hash, audit) -> None:
-        if self.ceremonies[ceremony_id].ceremony.status == "dealing":
-            self._set(ceremony_id, status="confirming", transcript_hash=transcript_hash)
-            self.audit.append(audit)
-
-    async def add_confirmation(self, tenant_id, ceremony_id, confirmation, audit) -> None:
+    async def add_confirmation(
+        self, tenant_id, ceremony_id, confirmation, audit, activation: Activation
+    ) -> str:
         snapshot = self._locked(ceremony_id, confirmation.confirmed_at, ("confirming",))
         if snapshot.has_confirmed(confirmation.holder_index):
             raise conflict("ALREADY_SUBMITTED", "confirmed")
-        self.ceremonies[ceremony_id] = replace(
-            snapshot, confirmations=(*snapshot.confirmations, confirmation)
-        )
-        self.audit.append(audit)
+        after = replace(snapshot, confirmations=(*snapshot.confirmations, confirmation))
+        return self._commit(after, audit, activation)
 
-    async def confirm_paper(self, tenant_id, ceremony_id, audit) -> None:
-        self._locked(ceremony_id, audit.at, ("confirming",))
-        self._set(ceremony_id, paper_confirmed_at=audit.at)
-        self.audit.append(audit)
+    async def confirm_paper(self, tenant_id, ceremony_id, audit, activation: Activation) -> str:
+        snapshot = self._locked(ceremony_id, audit.at, ("confirming",))
+        if snapshot.ceremony.paper_confirmed_at is not None:
+            raise conflict("CEREMONY_STATE", "printed")
+        after = replace(snapshot, ceremony=replace(snapshot.ceremony, paper_confirmed_at=audit.at))
+        return self._commit(after, audit, activation)
+
+    def _commit(self, after: CeremonySnapshot, audit: AuditEvent, activation: Activation) -> str:
+        """Stores `after`, activating it if ready; an activation failure stores nothing."""
+        ceremony_id = after.ceremony.ceremony_id
+        if not after.ready_to_activate():
+            self.ceremonies[ceremony_id] = after
+            self.audit.append(audit)
+            return after.ceremony.status
+        key, shares, activated = activation(after)
+        self.ceremonies[ceremony_id] = replace(
+            after, ceremony=replace(after.ceremony, status="active")
+        )
+        self.recovery_key, self.shares = key, list(shares)
+        self.audit.extend([audit, activated])
+        return "active"
 
     async def abort(self, tenant_id, ceremony_id, reason, audit) -> None:
         self._locked(ceremony_id, audit.at, ("dealing", "confirming"))
         self._set(ceremony_id, status="aborted")
         self.aborted[ceremony_id] = FailedCeremony(ceremony_id, reason, audit.at)
         self.audit.append(audit)
-
-    async def activate(self, tenant_id, key, shares, audit) -> bool:
-        if self.ceremonies[key.key_id].ceremony.status != "confirming":
-            return False
-        self._set(key.key_id, status="active")
-        self.recovery_key, self.shares = key, list(shares)
-        self.audit.append(audit)
-        return True
 
 
 @dataclass

@@ -283,6 +283,57 @@ async def test_sub_shares_are_released_only_after_every_dealing(world):
 
 
 @pytest.mark.asyncio
+async def test_the_last_dealing_hands_back_a_ceremony_ready_for_signatures(world):
+    service = world[0]
+    snapshot = await service.start(TENANT, ORG_ADMIN, _request(), "corr")
+    for holder in CUSTODIANS:
+        snapshot = await service.deal(
+            TENANT,
+            holder.sub,
+            snapshot.ceremony.ceremony_id,
+            holder.deal(snapshot, POLYNOMIALS[holder.sub]),
+        )
+    assert snapshot.ceremony.status == "confirming"
+    assert (
+        snapshot.ceremony.transcript_hash
+        == (await service.state(TENANT)).ceremony.ceremony.transcript_hash
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_failed_activation_leaves_the_last_signature_to_be_sent_again(world, monkeypatch):
+    service, repository, _, _ = world
+    await service.start(TENANT, ORG_ADMIN, _request(paper=False), "corr")
+    snapshot = await _deal_all(service)
+    ceremony_id = snapshot.ceremony.ceremony_id
+    signed = {}
+    for holder in CUSTODIANS:
+        index = snapshot.custodian(holder.sub).holder_index
+        received = await service.subshares(TENANT, holder.sub, ceremony_id)
+        share = holder.share(snapshot, index, received[index])
+        signed[holder.sub] = holder.confirmation(
+            snapshot, index, share, snapshot.ceremony.transcript_hash
+        )
+    for holder in (ANNA, BERND):
+        assert await service.confirm(TENANT, holder.sub, ceremony_id, *signed[holder.sub]) == (
+            "confirming"
+        )
+
+    def broken(_snapshot):
+        raise RuntimeError("signing failed")
+
+    monkeypatch.setattr(service, "_recovery_key", broken)
+    with pytest.raises(RuntimeError):
+        await service.confirm(TENANT, "carla", ceremony_id, *signed["carla"])
+    assert repository.recovery_key is None
+    assert not (await service.state(TENANT)).ceremony.has_confirmed(3)
+
+    monkeypatch.undo()
+    assert await service.confirm(TENANT, "carla", ceremony_id, *signed["carla"]) == "active"
+    assert repository.recovery_key is not None
+
+
+@pytest.mark.asyncio
 async def test_a_signature_over_another_transcript_is_refused(world):
     service = world[0]
     await service.start(TENANT, ORG_ADMIN, _request(), "corr")

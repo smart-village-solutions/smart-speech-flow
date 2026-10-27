@@ -103,3 +103,22 @@ def test_an_unwired_gateway_answers_503(client_for):
     response = client_for(_claims(), service=None).get("/api/admin/recording/keys/me")
     assert response.status_code == 503
     assert _code(response) == "RECORDING_UNAVAILABLE"
+
+
+def test_a_blob_the_server_layer_cannot_open_is_a_coded_error(client_for):
+    repository = FakeRecordingRepository()
+    enrolled_with = KeyEnrolmentService(
+        repository=repository, server_layer=ServerLayer(os.urandom(32))
+    )
+    assert (
+        client_for(_claims(), enrolled_with)
+        .post("/api/admin/recording/keys", json=enrolment_body())
+        .status_code
+        == 201
+    )
+    # A replaced blob key, or a damaged row, leaves the stored blob unopenable.
+    rotated = KeyEnrolmentService(repository=repository, server_layer=ServerLayer(os.urandom(32)))
+    response = client_for(_claims(), rotated).get("/api/admin/recording/keys/me")
+    assert response.status_code == 500
+    assert _code(response) == "KEY_UNREADABLE"
+    assert [event.event_type for event in repository.audit] == ["key_enrolled"]

@@ -7,10 +7,12 @@ from typing import Any
 
 import pytest
 
+from services.api_gateway.recording.directory import StudioCustodianDirectory
 from services.api_gateway.studio_recording_directory_client import (
     StudioRecordingDirectoryClient,
     StudioRecordingDirectoryClientError,
 )
+from services.api_gateway.studio_runtime_token import StudioTokenError
 from services.api_gateway.studio_v1 import StudioV1HttpResponse
 from services.studio_mock import contract_fixtures
 
@@ -113,3 +115,20 @@ async def test_studio_unavailability_is_retryable():
     with pytest.raises(StudioRecordingDirectoryClientError) as caught:
         await _client(FixedTransport(503, envelope)).fetch(TENANT, "corr-1")
     assert (caught.value.code, caught.value.retryable) == ("recording_directory_unavailable", True)
+
+
+@pytest.mark.asyncio
+async def test_custodians_are_unavailable_on_any_studio_failure_including_the_token():
+    async def no_token() -> str:
+        raise StudioTokenError("studio_token_unavailable", retryable=True)
+
+    without_token = StudioRecordingDirectoryClient(
+        "https://studio.test", no_token, transport=FixedTransport(200, _body())
+    )
+    assert await StudioCustodianDirectory(without_token).custodians(TENANT, "corr-1") is None
+    refused = _client(FixedTransport(200, _body(tenantId="tenant-other")))
+    assert await StudioCustodianDirectory(refused).custodians(TENANT, "corr-1") is None
+    names = await StudioCustodianDirectory(_client(FixedTransport(200, _body()))).custodians(
+        TENANT, "corr-1"
+    )
+    assert sorted(names.values()) == ["Anna Becker", "Bernd Schulz", "Carla Weber"]

@@ -1,7 +1,7 @@
 import { useServices } from '@/app/providers/services';
 import type { UnlockedKeys } from '@/core/crypto/archive-crypto.port';
 import { equalBytes } from '@/core/crypto/bytes';
-import { CeremonyCheckError, type CeremonyFacts } from '@/core/crypto/ceremony-crypto.port';
+import { CeremonyCheckError, heldShare, type CeremonyFacts } from '@/core/crypto/ceremony-crypto.port';
 import type { Ceremony, CeremonyParticipant } from '@/domain/recovery/recovery.types';
 import { useCeremonyStep } from './useCeremony';
 
@@ -36,7 +36,7 @@ export function useCustodianActions(
       const subshares = await recoveryCeremony.subshares(ceremony.ceremonyId);
       const receiver = { privateKey: keys.encPrivate, publicKey: keys.encPub };
       const received = await ceremonyCrypto.receive(facts, receiver, subshares, expected);
-      const share = received.shares.get(participant.holderIndex) ?? 0n;
+      const share = heldShare(received, participant.holderIndex);
       const confirmation = await ceremonyCrypto.confirm(facts, participant, share, received.transcriptHash, keys.sigPrivate);
       await recoveryCeremony.confirm(ceremony.ceremonyId, confirmation);
     });

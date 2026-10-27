@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useServices } from '@/app/providers/services';
-import type { CeremonyFacts } from '@/core/crypto/ceremony-crypto.port';
+import { heldShare, type CeremonyFacts } from '@/core/crypto/ceremony-crypto.port';
 import type { Ceremony } from '@/domain/recovery/recovery.types';
 import { useCeremonyStep } from './useCeremony';
 
@@ -32,7 +32,7 @@ export function usePaperDevice(ceremony: Readonly<Ceremony>, facts: Readonly<Cer
           .map((participant) => ({
             holderRef: participant.holderRef,
             holderIndex: participant.holderIndex,
-            share: received.shares.get(participant.holderIndex) ?? 0n,
+            share: heldShare(received, participant.holderIndex),
           }))
       );
     });

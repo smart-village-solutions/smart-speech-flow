@@ -2,14 +2,17 @@
 
 Every write takes the ceremony row FOR UPDATE and re-checks its status, so
 two custodians submitting at once cannot both move it on, and a ceremony
-aborted a moment ago accepts nothing more. Tenant isolation is row-level
-security, as in repository.py.
+aborted a moment ago accepts nothing more. The write that completes a step
+moves the ceremony on in the same transaction, so a failure cannot leave it
+with every dealing or signature in and its status behind. Tenant isolation
+is row-level security, as in repository.py.
 """
 
 from __future__ import annotations
 
 import json
 from collections.abc import Collection, Sequence
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -17,6 +20,7 @@ import asyncpg
 
 from .audit import AuditEvent
 from .ceremony_model import (
+    Activation,
     CeremonyParticipant,
     CeremonyRecord,
     CeremonySnapshot,
@@ -25,6 +29,7 @@ from .ceremony_model import (
     FailedCeremony,
     RecoveryKeyRecord,
     RecoveryShareRecord,
+    computed_transcript_hash,
     conflict,
 )
 from .crypto.encoding import b64url, from_b64url, scalar_from_bytes, scalar_to_bytes
@@ -306,7 +311,7 @@ class PostgresCeremonyRepository(PostgresRecordingRepository):
     async def add_dealing(
         self, tenant_id: str, ceremony_id: str, dealing: DealingRecord, audit: AuditEvent
     ) -> CeremonySnapshot:
-        """Returns the ceremony as it stands after this dealing."""
+        """Returns the ceremony after this dealing; the last one opens it for signatures."""
         try:
             async with self._pool.acquire() as connection:
                 async with connection.transaction():
@@ -327,23 +332,25 @@ class PostgresCeremonyRepository(PostgresRecordingRepository):
                         dealing.dealt_at,
                     )
                     await append_audit(connection, audit)
-                    return await _snapshot(connection, row)
+                    after = await _snapshot(connection, row)
+                    if not after.all_dealt():
+                        return after
+                    transcript = computed_transcript_hash(after)
+                    await connection.execute(
+                        "UPDATE recovery_ceremonies SET status = 'confirming',"
+                        " transcript_hash = $2 WHERE ceremony_id = $1",
+                        ceremony_id,
+                        transcript,
+                    )
+                    await append_audit(connection, replace(audit, event_type="ceremony_dealt_all"))
+                    ceremony = replace(
+                        after.ceremony, status="confirming", transcript_hash=transcript
+                    )
+                    return replace(after, ceremony=ceremony)
         except asyncpg.UniqueViolationError:
             raise conflict("ALREADY_SUBMITTED", "This custodian has already dealt") from None
         except DRIVER_FAILURE as error:
             raise storage_unavailable(error) from None
-
-    async def begin_confirming(
-        self, tenant_id: str, ceremony_id: str, transcript_hash: bytes, audit: AuditEvent
-    ) -> None:
-        """Dealing -> confirming. A second caller finds the move made and changes nothing."""
-        await self._transition(
-            tenant_id,
-            "UPDATE recovery_ceremonies SET status = 'confirming', transcript_hash = $2"
-            " WHERE ceremony_id = $1 AND status = 'dealing'",
-            (ceremony_id, transcript_hash),
-            audit,
-        )
 
     async def add_confirmation(
         self,
@@ -351,7 +358,9 @@ class PostgresCeremonyRepository(PostgresRecordingRepository):
         ceremony_id: str,
         confirmation: ConfirmationRecord,
         audit: AuditEvent,
-    ) -> None:
+        activation: Activation,
+    ) -> str:
+        """Returns the status afterwards: 'confirming', or 'active' if this completed it."""
         try:
             async with self._pool.acquire() as connection:
                 async with connection.transaction():
@@ -369,19 +378,33 @@ class PostgresCeremonyRepository(PostgresRecordingRepository):
                         confirmation.confirmed_at,
                     )
                     await append_audit(connection, audit)
+                    return await self._activate_if_ready(connection, ceremony_id, activation)
         except asyncpg.UniqueViolationError:
             raise conflict("ALREADY_SUBMITTED", "This custodian has already confirmed") from None
         except DRIVER_FAILURE as error:
             raise storage_unavailable(error) from None
 
-    async def confirm_paper(self, tenant_id: str, ceremony_id: str, audit: AuditEvent) -> None:
-        await self._locked_update(
-            tenant_id,
-            ceremony_id,
-            audit,
-            "UPDATE recovery_ceremonies SET paper_confirmed_at = $2 WHERE ceremony_id = $1",
-            ("confirming",),
-        )
+    async def confirm_paper(
+        self, tenant_id: str, ceremony_id: str, audit: AuditEvent, activation: Activation
+    ) -> str:
+        """Returns the status afterwards, as add_confirmation does."""
+        try:
+            async with self._pool.acquire() as connection:
+                async with connection.transaction():
+                    await bind_tenant(connection, tenant_id)
+                    row = await _lock(connection, ceremony_id, audit.at, ("confirming",))
+                    if row["paper_confirmed_at"] is not None:
+                        raise conflict("CEREMONY_STATE", "The paper shares are already confirmed")
+                    await connection.execute(
+                        "UPDATE recovery_ceremonies SET paper_confirmed_at = $2"
+                        " WHERE ceremony_id = $1",
+                        ceremony_id,
+                        audit.at,
+                    )
+                    await append_audit(connection, audit)
+                    return await self._activate_if_ready(connection, ceremony_id, activation)
+        except DRIVER_FAILURE as error:
+            raise storage_unavailable(error) from None
 
     async def abort(self, tenant_id: str, ceremony_id: str, reason: str, audit: AuditEvent) -> None:
         await self._locked_update(
@@ -394,31 +417,26 @@ class PostgresCeremonyRepository(PostgresRecordingRepository):
             reason,
         )
 
-    async def activate(
-        self,
-        tenant_id: str,
-        key: RecoveryKeyRecord,
-        shares: Sequence[RecoveryShareRecord],
-        audit: AuditEvent,
-    ) -> bool:
-        """Confirming -> active with its key and shares. False if another caller got there first."""
-        try:
-            async with self._pool.acquire() as connection:
-                async with connection.transaction():
-                    await bind_tenant(connection, tenant_id)
-                    moved = await connection.execute(
-                        "UPDATE recovery_ceremonies SET status = 'active', closed_at = $2"
-                        " WHERE ceremony_id = $1 AND status = 'confirming'",
-                        key.key_id,
-                        key.activated_at,
-                    )
-                    if moved != "UPDATE 1":
-                        return False
-                    await self._insert_key(connection, key, shares)
-                    await append_audit(connection, audit)
-                    return True
-        except DRIVER_FAILURE as error:
-            raise storage_unavailable(error) from None
+    async def _activate_if_ready(
+        self, connection: asyncpg.Connection, ceremony_id: str, activation: Activation
+    ) -> str:
+        """Confirming -> active with its key and shares, under the caller's lock."""
+        row = await connection.fetchrow(
+            "SELECT * FROM recovery_ceremonies WHERE ceremony_id = $1", ceremony_id
+        )
+        snapshot = await _snapshot(connection, row)
+        if not snapshot.ready_to_activate():
+            return snapshot.ceremony.status
+        key, shares, audit = activation(snapshot)
+        await connection.execute(
+            "UPDATE recovery_ceremonies SET status = 'active', closed_at = $2"
+            " WHERE ceremony_id = $1",
+            ceremony_id,
+            key.activated_at,
+        )
+        await self._insert_key(connection, key, shares)
+        await append_audit(connection, audit)
+        return "active"
 
     async def _insert_key(
         self,
@@ -457,18 +475,6 @@ class PostgresCeremonyRepository(PostgresRecordingRepository):
                 for share in shares
             ],
         )
-
-    async def _transition(
-        self, tenant_id: str, query: str, args: tuple[Any, ...], audit: AuditEvent
-    ) -> None:
-        try:
-            async with self._pool.acquire() as connection:
-                async with connection.transaction():
-                    await bind_tenant(connection, tenant_id)
-                    if await connection.execute(query, *args) == "UPDATE 1":
-                        await append_audit(connection, audit)
-        except DRIVER_FAILURE as error:
-            raise storage_unavailable(error) from None
 
     async def _locked_update(
         self,
