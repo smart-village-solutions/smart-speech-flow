@@ -1,10 +1,11 @@
 # The off-site replica of the archive store (spec §12.1). Runbook:
 # docs/operations/runbooks/archive-storage-deployment.md
 #
-# The replica pulls from the primary: primary-sync reads new versions from the
-# primary's filer and volume server over the private link and writes them
-# here, never a deletion or an update. The replica publishes only its S3 port,
-# for restores, so the primary holds no credential for it and cannot reach it.
+# The replica pulls from the primary: primary-sync reads new versions through
+# the primary's filer (-a.filerProxy) over the private link and writes them
+# here, never a deletion. The replica publishes only its S3 port, for restores,
+# so the primary holds no credential for it and cannot reach it. A version
+# rewritten below the primary's S3 API still reaches the replica (runbook).
 #
 #   replica_compose up -d                     (defined in the runbook)
 

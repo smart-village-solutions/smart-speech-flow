@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -76,6 +77,12 @@ async def test_a_put_is_write_once_signed_and_carries_its_hash():
     assert headers["x-amz-meta-sha256"] == digest == stored.sha256
     assert headers["x-amz-content-sha256"] == digest
     assert "if-none-match" in headers["Authorization"].split("SignedHeaders=")[1]
+    # The store checks the body against this signed header, so it cannot be swapped in transit.
+    assert (
+        headers["x-amz-checksum-sha256"]
+        == base64.b64encode(hashlib.sha256(b"ciphertext").digest()).decode()
+    )
+    assert "x-amz-checksum-sha256" in headers["Authorization"].split("SignedHeaders=")[1]
     assert "x-amz-object-lock-mode" not in headers  # the bucket default locks it
     assert stored.version_id == "v1"
 
@@ -194,6 +201,17 @@ async def test_the_default_retention_is_compliance_in_days():
     assert await admin.default_retention_days(TENANT) is None  # governance can be bypassed
     with pytest.raises(ValueError):
         await admin.set_default_retention(TENANT, 0)
+
+
+async def test_the_host_is_signed_in_lower_case_as_it_is_sent():
+    clock = lambda: datetime(2026, 10, 27, tzinfo=timezone.utc)  # noqa: E731
+    sent = []
+    for endpoint in ("https" + "://Archive.TEST:8333", ENDPOINT):
+        transport = RecordingTransport(_ok({"x-amz-version-id": "v1"}))
+        client = S3Client(endpoint, transport=transport, clock=clock)
+        await S3ArchiveStore(client, lambda tenant: WRITER).put(TENANT, KEY, b"ciphertext")
+        sent.append(transport.sent[0])
+    assert sent[0] == sent[1]
 
 
 @pytest.mark.parametrize(

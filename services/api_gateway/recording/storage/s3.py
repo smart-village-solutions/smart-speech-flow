@@ -115,7 +115,9 @@ def _origin(endpoint: str) -> tuple[str, str]:
         raise ValueError("the archive endpoint must be an http(s) origin")
     if parsed.username or parsed.password or parsed.path not in ("", "/") or parsed.query:
         raise ValueError("the archive endpoint must be a bare origin")
-    return f"{parsed.scheme}://{parsed.netloc}", parsed.netloc
+    # The client sends the host in lower case, so it is signed that way too.
+    host = parsed.netloc.lower()
+    return f"{parsed.scheme}://{host}", host
 
 
 def _code(response: S3Response) -> str:
@@ -144,7 +146,7 @@ def _iso(moment: datetime) -> str:
 
 
 def _checksum(body: bytes) -> str:
-    """S3 wants an integrity header on lock configuration bodies; SHA-256 rather than MD5."""
+    """The signed integrity header the store checks a body against; SHA-256 rather than MD5."""
     return base64.b64encode(hashlib.sha256(body).digest()).decode()
 
 
@@ -247,6 +249,8 @@ class S3ArchiveStore:
                 "Content-Type": "application/octet-stream",
                 "If-None-Match": "*",
                 SHA256_META: digest,
+                # The store refuses a body that does not match it (BadDigest).
+                "x-amz-checksum-sha256": _checksum(data),
             },
             body=data,
         )

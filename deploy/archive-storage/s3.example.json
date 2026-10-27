@@ -42,7 +42,6 @@
               "s3:PutObjectRetention",
               "s3:GetObjectLegalHold",
               "s3:PutObjectLegalHold",
-              "s3:GetObjectVersion",
               "s3:DeleteObjectVersion"
             ],
             "Resource": [

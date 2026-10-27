@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import hashlib
 import os
 import uuid
@@ -23,12 +24,15 @@ import pytest
 
 from services.api_gateway.recording.storage import admin as archive_admin
 from services.api_gateway.recording.storage.archive import (
+    ArchiveError,
     ArchiveKeyExistsError,
+    ArchiveNotFoundError,
     ArchiveRefusedError,
     bucket_for,
     object_key,
 )
 from services.api_gateway.recording.storage.s3 import (
+    AiohttpS3Transport,
     S3ArchiveAdmin,
     S3ArchiveStore,
     S3Client,
@@ -98,6 +102,44 @@ async def test_a_locked_version_cannot_be_deleted_with_any_credential(stores):
     assert await stores["writer"].get(TENANT, key, stored.version_id) == b"ciphertext"
 
 
+async def test_the_writer_can_neither_hold_nor_hide_a_version(stores):
+    key = _key()
+    stored = await stores["writer"].put(TENANT, key, b"ciphertext")
+    with pytest.raises(ArchiveRefusedError):
+        await stores["writer"].set_legal_hold(TENANT, key, stored.version_id, True)
+    with pytest.raises(ArchiveRefusedError):  # a delete marker would hide the key
+        await stores["client"].request(
+            _credentials("SSF_ARCHIVE_TEST_WRITER"), "DELETE", bucket_for(TENANT), key
+        )
+    assert await stores["writer"].head(TENANT, key) == stored
+
+
+async def test_the_retention_identity_cannot_read_ciphertext(stores):
+    key = _key()
+    stored = await stores["writer"].put(TENANT, key, b"ciphertext")
+    with pytest.raises(ArchiveRefusedError):
+        await stores["retention"].get(TENANT, key, stored.version_id)
+
+
+class _AlteredInTransit(AiohttpS3Transport):
+    async def send(self, method, url, headers, body, timeout_seconds):
+        return await super().send(method, url, headers, body[::-1], timeout_seconds)
+
+
+async def test_a_body_altered_in_transit_is_refused(stores):
+    client = S3Client(ENDPOINT, transport=_AlteredInTransit())
+    writer = S3ArchiveStore(client, lambda _: _credentials("SSF_ARCHIVE_TEST_WRITER"))
+    key = _key()
+    try:
+        with pytest.raises(ArchiveRefusedError) as refused:
+            await writer.put(TENANT, key, b"ciphertext")
+    finally:
+        await client.close()
+    assert refused.value.code == "BadDigest"
+    with pytest.raises(ArchiveNotFoundError):
+        await stores["writer"].head(TENANT, key)
+
+
 async def test_an_overwrite_and_a_delete_marker_leave_the_original_readable(stores):
     key = _key()
     stored = await stores["writer"].put(TENANT, key, b"original")
@@ -152,17 +194,27 @@ async def test_a_lapsed_version_is_deleted_only_without_a_legal_hold(stores):
     with pytest.raises(ArchiveRefusedError):
         await stores["retention"].delete_version(TENANT, held, versions[held])
     await stores["retention"].delete_version(TENANT, free, versions[free])
+    # Leave nothing held behind: this suite also runs against the production store.
+    await stores["retention"].set_legal_hold(TENANT, held, versions[held], False)
+    await stores["retention"].delete_version(TENANT, held, versions[held])
 
 
 async def test_a_writer_reaches_no_other_tenant(stores):
-    other = "tenant-other"
+    other = f"{TENANT}-other"  # never a real tenant's bucket, also in production
     await stores["admin"].create_bucket(other)
     key = _key()
     stored = await stores["root"].put(other, key, b"other tenant")
-    with pytest.raises(ArchiveRefusedError):
-        await stores["writer"].put(other, _key(), b"ciphertext")
-    with pytest.raises(ArchiveRefusedError):
-        await stores["writer"].get(other, key, stored.version_id)
+    try:
+        with pytest.raises(ArchiveRefusedError):
+            await stores["writer"].put(other, _key(), b"ciphertext")
+        with pytest.raises(ArchiveRefusedError):
+            await stores["writer"].get(other, key, stored.version_id)
+    finally:
+        # The bucket has no default retention, so its one version is not locked.
+        await stores["root"].delete_version(other, key, stored.version_id)
+        await stores["client"].request(
+            _credentials("SSF_ARCHIVE_TEST_ADMIN"), "DELETE", bucket_for(other)
+        )
 
 
 def _xml(root: str, inner: str) -> bytes:
@@ -221,17 +273,42 @@ BUCKET_CHANGES = {
 async def test_no_application_credential_changes_the_bucket(stores, credential, change):
     method, subresource, body = BUCKET_CHANGES[change]
     headers = {"Content-MD5": base64.b64encode(hashlib.md5(body).digest()).decode()} if body else {}
-    with pytest.raises(ArchiveRefusedError):
-        await stores["client"].request(
-            _credentials(credential),
-            method,
-            bucket_for(TENANT),
-            query={subresource: ""} if subresource else None,
-            headers=headers,
-            body=body,
-        )
+    try:
+        with pytest.raises(ArchiveRefusedError):
+            await stores["client"].request(
+                _credentials(credential),
+                method,
+                bucket_for(TENANT),
+                query={subresource: ""} if subresource else None,
+                headers=headers,
+                body=body,
+            )
+    finally:
+        await _undo_bucket_changes(stores)
     admin = _credentials("SSF_ARCHIVE_TEST_ADMIN")
     assert await read_default_retention(stores["client"], admin, TENANT) == ("COMPLIANCE", 2)
+
+
+async def _undo_bucket_changes(stores) -> None:
+    """Should a change get through, take it back: this suite also runs against production."""
+    admin, bucket, client = (
+        _credentials("SSF_ARCHIVE_TEST_ADMIN"),
+        bucket_for(TENANT),
+        stores["client"],
+    )
+    for subresource in ("lifecycle", "policy", "cors"):
+        with contextlib.suppress(ArchiveError):
+            await client.request(admin, "DELETE", bucket, query={subresource: ""})
+    versioning = _xml("VersioningConfiguration", "<Status>Enabled</Status>")
+    await client.request(
+        admin,
+        "PUT",
+        bucket,
+        query={"versioning": ""},
+        headers={"Content-MD5": base64.b64encode(hashlib.md5(versioning).digest()).decode()},
+        body=versioning,
+    )
+    await stores["admin"].set_default_retention(TENANT, 2)
 
 
 async def test_the_check_command_passes_for_an_onboarded_tenant(stores):
@@ -318,6 +395,14 @@ async def test_the_replica_keeps_locked_copies_that_survive_deletion_on_the_prim
         with pytest.raises(ArchiveRefusedError):
             await replica.delete_version(TENANT, key, stored.version_id)
 
+        # What the primary's S3 API allows, an overwrite and a delete marker, leaves the copy alone.
+        admin = _credentials("SSF_ARCHIVE_TEST_ADMIN")
+        await stores["client"].request(admin, "PUT", bucket_for(TENANT), key, body=b"replacement")
+        await stores["client"].request(admin, "DELETE", bucket_for(TENANT), key)
+        await asyncio.sleep(5)
+        assert await replica.get(TENANT, key, stored.version_id) == b"x" * 200_000
+        assert await replica.retention(TENANT, key, stored.version_id) == copy
+
         # A version deleted on the primary once its lock lapsed stays on the replica.
         lapsing = _key()
         soon = datetime.now(timezone.utc) + timedelta(seconds=3)
@@ -338,5 +423,6 @@ async def test_the_replica_keeps_locked_copies_that_survive_deletion_on_the_prim
         await stores["retention"].delete_version(TENANT, lapsing, version)
         await asyncio.sleep(5)
         assert await replica.get(TENANT, lapsing, version) == b"lapsing"
+        await replica.delete_version(TENANT, lapsing, version)
     finally:
         await replica_client.close()

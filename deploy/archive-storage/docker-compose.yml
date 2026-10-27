@@ -3,9 +3,9 @@
 #
 # Object Lock is enforced by the S3 API only. The gateway reaches port 8333 and
 # nothing else. The off-site replica pulls new versions over the private link
-# through the filer's gRPC port and the volume server, so those two are
-# published on the link address only; security.toml makes the filer and volume
-# servers refuse unsigned writes.
+# through the filer alone, so its HTTP and gRPC ports are published on the link
+# address only; security.toml makes the filer and volume servers refuse
+# unsigned writes.
 #
 #   archive_compose up -d                     (defined in the runbook)
 #
