@@ -1,0 +1,66 @@
+{
+  "identities": [
+    {
+      "name": "admin",
+      "credentials": [
+        {
+          "accessKey": "REPLACE",
+          "secretKey": "REPLACE"
+        }
+      ],
+      "actions": [
+        "Admin",
+        "Read",
+        "Write",
+        "List",
+        "Tagging"
+      ]
+    },
+    {
+      "name": "retention",
+      "credentials": [
+        {
+          "accessKey": "REPLACE",
+          "secretKey": "REPLACE"
+        }
+      ],
+      "policyNames": [
+        "retention"
+      ]
+    }
+  ],
+  "policies": [
+    {
+      "name": "retention",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "s3:GetObjectRetention",
+              "s3:PutObjectRetention",
+              "s3:GetObjectLegalHold",
+              "s3:PutObjectLegalHold",
+              "s3:GetObjectVersion",
+              "s3:DeleteObjectVersion"
+            ],
+            "Resource": [
+              "arn:aws:s3:::ssf-rec-*/*"
+            ]
+          },
+          {
+            "Effect": "Allow",
+            "Action": [
+              "s3:ListBucket",
+              "s3:ListBucketVersions"
+            ],
+            "Resource": [
+              "arn:aws:s3:::ssf-rec-*"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

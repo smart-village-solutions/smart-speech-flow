@@ -1,0 +1,37 @@
+# The off-site replica of the archive store (spec §12.1). Runbook:
+# docs/operations/runbooks/archive-storage-deployment.md
+#
+# The replica pulls from the primary: primary-sync reads new versions from the
+# primary's filer and volume server over the private link and writes them
+# here, never a deletion or an update. The replica publishes only its S3 port,
+# for restores, so the primary holds no credential for it and cannot reach it.
+#
+#   replica_compose up -d                     (defined in the runbook)
+
+name: ssf-archive-replica
+
+x-seaweedfs-image: &seaweedfs-image chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d # 4.48
+
+services:
+  seaweedfs:
+    image: *seaweedfs-image
+    command: server -dir=/data -s3 -s3.config=/etc/seaweedfs/s3.json
+    ports:
+      - "${SSF_ARCHIVE_LISTEN_ADDRESS:?the address restores are run from}:8333:8333"
+    volumes:
+      - seaweedfs-data:/data
+      - ${SSF_ARCHIVE_CONFIG_DIR:-/etc/ssf-archive}/seaweedfs:/etc/seaweedfs:ro
+    restart: unless-stopped
+
+  primary-sync:
+    image: *seaweedfs-image
+    command: >-
+      filer.sync -a=${SSF_ARCHIVE_PRIMARY_FILER:?the primary's link address with port 8888}
+      -a.filerProxy -b=seaweedfs:8888 -isActivePassive -b.doDeleteFiles=false
+      -a.path=/buckets -b.path=/buckets -a.excludePaths=/buckets/.system
+    depends_on:
+      - seaweedfs
+    restart: unless-stopped
+
+volumes:
+  seaweedfs-data:
