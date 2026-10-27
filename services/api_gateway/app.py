@@ -42,6 +42,12 @@ from .gateway_metrics import GatewayMetrics
 from .logging_setup import configure_logging
 from .pipeline_admission import PipelineAdmission, PipelineAdmissionConfig, PipelineAdmissionMetrics
 from .rate_limiter import RateLimitMiddleware, RateLimits
+from .recording.wiring import (
+    close_recording,
+    connect_recording,
+    recording_connect_task,
+    recording_dsn,
+)
 from .refinement_metrics import RefinementMetrics
 from .unhandled_errors import UnhandledErrorMiddleware
 
@@ -309,6 +315,7 @@ def _start_background_tasks(
         asyncio.create_task(
             feedback_connect_task(dependencies, feedback_dsn, maintenance_dsn, sessions, read_dsn)
         ),
+        asyncio.create_task(recording_connect_task(dependencies, recording_dsn())),
     ]
 
 
@@ -358,6 +365,7 @@ async def _shut_down(
         )
 
     await _close_feedback(dependencies)
+    await close_recording(dependencies)
     app.state.dependencies = None
 
     print("Shutdown complete", flush=True)
@@ -410,6 +418,9 @@ async def _start_serving(
     await _wire_feedback(
         dependencies, feedback_dsn, maintenance_dsn, dependencies.session_manager, read_dsn
     )
+
+    # Recording mode (#614): optional and non-fatal for the same reason.
+    await connect_recording(dependencies, recording_dsn())
 
     # The hourly loop's first pass would be an hour away: run one now, so
     # content that expired during downtime goes and the audio series have
@@ -521,7 +532,17 @@ def setup_cors_for_websockets(app: FastAPI) -> None:
 
 # === Module Imports ===
 from . import websocket, websocket_monitoring_routes, websocket_polling_routes
-from .routes import admin, circuit_breaker, content, customer, feedback, login, session
+from .routes import (
+    admin,
+    circuit_breaker,
+    content,
+    customer,
+    feedback,
+    login,
+    recording,
+    recording_ceremony,
+    session,
+)
 from .routes.health import router as health_router
 from .routes.metrics import metrics
 
@@ -543,6 +564,8 @@ def _include_routes(app: FastAPI) -> None:
     app.include_router(websocket.router, tags=["websocket"])
     app.include_router(circuit_breaker.router, prefix="/api", tags=["circuit-breaker"])
     app.include_router(feedback.router, tags=["feedback"])
+    app.include_router(recording.router)
+    app.include_router(recording_ceremony.router)
 
     # Metrics-Route direkt an App binden
     app.get("/metrics")(metrics)

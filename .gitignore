@@ -115,3 +115,5 @@ docs/PRODUCT_VISION.md
 docs/PRODUCT_VISION.md
 .worktrees/
 traefik/dynamic/*
+# Recording secrets generated for local development (#614).
+deploy/local/recording-secrets/

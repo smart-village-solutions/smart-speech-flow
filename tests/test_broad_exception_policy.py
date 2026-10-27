@@ -41,6 +41,10 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/feedback/wiring.py", "feedback_connect_task"): ["boundary"],
     # the maintenance loop survives any one pass
     ("services/api_gateway/feedback/wiring.py", "feedback_maintenance_task"): ["boundary"],
+    # recording stays off (503) and is retried: pool creation, then key registration
+    ("services/api_gateway/recording/wiring.py", "connect_recording"): ["fallback", "fallback"],
+    # the recording connect loop survives any one attempt
+    ("services/api_gateway/recording/wiring.py", "recording_connect_task"): ["boundary"],
     # a daemon-thread target hands its failure back to the loop
     ("services/api_gateway/app.py", "_shutdown_quality_telemetry.run"): ["boundary"],
     # telemetry off rather than no gateway

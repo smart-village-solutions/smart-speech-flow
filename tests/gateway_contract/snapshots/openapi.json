@@ -1,6 +1,22 @@
 {
   "components": {
     "schemas": {
+      "AbortBody": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "AbortBody",
+        "type": "object"
+      },
       "ActivateSessionRequest": {
         "example": {
           "customer_language": "en",
@@ -138,6 +154,29 @@
           "provided"
         ],
         "title": "BundledGuestLanguage",
+        "type": "object"
+      },
+      "ConfirmationBody": {
+        "additionalProperties": false,
+        "properties": {
+          "encrypted_share": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Encrypted Share",
+            "type": "string"
+          },
+          "transcript_signature": {
+            "maxLength": 86,
+            "minLength": 86,
+            "title": "Transcript Signature",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transcript_signature",
+          "encrypted_share"
+        ],
+        "title": "ConfirmationBody",
         "type": "object"
       },
       "ContentBranding": {
@@ -613,6 +652,86 @@
           "mode"
         ],
         "title": "ContentStorage",
+        "type": "object"
+      },
+      "DealingBody": {
+        "additionalProperties": false,
+        "properties": {
+          "c": {
+            "maxLength": 43,
+            "minLength": 43,
+            "title": "C",
+            "type": "string"
+          },
+          "commitments": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Commitments",
+            "type": "array"
+          },
+          "s": {
+            "maxLength": 43,
+            "minLength": 43,
+            "title": "S",
+            "type": "string"
+          },
+          "signature": {
+            "maxLength": 86,
+            "minLength": 86,
+            "title": "Signature",
+            "type": "string"
+          },
+          "subshares": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 15,
+            "minProperties": 1,
+            "title": "Subshares",
+            "type": "object"
+          }
+        },
+        "required": [
+          "commitments",
+          "c",
+          "s",
+          "signature",
+          "subshares"
+        ],
+        "title": "DealingBody",
+        "type": "object"
+      },
+      "EnrolmentBody": {
+        "additionalProperties": false,
+        "properties": {
+          "blob": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Blob",
+            "type": "string"
+          },
+          "enc_pub": {
+            "maxLength": 87,
+            "minLength": 87,
+            "title": "Enc Pub",
+            "type": "string"
+          },
+          "sig_pub": {
+            "maxLength": 87,
+            "minLength": 87,
+            "title": "Sig Pub",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enc_pub",
+          "sig_pub",
+          "blob"
+        ],
+        "title": "EnrolmentBody",
         "type": "object"
       },
       "FeedbackAcceptedResponse": {
@@ -1263,6 +1382,22 @@
         "title": "LoginTenantResponse",
         "type": "object"
       },
+      "PaperConfirmationBody": {
+        "additionalProperties": false,
+        "properties": {
+          "transcript_hash": {
+            "maxLength": 43,
+            "minLength": 43,
+            "title": "Transcript Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transcript_hash"
+        ],
+        "title": "PaperConfirmationBody",
+        "type": "object"
+      },
       "PollingMessage": {
         "properties": {
           "content": {
@@ -1614,6 +1749,45 @@
         "title": "StaffContentResponse",
         "type": "object"
       },
+      "StartBody": {
+        "additionalProperties": false,
+        "properties": {
+          "custodians": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 2,
+            "title": "Custodians",
+            "type": "array"
+          },
+          "k": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "K",
+            "type": "integer"
+          },
+          "paper_device_pub": {
+            "anyOf": [
+              {
+                "maxLength": 87,
+                "minLength": 87,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paper Device Pub"
+          }
+        },
+        "required": [
+          "k",
+          "custodians"
+        ],
+        "title": "StartBody",
+        "type": "object"
+      },
       "TelemetryProbeResponse": {
         "properties": {
           "event_id": {
@@ -1887,6 +2061,433 @@
         "tags": [
           "admin",
           "admin"
+        ]
+      }
+    },
+    "/api/admin/recording/ceremony": {
+      "get": {
+        "operationId": "ceremony_state_api_admin_recording_ceremony_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Ceremony State Api Admin Recording Ceremony Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ceremony State",
+        "tags": [
+          "recording"
+        ]
+      },
+      "post": {
+        "operationId": "start_api_admin_recording_ceremony_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Start Api Admin Recording Ceremony Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/ceremony/candidates": {
+      "get": {
+        "operationId": "candidates_api_admin_recording_ceremony_candidates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Candidates Api Admin Recording Ceremony Candidates Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Candidates",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/ceremony/{ceremony_id}/abort": {
+      "post": {
+        "operationId": "abort_api_admin_recording_ceremony__ceremony_id__abort_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ceremony_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ceremony Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbortBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Abort",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/ceremony/{ceremony_id}/confirmations": {
+      "post": {
+        "operationId": "confirm_api_admin_recording_ceremony__ceremony_id__confirmations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ceremony_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ceremony Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Confirm Api Admin Recording Ceremony  Ceremony Id  Confirmations Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/ceremony/{ceremony_id}/dealings": {
+      "post": {
+        "operationId": "deal_api_admin_recording_ceremony__ceremony_id__dealings_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ceremony_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ceremony Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DealingBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Deal Api Admin Recording Ceremony  Ceremony Id  Dealings Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deal",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/ceremony/{ceremony_id}/paper-confirmation": {
+      "post": {
+        "operationId": "confirm_paper_api_admin_recording_ceremony__ceremony_id__paper_confirmation_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ceremony_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ceremony Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaperConfirmationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Confirm Paper Api Admin Recording Ceremony  Ceremony Id  Paper Confirmation Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Paper",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/ceremony/{ceremony_id}/subshares": {
+      "get": {
+        "operationId": "subshares_api_admin_recording_ceremony__ceremony_id__subshares_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ceremony_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ceremony Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "additionalProperties": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "type": "object"
+                  },
+                  "title": "Response Subshares Api Admin Recording Ceremony  Ceremony Id  Subshares Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Subshares",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/keys": {
+      "post": {
+        "operationId": "enrol_key_api_admin_recording_keys_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrolmentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Enrol Key Api Admin Recording Keys Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enrol Key",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/admin/recording/keys/me": {
+      "get": {
+        "operationId": "own_key_api_admin_recording_keys_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Own Key Api Admin Recording Keys Me Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Own Key",
+        "tags": [
+          "recording"
         ]
       }
     },

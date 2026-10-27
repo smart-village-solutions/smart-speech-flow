@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from services.api_gateway import (
     studio_installation_client,
     studio_login_directory_client,
+    studio_recording_directory_client,
     studio_runtime_v2_client,
 )
 from services.api_gateway.studio_installation_client import (
@@ -22,6 +23,10 @@ from services.api_gateway.studio_installation_client import (
 from services.api_gateway.studio_login_directory_client import (
     StudioLoginDirectoryClient,
     StudioLoginDirectoryClientError,
+)
+from services.api_gateway.studio_recording_directory_client import (
+    StudioRecordingDirectoryClient,
+    StudioRecordingDirectoryClientError,
 )
 from services.api_gateway.studio_runtime_v2_client import (
     TENANT_CONFLICT_CODES,
@@ -302,3 +307,54 @@ def test_every_directory_tenant_has_a_runtime_configuration() -> None:
     directory_ids = {tenant["id"] for tenant in mock._login_directory()["tenants"]}
 
     assert directory_ids <= set(contract_fixtures.RUNTIME_V2_TENANTS)
+
+
+def _recording_directory(
+    token: str = AUTHORIZED, scenario: str | None = None
+) -> StudioRecordingDirectoryClient:
+    return StudioRecordingDirectoryClient(
+        "http://studio-mock.test", _token(token), transport=MockTransport(scenario)
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tenant_id", contract_fixtures.RUNTIME_V2_TENANTS)
+async def test_every_tenant_recording_directory_validates_in_the_client(tenant_id: str) -> None:
+    directory = await _recording_directory().fetch(tenant_id, "contract-correlation")
+
+    assert directory.tenant_id == tenant_id
+    served = contract_fixtures.recording_directory(tenant_id)
+    assert directory.directory_revision == served["directoryRevision"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("token", "scenario", "code"),
+    [
+        ("not-a-mock-token", None, "service_authentication_invalid"),
+        (UNAUTHORIZED, None, "service_action_forbidden"),
+        (AUTHORIZED, "suspended", "tenant_suspended"),
+        (AUTHORIZED, "unavailable", "recording_directory_unavailable"),
+    ],
+)
+async def test_every_reachable_recording_directory_error_is_one_the_client_accepts(
+    token: str, scenario: str | None, code: str
+) -> None:
+    with pytest.raises(StudioRecordingDirectoryClientError) as caught:
+        await _recording_directory(token, scenario).fetch("tenant-kassel", "contract-correlation")
+
+    assert caught.value.code == code
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_tenant_has_no_recording_directory() -> None:
+    with pytest.raises(StudioRecordingDirectoryClientError) as caught:
+        await _recording_directory().fetch("tenant-nowhere", "contract-correlation")
+
+    assert caught.value.code == "tenant_not_found"
+
+
+def test_the_mock_recording_directory_emits_only_codes_the_client_accepts() -> None:
+    accepted = set().union(*studio_recording_directory_client.EXPECTED_ERROR_CODES.values())
+
+    assert set(get_args(mock.RecordingDirectoryErrorCode)) <= accepted

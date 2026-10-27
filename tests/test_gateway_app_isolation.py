@@ -58,6 +58,13 @@ FEEDBACK = (
     "feedback_read_service",
     "feedback_maintenance",
 )
+# None without a recording database and its secret files (#614).
+RECORDING = (
+    "recording_repository",
+    "recording_secrets",
+    "recording_keys",
+    "recording_ceremony",
+)
 
 
 @pytest.fixture
@@ -69,6 +76,7 @@ def configured_process(monkeypatch: pytest.MonkeyPatch) -> None:
         "SSF_FEEDBACK_DATABASE_URL",
         "SSF_FEEDBACK_MAINTENANCE_DATABASE_URL",
         "SSF_FEEDBACK_READER_DATABASE_URL",
+        "SSF_RECORDING_DATABASE_URL",
     ):
         monkeypatch.delenv(variable, raising=False)
     monkeypatch.setenv("STUDIO_RUNTIME_CONFIGURATION_BASE_URL", "http://studio-mock:8000")
@@ -95,6 +103,7 @@ def test_every_container_field_is_classified() -> None:
         *APP_BUILT,
         *SETTINGS,
         *FEEDBACK,
+        *RECORDING,
     }
 
 

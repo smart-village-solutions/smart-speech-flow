@@ -85,6 +85,11 @@ class GatewayDependencies:
     feedback_service: Any = None
     feedback_read_service: Any = None
     feedback_maintenance: Any = None
+    # Recording mode (#614); None until its database and secrets are wired.
+    recording_repository: Any = None
+    recording_secrets: Any = None
+    recording_keys: Any = None
+    recording_ceremony: Any = None
 
 
 def build_gateway_dependencies(
