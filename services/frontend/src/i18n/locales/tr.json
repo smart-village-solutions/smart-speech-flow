@@ -59,11 +59,24 @@
     },
     "ask": {
       "title": "Bu görüşme kaydedilebilir mi?",
-      "body": "Görevli bu görüşmeyi kaydetmek istiyor. Bundan sonra, siz ya da görevli kaydı durdurana kadar her mesaj şifreli olarak saklanacaktır. Kaydı istediğiniz zaman durdurabilirsiniz.",
       "resumeTitle": "Kayıt devam etsin mi?",
-      "resumeBody": "Kayıt durduruldu. Şu andan itibaren devam edebilir mi? Kaydı istediğiniz zaman yeniden durdurabilirsiniz.",
       "yes": "Evet, kaydet",
       "no": "Hayır"
+    },
+    "consent": {
+      "readAloud": "Sesli oku",
+      "stopReading": "Okumayı durdur",
+      "loading": "Metin yükleniyor…",
+      "unavailable": "Metin şu anda yüklenemiyor. Lütfen görevliye başvurun.",
+      "name": "Adınız",
+      "nameProposed": "Görevli tarafından girildi. Lütfen kontrol edin.",
+      "signature": "İmzanız",
+      "optional": "isteğe bağlı",
+      "clear": "Temizle",
+      "cannotSign": "İmza atamıyorum, dokunarak onaylıyorum.",
+      "nameRequired": "Lütfen adınızı girin.",
+      "signatureRequired": "Lütfen imzalayın veya imza atamadığınızı onaylayın.",
+      "textChanged": "Metin değişti. Lütfen yanıt vermeden önce yeniden okuyun."
     }
   },
   "feedback": {

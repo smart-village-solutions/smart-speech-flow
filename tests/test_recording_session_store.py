@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -12,6 +13,8 @@ from services.api_gateway.recording.session_store import (
     STATE_TTL_SECONDS,
     MemoryRecordingStateStore,
     RedisRecordingStateStore,
+    decode_state,
+    encode_state,
 )
 from services.api_gateway.tenant_session import TenantSessionKey
 
@@ -100,6 +103,26 @@ async def test_a_state_round_trips_with_every_field(store) -> None:
     state = rs.answer(asking(), request_id="r1", consent=True, window_id="w1", now=T0)
     await store.save(KEY, state)
     assert await store.load(KEY) == state
+
+
+async def test_a_first_requests_name_and_id_check_round_trip(store) -> None:
+    state = rs.request(
+        RecordingState(),
+        request_id="r1",
+        requested_by="emp",
+        now=T0,
+        proposed_name="Amira",
+        id_checked=True,
+    )
+    await store.save(KEY, state)
+    assert (await store.load(KEY)).id_checked_at == T0
+    assert await store.load(KEY) == state
+
+
+async def test_a_state_saved_before_the_consent_fields_still_loads(store) -> None:
+    fields = json.loads(encode_state(asking()))
+    del fields["proposed_name"], fields["id_checked_at"]
+    assert decode_state(json.dumps(fields)) == asking()
 
 
 async def test_only_conversations_that_are_not_off_are_listed(store) -> None:

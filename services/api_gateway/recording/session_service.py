@@ -15,6 +15,7 @@ import logging
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final, Protocol
 
@@ -33,8 +34,11 @@ from ..tenant_session import TenantSessionKey
 from . import session_state as rs
 from .archive_service import ArchiveUnavailableError, ConversationArchive, MessageArtefacts
 from .audit import AuditEvent
+from .consent_evidence import ConsentEvidenceError, GuestAnswer, evidence
+from .consent_text import ConsentText, consent_text
+from .consent_voice import ConsentVoice
 from .records import PlaybackEvent
-from .session_state import Phase, Reason, RecordingState, Snapshot
+from .session_state import ConsentKind, Phase, Reason, RecordingState, Snapshot
 from .session_store import RecordingStateStore
 
 logger = logging.getLogger(__name__)
@@ -63,6 +67,18 @@ class RecordingUnavailableError(Exception):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+@dataclass(frozen=True, slots=True)
+class ServedConsent:
+    """The open question as the guest's screen shows it (§6)."""
+
+    request_id: str
+    kind: ConsentKind
+    text: ConsentText
+    # What a first yes asks beyond the text; a resume asks for neither.
+    signature: str
+    proposed_name: str | None
 
 
 class Announcer(Protocol):
@@ -104,6 +120,10 @@ class RecordingSessions:
         self._last_policy_read: dict[TenantSessionKey, float] = {}
         # A conversation whose last tick step is still running is not started again.
         self._ticking: dict[TenantSessionKey, asyncio.Task[None]] = {}
+        # Reads the open question's text aloud for the guest (§6).
+        self.voice = ConsentVoice()
+        # The text last served to each guest and its request: a "no" to a resume cites it.
+        self._served: dict[TenantSessionKey, tuple[str, ConsentText]] = {}
 
     async def state(self, key: TenantSessionKey) -> RecordingState:
         return await self._store.load(key)
@@ -123,21 +143,56 @@ class RecordingSessions:
         return policy
 
     async def request(
-        self, key: TenantSessionKey, *, request_id: str, requested_by: str
+        self,
+        key: TenantSessionKey,
+        *,
+        request_id: str,
+        requested_by: str,
+        proposed_name: str | None = None,
+        id_checked: bool = False,
     ) -> RecordingState:
         current = await self._store.load(key)
         if current.request_id == request_id:
             return current  # a replay: the checks were made when it was new
         self._require_guest(key)
-        await self.check_available(key.tenant_id)
+        policy = await self.check_available(key.tenant_id)
+        id_checked = id_checked and policy.id_check != "off"
 
         def transition(state: RecordingState, now: datetime) -> RecordingState:
             # Again under the lock: the guest may have left, or the session ended,
             # while the policy was read.
             self._require_guest(key)
-            return rs.request(state, request_id=request_id, requested_by=requested_by, now=now)
+            first = state.phase is Phase.OFF and not state.consented
+            if first and policy.id_check == "required" and not id_checked:
+                raise ConsentEvidenceError("ID_CHECK_REQUIRED")
+            return rs.request(
+                state,
+                request_id=request_id,
+                requested_by=requested_by,
+                now=now,
+                proposed_name=proposed_name,
+                id_checked=id_checked,
+            )
 
         return await self._change(key, requested_by, transition)
+
+    async def consent(self, key: TenantSessionKey, language: str) -> ServedConsent:
+        """The open question's text in the guest's language, from a live policy read."""
+        state = await self._store.load(key)
+        if state.phase is not Phase.ASKING or state.request_id is None:
+            raise rs.RecordingConflictError("RECORDING_REQUEST_STALE")
+        policy = await self.check_available(key.tenant_id)
+        kind = state.request_kind or "first"
+        text = consent_text(policy, language, kind)
+        self._served[key] = (state.request_id, text)
+        first = kind == "first"
+        return ServedConsent(
+            request_id=state.request_id,
+            kind=kind,
+            text=text,
+            signature=policy.signature if first else "off",
+            proposed_name=state.proposed_name if first else None,
+        )
 
     def _require_guest(self, key: TenantSessionKey) -> None:
         if not self._announcer.connected(key, ClientType.CUSTOMER):
@@ -149,14 +204,22 @@ class RecordingSessions:
         )
 
     async def answer(
-        self, key: TenantSessionKey, *, request_id: str, consent: bool
+        self,
+        key: TenantSessionKey,
+        *,
+        request_id: str,
+        consent: bool,
+        reply: GuestAnswer | None = None,
     ) -> RecordingState:
+        """The guest's answer. A yes must carry the evidence §6 asks; a no never needs any."""
         current = await self._store.load(key)
         policy = None
+        fields: dict[str, Any] = {}
         if consent and current.phase is Phase.ASKING and current.request_id == request_id:
             # The policy is read again at the guest's yes; a failure refuses it.
             # A replay or a stale answer needs no read: the transition settles it.
             policy = await self.check_available(key.tenant_id)
+            fields = evidence(policy, current, reply or GuestAnswer(language=""))
         window_id = str(uuid.uuid4())
         return await self._change(
             key,
@@ -164,10 +227,12 @@ class RecordingSessions:
             lambda state, now: rs.answer(
                 state, request_id=request_id, consent=consent, window_id=window_id, now=now
             ),
-            opening=self._opening(key, policy),
+            opening=self._opening(key, policy, fields),
         )
 
-    def _opening(self, key: TenantSessionKey, policy: RecordingPolicy | None) -> Opening:
+    def _opening(
+        self, key: TenantSessionKey, policy: RecordingPolicy | None, fields: dict[str, Any]
+    ) -> Opening:
         """The yes's archive work, inside the lock: if it fails, the yes did not happen."""
 
         async def open_window(before: RecordingState, after: RecordingState) -> RecordingState:
@@ -177,7 +242,8 @@ class RecordingSessions:
                 raise RecordingUnavailableError("RECORDING_POLICY_UNAVAILABLE")
             try:
                 return await asyncio.wait_for(
-                    self._archive.open_window(key, before, after, policy), ARCHIVE_SECONDS
+                    self._archive.open_window(key, before, after, policy, fields),
+                    ARCHIVE_SECONDS,
                 )
             except (ArchiveUnavailableError, TimeoutError) as error:
                 code = getattr(error, "code", "timeout")
@@ -335,6 +401,7 @@ class RecordingSessions:
             if self._archive is not None:
                 await self._archive.transitioned(key, state, ended)
                 await self._archive.session_ended(key, state)
+        self._served.pop(key, None)
         self._forget(key)
 
     async def tick(self) -> None:
@@ -468,7 +535,9 @@ class RecordingSessions:
         if not audited:
             await self._record(key, before, after, actor)
         if self._archive is not None:
-            await self._archive.transitioned(key, before, after)
+            served = self._served.get(key)
+            text = served[1] if served is not None and served[0] == before.request_id else None
+            await self._archive.transitioned(key, before, after, served=text)
 
     async def _record(
         self, key: TenantSessionKey, before: RecordingState, after: RecordingState, actor: str

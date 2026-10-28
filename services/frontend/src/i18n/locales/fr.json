@@ -59,11 +59,24 @@
     },
     "ask": {
       "title": "Cette conversation peut-elle être enregistrée ?",
-      "body": "Votre interlocuteur souhaite enregistrer cette conversation. À partir de maintenant, chaque message serait conservé sous forme chiffrée jusqu'à ce que vous ou votre interlocuteur arrêtiez l'enregistrement. Vous pouvez l'arrêter à tout moment.",
       "resumeTitle": "Reprendre l'enregistrement ?",
-      "resumeBody": "L'enregistrement a été arrêté. Peut-il reprendre à partir de maintenant ? Vous pouvez l'arrêter de nouveau à tout moment.",
       "yes": "Oui, enregistrer",
       "no": "Non"
+    },
+    "consent": {
+      "readAloud": "Lire à voix haute",
+      "stopReading": "Arrêter la lecture",
+      "loading": "Chargement du texte…",
+      "unavailable": "Le texte ne peut pas être chargé pour le moment. Veuillez vous adresser à votre interlocuteur.",
+      "name": "Votre nom",
+      "nameProposed": "Saisi par votre interlocuteur. Veuillez le vérifier.",
+      "signature": "Votre signature",
+      "optional": "facultatif",
+      "clear": "Effacer",
+      "cannotSign": "Je ne peux pas signer et je confirme d'un toucher.",
+      "nameRequired": "Veuillez saisir votre nom.",
+      "signatureRequired": "Veuillez signer ou confirmer que vous ne pouvez pas signer.",
+      "textChanged": "Le texte a changé. Veuillez le relire avant de répondre."
     }
   },
   "feedback": {

@@ -59,11 +59,24 @@
     },
     "ask": {
       "title": "Rögzíthető ez a beszélgetés?",
-      "body": "Az ügyintéző szeretné rögzíteni ezt a beszélgetést. Mostantól minden üzenet titkosítva kerülne tárolásra, amíg Ön vagy az ügyintéző le nem állítja a felvételt. Bármikor leállíthatja.",
       "resumeTitle": "Folytatódhat a felvétel?",
-      "resumeBody": "A felvétel leállt. Folytatódhat mostantól? Bármikor újra leállíthatja.",
       "yes": "Igen, rögzítés",
       "no": "Nem"
+    },
+    "consent": {
+      "readAloud": "Felolvasás",
+      "stopReading": "Felolvasás leállítása",
+      "loading": "A szöveg betöltése…",
+      "unavailable": "A szöveg most nem tölthető be. Kérjük, forduljon az ügyintézőhöz.",
+      "name": "Az Ön neve",
+      "nameProposed": "Az ügyintéző adta meg. Kérjük, ellenőrizze.",
+      "signature": "Az Ön aláírása",
+      "optional": "nem kötelező",
+      "clear": "Törlés",
+      "cannotSign": "Nem tudok aláírni, koppintással erősítem meg.",
+      "nameRequired": "Kérjük, adja meg a nevét.",
+      "signatureRequired": "Kérjük, írja alá, vagy erősítse meg, hogy nem tud aláírni.",
+      "textChanged": "A szöveg megváltozott. Kérjük, olvassa el újra, mielőtt válaszol."
     }
   },
   "feedback": {

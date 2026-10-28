@@ -24,7 +24,7 @@ from services.api_gateway.recording.session_store import MemoryRecordingStateSto
 from services.api_gateway.session_models import ClientType
 from services.api_gateway.studio_v2 import RecordingPolicy
 from services.api_gateway.tenant_session import TenantSessionKey
-from tests.recording_archive_fakes import archive_rig
+from tests.recording_archive_fakes import archive_rig, say_yes
 
 KEY = TenantSessionKey("tenant-kassel", "ABCD1234")
 ADMIN, GUEST = ClientType.ADMIN, ClientType.CUSTOMER
@@ -113,7 +113,7 @@ class Harness:
 
     async def on(self) -> None:
         await self.service.request(KEY, request_id="r1", requested_by="emp-sub")
-        await self.service.answer(KEY, request_id="r1", consent=True)
+        await say_yes(self.service, KEY, "r1")
         await self.ack_both()
         await self.ack_both()
 
@@ -167,7 +167,7 @@ async def test_a_yes_rereads_the_policy_and_a_failure_keeps_the_question_open(h)
     await h.service.request(KEY, request_id="r1", requested_by="emp-sub")
     h.policy_fails = True
     with pytest.raises(RecordingUnavailableError):
-        await h.service.answer(KEY, request_id="r1", consent=True)
+        await say_yes(h.service, KEY, "r1")
     assert (await h.service.state(KEY)).phase is Phase.ASKING
     declined = await h.service.answer(KEY, request_id="r1", consent=False)
     assert (declined.phase, declined.reason) == (Phase.OFF, Reason.DECLINED)
@@ -175,7 +175,7 @@ async def test_a_yes_rereads_the_policy_and_a_failure_keeps_the_question_open(h)
 
 async def test_a_yes_arms_and_pings_at_once_then_both_acks_and_pongs_turn_it_on(h) -> None:
     await h.service.request(KEY, request_id="r1", requested_by="emp-sub")
-    armed = await h.service.answer(KEY, request_id="r1", consent=True)
+    armed = await say_yes(h.service, KEY, "r1")
     assert armed.phase is Phase.ARMING and armed.window_id
     assert h.announcer.types()[-1] == "recording_ping"
     await h.service.acknowledge(KEY, ADMIN, armed.state_version)
@@ -226,7 +226,7 @@ async def test_one_silent_screen_is_enough_to_pause(h) -> None:
 
 async def test_an_unacknowledged_arming_pauses_after_ten_seconds(h) -> None:
     await h.service.request(KEY, request_id="r1", requested_by="emp-sub")
-    await h.service.answer(KEY, request_id="r1", consent=True)
+    await say_yes(h.service, KEY, "r1")
     h.clocks.advance(10)
     await h.service.tick()
     assert (await h.service.state(KEY)).reason is Reason.UNACKNOWLEDGED
@@ -359,7 +359,7 @@ async def test_a_reconnecting_screen_is_pinged_with_its_greeting(h) -> None:
 
 async def test_turning_on_pings_both_screens_at_once(h) -> None:
     await h.service.request(KEY, request_id="r1", requested_by="emp-sub")
-    await h.service.answer(KEY, request_id="r1", consent=True)
+    await say_yes(h.service, KEY, "r1")
     h.clocks.advance(1)
     await h.ack_both()
     types = h.announcer.types()
@@ -437,13 +437,13 @@ async def test_a_request_racing_the_guests_departure_is_refused(h) -> None:
 
 async def test_replays_return_the_state_without_rechecking(h) -> None:
     asked = await h.service.request(KEY, request_id="r1", requested_by="emp-sub")
-    armed = await h.service.answer(KEY, request_id="r1", consent=True)
+    armed = await say_yes(h.service, KEY, "r1")
     h.announcer.guest_connected = False
     h.policy_fails = True
     assert await h.service.request(KEY, request_id="r1", requested_by="emp-sub") == armed
-    assert await h.service.answer(KEY, request_id="r1", consent=True) == armed
+    assert await say_yes(h.service, KEY, "r1") == armed
     with pytest.raises(RecordingConflictError) as stale:
-        await h.service.answer(KEY, request_id="r0", consent=True)
+        await say_yes(h.service, KEY, "r0")
     assert stale.value.code == "RECORDING_REQUEST_STALE"
     assert asked.request_id == "r1"
 

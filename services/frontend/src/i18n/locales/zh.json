@@ -59,11 +59,24 @@
     },
     "ask": {
       "title": "可以录下这次对话吗？",
-      "body": "工作人员希望录下这次对话。从现在起，每条消息都将加密保存，直到您或工作人员停止录音。您可以随时停止。",
       "resumeTitle": "继续录音吗？",
-      "resumeBody": "录音已停止。可以从现在起继续吗？您可以随时再次停止。",
       "yes": "是，录音",
       "no": "否"
+    },
+    "consent": {
+      "readAloud": "朗读",
+      "stopReading": "停止朗读",
+      "loading": "正在加载文本…",
+      "unavailable": "目前无法加载文本。请咨询工作人员。",
+      "name": "您的姓名",
+      "nameProposed": "由工作人员填写，请核对。",
+      "signature": "您的签名",
+      "optional": "可选",
+      "clear": "清除",
+      "cannotSign": "我无法签名，点按确认。",
+      "nameRequired": "请输入您的姓名。",
+      "signatureRequired": "请签名，或确认您无法签名。",
+      "textChanged": "文本已更改。请在回答前重新阅读。"
     }
   },
   "feedback": {

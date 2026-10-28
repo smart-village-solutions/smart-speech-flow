@@ -175,11 +175,15 @@ opposite failure behaviour:
 - **Recording policy** — the optional `recording` block (`enabled`,
   `legalBasis`, `signature`, `idCheck`, `retentionHours`,
   `verificationRequired`, `recoveryMode`, `timestampAuthorityUrl`,
-  `auditRetentionHours`), proposed for the Studio contract in #612 — is read
-  live when staff request a recording, at the guest's yes, and while a
-  recording is paused for policy. It fails closed for recording alone: a
-  missing or invalid block makes recording unavailable and leaves the rest of
-  the read intact.
+  `auditRetentionHours`, and `texts`: per locale a `consentHtml` and a
+  `resumePromptHtml`, German included), proposed for the Studio contract in
+  #612 — is read live when staff request a recording, when the guest's screen
+  loads the consent text, at the guest's yes, and while a recording is paused
+  for policy. It fails closed for recording alone: a missing or invalid block
+  makes recording unavailable and leaves the rest of the read intact. A
+  language without a Studio text gets SSF's bundled text for the legal basis;
+  the guest's yes carries the SHA-256 of the text it was served, and a
+  mismatch refuses it.
 - **Content** — staff texts, guest languages and texts, feedback forms per
   audience, branding, legal links — fails open. SSF sanitises it once, caches it
   by revision, and serves it to browsers through four routes:

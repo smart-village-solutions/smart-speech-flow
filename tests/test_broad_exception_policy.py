@@ -73,6 +73,8 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/recording/session_service.py", "RecordingSessions.archive"): [
         "fallback"
     ],
+    # a voice that cannot read the consent text aloud costs the guest the button
+    ("services/api_gateway/recording/consent_voice.py", "ConsentVoice._synthesise"): ["fallback"],
     # a playback report that cannot be archived pauses recording; the screen gets no error
     ("services/api_gateway/recording/session_service.py", "RecordingSessions.playback"): [
         "fallback"

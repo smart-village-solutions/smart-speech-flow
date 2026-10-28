@@ -27,11 +27,18 @@ from services.api_gateway.recording.archive_service import (
 from services.api_gateway.recording.audit import AuditEvent
 from services.api_gateway.recording.ceremony_model import RecoveryKeyRecord
 from services.api_gateway.recording.chain import ChainEntry, object_types
+from services.api_gateway.recording.consent_evidence import GuestAnswer
 from services.api_gateway.recording.crypto import aead, ecies, tags
 from services.api_gateway.recording.repository import RecordingStorageUnavailable, UserKeyRecord
 from services.api_gateway.recording.secrets import RecordingSecrets, ServerLayer, gateway_key_id
+from services.api_gateway.recording.session_service import (
+    RecordingSessions,
+    RecordingUnavailableError,
+)
+from services.api_gateway.recording.session_state import RecordingConflictError, RecordingState
 from services.api_gateway.recording.storage.filesystem import FilesystemArchiveStore
 from services.api_gateway.recording.storage.tenant_spools import TenantSpools
+from services.api_gateway.tenant_session import TenantSessionKey
 from tests import recording_crypto_reference as ref
 
 GATEWAY_SCALAR = 7
@@ -321,3 +328,31 @@ async def open_object(
         entry.tenant_id, entry.conversation_id, entry.entry_id, object_type, entry.key_id
     )
     return aead.open_(conversation_key(rig, entry, scalar=scalar), ciphertext, aad)
+
+
+GUEST_NAME = "Amira Haddad"
+
+
+async def say_yes(
+    service: RecordingSessions,
+    key: TenantSessionKey,
+    request_id: str,
+    *,
+    language: str = "en",
+    name: str | None = GUEST_NAME,
+    signature_png: bytes | None = None,
+    cannot_sign: bool = False,
+) -> RecordingState:
+    """A guest's yes as the screen sends it: the hash of the text it was served, and a name."""
+    try:
+        digest: str | None = (await service.consent(key, language)).text.sha256
+    except (RecordingConflictError, RecordingUnavailableError):
+        digest = None  # no open question: the answer itself meets the refusal
+    reply = GuestAnswer(
+        language,
+        digest,
+        name=name,
+        signature_png=signature_png,
+        cannot_sign=cannot_sign,
+    )
+    return await service.answer(key, request_id=request_id, consent=True, reply=reply)

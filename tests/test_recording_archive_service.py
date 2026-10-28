@@ -34,6 +34,7 @@ from tests.recording_archive_fakes import (
     conversation_key,
     decoded_objects,
     open_object,
+    say_yes,
 )
 from tests.test_recording_session_service import ADMIN, GUEST, KEY, Harness
 
@@ -89,7 +90,7 @@ def _gateway_keys(h) -> dict[str, bytes]:
 
 async def test_a_yes_opens_the_conversation_with_a_signed_consent_entry(h):
     await h.service.request(KEY, request_id="r1", requested_by="emp-sub")
-    state = await h.service.answer(KEY, request_id="r1", consent=True)
+    state = await say_yes(h.service, KEY, "r1")
 
     [consent] = _chain(h)
     assert state.conversation_id == consent.conversation_id
@@ -156,7 +157,7 @@ async def test_a_yes_the_archive_cannot_record_is_refused_and_changes_nothing(h,
     frames = len(h.announcer.frames)
 
     with pytest.raises(RecordingUnavailableError) as error:
-        await h.service.answer(KEY, request_id="r1", consent=True)
+        await say_yes(h.service, KEY, "r1")
 
     assert error.value.code == "ARCHIVE_WRITE_FAILED"
     assert (await h.service.state(KEY)).phase is Phase.ASKING
@@ -374,7 +375,7 @@ async def test_a_resume_reuses_the_conversation_and_its_key(h):
     await h.on()
     await _stop(h)
     await h.service.request(KEY, request_id="r2", requested_by="emp-sub")
-    await h.service.answer(KEY, request_id="r2", consent=True)
+    await say_yes(h.service, KEY, "r2")
 
     first, second = _chain(h)
     assert (second.kind, second.seq, second.key_id) == ("consent", 2, first.key_id)
@@ -496,7 +497,7 @@ async def test_a_yes_committed_before_its_spool_write_failed_still_stands(h, mon
     monkeypatch.setattr(h.rig.spools.spool(KEY.tenant_id), "submit", refuse)
     await _asking(h)
 
-    state = await h.service.answer(KEY, request_id="r1", consent=True)
+    state = await say_yes(h.service, KEY, "r1")
 
     assert state.phase is Phase.ARMING and state.conversation_id is not None
     assert list(h.rig.repository.conversations) == [state.conversation_id]
@@ -516,9 +517,9 @@ async def test_a_yes_whose_state_was_not_saved_reuses_its_conversation_on_retry(
     monkeypatch.setattr(h.store, "save", save_failing_once)
     await _asking(h)
     with pytest.raises(ConnectionError):
-        await h.service.answer(KEY, request_id="r1", consent=True)
+        await say_yes(h.service, KEY, "r1")
 
-    state = await h.service.answer(KEY, request_id="r1", consent=True)
+    state = await say_yes(h.service, KEY, "r1")
 
     assert list(h.rig.repository.conversations) == [state.conversation_id]
     assert [entry.kind for entry in _chain(h)] == ["consent", "consent"]
@@ -532,9 +533,9 @@ async def test_a_yes_whose_commit_landed_but_failed_is_retried_into_the_same_con
     await _asking(h)
     h.rig.repository.lands_then_fails = True
     with pytest.raises(RecordingUnavailableError):
-        await h.service.answer(KEY, request_id="r1", consent=True)
+        await say_yes(h.service, KEY, "r1")
 
-    state = await h.service.answer(KEY, request_id="r1", consent=True)
+    state = await say_yes(h.service, KEY, "r1")
 
     assert list(h.rig.repository.conversations) == [state.conversation_id]
     assert [entry.seq for entry in _chain(h)] == [1, 2]
@@ -631,7 +632,7 @@ async def test_the_employee_hears_when_a_yes_could_not_be_recorded(h):
     h.rig.repository.down = True
 
     with pytest.raises(RecordingUnavailableError):
-        await h.service.answer(KEY, request_id="r1", consent=True)
+        await say_yes(h.service, KEY, "r1")
 
     errors = [(f, role) for f, role in h.announcer.frames if f["type"] == "recording_error"]
     assert [(f["code"], role) for f, role in errors] == [("ARCHIVE_WRITE_FAILED", ADMIN)]

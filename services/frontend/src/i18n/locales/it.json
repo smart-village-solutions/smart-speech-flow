@@ -59,11 +59,24 @@
     },
     "ask": {
       "title": "Questa conversazione può essere registrata?",
-      "body": "Il suo interlocutore desidera registrare questa conversazione. Da ora in poi ogni messaggio verrebbe salvato in forma cifrata finché lei o il suo interlocutore non interrompete la registrazione. Può interromperla in qualsiasi momento.",
       "resumeTitle": "Continuare la registrazione?",
-      "resumeBody": "La registrazione è stata interrotta. Può riprendere da adesso? Può interromperla di nuovo in qualsiasi momento.",
       "yes": "Sì, registra",
       "no": "No"
+    },
+    "consent": {
+      "readAloud": "Leggi ad alta voce",
+      "stopReading": "Interrompi la lettura",
+      "loading": "Caricamento del testo…",
+      "unavailable": "Al momento il testo non può essere caricato. Si rivolga al suo interlocutore.",
+      "name": "Il suo nome",
+      "nameProposed": "Inserito dal suo interlocutore. La preghiamo di verificarlo.",
+      "signature": "La sua firma",
+      "optional": "facoltativa",
+      "clear": "Cancella",
+      "cannotSign": "Non posso firmare e confermo con un tocco.",
+      "nameRequired": "Inserisca il suo nome.",
+      "signatureRequired": "Firmi oppure confermi di non poter firmare.",
+      "textChanged": "Il testo è cambiato. Lo rilegga prima di rispondere."
     }
   },
   "feedback": {

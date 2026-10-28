@@ -4,6 +4,7 @@ import { usePlayback } from '@/app/providers/playback';
 import type { RecordingSessionRepository } from '@/domain/recording/recordingSession.repository';
 import { createFakeAudioPlayer } from '@/test/fakeAudioPlayer';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { consentClipId } from '../consentClip';
 import { playbackReports } from '../playbackReports';
 import { usePlaybackReports } from '../usePlaybackReports';
 
@@ -44,20 +45,27 @@ describe('playbackReports', () => {
   });
 });
 
-function Reporter({ live, onReady }: { live: boolean; onReady: (play: () => void) => void }) {
+interface ReporterProps {
+  live: boolean;
+  clip: string;
+  onReady: (play: () => void) => void;
+}
+
+function Reporter({ live, clip, onReady }: ReporterProps) {
   const { enqueue } = usePlayback();
   usePlaybackReports('A1B2C3D4', 'admin', live);
-  onReady(() => enqueue('m1', '/audio/m1'));
+  onReady(() => enqueue(clip, `/audio/${clip}`));
   return null;
 }
 
 async function playToEnd(
   live: boolean,
-  reportPlayback: ReturnType<typeof vi.fn> = vi.fn().mockResolvedValue(undefined)
+  reportPlayback: ReturnType<typeof vi.fn> = vi.fn().mockResolvedValue(undefined),
+  clip = 'm1'
 ) {
   const player = createFakeAudioPlayer();
   let play = () => {};
-  renderWithProviders(<Reporter live={live} onReady={(start) => (play = start)} />, {
+  renderWithProviders(<Reporter live={live} clip={clip} onReady={(start) => (play = start)} />, {
     player: player.port,
     services: { recordingSession: { reportPlayback } as unknown as RecordingSessionRepository },
   });
@@ -77,6 +85,12 @@ describe('usePlaybackReports', () => {
       ['A1B2C3D4', 'admin', 'm1', 'started'],
       ['A1B2C3D4', 'admin', 'm1', 'completed'],
     ]);
+  });
+
+  it('never reports the consent text read aloud: it is no message', async () => {
+    const reportPlayback = await playToEnd(true, undefined, consentClipId('r-1'));
+
+    expect(reportPlayback).not.toHaveBeenCalled();
   });
 
   it('reports nothing while recording is not live', async () => {

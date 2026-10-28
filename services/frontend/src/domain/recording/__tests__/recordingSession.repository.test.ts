@@ -35,7 +35,13 @@ describe('recording session repository', () => {
   it('reads the admin view with its open request and availability', async () => {
     server.use(
       http.get(`${BASE}/api/admin/session/S1/recording`, () =>
-        HttpResponse.json({ ...asking, can_request: true, unavailable_reason: null })
+        HttpResponse.json({
+          ...asking,
+          can_request: true,
+          unavailable_reason: null,
+          next_consent_kind: 'resume',
+          id_check: 'required',
+        })
       )
     );
     const view = await repository().adminView('S1');
@@ -48,6 +54,7 @@ describe('recording session repository', () => {
     });
     expect(view.request).toEqual({ requestId: 'r-1', consentKind: 'first' });
     expect(view.canRequest).toBe(true);
+    expect([view.nextConsentKind, view.idCheck]).toEqual(['resume', 'required']);
   });
 
   it('posts a request with its id and answers with the state', async () => {
@@ -61,6 +68,35 @@ describe('recording session repository', () => {
     const state = await repository().request('S1', 'r-1');
     expect(body).toEqual({ request_id: 'r-1' });
     expect(state.phase).toBe('asking');
+
+    await repository().request('S1', 'r-2', { guestName: 'Amira', idChecked: false });
+    expect(body).toEqual({ request_id: 'r-2', guest_name: 'Amira', id_checked: false });
+  });
+
+  it("reads the open question's consent text and names its read-aloud clip", async () => {
+    server.use(
+      http.get(`${BASE}/api/customer/session/S1/recording/consent`, () =>
+        HttpResponse.json({
+          request_id: 'r-1',
+          consent_kind: 'first',
+          language: 'ar',
+          html: '<p>نص</p>',
+          signature: 'optional',
+          proposed_name: 'Amira',
+        })
+      )
+    );
+    expect(await repository().consentText('S1')).toEqual({
+      requestId: 'r-1',
+      consentKind: 'first',
+      language: 'ar',
+      html: '<p>نص</p>',
+      signature: 'optional',
+      proposedName: 'Amira',
+    });
+    expect(repository().consentAudioUrl('S1', 'r 1', 'ab')).toBe(
+      '/api/customer/session/S1/recording/consent/audio?request_id=r+1&text_sha256=ab'
+    );
   });
 
   it('sends the guest answer and stops for either role', async () => {
@@ -74,8 +110,22 @@ describe('recording session repository', () => {
       http.post(`${BASE}/api/customer/session/S1/recording/stop`, () => HttpResponse.json(off)),
       http.post(`${BASE}/api/admin/session/S1/recording/stop`, () => HttpResponse.json(off))
     );
-    expect((await repository().answer('S1', 'r-1', true)).phase).toBe('arming');
-    expect(answered).toEqual({ request_id: 'r-1', consent: true });
+    expect((await repository().answer('S1', 'r-1', false)).phase).toBe('arming');
+    expect(answered).toEqual({ request_id: 'r-1', consent: false });
+    await repository().answer('S1', 'r-1', true, {
+      textSha256: 'ab',
+      name: 'Amira',
+      signaturePng: 'iVBO',
+      cannotSign: false,
+    });
+    expect(answered).toEqual({
+      request_id: 'r-1',
+      consent: true,
+      text_sha256: 'ab',
+      name: 'Amira',
+      signature_png: 'iVBO',
+      cannot_sign: false,
+    });
     expect((await repository().stop('S1', 'customer')).reason).toBe('stopped_by_guest');
     expect((await repository().stop('S1', 'admin')).stateVersion).toBe(4);
   });

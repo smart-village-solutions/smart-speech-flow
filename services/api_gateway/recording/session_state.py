@@ -81,6 +81,9 @@ class RecordingState:
     # Set by the archive at the first yes and kept for the rest of the session,
     # so a restart continues the same archived conversation.
     conversation_id: str | None = None
+    # A first request's extras, kept only while the guest is asked (§6).
+    proposed_name: str | None = None
+    id_checked_at: datetime | None = None
 
     @property
     def recording(self) -> bool:
@@ -145,24 +148,36 @@ def _move(state: RecordingState, phase: Phase, now: datetime, **changes: object)
 
 
 def _off(state: RecordingState, reason: Reason, now: datetime) -> RecordingState:
-    return _move(state, Phase.OFF, now, reason=reason, window_id=None)
+    return _move(
+        state, Phase.OFF, now, reason=reason, window_id=None, proposed_name=None, id_checked_at=None
+    )
 
 
 def request(
-    state: RecordingState, *, request_id: str, requested_by: str, now: datetime
+    state: RecordingState,
+    *,
+    request_id: str,
+    requested_by: str,
+    now: datetime,
+    proposed_name: str | None = None,
+    id_checked: bool = False,
 ) -> RecordingState:
+    """Ask the guest. A name and ID check belong to a first request only."""
     if state.request_id == request_id:
         return state
     if state.phase is not Phase.OFF:
         raise RecordingConflictError("RECORDING_BUSY")
+    first = not state.consented
     return _move(
         state,
         Phase.ASKING,
         now,
         request_id=request_id,
-        request_kind="resume" if state.consented else "first",
+        request_kind="first" if first else "resume",
         requested_by=requested_by,
         answer=None,
+        proposed_name=proposed_name if first else None,
+        id_checked_at=now if first and id_checked else None,
     )
 
 
@@ -183,7 +198,16 @@ def answer(
         raise RecordingConflictError("RECORDING_REQUEST_STALE")
     if not consent:
         return replace(_off(state, Reason.DECLINED, now), answer=False)
-    return _move(state, Phase.ARMING, now, window_id=window_id, answer=True, consented=True)
+    return _move(
+        state,
+        Phase.ARMING,
+        now,
+        window_id=window_id,
+        answer=True,
+        consented=True,
+        proposed_name=None,
+        id_checked_at=None,
+    )
 
 
 def stop(state: RecordingState, *, by: ClientType, now: datetime) -> RecordingState:

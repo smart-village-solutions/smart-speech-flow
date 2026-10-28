@@ -1,10 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch } from 'react';
 import { useServices } from '@/app/providers/services';
 import { randomId } from '@/core/ids';
-import type { RecordingStatus } from '@/domain/recording/recordingSession.types';
+import type {
+  ConsentKind,
+  PolicyLevel,
+  RecordingStatus,
+} from '@/domain/recording/recordingSession.types';
 import type { RecordingAction, RecordingSlice } from './recording.slice';
 import type { BandAction } from './recordingBand';
 import { adminRecordingErrorKey } from './recordingErrors';
+import { useFirstRequest } from './useFirstRequest';
+
+interface NextRequest {
+  kind: ConsentKind;
+  idCheck: PolicyLevel | null;
+}
 
 type AdminDispatch = Dispatch<RecordingAction | { type: 'error/raised'; errorKey: string }>;
 
@@ -20,8 +30,10 @@ export function useAdminRecording(
 ) {
   const { recordingSession } = useServices();
   const [canRequest, setCanRequest] = useState(false);
+  const [next, setNext] = useState<NextRequest>({ kind: 'first', idCheck: null });
   // The open request's id, needed to cancel it; read back after a reload.
   const requestId = useRef<string | null>(null);
+  const first = useFirstRequest(sessionId, dispatch, requestId);
   const { phase } = slice.status;
 
   useEffect(() => {
@@ -34,6 +46,7 @@ export function useAdminRecording(
       .then((view) => {
         if (cancelled) return;
         setCanRequest(view.canRequest);
+        setNext({ kind: view.nextConsentKind, idCheck: view.idCheck });
         requestId.current = view.request?.requestId ?? requestId.current;
         dispatch({ type: 'recording/state', status: view.status });
       })
@@ -59,7 +72,9 @@ export function useAdminRecording(
 
   const onAction = useCallback(
     (action: BandAction) => {
-      if (action === 'request') {
+      if (action === 'request' && next.kind === 'first') {
+        first.show();
+      } else if (action === 'request') {
         const id = randomId();
         requestId.current = id;
         void run(() => recordingSession.request(sessionId, id));
@@ -70,8 +85,8 @@ export function useAdminRecording(
         void run(() => recordingSession.stop(sessionId, 'admin'));
       }
     },
-    [recordingSession, run, sessionId]
+    [first, next.kind, recordingSession, run, sessionId]
   );
 
-  return { canRequest, onAction };
+  return { canRequest, onAction, firstRequest: { ...first, idCheck: next.idCheck } };
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type {
   AdminRecordingView,
+  ConsentText,
   RecordingRequest,
   RecordingStatus,
   RecordingView,
@@ -8,6 +9,7 @@ import type {
 
 const phase = z.enum(['off', 'asking', 'arming', 'on', 'paused']);
 const consentKind = z.enum(['first', 'resume']);
+const policyLevel = z.enum(['off', 'optional', 'required']);
 const since = z
   .string()
   .nullable()
@@ -32,6 +34,17 @@ const view = status.extend({
 const adminView = view.extend({
   can_request: z.boolean(),
   unavailable_reason: z.string().nullable(),
+  next_consent_kind: consentKind,
+  id_check: policyLevel.nullable(),
+});
+
+const consentText = z.object({
+  request_id: z.string().min(1),
+  consent_kind: consentKind,
+  language: z.string().min(1),
+  html: z.string().min(1),
+  signature: policyLevel,
+  proposed_name: z.string().nullable(),
 });
 
 function toStatus(parsed: z.infer<typeof status>): RecordingStatus {
@@ -78,5 +91,19 @@ export function toAdminRecordingView(body: unknown): AdminRecordingView {
     ...toView(parsed),
     canRequest: parsed.can_request,
     unavailableReason: parsed.unavailable_reason,
+    nextConsentKind: parsed.next_consent_kind,
+    idCheck: parsed.id_check,
+  };
+}
+
+export function toConsentText(body: unknown): ConsentText {
+  const parsed = consentText.parse(body);
+  return {
+    requestId: parsed.request_id,
+    consentKind: parsed.consent_kind,
+    language: parsed.language,
+    html: parsed.html,
+    signature: parsed.signature,
+    proposedName: parsed.proposed_name,
   };
 }

@@ -59,11 +59,24 @@
     },
     "ask": {
       "title": "¿Se puede grabar esta conversación?",
-      "body": "Su interlocutor desea grabar esta conversación. A partir de ahora, cada mensaje se guardaría cifrado hasta que usted o su interlocutor detengan la grabación. Puede detenerla en cualquier momento.",
       "resumeTitle": "¿Continuar la grabación?",
-      "resumeBody": "La grabación se detuvo. ¿Puede continuar a partir de ahora? Puede volver a detenerla en cualquier momento.",
       "yes": "Sí, grabar",
       "no": "No"
+    },
+    "consent": {
+      "readAloud": "Leer en voz alta",
+      "stopReading": "Detener la lectura",
+      "loading": "Cargando el texto…",
+      "unavailable": "Ahora no se puede cargar el texto. Diríjase a su interlocutor.",
+      "name": "Su nombre",
+      "nameProposed": "Introducido por su interlocutor. Compruébelo, por favor.",
+      "signature": "Su firma",
+      "optional": "opcional",
+      "clear": "Borrar",
+      "cannotSign": "No puedo firmar y confirmo con un toque.",
+      "nameRequired": "Introduzca su nombre, por favor.",
+      "signatureRequired": "Firme o confirme que no puede firmar, por favor.",
+      "textChanged": "El texto ha cambiado. Léalo de nuevo antes de responder, por favor."
     }
   },
   "feedback": {

@@ -59,11 +59,24 @@
     },
     "ask": {
       "title": "Esta conversa pode ser gravada?",
-      "body": "O atendente gostaria de gravar esta conversa. A partir de agora, cada mensagem seria armazenada de forma criptografada até que você ou o atendente parem a gravação. Você pode pará-la a qualquer momento.",
       "resumeTitle": "Continuar a gravação?",
-      "resumeBody": "A gravação foi parada. Ela pode continuar a partir de agora? Você pode pará-la novamente a qualquer momento.",
       "yes": "Sim, gravar",
       "no": "Não"
+    },
+    "consent": {
+      "readAloud": "Ler em voz alta",
+      "stopReading": "Parar a leitura",
+      "loading": "Carregando o texto…",
+      "unavailable": "Não é possível carregar o texto agora. Fale com o atendente.",
+      "name": "Seu nome",
+      "nameProposed": "Inserido pelo atendente. Verifique, por favor.",
+      "signature": "Sua assinatura",
+      "optional": "opcional",
+      "clear": "Limpar",
+      "cannotSign": "Não consigo assinar e confirmo com um toque.",
+      "nameRequired": "Digite seu nome, por favor.",
+      "signatureRequired": "Assine ou confirme que não consegue assinar, por favor.",
+      "textChanged": "O texto mudou. Leia-o novamente antes de responder, por favor."
     }
   },
   "feedback": {

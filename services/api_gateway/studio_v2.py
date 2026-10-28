@@ -254,6 +254,14 @@ class InstallationContent(_StudioModel):
         return lifted
 
 
+class RecordingTexts(_StudioModel):
+    """One language's consent texts (spec §6, D9); German may be listed too."""
+
+    locale: Locale
+    consent_html: Html = Field(alias="consentHtml")
+    resume_prompt_html: Html = Field(alias="resumePromptHtml")
+
+
 class RecordingPolicy(_StudioModel):
     """The tenant's `recording` block (spec §14), proposed for the Studio contract in #612."""
 
@@ -266,6 +274,9 @@ class RecordingPolicy(_StudioModel):
     recovery_mode: Literal["standard", "enhanced"] = Field(alias="recoveryMode")
     timestamp_authority_url: HttpsUrl = Field(alias="timestampAuthorityUrl")
     audit_retention_hours: int = Field(alias="auditRetentionHours", ge=1)
+    texts: tuple[RecordingTexts, ...] = Field(default=(), max_length=40, strict=False)
+    # Not part of the block: the read's revision, which versions Studio's texts.
+    configuration_revision: str = ""
 
     @model_validator(mode="after")
     def _audit_outlives_archive(self) -> Self:
@@ -370,11 +381,14 @@ def _guest_languages(raw: object, mode: str) -> tuple[GuestLanguageContent, ...]
     return tuple(languages)
 
 
-def _recording_policy(raw: object) -> RecordingPolicy | None:
+def _recording_policy(raw: object, revision: str) -> RecordingPolicy | None:
     """Fail closed for recording alone: a bad block must not refuse the conversation."""
     if raw is None:
         return None
-    return _validate_or_none(RecordingPolicy, raw, "recording")
+    policy = _validate_or_none(RecordingPolicy, raw, "recording")
+    if policy is None:
+        return None
+    return policy.model_copy(update={"configuration_revision": revision})
 
 
 def parse_runtime_configuration_v2(body: object, *, expected_tenant_id: str) -> RuntimeRead:
@@ -404,7 +418,7 @@ def parse_runtime_configuration_v2(body: object, *, expected_tenant_id: str) -> 
             tenant_id=view.tenant.id,
             mode=storage.mode,
             retention_hours=storage.retention_hours,
-            recording=_recording_policy(body.get("recording")),
+            recording=_recording_policy(body.get("recording"), view.configuration_revision),
         ),
         content=RuntimeContent(
             display_name=tenant.display_name,

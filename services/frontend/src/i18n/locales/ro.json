@@ -59,11 +59,24 @@
     },
     "ask": {
       "title": "Poate fi înregistrată această conversație?",
-      "body": "Interlocutorul dumneavoastră dorește să înregistreze această conversație. De acum înainte, fiecare mesaj ar fi stocat criptat până când dumneavoastră sau interlocutorul opriți înregistrarea. O puteți opri oricând.",
       "resumeTitle": "Continuați înregistrarea?",
-      "resumeBody": "Înregistrarea a fost oprită. Poate continua de acum înainte? O puteți opri din nou oricând.",
       "yes": "Da, înregistrați",
       "no": "Nu"
+    },
+    "consent": {
+      "readAloud": "Citește cu voce tare",
+      "stopReading": "Oprește citirea",
+      "loading": "Se încarcă textul…",
+      "unavailable": "Textul nu poate fi încărcat acum. Vă rugăm să vă adresați interlocutorului.",
+      "name": "Numele dumneavoastră",
+      "nameProposed": "Introdus de interlocutor. Vă rugăm să-l verificați.",
+      "signature": "Semnătura dumneavoastră",
+      "optional": "opțional",
+      "clear": "Șterge",
+      "cannotSign": "Nu pot semna și confirm prin atingere.",
+      "nameRequired": "Vă rugăm să introduceți numele.",
+      "signatureRequired": "Vă rugăm să semnați sau să confirmați că nu puteți semna.",
+      "textChanged": "Textul s-a schimbat. Vă rugăm să-l citiți din nou înainte de a răspunde."
     }
   },
   "feedback": {

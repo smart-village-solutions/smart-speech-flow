@@ -59,11 +59,24 @@
     },
     "ask": {
       "title": "Ma ev axaftin dikare were tomarkirin?",
-      "body": "Karmend dixwaze vê axaftinê tomar bike. Ji niha û pê ve, her peyam dê bi şîfrekirî were hilanîn heta ku tu an karmend tomarkirinê rawestînin. Tu dikarî her dem wê rawestînî.",
       "resumeTitle": "Tomarkirin bidome?",
-      "resumeBody": "Tomarkirin hat rawestandin. Ma ew dikare ji niha ve bidome? Tu dikarî her dem dîsa wê rawestînî.",
       "yes": "Erê, tomar bike",
       "no": "Na"
+    },
+    "consent": {
+      "readAloud": "Bi deng bixwîne",
+      "stopReading": "Xwendinê rawestîne",
+      "loading": "Nivîs tê barkirin…",
+      "unavailable": "Nivîs niha nayê barkirin. Ji kerema xwe serî li karmend bide.",
+      "name": "Navê te",
+      "nameProposed": "Ji aliyê karmend ve hatiye nivîsandin. Ji kerema xwe kontrol bike.",
+      "signature": "Îmzeya te",
+      "optional": "bi dilxwazî",
+      "clear": "Paqij bike",
+      "cannotSign": "Ez nikarim îmze bikim, bi pêlêkirinê piştrast dikim.",
+      "nameRequired": "Ji kerema xwe navê xwe binivîse.",
+      "signatureRequired": "Ji kerema xwe îmze bike an piştrast bike ku tu nikarî îmze bikî.",
+      "textChanged": "Nivîs guherî. Ji kerema xwe berî bersivdanê dîsa bixwîne."
     }
   },
   "feedback": {

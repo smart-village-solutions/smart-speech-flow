@@ -115,9 +115,10 @@ def consent_record(
     window_id: str | None,
     legal_basis: str,
     answer: Literal["yes", "no"] = "yes",
+    evidence: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """`consent.json` of an answer. 3C adds the name, signature, text hash and ID check."""
-    return {
+    """`consent.json` of an answer, with the evidence it carried (§6)."""
+    return dict(evidence or {}) | {
         "v": RECORD_VERSION,
         "request_id": request_id,
         "kind": request_kind,

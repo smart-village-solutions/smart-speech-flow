@@ -59,11 +59,24 @@
     },
     "ask": {
       "title": "Czy tę rozmowę można nagrać?",
-      "body": "Pracownik chciałby nagrać tę rozmowę. Od teraz każda wiadomość byłaby przechowywana w postaci zaszyfrowanej, dopóki Pan/Pani lub pracownik nie zatrzyma nagrywania. Można je zatrzymać w każdej chwili.",
       "resumeTitle": "Kontynuować nagrywanie?",
-      "resumeBody": "Nagrywanie zostało zatrzymane. Czy może być kontynuowane od teraz? Można je ponownie zatrzymać w każdej chwili.",
       "yes": "Tak, nagrywaj",
       "no": "Nie"
+    },
+    "consent": {
+      "readAloud": "Przeczytaj na głos",
+      "stopReading": "Zatrzymaj czytanie",
+      "loading": "Wczytywanie tekstu…",
+      "unavailable": "Nie można teraz wczytać tekstu. Prosimy zwrócić się do pracownika.",
+      "name": "Imię i nazwisko",
+      "nameProposed": "Wpisane przez pracownika. Prosimy sprawdzić.",
+      "signature": "Podpis",
+      "optional": "opcjonalnie",
+      "clear": "Wyczyść",
+      "cannotSign": "Nie mogę się podpisać i potwierdzam dotknięciem.",
+      "nameRequired": "Prosimy wpisać imię i nazwisko.",
+      "signatureRequired": "Prosimy złożyć podpis lub potwierdzić, że nie można się podpisać.",
+      "textChanged": "Tekst się zmienił. Prosimy przeczytać go ponownie przed udzieleniem odpowiedzi."
     }
   },
   "feedback": {

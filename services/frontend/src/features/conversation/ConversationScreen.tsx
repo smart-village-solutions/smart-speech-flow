@@ -25,6 +25,7 @@ export function ConversationScreen() {
           slice={recording}
           dispatch={screen.dispatch}
           band={band}
+          language={screen.customerLanguage}
         />
       }
       recordingBand={band.view !== null}

@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
@@ -15,6 +15,13 @@ const off = {
   state_version: 0,
   since: null,
 };
+const askable = {
+  ...off,
+  can_request: true,
+  unavailable_reason: null,
+  next_consent_kind: 'first',
+  id_check: 'optional',
+};
 
 function render(view: Record<string, unknown>) {
   server.use(http.get(`*/api/admin/session/${SESSION}/recording`, () => HttpResponse.json(view)));
@@ -27,22 +34,81 @@ function render(view: Record<string, unknown>) {
 }
 
 describe('recording, as the employee sees it', () => {
-  it('offers the request and sends it with a fresh id', async () => {
-    let requested: { request_id?: string } = {};
+  it('asks for the name and ID check before a first request, then sends it with a fresh id', async () => {
+    let requested: Record<string, unknown> = {};
     server.use(
       http.post(`*/api/admin/session/${SESSION}/recording/request`, async ({ request }) => {
-        requested = (await request.json()) as { request_id: string };
+        requested = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({ ...off, state: 'asking', state_version: 1 });
       })
     );
-    render({ ...off, can_request: true, unavailable_reason: null });
+    render(askable);
 
     expect(await screen.findByText('Keine Aufnahme')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Aufnahme anfragen' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText('Name des Gastes (freiwillig)'), ' Amira ');
+    await userEvent.click(within(dialog).getByText('Identität mit Ausweisdokument geprüft'));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Aufnahme anfragen' }));
 
     expect(requested.request_id).toMatch(/^[0-9a-f-]{32,36}$/);
+    expect(requested).toMatchObject({ guest_name: 'Amira', id_checked: true });
     expect(await screen.findByText('Warten auf die Antwort des Gastes …')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Anfrage zurückziehen' })).toBeInTheDocument();
+  });
+
+  it('holds a first request back until a required ID check is ticked', async () => {
+    render({ ...askable, id_check: 'required' });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Aufnahme anfragen' }));
+    const dialog = await screen.findByRole('dialog');
+    const send = within(dialog).getByRole('button', { name: 'Aufnahme anfragen' });
+
+    expect(send).toBeDisabled();
+    await userEvent.click(within(dialog).getByText('Identität mit Ausweisdokument geprüft'));
+    expect(send).toBeEnabled();
+  });
+
+  it('sends a first request once, however often it is clicked', async () => {
+    const requested = vi.fn();
+    let answer = () => {};
+    server.use(
+      http.post(`*/api/admin/session/${SESSION}/recording/request`, async () => {
+        requested();
+        await new Promise<void>((resolve) => (answer = resolve));
+        return HttpResponse.json({ ...off, state: 'asking', state_version: 1 });
+      })
+    );
+    render(askable);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Aufnahme anfragen' }));
+    const dialog = await screen.findByRole('dialog');
+    const send = within(dialog).getByRole('button', { name: 'Aufnahme anfragen' });
+    await userEvent.click(send);
+    await userEvent.click(send);
+
+    expect(send).toBeDisabled();
+    answer();
+    expect(await screen.findByText('Warten auf die Antwort des Gastes …')).toBeInTheDocument();
+    expect(requested).toHaveBeenCalledOnce();
+  });
+
+  it('requests a resume straight from the band', async () => {
+    let requested: Record<string, unknown> = {};
+    server.use(
+      http.post(`*/api/admin/session/${SESSION}/recording/request`, async ({ request }) => {
+        requested = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ...off, state: 'asking', state_version: 1 });
+      })
+    );
+    render({ ...askable, next_consent_kind: 'resume' });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Aufnahme anfragen' }));
+
+    expect(await screen.findByText('Warten auf die Antwort des Gastes …')).toBeInTheDocument();
+    expect(Object.keys(requested)).toEqual(['request_id']);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('names the reason when the gateway refuses', async () => {
@@ -54,15 +120,19 @@ describe('recording, as the employee sees it', () => {
         )
       )
     );
-    render({ ...off, can_request: true, unavailable_reason: null });
+    render(askable);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Aufnahme anfragen' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Aufnahme anfragen' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Der Gast ist nicht verbunden.');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Der Gast ist nicht verbunden.'
+    );
   });
 
   it("says so when the guest's yes could not be recorded", async () => {
-    const wire = render({ ...off, can_request: true, unavailable_reason: null });
+    const wire = render(askable);
     await screen.findByText('Keine Aufnahme');
 
     await wire.receive({

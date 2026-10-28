@@ -59,11 +59,24 @@
     },
     "ask": {
       "title": "A mund të regjistrohet kjo bisedë?",
-      "body": "Punonjësi dëshiron ta regjistrojë këtë bisedë. Që tani e tutje, çdo mesazh do të ruhej i enkriptuar derisa ju ose punonjësi ta ndaloni regjistrimin. Mund ta ndaloni në çdo kohë.",
       "resumeTitle": "Të vazhdojë regjistrimi?",
-      "resumeBody": "Regjistrimi u ndal. A mund të vazhdojë që tani? Mund ta ndaloni përsëri në çdo kohë.",
       "yes": "Po, regjistro",
       "no": "Jo"
+    },
+    "consent": {
+      "readAloud": "Lexo me zë",
+      "stopReading": "Ndalo leximin",
+      "loading": "Teksti po ngarkohet…",
+      "unavailable": "Teksti nuk mund të ngarkohet tani. Ju lutemi drejtojuni punonjësit.",
+      "name": "Emri juaj",
+      "nameProposed": "Futur nga punonjësi. Ju lutemi kontrollojeni.",
+      "signature": "Nënshkrimi juaj",
+      "optional": "opsionale",
+      "clear": "Fshi",
+      "cannotSign": "Nuk mund të nënshkruaj dhe konfirmoj me prekje.",
+      "nameRequired": "Ju lutemi shkruani emrin tuaj.",
+      "signatureRequired": "Ju lutemi nënshkruani ose konfirmoni që nuk mund të nënshkruani.",
+      "textChanged": "Teksti ka ndryshuar. Ju lutemi lexojeni përsëri para se të përgjigjeni."
     }
   },
   "feedback": {

@@ -1558,8 +1558,83 @@
       "RecordingAnswerBody": {
         "additionalProperties": false,
         "properties": {
+          "cannot_sign": {
+            "default": false,
+            "title": "Cannot Sign",
+            "type": "boolean"
+          },
           "consent": {
             "title": "Consent",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "signature_png": {
+            "anyOf": [
+              {
+                "maxLength": 349529,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature Png"
+          },
+          "text_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Sha256"
+          }
+        },
+        "required": [
+          "request_id",
+          "consent"
+        ],
+        "title": "RecordingAnswerBody",
+        "type": "object"
+      },
+      "RecordingAskBody": {
+        "additionalProperties": false,
+        "properties": {
+          "guest_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guest Name"
+          },
+          "id_checked": {
+            "default": false,
+            "title": "Id Checked",
             "type": "boolean"
           },
           "request_id": {
@@ -1569,10 +1644,9 @@
           }
         },
         "required": [
-          "request_id",
-          "consent"
+          "request_id"
         ],
-        "title": "RecordingAnswerBody",
+        "title": "RecordingAskBody",
         "type": "object"
       },
       "RecordingRequestBody": {
@@ -3386,7 +3460,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RecordingRequestBody"
+                "$ref": "#/components/schemas/RecordingAskBody"
               }
             }
           },
@@ -4651,6 +4725,144 @@
           }
         },
         "summary": "Answer Recording",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/recording/consent": {
+      "get": {
+        "description": "The open question's text, sanitised; the screen answers with the hash of this `html`.",
+        "operationId": "guest_consent_text_api_customer_session__session_id__recording_consent_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Guest Consent Text Api Customer Session  Session Id  Recording Consent Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Guest Consent Text",
+        "tags": [
+          "recording"
+        ]
+      }
+    },
+    "/api/customer/session/{session_id}/recording/consent/audio": {
+      "get": {
+        "description": "The same text read aloud by the TTS service in the guest's language (§6).\n\nNamed by its question and the text's hash, so a screen never plays a clip it\nkept for an earlier question or an earlier version of the text.",
+        "operationId": "guest_consent_audio_api_customer_session__session_id__recording_consent_audio_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "text_sha256",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Text Sha256",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Guest-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Guest-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Guest Consent Audio",
         "tags": [
           "recording"
         ]

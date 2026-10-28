@@ -20,6 +20,7 @@ from .session_state import Phase, Reason, RecordingState
 # Longer than any session may live, so a state outlives its session only briefly.
 STATE_TTL_SECONDS: Final[int] = 24 * 60 * 60
 _SEPARATOR: Final[str] = "\x1f"
+_TIMES: Final[tuple[str, ...]] = ("since", "id_checked_at")
 
 
 class RecordingStateStore(Protocol):
@@ -40,7 +41,9 @@ def encode_state(state: RecordingState) -> str:
     fields = asdict(state)
     fields["phase"] = state.phase.value
     fields["reason"] = state.reason.value if state.reason else None
-    fields["since"] = state.since.isoformat() if state.since else None
+    for name in _TIMES:
+        at = getattr(state, name)
+        fields[name] = at.isoformat() if at else None
     return json.dumps(fields, separators=(",", ":"), sort_keys=True)
 
 
@@ -48,7 +51,9 @@ def decode_state(raw: str) -> RecordingState:
     fields: dict[str, Any] = json.loads(raw)
     fields["phase"] = Phase(fields["phase"])
     fields["reason"] = Reason(fields["reason"]) if fields["reason"] else None
-    fields["since"] = datetime.fromisoformat(fields["since"]) if fields["since"] else None
+    for name in _TIMES:
+        at = fields.get(name)
+        fields[name] = datetime.fromisoformat(at) if at else None
     return RecordingState(**fields)
 
 

@@ -59,11 +59,24 @@
     },
     "ask": {
       "title": "May this conversation be recorded?",
-      "body": "The staff member would like to record this conversation. From now on, every message would be stored in encrypted form until you or the staff member stop the recording. You can stop it at any time.",
       "resumeTitle": "Continue recording?",
-      "resumeBody": "The recording was stopped. May it continue from now on? You can stop it again at any time.",
       "yes": "Yes, record",
       "no": "No"
+    },
+    "consent": {
+      "readAloud": "Read aloud",
+      "stopReading": "Stop reading",
+      "loading": "Loading the text…",
+      "unavailable": "The text cannot be loaded right now. Please ask the staff member.",
+      "name": "Your name",
+      "nameProposed": "Entered by the staff member. Please check it.",
+      "signature": "Your signature",
+      "optional": "optional",
+      "clear": "Clear",
+      "cannotSign": "I cannot sign and confirm by tapping.",
+      "nameRequired": "Please enter your name.",
+      "signatureRequired": "Please sign, or confirm that you cannot sign.",
+      "textChanged": "The text has changed. Please read it again before you answer."
     }
   },
   "feedback": {
@@ -317,7 +330,17 @@
         "RECORDING_BUSY": "Recording is already requested or running.",
         "ARCHIVE_UNAVAILABLE": "No recording archive is set up for this installation.",
         "ARCHIVE_WRITE_FAILED": "The guest's consent could not be saved. The guest can try again.",
-        "generic": "The recording could not be changed."
+        "generic": "The recording could not be changed.",
+        "ID_CHECK_REQUIRED": "Please check the guest's ID document first."
+      },
+      "ask": {
+        "title": "Request recording",
+        "body": "The guest will be asked on their screen to consent to the recording.",
+        "name": "Guest's name (optional)",
+        "nameHint": "The guest confirms or corrects it on their screen.",
+        "idChecked": "Identity checked with ID document",
+        "idRequired": "This organisation requires the ID check before recording.",
+        "cancel": "Cancel"
       }
     }
   }

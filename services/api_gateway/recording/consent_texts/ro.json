@@ -1,0 +1,10 @@
+{
+  "consent": {
+    "first": "<p>Interlocutorul dumneavoastră dorește să înregistreze această conversație. De acum înainte, fiecare mesaj ar fi stocat criptat până când dumneavoastră sau interlocutorul opriți înregistrarea. O puteți opri oricând.</p><p>Doar persoanele autorizate pot deschide înregistrarea. Aceasta este ștearsă la expirarea perioadei de păstrare.</p><p>Consimțământul dumneavoastră este voluntar. Dacă refuzați, conversația continuă fără înregistrare. Mesajele deja stocate rămân stocate și după oprire.</p>",
+    "resume": "<p>Înregistrarea a fost oprită. Poate continua de acum înainte? O puteți opri din nou oricând.</p>"
+  },
+  "statutory": {
+    "first": "<p>Interlocutorul dumneavoastră dorește să înregistreze această conversație. De acum înainte, fiecare mesaj ar fi stocat criptat până când dumneavoastră sau interlocutorul opriți înregistrarea. O puteți opri oricând.</p><p>Înregistrarea se face pe baza unui temei legal. Doar persoanele autorizate pot deschide înregistrarea. Aceasta este ștearsă la expirarea perioadei de păstrare.</p><p>Vă rugăm să confirmați că ați primit aceste informații și că înregistrarea poate începe.</p>",
+    "resume": "<p>Înregistrarea a fost oprită. De acum înainte, ea urmează să continue pe același temei legal. O puteți opri din nou oricând.</p>"
+  }
+}

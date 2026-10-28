@@ -33,6 +33,7 @@ from .archive_repository import (
 from .audit import AuditEvent
 from .ceremony_model import RecoveryKeyRecord
 from .chain import ChainEntry, ChainObject, EntryKind, seal_entry
+from .consent_text import ConsentText
 from .conversation_keys import (
     ConversationKey,
     Recipient,
@@ -194,8 +195,12 @@ class ConversationArchive:
         before: RecordingState,
         after: RecordingState,
         policy: RecordingPolicy,
+        evidence: Mapping[str, Any],
     ) -> RecordingState:
         """A guest's yes: conversation, window, key, consent entry and audit, or none of them.
+
+        `evidence` is what the yes carried (§6): the served text, and on a first
+        yes the name, signature and ID check.
 
         Once that transaction has committed, the yes stands: a spool write that
         fails afterwards marks the conversation incomplete, as for any entry.
@@ -213,6 +218,7 @@ class ConversationArchive:
             answered_at=now,
             window_id=window_id,
             legal_basis=policy.legal_basis,
+            evidence=evidence,
         )
         sealed = await self._seal(
             conversation,
@@ -353,8 +359,13 @@ class ConversationArchive:
         await self._spool(key.tenant_id, conversation.conversation_id, sealed.blobs)
         return True
 
-    async def declined(self, key: TenantSessionKey, before: RecordingState) -> None:
-        """A "no" to a resume, after an earlier yes: its own consent entry (§6). Best effort."""
+    async def declined(
+        self, key: TenantSessionKey, before: RecordingState, served: ConsentText | None
+    ) -> None:
+        """A "no" to a resume, after an earlier yes: its own consent entry (§6). Best effort.
+
+        It cites the text the guest's screen was served for the question, if any.
+        """
         conversation = await self._conversation(key.tenant_id, before.conversation_id)
         now = self._clock()
         record = records.consent_record(
@@ -366,6 +377,7 @@ class ConversationArchive:
             window_id=None,
             legal_basis=conversation.legal_basis,
             answer="no",
+            evidence={"text": served.record()} if served is not None else None,
         )
         sealed = await self._seal(
             conversation, "consent", None, {"consent.json": records.encode(record)}, now
@@ -374,12 +386,17 @@ class ConversationArchive:
         await self._spool(key.tenant_id, conversation.conversation_id, sealed.blobs)
 
     async def transitioned(
-        self, key: TenantSessionKey, before: RecordingState, after: RecordingState
+        self,
+        key: TenantSessionKey,
+        before: RecordingState,
+        after: RecordingState,
+        *,
+        served: ConsentText | None = None,
     ) -> None:
         """Pauses and closes of a window, kept beside it. A failure is logged, never raised."""
         if before.phase is Phase.ASKING and after.answer is False and before.consented:
             try:
-                await self.declined(key, before)
+                await self.declined(key, before, served)
             except ArchiveUnavailableError as error:
                 logger.error("recording_decline_not_archived code=%s", error.code)
             return

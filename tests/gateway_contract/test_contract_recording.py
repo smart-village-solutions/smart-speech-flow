@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import hashlib
 import json
 import uuid
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -12,6 +16,7 @@ from services.api_gateway.app import app
 from services.api_gateway.auth import require_ssf_user
 from services.api_gateway.clock import utc_now
 from services.api_gateway.recording.audit import AuditEvent
+from services.api_gateway.recording.consent_text import consent_text
 from services.api_gateway.recording.session_service import RecordingSessions
 from services.api_gateway.recording.wiring import WebSocketAnnouncer
 from services.api_gateway.studio_v2 import RecordingPolicy
@@ -98,6 +103,14 @@ def _of(frames: list[dict[str, Any]], frame_type: str) -> list[dict[str, Any]]:
     return [frame for frame in frames if frame["type"] == frame_type]
 
 
+def _yes(client, session_id: str, request_id: str) -> dict[str, Any]:
+    """A yes as the guest's screen sends it: the hash of the text it was served, and a name."""
+    served = client.get(f"/api/customer/session/{session_id}/recording/consent")
+    assert served.status_code == 200, served.text
+    digest = hashlib.sha256(served.json()["html"].encode()).hexdigest()
+    return {"request_id": request_id, "consent": True, "text_sha256": digest, "name": "Amira"}
+
+
 def _ack(socket, version: int) -> None:
     socket.send_json({"type": "recording_state_ack", "state_version": version})
 
@@ -137,7 +150,7 @@ def test_a_recording_is_asked_answered_acknowledged_and_stopped(
 
             answered = client.post(
                 f"/api/customer/session/{session_id}/recording/answer",
-                json={"request_id": request_id, "consent": True},
+                json=_yes(client, session_id, request_id),
             )
             assert answered.status_code == 200, answered.text
             arming = answered.json()
@@ -182,6 +195,8 @@ def test_only_a_permitted_employee_may_ask(client, conversations, recording, ide
         "since": None,
         "can_request": False,
         "unavailable_reason": "PERMISSION_REQUIRED",
+        "next_consent_kind": "first",
+        "id_check": None,
     }
     refused = client.post(
         f"/api/admin/session/{session_id}/recording/request",
@@ -249,7 +264,7 @@ def _recording_on(client, conversations, session_id, admin, guest) -> None:
     )
     armed = client.post(
         f"/api/customer/session/{session_id}/recording/answer",
-        json={"request_id": request_id, "consent": True},
+        json=_yes(client, session_id, request_id),
     ).json()
     for socket in (admin, guest):
         _queued(socket)
@@ -317,7 +332,7 @@ def _turn_on(client, conversations, session_id: str, admin, guest) -> None:
     )
     arming = client.post(
         f"/api/customer/session/{session_id}/recording/answer",
-        json={"request_id": request_id, "consent": True},
+        json=_yes(client, session_id, request_id),
     ).json()
     for socket in (admin, guest):
         _queued(socket)
@@ -395,3 +410,140 @@ def test_a_playback_report_with_a_malformed_body_is_refused(client, conversation
         json={"message_id": "not-a-uuid", "event": "completed"},
     )
     assert refused.status_code == 422
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x02" * 16
+
+
+class _Voice:
+    """The TTS service as the read-aloud route sees it."""
+
+    def __init__(self) -> None:
+        self.fails = False
+        # TTS answers 200 with a JSON body when synthesis fails.
+        self.content_type = "audio/wav"
+        self.payloads: list[dict[str, Any]] = []
+
+    def synthesize(self, payload: dict[str, Any], *, timeout: float) -> Any:
+        self.payloads.append(payload)
+        if self.fails:
+            raise ConnectionError("tts down")
+        return SimpleNamespace(
+            status_code=200, headers={"content-type": self.content_type}, content=b"RIFF-read-aloud"
+        )
+
+
+def _ask(client, session_id: str, **extras: Any) -> str:
+    request_id = str(uuid.uuid4())
+    asked = client.post(
+        f"/api/admin/session/{session_id}/recording/request",
+        json={"request_id": request_id, **extras},
+    )
+    assert asked.status_code == 200, asked.text
+    return request_id
+
+
+def _error(response) -> tuple[int, str]:
+    return response.status_code, response.json()["detail"]["error_code"]
+
+
+def test_the_guest_answers_with_the_hash_of_the_text_it_was_served(
+    client, conversations, recording, monkeypatch
+) -> None:
+    monkeypatch.setitem(globals(), "POLICY", POLICY.model_copy(update={"id_check": "optional"}))
+    session_id = conversations.create()
+    conversations.activate(session_id, "ar")
+    with open_guest_socket(client, session_id, ORIGIN):
+        request_id = _ask(client, session_id, guest_name=" Amira ", id_checked=True)
+        served = client.get(f"/api/customer/session/{session_id}/recording/consent").json()
+        assert served == {
+            "request_id": request_id,
+            "consent_kind": "first",
+            "language": "ar",
+            "html": consent_text(POLICY, "ar", "first").html,
+            "signature": "optional",
+            "proposed_name": "Amira",
+        }
+        answer = f"/api/customer/session/{session_id}/recording/answer"
+        tampered = _yes(client, session_id, request_id) | {"text_sha256": "0" * 64}
+        assert _error(client.post(answer, json=tampered)) == (409, "CONSENT_TEXT_MISMATCH")
+
+        signed = _yes(client, session_id, request_id) | {
+            "signature_png": base64.b64encode(PNG).decode()
+        }
+        answered = client.post(answer, json=signed)
+        assert answered.status_code == 200, answered.text
+
+    [consent] = _entries(recording)
+    record = json.loads(asyncio.run(open_object(recording.rig, consent, "consent.json")))
+    assert record["guest"] == {"name": "Amira", "entered_by": "employee"}
+    assert record["signature"]["given"] is True
+    assert record["id_check"]["checked"] is True
+    assert (record["text"]["language"], record["text_de"]["language"]) == ("ar", "de")
+
+
+def test_without_an_open_question_there_is_no_consent_text(client, conversations, recording):
+    session_id = conversations.create()
+    served = client.get(f"/api/customer/session/{session_id}/recording/consent")
+    assert _error(served) == (409, "RECORDING_REQUEST_STALE")
+
+
+def test_a_signature_that_is_not_a_png_is_refused(client, conversations, recording) -> None:
+    session_id = conversations.create()
+    conversations.activate(session_id, "en")
+    with open_guest_socket(client, session_id, ORIGIN):
+        request_id = _ask(client, session_id)
+        body = _yes(client, session_id, request_id) | {"signature_png": "R0lGODlh"}
+        refused = client.post(f"/api/customer/session/{session_id}/recording/answer", json=body)
+    assert _error(refused) == (422, "INVALID_SIGNATURE")
+
+
+def test_a_required_id_check_is_offered_to_and_enforced_on_the_employee(
+    client, conversations, recording, monkeypatch
+) -> None:
+    monkeypatch.setitem(globals(), "POLICY", POLICY.model_copy(update={"id_check": "required"}))
+    session_id = conversations.create()
+    conversations.activate(session_id, "en")
+    view = client.get(f"/api/admin/session/{session_id}/recording").json()
+    assert (view["next_consent_kind"], view["id_check"]) == ("first", "required")
+    with open_guest_socket(client, session_id, ORIGIN):
+        refused = client.post(
+            f"/api/admin/session/{session_id}/recording/request",
+            json={"request_id": str(uuid.uuid4())},
+        )
+        assert _error(refused) == (422, "ID_CHECK_REQUIRED")
+        _ask(client, session_id, id_checked=True)
+
+
+def test_the_consent_text_is_read_aloud_in_the_guests_language(
+    client, conversations, recording, gateway_dependencies, monkeypatch
+) -> None:
+    voice = _Voice()
+    monkeypatch.setattr(gateway_dependencies.speech_pipeline, "speech", voice)
+    session_id = conversations.create()
+    conversations.activate(session_id, "uk")
+    audio = f"/api/customer/session/{session_id}/recording/consent/audio"
+    text = consent_text(POLICY, "uk", "first")
+    with open_guest_socket(client, session_id, ORIGIN):
+        request_id = _ask(client, session_id)
+        url = f"{audio}?request_id={request_id}&text_sha256={text.sha256}"
+        stale = client.get(f"{audio}?request_id={uuid.uuid4()}&text_sha256={text.sha256}")
+        assert _error(stale) == (409, "RECORDING_REQUEST_STALE")
+        changed = client.get(f"{audio}?request_id={request_id}&text_sha256={'0' * 64}")
+        assert _error(changed) == (409, "CONSENT_TEXT_MISMATCH")
+
+        voice.content_type = "application/json"
+        assert _error(client.get(url)) == (503, "READ_ALOUD_UNAVAILABLE")
+        voice.fails = True
+        assert _error(client.get(url)) == (503, "READ_ALOUD_UNAVAILABLE")
+
+        voice.fails, voice.content_type = False, "audio/wav"
+        spoken = client.get(url)
+        assert (spoken.status_code, spoken.headers["content-type"], spoken.content) == (
+            200,
+            "audio/wav",
+            b"RIFF-read-aloud",
+        )
+        assert voice.payloads[-1] == {"text": text.plain(), "lang": "uk", "debug": "false"}
+        voice.fails = True
+        assert client.get(url).content == b"RIFF-read-aloud"  # read once, kept

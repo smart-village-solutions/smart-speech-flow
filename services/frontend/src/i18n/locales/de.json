@@ -59,11 +59,24 @@
     },
     "ask": {
       "title": "Darf dieses Gespräch aufgezeichnet werden?",
-      "body": "Ihre Ansprechperson möchte dieses Gespräch aufzeichnen. Ab jetzt würde jede Nachricht verschlüsselt gespeichert, bis Sie oder Ihre Ansprechperson die Aufnahme beenden. Sie können sie jederzeit beenden.",
       "resumeTitle": "Aufnahme fortsetzen?",
-      "resumeBody": "Die Aufnahme wurde beendet. Darf sie ab jetzt fortgesetzt werden? Sie können sie jederzeit wieder beenden.",
       "yes": "Ja, aufzeichnen",
       "no": "Nein"
+    },
+    "consent": {
+      "readAloud": "Vorlesen",
+      "stopReading": "Vorlesen beenden",
+      "loading": "Text wird geladen …",
+      "unavailable": "Der Text kann gerade nicht geladen werden. Bitte wenden Sie sich an Ihre Ansprechperson.",
+      "name": "Ihr Name",
+      "nameProposed": "Von Ihrer Ansprechperson eingetragen. Bitte prüfen Sie ihn.",
+      "signature": "Ihre Unterschrift",
+      "optional": "freiwillig",
+      "clear": "Löschen",
+      "cannotSign": "Ich kann nicht unterschreiben und bestätige durch Antippen.",
+      "nameRequired": "Bitte geben Sie Ihren Namen ein.",
+      "signatureRequired": "Bitte unterschreiben Sie oder bestätigen Sie, dass Sie nicht unterschreiben können.",
+      "textChanged": "Der Text hat sich geändert. Bitte lesen Sie ihn erneut, bevor Sie antworten."
     }
   },
   "feedback": {
@@ -317,7 +330,17 @@
         "RECORDING_BUSY": "Die Aufnahme ist bereits angefragt oder läuft.",
         "ARCHIVE_UNAVAILABLE": "Für diese Installation ist kein Aufnahmearchiv eingerichtet.",
         "ARCHIVE_WRITE_FAILED": "Die Zustimmung des Gastes konnte nicht gespeichert werden. Der Gast kann es erneut versuchen.",
-        "generic": "Die Aufnahme konnte nicht geändert werden."
+        "generic": "Die Aufnahme konnte nicht geändert werden.",
+        "ID_CHECK_REQUIRED": "Bitte prüfen Sie zuerst das Ausweisdokument des Gastes."
+      },
+      "ask": {
+        "title": "Aufnahme anfragen",
+        "body": "Der Gast wird auf seinem Bildschirm um Zustimmung zur Aufnahme gebeten.",
+        "name": "Name des Gastes (freiwillig)",
+        "nameHint": "Der Gast bestätigt oder korrigiert ihn auf seinem Bildschirm.",
+        "idChecked": "Identität mit Ausweisdokument geprüft",
+        "idRequired": "Diese Organisation verlangt vor der Aufnahme die Ausweisprüfung.",
+        "cancel": "Abbrechen"
       }
     }
   }

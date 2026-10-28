@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -22,6 +23,24 @@ const frame = (state: string, version: number) => ({
   session_id: SESSION,
   ...body(state, version),
 });
+
+const HTML = '<p>The staff member would like to record this conversation.</p>';
+const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
+
+function serveConsent(consentKind: 'first' | 'resume') {
+  server.use(
+    http.get(`*/api/customer/session/${SESSION}/recording/consent`, () =>
+      HttpResponse.json({
+        request_id: 'r-1',
+        consent_kind: consentKind,
+        language: 'en',
+        html: HTML,
+        signature: 'off',
+        proposed_name: null,
+      })
+    )
+  );
+}
 
 function render() {
   const wire = createRealtimeWire();
@@ -52,6 +71,7 @@ afterEach(() => {
 describe('recording, as the guest sees it', () => {
   it('asks the question and sends the yes with its request id', async () => {
     let answered: unknown;
+    serveConsent('first');
     server.use(
       http.post(`*/api/customer/session/${SESSION}/recording/answer`, async ({ request }) => {
         answered = await request.json();
@@ -69,17 +89,25 @@ describe('recording, as the guest sees it', () => {
       request_id: 'r-1',
       consent_kind: 'first',
     });
-    expect(await screen.findByRole('dialog')).toHaveTextContent(
-      'May this conversation be recorded?'
-    );
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('May this conversation be recorded?');
+    expect(
+      await within(dialog).findByText('The staff member would like to record this conversation.')
+    ).toBeInTheDocument();
     expect(wire.transport.send).toHaveBeenCalledWith({
       type: 'recording_state_ack',
       state_version: 1,
     });
 
+    await userEvent.type(screen.getByLabelText('Your name'), ' Amira ');
     await userEvent.click(screen.getByRole('button', { name: 'Yes, record' }));
 
-    expect(answered).toEqual({ request_id: 'r-1', consent: true });
+    expect(answered).toEqual({
+      request_id: 'r-1',
+      consent: true,
+      text_sha256: sha256(HTML),
+      name: 'Amira',
+    });
     expect(await screen.findByText('Recording is starting…')).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
@@ -138,6 +166,7 @@ describe('recording, as the guest sees it', () => {
   });
 
   it('keeps the question open and says so when the yes fails', async () => {
+    serveConsent('resume');
     server.use(
       http.post(`*/api/customer/session/${SESSION}/recording/answer`, () =>
         HttpResponse.json(
@@ -157,9 +186,10 @@ describe('recording, as the guest sees it', () => {
       consent_kind: 'resume',
     });
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Yes, record' }));
-
     const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('The staff member would like to record this conversation.');
+    await userEvent.click(screen.getByRole('button', { name: 'Yes, record' }));
+
     expect(dialog).toHaveTextContent('Continue recording?');
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       'The recording could not be changed. Please try again.'

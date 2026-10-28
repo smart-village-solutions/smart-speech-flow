@@ -4,6 +4,7 @@ import { useFeedback } from '@/app/providers/feedback';
 import { ConversationSurface } from '@/features/conversation/ConversationSurface';
 import { useConversationScreen } from '@/features/conversation/useConversationScreen';
 import { RecordingIndicator } from '@/features/recording/RecordingIndicator';
+import { RecordingRequestDialog } from '@/features/recording/RecordingRequestDialog';
 import { useAdminRecording } from '@/features/recording/useAdminRecording';
 import { usePlaybackReports } from '@/features/recording/usePlaybackReports';
 import { useRecordingBand } from '@/features/recording/useRecordingBand';
@@ -64,7 +65,20 @@ export function AdminSessionScreen({
     <ConversationSurface
       screen={screen}
       contentTop="var(--spacing-content-top)"
-      recording={<RecordingIndicator band={band} onAction={admin.onAction} />}
+      recording={
+        <>
+          <RecordingIndicator band={band} onAction={admin.onAction} />
+          {admin.firstRequest.open && (
+            <RecordingRequestDialog
+              idCheck={admin.firstRequest.idCheck}
+              error={admin.firstRequest.error}
+              sending={admin.firstRequest.sending}
+              onSubmit={(ask) => void admin.firstRequest.submit(ask)}
+              onCancel={admin.firstRequest.hide}
+            />
+          )}
+        </>
+      }
       recordingBand={band.view !== null}
       header={
         <AdminHeader

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { usePlayback } from '@/app/providers/playback';
 import { useServices } from '@/app/providers/services';
 import type { ClientRole } from '@/core/roles';
+import { isConsentClip } from './consentClip';
 import { playbackReports, type PlaybackSnapshot } from './playbackReports';
 
 /**
@@ -25,6 +26,7 @@ export function usePlaybackReports(sessionId: string, role: ClientRole, live: bo
       return;
     }
     for (const { messageId, event } of reports) {
+      if (isConsentClip(messageId)) continue; // the consent text, read aloud
       queue.current = queue.current.then(() =>
         recordingSession.reportPlayback(sessionId, role, messageId, event).catch(() => undefined)
       );
