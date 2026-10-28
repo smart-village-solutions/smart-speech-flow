@@ -11,8 +11,8 @@ TENANT_A = "tenant-a"
 TENANT_B = "tenant-b"
 
 
-def runtime_read(tenant_id: str, *, storage_mode: str = "ask") -> RuntimeRead:
-    return build_runtime_read(tenant_id, storage_mode, revision=REVISION)
+def runtime_read(tenant_id: str) -> RuntimeRead:
+    return build_runtime_read(tenant_id, revision=REVISION)
 
 
 def wav_bytes(seconds: float = 1.0, rate: int = 16000) -> bytes:

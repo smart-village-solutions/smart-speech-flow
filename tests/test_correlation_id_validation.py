@@ -2,15 +2,13 @@
 
 `StudioRuntimeV2Client` rejects a malformed correlation ID with a plain
 `ValueError`. Every route that forwards the header must refuse the request with
-a 400 instead of letting that surface as a 500, or -- worse on the write path --
-be swallowed into a silent refusal to persist.
+a 400 instead of letting that surface as a 500.
 """
 
 import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway.app import app
-from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.dependencies import get_studio_runtime_flow
 from tests.guest_access import activate_guest, guest_headers
 from tests.runtime_policy_helpers import runtime_read
@@ -31,7 +29,7 @@ class _FakeStudio:
 
     async def fetch(self, tenant_id: str, correlation_id: str):
         self.calls += 1
-        return runtime_read(tenant_id=tenant_id, mode="ask")
+        return runtime_read(tenant_id=tenant_id)
 
 
 @pytest.fixture
@@ -74,24 +72,32 @@ async def test_activation_accepts_a_well_formed_correlation_id(session_manager, 
     session_id, key = await _pending(client, session_manager)
     response = client.post(
         "/api/customer/session/activate",
-        json={
-            "session_id": session_id,
-            "customer_language": "en",
-            "data_retention_consent": True,
-        },
+        json={"session_id": session_id, "customer_language": "en"},
         headers={"X-Correlation-Id": "correlation-1"},
     )
     assert response.status_code == 200
-    assert (await session_manager.get_session(key)).consent_status is ConsentStatus.GRANTED
+    assert (await session_manager.get_session(key)).status.value == "active"
+    assert studio.calls == 1
+
+
+async def test_activation_ignores_the_consent_an_old_client_still_sends(
+    session_manager, client, studio
+):
+    session_id, key = await _pending(client, session_manager)
+    response = client.post(
+        "/api/customer/session/activate",
+        json={"session_id": session_id, "customer_language": "en", "data_retention_consent": True},
+        headers={"X-Correlation-Id": "correlation-1"},
+    )
+    assert response.status_code == 200
+    assert (await session_manager.get_session(key)).status.value == "active"
 
 
 @pytest.mark.parametrize("correlation_id", MALFORMED)
 async def test_a_message_refuses_a_malformed_correlation_id(
     client, studio, correlation_id, session_manager
 ):
-    # Not merely a 500 risk: an unvalidated header reaches the policy gate,
-    # whose blanket `except Exception` turns it into a refusal to persist. That
-    # would hand any client a silent switch for another guest's retention.
+    # Refused before the pipeline runs: a malformed header is the caller's mistake.
     session_id, _key = await _pending(client, session_manager)
     token = activate_guest(client, session_id)["guest_token"]
     response = client.post(
@@ -109,7 +115,7 @@ async def test_the_studio_client_raises_a_bare_value_error(correlation_id):
 
     `ValueError` is caught by neither the activation helper's Studio excepts
     nor anything that would classify it, so an unvalidated header reaches here
-    and escapes as a 500 -- or is swallowed by the gate's blanket except.
+    and escapes as a 500.
     """
     from services.api_gateway.studio_runtime_v2_client import StudioRuntimeV2Client
 

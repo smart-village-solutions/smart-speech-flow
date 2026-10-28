@@ -64,12 +64,11 @@ RUN printf '%s%s\n' \
     && addgroup --system app \
     && adduser --system --ingroup app app \
     && chown -R app:app /app \
-    # Compose mounts a named volume here. Docker initialises such a volume
-    # from the image path, so the directory must exist and belong to app --
-    # otherwise the volume is created root:root and the container, which runs
-    # as app, cannot write a single audio file into it. The archive spool (#615)
-    # is such a volume too.
-    && mkdir -p /data/audio /data/archive-spool \
+    # Compose mounts the archive spool (#615), a named volume, here. Docker
+    # initialises such a volume from the image path, so the directory must
+    # exist and belong to app -- otherwise the volume is created root:root and
+    # the container, which runs as app, cannot write a single file into it.
+    && mkdir -p /data/archive-spool \
     && chown -R app:app /data
 
 COPY services/api_gateway/ /app/services/api_gateway/

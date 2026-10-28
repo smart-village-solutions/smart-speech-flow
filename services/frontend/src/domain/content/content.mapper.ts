@@ -92,15 +92,12 @@ const guestLanguages = z.object({
   ),
 });
 
-const storage = z.object({ mode: z.enum(['ask', 'disabled', 'unknown']).catch('unknown') });
 const guestContent = z.discriminatedUnion('provided', [
-  z.object({ storage, provided: z.literal(false) }),
+  z.object({ provided: z.literal(false) }),
   z.object({
-    storage,
     provided: z.literal(true),
     revision: z.string(),
     explanationHtml: z.string(),
-    storageQuestionHtml: z.string().nullable(),
     feedback: feedbackForm,
   }),
 ]);

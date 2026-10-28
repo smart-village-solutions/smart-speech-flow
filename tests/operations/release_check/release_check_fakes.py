@@ -50,7 +50,6 @@ class FakeSession:
     tenant: str
     owner: str = "real-user"
     status: str = "pending"
-    consent: bool = False
     messages: list[str] = field(default_factory=list)
     tickets: set[str] = field(default_factory=set)
     guest_token: str | None = None
@@ -60,8 +59,7 @@ class FakeSession:
 
 
 class FakeGateway:
-    def __init__(self, storage: dict[str, str] | None = None) -> None:
-        self.storage = storage or {"A": "ask", "B": "ask"}
+    def __init__(self) -> None:
         self.sessions: dict[str, FakeSession] = {}
         self.terminated: list[str] = []
         self.leak_cross_tenant = False
@@ -69,7 +67,7 @@ class FakeGateway:
         self.accept_selectors = False
         self.accept_foreign_ticket = False
         self.drop_delivery = False
-        self.keep_refused_content = False
+        self.keep_ended_content = False
         self.fail_create_for: set[str] = set()
         self.ping_before_ack = False
         self.history_status = 200
@@ -135,7 +133,7 @@ class FakeGateway:
         session = self._own(token, session_id)
         if session is None:
             return _not_found()
-        # The gateway serves no audio for an ended conversation, kept or not.
+        # The gateway serves no audio for an ended conversation.
         if session.status == "terminated" and not self.serve_audio_after_termination:
             return _not_found()
         if self.missing_live_audio or message_id not in session.messages:
@@ -166,8 +164,7 @@ class FakeGateway:
         if session is None:
             return _not_found()
         self.terminated.append(session_id)
-        keeps = session.consent and self.storage[session.tenant] == "ask"
-        if not keeps and not self.keep_refused_content:
+        if not self.keep_ended_content:
             session.messages.clear()
         session.status = "terminated"
         return _json(200, {"status": "terminated"})
@@ -182,14 +179,13 @@ class FakeGateway:
             return _json(409, GUEST_REFUSAL)
         return _json(200, {"status": session.status})
 
-    async def activate(self, session_id, language, consent) -> httpx.Response:
+    async def activate(self, session_id, language) -> httpx.Response:
         session = self.sessions.get(session_id)
         if session is None:
             return _not_found()
         if session.guest_token is not None:
             return _json(409, GUEST_REFUSAL)
         session.status = "active"
-        session.consent = consent
         session.guest_token = f"guest-{session_id}"
         return _json(200, {"status": "active", "guest_token": session.guest_token})
 

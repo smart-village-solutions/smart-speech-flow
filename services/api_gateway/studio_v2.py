@@ -209,14 +209,13 @@ class GuestLanguageContent(_StudioModel):
     staff_name: Text = Field(alias="staffName")
     icon: LenientMedia = None
     explanation_html: Html = Field(alias="explanationHtml")
-    storage_question_html: Html | None = Field(alias="storageQuestionHtml")
     # Not lenient: the spec drops the whole language for an invalid form.
     feedback: FeedbackForm | None = None
 
     @model_validator(mode="before")
     @classmethod
     def _lift_guest_texts(cls, data: Any) -> Any:
-        return _lift(data, "guest", ("explanationHtml", "storageQuestionHtml"))
+        return _lift(data, "guest", ("explanationHtml",))
 
 
 class LegalLinks(_StudioModel):
@@ -289,8 +288,6 @@ class RuntimePolicy(_StudioModel):
     contract_version: str
     configuration_revision: str
     tenant_id: str
-    mode: Literal["ask", "disabled"]
-    retention_hours: int | None
     # None while Studio sends no valid block: recording is then unavailable.
     recording: RecordingPolicy | None = None
 
@@ -327,21 +324,11 @@ class _TenantTexts(_StudioModel):
     )
 
 
-class _Storage(_StudioModel):
-    mode: Literal["ask", "disabled"]
-    retention_hours: int | None = Field(alias="retentionHours", ge=0, le=MAX_RETENTION_HOURS)
-
-    @model_validator(mode="after")
-    def _retention_matches_mode(self) -> Self:
-        if (self.mode == "ask") != (self.retention_hours is not None):
-            raise ValueError("retentionHours is an integer for ask and null for disabled")
-        return self
-
-
 class _PolicyView(_Versioned):
+    # `conversationContentStorage` and `storageQuestionHtml` belonged to the
+    # retired `ask` mode (spec §5.4); Studio may still send them, and SSF ignores them.
     configuration_revision: str = Field(alias="configurationRevision", pattern=REVISION_PATTERN)
     tenant: _TenantId
-    conversation_content_storage: _Storage = Field(alias="conversationContentStorage")
 
 
 def _lift(data: Any, block: str, keys: tuple[str, ...]) -> Any:
@@ -362,22 +349,15 @@ def _branding_body(raw: object) -> object:
     return {}
 
 
-def _guest_languages(raw: object, mode: str) -> tuple[GuestLanguageContent, ...]:
+def _guest_languages(raw: object) -> tuple[GuestLanguageContent, ...]:
     if not isinstance(raw, list):
         logger.warning("Studio content dropped: guestLanguages (not a list)")
         return ()
     languages = []
     for index, item in enumerate(raw):
-        section = f"guestLanguages.{index}"
-        language = _validate_or_none(GuestLanguageContent, item, section)
-        if language is None:
-            continue
-        if (language.storage_question_html is None) != (mode == "disabled"):
-            logger.warning(
-                "Studio content dropped: %s (storage question contradicts the mode)", section
-            )
-            continue
-        languages.append(language)
+        language = _validate_or_none(GuestLanguageContent, item, f"guestLanguages.{index}")
+        if language is not None:
+            languages.append(language)
     return tuple(languages)
 
 
@@ -406,7 +386,6 @@ def parse_runtime_configuration_v2(body: object, *, expected_tenant_id: str) -> 
     # Studio's tenant id is not guaranteed ASCII, and compare_digest raises on non-ASCII str.
     if not hmac.compare_digest(view.tenant.id.encode(), expected_tenant_id.encode()):
         raise StudioContractError("tenant_mismatch")
-    storage = view.conversation_content_storage
     tenant = _TenantTexts.model_validate(body["tenant"], context={"section": "tenant"})
     branding = Branding.model_validate(
         _branding_body(body.get("branding")), context={"section": "branding"}
@@ -416,8 +395,6 @@ def parse_runtime_configuration_v2(body: object, *, expected_tenant_id: str) -> 
             contract_version=view.contract_version,
             configuration_revision=view.configuration_revision,
             tenant_id=view.tenant.id,
-            mode=storage.mode,
-            retention_hours=storage.retention_hours,
             recording=_recording_policy(body.get("recording"), view.configuration_revision),
         ),
         content=RuntimeContent(
@@ -425,7 +402,7 @@ def parse_runtime_configuration_v2(body: object, *, expected_tenant_id: str) -> 
             time_zone=tenant.time_zone,
             branding=branding,
             staff=_validate_or_none(StaffContent, body.get("staff"), "staff"),
-            guest_languages=_guest_languages(body.get("guestLanguages"), storage.mode),
+            guest_languages=_guest_languages(body.get("guestLanguages")),
         ),
     )
 

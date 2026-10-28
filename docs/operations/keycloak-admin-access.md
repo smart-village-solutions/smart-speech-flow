@@ -79,12 +79,10 @@ Installation content and the login directory take the same headers without
 
 `Bearer studio-mock-authorized-token` has
 `ssf.runtime-configuration.read`; `Bearer studio-mock-unauthorized-token`
-models an authenticated caller without that permission. `tenant-kassel`
-returns storage mode `ask`; `tenant-fulda` returns `disabled`. On v2,
-`tenant-kassel` keeps conversation content for 4320 hours, `tenant-fulda` has
-no retention and no storage questions, and `tenant-marburg` returns
-`retentionHours: 0`. `tenant-marburg` has no local Keycloak realm, so the login
-directory lists only Kassel and Fulda.
+models an authenticated caller without that permission. The mock still sends
+the retired `ask` storage fields (Kassel `ask`, Fulda `disabled`, Marburg
+`retentionHours: 0`), which the gateway ignores. `tenant-marburg` has no local
+Keycloak realm, so the login directory lists only Kassel and Fulda.
 
 On both runtime paths, send `X-Mock-Scenario: suspended`, `plugin-inactive`,
 `tenant-not-ready`, or `unavailable` to exercise the exact `409` and `503`

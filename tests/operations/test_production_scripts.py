@@ -396,7 +396,11 @@ def test_backup_records_ollama_models_without_archiving_model_volume(tmp_path):
     # The authoritative feedback store: retained for twelve months, and until
     # this line it was the one stateful service with no recovery path.
     assert "ssf-postgres.sql.gz" in manifest["required"]
-    assert "volumes/ssf-backend_audio-data.tar.gz" in manifest["required"]
+    # Conversations are transient outside a recording (spec §16): neither Redis
+    # nor the live delivery audio is backed up.
+    assert "redis.rdb" not in manifest["required"]
+    assert not (backup / "redis.rdb").exists()
+    assert not any("audio" in item for item in manifest["required"])
     assert "volumes/ssf-backend_ollama-data.tar.gz" not in manifest["required"]
     assert "gpt-oss:20b" in (backup / "ollama-models.txt").read_text()
     docker_calls = docker_log.read_text()
@@ -405,10 +409,12 @@ def test_backup_records_ollama_models_without_archiving_model_volume(tmp_path):
         "ssf-backend_clickhouse-data",
         "ssf-backend_keycloak-postgres-data",
         "ssf-backend_redis-data",
+        "ssf-backend_audio-data",
         "1980baddd3a6bd8bcade314d6f81d3716e73ae9bba6655b90d4179ff7b1990a7",
     ):
         assert volume not in manifest["required"]
         assert volume not in docker_calls
+    assert "exec -T redis" not in docker_calls
     with sqlite3.connect(backup / "grafana.db") as connection:
         assert connection.execute("SELECT value FROM backup_check").fetchone() == (
             "consistent snapshot",

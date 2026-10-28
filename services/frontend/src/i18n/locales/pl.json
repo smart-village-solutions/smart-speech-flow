@@ -24,8 +24,6 @@
     "intro": "$t(app.name) to automatyczna usługa tłumaczenia w czasie rzeczywistym, która wspiera rozmowy osób mówiących różnymi językami. Usługa działa wyłącznie na dedykowanym, prywatnym serwerze.",
     "howTo": "Aby rozpocząć nagrywanie, należy dotknąć przycisku mikrofonu. Na wypowiedź jest wtedy 20 sekund. Nagrywanie można też zakończyć wcześniej, dotykając przycisku ponownie. Zamiast tego można również skorzystać z pola tekstowego.",
     "retention": "Domyślnie dane audio i transkrypcje są przetwarzane wyłącznie w trakcie aktywnej sesji i nie są później przechowywane. Po zakończeniu rozmowy dane są automatycznie usuwane. Problemy lub pomysły na ulepszenia można w każdej chwili zgłosić za pomocą funkcji opinii w aplikacji.",
-    "optIn": "Aby pomóc nam ulepszyć $t(app.name), można wyrazić zgodę na przechowywanie danych rozmowy przez maksymalnie 180 dni. Dane te mogą być wykorzystywane wyłącznie do analiz i poprawy jakości w ramach projektu $t(app.name).",
-    "checkbox": "Wyrażam zgodę na przechowywanie danych mojej rozmowy przez maksymalnie 180 dni w celu ulepszenia $t(app.name).",
     "getStarted": "Rozpocznij",
     "loading": "Wczytywanie informacji"
   },

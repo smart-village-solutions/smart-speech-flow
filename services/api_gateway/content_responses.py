@@ -14,7 +14,6 @@ from pydantic.alias_generators import to_camel
 
 from .message_models import SUPPORTED_LANGUAGES
 from .studio_content import TenantContent
-from .studio_content_service import GuestContent
 from .studio_locales import GUEST_LANGUAGES
 from .studio_v2 import FeedbackForm, InstallationContent, Media
 
@@ -126,21 +125,14 @@ class GuestLanguagesResponse(_Body):
     ]
 
 
-class ContentStorage(_Body):
-    mode: Literal["ask", "disabled", "unknown"]
-
-
 class ProvidedGuestContent(_Body):
-    storage: ContentStorage
     provided: Literal[True] = True
     revision: str
     explanation_html: str
-    storage_question_html: str | None
     feedback: ContentFeedbackForm | None
 
 
 class UnprovidedGuestContent(_Body):
-    storage: ContentStorage
     provided: Literal[False] = False
 
 
@@ -235,18 +227,14 @@ def guest_languages_response(content: TenantContent | None) -> GuestLanguagesRes
 
 
 def guest_content_response(
-    guest: GuestContent, language: str
+    content: TenantContent | None, language: str
 ) -> ProvidedGuestContent | UnprovidedGuestContent:
-    storage = ContentStorage(mode=guest.mode)
-    content = guest.content
     studio = content.guest_languages.get(language) if content is not None else None
     if content is None or studio is None:
-        return UnprovidedGuestContent(storage=storage)
+        return UnprovidedGuestContent()
     return ProvidedGuestContent(
-        storage=storage,
         revision=content.revision,
         explanation_html=studio.explanation_html,
-        storage_question_html=studio.storage_question_html,
         feedback=_form(studio.feedback),
     )
 

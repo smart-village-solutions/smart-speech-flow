@@ -56,7 +56,6 @@ from .unhandled_errors import UnhandledErrorMiddleware
 if TYPE_CHECKING:
     from .quality_telemetry import QualityTelemetry
     from .quality_telemetry_schema import TelemetryMode
-    from .runtime_policy import RuntimePolicyGate
     from .studio_content_metrics import StudioContentMetrics
     from .studio_content_service import StudioContentService
     from .studio_policy_reads import StudioPolicyReadMetrics
@@ -122,15 +121,14 @@ def _announce(line: str) -> None:
 
 
 def _build_studio(
-    registry: CollectorRegistry,
     token_provider: "StudioRuntimeTokenProvider | None",
     content_metrics: "StudioContentMetrics",
     policy_reads: "StudioPolicyReadMetrics",
 ) -> "StudioWiring":
-    """The Studio flow, the persistence gate built on it, and the content service.
+    """The Studio flow and the content service.
 
-    No gate refuses every write, so a failure to build one is a safe state,
-    not a startup error. Studio credentials are absent in local development
+    Without a runtime client no session can be created, which is a safe state,
+    not a startup error: Studio credentials are absent in local development
     and CI. Every read through the flow also refreshes display content.
     """
     from .studio_content import StudioContentCache
@@ -141,16 +139,15 @@ def _build_studio(
     try:
         runtime_client = runtime_client_from_environment(token_provider)
     except StudioRuntimeFlowError as error:
-        _announce(f"Runtime policy gate unbound ({error.code}); persistence refused")
+        _announce(f"Studio runtime client unbound ({error.code}); sessions refused")
         runtime_client = None
     else:
-        _announce("Runtime policy gate ready")
+        _announce("Studio runtime client ready")
     policy_reads.gate_bound(runtime_client is not None)
     return wire_studio(
         runtime_client,
         installation_client_from_environment(token_provider),
         StudioContentCache(on_skip=content_metrics.skipped),
-        policy_registry=registry,
         content_metrics=content_metrics,
         policy_reads=policy_reads,
         cache_seconds=content_cache_seconds(),
@@ -161,7 +158,6 @@ def _build_dependencies(
     app: FastAPI,
     persistence: "TenantPersistenceBinding | None",
     runtime_flow: "StudioRuntimeFlow | None",
-    runtime_policy: "RuntimePolicyGate | None",
     pipeline: "_PipelineCollaborators",
     studio_token_provider: "StudioRuntimeTokenProvider | None",
     studio_content: "StudioContentService",
@@ -175,7 +171,6 @@ def _build_dependencies(
         studio_runtime_flow=runtime_flow,
         studio_token_provider=studio_token_provider,
         studio_content=studio_content,
-        runtime_policy=runtime_policy,
         polling_messages_dropped=metrics.polling_messages_dropped,
         websocket_metrics=metrics.websocket,
         audio_storage_metrics=metrics.audio_storage,
@@ -351,8 +346,6 @@ async def _shut_down(
     dependencies.session_manager.attach_quality_telemetry(None)
     refiner.attach_refinement_metrics(None)
     refiner.shutdown()
-    # A handler still holding the manager after shutdown persists nothing.
-    dependencies.session_manager.runtime_policy = None
     if persistence is not None:
         # A cancelled poll's shielded presence release may still be writing
         # through this connection.
@@ -387,7 +380,6 @@ async def _start_serving(
     # One per app: every Studio client shares its cached service token.
     studio_token_provider = token_provider_from_environment()
     studio = _build_studio(
-        app.state.prometheus_registry,
         studio_token_provider,
         metrics.studio_content,
         metrics.studio_policy_reads,
@@ -400,7 +392,6 @@ async def _start_serving(
         app,
         tenant_persistence,
         studio.runtime_flow,
-        studio.runtime_policy,
         pipeline,
         studio_token_provider,
         studio.content,

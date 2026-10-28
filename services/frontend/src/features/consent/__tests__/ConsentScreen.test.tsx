@@ -15,7 +15,6 @@ import {
   STUDIO_ICON_URL,
   guestContentBody,
   guestLanguagesBodyWith,
-  type FixtureStorageMode,
 } from '@/test/contentFixtures';
 import { GuestContentSettled } from '@/test/ContentSettled';
 import { contentKeys } from '@/features/content/contentQuery';
@@ -35,17 +34,13 @@ function tree(live: React.ReactNode = <p>conversation screen</p>, language = 'en
   );
 }
 
-/** Studio's English texts, distinct from the bundled ones, under `mode`. */
-function studioEnglish(mode: FixtureStorageMode = 'ask') {
+/** Studio's English texts, distinct from the bundled ones. */
+function studioEnglish() {
   return guestContentHandler((language) =>
     HttpResponse.json(
       language === 'en'
-        ? {
-            ...guestContentBody(language, mode),
-            explanationHtml: STUDIO_ENGLISH.explanationHtml,
-            storageQuestionHtml: mode === 'disabled' ? null : STUDIO_ENGLISH.storageQuestionHtml,
-          }
-        : guestContentBody(language, mode)
+        ? { ...guestContentBody(language), explanationHtml: STUDIO_ENGLISH.explanationHtml }
+        : guestContentBody(language)
     )
   );
 }
@@ -114,7 +109,7 @@ describe('ConsentScreen', () => {
     expect(screen.getByRole('img', { name: 'English' })).toBeInTheDocument();
   });
 
-  it('allows continuing without consent', async () => {
+  it('continues to the conversation', async () => {
     renderWithProviders(tree(), { route });
 
     await userEvent.click(await screen.findByRole('button', { name: 'Get started' }));
@@ -122,25 +117,9 @@ describe('ConsentScreen', () => {
     expect(await screen.findByText('conversation screen')).toBeInTheDocument();
   });
 
-  // One request, not two. A second, consent-less POST to the same endpoint
-  // would re-activate the session and resolve its consent to declined,
-  // overwriting the answer the guest just gave.
-  it('activates exactly once, carrying the checkbox state', async () => {
-    const activate = vi.fn().mockResolvedValue(sessionFixture);
-
-    renderWithProviders(tree(), {
-      route,
-      services: { session: { getSession: vi.fn(), activate } },
-    });
-
-    await userEvent.click(await screen.findByRole('checkbox'));
-    await userEvent.click(screen.getByRole('button', { name: 'Get started' }));
-
-    await waitFor(() => expect(activate).toHaveBeenCalledTimes(1));
-    expect(activate).toHaveBeenCalledWith('A1B2C3D4', 'en', true);
-  });
-
-  it('activates once with false when the checkbox is untouched', async () => {
+  // Nothing is stored outside a recording (spec §5.4), so there is nothing to agree
+  // to here: recording asks the guest itself, during the conversation.
+  it('activates exactly once and asks no storage question', async () => {
     const activate = vi.fn().mockResolvedValue(sessionFixture);
 
     renderWithProviders(tree(), {
@@ -150,8 +129,9 @@ describe('ConsentScreen', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Get started' }));
 
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     await waitFor(() => expect(activate).toHaveBeenCalledTimes(1));
-    expect(activate).toHaveBeenCalledWith('A1B2C3D4', 'en', false);
+    expect(activate).toHaveBeenCalledWith('A1B2C3D4', 'en');
   });
 
   // The route guard has already cached the session as it was before activation,
@@ -192,18 +172,14 @@ describe('ConsentScreen', () => {
   });
 
   describe('Studio content', () => {
-    it("shows Studio's explanation and storage question for a language Studio provides", async () => {
+    it("shows Studio's explanation for a language Studio provides", async () => {
       server.use(studioEnglish());
       renderWithProviders(tree(), { route });
       await settled();
 
       expect(screen.getByText('Studio explains the service.')).toBeInTheDocument();
       expect(screen.queryByText(en.consent.howTo)).not.toBeInTheDocument();
-      const checkbox = screen.getByRole('checkbox', {
-        name: 'Studio asks to keep the conversation.',
-      });
-      // Inline rendering: a <p> inside the <label> would be invalid markup.
-      expect(checkbox.closest('label')?.querySelector('p')).toBeNull();
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     });
 
     it('keeps the bundled texts, right to left, for a language Studio does not provide', async () => {
@@ -213,27 +189,9 @@ describe('ConsentScreen', () => {
       expect(document.documentElement).toHaveAttribute('dir', 'rtl');
       const block = prose(ar.consent.howTo);
       expect(within(block).getByText(ar.consent.retention)).toBeInTheDocument();
-      expect(block.children).toHaveLength(4);
-      expect(block.lastElementChild).toHaveClass('opacity-65');
-      // The bundled label names the app through $t(app.name), so match its fixed start.
-      expect(
-        screen.getByRole('checkbox', { name: new RegExp(ar.consent.checkbox.split('$t')[0]) })
-      ).toBeInTheDocument();
+      expect(block.children).toHaveLength(3);
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: ar.consent.getStarted })).toBeInTheDocument();
-    });
-
-    it("labels the checkbox with the bundled question when Studio's has no text", async () => {
-      server.use(
-        guestContentHandler((language) =>
-          HttpResponse.json({ ...guestContentBody(language), storageQuestionHtml: '<p></p>' })
-        )
-      );
-      renderWithProviders(tree(), { route });
-      await settled();
-
-      expect(
-        screen.getByRole('checkbox', { name: /^I agree to the storage of my conversation data/ })
-      ).toBeInTheDocument();
     });
 
     it("shows the flag from the guest languages, with Studio's icon", async () => {
@@ -262,44 +220,27 @@ describe('ConsentScreen', () => {
     });
   });
 
-  describe('storage mode', () => {
-    it('asks nothing and activates with false when storage is disabled', async () => {
-      const activate = vi.fn().mockResolvedValue(sessionFixture);
-      server.use(studioEnglish('disabled'));
-      renderWithProviders(tree(), {
-        route,
-        services: { session: { getSession: vi.fn(), activate } },
-      });
-      await settled();
-
-      expect(screen.getByText('Studio explains the service.')).toBeInTheDocument();
-      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
-
-      await userEvent.click(screen.getByRole('button', { name: 'Get started' }));
-      await waitFor(() => expect(activate).toHaveBeenCalledTimes(1));
-      expect(activate).toHaveBeenCalledWith('A1B2C3D4', 'en', false);
-    });
-
-    it.each<FixtureStorageMode>(['disabled', 'unknown'])(
-      'drops the bundled opt-in paragraph and the checkbox when the mode is %s',
-      async (mode) => {
-        server.use(studioEnglish(mode));
-        renderWithProviders(tree(undefined, 'ar'), { route: '/s/A1B2C3D4/info/ar' });
-        await settled();
-
-        expect(prose(ar.consent.howTo).children).toHaveLength(3);
-        expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
-      }
+  it('asks nothing whatever storage fields an earlier gateway still sends', async () => {
+    const activate = vi.fn().mockResolvedValue(sessionFixture);
+    server.use(
+      guestContentHandler((language) =>
+        HttpResponse.json({
+          ...guestContentBody(language),
+          storage: { mode: 'ask' },
+          storageQuestionHtml: '<p>Keep the conversation?</p>',
+        })
+      )
     );
-
-    it("shows Studio's last known texts without the question when the mode is unknown", async () => {
-      server.use(studioEnglish('unknown'));
-      renderWithProviders(tree(), { route });
-      await settled();
-
-      expect(screen.getByText('Studio explains the service.')).toBeInTheDocument();
-      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    renderWithProviders(tree(), {
+      route,
+      services: { session: { getSession: vi.fn(), activate } },
     });
+    await settled();
+
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('Keep the conversation?')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Get started' }));
+    await waitFor(() => expect(activate).toHaveBeenCalledWith('A1B2C3D4', 'en'));
   });
 
   describe('fallback', () => {
@@ -317,19 +258,16 @@ describe('ConsentScreen', () => {
           ['ar', ar.consent.howTo],
         ].map(([language, howTo]) => ({ name, respond, language, howTo }))
       )
-    )(
-      'shows the bundled $language texts without the question after $name',
-      async ({ respond, language, howTo }) => {
-        server.use(guestContentHandler(respond));
-        renderWithProviders(tree(undefined, language), {
-          route: `/s/A1B2C3D4/info/${language}`,
-        });
-        await settled();
+    )('shows the bundled $language texts after $name', async ({ respond, language, howTo }) => {
+      server.use(guestContentHandler(respond));
+      renderWithProviders(tree(undefined, language), {
+        route: `/s/A1B2C3D4/info/${language}`,
+      });
+      await settled();
 
-        expect(prose(howTo).children).toHaveLength(3);
-        expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
-      }
-    );
+      expect(prose(howTo).children).toHaveLength(3);
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    });
 
     it('shows a placeholder, not text, while the content is on its way', async () => {
       const { handler, release } = holdGuestContent();
@@ -349,7 +287,7 @@ describe('ConsentScreen', () => {
       await settled();
 
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
-      expect(screen.getByRole('checkbox')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Get started' })).toBeInTheDocument();
     });
 
     it('keeps the fallback it showed when a reconnect later brings Studio content', async () => {
@@ -396,7 +334,7 @@ describe('ConsentScreen', () => {
       }
       await settled();
 
-      // The late answer asks; the screen must not swap to it.
+      // The late answer brings Studio's text; the screen must not swap to it.
       expect(prose(en.consent.howTo).children).toHaveLength(3);
       expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     });

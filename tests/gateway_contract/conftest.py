@@ -300,12 +300,11 @@ def openapi_document(gateway) -> dict[str, Any]:
 class StudioStub:
     """Studio runtime configuration v2 as seen by the gateway.
 
-    One object answers all three reads: the admin create resolution, the
-    customer activation read and the persistence gate.
+    One object answers both reads: the admin create resolution and the
+    customer activation read.
     """
 
     def __init__(self) -> None:
-        self.storage_mode = "ask"
         self.error: Exception | None = None
         self.configuration_override: RuntimeRead | None = None
         self.fetches: list[tuple[str, str]] = []
@@ -321,19 +320,17 @@ class StudioStub:
             raise self.error
         if self.configuration_override is not None:
             return self.configuration_override
-        return runtime_read(tenant_id, storage_mode=self.storage_mode)
+        return runtime_read(tenant_id)
 
 
 @pytest.fixture
 def studio(gateway_dependencies: GatewayDependencies) -> Iterator[StudioStub]:
     """Route every Studio read to a stub, with the real resolution dependency."""
     from services.api_gateway import studio_runtime_flow
-    from services.api_gateway.runtime_policy import RuntimePolicyGate
 
     stub = StudioStub()
     app.dependency_overrides.pop(require_validated_runtime_configuration, None)
     gateway_dependencies.studio_runtime_flow = studio_runtime_flow.StudioRuntimeFlow(stub)
-    gateway_dependencies.session_manager.runtime_policy = RuntimePolicyGate(stub)
     yield stub
 
 
@@ -399,12 +396,10 @@ def studio_mock(gateway_dependencies: GatewayDependencies) -> StudioMock:
             StudioRuntimeV2Client(base_url, studio.token, transport=studio),
             StudioInstallationClient(base_url, studio.token, transport=studio),
             StudioContentCache(clock=studio.clock),
-            policy_registry=CollectorRegistry(),
             content_metrics=StudioContentMetrics(CollectorRegistry()),
             policy_reads=StudioPolicyReadMetrics(CollectorRegistry()),
         )
         gateway_dependencies.studio_runtime_flow = wiring.runtime_flow
-        gateway_dependencies.session_manager.runtime_policy = wiring.runtime_policy
         gateway_dependencies.studio_content = wiring.content
 
     app.dependency_overrides.pop(require_validated_runtime_configuration, None)
@@ -427,12 +422,6 @@ def guest_grace_window(gateway_dependencies: GatewayDependencies) -> Callable[[t
 def studio_unconfigured() -> None:
     """The real resolution dependency with no Studio settings at all."""
     app.dependency_overrides.pop(require_validated_runtime_configuration, None)
-
-
-@pytest.fixture
-def unbound_persistence_gate(gateway_dependencies: GatewayDependencies) -> None:
-    """The production default when Studio is unconfigured: every write refused."""
-    gateway_dependencies.session_manager.runtime_policy = None
 
 
 class _SpeechResponse:

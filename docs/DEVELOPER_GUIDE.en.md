@@ -72,7 +72,7 @@ The standard conversation flow is session-based:
 4. Either client submits text or audio through the unified message endpoint.
 5. The gateway validates the request, persists message state, orchestrates ASR, translation, optional refinement, and TTS as needed, then broadcasts the result.
 
-When Redis is available, it persists sessions, messages, and timeout metadata; the gateway falls back to in-memory session storage if Redis cannot be reached. Audio is written to the named `audio-data` volume and is subject to the current 24-hour retention policy. Prometheus collects metrics; Grafana and Loki provide monitoring and logs.
+When Redis is available, it holds sessions, messages, and timeout metadata in memory only (it writes nothing to disk, so a Redis restart ends live conversations); the gateway falls back to in-memory session storage if Redis cannot be reached. Delivery audio is written to the gateway's `/tmp/audio` tmpfs and deleted when its session ends. Prometheus collects metrics; Grafana and Loki provide monitoring and logs.
 
 ### Pipeline Services
 
@@ -267,7 +267,7 @@ Variable groups currently interpolated by Compose include:
 - `ENVIRONMENT` and `DEVELOPMENT_CORS_ORIGINS` for environment-specific CORS behaviour.
 - `GRAFANA_ADMIN_*` for local monitoring access.
 
-In the current Compose stack, `REDIS_URL`, `REDIS_NAMESPACE`, and `CLIENT_BASE_URL` are assigned in `docker-compose.yml` rather than interpolated from `.env`. The `AUDIO_*` variables are likewise documented and passed by Compose, but the gateway currently reads only `SSF_AUDIO_BASE_DIR`; it uses a fixed 24-hour retention period and an hourly cleanup interval. Do not rely on `.env` changes to the `AUDIO_*` variables to change runtime audio-storage behaviour. The following values document those fixed settings:
+In the current Compose stack, `REDIS_URL`, `REDIS_NAMESPACE`, and `CLIENT_BASE_URL` are assigned in `docker-compose.yml` rather than interpolated from `.env`. The gateway reads only `SSF_AUDIO_BASE_DIR` for audio storage (Compose sets it to the `/tmp/audio` tmpfs); an hourly pass deletes any delivery audio that a session's end missed once it is older than `SSF_SESSION_MAX_HOURS` plus an hour. The following values document those settings:
 
 - `REDIS_URL` and `REDIS_NAMESPACE` for session storage.
 - `CLIENT_BASE_URL` for generated customer links and one additional exact production browser origin for HTTP CORS and WebSocket connections. For a standalone frontend, set it to an HTTPS origin such as `https://dialog.kassel.de` in the effective API container environment. Credentials, wildcard hosts, paths other than `/`, query strings, and fragments are not accepted as browser origins. Existing production origins remain available; an unset or invalid value adds no origin. Configure the frontend Keycloak URL and the Keycloak client redirect URIs separately.
@@ -289,7 +289,7 @@ Treat security and privacy as functional requirements, not as a later review ste
 - Apply least privilege and tenant isolation to every new data access path. Do not trust a tenant, role, or ownership identifier supplied by a client without server-side verification.
 - Collect, retain, and expose only the data required for the documented purpose. Do not put message content, raw audio, credentials, or personal data in logs, metrics, traces, error reports, or metric labels.
 - Keep operational telemetry pseudonymised and aggregate wherever possible. Storage of conversation content or free-text feedback requires a documented purpose, an appropriate opt-in where required, a defined retention period, and verifiable deletion.
-- Original and translated audio are currently subject to the managed 24-hour cleanup policy. Any change to audio storage, retention, backups, or retrieval must include a privacy and security review and updates to the relevant documentation and tests.
+- Original and translated delivery audio exist only on the gateway's tmpfs, for as long as their session runs; only recording mode keeps conversation content, encrypted. Any change to audio storage, retention, backups, or retrieval must include a privacy and security review and updates to the relevant documentation and tests.
 - Review dependency, configuration, and deployment changes for known vulnerabilities, insecure defaults, unnecessary network exposure, and secret handling.
 - Add or update tests for security-relevant behaviour, including validation failures, authorisation boundaries, retention, and deletion where applicable.
 

@@ -13,6 +13,7 @@ from requests import Response, exceptions
 
 from .quality_telemetry import classify_exception, classify_upstream_status
 from .quality_telemetry_schema import QualityErrorCode, RefinementOutcomeCode, RefinerRole
+from .telemetry_languages import reported_languages
 from .translation_facts import refinement_changes_facts
 
 logger = logging.getLogger(__name__)
@@ -409,12 +410,13 @@ class OllamaTranslationRefiner(BaseTranslationRefiner):
         is empty exactly where it matters.
         """
         outcome = self._perform_refinement(text, source_lang, target_lang, context)
+        source, target = reported_languages(source_lang, target_lang, context)
         self._emit_outcome(
             outcome,
             role=RefinerRole.PRIMARY,
             model_ref=self.model,
-            source_lang=source_lang,
-            target_lang=target_lang,
+            source_lang=source,
+            target_lang=target,
         )
         return outcome
 
@@ -611,7 +613,8 @@ class ShadowComparisonRefiner(OllamaTranslationRefiner):
         way round by the two pipelines."""
         source = kwargs.get("source_lang") or (args[1] if len(args) > 1 else "")
         target = kwargs.get("target_lang") or (args[2] if len(args) > 2 else "")
-        return str(source), str(target)
+        context = kwargs.get("context") or (args[3] if len(args) > 3 else None)
+        return reported_languages(str(source), str(target), context)
 
     def _run_candidate(self, *args: Any, **kwargs: Any) -> None:
         try:

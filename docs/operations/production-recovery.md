@@ -40,10 +40,11 @@ Redis, and ClickHouse.
 
 Daily, weekly, and monthly timers create complete local backups under
 `backups/<tier>/<UTC timestamp>`. Retention is seven daily, four weekly, and
-twelve monthly backups. Every backup contains the stateful production Docker
-audio volume, a logical Keycloak PostgreSQL export, Redis snapshot, ClickHouse
-native backup, configuration and state directories, checksum manifests, and
-archive readability validation. The database and Prometheus raw volumes are
+twelve monthly backups. Every backup contains a logical Keycloak PostgreSQL
+export, the feedback database export, a ClickHouse native backup,
+configuration and state directories, checksum manifests, and archive
+readability validation. Redis and delivery audio are not backed up: outside a
+recording a conversation leaves nothing behind (#615). The database and Prometheus raw volumes are
 intentionally not archived because they are actively written and their
 consistent native snapshots are the recovery source. `ollama-models.txt`
 records the installed model identifiers; after recovery, pull those models

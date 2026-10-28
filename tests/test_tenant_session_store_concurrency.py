@@ -125,7 +125,6 @@ def _message(message_id: str, *, age: timedelta) -> SessionMessage:
         source_lang="de",
         target_lang="en",
         timestamp=utc_now() - age,
-        record_authorized=True,
     )
 
 
@@ -154,6 +153,7 @@ async def test_a_failed_sweep_keeps_a_message_appended_while_it_saved(
     store = SweepSaveFailsStore()
     manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
     session = make_session("tenant-a", "ABC12345")
+    session.created_at = utc_now() - timedelta(hours=session.maximum_lifetime_hours + 1)
     await store.create(session)
     manager.sessions[session.key] = session
     session.messages.append(_message("expired", age=timedelta(hours=30)))
@@ -295,6 +295,7 @@ async def test_a_failed_sweep_does_not_restore_content_onto_a_terminated_session
     store = SweepSaveFailsStore()
     manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
     session = await manager.create_admin_session("tenant-a", REVISION)
+    session.created_at = utc_now() - timedelta(hours=session.maximum_lifetime_hours + 1)
     session.messages.append(_message("expired", age=timedelta(hours=30)))
 
     async def terminate_during_the_sweep() -> None:
@@ -309,38 +310,6 @@ async def test_a_failed_sweep_does_not_restore_content_onto_a_terminated_session
 
     assert session.status.value == "terminated"
     assert session.messages == []
-
-
-async def test_a_failed_sweep_keeps_an_authorization_recorded_while_it_saved(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "24")
-    store = SweepSaveFailsStore()
-    manager = TenantSessionManager(store=store, audio_store=AudioStore(tmp_path))
-    session = make_session("tenant-a", "ABC12345")
-    await store.create(session)
-    manager.sessions[session.key] = session
-    session.messages.append(_message("expired", age=timedelta(hours=30)))
-    pending = _message("pending", age=timedelta(0))
-    pending.record_authorized = False
-    session.messages.append(pending)
-
-    async def authorize_during_the_sweep() -> None:
-        await store.sweep_saving.wait()
-        await manager.record_message_authorization(
-            session.key, "pending", record=True, original_audio=True, translated_audio=False
-        )
-        store.appended.set()
-
-    store.fail_next_save = True
-    authorizer = asyncio.create_task(authorize_during_the_sweep())
-    await manager.sweep_expired_content(utc_now())
-    await authorizer
-
-    restored = {message.id: message for message in session.messages}
-    assert list(restored) == ["expired", "pending"]
-    assert restored["pending"].record_authorized is True
-    assert restored["pending"].original_audio_authorized is True
 
 
 class CountingRedis:

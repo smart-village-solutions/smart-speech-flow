@@ -1,8 +1,7 @@
 """Counts every live Studio policy read, by the stage that made it.
 
 A failed read refuses whatever waited on it: a staff session is not created,
-consent cannot be granted at activation, and a message's content is not
-stored. Every label is a fixed vocabulary; no tenant or session becomes one.
+or a guest cannot activate one. Every label is a fixed vocabulary; no tenant or session becomes one.
 """
 
 from __future__ import annotations
@@ -17,9 +16,9 @@ from .studio_v2 import RuntimeRead
 if TYPE_CHECKING:  # pragma: no cover - typing only, avoids an import cycle
     from .studio_runtime_flow import RuntimeConfigurationFetcher
 
-PolicyReadStage = Literal["session_create", "activation", "message"]
+PolicyReadStage = Literal["session_create", "activation"]
 PolicyReadOutcome = Literal["ok", "unavailable", "contract_error", "tenant_conflict"]
-STAGES: tuple[PolicyReadStage, ...] = ("session_create", "activation", "message")
+STAGES: tuple[PolicyReadStage, ...] = ("session_create", "activation")
 OUTCOMES: tuple[PolicyReadOutcome, ...] = ("ok", "unavailable", "contract_error", "tenant_conflict")
 
 _UNAVAILABLE_CODES = frozenset(

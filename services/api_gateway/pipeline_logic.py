@@ -197,6 +197,8 @@ class _PipelineRun:
     translation_text: Optional[str] = None
     # The machine translation before refinement, which a recorded message keeps.
     raw_translation_text: Optional[str] = None
+    # A recorded session's telemetry names no language (spec §5.5).
+    withhold_languages: bool = False
 
 
 def _start_run(
@@ -207,6 +209,7 @@ def _start_run(
     session_id: Optional[str],
     debug: bool,
     input_size: Dict[str, int],
+    withhold_languages: bool = False,
 ) -> _PipelineRun:
     started_at = utc_now()
     debug_info: Dict[str, Any] = {
@@ -222,6 +225,7 @@ def _start_run(
         debug=debug,
         debug_info=debug_info,
         start_total=time.perf_counter(),
+        withhold_languages=withhold_languages,
     )
 
 
@@ -265,7 +269,11 @@ def _refine(run: _PipelineRun, refiner: BaseTranslationRefiner) -> None:
         run.translation_text,
         run.source_lang,
         run.target_lang,
-        context={"original_text": run.source_text, "pipeline": run.mode},
+        context={
+            "original_text": run.source_text,
+            "pipeline": run.mode,
+            "withhold_languages": run.withhold_languages,
+        },
     )
     completed_at = utc_now()
     run.translation_text = outcome.text
@@ -489,6 +497,7 @@ def process_text_pipeline(
     *,
     speech: SpeechServices,
     refiner: BaseTranslationRefiner,
+    withhold_languages: bool = False,
 ) -> Dict[str, Any]:
     """
     Optimized text processing pipeline that skips ASR
@@ -515,6 +524,7 @@ def process_text_pipeline(
         session_id=session_id,
         debug=debug,
         input_size={"text_length": len(text)},
+        withhold_languages=withhold_languages,
     )
     try:
         if validate_text:
@@ -540,6 +550,7 @@ def process_wav(
     speech: SpeechServices,
     refiner: BaseTranslationRefiner,
     session_id: Optional[str] = None,
+    withhold_languages: bool = False,
 ):
     """
     Run ASR, translation, refinement and TTS on already-validated WAV bytes.
@@ -563,6 +574,7 @@ def process_wav(
         session_id=session_id,
         debug=debug,
         input_size={"file_size": len(file_bytes)},
+        withhold_languages=withhold_languages,
     )
     try:
         asr_failure = _transcribe(run, file_bytes, speech)

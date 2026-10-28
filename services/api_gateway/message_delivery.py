@@ -8,10 +8,8 @@ from typing import Any, Dict, Optional
 
 from .audio_storage import AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
 from .clock import utc_now
-from .consent import ConsentStatus
 from .log_safety import redacted_exception_info, safe_session_ref, sanitize_log_value
 from .message_requests import _log_session_event
-from .persistence_authorization import authorize_message_artifacts
 from .realtime_dispatch import BroadcastResult
 from .realtime_protocol import receiver_message_frame, sender_confirmation_frame
 from .session_manager import TenantSessionManager
@@ -34,16 +32,6 @@ def _nothing_delivered() -> BroadcastResult:
     )
 
 
-async def _session_consent_status(
-    key: TenantSessionKey, sessions: TenantSessionManager
-) -> ConsentStatus:
-    """The session's resolved consent, or `pending` when it cannot be read."""
-    session = await sessions.get_session(key)
-    if session is None:
-        return ConsentStatus.PENDING
-    return session.consent_status
-
-
 async def create_session_message(
     session_id: TenantSessionKey,
     client_type: ClientType,
@@ -55,7 +43,6 @@ async def create_session_message(
     pipeline_metadata: Optional[Dict[str, Any]] = None,
     original_audio_url: Optional[str] = None,
     message_id: Optional[str] = None,  # Allow pre-generated message_id
-    correlation_id: Optional[str] = None,
     *,
     sessions: TenantSessionManager,
     translated_audio_available: bool,
@@ -129,39 +116,6 @@ async def create_session_message(
             exc_info=redacted_exception_info(e),
         )
         # WebSocket-Fehler sollen den HTTP-Request nicht zum Absturz bringen
-
-    # Only now, with every participant served, does persistence get its say.
-    # One live read decides every artefact of the message; the outcome decides
-    # what survives termination, never what the conversation delivered.
-    authorization = await authorize_message_artifacts(
-        gate=sessions.runtime_policy,
-        tenant_id=session_id.tenant_id,
-        consent_status=await _session_consent_status(session_id, sessions),
-        correlation_id=correlation_id or str(uuid.uuid4()),
-        has_original_audio=original_audio_url is not None,
-        has_translated_audio=translated_audio_available,
-    )
-    message.record_authorized = authorization.record
-    message.original_audio_authorized = authorization.original_audio
-    message.translated_audio_authorized = authorization.translated_audio
-    try:
-        await sessions.record_message_authorization(
-            session_id,
-            resolved_message_id,
-            record=authorization.record,
-            original_audio=authorization.original_audio,
-            translated_audio=authorization.translated_audio,
-        )
-    except Exception:  # noqa: BLE001 - the message is already delivered
-        # The policy read leaves a window in which the session can terminate,
-        # and the store then refuses the write-back. Failing the request here
-        # would report an error for a message the other party already has, and
-        # a retry would duplicate it. The record defaults to refused, so the
-        # content this loses is content nothing will retain.
-        logger.warning(
-            "persistence_authorization_not_recorded | %s",
-            sanitize_log_value({"session_ref": safe_session_ref(session_id.session_id)}),
-        )
 
     return message
 

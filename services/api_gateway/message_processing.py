@@ -10,7 +10,6 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException, Request
 
 from .audio_storage import AudioStore, AudioVariant, scope_pipeline_audio_urls, scoped_audio_url
-from .content_retention import captured_retention_hours
 from .log_safety import safe_session_ref, sanitize_log_value
 from .message_delivery import create_session_message
 from .message_models import MessageResponse, create_error_response
@@ -39,6 +38,7 @@ from .quality_telemetry_schema import InputMode
 from .recording.message_archive import Acceptance, accept_message, archive_message
 from .session_manager import TenantSessionManager
 from .session_models import ClientType, SessionMessage, SessionStatus
+from .session_store import SessionStoreConsistencyError
 from .tenant_session import TenantSessionKey
 from .websocket import WebSocketManager
 
@@ -414,18 +414,12 @@ async def _complete_message(
     original_audio: Optional[bytes],
     pipeline_type: str,
     manager: Optional[WebSocketManager],
-    correlation_id: str,
     sessions: TenantSessionManager,
     audio_store: AudioStore,
     start_time: float,
-    retention_hours: Optional[int],
     acceptance: Optional[Acceptance] = None,
 ) -> MessageResponse:
-    """Store, record and answer a message the pipeline produced, for either mode.
-
-    `retention_hours` is the session's captured retention, written beside its
-    audio for the cleanup; None leaves the audio to the short default.
-    """
+    """Store, record and answer a message the pipeline produced, for either mode."""
     message_id = str(uuid.uuid4())
     await archive_message(
         acceptance,
@@ -444,7 +438,6 @@ async def _complete_message(
             message_id,
             original_audio,
             audio_store=audio_store,
-            retention_hours=retention_hours,
         )
         if original_audio is not None
         else False
@@ -461,25 +454,29 @@ async def _complete_message(
         message_id,
         result.get("audio_bytes"),
         audio_store=audio_store,
-        retention_hours=retention_hours,
     )
-    message = await create_session_message(
-        session_id=key,
-        client_type=client_type,
-        original_text=original_text,
-        translated_text=result.get("translation_text", ""),
-        source_lang=source_lang,
-        target_lang=target_lang,
-        manager=manager,
-        pipeline_metadata=pipeline_metadata,
-        # Internal availability marker only. Role-scoped URLs are built at
-        # HTTP/WebSocket response boundaries and are never persisted.
-        original_audio_url="available" if original_audio_available else None,
-        message_id=message_id,
-        correlation_id=correlation_id,
-        sessions=sessions,
-        translated_audio_available=translated_audio_available,
-    )
+    try:
+        message = await create_session_message(
+            session_id=key,
+            client_type=client_type,
+            original_text=original_text,
+            translated_text=result.get("translation_text", ""),
+            source_lang=source_lang,
+            target_lang=target_lang,
+            manager=manager,
+            pipeline_metadata=pipeline_metadata,
+            # Internal availability marker only. Role-scoped URLs are built at
+            # HTTP/WebSocket response boundaries and are never persisted.
+            original_audio_url="available" if original_audio_available else None,
+            message_id=message_id,
+            sessions=sessions,
+            translated_audio_available=translated_audio_available,
+        )
+    except SessionStoreConsistencyError:
+        # The session ended while the pipeline ran, and its end already deleted
+        # the session's audio: these files came after, and go too (§5.5).
+        audio_store.delete_session(key)
+        raise
     return _build_message_response(
         message=message,
         key=key,
@@ -514,7 +511,7 @@ async def process_audio_input(
     )
     # Before the pipeline: a malformed header is the caller's mistake and must
     # not cost a pipeline run.
-    correlation_id = _correlation_id_for(request)
+    _correlation_id_for(request)
     file, source_lang, target_lang = await _parse_audio_form(request)
     recorder.record_request(
         client_type=client_type, source_lang=source_lang, target_lang=target_lang
@@ -546,6 +543,7 @@ async def process_audio_input(
             session_id=key.session_id,
             speech=pipeline.speech,
             refiner=pipeline.refiner,
+            withhold_languages=sessions.pseudonymizer.is_recorded(key.session_id),
         )
     except PipelineBusyError as busy:
         raise _system_busy_error(busy) from busy
@@ -585,11 +583,9 @@ async def process_audio_input(
         original_audio=file_bytes,
         pipeline_type="audio",
         manager=manager,
-        correlation_id=correlation_id,
         sessions=sessions,
         audio_store=audio_store,
         start_time=start_time,
-        retention_hours=captured_retention_hours(session),
         acceptance=acceptance,
     )
 
@@ -613,7 +609,7 @@ async def process_text_input(
     recorder = recorder or MessageTelemetryRecorder(
         session_id=key, start_time=start_time, pseudonymizer=sessions.pseudonymizer
     )
-    correlation_id = _correlation_id_for(request)
+    _correlation_id_for(request)  # a malformed header is refused before the pipeline
     text_request = await _parse_text_request(request)
     recorder.record_request(
         client_type=client_type,
@@ -670,6 +666,7 @@ async def process_text_input(
             session_id=session_id,
             speech=pipeline.speech,
             refiner=pipeline.refiner,
+            withhold_languages=sessions.pseudonymizer.is_recorded(session_id),
         )
     except PipelineBusyError as busy:
         raise _system_busy_error(busy) from busy
@@ -708,10 +705,8 @@ async def process_text_input(
         original_audio=None,
         pipeline_type="text",
         manager=manager,
-        correlation_id=correlation_id,
         sessions=sessions,
         audio_store=audio_store,
         start_time=start_time,
-        retention_hours=captured_retention_hours(session),
         acceptance=acceptance,
     )

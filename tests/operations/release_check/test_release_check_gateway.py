@@ -62,7 +62,7 @@ async def test_messages_are_json_and_guest_calls_carry_no_admin_token():
 
     gateway, _ = _gateway(handler)
     await gateway.admin_send("tok", "S1", "Hallo", "de", "en", extra={"tenant_id": "x"})
-    await gateway.activate("S1", "en", True)
+    await gateway.activate("S1", "en")
     await gateway.customer_send("S1", "Hello", "en", "de", "guest")
     await gateway.guest_ticket("S1", "guest")
 
@@ -73,7 +73,7 @@ async def test_messages_are_json_and_guest_calls_carry_no_admin_token():
     )
     assert bodies[1] == (
         "/api/customer/session/activate",
-        {"session_id": "S1", "customer_language": "en", "data_retention_consent": True},
+        {"session_id": "S1", "customer_language": "en"},
         None,
     )
     assert bodies[2][0] == "/api/customer/session/S1/message"

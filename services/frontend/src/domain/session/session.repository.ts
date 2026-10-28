@@ -9,11 +9,7 @@ import type { Session } from './session.types';
 
 export interface SessionRepository {
   getSession(id: string, role: ClientRole): Promise<Session>;
-  activate(
-    id: string,
-    languageCode: string,
-    dataRetentionConsent: boolean
-  ): Promise<Session>;
+  activate(id: string, languageCode: string): Promise<Session>;
   /** A one-time ticket for the guest's socket; the session must be active. */
   issueGuestTicket(id: string): Promise<string>;
 }
@@ -34,7 +30,7 @@ export function createSessionRepository(
       return statusToSession(response.data);
     },
 
-    async activate(id, languageCode, dataRetentionConsent) {
+    async activate(id, languageCode) {
       const safeId = requirePathIdentifier(id, 'session');
       // Chosen and kept before asking: if the answer is lost, the retry carries
       // the same token and the gateway admits it.
@@ -47,7 +43,6 @@ export function createSessionRepository(
         {
           session_id: safeId,
           customer_language: languageCode,
-          data_retention_consent: dataRetentionConsent,
         },
         { headers: token ? { 'X-Guest-Token': token } : {} }
       );

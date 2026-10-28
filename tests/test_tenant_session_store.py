@@ -6,9 +6,6 @@ import json
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-import pytest
-
-from services.api_gateway.consent import ConsentStatus
 from services.api_gateway.session_models import ClientType, Session, SessionMessage, SessionStatus
 from services.api_gateway.tenant_session import (
     TenantSessionKey,
@@ -321,12 +318,6 @@ class TestEndedJoinResolution:
             assert await store.resolve_join(ended.id) is None
 
 
-def granted(session: Session, hours: int) -> Session:
-    session.consent_status = ConsentStatus.GRANTED
-    session.consent_retention_hours = hours
-    return session
-
-
 async def _terminal_ttl(session: Session) -> object:
     redis = RecordingRedis()
     store = RedisTenantSessionStore(redis, namespace="ssf")
@@ -339,41 +330,28 @@ async def _terminal_ttl(session: Session) -> object:
     return call[10]
 
 
-async def test_a_granted_record_expires_after_its_captured_retention(monkeypatch) -> None:
-    """The terminal record is immutable, so retention is an expiry, not a prune.
+async def test_a_terminal_record_expires_after_the_default_period(monkeypatch) -> None:
+    """The terminal record is immutable, so its lifetime is an expiry, not a prune.
 
     Nothing else can remove it: the save script refuses every change to a
     terminated record, and there is no purge job.
     """
-    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "24")
-
-    assert await _terminal_ttl(granted(make_session("tenant-a", "ABC12345"), 4320)) == 4320 * 3600
-
-
-async def test_a_captured_zero_never_expires_the_record() -> None:
-    # Zero disables automatic deletion; it must not mean "expire immediately".
-    assert await _terminal_ttl(granted(make_session("tenant-a", "ABC12345"), 0)) == 0
-
-
-@pytest.mark.parametrize(
-    "status", [ConsentStatus.PENDING, ConsentStatus.DECLINED, ConsentStatus.POLICY_DISABLED]
-)
-async def test_a_record_without_granted_consent_expires_after_the_short_default(
-    monkeypatch, status
-) -> None:
     monkeypatch.delenv("SSF_TERMINAL_RECORD_HOURS", raising=False)
-    session = make_session("tenant-a", "ABC12345")
-    session.consent_status = status
-    # Never consulted without granted consent.
-    session.consent_retention_hours = 4320
 
-    assert await _terminal_ttl(session) == 24 * 3600
+    assert await _terminal_ttl(make_session("tenant-a", "ABC12345")) == 24 * 3600
 
 
-async def test_the_short_default_is_configurable(monkeypatch) -> None:
+async def test_the_terminal_record_period_is_configurable(monkeypatch) -> None:
     monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "48")
 
     assert await _terminal_ttl(make_session("tenant-a", "ABC12345")) == 48 * 3600
+
+
+async def test_a_zero_terminal_record_period_falls_back_to_the_default(monkeypatch) -> None:
+    # A record must not live forever, so zero is refused like any unusable value.
+    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "0")
+
+    assert await _terminal_ttl(make_session("tenant-a", "ABC12345")) == 24 * 3600
 
 
 async def test_an_expired_terminal_record_is_gone() -> None:
@@ -388,26 +366,17 @@ async def test_an_expired_terminal_record_is_gone() -> None:
     assert await store.load(session.key) is None
 
 
-async def test_the_memory_store_mirrors_the_captured_retention(monkeypatch) -> None:
-    monkeypatch.delenv("SSF_TERMINAL_RECORD_HOURS", raising=False)
+async def test_the_memory_store_mirrors_the_terminal_record_period(monkeypatch) -> None:
+    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "72")
     store = MemoryTenantSessionStore()
-    sessions = {
-        hours: granted(make_session("tenant-a", f"SESSION{hours or 0}"), hours)
-        for hours in (4320, 0)
-    }
-    declined = make_session("tenant-a", "DECLINED")
+    session = make_session("tenant-a", "ABC12345")
     before = datetime.now(timezone.utc)
-    for session in (*sessions.values(), declined):
-        assert await store.create(session) is True
-        session.status = SessionStatus.TERMINATED
-        await store.terminate(session)
+    assert await store.create(session) is True
+    session.status = SessionStatus.TERMINATED
+    await store.terminate(session)
 
-    def lifetime(session: Session) -> timedelta:
-        return store._expiries[session.key] - before
-
-    assert timedelta(hours=4320) <= lifetime(sessions[4320]) < timedelta(hours=4320, seconds=5)
-    assert sessions[0].key not in store._expiries
-    assert timedelta(hours=24) <= lifetime(declined) < timedelta(hours=24, seconds=5)
+    lifetime = store._expiries[session.key] - before
+    assert timedelta(hours=72) <= lifetime < timedelta(hours=72, seconds=5)
 
 
 async def test_listing_prunes_index_members_whose_record_is_gone() -> None:

@@ -7,13 +7,14 @@ Das Smart Speech Flow System ist eine verteilte Mikroservice-Architektur für me
 ### Studio runtime configuration and display text
 
 `GET /api/languages/supported` supplies conversation and pipeline languages.
-The gateway reads Studio runtime configuration contract v2. Its storage policy
-(`conversationContentStorage`) is read live and never cached: it decides consent
-at guest activation and authorizes each message's persistence with one read per
-message. A session keeps the `configurationRevision` it was created on; when a
-guest grants consent it also keeps that read's `retentionHours` and revision,
-which govern how long the session's consented content is kept (`0` keeps it
-until it is removed by hand). Everything else uses `SSF_TERMINAL_RECORD_HOURS`.
+The gateway reads Studio runtime configuration contract v2. Its policy is read
+live and never cached: at session create, at guest activation (a suspended
+tenant starts no session) and by recording mode, whose optional `recording`
+block it carries. A session keeps the `configurationRevision` it was created
+on. Outside a recording a conversation leaves nothing behind: the terminal
+record holds metadata only and expires after `SSF_TERMINAL_RECORD_HOURS`, and
+delivery audio on the gateway's tmpfs goes when the session ends. The retired
+`conversationContentStorage` block is ignored if Studio still sends it.
 
 Content sections (staff texts, guest languages, feedback forms, branding, legal
 links) are parsed leniently: an invalid section is dropped on its own and the

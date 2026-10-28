@@ -166,12 +166,13 @@ SSF reads `/internal/plugins/ssf/v2/runtime-configuration` for one tenant and
 both with the `ssf-runtime` service identity. A tenant read has two halves with
 opposite failure behaviour:
 
-- **Policy** — `conversationContentStorage` (mode and `retentionHours`) — is
-  read live whenever SSF decides with it: when staff create a session, when a
-  guest activates it (consent is resolved here, and on `granted` the session
-  keeps that read's `retentionHours` and `configurationRevision` for life), and
-  once per message before anything is stored. It is never cached, and it fails
-  closed: without a successful read no session starts and nothing is stored.
+- **Policy** — the tenant and its `configurationRevision` — is read live
+  whenever SSF decides with it: when staff create a session (without a
+  successful read none starts), and when a guest activates it (a suspended or
+  not-ready tenant starts no session; any other failure lets the guest in). It
+  is never cached. The `ask` storage mode's `conversationContentStorage` block
+  and guest `storageQuestionHtml` are retired (#615): SSF ignores them, and
+  outside a recording a conversation leaves nothing behind.
 - **Recording policy** — the optional `recording` block (`enabled`,
   `legalBasis`, `signature`, `idCheck`, `retentionHours`,
   `verificationRequired`, `recoveryMode`, `timestampAuthorityUrl`,

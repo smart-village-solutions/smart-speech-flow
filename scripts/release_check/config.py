@@ -10,7 +10,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from urllib.parse import quote
 
-STORAGE_MODES = ("ask", "disabled")
 GUEST_LANGUAGES = ("en", "tr")
 
 
@@ -29,7 +28,6 @@ class Tenant:
     label: str
     directory_id: str
     guest_language: str
-    storage_mode: str
     operators: tuple[Operator, Operator]
 
 
@@ -88,7 +86,6 @@ def _tenant(env: Mapping[str, str], label: str, default_language: str) -> Tenant
         label=label,
         directory_id=_required(env, f"{prefix}ID"),
         guest_language=_choice(env, f"{prefix}LANGUAGE", default_language, GUEST_LANGUAGES),
-        storage_mode=_choice(env, f"{prefix}STORAGE", "ask", STORAGE_MODES),
         operators=(_operator(env, prefix, 1), _operator(env, prefix, 2)),
     )
 

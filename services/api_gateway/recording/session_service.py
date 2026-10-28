@@ -29,6 +29,7 @@ from ..realtime_protocol import (
     recording_state_frame,
 )
 from ..session_models import ClientType
+from ..session_pseudonym import SessionPseudonymizer
 from ..studio_v2 import RecordingPolicy
 from ..tenant_session import TenantSessionKey
 from . import session_state as rs
@@ -100,6 +101,7 @@ class RecordingSessions:
         audit: Callable[[AuditEvent], Awaitable[None]],
         archive: ConversationArchive | None = None,
         storage_ready: Callable[[TenantSessionKey], bool] | None = None,
+        pseudonymizer: SessionPseudonymizer | None = None,
         clock: Callable[[], datetime] = utc_now,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -112,6 +114,8 @@ class RecordingSessions:
         if storage_ready is None:
             storage_ready = archive.ready if archive is not None else (lambda _key: True)
         self._storage_ready = storage_ready
+        # Told of every recorded session, so its telemetry goes unlinkable (§5.5).
+        self._pseudonymizer = pseudonymizer
         self._clock = clock
         self._monotonic = monotonic
         self._locks: KeyedLocks[TenantSessionKey] = KeyedLocks()
@@ -302,6 +306,8 @@ class RecordingSessions:
         """
         async with self._locks.hold(key):
             state = await self._store.load(key)
+            # After a restart the process learns it here, before the message's telemetry.
+            self._note_recorded(key, state)
             if state.phase is Phase.ON and not await self._policy_allows(key.tenant_id):
                 paused = rs.pause(state, reason=Reason.POLICY, now=self._clock())
                 await self._commit(key, state, paused, SYSTEM_ACTOR)
@@ -384,6 +390,7 @@ class RecordingSessions:
 
     async def _greet(self, key: TenantSessionKey, role: ClientType, send: Send) -> None:
         state = await self._store.load(key)
+        self._note_recorded(key, state)
         await send(self._state_frame(key, state))
         if role is ClientType.CUSTOMER and state.phase is Phase.ASKING:
             await send(self._request_frame(key, state))
@@ -391,7 +398,21 @@ class RecordingSessions:
             # Its band counts as live only after a ping; the next might be 5 s away.
             await send(recording_ping_frame(key.session_id))
 
+    async def note_recorded(self, key: TenantSessionKey) -> None:
+        """Mark the session as recorded if its state says so: a restart forgot it."""
+        self._note_recorded(key, await self._store.load(key))
+
     async def session_ended(self, key: TenantSessionKey) -> None:
+        try:
+            await self._end(key)
+        finally:
+            self._served.pop(key, None)
+            if self._pseudonymizer is not None:
+                # Its termination event was emitted when the record committed.
+                self._pseudonymizer.ended(key.session_id)
+            self._forget(key)
+
+    async def _end(self, key: TenantSessionKey) -> None:
         async with self._locks.hold(key):
             state = await self._store.load(key)
             ended = rs.end(state, now=self._clock())
@@ -401,8 +422,6 @@ class RecordingSessions:
             if self._archive is not None:
                 await self._archive.transitioned(key, state, ended)
                 await self._archive.session_ended(key, state)
-        self._served.pop(key, None)
-        self._forget(key)
 
     async def tick(self) -> None:
         """Advance every recording conversation, and ping its screens on schedule.
@@ -520,6 +539,7 @@ class RecordingSessions:
         audited: bool = False,
     ) -> None:
         await self._store.save(key, after)
+        self._note_recorded(key, after)
         if after.state_version == before.state_version:
             return  # an acknowledgement: nothing for the screens to render
         await self._announcer.broadcast(key, self._state_frame(key, after), None)
@@ -538,6 +558,10 @@ class RecordingSessions:
             served = self._served.get(key)
             text = served[1] if served is not None and served[0] == before.request_id else None
             await self._archive.transitioned(key, before, after, served=text)
+
+    def _note_recorded(self, key: TenantSessionKey, state: RecordingState) -> None:
+        if state.consented and self._pseudonymizer is not None:
+            self._pseudonymizer.mark_recorded(key.session_id)
 
     async def _record(
         self, key: TenantSessionKey, before: RecordingState, after: RecordingState, actor: str

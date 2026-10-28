@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import uuid
 from types import SimpleNamespace
 from typing import Any
@@ -72,6 +73,7 @@ def recording(gateway_dependencies, identity, tmp_path):
         recovery_key_ready=recovery_key_ready,
         audit=append,
         archive=rig.archive,
+        pseudonymizer=gateway_dependencies.session_manager.pseudonymizer,
     )
     sessions.rig = rig  # type: ignore[attr-defined]
     gateway_dependencies.recording_sessions = sessions
@@ -547,3 +549,94 @@ def test_the_consent_text_is_read_aloud_in_the_guests_language(
         assert voice.payloads[-1] == {"text": text.plain(), "lang": "uk", "debug": "false"}
         voice.fails = True
         assert client.get(url).content == b"RIFF-read-aloud"  # read once, kept
+
+
+MARKER = "Zebrastreifen-7f3c"
+
+
+def _files_holding(root, needle: bytes) -> list[str]:
+    return [str(path) for path in root.rglob("*") if path.is_file() and needle in path.read_bytes()]
+
+
+def test_no_plaintext_outlives_its_conversation(
+    client, conversations, recording, speech_services, gateway_dependencies, caplog, tmp_path
+) -> None:
+    """Spec §20 "no plaintext at rest", for what this process writes: a marker spoken
+    and typed into a recorded conversation is, once it ends, in no file the archive,
+    the spool or delivery left, in no log line, and not in the terminal record."""
+    caplog.set_level(logging.DEBUG)  # every level the gateway logs at
+    speech_services.asr_text = f"Ich heiße {MARKER}"
+    session_id = conversations.create()
+    conversations.activate(session_id, "en")
+    key = TenantSessionKey(TENANT_A, session_id)
+    with _admin_socket(client, conversations, session_id) as admin:
+        with open_guest_socket(client, session_id, ORIGIN) as guest:
+            _turn_on(client, conversations, session_id, admin, guest)
+            spoken = client.post(
+                f"/api/admin/session/{session_id}/message",
+                files={"file": ("speech.wav", wav_bytes(), "audio/wav")},
+                data={"source_lang": "de", "target_lang": "en"},
+            )
+            typed = client.post(
+                f"/api/customer/session/{session_id}/message",
+                json={"text": f"Mein Name ist {MARKER}", "source_lang": "en", "target_lang": "de"},
+            )
+            assert (spoken.status_code, typed.status_code) == (200, 200)
+            live = client.portal.call(gateway_dependencies.session_manager.store.load, key)
+            assert MARKER in json.dumps(live.to_dict(include_messages=True))  # not vacuous
+    assert _kinds(recording)[-2:] == ["message", "message"]
+    assert client.portal.call(recording.rig.spools.flush)
+
+    conversations.terminate(session_id)
+
+    needle = MARKER.encode()
+    # The recording rig keeps its spool and archive store under this test's tmp_path.
+    assert _files_holding(tmp_path, needle) == []  # spool and archive store: ciphertext only
+    audio = gateway_dependencies.audio_store.base_dir / "v2"
+    assert not any(audio.rglob(f"*{session_id}*")), "delivery audio outlived the session"
+    ended = client.portal.call(gateway_dependencies.session_manager.store.load, key)
+    assert ended.messages == [] and MARKER not in json.dumps(ended.to_dict(include_messages=True))
+    assert MARKER not in caplog.text
+
+
+def test_a_recorded_conversation_withholds_its_languages_from_the_pipelines_telemetry(
+    client, conversations, recording, speech_services, monkeypatch
+) -> None:
+    """Spec §5.5: from the first yes on, the refiner's events name no language."""
+    from services.api_gateway import message_processing
+
+    withheld: list[tuple[str, bool]] = []
+
+    def spying(name: str) -> Any:
+        real = getattr(message_processing, name)
+
+        def spy(*args: Any, **kwargs: Any) -> Any:
+            withheld.append((name, kwargs["withhold_languages"]))
+            return real(*args, **kwargs)
+
+        return spy
+
+    for name in ("process_text_pipeline", "process_wav"):
+        monkeypatch.setattr(message_processing, name, spying(name))
+    session_id = conversations.create()
+    conversations.activate(session_id, "en")
+
+    def speak() -> int:
+        return client.post(
+            f"/api/admin/session/{session_id}/message",
+            files={"file": ("speech.wav", wav_bytes(), "audio/wav")},
+            data={"source_lang": "de", "target_lang": "en"},
+        ).status_code
+
+    with _admin_socket(client, conversations, session_id) as admin:
+        with open_guest_socket(client, session_id, ORIGIN) as guest:
+            assert (conversations.send_text(session_id).status_code, speak()) == (200, 200)
+            _turn_on(client, conversations, session_id, admin, guest)
+            assert (conversations.send_text(session_id).status_code, speak()) == (200, 200)
+
+    assert withheld == [
+        ("process_text_pipeline", False),
+        ("process_wav", False),
+        ("process_text_pipeline", True),
+        ("process_wav", True),
+    ]

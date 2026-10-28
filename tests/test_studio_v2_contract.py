@@ -8,6 +8,8 @@ from typing import Any, Callable
 import pytest
 
 from services.api_gateway.studio_v2 import (
+    GuestLanguageContent,
+    RuntimePolicy,
     RuntimeRead,
     StudioContractError,
     parse_installation_content_v2,
@@ -37,14 +39,6 @@ def _drop(key: str) -> Mutation:
     return lambda body: body.pop(key)
 
 
-def _disabled_with(hours: Any) -> Mutation:
-    def mutate(body: dict[str, Any]) -> None:
-        body["conversationContentStorage"] = {"mode": "disabled", "retentionHours": hours}
-        body["guestLanguages"][0]["guest"]["storageQuestionHtml"] = None
-
-    return mutate
-
-
 def _guest(body: dict[str, Any]) -> dict[str, Any]:
     return body["guestLanguages"][0]
 
@@ -65,8 +59,6 @@ def test_production_runtime_bodies_parse_completely(name: str, tenant: str) -> N
 
     assert read.policy.tenant_id == tenant
     assert read.policy.contract_version == "2.0"
-    assert read.policy.mode == "ask"
-    assert read.policy.retention_hours == 4320
     assert read.policy.configuration_revision.startswith("sha256:")
     assert read.content.time_zone == "Europe/Berlin"
     assert read.content.branding.logo is not None
@@ -86,7 +78,6 @@ def test_production_runtime_bodies_parse_completely(name: str, tenant: str) -> N
     english = read.content.guest_languages[0]
     assert english.native_name == "English"
     assert english.icon is not None
-    assert english.storage_question_html is not None
     assert english.feedback is not None
 
 
@@ -114,15 +105,6 @@ def test_accepts_a_later_minor_version_and_ignores_unknown_fields() -> None:
         _drop("configurationRevision"),
         _set("tenant.id", ""),
         _set("tenant.id", 42),
-        _set("conversationContentStorage.mode", "always"),
-        _set("conversationContentStorage.retentionHours", None),
-        _set("conversationContentStorage.retentionHours", -1),
-        _set("conversationContentStorage.retentionHours", 8761),
-        _set("conversationContentStorage.retentionHours", 4320.0),
-        _set("conversationContentStorage.retentionHours", True),
-        _set("conversationContentStorage.retentionHours", "4320"),
-        _disabled_with(4320),
-        _drop("conversationContentStorage"),
         _drop("tenant"),
     ],
     ids=[
@@ -133,15 +115,6 @@ def test_accepts_a_later_minor_version_and_ignores_unknown_fields() -> None:
         "revision-missing",
         "tenant-id-empty",
         "tenant-id-not-a-string",
-        "mode-unknown",
-        "ask-null-retention",
-        "retention-negative",
-        "retention-over-8760",
-        "retention-float",
-        "retention-bool",
-        "retention-string",
-        "disabled-with-retention",
-        "storage-missing",
         "tenant-missing",
     ],
 )
@@ -163,23 +136,101 @@ def test_a_non_object_body_fails_the_read(body: object) -> None:
     assert caught.value.reason == "response_invalid"
 
 
-@pytest.mark.parametrize("hours", [0, 8760])
-def test_retention_bounds_are_inclusive(hours: int) -> None:
+def _retire_storage(body: dict[str, Any]) -> None:
+    body.pop("conversationContentStorage")
+    for language in body["guestLanguages"]:
+        language["guest"].pop("storageQuestionHtml")
+
+
+def test_the_parsed_read_carries_no_storage_mode_retention_or_question() -> None:
+    assert {"mode", "retention_hours"}.isdisjoint(RuntimePolicy.model_fields)
+    assert "storage_question_html" not in GuestLanguageContent.model_fields
+
+
+def test_a_body_still_carrying_the_retired_storage_fields_parses() -> None:
     body = load_fixture(KASSEL)
-    body["conversationContentStorage"]["retentionHours"] = hours
-
-    assert parse(body).policy.retention_hours == hours
-
-
-def test_disabled_requires_null_retention() -> None:
-    body = load_fixture(KASSEL)
-    _disabled_with(None)(body)
+    assert body["conversationContentStorage"] == {"mode": "ask", "retentionHours": 4320}
+    assert _guest(body)["guest"]["storageQuestionHtml"]
 
     read = parse(body)
 
-    assert read.policy.mode == "disabled"
-    assert read.policy.retention_hours is None
+    assert read.policy.tenant_id == "tenant-kassel"
     assert [language.locale for language in read.content.guest_languages] == ["en"]
+
+
+def test_a_body_without_the_storage_block_or_questions_parses() -> None:
+    body = load_fixture(KASSEL)
+    _retire_storage(body)
+
+    read = parse(body)
+
+    assert read.policy.configuration_revision == body["configurationRevision"]
+    assert [language.locale for language in read.content.guest_languages] == ["en"]
+    assert read.content.staff is not None
+
+
+@pytest.mark.parametrize(
+    "storage",
+    [
+        {"mode": "always", "retentionHours": 4320},
+        {"mode": "ask", "retentionHours": None},
+        {"mode": "ask", "retentionHours": -1},
+        {"mode": "ask", "retentionHours": "4320"},
+        {"mode": "disabled", "retentionHours": 4320},
+        None,
+        "ask",
+    ],
+    ids=[
+        "mode-unknown",
+        "ask-null-retention",
+        "retention-negative",
+        "retention-string",
+        "disabled-with-retention",
+        "null",
+        "not-an-object",
+    ],
+)
+def test_a_storage_block_that_once_failed_the_read_is_now_ignored(storage: object) -> None:
+    body = load_fixture(KASSEL)
+    body["conversationContentStorage"] = storage
+
+    read = parse(body)
+
+    assert read.policy.tenant_id == "tenant-kassel"
+    assert [language.locale for language in read.content.guest_languages] == ["en"]
+
+
+@pytest.mark.parametrize(
+    ("storage", "question"),
+    [
+        (
+            {"mode": "disabled", "retentionHours": None},
+            "<p>Darf das Gespräch gespeichert werden?</p>",
+        ),
+        ({"mode": "ask", "retentionHours": 4320}, None),
+        ({"mode": "ask", "retentionHours": 4320}, ""),
+        ({"mode": "ask", "retentionHours": 4320}, "x" * 65_537),
+        ({"mode": "ask", "retentionHours": 4320}, 42),
+    ],
+    ids=[
+        "question-under-disabled",
+        "null-question-under-ask",
+        "empty-question",
+        "question-too-long",
+        "question-not-a-string",
+    ],
+)
+def test_a_guest_language_is_kept_whatever_its_storage_question(
+    storage: dict[str, Any], question: object
+) -> None:
+    body = load_fixture(KASSEL)
+    body["conversationContentStorage"] = storage
+    _guest(body)["guest"]["storageQuestionHtml"] = question
+
+    read = parse(body)
+
+    assert [language.locale for language in read.content.guest_languages] == ["en"]
+    assert read.content.guest_languages[0].feedback is not None
 
 
 @pytest.mark.parametrize("requested", ["tenant-fulda", "tenant-kässel", "TENANT-KASSEL"])
@@ -211,8 +262,6 @@ GUEST_LANGUAGE_DEFECTS: dict[str, Mutation] = {
     "notice-html-too-long": lambda g: _form(g).update(noticeHtml="x" * 65_537),
     "explanation-html-empty": lambda g: g["guest"].update(explanationHtml=""),
     "explanation-html-too-long": lambda g: g["guest"].update(explanationHtml="x" * 65_537),
-    "storage-question-missing": lambda g: g["guest"].pop("storageQuestionHtml"),
-    "storage-question-null-for-ask": lambda g: g["guest"].update(storageQuestionHtml=None),
     "native-name-too-long": lambda g: g.update(nativeName="x" * 501),
     "staff-name-empty": lambda g: g.update(staffName=""),
     "locale-not-bcp47": lambda g: g.update(locale="english"),
@@ -230,8 +279,6 @@ def test_an_invalid_guest_language_is_dropped_alone(defect: Mutation) -> None:
     read = parse(body)
 
     assert [language.locale for language in read.content.guest_languages] == ["tr"]
-    assert read.policy.mode == "ask"
-    assert read.policy.retention_hours == 4320
     assert read.content.staff is not None
 
 
@@ -242,18 +289,7 @@ def test_an_unknown_question_type_keeps_the_policy_usable() -> None:
     read = parse(body)
 
     assert read.content.guest_languages == ()
-    assert read.policy.mode == "ask"
-    assert read.policy.retention_hours == 4320
-
-
-def test_a_disabled_mode_drops_a_language_that_still_asks() -> None:
-    body = load_fixture(KASSEL)
-    body["conversationContentStorage"] = {"mode": "disabled", "retentionHours": None}
-
-    read = parse(body)
-
-    assert read.policy.mode == "disabled"
-    assert read.content.guest_languages == ()
+    assert read.policy.configuration_revision == body["configurationRevision"]
 
 
 @pytest.mark.parametrize(
@@ -332,7 +368,7 @@ def test_a_missing_content_section_does_not_fail_the_read(key: str) -> None:
 
     read = parse(body)
 
-    assert read.policy.retention_hours == 4320
+    assert read.policy.configuration_revision == body["configurationRevision"]
 
 
 def test_html_and_text_limits_are_inclusive() -> None:
@@ -416,8 +452,7 @@ def test_an_unusable_time_zone_is_dropped_and_the_policy_still_works(mutate: Mut
 
     assert read.content.time_zone is None
     assert read.content.display_name == "Smart City Kassel"
-    assert read.policy.mode == "ask"
-    assert read.policy.retention_hours == 4320
+    assert read.policy.configuration_revision == body["configurationRevision"]
 
 
 @pytest.mark.parametrize(
@@ -437,7 +472,7 @@ def test_an_unusable_display_name_is_dropped_and_the_policy_still_works(mutate: 
 
     assert read.content.display_name is None
     assert read.content.time_zone == "Europe/Berlin"
-    assert read.policy.retention_hours == 4320
+    assert read.policy.configuration_revision == body["configurationRevision"]
 
 
 def test_production_installation_body_parses() -> None:

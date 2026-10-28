@@ -24,13 +24,12 @@
 - Grafana database & dashboards
 - Prometheus data (metrics)
 - Loki logs
-- Redis data
 - Configuration files (.env, docker-compose.yml)
 
-### 2. Application State (Daily)
-- Audio files (original + translated)
-- Session metadata
-- Circuit breaker states
+Redis and delivery audio are deliberately not backed up: outside a recording a
+conversation leaves nothing behind, so Redis keeps nothing on disk and audio
+lives on a tmpfs (#615). Recorded conversations are archived, encrypted, in
+the recording archive, whose database dump and replica are separate.
 
 ### 3. ClickHouse Analytics Data (Before Upgrade and Schema Changes)
 - Logical, compressed exports of approved analytics tables only
@@ -69,8 +68,6 @@
 - Grafana database (SQLite)
 - Prometheus TSDB (last 24h)
 - Loki chunks (last 24h)
-- Redis dump
-- Audio files (if retention > 24h)
 - Configuration files
 
 ### Weekly Backups (Sunday 01:00 UTC)
@@ -152,8 +149,6 @@ RETENTION_DAYS=7
 backup_grafana
 backup_prometheus_recent
 backup_loki_recent
-backup_redis
-backup_audio_files
 backup_configs
 cleanup_old_backups "$BACKUP_TYPE" "$RETENTION_DAYS"
 ```

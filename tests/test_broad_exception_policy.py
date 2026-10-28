@@ -139,11 +139,10 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/message_requests.py", "_store_audio_artifacts"): ["fallback"],
     # records the telemetry failure and session, then re-raises
     ("services/api_gateway/message_processing.py", "send_unified_message"): ["bookkeeping-reraise"],
-    # a stored message is not failed by its broadcast or its authorization write-back
-    ("services/api_gateway/message_delivery.py", "create_session_message"): [
-        "boundary",
-        "fallback",
-    ],
+    # telemetry marking never decides whether a session ends
+    ("services/api_gateway/session_manager.py", "TenantSessionManager._note_recording"): ["fallback"],
+    # a stored message is not failed by its broadcast
+    ("services/api_gateway/message_delivery.py", "create_session_message"): ["boundary"],
     # no reply audio rather than a failed message
     ("services/api_gateway/message_requests.py", "_store_translated_audio"): ["fallback"],
     # telemetry must never reach the caller
@@ -183,8 +182,6 @@ ALLOWED: dict[tuple[str, str], list[str]] = {
     ("services/api_gateway/realtime_heartbeat.py", "Heartbeat.monitor_loop"): ["boundary"],
     # one dead socket is released, the rest still pinged
     ("services/api_gateway/realtime_heartbeat.py", "Heartbeat.send_pings"): ["boundary"],
-    # fail closed: refuse the write, never raise
-    ("services/api_gateway/runtime_policy.py", "RuntimePolicyGate._decide"): ["fallback"],
     # one failed pass must not end polling
     ("services/api_gateway/service_health.py", "ServiceHealthManager._health_check_loop"): [
         "boundary"

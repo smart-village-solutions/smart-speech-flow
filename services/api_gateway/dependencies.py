@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from .pipeline_logic import SpeechPipeline
     from .quality_telemetry import QualityTelemetry
     from .realtime_ticket import RealtimeTicketStore
-    from .runtime_policy import RuntimePolicyGate
     from .service_health import ServiceHealthManager
     from .session_lifecycle import SessionLifecycleService
     from .session_manager import TenantSessionManager
@@ -108,7 +107,6 @@ def build_gateway_dependencies(
     studio_runtime_flow: StudioRuntimeFlow | None = None,
     studio_token_provider: StudioRuntimeTokenProvider | None = None,
     studio_content: StudioContentService | None = None,
-    runtime_policy: RuntimePolicyGate | None = None,
     polling_messages_dropped: Counter | None = None,
     websocket_metrics: WebSocketMetrics | None = None,
     translation_refiner: BaseTranslationRefiner,
@@ -191,7 +189,6 @@ def build_gateway_dependencies(
         audio_store=audio_store,
         realtime_tickets=realtime_tickets,
         polling_store=polling_store,
-        runtime_policy=runtime_policy,
         pseudonymizer=pseudonymizer,
     )
     websocket_manager = WebSocketManager(session_manager, polling_store, monitor=websocket_monitor)

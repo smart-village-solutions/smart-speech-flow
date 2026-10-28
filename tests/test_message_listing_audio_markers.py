@@ -18,10 +18,10 @@ REVISION = f"sha256:{'a' * 64}"
 
 
 class UndeletableAudioStore(AudioStore):
-    """Every removal fails, as an unlink refused by the filesystem does."""
+    """Every removal fails, as a deletion refused by the filesystem does."""
 
-    def delete(self, *_args: object, **_kwargs: object) -> bool:
-        return False
+    def delete_session(self, *_args: object, **_kwargs: object) -> None:
+        return None
 
 
 @pytest.fixture
@@ -40,9 +40,7 @@ def _conversations(manager: TenantSessionManager) -> ConversationService:
     )
 
 
-def _audio_message(
-    *, original_authorized: bool = True, translated_authorized: bool = True
-) -> SessionMessage:
+def _audio_message() -> SessionMessage:
     return SessionMessage(
         id="m1",
         sender=ClientType.CUSTOMER,
@@ -55,9 +53,6 @@ def _audio_message(
         translated_audio_available=True,
         pipeline_metadata={"input": {"type": "audio", "source_lang": "de"}, "steps": []},
         original_audio_url="available",
-        record_authorized=True,
-        original_audio_authorized=original_authorized,
-        translated_audio_authorized=translated_authorized,
     )
 
 
@@ -107,45 +102,36 @@ async def test_listing_advertises_no_audio_for_a_message_without_markers(
     assert "original_audio_url" not in item
 
 
-async def test_settled_refused_audio_is_not_advertised_even_if_its_file_survives(
+async def test_an_ended_sessions_audio_is_not_advertised_even_if_its_file_survives(
     tmp_path: Path,
 ) -> None:
-    """A failed unlink after settlement must not bring the refused audio back into view."""
+    """A failed deletion at termination must not bring the audio back into view."""
     audio_store = UndeletableAudioStore(tmp_path)
     manager = TenantSessionManager(store=MemoryTenantSessionStore(), audio_store=audio_store)
     session = await manager.create_admin_session("tenant-test", REVISION)
-    await manager.add_message(
-        session.key, _audio_message(original_authorized=False, translated_authorized=False)
-    )
+    await manager.add_message(session.key, _audio_message())
     _save_both(session.key, audio_store)
 
     await manager.terminate_session(session.key, reason="test")
 
     assert audio_store.path(session.key, "m1", AudioVariant.TRANSLATED).is_file()
-    [retained] = (await manager.get_session(session.key)).messages
-    assert retained.translated_audio_available is False
-    assert retained.original_audio_url is None
-    [item] = await _conversations(manager).messages(session.key, ClientType.ADMIN)
-    assert "audio_url" not in item
-    assert "original_audio_url" not in item
-    assert "audio_url" not in repr(item.get("pipeline_metadata"))
+    assert (await manager.get_session(session.key)).messages == []
+    assert await _conversations(manager).messages(session.key, ClientType.ADMIN) == []
 
 
-async def test_the_content_sweep_clears_the_markers_it_settles(
+async def test_the_content_sweep_leaves_no_audio_to_advertise(
     manager: TenantSessionManager, audio_store: AudioStore
 ) -> None:
     session = await manager.create_admin_session("tenant-test", REVISION)
-    await manager.add_message(
-        session.key, _audio_message(original_authorized=False, translated_authorized=False)
-    )
+    await manager.add_message(session.key, _audio_message())
+    _save_both(session.key, audio_store)
     past_lifetime = session.created_at + timedelta(hours=session.maximum_lifetime_hours)
 
     await manager.sweep_expired_content(past_lifetime)
 
-    [item] = await _list_without_filesystem(manager, session.key, ClientType.ADMIN)
-    assert "audio_url" not in item
-    assert "original_audio_url" not in item
-    assert "audio_url" not in repr(item.get("pipeline_metadata"))
+    assert await _list_without_filesystem(manager, session.key, ClientType.ADMIN) == []
+    for variant in AudioVariant:
+        assert not audio_store.path(session.key, "m1", variant).exists()
 
 
 async def test_serving_audio_still_checks_that_the_file_exists(

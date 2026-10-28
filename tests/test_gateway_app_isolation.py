@@ -132,7 +132,7 @@ def test_each_apps_session_manager_is_wired_to_that_apps_collaborators() -> None
     first_app, second_app = create_app(), create_app()
 
     with TestClient(first_app), TestClient(second_app):
-        gates = []
+        flows = []
         for dependencies in (first_app.state.dependencies, second_app.state.dependencies):
             sessions = dependencies.session_manager
             assert sessions.realtime_tickets is dependencies.realtime_tickets
@@ -142,9 +142,9 @@ def test_each_apps_session_manager_is_wired_to_that_apps_collaborators() -> None
             # One reference per session in the manager's and the monitor's log lines.
             assert dependencies.websocket_monitor.pseudonymizer is dependencies.pseudonymizer
             assert dependencies.websocket_manager.monitor is dependencies.websocket_monitor
-            assert sessions.runtime_policy is not None
-            gates.append(sessions.runtime_policy)
-        assert gates[0] is not gates[1]
+            assert dependencies.studio_runtime_flow is not None
+            flows.append(dependencies.studio_runtime_flow)
+        assert flows[0] is not flows[1]
 
 
 @pytest.mark.usefixtures("configured_process")

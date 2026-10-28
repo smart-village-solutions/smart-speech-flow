@@ -73,8 +73,8 @@ class ConversationService:
         session = await self._sessions.get_session(key)
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
-        # Availability comes from the markers the writer recorded; settlement clears them
-        # when it removes audio. `audio()` alone checks the disk, as it serves the file.
+        # Availability comes from the markers the writer recorded; a session's audio goes
+        # with its messages. `audio()` alone checks the disk, as it serves the file.
         result: list[dict[str, object]] = []
         for message in session.messages:
             item = message.to_dict()

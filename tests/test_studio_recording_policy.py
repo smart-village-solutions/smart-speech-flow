@@ -53,6 +53,6 @@ def test_without_a_block_recording_is_unavailable() -> None:
 def test_an_invalid_block_disables_recording_and_keeps_the_rest(change, caplog) -> None:
     read = parse_runtime_configuration_v2(_body(**change), expected_tenant_id=TENANT)
     assert read.policy.recording is None
-    assert read.policy.mode == "ask"
+    assert read.policy.tenant_id == TENANT
     assert read.content.guest_languages
     assert any("recording" in record.getMessage() for record in caplog.records)

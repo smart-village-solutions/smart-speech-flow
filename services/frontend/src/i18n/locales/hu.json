@@ -24,8 +24,6 @@
     "intro": "A $t(app.name) automatikus, valós idejű fordítószolgáltatás, amely a különböző nyelveket beszélő emberek közötti beszélgetéseket segíti. A szolgáltatás kizárólag egy dedikált, privát szerveren fut.",
     "howTo": "A felvétel indításához koppintson a mikrofon gombra. Ezután 20 másodperce van beszélni. A felvételt egy újabb koppintással korábban is befejezheti. Ehelyett szöveges bevitelt is használhat.",
     "retention": "Alapértelmezés szerint a hang- és átirati adatokat csak az aktív munkamenet alatt dolgozzuk fel, utána nem őrizzük meg őket. A beszélgetés végén az adatok automatikusan törlődnek. Problémát jelezhet vagy fejlesztési ötletet oszthat meg bármikor az alkalmazás visszajelzési funkciójával.",
-    "optIn": "Ha szeretne segíteni a $t(app.name) fejlesztésében, engedélyezheti, hogy beszélgetése adatait legfeljebb 180 napig tároljuk. Ezek az adatok kizárólag elemzésre és minőségjavításra használhatók a $t(app.name) projekt keretében.",
-    "checkbox": "Hozzájárulok, hogy beszélgetésem adatait legfeljebb 180 napig tárolják a $t(app.name) fejlesztése céljából.",
     "getStarted": "Kezdés",
     "loading": "Az információk betöltése"
   },

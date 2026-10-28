@@ -143,15 +143,13 @@ async def test_every_v2_tenant_validates_in_the_v2_client(tenant_id: str) -> Non
 
 
 @pytest.mark.asyncio
-async def test_the_ask_tenant_carries_every_guest_language_shape() -> None:
+async def test_the_kassel_tenant_carries_every_guest_language_shape() -> None:
     read = await _runtime_v2().fetch("tenant-kassel", "contract-correlation")
     languages = {language.locale: language for language in read.content.guest_languages}
 
-    assert (read.policy.mode, read.policy.retention_hours) == ("ask", 4320)
     assert list(languages) == ["en", "tr", "ar", "kmr", "pt-BR"]
     assert languages["tr"].icon is not None
     assert languages["ar"].icon is None
-    assert all(language.storage_question_html for language in languages.values())
     assert read.content.staff is not None
     assert read.content.staff.feedback is not None
     assert {question.type for question in read.content.staff.feedback.questions} == {
@@ -162,30 +160,26 @@ async def test_the_ask_tenant_carries_every_guest_language_shape() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_disabled_tenant_has_null_retention_and_questions() -> None:
-    read = await _runtime_v2().fetch("tenant-fulda", "contract-correlation")
+@pytest.mark.parametrize(
+    ("tenant_id", "scenario"),
+    [
+        ("tenant-kassel", None),
+        ("tenant-fulda", None),
+        ("tenant-marburg", None),
+        ("tenant-kassel", "storage-disabled"),
+    ],
+)
+async def test_the_retired_storage_fields_the_mock_still_sends_are_ignored(
+    tenant_id: str, scenario: str | None
+) -> None:
+    served = contract_fixtures.runtime_configuration_v2(tenant_id, scenario)
+    assert "conversationContentStorage" in served
 
-    assert (read.policy.mode, read.policy.retention_hours) == ("disabled", None)
-    assert read.content.guest_languages
-    assert all(language.storage_question_html is None for language in read.content.guest_languages)
+    read = await _runtime_v2(scenario=scenario).fetch(tenant_id, "contract-correlation")
 
-
-@pytest.mark.asyncio
-async def test_the_zero_retention_tenant_reads_zero() -> None:
-    read = await _runtime_v2().fetch("tenant-marburg", "contract-correlation")
-
-    assert (read.policy.mode, read.policy.retention_hours) == ("ask", 0)
-
-
-@pytest.mark.asyncio
-async def test_storage_disabled_reaches_the_client_as_disabled() -> None:
-    client = _runtime_v2(scenario="storage-disabled")
-
-    read = await client.fetch("tenant-kassel", "contract-correlation")
-
-    assert (read.policy.mode, read.policy.retention_hours) == ("disabled", None)
-    assert len(read.content.guest_languages) == 5
-    assert all(language.storage_question_html is None for language in read.content.guest_languages)
+    assert [language.locale for language in read.content.guest_languages] == [
+        language["locale"] for language in served["guestLanguages"]
+    ]
 
 
 @pytest.mark.asyncio
@@ -194,7 +188,7 @@ async def test_invalid_content_drops_one_guest_language_and_keeps_the_policy() -
 
     read = await client.fetch("tenant-kassel", "contract-correlation")
 
-    assert (read.policy.mode, read.policy.retention_hours) == ("ask", 4320)
+    assert read.policy.tenant_id == "tenant-kassel"
     assert [language.locale for language in read.content.guest_languages] == [
         "tr",
         "ar",
@@ -210,8 +204,7 @@ async def test_invalid_content_keeps_every_tenants_policy(tenant_id: str) -> Non
 
     read = await _runtime_v2(scenario="invalid-content").fetch(tenant_id, "contract-correlation")
 
-    assert read.policy.mode == plain.policy.mode
-    assert read.policy.retention_hours == plain.policy.retention_hours
+    assert read.policy.tenant_id == plain.policy.tenant_id
     assert read.content.guest_languages == plain.content.guest_languages[1:]
 
 

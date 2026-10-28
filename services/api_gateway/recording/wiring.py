@@ -145,6 +145,7 @@ def _recording_sessions(
         recovery_key_ready=recovery_key_ready,
         audit=repository.record_audit,
         archive=archive,
+        pseudonymizer=state.session_manager.pseudonymizer,
     )
 
 

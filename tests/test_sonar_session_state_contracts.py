@@ -206,7 +206,6 @@ async def test_sweep_preserves_snapshot_when_store_adds_session_during_write(mon
                 source_lang="de",
                 target_lang="en",
                 timestamp=NOW - timedelta(hours=25),
-                record_authorized=True,
             )
         ]
         assert await store.create(session)
@@ -219,12 +218,7 @@ async def test_sweep_preserves_snapshot_when_store_adds_session_during_write(mon
         manager.sessions[added.key] = added
 
     monkeypatch.setattr(store, "save", save_and_add)
-    monkeypatch.setenv("SSF_TERMINAL_RECORD_HOURS", "24")
 
-    assert await manager.sweep_expired_content(NOW) == {
-        "refused_removed": 0,
-        "expired_removed": 2,
-        "failed": 0,
-    }
+    assert await manager.sweep_expired_content(NOW) == {"removed": 2, "failed": 0}
     assert first.messages == second.messages == []
     assert len(manager.sessions) == 3

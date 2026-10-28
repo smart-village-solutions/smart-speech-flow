@@ -84,13 +84,6 @@ class ActivateSessionRequest(BaseModel):
     customer_language: str = Field(
         ..., description="Customer's preferred language code (e.g. 'en', 'de', 'ar')"
     )
-    data_retention_consent: Optional[bool] = Field(
-        None,
-        description=(
-            "The guest's answer to the conversation-content storage question. "
-            "Absent is not an answer and does not grant consent."
-        ),
-    )
 
     class Config:
         json_schema_extra = {"example": {"session_id": "ABC12345", "customer_language": "en"}}
@@ -240,7 +233,6 @@ async def activate_session(
         activation = await lifecycle.activate(
             key,
             request.customer_language,
-            request.data_retention_consent,
             runtime_flow,
             lambda: correlation_id_from_request(http_request),
             guest_token=guest_token,

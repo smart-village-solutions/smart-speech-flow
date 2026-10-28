@@ -28,18 +28,6 @@
             "title": "Customer Language",
             "type": "string"
           },
-          "data_retention_consent": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The guest's answer to the conversation-content storage question. Absent is not an answer and does not grant consent.",
-            "title": "Data Retention Consent"
-          },
           "session_id": {
             "description": "Session ID to activate",
             "title": "Session Id",
@@ -634,24 +622,6 @@
           "login"
         ],
         "title": "ContentStartpage",
-        "type": "object"
-      },
-      "ContentStorage": {
-        "properties": {
-          "mode": {
-            "enum": [
-              "ask",
-              "disabled",
-              "unknown"
-            ],
-            "title": "Mode",
-            "type": "string"
-          }
-        },
-        "required": [
-          "mode"
-        ],
-        "title": "ContentStorage",
         "type": "object"
       },
       "DealingBody": {
@@ -1447,28 +1417,12 @@
           "revision": {
             "title": "Revision",
             "type": "string"
-          },
-          "storage": {
-            "$ref": "#/components/schemas/ContentStorage"
-          },
-          "storageQuestionHtml": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storagequestionhtml"
           }
         },
         "required": [
-          "storage",
           "provided",
           "revision",
           "explanationHtml",
-          "storageQuestionHtml",
           "feedback"
         ],
         "title": "ProvidedGuestContent",
@@ -1939,13 +1893,9 @@
             "default": false,
             "title": "Provided",
             "type": "boolean"
-          },
-          "storage": {
-            "$ref": "#/components/schemas/ContentStorage"
           }
         },
         "required": [
-          "storage",
           "provided"
         ],
         "title": "UnprovidedGuestContent",

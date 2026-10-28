@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Protocol
 
-from .content_retention import session_retention_hours
+from .content_retention import terminal_record_hours
 from .keyed_locks import KeyedLocks
 from .tenant_session import TenantSessionKey
 
@@ -53,10 +53,10 @@ return 1
 """
 
 # The terminal record is immutable -- SAVE_SESSION_LUA refuses every change to
-# one -- so retention for its conversation content is an expiry set here, at
-# the moment it becomes terminal. The join tombstone deliberately does not
-# expire: it carries no content and is what stops a session identifier being
-# reused. ARGV[6] is the session's retention in seconds; 0 means never expire.
+# one -- so its expiry is set here, at the moment it becomes terminal. The join
+# tombstone deliberately does not expire: it carries no content and is what
+# stops a session identifier being reused while Redis keeps it. ARGV[6] is the
+# record's lifetime in seconds.
 TERMINATE_SESSION_LUA = """
 local current_join = redis.call('GET', KEYS[3])
 if current_join == ARGV[3] then
@@ -133,14 +133,9 @@ def join_key(namespace: str, session_id: str) -> str:
     return f"{namespace}:v2:join:{session_id}"
 
 
-def _content_retention_seconds(session: Session) -> int:
-    """Seconds this terminated record may keep its conversation content.
-
-    The session's own retention: the one captured with granted consent, else
-    the short terminal-record period. Zero disables automatic deletion, which
-    must mean "never expire" rather than "expire now".
-    """
-    return session_retention_hours(session) * 3600
+def _terminal_record_seconds() -> int:
+    """How long a terminated record, which holds metadata only, is kept."""
+    return terminal_record_hours() * 3600
 
 
 def _join_payload(key: TenantSessionKey, *, active: bool) -> str:
@@ -292,9 +287,9 @@ class MemoryTenantSessionStore:
         self._sessions[session.key] = session
         self._joins[session.id] = (session.key, False)
         # Mirrors the Redis EXPIRE: the record goes, the tombstone stays.
-        retention = _content_retention_seconds(session)
-        if retention > 0:
-            self._expiries[session.key] = datetime.now(timezone.utc) + timedelta(seconds=retention)
+        self._expiries[session.key] = datetime.now(timezone.utc) + timedelta(
+            seconds=_terminal_record_seconds()
+        )
         return session
 
 
@@ -483,7 +478,7 @@ class RedisTenantSessionStore:
                 _join_payload(key, active=True),
                 _join_payload(key, active=False),
                 key.tenant_id,
-                _content_retention_seconds(session),
+                _terminal_record_seconds(),
             )
         if result == 1:
             return session

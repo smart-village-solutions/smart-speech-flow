@@ -101,8 +101,8 @@ def runtime_client_from_environment(
     An unusable timeout falls back to the default rather than propagating. The
     flow built on this also backs `require_validated_runtime_configuration`,
     so letting the client's range check raise here would turn a mistyped
-    timeout into a 502 on every tenant-login request, not merely an unbound
-    persistence gate.
+    timeout into a 502 on every tenant-login request, not merely refused
+    session creation.
 
     Raises:
         StudioRuntimeFlowError: no token provider, or no usable base URL.
